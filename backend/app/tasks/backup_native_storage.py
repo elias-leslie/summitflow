@@ -110,14 +110,32 @@ def update_backup_index(
 
 
 def apply_local_retention(local_dir: Path, retention_days: int = 14) -> None:
-    """Remove expired native archives while always retaining the newest copy."""
+    """Expire old copies without losing pending offsites or three recovery points."""
+    pending: set[str] = set()
+    manifest = local_dir / "offsite-manifest.json"
+    if manifest.exists():
+        try:
+            payload = json.loads(manifest.read_text())
+            entries = payload["archives"]
+            if not isinstance(entries, list):
+                return  # Unknown replica state is not permission to reclaim it.
+            pending = {
+                str(entry["archive_name"]) for entry in entries
+                if isinstance(entry, dict) and entry.get("status") in {"pending", "failed"}
+            }
+        except (OSError, ValueError, KeyError, TypeError):
+            return
     archives = sorted(
-        [*local_dir.glob("*.tar.gz"), *local_dir.glob("*.tar.gz.age")],
+        [item for item in [*local_dir.glob("*.tar.gz"), *local_dir.glob("*.tar.gz.age")]
+         if item.is_file() and not item.is_symlink()],
         key=lambda item: item.stat().st_mtime,
         reverse=True,
     )
+    retained = {item.name for item in [item for item in archives if item.name not in pending][:3]}
     cutoff = datetime.now(UTC) - timedelta(days=retention_days)
-    for old in archives[1:]:
+    for old in archives:
+        if old.name in retained or old.name in pending:
+            continue
         modified = datetime.fromtimestamp(old.stat().st_mtime, UTC)
         if modified < cutoff:
             old.unlink(missing_ok=True)

@@ -4,6 +4,8 @@ import hashlib
 import struct
 from pathlib import Path
 
+import pytest
+
 from tests.tasks.test_backup_native_recovery import _git
 
 
@@ -21,7 +23,8 @@ def _index_entries(data: bytes) -> dict[bytes, bytes]:
     return entries
 
 
-def test_recovery_preserves_intent_to_add_directory_conflict(tmp_path: Path) -> None:
+@pytest.mark.parametrize("history_mode", ["full", "compact"])
+def test_recovery_preserves_intent_to_add_directory_conflict(tmp_path: Path, history_mode: str) -> None:
     from app.tasks.backup_native_recovery import (
         create_git_recovery_payload,
         git_state,
@@ -36,6 +39,8 @@ def test_recovery_preserves_intent_to_add_directory_conflict(tmp_path: Path) -> 
     (project / "base").write_text("base")
     _git(project, "add", "base")
     _git(project, "commit", "-m", "base")
+    _git(project, "remote", "add", "origin", "https://example.invalid/fixture.git")
+    _git(project, "update-ref", "refs/remotes/origin/main", "HEAD")
     skill = project / "skill"
     skill.write_text("")
     _git(project, "add", "-N", "skill")
@@ -54,7 +59,7 @@ def test_recovery_preserves_intent_to_add_directory_conflict(tmp_path: Path) -> 
     restored = tmp_path / "restored"
     restored.mkdir()
 
-    create_git_recovery_payload(project, restored, git_state(project))
+    create_git_recovery_payload(project, restored, git_state(project), git_history_mode=history_mode)
     restore_git_recovery(restored)
 
     assert (project / ".git/index").read_bytes() == original_index

@@ -1,5 +1,69 @@
 # Backup optimization rollout and inventory
 
+## Current direction — 2026-09-30
+
+The owner superseded the Restic-default rollout below. Use the existing native
+consistency-safe capture, gzip compression and age encryption once per source.
+Retain its completed local archive and copy that exact ciphertext to a dedicated
+Drive archive folder with rclone. Fresh Drive object ID, size and provider hash
+verification replace the previous full-download verification. Retry the retained
+artifact after outages; never recapture a project merely to retry its offsite.
+Native archive restore and the existing backup UI remain the common recovery path.
+Veeam remains the full-system recovery path.
+
+The shared selection omits audited build/import output, tool caches, graph indexes,
+exported session diagnostics, logs and nested backup output. These remain local
+unless explicitly approved for cleanup. Current builds, originals, editable asset
+workspaces and uncertain unique drafts are not deleted. Six obsolete Rootfall
+release exports were moved to a recoverable quarantine outside project roots;
+the private cleanup receipt records their exact recovery paths.
+
+Git recovery keeps current trees, unpublished commits across refs, active stashes
+and exact staged/unstaged recovery. Published historical refs/ancestry need not be
+carried in each archive. The source repository stays intact; restored compact
+repositories are shallow at published boundaries and can fetch older published
+history later. Missing or uncertain published baselines retain full history.
+The actual AfterTimes Git payload fell from 3,917,612,748 to 277,849,132 bytes;
+isolated Git integrity, HEAD, tree, index and source-unchanged checks passed.
+This is a Git-only measurement, not the new all-source compressed full size.
+
+Keep historical Portfolio news and snapshot metrics: complete replay was not
+proven. Keep self-contained project SQL and full infrastructure SQL for now.
+Removing overlapping SQL would also remove database-creation/ownership coverage
+and require cross-archive dependencies; raw SQL size does not establish its
+compressed storage cost. Do not purge live databases or native Codex history.
+
+The existing hourly scheduler admits ordinary captures from 02:00–06:00 in
+America/New_York. Persisted runs missed during a finished window catch up on the
+next poll after recovery, including daytime recovery. Failed captures stay due;
+successful schedules align to future overnight starts. The existing half-hour
+pending drain retries failed/pending offsites without new captures and protects
+their local archives from expiry. Publication is commit-only to an existing
+approved main/master upstream; failure never blocks the backup, and its recorded
+pending result is retried by the same drain. No automatic commits, rebases, force
+pushes, new remotes or new daemons are part of this policy.
+
+The non-secret worker settings live in
+`~/.config/summitflow/backup-schedule.env`, loaded after `.env.local` by the managed
+worker unit and included in the infrastructure archive. The Restic pilot is
+disabled. Retained Restic repositories remain available for recovery; automatic
+maintenance can be disabled without changing their identity or deleting points.
+
+Completion still requires the new lean archives for every enabled source,
+verified copies in the new Drive folder, and the actual compressed-size tally.
+Only then may the explicitly authorized old dedicated Drive folder be permanently
+purged. Preserve local legacy archives, keys, Veeam and unrelated Drive data.
+
+Native Drive rotation initially uses normal Drive trash, not account-wide trash
+emptying. Trashed archives continue to consume quota until permanent deletion
+(Google automatically deletes them after 30 days). Count that extra retained
+traffic/storage when reporting steady-state utilization. Immediate permanent
+expiry within the new bounded archive folder needs explicit owner authorization;
+the authorization to purge the old dedicated folder is not a global trash grant.
+See [Google's deletion/storage guidance](https://support.google.com/drive/answer/2375102).
+
+## Historical Restic rollout — superseded, not completion requirements
+
 During rollout, native encrypted age archives remain the production default.
 Restic becomes the default only after recovery coverage and measured incremental
 operation pass. Retain local legacy

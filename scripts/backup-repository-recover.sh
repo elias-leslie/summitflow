@@ -181,6 +181,24 @@ if object_format not in {"sha1", "sha256"}:
 object_id = re.compile(r"[0-9a-f]{%d}" % (40 if object_format == "sha1" else 64))
 if not object_id.fullmatch(str(identity.get("head", ""))):
     raise SystemExit("ERROR: Invalid Git recovery HEAD")
+if identity.get("recovery_format", 1) not in {1, 2}:
+    raise SystemExit("ERROR: Unsupported Git recovery format")
+shallow_commits = identity.get("shallow_commits", [])
+if not isinstance(shallow_commits, list) or any(not isinstance(oid, str) or not object_id.fullmatch(oid) for oid in shallow_commits):
+    raise SystemExit("ERROR: Invalid Git shallow recovery boundaries")
+remote_config = identity.get("remote_config", [])
+config_key = re.compile(r"(?:remote\..+\.(?:url|pushurl|fetch|mirror|tagopt)|branch\..+\.(?:remote|merge))")
+if not isinstance(remote_config, list) or any(not isinstance(entry, dict) or not isinstance(entry.get("key"), str) or not config_key.fullmatch(entry["key"]) or not isinstance(entry.get("value"), str) or "\0" in entry["value"] for entry in remote_config):
+    raise SystemExit("ERROR: Invalid Git remote recovery configuration")
+stash_entries = identity.get("stash_entries", [])
+if not isinstance(stash_entries, list) or any(not isinstance(entry, dict) or not isinstance(entry.get("object_id"), str) or not object_id.fullmatch(entry["object_id"]) or not isinstance(entry.get("message"), str) or "\0" in entry["message"] for entry in stash_entries):
+    raise SystemExit("ERROR: Invalid Git stash recovery entries")
+shared_name = identity.get("shared_index_name")
+if shared_name is not None:
+    if not isinstance(shared_name, str) or not re.fullmatch(r"sharedindex\.[0-9a-f]{40}|sharedindex\.[0-9a-f]{64}", shared_name):
+        raise SystemExit("ERROR: Invalid shared Git index name")
+    if checksum(recovery / "git-shared-index") != identity.get("shared_index_checksum"):
+        raise SystemExit("ERROR: Shared Git index checksum mismatch")
 if (project / ".git").exists() or (project / ".git").is_symlink():
     raise SystemExit("ERROR: Refusing an existing Git repository")
 def git(*arguments):
@@ -188,14 +206,25 @@ def git(*arguments):
     environment.update(GIT_CONFIG_GLOBAL="/dev/null", GIT_CONFIG_SYSTEM="/dev/null")
     return subprocess.run(["git", "-c", "core.hooksPath=/dev/null", "-c", "init.templateDir=", "-C", str(project), *arguments], env=environment, check=True, text=True, capture_output=True).stdout.strip()
 git("init", "--object-format=" + object_format)
+if shallow_commits:
+    (project / ".git" / "shallow").write_text("\n".join(shallow_commits) + "\n", encoding="ascii")
 git("bundle", "verify", str(bundle))
 git("bundle", "unbundle", str(bundle))
+for oid in shallow_commits:
+    if git("cat-file", "-t", oid) != "commit":
+        raise SystemExit("ERROR: Missing Git shallow recovery boundary")
 for line in identity.get("refs", []):
     oid, separator, ref = str(line).partition(" ")
     if not separator or not object_id.fullmatch(oid) or not ref.startswith("refs/"):
         raise SystemExit("ERROR: Invalid Git recovery ref")
     git("check-ref-format", ref)
+    if ref == "refs/stash" and stash_entries:
+        continue
     git("update-ref", ref, oid)
+for entry in reversed(stash_entries):
+    git("update-ref", "--create-reflog", "-m", entry["message"], "refs/stash", entry["object_id"])
+for entry in remote_config:
+    git("config", "--local", "--add", entry["key"], entry["value"])
 head_ref = identity.get("head_ref")
 if head_ref:
     git("check-ref-format", head_ref)
@@ -205,6 +234,10 @@ else:
 if git("rev-parse", "HEAD") != identity["head"]:
     raise SystemExit("ERROR: Restored Git HEAD differs from the manifest")
 if identity.get("index_checksum") is not None:
+    if shared_name is not None:
+        with (recovery / "git-shared-index").open("rb") as source, (project / ".git" / shared_name).open("xb") as destination:
+            shutil.copyfileobj(source, destination)
+        os.chmod(project / ".git" / shared_name, 0o600)
     with index.open("rb") as source, (project / ".git" / "index").open("xb") as destination:
         shutil.copyfileobj(source, destination)
     os.chmod(project / ".git" / "index", 0o600)

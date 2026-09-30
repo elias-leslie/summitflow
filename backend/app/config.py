@@ -8,8 +8,9 @@ from __future__ import annotations
 import os
 from functools import lru_cache
 from pathlib import Path
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
-from pydantic import field_validator
+from pydantic import Field, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 # ---------------------------------------------------------------------------
@@ -101,6 +102,31 @@ class Settings(BaseSettings):
     backup_restic_pilot_backend_id: str = ""
     backup_restic_pilot_daily_utc: str = "02:00"
     backup_restic_pilot_interface: str = "enp8s0"
+    backup_publish_before_backup: bool = False
+
+    # Optional local-time window for the existing scheduled backup workflow.
+    # Unset hours preserve unrestricted scheduling; manual backups are separate.
+    backup_schedule_start_hour: int | None = Field(default=None, ge=0, le=23)
+    backup_schedule_end_hour: int | None = Field(default=None, ge=0, le=23)
+    backup_schedule_timezone: str = "America/New_York"
+
+    @field_validator("backup_schedule_timezone")
+    @classmethod
+    def validate_backup_schedule_timezone(cls, value: str) -> str:
+        try:
+            ZoneInfo(value)
+        except (ValueError, ZoneInfoNotFoundError) as exc:
+            raise ValueError("Backup schedule timezone must be an IANA timezone") from exc
+        return value
+
+    @model_validator(mode="after")
+    def validate_backup_schedule_window(self) -> Settings:
+        start, end = self.backup_schedule_start_hour, self.backup_schedule_end_hour
+        if (start is None) != (end is None):
+            raise ValueError("Backup schedule requires both start and end hours")
+        if start is not None and start == end:
+            raise ValueError("Backup schedule start and end hours must differ")
+        return self
 
 
 @lru_cache

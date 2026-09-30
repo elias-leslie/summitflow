@@ -157,7 +157,7 @@ async def test_referenced_repository_metadata_and_qualification_can_change(monke
     monkeypatch.setattr(endpoints.backup_store, "backend_has_backups", referenced)
     update = MagicMock(return_value=backend)
     monkeypatch.setattr(endpoints.backup_store, "update_backend", update)
-    config = {**repository_config, "restic_offsite_prune_qualified": True}
+    config = {**repository_config, "restic_offsite_prune_qualified": True, "restic_automatic_maintenance": False}
     await endpoints.update_storage_backend("pilot", StorageBackendUpdate(name="Renamed", enabled=False, config=config))
     update.assert_called_once_with("pilot", name="Renamed", enabled=False, config=config)
     referenced.assert_not_called()

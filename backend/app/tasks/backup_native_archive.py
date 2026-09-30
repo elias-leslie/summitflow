@@ -50,7 +50,41 @@ DEFAULT_EXCLUDES = (
     ".claude/backups",
     "node_modules",
     "docker/compose/hatchet-config",
+    # Rebuildable tool output, not editable assets or authoritative records.
+    "./graphify-out",
+    "./.dev-tools/npm-cache",
+    "./.dev-tools/uv-cache",
+    "./.dev-tools/tiktoken-cache",
+    "./.dev-tools/cleanroom-pydeps",
+    "./.dev-tools/*-details.txt",
 )
+
+# Narrow, audited source-specific output paths. Keep these in the shared capture
+# policy so native archives and repository captures use the same selection.
+# Never infer exclusions from generic names such as data, assets, build or cache.
+# A source's .backupignore can opt an exact inherited pattern back in with !.
+AUDITED_PROJECT_EXCLUDES: dict[str, tuple[str, ...]] = {
+    "summitflow": (
+        "./host-monitor/target",
+        "./backend/logs",
+    ),
+    "portfolio-ai": (
+        "./data/backups",
+    ),
+    "rootfall": (
+        "./builds/web",
+        "./builds/desktop",
+        "./builds/releases-*",
+        "./.godot/imported",
+        "./.godot/shader_cache",
+    ),
+    "cinderwake": (
+        "./builds/web",
+        "./builds/desktop",
+        "./.godot/imported",
+        "./.godot/shader_cache",
+    ),
+}
 
 
 def _read_env_file(path: Path) -> dict[str, str]:
@@ -118,10 +152,11 @@ def _should_exclude(rel_path: str, patterns: tuple[str, ...]) -> bool:
     return False
 
 
-def _load_excludes(project_dir: Path) -> tuple[str, ...]:
+def _load_excludes(project_dir: Path, project_name: str | None = None) -> tuple[str, ...]:
     patterns = list(DEFAULT_EXCLUDES)
     if project_dir.is_file():
         return tuple(patterns)
+    patterns.extend(AUDITED_PROJECT_EXCLUDES.get(project_name or project_dir.name, ()))
     ignore_file = project_dir / ".backupignore"
     if ignore_file.exists():
         for raw_line in ignore_file.read_text(errors="ignore").splitlines():
@@ -366,7 +401,7 @@ def prepare_project_payload(
     mode = project_dir.lstat().st_mode
     if not (stat.S_ISDIR(mode) or stat.S_ISREG(mode)):
         raise RuntimeError("Backup source must be a directory or explicit regular file")
-    excludes = _load_excludes(project_dir)
+    excludes = _load_excludes(project_dir, project_name)
     if project_dir.is_dir():
         excludes = (*excludes, f"./{PROJECT_DATABASE_DUMP_NAME}")
     codex_essentials = project_name == ".codex" and stat.S_ISDIR(mode)
@@ -378,6 +413,7 @@ def prepare_project_payload(
         project_dir, staging, excludes, capture_excludes, sensitive_paths,
         source_roots=source_roots, git_bundle_reuse=git_bundle_reuse,
         capture_git=not codex_essentials,
+        git_history_mode="compact",
     )
     if codex_essentials:
         recovery["capture_profile"] = CODEX_CAPTURE_PROFILE

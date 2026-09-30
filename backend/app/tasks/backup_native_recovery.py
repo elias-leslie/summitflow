@@ -5,6 +5,7 @@ from __future__ import annotations
 import hashlib
 import json
 import os
+import re
 import shutil
 import sqlite3
 import stat
@@ -12,7 +13,8 @@ import subprocess
 import tempfile
 from dataclasses import dataclass
 from pathlib import Path, PurePosixPath
-from typing import Any
+from typing import Any, cast
+from urllib.parse import urlsplit, urlunsplit
 
 from ..services.backup_keys import backup_key_directory
 from .backup_activity import BackupCancelled, backup_phase, check_backup_cancelled, run_bulk_process
@@ -21,6 +23,7 @@ RECOVERY_DIR_NAME = ".summitflow-recovery"
 RECOVERY_MANIFEST_NAME = "manifest.json"
 GIT_BUNDLE_NAME = "git.bundle"
 GIT_INDEX_NAME = "git-index"
+GIT_SHARED_INDEX_NAME = "git-shared-index"
 GIT_RECOVERY_FORMAT = 1
 SQLITE_TRANSIENT_SUFFIXES = ("-wal", "-shm", "-journal")
 JJ_GIT_IMPORT_EXPORT_LOCK = ".jj/repo/git_import_export.lock"
@@ -381,12 +384,19 @@ def _run_git(
     input_data: str | None = None,
 ) -> subprocess.CompletedProcess[Any]:
     check_backup_cancelled()
+    git_environment = {
+        **os.environ,
+        "GIT_OPTIONAL_LOCKS": "0",
+        "GIT_NO_REPLACE_OBJECTS": "1",
+        "GIT_NO_LAZY_FETCH": "1",
+        **(env or {}),
+    }
     if args and args[0] in {"bundle", "pack-objects", "index-pack", "unpack-objects", "fsck"}:
         if input_data is not None:
             raise ValueError("Bulk Git recovery commands do not accept buffered stdin")
         return run_bulk_process(
             ["git", "-C", str(project_dir), *args],
-            env={**os.environ, **env} if env else None,
+            env=git_environment,
             phase="git_recovery", attention_after=120, text=text,
         )
     return subprocess.run(
@@ -394,7 +404,7 @@ def _run_git(
         capture_output=True,
         text=text,
         input=input_data,
-        env={**os.environ, **env} if env else None,
+        env=git_environment,
         timeout=120,
         check=False,
     )
@@ -419,6 +429,21 @@ def git_state(project_dir: Path) -> dict[str, Any] | None:
     version = _run_git(project_dir, ["--version"])
     if object_format.returncode != 0 or version.returncode != 0:
         raise RuntimeError("Unable to capture Git recovery compatibility")
+    stash = _run_git(project_dir, ["reflog", "show", "--format=%H%x00%gs", "refs/stash"])
+    stash_entries = []
+    if any(line.endswith(" refs/stash") for line in refs.stdout.splitlines()):
+        if stash.returncode != 0:
+            raise RuntimeError("Unable to capture Git stash recovery state")
+        for line in stash.stdout.splitlines():
+            object_id, separator, message = line.partition("\0")
+            if not separator:
+                raise RuntimeError("Invalid Git stash recovery state")
+            stash_entries.append({"object_id": object_id, "message": message})
+    shared_path = _shared_git_index_path(index_path, object_format.stdout.strip())
+    shallow = _run_git(project_dir, ["rev-parse", "--path-format=absolute", "--git-path", "shallow"])
+    if shallow.returncode != 0:
+        raise RuntimeError("Unable to capture Git shallow state")
+    shallow_path = Path(shallow.stdout.strip())
     return {
         "head": head.stdout.strip(),
         "head_ref": symbolic.stdout.strip() if symbolic.returncode == 0 else None,
@@ -428,6 +453,118 @@ def git_state(project_dir: Path) -> dict[str, Any] | None:
         "object_format": object_format.stdout.strip(),
         "git_version": version.stdout.strip(),
         "recovery_format": GIT_RECOVERY_FORMAT,
+        "stash_entries": stash_entries,
+        "remote_config": _git_remote_config(project_dir),
+        "shared_index_path": str(shared_path) if shared_path else None,
+        "shared_index_checksum": _sha256(shared_path) if shared_path else None,
+        "shallow_commits": sorted(shallow_path.read_text().splitlines()) if shallow_path.is_file() else [],
+    }
+
+
+def _shared_git_index_path(index_path: Path, object_format: str) -> Path | None:
+    """Inspect a private copy because even Git index reads refresh split files."""
+    candidates = list(index_path.parent.glob("sharedindex.*"))
+    if not candidates or not index_path.is_file():
+        return None
+    with tempfile.TemporaryDirectory(prefix="backup-git-shared-index-") as temporary:
+        repository = Path(temporary) / "index.git"
+        initialized = _run_git(repository.parent, ["init", "--bare", f"--object-format={object_format}", str(repository)])
+        if initialized.returncode != 0:
+            raise RuntimeError("Unable to stage shared Git index inspection")
+        shutil.copy2(index_path, repository / "index")
+        for candidate in candidates:
+            if not stat.S_ISREG(candidate.lstat().st_mode):
+                raise RuntimeError("Shared Git index is not a regular file")
+            shutil.copy2(candidate, repository / candidate.name)
+        shared = _run_git(repository, ["rev-parse", "--path-format=absolute", "--shared-index-path"])
+        if shared.returncode != 0:
+            raise RuntimeError("Unable to capture shared Git index state")
+        return index_path.parent / Path(shared.stdout.strip()).name if shared.stdout.strip() else None
+
+
+def _git_remote_config(project_dir: Path) -> list[dict[str, str]]:
+    """Keep remote/upstream identity, never executable config or URL secrets."""
+    result = _run_git(project_dir, ["config", "--local", "--null", "--get-regexp", r"^(remote\..*\.(url|pushurl|fetch|mirror|tagopt)|branch\..*\.(remote|merge))$"])
+    if result.returncode not in {0, 1}:
+        raise RuntimeError("Unable to capture Git remote configuration")
+    entries = []
+    for entry in result.stdout.split("\0"):
+        if not entry:
+            continue
+        key, separator, value = entry.partition("\n")
+        if not separator:
+            raise RuntimeError("Invalid Git remote configuration")
+        if key.endswith((".url", ".pushurl")):
+            parsed = urlsplit(value)
+            if parsed.scheme and parsed.netloc:
+                # Auth belongs to the owner's credential manager. Query strings
+                # and fragments may also contain tokens and are not identity.
+                host = parsed.netloc.rsplit("@", 1)[-1]
+                if parsed.scheme not in {"http", "https"} and "@" in parsed.netloc:
+                    host = parsed.netloc.rsplit("@", 1)[0].split(":", 1)[0] + "@" + host
+                value = urlunsplit((parsed.scheme, host, parsed.path, "", ""))
+        entries.append({"key": key, "value": value})
+    return entries
+
+
+def _compact_git_plan(project_dir: Path, state: dict[str, Any]) -> dict[str, Any]:
+    """Select unpublished ancestry and published edge trees, or retain all Git.
+
+    Local remote-tracking refs are the capture's published baseline; capture
+    never contacts a server. Missing baselines or unusual traversal semantics
+    retain full history. The source repository is never made shallow.
+    """
+    full: dict[str, Any] = {"capture_mode": "full", "shallow_commits": state.get("shallow_commits", [])}
+    if state.get("shallow_commits"):
+        return {**full, "compact_fallback_reason": "source_already_shallow"}
+    if any(" refs/replace/" in line for line in state["refs"]):
+        return {**full, "compact_fallback_reason": "replacement_refs"}
+    graft_path = _run_git(project_dir, ["rev-parse", "--path-format=absolute", "--git-path", "info/grafts"])
+    if graft_path.returncode != 0 or Path(graft_path.stdout.strip()).exists():
+        return {**full, "compact_fallback_reason": "uncertain_traversal"}
+    remote_names = {item["key"][7:-4] for item in state.get("remote_config", []) if item["key"].startswith("remote.") and item["key"].endswith(".url")}
+    published = []
+    tips = [state["head"], *(line.split(" ", 1)[0] for line in state["refs"]), *(item["object_id"] for item in state.get("stash_entries", []))]
+    for line in state["refs"]:
+        object_id, ref_name = line.split(" ", 1)
+        if ref_name.startswith("refs/remotes/"):
+            if not any(ref_name.startswith(f"refs/remotes/{name}/") for name in remote_names):
+                return {**full, "compact_fallback_reason": "unconfigured_remote_baseline"}
+            published.append(object_id)
+    if not published:
+        return {**full, "compact_fallback_reason": "no_published_baseline"}
+    peeled_commits = {}
+    annotated_tags = []
+    for tip in sorted(set(tips)):
+        peeled = _run_git(project_dir, ["rev-parse", "--verify", f"{tip}^{{commit}}"])
+        if peeled.returncode != 0:
+            return {**full, "compact_fallback_reason": "non_commit_ref"}
+        peeled_commits[tip] = peeled.stdout.strip()
+        kind = _run_git(project_dir, ["cat-file", "-t", tip])
+        if kind.returncode != 0:
+            return {**full, "compact_fallback_reason": "uncertain_ref_type"}
+        if kind.stdout.strip() == "tag":
+            annotated_tags.append(tip)
+    # Explicit stash reflog roots include older stashes which refs/stash alone
+    # does not reach. All refs include unpublished work on other local branches.
+    traversal = _run_git(project_dir, ["rev-list", "--boundary", *sorted(set(peeled_commits.values())), "--not", *sorted(set(published))])
+    if traversal.returncode != 0:
+        return {**full, "compact_fallback_reason": "published_traversal_failed"}
+    unpublished = {line for line in traversal.stdout.splitlines() if not line.startswith("-")}
+    boundaries = {line[1:] for line in traversal.stdout.splitlines() if line.startswith("-")}
+    # A remote-tracking branch proves commit publication, not publication of
+    # annotation messages/signatures. Preserve annotated tag objects regardless
+    # of whether their target commits are already published.
+    required_tips = [state["head"], *annotated_tags, *(entry["object_id"] for entry in state.get("stash_entries", []))]
+    boundaries.update(peeled_commits[tip] for tip in required_tips if peeled_commits[tip] not in unpublished)
+    # Published refs unrelated to current/unpublished work would reintroduce
+    # entire historical trees. Retain their names only if their objects already
+    # belong to this recovery graph; remote identity remains in configuration.
+    retained = [line for line in state["refs"] if peeled_commits[line.split(" ", 1)[0]] in unpublished | boundaries]
+    return {
+        "capture_mode": "compact", "shallow_commits": sorted(boundaries),
+        "unpublished_commit_count": len(unpublished), "refs": retained,
+        "omitted_published_ref_count": len(state["refs"]) - len(retained),
     }
 
 
@@ -437,8 +574,11 @@ def create_git_recovery_payload(
     state: dict[str, Any] | None,
     *,
     git_bundle_reuse: dict[str, Any] | None = None,
+    git_history_mode: str = "full",
 ) -> dict[str, Any]:
     """Create a bundle and copy the exact Git index into the staged snapshot."""
+    if git_history_mode not in {"full", "compact"}:
+        raise ValueError("Unsupported Git history capture mode")
     recovery_dir = snapshot_dir / RECOVERY_DIR_NAME
     recovery_dir.mkdir(parents=True, exist_ok=True)
     manifest: dict[str, Any] = {
@@ -447,6 +587,8 @@ def create_git_recovery_payload(
         "jj_present": (project_dir / ".jj").exists(),
     }
     if state is not None:
+        plan = _compact_git_plan(project_dir, state) if git_history_mode == "compact" else {"capture_mode": "full", "shallow_commits": state.get("shallow_commits", [])}
+        bundle_state = {**state, **plan, "recovery_format": 2 if plan["capture_mode"] == "compact" else GIT_RECOVERY_FORMAT}
         bundle = recovery_dir / GIT_BUNDLE_NAME
         index_path = Path(str(state["index_path"]))
         saved_index = recovery_dir / GIT_INDEX_NAME
@@ -454,9 +596,14 @@ def create_git_recovery_payload(
             shutil.copy2(index_path, saved_index)
         if saved_index.is_file() and _sha256(saved_index) != state["index_checksum"]:
             raise RuntimeError("Backup source changed during Git index capture")
-        if not _reuse_git_bundle(project_dir, bundle, state, git_bundle_reuse):
+        if state.get("shared_index_path"):
+            shared_index = recovery_dir / GIT_SHARED_INDEX_NAME
+            shutil.copy2(Path(state["shared_index_path"]), shared_index)
+            if _sha256(shared_index) != state["shared_index_checksum"]:
+                raise RuntimeError("Backup source changed during shared Git index capture")
+        if not _reuse_git_bundle(project_dir, bundle, bundle_state, git_bundle_reuse):
             _create_git_bundle(
-                project_dir, bundle, state,
+                project_dir, bundle, bundle_state,
                 saved_index if saved_index.is_file() else None,
             )
         verified = _run_git(project_dir, ["bundle", "verify", str(bundle)])
@@ -470,7 +617,12 @@ def create_git_recovery_payload(
             "bundle_checksum": _sha256(bundle),
             "object_format": state.get("object_format", "sha1"),
             "git_version": state.get("git_version"),
-            "recovery_format": GIT_RECOVERY_FORMAT,
+            "recovery_format": bundle_state["recovery_format"],
+            **plan,
+            "stash_entries": state.get("stash_entries", []),
+            "remote_config": state.get("remote_config", []),
+            "shared_index_name": Path(state["shared_index_path"]).name if state.get("shared_index_path") else None,
+            "shared_index_checksum": state.get("shared_index_checksum"),
         }
     (recovery_dir / RECOVERY_MANIFEST_NAME).write_text(
         json.dumps(manifest, indent=2, sort_keys=True) + "\n"
@@ -482,12 +634,15 @@ def _reuse_git_bundle(
     project_dir: Path, destination: Path, state: dict[str, Any],
     reuse: dict[str, Any] | None,
 ) -> bool:
-    """Accept only a compatible full bundle from caller-owned private staging."""
+    """Accept only a compatible self-contained bundle from private staging."""
     if not reuse or not isinstance(reuse.get("git"), dict):
         return False
     previous = reuse["git"]
     compatibility = ("head", "head_ref", "refs", "index_checksum", "object_format", "git_version", "recovery_format")
     if any(previous.get(key) != state.get(key) for key in compatibility):
+        return False
+    optional_defaults = {"capture_mode": "full", "shallow_commits": [], "stash_entries": [], "shared_index_checksum": None}
+    if any(previous.get(key, default) != state.get(key, default) for key, default in optional_defaults.items()):
         return False
     try:
         source = Path(reuse["bundle_path"])
@@ -518,20 +673,18 @@ def _reuse_git_bundle(
         return False
 
 
-def _create_git_bundle(
-    project_dir: Path,
-    bundle: Path,
-    state: dict[str, Any],
+def _create_index_commit(
+    bundle_repo: Path,
     saved_index: Path | None,
-) -> None:
-    """Bundle refs and index objects, including non-commit-ready indexes."""
+) -> str | None:
+    """Retain exact index objects, writing synthetic objects only in staging."""
     index_commit_id: str | None = None
     if saved_index is not None:
         with tempfile.TemporaryDirectory(prefix="backup-git-index-") as temporary:
             working_index = Path(temporary) / "index"
             shutil.copy2(saved_index, working_index)
             entries = _run_git(
-                project_dir,
+                bundle_repo,
                 ["ls-files", "--stage", "-z"],
                 env={"GIT_INDEX_FILE": str(working_index)},
             )
@@ -550,14 +703,14 @@ def _create_git_bundle(
                 object_type = "tree" if mode == "040000" else "blob"
                 objects[object_id] = f"{mode} {object_type} {object_id}\t{object_id}\0"
             index_tree = _run_git(
-                project_dir,
-                ["mktree", "-z"],
+                bundle_repo,
+                ["mktree", "--missing", "-z"],
                 input_data="".join(objects[key] for key in sorted(objects)),
             )
             if index_tree.returncode != 0:
                 raise RuntimeError(f"Git index tree capture failed: {index_tree.stderr.strip()}")
             index_commit = _run_git(
-                project_dir,
+                bundle_repo,
                 [
                     "-c",
                     "user.name=SummitFlow Backup",
@@ -565,8 +718,6 @@ def _create_git_bundle(
                     "user.email=backup@localhost.invalid",
                     "commit-tree",
                     index_tree.stdout.strip(),
-                    "-p",
-                    str(state["head"]),
                     "-m",
                     "SummitFlow staged index recovery",
                 ],
@@ -579,7 +730,16 @@ def _create_git_bundle(
         if index_commit.returncode != 0:
             raise RuntimeError(f"Git index commit capture failed: {index_commit.stderr.strip()}")
         index_commit_id = index_commit.stdout.strip()
+    return index_commit_id
 
+
+def _create_git_bundle(
+    project_dir: Path,
+    bundle: Path,
+    state: dict[str, Any],
+    saved_index: Path | None,
+) -> None:
+    """Bundle original refs and index objects without writing original Git."""
     object_dir_result = _run_git(
         project_dir,
         ["rev-parse", "--path-format=absolute", "--git-path", "objects"],
@@ -592,13 +752,25 @@ def _create_git_bundle(
         initialized = _run_git(bundle_repo.parent, ["init", "--bare", f"--object-format={state.get('object_format', 'sha1')}", str(bundle_repo)])
         if initialized.returncode != 0:
             raise RuntimeError(f"Git bundle staging failed: {initialized.stderr.strip()}")
+        if state.get("shared_index_path"):
+            shared_source = Path(state["shared_index_path"])
+            shutil.copy2(shared_source, bundle_repo / shared_source.name)
+        # Writing an object already present in an alternate can refresh the
+        # original loose object's mtime. Create synthetic objects before adding
+        # read-only access to the source. Their flat tree permits missing blobs
+        # until the original object directory becomes available for packing.
+        index_commit_id = _create_index_commit(bundle_repo, saved_index)
         alternates = bundle_repo / "objects" / "info" / "alternates"
         alternates.parent.mkdir(parents=True, exist_ok=True)
         alternates.write_text(object_dir_result.stdout.strip() + "\n", encoding="utf-8")
+        shallow_commits = state.get("shallow_commits", [])
+        if shallow_commits:
+            (bundle_repo / "shallow").write_text("\n".join(shallow_commits) + "\n", encoding="ascii")
 
         recovery_refs = [
             *state.get("refs", []),
             f"{state['head']} refs/summitflow-recovery/head",
+            *(f"{entry['object_id']} refs/summitflow-recovery/stash/{position}" for position, entry in enumerate(state.get("stash_entries", []))),
         ]
         if index_commit_id:
             recovery_refs.append(
@@ -627,6 +799,7 @@ def build_consistent_snapshot(
     source_roots: dict[str, Path] | None = None,
     git_bundle_reuse: dict[str, Any] | None = None,
     capture_git: bool = True,
+    git_history_mode: str = "full",
 ) -> tuple[Path, dict[str, Any]]:
     """Stage a tree and fail closed if source files or Git refs changed."""
     root_metadata = project_dir.lstat()
@@ -650,7 +823,7 @@ def build_consistent_snapshot(
         raise RuntimeError("Backup source contains no regular files")
     snapshot_dir = staging / "project-snapshot"
     copy_inventory_snapshot(project_dir, snapshot_dir, before)
-    recovery = create_git_recovery_payload(project_dir, snapshot_dir, git_before, git_bundle_reuse=git_bundle_reuse)
+    recovery = create_git_recovery_payload(project_dir, snapshot_dir, git_before, git_bundle_reuse=git_bundle_reuse, git_history_mode=git_history_mode)
     after = inventory_project_tree(project_dir, effective_excludes, should_exclude, source_roots=source_roots, sensitive_paths=sensitive_paths)
     git_after = None if file_source or not capture_git else git_state(project_dir)
     changed = sorted(
@@ -827,15 +1000,47 @@ def restore_git_recovery(project_dir: Path) -> dict[str, Any]:
     git_manifest = manifest.get("git")
     if not isinstance(git_manifest, dict):
         return {"git_restored": False, "reason": "archive has no Git repository"}
+    if git_manifest.get("recovery_format", 1) not in {1, 2}:
+        raise RuntimeError("Unsupported Git recovery format")
+    object_format = git_manifest.get("object_format", "sha1")
+    if object_format not in {"sha1", "sha256"}:
+        raise RuntimeError("Unsupported Git recovery object format")
+    object_length = 40 if object_format == "sha1" else 64
+    object_pattern = re.compile(rf"[0-9a-f]{{{object_length}}}")
+    shallow_commits = git_manifest.get("shallow_commits", [])
+    if not isinstance(shallow_commits, list) or any(not isinstance(commit, str) or not object_pattern.fullmatch(commit) for commit in shallow_commits):
+        raise RuntimeError("Invalid Git shallow recovery boundaries")
+    remote_config = git_manifest.get("remote_config", [])
+    config_pattern = re.compile(r"(?:remote\..+\.(?:url|pushurl|fetch|mirror|tagopt)|branch\..+\.(?:remote|merge))")
+    if not isinstance(remote_config, list) or any(not isinstance(entry, dict) or not isinstance(entry.get("key"), str) or not config_pattern.fullmatch(entry["key"]) or not isinstance(entry.get("value"), str) or "\0" in entry["value"] for entry in remote_config):
+        raise RuntimeError("Invalid Git remote recovery configuration")
+    stash_entries = git_manifest.get("stash_entries", [])
+    if not isinstance(stash_entries, list) or any(not isinstance(entry, dict) or not isinstance(entry.get("object_id"), str) or not object_pattern.fullmatch(entry["object_id"]) or not isinstance(entry.get("message"), str) or "\0" in entry["message"] for entry in stash_entries):
+        raise RuntimeError("Invalid Git stash recovery entries")
+    shared_index_name = git_manifest.get("shared_index_name")
+    if shared_index_name is not None and (not isinstance(shared_index_name, str) or not re.fullmatch(r"sharedindex\.[0-9a-f]{40}|sharedindex\.[0-9a-f]{64}", shared_index_name)):
+        raise RuntimeError("Invalid shared Git index recovery name")
     bundle = recovery_dir / GIT_BUNDLE_NAME
     if _sha256(bundle) != git_manifest.get("bundle_checksum"):
         raise RuntimeError("Git recovery bundle checksum mismatch")
+    saved_index = recovery_dir / GIT_INDEX_NAME
+    if git_manifest.get("index_checksum") is not None and (not saved_index.is_file() or _sha256(saved_index) != git_manifest["index_checksum"]):
+        raise RuntimeError("Git recovery index checksum mismatch")
     initialized = _run_git(project_dir, ["init", f"--object-format={git_manifest.get('object_format', 'sha1')}"])
     if initialized.returncode != 0:
         raise RuntimeError(f"Git initialization failed: {initialized.stderr.strip()}")
+    if shallow_commits:
+        shallow_path_result = _run_git(project_dir, ["rev-parse", "--path-format=absolute", "--git-path", "shallow"])
+        if shallow_path_result.returncode != 0:
+            raise RuntimeError("Unable to locate Git shallow recovery path")
+        Path(shallow_path_result.stdout.strip()).write_text("\n".join(shallow_commits) + "\n", encoding="ascii")
     unbundled = _run_git(project_dir, ["bundle", "unbundle", str(bundle)])
     if unbundled.returncode != 0:
         raise RuntimeError(f"Git bundle restore failed: {unbundled.stderr.strip()}")
+    for commit in shallow_commits:
+        exists = _run_git(project_dir, ["cat-file", "-t", commit])
+        if exists.returncode != 0 or exists.stdout.strip() != "commit":
+            raise RuntimeError("Missing Git shallow recovery boundary")
     for ref_line in git_manifest.get("refs", []):
         object_id, separator, ref_name = str(ref_line).partition(" ")
         if not separator or not ref_name.startswith("refs/"):
@@ -843,9 +1048,19 @@ def restore_git_recovery(project_dir: Path) -> dict[str, Any]:
         checked = _run_git(project_dir, ["check-ref-format", ref_name])
         if checked.returncode != 0:
             raise RuntimeError("Invalid ref in Git recovery manifest")
+        if ref_name == "refs/stash" and stash_entries:
+            continue
         updated = _run_git(project_dir, ["update-ref", ref_name, object_id])
         if updated.returncode != 0:
             raise RuntimeError(f"Unable to restore Git ref: {ref_name}")
+    for entry in reversed(cast(list[dict[str, str]], stash_entries)):
+        updated = _run_git(project_dir, ["update-ref", "--create-reflog", "-m", entry["message"], "refs/stash", entry["object_id"]])
+        if updated.returncode != 0:
+            raise RuntimeError("Unable to restore Git stash reflog")
+    for entry in cast(list[dict[str, str]], remote_config):
+        configured = _run_git(project_dir, ["config", "--local", "--add", entry["key"], entry["value"]])
+        if configured.returncode != 0:
+            raise RuntimeError("Unable to restore Git remote configuration")
     head_ref = git_manifest.get("head_ref")
     if isinstance(head_ref, str) and head_ref:
         result = _run_git(project_dir, ["symbolic-ref", "HEAD", head_ref])
@@ -853,7 +1068,14 @@ def restore_git_recovery(project_dir: Path) -> dict[str, Any]:
         result = _run_git(project_dir, ["update-ref", "--no-deref", "HEAD", str(git_manifest["head"])])
     if result.returncode != 0:
         raise RuntimeError("Unable to restore Git HEAD")
-    saved_index = recovery_dir / GIT_INDEX_NAME
+    if shared_index_name:
+        saved_shared = recovery_dir / GIT_SHARED_INDEX_NAME
+        if _sha256(saved_shared) != git_manifest.get("shared_index_checksum"):
+            raise RuntimeError("Shared Git recovery index checksum mismatch")
+        shared_path_result = _run_git(project_dir, ["rev-parse", "--path-format=absolute", "--git-path", shared_index_name])
+        if shared_path_result.returncode != 0:
+            raise RuntimeError("Unable to locate shared Git recovery index path")
+        shutil.copy2(saved_shared, Path(shared_path_result.stdout.strip()))
     if saved_index.is_file():
         index_result = _run_git(project_dir, ["rev-parse", "--path-format=absolute", "--git-path", "index"])
         index_path = Path(index_result.stdout.strip())

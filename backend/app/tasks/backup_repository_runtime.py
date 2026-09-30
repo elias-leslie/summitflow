@@ -520,6 +520,8 @@ def run_repository_maintenance() -> dict[str, Any]:
         config = backend.get("config") or {}
         if config.get("engine") != "restic":
             continue
+        if config.get("restic_automatic_maintenance") is False:
+            continue  # Retired pilot points remain readable without recurring scans.
         if pilot_reserves_backend(str(backend["id"])):
             continue  # Daily runner owns *all* pilot maintenance in its measured window.
         try:

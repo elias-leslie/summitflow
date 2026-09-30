@@ -223,6 +223,48 @@ def test_inventory_opens_no_file_contents_skips_links_and_protects_recovery_arti
     assert "linked/not-in-scope" not in indexed
 
 
+def test_standalone_compact_git_restores_stashes_upstream_and_split_index(tools, tmp_path: Path) -> None:
+    from app.tasks import backup_native_archive, backup_native_recovery
+    from tests.tasks.test_backup_native_recovery import _git
+
+    project = tmp_path / "source"
+    project.mkdir()
+    _git(project, "init", "-b", "main")
+    _git(project, "config", "user.name", "Fixture")
+    _git(project, "config", "user.email", "fixture@example.invalid")
+    (project / "file.txt").write_text("published")
+    _git(project, "add", ".")
+    _git(project, "commit", "-m", "published")
+    _git(project, "remote", "add", "origin", "https://example.invalid/project.git")
+    _git(project, "update-ref", "refs/remotes/origin/main", "HEAD")
+    _git(project, "config", "branch.main.remote", "origin")
+    _git(project, "config", "branch.main.merge", "refs/heads/main")
+    for message in ("first", "second"):
+        (project / "file.txt").write_text(message)
+        _git(project, "stash", "push", "-m", message)
+    (project / "file.txt").write_text("unpublished")
+    _git(project, "add", ".")
+    _git(project, "commit", "-m", "unpublished")
+    _git(project, "update-index", "--split-index")
+    (project / "file.txt").write_text("working")
+    snapshot, manifest = backup_native_recovery.build_consistent_snapshot(
+        project, tmp_path / "stage", (".git",), backup_native_archive._should_exclude,
+        git_history_mode="compact",
+    )
+    assert manifest["git"]["capture_mode"] == "compact"
+    assert manifest["git"]["shared_index_name"]
+    tools[0]["FAKE_SOURCE"] = str(snapshot)
+    result = run_recovery(tools, "restore", "--snapshot", "a" * 64, "--into", str(tmp_path / "restored"), "--verify", "--git-root", "project")
+    assert result.returncode == 0, result.stderr
+    restored = tmp_path / "restored" / "project"
+    assert (restored / "file.txt").read_text() == "working"
+    assert _git(restored, "rev-parse", "HEAD") == _git(project, "rev-parse", "HEAD")
+    assert _git(restored, "stash", "list", "--format=%H %gs") == _git(project, "stash", "list", "--format=%H %gs")
+    assert _git(restored, "config", "branch.main.remote") == "origin"
+    assert _git(restored, "config", "remote.origin.url") == "https://example.invalid/project.git"
+    assert _git(restored, "status", "--porcelain", "--", "file.txt") == _git(project, "status", "--porcelain", "--", "file.txt")
+
+
 def test_inventory_counts_hardlinks_once_and_marks_bounded_traversal_incomplete(tmp_path: Path) -> None:
     module = runpy.run_path(str(INVENTORY))
     root = tmp_path / ".claude"

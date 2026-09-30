@@ -239,6 +239,9 @@ def update_backend(
         str | None,
         typer.Option("--offsite-gio-uri", help="Existing GIO destination URI"),
     ] = None,
+    offsite_transport: Annotated[str | None, typer.Option("--offsite-transport", help="Native offsite transport: gio or rclone")] = None,
+    offsite_rclone_remote: Annotated[str | None, typer.Option("--offsite-rclone-remote", help="Bounded Drive folder, REMOTE:FOLDER")] = None,
+    offsite_rclone_config: Annotated[str | None, typer.Option("--offsite-rclone-config", help="Private managed rclone config-file reference")] = None,
     engine: Annotated[str | None, typer.Option("--engine", help="Backup engine: native or restic")] = None,
     local_repository: Annotated[str | None, typer.Option("--local-repository", help="Absolute Restic local repository path")] = None,
     remote_repository: Annotated[str | None, typer.Option("--remote-repository", help="Bounded independent Restic remote reference")] = None,
@@ -254,6 +257,11 @@ def update_backend(
         engine, local_repository, remote_repository, local_password_file,
         remote_password_file, rclone_config, key_directory, lock_directory,
     )
+    if offsite_transport is not None and offsite_transport not in {"gio", "rclone"}:
+        raise typer.BadParameter("--offsite-transport must be 'gio' or 'rclone'")
+    for key, value in (("offsite_transport", offsite_transport), ("offsite_rclone_remote", offsite_rclone_remote), ("offsite_rclone_config", offsite_rclone_config)):
+        if value is not None:
+            settings[key] = value
     if offsite_gio_uri is None and not settings and default is None:
         typer.echo("Error: provide storage settings to update", err=True)
         raise typer.Exit(1)
@@ -270,7 +278,7 @@ def update_backend(
         result = _api_put(f"backup-storage/{backend_id}", fields)
         if ctx.obj.is_compact:
             restic = merged.get("engine") == "restic"
-            offsite = merged.get("restic_remote_repository") if restic else merged.get("offsite_gio_uri")
+            offsite = merged.get("restic_remote_repository") if restic else merged.get("offsite_rclone_remote") if merged.get("offsite_transport") == "rclone" else merged.get("offsite_gio_uri")
             engine_label = "|engine:restic" if restic else ""
             print(f"UPDATED {result['id']}{engine_label}|offsite:{'configured' if offsite else 'unconfigured'}")
         else:

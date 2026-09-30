@@ -374,6 +374,10 @@ def storage_config_env(config: Mapping[str, Any]) -> dict[str, str]:
         env_map["CREDENTIALS_FILE"] = str(config["credentials_file"])
     if config.get("offsite_gio_uri"):
         env_map["BACKUP_OFFSITE_GIO_URI"] = str(config["offsite_gio_uri"])
+    for key in ("transport", "rclone_remote", "rclone_config"):
+        value = config.get(f"offsite_{key}")
+        if value is not None:
+            env_map[f"BACKUP_OFFSITE_{key.upper()}"] = str(value)
     if config.get("__backend_id"):
         env_map["BACKUP_STORAGE_BACKEND_ID"] = str(config["__backend_id"])
     if config.get("engine"):
@@ -391,6 +395,16 @@ def storage_config_env(config: Mapping[str, Any]) -> dict[str, str]:
         if value is not None:
             env_map[f"RESTIC_{key.upper()}"] = str(value).lower() if isinstance(value, bool) else str(value)
     return env_map
+
+
+def offsite_is_configured(env: Mapping[str, str]) -> bool:
+    """Identify the selected native replica transport, including bad config.
+
+    A selected but incomplete rclone route must surface a failed/pending copy,
+    not silently fall back to GIO or report an unconfigured offsite.
+    """
+    transport = env.get("BACKUP_OFFSITE_TRANSPORT", os.environ.get("BACKUP_OFFSITE_TRANSPORT", "gio"))
+    return transport == "rclone" or bool(env.get("BACKUP_OFFSITE_GIO_URI") or os.environ.get("BACKUP_OFFSITE_GIO_URI"))
 
 
 def canonical_backup_source_roots() -> dict[str, Path]:

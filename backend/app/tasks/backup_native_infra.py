@@ -51,6 +51,7 @@ from .backup_native_storage import (
     storage_backend_type,
     update_backup_index,
 )
+from .backup_utils import offsite_is_configured
 
 logger = get_logger(__name__)
 
@@ -596,6 +597,7 @@ def prepare_infrastructure_payload(
     if db_size == 0:
         raise RuntimeError("Infrastructure database dump is empty")
     _copy_if_exists(Path.home() / ".env.local", configs / "env.local")
+    _copy_if_exists(Path.home() / ".config" / "summitflow" / "backup-schedule.env", configs / "backup-schedule.env")
     _copy_if_exists(config_root / "docker" / "compose" / ".env", configs / "compose-env")
     _copy_if_exists(Path.home() / ".smbcredentials", configs / "smbcredentials")
     _copy_if_exists(
@@ -755,10 +757,7 @@ def run_infra_backup(
                 "verification": verification,
             }
         )
-        offsite_configured = bool(
-            run_env.get("BACKUP_OFFSITE_GIO_URI")
-            or os.environ.get("BACKUP_OFFSITE_GIO_URI")
-        )
+        offsite_configured = offsite_is_configured(run_env)
         backend_type = storage_backend_type(run_env)
         local_dir = project_dir / "backups" / "infrastructure"
         if offsite_configured and backend_type != "local":

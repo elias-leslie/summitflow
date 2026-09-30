@@ -2,13 +2,109 @@
 
 from __future__ import annotations
 
+import os
+import re
+import shutil
 import subprocess
+from ipaddress import ip_address
 from pathlib import Path
+from typing import Any
+from urllib.parse import urlsplit
 
 from ...logging_config import get_logger
 from ...utils import safe_subprocess
 
 logger = get_logger(__name__)
+
+
+def network_repository_identity(url: str) -> tuple[str, int | None, str] | None:
+    """Compare existing SSH/HTTPS repository routes without retaining secrets."""
+    if not url or any(character.isspace() for character in url) or "\0" in url:
+        return None
+    try:
+        parsed = urlsplit(url)
+        if parsed.scheme in {"https", "ssh"} and parsed.hostname:
+            if parsed.query or parsed.fragment:
+                return None
+            host, path, port = parsed.hostname, parsed.path, parsed.port
+            if port in {443 if parsed.scheme == "https" else 22}:
+                port = None
+        else:
+            scp = re.fullmatch(r"(?:[A-Za-z0-9_.-]+@)?([^/:]+):(.+)", url)
+            if not scp or "://" in url or "::" in url or parsed.scheme in {"file", "http", "ext"}:
+                return None
+            host, path, port = scp[1], scp[2], None
+        host = host.lower().rstrip(".")
+        if not host or host.startswith("-"):
+            return None
+        if host in {"localhost", "localhost.localdomain"} or host.endswith(".localhost"):
+            return None
+        try:
+            address = ip_address(host)
+        except ValueError:
+            address = None
+        if address is not None and (address.is_loopback or address.is_unspecified):
+            return None
+        path = path.strip("/")
+        if not path:
+            return None
+        return host, port, path.removesuffix(".git")
+    except ValueError:
+        return None
+
+
+def push_captured_head_to_upstream(
+    project_path: str | Path,
+    head: str,
+    upstream_ref: str,
+    push_url: str,
+    *,
+    ssh_command: str = "ssh",
+    timeout_seconds: int = 300,
+) -> dict[str, Any]:
+    """Publish one validated captured commit; return only sanitized outcomes.
+
+    The caller verifies the current branch's existing upstream and transport.
+    A captured URL avoids redirection through a concurrently edited remote name.
+    GNU timeout bounds Git and its SSH/credential/hook process group together.
+    No raw URL, command output or exception is returned or logged.
+    """
+    if not re.fullmatch(r"[0-9a-f]{40}|[0-9a-f]{64}", head) or upstream_ref not in {"refs/heads/main", "refs/heads/master"} or network_repository_identity(push_url) is None:
+        return {"status": "failed", "reason": "invalid_push_request", "attempted": False}
+    timeout = shutil.which("timeout")
+    if timeout is None:
+        return {"status": "failed", "reason": "timeout_tool_unavailable", "attempted": False}
+    if not 1 <= timeout_seconds <= 300:
+        return {"status": "failed", "reason": "invalid_push_timeout", "attempted": False}
+    environment = {key: value for key, value in os.environ.items() if not key.startswith("GIT_")}
+    environment.update({
+        "GIT_TERMINAL_PROMPT": "0", "GCM_INTERACTIVE": "Never",
+        "GIT_ASKPASS": "/bin/false", "SSH_ASKPASS": "/bin/false",
+        "GIT_OPTIONAL_LOCKS": "0", "GIT_NO_LAZY_FETCH": "1",
+        "GIT_NO_REPLACE_OBJECTS": "1",
+        "GIT_SSH_COMMAND": ssh_command + " -o BatchMode=yes -o ConnectTimeout=10",
+    })
+    command = [
+        timeout, "--signal=TERM", "--kill-after=5s", f"{timeout_seconds}s",
+        "git", "-C", str(project_path), "-c", "push.followTags=false",
+        "push", "--porcelain", "--no-follow-tags", "--recurse-submodules=no",
+        "--", push_url, f"{head}:{upstream_ref}",
+    ]
+    try:
+        result = safe_subprocess.run(
+            command, stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL, env=environment, timeout=timeout_seconds + 10,
+            check=False,
+        )
+    except subprocess.TimeoutExpired:
+        return {"status": "failed", "reason": "push_timeout", "attempted": True}
+    except OSError:
+        return {"status": "failed", "reason": "push_transport_unavailable", "attempted": True}
+    if result.returncode in {124, 137}:
+        return {"status": "failed", "reason": "push_timeout", "attempted": True}
+    if result.returncode != 0:
+        return {"status": "failed", "reason": "push_failed", "attempted": True}
+    return {"status": "published", "reason": "captured_head_published", "attempted": True}
 
 
 def push_branch(

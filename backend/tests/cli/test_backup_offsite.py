@@ -81,3 +81,19 @@ def test_sync_offsite_reports_queued_workflow(monkeypatch) -> None:
 
     assert result.exit_code == 0
     assert "OFFSITE_SYNC backup-1|source:summitflow|status:queued|task:workflow-1" in result.output
+
+
+def test_native_rclone_settings_keep_local_storage_and_use_private_ref(monkeypatch) -> None:
+    from cli.commands import backup_storage
+    from cli.main import app
+
+    captured = {}
+    monkeypatch.setattr(backup_storage, "_api_get", lambda _: {"config": {"root_path": "/backup", "path": "project-backups"}})
+    def update(path, data):
+        captured.update(data["config"])
+        return {"id": "local-1"}
+    monkeypatch.setattr(backup_storage, "_api_put", update)
+    result = runner.invoke(app, ["backup", "storage", "update", "local-1", "--offsite-transport", "rclone", "--offsite-rclone-remote", "drive:bounded", "--offsite-rclone-config", "/private/keys/rclone.conf"])
+    assert result.exit_code == 0, result.output
+    assert captured == {"root_path": "/backup", "path": "project-backups", "offsite_transport": "rclone", "offsite_rclone_remote": "drive:bounded", "offsite_rclone_config": "/private/keys/rclone.conf"}
+    assert "offsite:configured" in result.output

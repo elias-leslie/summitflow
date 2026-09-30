@@ -11,7 +11,11 @@ from ...logging_config import get_logger
 from ...storage import backups as backup_store
 from ...tasks.backup_coverage import get_coverage_summary, verify_archive_coverage
 from ...tasks.backup_lock import has_active_backup_lease
-from ...tasks.backup_utils import REPOSITORY_CRITICAL_RESTORE_DAYS, build_storage_env
+from ...tasks.backup_utils import (
+    REPOSITORY_CRITICAL_RESTORE_DAYS,
+    build_storage_env,
+    offsite_is_configured,
+)
 from .models import (
     BackupHealthItem,
     BackupHealthResponse,
@@ -56,7 +60,7 @@ async def backup_health() -> BackupHealthResponse:
         isolated_restore = verification.get("isolated_restore")
         isolated_restore = isolated_restore if isinstance(isolated_restore, Mapping) else {}
         storage_env = build_storage_env(str(row["source_id"]))
-        offsite_configured = bool(storage_env.get("BACKUP_OFFSITE_GIO_URI"))
+        offsite_configured = offsite_is_configured(storage_env)
         offsite_status = str(offsite.get("status") or ("pending" if offsite_configured and last_success else "unconfigured"))
         raw_activity = row.get("backup_activity")
         activity = dict(raw_activity) if isinstance(raw_activity, Mapping) else None

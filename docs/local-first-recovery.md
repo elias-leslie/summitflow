@@ -17,7 +17,11 @@ database.
 - Enough private temporary disk space for one plaintext archive and extracted tree.
 
 GitHub credentials and a GitHub account are not required. The archive contains its
-own Git bundle, refs, HEAD, exact index, working files, and recovery manifest.
+own Git bundle, required refs, HEAD, exact index, working files, and recovery manifest.
+Current lean captures preserve unpublished commits and stashes but may be shallow
+at published boundaries. Older published history can be fetched later; it is not
+required to restore the current tree or unpublished work. Legacy full bundles remain
+readable. If a shared Git index is recorded, its recovery blob is included too.
 
 Dependency caches are intentionally not backup contents. Rebuilding the backend
 requires the package sources or registries referenced by `backend/uv.lock`. Building
@@ -42,6 +46,11 @@ summitflow/
 
 Infrastructure archives instead use `infrastructure/` and contain
 `pgdumpall.sql.gz`, `configs/`, and `state/` capture manifests.
+The non-secret nightly/catch-up settings are saved as
+`configs/backup-schedule.env`. On a replacement host, restore that file to the
+service user's `~/.config/summitflow/backup-schedule.env` with mode 600 before
+rebuilding the managed worker. It does not contain Drive credentials or recovery
+keys; those remain separately held private files.
 
 ## Bootstrap the offline CLI
 

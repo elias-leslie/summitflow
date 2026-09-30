@@ -3,20 +3,80 @@
 from __future__ import annotations
 
 from collections.abc import Callable
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from typing import Any
+from zoneinfo import ZoneInfo
 
+from ..config import get_settings
 from ..logging_config import get_logger
 from ..storage import backups as backup_store
 from ..storage import maintenance_runs as maintenance_store
 from .backup_executor import create_backup
 from .backup_local_cleanup import cleanup_local_backup_archives
 from .backup_lock import has_active_backup_lease
-from .backup_utils import calculate_next_run
+from .backup_utils import _FREQUENCY_DELTAS, calculate_next_run
 
 logger = get_logger(__name__)
 SUCCESS_STATUSES = {"completed", "completed_pending_upload"}
 STALE_RUNNING_AGE_MINUTES = 30
+
+
+def _scheduled_backup_window_open(now: datetime) -> bool:
+    """Allow scheduled work within the optional local-time window, including DST."""
+    settings = get_settings()
+    start = settings.backup_schedule_start_hour
+    end = settings.backup_schedule_end_hour
+    if start is None or end is None:
+        return True
+    hour = now.astimezone(ZoneInfo(settings.backup_schedule_timezone)).hour
+    if start < end:
+        return start <= hour < end
+    return hour >= start or hour < end
+
+
+def _latest_finished_window_end(now: datetime) -> datetime:
+    settings = get_settings()
+    local = now.astimezone(ZoneInfo(settings.backup_schedule_timezone))
+    end = local.replace(hour=settings.backup_schedule_end_hour or 0, minute=0, second=0, microsecond=0, fold=0)
+    if end.astimezone(UTC) > now.astimezone(UTC):
+        end -= timedelta(days=1)
+    return end.astimezone(UTC)
+
+
+def _catchup_source(source: dict[str, Any], finished_window_end: datetime) -> bool:
+    """Only recover persisted overdue work, never a newly due daytime source."""
+    if source.get("enabled") is False:
+        return False
+    due = source.get("next_run_at")
+    if not due:
+        last_run = source.get("last_run_at")
+        if last_run:
+            if isinstance(last_run, str):
+                last_run = datetime.fromisoformat(last_run)
+            due = last_run + _FREQUENCY_DELTAS.get(source.get("frequency", "daily"), timedelta(days=1))
+        else:
+            # An initial source's registration time proves whether it existed
+            # during a missed window.
+            due = source.get("created_at")
+    if not due:
+        return False
+    if isinstance(due, str):
+        due = datetime.fromisoformat(due)
+    if due.tzinfo is None:
+        due = due.replace(tzinfo=UTC)
+    return bool(due < finished_window_end)
+
+
+def _align_next_run_to_window(next_run: datetime, now: datetime) -> datetime:
+    settings = get_settings()
+    start = settings.backup_schedule_start_hour
+    if start is None:
+        return next_run
+    local = next_run.astimezone(ZoneInfo(settings.backup_schedule_timezone))
+    aligned = local.replace(hour=start, minute=0, second=0, microsecond=0, fold=0)
+    if aligned.astimezone(UTC) <= now.astimezone(UTC):
+        aligned += timedelta(days=1)
+    return aligned.astimezone(UTC)
 
 
 def _cleanup_stale_records() -> int:
@@ -59,6 +119,17 @@ def _process_due_source(
         frequency=frequency,
     )
 
+    publication: dict[str, Any] | None = None
+    if get_settings().backup_publish_before_backup:
+        from .backup_publish import publish_source_before_backup
+        try:
+            publication = publish_source_before_backup(source)
+        except Exception:
+            # Publication is useful redundancy, never a prerequisite for WIP
+            # recovery. Avoid persisting raw Git/OAuth diagnostics.
+            logger.warning("backup_publication_failed", source_id=source_id)
+            publication = {"status": "failed", "reason": "publication-unavailable"}
+
     result = create_backup(
         project_id=project_id,
         backup_type="scheduled",
@@ -83,13 +154,22 @@ def _process_due_source(
             "error": result.get("error"),
         }
 
+    if publication is not None and result.get("backup_id"):
+        try:
+            backup_store.merge_backup_verification_json(str(result["backup_id"]), {"publication": publication})
+        except Exception:
+            logger.warning("backup_publication_evidence_failed", source_id=source_id)
+
     next_run = calculate_next_run(frequency)
+    if frequency in {"daily", "weekly", "monthly"}:
+        next_run = _align_next_run_to_window(next_run, datetime.now(UTC))
     backup_store.update_source_last_run(source_id, next_run)
     return {
         "source_id": source_id,
         "status": status,
         "next_run": next_run.isoformat() if next_run else None,
         "backup_id": result.get("backup_id"),
+        **({"publication": publication} if publication is not None else {}),
     }
 
 
@@ -127,17 +207,24 @@ def run_scheduled_backups(*, on_progress: Callable[[], None] | None = None) -> d
         Summary of scheduled backups run
     """
     started_at = datetime.now(UTC)
+    window_open = _scheduled_backup_window_open(started_at)
     logger.info("run_scheduled_backups_started")
 
     try:
+        due_sources = backup_store.list_due_sources()
+        if not window_open:
+            window_end = _latest_finished_window_end(started_at)
+            due_sources = [source for source in due_sources if _catchup_source(source, window_end)]
+            if not due_sources:
+                logger.info("scheduled_backups_outside_window")
+                return {"status": "skipped", "reason": "outside-backup-window", "count": 0, "results": []}
+            logger.info("scheduled_backups_catching_up", count=len(due_sources))
         stale_failed = _fail_stale_running_records()
-        stale_cleaned = _cleanup_stale_records()
-        expired_count = _cleanup_expired_records()
-        local_cleanup = _cleanup_local_archives()
+        stale_cleaned = _cleanup_stale_records() if window_open else 0
+        expired_count = _cleanup_expired_records() if window_open else 0
+        local_cleanup = _cleanup_local_archives() if window_open else {}
         local_archives_deleted = int(local_cleanup.get("deleted") or 0)
         local_bytes_deleted = int(local_cleanup.get("bytes_deleted") or 0)
-
-        due_sources = backup_store.list_due_sources()
 
         results: list[dict[str, Any]] = []
         for source in due_sources:
@@ -170,13 +257,14 @@ def run_scheduled_backups(*, on_progress: Callable[[], None] | None = None) -> d
             "local_bytes_deleted": local_bytes_deleted,
             "rows_cleaned": stale_failed + stale_cleaned + expired_count,
             "results": results,
+            "catch_up": not window_open,
         }
         if not due_sources:
             result["message"] = "No scheduled backups due"
 
         # Restore drill cadence is independent of whether any backup is due.
         try:
-            result["drill"] = run_scheduled_drills()
+            result["drill"] = run_scheduled_drills() if window_open else {"status": "skipped", "reason": "outside-backup-window"}
         except Exception:
             logger.exception("scheduled_drill_failed")
             result["drill"] = {"status": "error"}
@@ -187,7 +275,7 @@ def run_scheduled_backups(*, on_progress: Callable[[], None] | None = None) -> d
                 run_repository_maintenance,
             )
 
-            repositories = run_repository_maintenance()
+            repositories = run_repository_maintenance() if window_open else []
             if repositories:
                 result["repository_maintenance"] = repositories
                 if repository_maintenance_failed(repositories):
@@ -199,7 +287,7 @@ def run_scheduled_backups(*, on_progress: Callable[[], None] | None = None) -> d
 
         from .backup_restic_pilot import run_daily_restic_pilot
 
-        pilot = run_daily_restic_pilot(on_progress=on_progress)
+        pilot = run_daily_restic_pilot(on_progress=on_progress) if window_open else {"reason": "pilot-disabled"}
         if pilot.get("reason") != "pilot-disabled":
             result["restic_daily_pilot"] = pilot
             if pilot.get("status") in {"failed", "incomplete"} or pilot.get("daily_status") in {"failed", "incomplete"}:

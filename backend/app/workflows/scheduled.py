@@ -522,14 +522,16 @@ async def health_monitor_wf(input: EmptyInput, ctx: Context) -> dict[str, Any]:
 @hatchet.task(
     name="summitflow-pending-drain",
     input_validator=EmptyInput,
-    execution_timeout="600s",
+    # A retained all-source Drive backlog can exceed the former ten-minute
+    # SMB-only envelope. Each verified archive persists its own checkpoint.
+    execution_timeout="7200s",
     retries=2,
     backoff_factor=2.0,
     on_crons=["*/30 * * * *"],
     concurrency=ConcurrencyExpression(
         expression="'summitflow-pending-drain'",
         max_runs=1,
-        limit_strategy=ConcurrencyLimitStrategy.CANCEL_IN_PROGRESS,
+        limit_strategy=ConcurrencyLimitStrategy.CANCEL_NEWEST,
     ),
 )
 async def pending_drain_wf(input: EmptyInput, ctx: Context) -> dict[str, Any]:

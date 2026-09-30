@@ -3,11 +3,13 @@ import subprocess
 from app.tasks import backup_native_offsite as offsite
 
 
-def test_retention_keeps_newest_and_current_verified_copy(monkeypatch):
+def test_retention_keeps_three_completed_and_current_verified_copy(monkeypatch):
     children = [
         {"uri": "drive/old", "display_name": "source-20200101-000000.tar.gz.age"},
         {"uri": "drive/verified", "display_name": "source-20200102-000000.tar.gz.age"},
         {"uri": "drive/newest", "display_name": "source-20200103-000000.tar.gz.age"},
+        {"uri": "drive/recent-1", "display_name": "source-20200104-000000.tar.gz.age"},
+        {"uri": "drive/recent-2", "display_name": "source-20200105-000000.tar.gz.age"},
         {"uri": "drive/other", "display_name": "unrelated-owner-document"},
     ]
     monkeypatch.setattr(offsite, "_list_children", lambda _uri: children)

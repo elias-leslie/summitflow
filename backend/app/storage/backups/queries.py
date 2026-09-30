@@ -85,6 +85,7 @@ def cleanup_stale_backup_records(max_age_days: int = 30) -> int:
             """
             DELETE FROM backups
             WHERE status = 'failed'
+              AND COALESCE(verification_json #>> '{offsite,status}', '') NOT IN ('pending', 'failed')
               AND created_at < NOW() - INTERVAL '%s days'
             RETURNING id
             """,
@@ -102,7 +103,7 @@ def cleanup_expired_backup_records(default_retention_days: int = 14, min_keep: i
     Uses per-source retention_days from backup_sources table, falling back to
     default_retention_days for backups without a matching source.
 
-    Pending uploads and active/pending verification are always preserved and
+    Pending uploads and active/pending/failed offsite copies are preserved and
     do not displace the minimum completed recovery records retained per source.
     Restic snapshot records belong to repository retention and reconciliation.
 
@@ -120,7 +121,7 @@ def cleanup_expired_backup_records(default_retention_days: int = 14, min_keep: i
             WHERE status = 'completed'
               AND (verification_json ->> 'format') IS DISTINCT FROM 'restic-v1'
               AND (verification_json #>> '{activity,active}') IS DISTINCT FROM 'true'
-              AND (verification_json #>> '{offsite,status}') IS DISTINCT FROM 'pending'
+              AND COALESCE(verification_json #>> '{offsite,status}', '') NOT IN ('pending', 'failed')
               AND created_at < NOW() - INTERVAL '1 day' * COALESCE(
                 (SELECT bs.retention_days FROM backup_sources bs
                  WHERE bs.id = backups.source_id),
@@ -134,7 +135,7 @@ def cleanup_expired_backup_records(default_retention_days: int = 14, min_keep: i
                   FROM backups WHERE status = 'completed'
                     AND (verification_json ->> 'format') IS DISTINCT FROM 'restic-v1'
                     AND (verification_json #>> '{activity,active}') IS DISTINCT FROM 'true'
-                    AND (verification_json #>> '{offsite,status}') IS DISTINCT FROM 'pending'
+                    AND COALESCE(verification_json #>> '{offsite,status}', '') NOT IN ('pending', 'failed')
                 ) ranked WHERE rn <= %s
               )
             RETURNING id
@@ -445,6 +446,53 @@ def get_pending_upload_backups() -> list[dict[str, Any]]:
                 f"SELECT {BACKUP_COLUMNS} FROM backups "
                 "WHERE status = 'completed_pending_upload' "
                 "ORDER BY created_at ASC"
+            ),
+        )
+        rows = cur.fetchall()
+    return [row_to_backup(row) for row in rows]
+
+
+def get_pending_native_offsite_backups() -> list[dict[str, Any]]:
+    """Return retained native recovery points whose independent copy needs retry.
+
+    Local completion remains truthful while a replica is unavailable. Restic
+    snapshots use their repository reconciliation rather than native archive
+    or SMB upload drain. Callers check current route and source leases before
+    retry; disabled destinations must not erase previously recorded failures.
+    """
+    with get_cursor() as cur:
+        cur.execute(
+            static_sql(
+                f"SELECT {BACKUP_COLUMNS} FROM backups "
+                "WHERE status = 'completed' "
+                "AND (verification_json ->> 'format') IS DISTINCT FROM 'restic-v1' "
+                "AND verification_json #>> '{offsite,status}' IN ('pending', 'failed') "
+                "ORDER BY created_at ASC, id ASC"
+            ),
+        )
+        rows = cur.fetchall()
+    return [row_to_backup(row) for row in rows]
+
+
+def get_pending_backup_publications() -> list[dict[str, Any]]:
+    """Retry only publication evidence on the latest local project recovery point.
+
+    A newer successful/skipped publication supersedes older failures. The
+    queue is derived from existing backup evidence, never from discovering or
+    publishing unrelated repositories.
+    """
+    with get_cursor() as cur:
+        cur.execute(
+            static_sql(
+                f"SELECT {BACKUP_COLUMNS} FROM backups "
+                "WHERE id IN ("
+                "SELECT DISTINCT ON (COALESCE(b.source_id, b.project_id)) b.id "
+                "FROM backups b JOIN backup_sources bs ON bs.id = COALESCE(b.source_id, b.project_id) "
+                "WHERE b.status IN ('completed', 'completed_pending_upload') "
+                "AND bs.enabled = TRUE AND bs.source_type = 'project' "
+                "ORDER BY COALESCE(b.source_id, b.project_id), b.completed_at DESC NULLS LAST, b.created_at DESC, b.id DESC"
+                ") AND verification_json #>> '{publication,status}' IN ('pending', 'failed') "
+                "ORDER BY created_at ASC, id ASC"
             ),
         )
         rows = cur.fetchall()

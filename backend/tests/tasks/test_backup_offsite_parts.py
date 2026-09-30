@@ -296,7 +296,8 @@ def test_retention_removes_only_expired_parts_group_and_keeps_newest(monkeypatch
     old = "source-20200101-000000.tar.gz.age"
     new = "source-20260921-000000.tar.gz.age"
     names = [old + ".parts.json", old + ".part000001", new + ".parts.json",
-             new + ".part000001", old + ".part-not-managed", "notes.json"]
+             new + ".part000001", "source-20260601-000000.tar.gz.age",
+             "source-20260701-000000.tar.gz.age", old + ".part-not-managed", "notes.json"]
     monkeypatch.setattr(offsite, "_list_children", lambda _uri: [
         {"uri": "drive/" + name, "display_name": name, "attributes": ""} for name in names
     ])
@@ -346,6 +347,44 @@ def test_retention_without_any_complete_archive_does_not_delete_parts(
         "attributes": "",
     }])
     assert offsite._apply_remote_retention("drive", 14) == []
+
+
+def test_gio_retention_preserves_three_complete_groups_and_pending_artifacts(monkeypatch):
+    from app.tasks import backup_native_offsite as offsite
+
+    stable = [f"source-{year}0101-000000.tar.gz.age" for year in range(2017, 2021)]
+    pending = "source-20250101-000000.tar.gz.age"
+    incomplete = "source-20260101-000000.tar.gz.age"
+    names = [stable[0] + ".parts.json", stable[0] + ".part000001", stable[1],
+             stable[2] + ".parts.json", stable[2] + ".part000001", stable[3],
+             pending + ".parts.json", pending + ".part000001", incomplete + ".part000001"]
+    monkeypatch.setattr(offsite, "_list_children", lambda _uri: [
+        {"uri": "drive/" + name, "display_name": name, "attributes": ""} for name in names
+    ])
+    removed = []
+
+    def run(command, **_kwargs):
+        removed.append(command[-1])
+        return subprocess.CompletedProcess(command, 0, "", "")
+
+    monkeypatch.setattr(offsite, "_run", run)
+    offsite._apply_remote_retention("drive", 14, None, {pending, incomplete})
+    assert removed == ["drive/" + stable[0] + ".parts.json", "drive/" + stable[0] + ".part000001"]
+
+
+def test_corrupt_gio_manifest_blocks_cleanup_without_revoking_verified_upload(drive, monkeypatch):
+    from app.tasks import backup_native_offsite as offsite
+
+    path = drive["archive"].parent / offsite.OFFSITE_MANIFEST_NAME
+    path.write_text("{corrupt manifest")
+    retention_calls = []
+    monkeypatch.setattr(offsite, "_apply_remote_retention", lambda *_args: retention_calls.append(True))
+    result = replicate(drive)
+    assert result["status"] == "verified"
+    assert result["retention_status"] == "failed"
+    assert "manifest state is unknown" in result["maintenance_error"]
+    assert path.read_text() == "{corrupt manifest"
+    assert not retention_calls
 
 
 def test_unmounted_existing_drive_mounts_account_once_then_retries_listing(

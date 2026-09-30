@@ -10,6 +10,7 @@ from app.workflows.models import EmptyInput
 from app.workflows.scheduled import (
     _explorer_schedule_concurrency,
     hatchet_retention_wf,
+    pending_drain_wf,
     refresh_graphify_graphs_wf,
     refresh_precision_indexes_wf,
     scan_projects_wf,
@@ -53,6 +54,15 @@ def test_scheduled_backups_skip_overlapping_cron_instead_of_killing_active_sweep
     constraint = constraints[0]
     assert isinstance(constraint, ConcurrencyExpression)
     assert constraint.limit_strategy == ConcurrencyLimitStrategy.CANCEL_NEWEST
+
+
+def test_pending_drive_backlog_is_not_killed_by_next_poll() -> None:
+    assert pending_drain_wf._task.execution_timeout == "7200s"
+    constraints = pending_drain_wf._task.concurrency
+    constraints = constraints if isinstance(constraints, list) else [constraints]
+    assert isinstance(constraints[0], ConcurrencyExpression)
+    assert constraints[0].max_runs == 1
+    assert constraints[0].limit_strategy == ConcurrencyLimitStrategy.CANCEL_NEWEST
 
 
 @pytest.mark.asyncio

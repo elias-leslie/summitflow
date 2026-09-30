@@ -64,6 +64,21 @@ def _validate_engine_config(config: dict[str, object], backend_type: str) -> Non
     if engine != "restic":
         if any(key.startswith("restic_") for key in config):
             raise HTTPException(status_code=400, detail="Restic settings require engine=restic")
+        transport = config.get("offsite_transport", "gio")
+        if not isinstance(transport, str) or transport not in {"gio", "rclone"}:
+            raise HTTPException(status_code=400, detail="Unsupported offsite transport")
+        if transport == "rclone":
+            remote = config.get("offsite_rclone_remote")
+            if not isinstance(remote, str) or not re.fullmatch(r"[A-Za-z0-9_-]+:[^\x00\r\n?#\\]+", remote):
+                raise HTTPException(status_code=400, detail="Offsite requires a bounded rclone folder")
+            if any(part in {"", ".", ".."} for part in remote.split(":", 1)[1].split("/")):
+                raise HTTPException(status_code=400, detail="Offsite remote root and traversal are refused")
+            config_file = config.get("offsite_rclone_config")
+            if not isinstance(config_file, str) or any(char in config_file for char in "\x00\r\n"):
+                raise HTTPException(status_code=400, detail="Offsite requires a private rclone config-file reference")
+            config_path = Path(config_file)
+            if not config_path.is_absolute() or config_path.resolve().parent != backup_key_directory().resolve():
+                raise HTTPException(status_code=400, detail="Offsite credential reference must be inside the canonical backup-key directory")
         return
     if backend_type != "local":
         raise HTTPException(status_code=400, detail="Restic requires a local storage backend")
@@ -72,9 +87,12 @@ def _validate_engine_config(config: dict[str, object], backend_type: str) -> Non
         "restic_local_repository", "restic_remote_repository", "restic_local_password_file",
         "restic_remote_password_file", "restic_rclone_config", "restic_key_directory",
         "restic_lock_directory", "restic_hostname", "restic_offsite_prune_qualified",
+        "restic_automatic_maintenance",
     }
     if set(config) - allowed:
         raise HTTPException(status_code=400, detail="Restic accepts repository settings and credential file references only")
+    if "restic_automatic_maintenance" in config and not isinstance(config["restic_automatic_maintenance"], bool):
+        raise HTTPException(status_code=400, detail="Automatic repository maintenance must be a boolean")
     for key in (
         "restic_local_repository", "restic_local_password_file", "restic_remote_password_file",
         "restic_rclone_config", "restic_key_directory", "restic_lock_directory",
@@ -212,8 +230,9 @@ async def update_storage_backend(
     _validate_engine_config(candidate_config, str(existing["backend_type"]))
     existing_config = as_object_dict(existing.get("config"))
     if existing_config.get("engine") == "restic" and "config" in fields:
-        identity = {key: value for key, value in existing_config.items() if key != "restic_offsite_prune_qualified"}
-        candidate_identity = {key: value for key, value in candidate_config.items() if key != "restic_offsite_prune_qualified"}
+        mutable_policy = {"restic_offsite_prune_qualified", "restic_automatic_maintenance"}
+        identity = {key: value for key, value in existing_config.items() if key not in mutable_policy}
+        candidate_identity = {key: value for key, value in candidate_config.items() if key not in mutable_policy}
         if identity != candidate_identity and backup_store.backend_has_backups(backend_id):
             raise HTTPException(status_code=409, detail="Retained backups depend on this repository configuration; create a new backend instead")
 
@@ -364,7 +383,18 @@ async def test_storage_backend(backend_id: str) -> dict[str, object]:
     offsite_message: str | None = None
     encryption_ready = bool(get_backup_key_status().get("ready"))
     success = local_success and encryption_ready
-    if offsite_uri:
+    if config.get("offsite_transport") == "rclone":
+        from ...tasks.backup_native_rclone import probe_rclone_destination
+        try:
+            probe_rclone_destination(storage_config_env(config))
+            offsite_success = True
+            offsite_message = "Google Drive reachable through rclone"
+        except (OSError, RuntimeError, subprocess.TimeoutExpired):
+            offsite_success = False
+            offsite_message = "rclone destination unavailable; check private configuration and connectivity"
+        success = local_success and offsite_success and encryption_ready
+        message = f"{message}; {offsite_message}"
+    elif offsite_uri:
         try:
             gio_result = safe_subprocess.run(
                 ["gio", "list", "-u", offsite_uri],

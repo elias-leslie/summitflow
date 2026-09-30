@@ -1,4 +1,4 @@
-"""Encrypted completed-archive replication through an existing GIO mount."""
+"""Encrypted completed-archive replication through existing Drive transports."""
 
 from __future__ import annotations
 
@@ -10,7 +10,7 @@ import shutil
 import subprocess
 import tempfile
 import time
-from collections.abc import Callable
+from collections.abc import Callable, Collection
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any
@@ -18,6 +18,7 @@ from urllib.parse import quote, urlsplit
 
 from ..services.backup_keys import get_backup_key_paths
 from .backup_activity import check_backup_cancelled, current_activity, run_bulk_process
+from .backup_native_rclone import NativeRcloneProvider
 
 OFFSITE_MANIFEST_NAME = "offsite-manifest.json"
 _ARCHIVE_TIMESTAMP = re.compile(
@@ -136,17 +137,18 @@ def _ensure_display_folder(parent_uri: str, display_name: str) -> str:
     return resolved
 
 
-def _write_manifest(local_dir: Path, entry: dict[str, Any]) -> None:
+def _write_manifest(local_dir: Path, entry: dict[str, Any]) -> bool:
     local_dir.mkdir(parents=True, exist_ok=True)
     path = local_dir / OFFSITE_MANIFEST_NAME
     payload: dict[str, Any] = {"version": 1, "archives": []}
     if path.is_file():
         try:
             loaded = json.loads(path.read_text())
-            if isinstance(loaded, dict):
-                payload = loaded
-        except (json.JSONDecodeError, OSError):
-            pass
+            if not isinstance(loaded, dict) or not isinstance(loaded.get("archives"), list):
+                return False
+            payload = loaded
+        except (ValueError, OSError):
+            return False  # Preserve unknown state for local/remote cleanup.
     archives = payload.get("archives")
     if not isinstance(archives, list):
         archives = []
@@ -156,18 +158,45 @@ def _write_manifest(local_dir: Path, entry: dict[str, Any]) -> None:
     temporary = path.with_suffix(".tmp")
     temporary.write_text(json.dumps(payload, indent=2, sort_keys=True) + "\n")
     os.replace(temporary, path)
+    return True
+
+
+def _pending_archive_names(local_dir: Path) -> set[str]:
+    path = local_dir / OFFSITE_MANIFEST_NAME
+    if not path.exists():
+        return set()
+    try:
+        payload = json.loads(path.read_text())
+        entries = payload.get("archives") if isinstance(payload, dict) else None
+        if not isinstance(entries, list):
+            raise ValueError("Invalid manifest archive list")
+        pending: set[str] = set()
+        for entry in entries:
+            if (
+                not isinstance(entry, dict)
+                or not isinstance(entry.get("archive_name"), str)
+                or not entry["archive_name"]
+                or entry.get("status") not in {"pending", "failed", "verified", "unconfigured"}
+            ):
+                raise ValueError("Invalid manifest archive entry")
+            if entry["status"] in {"pending", "failed"}:
+                pending.add(entry["archive_name"])
+        return pending
+    except (OSError, ValueError, TypeError):
+        raise RuntimeError("Local offsite manifest state is unknown; remote retention refused") from None
 
 
 def _apply_remote_retention(
     folder_uri: str,
     retention_days: int,
     preserve_uri: str | None = None,
+    pending_archive_names: Collection[str] = (),
 ) -> list[str]:
     cutoff = datetime.now(UTC) - timedelta(days=retention_days)
     deleted: list[str] = []
     children = _list_children(folder_uri)
     groups: dict[str, tuple[datetime, list[dict[str, str]]]] = {}
-    complete_dates: list[datetime] = []
+    complete: dict[str, datetime] = {}
     for child in children:
         match = _ARCHIVE_TIMESTAMP.fullmatch(child["display_name"])
         if not match:
@@ -177,19 +206,20 @@ def _apply_remote_retention(
         except ValueError:
             continue  # Not a managed archive timestamp; leave it untouched.
         groups.setdefault(match["archive"], (created, []))[1].append(child)
-        if match["suffix"] in {None, ".parts.json"}:
-            complete_dates.append(created)
+        if match["suffix"] in {None, ".parts.json"} and match["archive"] not in pending_archive_names:
+            complete[match["archive"]] = created
     # Never reclaim incomplete uploads without an available complete archive.
-    if not complete_dates:
+    if not complete:
         return []
-    newest_created = max(complete_dates)
-    for created, targets in groups.values():
+    retained = set(sorted(complete, key=lambda name: (complete[name], name), reverse=True)[:3])
+    for archive_name, (created, targets) in groups.items():
         # An old retained archive can be retried after an extended outage. Never
-        # delete the copy just verified, or the last/newest recovery point.
+        # delete the copy just verified, or the minimum completed recovery points.
         if (
             created >= cutoff
             or any(child["uri"] == preserve_uri for child in targets)
-            or created == newest_created
+            or archive_name in retained
+            or archive_name in pending_archive_names
         ):
             continue
         # Withdraw the completion marker before removing its parts, so a failed
@@ -307,8 +337,10 @@ def _replicate_single_file(
     local_checksum: str,
     temporary_dir: Path,
     retry: bool,
+    provider: NativeRcloneProvider | None = None,
 ) -> dict[str, Any]:
-    published = _publish_verified_file(
+    publish = provider.publish if provider else _publish_verified_file
+    published = publish(
         archive_path,
         folder_uri=source_folder_uri,
         remote_name=archive_path.name,
@@ -322,6 +354,15 @@ def _replicate_single_file(
             int(published["uploaded_bytes"])
             + int(published["downloaded_bytes"])
         ),
+        **({
+            "artifacts": [{
+                "role": "archive", "name": archive_path.name,
+                "size_bytes": archive_path.stat().st_size, "checksum": local_checksum,
+                **{key: published[key] for key in (
+                    "location", "provider_id", "remote_path", "provider_checksum", "verification_method",
+                )},
+            }],
+        } if provider else {}),
     }
 
 
@@ -333,6 +374,7 @@ def _replicate_parts(
     temporary_dir: Path,
     retry: bool,
     on_progress: Callable[[], None] | None = None,
+    provider: NativeRcloneProvider | None = None,
 ) -> dict[str, Any]:
     """Publish a large ciphertext as verified bounded-size objects."""
     aggregate = hashlib.sha256()
@@ -341,13 +383,17 @@ def _replicate_parts(
     transfer_bytes = 0
     manifest_name = f"{archive_path.name}.parts.json"
     completion_withdrawn = False
+    publish = provider.publish if provider else _publish_verified_file
 
     def withdraw_completion() -> None:
         nonlocal completion_withdrawn
         if completion_withdrawn:
             return
-        manifest_uri = _find_display_child(source_folder_uri, manifest_name)
-        if manifest_uri:
+        if provider:
+            manifest_entry = provider.find(source_folder_uri, manifest_name)
+            if manifest_entry:
+                provider.remove(source_folder_uri, manifest_entry)
+        elif manifest_uri := _find_display_child(source_folder_uri, manifest_name):
             removed = _run(["gio", "remove", manifest_uri], timeout=60)
             if removed.returncode != 0:
                 raise _command_error("GIO completion manifest withdrawal", removed)
@@ -376,7 +422,7 @@ def _replicate_parts(
             part_number += 1
             part_name = f"{archive_path.name}.part{part_number:06d}"
             part_checksum = f"sha256:{part_digest.hexdigest()}"
-            published = _publish_verified_file(
+            published = publish(
                 part_path,
                 folder_uri=source_folder_uri,
                 remote_name=part_name,
@@ -398,6 +444,7 @@ def _replicate_parts(
                     "name": part_name,
                     "size_bytes": part_bytes,
                     "checksum": part_checksum,
+                    **({"location": published["location"], "provider_id": published["provider_id"]} if provider else {}),
                 }
             )
             artifacts.append(
@@ -407,6 +454,9 @@ def _replicate_parts(
                     "size_bytes": part_bytes,
                     "checksum": part_checksum,
                     "location": published["location"],
+                    **({key: published[key] for key in (
+                        "provider_id", "remote_path", "provider_checksum", "verification_method",
+                    )} if provider else {}),
                 }
             )
 
@@ -431,7 +481,7 @@ def _replicate_parts(
     )
     manifest_path.chmod(0o600)
     manifest_checksum = _checksum(manifest_path)
-    published_manifest = _publish_verified_file(
+    published_manifest = publish(
         manifest_path,
         folder_uri=source_folder_uri,
         remote_name=manifest_name,
@@ -449,6 +499,9 @@ def _replicate_parts(
             "size_bytes": manifest_path.stat().st_size,
             "checksum": manifest_checksum,
             "location": published_manifest["location"],
+            **({key: published_manifest[key] for key in (
+                "provider_id", "remote_path", "provider_checksum", "verification_method",
+            )} if provider else {}),
         }
     )
     return {
@@ -470,21 +523,27 @@ def replicate_completed_archive(
     retry: bool = False,
     on_progress: Callable[[], None] | None = None,
 ) -> dict[str, Any]:
-    """Upload and download-verify one already encrypted completed archive."""
+    """Replicate the exact completed ciphertext and freshly verify each object."""
     started = time.monotonic()
     merged = {**os.environ, **env}
-    root_uri = merged.get("BACKUP_OFFSITE_GIO_URI", "").strip()
-    if not root_uri:
-        return {"status": "unconfigured"}
-    if not shutil.which("gio"):
-        return {"status": "failed", "error": "gio executable is unavailable"}
-    if not archive_path.name.endswith(".tar.gz.age"):
-        return {"status": "failed", "error": "offsite replication requires an encrypted .tar.gz.age archive"}
-
-    local_checksum = _checksum(archive_path)
-    safe_source = _safe_source_id(source_id)
+    local_checksum: str | None = None
     try:
-        source_folder_uri = _ensure_display_folder(root_uri, safe_source)
+        transport = merged.get("BACKUP_OFFSITE_TRANSPORT", "gio").strip().lower()
+        if transport not in {"gio", "rclone"}:
+            raise RuntimeError("Unsupported native offsite transport")
+        root_uri = merged.get("BACKUP_OFFSITE_GIO_URI" if transport == "gio" else "BACKUP_OFFSITE_RCLONE_REMOTE", "").strip()
+        if not root_uri:
+            if transport == "rclone":
+                raise RuntimeError("Native rclone offsite remote is missing")
+            return {"status": "unconfigured"}
+        if not shutil.which(transport):
+            raise RuntimeError(f"{transport} executable is unavailable")
+        if not archive_path.name.endswith(".tar.gz.age"):
+            raise RuntimeError("offsite replication requires an encrypted .tar.gz.age archive")
+        local_checksum = _checksum(archive_path)
+        safe_source = _safe_source_id(source_id)
+        provider = NativeRcloneProvider(merged) if transport == "rclone" else None
+        source_folder_uri = provider.ensure_folder(safe_source) if provider else _ensure_display_folder(root_uri, safe_source)
         with tempfile.TemporaryDirectory(prefix="backup-offsite-") as temporary_dir:
             encrypted_checksum = local_checksum
             encrypted_bytes = archive_path.stat().st_size
@@ -497,6 +556,7 @@ def replicate_completed_archive(
                     temporary_dir=temp_path,
                     retry=retry,
                     on_progress=on_progress,
+                    provider=provider,
                 )
                 if encrypted_bytes > PART_SIZE_BYTES
                 else _replicate_single_file(
@@ -505,6 +565,7 @@ def replicate_completed_archive(
                     local_checksum=local_checksum,
                     temporary_dir=temp_path,
                     retry=retry,
+                    provider=provider,
                 )
             )
             remote_uri = str(replicated["location"])
@@ -517,21 +578,36 @@ def replicate_completed_archive(
             "encrypted_checksum": encrypted_checksum,
             "remote_uri": remote_uri,
             "verified_at": verified_at,
+            "transport": transport,
             **{
                 key: replicated[key]
                 for key in ("layout", "part_count", "artifacts")
                 if key in replicated
             },
         }
-        _write_manifest(local_dir, entry)
+        protection_error: str | None = None
+        try:
+            pending_names = _pending_archive_names(local_dir)
+            pending_names.discard(archive_path.name)  # This exact copy is now verified.
+        except RuntimeError as exc:
+            protection_error = str(exc)
+            pending_names = set()
+        if protection_error is None and not _write_manifest(local_dir, entry):
+            protection_error = "Local offsite manifest state is unknown; remote retention refused"
         retention: dict[str, Any] = {"retention_status": "completed", "retention_deleted": 0}
         try:
-            deleted = _apply_remote_retention(source_folder_uri, retention_days, remote_uri)
+            if protection_error:
+                raise RuntimeError(protection_error)
+            deleted = (
+                provider.retention(source_folder_uri, retention_days, remote_uri, _ARCHIVE_TIMESTAMP, pending_names)
+                if provider else _apply_remote_retention(source_folder_uri, retention_days, remote_uri, pending_names)
+            )
             retention["retention_deleted"] = len(deleted)
         except (OSError, RuntimeError, subprocess.TimeoutExpired) as exc:
             retention.update(retention_status="failed", retention_deleted=None, maintenance_error=str(exc))
         return {
             "status": "verified",
+            "transport": transport,
             "location": remote_uri,
             "checksum": encrypted_checksum,
             "local_checksum": local_checksum,

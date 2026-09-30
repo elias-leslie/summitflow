@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import os
 import shutil
 import tempfile
 import time
@@ -39,7 +38,11 @@ from .backup_native_storage import (
     storage_backend_type,
     update_backup_index,
 )
-from .backup_utils import canonical_backup_source_roots, require_verified_backup_output
+from .backup_utils import (
+    canonical_backup_source_roots,
+    offsite_is_configured,
+    require_verified_backup_output,
+)
 
 logger = get_logger(__name__)
 
@@ -181,10 +184,7 @@ def run_project_backup(
         )
         if local_only:
             return _store_local_project_archive(project_path, source_id, result, archive_path, archive_name, retention)
-        offsite_configured = bool(
-            run_env.get("BACKUP_OFFSITE_GIO_URI")
-            or os.environ.get("BACKUP_OFFSITE_GIO_URI")
-        )
+        offsite_configured = offsite_is_configured(run_env)
         backend_type = storage_backend_type(run_env)
         local_archive = project_path / "backups" / archive_name
         if offsite_configured and backend_type != "local":
