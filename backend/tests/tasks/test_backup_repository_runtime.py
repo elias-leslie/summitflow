@@ -69,6 +69,22 @@ def test_recorded_backend_required_no_current_default_fallback() -> None:
         runtime._backup_environment({"source_id": "fixture", "verification_json": {"format": "restic-v1"}})
 
 
+def test_codex_essentials_does_not_download_previous_git_bundle(repository_env: dict[str, str], tmp_path: Path) -> None:
+    source = tmp_path / ".codex"
+    source.mkdir()
+    (source / "AGENTS.md").write_text("custom instructions")
+    saved = {"snapshot_id": "a" * 64, "repository_id": "b" * 64, "location": "restic-v1:fixture", "verification": {"verified": True, "capture": {}}}
+    with (
+        patch.object(runtime, "canonical_backup_source_roots", return_value={}),
+        patch.object(runtime, "_previous_bundle", side_effect=AssertionError("unnecessary previous bundle download")),
+        patch.object(ResticAdapter, "save_payload", return_value=saved) as save,
+        patch.object(runtime, "record_local_archive"),
+    ):
+        runtime.run_repository_backup(project_dir=str(source), source_id=".codex", env=repository_env, local_only=True)
+    assert save.call_args.args[1]["recovery"]["capture_profile"] == "codex-restore-essentials-v1"
+    assert save.call_args.args[1]["recovery"]["git"] is None
+
+
 def test_infrastructure_capture_uses_stable_host_config_root(repository_env, tmp_path) -> None:
     release = tmp_path / "immutable-release"
     release.mkdir()

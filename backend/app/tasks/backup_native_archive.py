@@ -4,6 +4,7 @@ import fnmatch
 import gzip
 import hashlib
 import io
+import json
 import os
 import stat
 import tarfile
@@ -14,7 +15,13 @@ from typing import Any, BinaryIO
 from urllib.parse import unquote, urlsplit
 
 from .backup_activity import BackupCancelled, backup_phase, check_backup_cancelled, run_bulk_process
-from .backup_native_recovery import _safe_relative_symlink, build_consistent_snapshot
+from .backup_codex_policy import CODEX_CAPTURE_PROFILE, is_codex_recovery_input
+from .backup_native_recovery import (
+    RECOVERY_DIR_NAME,
+    RECOVERY_MANIFEST_NAME,
+    _safe_relative_symlink,
+    build_consistent_snapshot,
+)
 
 BACKUP_TIMEOUT = 600
 PROJECT_DATABASE_DUMP_NAME = "database.sql.gz"
@@ -362,10 +369,19 @@ def prepare_project_payload(
     excludes = _load_excludes(project_dir)
     if project_dir.is_dir():
         excludes = (*excludes, f"./{PROJECT_DATABASE_DUMP_NAME}")
+    codex_essentials = project_name == ".codex" and stat.S_ISDIR(mode)
+
+    def capture_excludes(relative: str, patterns: tuple[str, ...]) -> bool:
+        return (codex_essentials and not is_codex_recovery_input(relative)) or _should_exclude(relative, patterns)
+
     snapshot_dir, recovery = build_consistent_snapshot(
-        project_dir, staging, excludes, _should_exclude, sensitive_paths,
+        project_dir, staging, excludes, capture_excludes, sensitive_paths,
         source_roots=source_roots, git_bundle_reuse=git_bundle_reuse,
+        capture_git=not codex_essentials,
     )
+    if codex_essentials:
+        recovery["capture_profile"] = CODEX_CAPTURE_PROFILE
+        (snapshot_dir / RECOVERY_DIR_NAME / RECOVERY_MANIFEST_NAME).write_text(json.dumps(recovery, indent=2, sort_keys=True) + "\n")
     db_dump = snapshot_dir / PROJECT_DATABASE_PAYLOAD_NAME
     if db_dump.exists():
         # Preserve a source SQL file at the project root; generated recovery SQL
@@ -373,7 +389,7 @@ def prepare_project_payload(
         # the original asset.
         db_dump = snapshot_dir / ".summitflow-recovery" / PROJECT_DATABASE_PAYLOAD_NAME
     # An explicitly registered configuration file has no project database.
-    db_size, expects_db = (0, False) if recovery["source_kind"] == "file" else _dump_database(project_name, db_dump, env)
+    db_size, expects_db = (0, False) if recovery["source_kind"] == "file" or codex_essentials else _dump_database(project_name, db_dump, env)
     db_size = db_dump.stat().st_size if recovery["source_kind"] != "file" and db_dump.exists() else 0
     if db_size == 0 and expects_db:
         raise RuntimeError(f"Database dump skipped: missing credentials for {project_name}")

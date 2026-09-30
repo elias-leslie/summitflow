@@ -55,7 +55,7 @@ def pilot_reserves_backend(backend_id: str) -> bool:
 
 
 def _route_fingerprint(routes: str, ipv6: str) -> str:
-    """Hash routing topology, not usage counters or container link-local paths."""
+    """Hash unicast egress topology, not counters or local-only IPv6 routes."""
     topology: list[tuple[str, ...]] = []
     for line in routes.splitlines()[1:]:
         fields = line.split()
@@ -67,9 +67,11 @@ def _route_fingerprint(routes: str, ipv6: str) -> str:
         fields = line.split()
         if len(fields) != 10:
             raise ValueError("IPv6 route evidence is malformed")
-        if int(fields[1], 16) >= 10 and IPv6Address(int(fields[0], 16)).is_link_local:
-            # Starting an isolated restore container adds a veth fe80:: route.
-            # It cannot redirect public Drive traffic away from the uplink.
+        destination = IPv6Address(int(fields[0], 16))
+        prefix = int(fields[1], 16)
+        if (prefix >= 10 and destination.is_link_local) or (prefix >= 8 and destination.is_multicast):
+            # Isolated restore containers add veth fe80:: and ff00:: routes.
+            # Neither can redirect public unicast Drive traffic off the uplink.
             continue
         topology.append(("ipv6", *fields[:6], *fields[8:]))
     return hashlib.sha256(repr(sorted(topology)).encode()).hexdigest()
@@ -250,6 +252,10 @@ def _execute_day(path: Path, state: dict[str, Any], *, backend_id: str, now: dat
                 current = sample_interface(settings.backup_restic_pilot_interface)
                 if run["samples"]:
                     continuity = measure_samples([run["samples"][-1], current], [])
+                    if continuity["errors"] and "first_measurement_error" not in run:
+                        # Endpoint-only sampling otherwise loses a transient
+                        # topology change and makes later diagnosis speculative.
+                        run["first_measurement_error"] = {"previous": run["samples"][-1], "current": current, "errors": continuity["errors"]}
                     run["measurement_errors"] = sorted(set(run["measurement_errors"] + continuity["errors"]))
                 run["sample_count"] += 1
                 run["samples"] = [run["samples"][0], current] if run["samples"] else [current]

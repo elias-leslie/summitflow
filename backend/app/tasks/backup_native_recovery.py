@@ -626,6 +626,7 @@ def build_consistent_snapshot(
     *,
     source_roots: dict[str, Path] | None = None,
     git_bundle_reuse: dict[str, Any] | None = None,
+    capture_git: bool = True,
 ) -> tuple[Path, dict[str, Any]]:
     """Stage a tree and fail closed if source files or Git refs changed."""
     root_metadata = project_dir.lstat()
@@ -644,14 +645,14 @@ def build_consistent_snapshot(
             continue
     effective_excludes = (*excludes, RECOVERY_DIR_NAME, *key_excludes)
     before = inventory_project_tree(project_dir, effective_excludes, should_exclude, source_roots=source_roots, sensitive_paths=sensitive_paths)
-    git_before = None if file_source else git_state(project_dir)
+    git_before = None if file_source or not capture_git else git_state(project_dir)
     if not before and git_before is None:
         raise RuntimeError("Backup source contains no regular files")
     snapshot_dir = staging / "project-snapshot"
     copy_inventory_snapshot(project_dir, snapshot_dir, before)
     recovery = create_git_recovery_payload(project_dir, snapshot_dir, git_before, git_bundle_reuse=git_bundle_reuse)
     after = inventory_project_tree(project_dir, effective_excludes, should_exclude, source_roots=source_roots, sensitive_paths=sensitive_paths)
-    git_after = None if file_source else git_state(project_dir)
+    git_after = None if file_source or not capture_git else git_state(project_dir)
     changed = sorted(
         relative_path
         for relative_path in set(before) | set(after)

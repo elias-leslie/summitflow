@@ -207,9 +207,10 @@ For an infrastructure source using Restic with an offsite repository, the
 existing repository manager owns the weekly Drive-only PostgreSQL/Redis and
 configuration restore drill. The scheduler does not also rebuild those
 databases locally every day. It restores the canonical configuration/skills
-sources, not the full `.codex`/`.claude` conversation trees. Those trees remain
-fully backed up, provider-hash verified and covered by the rotating payload
-checks; weekly full history downloads are unnecessary for this critical drill.
+sources, not the full `.codex`/`.claude` conversation trees. The `.claude` tree
+remains backed up; new `.codex` points use the essentials profile below. All
+included payloads remain provider-hash verified and covered by rotating checks;
+weekly full history downloads are unnecessary for this critical drill.
 Actual database results update the existing dated
 drill evidence, and infrastructure health follows that seven-day cadence.
 Native and local-only backends retain their existing daily drill behavior;
@@ -218,18 +219,36 @@ last successful weekly check.
 
 ## Keep and exclude without removing originals
 
-Preserve `.codex` and `.claude` conversations/transcripts, plans, skills, settings,
-WIP and durable state. Register canonical configuration/skills separately and
-capture `.claude.json` as an explicit regular file. Keep Git history, refs and
-the exact staged index, alongside unstaged and untracked files. Exclude backup
+Preserve `.claude` conversations/transcripts, plans, skills, settings, WIP and
+durable state. Register canonical configuration/skills separately and capture
+`.claude.json` as an explicit regular file. Project and canonical configuration
+sources keep Git history, refs and the exact staged index alongside unstaged
+and untracked files. Exclude backup
 private keys and rclone credential references from source captures; their
 separate custody is a recovery prerequisite.
 
-The two top-level Codex desktop-state JSON documents are preserved as complete,
-validated point-in-time copies. Each open file must remain stable during its
-read; later desktop bookkeeping updates do not invalidate a long conversation
-capture. This exception does not apply to other JSON, nested files, project
-edits, or configuration changes elsewhere.
+Owner revision, September 30: future portable `.codex` points use
+`codex-restore-essentials-v1`, a positive selection of custom configuration,
+instructions, hooks, skills, integration scripts and original images,
+attachments, pets and visualizations. Existing exclusions and safe mapped-link
+restoration still apply. Provider login is renewed separately.
+
+Native conversations, history indexes, all native SQLite state/projections,
+desktop bookkeeping JSON, memories, caches, downloaded runtimes, proxy
+certificates and logs are optional continuity, not startup/restore requirements,
+and are omitted. The native `.codex` Git bundle/index is omitted too, so tracked
+runtime files cannot bypass exclusions. Separately backed-up `codex-config` and
+`agent-skills` retain their complete Git recovery. Veeam remains the full-profile
+recovery path. Local files and existing encrypted points are not deleted by this
+policy; old points expire only under the already-approved protected rotation.
+
+The sync checkpoints and immutable bindings live separately in
+`~/.local/state/codex-session-sync`, not `.codex`. Preserve them when using Veeam
+or recovering retained native history; do not flush them as cache. Portable
+essentials recovery does not restore native history to replay. Existing Agent
+Hub retention/autovacuum remain responsible for its database maintenance; the
+Codex sync timer uses the bounded system journal instead of an unbounded private
+log. Do not truncate live native SQLite files or remove their WAL sidecars.
 
 AfterTimes must retain source art, editable originals, source code, licensing,
 manifests, import originals with unproven replaceability, and unfinished work.

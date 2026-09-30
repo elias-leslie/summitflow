@@ -324,6 +324,7 @@ def test_physical_counter_sampler_rejects_virtual_or_wrong_route(interface_files
 
 @pytest.mark.parametrize("change,changed", [
     ("usage-counters", False), ("container-link-local", False),
+    ("container-multicast", False),
     ("ipv6-usage-counters", False), ("row-order", False),
     ("metric", True),
     ("gateway", True), ("public-ipv6", True),
@@ -340,6 +341,8 @@ def test_route_identity_ignores_usage_and_container_link_local_not_egress_change
         route.write_text(route.read_text().replace("0003 0 0", "0003 3 42"))
     elif change == "container-link-local":
         ipv6.write_text("fe800000000000000000000000000000 40 " + "0" * 32 + " 00 " + "0" * 32 + " 00000100 00000001 00000000 00000001 veth-fixture\n")
+    elif change == "container-multicast":
+        ipv6.write_text("ff000000000000000000000000000000 08 " + "0" * 32 + " 00 " + "0" * 32 + " 00000100 00000001 00000000 00000001 veth-fixture\n")
     elif change == "gateway":
         route.write_text(route.read_text().replace("01010101", "02020202"))
     elif change == "public-ipv6":
@@ -353,6 +356,19 @@ def test_route_identity_ignores_usage_and_container_link_local_not_egress_change
         route.write_text(route.read_text().replace("0 0 100", "0 0 200"))
     second = pilot.sample_interface("enp8s0")
     assert (first["route_sha256"] != second["route_sha256"]) is changed
+
+
+def test_transient_measurement_failure_preserves_offending_samples(configured, monkeypatch):
+    readings = [_sample(0), {**_sample(1), "route_sha256": "transient"}, _sample(2), _sample(3)]
+    monkeypatch.setattr(pilot, "sample_interface", Mock(side_effect=readings))
+    result = pilot.run_daily_restic_pilot()
+    assert result["status"] == "failed"
+    assert result["measurement"]["valid"] is False
+    assert result["samples"][0]["route_sha256"] == result["samples"][-1]["route_sha256"]
+    first_error = result["first_measurement_error"]
+    assert first_error["previous"] == readings[0]
+    assert first_error["current"] == readings[1]
+    assert first_error["errors"] == ["boot-interface-or-route-changed"]
 
 
 def test_scheduler_maintenance_failures_are_truthful(configured, monkeypatch):

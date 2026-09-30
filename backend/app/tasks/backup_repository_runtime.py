@@ -189,7 +189,9 @@ def run_repository_backup(
         staging.mkdir(mode=0o700)
         try:
             previous = state["sources"].get(source_id, {})
-            reuse = None if infrastructure else _previous_bundle(adapter, previous, staging)
+            # The Codex essentials profile intentionally omits native Git. Do
+            # not download its previous multi-GB bundle merely to discard it.
+            reuse = None if infrastructure or Path(project_dir).name == ".codex" else _previous_bundle(adapter, previous, staging)
             if infrastructure:
                 payload = prepare_infrastructure_payload(Path(project_dir), staging, host_config_root=get_host_config_root())
             else:
