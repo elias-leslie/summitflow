@@ -67,6 +67,14 @@ def _validate_engine_config(config: dict[str, object], backend_type: str) -> Non
         transport = config.get("offsite_transport", "gio")
         if not isinstance(transport, str) or transport not in {"gio", "rclone"}:
             raise HTTPException(status_code=400, detail="Unsupported offsite transport")
+        expiry = config.get("offsite_rclone_permanent_expiry", False)
+        if not isinstance(expiry, bool):
+            raise HTTPException(status_code=400, detail="Permanent offsite expiry must be a boolean")
+        root_id = config.get("offsite_rclone_root_id")
+        if root_id is not None and (not isinstance(root_id, str) or not re.fullmatch(r"[A-Za-z0-9_-]+", root_id)):
+            raise HTTPException(status_code=400, detail="Offsite root identity is invalid")
+        if expiry and (transport != "rclone" or not root_id):
+            raise HTTPException(status_code=400, detail="Permanent expiry requires rclone and an approved root identity")
         if transport == "rclone":
             remote = config.get("offsite_rclone_remote")
             if not isinstance(remote, str) or not re.fullmatch(r"[A-Za-z0-9_-]+:[^\x00\r\n?#\\]+", remote):

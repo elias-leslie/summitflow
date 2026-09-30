@@ -608,6 +608,8 @@ def replicate_completed_archive(
         if protection_error is None and not _write_manifest(local_dir, entry):
             protection_error = "Local offsite manifest state is unknown; remote retention refused"
         retention: dict[str, Any] = {"retention_status": "completed", "retention_deleted": 0}
+        if provider:
+            retention["retention_mode"] = "permanent" if provider.permanent_expiry else "trash"
         try:
             if protection_error:
                 raise RuntimeError(protection_error)

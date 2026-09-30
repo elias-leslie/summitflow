@@ -28,6 +28,15 @@ class NativeRcloneProvider:
         match = _REMOTE.fullmatch(self.root)
         if not match or any(part in {"", ".", ".."} for part in match[1].split("/")):
             raise RuntimeError("Native rclone offsite requires a dedicated remote folder")
+        expiry = env.get("BACKUP_OFFSITE_RCLONE_PERMANENT_EXPIRY", "false").lower()
+        if expiry not in {"true", "false"}:
+            raise RuntimeError("Native Drive permanent expiry must be a boolean")
+        self.permanent_expiry = expiry == "true"
+        self.root_id = env.get("BACKUP_OFFSITE_RCLONE_ROOT_ID", "").strip()
+        if self.root_id and not _ID.fullmatch(self.root_id):
+            raise RuntimeError("Native Drive root identity is invalid")
+        if self.permanent_expiry and not self.root_id:
+            raise RuntimeError("Permanent expiry requires an approved Drive root identity")
         raw_config = env.get("BACKUP_OFFSITE_RCLONE_CONFIG", "")
         self.config = Path(raw_config)
         if not raw_config or not self.config.is_absolute():
@@ -113,6 +122,8 @@ class NativeRcloneProvider:
             parent = f"{parent}{name}" if parent == remote + ":" else f"{parent}/{name}"
         if root is None:
             raise RuntimeError("Native Drive destination directory is missing")
+        if self.root_id and root["ID"] != self.root_id:
+            raise RuntimeError("Native Drive destination differs from its approved identity")
         return {"reachable": True, "provider_id": root["ID"], "remote_path": self.root}
 
     def _directory_entry(self, parent: str, name: str) -> dict[str, Any] | None:
@@ -208,12 +219,22 @@ class NativeRcloneProvider:
         }
         return metadata["Size"] == path.stat().st_size and observed == expected_hash, evidence
 
-    def remove(self, folder: str, entry: dict[str, Any]) -> None:
+    def remove(self, folder: str, entry: dict[str, Any], *, permanent: bool = False) -> None:
+        if permanent:
+            # Only the retention caller opts in. Repair/replacement continues
+            # using trash, even when permanent expiry is enabled.
+            source = folder.removeprefix(self.root + "/")
+            if (
+                not self.permanent_expiry or folder == source or source in {".", ".."}
+                or not re.fullmatch(r"[A-Za-z0-9._-]+", source)
+            ):
+                raise RuntimeError("Permanent expiry is outside the approved Drive source folder")
+            self.probe()  # Recheck the pinned root before irreversible deletion.
         current = self.find(folder, entry["Name"])
         if not current or current["ID"] != entry["ID"]:
             raise RuntimeError("Native Drive object identity changed before removal")
-        # Drive's standard trash behavior is retained; no permanent-delete flag.
-        self._run("deletefile", f"{folder}/{entry['Name']}", "--drive-use-trash=true", phase="retention")
+        self._run("deletefile", f"{folder}/{entry['Name']}",
+                  f"--drive-use-trash={str(not permanent).lower()}", phase="retention")
 
     def publish(
         self, local_path: Path, *, folder_uri: str, remote_name: str,
@@ -282,7 +303,7 @@ class NativeRcloneProvider:
                 continue
             # Completion first, then parts, matching the native GIO contract.
             for entry in sorted(targets, key=lambda item: not item["Name"].endswith(".parts.json")):
-                self.remove(folder, entry)
+                self.remove(folder, entry, permanent=self.permanent_expiry)
                 deleted.append(f"gdrive://{entry['ID']}")
         return deleted
 

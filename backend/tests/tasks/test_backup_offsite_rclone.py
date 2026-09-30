@@ -114,7 +114,10 @@ def drive(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> dict[str, Any]:
                 state["archive"].write_bytes(state["archive"].read_bytes() + b"changed")
                 state["mutate_local"] = False
         elif args[0] == "deletefile":
-            assert args[2:] == ["--drive-use-trash=true"]
+            assert args[2:] in (["--drive-use-trash=true"], ["--drive-use-trash=false"])
+            if args[2:] == ["--drive-use-trash=false"]:
+                assert state["env"].get("BACKUP_OFFSITE_RCLONE_PERMANENT_EXPIRY") == "true"
+                assert state["env"].get("BACKUP_OFFSITE_RCLONE_ROOT_ID") == "root-id"
             if (state["fail_remove"] and args[1].endswith(state["fail_remove"])) or state["fail_retention"]:
                 return subprocess.CompletedProcess(command, 1, "", "token=private-oauth-fixture")
             del state["objects"][args[1]]
@@ -441,7 +444,10 @@ def test_changed_local_ciphertext_never_claims_valid(drive, hashes):
     assert replicate(drive)["status"] == "failed"
 
 
-def test_retention_trashes_only_expired_managed_group_completion_first(drive):
+@pytest.mark.parametrize("permanent", [False, True])
+def test_retention_expires_only_managed_group_completion_first(drive, permanent):
+    if permanent:
+        drive["env"].update(BACKUP_OFFSITE_RCLONE_PERMANENT_EXPIRY="true", BACKUP_OFFSITE_RCLONE_ROOT_ID="root-id")
     old = "source-20200101-000000.tar.gz.age"
     newest = "source-20260930-000000.tar.gz.age"
     names = [old + ".parts.json", old + ".part000001", newest + ".parts.json",
@@ -452,11 +458,13 @@ def test_retention_trashes_only_expired_managed_group_completion_first(drive):
     result = replicate(drive)
     assert result["status"] == "verified"
     assert result["retention_deleted"] == 3
+    assert result["retention_mode"] == ("permanent" if permanent else "trash")
     deleted = [args[1].rsplit("/", 1)[-1] for args in drive["commands"] if args[0] == "deletefile"]
     assert deleted[:2] == [old + ".parts.json", old + ".part000001"]
     assert newest + ".parts.json" not in deleted
     assert "notes.json" not in deleted
-    assert not any("--drive-use-trash=false" in args for args in drive["commands"])
+    assert all(args[2:] == [f"--drive-use-trash={str(not permanent).lower()}"]
+               for args in drive["commands"] if args[0] == "deletefile")
 
 
 def test_retention_failure_preserves_verified_result(drive):
@@ -473,9 +481,12 @@ def test_retention_failure_preserves_verified_result(drive):
 
 @pytest.mark.parametrize("pending_status", ["pending", "failed"])
 @pytest.mark.parametrize("pending_layout", ["whole", "parts"])
-def test_retention_preserves_manifest_backlog_without_displacing_three_completed_points(drive, pending_status, pending_layout):
+@pytest.mark.parametrize("permanent", [False, True])
+def test_retention_preserves_manifest_backlog_without_displacing_three_completed_points(drive, pending_status, pending_layout, permanent):
     from app.tasks.backup_native_offsite import OFFSITE_MANIFEST_NAME
 
+    if permanent:
+        drive["env"].update(BACKUP_OFFSITE_RCLONE_PERMANENT_EXPIRY="true", BACKUP_OFFSITE_RCLONE_ROOT_ID="root-id")
     stable = [f"source-{year}0101-000000.tar.gz.age" for year in range(2018, 2022)]
     pending = "source-20260101-000000.tar.gz.age"
     incomplete = "source-20260201-000000.tar.gz.age"
@@ -501,9 +512,12 @@ def test_retention_preserves_manifest_backlog_without_displacing_three_completed
 
 
 @pytest.mark.parametrize("corruption", [b"{invalid-json", b'{"archives":{}}', b"\xff\xfe"])
-def test_corrupt_manifest_blocks_remote_cleanup_across_retries_but_upload_stays_verified(drive, corruption):
+@pytest.mark.parametrize("permanent", [False, True])
+def test_corrupt_manifest_blocks_remote_cleanup_across_retries_but_upload_stays_verified(drive, corruption, permanent):
     from app.tasks.backup_native_offsite import OFFSITE_MANIFEST_NAME
 
+    if permanent:
+        drive["env"].update(BACKUP_OFFSITE_RCLONE_PERMANENT_EXPIRY="true", BACKUP_OFFSITE_RCLONE_ROOT_ID="root-id")
     for year in range(2017, 2021):
         drive["objects"][drive["folder"] + f"/source-{year}0101-000000.tar.gz.age"] = {"id": f"old-{year}", "content": b"old"}
     manifest = drive["archive"].parent / OFFSITE_MANIFEST_NAME
@@ -548,7 +562,10 @@ def test_unknown_legacy_manifest_entry_still_blocks_rotation(tmp_path, fields):
         _pending_archive_names(tmp_path)
 
 
-def test_retention_preserves_old_copy_just_verified_on_retry(drive):
+@pytest.mark.parametrize("permanent", [False, True])
+def test_retention_preserves_old_copy_just_verified_on_retry(drive, permanent):
+    if permanent:
+        drive["env"].update(BACKUP_OFFSITE_RCLONE_PERMANENT_EXPIRY="true", BACKUP_OFFSITE_RCLONE_ROOT_ID="root-id")
     old = drive["archive"].with_name("source-20200101-000000.tar.gz.age")
     drive["archive"].rename(old)
     drive["archive"] = old
@@ -558,6 +575,50 @@ def test_retention_preserves_old_copy_just_verified_on_retry(drive):
     assert result["status"] == "verified"
     assert result["retention_deleted"] == 0
     assert drive["folder"] + "/" + old.name in drive["objects"]
+
+
+@pytest.mark.parametrize("settings", [
+    {"BACKUP_OFFSITE_RCLONE_PERMANENT_EXPIRY": "true"},
+    {"BACKUP_OFFSITE_RCLONE_PERMANENT_EXPIRY": "yes", "BACKUP_OFFSITE_RCLONE_ROOT_ID": "root-id"},
+    {"BACKUP_OFFSITE_RCLONE_PERMANENT_EXPIRY": "true", "BACKUP_OFFSITE_RCLONE_ROOT_ID": "different-id"},
+])
+def test_permanent_expiry_refuses_missing_invalid_or_changed_root_before_mutation(drive, settings):
+    drive["env"].update(settings)
+    assert replicate(drive)["status"] == "failed"
+    assert not any(args[0] in {"mkdir", "copyto", "deletefile"} for args in drive["commands"])
+
+
+@pytest.mark.parametrize("folder", ["summitflow-drive:Other/source", "summitflow-drive:Canonical", "summitflow-drive:Canonical/../other", "summitflow-drive:Canonical/source/nested"])
+def test_permanent_removal_refuses_outside_root_or_non_source_folder(drive, folder):
+    from app.tasks.backup_native_rclone import NativeRcloneProvider
+
+    drive["env"].update(BACKUP_OFFSITE_RCLONE_PERMANENT_EXPIRY="true", BACKUP_OFFSITE_RCLONE_ROOT_ID="root-id")
+    with pytest.raises(RuntimeError, match="outside the approved"):
+        NativeRcloneProvider(drive["env"]).remove(folder, {"Name": "old.tar.gz.age", "ID": "object-id"}, permanent=True)
+    assert not drive["commands"]
+
+
+def test_permanent_expiry_does_not_make_corrupt_upload_repair_permanent(drive):
+    drive["env"].update(BACKUP_OFFSITE_RCLONE_PERMANENT_EXPIRY="true", BACKUP_OFFSITE_RCLONE_ROOT_ID="root-id")
+    assert replicate(drive)["status"] == "verified"
+    target = drive["folder"] + "/" + drive["archive"].name
+    drive["objects"][target]["content"] = b"corrupt"
+    drive["commands"].clear()
+    assert replicate(drive, retry=True)["status"] == "verified"
+    removals = [args for args in drive["commands"] if args[0] == "deletefile"]
+    assert len(removals) == 1 and removals[0][2:] == ["--drive-use-trash=true"]
+
+
+def test_permanent_deletion_rechecks_root_identity_at_time_of_removal(drive):
+    from app.tasks.backup_native_rclone import NativeRcloneProvider
+
+    drive["env"].update(BACKUP_OFFSITE_RCLONE_PERMANENT_EXPIRY="true", BACKUP_OFFSITE_RCLONE_ROOT_ID="root-id")
+    provider = NativeRcloneProvider(drive["env"])
+    assert provider.probe()["provider_id"] == "root-id"
+    drive["directories"][drive["root"]] = "new-unapproved-id"
+    with pytest.raises(RuntimeError, match="approved identity"):
+        provider.remove(drive["folder"], {"Name": "source-20200101-000000.tar.gz.age", "ID": "old-id"}, permanent=True)
+    assert not any(args[0] == "deletefile" for args in drive["commands"])
 
 
 def test_retention_does_not_delete_without_complete_recovery_point(drive):

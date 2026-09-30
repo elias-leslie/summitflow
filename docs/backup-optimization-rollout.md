@@ -69,19 +69,20 @@ folders were checked. Local legacy archives, escrow keys, Veeam and unrelated
 Drive data remain intact. Private rollout and purge receipts are in
 `.dev-tools/backup-native-rollout-20260930/`.
 
-Native Drive rotation initially uses normal Drive trash, not account-wide trash
-emptying. Trashed archives continue to consume quota until permanent deletion
-(Google automatically deletes them after 30 days). Count that extra retained
-traffic/storage when reporting steady-state utilization. Immediate permanent
-expiry within the new bounded archive folder needs explicit owner authorization;
-the authorization to purge the old dedicated folder is not a global trash grant.
-See [Google's deletion/storage guidance](https://support.google.com/drive/answer/2375102).
+The owner subsequently approved permanent expiry only inside the new native
+Drive archive root. Enable `offsite_rclone_permanent_expiry` with the approved
+`offsite_rclone_root_id`; a missing or changed root ID fails closed. Rotation
+uses the existing per-source 7/14/30-day windows, minimum three completed points,
+pending-copy protection, and preservation of the copy just verified. Only aged
+managed archive groups in direct source folders are deleted. Recovery-kit files,
+unknown files, other Drive folders and account-wide trash are untouched. Repair
+of a corrupt same-name upload still uses trash, not permanent deletion.
 At measured full sizes and unchanged daily cadence, the current 7/14/30-day
-windows imply about 118.9 GB of visible retained native archives, plus about
-229.8 GB during the 30-day trash period: roughly 348.6 GB steady-state native
-quota usage. These are estimates, excluding retained Restic and unrelated data;
-source sizes and actual capture frequency can change them. Immediate bounded
-permanent expiry would remove the trash overhead, but is not currently enabled.
+windows imply about 118.9 GB of retained native archives. Bounded permanent
+expiry avoids the approximately 229.8 GB extra quota that normal 30-day trash
+rotation would use. These are estimates, excluding retained Restic and unrelated
+data; source sizes and actual capture frequency can change them. No global trash
+emptying is authorized. See [Google's deletion/storage guidance](https://support.google.com/drive/answer/2375102).
 
 ## Historical Restic rollout — superseded, not completion requirements
 

@@ -242,6 +242,8 @@ def update_backend(
     offsite_transport: Annotated[str | None, typer.Option("--offsite-transport", help="Native offsite transport: gio or rclone")] = None,
     offsite_rclone_remote: Annotated[str | None, typer.Option("--offsite-rclone-remote", help="Bounded Drive folder, REMOTE:FOLDER")] = None,
     offsite_rclone_config: Annotated[str | None, typer.Option("--offsite-rclone-config", help="Private managed rclone config-file reference")] = None,
+    offsite_rclone_root_id: Annotated[str | None, typer.Option("--offsite-rclone-root-id", help="Pin the approved Drive destination folder ID")] = None,
+    offsite_rclone_permanent_expiry: Annotated[bool | None, typer.Option("--offsite-permanent-expiry/--offsite-trash-expiry", help="Permanently expire aged managed archives only in the pinned native Drive folder")] = None,
     engine: Annotated[str | None, typer.Option("--engine", help="Backup engine: native or restic")] = None,
     local_repository: Annotated[str | None, typer.Option("--local-repository", help="Absolute Restic local repository path")] = None,
     remote_repository: Annotated[str | None, typer.Option("--remote-repository", help="Bounded independent Restic remote reference")] = None,
@@ -259,7 +261,7 @@ def update_backend(
     )
     if offsite_transport is not None and offsite_transport not in {"gio", "rclone"}:
         raise typer.BadParameter("--offsite-transport must be 'gio' or 'rclone'")
-    for key, value in (("offsite_transport", offsite_transport), ("offsite_rclone_remote", offsite_rclone_remote), ("offsite_rclone_config", offsite_rclone_config)):
+    for key, value in (("offsite_transport", offsite_transport), ("offsite_rclone_remote", offsite_rclone_remote), ("offsite_rclone_config", offsite_rclone_config), ("offsite_rclone_root_id", offsite_rclone_root_id), ("offsite_rclone_permanent_expiry", offsite_rclone_permanent_expiry)):
         if value is not None:
             settings[key] = value
     if offsite_gio_uri is None and not settings and default is None:

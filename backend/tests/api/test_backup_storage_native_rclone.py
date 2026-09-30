@@ -51,6 +51,29 @@ def test_incomplete_selected_transport_is_reported_as_configured(monkeypatch) ->
     assert not offsite_is_configured({})
 
 
+def test_permanent_expiry_is_boolean_and_pinned_to_root(configuration):
+    from app.api.backups.storage_endpoints import _validate_engine_config
+    from app.tasks.backup_utils import storage_config_env
+
+    configuration.update(offsite_rclone_permanent_expiry=True, offsite_rclone_root_id="approved-root")
+    _validate_engine_config(configuration, "local")
+    env = storage_config_env(configuration)
+    assert env["BACKUP_OFFSITE_RCLONE_PERMANENT_EXPIRY"] == "true"
+    assert env["BACKUP_OFFSITE_RCLONE_ROOT_ID"] == "approved-root"
+
+
+@pytest.mark.parametrize("settings", [
+    {"offsite_rclone_permanent_expiry": "true"},
+    {"offsite_rclone_permanent_expiry": True},
+    {"offsite_rclone_permanent_expiry": True, "offsite_rclone_root_id": "../other"},
+    {"offsite_rclone_permanent_expiry": True, "offsite_rclone_root_id": "approved-root", "offsite_transport": "gio"},
+])
+def test_permanent_expiry_rejects_unpinned_or_invalid_configuration(configuration, settings):
+    from app.api.backups.storage_endpoints import _validate_engine_config
+    with pytest.raises(HTTPException):
+        _validate_engine_config({**configuration, **settings}, "local")
+
+
 @pytest.mark.asyncio
 @pytest.mark.parametrize("reachable", [True, False])
 async def test_probe_reads_rclone_metadata_without_gio_or_upload(configuration, monkeypatch, tmp_path, reachable) -> None:

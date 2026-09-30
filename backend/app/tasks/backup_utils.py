@@ -374,10 +374,10 @@ def storage_config_env(config: Mapping[str, Any]) -> dict[str, str]:
         env_map["CREDENTIALS_FILE"] = str(config["credentials_file"])
     if config.get("offsite_gio_uri"):
         env_map["BACKUP_OFFSITE_GIO_URI"] = str(config["offsite_gio_uri"])
-    for key in ("transport", "rclone_remote", "rclone_config"):
+    for key in ("transport", "rclone_remote", "rclone_config", "rclone_root_id", "rclone_permanent_expiry"):
         value = config.get(f"offsite_{key}")
         if value is not None:
-            env_map[f"BACKUP_OFFSITE_{key.upper()}"] = str(value)
+            env_map[f"BACKUP_OFFSITE_{key.upper()}"] = str(value).lower() if isinstance(value, bool) else str(value)
     if config.get("__backend_id"):
         env_map["BACKUP_STORAGE_BACKEND_ID"] = str(config["__backend_id"])
     if config.get("engine"):

@@ -677,12 +677,18 @@ Configure the existing native storage backend through the restored CLI:
 st backup storage update <native-backend-id> \
   --offsite-transport rclone \
   --offsite-rclone-remote summitflow-drive:SummitFlow-Archives \
-  --offsite-rclone-config <absolute-private-rclone-config-path>
+  --offsite-rclone-config <absolute-private-rclone-config-path> \
+  --offsite-rclone-root-id <approved-folder-id-from-inventory> \
+  --offsite-permanent-expiry
 st backup storage test <native-backend-id>
 ```
 
 Use the backend ID from the recovered registry and the exact folder/remote name
 from the recovery inventory; do not create a replacement folder silently.
+The owner-approved permanent expiry is bounded to that pinned folder and retains
+the configured windows, minimum-three points and pending uploads; it never empties
+account-wide trash. If intentionally changing the destination, leave permanent
+expiry disabled with `--offsite-trash-expiry` until the new folder is approved.
 Initial recovery may use browser downloads. Routine offsite verification uses
 the fresh provider checksum, not a full archive download. Interrupted uploads
 retry the retained ciphertext; failed publication does not block the backup.
