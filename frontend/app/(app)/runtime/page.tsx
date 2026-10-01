@@ -51,7 +51,7 @@ export default function RuntimePage() {
         initial={{ opacity: 0, y: 14 }}
         animate={{ opacity: 1, y: 0 }}
         transition={{ duration: 0.4, ease: [0.25, 0.46, 0.45, 0.94] }}
-        className="flex items-center justify-between hero-glow"
+        className="flex flex-col items-start gap-3 sm:flex-row sm:flex-wrap sm:items-center sm:justify-between hero-glow"
       >
         <div className="flex items-center gap-3 relative z-10">
           <div className="p-1.5 rounded-md bg-cyan-500/10 border border-cyan-500/20">
@@ -67,7 +67,7 @@ export default function RuntimePage() {
           </div>
         </div>
         {health && (
-          <div className="flex items-center gap-3 text-sm">
+          <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-sm">
             <span className="text-slate-500">{health.total} services</span>
             {health.healthy > 0 && (
               <span className="text-emerald-400">{health.healthy} healthy</span>

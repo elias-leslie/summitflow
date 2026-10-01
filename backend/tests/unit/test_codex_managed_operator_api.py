@@ -89,3 +89,39 @@ def test_update_failure_reports_safe_specific_stage_without_private_payload(monk
     response = http.post("/api/projects/summitflow/managed-codex/qualify-update", headers={"origin": "http://testserver"})
     assert response.status_code == 409
     assert response.json()["detail"] == "Managed Codex update failed: delivery_credentials_unavailable (qualify-update)"
+
+
+def test_combined_application_routes_keep_managed_status_before_project_detail(monkeypatch):
+    from datetime import UTC, datetime
+    from unittest.mock import AsyncMock
+
+    from app.api import projects
+    from app.main import app as application
+
+    # Use the application's actual combined route registration, with only its
+    # principal middleware replaced by a deterministic owner/viewer fixture.
+    combined = FastAPI()
+    combined.include_router(application.router)
+    @combined.middleware("http")
+    async def principal(request, call_next):
+        request.state.principal = AccessPrincipal(email="fixture@example.test", role=request.headers.get("x-fixture-role", "owner"), is_active=True)
+        return await call_next(request)
+    managed_calls = []
+    def status(*, project_id):
+        managed_calls.append(project_id)
+        return {"available": True, "project_id": project_id}
+    monkeypatch.setattr(agent_sessions, "_managed_owner", lambda: SimpleNamespace(operator_status=status))
+    detail_calls = []
+    def project_detail(project_id):
+        detail_calls.append(project_id)
+        return projects.ProjectResponse(id=project_id, name="Fixture", base_url="http://fixture", public_url="http://fixture", health_endpoint="/health", category="dev", created_at=datetime.now(UTC))
+    monkeypatch.setattr(projects, "get_project_from_db", project_detail)
+    monkeypatch.setattr(projects, "_resolve_project_health_statuses", AsyncMock(return_value={"summitflow": "healthy"}))
+    http = TestClient(combined)
+    managed = http.get("/api/projects/managed-codex?project_id=summitflow")
+    assert managed.status_code == 200 and managed.json() == {"available": True, "project_id": "summitflow"}
+    assert managed.headers["cache-control"] == "no-store"
+    assert http.get("/api/projects/managed-codex", headers={"x-fixture-role": "viewer"}).status_code == 403
+    detail = http.get("/api/projects/summitflow")
+    assert detail.status_code == 200 and detail.json()["id"] == "summitflow" and detail.json()["health_status"] == "healthy"
+    assert managed_calls == ["summitflow"] and detail_calls == ["summitflow"]
