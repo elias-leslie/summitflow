@@ -168,3 +168,8 @@ remove them after integration checks. Deployed acceptance, canonical activation,
 service rebuilds and production host configuration are separate managed operator
 steps. See Agent Hub's `native-observation-v1.md` for its receipt, alias, profile and
 canonical projection contracts.
+
+The trusted `native-sessions` ST binding selects Agent Hub's accepted managed
+runtime, including its matching Python environment. Missing or incomplete releases
+fail explicitly instead of using an older checkout wheel. Other extension bindings
+keep their existing checkout selection unless their trusted registration opts in.

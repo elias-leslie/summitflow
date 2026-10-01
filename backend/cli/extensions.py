@@ -89,7 +89,18 @@ def _resolve_executable(record: ExtensionRecord, root_resolver: Callable[[str], 
     root = root_resolver(record.binding.owner)
     if not root:
         return None, 127, f"Owner project '{record.binding.owner}' is unavailable in the ST project registry."
-    executable = Path(root) / record.binding.executable
+    execution_root = Path(root)
+    if record.binding.execution_source == "accepted_runtime":
+        from .lib.service_release import service_state_root
+
+        project_state = service_state_root() / "projects" / record.binding.owner
+        try:
+            execution_root = (project_state / "current/source").resolve(strict=True)
+        except OSError:
+            return None, 127, f"Rebuild owner '{record.binding.owner}' before using its accepted runtime."
+        if not execution_root.is_relative_to((project_state / "releases").resolve()):
+            return None, 127, "The owner runtime does not reference a managed accepted release."
+    executable = execution_root / record.binding.executable
     if not executable.is_file():
         return None, 127, f"Install the registered executable for owner '{record.binding.owner}': {record.binding.executable}"
     if not os.access(executable, os.X_OK):

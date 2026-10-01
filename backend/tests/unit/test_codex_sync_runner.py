@@ -1079,3 +1079,21 @@ def isolated_managed_host_settings(tmp_path, monkeypatch):
     monkeypatch.setattr(Path, "home", classmethod(lambda _cls: home))
     for key in ("SUMMITFLOW_CODEX_MANAGED_CAPTURE", "SUMMITFLOW_CODEX_OUTBOX", "SUMMITFLOW_CODEX_OUTBOXES_JSON", "SUMMITFLOW_CODEX_OUTBOX_MAX_BYTES", "SUMMITFLOW_CODEX_RAW_RETENTION_SECONDS", "SUMMITFLOW_CODEX_PROTOCOL_QUALIFICATION"):
         monkeypatch.delenv(key, raising=False)
+
+
+def test_manual_collector_uses_private_host_policy_and_forwards_verified_path(tmp_path, monkeypatch):
+    delivery = importlib.import_module("codex_managed_delivery")
+    info = _info(tmp_path, "owned-thread")
+    home = Path.home()
+    (home / ".env.local").write_text("SUMMITFLOW_CODEX_OUTBOXES_JSON='" + json.dumps({"a-loom": str(tmp_path / "private/outbox.sqlite")}) + "'\n")
+    assert "SUMMITFLOW_CODEX_OUTBOXES_JSON" not in os.environ
+    monkeypatch.setattr(codex_sync_runner, "build_project_context", lambda _: _project())
+    monkeypatch.setattr(codex_sync_runner, "upsert_session", lambda *_args, **_kwargs: (True, "", 200))
+    calls = []
+    monkeypatch.setattr(delivery, "recover_configured_outbox", lambda api_url, **kwargs: calls.append((api_url, kwargs)))
+    monkeypatch.setattr(codex_sync_runner, "ingest_transcript", lambda *_args, **_kwargs: (True, "cp", "ok", "", 200))
+    state = {"transcripts": {}}
+    for ingest_required in (True, False):
+        result = codex_sync_runner.sync_transcript(info, state, "http://fixture/api", "client", "/sync", close_session=False, ingest_required=ingest_required, heartbeat_required=False, log_fn=lambda _: None, verbose=False)
+        assert result[0]
+    assert calls == [("http://fixture/api", {"project_id": "a-loom", "session_id": "owned-thread", "register_only": True, "transcript_path": info.path})] * 2

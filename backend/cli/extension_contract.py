@@ -38,6 +38,7 @@ class ExtensionBinding(StrictModel):
     namespace: str = Field(pattern=r"^[a-z][a-z0-9-]*$")
     manifest: str
     executable: str
+    execution_source: Literal["checkout", "accepted_runtime"] = "checkout"
     grant: DispatchGrant
     arguments: list[str] = Field(default_factory=list)
     environment: list[str] = Field(default_factory=list)

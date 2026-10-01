@@ -181,6 +181,34 @@ class ManagedOutbox:
             row = db.execute("SELECT value FROM metadata WHERE key=?", (key,)).fetchone()
             return json.loads(row[0]) if row else {}
 
+    def bind_rollout_path(self, thread: str, project: str, path: Path) -> bool:
+        """Bind only the collector's verified path for an already owned thread."""
+        with self.connect() as db:
+            db.execute("BEGIN IMMEDIATE")
+            owner = db.execute("SELECT project FROM threads WHERE id=?", (thread,)).fetchone()
+            if owner is None:
+                return False
+            if owner["project"] != project:
+                raise ValueError("managed_rollout_project_binding_mismatch")
+            resolved = path.resolve(strict=True)
+            if not resolved.is_file():
+                raise ValueError("managed_rollout_path_unavailable")
+            value = {"project_id": project, "transcript_path": str(resolved)}
+            key = "rollout_path:" + thread
+            existing = db.execute("SELECT value FROM metadata WHERE key=?", (key,)).fetchone()
+            if existing and json.loads(existing[0]) != value:
+                raise ValueError("managed_rollout_path_binding_mismatch")
+            db.execute("INSERT OR REPLACE INTO metadata VALUES(?,?)", (key, json.dumps(value, sort_keys=True)))
+            if self._used_bytes(db) > self.max_bytes:
+                raise OutboxFull("Managed rollout path binding exceeds quota")
+            return True
+
+    def rollout_path(self, thread: str, project: str) -> str | None:
+        value = self.metadata("rollout_path:" + thread)
+        if value and value.get("project_id") != project:
+            raise ValueError("managed_rollout_project_binding_mismatch")
+        return value.get("transcript_path")
+
     def quarantine(self, payload: dict, *, registration: dict | None = None, reference: dict | None = None):
         """Retain an unsupported unbound wire frame without inventing a subject."""
         encoded = json.dumps(payload, sort_keys=True, separators=(",", ":"))
@@ -309,13 +337,18 @@ class ManagedOutbox:
 
     def predecessor(self, thread: str, generation: int) -> str | None:
         with self.connect() as db:
+            table, generation = self._stream_table(db, thread, generation)
+            registration = db.execute(f"SELECT registration FROM {table} WHERE id=? AND generation=?", (thread, generation)).fetchone()
+            if registration and (source := json.loads(registration[0]).get("predecessor_source_id")):
+                return source
             row = db.execute("SELECT source_id FROM retired_sources WHERE id=? AND generation=?", (thread, generation - 1)).fetchone()
             return row[0] if row else None
 
     def bind_source(self, thread: str, receipt: dict, generation: int | None = None):
         with self.connect() as db:
+            db.execute("BEGIN IMMEDIATE")
             table, generation = self._stream_table(db, thread, generation)
-            row = db.execute(f"SELECT source_id,next_position,acknowledged FROM {table} WHERE id=? AND generation=?", (thread, generation)).fetchone()
+            row = db.execute(f"SELECT source_id,next_position,acknowledged,registration FROM {table} WHERE id=? AND generation=?", (thread, generation)).fetchone()
             if receipt.get("schema_version") != "native-observation.v1" or receipt.get("authenticity") != "collector_attested":
                 raise ValueError("Unexpected Agent Hub source acknowledgement")
             if row["source_id"] not in (None, receipt["source_id"]):
@@ -324,7 +357,20 @@ class ManagedOutbox:
             # exact accepted/replayed dispositions permit outbox cleanup.
             if not 0 <= receipt["committed_position"] < row["next_position"]:
                 raise ValueError("Agent Hub returned an impossible source position")
+            if generation:
+                registration = json.loads(row["registration"])
+                previous = db.execute("SELECT source_id FROM retired_sources WHERE id=? AND generation=?", (thread, generation - 1)).fetchone()
+                predecessor = registration.get("predecessor_source_id") or (previous[0] if previous else None)
+                if not predecessor or (previous and previous[0] not in (None, predecessor)):
+                    raise ValueError("Managed source predecessor binding unavailable or changed")
+                # Offline rotations initially lack a remote predecessor. Persist
+                # the exact registered lineage before acknowledged cleanup can
+                # remove the retired predecessor's local delivery catalog.
+                registration["predecessor_source_id"] = predecessor
+                db.execute(f"UPDATE {table} SET registration=? WHERE id=? AND generation=?", (json.dumps(registration, sort_keys=True, separators=(",", ":")), thread, generation))
             db.execute(f"UPDATE {table} SET source_id=? WHERE id=? AND generation=?", (receipt["source_id"], thread, generation))
+            if self._used_bytes(db) > self.max_bytes:
+                raise OutboxFull("Managed source registry exceeds quota")
 
     def accept(self, thread: str, position: int, result: dict, generation: int | None = None) -> bool:
         with self.connect() as db:
@@ -376,8 +422,9 @@ class ManagedOutbox:
         db.execute("DELETE FROM quarantine WHERE accepted_at IS NOT NULL AND accepted_at<=?", (time.time() - self.retention_seconds,))
         db.execute("""DELETE FROM retired_sources AS old WHERE generation>0
             AND NOT EXISTS (SELECT 1 FROM events WHERE thread=old.id AND generation=old.generation)
-            AND (EXISTS (SELECT 1 FROM retired_sources AS successor WHERE successor.id=old.id AND successor.generation=old.generation+1 AND successor.source_id IS NOT NULL)
-                OR EXISTS (SELECT 1 FROM threads AS successor WHERE successor.id=old.id AND successor.generation=old.generation+1 AND successor.source_id IS NOT NULL))""")
+            AND old.source_id IS NOT NULL
+            AND (EXISTS (SELECT 1 FROM retired_sources AS successor WHERE successor.id=old.id AND successor.generation=old.generation+1 AND successor.source_id IS NOT NULL AND json_extract(successor.registration,'$.predecessor_source_id')=old.source_id)
+                OR EXISTS (SELECT 1 FROM threads AS successor WHERE successor.id=old.id AND successor.generation=old.generation+1 AND successor.source_id IS NOT NULL AND json_extract(successor.registration,'$.predecessor_source_id')=old.source_id))""")
 
     def reclaim(self):
         with self.connect() as db:

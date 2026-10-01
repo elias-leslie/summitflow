@@ -6,6 +6,7 @@ import asyncio
 import json
 import os
 import re
+import sqlite3
 from pathlib import Path
 
 from codex_managed_outbox import ManagedOutbox
@@ -40,10 +41,15 @@ async def deliver(outbox: ManagedOutbox, client, *, execution_owner_secret: str,
                 await asyncio.to_thread(outbox.bind_source, thread["id"], source.model_dump(mode="json"), generation)
                 # Preserve the rollout namespace. The rollout adapter still owns
                 # projection and its cursor, and verifies this path independently.
-                path = (session.provider_metadata or {}).get("transcript_path")
+                path = await asyncio.to_thread(outbox.rollout_path, thread["id"], thread["project"])
                 if path and generation == 0:
                     rollout = registration.model_copy(update={"source_kind": "rollout", "transcript_path": path, "epoch": "rollout", "producer_id": "summitflow/codex-session-sync", "reconcile_existing_rollout": True, "generation": 0, "predecessor_source_id": None})
-                    await client.register_native_source(thread["id"], rollout, execution_owner_secret=execution_owner_secret)
+                    try:
+                        await client.register_native_source(thread["id"], rollout, execution_owner_secret=execution_owner_secret)
+                    except Exception:
+                        # A missing/rejected rollout locator cannot block durable
+                        # App Server evidence; the collector retries registration.
+                        await asyncio.to_thread(outbox.delivery_health, "rollout_registration_unavailable")
                 if register_only:
                     continue
                 while (observation := await asyncio.to_thread(outbox.pending, thread["id"], generation)) is not None and observation["position"] < thread["next_position"]:
@@ -233,13 +239,18 @@ def owner_credentials() -> tuple[str | None, str | None]:
     return secret, client_id
 
 
-def recover_configured_outbox(api_url: str, *, project_id: str | None = None, session_id: str | None = None, register_only: bool = False) -> dict | None:
+def recover_configured_outbox(api_url: str, *, project_id: str | None = None, session_id: str | None = None, register_only: bool = False, transcript_path: Path | None = None) -> dict | None:
     """Called by the existing host collector even when managed capture is off."""
     from codex_sync_api import HTTP_TIMEOUT
 
     outbox = configured_outbox(project_id)
     if outbox is None:
         return None
+    if transcript_path is not None:
+        if not project_id or not session_id:
+            raise ValueError("managed_rollout_binding_requires_owned_project_thread")
+        if not outbox.bind_rollout_path(session_id, project_id, transcript_path):
+            return outbox.status()
     secret, client_id = owner_credentials()
     if not secret or not client_id:
         outbox.delivery_health("delivery_credentials_unavailable")
@@ -266,6 +277,8 @@ def recover_configured_outboxes(api_url: str) -> list[dict]:
             status = recover_configured_outbox(api_url, project_id=project)
             if status:
                 results.append(status)
-        except (ValueError, KeyError, OSError, RuntimeError):
-            results.append({"project_id": project, "health": "delivery_unavailable", "pending": 0, "capture_gaps": 0})
+        except (ValueError, KeyError, OSError, RuntimeError, sqlite3.Error):
+            # An unreadable spool cannot prove that no pending capture or gaps
+            # exist. Keep the other project owners independently recoverable.
+            results.append({"project_id": project, "health": "delivery_unavailable", "pending": None, "capture_gaps": None})
     return results

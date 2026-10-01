@@ -39,6 +39,7 @@ UPDATE_ERRORS = {
     "registry_check_failed", "candidate_install_failed", "runtime_selection_failed",
     "managed_runtime_changed_during_pin", "managed_runtime_pinned_tree_changed",
     "managed_runtime_resource_escapes_vendor", "managed_runtime_private_directory_required",
+    "managed_runtime_native_binary_unavailable", "managed_runtime_platform_unsupported",
 }
 
 
@@ -83,7 +84,10 @@ def native_binary(binary: str) -> Path:
         raise ValueError("managed_runtime_platform_unsupported")
     package, triple = target
     root = path.parent.parent
-    for vendor in (root / "node_modules" / "@openai" / f"codex-{package}" / "vendor", root / "vendor"):
+    # npm global installs can nest the optional platform package inside the
+    # launcher, while a fresh private prefix normally hoists it beside the
+    # launcher in the same @openai scope. Both are official package layouts.
+    for vendor in (root / "node_modules" / "@openai" / f"codex-{package}" / "vendor", root.parent / f"codex-{package}" / "vendor", root / "vendor"):
         candidate = vendor / triple / "bin/codex"
         if candidate.is_file():
             return candidate.resolve()

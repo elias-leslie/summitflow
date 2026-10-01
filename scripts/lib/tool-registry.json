@@ -154,6 +154,7 @@
       "namespace": "native-sessions",
       "manifest": "extensions/native-sessions.json",
       "executable": "backend/.venv/bin/agent-hub-st",
+      "execution_source": "accepted_runtime",
       "arguments": [
         "native-sessions"
       ],

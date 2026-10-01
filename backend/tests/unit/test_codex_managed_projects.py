@@ -61,6 +61,26 @@ def test_collector_recovers_second_project_after_first_storage_failure(settings,
     assert results[0]["health"] == "delivery_unavailable" and results[1]["health"] == "connected"
 
 
+def test_corrupt_first_spool_keeps_unknown_counts_and_recovers_healthy_project(settings, monkeypatch):
+    paths = json.loads(settings["SUMMITFLOW_CODEX_OUTBOXES_JSON"])
+    healthy = delivery.configured_outbox("summitflow")
+    healthy.add_thread("owned", "summitflow", {"thread_id": "owned"})
+    healthy.capture("owned", kind="capture_health", payload={"state": "connected"})
+    corrupt = Path(paths["agent-hub"])
+    corrupt.parent.mkdir(mode=0o700)
+    corrupt.write_bytes(b"not a SQLite database: private raw storage error")
+    corrupt.chmod(0o600)
+    monkeypatch.setattr(delivery, "owner_credentials", lambda: (None, None))
+    results = delivery.recover_configured_outboxes("http://fixture/api")
+    assert len(results) == 2
+    assert results[0] == {"project_id": "agent-hub", "health": "delivery_unavailable", "pending": None, "capture_gaps": None}
+    assert results[1]["pending"] == 1
+    assert healthy.metadata("project") == {"project_id": "summitflow"}
+    assert results[1]["delivery_health"] == "delivery_credentials_unavailable"
+    assert healthy.pending("owned") is not None
+    assert "private raw storage error" not in json.dumps(results)
+
+
 def test_legacy_single_spool_remains_bound_and_cannot_target_another_project(settings, tmp_path):
     settings.pop("SUMMITFLOW_CODEX_OUTBOXES_JSON")
     settings["SUMMITFLOW_CODEX_OUTBOX"] = str(tmp_path / "legacy/outbox.sqlite")

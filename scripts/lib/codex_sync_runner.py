@@ -187,14 +187,16 @@ def sync_transcript(
     )
     next_checkpoint = checkpoint
     detail = str(entry.get("detail") or "unchanged")
-    if ingest_required:
-        if os.environ.get("SUMMITFLOW_CODEX_OUTBOX") or os.environ.get("SUMMITFLOW_CODEX_OUTBOXES_JSON"):
-            try:
-                from codex_managed_delivery import recover_configured_outbox
+    try:
+        from codex_managed_delivery import configured_path, recover_configured_outbox
 
-                recover_configured_outbox(api_url, project_id=project["project_id"], session_id=info.session_id, register_only=True)
-            except Exception:
-                pass
+        # The existing trusted host settings include private file policy,
+        # even when a manual collector invocation has no injected env vars.
+        if configured_path(project["project_id"]) is not None:
+            recover_configured_outbox(api_url, project_id=project["project_id"], session_id=info.session_id, register_only=True, transcript_path=info.path)
+    except Exception:
+        pass
+    if ingest_required:
         ok, next_checkpoint, detail, err, status = ingest_transcript(
             info.session_id,
             info.path,

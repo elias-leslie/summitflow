@@ -190,6 +190,12 @@ class ManagedCapture:
             return
         self._retain(thread, "capture_health", {"state": "connected", "capture_gaps": owner["gaps"], "transport": "stdio", "provider_version": self.version})
 
+    def valid_thread(self, thread) -> bool:
+        # The qualified native Thread schema is shared by notifications and RPC
+        # snapshots. This is shape validation only; exact own RPC correlation or
+        # a validated owned-parent spawn must separately prove ownership.
+        return isinstance(thread, dict) and bool(thread.get("id")) and self.validators["ServerNotification"].is_valid({"method": "thread/started", "params": {"thread": thread}})
+
     def client_message(self, wire: dict) -> dict | None:
         """Return a local rejection; capture never synthesizes approval responses."""
         self.refresh_switch()
@@ -238,7 +244,7 @@ class ManagedCapture:
                     if method == "initialize":
                         self.initialize_response = True
                     thread = wire["result"].get("thread")
-                    if method in {"thread/start", "thread/fork"} and isinstance(thread, dict) and isinstance(thread.get("id"), str):
+                    if method in {"thread/start", "thread/fork"} and self.valid_thread(thread):
                         self.own_thread(thread["id"])
             return
         if "method" not in wire:
@@ -256,6 +262,12 @@ class ManagedCapture:
                 if str(wire.get("id", "")).startswith(f"summitflow-managed-{self.connection_id}-") and "error" in wire:
                     self.health_all("capture_gap", gap=True)
                 thread = wire.get("result", {}).get("thread", {})
+                if not isinstance(thread, dict) or ("thread" in wire.get("result", {}) and not self.valid_thread(thread)):
+                    self.quarantine(wire)
+                    self.health_all("unsupported", gap=True)
+                    self.capturing = False
+                    self.failure = "unsupported"
+                    return
                 if method in {"thread/start", "thread/fork"} and thread.get("id"):
                     self.own_thread(thread["id"])
                     if requested:
@@ -290,16 +302,23 @@ class ManagedCapture:
             self.capturing = False
             self.failure = "unsupported"
             return
+        valid = self.validators[schema].is_valid(wire)
+        if not valid and thread not in self.owned:
+            # Future/malformed native evidence cannot grant process ownership,
+            # even when it claims an owned parent or overlaps a pending start.
+            self.quarantine(wire)
+            self.health_all("unsupported", gap=True)
+            self.capturing = False
+            self.failure = "unsupported"
+            return
         if wire["method"] == "thread/started" and thread not in self.owned:
             source = thread_obj.get("source", {})
             subagent = source.get("subAgent", {}) if isinstance(source, dict) else {}
             spawn = subagent.get("thread_spawn", {}) if isinstance(subagent, dict) else {}
             parent = spawn.get("parent_thread_id") if isinstance(spawn, dict) else None
-            starts = [method for method, _, _ in self.pending.values() if method in {"thread/start", "thread/fork"}]
-            if thread and (parent in self.owned or starts):
+            if valid and thread and parent in self.owned:
                 self.own_thread(thread)
-                if parent in self.owned:
-                    self.subscribe(thread)
+                self.subscribe(thread)
         if thread not in self.owned:
             # Account/auth/global messages are deliberately outside session capture.
             # Unknown subject-bearing messages are a visible attribution limitation.
@@ -318,7 +337,6 @@ class ManagedCapture:
                 self.quarantine(wire)
                 self.health_all("capture_gap", gap=True)
             return
-        valid = self.validators[schema].is_valid(wire)
         position = self._retain(thread, "app_server_event", wire)
         if not valid:
             self.health_all("unsupported", gap=True)

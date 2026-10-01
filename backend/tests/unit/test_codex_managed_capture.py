@@ -30,6 +30,16 @@ def outbox(tmp_path):
     return result
 
 
+
+def api_session(project="summitflow"):
+    from datetime import UTC, datetime
+
+    from agent_hub.models.session import SessionResponse
+
+    # Exact public API shape: raw provider_metadata is intentionally absent.
+    return SessionResponse.model_validate({"id": "thread", "project_id": project, "provider": "codex", "model": "codex/unknown", "status": "active", "created_at": datetime.now(UTC).isoformat(), "updated_at": datetime.now(UTC).isoformat()})
+
+
 def receipt(position=0, source="source"):
     return {"schema_version": "native-observation.v1", "source_id": source, "committed_position": position, "authenticity": "collector_attested"}
 
@@ -153,6 +163,10 @@ def collector(outbox):
     return capture_module.ManagedCapture(outbox, project="summitflow", namespace="fixture", version="fixture", fingerprint="fixture", validators=validators())
 
 
+def native_thread(identifier, *, source="appServer", turns=None):
+    return {"id": identifier, "sessionId": "root", "projectId": None, "cliVersion": "0.159.3", "createdAt": 0, "updatedAt": 0, "cwd": "/fixture", "ephemeral": False, "modelProvider": "fixture", "preview": "", "source": source, "status": {"type": "idle"}, "turns": turns or []}
+
+
 def test_external_threads_are_rejected_and_capture_defaults_off(outbox, monkeypatch):
     monkeypatch.delenv("SUMMITFLOW_CODEX_MANAGED_CAPTURE", raising=False)
     assert capture_module.capture_enabled() is False
@@ -192,7 +206,7 @@ def test_unsupported_event_retains_raw_and_fails_capture_visibly(outbox):
 def test_snapshots_and_fork_history_are_never_live_command_events(outbox):
     capture = collector(outbox)
     capture.client_message({"id": 1, "method": "thread/fork", "params": {"threadId": "thread"}})
-    capture.server_message({"id": 1, "result": {"thread": {"id": "child", "sessionId": "root", "turns": [{"id": "parent-turn", "items": [{"id": "parent-command"}]}]}}})
+    capture.server_message({"id": 1, "result": {"thread": native_thread("child", turns=[{"id": "parent-turn", "status": "completed", "items": [{"id": "parent-command", "type": "userMessage", "content": []}]}])}})
     with outbox.connect() as db:
         rows = [json.loads(r[0]) for r in db.execute("SELECT observation FROM events WHERE thread='child' ORDER BY position")]
     assert [r["kind"] for r in rows] == ["capture_health", "app_server_snapshot"]
@@ -216,7 +230,7 @@ async def test_agent_hub_downtime_and_lost_ack_resume_exact_receipt(outbox, monk
 
         async def get_session(self, thread):
             assert thread == "thread"
-            return SimpleNamespace(project_id="summitflow", provider="codex", provider_metadata={})
+            return api_session()
 
         async def register_native_source(self, thread, registration, **kwargs):
             assert kwargs["execution_owner_secret"] == "fixture"
@@ -540,7 +554,7 @@ def test_bad_policy_fallback_still_fences_a_competing_configured_owner(outbox, m
 
 
 @pytest.mark.asyncio
-async def test_delivery_rollout_registration_retains_original_profile_across_upgrade(outbox, monkeypatch):
+async def test_delivery_rollout_registration_retains_original_profile_across_upgrade(outbox, tmp_path, monkeypatch):
     module = types.ModuleType("agent_hub.models.native_observation")
     with zipfile.ZipFile(ROOT / "docker/workspace-packages/agent_hub_client-0.4.1-py3-none-any.whl") as wheel:
         exec(compile(wheel.read("agent_hub/models/native_observation.py"), "native_observation.py", "exec"), module.__dict__)
@@ -548,10 +562,13 @@ async def test_delivery_rollout_registration_retains_original_profile_across_upg
     outbox.capture("thread", kind="capture_health", payload={"state": "old"})
     outbox.rotate_protocol(version="next", fingerprint="next-fingerprint")
     outbox.capture("thread", kind="capture_health", payload={"state": "new"})
+    path = tmp_path / "owned-rollout.jsonl"
+    path.write_text("verified collector fixture")
+    assert outbox.bind_rollout_path("thread", "summitflow", path)
     registrations = []
     class Client:
         async def get_session(self, _thread):
-            return SimpleNamespace(project_id="summitflow", provider="codex", provider_metadata={"transcript_path": "/owned/rollout.jsonl"})
+            return api_session()
         async def register_native_source(self, _thread, registration, **_kwargs):
             registrations.append(registration)
             source = "old" if registration.generation == 0 else "new"
@@ -567,6 +584,91 @@ async def test_delivery_rollout_registration_retains_original_profile_across_upg
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize("offline", [False, True])
+async def test_second_successor_delivers_after_predecessor_cleanup_and_restart(outbox, monkeypatch, offline):
+    module = types.ModuleType("agent_hub.models.native_observation")
+    with zipfile.ZipFile(ROOT / "docker/workspace-packages/agent_hub_client-0.4.1-py3-none-any.whl") as wheel:
+        exec(compile(wheel.read("agent_hub/models/native_observation.py"), "native_observation.py", "exec"), module.__dict__)
+    monkeypatch.setitem(sys.modules, module.__name__, module)
+    registrations = []
+
+    class Client:
+        async def get_session(self, _thread):
+            return api_session()
+
+        async def register_native_source(self, _thread, registration, **_kwargs):
+            registrations.append(registration)
+            source = f"source-{registration.generation}"
+            return SimpleNamespace(source_id=source, model_dump=lambda **_: receipt(source=source))
+
+        async def ingest_native_observations(self, _thread, source, batch, **_kwargs):
+            position = batch.observations[0].position
+            return SimpleNamespace(model_dump=lambda **_: acknowledgement(position, source=source))
+
+    client = Client()
+    for generation in range(3):
+        if generation:
+            outbox.rotate_protocol(version=f"version-{generation}", fingerprint=f"fingerprint-{generation}")
+        outbox.capture("thread", kind="capture_health", payload={"generation": generation})
+        if not offline:
+            assert await delivery_module.deliver(outbox, client, execution_owner_secret="fixture") == 1
+    if offline:
+        assert await delivery_module.deliver(outbox, client, execution_owner_secret="fixture") == 3
+    assert [stream["generation"] for stream in outbox.streams()] == [0, 2]
+    reopened = outbox_module.ManagedOutbox(outbox.path, max_bytes=100_000, retention_seconds=0)
+    assert reopened.capture("thread", kind="capture_health", payload={"state": "later"}) == 2
+    assert await delivery_module.deliver(reopened, client, execution_owner_secret="fixture") == 1
+    assert registrations[-1].generation == 2 and registrations[-1].predecessor_source_id == "source-1"
+    assert reopened.status()["pending"] == 0
+
+
+@pytest.mark.parametrize("provenance", ["parent", "pending_start"])
+def test_malformed_thread_started_cannot_establish_restart_ownership(outbox, provenance):
+    capture = collector(outbox)
+    source = {"subAgent": {"thread_spawn": {"parent_thread_id": "thread"}}} if provenance == "parent" else "appServer"
+    if provenance == "pending_start":
+        capture.client_message({"id": 1, "method": "thread/start", "params": {}})
+    wire = {"method": "thread/started", "params": {"thread": {"id": "unproven", "source": source}}}
+    assert not validators()["ServerNotification"].is_valid(wire)
+    capture.server_message(wire)
+    assert "unproven" not in capture.owned
+    assert {thread["id"] for thread in outbox.threads()} == {"thread"}
+    assert not capture.capturing and capture.failure == "unsupported"
+    assert json.loads(outbox.quarantines()[0]["payload"]) == wire
+    restarted = collector(outbox)
+    rejection = restarted.client_message({"id": 2, "method": "thread/resume", "params": {"threadId": "unproven"}})
+    assert rejection["error"]["message"] == "thread_is_not_owned_by_this_managed_session"
+
+
+def test_valid_thread_started_requires_own_parent_not_any_pending_start(outbox):
+    capture = collector(outbox)
+    capture.client_message({"id": 1, "method": "thread/start", "params": {}})
+    wire = {"method": "thread/started", "params": {"thread": native_thread("unproven")}}
+    assert validators()["ServerNotification"].is_valid(wire)
+    capture.server_message(wire)
+    assert "unproven" not in capture.owned and capture.capturing
+    assert json.loads(outbox.quarantines()[0]["payload"]) == wire
+    child = {"method": "thread/started", "params": {"thread": native_thread("child", source={"subAgent": {"thread_spawn": {"parent_thread_id": "thread", "depth": 1}}})}}
+    assert validators()["ServerNotification"].is_valid(child)
+    capture.server_message(child)
+    assert "child" in capture.owned and "child" in capture.subscribed
+
+
+@pytest.mark.parametrize("method", ["thread/start", "thread/fork", "thread/read"])
+def test_malformed_rpc_thread_cannot_grant_ownership_or_snapshot(outbox, method):
+    capture = collector(outbox)
+    params = {} if method == "thread/start" else {"threadId": "thread"}
+    capture.client_message({"id": 1, "method": method, "params": params})
+    wire = {"id": 1, "result": {"thread": {"id": "unproven", "turns": "future-shape"}}}
+    capture.server_message(wire)
+    assert "unproven" not in capture.owned
+    assert not capture.capturing and capture.failure == "unsupported"
+    assert json.loads(outbox.quarantines()[0]["payload"]) == wire
+    with outbox.connect() as db:
+        assert not db.execute("SELECT 1 FROM events WHERE observation LIKE '%app_server_snapshot%'").fetchone()
+
+
+@pytest.mark.asyncio
 async def test_quarantine_lost_ack_replays_exact_original_without_subject(outbox, monkeypatch):
     module = types.ModuleType("agent_hub.models.native_observation")
     with zipfile.ZipFile(ROOT / "docker/workspace-packages/agent_hub_client-0.4.1-py3-none-any.whl") as wheel:
@@ -576,7 +678,7 @@ async def test_quarantine_lost_ack_replays_exact_original_without_subject(outbox
     sent = []
     class Client:
         async def get_session(self, _thread):
-            return SimpleNamespace(project_id="summitflow", provider="codex", provider_metadata={})
+            return api_session()
         async def register_native_source(self, *_args, **_kwargs):
             return SimpleNamespace(source_id="source", model_dump=lambda **_: receipt())
         async def register_native_quarantine(self, registration, **_kwargs):
@@ -605,7 +707,7 @@ def test_disabled_owner_initializes_and_owns_new_threads_without_capturing(outbo
     capture.server_message({"id": 1, "result": {"userAgent": "fixture"}})
     assert capture.client_message({"method": "initialized", "params": {}}) is None
     assert capture.client_message({"id": 2, "method": "thread/start", "params": {}}) is None
-    capture.server_message({"id": 2, "result": {"thread": {"id": "new-thread"}}})
+    capture.server_message({"id": 2, "result": {"thread": native_thread("new-thread")}})
     assert "new-thread" in capture.owned and outbox.pending("new-thread") is None
     assert capture.client_message({"id": 3, "method": "thread/resume", "params": {"threadId": "external"}})["error"]
     outbox.enable_capture()
@@ -633,3 +735,83 @@ def test_future_spool_schema_is_rejected_without_mutating_original_pending(outbo
     assert outbox.pending("thread") == original
     with outbox.connect() as db:
         assert db.execute("PRAGMA user_version").fetchone()[0] == 99
+
+
+@pytest.mark.asyncio
+async def test_public_api_without_raw_metadata_delivers_before_late_path_and_after_restart(outbox, tmp_path, monkeypatch):
+    module = types.ModuleType("agent_hub.models.native_observation")
+    with zipfile.ZipFile(ROOT / "docker/workspace-packages/agent_hub_client-0.4.1-py3-none-any.whl") as wheel:
+        exec(compile(wheel.read("agent_hub/models/native_observation.py"), "native_observation.py", "exec"), module.__dict__)
+    monkeypatch.setitem(sys.modules, module.__name__, module)
+    capture = collector(outbox)
+    capture.server_message({"method": "turn/completed", "params": {"threadId": "thread", "turn": {"id": "turn", "items": [], "status": "completed", "error": None}}})
+    assert capture.capturing
+    registrations = []
+    class Client:
+        reject_rollout = False
+        async def get_session(self, _thread):
+            return api_session()
+        async def register_native_source(self, _thread, registration, **_kwargs):
+            registrations.append(registration.model_dump(mode="json"))
+            if registration.source_kind == "rollout" and self.reject_rollout:
+                raise ValueError("AH rejects unverifiable rollout")
+            return SimpleNamespace(source_id="source", model_dump=lambda **_: receipt())
+        async def ingest_native_observations(self, _thread, _source, batch, **_kwargs):
+            return SimpleNamespace(model_dump=lambda **_: acknowledgement(batch.observations[0].position))
+    client = Client()
+    assert await delivery_module.deliver(outbox, client, execution_owner_secret="fixture") == 1
+    assert [registration["source_kind"] for registration in registrations] == ["app_server"]
+    path = tmp_path / "verified-rollout.jsonl"
+    path.write_text("collector verified native identity fixture")
+    monkeypatch.setattr(delivery_module, "configured_outbox", lambda _project=None: outbox)
+    # Binding is committed before credentials/network availability, so the
+    # existing timer can finish it after an outage and supervisor restart.
+    monkeypatch.setattr(delivery_module, "owner_credentials", lambda: (None, None))
+    delivery_module.recover_configured_outbox("http://fixture/api", project_id="summitflow", session_id="thread", register_only=True, transcript_path=path)
+    reopened = outbox_module.ManagedOutbox(outbox.path, max_bytes=100_000, retention_seconds=0)
+    assert reopened.rollout_path("thread", "summitflow") == str(path.resolve())
+    assert await delivery_module.deliver(reopened, client, execution_owner_secret="fixture", register_only=True) == 0
+    rollout = [registration for registration in registrations if registration["source_kind"] == "rollout"]
+    assert len(rollout) == 1 and rollout[0]["transcript_path"] == str(path.resolve())
+    # Rejected rollout registration never blocks the independent raw stream.
+    client.reject_rollout = True
+    reopened.capture("thread", kind="capture_health", payload={"state": "after-path"})
+    assert await delivery_module.deliver(reopened, client, execution_owner_secret="fixture") == 1
+    assert reopened.pending("thread") is None
+    assert "verified-rollout" not in json.dumps(reopened.status())
+
+
+def test_rollout_binding_is_owned_immutable_and_bounded(outbox, tmp_path):
+    path = tmp_path / "owned-rollout.jsonl"
+    path.write_text("verified native fixture")
+    with pytest.raises(ValueError, match="project_binding_mismatch"):
+        outbox.bind_rollout_path("thread", "other", path)
+    assert outbox.rollout_path("thread", "summitflow") is None
+    assert not outbox.bind_rollout_path("external-thread", "summitflow", path)
+    outbox.max_bytes = outbox.status()["used_bytes"]
+    with pytest.raises(outbox_module.OutboxFull):
+        outbox.bind_rollout_path("thread", "summitflow", path)
+    assert outbox.rollout_path("thread", "summitflow") is None
+    outbox.max_bytes = 100_000
+    assert outbox.bind_rollout_path("thread", "summitflow", path)
+    another = tmp_path / "different-rollout.jsonl"
+    another.write_text("different verified fixture")
+    with pytest.raises(ValueError, match="path_binding_mismatch"):
+        outbox.bind_rollout_path("thread", "summitflow", another)
+    assert outbox.rollout_path("thread", "summitflow") == str(path.resolve())
+
+
+@pytest.mark.asyncio
+async def test_public_api_project_mismatch_never_registers_or_delivers(outbox, monkeypatch):
+    module = types.ModuleType("agent_hub.models.native_observation")
+    with zipfile.ZipFile(ROOT / "docker/workspace-packages/agent_hub_client-0.4.1-py3-none-any.whl") as wheel:
+        exec(compile(wheel.read("agent_hub/models/native_observation.py"), "native_observation.py", "exec"), module.__dict__)
+    monkeypatch.setitem(sys.modules, module.__name__, module)
+    outbox.capture("thread", kind="capture_health", payload={"state": "connected"})
+    class Client:
+        async def get_session(self, _thread):
+            return api_session("other")
+        async def register_native_source(self, *_args, **_kwargs):
+            pytest.fail("Mismatched project must never register a source")
+    assert await delivery_module.deliver(outbox, Client(), execution_owner_secret="fixture") == 0
+    assert outbox.pending("thread") is not None and outbox.status()["delivery_health"] == "project_binding_conflict"

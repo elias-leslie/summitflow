@@ -211,6 +211,45 @@ def test_missing_and_non_executable_dependencies(tmp_path):
     assert dispatch_extension(record, [], context=context(tmp_path), root_resolver=lambda _: str(tmp_path)) == 126
 
 
+def test_accepted_owner_runtime_uses_pinned_executable_without_stale_checkout_fallback(tmp_path, monkeypatch):
+    from cli.extensions import _resolve_executable
+
+    state = tmp_path / "service-state"
+    monkeypatch.setenv("SUMMITFLOW_SERVICE_STATE_ROOT", str(state))
+    registry = registration(tmp_path, binding_changes={"execution_source": "accepted_runtime"})
+    record = load_extensions(set(), registry_path=registry).records[0]
+    stale = tmp_path / "fixture"
+    stale.write_text("stale checkout executable")
+    stale.chmod(0o755)
+    assert _resolve_executable(record, lambda _: str(tmp_path))[1] == 127
+    project_state = state / "projects/fixture-owner"
+    source = project_state / "releases/accepted/source"
+    source.mkdir(parents=True)
+    (project_state / "current").symlink_to(source.parent)
+    accepted = source / "fixture"
+    accepted.write_text("accepted executable")
+    assert _resolve_executable(record, lambda _: str(tmp_path))[1] == 126
+    accepted.chmod(0o755)
+    assert _resolve_executable(record, lambda _: str(tmp_path))[:2] == (accepted, 0)
+    accepted.unlink()
+    assert _resolve_executable(record, lambda _: str(tmp_path))[1] == 127
+
+
+def test_accepted_owner_runtime_rejects_current_pointer_outside_managed_releases(tmp_path, monkeypatch):
+    from cli.extensions import _resolve_executable
+
+    state = tmp_path / "service-state"
+    monkeypatch.setenv("SUMMITFLOW_SERVICE_STATE_ROOT", str(state))
+    registry = registration(tmp_path, binding_changes={"execution_source": "accepted_runtime"})
+    record = load_extensions(set(), registry_path=registry).records[0]
+    project_state = state / "projects/fixture-owner"
+    project_state.mkdir(parents=True)
+    source = tmp_path / "unaccepted/source"
+    source.mkdir(parents=True)
+    (project_state / "current").symlink_to(source.parent)
+    assert _resolve_executable(record, lambda _: str(tmp_path))[1] == 127
+
+
 def test_exact_arguments_context_environment_and_nonzero_exit(tmp_path, capfd, monkeypatch):
     registry = registration(tmp_path)
     script = tmp_path / "fixture"

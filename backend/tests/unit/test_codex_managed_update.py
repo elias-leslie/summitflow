@@ -193,3 +193,33 @@ def isolated_managed_host_settings(tmp_path, monkeypatch):
     monkeypatch.setattr(Path, "home", classmethod(lambda _cls: home))
     for key in ("SUMMITFLOW_CODEX_MANAGED_CAPTURE", "SUMMITFLOW_CODEX_OUTBOX", "SUMMITFLOW_CODEX_OUTBOXES_JSON", "SUMMITFLOW_CODEX_OUTBOX_MAX_BYTES", "SUMMITFLOW_CODEX_RAW_RETENTION_SECONDS", "SUMMITFLOW_CODEX_PROTOCOL_QUALIFICATION"):
         monkeypatch.delenv(key, raising=False)
+
+
+@pytest.mark.parametrize("layout", ["nested", "hoisted"])
+def test_stage_update_pins_official_npm_native_layouts_without_scripts(outbox, monkeypatch, layout):
+    monkeypatch.setattr(update.platform, "system", lambda: "Linux")
+    monkeypatch.setattr(update.platform, "machine", lambda: "x86_64")
+    outbox.metadata("update", {"latest_version": "0.159.3"})
+    installs = []
+    def run(command, **kwargs):
+        if command[:2] == ["npm", "install"]:
+            installs.append((command, kwargs))
+            stage = Path(command[command.index("--prefix") + 1])
+            package = stage / "node_modules/@openai/codex"
+            (package / "bin").mkdir(parents=True)
+            (package / "bin/codex.js").write_text("// official launcher fixture\n")
+            scope = package / "node_modules/@openai" if layout == "nested" else package.parent
+            vendor(scope, "codex-linux-x64/vendor/x86_64-unknown-linux-musl")
+            return SimpleNamespace(stdout="")
+        assert command[-1] == "--version"
+        return SimpleNamespace(stdout="codex-cli 0.159.3\n")
+    monkeypatch.setattr(update.subprocess, "run", run)
+    update.update_action(outbox, "stage-update")
+    state = outbox.metadata("update")
+    candidate = Path(state["candidate"]["binary"])
+    assert candidate.is_file() and (candidate.parent.parent / "codex-resources/helper").read_text() == "original resource"
+    assert state["state"] == "staged" and not state["candidate_qualified"] and not state.get("active")
+    command, kwargs = installs[0]
+    assert "--ignore-scripts" in command and command[-1] == "@openai/codex@0.159.3"
+    assert kwargs["env"]["NPM_CONFIG_USERCONFIG"] == "/dev/null"
+    assert set(kwargs["env"]) == {"PATH", "HOME", "NPM_CONFIG_USERCONFIG", "NPM_CONFIG_CACHE"}
