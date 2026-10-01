@@ -8,9 +8,11 @@ from __future__ import annotations
 
 import base64
 import fcntl
+import grp
 import hashlib
 import json
 import os
+import pwd
 import re
 import stat
 import subprocess
@@ -35,6 +37,7 @@ FIXTURE_ROOT = Path("/opt/neri-wordpress-fixture")
 RESET_CONFIG = Path("/etc/neri-runner/reset-profiles.json")
 RESET_HELPER = Path("/usr/local/lib/neri/target_reset.py")
 WORDPRESS_CONFIG = Path("/etc/neri-runner/wordpress-config.json")
+RUNNER_CONFIG = Path("/etc/neri-runner/config.json")
 PRIVILEGED_UID = 0
 MAX_TRANSFER_PAYLOAD_BYTES = 4 * 1024 * 1024
 
@@ -291,6 +294,94 @@ def protected_directory(path: Path) -> None:
         raise DeploymentError("Fixture/configuration directory is not protected and root-owned")
 
 
+PIN_ATTRIBUTES = ("st_dev", "st_ino", "st_mode", "st_uid", "st_gid", "st_nlink",
+                  "st_size", "st_mtime_ns", "st_ctime_ns")
+
+
+def pinned_path(path: Path, *, directory: bool = False) -> tuple[os.stat_result, bytes]:
+    """Read without following links, and reject replacement during the read."""
+    details = path.lstat()
+    expected_type = stat.S_ISDIR if directory else stat.S_ISREG
+    if not expected_type(details.st_mode) or (not directory and details.st_nlink != 1):
+        raise DeploymentError("Runner configuration path is not a fixed directory or private file")
+    flags = os.O_RDONLY | os.O_NOFOLLOW | (os.O_DIRECTORY if directory else os.O_NONBLOCK)
+    descriptor = os.open(path, flags)
+    try:
+        contents = b""
+        if not directory:
+            with os.fdopen(descriptor, "rb", closefd=False) as stream:
+                contents = stream.read()
+        opened = os.fstat(descriptor)
+        current = path.lstat()
+        if any(getattr(details, name) != getattr(value, name)
+               for value in (opened, current) for name in PIN_ATTRIBUTES):
+            raise DeploymentError("Runner configuration changed during inspection")
+        return details, contents
+    finally:
+        os.close(descriptor)
+
+
+def revalidate_pins(pins: dict[Path, tuple[os.stat_result, bytes]]) -> None:
+    for path, (details, contents) in pins.items():
+        current, current_bytes = pinned_path(path, directory=stat.S_ISDIR(details.st_mode))
+        if (current_bytes != contents or any(getattr(details, name) != getattr(current, name)
+                                            for name in PIN_ATTRIBUTES)):
+            raise DeploymentError("Runner configuration changed since inspection")
+
+
+def configuration_layout() -> tuple[bool, int, dict[Path, tuple[os.stat_result, bytes]]]:
+    """Allow only the named runner's original layout or its exact root-owned replacement."""
+    try:
+        runner = pwd.getpwnam("neri-runner")
+        group = grp.getgrnam("neri-runner")
+    except KeyError as exc:
+        raise DeploymentError("Named runner account/group is unavailable") from exc
+    if runner.pw_uid == 0 or group.gr_gid == 0 or runner.pw_gid != group.gr_gid:
+        raise DeploymentError("Named runner account/group is invalid")
+    directory = WORDPRESS_CONFIG.parent
+    if RUNNER_CONFIG.parent != directory or RESET_CONFIG.parent != directory:
+        raise DeploymentError("Runner configuration paths differ from the fixed layout")
+    pins = {directory: pinned_path(directory, directory=True),
+            RUNNER_CONFIG: pinned_path(RUNNER_CONFIG), WORDPRESS_CONFIG: pinned_path(WORDPRESS_CONFIG)}
+
+    def metadata(path: Path) -> tuple[int, int, int]:
+        details = pins[path][0]
+        return details.st_uid, details.st_gid, stat.S_IMODE(details.st_mode)
+
+    canonical_private = (PRIVILEGED_UID, group.gr_gid, 0o640)
+    canonical = (metadata(directory) == (PRIVILEGED_UID, group.gr_gid, 0o750)
+                 and metadata(RUNNER_CONFIG) == canonical_private)
+    legacy = (metadata(directory) == (runner.pw_uid, group.gr_gid, 0o700)
+              and metadata(RUNNER_CONFIG) == (runner.pw_uid, group.gr_gid, 0o600))
+    if not (canonical or legacy) or metadata(WORDPRESS_CONFIG) != canonical_private:
+        raise DeploymentError("Runner configuration ownership/modes differ from the supported layouts")
+    for path in (RUNNER_CONFIG, WORDPRESS_CONFIG):
+        if not isinstance(json.loads(pins[path][1]), dict):
+            raise DeploymentError("Private runner configuration is invalid")
+    return legacy, group.gr_gid, pins
+
+
+def adopt_configuration(gid: int, pins: dict[Path, tuple[os.stat_result, bytes]]) -> None:
+    """Freeze the legacy directory, then atomically preserve the exact private bytes."""
+    revalidate_pins(pins)
+    directory = WORDPRESS_CONFIG.parent
+    descriptor = os.open(directory, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW)
+    try:
+        opened = os.fstat(descriptor)
+        if any(getattr(opened, name) != getattr(pins[directory][0], name) for name in PIN_ATTRIBUTES):
+            raise DeploymentError("Runner configuration directory changed since inspection")
+        os.fchown(descriptor, PRIVILEGED_UID, gid)
+        os.fchmod(descriptor, 0o750)
+        os.fsync(descriptor)
+        current = directory.lstat()
+        if (current.st_dev, current.st_ino) != (opened.st_dev, opened.st_ino):
+            raise DeploymentError("Runner configuration directory was replaced during adoption")
+        revalidate_pins({path: value for path, value in pins.items() if path != directory})
+        replace_file(RUNNER_CONFIG, pins[RUNNER_CONFIG][1], 0o640, PRIVILEGED_UID, gid)
+    finally:
+        os.close(descriptor)
+
+
 def fixture_observation() -> dict[str, Any]:
     """Public byte identity and one public scalar; never return private config."""
     result: dict[str, Any] = {"installed": None, "artifact_identity": None, "fixture_digest": None}
@@ -396,23 +487,27 @@ def sync_fixture(attempt: str, payload: dict[str, Any]) -> dict[str, Any]:
             require_release(runner_before, runner_before["installed"], blocked=False)
             contents, digest, artifact = fixture_contents(payload)
             phase("validated", expected=payload["identity"], artifact_identity=artifact, fixture_digest=digest)
+            legacy, runner_gid, config_pins = configuration_layout()
             before = fixture_observation()
             record["before"] = before
-            if (before["installed"] == payload["identity"] and before["artifact_identity"] == artifact
+            if (not legacy and before["installed"] == payload["identity"] and before["artifact_identity"] == artifact
                     and "error" not in before):
                 verify_fixture()
+                revalidate_pins(config_pins)
                 phase("verified", state="noop", after=before, verified=True)
                 return record
 
             # Existing private config must be present and protected; no secrets
             # are supplied by the host or synthesized from public fixture data.
-            for directory in {FIXTURE_ROOT, RESET_CONFIG.parent, RESET_HELPER.parent, WORDPRESS_CONFIG.parent}:
+            for directory in {FIXTURE_ROOT, RESET_HELPER.parent}:
                 protected_directory(directory)
-            private_details = protected_file(WORDPRESS_CONFIG)
-            private_bytes = WORDPRESS_CONFIG.read_bytes()
+            public_pins = {}
+            for destination in fixture_paths().values():
+                if destination.exists() or destination.is_symlink():
+                    protected_file(destination)
+                    public_pins[destination] = pinned_path(destination)
+            private_details, private_bytes = config_pins[WORDPRESS_CONFIG]
             private = json.loads(private_bytes)
-            if not isinstance(private, dict):
-                raise DeploymentError("Private runner configuration is invalid")
             private["target_artifact_identity"] = artifact
             phase("interlock")
             marker = ROOT / ".deploying"
@@ -426,16 +521,18 @@ def sync_fixture(attempt: str, payload: dict[str, Any]) -> dict[str, Any]:
             require_idle(inspect(), blocked=True)
 
             phase("backup")
+            revalidate_pins({**config_pins, **public_pins})
             backup = receipts / (attempt + "-fixture-backup")
             backup.mkdir(mode=0o700)
             backup.chmod(0o700)
             for name, destination in fixture_paths().items():
-                if destination.exists() or destination.is_symlink():
-                    details = protected_file(destination)
-                    replace_file(backup / name.replace("/", "_"), destination.read_bytes(),
+                if destination in public_pins:
+                    details, old_bytes = public_pins[destination]
+                    replace_file(backup / name.replace("/", "_"), old_bytes,
                                  stat.S_IMODE(details.st_mode), details.st_uid, details.st_gid)
-            replace_file(backup / "private-wordpress-config.json", private_bytes,
-                         0o600, private_details.st_uid, private_details.st_gid)
+            for destination in (RUNNER_CONFIG, WORDPRESS_CONFIG):
+                replace_file(backup / ("private-" + destination.name), config_pins[destination][1],
+                             0o600, PRIVILEGED_UID, PRIVILEGED_UID)
             sync_directory(receipts)
             record["backup"] = str(backup)
             record["private_config_metadata"] = {
@@ -448,18 +545,27 @@ def sync_fixture(attempt: str, payload: dict[str, Any]) -> dict[str, Any]:
             phase("stop")
             uncertain = True
             systemctl("stop")
-            phase("install")
-            for name, destination in fixture_paths().items():
-                mode = 0o755 if name in {"fixture/setup.sh", "fixture/seed.sh"} else 0o644
-                replace_file(destination, contents[name], mode, PRIVILEGED_UID, PRIVILEGED_UID)
-            current_details = protected_file(WORDPRESS_CONFIG)
-            attributes = ("st_dev", "st_ino", "st_mode", "st_uid", "st_gid", "st_size", "st_mtime_ns")
-            if (WORDPRESS_CONFIG.read_bytes() != private_bytes or any(
-                    getattr(current_details, name) != getattr(private_details, name) for name in attributes)):
-                raise DeploymentError("Private runner configuration changed since inspection")
-            replace_file(WORDPRESS_CONFIG, json.dumps(private).encode(),
-                         stat.S_IMODE(private_details.st_mode), private_details.st_uid, private_details.st_gid)
-            if before["fixture_digest"] != digest:
+            revalidate_pins({**config_pins, **public_pins})
+            if legacy:
+                phase("adopt-configuration")
+                adopt_configuration(runner_gid, config_pins)
+                record["configuration_adopted"] = True
+                _legacy, _gid, config_pins = configuration_layout()
+            # Legacy protection may have hidden an already-identical fixture.
+            # Reobserve strictly after adoption before choosing any provisioning.
+            current_fixture = fixture_observation()
+            if (current_fixture["installed"] != payload["identity"]
+                    or current_fixture["artifact_identity"] != artifact or "error" in current_fixture):
+                phase("install")
+                revalidate_pins({**config_pins, **public_pins})
+                for name, destination in fixture_paths().items():
+                    mode = 0o755 if name in {"fixture/setup.sh", "fixture/seed.sh"} else 0o644
+                    replace_file(destination, contents[name], mode, PRIVILEGED_UID, PRIVILEGED_UID)
+                revalidate_pins({WORDPRESS_CONFIG: config_pins[WORDPRESS_CONFIG],
+                                 RUNNER_CONFIG: config_pins[RUNNER_CONFIG]})
+                replace_file(WORDPRESS_CONFIG, json.dumps(private).encode(),
+                             0o640, PRIVILEGED_UID, runner_gid)
+            if current_fixture["fixture_digest"] != digest:
                 phase("provision", provision_started=True)
                 provision_fixture()
             phase("verify-fixture")

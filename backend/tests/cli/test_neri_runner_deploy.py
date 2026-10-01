@@ -8,6 +8,7 @@ import subprocess
 from contextlib import nullcontext
 from dataclasses import replace
 from pathlib import Path
+from types import SimpleNamespace
 from typing import Any
 from unittest.mock import Mock
 
@@ -93,11 +94,15 @@ def fixture_installation(installed, monkeypatch, tmp_path):
     for attribute, path in (
         ("FIXTURE_ROOT", tmp_path / "fixture"), ("RESET_CONFIG", tmp_path / "etc/reset-profiles.json"),
         ("RESET_HELPER", tmp_path / "lib/target_reset.py"), ("WORDPRESS_CONFIG", tmp_path / "etc/wordpress-config.json"),
+        ("RUNNER_CONFIG", tmp_path / "etc/config.json"),
     ):
         monkeypatch.setattr(guest, attribute, path)
         directory = path if attribute == "FIXTURE_ROOT" else path.parent
         directory.mkdir(exist_ok=True)
         directory.chmod(0o755)
+    guest.WORDPRESS_CONFIG.parent.chmod(0o750)
+    monkeypatch.setattr(guest.pwd, "getpwnam", lambda name: SimpleNamespace(pw_uid=os.getuid(), pw_gid=os.getgid()))
+    monkeypatch.setattr(guest.grp, "getgrnam", lambda name: SimpleNamespace(gr_gid=os.getgid()))
     files = fixture_public_files()
     for name, path in guest.fixture_paths().items():
         path.write_bytes(files[name])
@@ -106,6 +111,8 @@ def fixture_installation(installed, monkeypatch, tmp_path):
                "target_artifact_identity": guest.fixture_contents(payload(files))[2]}
     guest.WORDPRESS_CONFIG.write_text(json.dumps(private))
     guest.WORDPRESS_CONFIG.chmod(0o640)
+    guest.RUNNER_CONFIG.write_bytes(b'{ "api_key": "private-juice-key", "keep": true }\n')
+    guest.RUNNER_CONFIG.chmod(0o640)
     provision = Mock()
     verify = Mock()
     monkeypatch.setattr(guest, "provision_fixture", provision)
@@ -613,6 +620,176 @@ def test_identical_fixture_is_verified_noop_without_reseed_or_restart(installed,
     verify.assert_called_once_with()
     assert not (root / ".deploying").exists()
     assert "backup" not in result
+
+
+@pytest.mark.parametrize("changed", [False, True])
+def test_legacy_config_adoption_preserves_private_bytes_and_provisions_only_changed_digest(
+    installed, fixture_installation, changed,
+):
+    root, _source, state = installed
+    old, _private, provision, verify = fixture_installation
+    directory = guest.WORDPRESS_CONFIG.parent
+    directory.chmod(0o700)
+    guest.RUNNER_CONFIG.chmod(0o600)
+    private_bytes = {path: path.read_bytes() for path in (guest.RUNNER_CONFIG, guest.WORDPRESS_CONFIG)}
+    old_runner_inode = guest.RUNNER_CONFIG.stat().st_ino
+    tls = directory / "tls"
+    tls.mkdir(mode=0o700)
+    certificate = tls / "private.pem"
+    certificate.write_bytes(b"private-tls-key")
+    certificate.chmod(0o600)
+    tls_before = tls.stat(), certificate.stat(), certificate.read_bytes()
+    files = fixture_public_files("new") if changed else old
+
+    result = guest.sync_fixture(ATTEMPT, payload(files))
+
+    assert result["state"] == "succeeded", result
+    assert result["configuration_adopted"] is True
+    assert state["calls"] == ["stop", "restart"]
+    assert provision.call_count == int(changed)
+    verify.assert_called_once_with()
+    assert guest.RUNNER_CONFIG.read_bytes() == private_bytes[guest.RUNNER_CONFIG]
+    assert guest.RUNNER_CONFIG.stat().st_ino != old_runner_inode
+    assert directory.stat().st_mode & 0o777 == 0o750
+    for path in private_bytes:
+        details = path.stat()
+        assert (details.st_uid, details.st_gid, details.st_mode & 0o777) == (os.getuid(), os.getgid(), 0o640)
+        backup = Path(result["backup"]) / ("private-" + path.name)
+        assert backup.read_bytes() == private_bytes[path]
+        assert backup.stat().st_mode & 0o777 == 0o600
+    if not changed:
+        assert guest.WORDPRESS_CONFIG.read_bytes() == private_bytes[guest.WORDPRESS_CONFIG]
+        assert "install" not in [event["phase"] for event in result["events"]]
+    assert (tls.stat(), certificate.stat(), certificate.read_bytes()) == tls_before
+    assert guest.fixture_observation()["installed"] == guest.identity(files)
+    assert not (root / ".deploying").exists()
+    receipt = json.dumps(result)
+    for secret in ("private-api-key", "private-juice-key", "private-value", "private-tls-key"):
+        assert secret not in receipt
+
+    result = guest.sync_fixture("2" * 32, payload(files))
+    assert result["state"] == "noop", result
+    assert provision.call_count == int(changed)
+    assert state["calls"] == ["stop", "restart"]
+
+
+@pytest.mark.parametrize("fault", ["directory-mode", "directory-symlink", "runner-mode",
+                                   "runner-symlink", "runner-hardlink", "owner", "group", "missing-account"])
+def test_config_adoption_refuses_unsupported_layout_before_service_effects(
+    installed, fixture_installation, monkeypatch, fault,
+):
+    root, _source, state = installed
+    files, _private, provision, verify = fixture_installation
+    if fault == "directory-mode":
+        guest.WORDPRESS_CONFIG.parent.chmod(0o755)
+    elif fault == "directory-symlink":
+        directory = guest.WORDPRESS_CONFIG.parent
+        directory.rename(directory.with_name("moved"))
+        directory.symlink_to(directory.with_name("moved"), target_is_directory=True)
+    elif fault == "runner-mode":
+        guest.RUNNER_CONFIG.chmod(0o660)
+    elif fault == "runner-symlink":
+        moved = guest.RUNNER_CONFIG.with_suffix(".private")
+        guest.RUNNER_CONFIG.rename(moved)
+        guest.RUNNER_CONFIG.symlink_to(moved)
+    elif fault == "runner-hardlink":
+        os.link(guest.RUNNER_CONFIG, guest.RUNNER_CONFIG.with_suffix(".link"))
+    elif fault == "owner":
+        guest.WORDPRESS_CONFIG.parent.chmod(0o700)
+        guest.RUNNER_CONFIG.chmod(0o600)
+        monkeypatch.setattr(guest.pwd, "getpwnam", lambda _: SimpleNamespace(pw_uid=os.getuid() + 1, pw_gid=os.getgid()))
+    elif fault == "group":
+        monkeypatch.setattr(guest.grp, "getgrnam", lambda _: SimpleNamespace(gr_gid=os.getgid() + 1))
+    else:
+        monkeypatch.setattr(guest.pwd, "getpwnam", Mock(side_effect=KeyError("private account details")))
+    result = guest.sync_fixture(ATTEMPT, payload(files))
+    assert result["state"] == "failed", result
+    assert not state["calls"]
+    assert not (root / ".deploying").exists()
+    assert "backup" not in result
+    provision.assert_not_called()
+    verify.assert_not_called()
+    assert "private account details" not in json.dumps(result)
+
+
+@pytest.mark.parametrize("path_name", ["RUNNER_CONFIG", "WORDPRESS_CONFIG", "directory", "public-lock"])
+@pytest.mark.parametrize("when", ["interlock", "stop"])
+def test_config_adoption_revalidates_swapped_paths_and_retains_uncertain_marker(
+    installed, fixture_installation, monkeypatch, path_name, when,
+):
+    root, _source, state = installed
+    files, _private, provision, verify = fixture_installation
+    guest.WORDPRESS_CONFIG.parent.chmod(0o700)
+    guest.RUNNER_CONFIG.chmod(0o600)
+    swapped = False
+
+    def swap():
+        nonlocal swapped
+        if swapped:
+            return
+        swapped = True
+        if path_name == "directory":
+            guest.WORDPRESS_CONFIG.parent.chmod(0o750)
+        else:
+            path = (guest.FIXTURE_ROOT / "fixture.lock.json" if path_name == "public-lock"
+                    else getattr(guest, path_name))
+            replacement = path.with_suffix(".replacement")
+            replacement.write_bytes(path.read_bytes())
+            replacement.chmod(path.stat().st_mode & 0o777)
+            replacement.replace(path)
+
+    health = guest.profile_health
+    services = guest.systemctl
+
+    def observe(config, port):
+        if when == "interlock" and (root / ".deploying").exists():
+            swap()
+        return health(config, port)
+
+    def service_action(action):
+        services(action)
+        if when == "stop" and action == "stop":
+            swap()
+
+    monkeypatch.setattr(guest, "profile_health", observe)
+    monkeypatch.setattr(guest, "systemctl", service_action)
+    result = guest.sync_fixture(ATTEMPT, payload(files))
+    assert result["state"] == ("uncertain" if when == "stop" else "failed"), result
+    assert result["interlock_retained"] is (when == "stop")
+    assert (root / ".deploying").exists() is (when == "stop")
+    assert state["calls"] == (["stop"] if when == "stop" else [])
+    provision.assert_not_called()
+    verify.assert_not_called()
+
+
+def test_config_adoption_partial_replacement_failure_keeps_backup_and_interlock(
+    installed, fixture_installation, monkeypatch,
+):
+    root, _source, state = installed
+    files, _private, provision, verify = fixture_installation
+    guest.WORDPRESS_CONFIG.parent.chmod(0o700)
+    guest.RUNNER_CONFIG.chmod(0o600)
+    replace = guest.replace_file
+
+    def interrupt(path, contents, mode, uid, gid):
+        if path == guest.RUNNER_CONFIG:
+            raise OSError("private adoption details")
+        replace(path, contents, mode, uid, gid)
+
+    monkeypatch.setattr(guest, "replace_file", interrupt)
+    result = guest.sync_fixture(ATTEMPT, payload(files))
+    assert result["state"] == "uncertain", result
+    assert result["failed_phase"] == "adopt-configuration"
+    assert (root / ".deploying").read_text() == ATTEMPT
+    assert state["calls"] == ["stop"]
+    assert guest.WORDPRESS_CONFIG.parent.stat().st_mode & 0o777 == 0o750
+    assert (Path(result["backup"]) / "private-config.json").read_bytes() == guest.RUNNER_CONFIG.read_bytes()
+    assert "private adoption details" not in json.dumps(result)
+    provision.assert_not_called()
+    verify.assert_not_called()
+    refused = guest.sync_fixture("2" * 32, payload(files))
+    assert refused["state"] == "failed"
+    assert refused["interlock_retained"] is True
 
 
 @pytest.mark.parametrize("change", ["private-artifact", "reset-helper", "missing-helper", "script-mode"])
