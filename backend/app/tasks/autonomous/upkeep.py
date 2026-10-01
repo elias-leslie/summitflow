@@ -26,7 +26,6 @@ from .upkeep_constants import (
     REASON_ALREADY_RUNNING,
     REASON_NOT_DUE,
     ROUTINE_UPKEEP_WORKFLOW,
-    SOURCE_FEEDBACK,
     SOURCE_QUALITY,
     SOURCE_REFACTORS,
     SOURCES,
@@ -36,7 +35,6 @@ from .upkeep_constants import (
     STATUS_FAILED,
     STATUS_SKIPPED,
 )
-from .upkeep_feedback import create_feedback_tasks as _create_feedback_tasks
 from .upkeep_models import RunAccumulator, RunOutcome, SourceRunResult
 from .upkeep_quality import create_quality_failure_tasks as _create_quality_failure_tasks
 from .upkeep_signals import task_exists_for_upkeep_source
@@ -185,7 +183,6 @@ def _source_plan(project_id: str, remaining: int) -> dict[str, Callable[[], Any]
     return {
         SOURCE_REFACTORS: lambda: _run_refactor_source(project_id, remaining),
         SOURCE_QUALITY: lambda: _create_quality_failure_tasks(project_id, remaining),
-        SOURCE_FEEDBACK: lambda: _create_feedback_tasks(project_id, remaining),
     }
 
 

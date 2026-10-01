@@ -28,6 +28,11 @@ export interface FeedbackItem {
   model_used: string | null
   session_type: string | null
   vote_count: number
+  occurrence_count: number
+  independent_run_count: number
+  affected_roles: string[]
+  affected_projects: string[]
+  last_seen_at: string
   linked_task_id: string | null
   resolved_at: string | null
   resolution_note: string | null
@@ -41,7 +46,16 @@ export type FeedbackStatusFilter = 'active' | FeedbackStatus
 export interface FeedbackVote {
   id: string
   feedback_item_id: string
-  session_id: string
+  session_id: string | null
+  occurrence_id: string
+  source_project_id: string | null
+  run_ref: string | null
+  role: string | null
+  occurred_at: string
+  consequence: string | null
+  workaround: string | null
+  evidence_refs: string[]
+  source_kind: string
   comment: string | null
   agent_slug: string | null
   model_used: string | null
@@ -50,6 +64,7 @@ export interface FeedbackVote {
 
 export interface FeedbackItemWithVotes extends FeedbackItem {
   votes: FeedbackVote[]
+  occurrences: FeedbackVote[]
 }
 
 export interface FeedbackListResponse {

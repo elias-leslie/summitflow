@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 from contextlib import contextmanager
-from datetime import UTC, datetime
 from typing import Any
 from unittest.mock import MagicMock
 
@@ -49,7 +48,6 @@ def test_run_routine_upkeep_force_runs_even_when_disabled(mocker) -> None:
         return_value={"created_count": 1, "retired_count": 0, "scanned_count": 1},
     )
     mocker.patch("app.tasks.autonomous.upkeep._create_quality_failure_tasks", return_value=[])
-    mocker.patch("app.tasks.autonomous.upkeep._create_feedback_tasks", return_value=[])
     mocker.patch("app.tasks.autonomous.upkeep.maintenance_store.record_maintenance_run")
 
     result = run_routine_upkeep("summitflow", force=True)
@@ -75,7 +73,6 @@ def test_run_routine_upkeep_records_completed_no_work(mocker) -> None:
         return_value={"created_count": 0, "retired_count": 0, "scanned_count": 0},
     )
     mocker.patch("app.tasks.autonomous.upkeep._create_quality_failure_tasks", return_value=[])
-    mocker.patch("app.tasks.autonomous.upkeep._create_feedback_tasks", return_value=[])
     record_run = mocker.patch("app.tasks.autonomous.upkeep.maintenance_store.record_maintenance_run")
 
     result = run_routine_upkeep("summitflow")
@@ -125,7 +122,6 @@ def test_run_routine_upkeep_counts_refactors_against_batch_limit(mocker) -> None
         "app.tasks.autonomous.upkeep._create_quality_failure_tasks",
         return_value=["task-quality"],
     )
-    create_feedback = mocker.patch("app.tasks.autonomous.upkeep._create_feedback_tasks")
     mocker.patch("app.tasks.autonomous.upkeep.maintenance_store.record_maintenance_run")
 
     result = run_routine_upkeep("summitflow")
@@ -133,7 +129,6 @@ def test_run_routine_upkeep_counts_refactors_against_batch_limit(mocker) -> None
     assert result["tasks_created"] == 3
     run_refactors.assert_called_once_with("summitflow", 3)
     create_quality.assert_called_once_with("summitflow", 1)
-    create_feedback.assert_not_called()
 
 
 def test_upkeep_refactor_source_uses_existing_scan_index(mocker) -> None:
@@ -167,14 +162,12 @@ def test_run_routine_upkeep_counts_quality_against_daily_budget(mocker) -> None:
         "app.tasks.autonomous.upkeep._create_quality_failure_tasks",
         return_value=["task-quality-1", "task-quality-2"],
     )
-    create_feedback = mocker.patch("app.tasks.autonomous.upkeep._create_feedback_tasks")
     mocker.patch("app.tasks.autonomous.upkeep.maintenance_store.record_maintenance_run")
 
     result = run_routine_upkeep("summitflow")
 
     assert result["tasks_created"] == 2
     create_quality.assert_called_once_with("summitflow", 2)
-    create_feedback.assert_not_called()
 
 
 def test_create_quality_failure_task_uses_source_key_and_marks_escalated(mocker) -> None:
@@ -275,187 +268,53 @@ def test_quality_failure_task_dedupes_by_stable_signal_not_result_id(mocker) -> 
     mark_escalated.assert_not_called()
 
 
-def test_create_feedback_task_links_agent_hub_item(mocker) -> None:
-    from app.tasks.autonomous import upkeep
+def test_feedback_compatibility_entrypoints_never_create_work(mocker) -> None:
+    from app.tasks.autonomous.upkeep_feedback import create_feedback_tasks, feedback_task_from_item
 
-    feedback = {
-        "id": "fb-123",
-        "component_id": "sf.cli",
-        "feedback_type": "idea",
-        "title": "CLI output confusing",
-        "description": "The command output is hard to interpret.",
-        "status": "open",
-        "project_id": "summitflow",
-        "vote_count": 2,
-        "linked_task_id": None,
-        "created_at": datetime.now(UTC).isoformat(),
-    }
-    mocker.patch("app.tasks.autonomous.upkeep_feedback.fetch_feedback_items", return_value=[feedback])
-    mocker.patch("app.tasks.autonomous.upkeep_feedback.task_exists_for_upkeep_source", return_value=False)
-    mocker.patch(
-        "app.tasks.autonomous.upkeep_signals.task_store.create_task",
-        return_value={"id": "task-feedback"},
-    )
-    create_spirit = mocker.patch("app.tasks.autonomous.upkeep_signals.create_task_spirit")
-    create_subtask = mocker.patch("app.tasks.autonomous.upkeep_signals.create_single_subtask_with_steps")
-    link_feedback = mocker.patch("app.tasks.autonomous.upkeep_feedback.link_feedback_task")
-
-    created = upkeep._create_feedback_tasks("summitflow", limit=2)
-
-    assert created == ["task-feedback"]
-    context = create_spirit.call_args.kwargs["context"]
-    assert context["upkeep"]["source_key"] == "upkeep:feedback:fb-123"
-    assert context["upkeep"]["signal_type"] == "feedback"
-    assert create_subtask.call_args.kwargs["subtask_type"] is None
-    link_feedback.assert_called_once_with("fb-123", "task-feedback")
+    create = mocker.patch("app.tasks.autonomous.upkeep_signals.task_store.create_task")
+    approve = mocker.patch("app.tasks.autonomous.upkeep_signals.approve_plan")
+    for feedback_type in ("friction", "idea", "improvement", "praise"):
+        assert feedback_task_from_item("summitflow", {"id": "item", "feedback_type": feedback_type,
+                                                    "vote_count": 999, "status": "acknowledged"}) is None
+    assert create_feedback_tasks("summitflow", 200) == []
+    create.assert_not_called()
+    approve.assert_not_called()
 
 
-def test_create_feedback_task_does_not_restore_retired_governance_workflow(mocker) -> None:
-    from app.tasks.autonomous import upkeep
+def test_scheduled_and_forced_upkeep_cannot_promote_feedback(mocker) -> None:
+    from app.tasks.autonomous.upkeep import RoutineUpkeepSettings, run_routine_upkeep
+    from app.tasks.autonomous.upkeep_constants import SOURCES
 
-    feedback = {
-        "id": "fb-governance",
-        "component_id": "sf.quality",
-        "feedback_type": "friction",
-        "title": "Tool governance: missing quality gate",
-        "description": "Expected st check.",
-        "status": "open",
-        "project_id": "summitflow",
-        "vote_count": 1,
-        "linked_task_id": None,
-        "created_at": datetime.now(UTC).isoformat(),
-    }
-    mocker.patch("app.tasks.autonomous.upkeep_feedback.fetch_feedback_items", return_value=[feedback])
-    mocker.patch("app.tasks.autonomous.upkeep_feedback.task_exists_for_upkeep_source", return_value=False)
-    create_task = mocker.patch(
-        "app.tasks.autonomous.upkeep_signals.task_store.create_task",
-        return_value={"id": "task-feedback"},
-    )
-    create_spirit = mocker.patch("app.tasks.autonomous.upkeep_signals.create_task_spirit")
-    create_subtask = mocker.patch("app.tasks.autonomous.upkeep_signals.create_single_subtask_with_steps")
-    mocker.patch("app.tasks.autonomous.upkeep_feedback.link_feedback_task")
-
-    created = upkeep._create_feedback_tasks("summitflow", limit=2)
-
-    assert created == ["task-feedback"]
-    assert create_task.call_args.kwargs["priority"] == 2
-    context = create_spirit.call_args.kwargs["context"]
-    assert "tool_governance" not in context["upkeep"]
-    assert "files_to_modify" not in context
-    assert create_subtask.call_args.kwargs["description"] == "Resolve feedback item fb-governance"
+    assert "feedback" not in SOURCES
+    mocker.patch("app.tasks.autonomous.upkeep.get_routine_upkeep_settings",
+                 return_value=RoutineUpkeepSettings(enabled=True))
+    mocker.patch("app.tasks.autonomous.upkeep._is_due", return_value=True)
+    mocker.patch("app.tasks.autonomous.upkeep._run_refactor_source", return_value={"created_count": 0})
+    mocker.patch("app.tasks.autonomous.upkeep._create_quality_failure_tasks", return_value=[])
+    mocker.patch("app.tasks.autonomous.upkeep.maintenance_store.record_maintenance_run")
+    create = mocker.patch("app.tasks.autonomous.upkeep_signals.task_store.create_task")
+    approve = mocker.patch("app.tasks.autonomous.upkeep_signals.approve_plan")
+    dispatch = MagicMock()
+    for force in (False, True):
+        mocker.patch("app.tasks.autonomous.upkeep._routine_upkeep_lock", return_value=_acquired_lock())
+        result = run_routine_upkeep("summitflow", dispatch=dispatch, force=force)
+        assert result["tasks_created"] == 0
+        assert result["dispatch"]["dispatched"] == 0
+    create.assert_not_called()
+    approve.assert_not_called()
+    dispatch.assert_not_called()
 
 
-def test_create_feedback_task_replaces_stale_linked_task(mocker) -> None:
-    from app.tasks.autonomous import upkeep
-
-    feedback = {
-        "id": "fb-123",
-        "component_id": "sf.quality",
-        "feedback_type": "friction",
-        "title": "Quality gate missing",
-        "description": "Expected st check.",
-        "status": "open",
-        "project_id": "summitflow",
-        "vote_count": 1,
-        "linked_task_id": "task-stale",
-        "created_at": datetime.now(UTC).isoformat(),
-    }
-    mocker.patch("app.tasks.autonomous.upkeep_feedback.fetch_feedback_items", return_value=[feedback])
-    mocker.patch("app.tasks.autonomous.upkeep_feedback.task_exists_for_upkeep_source", return_value=False)
-    mocker.patch("app.tasks.autonomous.upkeep_feedback.task_store.get_task", return_value=None)
-    mocker.patch("app.tasks.autonomous.upkeep_feedback.get_task_spirit")
-    mocker.patch(
-        "app.tasks.autonomous.upkeep_signals.task_store.create_task",
-        return_value={"id": "task-feedback"},
-    )
-    mocker.patch("app.tasks.autonomous.upkeep_signals.create_task_spirit")
-    mocker.patch("app.tasks.autonomous.upkeep_signals.create_single_subtask_with_steps")
-    link_feedback = mocker.patch("app.tasks.autonomous.upkeep_feedback.link_feedback_task")
-
-    created = upkeep._create_feedback_tasks("summitflow", limit=2)
-
-    assert created == ["task-feedback"]
-    link_feedback.assert_called_once_with("fb-123", "task-feedback")
-
-
-def test_create_feedback_task_keeps_valid_linked_task(mocker) -> None:
-    from app.tasks.autonomous import upkeep
-
-    feedback = {
-        "id": "fb-123",
-        "component_id": "sf.quality",
-        "feedback_type": "friction",
-        "title": "Quality gate missing",
-        "description": "Expected st check.",
-        "status": "open",
-        "project_id": "summitflow",
-        "vote_count": 1,
-        "linked_task_id": "task-existing",
-        "created_at": datetime.now(UTC).isoformat(),
-    }
-    mocker.patch("app.tasks.autonomous.upkeep_feedback.fetch_feedback_items", return_value=[feedback])
-    mocker.patch("app.tasks.autonomous.upkeep_feedback.task_exists_for_upkeep_source", return_value=False)
-    mocker.patch(
-        "app.tasks.autonomous.upkeep_feedback.task_store.get_task",
-        return_value={"id": "task-existing", "project_id": "summitflow", "status": "pending"},
-    )
-    mocker.patch(
-        "app.tasks.autonomous.upkeep_feedback.get_task_spirit",
-        return_value={"context": {"upkeep": {"source_key": "upkeep:feedback:fb-123"}}},
-    )
-    create_task = mocker.patch("app.tasks.autonomous.upkeep_signals.task_store.create_task")
-    link_feedback = mocker.patch("app.tasks.autonomous.upkeep_feedback.link_feedback_task")
-
-    created = upkeep._create_feedback_tasks("summitflow", limit=2)
-
-    assert created == []
-    create_task.assert_not_called()
-    link_feedback.assert_not_called()
-
-
-def test_create_feedback_task_stays_in_current_project(mocker) -> None:
-    from app.tasks.autonomous import upkeep
-
-    feedback = {
-        "id": "fb-456",
-        "component_id": "st.search",
-        "feedback_type": "friction",
-        "title": "Search task created in wrong queue",
-        "description": "This belongs with SummitFlow maintenance.",
-        "status": "open",
-        "project_id": "portfolio-ai",
-        "vote_count": 1,
-        "linked_task_id": None,
-        "created_at": datetime.now(UTC).isoformat(),
-    }
-    mocker.patch("app.tasks.autonomous.upkeep_feedback.fetch_feedback_items", return_value=[feedback])
-    task_exists = mocker.patch("app.tasks.autonomous.upkeep_feedback.task_exists_for_upkeep_source", return_value=False)
-    create_task = mocker.patch(
-        "app.tasks.autonomous.upkeep_signals.task_store.create_task",
-        return_value={"id": "task-feedback"},
-    )
-    mocker.patch("app.tasks.autonomous.upkeep_signals.create_task_spirit")
-    mocker.patch("app.tasks.autonomous.upkeep_signals.create_single_subtask_with_steps")
-    mocker.patch("app.tasks.autonomous.upkeep_feedback.link_feedback_task")
-
-    created = upkeep._create_feedback_tasks("portfolio-ai", limit=2)
-
-    assert created == ["task-feedback"]
-    task_exists.assert_called_once_with("portfolio-ai", "upkeep:feedback:fb-456")
-    assert create_task.call_args.kwargs["project_id"] == "portfolio-ai"
-
-
-def test_task_exists_for_upkeep_source_uses_task_spirit_context(mocker) -> None:
-    from app.tasks.autonomous.upkeep_signals import task_exists_for_upkeep_source
+def test_automatic_pickup_excludes_legacy_generated_feedback(mocker) -> None:
+    from app.tasks.autonomous.pickup_queries import get_queued_autonomous_tasks
 
     cursor = MagicMock()
-    cursor.fetchone.return_value = ("task-existing",)
-    get_cursor = mocker.patch("app.tasks.autonomous.upkeep_signals.get_cursor")
-    get_cursor.return_value.__enter__.return_value = cursor
-
-    assert task_exists_for_upkeep_source("summitflow", "upkeep:quality:123") == "task-existing"
-
-    sql_text = cursor.execute.call_args.args[0]
-    assert "ts.context -> 'upkeep' ->> 'source_key'" in sql_text
-    assert "completed" in sql_text
-    assert "cancelled" in sql_text
+    cursor.fetchall.return_value = []
+    manager = MagicMock()
+    manager.__enter__.return_value = cursor
+    mocker.patch("app.tasks.autonomous.pickup_queries.get_cursor", return_value=manager)
+    mocker.patch("app.tasks.autonomous.pickup_queries.get_allowed_external_origins", return_value=None)
+    assert get_queued_autonomous_tasks("summitflow") == []
+    query = cursor.execute.call_args.args[0]
+    assert "NOT ('auto-generated' = ANY(labels) AND 'feedback' = ANY(labels))" in query
+    assert "ts.context -> 'upkeep' ->> 'signal_type' = 'feedback'" in query

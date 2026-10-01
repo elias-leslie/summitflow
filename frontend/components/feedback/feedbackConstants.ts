@@ -83,7 +83,7 @@ export const STATUS_CONFIG = {
 // ============================================================================
 
 export const SORT_OPTIONS = [
-  { value: 'votes', label: 'Most Voted' },
+  { value: 'votes', label: 'Most reports' },
   { value: 'newest', label: 'Newest' },
   { value: 'oldest', label: 'Oldest' },
 ] as const
@@ -121,6 +121,7 @@ export const COMPONENT_GROUPS: Record<string, string[]> = {
     'ah.hooks',
   ],
   'Cross-Cutting': [
+    'xc.product',
     'xc.tool_registry',
     'xc.error_handling',
     'xc.documentation',

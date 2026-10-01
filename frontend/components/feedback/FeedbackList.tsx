@@ -152,10 +152,10 @@ function InlineDetail({
         </div>
         <div className="min-w-0 rounded bg-slate-950/50 px-2 py-1.5">
           <div className="text-[10px] uppercase tracking-[0.14em] text-slate-500">
-            Votes
+            Occurrences
           </div>
           <div className="truncate text-xs text-slate-200">
-            {item.vote_count}
+            {item.occurrence_count ?? item.vote_count}
           </div>
         </div>
         <div className="min-w-0 rounded bg-slate-950/50 px-2 py-1.5">
@@ -168,10 +168,10 @@ function InlineDetail({
         </div>
         <div className="min-w-0 rounded bg-slate-950/50 px-2 py-1.5">
           <div className="text-[10px] uppercase tracking-[0.14em] text-slate-500">
-            Created
+            Last seen
           </div>
           <div className="truncate text-xs text-slate-200">
-            {formatShortDate(item.created_at)}
+            {formatShortDate(item.last_seen_at ?? item.created_at)}
           </div>
         </div>
         {item.agent_slug && (
@@ -219,6 +219,13 @@ function InlineDetail({
         )}
       </div>
 
+      <p className="text-xs text-slate-400">
+        {item.independent_run_count ?? 0} distinct runs · Projects:{' '}
+        {(item.affected_projects ?? [item.project_id]).join(', ')}
+        {(item.affected_roles ?? []).length > 0 &&
+          ` · Roles: ${item.affected_roles.join(', ')}`}
+      </p>
+
       {/* Resolution note */}
       {item.resolution_note && (
         <div className="p-3 rounded-lg bg-emerald-500/8 border border-emerald-500/20">
@@ -235,14 +242,15 @@ function InlineDetail({
       )}
 
       {/* Votes */}
-      {item.votes && item.votes.length > 0 && (
+      {(item.occurrences ?? item.votes)?.length > 0 && (
         <div>
           <div className="text-[10px] uppercase tracking-[0.14em] text-slate-500 mb-1.5 flex items-center gap-1.5">
             <ThumbsUp className="w-3 h-3" />
-            {item.votes.length} vote{item.votes.length !== 1 ? 's' : ''}
+            {(item.occurrences ?? item.votes).length} occurrence
+            {(item.occurrences ?? item.votes).length !== 1 ? 's' : ''}
           </div>
           <div className="space-y-1">
-            {item.votes.map((vote) => (
+            {(item.occurrences ?? item.votes).map((vote) => (
               <div
                 key={vote.id}
                 className="rounded border border-slate-800/60 bg-slate-950/40 px-2.5 py-1.5 flex items-start gap-2"
@@ -254,9 +262,34 @@ function InlineDetail({
                       {vote.comment}
                     </p>
                   )}
-                  <div className="flex items-center gap-2 text-2xs text-slate-600">
+                  {vote.consequence && (
+                    <p className="text-xs text-slate-300">
+                      Consequence: {vote.consequence}
+                    </p>
+                  )}
+                  {vote.workaround && (
+                    <p className="text-xs text-slate-400">
+                      Workaround: {vote.workaround}
+                    </p>
+                  )}
+                  {vote.evidence_refs?.length > 0 && (
+                    <p className="text-xs text-slate-400 break-all">
+                      Evidence: {vote.evidence_refs.join(', ')}
+                    </p>
+                  )}
+                  <div className="flex flex-wrap items-center gap-2 text-2xs text-slate-500">
+                    {vote.role && <span>{vote.role}</span>}
+                    {vote.source_project_id && (
+                      <span>{vote.source_project_id}</span>
+                    )}
+                    {vote.run_ref && <span>{vote.run_ref}</span>}
+                    {vote.source_kind?.startsWith('legacy') && (
+                      <span>Legacy report</span>
+                    )}
                     {vote.agent_slug && <span>{vote.agent_slug}</span>}
-                    <span>{formatShortDate(vote.created_at)}</span>
+                    <span>
+                      {formatShortDate(vote.occurred_at ?? vote.created_at)}
+                    </span>
                   </div>
                 </div>
               </div>
@@ -456,12 +489,16 @@ export function FeedbackList({
             {/* Header row */}
             <div
               role="button"
+              aria-expanded={isExpanded}
               tabIndex={0}
               onClick={() => onItemClick(isExpanded ? null : item.id)}
-              onKeyDown={(e) =>
-                e.key === 'Enter' && onItemClick(isExpanded ? null : item.id)
-              }
-              className="flex items-start gap-3 px-4 py-3 cursor-pointer select-none group"
+              onKeyDown={(e) => {
+                if (e.key === 'Enter' || e.key === ' ') {
+                  e.preventDefault()
+                  onItemClick(isExpanded ? null : item.id)
+                }
+              }}
+              className="flex items-start gap-3 px-4 py-3 cursor-pointer select-none group focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-phosphor-500/50"
             >
               <ChevronRight
                 className={clsx(
@@ -507,18 +544,19 @@ export function FeedbackList({
                       {item.agent_slug}
                     </span>
                   )}
-                  <span className="text-2xs text-slate-600">
-                    {formatTimeAgo(item.created_at)}
+                  <span className="text-2xs text-slate-500">
+                    Last seen{' '}
+                    {formatTimeAgo(item.last_seen_at ?? item.created_at)}
                   </span>
                 </div>
               </div>
 
-              {/* Vote pill */}
-              {item.vote_count > 0 && (
+              {/* Occurrence count */}
+              {(item.occurrence_count ?? item.vote_count) > 0 && (
                 <div className="shrink-0 flex items-center gap-1 px-2 py-0.5 rounded-md bg-slate-700/50 border border-slate-600/40">
                   <ThumbsUp className="w-3 h-3 text-slate-400" />
                   <span className="text-xs font-mono font-medium text-slate-300 tabular-nums">
-                    {item.vote_count}
+                    {item.occurrence_count ?? item.vote_count} reports
                   </span>
                 </div>
               )}

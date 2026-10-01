@@ -90,11 +90,15 @@ def get_queued_autonomous_tasks(project_id: str, limit: int = 10) -> list[dict[s
               AND status = 'pending'
               AND COALESCE(verification_result->'closeout'->>'state', '') <> 'pending'
               AND execution_mode = 'autonomous'
+              AND NOT ('auto-generated' = ANY(labels) AND 'feedback' = ANY(labels))
+              AND NOT EXISTS (
+                  SELECT 1 FROM task_spirit ts WHERE ts.task_id = tasks.id
+                    AND ts.context -> 'upkeep' ->> 'signal_type' = 'feedback'
+              )
               {origin_clause}
               AND (claimed_by IS NULL OR lock_expires_at < NOW())
             ORDER BY
                 priority ASC,
-                CASE WHEN 'feedback' = ANY(labels) THEN 0 ELSE 1 END,
                 created_at ASC
             LIMIT %s
             """,
