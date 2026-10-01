@@ -94,3 +94,13 @@ def test_missing_credentials_warns_once_to_direct_cli(monkeypatch, capsys):
     captured = capsys.readouterr()
     assert captured.out == ""
     assert captured.err.count("Missing SUMMITFLOW_CLIENT_ID") == 1
+
+
+@pytest.fixture(autouse=True)
+def isolated_managed_host_settings(tmp_path, monkeypatch):
+    """Host policy must never make unit tests initialize the owner's real spools."""
+    home = tmp_path / "isolated-home"
+    home.mkdir()
+    monkeypatch.setattr(Path, "home", classmethod(lambda _cls: home))
+    for key in ("SUMMITFLOW_CODEX_MANAGED_CAPTURE", "SUMMITFLOW_CODEX_OUTBOX", "SUMMITFLOW_CODEX_OUTBOXES_JSON", "SUMMITFLOW_CODEX_OUTBOX_MAX_BYTES", "SUMMITFLOW_CODEX_RAW_RETENTION_SECONDS", "SUMMITFLOW_CODEX_PROTOCOL_QUALIFICATION"):
+        monkeypatch.delenv(key, raising=False)

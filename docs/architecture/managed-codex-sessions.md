@@ -1,151 +1,170 @@
-# Managed Codex sessions: Architecture D shadow rollout
+# Managed Codex sessions: Architecture D
 
-SummitFlow owns a process and transport, not normalization. Agent Hub is the sole
-receipt, reconciliation, checkpoint and query authority. The existing host rollout
-collector stays permanently enabled for managed and independently launched sessions.
-No downstream consumer changes or new services are required.
+SummitFlow owns explicitly launched App Server processes, transport and the private
+local delivery copy. Agent Hub owns protocol qualification, durable receipts,
+normalization, model evidence, reconciliation, checkpoints and canonical activation.
+The existing host rollout collector remains enabled for managed and independently
+launched sessions. No new service or parallel normalization store is introduced.
 
-## Operation
+## Owner configuration and controls
 
-`st sessions managed-codex` is a native stdio App Server entrypoint for a controlling
-client. It starts its own process and requires the current directory's registered
-project identity. The client supplies initialize, thread/turn operations and approval
-decisions. This command is not an interactive Codex TUI launcher or a passive
-observer of another App Server. Ordinary independently launched Codex is unchanged.
-
-Managed capture is default-off. Without `SUMMITFLOW_CODEX_MANAGED_CAPTURE=1`, the
-entrypoint immediately executes native `codex app-server --listen stdio://` without
-an outbox, schema probe, SDK call or Agent Hub dependency. To opt into shadow capture,
-set the following in the existing managed operator environment:
+`st sessions managed-codex` starts native stdio App Server for a controlling client
+in its registered project. It is not a TUI launcher. Code defaults capture off;
+without `SUMMITFLOW_CODEX_MANAGED_CAPTURE=1`, it executes native App Server directly.
+Approved host settings use the existing private `~/.env.local` and optional managed
+service EnvironmentFile; explicit process environment values take precedence.
 
 | Variable | Contract |
 | --- | --- |
-| `SUMMITFLOW_CODEX_MANAGED_CAPTURE` | Exactly `1` enables managed capture; absent/other values use rollout only. |
-| `SUMMITFLOW_CODEX_OUTBOX` | Explicit private SQLite path, one owner per outbox. |
-| `SUMMITFLOW_CODEX_OUTBOX_MAX_BYTES` | Explicit positive logical raw-payload plus immutable catalog quota. SQLite fixed pages, indexes and journals add overhead. |
-| `SUMMITFLOW_CODEX_RAW_RETENTION_SECONDS` | Explicit nonnegative acknowledged raw retention; zero clears accepted payloads immediately. |
-| `AGENT_HUB_API` | Existing Agent Hub API location, default `http://localhost:8003/api`. |
-| `INTERNAL_SERVICE_SECRET`, `SUMMITFLOW_CLIENT_ID` | Existing approved service credentials; loaded privately from process environment or `~/.env.local`. Never put values in command examples/logs. |
+| `SUMMITFLOW_CODEX_MANAGED_CAPTURE` | Exactly `1` opts managed launches into capture. |
+| `SUMMITFLOW_CODEX_OUTBOXES_JSON` | Trusted mapping of registered project IDs to distinct absolute private SQLite paths; never accepted from HTTP. |
+| `SUMMITFLOW_CODEX_OUTBOX` | Legacy single-spool path, used when the mapping is absent. |
+| `SUMMITFLOW_CODEX_OUTBOX_MAX_BYTES` | Positive logical raw/catalog/metadata quota. Approved host policy is `268435456` (256 MiB) per spool. SQLite pages/indexes add fixed overhead. |
+| `SUMMITFLOW_CODEX_RAW_RETENTION_SECONDS` | Nonnegative accepted raw retention. Approved host policy is `0`, which removes accepted local payloads immediately. |
+| `AGENT_HUB_API` | Existing Agent Hub API location. |
+| `INTERNAL_SERVICE_SECRET`, `SUMMITFLOW_CLIENT_ID` | Existing owner service credentials, read privately. Never put values in operational logs or examples. |
 
-The existing `codex-session-sync.service`/timer runs through SummitFlow's managed
-Python environment, including the bundled public Agent Hub SDK. Its approved
-EnvironmentFile is optional. The existing sync service is declared an optional
-worker; its existing timer stays active independently. Timers are not collector
-service entries. Managed rebuild refreshes the service template and retains
-active/inactive worker policy.
-No rollout polling or reconciliation depends on successful capture or delivery.
-Before normal transcript ingestion, sync tries managed source registration; afterwards
-it drains durable pending receipts. Either failure preserves rollout operation. The
-same timer retries after Agent Hub recovery. `st sessions managed-codex --drain`
-performs an explicit bounded delivery pass, including when capture is disabled.
+Each configured project has its own process fence, producer/epoch, quota, delivery
+lease, runtime selection and capture switch. Default status selects `agent-hub` when
+configured, otherwise the first sorted project. Project controls require the exact
+configured and durably bound project; a mixed or mismatched spool fails closed.
+The existing `codex-session-sync.service`/timer drains every configured spool
+independently, including while capture is off. A failing spool does not prevent the
+other project's delivery or ordinary rollout ingestion.
 
-Installed support is `codex-cli 0.159.2`, stdio JSON-RPC and schema fingerprint
-`6f7a929fad56ae9fc103a8364f0a7f51bd520c007b826d8e3edf5fe167c253e2`.
-Version/schema are probed from the installed executable before startup and recorded
-in each source registration. Notification/request shapes are checked as captured;
-unsupported raw evidence remains retained or quarantined without an invented subject.
-Legacy approval requests lacking an exact modern turn/item subject are explicitly
-quarantined and fail capture; they are never silently treated as global messages.
-Unsupported startup fails clearly with content-free local health. Unsupported live
-capture, storage failure or oversized frames preserve the native connection and
-explicitly fall back to rollout. A live child requires client subscription/resume;
-spawn ownership alone is not proof of captured child notifications.
+CLI controls are `--status`, `--drain`, `--disable-capture`, `--enable-capture` and
+`--update-action`. The existing authenticated owner interface also exposes
+`GET /api/projects/managed-codex?project_id=...` and
+`POST /api/projects/{project_id}/managed-codex/{action}`. Mutations require the active
+owner and same origin; forwarded local-bypass identities cannot grant access. Status
+returns configured project IDs, content-free health, counts, versions and supported
+actions; it never returns filesystem paths, prompts or credentials. Agent Hub links
+use its registered frontend. `promotion_state=agent_hub_controlled` delegates
+canonical authority honestly to Agent Hub rather than claiming a local projection
+mode.
 
-## Delivery and health
+## Process lifecycle and transport
 
-Private directory mode is 0700, database/locks 0600, no symlink database/lock targets.
-Initialization creates a private directory or requires an existing owned 0700
-directory; it rejects shared directories without changing their permissions.
-SQLite FULL commits precede forwarding native events or an existing authority's
-approval response. Original envelopes, producer UUID, epoch UUID and source positions
-survive restart. Process and delivery leases fence local concurrent owners. Pending
-evidence is never evicted; quota exhaustion stops capture and records a gap if storage
-permits. Acknowledged rows expire on capture, delivery or status according to configured
-retention using SQLite secure deletion. Unbound quarantine remains pending until
-explicit forensic association; quota still bounds it. Canonical receipts/issues stay
-in Agent Hub, not the local delivery copy. Database page high-water storage is reused;
-logical expiry does not claim filesystem snapshots or storage backups were erased.
+Only the process started by this owner is supervised. A lifetime lease rejects a
+competing launch; independent App Servers and external thread IDs are never attached
+or signalled. The controlling client supplies `initialize`/`initialized`, turn
+operations and every approval decision. Initialization must complete before owned
+operations. The supervisor never replays a turn or approval decision.
 
-Only Agent Hub's exact durable receipt disposition and contiguous checkpoint permit
-local acceptance. Registration cannot acknowledge an unsent local row. Conflicts,
-stale acknowledgements and gaps remain pending, with content-free delivery health.
-Restart reconnects by starting another owned process and the controlling client
-explicitly resuming an owned thread. It retains the same epoch/position sequence,
-records a live gap, and never reconstructs missed approvals or turns from snapshots.
-Raw payloads can contain sensitive session data and are never operational logs.
+Owned child provenance permits an internal `thread/resume` subscription. Internal
+responses stay private to the transport; snapshots retain their stored origin and
+parent provenance. Subscription does not fabricate omitted child notifications.
+The controller remains the approval authority for parent and child requests.
 
-Use `st sessions managed-codex --status` for local health/pending counts. Agent Hub's
-project-authorized `GET /api/session-ingestion/sessions/{thread}/native-capture`
-reports durable sources, positions, receipt/issue counts, missing prefixes and capture
-health without contacting a native process. Internal owner-only receipt/issue query
-routes retain evidence access; approval subjects distinguish source/connection/request
-position/turn/item. Usage remains snapshots, not duplicated accounting. Requested
-and configured model values never imply observed delivery; absent attributable runtime
-delivery evidence, the delivered model remains unknown.
+For owned `turn/start` and `turn/steer`, the supervisor adds an opaque
+`clientUserMessageId` only when absent and preserves caller-supplied IDs. The native
+`userMessage.clientId` response provides exact correlation across provisional
+`item-*` and UUID representations. Agent Hub alone decides canonical aliases;
+missing correlation stays unresolved. This transport correlation is not a canonical
+cursor and does not alter independent clients.
 
-## One-step rollback
+Restart starts another owned process. The controller explicitly resumes an owned
+thread; producer/epoch and per-source positions persist. A durable live gap records
+that snapshots cannot reconstruct missed notifications or pending approvals.
+Disable retains pending evidence and forwards the same connection. Re-enable
+preserves source positions, clears stale approval correlations and records the
+uncaptured interval before capturing subsequent messages. Neither action executes
+stored decisions.
 
-Run `st sessions managed-codex --disable-capture` in the managed project with its
-outbox configured. The running proxy observes the durable switch on its next protocol
-message, retains a disabled marker, and forwards the same native connection without
-capture. Pending delivery and rollout remain available. Future launches using that
-outbox immediately execute native App Server. Separately unset/set the enable flag to
-`0` to make all future launches rollout-only. No deletion, receipt rewind, service
-restart or approval replay is involved. There is no automatic re-enable of the
-durable disable switch; a future reviewed re-enable procedure must preserve its epoch
-and pending evidence. Do not delete an outbox with pending/quarantined evidence.
+## Durability and delivery
 
-## Verification and remaining stages
+Private directories are owned mode0700, SQLite/locks mode0600, with no symlink
+DB/lock targets. SQLite FULL commits precede forwarding retained native evidence
+or an approval response. Atomic `BEGIN IMMEDIATE` schema migration recovers old or
+interrupted legacy event tables without dropping pending raw evidence. Concurrent
+initializers share the same migration fence.
 
-The content-free [installed-runtime canary receipt](evidence/managed-codex-canary.json)
-records the pinned runtime and exercised cases. The canary runs under `unshare -Urn`,
-checks that loopback is the only interface, uses a scripted local Responses provider,
-and isolates HOME/CODEX_HOME without credentials. No external or target traffic occurs.
+Original envelopes and immutable producer/epoch/source positions survive restart
+and lost acknowledgements. Protocol updates create explicit successor generations
+with the exact predecessor source; pending older generations deliver first. The
+independent rollout source keeps its original stable registration profile. Agent Hub
+owns rollout rewrite/reset lineage and canonical checkpoints.
 
-```
+Only Agent Hub's exact durable disposition for the sent position advances the local
+delivery copy. Registration and future server checkpoints cannot acknowledge an
+unsent local row. Conflicts retain their raw envelopes. Quarantine uses truthful
+project/producer/epoch/connection provenance and its own per-source positions, with
+no fabricated thread/session. A lost quarantine acknowledgement replays the exact
+original receipt; fresh `quarantined` acceptance removes it according to retention.
+Legacy unbound rows without truthful registration stay pending for explicit review.
+
+Quota exhaustion never evicts pending or conflicted evidence. Unsupported versions,
+shapes, policy/storage failures and oversized frames report content-free health and
+preserve native execution with rollout recovery. A storage failure may also prevent
+the gap marker itself; stderr then states that limitation. Project binding mismatch
+and competing ownership remain hard errors. Accepted expiry uses secure deletion
+and incremental vacuum to reclaim physical pages, not just logical row accounting.
+Backups and filesystem snapshots have their own retention policy.
+
+## Frequent updates and rollback
+
+Bundled tested profiles retain `codex-cli 0.159.2` and `0.159.3`. Actual version,
+generated schema fingerprint and binary identity are checked and cached before
+capture. Unknown versions require an Agent Hub approved profile; changed schemas
+fail capture and use native/rollout fallback.
+
+Owner actions form a concrete update path:
+
+1. `check-update` reads the official npm registry version without installing.
+2. `stage-update` explicitly installs that exact version into a private temporary
+   prefix, with lifecycle scripts disabled. It pins the native executable and its
+   adjacent vendor resources; it never modifies the global Codex installation.
+3. `qualify-update` runs the full installed-runtime canary in `unshare -Urn`, with
+   only loopback and a scripted local provider, isolated HOME/CODEX_HOME and no
+   account traffic. An unknown version must have an exact known compatible schema.
+   Agent Hub validates and durably approves the complete receipt before the local
+   candidate becomes qualified. Changed protocol shapes need an updated tested
+   public profile; qualification cannot invent one.
+4. `promote-update` selects the qualified private runtime for future launches.
+   `rollback-update` selects the preserved previous runtime. Retried promotion or
+   rollback is idempotent and retains the original rollback target.
+
+Private runtime identities hash deterministic resource paths, executable modes and
+bytes, not just the executable. Copy validation detects concurrent changes and
+selection verifies the entire tree. The local context wrapper resolves to its
+actual native package before pinning. Running processes hold independent filesystem
+runtime leases, so SQLite quota/marker failure cannot let cleanup remove live
+resources. Cleanup runs under the owner update lease on launches and successful
+update actions; it retains active, candidate, previous and running references and
+prunes only unreferenced unlocked content-addressed trees. Thus weekly updates do
+not retain every historical runtime indefinitely. Active sessions keep their pinned
+runtime and resources across promotion; no running session is upgraded in place.
+
+## Verification
+
+All project checks run through ST. The permanent canary exercises initialization,
+commands, controlling-client approvals, interruption, read/resume/compaction/fork,
+ownership fencing, external rejection, child subscription, usage, durable restart,
+disable/re-enable, quota fallback, exact client message identity and actual private
+runtime/resource promotion and rollback. It records provider request counts,
+content-free gap reasons and unbound methods. Deliberate restart/disable intervals
+and native warnings before child ownership remain explicit capture limitations;
+passing case flags do not claim uninterrupted live capture.
+
+```sh
 st check cleanroom --env CODEX_REAL=/home/kasadis/.local/bin/codex-real -- \
   unshare -Urn /srv/workspaces/projects/summitflow/backend/.venv/bin/python \
-  scripts/codex-managed-canary.py --output /tmp/architecture-d-final-canary.json \
-  --evidence-directory /tmp/architecture-d-final-private
-```
+  scripts/codex-managed-canary.py --project agent-hub \
+  --output /tmp/architecture-d-canary.json \
+  --evidence-directory /tmp/architecture-d-private
 
-The evidence-directory option exports only toy outbox/rollouts with private permissions
-for Agent Hub's actual isolated PostgreSQL acceptance; omit it for ordinary conformance.
-Remove the private toy export after those tests. The local launcher path above is
-host-specific; verify its native binary mapping when running elsewhere.
-
-```
-# Agent Hub, isolated migration-owned PostgreSQL schema:
-ARCHITECTURE_D_CANARY_EVIDENCE=/tmp/architecture-d-final-private st check pytest -- \
-  tests/services/session_ingestion/test_native_observations.py \
-  tests/services/session_ingestion/test_native_sdk.py \
-  tests/api/test_session_ingestion.py --run-integration -q
-
-# SummitFlow:
 st check pytest -- tests/unit/test_codex_managed_capture.py \
+  tests/unit/test_codex_managed_update.py tests/unit/test_codex_managed_projects.py \
+  tests/unit/test_codex_managed_operator_api.py \
   tests/unit/test_codex_session_sync_entrypoint.py \
   tests/unit/test_codex_session_sync_service.py tests/unit/test_codex_sync_runner.py \
-  tests/scripts/test_workspace_package_selection.py -q
+  tests/unit/test_codex_sync_transcripts.py -q
 ```
 
-The PostgreSQL suite passed 22 tests, including atomic rollback, concurrent receipt
-replay and actual canary evidence with registration before/after rollout ingestion.
-The SummitFlow focused suite passed 65 tests. All 50 collector Rust tests passed,
-including a real registry-load regression that reproduced and fixed an invalid
-`.timer` worker entry before deployment. The focused suite covers durability,
-ownership fencing, quota, Agent Hub downtime,
-lost acknowledgements, approvals, explicit rollback and unsupported evidence tests.
-The runtime canary passed nine cases, including live rollback. These are isolated
-tests, not proof of deployed real-service outage recovery or physical disk durability.
-
-Promotion is **shadow**, default-off. Command entities reconcile matching durable
-thread/turn/item identities and multiple receipts; rollout remains the timeline and
-usage authority. Provisional `item-*` snapshot/live receipts remain unresolved until
-the runtime supplies an attributable durable-ID mapping. Content/position similarity
-is not such evidence. Live-first timeline sequence allocation, non-command canonical
-projection, production comparison rates/latency, deployed outage/hard-kill/storage
-fault recovery and source rotation remain unproven. There is no promotion flag that
-bypasses these acceptance gaps. Extend Agent Hub's existing projection contract and
-prove these cases before changing authority; downstream availability must remain
-independent of App Server. See Agent Hub's `native-observation-v1.md` for the exact
-envelope, acknowledgement, identity and reconciliation contracts.
+`--project` defaults to `canary`. A registered project argument truthfully binds the
+toy fixture for later owner-authorized local Agent Hub delivery outside the network
+namespace. Private exports contain only toy outbox/rollouts with mode0700/0600;
+remove them after integration checks. Deployed acceptance, canonical activation,
+service rebuilds and production host configuration are separate managed operator
+steps. See Agent Hub's `native-observation-v1.md` for its receipt, alias, profile and
+canonical projection contracts.

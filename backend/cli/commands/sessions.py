@@ -89,25 +89,51 @@ app = typer.Typer(
 app.command("inspect")(inspect_native_session)
 
 
+def _managed_codex_runtime() -> tuple[str, Path]:
+    """Select one immutable accepted script/interpreter pair, or the checkout pair."""
+    import os
+
+    from ..lib.service_release import service_state_root
+
+    current = service_state_root() / "projects/summitflow/current"
+    if current.exists() or current.is_symlink():
+        try:
+            source = (current / "source").resolve(strict=True)
+            python = source / "backend/.venv/bin/python"
+            script = source / "scripts/codex-managed-session.py"
+            if not script.is_file() or not python.is_file() or not os.access(python, os.X_OK):
+                raise ValueError("incomplete accepted runtime")
+        except (OSError, ValueError) as error:
+            raise typer.BadParameter("Managed Codex accepted runtime incomplete; rebuild SummitFlow") from error
+        return str(python), script
+    return sys.executable, Path(__file__).resolve().parents[3] / "scripts/codex-managed-session.py"
+
+
 @app.command("managed-codex")
 def managed_codex(
     status: Annotated[bool, typer.Option(help="Show content-free local capture health")] = False,
     drain: Annotated[bool, typer.Option(help="Retry the durable outbox through Agent Hub")] = False,
     disable_capture: Annotated[bool, typer.Option(help="Disable capture immediately; preserve execution and rollout ingestion")] = False,
+    enable_capture: Annotated[bool, typer.Option(help="Re-enable owned capture with a gap marker; preserve pending delivery")] = False,
+    update_action: Annotated[str | None, typer.Option(help="Owner update: check-update, stage-update, qualify-update, promote-update, rollback-update")] = None,
 ) -> None:
     """Run an explicitly owned Codex App Server stdio connection."""
     import os
 
     project, root = _binding_project()
-    script = Path(__file__).resolve().parents[3] / "scripts" / "codex-managed-session.py"
-    argv = [sys.executable, str(script), "--project", project, "--project-root", str(root)]
+    python, script = _managed_codex_runtime()
+    argv = [python, str(script), "--project", project, "--project-root", str(root)]
     if status:
         argv.append("--status")
     if drain:
         argv.append("--drain")
     if disable_capture:
         argv.append("--disable-capture")
-    os.execv(sys.executable, argv)
+    if enable_capture:
+        argv.append("--enable-capture")
+    if update_action:
+        argv.extend(["--update-action", update_action])
+    os.execv(python, argv)
 
 _CODEX_SESSION_SYNC = Path(__file__).resolve().parents[3] / "scripts" / "codex-session-sync.py"
 

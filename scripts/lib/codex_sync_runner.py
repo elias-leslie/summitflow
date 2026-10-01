@@ -63,8 +63,7 @@ class TranscriptInfoLike(Protocol):
     ownership_ambiguous: bool
     native_session_id: str | None
     identity_error: str | None
-    model_evidence: dict[str, object]
-    model_scan: dict[str, object]
+    identity_scan: dict[str, object]
 
 
 def run_sync(
@@ -189,11 +188,11 @@ def sync_transcript(
     next_checkpoint = checkpoint
     detail = str(entry.get("detail") or "unchanged")
     if ingest_required:
-        if os.environ.get("SUMMITFLOW_CODEX_OUTBOX"):
+        if os.environ.get("SUMMITFLOW_CODEX_OUTBOX") or os.environ.get("SUMMITFLOW_CODEX_OUTBOXES_JSON"):
             try:
                 from codex_managed_delivery import recover_configured_outbox
 
-                recover_configured_outbox(api_url, session_id=info.session_id, register_only=True)
+                recover_configured_outbox(api_url, project_id=project["project_id"], session_id=info.session_id, register_only=True)
             except Exception:
                 pass
         ok, next_checkpoint, detail, err, status = ingest_transcript(
@@ -233,8 +232,7 @@ def sync_transcript(
         identity_fingerprint=identity_fingerprint,
         project_binding_fingerprint=project_binding_fingerprint,
         heartbeat_at=heartbeat_at,
-        model_fingerprint=_model_fingerprint(meta),
-        model_scan=info.model_scan,
+        identity_scan=info.identity_scan,
     )
     if verbose:
         log_fn(
@@ -356,7 +354,6 @@ def _session_meta(
     harness = owner.harness if owner is not None else "codex"
     return {
         "native_session_id": info.native_session_id,
-        "model_evidence": info.model_evidence or None,
         "transcript_path": str(info.path),
         "repo_root": project["repo_root"],
         "cwd": str(effective_cwd),
@@ -390,10 +387,6 @@ def _identity_fingerprint(
     return hashlib.sha256(encoded).hexdigest()
 
 
-def _model_fingerprint(meta: dict[str, object]) -> str:
-    return hashlib.sha256(json.dumps(meta.get("model_evidence") or {}, sort_keys=True).encode()).hexdigest()
-
-
 def _sync_keywords(api_url: str, client_id: str, source_path: str) -> dict[str, str]:
     return {
         "api_url": api_url,
@@ -420,7 +413,6 @@ def _ensure_session_upserted(
         identity_fingerprint,
         is_open=info.is_open,
         reactivate_open_session=reactivate_open_session,
-        model_changed=bool(info.model_evidence) and (entry or {}).get("model_fingerprint") != _model_fingerprint(meta),
     ):
         return True, "", None, project
     return _upsert_with_project_aliases(
@@ -463,7 +455,6 @@ def _should_upsert(
     *,
     is_open: bool,
     reactivate_open_session: bool = False,
-    model_changed: bool = False,
 ) -> bool:
     if entry is None:
         return True
@@ -489,8 +480,6 @@ def _should_upsert(
         # richer identity previously recorded while it was live instead of
         # replacing it with a synthetic direct-launch identity during closeout.
         return False
-    if model_changed:
-        return True
     return not (
         entry.get("session_id") == session_id
         and entry.get("identity_fingerprint") == identity_fingerprint
@@ -554,7 +543,7 @@ def _transcript_infos(
             args.transcript,
             log_fn=log_fn,
             open_snapshot=open_snapshot,
-            scan_state=(get_state_entry(_resolve_transcript_path(args.transcript), state) or {}).get("model_scan"),
+            scan_state=(get_state_entry(_resolve_transcript_path(args.transcript), state) or {}).get("identity_scan") or (get_state_entry(_resolve_transcript_path(args.transcript), state) or {}).get("model_scan"),
         )
         infos: list[TranscriptInfoLike] = [info] if info is not None else []
     else:
@@ -575,7 +564,7 @@ def _transcript_infos(
             if resolved in by_path:
                 continue
             info = read_transcript_info(path, log_fn=log_fn, open_snapshot=open_snapshot,
-                scan_state=(get_state_entry(resolved, state) or {}).get("model_scan"))
+                scan_state=((get_state_entry(resolved, state) or {}).get("identity_scan") or (get_state_entry(resolved, state) or {}).get("model_scan")))
             if info is not None:
                 by_path[resolved] = info
         infos = list(by_path.values())

@@ -4,7 +4,10 @@ import importlib.util
 from pathlib import Path
 from types import SimpleNamespace
 
+import pytest
+
 SCRIPT_PATH = Path(__file__).resolve().parents[3] / "scripts" / "codex-session-sync.py"
+
 
 
 def _load_module():
@@ -140,3 +143,13 @@ def test_binding_native_validation_failure_never_loads_credentials_or_mutates(mo
     assert module.main(["--bind-session", "unrelated", "--bind-project", "neri", "--project-root", "/srv/workspaces/projects/neri"]) == 2
     assert calls == []
     assert "contradictory native provenance" in capsys.readouterr().err
+
+
+@pytest.fixture(autouse=True)
+def isolated_managed_host_settings(tmp_path, monkeypatch):
+    """Host policy must never make unit tests initialize the owner's real spools."""
+    home = tmp_path / "isolated-home"
+    home.mkdir()
+    monkeypatch.setattr(Path, "home", classmethod(lambda _cls: home))
+    for key in ("SUMMITFLOW_CODEX_MANAGED_CAPTURE", "SUMMITFLOW_CODEX_OUTBOX", "SUMMITFLOW_CODEX_OUTBOXES_JSON", "SUMMITFLOW_CODEX_OUTBOX_MAX_BYTES", "SUMMITFLOW_CODEX_RAW_RETENTION_SECONDS", "SUMMITFLOW_CODEX_PROTOCOL_QUALIFICATION"):
+        monkeypatch.delenv(key, raising=False)

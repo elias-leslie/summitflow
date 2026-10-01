@@ -1,0 +1,68 @@
+{
+  "id": "agent-hub.native-sessions",
+  "owner": "agent-hub",
+  "namespace": "native-sessions",
+  "version": "0.1.0",
+  "st_contract_versions": [
+    1
+  ],
+  "summary": "Inspect native session evidence and operate server-owned managed projection gates.",
+  "effects": [
+    "network",
+    "read-remote",
+    "write-remote",
+    "read-local",
+    "credentials",
+    "process"
+  ],
+  "help": {
+    "": "Usage: native-sessions [OPTIONS] COMMAND [ARGS]...\n\n  Inspect and operate Agent Hub-owned native session authority\n\nOptions:\n  --install-completion  Install completion for the current shell.\n  --show-completion     Show completion for the current shell, to copy it or\n                        customize the installation.\n  --help                Show this message and exit.\n\nCommands:\n  status      Read the content-free native capture and promotion state.\n  acceptance  Record verified server acceptance; this does not activate...\n  projection  Activate server-accepted managed projection or roll back in...\n  prune-raw   Preview or apply an explicit raw-evidence retention cutoff;...",
+    "status": "Usage: native-sessions status [OPTIONS] {thread}\n\n  Read the content-free native capture and promotion state.\n\nArguments:\n  thread  [required]\n\nOptions:\n  --help  Show this message and exit.",
+    "acceptance": "Usage: native-sessions acceptance [OPTIONS] {thread}\n\n  Record verified server acceptance; this does not activate projection.\n\nArguments:\n  thread  [required]\n\nOptions:\n  --canary-receipt <file>    [required]\n  --identity-receipt <file>  [required]\n  --gate-receipt <file>      [required]\n  --help                     Show this message and exit.",
+    "projection": "Usage: native-sessions projection [OPTIONS] {thread}\n\n  Activate server-accepted managed projection or roll back in one step.\n\nArguments:\n  thread  [required]\n\nOptions:\n  --mode <str>  [required]\n  --help        Show this message and exit.",
+    "prune-raw": "Usage: native-sessions prune-raw [OPTIONS]\n\n  Preview or apply an explicit raw-evidence retention cutoff; no default TTL.\n\nOptions:\n  --project <str>      [required]\n  --older-than <str>   [required]\n  --limit <int range>  [default: 100; 1<=x<=1000]\n  --apply\n  --help               Show this message and exit."
+  },
+  "usage": [
+    {
+      "surface": "st.native-sessions.status",
+      "tier": "reference",
+      "cmd": "st native-sessions status THREAD",
+      "when": "inspect durable native capture and promotion eligibility without contacting Codex",
+      "task_types": [
+        "agent-admin",
+        "incident"
+      ]
+    },
+    {
+      "surface": "st.native-sessions.acceptance",
+      "tier": "reference",
+      "cmd": "st native-sessions acceptance THREAD --canary-receipt FILE --identity-receipt FILE --gate-receipt FILE",
+      "when": "verify retained runtime evidence and the current canonical ST acceptance gate before promotion",
+      "task_types": [
+        "agent-admin",
+        "release"
+      ]
+    },
+    {
+      "surface": "st.native-sessions.projection",
+      "tier": "reference",
+      "cmd": "st native-sessions projection THREAD --mode canonical_managed|shadow",
+      "when": "activate an accepted managed source or immediately roll back to rollout recovery",
+      "task_types": [
+        "agent-admin",
+        "incident",
+        "release"
+      ]
+    },
+    {
+      "surface": "st.native-sessions.prune-raw",
+      "tier": "reference",
+      "cmd": "st native-sessions prune-raw --project PROJECT --older-than ISO --limit N [--apply]",
+      "when": "apply an explicit owner retention cutoff while preserving pending, unresolved and conflict evidence",
+      "task_types": [
+        "agent-admin",
+        "maintenance"
+      ]
+    }
+  ]
+}

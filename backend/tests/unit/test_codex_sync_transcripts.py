@@ -151,59 +151,37 @@ def _started(turn, timestamp="2026-09-30T10:01:00Z"):
             "payload": {"type": "task_started", "turn_id": turn}}
 
 
-def test_incremental_model_evidence_latest_turn_and_stable_nonmodel_append(tmp_path):
+def test_incremental_identity_scan_leaves_all_model_semantics_to_agent_hub(tmp_path):
     transcript = tmp_path / "root.jsonl"
-    records = [_meta(), _context("t1", "gpt-old")]
+    records = [_meta(), _context("t1", "requested-model")]
     _write_jsonl(transcript, records)
     first = codex_sync_transcripts.read_transcript_info(transcript)
-    assert first.model == "unknown"
-    assert first.model_evidence["requested_model"] == "gpt-old"
-    assert first.model_evidence["observed_model"] is None
-    unchanged = codex_sync_transcripts.read_transcript_info(transcript, scan_state=first.model_scan)
-    assert unchanged.model_evidence == first.model_evidence
-    assert unchanged.model_scan == first.model_scan
-    records += [{"type": "event_msg", "payload": {"type": "token_count"}}]
-    _write_jsonl(transcript, records)
-    other = codex_sync_transcripts.read_transcript_info(transcript, scan_state=first.model_scan)
-    assert other.model_evidence == first.model_evidence
-    records += [_started("t2"), _context("t2", "gpt-6.1-sol")]
-    _write_jsonl(transcript, records)
-    latest = codex_sync_transcripts.read_transcript_info(transcript, scan_state=other.model_scan)
-    assert latest.model_evidence["requested_model"] == "gpt-6.1-sol"
-    assert latest.model_evidence["requested_reasoning_effort"] == "high"
-    assert latest.model_evidence["source_line"] == 5
-    assert latest.model_evidence["source_generation"] == first.model_evidence["source_generation"]
-    assert latest.model == "unknown"
-
-
-def test_child_excludes_inherited_turns_and_accepts_attributed_usage_model(tmp_path):
-    transcript = tmp_path / "child.jsonl"
-    records = [
-        _meta("child", parent="root", native_session="root"), _meta(),
-        _started("parent-turn", "2026-09-30T09:00:00Z"), _context("parent-turn", "parent-model"),
-    ]
-    _write_jsonl(transcript, records)
-    parent_only = codex_sync_transcripts.read_transcript_info(transcript)
-    assert parent_only.model == "unknown"
-    assert parent_only.model_evidence == {}
-    records += [_started("child-turn"), _context("child-turn", "gpt-6.1-sol"), {
-        "type": "event_msg", "timestamp": "2026-09-30T10:02:00Z", "payload": {
-            "type": "token_usage_record", "thread_id": "child", "session_id": "root",
-            "turn_id": "child-turn", "model": "served-model",
-        },
+    unchanged = codex_sync_transcripts.read_transcript_info(transcript, scan_state=first.identity_scan)
+    assert unchanged.identity_scan == first.identity_scan
+    records += [_started("t2"), _context("t2", "different-model"), {
+        "type": "event_msg", "payload": {"type": "token_usage_record", "thread_id": "root", "turn_id": "t2", "model": "served-model"},
     }]
     _write_jsonl(transcript, records)
-    child = codex_sync_transcripts.read_transcript_info(transcript, scan_state=parent_only.model_scan)
-    assert child.model == "served-model"
-    assert child.model_evidence["requested_model"] == "gpt-6.1-sol"
-    assert child.model_evidence["source_line"] == 6
-    assert child.model_evidence["observed_source_line"] == 7
-    assert child.model_evidence["observed_source"] == "codex.token_usage_record.model"
-    records += [_started("next"), _context("next", "later-model")]
-    _write_jsonl(transcript, records)
-    latest = codex_sync_transcripts.read_transcript_info(transcript, scan_state=child.model_scan)
+    latest = codex_sync_transcripts.read_transcript_info(transcript, scan_state=first.identity_scan)
     assert latest.model == "unknown"
-    assert latest.model_evidence["observed_model"] is None
+    assert latest.identity_scan["source_generation"] == first.identity_scan["source_generation"]
+    assert latest.identity_scan["offset"] > first.identity_scan["offset"]
+    assert not any(key in latest.identity_scan for key in ("evidence", "active_turn", "requested_model", "observed_model"))
+
+
+def test_child_identity_survives_inherited_and_local_model_evidence(tmp_path):
+    transcript = tmp_path / "child.jsonl"
+    records = [_meta("child", parent="root", native_session="root"), _meta(),
+        _started("parent-turn", "2026-09-30T09:00:00Z"), _context("parent-turn", "parent-model")]
+    _write_jsonl(transcript, records)
+    parent_only = codex_sync_transcripts.read_transcript_info(transcript)
+    records += [_started("child-turn"), _context("child-turn", "child-model"), {
+        "type": "event_msg", "payload": {"type": "token_usage_record", "thread_id": "child", "session_id": "root", "turn_id": "child-turn", "model": "served-model"},
+    }]
+    _write_jsonl(transcript, records)
+    child = codex_sync_transcripts.read_transcript_info(transcript, scan_state=parent_only.identity_scan)
+    assert child.session_id == "child" and child.parent_session_id == "root"
+    assert child.native_session_id == "root" and child.model == "unknown"
 
 
 @pytest.mark.parametrize("wrong", [{"thread_id": "other"}, {"session_id": "other"}, {"turn_id": "old"}])
@@ -259,16 +237,17 @@ def test_incremental_partial_record_retried_and_truncation_resets(tmp_path):
     first = codex_sync_transcripts.read_transcript_info(transcript)
     with transcript.open("ab") as handle:
         handle.write(b'{"type":"turn_context","payload":')
-    partial = codex_sync_transcripts.read_transcript_info(transcript, scan_state=first.model_scan)
-    assert partial.model_scan["offset"] == first.model_scan["offset"]
+    partial = codex_sync_transcripts.read_transcript_info(transcript, scan_state=first.identity_scan)
+    assert partial.identity_scan["offset"] == first.identity_scan["offset"]
     with transcript.open("ab") as handle:
         handle.write(b'{"turn_id":"next","model":"new"}}\n')
-    complete = codex_sync_transcripts.read_transcript_info(transcript, scan_state=partial.model_scan)
-    assert complete.model_evidence["requested_model"] == "new"
+    complete = codex_sync_transcripts.read_transcript_info(transcript, scan_state=partial.identity_scan)
+    assert complete.identity_scan["offset"] == transcript.stat().st_size
+    assert complete.model == "unknown"
     _write_jsonl(transcript, [_meta("replacement")])
-    replacement = codex_sync_transcripts.read_transcript_info(transcript, scan_state=complete.model_scan)
+    replacement = codex_sync_transcripts.read_transcript_info(transcript, scan_state=complete.identity_scan)
     assert replacement.session_id == "replacement"
-    assert replacement.model_evidence == {}
+    assert replacement.model == "unknown"
 
 
 def test_incremental_same_inode_larger_rewrite_revalidates_header(tmp_path):
@@ -278,10 +257,10 @@ def test_incremental_same_inode_larger_rewrite_revalidates_header(tmp_path):
     _write_jsonl(transcript, [_meta("replacement"), _context("replacement-turn", "replacement-model"),
         {"type": "event_msg", "payload": {"type": "token_count", "padding": "x" * 200}}])
     assert transcript.stat().st_size > first.size
-    replacement = codex_sync_transcripts.read_transcript_info(transcript, scan_state=first.model_scan)
+    replacement = codex_sync_transcripts.read_transcript_info(transcript, scan_state=first.identity_scan)
     assert replacement.session_id == "replacement"
-    assert replacement.model_evidence["requested_model"] == "replacement-model"
-    assert replacement.model_evidence["source_generation"] != first.model_evidence["source_generation"]
+    assert replacement.model == "unknown"
+    assert replacement.identity_scan["source_generation"] != first.identity_scan["source_generation"]
 
 
 @pytest.mark.parametrize("override", [False, True])

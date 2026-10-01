@@ -91,8 +91,7 @@ def update_state_entry(
     project_binding_fingerprint: str | None = None,
     heartbeat_at: str | None = None,
     rejected_identity: str | None = None,
-    model_fingerprint: str | None = None,
-    model_scan: dict[str, object] | None = None,
+    identity_scan: dict[str, object] | None = None,
 ) -> None:
     transcripts = _transcripts_map(state, create=True)
     assert transcripts is not None
@@ -123,8 +122,7 @@ def update_state_entry(
         ),
         "updated_at": datetime.now(UTC).isoformat(),
         "rejected_identity": rejected_identity if rejected_identity is not None else previous.get("rejected_identity"),
-        "model_fingerprint": model_fingerprint if model_fingerprint is not None else previous.get("model_fingerprint"),
-        "model_scan": model_scan if model_scan is not None else previous.get("model_scan"),
+        "identity_scan": identity_scan if identity_scan is not None else (previous.get("identity_scan") or previous.get("model_scan")),
     }
 
 

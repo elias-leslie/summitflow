@@ -67,8 +67,7 @@ class TranscriptInfo:
     ownership_ambiguous: bool = False
     native_session_id: str | None = None
     identity_error: str | None = None
-    model_evidence: dict[str, object] = field(default_factory=dict)
-    model_scan: dict[str, object] = field(default_factory=dict)
+    identity_scan: dict[str, object] = field(default_factory=dict)
 
 
 def _safe_identifier(value: object) -> str:
@@ -147,24 +146,10 @@ def _native_identity(payload: dict[str, object]) -> dict[str, object]:
     }
 
 
-def _timestamp(value: object) -> datetime | None:
-    if not isinstance(value, str):
-        return None
-    try:
-        parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
-        return parsed if parsed.tzinfo is not None else None
-    except ValueError:
-        return None
-
-
-def _model_name(value: object) -> str | None:
-    return value if isinstance(value, str) and 0 < len(value) <= 128 else None
-
-
 def _extract_transcript_fields(
     path: Path, previous: dict[str, object] | None = None,
-) -> tuple[dict[str, object], dict[str, object], dict[str, object]]:
-    """Read immutable identity and latest locally attributed turn evidence."""
+) -> tuple[dict[str, object], dict[str, object]]:
+    """Read native ownership provenance; Agent Hub alone interprets turn/model data."""
     stat = path.stat()
     file_generation = f"{stat.st_dev}:{stat.st_ino}"
     saved = previous or {}
@@ -175,132 +160,47 @@ def _extract_transcript_fields(
             head = prefix.read(int(saved.get("head_size") or 0))
             prefix.seek(int(saved.get("tail_start") or 0))
             tail = prefix.read(int(saved.get("offset") or 0) - int(saved.get("tail_start") or 0))
-        if (
-            hashlib.sha256(head).hexdigest() != saved.get("head_digest")
-            or hashlib.sha256(tail).hexdigest() != saved.get("tail_digest")
-        ):
+        if hashlib.sha256(head).hexdigest() != saved.get("head_digest") or hashlib.sha256(tail).hexdigest() != saved.get("tail_digest"):
             saved = {}
     generation = str(saved.get("source_generation") or file_generation)
     identity: dict[str, object] = dict(saved.get("identity") or {})
-    evidence: dict[str, object] = dict(saved.get("evidence") or {})
-    inherited = bool(saved.get("inherited"))
-    started_at = _timestamp(saved.get("started_at"))
-    active_turn = saved.get("active_turn")
     line_number = int(saved.get("line_number") or 0)
     offset = int(saved.get("offset") or 0)
     with path.open("rb") as handle:
         handle.seek(offset)
         while line := handle.readline():
             if not line.endswith(b"\n"):
-                break  # Retry an in-progress JSONL record on the next pass.
+                break
             offset = handle.tell()
             line_number += 1
             try:
                 obj = json.loads(line)
             except (json.JSONDecodeError, UnicodeDecodeError):
                 continue
-            if not isinstance(obj, dict):
+            if not isinstance(obj, dict) or obj.get("type") != "session_meta":
                 continue
-            payload = obj.get("payload") or {}
+            payload = obj.get("payload")
             if not isinstance(payload, dict):
                 continue
-            kind = obj.get("type")
-            if kind == "session_meta":
-                if not identity:
-                    identity = _native_identity(payload)
-                    started_at = _timestamp(payload.get("timestamp") or obj.get("timestamp"))
-                    generation += ":" + hashlib.sha256(line).hexdigest()
-                    inherited = bool(identity.get("parent_session_id"))
-                elif payload.get("id") != identity["session_id"]:
-                    # Fork history follows the first immutable child header.
-                    inherited = True
-                elif _native_identity(payload) != identity:
-                    identity["identity_error"] = "contradictory repeated native session provenance"
-                continue
             if not identity:
-                continue
-            ordinal = obj.get("ordinal")
-            start_ordinal = identity.get("history_start_ordinal")
-            ordinal_local = isinstance(start_ordinal, int) and isinstance(ordinal, int) and ordinal >= start_ordinal
-            if isinstance(start_ordinal, int) and isinstance(ordinal, int) and ordinal < start_ordinal:
-                continue
-            attributed_id = payload.get("thread_id")
-            runtime_id = payload.get("session_id")
-            if runtime_id and runtime_id != identity.get("native_session_id"):
-                continue
-            if ordinal_local or attributed_id == identity["session_id"]:
-                inherited = False
-            if attributed_id and attributed_id != identity["session_id"]:
-                continue
-            event_type = payload.get("type") if kind == "event_msg" else kind
-            if event_type in {"task_started", "turn_started"}:
-                record_at = _timestamp(obj.get("timestamp"))
-                if inherited and not (
-                    attributed_id == identity["session_id"]
-                    or (started_at and record_at and record_at >= started_at)
-                ):
-                    continue
-                inherited = False
-                active_turn = _safe_identifier(payload.get("turn_id")) or None
-                evidence = {
-                    "session_id": identity["session_id"], "native_session_id": identity.get("native_session_id"),
-                    "turn_id": active_turn, "source": "codex_transcript",
-                    "source_path": str(path.resolve()), "source_generation": generation,
-                    "source_line": line_number, "source_timestamp": obj.get("timestamp"),
-                    "requested_model": None, "requested_reasoning_effort": None, "observed_model": None,
-                }
-                continue
-            if inherited:
-                continue
-            turn_id = _safe_identifier(payload.get("turn_id")) or active_turn
-            if kind == "turn_context":
-                if identity.get("parent_session_id") and active_turn and turn_id != active_turn:
-                    continue
-                if turn_id != evidence.get("turn_id"):
-                    evidence = {}
-                evidence.update({
-                    "session_id": identity["session_id"], "turn_id": turn_id,
-                    "source": "codex_transcript",
-                    "requested_model": _model_name(payload.get("model")),
-                    "requested_reasoning_effort": _safe_identifier(payload.get("effort")) or None,
-                    "observed_model": evidence.get("observed_model"),
-                    "native_session_id": identity.get("native_session_id"),
-                    "source_path": str(path.resolve()), "source_generation": generation,
-                    "source_line": line_number, "source_timestamp": obj.get("timestamp"),
-                })
-                active_turn = turn_id
-            elif (
-                event_type == "token_usage_record"
-                or (kind == "response_item" and (
-                    payload.get("type") == "reasoning"
-                    or (payload.get("type") == "message" and payload.get("role") == "assistant")
-                ))
-            ):
-                observed = _model_name(payload.get("model"))
-                if observed and turn_id and turn_id == active_turn:
-                    evidence.update({
-                        "session_id": identity["session_id"], "turn_id": turn_id,
-                        "source": "codex_transcript",
-                        "observed_model": observed,
-                        "observed_source": f"codex.{kind if kind == 'response_item' else event_type}.model",
-                        "observed_source_line": line_number,
-                        "observed_source_timestamp": obj.get("timestamp"),
-                    })
+                identity = _native_identity(payload)
+                generation += ":" + hashlib.sha256(line).hexdigest()
+            elif payload.get("id") == identity["session_id"] and _native_identity(payload) != identity:
+                identity["identity_error"] = "contradictory repeated native session provenance"
+            # Fork history may contain a different parent's header. It cannot
+            # replace the first immutable child identity.
         head_size = min(offset, 4096)
         tail_start = max(offset - 4096, 0)
         handle.seek(0)
         head_digest = hashlib.sha256(handle.read(head_size)).hexdigest()
         handle.seek(tail_start)
         tail_digest = hashlib.sha256(handle.read(offset - tail_start)).hexdigest()
-    scan = {
+    return identity, {
         "generation": file_generation, "source_generation": generation,
         "offset": offset, "line_number": line_number, "identity": identity,
-        "evidence": evidence, "inherited": inherited, "active_turn": active_turn,
-        "started_at": started_at.isoformat() if started_at else None,
         "head_size": head_size, "head_digest": head_digest,
         "tail_start": tail_start, "tail_digest": tail_digest,
     }
-    return identity, evidence, scan
 
 
 def resolve_current_transcript(
@@ -384,9 +284,9 @@ def read_transcript_info(
     open_snapshot: OpenTranscriptSnapshot | None = None,
     scan_state: dict[str, object] | None = None,
 ) -> TranscriptInfo | None:
-    """Parse native identity and advance the retained model evidence cursor."""
+    """Parse native identity and advance the ownership-provenance cursor."""
     try:
-        identity, evidence, model_scan = _extract_transcript_fields(path, scan_state)
+        identity, identity_scan = _extract_transcript_fields(path, scan_state)
     except OSError as exc:
         if log_fn:
             log_fn(f"[WARN] Failed to read transcript {path}: {exc}")
@@ -405,7 +305,7 @@ def read_transcript_info(
         path=resolved,
         session_id=identity["session_id"],
         cwd=Path(identity["cwd"]),
-        model=evidence.get("observed_model") or DEFAULT_MODEL,
+        model=DEFAULT_MODEL,
         mtime=stat.st_mtime,
         size=stat.st_size,
         parent_session_id=identity["parent_session_id"],
@@ -413,8 +313,7 @@ def read_transcript_info(
         agent_path=identity["agent_path"],
         native_session_id=identity["native_session_id"],
         identity_error=identity["identity_error"],
-        model_evidence=evidence,
-        model_scan=model_scan,
+        identity_scan=identity_scan,
         is_open=resolved in snapshot.paths,
         process_owner=snapshot.owners.get(resolved),
         ownership_ambiguous=resolved in snapshot.ambiguous_paths,
@@ -439,7 +338,7 @@ def iter_recent_transcripts(
         if modified_at < cutoff:
             continue
         entry = (scan_states or {}).get(str(path.resolve()))
-        scan_state = entry.get("model_scan") if isinstance(entry, dict) else None
+        scan_state = (entry.get("identity_scan") or entry.get("model_scan")) if isinstance(entry, dict) else None
         info = read_transcript_info(path, log_fn=log_fn, open_snapshot=open_snapshot, scan_state=scan_state)
         if info is not None:
             transcripts.append(info)

@@ -149,6 +149,28 @@
       "environment": []
     },
     {
+      "id": "agent-hub.native-sessions",
+      "owner": "agent-hub",
+      "namespace": "native-sessions",
+      "manifest": "extensions/native-sessions.json",
+      "executable": "backend/.venv/bin/agent-hub-st",
+      "arguments": [
+        "native-sessions"
+      ],
+      "grant": {
+        "enabled": true,
+        "effects": [
+          "network",
+          "read-remote",
+          "write-remote",
+          "read-local",
+          "credentials",
+          "process"
+        ]
+      },
+      "environment": []
+    },
+    {
       "id": "agent-hub.note",
       "owner": "agent-hub",
       "namespace": "note",

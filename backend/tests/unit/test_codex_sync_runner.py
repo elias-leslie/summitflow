@@ -80,11 +80,8 @@ def _args(**overrides) -> argparse.Namespace:
     return argparse.Namespace(**values)
 
 
-def test_model_evidence_growth_updates_upsert_once_then_stays_stable(tmp_path, monkeypatch):
-    info = replace(_info(tmp_path, "root"), model="unknown", native_session_id="root",
-        model_evidence={"session_id": "root", "turn_id": "t1", "source": "codex_transcript",
-            "requested_model": "gpt-6.1-sol", "requested_reasoning_effort": "high",
-            "observed_model": None, "source_line": 2})
+def test_rollout_growth_does_not_compete_with_agent_hub_model_attribution(tmp_path, monkeypatch):
+    info = replace(_info(tmp_path, "root"), model="unknown", native_session_id="root")
     state = {"transcripts": {}}
     upserts = []
     ingests = []
@@ -97,15 +94,11 @@ def test_model_evidence_growth_updates_upsert_once_then_stays_stable(tmp_path, m
             log_fn=lambda _: None, verbose=False)
     assert sync(info)[0]
     assert sync(info)[0]
-    assert len(upserts) == 1
-    observed = replace(info, model="served-model", size=400,
-        model_evidence={**info.model_evidence, "observed_model": "served-model", "observed_source": "codex.token_usage_record.model", "observed_source_line": 3})
-    assert sync(observed)[0]
-    assert len(upserts) == 2
-    assert upserts[-1][0][2] == "served-model"
-    assert upserts[-1][1]["provider_metadata"]["model_evidence"]["requested_model"] == "gpt-6.1-sol"
-    assert sync(observed)[0]
-    assert len(upserts) == 2
+    grown = replace(info, size=400)
+    assert sync(grown)[0]
+    assert sync(grown)[0]
+    assert len(upserts) == 1 and len(ingests) == 4
+    assert "model_evidence" not in upserts[0][1]["provider_metadata"]
     assert ingests[-1][2] == "cp"
 
 
@@ -1076,3 +1069,13 @@ def test_corrupt_binding_snapshot_fails_closed_with_diagnostic(monkeypatch) -> N
 
     assert result == 2
     assert logs == ["[WARN] Invalid Codex project binding snapshot: broken JSON"]
+
+
+@pytest.fixture(autouse=True)
+def isolated_managed_host_settings(tmp_path, monkeypatch):
+    """Host policy must never make unit tests initialize the owner's real spools."""
+    home = tmp_path / "isolated-home"
+    home.mkdir()
+    monkeypatch.setattr(Path, "home", classmethod(lambda _cls: home))
+    for key in ("SUMMITFLOW_CODEX_MANAGED_CAPTURE", "SUMMITFLOW_CODEX_OUTBOX", "SUMMITFLOW_CODEX_OUTBOXES_JSON", "SUMMITFLOW_CODEX_OUTBOX_MAX_BYTES", "SUMMITFLOW_CODEX_RAW_RETENTION_SECONDS", "SUMMITFLOW_CODEX_PROTOCOL_QUALIFICATION"):
+        monkeypatch.delenv(key, raising=False)
