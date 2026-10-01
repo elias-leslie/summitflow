@@ -1,7 +1,7 @@
 """Fixed stdlib-only Neri deployment program sent through the guest agent.
 
 This is operator code, never code or commands supplied by project identity.
-Only the two source files, their hashes, and an attempt UUID are input data.
+Only fixed source/fixture files, their hashes, and an attempt UUID are input data.
 """
 
 from __future__ import annotations
@@ -12,6 +12,7 @@ import hashlib
 import json
 import os
 import re
+import stat
 import subprocess
 import sys
 import time
@@ -28,6 +29,12 @@ PROFILES = (
 )
 SERVICES = ("neri-proxy.service", "neri-wordpress-proxy.service")
 FILES = ("proxy_runner.py", "proxy_core.py")
+FIXTURE_CONTROLS = ("fixture.lock.json", ".wp-env.json", "package.json", "package-lock.json", "setup.sh", "seed.sh")
+FIXTURE_FILES = ("reset-profiles.json", "target_reset.py", *("fixture/" + name for name in FIXTURE_CONTROLS))
+FIXTURE_ROOT = Path("/opt/neri-wordpress-fixture")
+RESET_CONFIG = Path("/etc/neri-runner/reset-profiles.json")
+RESET_HELPER = Path("/usr/local/lib/neri/target_reset.py")
+WORDPRESS_CONFIG = Path("/etc/neri-runner/wordpress-config.json")
 PRIVILEGED_UID = 0
 MAX_TRANSFER_PAYLOAD_BYTES = 4 * 1024 * 1024
 
@@ -222,6 +229,273 @@ def require_legacy_layout() -> None:
         raise DeploymentError("Legacy runner source layout is not the expected fixed-file installation")
 
 
+def fixture_paths() -> dict[str, Path]:
+    return {"reset-profiles.json": RESET_CONFIG, "target_reset.py": RESET_HELPER,
+            **{"fixture/" + name: FIXTURE_ROOT / name for name in FIXTURE_CONTROLS}}
+
+
+def fixture_contents(payload: dict[str, Any]) -> tuple[dict[str, bytes], str, str]:
+    """Validate public pins before any guest mutation, including at host freeze."""
+    try:
+        if (set(payload) != {"files", "identity"} or not isinstance(payload["files"], dict)
+                or set(payload["files"]) != set(FIXTURE_FILES)):
+            raise DeploymentError("Fixture bundle must contain exactly the fixed public files")
+        contents = {name: base64.b64decode(payload["files"][name], validate=True) for name in FIXTURE_FILES}
+        if identity(contents) != payload["identity"]:
+            raise DeploymentError("Transferred fixture bundle hash mismatch")
+        config = json.loads(contents["reset-profiles.json"])
+        if (config["schema_version"] != "neri.reset-profiles.v1"
+                or set(config["profiles"]) != {profile[0] for profile in PROFILES}):
+            raise DeploymentError("Fixture reset profiles differ from the fixed runner profiles")
+        profile = config["profiles"]["wordpress-simple-page-ordering-local-v1"]
+        fixed = {
+            "kind": "wordpress", "root": "/var/lib/neri-wordpress-runner",
+            "receipts": "/var/lib/neri-wordpress-reset-receipts",
+            "fixture_root": "/opt/neri-wordpress-fixture",
+            "env_home": "/var/lib/neri-wordpress/wp-env", "runtime_user": "neri-wordpress",
+        }
+        if any(profile.get(key) != value for key, value in fixed.items()):
+            raise DeploymentError("WordPress fixture locations and runtime identity are fixed")
+        lock_bytes = contents["fixture/fixture.lock.json"]
+        digest = hashlib.sha256(lock_bytes).hexdigest()
+        artifact = "wordpress-fixture:sha256:" + digest
+        lock = json.loads(lock_bytes)
+        if (profile["fixture_digest"] != digest or profile["artifact_identity"] != artifact
+                or lock["schema_version"] != "neri.wordpress-fixture.v1"
+                or lock["reset_version"] != profile["reset_version"]):
+            raise DeploymentError("Fixture lock and reset artifact identity differ")
+        if set(lock["fixture_files"]) != set(FIXTURE_CONTROLS) - {"fixture.lock.json"}:
+            raise DeploymentError("Fixture control hash allowlist differs")
+        for name, expected in lock["fixture_files"].items():
+            if hashlib.sha256(contents["fixture/" + name]).hexdigest() != expected:
+                raise DeploymentError("Fixture control hash differs from its lock")
+        return contents, digest, artifact
+    except DeploymentError:
+        raise
+    except (KeyError, ValueError, TypeError, AttributeError) as exc:
+        raise DeploymentError("Fixture bundle contract is invalid") from exc
+
+
+def protected_file(path: Path) -> os.stat_result:
+    details = path.lstat()
+    if (not stat.S_ISREG(details.st_mode) or details.st_uid != PRIVILEGED_UID
+            or details.st_nlink != 1 or details.st_mode & 0o022):
+        raise DeploymentError("Fixture/configuration file is not protected and root-owned")
+    return details
+
+
+def protected_directory(path: Path) -> None:
+    details = path.lstat()
+    if (not stat.S_ISDIR(details.st_mode) or details.st_uid != PRIVILEGED_UID
+            or details.st_mode & 0o022):
+        raise DeploymentError("Fixture/configuration directory is not protected and root-owned")
+
+
+def fixture_observation() -> dict[str, Any]:
+    """Public byte identity and one public scalar; never return private config."""
+    result: dict[str, Any] = {"installed": None, "artifact_identity": None, "fixture_digest": None}
+    try:
+        for directory in {FIXTURE_ROOT, RESET_CONFIG.parent, RESET_HELPER.parent, WORDPRESS_CONFIG.parent}:
+            protected_directory(directory)
+        protected_file(FIXTURE_ROOT / "fixture.lock.json")
+        result["fixture_digest"] = hashlib.sha256((FIXTURE_ROOT / "fixture.lock.json").read_bytes()).hexdigest()
+        contents = {}
+        for name, path in fixture_paths().items():
+            details = protected_file(path)
+            expected_mode = 0o755 if name in {"fixture/setup.sh", "fixture/seed.sh"} else 0o644
+            if stat.S_IMODE(details.st_mode) != expected_mode:
+                raise DeploymentError("Installed fixture public-file mode differs")
+            contents[name] = path.read_bytes()
+        result["installed"] = identity(contents)
+        protected_file(WORDPRESS_CONFIG)
+        artifact = json.loads(WORDPRESS_CONFIG.read_bytes()).get("target_artifact_identity")
+        if not isinstance(artifact, str) or not re.fullmatch(r"wordpress-fixture:sha256:[a-f0-9]{64}", artifact):
+            raise DeploymentError("Private runner artifact identity is invalid")
+        result["artifact_identity"] = artifact
+    except (OSError, ValueError, TypeError, AttributeError, DeploymentError):
+        result["error"] = "Installed fixture/configuration unreadable or unprotected"
+    return result
+
+
+def replace_file(path: Path, contents: bytes, mode: int, uid: int, gid: int) -> None:
+    temporary = path.with_name(path.name + ".next")
+    descriptor = os.open(temporary, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW, mode)
+    with os.fdopen(descriptor, "wb") as stream:
+        os.fchown(stream.fileno(), uid, gid)
+        os.fchmod(stream.fileno(), mode)
+        stream.write(contents)
+        stream.flush()
+        os.fsync(stream.fileno())
+    os.replace(temporary, path)
+    sync_directory(path.parent)
+
+
+def provision_fixture() -> None:
+    result = subprocess.run(
+        ["/usr/bin/bash", str(FIXTURE_ROOT / "setup.sh")],
+        cwd=FIXTURE_ROOT, env={
+            "PATH": "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin",
+            "HOME": "/root", "NERI_RESET_CONFIG": str(RESET_CONFIG),
+        }, capture_output=True, timeout=900, check=False,
+    )
+    if result.returncode != 0:
+        raise DeploymentError("Fixed WordPress fixture provisioning failed")
+
+
+def verify_fixture() -> None:
+    # Reuse Neri's complete archive/tree/image/config and live baseline checks.
+    # The fixed import program receives no target commands or private config.
+    program = (
+        "import importlib.util; "
+        "spec=importlib.util.spec_from_file_location('neri_target_reset', '/usr/local/lib/neri/target_reset.py'); "
+        "helper=importlib.util.module_from_spec(spec); spec.loader.exec_module(helper); "
+        "helper.wordpress_state(helper.wordpress_lock())"
+    )
+    result = subprocess.run(
+        ["/usr/bin/python3", "-B", "-c", program],
+        env={"PATH": "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin",
+             "NERI_RESET_KIND": "wordpress", "NERI_RESET_CONFIG": str(RESET_CONFIG)},
+        capture_output=True, timeout=900, check=False,
+    )
+    if result.returncode != 0:
+        raise DeploymentError("WordPress fixture verification failed")
+
+
+def sync_fixture(attempt: str, payload: dict[str, Any]) -> dict[str, Any]:
+    """Synchronize fixed public pins; provision only a changed fixture digest."""
+    if not re.fullmatch(r"[0-9a-f]{32}", attempt):
+        raise DeploymentError("Invalid deployment attempt")
+    protected_directory(ROOT)
+    if os.geteuid() != PRIVILEGED_UID:
+        raise DeploymentError("Fixture deployment requires root")
+    receipts = ROOT / "deployments"
+    path = receipts / (attempt + "-fixture.json")
+    record: dict[str, Any] = {
+        "adapter": ADAPTER, "operation": "sync-fixture", "attempt": attempt,
+        "state": "running", "events": [],
+    }
+    marker_owned = False
+    uncertain = False
+
+    def phase(name: str, **values: Any) -> None:
+        record.update(phase=name, **values)
+        record["events"].append({"phase": name, "at": time.time()})
+        atomic_json(path, record)
+
+    with (ROOT / ".deployment-lock").open("a") as lock:
+        fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        receipts.mkdir(mode=0o755, exist_ok=True)
+        protected_directory(receipts)
+        if path.exists() or path.is_symlink():
+            raise DeploymentError("Fixture attempt already exists; inspect its receipt instead of retrying")
+        try:
+            phase("inspect")
+            runner_before = inspect()
+            if runner_before["marker"] is not None:
+                raise DeploymentError("Existing deployment interlock retained; inspect and recover its owner")
+            require_release(runner_before, runner_before["installed"], blocked=False)
+            contents, digest, artifact = fixture_contents(payload)
+            phase("validated", expected=payload["identity"], artifact_identity=artifact, fixture_digest=digest)
+            before = fixture_observation()
+            record["before"] = before
+            if (before["installed"] == payload["identity"] and before["artifact_identity"] == artifact
+                    and "error" not in before):
+                verify_fixture()
+                phase("verified", state="noop", after=before, verified=True)
+                return record
+
+            # Existing private config must be present and protected; no secrets
+            # are supplied by the host or synthesized from public fixture data.
+            for directory in {FIXTURE_ROOT, RESET_CONFIG.parent, RESET_HELPER.parent, WORDPRESS_CONFIG.parent}:
+                protected_directory(directory)
+            private_details = protected_file(WORDPRESS_CONFIG)
+            private_bytes = WORDPRESS_CONFIG.read_bytes()
+            private = json.loads(private_bytes)
+            if not isinstance(private, dict):
+                raise DeploymentError("Private runner configuration is invalid")
+            private["target_artifact_identity"] = artifact
+            phase("interlock")
+            marker = ROOT / ".deploying"
+            with marker.open("x") as stream:
+                stream.write(attempt)
+                stream.flush()
+                os.fsync(stream.fileno())
+            marker.chmod(0o644)
+            marker_owned = True
+            sync_directory(ROOT)
+            require_idle(inspect(), blocked=True)
+
+            phase("backup")
+            backup = receipts / (attempt + "-fixture-backup")
+            backup.mkdir(mode=0o700)
+            backup.chmod(0o700)
+            for name, destination in fixture_paths().items():
+                if destination.exists() or destination.is_symlink():
+                    details = protected_file(destination)
+                    replace_file(backup / name.replace("/", "_"), destination.read_bytes(),
+                                 stat.S_IMODE(details.st_mode), details.st_uid, details.st_gid)
+            replace_file(backup / "private-wordpress-config.json", private_bytes,
+                         0o600, private_details.st_uid, private_details.st_gid)
+            sync_directory(receipts)
+            record["backup"] = str(backup)
+            record["private_config_metadata"] = {
+                "mode": stat.S_IMODE(private_details.st_mode),
+                "uid": private_details.st_uid, "gid": private_details.st_gid,
+            }
+
+            # Stop both runners before installing configuration they load once.
+            # Every interruption from this point requires receipt reconciliation.
+            phase("stop")
+            uncertain = True
+            systemctl("stop")
+            phase("install")
+            for name, destination in fixture_paths().items():
+                mode = 0o755 if name in {"fixture/setup.sh", "fixture/seed.sh"} else 0o644
+                replace_file(destination, contents[name], mode, PRIVILEGED_UID, PRIVILEGED_UID)
+            current_details = protected_file(WORDPRESS_CONFIG)
+            attributes = ("st_dev", "st_ino", "st_mode", "st_uid", "st_gid", "st_size", "st_mtime_ns")
+            if (WORDPRESS_CONFIG.read_bytes() != private_bytes or any(
+                    getattr(current_details, name) != getattr(private_details, name) for name in attributes)):
+                raise DeploymentError("Private runner configuration changed since inspection")
+            replace_file(WORDPRESS_CONFIG, json.dumps(private).encode(),
+                         stat.S_IMODE(private_details.st_mode), private_details.st_uid, private_details.st_gid)
+            if before["fixture_digest"] != digest:
+                phase("provision", provision_started=True)
+                provision_fixture()
+            phase("verify-fixture")
+            verify_fixture()
+            after = fixture_observation()
+            if (after["installed"] != payload["identity"] or after["artifact_identity"] != artifact
+                    or "error" in after):
+                raise DeploymentError("Installed fixture/configuration identity mismatch")
+            phase("restart", after=after)
+            systemctl("restart")
+            deadline = time.monotonic() + 30
+            while True:
+                try:
+                    require_release(inspect(), runner_before["installed"], blocked=True)
+                    break
+                except DeploymentError:
+                    if time.monotonic() >= deadline:
+                        raise
+                    time.sleep(1)
+            phase("verified", state="succeeded", after=after, verified=True)
+            uncertain = False
+        except Exception as exc:
+            reason = str(exc) if isinstance(exc, DeploymentError) else type(exc).__name__
+            phase("failed", failed_phase=record.get("phase"),
+                  state="uncertain" if uncertain else "failed", error=reason, after=fixture_observation())
+        finally:
+            if marker_owned and not uncertain:
+                marker = ROOT / ".deploying"
+                if marker.read_text().strip() == attempt:
+                    marker.unlink()
+                    sync_directory(ROOT)
+            record["interlock_retained"] = (ROOT / ".deploying").exists()
+            atomic_json(path, record)
+    return record
+
+
 def bootstrap(attempt: str, payload: dict[str, Any]) -> dict[str, Any]:
     """Adopt the fixed legacy layout after explicitly stopping both runners."""
     if not re.fullmatch(r"[0-9a-f]{32}", attempt):
@@ -229,10 +503,7 @@ def bootstrap(attempt: str, payload: dict[str, Any]) -> dict[str, Any]:
     if os.geteuid() != PRIVILEGED_UID or ROOT.stat().st_uid != PRIVILEGED_UID:
         raise DeploymentError("Runner deployment requires its root-owned installation directory")
     receipts = ROOT / "deployments"
-    receipts.mkdir(exist_ok=True)
     path = receipts / (attempt + ".json")
-    if path.exists():
-        raise DeploymentError("Attempt already exists; inspect its receipt instead of retrying")
     record: dict[str, Any] = {
         "adapter": ADAPTER, "operation": "bootstrap", "attempt": attempt,
         "state": "running", "events": [],
@@ -246,8 +517,11 @@ def bootstrap(attempt: str, payload: dict[str, Any]) -> dict[str, Any]:
         atomic_json(path, record)
 
     with (ROOT / ".deployment-lock").open("a") as lock:
+        fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        receipts.mkdir(exist_ok=True)
+        if path.exists() or path.is_symlink():
+            raise DeploymentError("Attempt already exists; inspect its receipt instead of retrying")
         try:
-            fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
             phase("inspect")
             before = inspect()
             record["before"] = before
@@ -321,10 +595,7 @@ def deploy(attempt: str, payload: dict[str, Any]) -> dict[str, Any]:
     if os.geteuid() != PRIVILEGED_UID or ROOT.stat().st_uid != PRIVILEGED_UID:
         raise DeploymentError("Runner deployment requires its root-owned installation directory")
     receipts = ROOT / "deployments"
-    receipts.mkdir(exist_ok=True)
     path = receipts / (attempt + ".json")
-    if path.exists():
-        raise DeploymentError("Attempt already exists; inspect its receipt instead of retrying")
     record: dict[str, Any] = {"adapter": ADAPTER, "attempt": attempt, "state": "running", "events": []}
     marker_owned = False
     uncertain = False
@@ -336,8 +607,11 @@ def deploy(attempt: str, payload: dict[str, Any]) -> dict[str, Any]:
 
     # Serialize deployments without truncating a previous attempt's marker.
     with (ROOT / ".deployment-lock").open("a") as lock:
+        fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        receipts.mkdir(exist_ok=True)
+        if path.exists() or path.is_symlink():
+            raise DeploymentError("Attempt already exists; inspect its receipt instead of retrying")
         try:
-            fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
             phase("inspect")
             before = inspect()
             record["before"] = before
@@ -411,9 +685,9 @@ def main() -> int:
     if sys.argv[1:] == ["inspect"]:
         print(json.dumps(inspect()))
         return 0
-    if len(sys.argv) != 4 or sys.argv[1] not in {"bootstrap", "deploy"}:
+    if len(sys.argv) != 4 or sys.argv[1] not in {"bootstrap", "deploy", "sync-fixture"}:
         raise DeploymentError("Unsupported fixed adapter action")
-    operation = bootstrap if sys.argv[1] == "bootstrap" else deploy
+    operation = {"bootstrap": bootstrap, "deploy": deploy, "sync-fixture": sync_fixture}[sys.argv[1]]
     result = operation(sys.argv[2], decode_payload(sys.argv[3]))
     print(json.dumps(result))
     return 0 if result["state"] in {"noop", "succeeded"} else 1

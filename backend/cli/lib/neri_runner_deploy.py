@@ -16,6 +16,11 @@ from .proxmox import ProxmoxClient, ProxmoxError
 
 VM_ID = "120"
 SOURCES = ("scripts/proxy_runner.py", "backend/app/proxy_core.py")
+FIXTURE_SOURCES = (
+    "config/reset-profiles.json",
+    "scripts/lab-vm/target_reset.py",
+    *("scripts/lab-vm/wordpress-fixture/" + name for name in guest.FIXTURE_CONTROLS),
+)
 
 
 class RunnerAdapter(StrEnum):
@@ -36,6 +41,24 @@ class FrozenBundle:
     @classmethod
     def from_checkout(cls, root: Path) -> FrozenBundle:
         return cls(((root / SOURCES[0]).read_bytes(), (root / SOURCES[1]).read_bytes()))
+
+
+@dataclass(frozen=True)
+class FrozenFixture:
+    contents: tuple[bytes, ...]
+
+    @property
+    def payload(self) -> dict[str, Any]:
+        files = dict(zip(guest.FIXTURE_FILES, self.contents, strict=True))
+        return {"identity": guest.identity(files), "files": {
+            name: base64.b64encode(value).decode("ascii") for name, value in files.items()
+        }}
+
+    @classmethod
+    def from_checkout(cls, root: Path) -> FrozenFixture:
+        result = cls(tuple((root / source).read_bytes() for source in FIXTURE_SOURCES))
+        guest.fixture_contents(result.payload)
+        return result
 
 
 def _operate_runner(root: Path, adapter: RunnerAdapter, action: str) -> int:
@@ -63,6 +86,9 @@ def _operate_runner(root: Path, adapter: RunnerAdapter, action: str) -> int:
         phase("freeze")
         bundle = FrozenBundle.from_checkout(root)
         record["expected"] = bundle.payload["identity"]
+        fixture = FrozenFixture.from_checkout(root) if action == "deploy" else None
+        if fixture is not None:
+            record["fixture_expected"] = fixture.payload["identity"]
         # Fixed implementation source, never a path or executable from identity.
         program = Path(guest.__file__).read_text()
         client = ProxmoxClient()
@@ -74,7 +100,7 @@ def _operate_runner(root: Path, adapter: RunnerAdapter, action: str) -> int:
             # deployment response cannot leave the earlier inspection PID as
             # the apparent process to reconcile.
             phase(action + "-submitting", guest_action=action, guest_pid=None)
-            if action in {"bootstrap", "deploy"}:
+            if action in {"bootstrap", "deploy", "sync-fixture"}:
                 submitted = True  # The API may accept a command before losing its response.
             response = client.agent_exec(VM_ID, ["/usr/bin/python3", "-c", program, action, *arguments])
             pid = response.get("pid")
@@ -84,7 +110,7 @@ def _operate_runner(root: Path, adapter: RunnerAdapter, action: str) -> int:
             phase(action + "-waiting", guest_action=action, guest_pid=pid)
             # Match the existing guest-exec wait window; first adoption can
             # include both a bounded stop and restart before startup health.
-            deadline = time.monotonic() + 300
+            deadline = time.monotonic() + (2100 if action == "sync-fixture" else 300)
             while time.monotonic() < deadline:
                 status = client.agent_exec_status(VM_ID, pid)
                 if status.get("exited"):
@@ -110,6 +136,19 @@ def _operate_runner(root: Path, adapter: RunnerAdapter, action: str) -> int:
             raise ProxmoxError("Existing runner interlock retained; recovery required")
         if action == "deploy":
             guest.require_release(observation, observation["installed"], blocked=False)
+            assert fixture is not None
+            code, fixture_result = execute("sync-fixture", attempt, guest.encode_payload(fixture.payload))
+            phase("fixture-result", fixture=fixture_result, state=fixture_result.get("state", "uncertain"))
+            if (fixture_result.get("attempt") != attempt
+                    or fixture_result.get("expected") != record["fixture_expected"]):
+                raise ProxmoxError("Guest fixture result identity mismatch")
+            if code != 0 or fixture_result.get("state") not in {"noop", "succeeded"}:
+                return 1
+            if (fixture_result.get("interlock_retained") is not False
+                    or fixture_result.get("after", {}).get("installed") != record["fixture_expected"]
+                    or fixture_result.get("after", {}).get("artifact_identity") != fixture_result.get("artifact_identity")
+                    or fixture_result.get("verified") is not True):
+                raise ProxmoxError("Guest verified fixture result is incomplete")
         code, result = execute(action, attempt, guest.encode_payload(bundle.payload))
         phase("result", guest=result, state=result.get("state", "uncertain"))
         if result.get("attempt") != attempt:

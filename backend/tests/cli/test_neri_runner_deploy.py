@@ -1,6 +1,7 @@
 """Fixed runner deployment: real filesystem transactions, simulated guest services."""
 
 import base64
+import hashlib
 import json
 import os
 import subprocess
@@ -32,6 +33,7 @@ def payload(files):
 def installed(tmp_path, monkeypatch):
     root = tmp_path / "guest"
     root.mkdir()
+    root.chmod(0o755)
     monkeypatch.setattr(guest, "ROOT", root)
     monkeypatch.setattr(guest, "PRIVILEGED_UID", os.getuid())
     files = {name: b"old-" + name.encode() for name in guest.FILES}
@@ -59,6 +61,56 @@ def installed(tmp_path, monkeypatch):
 
 def new_bundle():
     return payload({name: b"new-" + name.encode() for name in guest.FILES})
+
+
+def fixture_public_files(version="old"):
+    controls = {name: ("fixture-" + name).encode() for name in guest.FIXTURE_CONTROLS if name != "fixture.lock.json"}
+    lock = {
+        "schema_version": "neri.wordpress-fixture.v1", "reset_version": "fixture-seed-v1",
+        "wordpress": {"version": version},
+        "fixture_files": {name: hashlib.sha256(value).hexdigest() for name, value in controls.items()},
+    }
+    lock_bytes = json.dumps(lock).encode()
+    digest = hashlib.sha256(lock_bytes).hexdigest()
+    profile = {
+        "kind": "wordpress", "root": "/var/lib/neri-wordpress-runner",
+        "receipts": "/var/lib/neri-wordpress-reset-receipts",
+        "fixture_root": "/opt/neri-wordpress-fixture", "env_home": "/var/lib/neri-wordpress/wp-env",
+        "runtime_user": "neri-wordpress", "reset_version": "fixture-seed-v1",
+        "fixture_digest": digest, "artifact_identity": "wordpress-fixture:sha256:" + digest,
+    }
+    config = {"schema_version": "neri.reset-profiles.v1", "profiles": {
+        "juice-shop-local-v1": {"kind": "juice-shop"},
+        "wordpress-simple-page-ordering-local-v1": profile,
+    }}
+    return {"reset-profiles.json": json.dumps(config).encode(), "target_reset.py": b"fixed-reset-helper",
+            "fixture/fixture.lock.json": lock_bytes,
+            **{"fixture/" + name: value for name, value in controls.items()}}
+
+
+@pytest.fixture
+def fixture_installation(installed, monkeypatch, tmp_path):
+    for attribute, path in (
+        ("FIXTURE_ROOT", tmp_path / "fixture"), ("RESET_CONFIG", tmp_path / "etc/reset-profiles.json"),
+        ("RESET_HELPER", tmp_path / "lib/target_reset.py"), ("WORDPRESS_CONFIG", tmp_path / "etc/wordpress-config.json"),
+    ):
+        monkeypatch.setattr(guest, attribute, path)
+        directory = path if attribute == "FIXTURE_ROOT" else path.parent
+        directory.mkdir(exist_ok=True)
+        directory.chmod(0o755)
+    files = fixture_public_files()
+    for name, path in guest.fixture_paths().items():
+        path.write_bytes(files[name])
+        path.chmod(0o755 if name.endswith(".sh") else 0o644)
+    private = {"api_key": "private-api-key", "nested": {"keep": ["private-value"]},
+               "target_artifact_identity": guest.fixture_contents(payload(files))[2]}
+    guest.WORDPRESS_CONFIG.write_text(json.dumps(private))
+    guest.WORDPRESS_CONFIG.chmod(0o640)
+    provision = Mock()
+    verify = Mock()
+    monkeypatch.setattr(guest, "provision_fixture", provision)
+    monkeypatch.setattr(guest, "verify_fixture", verify)
+    return files, private, provision, verify
 
 
 def test_runner_bundle_transport_is_bounded_and_round_trips_exact_payload():
@@ -303,12 +355,16 @@ def test_later_release_uses_single_activation_without_legacy_stop(installed):
 
 
 @pytest.fixture
-def checkout(tmp_path):
+def checkout(tmp_path, fixture_installation):
     root = tmp_path / "checkout"
     for source in deploy.SOURCES:
         path = root / source
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_bytes(b"checkout-" + path.name.encode())
+    for source, name in zip(deploy.FIXTURE_SOURCES, guest.FIXTURE_FILES, strict=True):
+        path = root / source
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_bytes(fixture_installation[0][name])
     return root
 
 
@@ -325,8 +381,8 @@ class LocalGuestClient:
         if command[3] == "inspect":
             value, code = guest.inspect(), 0
         else:
-            assert command[3] in {"bootstrap", "deploy"}
-            operation = guest.bootstrap if command[3] == "bootstrap" else guest.deploy
+            assert command[3] in {"bootstrap", "deploy", "sync-fixture"}
+            operation = {"bootstrap": guest.bootstrap, "deploy": guest.deploy, "sync-fixture": guest.sync_fixture}[command[3]]
             value = operation(command[4], guest.decode_payload(command[5]))
             code = 0 if value["state"] in {"succeeded", "noop"} else 1
         pid = len(self.commands)
@@ -340,22 +396,26 @@ class LocalGuestClient:
 def test_host_freezes_sources_before_inspection_and_uses_fixed_argv(installed, checkout, monkeypatch):
     client = LocalGuestClient()
     initial = deploy.FrozenBundle.from_checkout(checkout).payload["identity"]
+    fixture_initial = deploy.FrozenFixture.from_checkout(checkout).payload["identity"]
     execute = client.agent_exec
 
     def mutate_after_freeze(vmid, command):
         result = execute(vmid, command)
         if command[3] == "inspect":
             (checkout / deploy.SOURCES[0]).write_bytes(b"later checkout change")
+            (checkout / deploy.FIXTURE_SOURCES[0]).write_bytes(b"later public config change")
         return result
 
     monkeypatch.setattr(client, "agent_exec", mutate_after_freeze)
     monkeypatch.setattr(deploy, "ProxmoxClient", lambda: client)
     assert deploy.deploy_runner(checkout, deploy.RunnerAdapter.neri_runner_v1) == 0
     assert guest.read_identity(installed[0]) == initial
-    assert [command[3] for command in client.commands] == ["inspect", "deploy"]
+    assert [command[3] for command in client.commands] == ["inspect", "sync-fixture", "deploy"]
+    assert guest.fixture_observation()["installed"] == fixture_initial
     record = json.loads(next((checkout / ".dev-tools" / "runner-deployments").glob("*.json")).read_text())
     assert record["state"] == "succeeded"
-    assert record["guest_pid"] == 2
+    assert record["guest_pid"] == 3
+    assert record["fixture"]["expected"] == fixture_initial
 
 
 def test_host_bootstrap_uses_explicit_fixed_guest_action(installed, checkout, monkeypatch):
@@ -403,7 +463,7 @@ def test_host_preserves_uncertainty_after_submission_without_retry(installed, ch
     status = client.agent_exec_status
 
     def lost_status(vmid, pid):
-        if pid == 2:
+        if pid == 3:
             if failure == "poll":
                 raise ProxmoxError("private transport details")
             if failure == "truncated":
@@ -420,7 +480,7 @@ def test_host_preserves_uncertainty_after_submission_without_retry(installed, ch
     assert record["state"] == "uncertain"
     assert record["observation"]["installed"] == guest.identity(installed[1])
     assert "private transport details" not in json.dumps(record)
-    assert len(client.commands) <= 2
+    assert len(client.commands) <= 3
     assert record["guest_processes"]["inspect"]["pid"] == 1
     assert record["guest_processes"]["inspect"]["state"] == "exited"
     if failure == "submission":
@@ -430,8 +490,8 @@ def test_host_preserves_uncertainty_after_submission_without_retry(installed, ch
             "state": "submitting", "pid": None,
         }
     else:
-        assert record["guest_pid"] == 2
-        assert record["guest_processes"]["deploy"]["pid"] == 2
+        assert record["guest_pid"] == 3
+        assert record["guest_processes"]["deploy"]["pid"] == 3
 
 
 @pytest.mark.parametrize("raw,project", [
@@ -508,3 +568,296 @@ def test_lifecycle_scope_and_runner_failure_precede_host_mutations(monkeypatch, 
     monkeypatch.setattr(service, "_load", lambda _: replace(project, runner_adapter=None))
     result = CliRunner().invoke(service.app, ["rebuild", "neri", "--scope", "frontend"])
     assert result.exit_code == 0
+
+
+def test_changed_fixture_provisions_verifies_and_preserves_private_config(installed, fixture_installation):
+    root, _old_source, state = installed
+    old, private, provision, verify = fixture_installation
+    old_details = guest.WORDPRESS_CONFIG.stat()
+    files = fixture_public_files("new")
+    result = guest.sync_fixture(ATTEMPT, payload(files))
+
+    assert result["state"] == "succeeded", result
+    assert result["verified"] is True
+    assert result["after"]["installed"] == guest.identity(files)
+    assert result["after"]["artifact_identity"] == guest.fixture_contents(payload(files))[2]
+    updated = json.loads(guest.WORDPRESS_CONFIG.read_bytes())
+    assert updated == {**private, "target_artifact_identity": result["artifact_identity"]}
+    details = guest.WORDPRESS_CONFIG.stat()
+    assert (details.st_mode, details.st_uid, details.st_gid) == (old_details.st_mode, old_details.st_uid, old_details.st_gid)
+    assert state["calls"] == ["stop", "restart"]
+    provision.assert_called_once_with()
+    verify.assert_called_once_with()
+    backup = Path(result["backup"])
+    assert backup.stat().st_mode & 0o777 == 0o700
+    private_backup = backup / "private-wordpress-config.json"
+    assert private_backup.stat().st_mode & 0o777 == 0o600
+    assert json.loads(private_backup.read_bytes()) == private
+    assert (backup / "fixture_fixture.lock.json").read_bytes() == old["fixture/fixture.lock.json"]
+    assert "private-api-key" not in json.dumps(result)
+    assert "private-value" not in json.dumps(result)
+    assert not (root / ".deploying").exists()
+    assert json.loads((root / "deployments" / (ATTEMPT + "-fixture.json")).read_text()) == result
+    assert guest.FILES == ("proxy_runner.py", "proxy_core.py")
+
+
+def test_identical_fixture_is_verified_noop_without_reseed_or_restart(installed, fixture_installation):
+    root, _old_source, state = installed
+    files, _private, provision, verify = fixture_installation
+    result = guest.sync_fixture(ATTEMPT, payload(files))
+    assert result["state"] == "noop", result
+    assert result["verified"] is True
+    assert result["after"]["installed"] == guest.identity(files)
+    assert state["calls"] == []
+    provision.assert_not_called()
+    verify.assert_called_once_with()
+    assert not (root / ".deploying").exists()
+    assert "backup" not in result
+
+
+@pytest.mark.parametrize("change", ["private-artifact", "reset-helper", "missing-helper", "script-mode"])
+def test_same_lock_digest_updates_metadata_without_reseeding(installed, fixture_installation, change):
+    _root, _old_source, state = installed
+    files, private, provision, verify = fixture_installation
+    files = dict(files)
+    if change == "private-artifact":
+        guest.WORDPRESS_CONFIG.write_text(json.dumps({**private, "target_artifact_identity": "wordpress-fixture:sha256:" + "0" * 64}))
+    elif change == "reset-helper":
+        files["target_reset.py"] = b"updated-fixed-helper"
+    elif change == "missing-helper":
+        guest.RESET_HELPER.unlink()
+    else:
+        (guest.FIXTURE_ROOT / "seed.sh").chmod(0o644)
+    result = guest.sync_fixture(ATTEMPT, payload(files))
+    assert result["state"] == "succeeded", result
+    assert state["calls"] == ["stop", "restart"]
+    provision.assert_not_called()
+    verify.assert_called_once_with()
+
+
+@pytest.mark.parametrize("fault", ["extra", "missing", "transfer-hash", "control-hash", "profile-artifact", "profile-path", "control-allowlist"])
+def test_fixture_contract_errors_refuse_before_mutation(installed, fixture_installation, fault):
+    root, _source, state = installed
+    old, _private, provision, verify = fixture_installation
+    files = fixture_public_files("new")
+    if fault == "extra":
+        files["fixture/arbitrary.sh"] = b"caller code"
+    elif fault == "missing":
+        del files["fixture/seed.sh"]
+    elif fault == "control-hash":
+        files["fixture/seed.sh"] = b"corrupt"
+    elif fault in {"profile-artifact", "profile-path"}:
+        config = json.loads(files["reset-profiles.json"])
+        profile = config["profiles"]["wordpress-simple-page-ordering-local-v1"]
+        profile["artifact_identity" if fault == "profile-artifact" else "fixture_root"] = "invalid"
+        files["reset-profiles.json"] = json.dumps(config).encode()
+    elif fault == "control-allowlist":
+        lock = json.loads(files["fixture/fixture.lock.json"])
+        lock["fixture_files"]["../arbitrary.sh"] = "0" * 64
+        files["fixture/fixture.lock.json"] = json.dumps(lock).encode()
+        config = json.loads(files["reset-profiles.json"])
+        profile = config["profiles"]["wordpress-simple-page-ordering-local-v1"]
+        profile["fixture_digest"] = hashlib.sha256(files["fixture/fixture.lock.json"]).hexdigest()
+        profile["artifact_identity"] = "wordpress-fixture:sha256:" + profile["fixture_digest"]
+        files["reset-profiles.json"] = json.dumps(config).encode()
+    value = payload(files)
+    if fault == "transfer-hash":
+        value["files"]["target_reset.py"] = base64.b64encode(b"corrupt").decode()
+    result = guest.sync_fixture(ATTEMPT, value)
+    assert result["state"] == "failed", result
+    assert guest.fixture_observation()["installed"] == guest.identity(old)
+    assert state["calls"] == []
+    assert not (root / ".deploying").exists()
+    provision.assert_not_called()
+    verify.assert_not_called()
+
+
+@pytest.mark.parametrize("profile,unsettled", [(0, False), (1, False), (1, True)])
+def test_fixture_sync_refuses_either_busy_profile_or_unsettled_reset(installed, fixture_installation, monkeypatch, profile, unsettled):
+    root, _source, state = installed
+    old, _private, provision, verify = fixture_installation
+    health = guest.profile_health
+
+    def busy(config, port):
+        value = health(config, port)
+        if port == guest.PROFILES[profile][2]:
+            # The real runner includes an unsettled reset in this health field.
+            value.update(busy=True, stopped=unsettled)
+        return value
+
+    monkeypatch.setattr(guest, "profile_health", busy)
+    result = guest.sync_fixture(ATTEMPT, payload(fixture_public_files("new")))
+    assert result["state"] == "failed"
+    assert "busy" in result["error"]
+    assert guest.fixture_observation()["installed"] == guest.identity(old)
+    assert not state["calls"]
+    assert not (root / ".deploying").exists()
+    provision.assert_not_called()
+    verify.assert_not_called()
+
+
+@pytest.mark.parametrize("fault", ["stop", "install", "private-config", "provision", "verify", "restart"])
+def test_fixture_effect_uncertainty_retains_interlock_and_prevents_retry(installed, fixture_installation, monkeypatch, fault):
+    root, _source, _state = installed
+    _old, _private, provision, verify = fixture_installation
+    service_action = guest.systemctl
+    replace = guest.replace_file
+
+    def services(action):
+        if action == fault:
+            raise OSError("private service details")
+        service_action(action)
+
+    def interrupt(path, contents, mode, uid, gid):
+        if ((fault == "install" and path == guest.RESET_HELPER)
+                or (fault == "private-config" and path == guest.WORDPRESS_CONFIG)):
+            raise OSError("private installation details")
+        replace(path, contents, mode, uid, gid)
+
+    monkeypatch.setattr(guest, "systemctl", services)
+    monkeypatch.setattr(guest, "replace_file", interrupt)
+    if fault == "provision":
+        provision.side_effect = subprocess.TimeoutExpired(["private process"], 900, output=b"private output")
+    if fault == "verify":
+        verify.side_effect = OSError("private verification details")
+    value = payload(fixture_public_files("new"))
+    result = guest.sync_fixture(ATTEMPT, value)
+    assert result["state"] == "uncertain", result
+    assert result["interlock_retained"] is True
+    assert (root / ".deploying").read_text() == ATTEMPT
+    assert Path(result["backup"]).is_dir()
+    assert "private-api-key" not in json.dumps(result)
+    assert "private output" not in json.dumps(result)
+    assert "private installation details" not in json.dumps(result)
+    calls = provision.call_count, verify.call_count
+    refused = guest.sync_fixture("2" * 32, value)
+    assert refused["state"] == "failed"
+    assert refused["interlock_retained"] is True
+    assert (provision.call_count, verify.call_count) == calls
+    with pytest.raises(guest.DeploymentError, match="already exists"):
+        guest.sync_fixture(ATTEMPT, value)
+
+
+@pytest.mark.parametrize("fault", ["symlink", "writable", "hardlink"])
+def test_fixture_sync_rejects_unprotected_private_config(installed, fixture_installation, fault):
+    root, _source, state = installed
+    if fault == "symlink":
+        moved = guest.WORDPRESS_CONFIG.with_suffix(".private")
+        guest.WORDPRESS_CONFIG.rename(moved)
+        guest.WORDPRESS_CONFIG.symlink_to(moved)
+    elif fault == "writable":
+        guest.WORDPRESS_CONFIG.chmod(0o660)
+    else:
+        os.link(guest.WORDPRESS_CONFIG, guest.WORDPRESS_CONFIG.with_suffix(".link"))
+    result = guest.sync_fixture(ATTEMPT, payload(fixture_public_files("new")))
+    assert result["state"] == "failed"
+    assert not state["calls"]
+    assert not (root / ".deploying").exists()
+
+
+def test_fixture_commands_are_fixed_and_sanitize_output(monkeypatch):
+    run = Mock(return_value=subprocess.CompletedProcess([], 0, "private output", "private stderr"))
+    monkeypatch.setattr(guest.subprocess, "run", run)
+    guest.provision_fixture()
+    assert run.call_args.args[0] == ["/usr/bin/bash", "/opt/neri-wordpress-fixture/setup.sh"]
+    assert "shell" not in run.call_args.kwargs
+    guest.verify_fixture()
+    command = run.call_args.args[0]
+    assert command[:3] == ["/usr/bin/python3", "-B", "-c"]
+    assert "helper.wordpress_state(helper.wordpress_lock())" in command[3]
+    assert "helper.main" not in command[3]
+    run.return_value = subprocess.CompletedProcess([], 1, "private output", "private stderr")
+    with pytest.raises(guest.DeploymentError, match="provisioning failed") as failure:
+        guest.provision_fixture()
+    assert "private" not in str(failure.value)
+
+
+def test_host_fixture_failure_stops_before_source_deploy(installed, fixture_installation, checkout, monkeypatch):
+    client = LocalGuestClient()
+    for source, name in zip(deploy.FIXTURE_SOURCES, guest.FIXTURE_FILES, strict=True):
+        (checkout / source).write_bytes(fixture_public_files("new")[name])
+    fixture_installation[2].side_effect = OSError("private provisioning details")
+    monkeypatch.setattr(deploy, "ProxmoxClient", lambda: client)
+    assert deploy.deploy_runner(checkout, deploy.RunnerAdapter.neri_runner_v1) == 1
+    assert [command[3] for command in client.commands] == ["inspect", "sync-fixture"]
+    assert guest.read_identity(installed[0]) == guest.identity(installed[1])
+    record = json.loads(next((checkout / ".dev-tools/runner-deployments").glob("*.json")).read_text())
+    assert record["state"] == "uncertain"
+    assert record["fixture"]["interlock_retained"] is True
+    assert "private provisioning details" not in json.dumps(record)
+
+
+def test_host_rejects_invalid_fixture_before_guest_submission(checkout, monkeypatch):
+    (checkout / "scripts/lab-vm/wordpress-fixture/seed.sh").write_bytes(b"corrupt")
+    client = Mock()
+    monkeypatch.setattr(deploy, "ProxmoxClient", client)
+    assert deploy.deploy_runner(checkout, deploy.RunnerAdapter.neri_runner_v1) == 1
+    client.assert_not_called()
+
+
+@pytest.mark.parametrize("operation", ["sync_fixture", "bootstrap", "deploy"])
+@pytest.mark.parametrize("existing", [False, True])
+def test_deployment_lock_loser_preserves_receipt_and_has_no_actions(installed, fixture_installation, monkeypatch, operation, existing):
+    root, _source, state = installed
+    receipts = root / "deployments"
+    receipts.mkdir(mode=0o755)
+    path = receipts / (ATTEMPT + ("-fixture.json" if operation == "sync_fixture" else ".json"))
+    original = b'{"state":"running","owner":"original-attempt"}\n'
+    if existing:
+        path.write_bytes(original)
+    marker = root / ".deploying"
+    marker.write_text("other-attempt")
+    record = Mock()
+    inspection = Mock()
+    monkeypatch.setattr(guest, "atomic_json", record)
+    monkeypatch.setattr(guest, "inspect", inspection)
+    value = payload(fixture_public_files("new")) if operation == "sync_fixture" else new_bundle()
+
+    with (root / ".deployment-lock").open("a") as owner:
+        guest.fcntl.flock(owner, guest.fcntl.LOCK_EX | guest.fcntl.LOCK_NB)
+        with pytest.raises(BlockingIOError):
+            getattr(guest, operation)(ATTEMPT, value)
+
+    if existing:
+        assert path.read_bytes() == original
+    else:
+        assert not path.exists()
+    assert list(receipts.iterdir()) == ([path] if existing else [])
+    assert marker.read_text() == "other-attempt"
+    assert state["calls"] == []
+    record.assert_not_called()
+    inspection.assert_not_called()
+    fixture_installation[2].assert_not_called()
+    fixture_installation[3].assert_not_called()
+
+
+@pytest.mark.parametrize("operation", ["sync_fixture", "bootstrap", "deploy"])
+def test_receipt_created_before_lock_acquisition_is_rechecked_and_preserved(installed, fixture_installation, monkeypatch, operation):
+    root, _source, state = installed
+    receipts = root / "deployments"
+    receipts.mkdir(mode=0o755)
+    path = receipts / (ATTEMPT + ("-fixture.json" if operation == "sync_fixture" else ".json"))
+    original = b'{"state":"succeeded","owner":"completed-while-waiting"}\n'
+    flock = guest.fcntl.flock
+
+    def complete_prior_attempt(lock, mode):
+        flock(lock, mode)
+        path.write_bytes(original)
+
+    monkeypatch.setattr(guest.fcntl, "flock", complete_prior_attempt)
+    record = Mock()
+    inspection = Mock()
+    monkeypatch.setattr(guest, "atomic_json", record)
+    monkeypatch.setattr(guest, "inspect", inspection)
+    value = payload(fixture_public_files("new")) if operation == "sync_fixture" else new_bundle()
+    with pytest.raises(guest.DeploymentError, match="already exists"):
+        getattr(guest, operation)(ATTEMPT, value)
+
+    assert path.read_bytes() == original
+    assert list(receipts.iterdir()) == [path]
+    assert state["calls"] == []
+    assert not (root / ".deploying").exists()
+    record.assert_not_called()
+    inspection.assert_not_called()
+    fixture_installation[2].assert_not_called()
+    fixture_installation[3].assert_not_called()
