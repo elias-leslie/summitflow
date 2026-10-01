@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import base64
 import json
+import re
 import time
 import uuid
 from dataclasses import dataclass
@@ -61,11 +62,14 @@ class FrozenFixture:
         return result
 
 
-def _operate_runner(root: Path, adapter: RunnerAdapter, action: str) -> int:
+def _operate_runner(root: Path, adapter: RunnerAdapter, action: str, original_attempt: str | None = None) -> int:
     if adapter != RunnerAdapter.neri_runner_v1:
         raise ValueError("Unsupported runner adapter")
-    if action not in {"bootstrap", "deploy"}:
+    if action not in {"bootstrap", "deploy", "recover-fixture"}:
         raise ValueError("Unsupported fixed runner operation")
+    if action == "recover-fixture" and (not isinstance(original_attempt, str)
+                                       or not re.fullmatch(r"[0-9a-f]{32}", original_attempt)):
+        raise guest.DeploymentError("Invalid original fixture deployment attempt")
     attempt = uuid.uuid4().hex
     directory = root / ".dev-tools" / "runner-deployments"
     directory.mkdir(parents=True, exist_ok=True)
@@ -74,6 +78,8 @@ def _operate_runner(root: Path, adapter: RunnerAdapter, action: str) -> int:
         "adapter": adapter.value, "operation": action, "attempt": attempt,
         "state": "running", "events": [], "guest_processes": {},
     }
+    if original_attempt is not None:
+        record["original_attempt"] = original_attempt
 
     def phase(name: str, **values: Any) -> None:
         record.update(phase=name, **values)
@@ -84,9 +90,10 @@ def _operate_runner(root: Path, adapter: RunnerAdapter, action: str) -> int:
     submitted = False
     try:
         phase("freeze")
-        bundle = FrozenBundle.from_checkout(root)
-        record["expected"] = bundle.payload["identity"]
-        fixture = FrozenFixture.from_checkout(root) if action == "deploy" else None
+        bundle = FrozenBundle.from_checkout(root) if action != "recover-fixture" else None
+        if bundle is not None:
+            record["expected"] = bundle.payload["identity"]
+        fixture = FrozenFixture.from_checkout(root) if action in {"deploy", "recover-fixture"} else None
         if fixture is not None:
             record["fixture_expected"] = fixture.payload["identity"]
         # Fixed implementation source, never a path or executable from identity.
@@ -100,7 +107,7 @@ def _operate_runner(root: Path, adapter: RunnerAdapter, action: str) -> int:
             # deployment response cannot leave the earlier inspection PID as
             # the apparent process to reconcile.
             phase(action + "-submitting", guest_action=action, guest_pid=None)
-            if action in {"bootstrap", "deploy", "sync-fixture"}:
+            if action in {"bootstrap", "deploy", "sync-fixture", "recover-fixture"}:
                 submitted = True  # The API may accept a command before losing its response.
             response = client.agent_exec(VM_ID, ["/usr/bin/python3", "-c", program, action, *arguments])
             pid = response.get("pid")
@@ -110,7 +117,7 @@ def _operate_runner(root: Path, adapter: RunnerAdapter, action: str) -> int:
             phase(action + "-waiting", guest_action=action, guest_pid=pid)
             # Match the existing guest-exec wait window; first adoption can
             # include both a bounded stop and restart before startup health.
-            deadline = time.monotonic() + (2100 if action == "sync-fixture" else 300)
+            deadline = time.monotonic() + (2100 if action in {"sync-fixture", "recover-fixture"} else 300)
             while time.monotonic() < deadline:
                 status = client.agent_exec_status(VM_ID, pid)
                 if status.get("exited"):
@@ -132,6 +139,29 @@ def _operate_runner(root: Path, adapter: RunnerAdapter, action: str) -> int:
         phase("inspected", observation=observation)
         if code != 0:
             raise ProxmoxError("Runner inspection failed")
+        if action == "recover-fixture":
+            if observation.get("marker") != original_attempt:
+                raise guest.DeploymentError("Fixture recovery requires the exact original deployment interlock")
+            assert fixture is not None and original_attempt is not None
+            code, result = execute("recover-fixture", original_attempt, attempt, guest.encode_payload(fixture.payload))
+            phase("result", guest=result, state=result.get("state", "uncertain"))
+            if (result.get("operation") != "recover-fixture" or result.get("attempt") != attempt
+                    or result.get("original_attempt") != original_attempt):
+                raise ProxmoxError("Guest recovery result identity mismatch")
+            if code != 0 or result.get("state") != "succeeded":
+                return 1
+            if (result.get("expected") != record["fixture_expected"] or result.get("verified") is not True
+                    or result.get("interlock_retained") is not False
+                    or result.get("after", {}).get("installed") != record["fixture_expected"]
+                    or result.get("after", {}).get("artifact_identity") != result.get("artifact_identity")
+                    or result.get("original_receipt", {}).get("path") != str(
+                        guest.ROOT / "deployments" / (original_attempt + "-fixture.json"))
+                    or not re.fullmatch(r"[0-9a-f]{64}", result.get("original_receipt", {}).get("sha256", ""))
+                    or result.get("original_backup") != str(
+                        guest.ROOT / "deployments" / (original_attempt + "-fixture-backup"))):
+                raise ProxmoxError("Guest verified fixture recovery result is incomplete")
+            guest.require_release(result["runner_after"], observation["installed"], blocked=True)
+            return 0
         if observation.get("marker") is not None:
             raise ProxmoxError("Existing runner interlock retained; recovery required")
         if action == "deploy":
@@ -149,6 +179,7 @@ def _operate_runner(root: Path, adapter: RunnerAdapter, action: str) -> int:
                     or fixture_result.get("after", {}).get("artifact_identity") != fixture_result.get("artifact_identity")
                     or fixture_result.get("verified") is not True):
                 raise ProxmoxError("Guest verified fixture result is incomplete")
+        assert bundle is not None
         code, result = execute(action, attempt, guest.encode_payload(bundle.payload))
         phase("result", guest=result, state=result.get("state", "uncertain"))
         if result.get("attempt") != attempt:
@@ -174,3 +205,7 @@ def deploy_runner(root: Path, adapter: RunnerAdapter) -> int:
 
 def bootstrap_runner(root: Path, adapter: RunnerAdapter) -> int:
     return _operate_runner(root, adapter, "bootstrap")
+
+
+def recover_runner_fixture(root: Path, adapter: RunnerAdapter, original_attempt: str) -> int:
+    return _operate_runner(root, adapter, "recover-fixture", original_attempt)

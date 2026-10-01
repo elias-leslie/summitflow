@@ -123,6 +123,62 @@ def profile_health(config: Path, port: int) -> dict[str, Any]:
     return health
 
 
+def staged_fixture_receipt(contents: bytes) -> dict[str, Any] | None:
+    """Recognize only this fixed recovery's sealed marker/completion envelope."""
+    try:
+        value = json.loads(contents)
+        if (not isinstance(value, dict) or set(value) != {
+                "adapter", "operation", "original_attempt", "recovery_attempt", "state", "receipt_sha256", "final_receipt"}
+                or value["adapter"] != ADAPTER or value["operation"] != "recover-fixture"
+                or value["state"] != "verified"
+                or not re.fullmatch(r"[0-9a-f]{32}", value["original_attempt"])
+                or not re.fullmatch(r"[0-9a-f]{32}", value["recovery_attempt"])
+                or value["original_attempt"] == value["recovery_attempt"]):
+            return None
+        final = value["final_receipt"]
+        if (not isinstance(final, dict) or set(final) != {
+                "adapter", "operation", "original_attempt", "attempt", "state", "events", "phase",
+                "original_receipt", "original_backup", "expected", "artifact_identity", "fixture_digest",
+                "before", "after", "verified", "runner_after", "interlock_retained"}
+                or final["adapter"] != ADAPTER or final["operation"] != "recover-fixture"
+                or final["original_attempt"] != value["original_attempt"] or final["attempt"] != value["recovery_attempt"]
+                or final["state"] != "succeeded" or final["phase"] != "verified"
+                or final["verified"] is not True or final["interlock_retained"] is not False
+                or set(final["original_receipt"]) != {"path", "sha256"}
+                or final["original_receipt"]["path"] != str(ROOT / "deployments" / (value["original_attempt"] + "-fixture.json"))
+                or not re.fullmatch(r"[0-9a-f]{64}", final["original_receipt"]["sha256"])
+                or final["original_backup"] != str(ROOT / "deployments" / (value["original_attempt"] + "-fixture-backup"))
+                or final["after"]["installed"] != final["expected"]
+                or final["after"]["artifact_identity"] != final["artifact_identity"]
+                or set(final["after"]) != {"installed", "artifact_identity", "fixture_digest"}
+                or final["after"]["fixture_digest"] != final["fixture_digest"]
+                or not re.fullmatch(r"[0-9a-f]{64}", final["fixture_digest"])
+                or final["artifact_identity"] != "wordpress-fixture:sha256:" + final["fixture_digest"]
+                or set(final["expected"]) != {"release_id", "files"}
+                or not re.fullmatch(r"sha256:[0-9a-f]{64}", final["expected"]["release_id"])
+                or set(final["expected"]["files"]) != set(FIXTURE_FILES)
+                or any(not re.fullmatch(r"[0-9a-f]{64}", digest) for digest in final["expected"]["files"].values())
+                or set(final["before"]) - {"installed", "artifact_identity", "fixture_digest", "error"}
+                or set(final["runner_after"]) != {"profiles", "installed", "marker"}
+                or final["runner_after"]["marker"] != value["original_attempt"]):
+            return None
+        encoded = json.dumps(final, sort_keys=True, separators=(",", ":")).encode()
+        if hashlib.sha256(encoded).hexdigest() != value["receipt_sha256"]:
+            return None
+        require_release(final["runner_after"], final["runner_after"]["installed"], blocked=True)
+        return final
+    except (ValueError, TypeError, KeyError, AttributeError, DeploymentError):
+        return None
+
+
+def deployment_marker_owner(contents: bytes) -> str:
+    owner = contents.decode().strip()
+    if re.fullmatch(r"[0-9a-f]{32}", owner):
+        return owner
+    staged = staged_fixture_receipt(contents)
+    return staged["original_attempt"] if staged is not None else "unrecognized"
+
+
 def inspect() -> dict[str, Any]:
     result: dict[str, Any] = {"profiles": {}, "installed": None, "marker": None}
     try:
@@ -130,11 +186,10 @@ def inspect() -> dict[str, Any]:
     except (OSError, ValueError):
         result["installed_error"] = "Installed bundle unreadable"
     marker = ROOT / ".deploying"
-    if marker.exists():
+    if marker.exists() or marker.is_symlink():
         try:
-            owner = marker.read_text().strip()
-            result["marker"] = owner if re.fullmatch(r"[0-9a-f]{32}", owner) else "unrecognized"
-        except OSError:
+            result["marker"] = "unrecognized" if marker.is_symlink() else deployment_marker_owner(marker.read_bytes())
+        except (OSError, UnicodeError):
             result["marker"] = "unreadable"
     for name, config, port in PROFILES:
         try:
@@ -602,6 +657,191 @@ def sync_fixture(attempt: str, payload: dict[str, Any]) -> dict[str, Any]:
     return record
 
 
+def require_recovery_stopped(observation: dict[str, Any]) -> None:
+    """Accept blocked idle health or both services explicitly inactive after sync."""
+    if set(observation["profiles"]) != {profile[0] for profile in PROFILES}:
+        raise DeploymentError("Both fixed runner profiles must report recovery state")
+    if all("error" not in value for value in observation["profiles"].values()):
+        require_release(observation, observation["installed"], blocked=True)
+        return
+    if any("error" not in value for value in observation["profiles"].values()):
+        raise DeploymentError("Partial runner health is unavailable for fixture recovery")
+    result = subprocess.run(
+        ["/usr/bin/systemctl", "show", "--property=ActiveState", "--value", *SERVICES],
+        capture_output=True, timeout=30, check=False,
+    )
+    if (result.returncode != 0 or result.stdout.decode().split() != ["inactive", "inactive"]
+            or observation["installed"] is None):
+        raise DeploymentError("Fixture recovery requires both runners stopped or blocked and idle")
+
+
+def recover_fixture(original_attempt: str, attempt: str, payload: dict[str, Any]) -> dict[str, Any]:
+    """Repair public verification inputs after successful provisioning; never reseed."""
+    if (not re.fullmatch(r"[0-9a-f]{32}", original_attempt)
+            or not re.fullmatch(r"[0-9a-f]{32}", attempt) or attempt == original_attempt):
+        raise DeploymentError("Invalid fixture recovery attempt")
+    protected_directory(ROOT)
+    if os.geteuid() != PRIVILEGED_UID:
+        raise DeploymentError("Fixture recovery requires root")
+    receipts = ROOT / "deployments"
+    path = receipts / (attempt + "-fixture-recovery.json")
+    original_path = receipts / (original_attempt + "-fixture.json")
+    marker = ROOT / ".deploying"
+    record: dict[str, Any] = {
+        "adapter": ADAPTER, "operation": "recover-fixture", "attempt": attempt,
+        "original_attempt": original_attempt, "state": "running", "events": [],
+    }
+    marker_owned = False
+
+    def phase(name: str, **values: Any) -> None:
+        record.update(phase=name, **values)
+        record["events"].append({"phase": name, "at": time.time()})
+        atomic_json(path, record)
+        path.chmod(0o644)
+        with path.open("rb") as stream:
+            os.fsync(stream.fileno())
+
+    with (ROOT / ".deployment-lock").open("a") as lock:
+        fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        protected_directory(receipts)
+        if path.exists() or path.is_symlink():
+            raise DeploymentError("Recovery attempt already exists; inspect its receipt instead of retrying")
+        try:
+            phase("inspect")
+            protected_file(marker)
+            protected_file(original_path)
+            original_pins = {marker: pinned_path(marker), original_path: pinned_path(original_path)}
+            original = json.loads(original_pins[original_path][1])
+            events = [event.get("phase") for event in original.get("events", [])]
+            if (deployment_marker_owner(original_pins[marker][1]) != original_attempt
+                    or original.get("adapter") != ADAPTER or original.get("operation") != "sync-fixture"
+                    or original.get("attempt") != original_attempt or original.get("state") != "uncertain"
+                    or original.get("failed_phase") != "verify-fixture"
+                    or "provision" not in events or "verify-fixture" not in events
+                    or events.index("provision") >= events.index("verify-fixture")):
+                raise DeploymentError("Recovery requires the matching provisioned fixture verification failure")
+            backup = receipts / (original_attempt + "-fixture-backup")
+            if original.get("backup") != str(backup):
+                raise DeploymentError("Original fixture backup identity mismatch")
+            protected_directory(backup)
+            marker_owned = True
+            record.update(original_receipt={"path": str(original_path),
+                          "sha256": hashlib.sha256(original_pins[original_path][1]).hexdigest()},
+                          original_backup=str(backup))
+            runner_before = inspect()
+            if runner_before["marker"] != original_attempt:
+                raise DeploymentError("Fixture recovery marker owner differs")
+            require_recovery_stopped(runner_before)
+            contents, digest, artifact = fixture_contents(payload)
+            legacy, runner_gid, config_pins = configuration_layout()
+            if legacy:
+                raise DeploymentError("Fixture recovery requires the protected configuration layout")
+            for directory in {FIXTURE_ROOT, RESET_HELPER.parent}:
+                protected_directory(directory)
+            public_pins = {}
+            for destination in fixture_paths().values():
+                protected_file(destination)
+                public_pins[destination] = pinned_path(destination)
+            private = json.loads(config_pins[WORDPRESS_CONFIG][1])
+            private["target_artifact_identity"] = artifact
+            phase("validated", expected=payload["identity"], artifact_identity=artifact, fixture_digest=digest,
+                  before=fixture_observation())
+            revalidate_pins({**original_pins, **config_pins, **public_pins})
+            require_recovery_stopped(inspect())
+            phase("install")
+            for name, destination in fixture_paths().items():
+                mode = 0o755 if name in {"fixture/setup.sh", "fixture/seed.sh"} else 0o644
+                replace_file(destination, contents[name], mode, PRIVILEGED_UID, PRIVILEGED_UID)
+            revalidate_pins({**original_pins, WORDPRESS_CONFIG: config_pins[WORDPRESS_CONFIG],
+                             RUNNER_CONFIG: config_pins[RUNNER_CONFIG]})
+            replace_file(WORDPRESS_CONFIG, json.dumps(private).encode(), 0o640, PRIVILEGED_UID, runner_gid)
+            phase("verify-fixture")
+            verify_fixture()
+            revalidate_pins(original_pins)
+            after = fixture_observation()
+            if (after["installed"] != payload["identity"] or after["artifact_identity"] != artifact
+                    or "error" in after):
+                raise DeploymentError("Recovered fixture/configuration identity mismatch")
+            phase("restart", after=after)
+            systemctl("restart")
+            revalidate_pins(original_pins)
+            phase("verify-runners")
+            deadline = time.monotonic() + 30
+            while True:
+                runner_after = inspect()
+                try:
+                    if runner_after["marker"] != original_attempt:
+                        raise DeploymentError("Fixture recovery marker owner differs")
+                    require_release(runner_after, runner_before["installed"], blocked=True)
+                    break
+                except DeploymentError:
+                    if time.monotonic() >= deadline:
+                        raise
+                    time.sleep(1)
+            revalidate_pins(original_pins)
+            phase("verified-blocked", verified=True, after=after,
+                  runner_after=runner_after, interlock_retained=True)
+            completed = {**record, "phase": "verified", "state": "succeeded", "interlock_retained": False,
+                         "events": [*record["events"], {"phase": "verified", "at": time.time()}]}
+            encoded = json.dumps(completed, sort_keys=True, separators=(",", ":")).encode()
+            envelope = {"adapter": ADAPTER, "operation": "recover-fixture", "original_attempt": original_attempt,
+                        "recovery_attempt": attempt, "state": "verified", "receipt_sha256": hashlib.sha256(encoded).hexdigest(),
+                        "final_receipt": completed}
+            staged_bytes = json.dumps(envelope, sort_keys=True, separators=(",", ":")).encode()
+            if staged_fixture_receipt(staged_bytes) != completed:
+                raise DeploymentError("Fixed recovery completion envelope is invalid")
+            revalidate_pins(original_pins)
+            # The marker remains present until its bytes become the authoritative
+            # receipt in one atomic rename. No unlink-before-receipt crash window.
+            replace_file(marker, staged_bytes, 0o644, PRIVILEGED_UID, PRIVILEGED_UID)
+            staged_pin = pinned_path(marker)
+            if staged_pin[1] != staged_bytes:
+                raise DeploymentError("Fixture recovery completion marker changed")
+            revalidate_pins({original_path: original_pins[original_path], marker: staged_pin})
+            os.replace(marker, path)
+            sync_directory(ROOT)
+            sync_directory(receipts)
+            protected_file(path)
+            durable = staged_fixture_receipt(path.read_bytes())
+            if durable is None or durable != completed:
+                raise DeploymentError("Durable fixture recovery completion differs")
+            record = durable
+        except Exception as exc:
+            reason = str(exc) if isinstance(exc, DeploymentError) else type(exc).__name__
+            if marker_owned:
+                if not marker.exists() and not marker.is_symlink():
+                    try:
+                        descriptor = os.open(marker, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW, 0o644)
+                    except FileExistsError:
+                        pass  # A different owner won the path; never replace it.
+                    else:
+                        with os.fdopen(descriptor, "wb") as stream:
+                            os.fchmod(stream.fileno(), 0o644)
+                            stream.write(original_pins[marker][1])
+                            stream.flush()
+                            os.fsync(stream.fileno())
+                        sync_directory(ROOT)
+                elif not marker.is_symlink():
+                    try:
+                        protected_file(marker)
+                        marker_pin = pinned_path(marker)
+                    except (OSError, DeploymentError):
+                        pass  # An unsupported replacement remains a conflict.
+                    else:
+                        staged = staged_fixture_receipt(marker_pin[1])
+                        if staged is not None and staged["original_attempt"] == original_attempt and staged["attempt"] == attempt:
+                            revalidate_pins({marker: marker_pin})
+                            replace_file(
+                                marker, original_pins[marker][1], 0o644,
+                                PRIVILEGED_UID, PRIVILEGED_UID,
+                            )
+            owner = inspect()["marker"]
+            phase("failed", failed_phase=record.get("phase"), state="uncertain", error=reason,
+                  after=fixture_observation(), interlock_retained=owner == original_attempt,
+                  marker_conflict=owner is not None and owner != original_attempt)
+    return record
+
+
 def bootstrap(attempt: str, payload: dict[str, Any]) -> dict[str, Any]:
     """Adopt the fixed legacy layout after explicitly stopping both runners."""
     if not re.fullmatch(r"[0-9a-f]{32}", attempt):
@@ -791,6 +1031,10 @@ def main() -> int:
     if sys.argv[1:] == ["inspect"]:
         print(json.dumps(inspect()))
         return 0
+    if len(sys.argv) == 5 and sys.argv[1] == "recover-fixture":
+        result = recover_fixture(sys.argv[2], sys.argv[3], decode_payload(sys.argv[4]))
+        print(json.dumps(result))
+        return 0 if result["state"] == "succeeded" else 1
     if len(sys.argv) != 4 or sys.argv[1] not in {"bootstrap", "deploy", "sync-fixture"}:
         raise DeploymentError("Unsupported fixed adapter action")
     operation = {"bootstrap": bootstrap, "deploy": deploy, "sync-fixture": sync_fixture}[sys.argv[1]]

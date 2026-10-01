@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import re
 import time
 from contextlib import nullcontext, suppress
 from enum import StrEnum
@@ -15,7 +16,7 @@ from app.tasks.backup_lock import BackupLockLeaseError, backup_worker_restart_gu
 
 from ..lib import service_ops, service_release
 from ..lib.confirm_token import confirm_gate
-from ..lib.neri_runner_deploy import bootstrap_runner, deploy_runner
+from ..lib.neri_runner_deploy import bootstrap_runner, deploy_runner, recover_runner_fixture
 from ..lib.usage import usage
 from ..output import output_error
 
@@ -71,6 +72,46 @@ def runner_bootstrap(
         f"st service bootstrap-runner {services.project_id}",
     )
     raise typer.Exit(bootstrap_runner(services.root, services.runner_adapter))
+
+
+@app.command("recover-runner-fixture")
+@usage(
+    surface="st.service.runner-fixture-recovery",
+    cmd="st service recover-runner-fixture neri <original-attempt>",
+    when="repair fixed fixture verification inputs after provisioning succeeded and retained its interlock",
+    precautions=(
+        "requires the exact original 32-hex attempt, matching retained interlock, and provisioned verification-failure receipt",
+        "two-pass confirmation is required; both runners must already be stopped or blocked and idle",
+        "installs public fixture files and updates only the private target artifact identity; never provisions or seeds",
+        "original receipt and backup remain intact; a linked recovery receipt is written and failures retain the interlock",
+    ),
+    task_types=("vm-repair", "devops"),
+    tier="reference",
+)
+def runner_fixture_recovery(
+    project: Annotated[str, typer.Argument(help="Project id with the fixed Neri runner adapter")],
+    attempt: Annotated[str, typer.Argument(help="Exact original 32-hex fixture deployment attempt")],
+    confirm: Annotated[str | None, typer.Option("--confirm", help="Confirm token from preview run")] = None,
+) -> None:
+    """Recover a provisioned fixture whose verification retained its interlock."""
+    if not re.fullmatch(r"[0-9a-f]{32}", attempt):
+        output_error("Pass the exact original 32-hex fixture deployment attempt.")
+        raise typer.Exit(1)
+    services = _load(project)
+    if services.runner_adapter is None:
+        output_error("Project has no managed runner adapter.")
+        raise typer.Exit(1)
+    confirm_gate(
+        f"service-runner-fixture-recovery-{services.project_id}-{attempt}", confirm,
+        [
+            f"RECOVER RUNNER FIXTURE: {services.project_id}; original attempt={attempt}",
+            "Installs the current fixed public fixture inputs without provisioning or seeding.",
+            "Preserves the original receipt and backup, then verifies the fixture and restarts both runners.",
+            "Clears only the matching interlock after full success; failures retain it.",
+        ],
+        f"st service recover-runner-fixture {services.project_id} {attempt}",
+    )
+    raise typer.Exit(recover_runner_fixture(services.root, services.runner_adapter, attempt))
 
 
 def _load(project: str) -> service_ops.ProjectServices:

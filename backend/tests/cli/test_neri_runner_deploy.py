@@ -387,6 +387,9 @@ class LocalGuestClient:
         self.commands.append(command)
         if command[3] == "inspect":
             value, code = guest.inspect(), 0
+        elif command[3] == "recover-fixture":
+            value = guest.recover_fixture(command[4], command[5], guest.decode_payload(command[6]))
+            code = 0 if value["state"] == "succeeded" else 1
         else:
             assert command[3] in {"bootstrap", "deploy", "sync-fixture"}
             operation = {"bootstrap": guest.bootstrap, "deploy": guest.deploy, "sync-fixture": guest.sync_fixture}[command[3]]
@@ -1038,3 +1041,534 @@ def test_receipt_created_before_lock_acquisition_is_rechecked_and_preserved(inst
     inspection.assert_not_called()
     fixture_installation[2].assert_not_called()
     fixture_installation[3].assert_not_called()
+
+
+@pytest.fixture
+def retained_fixture(installed, fixture_installation):
+    root, _source, state = installed
+    _old, _private, provision, verify = fixture_installation
+    verify.side_effect = guest.DeploymentError("WordPress fixture verification failed")
+    original = guest.sync_fixture(ATTEMPT, payload(fixture_public_files("provisioned")))
+    assert original["state"] == "uncertain", original
+    assert original["failed_phase"] == "verify-fixture"
+    (root / "deployments" / (ATTEMPT + "-fixture.json")).chmod(0o644)
+    provision.assert_called_once_with()
+    verify.side_effect = None
+    provision.reset_mock()
+    verify.reset_mock()
+    state["calls"].clear()
+    return original
+
+
+def test_fixture_recovery_preserves_original_backup_and_secrets_without_provision(
+    installed, fixture_installation, retained_fixture,
+):
+    root, source, state = installed
+    _old, _private, provision, verify = fixture_installation
+    original_path = root / "deployments" / (ATTEMPT + "-fixture.json")
+    original_bytes = original_path.read_bytes()
+    backup = Path(retained_fixture["backup"])
+    backup_bytes = {path.name: path.read_bytes() for path in backup.iterdir()}
+    private_before = json.loads(guest.WORDPRESS_CONFIG.read_bytes())
+    runner_before = guest.RUNNER_CONFIG.read_bytes()
+    files = fixture_public_files("revised-verification-pins")
+    result = guest.recover_fixture(ATTEMPT, "2" * 32, payload(files))
+    assert result["state"] == "succeeded", result
+    assert result["operation"] == "recover-fixture"
+    assert result["original_attempt"] == ATTEMPT
+    assert result["original_receipt"] == {
+        "path": str(original_path), "sha256": hashlib.sha256(original_bytes).hexdigest(),
+    }
+    assert result["original_backup"] == str(backup)
+    assert original_path.read_bytes() == original_bytes
+    assert {path.name: path.read_bytes() for path in backup.iterdir()} == backup_bytes
+    assert guest.RUNNER_CONFIG.read_bytes() == runner_before
+    assert json.loads(guest.WORDPRESS_CONFIG.read_bytes()) == {
+        **private_before, "target_artifact_identity": result["artifact_identity"],
+    }
+    assert guest.read_identity(root) == guest.identity(source)
+    assert result["after"]["installed"] == guest.identity(files)
+    assert result["after"]["artifact_identity"] == guest.fixture_contents(payload(files))[2]
+    guest.require_release(result["runner_after"], guest.identity(source), blocked=True)
+    assert result["verified"] is True
+    assert result["interlock_retained"] is False
+    assert not (root / ".deploying").exists()
+    assert state["calls"] == ["restart"]
+    recovery_path = root / "deployments" / ("2" * 32 + "-fixture-recovery.json")
+    envelope = json.loads(recovery_path.read_bytes())
+    assert envelope["state"] == "verified"
+    assert guest.staged_fixture_receipt(recovery_path.read_bytes()) == result
+    assert envelope["final_receipt"] == result
+    assert recovery_path.stat().st_mode & 0o777 == 0o644
+    assert recovery_path.stat().st_uid == guest.PRIVILEGED_UID
+    provision.assert_not_called()
+    verify.assert_called_once_with()
+    for secret in ("private-api-key", "private-juice-key", "private-value"):
+        assert secret not in json.dumps(result)
+
+
+@pytest.mark.parametrize("fault", ["marker", "receipt-attempt", "adapter", "operation", "state", "failed-phase",
+                                   "no-provision", "wrong-order", "backup", "receipt-symlink", "marker-symlink",
+                                   "busy", "unblocked", "legacy", "payload"])
+def test_fixture_recovery_requires_exact_original_failure_before_mutation(
+    installed, fixture_installation, retained_fixture, monkeypatch, fault,
+):
+    root, _source, state = installed
+    _old, _private, provision, verify = fixture_installation
+    original_path = root / "deployments" / (ATTEMPT + "-fixture.json")
+    marker = root / ".deploying"
+    original = dict(retained_fixture)
+    value = payload(fixture_public_files("revised"))
+    field_faults = {"receipt-attempt": ("attempt", "3" * 32), "adapter": ("adapter", "other"),
+                    "operation": ("operation", "deploy"), "state": ("state", "succeeded"),
+                    "failed-phase": ("failed_phase", "provision"), "backup": ("backup", "/arbitrary")}
+    if fault in field_faults:
+        field, wrong = field_faults[fault]
+        original[field] = wrong
+        original_path.write_text(json.dumps(original))
+    elif fault in {"no-provision", "wrong-order"}:
+        original["events"] = [{"phase": name} for name in (
+            ["verify-fixture", "failed"] if fault == "no-provision" else ["verify-fixture", "provision", "failed"])]
+        original_path.write_text(json.dumps(original))
+    elif fault == "marker":
+        marker.write_text("3" * 32)
+    elif fault in {"receipt-symlink", "marker-symlink"}:
+        path = original_path if fault == "receipt-symlink" else marker
+        moved = path.with_suffix(".moved")
+        path.rename(moved)
+        path.symlink_to(moved)
+    elif fault == "busy":
+        state["busy"] = True
+    elif fault == "unblocked":
+        observe = guest.inspect
+        def unblocked():
+            result = observe()
+            for profile in result["profiles"].values():
+                profile["deployment_blocked"] = False
+            return result
+        monkeypatch.setattr(guest, "inspect", unblocked)
+    elif fault == "legacy":
+        guest.WORDPRESS_CONFIG.parent.chmod(0o700)
+        guest.RUNNER_CONFIG.chmod(0o600)
+    else:
+        value["files"]["fixture/seed.sh"] = base64.b64encode(b"invalid").decode()
+    before = {path: path.read_bytes() for path in guest.fixture_paths().values()}
+    private_before = guest.WORDPRESS_CONFIG.read_bytes()
+    original_bytes, marker_bytes = original_path.read_bytes(), marker.read_bytes()
+    result = guest.recover_fixture(ATTEMPT, "2" * 32, value)
+    assert result["state"] == "uncertain", result
+    assert result["interlock_retained"] is (fault not in {"marker", "marker-symlink"})
+    assert result["marker_conflict"] is (fault in {"marker", "marker-symlink"})
+    assert original_path.read_bytes() == original_bytes
+    assert marker.read_bytes() == marker_bytes
+    assert {path: path.read_bytes() for path in guest.fixture_paths().values()} == before
+    assert guest.WORDPRESS_CONFIG.read_bytes() == private_before
+    assert state["calls"] == []
+    provision.assert_not_called()
+    verify.assert_not_called()
+
+
+@pytest.mark.parametrize("attempt", ["short", "F" * 32, "../" + "1" * 32, ATTEMPT])
+def test_fixture_recovery_rejects_invalid_recovery_identity(installed, fixture_installation, retained_fixture, attempt):
+    with pytest.raises(guest.DeploymentError, match="Invalid"):
+        guest.recover_fixture(ATTEMPT, attempt, payload(fixture_public_files("revised")))
+
+
+def test_fixture_recovery_rejects_partial_health_instead_of_using_stopped_service_fallback(installed, monkeypatch):
+    root, _source, _state = installed
+    (root / ".deploying").write_text(ATTEMPT)
+    observation = guest.inspect()
+    observation["profiles"][guest.PROFILES[0][0]] = {"error": "Runner health unavailable"}
+    check = Mock()
+    monkeypatch.setattr(guest.subprocess, "run", check)
+    with pytest.raises(guest.DeploymentError, match="Partial runner health"):
+        guest.require_recovery_stopped(observation)
+    check.assert_not_called()
+
+
+@pytest.mark.parametrize("fault", ["install", "verify", "restart", "running-release", "marker-replaced", "receipt-write"])
+def test_fixture_recovery_failure_retains_marker_and_original(
+    installed, fixture_installation, retained_fixture, monkeypatch, fault,
+):
+    root, _source, state = installed
+    _old, _private, provision, verify = fixture_installation
+    original_path = root / "deployments" / (ATTEMPT + "-fixture.json")
+    original_bytes = original_path.read_bytes()
+    if fault == "install":
+        monkeypatch.setattr(guest, "replace_file", Mock(side_effect=OSError("private installation details")))
+    elif fault == "verify":
+        verify.side_effect = RuntimeError("private verifier details")
+    elif fault == "restart":
+        monkeypatch.setattr(guest, "systemctl", Mock(side_effect=RuntimeError("private restart details")))
+    elif fault in {"running-release", "marker-replaced"}:
+        restart = guest.systemctl
+        def change_after_restart(action):
+            restart(action)
+            if fault == "running-release":
+                state["release"] = {"release_id": "wrong"}
+            else:
+                (root / ".deploying").write_text("3" * 32)
+        monkeypatch.setattr(guest, "systemctl", change_after_restart)
+        ticks = iter(range(0, 1000, 60))
+        monkeypatch.setattr(guest.time, "monotonic", lambda: next(ticks))
+    else:
+        replace = guest.replace_file
+        def fail_success_receipt(path, contents, mode, uid, gid):
+            if path == root / ".deploying":
+                raise OSError("private durable receipt details")
+            replace(path, contents, mode, uid, gid)
+        monkeypatch.setattr(guest, "replace_file", fail_success_receipt)
+    result = guest.recover_fixture(ATTEMPT, "2" * 32, payload(fixture_public_files("revised")))
+    assert result["state"] == "uncertain", result
+    assert result["interlock_retained"] is (fault != "marker-replaced")
+    assert result["marker_conflict"] is (fault == "marker-replaced")
+    assert (root / ".deploying").read_text() == ("3" * 32 if fault == "marker-replaced" else ATTEMPT)
+    assert original_path.read_bytes() == original_bytes
+    provision.assert_not_called()
+    assert "private" not in json.dumps(result)
+
+
+@pytest.mark.parametrize("when", ["verify", "restart"])
+@pytest.mark.parametrize("change", ["missing", "other-owner"])
+def test_fixture_recovery_restores_missing_owned_marker_and_reports_foreign_owner_conflict(
+    installed, fixture_installation, retained_fixture, monkeypatch, when, change,
+):
+    root, _source, state = installed
+    marker = root / ".deploying"
+    original_path = root / "deployments" / (ATTEMPT + "-fixture.json")
+    original_bytes = original_path.read_bytes()
+    def mutate_marker():
+        marker.unlink()
+        if change == "other-owner":
+            marker.write_text("3" * 32)
+            marker.chmod(0o644)
+    if when == "verify":
+        fixture_installation[3].side_effect = mutate_marker
+    else:
+        restart = guest.systemctl
+        def restarted(action):
+            restart(action)
+            mutate_marker()
+        monkeypatch.setattr(guest, "systemctl", restarted)
+    result = guest.recover_fixture(ATTEMPT, "2" * 32, payload(fixture_public_files("revised")))
+    assert result["state"] == "uncertain", result
+    assert result["interlock_retained"] is (change == "missing")
+    assert result["marker_conflict"] is (change == "other-owner")
+    assert marker.read_text() == (ATTEMPT if change == "missing" else "3" * 32)
+    assert marker.stat().st_mode & 0o777 == 0o644
+    assert original_path.read_bytes() == original_bytes
+    assert state["calls"] == ([] if when == "verify" else ["restart"])
+    fixture_installation[2].assert_not_called()
+
+
+@pytest.mark.parametrize("when", ["before-rename", "after-rename"])
+def test_fixture_recovery_atomic_release_has_durable_completion_or_owned_marker_after_hard_stop(
+    installed, fixture_installation, retained_fixture, monkeypatch, when,
+):
+    root, _source, _state = installed
+    marker = root / ".deploying"
+    recovery_path = root / "deployments" / ("2" * 32 + "-fixture-recovery.json")
+    replace = guest.os.replace
+    def interrupt_release(source, destination):
+        if source == marker and destination == recovery_path:
+            if when == "after-rename":
+                replace(source, destination)
+            raise SystemExit("simulated hard process termination")
+        replace(source, destination)
+    monkeypatch.setattr(guest.os, "replace", interrupt_release)
+    with pytest.raises(SystemExit, match="hard process termination"):
+        guest.recover_fixture(ATTEMPT, "2" * 32, payload(fixture_public_files("revised")))
+    if when == "before-rename":
+        assert marker.exists()
+        assert guest.inspect()["marker"] == ATTEMPT
+        staged = guest.staged_fixture_receipt(marker.read_bytes())
+        assert staged is not None
+        assert staged["attempt"] == "2" * 32
+        prior = json.loads(recovery_path.read_bytes())
+        assert prior["state"] == "running"
+        assert prior["phase"] == "verified-blocked"
+        assert prior["interlock_retained"] is True
+        monkeypatch.setattr(guest.os, "replace", replace)
+        resumed = guest.recover_fixture(ATTEMPT, "3" * 32, payload(fixture_public_files("revised")))
+        assert resumed["state"] == "succeeded", resumed
+        assert not marker.exists()
+        assert json.loads(recovery_path.read_bytes()) == prior
+    else:
+        assert not marker.exists()
+        durable = guest.staged_fixture_receipt(recovery_path.read_bytes())
+        assert durable is not None
+        assert durable["state"] == "succeeded"
+        assert durable["attempt"] == "2" * 32
+        assert durable["original_attempt"] == ATTEMPT
+        assert durable["interlock_retained"] is False
+    fixture_installation[2].assert_not_called()
+
+
+@pytest.mark.parametrize("fault", ["directory-sync", "final-receipt-corrupt"])
+def test_fixture_recovery_restores_original_marker_when_atomic_completion_cannot_be_confirmed(
+    installed, fixture_installation, retained_fixture, monkeypatch, fault,
+):
+    root, _source, _state = installed
+    marker = root / ".deploying"
+    recovery_path = root / "deployments" / ("2" * 32 + "-fixture-recovery.json")
+    if fault == "directory-sync":
+        sync = guest.sync_directory
+        failed = False
+        def fail_release_sync(directory):
+            nonlocal failed
+            if directory == root and not marker.exists() and not failed:
+                failed = True
+                raise OSError("private directory sync details")
+            sync(directory)
+        monkeypatch.setattr(guest, "sync_directory", fail_release_sync)
+    else:
+        replace = guest.os.replace
+        def corrupt_final_receipt(source, destination):
+            replace(source, destination)
+            if source == marker and destination == recovery_path:
+                envelope = json.loads(recovery_path.read_bytes())
+                envelope["receipt_sha256"] = "0" * 64
+                recovery_path.write_text(json.dumps(envelope))
+        monkeypatch.setattr(guest.os, "replace", corrupt_final_receipt)
+    result = guest.recover_fixture(ATTEMPT, "2" * 32, payload(fixture_public_files("revised")))
+    assert result["state"] == "uncertain", result
+    assert result["interlock_retained"] is True
+    assert result["marker_conflict"] is False
+    assert marker.read_text() == ATTEMPT
+    assert json.loads(recovery_path.read_bytes())["state"] == "uncertain"
+    assert "private" not in json.dumps(result)
+    fixture_installation[2].assert_not_called()
+
+
+def test_resumed_fixture_recovery_restores_exact_staged_marker_after_completion_failure(
+    installed, fixture_installation, retained_fixture, monkeypatch,
+):
+    root, _source, _state = installed
+    marker = root / ".deploying"
+    recovery_path = root / "deployments" / ("2" * 32 + "-fixture-recovery.json")
+    replace = guest.os.replace
+
+    def interrupt_before_rename(source, destination):
+        if source == marker and destination == recovery_path:
+            raise SystemExit("simulated hard process termination")
+        replace(source, destination)
+
+    monkeypatch.setattr(guest.os, "replace", interrupt_before_rename)
+    with pytest.raises(SystemExit, match="hard process termination"):
+        guest.recover_fixture(ATTEMPT, "2" * 32, payload(fixture_public_files("revised")))
+    staged_marker = marker.read_bytes()
+    staged = guest.staged_fixture_receipt(staged_marker)
+    assert staged is not None
+    assert staged["attempt"] == "2" * 32
+
+    monkeypatch.setattr(guest.os, "replace", replace)
+    sync = guest.sync_directory
+    failed = False
+
+    def fail_release_sync(directory):
+        nonlocal failed
+        if directory == root and not marker.exists() and not failed:
+            failed = True
+            raise OSError("private directory sync details")
+        sync(directory)
+
+    monkeypatch.setattr(guest, "sync_directory", fail_release_sync)
+    result = guest.recover_fixture(
+        ATTEMPT, "3" * 32, payload(fixture_public_files("revised")),
+    )
+
+    assert result["state"] == "uncertain", result
+    assert result["interlock_retained"] is True
+    assert result["marker_conflict"] is False
+    assert failed is True
+    assert marker.read_bytes() == staged_marker
+    assert guest.inspect()["marker"] == ATTEMPT
+    fixture_installation[2].assert_not_called()
+
+
+@pytest.mark.parametrize("fault", ["extra-field", "digest", "original-attempt", "final-state", "nested-extra"])
+def test_inspect_rejects_arbitrary_json_in_recovery_marker(
+    installed, fixture_installation, retained_fixture, monkeypatch, fault,
+):
+    root, _source, _state = installed
+    marker = root / ".deploying"
+    recovery_path = root / "deployments" / ("2" * 32 + "-fixture-recovery.json")
+    replace = guest.os.replace
+    def stop_before_release(source, destination):
+        if source == marker and destination == recovery_path:
+            raise SystemExit()
+        replace(source, destination)
+    monkeypatch.setattr(guest.os, "replace", stop_before_release)
+    with pytest.raises(SystemExit):
+        guest.recover_fixture(ATTEMPT, "2" * 32, payload(fixture_public_files("revised")))
+    envelope = json.loads(marker.read_bytes())
+    if fault == "extra-field":
+        envelope["arbitrary"] = True
+    elif fault == "digest":
+        envelope["receipt_sha256"] = "0" * 64
+    elif fault == "original-attempt":
+        envelope["original_attempt"] = "3" * 32
+    else:
+        if fault == "final-state":
+            envelope["final_receipt"]["state"] = "running"
+        else:
+            envelope["final_receipt"]["private_data"] = "arbitrary"
+        encoded = json.dumps(envelope["final_receipt"], sort_keys=True, separators=(",", ":")).encode()
+        envelope["receipt_sha256"] = hashlib.sha256(encoded).hexdigest()
+    marker.write_text(json.dumps(envelope))
+    assert guest.staged_fixture_receipt(marker.read_bytes()) is None
+    assert guest.inspect()["marker"] == "unrecognized"
+
+
+@pytest.mark.parametrize("active", [False, True])
+def test_fixture_recovery_checks_fixed_inactive_services_when_health_is_unavailable(
+    installed, fixture_installation, retained_fixture, monkeypatch, active,
+):
+    root, _source, state = installed
+    health = guest.profile_health
+    def stopped_health(config, port):
+        if not state["calls"]:
+            raise OSError("services stopped")
+        return health(config, port)
+    monkeypatch.setattr(guest, "profile_health", stopped_health)
+    check = Mock(return_value=subprocess.CompletedProcess([], 0, b"inactive\nactive\n" if active else b"inactive\ninactive\n", b""))
+    monkeypatch.setattr(guest.subprocess, "run", check)
+    result = guest.recover_fixture(ATTEMPT, "2" * 32, payload(fixture_public_files("revised")))
+    assert result["state"] == ("uncertain" if active else "succeeded"), result
+    assert (root / ".deploying").exists() is active
+    assert check.call_args.args[0] == ["/usr/bin/systemctl", "show", "--property=ActiveState", "--value", *guest.SERVICES]
+    fixture_installation[2].assert_not_called()
+
+
+def test_host_fixture_recovery_uses_only_fixed_action_and_linked_attempt(
+    installed, fixture_installation, retained_fixture, checkout, monkeypatch,
+):
+    client = LocalGuestClient()
+    files = fixture_public_files("revised")
+    for source, name in zip(deploy.FIXTURE_SOURCES, guest.FIXTURE_FILES, strict=True):
+        (checkout / source).write_bytes(files[name])
+    monkeypatch.setattr(deploy, "ProxmoxClient", lambda: client)
+    assert deploy.recover_runner_fixture(checkout, deploy.RunnerAdapter.neri_runner_v1, ATTEMPT) == 0
+    assert [command[3] for command in client.commands] == ["inspect", "recover-fixture"]
+    command = client.commands[1]
+    assert command[4] == ATTEMPT
+    assert command[5] != ATTEMPT and len(command[5]) == 32
+    assert guest.decode_payload(command[6]) == payload(files)
+    record = json.loads(next((checkout / ".dev-tools/runner-deployments").glob("*.json")).read_bytes())
+    assert record["operation"] == "recover-fixture"
+    assert record["original_attempt"] == ATTEMPT
+    assert record["guest"]["attempt"] == record["attempt"]
+    assert record["guest"]["original_attempt"] == ATTEMPT
+    assert record["state"] == "succeeded"
+    assert "private" not in json.dumps(record)
+    fixture_installation[2].assert_not_called()
+
+
+def test_host_fixture_recovery_refuses_wrong_marker_without_mutating_guest(checkout, monkeypatch):
+    client = LocalGuestClient()
+    monkeypatch.setattr(deploy, "ProxmoxClient", lambda: client)
+    assert deploy.recover_runner_fixture(checkout, deploy.RunnerAdapter.neri_runner_v1, ATTEMPT) == 1
+    assert [command[3] for command in client.commands] == ["inspect"]
+
+
+def test_host_fixture_recovery_validates_public_payload_before_guest_submission(checkout, monkeypatch):
+    (checkout / "scripts/lab-vm/wordpress-fixture/seed.sh").write_bytes(b"invalid control bytes")
+    client = Mock()
+    monkeypatch.setattr(deploy, "ProxmoxClient", client)
+    assert deploy.recover_runner_fixture(checkout, deploy.RunnerAdapter.neri_runner_v1, ATTEMPT) == 1
+    client.assert_not_called()
+
+
+@pytest.mark.parametrize("state,code", [("succeeded", 0), ("uncertain", 1)])
+def test_guest_main_dispatches_only_fixed_fixture_recovery_arguments(monkeypatch, capsys, state, code):
+    value = payload(fixture_public_files("revised"))
+    recover = Mock(return_value={"state": state})
+    monkeypatch.setattr(guest, "recover_fixture", recover)
+    monkeypatch.setattr(guest.sys, "argv", ["fixed-guest", "recover-fixture", ATTEMPT, "2" * 32, guest.encode_payload(value)])
+    assert guest.main() == code
+    recover.assert_called_once_with(ATTEMPT, "2" * 32, value)
+    assert json.loads(capsys.readouterr().out) == {"state": state}
+
+
+@pytest.mark.parametrize("fault", ["original-attempt", "receipt-link", "backup-link", "verified", "transport"])
+def test_host_fixture_recovery_rejects_incomplete_receipt_without_retry(
+    installed, fixture_installation, retained_fixture, checkout, monkeypatch, fault,
+):
+    client = LocalGuestClient()
+    execute = client.agent_exec
+    def incomplete(vmid, command):
+        response = execute(vmid, command)
+        if command[3] == "recover-fixture":
+            if fault == "transport":
+                raise ProxmoxError("private transport output")
+            status = client.results[response["pid"]]
+            record = json.loads(status["out-data"])
+            if fault == "original-attempt":
+                record["original_attempt"] = "3" * 32
+            elif fault == "receipt-link":
+                record["original_receipt"]["path"] = "/arbitrary"
+            elif fault == "backup-link":
+                record["original_backup"] = "/arbitrary"
+            else:
+                record["verified"] = False
+            status["out-data"] = json.dumps(record)
+        return response
+    monkeypatch.setattr(client, "agent_exec", incomplete)
+    monkeypatch.setattr(deploy, "ProxmoxClient", lambda: client)
+    assert deploy.recover_runner_fixture(checkout, deploy.RunnerAdapter.neri_runner_v1, ATTEMPT) == 1
+    assert [command[3] for command in client.commands] == ["inspect", "recover-fixture"]
+    record = json.loads(next((checkout / ".dev-tools/runner-deployments").glob("*.json")).read_bytes())
+    assert record["state"] == "uncertain"
+    assert "private" not in json.dumps(record)
+    fixture_installation[2].assert_not_called()
+
+
+@pytest.mark.parametrize("fault", ["lock", "existing-receipt"])
+def test_fixture_recovery_preserves_receipts_when_lock_or_attempt_is_unavailable(
+    installed, fixture_installation, retained_fixture, fault,
+):
+    root, _source, state = installed
+    recovery_path = root / "deployments" / ("2" * 32 + "-fixture-recovery.json")
+    recovery_bytes = b'{"state":"running","owner":"original-recovery"}\n'
+    if fault == "existing-receipt":
+        recovery_path.write_bytes(recovery_bytes)
+    with (root / ".deployment-lock").open("a") as lock:
+        if fault == "lock":
+            guest.fcntl.flock(lock, guest.fcntl.LOCK_EX | guest.fcntl.LOCK_NB)
+        with pytest.raises(BlockingIOError if fault == "lock" else guest.DeploymentError):
+            guest.recover_fixture(ATTEMPT, "2" * 32, payload(fixture_public_files("revised")))
+    if fault == "existing-receipt":
+        assert recovery_path.read_bytes() == recovery_bytes
+    else:
+        assert not recovery_path.exists()
+    assert (root / ".deploying").read_text() == ATTEMPT
+    assert state["calls"] == []
+    fixture_installation[2].assert_not_called()
+    fixture_installation[3].assert_not_called()
+
+
+def test_recovery_cli_preview_binds_exact_original_attempt(checkout, monkeypatch):
+    project = service_ops.ProjectServices(
+        project_id="neri", root=checkout, backend_service="backend", frontend_service="frontend",
+        default_workers=(), optional_workers=(), backend_port=1, frontend_port=2,
+        backend_dir=checkout / "backend", frontend_dir=checkout / "frontend", health_endpoint="/health",
+        runner_adapter=deploy.RunnerAdapter.neri_runner_v1,
+    )
+    monkeypatch.setattr(service, "_load", lambda _: project)
+    operation = Mock(return_value=0)
+    monkeypatch.setattr(service, "recover_runner_fixture", operation)
+    runner = CliRunner()
+    preview = runner.invoke(service.app, ["recover-runner-fixture", "neri", ATTEMPT])
+    assert preview.exit_code == 0, preview.output
+    assert "RECOVER RUNNER FIXTURE" in preview.output
+    assert ATTEMPT in preview.output
+    operation.assert_not_called()
+    token = preview.output.split("--confirm ", 1)[1].strip()
+    wrong = runner.invoke(service.app, ["recover-runner-fixture", "neri", "3" * 32, "--confirm", token])
+    assert wrong.exit_code == 1, wrong.output
+    operation.assert_not_called()
+    result = runner.invoke(service.app, ["recover-runner-fixture", "neri", ATTEMPT, "--confirm", token])
+    assert result.exit_code == 0, result.output
+    operation.assert_called_once_with(checkout, deploy.RunnerAdapter.neri_runner_v1, ATTEMPT)
+    invalid = runner.invoke(service.app, ["recover-runner-fixture", "neri", "not-an-attempt"])
+    assert invalid.exit_code == 1, invalid.output
