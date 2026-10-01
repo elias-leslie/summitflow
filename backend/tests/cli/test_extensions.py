@@ -286,6 +286,24 @@ def test_neri_binding_forwards_only_the_native_codex_session_identity():
     assert "AICO_SESSION_ID" not in binding["environment"]
 
 
+def test_neri_manifest_exposes_direct_hunt_and_surface_commands():
+    registry_path = Path(__file__).resolve().parents[3] / "scripts/lib/tool-registry.json"
+    record = next(
+        row
+        for row in load_extensions(set(), registry_path=registry_path).records
+        if row.manifest is not None and row.manifest.namespace == "neri"
+    )
+    assert record.manifest is not None
+
+    assert "hunt" in record.manifest.help[""]
+    assert "surface" in record.manifest.help[""]
+    assert "hunt begin" in record.manifest.help
+    assert "surface digest" in record.manifest.help
+    surfaces = {row["surface"] for row in record.manifest.usage}
+    assert "st.neri.hunt.begin" in surfaces
+    assert "st.neri.surface.digest" in surfaces
+
+
 def test_actual_neri_binding_preserves_only_approved_runtime_context(
     tmp_path, capfd, monkeypatch,
 ):
