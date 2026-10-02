@@ -155,15 +155,15 @@ export function ProjectCard({ project }: ProjectCardProps) {
 
   return (
     <article
-      className={clsx('card-interactive p-5 group')}
+      className={clsx('card-interactive min-w-0 p-5 group')}
       onMouseEnter={() => setHovered(true)}
       onMouseLeave={() => setHovered(false)}
       onFocusCapture={() => setHovered(true)}
     >
-      <div className="flex items-start justify-between">
-        <div className="flex items-center gap-3">
+      <div className="flex min-w-0 items-start justify-between gap-3">
+        <div className="flex min-w-0 flex-1 items-center gap-3">
           {project.logo_url ? (
-            <div className="w-12 h-12 rounded-xl overflow-hidden bg-slate-800 flex items-center justify-center">
+            <div className="h-12 w-12 shrink-0 overflow-hidden rounded-xl bg-slate-800 flex items-center justify-center">
               <Image
                 src={project.logo_url}
                 alt={project.name}
@@ -174,7 +174,7 @@ export function ProjectCard({ project }: ProjectCardProps) {
             </div>
           ) : (
             <div
-              className="w-12 h-12 rounded-xl flex items-center justify-center"
+              className="h-12 w-12 shrink-0 rounded-xl flex items-center justify-center"
               style={{
                 background: `linear-gradient(135deg, ${gradient.from} 0%, ${gradient.to} 100%)`,
               }}
@@ -184,18 +184,23 @@ export function ProjectCard({ project }: ProjectCardProps) {
               </span>
             </div>
           )}
-          <div>
+          <div className="min-w-0 flex-1">
             <Link
               href={`/projects/${project.id}`}
-              className="font-medium text-slate-100 transition-colors hover:text-phosphor-400 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-phosphor-500/60 rounded-sm"
+              className="block break-words font-medium text-slate-100 transition-colors hover:text-phosphor-400 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-phosphor-500/60 rounded-sm"
             >
               {project.name}
             </Link>
             <div className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-slate-500">
-              <span className="font-mono">{projectHost}</span>
+              <span
+                className="max-w-full truncate font-mono"
+                title={projectHost}
+              >
+                {projectHost}
+              </span>
               {project.root_path ? (
                 <span
-                  className="max-w-[240px] truncate font-mono text-slate-600"
+                  className="max-w-full truncate font-mono text-slate-600"
                   title={project.root_path}
                 >
                   {project.root_path}
@@ -225,18 +230,23 @@ export function ProjectCard({ project }: ProjectCardProps) {
               </a>
             </div>
             {checkpoint && (
-              <div className="flex items-center gap-1.5 mt-1 text-xs text-phosphor-400">
+              <div className="flex min-w-0 flex-wrap items-center gap-1.5 mt-1 text-xs text-phosphor-400">
                 <Database className="w-3 h-3" />
                 <span>Active checkpoint</span>
-                <span className="font-mono">{checkpoint.task_id}</span>
+                <span
+                  className="max-w-full truncate font-mono"
+                  title={checkpoint.task_id}
+                >
+                  {checkpoint.task_id}
+                </span>
                 <span className="text-slate-500">{checkpoint.age}</span>
               </div>
             )}
             {(health || project.health_status || qualityGate) && (
-              <div className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs">
+              <div className="mt-1 flex min-w-0 flex-wrap items-center gap-x-3 gap-y-1 break-words text-xs">
                 <span
                   className={clsx(
-                    'text-slate-500',
+                    'min-w-0 max-w-full text-slate-500',
                     health?.healthy === false && 'text-rose-300',
                   )}
                 >
@@ -253,7 +263,7 @@ export function ProjectCard({ project }: ProjectCardProps) {
                 </span>
                 <span
                   className={clsx(
-                    'text-slate-500',
+                    'min-w-0 max-w-full text-slate-500',
                     qualityGate &&
                       !qualityGate.overall_pass &&
                       'text-amber-300',
@@ -276,7 +286,7 @@ export function ProjectCard({ project }: ProjectCardProps) {
           </div>
         </div>
 
-        <div className="flex items-center gap-2">
+        <div className="flex shrink-0 items-center gap-2">
           {qualityLoading ? (
             <div className="w-3 h-3 border border-slate-600 border-t-purple-500 rounded-full animate-spin" />
           ) : qualityGate ? (

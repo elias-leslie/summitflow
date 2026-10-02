@@ -151,4 +151,37 @@ describe('ProjectCard', () => {
 
     expect(screen.getByText('No root path')).toBeInTheDocument()
   })
+
+  it('retains routes and independently focusable health details with long metadata', async () => {
+    const projectName = 'Browser Automation With A Long Project Name'
+    const rootPath =
+      '/srv/workspaces/projects/browser-automation/very-long-project-root'
+    renderCard({
+      ...project,
+      name: projectName,
+      root_path: rootPath,
+      public_url: 'https://long-project-host-name.example.test',
+    })
+    const health = screen.getByRole('button', {
+      name: `${projectName} health: healthy`,
+    })
+    expect(health.closest('a')).toBeNull()
+    expect(screen.getByRole('link', { name: projectName })).toHaveAttribute(
+      'href',
+      '/projects/summitflow',
+    )
+    expect(screen.getByTitle(rootPath)).toHaveTextContent(rootPath)
+    expect(
+      screen.getByTitle('long-project-host-name.example.test'),
+    ).toBeInTheDocument()
+    expect(screen.getByRole('link', { name: /settings/i })).toHaveAttribute(
+      'href',
+      '/projects/summitflow/settings',
+    )
+    fireEvent.focus(health)
+    expect(await screen.findByText('42 ms')).toBeInTheDocument()
+    expect(screen.getByRole('tooltip')).toHaveTextContent(
+      `${projectName} health`,
+    )
+  })
 })
