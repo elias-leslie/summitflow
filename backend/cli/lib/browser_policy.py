@@ -259,6 +259,42 @@ def local_launch(args: list[str], *, agent_browser_bin: str, env: Mapping[str, s
     }
 
 
+def managed_session_name(args: list[str], env: Mapping[str, str] | None = None) -> str | None:
+    """Only an explicit alternate session selects owner-managed local routing."""
+    requested, _ = browser_support.split_session_options(args)
+    if not requested or requested[1] == local_ai_session(env):
+        return None
+    return requested[1]
+
+
+def managed_session_launch(
+    session: str | None, *, agent_browser_bin: str, env: Mapping[str, str] | None = None,
+) -> dict[str, object]:
+    """Supply canonical Chrome; the owner resolves private profile/runtime paths."""
+    values = os.environ if env is None else env
+    chrome = system_chrome_path(values)
+    if not chrome:
+        raise ValueError("Local system Chrome not found; set ST_BROWSER_LOCAL_CHROME")
+    visible = values.get("ST_BROWSER_LOCAL_AI_VISIBLE", "").strip() == "1"
+    prefix = ["--executable-path", chrome]
+    if visible:
+        prefix.append("--headed")
+    else:
+        prefix.extend(["--args", HEADLESS_CHROME_ARGS])
+    if (session and session != local_ai_session(values)
+            and values.get("ST_BROWSER_MANAGED_EXTENSION_TEST", "").strip() == "1"):
+        if "--args" in prefix:
+            prefix[prefix.index("--args") + 1] += ",--enable-unsafe-extension-debugging"
+        else:
+            prefix.extend(["--args", "--enable-unsafe-extension-debugging"])
+    return {
+        "agent_browser_bin": agent_browser_bin, "prefix": prefix,
+        "window_mode": "visible" if visible else "headless",
+        "default_launch": False, "minimize": False, "window_class": "",
+        "managed_session": session,
+    }
+
+
 def isolated_check_launch(session: str, *, agent_browser_bin: str) -> dict[str, object]:
     """Resolve an ephemeral headless check independently of the interactive AI profile."""
     if re.fullmatch(r"[A-Za-z0-9_-]+", session) is None:

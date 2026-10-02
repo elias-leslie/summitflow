@@ -12,7 +12,8 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 router = APIRouter()
 
-WorkflowKey = Literal["work_pickup", "task_generation"]
+WorkflowKey = Literal["work_pickup", "task_generation", "browser_workflow"]
+LegacyWorkflowKey = Literal["work_pickup", "task_generation"]
 
 _REQUIRED_POLICY_KEYS = {
     "autonomous_enabled",
@@ -98,6 +99,7 @@ class AutomationDispatchRequest(BaseModel):
 class AutomationDispatchResponse(BaseModel):
     owner_run_id: str
     status: str
+    receipt: dict[str, Any] = Field(default_factory=dict)
 
 
 class AutomationClockFenceRequest(BaseModel):
@@ -108,7 +110,7 @@ class AutomationClockFenceRequest(BaseModel):
 
 class AutomationClockFenceResponse(BaseModel):
     project_id: str
-    workflow_key: WorkflowKey
+    workflow_key: LegacyWorkflowKey
     clock_owner: Literal["agent_hub"]
     status: Literal["fenced"]
     fence_receipt: str = Field(min_length=1)
@@ -132,11 +134,11 @@ async def dispatch_automation(
 ) -> AutomationDispatchResponse:
     """Authenticate and hand an Agent Hub run to the durable owner outbox."""
     _verify_internal_secret(internal_secret)
-    if workflow_key not in {"work_pickup", "task_generation"}:
+    if workflow_key not in {"work_pickup", "task_generation", "browser_workflow"}:
         raise HTTPException(status_code=404, detail="Unknown automation workflow")
     if request.workflow_key != workflow_key:
         raise HTTPException(status_code=409, detail="Workflow key does not match route")
-    if not _policy_is_valid(request.policy_config):
+    if request.workflow_key != "browser_workflow" and not _policy_is_valid(request.policy_config):
         raise HTTPException(status_code=422, detail="Agent Hub policy snapshot is incomplete")
     if request.workflow_key == "work_pickup":
         batch_limit = request.config.get("batch_limit")
@@ -144,6 +146,13 @@ async def dispatch_automation(
             raise HTTPException(status_code=422, detail="Agent Hub work-pickup batch_limit must be a positive integer")
     if request.workflow_key == "task_generation" and type(request.config.get("upkeep_batch_limit")) is not int:
         raise HTTPException(status_code=422, detail="Agent Hub task-generation config is incomplete")
+    if request.workflow_key == "browser_workflow":
+        from ..services.automation_dispatch import validate_browser_workflow_config
+
+        try:
+            validate_browser_workflow_config(request.config)
+        except ValueError as exc:
+            raise HTTPException(status_code=422, detail=str(exc)) from exc
 
     from ..services.automation_dispatch import accept_automation_dispatch
 
@@ -177,7 +186,7 @@ async def dispatch_automation_callback(
     response_model=AutomationClockFenceResponse,
 )
 async def fence_automation_clock(
-    workflow_key: WorkflowKey,
+    workflow_key: LegacyWorkflowKey,
     request: AutomationClockFenceRequest,
     internal_secret: str = Header(default="", alias="X-Agent-Hub-Internal"),
 ) -> AutomationClockFenceResponse:
@@ -196,3 +205,41 @@ async def fence_automation_clock(
         status="fenced",
         fence_receipt=fence_receipt,
     )
+
+
+class BrowserWorkflowResolution(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    step: str = Field(min_length=1, max_length=200)
+    outcome: Literal["completed", "retry"]
+
+
+class BrowserWorkflowControlRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    action: Literal["resume", "cancel"]
+    resolution: BrowserWorkflowResolution | None = None
+
+
+@router.post("/automations/runs/{run_id}/control", response_model=AutomationDispatchResponse)
+async def control_browser_workflow(
+    run_id: str,
+    request: BrowserWorkflowControlRequest,
+    idempotency_key: str = Header(alias="Idempotency-Key", min_length=1, max_length=200),
+    internal_secret: str = Header(default="", alias="X-Agent-Hub-Internal"),
+) -> AutomationDispatchResponse:
+    """Explicitly reconcile a human checkpoint through the same durable outbox."""
+    _verify_internal_secret(internal_secret)
+    if request.action == "cancel" and request.resolution is not None:
+        raise HTTPException(status_code=422, detail="Cancel does not accept a step resolution")
+    from ..services.automation_dispatch import control_browser_automation_run
+
+    try:
+        receipt = await control_browser_automation_run(run_id, {**request.model_dump(exclude_none=True), "idempotency_key": idempotency_key})
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail="Browser automation run not found") from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    except Exception as exc:
+        raise HTTPException(status_code=503, detail="Unable to queue browser workflow control") from exc
+    return AutomationDispatchResponse(**receipt)

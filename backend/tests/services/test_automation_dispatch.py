@@ -151,6 +151,7 @@ async def test_terminal_receipt_retries_completion_report_without_reexecuting(mo
 
 @pytest.mark.asyncio
 async def test_outbox_reconciler_resumes_pending_receipts(mocker) -> None:
+    mocker.patch("app.services.automation_dispatch.automation_dispatches.list_browser_cancellation_requests", return_value=[])
     receipts = [
         {"run_id": "run-1", "owner_run_id": "owner-1"},
         {"run_id": "run-2", "owner_run_id": "owner-2"},

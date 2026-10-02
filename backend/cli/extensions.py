@@ -243,9 +243,16 @@ def _help_path(
 def _callback(record: ExtensionRecord):
     def command(ctx: typer.Context) -> None:
         argv = list(ctx.meta["st_extension_argv"])
-        # Never ask the executable for help, even if dependencies are unavailable.
+        # Root and generic extension help remain passive. The browser adapter
+        # negotiates explicit focused core-command help with its owner.
         options = argv[:argv.index("--")] if "--" in argv else argv
-        if "--help" in options or "-h" in options:
+        browser_focused_help = False
+        if (record.status == "unverified" and record.binding and record.binding.policy_adapter == "browser"
+                and ("--help" in options or "-h" in options)):
+            from .commands.browser import focused_help_requested
+
+            browser_focused_help = focused_help_requested(options)
+        if ("--help" in options or "-h" in options) and not browser_focused_help:
             metadata = record.manifest
             if metadata is None:
                 typer.echo(record.diagnostic)

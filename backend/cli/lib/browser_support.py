@@ -13,6 +13,7 @@ import sys
 from collections.abc import Callable, Mapping
 from ipaddress import ip_address
 from pathlib import Path
+from typing import cast
 
 import httpx
 
@@ -40,9 +41,205 @@ AGENT_BROWSER_OPTIONS_WITH_VALUE = {
     "--screenshot-quality",
     "--session",
     "--session-name",
+    "--selected-tab",
     "--state",
     "--user-agent",
 }
+
+# Structured actions execute inside one host-selected launch/session. Command
+# options remain opaque, but actions cannot replace that authority.
+STRUCTURED_GLOBAL_OPTIONS = (AGENT_BROWSER_OPTIONS_WITH_VALUE - {
+    "--screenshot-dir", "--screenshot-format", "--screenshot-quality",
+}) | {
+    "--headed", "--headless",
+    "--ignore-https-errors", "--allow-file-access", "--auto-connect",
+    "--local-ai", "--proxmox", "--chrome", "--lp",
+    "--action-policy", "--confirm-actions", "--confirm-interactive",
+    "--no-auto-dialog", "--idle-timeout", "-p",
+}
+
+
+def read_structured_payload(path: str) -> dict[str, object]:
+    try:
+        payload = json.loads(Path(path).expanduser().read_text(encoding="utf-8"))
+    except (OSError, UnicodeError, json.JSONDecodeError) as exc:
+        raise ValueError(f"Unable to read browser JSON payload: {exc}") from None
+    if not isinstance(payload, dict):
+        raise ValueError("browser JSON payload must be an object")
+    return payload
+
+
+def split_session_options(args: list[str]) -> tuple[list[str], list[str]]:
+    """Extract one explicit host session without silently ignoring bad options."""
+    remaining: list[str] = []
+    session: list[str] = []
+    index = 0
+    while index < len(args):
+        arg = args[index]
+        if arg == "--session" or arg.startswith("--session="):
+            if session:
+                raise ValueError("--session may be supplied only once")
+            if arg == "--session":
+                index += 1
+                if index == len(args) or args[index].startswith("-"):
+                    raise ValueError("--session requires a name")
+                name = args[index]
+            else:
+                name = arg.split("=", 1)[1]
+            if not name.strip():
+                raise ValueError("--session requires a name")
+            session = ["--session", name]
+        else:
+            remaining.append(arg)
+        index += 1
+    return session, remaining
+
+
+def session_lifecycle_payload(args: list[str]) -> dict[str, object]:
+    """Parse host CLI spellings; the owner validates lifecycle/domain state."""
+    if not args:
+        raise ValueError("Usage: st browser session <create|list [--all]|status|pause|resume|close|view|lease|maintenance> ...")
+    action, *tail = args
+    if action in {"create", "status", "pause", "resume", "close", "view", "lease"}:
+        if len(tail) != 1 or not tail[0] or tail[0].startswith("-"):
+            raise ValueError(f"Usage: st browser session {action} NAME")
+        return {"action": action, "name": tail[0]}
+    if action == "list" and not tail:
+        return {"action": action}
+    if action == "list" and tail == ["--all"]:
+        return {"action": action, "all": True}
+    if action != "maintenance":
+        raise ValueError("Usage: st browser session <create|list [--all]|status|pause|resume|close|view|lease|maintenance> ...")
+    payload: dict[str, object] = {"action": action, "dry_run": True}
+    index = 0
+    seen = set()
+    while index < len(tail):
+        option, separator, value = tail[index].partition("=")
+        if option in seen:
+            raise ValueError(f"Repeated session maintenance option: {option}")
+        seen.add(option)
+        if option == "--apply" and not separator:
+            payload["dry_run"] = False
+        elif option == "--idle-ms":
+            if not separator:
+                index += 1
+                if index == len(tail):
+                    raise ValueError("--idle-ms requires a positive integer")
+                value = tail[index]
+            if not value.isascii() or not value.isdecimal() or int(value) < 1:
+                raise ValueError("--idle-ms requires a positive integer")
+            payload["idle_ms"] = int(value)
+        else:
+            raise ValueError(f"Unknown session maintenance option: {tail[index]}")
+        index += 1
+    return payload
+
+
+def selected_tab_options(args: list[str]) -> tuple[str | None, list[str]]:
+    """Extract one explicit target capability before the command; never infer it."""
+    remaining: list[str] = []
+    selected: str | None = None
+    command_seen = False
+    index = 0
+    while index < len(args):
+        arg = args[index]
+        option = arg.split("=", 1)[0]
+        if option == "--selected-tab":
+            if selected is not None or command_seen:
+                raise ValueError("--selected-tab must appear once before the browser command")
+            if "=" in arg:
+                value = arg.split("=", 1)[1]
+            else:
+                index += 1
+                value = args[index] if index < len(args) else ""
+            if re.fullmatch(r"[0-9a-f]{32}", value) is None:
+                raise ValueError("--selected-tab requires an opaque 32-character lowercase hexadecimal handle")
+            selected = value
+        else:
+            remaining.append(arg)
+            if not command_seen and option in AGENT_BROWSER_OPTIONS_WITH_VALUE and "=" not in arg:
+                index += 1
+                if index < len(args):
+                    remaining.append(args[index])
+            elif not arg.startswith("-"):
+                command_seen = True
+        index += 1
+    return selected, remaining
+
+
+def selected_tabs_payload(args: list[str]) -> dict[str, object]:
+    if args in (["list"], ["capabilities"]):
+        return {"action": args[0]}
+    if len(args) == 2 and args[0] == "revoke" and re.fullmatch(r"[0-9a-f]{32}", args[1]):
+        return {"action": "revoke", "handle": args[1]}
+    raise ValueError("Usage: st browser selected-tabs list|capabilities|revoke HANDLE")
+
+
+def workflow_payload(args: list[str]) -> dict[str, object]:
+    """Build the owner workflow wire from files and explicit lifecycle options."""
+    if not args or args[0] not in {"run", "resume", "cancel", "status", "record-start", "record-stop"}:
+        raise ValueError("Usage: st browser --session NAME workflow <run|resume|cancel|status|record-start|record-stop> ...")
+    action, *tail = args
+    payload: dict[str, object] = {"action": action, "definition": None, "parameters": {}, "run_id": "", "resolution": None}
+    if action != "run":
+        if not tail or not tail[0] or tail[0].startswith("-"):
+            raise ValueError(f"workflow {action} requires a run ID")
+        payload["run_id"], tail = tail[0], tail[1:]
+    allowed = {"--file", "--parameters", "--run-id"} if action == "run" else {"--step", "--resolution"} if action == "resume" else {"--file", "--parameters"} if action == "record-stop" else set()
+    options: dict[str, str] = {}
+    index = 0
+    while index < len(tail):
+        option, separator, value = tail[index].partition("=")
+        if option not in allowed or option in options:
+            raise ValueError(f"Unknown or repeated workflow option: {option}")
+        if not separator:
+            index += 1
+            if index == len(tail) or tail[index].startswith("-"):
+                raise ValueError(f"{option} requires a value")
+            value = tail[index]
+        if not value:
+            raise ValueError(f"{option} requires a value")
+        options[option] = value
+        index += 1
+    if action == "run":
+        if not {"--file", "--run-id"} <= options.keys():
+            raise ValueError("Usage: st browser --session NAME workflow run --file DEFINITION --run-id ID [--parameters JSON-file-or-object]")
+        payload["definition"] = read_structured_payload(options["--file"])
+        payload["run_id"] = options["--run-id"]
+    elif action == "resume" and options:
+        if set(options) != {"--step", "--resolution"} or options["--resolution"] not in {"completed", "retry"}:
+            raise ValueError("workflow resume resolution requires --step ID --resolution completed|retry")
+        payload["resolution"] = {"step": options["--step"], "outcome": options["--resolution"]}
+    if "--parameters" in options:
+        value = options["--parameters"]
+        if value.lstrip().startswith(("{", "[")):
+            try:
+                parameters = json.loads(value)
+            except json.JSONDecodeError:
+                raise ValueError("workflow parameters must be a valid JSON object") from None
+            if not isinstance(parameters, dict):
+                raise ValueError("workflow parameters must be a JSON object")
+            payload["parameters"] = parameters
+        else:
+            payload["parameters"] = read_structured_payload(value)
+    if action == "record-stop":
+        payload["output"] = str(Path(options["--file"]).expanduser().resolve()) if "--file" in options else None
+    return payload
+
+
+def validate_structured_action(action: object) -> list[str]:
+    if not isinstance(action, list) or not action or any(not isinstance(arg, str) for arg in action):
+        raise ValueError("run actions must be nonempty arrays of strings")
+    args = cast(list[str], action)
+    if not args[0] or args[0].startswith("-"):
+        raise ValueError("structured actions must start with a core command")
+    if args[0] in {"session", "sessions", "connect", "attach", "launch"}:
+        raise ValueError("structured actions cannot switch sessions or launch browsers")
+    if any(arg.split("=", 1)[0] in STRUCTURED_GLOBAL_OPTIONS for arg in args[1:]):
+        raise ValueError("structured actions cannot embed launch/global options or switch sessions")
+    if args[0] in {"close", "quit", "exit"} and any(arg == "--all" or arg.startswith("--all=") for arg in args[1:]):
+        raise ValueError("structured actions cannot close all sessions")
+    return list(args)
 
 
 def st_bin() -> str:

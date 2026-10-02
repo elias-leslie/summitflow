@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import subprocess
+import sys
 
 import pytest
 
@@ -43,3 +44,29 @@ def test_run_rejects_fork_forcing_options() -> None:
 
     with pytest.raises(ValueError, match="shell execution"):
         safe_subprocess.run(["git status"], shell=True)
+
+
+@pytest.mark.asyncio
+async def test_duplex_owner_receives_eof_and_is_reaped() -> None:
+    process = safe_subprocess.spawn_duplex([
+        sys.executable, "-c", "import sys; print('ready', flush=True); sys.stdin.read(); print('released', flush=True)",
+    ])
+    try:
+        assert await process.readline() == b"ready\n"
+        assert process.poll() is None
+        process.close_stdin()
+        process.close_stdin()
+        assert await process.readline() == b"released\n"
+        assert await process.wait() == 0
+        assert process.poll() == 0
+    finally:
+        process.close()
+
+
+def test_duplex_spawn_failure_closes_all_pipe_descriptors(monkeypatch) -> None:
+    import os
+
+    before = len(os.listdir("/proc/self/fd"))
+    with pytest.raises(FileNotFoundError):
+        safe_subprocess.spawn_duplex(["/does/not/exist"])
+    assert len(os.listdir("/proc/self/fd")) == before

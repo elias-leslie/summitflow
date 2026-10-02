@@ -8,7 +8,9 @@ from fastapi import HTTPException
 from app.api.automation_dispatch import (
     AutomationClockFenceRequest,
     AutomationDispatchRequest,
+    BrowserWorkflowControlRequest,
     _policy_is_valid,
+    control_browser_workflow,
     dispatch_automation,
     fence_automation_clock,
 )
@@ -173,3 +175,64 @@ async def test_work_pickup_rejects_invalid_central_batch_limit(monkeypatch) -> N
         )
 
     assert exc.value.status_code == 422
+
+
+@pytest.mark.asyncio
+async def test_browser_workflow_accepts_generic_ah_policy_and_immutable_definition(mocker, monkeypatch):
+    monkeypatch.setenv("INTERNAL_SERVICE_SECRET", "expected-secret")
+    accept = mocker.patch(
+        "app.services.automation_dispatch.accept_automation_dispatch",
+        return_value={"owner_run_id": "owner-browser", "status": "accepted"},
+    )
+    request = _request(workflow_key="browser_workflow", config={"workflow": {"schema_version": 1, "steps": [{"id": "read"}]}}, policy_config={"daily_limit": 2})
+    response = await dispatch_automation("browser_workflow", request, "expected-secret")
+    assert response.owner_run_id == "owner-browser"
+    accept.assert_awaited_once_with(request)
+
+
+@pytest.mark.asyncio
+async def test_browser_workflow_rejects_shared_session_before_acceptance(mocker, monkeypatch):
+    monkeypatch.setenv("INTERNAL_SERVICE_SECRET", "expected-secret")
+    accept = mocker.patch("app.services.automation_dispatch.accept_automation_dispatch")
+    with pytest.raises(HTTPException) as exc:
+        await dispatch_automation("browser_workflow", _request(workflow_key="browser_workflow", config={"workflow": {"schema_version": 1, "steps": [{}]}, "session": "st-local-ai"}, policy_config={}), "expected-secret")
+    assert exc.value.status_code == 422
+    accept.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_explicit_human_resolution_is_authenticated_and_idempotent(mocker, monkeypatch):
+    monkeypatch.setenv("INTERNAL_SERVICE_SECRET", "expected-secret")
+    queue = mocker.patch("app.services.automation_dispatch.control_browser_automation_run", return_value={"owner_run_id": "owner-browser", "status": "accepted"})
+    request = BrowserWorkflowControlRequest.model_validate({"action": "resume", "resolution": {"step": "submit", "outcome": "completed"}})
+    with pytest.raises(HTTPException) as missing:
+        await control_browser_workflow("run-1", request, "control-1", "")
+    assert missing.value.status_code == 403
+    queue.assert_not_called()
+    await control_browser_workflow("run-1", request, "control-1", "expected-secret")
+    queue.assert_awaited_once_with("run-1", {"action": "resume", "resolution": {"step": "submit", "outcome": "completed"}, "idempotency_key": "control-1"})
+
+
+@pytest.mark.asyncio
+async def test_control_rejects_active_resume_and_cancel_resolution(mocker, monkeypatch):
+    monkeypatch.setenv("INTERNAL_SERVICE_SECRET", "expected-secret")
+    queue = mocker.patch("app.services.automation_dispatch.control_browser_automation_run", side_effect=ValueError("Browser workflow control requires a waiting human checkpoint"))
+    with pytest.raises(HTTPException) as active:
+        await control_browser_workflow("run-1", BrowserWorkflowControlRequest(action="resume"), "resume-1", "expected-secret")
+    assert active.value.status_code == 409
+    queue.reset_mock()
+    request = BrowserWorkflowControlRequest.model_validate({"action": "cancel", "resolution": {"step": "submit", "outcome": "retry"}})
+    with pytest.raises(HTTPException) as invalid:
+        await control_browser_workflow("run-1", request, "cancel-2", "expected-secret")
+    assert invalid.value.status_code == 422
+    queue.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_active_cancel_returns_durable_acceptance_instead_of_conflict(mocker, monkeypatch):
+    monkeypatch.setenv("INTERNAL_SERVICE_SECRET", "expected-secret")
+    queue = mocker.patch("app.services.automation_dispatch.control_browser_automation_run", return_value={"owner_run_id": "owner-browser", "status": "accepted", "receipt": {"cancel_requested": True, "delivery": "pending"}})
+    response = await control_browser_workflow("run-1", BrowserWorkflowControlRequest(action="cancel"), "cancel-active", "expected-secret")
+    assert response.status == "accepted"
+    assert response.receipt["cancel_requested"] is True
+    queue.assert_awaited_once_with("run-1", {"action": "cancel", "idempotency_key": "cancel-active"})

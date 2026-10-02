@@ -81,6 +81,7 @@ class PipeProcess:
     pid: int
     stdout_fd: int
     returncode: int | None = None
+    stdin_fd: int | None = None
     _stdout_file: Any = field(init=False, repr=False)
 
     def __post_init__(self) -> None:
@@ -108,9 +109,45 @@ class PipeProcess:
         with contextlib.suppress(ProcessLookupError):
             os.kill(self.pid, signal.SIGKILL)
 
+    def terminate(self) -> None:
+        with contextlib.suppress(ProcessLookupError):
+            os.kill(self.pid, signal.SIGTERM)
+
+    def close_stdin(self) -> None:
+        """Signal EOF to an owned duplex process without writing user input."""
+        if self.stdin_fd is not None:
+            os.close(self.stdin_fd)
+            self.stdin_fd = None
+
     def close(self) -> None:
+        self.close_stdin()
         with contextlib.suppress(Exception):
             self._stdout_file.close()
+
+
+def spawn_duplex(
+    args: Sequence[StrPath], *, env: Mapping[str, str] | None = None,
+) -> PipeProcess:
+    """Spawn an EOF-controlled owner lease, with private stdout and no stderr log."""
+    stdin_r, stdin_w = os.pipe()
+    stdout_r, stdout_w = os.pipe()
+    stderr_fd = os.open(os.devnull, os.O_WRONLY)
+    try:
+        argv = _argv(args, env)
+        actions = [
+            (os.POSIX_SPAWN_DUP2, stdin_r, 0),
+            (os.POSIX_SPAWN_DUP2, stdout_w, 1),
+            (os.POSIX_SPAWN_DUP2, stderr_fd, 2),
+            *((os.POSIX_SPAWN_CLOSE, fd) for fd in (stdin_r, stdin_w, stdout_r, stdout_w, stderr_fd)),
+        ]
+        pid = os.posix_spawn(argv[0], argv, dict(env or os.environ), file_actions=actions)
+    except BaseException:
+        for fd in (stdin_r, stdin_w, stdout_r, stdout_w, stderr_fd):
+            os.close(fd)
+        raise
+    for fd in (stdin_r, stdout_w, stderr_fd):
+        os.close(fd)
+    return PipeProcess(pid=pid, stdout_fd=stdout_r, stdin_fd=stdin_w)
 
 
 def _wait_status_to_returncode(status: int) -> int:

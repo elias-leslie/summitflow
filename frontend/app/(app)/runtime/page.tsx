@@ -5,6 +5,7 @@ import { Boxes } from 'lucide-react'
 import { motion } from 'motion/react'
 import { useState } from 'react'
 import { SystemHealthWidget } from '@/components/dashboard/SystemHealthWidget'
+import { BrowserSessions } from '@/components/runtime/BrowserSessions'
 import { GpuStatusCard } from '@/components/runtime/GpuStatusCard'
 import { HealthBar } from '@/components/runtime/HealthBar'
 import { HostMonitor } from '@/components/runtime/HostMonitor'
@@ -18,9 +19,9 @@ import { runtimeApi } from '@/lib/api/runtime'
 import { POLL_MONITOR } from '@/lib/polling'
 
 export default function RuntimePage() {
-  const [tab, setTab] = useState<'services' | 'monitor' | 'dependencies'>(
-    'services',
-  )
+  const [tab, setTab] = useState<
+    'services' | 'monitor' | 'dependencies' | 'browsers'
+  >('services')
   const {
     data: health,
     isLoading: healthLoading,
@@ -83,21 +84,25 @@ export default function RuntimePage() {
       </motion.div>
 
       <nav
-        className="flex gap-2 border-b border-slate-700/60"
+        className="flex flex-wrap gap-2 border-b border-slate-700/60"
         aria-label="Runtime sections"
       >
-        {(['services', 'monitor', 'dependencies'] as const).map((section) => (
-          <button
-            key={section}
-            className={`px-3 py-2 text-sm capitalize focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-400 ${tab === section ? 'border-b-2 border-cyan-400 text-cyan-300' : 'text-slate-400'}`}
-            onClick={() => setTab(section)}
-            aria-current={tab === section ? 'page' : undefined}
-          >
-            {section}
-          </button>
-        ))}
+        {(['services', 'monitor', 'dependencies', 'browsers'] as const).map(
+          (section) => (
+            <button
+              key={section}
+              className={`px-3 py-2 text-sm capitalize focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-400 ${tab === section ? 'border-b-2 border-cyan-400 text-cyan-300' : 'text-slate-400'}`}
+              onClick={() => setTab(section)}
+              aria-current={tab === section ? 'page' : undefined}
+            >
+              {section === 'browsers' ? 'Browser sessions' : section}
+            </button>
+          ),
+        )}
       </nav>
-      {tab === 'dependencies' ? (
+      {tab === 'browsers' ? (
+        <BrowserSessions />
+      ) : tab === 'dependencies' ? (
         <RuntimeDependencies />
       ) : tab === 'monitor' ? (
         <HostMonitor />

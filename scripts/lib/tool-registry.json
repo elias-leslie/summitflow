@@ -455,7 +455,12 @@
         "DBUS_SESSION_BUS_ADDRESS",
         "AGENT_BROWSER_SESSION",
         "AGENT_BROWSER_CONFIG",
-        "AGENT_BROWSER_ALLOW_FILE_ACCESS"
+        "AGENT_BROWSER_ALLOW_FILE_ACCESS",
+        "ST_BROWSER_OWNER",
+        "ST_BROWSER_MANAGED_EXTENSION_TEST",
+        "ST_AGENT_ID",
+        "CODEX_THREAD_ID",
+        "XDG_STATE_HOME"
       ],
       "grant": {
         "enabled": true,

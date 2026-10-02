@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from datetime import timedelta
 from typing import Any
 
 from hatchet_sdk import ConcurrencyExpression, ConcurrencyLimitStrategy, Context
@@ -24,6 +25,7 @@ class AutomationOutboxInput(BaseModel):
 @hatchet.task(
     name="summitflow-agent-hub-automation-owner",
     input_validator=AutomationOwnerRunInput,
+    execution_timeout=timedelta(minutes=10),
     retries=5,
     backoff_factor=2.0,
 )
@@ -40,6 +42,7 @@ async def automation_owner_run_wf(input: AutomationOwnerRunInput, ctx: Context) 
 @hatchet.task(
     name="summitflow-agent-hub-automation-outbox-reconcile",
     input_validator=AutomationOutboxInput,
+    execution_timeout=timedelta(minutes=5),
     on_crons=["*/2 * * * *"],
     retries=1,
     concurrency=ConcurrencyExpression(

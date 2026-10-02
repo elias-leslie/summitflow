@@ -10,6 +10,38 @@
     "inventory": {
       "request_contract_version": 1,
       "response_schema_version": 1
+    },
+    "capabilities": {
+      "request_contract_version": 2,
+      "response_schema_version": 1
+    },
+    "help": {
+      "request_contract_version": 2,
+      "response_schema_version": 1
+    },
+    "observe": {
+      "request_contract_version": 2,
+      "response_schema_version": 1
+    },
+    "run": {
+      "request_contract_version": 2,
+      "response_schema_version": 1
+    },
+    "extract": {
+      "request_contract_version": 2,
+      "response_schema_version": 1
+    },
+    "session": {
+      "request_contract_version": 2,
+      "response_schema_version": 1
+    },
+    "workflow": {
+      "request_contract_version": 2,
+      "response_schema_version": 1
+    },
+    "selected-tabs": {
+      "request_contract_version": 2,
+      "response_schema_version": 1
     }
   },
   "summary": "Managed browser automation with SummitFlow-owned routing policy.",
@@ -23,7 +55,7 @@
     "desktop"
   ],
   "help": {
-    "": "Remote browser automation through st\n\nDefault target:\n  Interactive commands use local system Chrome profile AI.\n  Checks use a fresh isolated headless profile by default.\n  Force Proxmox/VM with --proxmox or ST_BROWSER_TARGET=proxmox when VM isolation is better.\n  Override VM with ST_BROWSER_HOST, ST_BROWSER_DEFAULT_HOST, or ST_BROWSER_VM_ID.\n  Do not start arbitrary Chrome, CDP proxies, or agent-browser on the project/server host.\n  The approved local default is the local-AI profile flow.\n  Set ST_BROWSER_DISABLE_DEFAULT_VM_HOST=1 to require explicit host config.\n\nUsage:\n  st browser health\n  st browser reap-isolated [--dry-run]\n  st browser --local-ai health\n  st browser --local-ai open <project-or-url>\n  st browser --proxmox check <project-or-url> [screenshot-path]\n  st browser url <project>\n  st browser check [--session <name>] <project-or-url> [screenshot-path]\n  st browser open <project-or-url>\n  st browser screenshot [path]\n  st browser snapshot\n  st browser eval <js>\n  st browser --proxmox endpoint [--http|--ws|--json]\n  st browser update\n  st browser inventory --json\n  st browser [--chrome|--lp|--engine <name>] <agent-browser command> [args...]\n\nExamples:\n  st browser --local-ai open portfolio-ai\n  st browser --local-ai check portfolio-ai /tmp/portfolio-ai.png\n  st browser health\n  st browser inventory --json\n  st browser url a-term\n  st browser check a-term /tmp/a-term.png\n  st browser --proxmox endpoint --ws\n  st vm status <browser-vm-id>\n  ST_BROWSER_HOST=<browser-vm-or-connector> st browser health\n  ST_BROWSER_HOST=<browser-vm-or-connector> st browser check http://app.lan:3001 /tmp/page.png\n  st browser --proxmox snapshot\n\nProxmox local page URL guard:\n  With --proxmox, localhost/127.0.0.1 targets are blocked because they point at the browser VM.\n  Use st browser url <project>; intentional Proxmox local targets print a confirmation token.\n\nDebug local CDP override:\n  ST_BROWSER_HOST=127.0.0.1 ST_BROWSER_ALLOW_LOCAL=1 st browser health\n\nLocal system Chrome:\n  Local mode uses system Chrome with headless hardware GL and no software-rasterizer\n  fallback. Checks create no desktop window or focus change.\n  Checks use a fresh isolated headless session, profile, and socket directory by default.\n  Named checks: check --session <name> <url> [png]; distinct names can run concurrently.\n  Fresh checks have no shared login state. Use check --session st-local-ai for\n  authenticated checks with the shared AI profile (serialized; closes that session).\n  Interactive open/snapshot/click commands share the AI profile and remain serialized.\n  Window control: ST_BROWSER_LOCAL_AI_VISIBLE=1 creates a normal watched window;\n  ST_BROWSER_LOCAL_AI_MINIMIZED=1 creates a minimized window. Both are explicit-only.\n  Override local Chrome with ST_BROWSER_LOCAL_CHROME, ST_BROWSER_LOCAL_AI_PROFILE.\n\nLocal desktop UI:\n  Use st ui when the already-open desktop/PWA is the right evidence source or browser automation is not enough.\n"
+    "": "Remote browser automation through st\n\nDefault target:\n  Interactive commands use local system Chrome profile AI.\n  Checks use a fresh isolated headless profile by default.\n  Force Proxmox/VM with --proxmox or ST_BROWSER_TARGET=proxmox when VM isolation is better.\n  Override VM with ST_BROWSER_HOST, ST_BROWSER_DEFAULT_HOST, or ST_BROWSER_VM_ID.\n  Set ST_BROWSER_DISABLE_DEFAULT_VM_HOST=1 to require explicit host config.\n\nSupported workflows:\n  st browser capabilities [topic]\n  st browser <core-command> --help\n  st browser observe [--selector CSS] [--interactive] [--full] [--screenshot PATH]\n  st browser run --file actions.json\n  st browser step <core-command> [args...]\n  st browser extract --file fields.json\n  st browser session create NAME | list [--all] | status NAME\n  st browser session pause NAME | resume NAME | close NAME\n  st browser session view NAME | lease NAME  (paused live view; lease lasts until stdin EOF)\n  st browser session maintenance [--idle-ms MS] [--apply]\n  st browser selected-tabs list | capabilities | revoke HANDLE\n  st browser --selected-tab HANDLE <core-command> [args...]\n  st browser --selected-tab HANDLE observe | run --file JSON | extract --file JSON\n  st browser --session NAME <core-command> [args...]\n  st browser --session NAME workflow run --file DEFINITION --run-id ID [--parameters JSON-file-or-object]\n  st browser --session NAME workflow resume RUN_ID [--step ID --resolution completed|retry]\n  st browser --session NAME workflow status RUN_ID | cancel RUN_ID\n  st browser --session NAME workflow record-start ID\n  st browser --session NAME workflow record-stop ID [--file OUTPUT] [--parameters JSON-file-or-object]\n  st browser check [--session NAME] <project-or-url> [png] [--viewports desktop,narrow,mobile]\n  st browser open <project-or-url>\n  st browser screenshot [path] | snapshot | eval <js>\n  st browser health | inventory --json | reap-isolated [--dry-run] | update\n  st browser url <project>\n  st browser --proxmox endpoint [--http|--ws|--json]\n  st browser [--chrome|--lp|--engine NAME] <core-command> [args...]\n\nObserve defaults to compact delta output with page text. --interactive selects controls;\n--full includes the full observation. Run files contain actions as arrays of strings,\noptional postconditions, observation, screenshot and binding. Step runs one action.\nUse set-value for native date/time and contenteditable controls;\nsee st browser set-value --help. Read capabilities controls before unusual inputs.\nStructured actions cannot switch sessions, override launch options or close --all.\n\nManaged sessions:\n  Set ST_BROWSER_OWNER (or ST_AGENT_ID / CODEX_THREAD_ID) for lifecycle mutations.\n  Create a named session before selecting it with --session NAME. Each managed name\n  has a persistent private profile and owner-held lock; independent names run concurrently.\n  Pause hands the browser to a human; resume restores automation ownership.\n  Maintenance previews by default; --apply closes only eligible idle sessions.\n  Without --idle-ms, running sessions are never expired for idleness.\n  Workflows require an explicit local managed session. Definitions use step action\n  arrays; {{name}} scalar parameters are resolved before navigation policy checks.\n  Recording retains acknowledged structured actions (run/step), not opaque core commands.\n  Selected tabs require an explicit bridge grant handle and stay bound to its origin.\n  They accept core actions/observe/run/extract; sessions, checks and workflows are unavailable.\n\nExamples:\n  st browser --local-ai open portfolio-ai\n  ST_BROWSER_OWNER=agent-a st browser session create research-a\n  ST_BROWSER_OWNER=agent-a st browser --session research-a observe --selector main\n  st browser step fill @e2 'Two words; literal text'\n  st browser run --file /tmp/browser-actions.json\n  st browser check a-term /tmp/a-term.png --viewports desktop,mobile\n  st browser --proxmox endpoint --ws\n\nRestrictions:\n  Do not start arbitrary Chrome, CDP proxies, or agent-browser on the project/server host.\n  Local mode uses system Chrome; checks create no desktop window or focus change.\n  Named isolated checks can run concurrently; default checks have no shared login state.\n  Use check --session st-local-ai for authenticated checks (serialized; closes that session).\n  Unqualified interactive commands share the AI profile and remain serialized.\n  Explicit alternate local --session names select managed sessions; checks stay isolated.\n  ST_BROWSER_LOCAL_AI_VISIBLE=1 / ST_BROWSER_LOCAL_AI_MINIMIZED=1 opt into watched windows.\n  Override local Chrome with ST_BROWSER_LOCAL_CHROME, ST_BROWSER_LOCAL_AI_PROFILE.\n  With --proxmox, localhost/127.0.0.1 targets are blocked because they point at the browser VM.\n  Use st browser url <project>; intentional VM-local targets print a confirmation token.\n  Debug override: ST_BROWSER_HOST=127.0.0.1 ST_BROWSER_ALLOW_LOCAL=1 st browser health\n  Use st ui when the already-open desktop/PWA is the right evidence source.\n"
   },
   "usage": [
     {
