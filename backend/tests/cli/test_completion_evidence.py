@@ -52,9 +52,12 @@ def test_acceptance_artifact_is_resolved_and_validated_at_exact_head(tmp_path, m
 
 
 def test_native_reference_uses_the_task_project_instead_of_ambient_context(tmp_path, monkeypatch):
-    from unittest.mock import Mock
+    from unittest.mock import MagicMock, Mock
 
-    client = Mock(project_id="owner-project")
+    client = MagicMock(project_id="owner-project")
+    client.__enter__.return_value = client
+    url = "https://summitflow.example.invalid/api/projects/owner-project/deployment-observations/" + "a" * 32
+    client._url.return_value = url
     client.get.return_value = {"deployment": {"receipt_id": "a" * 32}}
     factory = Mock(return_value=client)
     monkeypatch.setattr("cli.client.STClient", factory)
@@ -62,7 +65,8 @@ def test_native_reference_uses_the_task_project_instead_of_ambient_context(tmp_p
     evidence.write_text(json.dumps({"native_deployment_receipt": "a" * 32}))
     assert load_completion_evidence(evidence, project_root=tmp_path, project_id="owner-project") == client.get.return_value
     factory.assert_called_once_with(project_id="owner-project")
-    client.get.assert_called_once_with("/projects/owner-project/deployment-observations/" + "a" * 32)
+    client._url.assert_called_once_with("/deployment-observations/" + "a" * 32)
+    client.get.assert_called_once_with(url)
 
 
 @pytest.mark.parametrize("payload", [
@@ -78,11 +82,12 @@ def test_native_import_rejects_mixed_or_arbitrary_evidence(tmp_path, payload):
 
 
 def test_native_api_rejection_is_a_clean_import_error(tmp_path, monkeypatch):
-    from unittest.mock import Mock
+    from unittest.mock import MagicMock, Mock
 
     from cli.client import APIError
 
-    client = Mock(project_id="owner-project")
+    client = MagicMock(project_id="owner-project")
+    client.__enter__.return_value = client
     client.get.side_effect = APIError(422, "Unknown receipt")
     monkeypatch.setattr("cli.client.STClient", Mock(return_value=client))
     evidence = tmp_path / "evidence.json"

@@ -45,9 +45,9 @@ def observe(
     from ..client import APIError, STClient
 
     try:
-        client = STClient(project_id=project)
-        receipts = client.post(f"/projects/{project}/tasks/{task}/deployment-observations",
-                               {"acceptance_receipt": str(acceptance.resolve(strict=True))})
+        with STClient(project_id=project) as client:
+            receipts = client.post(client._url(f"/tasks/{task}/deployment-observations"),
+                                   {"acceptance_receipt": str(acceptance.resolve(strict=True))})
         with evidence.open("x") as stream:
             json.dump({"native_deployment_receipt": receipts["deployment"]["receipt_id"]}, stream)
             stream.write("\n")

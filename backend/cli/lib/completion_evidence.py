@@ -18,9 +18,9 @@ def load_completion_evidence(path: Path, *, project_root: Path, project_id: str 
             raise ValueError("Native evidence requires one server-issued receipt reference")
         from cli.client import APIError, STClient
 
-        client = STClient(project_id=project_id)
         try:
-            receipts.update(client.get(f"/projects/{client.project_id}/deployment-observations/{native}"))
+            with STClient(project_id=project_id) as client:
+                receipts.update(client.get(client._url(f"/deployment-observations/{native}")))
         except APIError as exc:
             raise ValueError(f"Server rejected the native receipt: {exc}") from exc
     if acceptance := payload.get("acceptance_receipt"):
