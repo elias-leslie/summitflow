@@ -488,6 +488,19 @@ def provision_fixture() -> None:
         raise DeploymentError("Fixed WordPress fixture provisioning failed")
 
 
+def restore_fixture_dependencies() -> None:
+    """Rebuild the locked fixture dependencies from the existing root cache only."""
+    result = subprocess.run(
+        ["/usr/bin/npm", "ci", "--offline", "--ignore-scripts"],
+        cwd=FIXTURE_ROOT, env={
+            "PATH": "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin",
+            "HOME": "/root",
+        }, capture_output=True, timeout=900, check=False,
+    )
+    if result.returncode != 0:
+        raise DeploymentError("Fixed WordPress fixture dependency restoration failed")
+
+
 def verify_fixture() -> None:
     # Reuse Neri's complete archive/tree/image/config and live baseline checks.
     # The fixed import program receives no target commands or private config.
@@ -764,6 +777,9 @@ def recover_fixture(original_attempt: str, attempt: str, payload: dict[str, Any]
             revalidate_pins({**original_pins, WORDPRESS_CONFIG: config_pins[WORDPRESS_CONFIG],
                              RUNNER_CONFIG: config_pins[RUNNER_CONFIG]})
             replace_file(WORDPRESS_CONFIG, json.dumps(private).encode(), 0o640, PRIVILEGED_UID, runner_gid)
+            if provisioning_failure:
+                phase("restore-dependencies")
+                restore_fixture_dependencies()
             phase("verify-fixture")
             verify_fixture()
             revalidate_pins(original_pins)

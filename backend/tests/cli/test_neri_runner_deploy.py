@@ -1108,7 +1108,7 @@ def test_fixture_recovery_preserves_original_backup_and_secrets_without_provisio
 
 
 def test_fixture_recovery_accepts_provisioning_failure_without_reprovision(
-    installed, fixture_installation,
+    installed, fixture_installation, monkeypatch,
 ):
     root, _source, state = installed
     _old, _private, provision, verify = fixture_installation
@@ -1121,6 +1121,8 @@ def test_fixture_recovery_accepts_provisioning_failure_without_reprovision(
     provision.side_effect = None
     provision.reset_mock()
     state["calls"].clear()
+    restore = Mock()
+    monkeypatch.setattr(guest, "restore_fixture_dependencies", restore)
 
     repaired = guest.recover_fixture(
         ATTEMPT, "2" * 32, payload(fixture_public_files("offline-compatible")),
@@ -1132,7 +1134,27 @@ def test_fixture_recovery_accepts_provisioning_failure_without_reprovision(
     assert not (root / ".deploying").exists()
     assert state["calls"] == ["restart"]
     provision.assert_not_called()
+    restore.assert_called_once_with()
     verify.assert_called_once_with()
+
+
+def test_fixture_dependency_restoration_is_offline_and_skips_scripts(monkeypatch):
+    run = Mock(return_value=subprocess.CompletedProcess([], 0, b"", b""))
+    monkeypatch.setattr(guest.subprocess, "run", run)
+
+    guest.restore_fixture_dependencies()
+
+    assert run.call_args.args[0] == ["/usr/bin/npm", "ci", "--offline", "--ignore-scripts"]
+    assert run.call_args.kwargs == {
+        "cwd": guest.FIXTURE_ROOT,
+        "env": {
+            "PATH": "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin",
+            "HOME": "/root",
+        },
+        "capture_output": True,
+        "timeout": 900,
+        "check": False,
+    }
 
 
 @pytest.mark.parametrize("fault", ["marker", "receipt-attempt", "adapter", "operation", "state", "failed-phase",

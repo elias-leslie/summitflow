@@ -110,7 +110,8 @@ def runner_bootstrap(
     precautions=(
         "requires the exact original 32-hex attempt, matching retained interlock, and post-install failure receipt",
         "two-pass confirmation is required; both runners must already be stopped or blocked and idle",
-        "installs public fixture files and updates only the private target artifact identity; never provisions or seeds",
+        "installs public fixture files; provisioning-stage recovery restores locked dependencies from local cache only",
+        "updates only the private target artifact identity; never provisions or seeds",
         "original receipt and backup remain intact; a linked recovery receipt is written and failures retain the interlock",
     ),
     task_types=("vm-repair", "devops"),
