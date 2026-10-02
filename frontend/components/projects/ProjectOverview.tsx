@@ -28,8 +28,8 @@ export function ProjectOverview({ project }: ProjectOverviewProps) {
   })
 
   return (
-    <div className="mx-auto w-full max-w-[1600px] space-y-6">
-      <Card className="border-slate-800/80 bg-slate-950/55">
+    <div className="mx-auto grid w-full max-w-[1600px] grid-cols-1 items-start gap-6 xl:grid-cols-2">
+      <Card className="min-w-0 border-slate-800/80 bg-slate-950/55">
         <CardHeader className="flex flex-row flex-wrap items-center justify-between gap-3 pb-3">
           <CardTitle className="text-base">README.md</CardTitle>
           <Link
@@ -76,7 +76,7 @@ export function ProjectOverview({ project }: ProjectOverviewProps) {
           )}
         </CardContent>
       </Card>
-      <section className="space-y-3">
+      <section className="min-w-0 space-y-3">
         <h2 className="text-base font-semibold text-slate-100">
           Recent Activity
         </h2>
