@@ -48,4 +48,31 @@ describe('README Markdown', () => {
       resolveReadmeUrl('mailto:team@example.test', 'summitflow', true),
     ).toBeUndefined()
   })
+
+  it.each([
+    'profiles/',
+    'backend/app/api/research/',
+    'scripts/systemd/',
+    'tests/',
+  ])('keeps directory intent for %s', (path) => {
+    render(
+      <ProjectReadmeMarkdown
+        projectId="summitflow"
+        content={`[Directory](${path})`}
+      />,
+    )
+    expect(screen.getByRole('link', { name: 'Directory' })).toHaveAttribute(
+      'href',
+      `/projects/summitflow/files?directory=${encodeURIComponent(path.slice(0, -1))}`,
+    )
+  })
+
+  it('normalizes a link to the repository root as a directory', () => {
+    expect(resolveReadmeUrl('./', 'summitflow', false)).toBe(
+      '/projects/summitflow/files?directory=',
+    )
+    expect(resolveReadmeUrl('profiles%2F', 'summitflow', false)).toBe(
+      '/projects/summitflow/files?directory=profiles',
+    )
+  })
 })

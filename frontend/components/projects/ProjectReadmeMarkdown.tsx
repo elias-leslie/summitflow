@@ -78,11 +78,14 @@ export function resolveReadmeUrl(
     if (image && !/^https?:/i.test(safe)) return undefined
     return safe
   }
-  const path = repositoryPath(value.split(/[?#]/)[0])
-  if (!path) return undefined
+  const repositoryUrl = value.split(/[?#]/)[0]
+  const path = repositoryPath(repositoryUrl)
+  if (path == null) return undefined
+  const directory = !image && /\/$|%2f$/i.test(repositoryUrl)
+  if (!path && !directory) return undefined
   return image
     ? getFileDownloadUrl({ kind: 'project', projectId }, path)
-    : `/projects/${encodeURIComponent(projectId)}/files?path=${encodeURIComponent(path)}`
+    : `/projects/${encodeURIComponent(projectId)}/files?${directory ? 'directory' : 'path'}=${encodeURIComponent(path)}`
 }
 
 export function ProjectReadmeMarkdown({
