@@ -1,0 +1,16 @@
+{
+  "id": "ominull.production",
+  "owner": "ominull",
+  "namespace": "ominull",
+  "version": "0.1.0",
+  "st_contract_versions": [1],
+  "summary": "Observe the installed Ominull production release through the native evidence contract.",
+  "effects": ["network", "read-remote", "read-local", "credentials", "process"],
+  "help": {
+    "": "Ominull production observations are issued by st service observe ominull --task ID --acceptance RECEIPT --evidence JSON. The owner operation reads the fixed private production configuration and returns fresh binary, service and route observations."
+  },
+  "usage": [],
+  "structured_operations": {
+    "observe_deployment": {"request_contract_version": 1, "response_schema_version": 1}
+  }
+}

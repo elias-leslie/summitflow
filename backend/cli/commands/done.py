@@ -117,7 +117,7 @@ def _handle_task_completion(
             output_error("Completion evidence requires a registered project checkout")
             raise typer.Exit(1)
         try:
-            receipts = load_completion_evidence(evidence, project_root=Path(root))
+            receipts = load_completion_evidence(evidence, project_root=Path(root), project_id=project_id)
             acceptance_receipt = receipts.get("acceptance")
             if acceptance_receipt is not None and not paths:
                 raise ValueError("Imported acceptance requires explicit --paths for task closeout")
@@ -191,7 +191,7 @@ def done_command(
     ] = False,
     evidence: Annotated[
         Path | None,
-        typer.Option("--evidence", help="JSON with acceptance_receipt (requires --paths), deployment_receipt and/or source-bound live_validation checks."),
+        typer.Option("--evidence", help="JSON with acceptance_receipt (requires --paths), native_deployment_receipt, deployment_receipt and/or source-bound live_validation checks."),
     ] = None,
 ) -> None:
     """Complete a task or subtask.

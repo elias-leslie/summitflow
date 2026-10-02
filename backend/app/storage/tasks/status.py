@@ -83,14 +83,14 @@ def _execute_status_update(
             from app.services.task_acceptance import completion_gates
 
             cur.execute(
-                """SELECT t.verification_result, ts.context, t.commits FROM tasks t
+                """SELECT t.verification_result, ts.context, t.commits, t.project_id FROM tasks t
                    LEFT JOIN task_spirit ts ON ts.task_id = t.id
                    WHERE t.id = %s FOR UPDATE OF t""", (resolved_task_id,),
             )
             evidence_row = cur.fetchone()
             if evidence_row:
                 gates = completion_gates({"verification_result": evidence_row[0], "context": evidence_row[1],
-                                          "commits": evidence_row[2]})
+                                          "commits": evidence_row[2], "id": resolved_task_id, "project_id": evidence_row[3]})
                 if gates:
                     raise ValueError(f"Task acceptance remains incomplete: {gates}")
         if expected_closeout_request_id is not None:

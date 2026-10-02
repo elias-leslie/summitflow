@@ -543,6 +543,25 @@
           "network"
         ]
       }
+    },
+    {
+      "id": "ominull.production",
+      "owner": "ominull",
+      "namespace": "ominull",
+      "manifest": "extensions/ominull.json",
+      "executable": "scripts/st-ominull",
+      "grant": {
+        "enabled": true,
+        "effects": [
+          "network",
+          "read-remote",
+          "read-local",
+          "credentials",
+          "process"
+        ]
+      },
+      "arguments": [],
+      "environment": []
     }
   ],
   "description": "Centralized tool registry — single source of truth for operator tool discovery, redirects, and check-runner configuration.",

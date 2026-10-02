@@ -15,6 +15,7 @@ from .core import router as core_router
 from .dependencies import router as dependencies_router
 from .enrichment import router as enrichment_router
 from .logging import router as logging_router
+from .native_deployment_endpoints import router as native_deployment_router
 from .observability import router as observability_router
 from .subtasks import router as subtasks_router
 from .workflow import router as workflow_router
@@ -29,5 +30,6 @@ router.include_router(subtasks_router)
 router.include_router(logging_router)
 router.include_router(workflow_router)
 router.include_router(observability_router)
+router.include_router(native_deployment_router)
 
 __all__ = ["router"]
