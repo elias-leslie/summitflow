@@ -15,6 +15,7 @@ import { EscalationPanel } from '@/components/execution/EscalationPanel'
 import { ExplorerTab } from '@/components/explorer/ExplorerTab'
 import type { ExplorerType } from '@/components/explorer/types'
 import { TaskKanbanBoard } from '@/components/kanban/TaskKanbanBoard'
+import { ProjectHealthBadge } from '@/components/projects/ProjectHealthBadge'
 import { ProjectOverview } from '@/components/projects/ProjectOverview'
 import { useViewMode } from '@/components/tasks/hooks/useViewMode'
 import { JennyExecutionStrip } from '@/components/tasks/JennyExecutionStrip'
@@ -281,15 +282,7 @@ export function ProjectDetailClient() {
                 <span className="rounded-full border border-slate-700/60 bg-slate-950/72 px-2 py-0.5 text-[10px] uppercase tracking-[0.14em] text-slate-300">
                   {SECTION_COPY[activeSection].label}
                 </span>
-                <span
-                  className={
-                    project.health_status === 'healthy'
-                      ? 'rounded-full border border-emerald-500/18 bg-emerald-500/10 px-2 py-0.5 text-[10px] uppercase tracking-[0.14em] text-emerald-300'
-                      : 'rounded-full border border-amber-500/18 bg-amber-500/10 px-2 py-0.5 text-[10px] uppercase tracking-[0.14em] text-amber-300'
-                  }
-                >
-                  {project.health_status === 'healthy' ? 'healthy' : 'watch'}
-                </span>
+                <ProjectHealthBadge project={project} />
               </div>
               <div className="mt-1 flex flex-wrap items-center gap-2 text-[11px]">
                 <span className="font-mono text-slate-500">{project.id}</span>

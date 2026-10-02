@@ -16,6 +16,7 @@ import Image from 'next/image'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { useState } from 'react'
+import { ProjectHealthBadge } from '@/components/projects/ProjectHealthBadge'
 import {
   fetchProjectHealth,
   fetchQualityGateHealth,
@@ -41,22 +42,12 @@ export function ProjectCard({ project }: ProjectCardProps) {
   const [hovered, setHovered] = useState(false)
   const appUrl = project.public_url || project.base_url
 
-  const { data: health, isLoading: healthLoading } = useQuery({
+  const { data: health } = useQuery({
     queryKey: ['project-health', project.id],
     queryFn: () => fetchProjectHealth(project.id),
-    enabled: hovered,
-    initialData: project.health_status
-      ? {
-          project_id: project.id,
-          healthy: project.health_status === 'healthy',
-          error:
-            project.health_status === 'healthy'
-              ? undefined
-              : project.health_status,
-          checked_at: project.created_at,
-        }
-      : undefined,
-    initialDataUpdatedAt: 0,
+    enabled:
+      hovered &&
+      Boolean(project.base_url?.trim() && project.health_endpoint?.trim()),
     staleTime: STALE_STANDARD,
     refetchInterval: hovered ? POLL_STANDARD * 2 : false,
   })
@@ -241,7 +232,7 @@ export function ProjectCard({ project }: ProjectCardProps) {
                 <span className="text-slate-500">{checkpoint.age}</span>
               </div>
             )}
-            {(health || qualityGate) && (
+            {(health || project.health_status || qualityGate) && (
               <div className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs">
                 <span
                   className={clsx(
@@ -250,13 +241,15 @@ export function ProjectCard({ project }: ProjectCardProps) {
                   )}
                 >
                   Service:{' '}
-                  {health
-                    ? health.healthy
-                      ? health.response_time_ms != null
-                        ? `${Math.round(health.response_time_ms)}ms`
-                        : 'healthy'
-                      : health.error || 'unhealthy'
-                    : 'pending'}
+                  {!project.base_url?.trim() || !project.health_endpoint?.trim()
+                    ? 'no health endpoint configured'
+                    : health
+                      ? health.healthy
+                        ? health.response_time_ms != null
+                          ? `${Math.round(health.response_time_ms)}ms`
+                          : 'healthy'
+                        : health.error || 'unhealthy'
+                      : project.health_status || 'pending'}
                 </span>
                 <span
                   className={clsx(
@@ -314,35 +307,7 @@ export function ProjectCard({ project }: ProjectCardProps) {
             />
           )}
 
-          {healthLoading ? (
-            <div className="w-3 h-3 border border-slate-600 border-t-phosphor-500 rounded-full animate-spin" />
-          ) : health ? (
-            <div
-              className={clsx(
-                'w-3 h-3 rounded-full status-dot-pulse',
-                health.healthy
-                  ? 'bg-green-500 text-green-500'
-                  : 'bg-rose-500 text-rose-500',
-              )}
-              title={
-                health.healthy
-                  ? `Service healthy${health.response_time_ms ? ` (${Math.round(health.response_time_ms)}ms)` : ''}`
-                  : `Service error: ${health.error || 'Unhealthy'}`
-              }
-              aria-label={
-                health.healthy
-                  ? 'Project service healthy'
-                  : `Project service unhealthy${health.error ? `: ${health.error}` : ''}`
-              }
-              data-testid="project-health-indicator"
-            />
-          ) : (
-            <div
-              className="w-3 h-3 rounded-full bg-slate-600"
-              aria-label="Project health status unavailable"
-              data-testid="project-health-indicator"
-            />
-          )}
+          <ProjectHealthBadge project={project} dot />
         </div>
       </div>
 

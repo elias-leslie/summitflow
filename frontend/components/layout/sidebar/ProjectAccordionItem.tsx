@@ -3,6 +3,7 @@ import { ChevronDown, GripVertical, Settings2 } from 'lucide-react'
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
 import type { ButtonHTMLAttributes } from 'react'
+import { ProjectHealthBadge } from '@/components/projects/ProjectHealthBadge'
 import type { Project } from '@/lib/api'
 import { projectNavItems } from './constants'
 import { ProjectNavItem } from './ProjectNavItem'
@@ -59,7 +60,6 @@ export function ProjectAccordionItem({
   const badge = tier
     ? TIER_BADGE_CONFIG[tier as keyof typeof TIER_BADGE_CONFIG]
     : null
-  const healthLabel = project.health_status === 'healthy' ? 'healthy' : 'watch'
 
   return (
     <div
@@ -150,9 +150,6 @@ export function ProjectAccordionItem({
             </div>
             <div className="mt-1 flex items-center gap-2 text-[11px] text-slate-500">
               <span className="truncate font-mono">{project.id}</span>
-              <span className="rounded-full border border-slate-700/60 bg-slate-900/60 px-1.5 py-0.5 uppercase tracking-[0.16em] text-[9px] text-slate-400">
-                {healthLabel}
-              </span>
             </div>
           </div>
 
@@ -171,6 +168,11 @@ export function ProjectAccordionItem({
             </span>
           )}
         </Link>
+
+        <ProjectHealthBadge
+          project={project}
+          className="self-center px-1.5 text-[9px]"
+        />
 
         <button
           type="button"

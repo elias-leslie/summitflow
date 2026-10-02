@@ -1,13 +1,16 @@
 'use client'
 
-import { useParams } from 'next/navigation'
+import { useParams, useSearchParams } from 'next/navigation'
 import { FilesWorkspace } from '@/components/files'
 
 export function FilesClient(): React.ReactElement {
   const params = useParams<{ id: string }>()
+  const filePath = useSearchParams().get('path') || undefined
 
   return (
     <FilesWorkspace
+      key={filePath}
+      initialFilePath={filePath}
       scope={{ kind: 'project', projectId: params.id }}
       title="Files"
       rootLabel={params.id}

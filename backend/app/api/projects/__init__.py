@@ -51,6 +51,7 @@ from .models import (
 )
 from .onboarding import build_onboarding_response, run_project_onboarding
 from .pulse import router as pulse_router
+from .readme import router as readme_router
 
 router = APIRouter()
 
@@ -62,6 +63,7 @@ def _get_quality_summaries(project_ids: list[str]) -> dict[str, dict]:
 
 
 router.include_router(pulse_router, tags=["projects"])
+router.include_router(readme_router, tags=["projects"])
 
 
 async def _resolve_project_health_statuses(projects):

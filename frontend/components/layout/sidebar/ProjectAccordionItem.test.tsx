@@ -1,3 +1,4 @@
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { fireEvent, render, screen } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import type { Project } from '@/lib/api'
@@ -42,17 +43,19 @@ function renderItem(
   } = {},
 ) {
   render(
-    <ProjectAccordionItem
-      project={buildProject(projectOverrides)}
-      isExpanded={isExpanded}
-      isActive={false}
-      activeTab={null}
-      onToggleExpand={onToggleExpand}
-      getProjectNavHref={(projectId, item) =>
-        `/projects/${projectId}${item.href}`
-      }
-      dragHandleProps={{ onPointerDown: () => {} }}
-    />,
+    <QueryClientProvider client={new QueryClient()}>
+      <ProjectAccordionItem
+        project={buildProject(projectOverrides)}
+        isExpanded={isExpanded}
+        isActive={false}
+        activeTab={null}
+        onToggleExpand={onToggleExpand}
+        getProjectNavHref={(projectId, item) =>
+          `/projects/${projectId}${item.href}`
+        }
+        dragHandleProps={{ onPointerDown: () => {} }}
+      />
+    </QueryClientProvider>,
   )
 }
 
