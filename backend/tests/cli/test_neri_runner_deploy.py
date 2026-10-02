@@ -1107,6 +1107,34 @@ def test_fixture_recovery_preserves_original_backup_and_secrets_without_provisio
         assert secret not in json.dumps(result)
 
 
+def test_fixture_recovery_accepts_provisioning_failure_without_reprovision(
+    installed, fixture_installation,
+):
+    root, _source, state = installed
+    _old, _private, provision, verify = fixture_installation
+    provision.side_effect = guest.DeploymentError("Fixed WordPress fixture provisioning failed")
+    original = guest.sync_fixture(ATTEMPT, payload(fixture_public_files("broken-provision")))
+    assert original["state"] == "uncertain", original
+    assert original["failed_phase"] == "provision"
+    assert [event["phase"] for event in original["events"]][-2:] == ["provision", "failed"]
+    (root / "deployments" / (ATTEMPT + "-fixture.json")).chmod(0o644)
+    provision.side_effect = None
+    provision.reset_mock()
+    state["calls"].clear()
+
+    repaired = guest.recover_fixture(
+        ATTEMPT, "2" * 32, payload(fixture_public_files("offline-compatible")),
+    )
+
+    assert repaired["state"] == "succeeded", repaired
+    assert repaired["verified"] is True
+    assert repaired["interlock_retained"] is False
+    assert not (root / ".deploying").exists()
+    assert state["calls"] == ["restart"]
+    provision.assert_not_called()
+    verify.assert_called_once_with()
+
+
 @pytest.mark.parametrize("fault", ["marker", "receipt-attempt", "adapter", "operation", "state", "failed-phase",
                                    "no-provision", "wrong-order", "backup", "receipt-symlink", "marker-symlink",
                                    "busy", "unblocked", "legacy", "payload"])

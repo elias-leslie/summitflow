@@ -106,9 +106,9 @@ def runner_bootstrap(
 @usage(
     surface="st.service.runner-fixture-recovery",
     cmd="st service recover-runner-fixture neri <original-attempt>",
-    when="repair fixed fixture verification inputs after provisioning succeeded and retained its interlock",
+    when="repair fixed fixture inputs after provisioning or verification retained its interlock",
     precautions=(
-        "requires the exact original 32-hex attempt, matching retained interlock, and provisioned verification-failure receipt",
+        "requires the exact original 32-hex attempt, matching retained interlock, and post-install failure receipt",
         "two-pass confirmation is required; both runners must already be stopped or blocked and idle",
         "installs public fixture files and updates only the private target artifact identity; never provisions or seeds",
         "original receipt and backup remain intact; a linked recovery receipt is written and failures retain the interlock",
@@ -121,7 +121,7 @@ def runner_fixture_recovery(
     attempt: Annotated[str, typer.Argument(help="Exact original 32-hex fixture deployment attempt")],
     confirm: Annotated[str | None, typer.Option("--confirm", help="Confirm token from preview run")] = None,
 ) -> None:
-    """Recover a provisioned fixture whose verification retained its interlock."""
+    """Recover a fixture whose provisioning or verification retained its interlock."""
     if not re.fullmatch(r"[0-9a-f]{32}", attempt):
         output_error("Pass the exact original 32-hex fixture deployment attempt.")
         raise typer.Exit(1)
