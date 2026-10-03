@@ -1,0 +1,7 @@
+#!/usr/bin/env bash
+set -uo pipefail
+script_path="$(readlink -f "${BASH_SOURCE[0]}")"
+root="$(cd "$(dirname "$script_path")/../.." && pwd)"
+if ! BASH_ENV='' PYTHONPATH="$root/backend" "$root/backend/.venv/bin/python" -m cli.lib.publication_hooks; then
+  printf '%s\n' '{"hookSpecificOutput":{"hookEventName":"SessionStart","additionalContext":"Publication startup status unavailable; inspect st vcs publication."}}'
+fi

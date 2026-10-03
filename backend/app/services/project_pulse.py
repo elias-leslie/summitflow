@@ -116,6 +116,8 @@ async def build_project_pulse(project_id: str) -> dict[str, Any]:
         raw_running_tasks, owner_task_ids, specialist_task_ids, session_linked_task_ids
     )
     cleanup = build_project_cleanup_status(project_id)
+    from app.services.publication_health import get_project_publication_health
+    publication = get_project_publication_health(project_id)
     return {
         "project_id": project_id,
         "generated_at": datetime.now(UTC).isoformat(),
@@ -140,4 +142,5 @@ async def build_project_pulse(project_id: str) -> dict[str, Any]:
         "active_sessions": active_sessions,
         "stale_sessions": stale_sessions,
         "cleanup": cleanup,
+        "publication": publication,
     }

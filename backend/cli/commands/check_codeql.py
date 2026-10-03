@@ -6,8 +6,15 @@ import json
 import shutil
 import subprocess
 import urllib.parse
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import cast
+
+from app.services.publication_security import (
+    bind_codeql_alert_sources,
+    observe_codeql,
+    record_codeql_observation,
+)
 
 from ..details import display_path, summary_hint, write_details
 from ..output import output_error
@@ -63,18 +70,28 @@ def _parse_codeql_args(args: list[str]) -> tuple[str | None, int]:
 
 def _fetch_codeql_repo(root: Path) -> str | None:
     if shutil.which("gh") is None:
+        _record_codeql_unavailable(root)
         return None
-    result = subprocess.run(
-        ["gh", "repo", "view", "--json", "nameWithOwner", "--jq", ".nameWithOwner"],
-        cwd=root,
-        text=True,
-        capture_output=True,
-        check=False,
-        timeout=30,
-    )
-    if result.returncode == 0:
-        return result.stdout.strip() or None
+    try:
+        result = subprocess.run(
+            ["gh", "repo", "view", "--json", "nameWithOwner", "--jq", ".nameWithOwner"],
+            cwd=root, text=True, capture_output=True, check=False, timeout=30,
+        )
+        if result.returncode == 0 and result.stdout.strip():
+            return result.stdout.strip()
+    except (OSError, subprocess.SubprocessError):
+        pass
+    _record_codeql_unavailable(root)
     return None
+
+
+def _record_codeql_unavailable(root: Path) -> None:
+    try:
+        record_codeql_observation(root, {"state": "pending", "reason": "codeql_cli_unavailable",
+                                         "observed_at": datetime.now(UTC).isoformat(), "alert_count": 0,
+                                         "alert_ids": [], "analysis_ids": []})
+    except Exception:
+        print("CODEQL:INGEST:UNAVAILABLE|hint:rolling repair evidence could not be recorded")
 
 
 def _fetch_codeql_ref(root: Path) -> str | None:
@@ -100,6 +117,8 @@ def _fetch_codeql_alerts(
     error = ""
     exit_code = 0
     while True:
+        if page > 100:
+            return alerts, "Incomplete CodeQL alert pagination", 1
         params: dict[str, str] = {
             "state": "open",
             "per_page": str(_CODEQL_PAGE_SIZE),
@@ -108,14 +127,13 @@ def _fetch_codeql_alerts(
         if ref:
             params["ref"] = ref
         endpoint = f"repos/{repo}/code-scanning/alerts?{urllib.parse.urlencode(params)}"
-        result = subprocess.run(
-            ["gh", "api", endpoint],
-            cwd=root,
-            text=True,
-            capture_output=True,
-            check=False,
-            timeout=60,
-        )
+        try:
+            result = subprocess.run(
+                ["gh", "api", endpoint], cwd=root, text=True,
+                capture_output=True, check=False, timeout=60,
+            )
+        except (OSError, subprocess.SubprocessError) as exc:
+            return alerts, "CodeQL API unavailable: " + type(exc).__name__, 1
         if result.returncode != 0:
             exit_code = result.returncode
             error = result.stderr or result.stdout
@@ -151,13 +169,29 @@ def _emit_codeql_result(
     error: str,
     exit_code: int,
 ) -> int:
+    evidence = observe_codeql(root, repo, ref=ref)
+    # A failed paginated read must never be replaced by a second green read.
+    if exit_code != 0 and evidence.get("state") not in {"unavailable", "failed"}:
+        evidence.update(state="pending", reason="codeql_api_unavailable")
+    elif alerts:
+        evidence.update(state="failed", reason="codeql_alerts_open", alert_count=len(alerts),
+                        alert_ids=[alert["number"] for alert in alerts if type(alert.get("number")) is int])
+        bind_codeql_alert_sources(evidence, alerts)
+    try:
+        record_codeql_observation(root, evidence)
+    except Exception:
+        print("CODEQL:INGEST:UNAVAILABLE|hint:rolling repair evidence could not be recorded")
     details_payload = {
         "repository": repo,
         "ref": ref,
         "alerts": alerts,
         "error": error or None,
+        "source_evidence": evidence,
     }
     details = write_details(root, "codeql", json.dumps(details_payload, indent=2))
+    if evidence.get("state") == "unavailable":
+        print(f"CODEQL:UNAVAILABLE:0|details:{display_path(root, details)}|hint:private CodeQL coverage unavailable; existing findings retained")
+        return 0
     if exit_code != 0:
         print(
             f"CODEQL:FAIL:{exit_code}|details:{display_path(root, details)}|"
@@ -171,9 +205,15 @@ def _emit_codeql_result(
             f"hint:{len(alerts)} open CodeQL alerts: {hint}"
         )
         return 1
+    if evidence.get("state") == "failed":
+        print(f"CODEQL:FAIL:1|details:{display_path(root, details)}|hint:{evidence['reason']}")
+        return 1
+    if evidence.get("state") == "pending":
+        print(f"CODEQL:PENDING:0|details:{display_path(root, details)}|hint:{evidence['reason']}; existing findings retained")
+        return 0
     ref_hint = ref or "default ref"
     print(
         f"CODEQL:OK:0|details:{display_path(root, details)}|"
-        f"hint:0 open CodeQL alerts for {repo} {ref_hint}"
+        f"hint:0 open CodeQL alerts for {repo} {ref_hint}; resolution={evidence['state']}"
     )
     return 0

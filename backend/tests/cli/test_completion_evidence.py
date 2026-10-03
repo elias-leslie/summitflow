@@ -49,3 +49,48 @@ def test_acceptance_artifact_is_resolved_and_validated_at_exact_head(tmp_path, m
     evidence.write_text(json.dumps({"acceptance_receipt": "accepted.json"}))
     assert load_completion_evidence(evidence, project_root=tmp_path) == {"acceptance": validated}
     validator.assert_called_once_with(tmp_path, tmp_path / "accepted.json", sha="HEAD")
+
+
+def test_native_reference_uses_the_task_project_instead_of_ambient_context(tmp_path, monkeypatch):
+    from unittest.mock import MagicMock, Mock
+
+    client = MagicMock(project_id="owner-project")
+    client.__enter__.return_value = client
+    url = "https://summitflow.example.invalid/api/projects/owner-project/deployment-observations/" + "a" * 32
+    client._url.return_value = url
+    client.get.return_value = {"deployment": {"receipt_id": "a" * 32}}
+    factory = Mock(return_value=client)
+    monkeypatch.setattr("cli.client.STClient", factory)
+    evidence = tmp_path / "evidence.json"
+    evidence.write_text(json.dumps({"native_deployment_receipt": "a" * 32}))
+    assert load_completion_evidence(evidence, project_root=tmp_path, project_id="owner-project") == client.get.return_value
+    factory.assert_called_once_with(project_id="owner-project")
+    client._url.assert_called_once_with("/deployment-observations/" + "a" * 32)
+    client.get.assert_called_once_with(url)
+
+
+@pytest.mark.parametrize("payload", [
+    {"native_deployment_receipt": "../forged"},
+    {"native_deployment_receipt": "a" * 32, "deployment_receipt": "forged.json"},
+    {"native_deployment_receipt": "a" * 32, "live_validation": {"source_commit": "b" * 40}},
+])
+def test_native_import_rejects_mixed_or_arbitrary_evidence(tmp_path, payload):
+    evidence = tmp_path / "evidence.json"
+    evidence.write_text(json.dumps(payload))
+    with pytest.raises(ValueError):
+        load_completion_evidence(evidence, project_root=tmp_path, project_id="owner-project")
+
+
+def test_native_api_rejection_is_a_clean_import_error(tmp_path, monkeypatch):
+    from unittest.mock import MagicMock, Mock
+
+    from cli.client import APIError
+
+    client = MagicMock(project_id="owner-project")
+    client.__enter__.return_value = client
+    client.get.side_effect = APIError(422, "Unknown receipt")
+    monkeypatch.setattr("cli.client.STClient", Mock(return_value=client))
+    evidence = tmp_path / "evidence.json"
+    evidence.write_text(json.dumps({"native_deployment_receipt": "a" * 32}))
+    with pytest.raises(ValueError, match="Server rejected"):
+        load_completion_evidence(evidence, project_root=tmp_path, project_id="owner-project")

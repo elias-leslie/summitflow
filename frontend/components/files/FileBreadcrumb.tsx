@@ -37,7 +37,7 @@ export function FileBreadcrumb({
       label: segment,
       href: isLast
         ? undefined
-        : `${rootHref}?path=${encodeURIComponent(segmentPath)}`,
+        : `${rootHref}?directory=${encodeURIComponent(segmentPath)}`,
     })
   }
 

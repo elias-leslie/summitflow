@@ -9,6 +9,8 @@ import os
 from pathlib import Path
 from typing import Any
 
+import psycopg
+
 from ..logging_config import get_logger
 from ..project_identity import canonicalize_project_name
 from ..utils.env_files import project_env_files, scrub_env_keys_from_files
@@ -24,9 +26,9 @@ def project_exists(project_id: str) -> bool:
         return cur.fetchone() is not None
 
 
-def get_project_root_path(project_id: str) -> str | None:
+def get_project_root_path(project_id: str, *, connection: psycopg.Connection | None = None) -> str | None:
     """Return project root path or None if project not found."""
-    with get_cursor() as cur:
+    with (connection.cursor() if connection else get_cursor()) as cur:
         cur.execute("SELECT root_path FROM projects WHERE id = %s", (project_id,))
         row = cur.fetchone()
         return row[0] if row else None

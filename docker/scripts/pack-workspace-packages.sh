@@ -2,7 +2,7 @@
 # Pack workspace packages for Docker builds.
 #
 # JavaScript: @agent-hub/{chat-ui,passport-client} → .tgz tarballs
-# Python: agent-hub-client → .whl wheel
+# Python: explicit --python-owner refresh only; Docker uses locked release wheels.
 #
 # Docker builds are isolated, so workspace:* and local path deps won't resolve.
 # This pre-packs everything so Dockerfiles can install from local artifacts.
@@ -12,7 +12,7 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 SUMMITFLOW_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
-SUMMITFLOW_ROOT_OVERRIDE="$SUMMITFLOW_ROOT"
+export SUMMITFLOW_ROOT_OVERRIDE="$SUMMITFLOW_ROOT"
 . "$SUMMITFLOW_ROOT/scripts/lib/project-roots.sh"
 
 OUT_DIR="${1:-/tmp/workspace-packages}"
@@ -22,7 +22,8 @@ OUT_DIR="$(cd "$OUT_DIR" && pwd)"
 PYTHON_TOOL_OWNERS=(browser-automation code-intelligence design-tools)
 
 # A package-only change must not run unrelated JavaScript prepack builds.
-# The default still produces the complete Docker dependency bundle.
+# Python wheels are checked-in, lock-bound releases. Only an explicit owner
+# refresh may rebuild one; default Docker preparation packs JavaScript only.
 if [ "$#" -gt 1 ]; then
   if [ "$#" -ne 3 ] || [ "$2" != "--python-owner" ]; then
     echo "Usage: $0 [output-directory [--python-owner OWNER]]" >&2
@@ -132,32 +133,7 @@ fi
 
 pack_js_package "@summitflow/notes-ui" "$SUMMITFLOW_ROOT/packages/notes-ui"
 
-# ── Python package (uv build → .whl) ────────────────────────────
-PYTHON_PKG="${PACKAGES_DIR:+$PACKAGES_DIR/agent-hub-client}"
-if [ -n "$PYTHON_PKG" ] && [ -d "$PYTHON_PKG" ]; then
-  echo "Building agent-hub-client wheel..."
-  (cd "$PYTHON_PKG" && SOURCE_DATE_EPOCH=1577836800 uv build --wheel --out-dir "$OUT_DIR" 2>&1)
-else
-  echo "SKIP: agent-hub-client package root not found"
-fi
-
-echo "Building summitflow-st-sdk wheel..."
-(cd "$SUMMITFLOW_ROOT/packages/st-sdk" && SOURCE_DATE_EPOCH=1577836800 uv build --wheel --out-dir "$OUT_DIR" 2>&1)
-
-if [ -n "$PACKAGES_DIR" ] && [ -d "$PACKAGES_DIR/st-cli" ]; then
-  echo "Building agent-hub-st wheel..."
-  (cd "$PACKAGES_DIR/st-cli" && SOURCE_DATE_EPOCH=1577836800 uv build --wheel --out-dir "$OUT_DIR" 2>&1)
-fi
-
-for owner in "${PYTHON_TOOL_OWNERS[@]}"; do
-  owner_root="$(resolve_project_root "$owner" 2>/dev/null || true)"
-  if [ -n "$owner_root" ] && [ -f "$owner_root/pyproject.toml" ]; then
-    echo "Building $owner wheel..."
-    (cd "$owner_root" && SOURCE_DATE_EPOCH=1577836800 uv build --wheel --out-dir "$OUT_DIR" 2>&1)
-  else
-    echo "SKIP: $owner package root not found; use its checked-in release wheel"
-  fi
-done
+echo "Using checked-in Python wheels bound by backend/uv.lock; owner refresh requires --python-owner."
 
 echo ""
 echo "Packed workspace packages to $OUT_DIR:"

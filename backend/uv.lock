@@ -1895,7 +1895,7 @@ dependencies = [
     { name = "typer" },
 ]
 wheels = [
-    { filename = "summitflow_st_sdk-0.1.0-py3-none-any.whl", hash = "sha256:f72029182e1a84e6db92e66438d250c078830cb92752b825873a5e7a62e43e23" },
+    { filename = "summitflow_st_sdk-0.1.0-py3-none-any.whl", hash = "sha256:37d6973620713570fdddfbc279487ffbe747a872b51fd37a75b8472a82459559" },
 ]
 
 [package.metadata]

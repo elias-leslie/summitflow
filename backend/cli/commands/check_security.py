@@ -8,6 +8,8 @@ import subprocess
 import tempfile
 from pathlib import Path
 
+from app.utils.heavy_work import heavy_work
+
 from ..details import display_path, summary_hint
 from .check_artifacts import write_check_details
 
@@ -98,15 +100,16 @@ def _emit_result(root: Path, name: str, result: subprocess.CompletedProcess[str]
 
 def _run(command: list[str], *, root: Path, name: str) -> int:
     try:
-        result = subprocess.run(
-            command,
-            cwd=root,
-            text=True,
-            capture_output=True,
-            encoding="utf-8",
-            errors="replace",
-            check=False,
-        )
+        with heavy_work(f"local scan {name}") as work:
+            result = work.run(
+                command,
+                cwd=root,
+                text=True,
+                capture_output=True,
+                encoding="utf-8",
+                errors="replace",
+                check=False,
+            )
     except OSError as exc:
         if name != "gitleaks" and isinstance(exc, FileNotFoundError):
             print(f"{name.upper()}:SKIP:{name}:tool_not_installed;coverage_not_claimed")
@@ -143,6 +146,7 @@ def _lockfiles(root: Path, paths: list[str], changed_only: bool) -> list[Path]:
     return sorted(path for path in selected if path.is_file())
 
 
+@heavy_work("local security")
 def run_local_security_check(
     name: str,
     root: Path,

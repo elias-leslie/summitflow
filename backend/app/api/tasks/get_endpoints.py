@@ -34,6 +34,14 @@ router = APIRouter()
 async def check_completion_readiness(task_id: str) -> dict[str, Any]:
     """Pre-validate completion gates without modifying state."""
     task = get_task_or_404(task_id)
+    from ...storage.task_spirit import get_task_spirit
+
+    # Generic task rows expose only the compact spirit summary. Read the
+    # canonical plan context, as the final status-change gate does, rather than
+    # silently omit owner-required deployment and live evidence.
+    spirit = await asyncio.to_thread(get_task_spirit, str(task["id"]))
+    if spirit is not None:
+        task = {**task, "context": spirit.get("context") or {}}
 
     subtasks = await asyncio.to_thread(get_subtasks_for_task, str(task["id"]), True)
     incomplete: list[str] = []

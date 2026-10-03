@@ -42,6 +42,7 @@ from ._command_guard_helpers import (
     repo_root as _repo_root,
 )
 from ._destructive_path_guard_helpers import derive_task_id
+from ._publication_guard import evaluate_publication_command
 from .destructive_path_guard import (
     DestructivePathGuardError,
     check_destructive_paths,
@@ -446,7 +447,7 @@ def _git_decision(segment: Sequence[str], cwd: Path) -> CommandGuardDecision | N
     if subcommand == "commit":
         return CommandGuardDecision(
             blocked=True, code="git_commit_redirect",
-            message="BLOCKED:git commit:Use 'st commit --push --message \"...\"' instead of raw git commit.",
+            message="BLOCKED:git commit:Use 'st commit --message \"...\"' for a local checkpoint.",
             source="git", command=segment_text,
         )
     if is_managed_repo_root(root) and subcommand in _GIT_MANAGED_REDIRECTS:
@@ -506,6 +507,9 @@ def evaluate_shell_command(command: str, cwd: str | Path | None = None) -> Comma
         decision = _jj_decision(segment, working_dir)
         if decision:
             return decision
+        decision = evaluate_publication_command(normalize_segment(segment), working_dir)
+        if decision.blocked:
+            return decision
     return CommandGuardDecision(blocked=False, code=None, message=None, source=None, command=command)
 
 
@@ -543,15 +547,18 @@ def _parse_args(argv: Sequence[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--staged-git", action="store_true", help="Inspect staged destructive git paths")
     parser.add_argument("--emit-intercept-words", action="store_true", help="Print bash intercept words")
     parser.add_argument("--json", action="store_true", help="Emit JSON output")
+    parser.add_argument("--publication-hook", action="store_true", help="Read synchronous PreToolUse JSON from stdin")
     args = parser.parse_args(argv)
-    enabled = sum(bool(v) for v in (args.shell_command, args.staged_git, args.emit_intercept_words))
+    enabled = sum(bool(v) for v in (args.shell_command, args.staged_git, args.emit_intercept_words, args.publication_hook))
     if enabled != 1:
-        parser.error("pass exactly one of --shell-command, --staged-git, or --emit-intercept-words")
+        parser.error("pass exactly one of --shell-command, --staged-git, --emit-intercept-words, or --publication-hook")
     return args
 
 
 def main(argv: Sequence[str] | None = None) -> int:
     args = _parse_args(argv)
+    if args.publication_hook:
+        return publication_hook_main()
     if args.emit_intercept_words:
         print(" ".join(get_bash_intercept_words()))
         return 0
@@ -569,6 +576,43 @@ def main(argv: Sequence[str] | None = None) -> int:
     elif decision.blocked and decision.message:
         print(decision.message)
     return 2 if decision.blocked else 0
+
+
+def publication_hook_main() -> int:
+    """Claude/Codex shared JSON protocol; valid deny output also on errors."""
+    try:
+        payload = json.load(sys.stdin)
+        tool_input = payload.get("tool_input")
+        if not isinstance(tool_input, dict):
+            raise ValueError("Missing tool input")
+        tool = str(payload.get("tool_name", "")).lower()
+        command = tool_input.get("command", tool_input.get("cmd"))
+        if isinstance(command, list) and all(isinstance(item, str) for item in command):
+            import shlex
+            command = shlex.join(command)
+        if command is None:
+            # Non-shell hooks may match GitHub connector tools directly.
+            mutation = any(word in tool for word in ("merge_pull_request", "create_release", "update_release", "delete_release", "push_files", "create_or_update_file", "create_repository"))
+            if mutation:
+                decision = CommandGuardDecision(True, "direct_publication", "Use the canonical ST publication workflow.", "publication", "")
+            elif any(word in tool for word in ("bash", "exec_command", "shell")):
+                raise ValueError("Missing shell command")
+            else:
+                decision = CommandGuardDecision(False, None, None, None, "")
+        elif not isinstance(command, str) or not command.strip():
+            raise ValueError("Invalid command")
+        else:
+            decision = evaluate_publication_command(command, payload.get("cwd"))
+    except Exception:
+        decision = CommandGuardDecision(True, "publication_error", "Publication guard could not evaluate tool input; execution refused.", "publication", "")
+    if decision.blocked:
+        print(json.dumps({"hookSpecificOutput": {
+            "hookEventName": "PreToolUse", "permissionDecision": "deny",
+            "permissionDecisionReason": decision.message,
+        }}))
+    else:
+        print("{}")
+    return 0
 
 
 if __name__ == "__main__":

@@ -11,6 +11,44 @@ from cli.output_context import OutputContext
 runner = CliRunner()
 
 
+def test_publish_requires_explicit_now():
+    with patch("app.tasks.backup_manual_publish.publish_project_now") as publish:
+        result = runner.invoke(vcs.app, ["publish", "--source", "source", "--sha", "a" * 40])
+    assert result.exit_code == 2
+    assert "requires --now" in result.stdout
+    publish.assert_not_called()
+
+
+def test_publish_exact_source_only_and_no_hygiene_actions():
+    with (
+        patch("app.tasks.backup_manual_publish.publish_project_now", return_value={
+            "publication_complete": True, "evidence_recorded": True, "health": {"state": "verified"},
+        }) as publish,
+        patch.object(vcs, "pull_repository") as pull,
+        patch.object(vcs, "cleanup_safe_git_residue") as cleanup,
+    ):
+        result = runner.invoke(vcs.app, ["publish", "--source", "source", "--sha", "a" * 40, "--now"])
+    assert result.exit_code == 0
+    publish.assert_called_once_with("source", "a" * 40)
+    pull.assert_not_called()
+    cleanup.assert_not_called()
+
+
+def test_publish_pending_is_not_a_green_completion():
+    with patch("app.tasks.backup_manual_publish.publish_project_now", return_value={
+        "publication_complete": True, "evidence_recorded": True, "health": {"state": "blocked"},
+    }):
+        result = runner.invoke(vcs.app, ["publish", "--source", "source", "--sha", "a" * 40, "--now"])
+    assert result.exit_code == 2
+
+
+def test_publish_never_prints_unexpected_diagnostics():
+    with patch("app.tasks.backup_manual_publish.publish_project_now", side_effect=RuntimeError("private-token-diagnostic")):
+        result = runner.invoke(vcs.app, ["publish", "--source", "source", "--sha", "a" * 40, "--now"])
+    assert result.exit_code == 2
+    assert "private-token-diagnostic" not in result.stdout
+
+
 def _cleanup_payload(needs_cleanup: bool = False) -> dict[str, object]:
     return {
         "summary": {

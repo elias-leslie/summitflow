@@ -192,28 +192,29 @@ def _locate_archive(location: str, name: str, source_id: str) -> str | None:
 def _download_smb_archive(smb_path: str) -> str | None:
     """Download an archive from SMB to a temp file. Returns local path or None."""
     import os
+    import shutil
     import tempfile
 
+    from app.utils.smb_commands import SmbCommandError, smb_archive_location, smb_command
+
     creds_file = Path(os.environ.get("HOME", str(Path.home()))) / ".smbcredentials"
-    parts = smb_path.split("/")
-    if len(parts) < 5:
+    try:
+        service, remote_dir, filename = smb_archive_location(smb_path)
+    except SmbCommandError:
         return None
 
-    host, share = parts[2], parts[3]
-    remote_dir = "/".join(parts[4:-1])
-    filename = parts[-1]
-
     temp_path = Path(tempfile.mkdtemp()) / filename
-    cmd = [
-        "smbclient", f"//{host}/{share}", "-A", str(creds_file),
-        "-c", f"cd {remote_dir}; get {filename} {temp_path}",
-    ]
     try:
+        cmd = [
+            "smbclient", service, "-A", str(creds_file),
+            "-c", smb_command(("cd", remote_dir), ("get", filename, str(temp_path))),
+        ]
         result = subprocess.run(cmd, capture_output=True, text=True, timeout=300)
         if result.returncode == 0 and temp_path.exists():
             return str(temp_path)
     except Exception:
         pass
+    shutil.rmtree(temp_path.parent, ignore_errors=True)
     return None
 
 

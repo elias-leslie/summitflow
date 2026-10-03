@@ -110,6 +110,10 @@ export interface ProjectHealth {
   checked_at: string
 }
 
+export type ProjectReadme =
+  | { project_id: string; status: 'available'; content: string }
+  | { project_id: string; status: 'missing' | 'unavailable'; content: null }
+
 export interface QualityGateHealth {
   project_id: string
   overall_pass: boolean

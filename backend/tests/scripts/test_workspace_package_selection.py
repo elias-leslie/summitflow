@@ -47,3 +47,30 @@ def test_unknown_python_owner_is_rejected(tmp_path: Path) -> None:
     result = subprocess.run(["bash", str(SCRIPT), str(tmp_path / "out"), "--python-owner", "unregistered-owner"], capture_output=True, text=True, check=False)
     assert result.returncode == 2
     assert "Unknown Python tool owner" in result.stderr
+
+
+def test_default_pack_never_builds_or_overwrites_python_wheels(tmp_path: Path) -> None:
+    commands = tmp_path / "bin"
+    commands.mkdir()
+    log = tmp_path / "commands.log"
+    for name, body in {
+        "uv": 'echo "unexpected Python wheel rebuild" >&2; exit 99',
+        "pnpm": 'printf "%s\\n" "$*" >> "$TEST_PACK_LOG"',
+    }.items():
+        executable = commands / name
+        executable.write_text("#!/bin/sh\n" + body + "\n")
+        executable.chmod(0o755)
+    packages = tmp_path / "agent-hub/packages"
+    for package in ("chat-ui", "passport-client"):
+        (packages / package / "node_modules").mkdir(parents=True)
+    out = tmp_path / "out"
+    out.mkdir()
+    locked = out / "locked-release.whl"
+    locked.write_bytes(b"locked release wheel")
+    result = subprocess.run(["bash", str(SCRIPT), str(out)], capture_output=True, text=True, check=False,
+                            env={**os.environ, "PATH": f"{commands}:{os.environ['PATH']}",
+                                 "AGENT_HUB_PACKAGES": str(packages), "AGENT_HUB_ROOT": str(packages.parent),
+                                 "TEST_PACK_LOG": str(log)})
+    assert result.returncode == 0, result.stderr
+    assert locked.read_bytes() == b"locked release wheel"
+    assert sum(line.startswith("pack --pack-destination") for line in log.read_text().splitlines()) == 3

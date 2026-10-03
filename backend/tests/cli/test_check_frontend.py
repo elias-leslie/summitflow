@@ -7,6 +7,7 @@ from unittest.mock import Mock, patch
 import pytest
 import typer
 
+from app.utils.heavy_work import HeavyWork
 from cli.commands import check
 
 CONFIG: dict[str, object] = {
@@ -123,7 +124,7 @@ def test_malformed_manifest_fails(tmp_path: Path) -> None:
 @pytest.mark.parametrize("name", ["vitest", "frontend-test"])
 def test_missing_test_executable_never_skips(tmp_path: Path, name: str) -> None:
     with patch.object(check, "_resolve_repo_root", return_value=tmp_path), patch.object(
-        check.subprocess, "run", side_effect=FileNotFoundError("missing")
+        HeavyWork, "run", side_effect=FileNotFoundError("missing")
     ):
         assert check._run_tool(name, {"binary": "missing"}, []) == 127
 

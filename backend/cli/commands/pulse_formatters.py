@@ -400,6 +400,9 @@ def print_compact_payload(
     project_id = payload.get("project_id", "?")
     jj_status = jj_status_for_project(project_id)
     _print_summary_line(project_id, summary, cleanup)
+    if payload.get("publication"):
+        from app.services.publication_health import format_publication_health
+        print(format_publication_health(payload["publication"]))
     if jj_status is not None:
         print(_format_jj_state(project_id, jj_status))
     print(_format_preflight(project_id, summary, cleanup, jj_status, payload))

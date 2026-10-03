@@ -1,4 +1,5 @@
 """Publication must distinguish delivery, CI, and merge outcomes."""
+import json
 import subprocess
 from pathlib import Path
 from unittest.mock import Mock
@@ -88,6 +89,89 @@ def test_protected_delivery_uses_remote_branch_without_checkout_switch(monkeypat
     assert result['publication_complete'] is False
 
 
+def test_protected_unpublished_source_pushes_then_creates_pr_and_retry_reuses_it(monkeypatch):
+    from cli.lib import github_publish
+
+    sha = 'a' * 40
+    client = github_publish.GitHub(Path('/repo'), 'owner/repo')
+    monkeypatch.setattr(client, 'plan', Mock(return_value={
+        'base': 'main', 'requires_pr': True, 'required': [{'context': 'backend'}], 'merge_method': 'merge'}))
+    monkeypatch.setattr(client, 'base_sha', Mock(return_value='b' * 40))
+    monkeypatch.setattr(client, 'observe', Mock(return_value={'state': 'pending', 'sha': sha, 'checks': []}))
+    monkeypatch.setattr(publish, 'GitHub', Mock(return_value=client))
+    events = []
+    uploaded = False
+    created = False
+    pull = {'number': 7, 'state': 'open', 'merged': False,
+            'html_url': 'https://github.com/owner/repo/pull/7',
+            'head': {'sha': sha, 'ref': 'st/task-123'}, 'base': {'ref': 'main'}}
+
+    def api_request(args, **_kwargs):
+        nonlocal created
+        path, method = args[2], args[args.index('--method') + 1]
+        events.append((method, path))
+        status = 200
+        if f'/commits/{sha}/pulls?' in path:
+            payload = [pull] if created else []
+            if not uploaded:
+                status, payload = 422, {'message': f'No commit found for SHA: {sha}'}
+        elif '/pulls?' in path:
+            assert uploaded and method == 'GET'
+            payload = [pull] if created else []
+        elif path.endswith('/pulls'):
+            assert uploaded and method == 'POST' and not created
+            created, payload = True, pull
+        else:
+            assert path.endswith('/pulls/7') and method == 'GET'
+            payload = pull
+        return subprocess.CompletedProcess(args, int(status >= 400),
+            f'HTTP/2.0 {status} Response\r\n\r\n' + json.dumps(payload), '')
+
+    def git(_repo, args):
+        nonlocal uploaded
+        if args[0] == 'remote':
+            return Mock(returncode=0, stdout='https://github.com/owner/repo.git', stderr='')
+        assert args == ['push', 'origin', f'{sha}:refs/heads/st/task-123']
+        assert not uploaded
+        uploaded = True
+        events.append(('push', args[-1]))
+        return Mock(returncode=0, stdout='', stderr='')
+
+    monkeypatch.setattr(github_publish.subprocess, 'run', api_request)
+    first = publish.publish_git(Path('/repo'), sha=sha, task_id='task-123', message='fix', run_git=git)
+    retry = publish.publish_git(Path('/repo'), sha=sha, task_id='task-other', message='retry', run_git=git, resume=True)
+    assert first['pushed'] and not retry['pushed']
+    assert first['pr_url'] == retry['pr_url'] == pull['html_url']
+    assert retry['publish_branch'] == 'st/task-123'
+    assert first['status'] == retry['status'] == 'PENDING'
+    assert not first['publication_complete'] and not retry['publication_complete']
+    assert [method for method, _ in events].count('push') == 1
+    assert [method for method, _ in events].count('POST') == 1
+    assert events[0][0] == 'GET' and '/commits/' in events[0][1]
+    assert events[1] == ('push', f'{sha}:refs/heads/st/task-123')
+    assert events[3] == ('POST', 'repos/owner/repo/pulls')
+
+
+@pytest.mark.parametrize(('status', 'message'), [(401, 'Bad credentials'),
+                                                (429, 'Rate limit exceeded'), (422, 'Validation Failed')])
+def test_protected_source_lookup_error_never_pushes_or_creates_pr(monkeypatch, status, message):
+    from cli.lib import github_publish
+
+    client = github_publish.GitHub(Path('/repo'), 'owner/repo')
+    monkeypatch.setattr(client, 'plan', Mock(return_value={
+        'base': 'main', 'requires_pr': True, 'required': [{'context': 'backend'}], 'merge_method': 'merge'}))
+    monkeypatch.setattr(client, 'base_sha', Mock(return_value='b' * 40))
+    monkeypatch.setattr(publish, 'GitHub', Mock(return_value=client))
+    request = Mock(return_value=subprocess.CompletedProcess([], 1,
+        f'HTTP/2.0 {status} Response\r\n\r\n' + json.dumps({'message': message}), ''))
+    monkeypatch.setattr(github_publish.subprocess, 'run', request)
+    git = Mock(return_value=Mock(returncode=0, stdout='https://github.com/owner/repo.git'))
+    with pytest.raises(publish.PublishError):
+        publish.publish_git(Path('/repo'), sha='a' * 40, task_id='task-123', message='fix', run_git=git)
+    assert git.call_count == 1 and git.call_args.args[1][0] == 'remote'
+    assert request.call_count == 1 and request.call_args.args[0][request.call_args.args[0].index('--method') + 1] == 'GET'
+
+
 def test_push_failure_never_claims_delivery(monkeypatch):
     monkeypatch.setattr(publish, 'GitHub', Mock())
     git = Mock(side_effect=[Mock(returncode=0, stdout='/tmp/remote.git'), Mock(returncode=0, stdout='main'), Mock(returncode=1, stdout='', stderr='hook rejected')])
@@ -109,21 +193,63 @@ def test_existing_remote_sha_only_observes_ci(monkeypatch):
     client.pull_request.assert_not_called()
 
 
-def test_reconcile_preserves_diverged_history_before_switch():
+def test_reconcile_defers_diverged_history_without_renaming_or_switching():
     git = Mock(side_effect=[Mock(returncode=0, stdout='main'), Mock(returncode=0, stdout=''),
                            Mock(returncode=0), Mock(returncode=1), Mock(returncode=0, stdout='a'*40),
                            Mock(returncode=1), Mock(returncode=0), Mock(returncode=0, stderr='')])
     result = publish.reconcile(Path('/repo'), 'main', git)
-    assert result['state'] == 'success'
-    assert result['preserved_branch'] == 'st-preserved/' + 'a'*16
-    assert git.call_args_list[-2].args[1] == ['branch', '-m', 'st-preserved/' + 'a'*16]
-    assert git.call_args.args[1] == ['switch', '-c', 'main', '--track', 'origin/main']
+    assert result == {'state': 'deferred', 'reason': 'diverged_history_preserved'}
+    assert git.call_count == 4
 
 
 def test_reconcile_preserves_dirty_work_without_blocking_remote_result():
     git = Mock(side_effect=[Mock(returncode=0, stdout='main'), Mock(returncode=0, stdout=' M user.txt')])
     assert publish.reconcile(Path('/repo'), 'main', git)['state'] == 'deferred'
     assert git.call_count == 2
+
+
+def test_closed_scheduled_window_never_inspects_or_publishes():
+    git = Mock(side_effect=AssertionError('No activity after night window'))
+    with pytest.raises(publish.PublishError, match='window is closed'):
+        publish.publish_git(Path('/repo'), sha='a'*40, task_id='nightly', message='nightly',
+                            run_git=git, activity_allowed=lambda: False)
+    git.assert_not_called()
+
+
+def test_scheduled_window_closure_before_push_retains_source(monkeypatch):
+    client = Mock()
+    client.plan.return_value = {'base': 'main', 'requires_pr': True, 'required': [], 'merge_method': 'merge'}
+    client.base_sha.return_value = 'b'*40
+    client.source_pull_request.return_value = None
+    monkeypatch.setattr(publish, 'GitHub', Mock(return_value=client))
+    window = Mock(side_effect=[True, False])
+    git = Mock(return_value=Mock(returncode=0, stdout='git@github.com:owner/repo.git'))
+    with pytest.raises(publish.PublishError, match='window is closed'):
+        publish.publish_git(Path('/repo'), sha='a'*40, task_id='nightly', message='nightly',
+                            run_git=git, activity_allowed=window)
+    assert git.call_count == 1
+    client.pull_request.assert_not_called()
+
+
+def test_github_reads_and_merge_requests_stop_after_window_closure(monkeypatch):
+    from cli.lib import github_publish
+
+    client = github_publish.GitHub(Path('/repo'), 'owner/repo')
+    client.activity_allowed = lambda: False
+    external = Mock(side_effect=AssertionError('No GitHub request after window'))
+    monkeypatch.setattr(github_publish.subprocess, 'run', external)
+    for method in ('GET', 'PUT', 'POST'):
+        with pytest.raises(github_publish.GitHubError, match='window is closed'):
+            client.api('pulls/7/merge', method=method)
+    external.assert_not_called()
+
+
+def test_clean_reconciliation_only_fast_forwards():
+    git = Mock(side_effect=[Mock(returncode=0, stdout='main'), Mock(returncode=0, stdout=''),
+                           Mock(returncode=0), Mock(returncode=0), Mock(returncode=0, stderr='')])
+    result = publish.reconcile(Path('/repo'), 'main', git)
+    assert result['state'] == 'success'
+    assert git.call_args.args[1] == ['merge', '--ff-only', 'origin/main']
 
 
 def test_rule_lookup_failure_never_pushes(monkeypatch):
@@ -135,6 +261,34 @@ def test_rule_lookup_failure_never_pushes(monkeypatch):
     with pytest.raises(publish.PublishError, match='authentication unavailable'):
         publish.publish_git(Path('/repo'), sha='a'*40, task_id='', message='fix', run_git=git)
     assert git.call_count == 1
+
+
+def test_rule_lookup_preserves_typed_outage_without_push(monkeypatch):
+    from cli.lib.github_publish import GitHubError
+    client = Mock()
+    client.plan.side_effect = GitHubError('Unavailable', unavailable=True, reason='remote_authentication_unavailable')
+    monkeypatch.setattr(publish, 'GitHub', Mock(return_value=client))
+    git = Mock(return_value=Mock(returncode=0, stdout='git@github.com:owner/repo.git'))
+    with pytest.raises(publish.PublishError) as exc:
+        publish.publish_git(Path('/repo'), sha='a'*40, task_id='', message='fix', run_git=git)
+    assert exc.value.unavailable and exc.value.reason == 'remote_authentication_unavailable'
+    assert git.call_count == 1
+
+
+@pytest.mark.parametrize('already_remote', [True, False])
+@pytest.mark.parametrize('reason', ['remote_api_unavailable', 'outside_publication_window'])
+def test_ci_provider_outage_retains_delivery_but_never_completes(monkeypatch, already_remote, reason):
+    from cli.lib.github_publish import GitHubError
+    client = Mock()
+    client.plan.return_value = {'base': 'main', 'requires_pr': False, 'required': []}
+    client.base_sha.return_value = 'a'*40 if already_remote else 'b'*40
+    client.observe.side_effect = GitHubError('Unavailable', unavailable=True, reason=reason)
+    monkeypatch.setattr(publish, 'GitHub', Mock(return_value=client))
+    git = Mock(return_value=Mock(returncode=0, stdout='git@github.com:owner/repo.git', stderr=''))
+    result = publish.publish_git(Path('/repo'), sha='a'*40, task_id='', message='fix', run_git=git, destination='main')
+    assert result['status'] == 'PENDING' and not result['publication_complete']
+    assert result['pushed'] is (not already_remote)
+    assert result['reason'] == reason and result['ci']['sha'] == 'a'*40
 
 
 @pytest.mark.parametrize('pr_head', ['a'*40, 'b'*40])
@@ -181,6 +335,32 @@ def test_empty_remote_publishes_initial_commit_with_ci_observation(monkeypatch):
     assert git.call_args.args[1] == ['push', '--porcelain', 'origin', 'a'*40 + ':refs/heads/main']
     assert result['status'] == 'PENDING'
     client.observe.assert_called_once_with('a'*40, [], branch='main')
+
+
+def test_isolated_empty_remote_uses_verified_explicit_default_without_branch_switch(monkeypatch):
+    client = Mock()
+    client.plan.return_value = {'base': 'main', 'requires_pr': False, 'required': []}
+    client.base_sha.return_value = None
+    client.observe.return_value = {'state': 'pending', 'sha': 'a'*40, 'checks': []}
+    monkeypatch.setattr(publish, 'GitHub', Mock(return_value=client))
+    git = Mock(side_effect=[Mock(returncode=0, stdout='git@github.com:owner/repo.git'),
+                           Mock(returncode=0, stdout='', stderr='')])
+    result = publish.publish_git(Path('/isolated'), sha='a'*40, task_id='nightly', message='initial',
+                                 run_git=git, destination='main', reconcile_checkout=False)
+    assert git.call_args.args[1] == ['push', '--porcelain', 'origin', 'a'*40 + ':refs/heads/main']
+    assert git.call_count == 2 and result['status'] == 'PENDING'
+
+
+def test_configured_destination_must_match_verified_remote_default_before_bootstrap(monkeypatch):
+    client = Mock()
+    client.plan.return_value = {'base': 'master', 'requires_pr': False, 'required': []}
+    monkeypatch.setattr(publish, 'GitHub', Mock(return_value=client))
+    git = Mock(return_value=Mock(returncode=0, stdout='git@github.com:owner/repo.git'))
+    with pytest.raises(publish.PublishError, match='does not match the remote default'):
+        publish.publish_git(Path('/isolated'), sha='a'*40, task_id='nightly', message='initial',
+                            run_git=git, destination='main', reconcile_checkout=False)
+    assert git.call_count == 1
+    client.base_sha.assert_not_called()
 
 
 def test_resume_direct_commit_after_main_advances_only_observes_original_ci(monkeypatch):

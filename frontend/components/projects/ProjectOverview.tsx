@@ -1,22 +1,14 @@
 'use client'
 
 import { useQuery } from '@tanstack/react-query'
-import { fetchProjectHealth, type Project } from '@/lib/api'
-import { formatTimeAgo } from '@/lib/format'
-import { POLL_STANDARD, STALE_STANDARD } from '@/lib/polling'
+import Link from 'next/link'
+import { fetchProjectReadme, type Project } from '@/lib/api'
+import { STALE_STANDARD } from '@/lib/polling'
+import { getErrorMessage } from '@/lib/utils'
 import { ActivityFeed } from '../dashboard/ActivityFeed'
-import { Badge } from '../ui/badge'
+import { Button } from '../ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '../ui/card'
-
-function summarizeError(error: unknown, fallback: string): string {
-  if (error instanceof Error && error.message.trim()) {
-    return error.message
-  }
-  if (typeof error === 'string' && error.trim()) {
-    return error
-  }
-  return fallback
-}
+import { ProjectReadmeMarkdown } from './ProjectReadmeMarkdown'
 
 interface ProjectOverviewProps {
   project: Project
@@ -24,67 +16,70 @@ interface ProjectOverviewProps {
 
 export function ProjectOverview({ project }: ProjectOverviewProps) {
   const {
-    data: health,
-    isLoading: healthLoading,
-    error: healthError,
+    data: readme,
+    isLoading,
+    error,
+    refetch,
+    isFetching,
   } = useQuery({
-    queryKey: ['project-health', project.id],
-    queryFn: () => fetchProjectHealth(project.id),
+    queryKey: ['project-readme', project.id],
+    queryFn: () => fetchProjectReadme(project.id),
     staleTime: STALE_STANDARD,
-    refetchInterval: POLL_STANDARD * 2,
   })
 
   return (
-    <div className="max-w-4xl space-y-6">
-      <Card className="border-slate-800/80 bg-slate-950/55">
-        <CardHeader className="flex flex-row items-start justify-between gap-3 pb-3">
-          <div>
-            <CardTitle className="text-base">Service Status</CardTitle>
-            <p className="mt-1 text-xs text-slate-500">
-              Public-facing reachability for this app.
-            </p>
-          </div>
-          <Badge
-            variant={
-              healthLoading ? 'slate' : health?.healthy ? 'emerald' : 'rose'
-            }
+    <div className="mx-auto grid w-full max-w-[1600px] grid-cols-1 items-start gap-6 xl:grid-cols-2">
+      <Card className="min-w-0 border-slate-800/80 bg-slate-950/55">
+        <CardHeader className="flex flex-row flex-wrap items-center justify-between gap-3 pb-3">
+          <CardTitle className="text-base">README.md</CardTitle>
+          <Link
+            href={`/projects/${project.id}/files?path=README.md`}
+            className="rounded text-xs text-slate-400 hover:text-phosphor-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-phosphor-500/60"
           >
-            {healthLoading
-              ? 'Checking'
-              : health?.healthy
-                ? 'Healthy'
-                : 'Needs attention'}
-          </Badge>
+            View project files
+          </Link>
         </CardHeader>
-        <CardContent className="space-y-3">
-          <div className="text-sm text-slate-300">
-            {healthLoading
-              ? 'Checking the configured health endpoint.'
-              : health
-                ? health.healthy
-                  ? health.response_time_ms != null
-                    ? `${Math.round(health.response_time_ms)}ms response time`
-                    : 'Endpoint responded successfully.'
-                  : health.error || `HTTP ${health.status_code ?? 'error'}`
-                : summarizeError(healthError, 'Health status unavailable')}
-          </div>
-          <div className="space-y-1.5 text-xs text-slate-500">
-            <div>Endpoint: {project.health_endpoint || '/health'}</div>
-            {health?.checked_at ? (
-              <div>Checked {formatTimeAgo(health.checked_at)}</div>
-            ) : null}
-          </div>
+        <CardContent>
+          {isLoading ? (
+            <p role="status" className="text-sm text-slate-400">
+              Loading README.md...
+            </p>
+          ) : error ? (
+            <div className="space-y-3">
+              <p role="alert" className="break-words text-sm text-rose-300">
+                {getErrorMessage(error, 'Could not load README.md.')}
+              </p>
+              <Button
+                variant="secondary"
+                size="sm"
+                disabled={isFetching}
+                onClick={() => void refetch()}
+              >
+                {isFetching ? 'Retrying...' : 'Retry'}
+              </Button>
+            </div>
+          ) : readme?.status === 'available' ? (
+            readme.content.trim() ? (
+              <ProjectReadmeMarkdown
+                projectId={project.id}
+                content={readme.content}
+              />
+            ) : (
+              <p className="text-sm text-slate-400">README.md is empty.</p>
+            )
+          ) : (
+            <p className="text-sm text-slate-400">
+              {readme?.status === 'missing'
+                ? 'No README.md in the project root.'
+                : 'README.md is unavailable.'}
+            </p>
+          )}
         </CardContent>
       </Card>
-      <section className="space-y-3">
-        <div className="space-y-1">
-          <h2 className="text-base font-semibold text-slate-100">
-            Recent Activity
-          </h2>
-          <p className="text-sm text-slate-500">
-            Project-scoped task, git, and backup activity.
-          </p>
-        </div>
+      <section className="min-w-0 space-y-3">
+        <h2 className="text-base font-semibold text-slate-100">
+          Recent Activity
+        </h2>
         <ActivityFeed projectId={project.id} />
       </section>
     </div>

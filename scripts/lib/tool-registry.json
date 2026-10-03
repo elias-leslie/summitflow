@@ -455,7 +455,12 @@
         "DBUS_SESSION_BUS_ADDRESS",
         "AGENT_BROWSER_SESSION",
         "AGENT_BROWSER_CONFIG",
-        "AGENT_BROWSER_ALLOW_FILE_ACCESS"
+        "AGENT_BROWSER_ALLOW_FILE_ACCESS",
+        "ST_BROWSER_OWNER",
+        "ST_BROWSER_MANAGED_EXTENSION_TEST",
+        "ST_AGENT_ID",
+        "CODEX_THREAD_ID",
+        "XDG_STATE_HOME"
       ],
       "grant": {
         "enabled": true,
@@ -543,6 +548,25 @@
           "network"
         ]
       }
+    },
+    {
+      "id": "ominull.production",
+      "owner": "ominull",
+      "namespace": "ominull",
+      "manifest": "extensions/ominull.json",
+      "executable": "scripts/st-ominull",
+      "grant": {
+        "enabled": true,
+        "effects": [
+          "network",
+          "read-remote",
+          "read-local",
+          "credentials",
+          "process"
+        ]
+      },
+      "arguments": [],
+      "environment": []
     }
   ],
   "description": "Centralized tool registry — single source of truth for operator tool discovery, redirects, and check-runner configuration.",

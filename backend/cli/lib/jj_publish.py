@@ -6,6 +6,13 @@ from collections.abc import Sequence
 from pathlib import Path
 from typing import Any
 
+from app.services.git.outgoing import (
+    OutgoingVerificationError,
+    PushUpdate,
+    live_destination_bases,
+    verify_outgoing,
+)
+
 from .jj_common import JJError, JJRevisionInfo, is_colocated, require_success, run_git, run_jj
 from .jj_status import (
     current_revision_info,
@@ -67,8 +74,10 @@ def publish_current_revision(
     def push_revision(protected_bookmark: str | None) -> Any:
         nonlocal resolved_bookmark
         if protected_bookmark and protected_bookmark != resolved_bookmark:
-            require_success(run_jj(repo, ["bookmark", "set", protected_bookmark, "-r", revision]), "jj protected bookmark")
+            require_success(run_jj(repo, ["bookmark", "set", protected_bookmark, "-r", source.stdout.strip()]), "jj protected bookmark")
             resolved_bookmark = protected_bookmark
+        if not dry_run:
+            _verify_jj_outgoing(repo, source.stdout.strip(), resolved_bookmark, remote)
         return run_jj(repo, _push_args(remote, resolved_bookmark, dry_run))
 
     if dry_run:
@@ -103,10 +112,45 @@ def _validate_publishable_revision(info: JJRevisionInfo, revision: str) -> None:
 
 
 def _push_args(remote: str, bookmark: str, dry_run: bool) -> list[str]:
-    args = ["git", "push", "--remote", remote, "--bookmark", bookmark, "--allow-empty-description"]
+    args = ["git", "push", "--remote", remote, "--bookmark", "exact:" + bookmark, "--allow-empty-description"]
     if dry_run:
         args.append("--dry-run")
     return args
+
+
+def _verify_jj_outgoing(repo: Path, sha: str, bookmark: str, remote: str, *, deleting: bool = False) -> None:
+    """JJ transports bypass Git hooks; verify the actual selected update here."""
+    destination = run_git(repo, ["remote", "get-url", "--push", "--all", remote])
+    require_success(destination, "resolve JJ publication destination")
+    urls = destination.stdout.splitlines()
+    if len(urls) != 1:
+        raise JJError("JJ publication requires one unambiguous destination")
+    # JJ versions differ in pushurl support: refuse ambiguous routing.
+    fetch_url = run_git(repo, ["remote", "get-url", remote])
+    require_success(fetch_url, "resolve JJ remote URL")
+    if fetch_url.stdout.strip() != urls[0]:
+        raise JJError("JJ publication requires identical fetch and push destinations")
+    ref = "refs/heads/" + bookmark
+    live = run_git(repo, ["ls-remote", "--refs", urls[0], ref])
+    require_success(live, "inspect live JJ publication destination")
+    lines = live.stdout.splitlines()
+    if len(lines) > 1 or (lines and lines[0].split()[1:] != [ref]):
+        raise JJError("Ambiguous live JJ destination ref")
+    old = lines[0].split()[0] if lines else "0" * len(sha)
+    if not deleting:
+        current = run_git(repo, ["rev-parse", "--verify", ref + "^{commit}"])
+        require_success(current, "resolve exact JJ bookmark")
+        if current.stdout.strip() != sha:
+            raise JJError("JJ publication bookmark changed after source verification")
+        if lines:
+            present = run_git(repo, ["cat-file", "-e", old + "^{commit}"])
+            if present.returncode:
+                require_success(run_git(repo, ["fetch", "--no-tags", urls[0], old]), "fetch exact JJ destination object")
+    try:
+        bases = live_destination_bases(repo, urls[0]) if not lines and not deleting else ()
+        verify_outgoing(repo, urls[0], [PushUpdate("(delete)" if deleting else ref, sha, ref, old)], published_bases=bases)
+    except OutgoingVerificationError as exc:
+        raise JJError(str(exc)) from exc
 
 
 def _normalize_selected_paths(repo: Path, paths: Sequence[str]) -> list[str]:
@@ -203,9 +247,11 @@ def delete_task_bookmark(
     if delete_result.returncode != 0 and "No such bookmark" not in delete_detail:
         require_success(delete_result, "jj bookmark delete")
 
-    push_args = ["git", "push", "--remote", remote, "--deleted"]
+    push_args = ["git", "push", "--remote", remote, "--bookmark", "exact:" + resolved_bookmark]
     if dry_run:
         push_args.append("--dry-run")
+    else:
+        _verify_jj_outgoing(repo, "0" * 40, resolved_bookmark, remote, deleting=True)
     push_result = run_jj(repo, push_args)
     require_success(push_result, "jj git push deleted")
     return {

@@ -172,7 +172,8 @@ def test_blocks_raw_git_commit(tmp_path: Path) -> None:
 
     assert decision.blocked is True
     assert decision.code == "git_commit_redirect"
-    assert "st commit --push" in (decision.message or "")
+    assert "st commit --message" in (decision.message or "")
+    assert "--push" not in (decision.message or "")
 
 
 @pytest.mark.parametrize(

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import shutil
 import subprocess
 from pathlib import Path
 from unittest.mock import Mock
@@ -10,6 +11,151 @@ from typer.testing import CliRunner
 
 from cli.lib import acceptance
 from cli.main import app
+
+
+def test_acceptance_plan_survives_equivalent_release_relocation(tmp_path: Path, monkeypatch) -> None:
+    from cli import tool_registry
+
+    checkout = tmp_path / "checkout"
+    for relative in ("backend/cli/commands/check.py", "backend/cli/lib/acceptance.py",
+                     "backend/app/utils/heavy_work.py", "backend/app/utils/safe_subprocess.py",
+                     "backend/cli/main.py", "backend/cli/tool_registry.py", "scripts/lib/tool-registry.json"):
+        path = checkout / relative
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(relative)
+    scanner = checkout / "scanner"
+    scanner.write_text("same scanner bytes")
+    launcher = checkout / "st"
+    launcher.write_text("checkout shell facade")
+    monkeypatch.setattr(acceptance, "__file__", str(checkout / "backend/cli/lib/acceptance.py"))
+    monkeypatch.setattr(tool_registry, "tool_registry_path", lambda: checkout / "scripts/lib/tool-registry.json")
+    monkeypatch.setattr(acceptance.shutil, "which", lambda name: str(launcher if name == "st" else scanner))
+    before = acceptance._acceptance_plan()
+    release = tmp_path / "release"
+    shutil.copytree(checkout, release, copy_function=shutil.copyfile)
+    (release / "st").write_text("release Python facade for the same cli.main:app")
+    monkeypatch.setattr(acceptance, "__file__", str(release / "backend/cli/lib/acceptance.py"))
+    monkeypatch.setattr(tool_registry, "tool_registry_path", lambda: release / "scripts/lib/tool-registry.json")
+    monkeypatch.setattr(acceptance.shutil, "which", lambda name: str(release / ("st" if name == "st" else "scanner")))
+    assert acceptance._acceptance_plan() == before
+    (release / "backend/cli/commands/check.py").write_text("changed gate implementation")
+    assert acceptance._acceptance_plan()["fingerprint"] != before["fingerprint"]
+
+
+def test_acceptance_plan_detects_changed_security_tool_bytes(tmp_path: Path, monkeypatch) -> None:
+    scanner = tmp_path / "scanner"
+    scanner.write_text("original scanner")
+    monkeypatch.setattr(acceptance.shutil, "which", lambda _name: str(scanner))
+    before = acceptance._acceptance_plan()
+    scanner.write_text("changed scanner")
+    assert acceptance._acceptance_plan()["fingerprint"] != before["fingerprint"]
+
+
+@pytest.mark.parametrize("name", ["heavy_work.py", "safe_subprocess.py"])
+def test_acceptance_plan_binds_shared_gate_support_bytes(tmp_path: Path, monkeypatch, name: str) -> None:
+    from cli import tool_registry
+
+    backend = tmp_path / "backend"
+    support = backend / "app" / "utils" / name
+    support.parent.mkdir(parents=True)
+    support.write_text("original shared gate support")
+    monkeypatch.setattr(acceptance, "__file__", str(backend / "cli" / "lib" / "acceptance.py"))
+    monkeypatch.setattr(tool_registry, "tool_registry_path", lambda: tmp_path / "scripts" / "lib" / "tool-registry.json")
+    before = acceptance._acceptance_plan()
+    support.write_text("changed shared gate support")
+    assert acceptance._acceptance_plan()["fingerprint"] != before["fingerprint"]
+
+
+def test_acceptance_plan_ignores_transient_heavy_admission_identity(monkeypatch) -> None:
+    monkeypatch.setenv("ST_HEAVY_LEASE", "first-process-fixture")
+    before = acceptance._acceptance_plan()
+    monkeypatch.setenv("ST_HEAVY_LEASE", "another-process-fixture")
+    assert acceptance._acceptance_plan() == before
+
+
+def test_acceptance_runner_binds_canonical_implementation_not_path(tmp_path: Path, monkeypatch) -> None:
+    launcher = tmp_path / "st"
+    launcher.write_text("unrelated PATH launcher")
+    monkeypatch.setenv("PATH", str(tmp_path))
+    monkeypatch.setenv("PYTHONPATH", "original-target-import-path")
+    invoke = Mock(return_value=subprocess.CompletedProcess([], 0, "", ""))
+    monkeypatch.setattr(acceptance.subprocess, "run", invoke)
+    acceptance._run(["st", "check", "--check"], tmp_path)
+    args, kwargs = invoke.call_args
+    assert args[0][:3] == [acceptance.sys.executable, "-P", "-c"]
+    assert args[0][4:] == [str(Path(acceptance.__file__).resolve().parents[2]), "check", "--check"]
+    assert kwargs["env"]["PYTHONPATH"] == "original-target-import-path"
+    assert acceptance.os.environ["PYTHONPATH"] == "original-target-import-path"
+    assert kwargs["cwd"] == tmp_path
+
+
+def test_acceptance_binding_does_not_change_target_child_import_environment(tmp_path: Path, monkeypatch) -> None:
+    backend = tmp_path / "bound-backend"
+    package = backend / "cli"
+    package.mkdir(parents=True)
+    (package / "__init__.py").write_text("")
+    (package / "main.py").write_text(
+        "def app():\n"
+        "    import subprocess, sys\n"
+        "    print('bound canonical CLI')\n"
+        "    print(subprocess.check_output([sys.executable, '-P', '-c', "
+        "\"import os; print(os.environ.get('PYTHONPATH'))\"], text=True).strip())\n"
+    )
+    target = tmp_path / "target-project"
+    (target / "cli").mkdir(parents=True)
+    (target / "cli" / "__init__.py").write_text("raise RuntimeError('wrong target CLI')")
+    monkeypatch.setattr(acceptance, "__file__", str(package / "lib/acceptance.py"))
+    monkeypatch.setenv("PYTHONPATH", "original-target-import-path")
+    result = acceptance._run(["st", "check", "--check"], target)
+    assert result.returncode == 0, result.stderr
+    assert result.stdout.splitlines() == ["bound canonical CLI", "original-target-import-path"]
+
+
+@pytest.mark.parametrize("name", ["DATABASE_URL", "DATABASE_ADMIN_URL", "POSTGRES_ADMIN_URL", "REDIS_URL", "TEST_DATABASE_URL"])
+def test_exporting_same_bound_home_configuration_preserves_gate_identity(tmp_path: Path, monkeypatch, name: str) -> None:
+    shared = tmp_path / "shared-home"
+    shared.mkdir()
+    monkeypatch.setattr(Path, "home", lambda: shared)
+    monkeypatch.delenv(name, raising=False)
+    (shared / ".env.local").write_text(f"{name}=fixture-literal-value\n")
+    before = acceptance._local_gate_inputs(tmp_path)
+    monkeypatch.setenv(name, "fixture-literal-value")
+    assert acceptance._local_gate_inputs(tmp_path) == before
+    monkeypatch.setenv(name, "different-explicit-override")
+    assert acceptance._local_gate_inputs(tmp_path) != before
+    monkeypatch.delenv(name)
+    (shared / ".env.local").write_text(f"{name}=changed-file-value\n")
+    assert acceptance._local_gate_inputs(tmp_path) != before
+
+
+def test_same_home_export_removed_from_actual_gate_child_only(tmp_path: Path, monkeypatch) -> None:
+    shared = tmp_path / "shared-home"
+    shared.mkdir()
+    (shared / ".env.local").write_text("DATABASE_URL=fixture-literal-value\n")
+    monkeypatch.setattr(Path, "home", lambda: shared)
+    monkeypatch.setenv("DATABASE_URL", "fixture-literal-value")
+    backend = tmp_path / "bound-backend"
+    package = backend / "cli"
+    package.mkdir(parents=True)
+    (package / "__init__.py").write_text("")
+    (package / "main.py").write_text("def app():\n    import os\n    print(os.environ.get('DATABASE_URL', 'unset'))\n")
+    monkeypatch.setattr(acceptance, "__file__", str(package / "lib/acceptance.py"))
+    result = acceptance._run(["st", "check", "--check"], tmp_path)
+    assert result.returncode == 0, result.stderr
+    assert result.stdout.strip() == "unset"
+    assert acceptance.os.environ["DATABASE_URL"] == "fixture-literal-value"
+    monkeypatch.setenv("DATABASE_URL", "different-explicit-override")
+    assert acceptance._run(["st", "check", "--check"], tmp_path).stdout.strip() == "different-explicit-override"
+
+
+@pytest.mark.parametrize("content", ["DATABASE_URL=${OTHER_VALUE}\n",
+                                     "DATABASE_URL=one\nDATABASE_URL=two\n",
+                                     "DATABASE_URL='unfinished\n", "DATABASE_URL\n"])
+def test_ambiguous_shared_configuration_is_not_normalized(tmp_path: Path, monkeypatch, content: str) -> None:
+    monkeypatch.setattr(Path, "home", lambda: tmp_path)
+    (tmp_path / ".env.local").write_text(content)
+    monkeypatch.setenv("DATABASE_URL", "two" if "=two" in content else "${OTHER_VALUE}")
+    assert acceptance._canonical_gate_environment()["DATABASE_URL"] == acceptance.os.environ["DATABASE_URL"]
 
 
 def git(repo: Path, *args: str) -> str:
@@ -86,6 +232,19 @@ def test_accept_revision_detects_checkout_mutation_during_checks(repo: Path) -> 
 
     with pytest.raises(acceptance.AcceptanceError, match="source_changed_during_acceptance"):
         acceptance.accept_revision(repo, sha=sha, runner=mutate)
+
+
+def test_accept_revision_detects_shared_plan_mutation_during_checks(repo: Path, monkeypatch) -> None:
+    scanner = repo.parent / "shared-scanner"
+    scanner.write_text("original scanner")
+    monkeypatch.setattr(acceptance.shutil, "which", lambda _name: str(scanner))
+
+    def mutate(command: list[str], cwd: Path):
+        scanner.write_text("changed scanner during acceptance")
+        return subprocess.CompletedProcess(command, 0, "ok", "")
+
+    with pytest.raises(acceptance.AcceptanceError, match="acceptance_plan_changed_during_acceptance"):
+        acceptance.accept_revision(repo, sha="HEAD", runner=mutate)
 
 
 def test_validate_receipt_allows_later_checkout_to_advance(repo: Path) -> None:

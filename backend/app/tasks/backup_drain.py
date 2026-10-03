@@ -92,12 +92,17 @@ def drain_pending_backups(dry_run: bool = False) -> dict[str, Any]:
 
 def _retry_pending_publications(records: list[dict[str, Any]]) -> dict[str, Any]:
     """Retry durable latest-point publication failures without another capture."""
+    from .backup_publish import publication_window_open
+
     completed = 0
     superseded = 0
     skipped: list[dict[str, Any]] = []
     failures: list[dict[str, Any]] = []
     for record in records:
         summary = _pending_backup_summary(record)
+        if not publication_window_open():
+            skipped.append({**summary, "reason": "Outside 02:00-06:00 America/New_York publication window"})
+            continue
         source_id = str(record.get("source_id") or record.get("project_id") or "")
         try:
             source = backup_store.get_source(source_id)
@@ -119,11 +124,20 @@ def _retry_pending_publications(records: list[dict[str, Any]]) -> dict[str, Any]
                     continue
                 from .backup_publish import publish_source_before_backup
 
-                publication = publish_source_before_backup(source)
+                retained = (latest.get("verification_json") or {}).get("publish_before_backup") or (latest.get("verification_json") or {}).get("publication") or {}
+                publication = publish_source_before_backup(source, retained=retained)
                 if publication.get("status") not in {"published", "up_to_date", "skipped", "failed", "pending"}:
                     raise RuntimeError("Publication helper returned an unknown status")
-                if backup_store.merge_backup_verification_json(str(record["id"]), {"publication": publication}) is None:
+                if backup_store.merge_backup_verification_json(str(record["id"]), {
+                    "publication": publication, "publish_before_backup": publication,
+                }) is None:
                     raise RuntimeError("Publication retry evidence could not be recorded")
+                if source.get("project_id"):
+                    try:
+                        from ..services.publication_health import record_publication_observation
+                        record_publication_observation(str(source["project_id"]), publication)
+                    except Exception:
+                        logger.warning("backup_publication_health_ingestion_unavailable", backup_id=record["id"])
             if publication["status"] in {"published", "up_to_date", "skipped"}:
                 completed += 1
             else:

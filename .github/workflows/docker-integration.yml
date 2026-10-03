@@ -59,6 +59,9 @@ jobs:
           AGENT_HUB_ROOT: ${{ github.workspace }}/agent-hub-repo
         run: docker/scripts/pack-workspace-packages.sh docker/workspace-packages
 
+      - name: Confirm Python wheels remain the checked-in locked releases
+        run: git diff --exit-code -- backend/uv.lock 'docker/workspace-packages/*.whl'
+
       - name: Build SummitFlow images
         run: |
           docker build -t ghcr.io/elias-leslie/summitflow-api:ci -f docker/backend.Dockerfile .

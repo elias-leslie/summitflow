@@ -488,6 +488,19 @@ def provision_fixture() -> None:
         raise DeploymentError("Fixed WordPress fixture provisioning failed")
 
 
+def restore_fixture_dependencies() -> None:
+    """Rebuild the locked fixture dependencies from the existing root cache only."""
+    result = subprocess.run(
+        ["/usr/bin/npm", "ci", "--offline", "--ignore-scripts"],
+        cwd=FIXTURE_ROOT, env={
+            "PATH": "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin",
+            "HOME": "/root",
+        }, capture_output=True, timeout=900, check=False,
+    )
+    if result.returncode != 0:
+        raise DeploymentError("Fixed WordPress fixture dependency restoration failed")
+
+
 def verify_fixture() -> None:
     # Reuse Neri's complete archive/tree/image/config and live baseline checks.
     # The fixed import program receives no target commands or private config.
@@ -676,7 +689,7 @@ def require_recovery_stopped(observation: dict[str, Any]) -> None:
 
 
 def recover_fixture(original_attempt: str, attempt: str, payload: dict[str, Any]) -> dict[str, Any]:
-    """Repair public verification inputs after successful provisioning; never reseed."""
+    """Repair public inputs after a retained post-install failure; never provision or reseed."""
     if (not re.fullmatch(r"[0-9a-f]{32}", original_attempt)
             or not re.fullmatch(r"[0-9a-f]{32}", attempt) or attempt == original_attempt):
         raise DeploymentError("Invalid fixture recovery attempt")
@@ -713,13 +726,22 @@ def recover_fixture(original_attempt: str, attempt: str, payload: dict[str, Any]
             original_pins = {marker: pinned_path(marker), original_path: pinned_path(original_path)}
             original = json.loads(original_pins[original_path][1])
             events = [event.get("phase") for event in original.get("events", [])]
+            verification_failure = (
+                original.get("failed_phase") == "verify-fixture"
+                and "provision" in events
+                and "verify-fixture" in events
+                and events.index("provision") < events.index("verify-fixture")
+            )
+            provisioning_failure = (
+                original.get("failed_phase") == "provision"
+                and "provision" in events
+                and "verify-fixture" not in events
+            )
             if (deployment_marker_owner(original_pins[marker][1]) != original_attempt
                     or original.get("adapter") != ADAPTER or original.get("operation") != "sync-fixture"
                     or original.get("attempt") != original_attempt or original.get("state") != "uncertain"
-                    or original.get("failed_phase") != "verify-fixture"
-                    or "provision" not in events or "verify-fixture" not in events
-                    or events.index("provision") >= events.index("verify-fixture")):
-                raise DeploymentError("Recovery requires the matching provisioned fixture verification failure")
+                    or not (verification_failure or provisioning_failure)):
+                raise DeploymentError("Recovery requires the matching post-install fixture failure")
             backup = receipts / (original_attempt + "-fixture-backup")
             if original.get("backup") != str(backup):
                 raise DeploymentError("Original fixture backup identity mismatch")
@@ -755,6 +777,9 @@ def recover_fixture(original_attempt: str, attempt: str, payload: dict[str, Any]
             revalidate_pins({**original_pins, WORDPRESS_CONFIG: config_pins[WORDPRESS_CONFIG],
                              RUNNER_CONFIG: config_pins[RUNNER_CONFIG]})
             replace_file(WORDPRESS_CONFIG, json.dumps(private).encode(), 0o640, PRIVILEGED_UID, runner_gid)
+            if provisioning_failure:
+                phase("restore-dependencies")
+                restore_fixture_dependencies()
             phase("verify-fixture")
             verify_fixture()
             revalidate_pins(original_pins)

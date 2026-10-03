@@ -193,30 +193,31 @@ def _resolve_smb_path(location: str, name: str, source_id: str) -> str | None:
 def _download_from_smb(smb_path: str) -> str | None:
     """Download archive from SMB to temp directory."""
     import os
+    import shutil
     import tempfile
 
-    creds_file = Path(os.environ.get("HOME", str(Path.home()))) / SMB_CREDS_FILENAME
-    parts = smb_path.split("/")
-    if len(parts) < 5:
-        return None
+    from app.utils.smb_commands import SmbCommandError, smb_archive_location, smb_command
 
-    host, share = parts[2], parts[3]
-    remote_dir = "/".join(parts[4:-1])
-    filename = parts[-1]
+    creds_file = Path(os.environ.get("HOME", str(Path.home()))) / SMB_CREDS_FILENAME
+    try:
+        service, remote_dir, filename = smb_archive_location(smb_path)
+    except SmbCommandError:
+        return None
 
     temp_dir = tempfile.mkdtemp(prefix=SMB_TEMP_PREFIX)
     temp_path = f"{temp_dir}/{filename}"
 
     try:
         result = subprocess.run(
-            ["smbclient", f"//{host}/{share}", "-A", str(creds_file),
-             "-c", f"cd {remote_dir}; get {filename} {temp_path}"],
+            ["smbclient", service, "-A", str(creds_file),
+             "-c", smb_command(("cd", remote_dir), ("get", filename, temp_path))],
             capture_output=True, text=True, timeout=SMB_DOWNLOAD_TIMEOUT,
         )
         if result.returncode == 0 and Path(temp_path).exists():
             return temp_path
     except Exception:
         pass
+    shutil.rmtree(temp_dir, ignore_errors=True)
     return None
 
 

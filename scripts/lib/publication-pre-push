@@ -1,0 +1,23 @@
+#!/usr/bin/env bash
+# Preserve every pre-push tuple for both shared verification and repo hook.
+set -euo pipefail
+script_path="$(readlink -f "${BASH_SOURCE[0]}")"
+root="$(cd "$(dirname "$script_path")/../.." && pwd)"
+input="$(mktemp)"
+trap 'rm -f "$input"' EXIT
+chmod 600 "$input"
+cat >"$input"
+BASH_ENV='' PYTHONPATH="$root/backend" "$root/backend/.venv/bin/python" \
+  -m app.services.git.outgoing "$@" <"$input"
+# Match verification's repository inspection environment when locating repo hooks.
+for git_variable in "${!GIT_@}"; do
+  unset "$git_variable"
+done
+common_dir="$(git rev-parse --git-common-dir)"
+repo_hook="$common_dir/hooks/pre-push"
+configured_hooks="$(git config --path --get core.hooksPath || true)"
+configured_push="${configured_hooks:+$configured_hooks/pre-push}"
+if [[ -x "$repo_hook" && "$(readlink -f "$repo_hook")" != "$script_path" && \
+      "$(readlink -f "$repo_hook")" != "$(readlink -f "$configured_push" 2>/dev/null || true)" ]]; then
+  "$repo_hook" "$@" <"$input"
+fi

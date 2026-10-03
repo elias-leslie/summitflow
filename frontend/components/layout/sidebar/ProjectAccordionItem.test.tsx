@@ -1,3 +1,4 @@
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { fireEvent, render, screen } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import type { Project } from '@/lib/api'
@@ -8,6 +9,9 @@ const navigationMocks = vi.hoisted(() => ({
 }))
 
 const permissionTierMock = vi.hoisted(() => vi.fn())
+const fetchProjectHealth = vi.hoisted(() => vi.fn())
+
+vi.mock('@/lib/api', () => ({ fetchProjectHealth }))
 
 vi.mock('next/navigation', () => ({
   usePathname: navigationMocks.usePathname,
@@ -42,17 +46,19 @@ function renderItem(
   } = {},
 ) {
   render(
-    <ProjectAccordionItem
-      project={buildProject(projectOverrides)}
-      isExpanded={isExpanded}
-      isActive={false}
-      activeTab={null}
-      onToggleExpand={onToggleExpand}
-      getProjectNavHref={(projectId, item) =>
-        `/projects/${projectId}${item.href}`
-      }
-      dragHandleProps={{ onPointerDown: () => {} }}
-    />,
+    <QueryClientProvider client={new QueryClient()}>
+      <ProjectAccordionItem
+        project={buildProject(projectOverrides)}
+        isExpanded={isExpanded}
+        isActive={false}
+        activeTab={null}
+        onToggleExpand={onToggleExpand}
+        getProjectNavHref={(projectId, item) =>
+          `/projects/${projectId}${item.href}`
+        }
+        dragHandleProps={{ onPointerDown: () => {} }}
+      />
+    </QueryClientProvider>,
   )
 }
 
@@ -100,6 +106,40 @@ describe('ProjectAccordionItem', () => {
       'href',
       '/projects/testing-1',
     )
+  })
+
+  it('keeps health in the secondary metadata row outside the broad project link', async () => {
+    permissionTierMock.mockReturnValue('full')
+    fetchProjectHealth.mockResolvedValue({
+      project_id: 'testing-1',
+      healthy: true,
+      status_code: 200,
+      response_time_ms: 12,
+      checked_at: '2026-10-02T12:00:00Z',
+    })
+    renderItem({ name: 'Browser Automation', base_url: '' })
+
+    const link = screen.getByTestId('project-link-testing-1')
+    const health = screen.getByRole('button', {
+      name: 'Browser Automation health: unconfigured',
+    })
+    const identifier = screen.getByText('testing-1')
+    const toggle = screen.getByTestId('project-accordion-toggle-testing-1')
+    expect(link).toHaveTextContent('Browser Automation')
+    expect(link).toHaveTextContent('F')
+    expect(link.querySelector('button')).toBeNull()
+    expect(link).not.toContainElement(health)
+    expect(identifier.parentElement).toContainElement(health)
+    expect(link.parentElement).toBe(identifier.parentElement?.parentElement)
+    expect(link.parentElement).not.toContainElement(toggle)
+    expect(link.parentElement?.className).toContain('flex-1')
+    expect(fetchProjectHealth).not.toHaveBeenCalled()
+
+    fireEvent.focus(health)
+    expect(await screen.findByRole('tooltip')).toHaveTextContent(
+      'No health endpoint configured.',
+    )
+    expect(fetchProjectHealth).not.toHaveBeenCalled()
   })
 
   it('uses the chevron button to expand project navigation', () => {

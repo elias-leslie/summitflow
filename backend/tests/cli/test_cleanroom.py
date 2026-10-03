@@ -1,11 +1,14 @@
 from __future__ import annotations
 
+import json
+import os
 import subprocess
 import sys
 from pathlib import Path
 
 import pytest
 
+from app.utils.heavy_work import HeavyWorkError
 from cli.lib import cleanroom
 
 
@@ -97,3 +100,57 @@ def test_run_cleanroom_uses_working_tree_not_head_and_skips_ignored_files(
 def test_parse_env_assignments_rejects_invalid_values() -> None:
     with pytest.raises(ValueError, match="invalid env assignment"):
         cleanroom.parse_env_assignments(["BROKEN"])
+
+
+def test_admission_failure_precedes_snapshot_materialization(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    def unavailable(_label: str) -> None:
+        raise HeavyWorkError("fixture admission unavailable")
+
+    def unexpected_snapshot(*_args: object, **_kwargs: object) -> None:
+        pytest.fail("snapshot materialized before heavy-work admission")
+
+    monkeypatch.setattr(cleanroom, "heavy_work", unavailable, raising=False)
+    monkeypatch.setattr(cleanroom.tempfile, "mkdtemp", unexpected_snapshot)
+    with pytest.raises(HeavyWorkError, match="fixture admission unavailable"):
+        cleanroom.run_cleanroom(tmp_path, [sys.executable, "-c", "pass"])
+
+
+def test_cleanroom_child_inherits_admission_limits_and_lower_priority(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capfd: pytest.CaptureFixture[str],
+) -> None:
+    project_root = tmp_path / "project"
+    project_root.mkdir()
+    _init_git_repo(project_root)
+    before = os.getpriority(os.PRIO_PROCESS, 0)
+    monkeypatch.setenv("UV_CONCURRENT_BUILDS", "1")
+    monkeypatch.setenv("GOMAXPROCS", "99")
+    code = (
+        "import json,os; print(json.dumps({"
+        "'lease':bool(os.environ.get('ST_HEAVY_LEASE')),"
+        "'uv':os.environ['UV_CONCURRENT_BUILDS'],"
+        "'go':os.environ['GOMAXPROCS'],"
+        "'nice':os.getpriority(os.PRIO_PROCESS,0)})); raise SystemExit(23)"
+    )
+    assert cleanroom.run_cleanroom(project_root, [sys.executable, "-c", code]) == 23
+    observed = json.loads(capfd.readouterr().out)
+    assert observed == {"lease": True, "uv": "1", "go": "2", "nice": min(19, before + 10)}
+    assert os.getpriority(os.PRIO_PROCESS, 0) == before
+
+
+def test_cleanroom_child_can_reenter_shared_admission(
+    tmp_path: Path, capfd: pytest.CaptureFixture[str],
+) -> None:
+    project_root = tmp_path / "project"
+    project_root.mkdir()
+    _init_git_repo(project_root)
+    backend = Path(__file__).resolve().parents[2]
+    code = (
+        "import signal,sys; signal.alarm(5); "
+        f"sys.path.insert(0,{str(backend)!r}); "
+        "from app.utils.heavy_work import heavy_work\n"
+        "with heavy_work('nested cleanroom fixture'): print('nested-admitted')\n"
+    )
+    assert cleanroom.run_cleanroom(project_root, [sys.executable, "-c", code]) == 0
+    assert capfd.readouterr().out.strip() == "nested-admitted"

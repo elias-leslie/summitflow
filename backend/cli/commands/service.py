@@ -29,6 +29,34 @@ app = typer.Typer(
 )
 
 
+@app.command("observe")
+@usage(surface="st.service.observe", cmd="st service observe <project> --task <id> --acceptance <receipt> --evidence <json>",
+       when="verify an owner-managed native deployment and issue source-bound task evidence",
+       precautions=("executes the registered read-only observer from fully accepted immutable source",
+                    "records the actual deployed commit and explicit runtime input equivalence; does not deploy",
+                    "the server issues the receipt; arbitrary observation JSON or target overrides are rejected"),
+       tier="reference")
+def observe(
+    project: Annotated[str, typer.Argument(help="Registered native owner project")],
+    task: Annotated[str, typer.Option("--task", help="Claimed task requiring production verification")],
+    acceptance: Annotated[Path, typer.Option("--acceptance", help="Successful full acceptance receipt")],
+    evidence: Annotated[Path, typer.Option("--evidence", help="Write a completion evidence reference to this new file")],
+) -> None:
+    from ..client import APIError, STClient
+
+    try:
+        with STClient(project_id=project) as client:
+            receipts = client.post(client._url(f"/tasks/{task}/deployment-observations"),
+                                   {"acceptance_receipt": str(acceptance.resolve(strict=True))})
+        with evidence.open("x") as stream:
+            json.dump({"native_deployment_receipt": receipts["deployment"]["receipt_id"]}, stream)
+            stream.write("\n")
+        print("NATIVE_DEPLOYMENT:" + json.dumps(receipts, separators=(",", ":")))
+    except (APIError, ValueError, OSError, KeyError) as exc:
+        output_error(str(exc))
+        raise typer.Exit(1) from None
+
+
 class RebuildScope(StrEnum):
     full = "full"
     backend = "backend"
@@ -78,11 +106,12 @@ def runner_bootstrap(
 @usage(
     surface="st.service.runner-fixture-recovery",
     cmd="st service recover-runner-fixture neri <original-attempt>",
-    when="repair fixed fixture verification inputs after provisioning succeeded and retained its interlock",
+    when="repair fixed fixture inputs after provisioning or verification retained its interlock",
     precautions=(
-        "requires the exact original 32-hex attempt, matching retained interlock, and provisioned verification-failure receipt",
+        "requires the exact original 32-hex attempt, matching retained interlock, and post-install failure receipt",
         "two-pass confirmation is required; both runners must already be stopped or blocked and idle",
-        "installs public fixture files and updates only the private target artifact identity; never provisions or seeds",
+        "installs public fixture files; provisioning-stage recovery restores locked dependencies from local cache only",
+        "updates only the private target artifact identity; never provisions or seeds",
         "original receipt and backup remain intact; a linked recovery receipt is written and failures retain the interlock",
     ),
     task_types=("vm-repair", "devops"),
@@ -93,7 +122,7 @@ def runner_fixture_recovery(
     attempt: Annotated[str, typer.Argument(help="Exact original 32-hex fixture deployment attempt")],
     confirm: Annotated[str | None, typer.Option("--confirm", help="Confirm token from preview run")] = None,
 ) -> None:
-    """Recover a provisioned fixture whose verification retained its interlock."""
+    """Recover a fixture whose provisioning or verification retained its interlock."""
     if not re.fullmatch(r"[0-9a-f]{32}", attempt):
         output_error("Pass the exact original 32-hex fixture deployment attempt.")
         raise typer.Exit(1)

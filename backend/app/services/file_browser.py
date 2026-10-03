@@ -173,11 +173,12 @@ def write_uploaded_file(
 
     safe_name = _normalize_upload_name(filename)
     target = directory / safe_name
-    if target.exists() and not target.is_file():
+    resolved_target = resolve_safe_path(root_path, str(target))
+    if resolved_target.exists() and not resolved_target.is_file():
         msg = f'Upload target is not a file: {target.name}'
         raise IsADirectoryError(msg)
 
-    with target.open('wb') as handle:
+    with resolved_target.open('wb') as handle:
         while True:
             chunk = source.read(UPLOAD_CHUNK_SIZE)
             if not chunk:
@@ -189,7 +190,7 @@ def write_uploaded_file(
         'path': _display_path(target, root, absolute_paths),
         'directory': _display_path(directory, root, absolute_paths),
         'name': safe_name,
-        'size': target.stat().st_size,
+        'size': resolved_target.stat().st_size,
     }
 
 

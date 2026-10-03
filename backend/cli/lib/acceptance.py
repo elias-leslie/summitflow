@@ -8,6 +8,7 @@ import json
 import os
 import shutil
 import subprocess
+import sys
 import tempfile
 import time
 from collections.abc import Callable, Iterator, Mapping, Sequence
@@ -15,6 +16,8 @@ from contextlib import contextmanager
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
+
+from dotenv.parser import parse_stream
 
 from app.utils.env_files import project_env_files
 
@@ -67,7 +70,38 @@ _GATE_ENVIRONMENT_NAMES = (
     "PYTEST_ADDOPTS",
     "REDIS_URL",
     "TEST_DATABASE_URL",
+    "SEMGREP_RULES",
+    "GITLEAKS_CONFIG",
+    "ST_OSV_OFFLINE",
 )
+_SHARED_CONFIGURATION_KEYS = frozenset({
+    "DATABASE_URL", "DATABASE_ADMIN_URL", "POSTGRES_ADMIN_URL", "REDIS_URL", "TEST_DATABASE_URL",
+})
+
+
+def _canonical_gate_environment() -> dict[str, str]:
+    """Keep explicit overrides; normalize only redundant literal home-file exports.
+
+    Managed workers export the shared env file that local gates already bind
+    and consume. Recreate local unset execution, never inject defaults or strip
+    an override merely because its key exists in a file.
+    """
+    environment = dict(os.environ)
+    try:
+        with (Path.home() / ".env.local").open(encoding="utf-8") as stream:
+            bindings = list(parse_stream(stream))
+    except (OSError, UnicodeError):
+        return environment
+    if any(binding.error for binding in bindings):
+        return environment
+    for binding in bindings:
+        key, value = binding.key, binding.value
+        if (key not in _SHARED_CONFIGURATION_KEYS or value is None or "${" in value or
+                sum(other.key == key for other in bindings) != 1):
+            continue
+        if environment.get(key) == value:
+            environment.pop(key)
+    return environment
 
 
 def _local_gate_file_candidates(repo: Path) -> list[tuple[str, Path]]:
@@ -115,8 +149,9 @@ def _local_gate_inputs(repo: Path) -> dict[str, Any]:
         for name, path in _local_gate_file_candidates(repo)
     ]
     environment: list[dict[str, Any]] = []
+    canonical_environment = _canonical_gate_environment()
     for name in _GATE_ENVIRONMENT_NAMES:
-        value = os.environ.get(name)
+        value = canonical_environment.get(name)
         environment.append(
             {"name": name, "state": "unset"}
             if value is None
@@ -137,7 +172,8 @@ def _git(
     repo: Path, args: Sequence[str], *, text: bool = True
 ) -> subprocess.CompletedProcess[Any]:
     return subprocess.run(
-        ["git", *args], cwd=repo, text=text, capture_output=True, check=False
+        ["git", "--no-replace-objects", *args], cwd=repo, text=text, capture_output=True, check=False,
+        env={key: value for key, value in os.environ.items() if not key.startswith("GIT_")},
     )
 
 
@@ -277,26 +313,36 @@ def source_identity(repo: Path, *, sha: str = "HEAD") -> dict[str, Any]:
     }
 
 
-def _file_identity(path: Path) -> dict[str, Any]:
+def _file_identity(path: Path, *, name: str) -> dict[str, Any]:
     try:
         resolved = path.resolve(strict=True)
         stat = resolved.stat()
         return {
-            "path": str(resolved),
+            "name": name,
             "size": stat.st_size,
-            "mtime_ns": stat.st_mtime_ns,
             "sha256": hashlib.sha256(resolved.read_bytes()).hexdigest(),
         }
     except OSError:
-        return {"path": str(path), "unavailable": True}
+        return {"name": name, "unavailable": True}
 
 
 def _acceptance_plan() -> dict[str, Any]:
-    executable = shutil.which("st")
+    # Bind content, not checkout location or extraction timestamps. The same
+    # accepted source is installed in an immutable managed release directory.
+    from cli.tool_registry import tool_registry_path
+    backend = Path(__file__).resolve().parents[2]
+    implementation = sorted((backend / "cli" / "commands").glob("check*.py"))
+    implementation.extend([
+        Path(__file__), backend / "cli" / "main.py", backend / "cli" / "tool_registry.py", tool_registry_path(),
+        backend / "app" / "utils" / "heavy_work.py", backend / "app" / "utils" / "safe_subprocess.py",
+    ])
     plan: dict[str, Any] = {
         "commands": [list(command) for command in _ACCEPTANCE_COMMANDS],
-        "toolchain": {"st": _file_identity(Path(executable)) if executable else {"unavailable": True}},
+        "toolchain": {"st": {"entrypoint": "cli.main:app"}},
         "remote_security": "not_run_local_acceptance_does_not_claim_codeql_equivalence",
+        "gate_implementation": [_file_identity(path, name=str(path.relative_to(backend.parent))) for path in implementation],
+        "security_tools": {name: _file_identity(Path(path), name=name) if (path := shutil.which(name)) else {"unavailable": True}
+                           for name in ("gitleaks", "semgrep", "osv-scanner")},
     }
     plan["fingerprint"] = hashlib.sha256(
         json.dumps(plan, sort_keys=True, separators=(",", ":")).encode()
@@ -305,6 +351,16 @@ def _acceptance_plan() -> dict[str, Any]:
 
 
 def _run(command: list[str], cwd: Path) -> subprocess.CompletedProcess[str]:
+    if command and command[0] == "st":
+        # Invoke the exact implementation fingerprinted above. Safe-path mode
+        # excludes the target project's cwd from module lookup; a different
+        # PATH launcher or target-owned cli module cannot replace this gate.
+        # Bind this CLI's import lookup only, not PYTHONPATH inherited by a
+        # different project's pytest/type/tool children.
+        bootstrap = "import sys; sys.path.insert(0, sys.argv.pop(1)); from cli.main import app; app()"
+        return subprocess.run([sys.executable, "-P", "-c", bootstrap,
+                               str(Path(__file__).resolve().parents[2]), *command[1:]],
+                              cwd=cwd, env=_canonical_gate_environment(), text=True, capture_output=True, check=False)
     return subprocess.run(command, cwd=cwd, text=True, capture_output=True, check=False)
 
 
@@ -515,11 +571,12 @@ def accept_revision(
             before[field] != after[field]
             for field in ("commit", "tree", "status", "workspace_fingerprint", "input_fingerprint")
         )
-        state = "blocked" if mutated else ("failed" if failed else "success")
+        plan_changed = _acceptance_plan() != plan
+        state = "blocked" if mutated or plan_changed else ("failed" if failed else "success")
         reason = (
             "source_changed_during_acceptance"
             if mutated
-            else ("acceptance_checks_failed" if failed else "")
+            else ("acceptance_plan_changed_during_acceptance" if plan_changed else "acceptance_checks_failed" if failed else "")
         )
         receipt: dict[str, Any] = {
             "schema_version": _SCHEMA_VERSION,

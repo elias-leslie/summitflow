@@ -1,0 +1,15 @@
+{
+  "description": "Merge these reviewed handlers into canonical user hook configuration, preserving existing ownership and Agent Hub hooks. Review Codex definitions through publication_hooks --review-codex after installation.",
+  "hooks": {
+    "PreToolUse": [{
+      "matcher": "Bash|mcp__.*(?:github|git).*",
+      "hooks": [{"type": "command", "command": "bash /srv/workspaces/projects/summitflow/scripts/lib/publication-pretool-hook", "timeout": 5}]
+    }],
+    "SessionStart": [{
+      "hooks": [{"type": "command", "command": "bash /srv/workspaces/projects/summitflow/scripts/lib/publication-startup-hook", "timeout": 30}]
+    }],
+    "SubagentStart": [{
+      "hooks": [{"type": "command", "command": "bash /srv/workspaces/projects/summitflow/scripts/lib/publication-startup-hook", "timeout": 30}]
+    }]
+  }
+}
