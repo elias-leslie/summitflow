@@ -10,7 +10,7 @@ from typing import Any
 import typer
 
 from app.storage.projects import get_project_root_path
-from app.tasks.autonomous.exec_modules.diff_gate import check_diff_gate
+from app.tasks.autonomous.exec_modules.diff_gate import DiffGateResult, check_diff_gate
 from app.utils.git_base import normalize_base_branch
 from app.utils.shared_paths import get_repo_root
 
@@ -293,7 +293,8 @@ def _initial_checkpoint_tree(repo_root: str, claimed_at: str | None) -> str | No
         return None
 
 
-def _task_commit_diff_ref(repo_root: str, task_id: str) -> tuple[str, str] | None:
+def _task_commit_diff_ref(repo_root: str, task_id: str, *, exact_commit: str | None = None,
+                          project_id: str | None = None) -> tuple[str, str] | None:
     """Recover a direct-main task diff when a broken checkpoint lacks its base."""
     import re
 
@@ -304,11 +305,16 @@ def _task_commit_diff_ref(repo_root: str, task_id: str) -> tuple[str, str] | Non
     except Exception:
         return None
     for event in events:
+        if exact_commit is not None and (event.get("trace_id") != task_id or event.get("project_id") != project_id):
+            continue
         message = event.get("message") or ""
-        match = re.search(r"\bst commit\b.*\bcommit=([0-9a-f]{7,40})\b", message)
+        commit_pattern = r"[0-9a-f]{40}(?:[0-9a-f]{24})?" if exact_commit is not None else r"[0-9a-f]{7,40}"
+        match = re.search(r"\bst commit\b.*\bcommit=(" + commit_pattern + r")\b", message)
         if not match:
             continue
         commit = match.group(1)
+        if exact_commit is not None and commit != exact_commit:
+            continue
         ancestor = subprocess.run(
             ["git", "merge-base", "--is-ancestor", commit, "HEAD"],
             cwd=repo_root, capture_output=True, check=False,
@@ -325,6 +331,36 @@ def _task_commit_diff_ref(repo_root: str, task_id: str) -> tuple[str, str] | Non
     return None
 
 
+def _reclaimed_repair_diff(repo_root: str, task_id: str, project_id: str | None, *,
+                           base_commit: str, paths: tuple[str, ...],
+                           acceptance_receipt: dict[str, Any]) -> DiffGateResult | None:
+    """Recheck the original patch for an exact-source, accepted repair refresh."""
+    from cli.lib.acceptance import AcceptanceError, repo_lock, validate_acceptance_receipt
+    from cli.lib.commit_workflow import run_git
+
+    if not paths or not project_id:
+        return None
+    repo = Path(repo_root)
+    try:
+        with repo_lock(repo, purpose="repair refresh diff validation"):
+            if not _selected_work_is_clean(repo_root, paths):
+                return None
+            validated = validate_acceptance_receipt(repo, acceptance_receipt, sha="HEAD")
+            if validated["source_commit"] != base_commit:
+                return None
+            task_diff = _task_commit_diff_ref(repo_root, task_id, exact_commit=base_commit, project_id=project_id)
+            if task_diff is None:
+                return None
+            commit, parent = task_diff
+            result = check_diff_gate(repo_root, head_ref=commit, base_tree=parent)
+            head = run_git(repo, ["rev-parse", "--verify", "HEAD^{commit}"])
+            if head.returncode or head.stdout.strip() != commit or not _selected_work_is_clean(repo_root, paths):
+                return None
+            return result
+    except (AcceptanceError, ValueError, OSError, subprocess.SubprocessError):
+        return None
+
+
 def _run_diff_gate(
     repo_root: str,
     task_id: str,
@@ -333,6 +369,8 @@ def _run_diff_gate(
     *,
     base_commit: str | None = None,
     claimed_at: str | None = None,
+    repair_acceptance_receipt: dict[str, Any] | None = None,
+    paths: tuple[str, ...] = (),
 ) -> None:
     # Emergency escape: ST_DIFF_GATE=off disables the gate entirely.
     if (os.environ.get("ST_DIFF_GATE") or "").strip().lower() == "off":
@@ -350,6 +388,13 @@ def _run_diff_gate(
             and (task_diff := _task_commit_diff_ref(repo_root, task_id))):
         commit, parent = task_diff
         diff_result = check_diff_gate(repo_root, head_ref=commit, base_tree=parent)
+    if (not diff_result.passed and diff_result.files_changed == 0 and base_commit
+            and repair_acceptance_receipt is not None
+            and diff_result.summary == "No files changed vs base branch — task has no code changes"):
+        recovered = _reclaimed_repair_diff(repo_root, task_id, project_id, base_commit=base_commit,
+                                          paths=paths, acceptance_receipt=repair_acceptance_receipt)
+        if recovered is not None:
+            diff_result = recovered
     if diff_result.passed:
         return
     output_error(
@@ -554,9 +599,13 @@ def _complete_with_snapshot(client: STClient, task_id: str, snapshot_info: dict[
     snapshot_info["base_branch"] = base_branch
     try:
         base_commit = str(snapshot_info.get("base_commit") or "") or None
+        repair_options: dict[str, Any] = {}
+        if is_repair and project_id == task.get("project_id") and paths and acceptance_receipt is not None:
+            repair_options = {"repair_acceptance_receipt": acceptance_receipt, "paths": paths}
         if not already_completed and repo_root and not skip_diff_gate:
             _run_diff_gate(repo_root, task_id, project_id, base_branch, base_commit=base_commit,
-                           claimed_at=str(snapshot_info.get("created_at") or "") or None)
+                           claimed_at=str(snapshot_info.get("created_at") or "") or None,
+                           **repair_options)
         if not already_completed:
             _accept_completed_work_or_exit(task_id, project_id, paths=paths, **({"acceptance_receipt": acceptance_receipt} if acceptance_receipt is not None else {}))
             if strict:
