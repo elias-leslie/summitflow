@@ -14,6 +14,8 @@ from typing import Any
 from unittest.mock import patch
 from uuid import uuid4
 
+import pytest
+
 from app.storage import tasks as task_store
 from app.storage.connection import get_connection
 from app.storage.task_spirit import get_task_spirit
@@ -235,6 +237,34 @@ class TestTaskUpdates:
 
 
 class TestShortTaskIdApiResolution:
+    @pytest.mark.parametrize("task_context", [None, {"completion_requirements": {"deployment": False}}])
+    def test_completion_readiness_uses_persisted_plan_requirements(
+        self, client: Any, task_context: dict[str, Any] | None,
+    ) -> None:
+        task_id = f"task-{uuid4()}"
+        task = {
+            "id": task_id,
+            "context": task_context,
+            "verification_result": {"acceptance": {"state": "success", "source_commit": "a" * 40}},
+        }
+        spirit = {"context": {"completion_requirements": {
+            "deployment": True, "live_checks": ["publication_health"],
+        }}}
+        with (
+            patch("app.api.tasks.get_endpoints.get_task_or_404", return_value=task),
+            patch("app.api.tasks.get_endpoints.get_subtasks_for_task", return_value=[]),
+            patch("app.storage.task_spirit.get_task_spirit", return_value=spirit) as read_spirit,
+        ):
+            result = client.get(f"/api/tasks/{task_id.removeprefix('task-')}/completion-readiness")
+
+        assert result.status_code == 200
+        assert result.json() == {"ready": False, "gates": [
+            {"gate": "deployment", "pass": False,
+             "detail": "Required deployment has not succeeded for the accepted source."},
+            {"gate": "live_validation", "pass": False, "detail": ["publication_health"]},
+        ]}
+        read_spirit.assert_called_once_with(task_id)
+
     def test_get_task_accepts_short_suffix(
         self, client: Any, test_project_id: str, cleanup_task: Callable[[str], None]
     ) -> None:
