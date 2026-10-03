@@ -14,6 +14,7 @@ import re
 import shutil
 import subprocess
 import tempfile
+from collections.abc import Callable
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
@@ -147,7 +148,8 @@ def _reviewed_jj_source(project: Path, default_head: str) -> str:
 
 
 def _publish_isolated(project: Path, head: str, branch: str, remote: str,
-                      remote_url: str, source_id: str, *, resume: bool) -> dict[str, Any]:
+                      remote_url: str, source_id: str, *, resume: bool,
+                      activity_allowed: Callable[[], bool] | None = None) -> dict[str, Any]:
     """Use canonical rules/PR/CI machinery without touching the active checkout."""
     from cli.lib.publish_workflow import PublishError, publish_git
 
@@ -158,6 +160,7 @@ def _publish_isolated(project: Path, head: str, branch: str, remote: str,
         verify_outgoing,
     )
 
+    allowed = publication_window_open if activity_allowed is None else activity_allowed
     with tempfile.TemporaryDirectory(prefix="st-nightly-publish-") as directory:
         isolated = Path(directory) / "source"
         cloned = _git(project, "clone", "--shared", "--no-checkout", "--no-hardlinks", str(project), str(isolated))
@@ -174,7 +177,7 @@ def _publish_isolated(project: Path, head: str, branch: str, remote: str,
         published_bases: tuple[str, ...] = ()
 
         def run_git(repo: Path, arguments: list[str]) -> subprocess.CompletedProcess[str]:
-            if arguments[0] in {"push", "fetch", "ls-remote"} and not publication_window_open():
+            if arguments[0] in {"push", "fetch", "ls-remote"} and not allowed():
                 raise _InspectionFailed
             if arguments[0] == "push":
                 destination_ref = arguments[-1].split(":", 1)[1]
@@ -196,7 +199,7 @@ def _publish_isolated(project: Path, head: str, branch: str, remote: str,
                     raise _OutgoingFailed from exc
                 security.update(state="success", commits_scanned=verified.commits_scanned,
                                 refs_checked=verified.refs_checked, base_sha=old, destination_ref=destination_ref)
-                if not publication_window_open():
+                if not allowed():
                     raise _InspectionFailed
                 arguments = ["push", "--porcelain", "--no-follow-tags", "--recurse-submodules=no", *arguments[1:]]
             response = _git(repo, *arguments)
@@ -240,29 +243,66 @@ def _publish_isolated(project: Path, head: str, branch: str, remote: str,
             delivery = publish_git(isolated, sha=head, task_id=f"nightly-{source_id}-{head[:16]}",
                 message=f"Publish reviewed local source {head[:12]}", run_git=run_git,
                 remote_name=remote, destination=branch, resume=resume,
-                reconcile_checkout=False, activity_allowed=publication_window_open)
+                reconcile_checkout=False, activity_allowed=allowed)
         except PublishError as exc:
-            window_open = publication_window_open()
-            delivery = {"status": "BLOCKED" if window_open and not exc.unavailable else "PENDING", "pushed": False,
+            activity_open = allowed()
+            delivery = {"status": "BLOCKED" if activity_open and not exc.unavailable else "PENDING", "pushed": False,
                         "publication_complete": False, "ci": {"state": "unavailable", "sha": head},
-                        "reason": exc.reason if window_open else "outside_publication_window"}
+                        "reason": exc.reason if activity_open else "outside_publication_window"}
         return {**_public_evidence(delivery), "security": security}
 
 
-def publish_source_before_backup(source: dict[str, Any], *, retained: dict[str, Any] | None = None) -> dict[str, Any]:
-    """Publish accepted committed source; every outcome allows independent backup."""
+def publish_source_before_backup(source: dict[str, Any], *, retained: dict[str, Any] | None = None,
+                                 manual_source_commit: str | None = None,
+                                 activity_allowed: Callable[[], bool] | None = None) -> dict[str, Any]:
+    """Publish accepted source; an explicit owner call pins its immutable OID.
+
+    The owning CLI/API authorizes manual calls. This changes only that call's
+    activity window; route, acceptance, outgoing and remote checks still apply.
+    """
+    manual = manual_source_commit is not None
+    deferred_reason: str | None = None
+
+    def can_publish() -> bool:
+        nonlocal deferred_reason
+        if deferred_reason is not None:
+            return False
+        if not manual and not publication_window_open():
+            deferred_reason = "outside_publication_window"
+            return False
+        try:
+            if activity_allowed is not None and activity_allowed() is not True:
+                deferred_reason = "publication_busy"
+                return False
+        except Exception:
+            deferred_reason = "publication_busy"
+            return False
+        return True
+
     result: dict[str, Any] = {
         "source_id": source.get("id"), "status": "skipped", "attempted": False,
         "backup_can_continue": True,
         "publication_complete": False, "observed_at": datetime.now(UTC).isoformat(),
         "source_status": "unknown", "remote_status": "unobserved",
         "ci": {"state": "unobserved"}, "security": {"state": "not_run"},
+        "publication_mode": "manual" if manual else "scheduled",
+        "requested_source_commit": None, "captured_source_commit": None,
     }
 
     def outcome(status: str, reason: str) -> dict[str, Any]:
         return {**result, "status": status, "reason": reason, "observed_at": datetime.now(UTC).isoformat()}
 
-    if not publication_window_open():
+    if manual:
+        if not isinstance(manual_source_commit, str) or not re.fullmatch(r"[0-9a-f]{40}|[0-9a-f]{64}", manual_source_commit):
+            return outcome("failed", "invalid_manual_source")
+        result["requested_source_commit"] = manual_source_commit
+        if retained and "head" in retained:
+            retained_head = retained["head"]
+            if not isinstance(retained_head, str) or not re.fullmatch(r"[0-9a-f]{40}|[0-9a-f]{64}", retained_head):
+                return outcome("failed", "invalid_retained_source")
+            if retained_head != manual_source_commit:
+                return outcome("failed", "manual_retained_source_conflict")
+    if not manual and not publication_window_open():
         return outcome("pending", "outside_publication_window")
     if source.get("source_type") != "project":
         return outcome("skipped", "non_project_source")
@@ -284,27 +324,31 @@ def publish_source_before_backup(source: dict[str, Any], *, retained: dict[str, 
         branch = symbolic.stdout.strip()
         if retained and retained.get("branch") in {"main", "master"}:
             branch = retained["branch"]
-        if colocated:
-            # JJ's @/Git HEAD can contain unfinished work. Use a named default
-            # bookmark as the boundary for receipt-selected immutable source.
+        if colocated or manual:
+            # Manual source is independent of a later active branch or JJ @.
+            # The existing default route is still verified against GitHub.
             branches = [name for name in ("main", "master") if _git(project, "show-ref", "--verify", "--quiet", f"refs/heads/{name}").returncode == 0]
             if len(branches) != 1:
-                return outcome("pending", "jj_default_bookmark_required")
+                return outcome("pending", "jj_default_bookmark_required" if colocated else "manual_default_branch_required")
             branch = branches[0]
         elif symbolic.returncode != 0 and not (retained and retained.get("branch") in {"main", "master"}):
             return outcome("skipped", "detached_head")
         if branch not in {"main", "master"}:
             return outcome("skipped", "non_default_branch")
-        revision = str(retained.get("head")) if retained and retained.get("head") else f"refs/heads/{branch}"
+        revision = (manual_source_commit if manual_source_commit is not None
+                    else str(retained.get("head")) if retained and retained.get("head") else f"refs/heads/{branch}")
         if retained and retained.get("head") and not re.fullmatch(r"[0-9a-f]{40}|[0-9a-f]{64}", revision):
             return outcome("failed", "invalid_retained_source")
         head_result = _git(project, "rev-parse", "--verify", f"{revision}^{{commit}}")
         if head_result.returncode != 0:
-            return outcome("skipped", "unborn_head")
+            return outcome("failed", "manual_source_unavailable") if manual else outcome("skipped", "unborn_head")
         head = head_result.stdout.strip()
-        if colocated and not (retained and retained.get("head")):
+        if manual and head != manual_source_commit:
+            return outcome("failed", "manual_source_unavailable")
+        if colocated and not manual and not (retained and retained.get("head")):
             head = _reviewed_jj_source(project, head)
         result.update(head=head, branch=branch, source_status="captured", vcs="jj" if colocated else "git",
+                      captured_source_commit=head,
                       source_tree=_value(project, "rev-parse", f"{head}^{{tree}}"))
         route = _value(project, "for-each-ref", "--format=%(upstream)%00%(upstream:remotename)%00%(upstream:remoteref)", f"refs/heads/{branch}").split("\0")
         if colocated and (len(route) != 3 or not all(route)):
@@ -355,9 +399,13 @@ def publish_source_before_backup(source: dict[str, Any], *, retained: dict[str, 
         if _value(project, "remote", "get-url", "--push", "--all", remote).splitlines() != push_urls:
             return outcome("pending", "repository_changed")
         result["source_status"] = "accepted"
+        if not can_publish():
+            return outcome("pending", deferred_reason or "publication_busy")
         result["attempted"] = True
         delivered = _publish_isolated(project, head, branch, remote, push_urls[0], str(source["id"]),
-                                      resume=bool(retained and retained.get("pushed")))
+                                      resume=bool(retained and retained.get("pushed")), activity_allowed=can_publish)
+        if deferred_reason and not delivered.get("publication_complete"):
+            delivered = {**delivered, "status": "PENDING", "reason": deferred_reason}
         result.update(delivered)
         if delivered.get("publication_complete"):
             try:
@@ -388,10 +436,10 @@ def publish_source_before_backup(source: dict[str, Any], *, retained: dict[str, 
     except _TransportUnavailable:
         result["remote_status"] = "unknown"
         result["ci"] = {"state": "unavailable", "sha": result.get("head")}
-        return outcome("pending", "remote_transport_unavailable" if publication_window_open() else "outside_publication_window")
+        return outcome("pending", "remote_transport_unavailable" if can_publish() else deferred_reason or "publication_busy")
     except (ImportError, OSError, ValueError, TypeError, RuntimeError, subprocess.SubprocessError):
-        if not publication_window_open():
-            return outcome("pending", "outside_publication_window")
+        if not can_publish():
+            return outcome("pending", deferred_reason or "publication_busy")
         return outcome("failed", "publication_inspection_unavailable")
 
 

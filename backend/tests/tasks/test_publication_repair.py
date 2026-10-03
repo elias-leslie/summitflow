@@ -1,10 +1,41 @@
 """Rolling repair evidence survives claims and out-of-order nightly callbacks."""
+import subprocess
 from unittest.mock import patch
 
+import psycopg
 import pytest
+from psycopg.types.json import Jsonb
 
 from app.storage import tasks
+from app.storage.tasks import publication_repair as repair
 from app.storage.tasks.publication_repair import get_repair_task, record_finding
+from app.utils import safe_subprocess
+
+
+@pytest.fixture
+def source_history(tmp_path, monkeypatch):
+    def git(*arguments):
+        return subprocess.run(["git", *arguments], cwd=tmp_path, check=True,
+                              capture_output=True, text=True).stdout.strip()
+
+    git("init", "-q", "--initial-branch=main")
+    git("config", "user.name", "Fixture")
+    git("config", "user.email", "fixture@example.invalid")
+    git("config", "core.hooksPath", "/dev/null")
+    for value in ("base", "failed", "fixed"):
+        (tmp_path / "source.txt").write_text(value)
+        git("add", "source.txt")
+        git("commit", "-qm", value)
+    fixed = git("rev-parse", "HEAD")
+    failed = git("rev-parse", "HEAD^")
+    base = git("rev-parse", "HEAD^^")
+    git("checkout", "--detach", base)
+    (tmp_path / "source.txt").write_text("different branch")
+    git("commit", "-qam", "divergent")
+    divergent = git("rev-parse", "HEAD")
+    git("checkout", "main")
+    monkeypatch.setattr("app.storage.projects.get_project_root_path", lambda *_args, **_kwargs: str(tmp_path))
+    return {"base": base, "failed": failed, "fixed": fixed, "divergent": divergent}
 
 
 def test_rolling_repair_is_ready_for_normal_pickup(test_project_id, cleanup_task):
@@ -100,3 +131,80 @@ def test_cancel_or_delete_cannot_hide_independent_findings(test_project_id, clea
     with pytest.raises(ValueError, match="unresolved repair"):
         tasks.delete_task(task_id)
     assert get_repair_task(test_project_id) is not None
+
+
+@pytest.mark.parametrize("category", ["publication", "outgoing_security", "codeql"])
+@pytest.mark.parametrize(("failed_key", "successful_key", "resolved"), [
+    ("failed", "failed", True), ("failed", "fixed", True),
+    ("failed", "base", False), ("failed", "divergent", False),
+    (None, "fixed", False), ("failed", None, False),
+    ("unknown", "fixed", False), ("failed", "unknown", False),
+])
+def test_later_success_must_include_failed_source(
+    test_project_id, cleanup_task, source_history, category, failed_key, successful_key, resolved,
+):
+    def observation(key, timestamp):
+        return {"observed_at": timestamp,
+                **({"source_commit": source_history.get(key, "f" * 40)} if key else {})}
+
+    failed = observation(failed_key, "2026-10-02T08:00:00+00:00")
+    task_id = record_finding(test_project_id, category, failed, resolved=False)
+    assert task_id is not None
+    cleanup_task(task_id)
+    success = observation(successful_key, "2026-10-03T08:00:00+00:00")
+    assert record_finding(test_project_id, category, success, resolved=True) == task_id
+    task = get_repair_task(test_project_id)
+    assert task is not None
+    finding = task["verification_result"]["publication_repair"][category]
+    assert finding == {**(success if resolved else failed), "state": "resolved" if resolved else "unresolved"}
+
+
+def test_resolution_does_not_substitute_accepted_source_for_actual_failed_source(
+    test_project_id, cleanup_task, source_history,
+):
+    failed = {"observed_at": "2026-10-02T08:00:00+00:00", "source_commit": source_history["divergent"],
+              "accepted_source_commit": source_history["failed"]}
+    task_id = record_finding(test_project_id, "codeql", failed, resolved=False)
+    assert task_id is not None
+    cleanup_task(task_id)
+    record_finding(test_project_id, "codeql", {"observed_at": "2026-10-03T08:00:00+00:00",
+                   "source_commit": source_history["fixed"]}, resolved=True)
+    task = get_repair_task(test_project_id)
+    assert task is not None
+    assert task["verification_result"]["publication_repair"]["codeql"] == {**failed, "state": "unresolved"}
+
+
+@pytest.mark.parametrize("replacement_key", ["failed", "divergent"])
+def test_resolution_cas_preserves_finding_replaced_during_ancestry_proof(
+    test_project_id, cleanup_task, source_history, monkeypatch, replacement_key,
+):
+    task_id = record_finding(test_project_id, "publication", {
+        "observed_at": "2026-10-02T08:00:00+00:00", "source_commit": source_history["failed"],
+    }, resolved=False)
+    assert task_id is not None
+    cleanup_task(task_id)
+    replacement = {"state": "unresolved", "observed_at": "2026-10-03T09:00:00+00:00",
+                   "source_commit": source_history[replacement_key]}
+    original_run = safe_subprocess.run
+    replaced = False
+
+    def concurrent_replacement(command, **kwargs):
+        nonlocal replaced
+        result = original_run(command, **kwargs)
+        if "merge-base" in command and result.returncode == 0 and not replaced:
+            assert repair.DATABASE_URL is not None
+            with psycopg.connect(repair.DATABASE_URL) as conn, conn.cursor() as cur:
+                cur.execute("""UPDATE tasks SET verification_result = jsonb_set(
+                    verification_result, '{publication_repair,publication}', %s::jsonb)
+                    WHERE id = %s""", (Jsonb(replacement), task_id))
+            replaced = True
+        return result
+
+    monkeypatch.setattr(safe_subprocess, "run", concurrent_replacement)
+    record_finding(test_project_id, "publication", {
+        "observed_at": "2026-10-03T08:00:00+00:00", "source_commit": source_history["fixed"],
+    }, resolved=True)
+    assert replaced, "fixture must replace the finding after actual ancestry proof"
+    task = get_repair_task(test_project_id)
+    assert task is not None
+    assert task["verification_result"]["publication_repair"]["publication"] == replacement

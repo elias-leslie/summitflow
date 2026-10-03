@@ -29,8 +29,8 @@ from .cleanup_handlers import cleanup_safe_git_residue
 
 app = typer.Typer(
     help=(
-        "Canonical VCS hygiene. Prefer `st vcs doctor` and `st vcs reconcile` "
-        "over separate git/jj/cleanup status sweeps."
+        "Canonical VCS hygiene and isolated exact-source publication. Prefer "
+        "`st vcs doctor` and `st vcs reconcile` over separate status sweeps."
     )
 )
 
@@ -55,6 +55,37 @@ def publication_status() -> None:
         typer.echo(format_publication_health(health))
     except Exception:
         typer.echo("Nightly publication: unknown; status unavailable. Inspect ST before claiming completion.")
+
+
+@app.command("publish")
+@usage(surface="st.vcs.publish", cmd="st vcs publish --source ID --sha FULL_OID --now",
+       when="owner-authorized immediate publication of an accepted exact commit",
+       precautions=("requires explicit publication authority; never creates commits or reconciles the checkout",
+                    "all acceptance, outgoing-history, repository-rule and CI gates remain required"), tier="reference")
+def publish_now(
+    source: Annotated[str, typer.Option("--source", help="Enabled registered project backup source ID")],
+    sha: Annotated[str, typer.Option("--sha", help="Exact accepted lowercase full commit OID")],
+    now: Annotated[bool, typer.Option("--now", help="Explicit owner-triggered publication outside the nightly schedule")] = False,
+) -> None:
+    """Publish an exact accepted source in isolation and retain its real CI evidence."""
+    if not now:
+        typer.echo("Immediate publication requires --now and explicit owner authorization; the nightly schedule is unchanged.")
+        raise typer.Exit(2)
+    from app.tasks.backup_manual_publish import publish_project_now
+
+    try:
+        result = publish_project_now(source, sha)
+    except ValueError as exc:
+        typer.echo(str(exc))
+        raise typer.Exit(2) from None
+    except Exception:
+        # Transport/DB errors can contain credentials. Never print raw diagnostics.
+        typer.echo("Publication could not establish durable evidence. Inspect canonical publication health before retrying.")
+        raise typer.Exit(2) from None
+    output_json(result)
+    if not (result.get("publication_complete") and result.get("evidence_recorded")
+            and (result.get("health") or {}).get("state") == "verified"):
+        raise typer.Exit(2)
 
 _IGNORED_WORKSPACE_REPO_NAMES = frozenset({"claude-config", "codex-config"})
 

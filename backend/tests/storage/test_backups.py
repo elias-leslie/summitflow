@@ -173,6 +173,23 @@ class TestBackupCRUD:
         assert updated["verification_json"]["tree"] == {"files": 1}
         assert updated["verification_json"]["testbed_baseline"]["snapshot_id"] == "snap-123"
 
+    def test_publication_slots_replace_whole_observations(self, cleanup_project: str) -> None:
+        backup = backups.create_backup_record(cleanup_project)
+        previous = {"head": "a" * 40, "merge_sha": "b" * 40,
+                    "ci": {"state": "success", "sha": "b" * 40, "pr_checks": {"sha": "a" * 40}}}
+        backups.update_backup_status(backup["id"], status="completed", verification_json={
+            "publication": previous, "publish_before_backup": previous,
+            "offsite": {"status": "verified", "checksum": "retained"},
+        })
+        current = {"head": "c" * 40, "ci": {"state": "unobserved"}}
+        updated = backups.merge_backup_verification_json(backup["id"], {
+            "publication": current, "publish_before_backup": current,
+        })
+        assert updated is not None
+        assert updated["verification_json"]["publication"] == current
+        assert updated["verification_json"]["publish_before_backup"] == current
+        assert updated["verification_json"]["offsite"] == {"status": "verified", "checksum": "retained"}
+
     def test_delete_backup_record(self, cleanup_project: str) -> None:
         """Delete backup removes record."""
         backup = backups.create_backup_record(cleanup_project)

@@ -1,6 +1,9 @@
 """One rolling publication/security repair task per project, in existing task storage."""
 from __future__ import annotations
 
+import os
+import re
+import subprocess
 from datetime import UTC, datetime
 from typing import Any
 
@@ -8,12 +11,14 @@ import psycopg
 from psycopg.types.json import Jsonb
 
 from ...config import DATABASE_URL
+from ...utils import safe_subprocess
 from .columns import TASK_COLUMNS_WITH_SPIRIT
 from .core import create_task
 from .mapping import row_to_dict_with_spirit
 
 REPAIR_LABEL = "publication-repair"
 _POLICY_APPROVER = "owner-approved-nightly-repair-policy"
+_SOURCE_OID = re.compile(r"[0-9a-f]{40}|[0-9a-f]{64}")
 
 
 def _ensure_policy_plan(task_id: str) -> None:
@@ -59,6 +64,35 @@ def get_repair_task(project_id: str, *, connection: psycopg.Connection | None = 
     return row_to_dict_with_spirit(row) if row else None
 
 
+def _resolution_includes_failure(project_id: str, previous: dict[str, Any], observation: dict[str, Any],
+                                 connection: psycopg.Connection) -> bool:
+    """Prove inclusion of the actual failed source, never a current-HEAD guess."""
+    failed = previous.get("source_commit")
+    verified = observation.get("source_commit")
+    if (not isinstance(failed, str) or not isinstance(verified, str)
+            or not _SOURCE_OID.fullmatch(failed) or not _SOURCE_OID.fullmatch(verified)):
+        return False
+    if failed == verified:
+        return True
+    from ..projects import get_project_root_path
+
+    root = get_project_root_path(project_id, connection=connection)
+    if not root:
+        return False
+    # Remote merge objects may not exist locally. Missing proof retains the
+    # finding; this read must not fetch or inspect another ambient Git repo.
+    environment = {key: value for key, value in os.environ.items() if not key.startswith("GIT_")}
+    environment.update(GIT_NO_LAZY_FETCH="1", GIT_OPTIONAL_LOCKS="0", GIT_TERMINAL_PROMPT="0")
+    try:
+        return safe_subprocess.run(
+            ["git", "--no-replace-objects", "-C", root, "merge-base", "--is-ancestor", failed, verified],
+            env=environment, capture_output=True, text=True, stdin=subprocess.DEVNULL, timeout=10,
+            check=False,
+        ).returncode == 0
+    except (OSError, subprocess.SubprocessError):
+        return False
+
+
 def record_finding(project_id: str, category: str, observation: dict[str, Any], *, resolved: bool) -> str | None:
     """Serialize task creation and merge a category without overwriting independent evidence."""
     # Do not hold a pooled slot while the canonical task/spirit APIs use the
@@ -102,11 +136,18 @@ def record_finding(project_id: str, category: str, observation: dict[str, Any], 
             # either order and an older success must never clear a newer defect.
             if timestamp < previous_time or (timestamp == previous_time and resolved and previous.get("state") != "resolved"):
                 return str(task["id"])
+        if (resolved and previous and previous.get("state") != "resolved"
+                and not _resolution_includes_failure(project_id, previous, observation, conn)):
+            return str(task["id"])
+        # The advisory lock serializes observer callbacks. Compare the exact
+        # category too: another task writer may replace it while Git proves
+        # ancestry, and that replacement must not inherit the old proof.
         cur.execute("""UPDATE tasks SET verification_result = jsonb_set(
                        COALESCE(verification_result, '{}'::jsonb), '{publication_repair}',
                        COALESCE(verification_result->'publication_repair', '{}'::jsonb) || %s::jsonb),
-                       updated_at = NOW() WHERE id = %s AND project_id = %s""",
+                       updated_at = NOW() WHERE id = %s AND project_id = %s
+                       AND COALESCE(verification_result->'publication_repair'->%s, '{}'::jsonb) = %s::jsonb""",
                     (Jsonb({category: {**observation, "observed_at": timestamp.astimezone(UTC).isoformat(),
                                       "state": "resolved" if resolved else "unresolved"}}),
-                     task["id"], project_id))
+                     task["id"], project_id, category, Jsonb(previous)))
         return str(task["id"])
