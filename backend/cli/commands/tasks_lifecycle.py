@@ -10,25 +10,55 @@ import typer
 
 from ..client import APIError, STClient
 from ..context import require_task_id
-from ..output import handle_api_error, output_error, output_success, output_task
+from ..output import handle_api_error, output_error, output_success, output_task, output_warning
 
 
 def _cleanup_safe_pause_residue(task_id: str, project_id: str | None) -> str | None:
-    """Remove already-merged checkpoint residue after pausing a task."""
+    """Drop only clean direct-to-main pause metadata; preserve legacy task refs."""
     if not project_id:
         return None
-    from ..lib.checkpoint import get_active_checkpoints
-    from .cleanup_analysis import CleanupAction, analyze_checkpoint, cleanup_checkpoint
+    from app.storage.projects import get_project_root_path
+    from app.storage.tasks import canonicalize_task_id, get_task
 
-    for checkpoint in get_active_checkpoints(project_id):
-        if checkpoint.task_id != task_id:
-            continue
-        analysis = analyze_checkpoint(checkpoint)
-        if analysis.action not in {CleanupAction.SAFE_DELETE, CleanupAction.ALREADY_MERGED}:
-            return f"checkpoint_kept:{analysis.action.value}"
-        cleaned, message = cleanup_checkpoint(analysis, force=False)
-        return "checkpoint_cleaned" if cleaned else f"checkpoint_kept:{message}"
-    return None
+    from ..lib.checkpoint import remove_snapshot
+    from ..lib.checkpoint_metadata import load_snapshot_meta
+    from ..lib.commit_workflow import run_git
+
+    try:
+        task_id = canonicalize_task_id(task_id)
+        checkpoint = load_snapshot_meta(task_id)
+        if checkpoint is None:
+            return None
+        if checkpoint.task_id != task_id or checkpoint.project_id != project_id:
+            return "checkpoint_kept:scope_mismatch"
+        root = get_project_root_path(project_id)
+        if not root:
+            return "checkpoint_kept:project_root_unavailable"
+        status = run_git(Path(root), ["status", "--porcelain", "--untracked-files=all"])
+        if status.returncode != 0:
+            return "checkpoint_kept:inspection_unavailable"
+        if status.stdout.strip():
+            return "checkpoint_kept:uncommitted_changes"
+        refs = run_git(Path(root), ["for-each-ref", "--format=%(refname)", "refs/heads/"])
+        if refs.returncode != 0:
+            return "checkpoint_kept:inspection_unavailable"
+        task_refs = (f"refs/heads/{task_id}", f"refs/heads/task/{task_id}")
+        if any(
+            ref == prefix or ref.startswith(prefix + "/")
+            for ref in refs.stdout.splitlines()
+            for prefix in task_refs
+        ):
+            return "checkpoint_kept:legacy_task_refs"
+        # A pause can race a reopen/reclaim: don't discard a replacement checkpoint.
+        task = get_task(task_id)
+        if not task or task.get("id") != task_id or task.get("project_id") != project_id or task.get("status") != "paused":
+            return "checkpoint_kept:task_not_paused"
+        if load_snapshot_meta(task_id) != checkpoint:
+            return "checkpoint_kept:checkpoint_changed"
+        return "checkpoint_cleaned" if remove_snapshot(task_id, project_id=project_id) else "checkpoint_kept:cleanup_unavailable"
+    except Exception:
+        # The API pause succeeded; optional local cleanup must not undo it or leak diagnostics.
+        return "checkpoint_kept:inspection_unavailable"
 
 
 def cancel_task_command(
@@ -63,12 +93,15 @@ def pause_task_command(
         handle_api_error(e)
         return
 
-    cleanup_result = _cleanup_safe_pause_residue(task_id, task.get("project_id"))
+    cleanup_result = _cleanup_safe_pause_residue(task.get("id") or task_id, task.get("project_id"))
     if reason:
         task["pause_reason"] = reason
     output_task(task)
     if cleanup_result:
-        output_success(cleanup_result)
+        if cleanup_result.startswith("checkpoint_kept:"):
+            output_warning(cleanup_result)
+        else:
+            output_success(cleanup_result)
 
 
 def delete_task_command(
