@@ -20,10 +20,15 @@ from pathlib import Path
 from urllib.parse import urlsplit
 
 from app.utils import safe_subprocess
+from app.utils.heavy_work import HeavyWork, HeavyWorkError, heavy_work
 
 
 class OutgoingVerificationError(RuntimeError):
     """Outgoing objects cannot be certified safe; messages never include content."""
+
+
+class OutgoingAdmissionUnavailable(OutgoingVerificationError):
+    """Shared admission infrastructure is unavailable, not a source finding."""
 
 
 @dataclass(frozen=True)
@@ -153,6 +158,20 @@ def verify_outgoing(
     scanner: str | None = None, policy_dir: str | Path | None = None,
     published_bases: Sequence[str] = (),
 ) -> OutgoingVerification:
+    """Admit complete outgoing verification before history/tree materialization."""
+    try:
+        with heavy_work("outgoing verification") as work:
+            return _verify_outgoing(repo, remote_url, updates, scanner=scanner,
+                                    policy_dir=policy_dir, published_bases=published_bases, work=work)
+    except HeavyWorkError as exc:
+        raise OutgoingAdmissionUnavailable("Outgoing verification admission is unavailable.") from exc
+
+
+def _verify_outgoing(
+    repo: str | Path, remote_url: str, updates: Sequence[PushUpdate], *,
+    scanner: str | None, policy_dir: str | Path | None,
+    published_bases: Sequence[str], work: HeavyWork,
+) -> OutgoingVerification:
     """Verify exact update tuples and all outgoing trees, with no history cap.
 
     Missing old objects, shallow/grafted history, scanner/policy failures, and
@@ -246,11 +265,11 @@ def verify_outgoing(
             env["GIT_NO_REPLACE_OBJECTS"] = "1"
             for revision in revisions:
                 try:
-                    result = safe_subprocess.run(
-                        [scanner_bin, "git", "--no-banner", "--redact=100", "--log-level", "error",
+                    result = safe_subprocess.run_inherited(
+                        work.command([scanner_bin, "git", "--no-banner", "--redact=100", "--log-level", "error",
                          "--ignore-gitleaks-allow", "--config", str(config),
-                         "--gitleaks-ignore-path", directory, "--log-opts=" + revision, str(root)],
-                        capture_output=True, env=env, timeout=300, check=False,
+                         "--gitleaks-ignore-path", directory, "--log-opts=" + revision, str(root)]),
+                        inherit_fds=work.pass_fds, env=work.environment(env), timeout=300,
                     )
                 except (OSError, subprocess.TimeoutExpired) as exc:
                     raise OutgoingVerificationError("Outgoing secret scan failed or timed out.") from exc

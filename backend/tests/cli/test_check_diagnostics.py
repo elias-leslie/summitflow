@@ -6,6 +6,7 @@ from unittest.mock import Mock
 
 import pytest
 
+from app.utils.heavy_work import HeavyWork
 from cli.commands import check
 
 
@@ -23,7 +24,7 @@ def test_silent_pytest_retains_report_without_running_again(tmp_path, monkeypatc
     monkeypatch.setattr(check, "_resolve_repo_root", lambda: tmp_path)
     monkeypatch.setattr(check, "_workdir", lambda *_: tmp_path)
     monkeypatch.setattr(check, "_resolve_command", lambda *_: ["pytest"])
-    monkeypatch.setattr(check.subprocess, "run", runner)
+    monkeypatch.setattr(HeavyWork, "run", runner)
     assert check._run_tool("pytest", {"label": "TEST"}, []) == returncode
     output = capsys.readouterr().out
     assert "report:" in output
@@ -40,7 +41,7 @@ def test_explicit_pytest_report_is_not_overridden(tmp_path, monkeypatch, argumen
     monkeypatch.setattr(check, "_resolve_repo_root", lambda: tmp_path)
     monkeypatch.setattr(check, "_workdir", lambda *_: tmp_path)
     monkeypatch.setattr(check, "_resolve_command", lambda *_: ["pytest"])
-    monkeypatch.setattr(check.subprocess, "run", runner)
+    monkeypatch.setattr(HeavyWork, "run", runner)
     assert check._run_tool("pytest", {"label": "TEST"}, [argument]) == 1
     arguments = runner.call_args.args[0]
     assert sum(arg.startswith(("--junitxml", "--junit-xml")) for arg in arguments) == 1

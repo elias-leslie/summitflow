@@ -398,6 +398,46 @@ def test_security_failure_never_pushes_or_discloses_diagnostics(source, monkeypa
     assert "private token" not in json.dumps(result)
 
 
+@pytest.mark.parametrize("phase", ["initial", "push"])
+def test_shared_admission_outage_defers_publication_without_push_or_repair(source, monkeypatch, phase):
+    from app.services import publication_health
+    from app.services.git import outgoing
+    from cli.lib import publish_workflow
+
+    original = publish._git
+
+    def local_git(repo, *args):
+        if args[0] == "ls-remote":
+            return subprocess.CompletedProcess(args, 0, "", "")
+        if args[0] == "push":
+            raise AssertionError("No push when required admission is unavailable")
+        return original(repo, *args)
+
+    monkeypatch.setattr(publish, "_git", local_git)
+    unavailable = outgoing.OutgoingAdmissionUnavailable("fixture-private-storage-diagnostic")
+    evidence = Mock(commits_scanned=2, refs_checked=1)
+    verifier = Mock(side_effect=unavailable if phase == "initial" else [evidence, unavailable])
+    monkeypatch.setattr(outgoing, "verify_outgoing", verifier)
+
+    def canonical(repo, **kwargs):
+        kwargs["run_git"](repo, ["push", "origin", f"{kwargs['sha']}:refs/heads/st/nightly"])
+        raise AssertionError("No delivery after required admission is unavailable")
+
+    publisher = Mock(side_effect=canonical)
+    monkeypatch.setattr(publish_workflow, "publish_git", publisher)
+    result = publish.publish_source_before_backup(source)
+    assert result["status"] == "pending" and result["reason"] == "heavy_work_admission_unavailable"
+    assert result["backup_can_continue"] and not result["publication_complete"]
+    assert result["security"]["state"] == "unavailable" and result["remote_status"] == "unknown"
+    assert verifier.call_count == (1 if phase == "initial" else 2)
+    assert publisher.call_count == (0 if phase == "initial" else 1)
+    assert "fixture-private-storage-diagnostic" not in json.dumps(result)
+    recorder = Mock()
+    monkeypatch.setattr(publication_health, "record_finding", recorder)
+    assert publication_health.record_publication_observation("fixture", result) is None
+    recorder.assert_not_called()
+
+
 @pytest.mark.parametrize("valid", [False, True])
 def test_exact_source_receipt_requires_canonical_validation(source, monkeypatch, valid):
     from cli.lib import acceptance

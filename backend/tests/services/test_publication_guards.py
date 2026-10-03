@@ -4,6 +4,7 @@ import io
 import json
 import os
 import subprocess
+from contextlib import contextmanager
 from pathlib import Path
 
 import pytest
@@ -18,6 +19,22 @@ from app.services.git.outgoing import (
 )
 
 ZERO = "0" * 40
+
+
+def test_outgoing_admission_failure_is_typed_before_history_work(monkeypatch, tmp_path) -> None:
+    from app.services.git import outgoing
+    from app.utils.heavy_work import HeavyWorkError
+
+    @contextmanager
+    def unavailable(_label):
+        raise HeavyWorkError("fixture infrastructure detail")
+        yield  # pragma: no cover
+
+    monkeypatch.setattr(outgoing, "heavy_work", unavailable)
+    monkeypatch.setattr(outgoing, "_git", lambda *_args, **_kwargs: pytest.fail("history traversal started"))
+    with pytest.raises(outgoing.OutgoingAdmissionUnavailable, match="admission is unavailable") as captured:
+        verify_outgoing(tmp_path, "/tmp/fixture-destination", [])
+    assert "fixture infrastructure detail" not in str(captured.value)
 
 
 @pytest.mark.parametrize("command", [

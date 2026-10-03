@@ -35,6 +35,10 @@ class _OutgoingFailed(RuntimeError):
     """Publication security evidence was unavailable or rejected."""
 
 
+class _AdmissionUnavailable(RuntimeError):
+    """Shared validation admission is unavailable, not a source finding."""
+
+
 def publication_window_open(now: datetime | None = None) -> bool:
     """Scheduled publication is limited to 02:00-06:00 New York, including DST."""
     local = (now or datetime.now(UTC)).astimezone(ZoneInfo("America/New_York"))
@@ -147,7 +151,12 @@ def _publish_isolated(project: Path, head: str, branch: str, remote: str,
     """Use canonical rules/PR/CI machinery without touching the active checkout."""
     from cli.lib.publish_workflow import PublishError, publish_git
 
-    from ..services.git.outgoing import OutgoingVerificationError, PushUpdate, verify_outgoing
+    from ..services.git.outgoing import (
+        OutgoingAdmissionUnavailable,
+        OutgoingVerificationError,
+        PushUpdate,
+        verify_outgoing,
+    )
 
     with tempfile.TemporaryDirectory(prefix="st-nightly-publish-") as directory:
         isolated = Path(directory) / "source"
@@ -181,6 +190,8 @@ def _publish_isolated(project: Path, head: str, branch: str, remote: str,
                 try:
                     verified = verify_outgoing(isolated, remote_url,
                         [PushUpdate(f"refs/heads/{branch}", head, destination_ref, old)], published_bases=published_bases)
+                except OutgoingAdmissionUnavailable as exc:
+                    raise _AdmissionUnavailable from exc
                 except OutgoingVerificationError as exc:
                     raise _OutgoingFailed from exc
                 security.update(state="success", commits_scanned=verified.commits_scanned,
@@ -218,6 +229,8 @@ def _publish_isolated(project: Path, head: str, branch: str, remote: str,
                 old = "0" * len(head)
         try:
             verified = verify_outgoing(isolated, remote_url, [PushUpdate(base_ref, head, base_ref, old)], published_bases=published_bases)
+        except OutgoingAdmissionUnavailable as exc:
+            raise _AdmissionUnavailable from exc
         except OutgoingVerificationError as exc:
             raise _OutgoingFailed from exc
         security.update(state="success", commits_scanned=verified.commits_scanned,
@@ -363,6 +376,11 @@ def publish_source_before_backup(source: dict[str, Any], *, retained: dict[str, 
         status = "published" if delivered.get("publication_complete") else "pending" if delivered.get("status") == "PENDING" else "failed"
         reason = ("uploaded_without_ci" if no_ci else "source_publication_verified") if delivered.get("publication_complete") else str(delivered.get("reason") or "remote_publication_unverified")
         return outcome(status, reason)
+    except _AdmissionUnavailable:
+        result["security"] = {"state": "unavailable", "sha": result.get("head")}
+        result["remote_status"] = "unknown"
+        result["action"] = "Restore shared heavy-work admission before retrying required outgoing verification"
+        return outcome("pending", "heavy_work_admission_unavailable")
     except _OutgoingFailed:
         result["security"] = {"state": "blocked", "sha": result.get("head")}
         result["action"] = "Inspect st vcs doctor and repair outgoing scanner, policy, history or secret findings before retry"

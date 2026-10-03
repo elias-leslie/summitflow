@@ -27,6 +27,7 @@ from app.project_identity import (
     list_project_identities,
 )
 from app.utils.env_files import project_env_files
+from app.utils.heavy_work import heavy_work
 from app.utils.shared_paths import get_repo_root
 
 from ..details import display_path, emit_result_or_details, summary_hint, write_details
@@ -185,17 +186,15 @@ def run(
     cwd: Path | None = None,
     env: dict[str, str] | None = None,
     quiet_success: bool = False,
+    _heavy: bool = False,
 ) -> int:
-    result = subprocess.run(
-        command,
-        cwd=cwd,
-        env=_command_env(command, env),
-        text=True,
-        capture_output=True,
-        encoding="utf-8",
-        errors="replace",
-        check=False,
-    )
+    options: dict[str, Any] = dict(cwd=cwd, env=_command_env(command, env), text=True,
+                   capture_output=True, encoding="utf-8", errors="replace", check=False)
+    if _heavy:
+        with heavy_work("managed service build/dependencies") as work:
+            result = work.run(command, **options)
+    else:
+        result = subprocess.run(command, **options)
     if result.returncode != 0 or not quiet_success:
         emit_result_or_details(cwd or get_repo_root(), _detail_name(command), "SERVICE", result)
     return result.returncode
@@ -633,7 +632,7 @@ def sync_backend(project: ProjectServices) -> int:
     extras = dict.fromkeys((*(("dev",) if "dev" in declared_extras else ()), *project.backend_extras))
     for extra in extras:
         command.extend(["--extra", extra])
-    return run(command, cwd=project.backend_dir, quiet_success=True)
+    return run(command, cwd=project.backend_dir, quiet_success=True, _heavy=True)
 
 
 def build_host_monitor(project: ProjectServices) -> int:
@@ -645,7 +644,7 @@ def build_host_monitor(project: ProjectServices) -> int:
         print("[service] host monitor requires Cargo.toml and Cargo.lock in accepted source")
         return 1
     print("[service] building locked host monitor")
-    code = run(["cargo", "build", "--locked", "--release"], cwd=source, quiet_success=True)
+    code = run(["cargo", "build", "--locked", "--release"], cwd=source, quiet_success=True, _heavy=True)
     if code == 0:
         host_monitor_deploy.build_helper(project.root)
     return code
@@ -841,10 +840,10 @@ def build_frontend(project: ProjectServices) -> int:
     if (project.frontend_dir / "package-lock.json").exists() and not (
         project.frontend_dir / "pnpm-lock.yaml"
     ).exists():
-        install = run(["npm", "ci"], cwd=project.frontend_dir, quiet_success=True)
+        install = run(["npm", "ci"], cwd=project.frontend_dir, quiet_success=True, _heavy=True)
         if install != 0:
             return install
-        return run(["npm", "run", "build"], cwd=project.frontend_dir, quiet_success=True)
+        return run(["npm", "run", "build"], cwd=project.frontend_dir, quiet_success=True, _heavy=True)
     # pnpm resolves workspace dependencies at the workspace root. Always verify
     # the frozen lock, even when an existing node_modules directory is present.
     install_dir = project.frontend_dir
@@ -856,7 +855,7 @@ def build_frontend(project: ProjectServices) -> int:
             install_dir = directory
             workspace = True
             break
-    install = run(["pnpm", "install", "--frozen-lockfile"], cwd=install_dir, quiet_success=True)
+    install = run(["pnpm", "install", "--frozen-lockfile"], cwd=install_dir, quiet_success=True, _heavy=True)
     if install != 0:
         return install
     if workspace:
@@ -864,10 +863,10 @@ def build_frontend(project: ProjectServices) -> int:
         # build order; build only this frontend's transitive workspace inputs.
         relative = project.frontend_dir.relative_to(install_dir).as_posix()
         dependencies = run(["pnpm", "--filter", f"{{./{relative}}}^...", "--if-present", "run", "build"],
-                           cwd=install_dir, quiet_success=True)
+                           cwd=install_dir, quiet_success=True, _heavy=True)
         if dependencies != 0:
             return dependencies
-    return run(["pnpm", "build"], cwd=project.frontend_dir, quiet_success=True)
+    return run(["pnpm", "build"], cwd=project.frontend_dir, quiet_success=True, _heavy=True)
 
 
 def run_migrations(project: ProjectServices) -> int:

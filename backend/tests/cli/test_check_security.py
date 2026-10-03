@@ -9,7 +9,19 @@ from unittest.mock import Mock
 
 import pytest
 
+from app.utils.heavy_work import HeavyWork
 from cli.commands import check_dispatch, check_security
+
+
+def test_security_admits_before_materializing_candidates(tmp_path, monkeypatch) -> None:
+    from app.utils import heavy_work as guard
+
+    def candidates(*_args):
+        assert getattr(guard._LOCAL, "work", None) is not None
+        return []
+
+    monkeypatch.setattr(check_security, "_candidate_paths", candidates)
+    assert check_security.run_local_security_check("gitleaks", tmp_path, [], False, []) == 0
 
 
 def test_gitleaks_materializes_only_changed_candidate_files(
@@ -28,7 +40,7 @@ def test_gitleaks_materializes_only_changed_candidate_files(
         assert not (candidate / "node_modules").exists()
         return subprocess.CompletedProcess(command, 0, "[]", "")
 
-    monkeypatch.setattr(check_security.subprocess, "run", run)
+    monkeypatch.setattr(HeavyWork, "run", staticmethod(run))
     assert check_security.run_local_security_check(
         "gitleaks", tmp_path, ["backend/app.py", "node_modules/secret.js"], True, []
     ) == 0
@@ -44,7 +56,7 @@ def test_gitleaks_is_required_and_redacts_findings(
         assert "--redact" in command
         raise FileNotFoundError("gitleaks")
 
-    monkeypatch.setattr(check_security.subprocess, "run", missing)
+    monkeypatch.setattr(HeavyWork, "run", staticmethod(missing))
     assert check_security.run_local_security_check(
         "gitleaks", tmp_path, ["secret.txt"], True, []
     ) == 127
@@ -58,7 +70,7 @@ def test_semgrep_without_local_rules_is_explicit_skip(
     source.write_text("pass\n")
     run = Mock()
     monkeypatch.delenv("SEMGREP_RULES", raising=False)
-    monkeypatch.setattr(check_security.subprocess, "run", run)
+    monkeypatch.setattr(HeavyWork, "run", run)
 
     assert check_security.run_local_security_check(
         "semgrep", tmp_path, ["app.py"], True, []
@@ -76,7 +88,7 @@ def test_semgrep_uses_only_local_rules_without_metrics_or_version_network(
     (tmp_path / "app.py").write_text("pass\n")
     (tmp_path / ".semgrep.yml").write_text("rules: []\n")
     run = Mock(return_value=subprocess.CompletedProcess([], 0, "{}", ""))
-    monkeypatch.setattr(check_security.subprocess, "run", run)
+    monkeypatch.setattr(HeavyWork, "run", run)
 
     assert check_security.run_local_security_check(
         "semgrep", tmp_path, ["app.py"], True, []
@@ -137,7 +149,7 @@ def test_osv_scans_only_candidate_lockfiles(
     lockfile.write_text("version = 1\n")
     (tmp_path / "pnpm-lock.yaml").write_text("lockfileVersion: '9'\n")
     run = Mock(return_value=subprocess.CompletedProcess([], 0, "{}", ""))
-    monkeypatch.setattr(check_security.subprocess, "run", run)
+    monkeypatch.setattr(HeavyWork, "run", run)
 
     assert check_security.run_local_security_check(
         "osv", tmp_path, ["backend/uv.lock"], True, []

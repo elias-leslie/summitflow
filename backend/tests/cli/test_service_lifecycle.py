@@ -14,6 +14,32 @@ from cli.commands import service
 from cli.lib import service_ops, service_release
 
 
+def test_service_admission_is_only_for_explicit_build_dependency_phases(monkeypatch, tmp_path):
+    admitted: list[str] = []
+    worker = Mock()
+    worker.run.return_value = subprocess.CompletedProcess([], 0, "", "")
+    ordinary = Mock(return_value=subprocess.CompletedProcess([], 0, "", ""))
+
+    @contextmanager
+    def admission(label):
+        admitted.append(label)
+        yield worker
+
+    monkeypatch.setattr(service_ops, "heavy_work", admission)
+    monkeypatch.setattr(service_ops.subprocess, "run", ordinary)
+    assert service_ops.run(["systemctl", "--user", "status"], cwd=tmp_path, quiet_success=True) == 0
+    assert admitted == []
+    ordinary.assert_called_once()
+    assert service_ops.run(["uv", "sync", "--locked"], cwd=tmp_path,
+                           env={"FIXTURE": "kept"}, quiet_success=True, _heavy=True) == 0
+    assert admitted == ["managed service build/dependencies"]
+    worker.run.assert_called_once()
+    assert worker.run.call_args.args == (["uv", "sync", "--locked"],)
+    assert worker.run.call_args.kwargs["cwd"] == tmp_path
+    assert worker.run.call_args.kwargs["env"]["FIXTURE"] == "kept"
+    ordinary.assert_called_once()
+
+
 @pytest.fixture
 def project(tmp_path: Path) -> service_ops.ProjectServices:
     return service_ops.ProjectServices(
@@ -218,6 +244,7 @@ def test_frontend_frozen_install_runs_at_workspace_root_and_keeps_cache(project,
     assert run.call_args_list[0].args[0] == ["pnpm", "install", "--frozen-lockfile"]
     assert run.call_args_list[0].kwargs["cwd"] == project.root
     assert run.call_args_list[-1].args[0] == ["pnpm", "build"]
+    assert all(call.kwargs["_heavy"] is True for call in run.call_args_list)
     assert (cache / "retained").exists()
 
 

@@ -109,7 +109,7 @@ def test_transient_deferral_does_not_create_repair(reason, monkeypatch):
 
 
 @pytest.mark.parametrize("reason", ["remote_authentication_unavailable", "remote_transport_unavailable",
-                                   "remote_api_unavailable", "remote_ci_unavailable"])
+                                   "remote_api_unavailable", "remote_ci_unavailable", "heavy_work_admission_unavailable"])
 def test_shared_outage_is_not_a_project_repair_even_with_failed_transport_status(reason, monkeypatch):
     recorder = Mock()
     monkeypatch.setattr(health, "record_finding", recorder)

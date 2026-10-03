@@ -7,14 +7,14 @@ import os
 import re
 import shlex
 import shutil
-import signal
 import subprocess
-from contextlib import suppress
 from pathlib import Path
 from typing import cast
 from uuid import uuid4
 
 import typer
+
+from app.utils.heavy_work import heavy_work
 
 from ..details import detail_path, display_path, summary_hint, write_details
 from ..lib.acceptance import AcceptanceError, accept_revision
@@ -114,22 +114,19 @@ _FRONTEND_TEST_TIMEOUT = 600
 
 def _run_frontend_script(command: list[str], cwd: Path, env: dict[str, str]) -> subprocess.CompletedProcess[str]:
     """Cap arbitrary manifest scripts and clean up their process group on timeout."""
-    with subprocess.Popen(
-        command, cwd=cwd, env={**env, "CI": "true", "NODE_ENV": "test"},
-        stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, encoding="utf-8",
-        errors="replace", start_new_session=True,
-    ) as process:
+    with heavy_work("frontend tests") as work:
         try:
-            stdout, stderr = process.communicate(timeout=_FRONTEND_TEST_TIMEOUT)
-        except subprocess.TimeoutExpired:
-            # The group may have completed at the deadline.
-            with suppress(ProcessLookupError):
-                os.killpg(process.pid, signal.SIGKILL)
-            stdout, stderr = process.communicate()
+            return work.run(
+                command, cwd=cwd, env={**env, "CI": "true", "NODE_ENV": "test"},
+                capture_output=True, text=True, encoding="utf-8", errors="replace",
+                timeout=_FRONTEND_TEST_TIMEOUT,
+            )
+        except subprocess.TimeoutExpired as exc:
+            stdout = exc.stdout.decode(errors="replace") if isinstance(exc.stdout, bytes) else exc.stdout or ""
+            stderr = exc.stderr.decode(errors="replace") if isinstance(exc.stderr, bytes) else exc.stderr or ""
             return subprocess.CompletedProcess(
                 command, 124, stdout, f"{stderr}\nFrontend tests exceeded {_FRONTEND_TEST_TIMEOUT}s; process group stopped."
             )
-        return subprocess.CompletedProcess(command, process.returncode, stdout, stderr)
 
 
 def _run_tool(name: str, config: dict[str, object], extra_args: list[str]) -> int:
@@ -170,16 +167,17 @@ def _run_tool(name: str, config: dict[str, object], extra_args: list[str]) -> in
         if name == "frontend-test":
             result = _run_frontend_script(command, cwd, tool_env(root, os.environ, name))
         else:
-            result = subprocess.run(
-                command,
-                cwd=cwd,
-                env=tool_env(root, os.environ, name),
-                capture_output=True,
-                text=True,
-                encoding="utf-8",
-                errors="replace",
-                check=False,
-            )
+            with heavy_work(f"check {name}") as work:
+                result = work.run(
+                    command,
+                    cwd=cwd,
+                    env=tool_env(root, os.environ, name),
+                    capture_output=True,
+                    text=True,
+                    encoding="utf-8",
+                    errors="replace",
+                    check=False,
+                )
     except OSError as exc:
         if name not in {"vitest", "frontend-test"} and isinstance(exc, FileNotFoundError) and tool_not_installed(name, root):
             print(f"{label}:SKIP:{name}:tool_not_installed")

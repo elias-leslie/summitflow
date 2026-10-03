@@ -1,13 +1,15 @@
-"""Subprocess helpers safe for ASGI request/service paths."""
+"""Native ASGI subprocess helpers and an explicitly separate CLI-owned adapter."""
 
 from __future__ import annotations
 
 import asyncio
 import contextlib
 import os
+import selectors
 import shutil
 import signal
 import subprocess
+import time
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -72,6 +74,163 @@ def run(args: Sequence[StrPath], **kwargs: Any) -> subprocess.CompletedProcess[A
 async def run_async(args: Sequence[StrPath], **kwargs: Any) -> subprocess.CompletedProcess[Any]:
     """Async adapter for safe subprocess calls."""
     return await asyncio.to_thread(run, args, **kwargs)
+
+
+def _stop_cli_owned_process(process: subprocess.Popen[Any]) -> None:
+    """Cancel only the CLI's captured owned subtree, including new sessions."""
+    def identity(pid: int) -> tuple[int, str]:
+        fields = Path(f"/proc/{pid}/stat").read_text().rsplit(")", 1)[1].split()
+        return int(fields[1]), fields[19]
+
+    snapshot: dict[int, tuple[int, str]] = {}
+    for entry in Path("/proc").iterdir():
+        if entry.name.isdigit():
+            with contextlib.suppress(OSError, ValueError):
+                snapshot[int(entry.name)] = identity(int(entry.name))
+    owned = {process.pid}
+    while additions := {pid for pid, (parent, _start) in snapshot.items() if parent in owned} - owned:
+        owned.update(additions)
+
+    def alive(pid: int) -> bool:
+        try:
+            return pid in snapshot and identity(pid)[1] == snapshot[pid][1]
+        except (OSError, ValueError):
+            return False
+
+    for sig in (signal.SIGTERM, signal.SIGKILL):
+        # The initial group remains ours after its leader exits. Pipe-holding
+        # children must not defeat timeout, but unrelated groups are not ours.
+        with contextlib.suppress(ProcessLookupError):
+            os.killpg(process.pid, sig)
+        for pid in [*sorted(owned - {process.pid}), process.pid]:
+            if alive(pid):
+                with contextlib.suppress(ProcessLookupError):
+                    os.kill(pid, sig)
+        try:
+            process.communicate(timeout=2)
+            if not any(alive(pid) for pid in owned - {process.pid}):
+                return
+        except subprocess.TimeoutExpired:
+            pass
+    # Already-reparented detached sessions are outside the captured subtree.
+    # Bound the final drain; never broaden signaling to unrelated processes.
+    try:
+        process.communicate(timeout=0)
+    except subprocess.TimeoutExpired:
+        for stream in (process.stdin, process.stdout, process.stderr):
+            if stream is not None:
+                stream.close()
+        process.wait(timeout=2)
+
+
+def run_cli_owned(
+    args: Sequence[StrPath], *, inherit_fds: Sequence[int], **kwargs: Any,
+) -> subprocess.CompletedProcess[Any]:
+    """CLI only: own a new session and its synchronous capture/timeout cleanup.
+
+    Unlike run()/run_inherited(), this may use Python fork. Resident ASGI/task
+    callers must keep using those native-spawn adapters, never this one.
+    """
+    if kwargs.pop("shell", False) or kwargs.get("preexec_fn") is not None:
+        raise ValueError("Owned CLI execution requires argv without preexec_fn")
+    if "pass_fds" in kwargs or "start_new_session" in kwargs:
+        raise ValueError("Owned CLI execution controls descriptor and session ownership")
+    check = kwargs.pop("check", False)
+    timeout = kwargs.pop("timeout", None)
+    data = kwargs.pop("input", None)
+    if kwargs.pop("capture_output", False):
+        if "stdout" in kwargs or "stderr" in kwargs:
+            raise ValueError("capture_output conflicts with stdout or stderr")
+        kwargs["stdout"] = subprocess.PIPE
+        kwargs["stderr"] = subprocess.PIPE
+    if data is not None:
+        if "stdin" in kwargs:
+            raise ValueError("stdin and input cannot both be supplied")
+        kwargs["stdin"] = subprocess.PIPE
+    argv = _argv(args, kwargs.get("env"))
+    with subprocess.Popen(argv, pass_fds=inherit_fds, start_new_session=True, **kwargs) as process:
+        try:
+            stdout, stderr = process.communicate(data, timeout=timeout)
+        except BaseException:
+            _stop_cli_owned_process(process)
+            raise
+    result = subprocess.CompletedProcess(list(args), process.returncode, stdout, stderr)
+    if check:
+        result.check_returncode()
+    return result
+
+
+def run_inherited(
+    args: Sequence[StrPath], *, inherit_fds: Sequence[int],
+    env: Mapping[str, str] | None = None, timeout: float | None = None,
+) -> subprocess.CompletedProcess[bytes]:
+    """Capture an owned scan with explicit lease FDs, still without Python fork.
+
+    DUP2 of the descriptor onto itself clears CLOEXEC only in the spawned child.
+    No temporary parent-inheritable descriptor leaks into unrelated services.
+    This narrow byte-output adapter is not a replacement for general run().
+    """
+    argv = _argv(args, env)
+    pipes = [os.pipe(), os.pipe()]
+    identities = {fd: (os.fstat(fd).st_dev, os.fstat(fd).st_ino) for pair in pipes for fd in pair}
+    pid = None
+    readers: set[int] = set()
+    outputs: dict[int, list[bytes]] = {read: [] for read, _write in pipes}
+    status = None
+    deadline = time.monotonic() + timeout if timeout is not None else None
+    try:
+        actions: list[tuple[int, int] | tuple[int, int, int]] = [
+            (os.POSIX_SPAWN_DUP2, fd, fd) for fd in dict.fromkeys(inherit_fds)
+        ]
+        actions.extend((os.POSIX_SPAWN_DUP2, write, target)
+                       for (_read, write), target in zip(pipes, (1, 2), strict=True))
+        actions.extend((os.POSIX_SPAWN_CLOSE, fd) for pair in pipes for fd in pair)
+        pid = os.posix_spawn(argv[0], argv, dict(os.environ if env is None else env),
+                             file_actions=actions, setpgroup=0)
+        for read, write in pipes:
+            os.close(write)
+            readers.add(read)
+        with selectors.DefaultSelector() as selector:
+            for read in readers:
+                selector.register(read, selectors.EVENT_READ)
+            while readers or status is None:
+                if deadline is not None and time.monotonic() >= deadline:
+                    assert timeout is not None
+                    raise subprocess.TimeoutExpired(argv, timeout)
+                delay = min(0.1, max(0, deadline - time.monotonic())) if deadline is not None else 0.1
+                for key, _events in selector.select(delay):
+                    data = os.read(key.fd, 65536)
+                    if data:
+                        outputs[key.fd].append(data)
+                    else:
+                        selector.unregister(key.fd)
+                        readers.remove(key.fd)
+                        os.close(key.fd)
+                if status is None:
+                    completed, observed = os.waitpid(pid, os.WNOHANG)
+                    if completed:
+                        status = observed
+        assert status is not None
+        return subprocess.CompletedProcess(list(args), _wait_status_to_returncode(status),
+                                           b"".join(outputs[pipes[0][0]]), b"".join(outputs[pipes[1][0]]))
+    except BaseException:
+        if pid is not None:
+            # Only the owned native scanner group; never an app/worker group.
+            with contextlib.suppress(ProcessLookupError):
+                os.killpg(pid, signal.SIGKILL)
+            if status is None:
+                with contextlib.suppress(ChildProcessError):
+                    os.waitpid(pid, 0)
+        raise
+    finally:
+        for pair in pipes:
+            for fd in pair:
+                # A just-closed FD can be reused by another web thread even
+                # during cancellation. Never close its unrelated replacement.
+                with contextlib.suppress(OSError):
+                    current = os.fstat(fd)
+                    if (current.st_dev, current.st_ino) == identities[fd]:
+                        os.close(fd)
 
 
 @dataclass

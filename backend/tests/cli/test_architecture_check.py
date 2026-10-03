@@ -26,3 +26,8 @@ def test_architecture_check_skips_when_changed_files_are_irrelevant(tmp_path: Pa
 
     output = capsys.readouterr().out
     assert "ARCH:SKIP:architecture:no_changed_paths" in output
+
+
+def test_shared_heavy_admission_keeps_raw_processes_behind_canonical_boundary() -> None:
+    root = Path(__file__).resolve().parents[3]
+    assert run_architecture_check(root, ["backend/app/utils/heavy_work.py"]) == 0

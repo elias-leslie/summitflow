@@ -332,7 +332,10 @@ def _acceptance_plan() -> dict[str, Any]:
     from cli.tool_registry import tool_registry_path
     backend = Path(__file__).resolve().parents[2]
     implementation = sorted((backend / "cli" / "commands").glob("check*.py"))
-    implementation.extend([Path(__file__), backend / "cli" / "main.py", backend / "cli" / "tool_registry.py", tool_registry_path()])
+    implementation.extend([
+        Path(__file__), backend / "cli" / "main.py", backend / "cli" / "tool_registry.py", tool_registry_path(),
+        backend / "app" / "utils" / "heavy_work.py", backend / "app" / "utils" / "safe_subprocess.py",
+    ])
     plan: dict[str, Any] = {
         "commands": [list(command) for command in _ACCEPTANCE_COMMANDS],
         "toolchain": {"st": {"entrypoint": "cli.main:app"}},
