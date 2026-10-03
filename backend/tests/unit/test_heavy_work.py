@@ -145,6 +145,21 @@ def test_reentrant_descendant_after_default_close_fds(lane: Path, tmp_path: Path
     assert os.getpriority(os.PRIO_PROCESS, 0) == before
 
 
+@pytest.mark.parametrize("relative_path", [False, True])
+def test_executable_discovery_uses_child_cwd(lane: Path, tmp_path: Path, relative_path: bool) -> None:
+    child_cwd = tmp_path / "child"
+    binary_dir = child_cwd / "scripts"
+    binary_dir.mkdir(parents=True)
+    executable = binary_dir / "validate-fixture"
+    executable.write_text("#!/bin/sh\nprintf 'child-command\\n'\nexit 7\n")
+    executable.chmod(0o755)
+    command = "validate-fixture" if relative_path else "./scripts/validate-fixture"
+    environment = {"PATH": "scripts" if relative_path else os.defpath}
+    with guard.heavy_work("child-directory command") as work:
+        result = work.run([command], cwd=child_cwd, env=environment, capture_output=True, text=True)
+    assert result.returncode == 7 and result.stdout == "child-command\n"
+
+
 def test_worker_settings_preserve_smaller_values_and_only_child_priority(lane: Path) -> None:
     before = os.getpriority(os.PRIO_PROCESS, 0)
     code = ("import os,json,subprocess; print(json.dumps([os.getpriority(os.PRIO_PROCESS,0),"

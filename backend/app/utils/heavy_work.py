@@ -176,7 +176,14 @@ class HeavyWork:
         kwargs["env"] = self.environment(kwargs.get("env"))
         # Wrapping with nice/ionice must not hide FileNotFoundError and turn an
         # existing not-applicable missing-tool result into a product failure.
-        if command and shutil.which(command[0], path=kwargs["env"].get("PATH")) is None:
+        executable = command[0] if command else ""
+        search_path = kwargs["env"].get("PATH", os.defpath)
+        if kwargs.get("cwd") is not None:
+            child_cwd = os.path.abspath(os.fsdecode(kwargs["cwd"]))
+            if os.path.dirname(executable):
+                executable = os.path.join(child_cwd, executable)
+            search_path = os.pathsep.join(os.path.join(child_cwd, entry) for entry in search_path.split(os.pathsep))
+        if command and shutil.which(executable, path=search_path) is None:
             raise FileNotFoundError(command[0])
         observed = safe_subprocess.run_cli_owned(self.command(command), inherit_fds=self.pass_fds, **kwargs)
         result = subprocess.CompletedProcess(list(command), observed.returncode, observed.stdout, observed.stderr)
