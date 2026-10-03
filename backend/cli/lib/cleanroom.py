@@ -12,6 +12,7 @@ from collections.abc import Iterable, Mapping
 from pathlib import Path
 
 from app.utils.env_files import project_env_files, scrub_env_keys_from_files
+from app.utils.heavy_work import heavy_work
 
 _BASE_UNSET_KEYS = (
     "BASH_ENV",
@@ -144,29 +145,33 @@ def run_cleanroom(
     if not command:
         raise ValueError("command is required")
 
-    temp_dir = tempfile.mkdtemp(prefix=f"{project_root.name}-cleanroom-")
-    clean_up = not keep_dir
-    snapshot_root = Path(temp_dir) / "repo"
-    home_root = Path(temp_dir) / "home"
-    snapshot_root.mkdir(parents=True, exist_ok=True)
+    # This isolated execution route is used for installs, lock resolution and
+    # gates. Admit before copying/staging the checkout as well as spawning the
+    # command; ordinary ST inspection does not use this route.
+    with heavy_work("isolated validation") as work:
+        temp_dir = tempfile.mkdtemp(prefix=f"{project_root.name}-cleanroom-")
+        clean_up = not keep_dir
+        snapshot_root = Path(temp_dir) / "repo"
+        home_root = Path(temp_dir) / "home"
+        snapshot_root.mkdir(parents=True, exist_ok=True)
 
-    try:
-        create_snapshot(project_root, snapshot_root)
-        initialize_snapshot_git(snapshot_root)
-        env = build_cleanroom_env(
-            project_root,
-            snapshot_root,
-            home_root,
-            env_overrides=env_overrides,
-            unset_keys=unset_keys,
-        )
-        completed = subprocess.run(command, cwd=snapshot_root, env=env)
-        return completed.returncode
-    finally:
-        if clean_up:
-            shutil.rmtree(temp_dir, ignore_errors=True)
-        else:
-            print(f"CLEANROOM:kept:{temp_dir}", file=sys.stderr)
+        try:
+            create_snapshot(project_root, snapshot_root)
+            initialize_snapshot_git(snapshot_root)
+            env = build_cleanroom_env(
+                project_root,
+                snapshot_root,
+                home_root,
+                env_overrides=env_overrides,
+                unset_keys=unset_keys,
+            )
+            completed = work.run(command, cwd=snapshot_root, env=env)
+            return completed.returncode
+        finally:
+            if clean_up:
+                shutil.rmtree(temp_dir, ignore_errors=True)
+            else:
+                print(f"CLEANROOM:kept:{temp_dir}", file=sys.stderr)
 
 
 def _build_parser() -> argparse.ArgumentParser:

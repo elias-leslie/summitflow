@@ -7,6 +7,13 @@ storage failures fail closed. No tool, required gate, or tool timeout is skipped
 or shortened. Runtime services, systemctl, ordinary inspection and the resident
 API/task workers are not reniced or admitted into this lane.
 
+`st check cleanroom` also acquires admission before materializing its isolated
+checkout and running the supplied command. This specialized validation/install
+route preserves its environment isolation, return code and cleanup behavior;
+its child receives the same lower priority and bounded worker settings. Nested
+canonical checks inherit admission rather than deadlocking. It is not a route
+for ordinary status or source inspection.
+
 The private `/tmp/st-heavy-<uid>` directory is independent of project and HOME.
 Owner, type, mode, link and symlink checks protect its lock files. There is no
 daemon, environment bypass, per-project policy store or new service. A live
