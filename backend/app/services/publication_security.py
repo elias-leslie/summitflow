@@ -23,6 +23,7 @@ _UNAVAILABLE_CODEQL_MESSAGES = frozenset({
     "GitHub Advanced Security must be enabled for this repository to use code scanning",
     "Advanced Security must be enabled for this repository to use code scanning",
     "Code scanning is not enabled for this repository",
+    "Code scanning is not enabled for this repository. Please enable code scanning in the repository settings",
 })
 
 
