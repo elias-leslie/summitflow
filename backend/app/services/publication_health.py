@@ -86,6 +86,12 @@ def record_publication_observation(project_id: str, result: dict[str, Any]) -> s
     task_id = record_finding(project_id, "publication", observation, resolved=observation["state"] == "verified")
     if observation["state"] == "verified":
         record_finding(project_id, "outgoing_security", observation, resolved=True)
+        # This proves CI now exists AND passes for the accepted source. Resolve
+        # only the known missing-CI setup cause, never arbitrary CI policy or
+        # independent CodeQL findings. Storage still requires failed-source
+        # inclusion, observation ordering, and an exact-category CAS.
+        record_finding(project_id, "cloud_ci", observation, resolved=True,
+                       resolution_reasons=frozenset({"cloud_ci_missing"}))
     return task_id
 
 
@@ -194,7 +200,7 @@ def publication_completion_gates(task: dict[str, Any], source: str | None, *,
         if not confirmation:
             return [{"gate": "remote_confirmation", "pass": False,
                      "detail": "Accepted repair source awaits verified nightly remote checks."}]
-    elif health["state"] == "blocked" or repair_id:
+    elif health["state"] == "blocked":
         return [{"gate": "project_repair", "pass": False,
                  "detail": f"Resolve rolling repair task {repair_id or 'nightly publication defect'} before completion."}]
     return []

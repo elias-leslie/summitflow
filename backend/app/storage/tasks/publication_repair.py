@@ -93,7 +93,8 @@ def _resolution_includes_failure(project_id: str, previous: dict[str, Any], obse
         return False
 
 
-def record_finding(project_id: str, category: str, observation: dict[str, Any], *, resolved: bool) -> str | None:
+def record_finding(project_id: str, category: str, observation: dict[str, Any], *, resolved: bool,
+                   resolution_reasons: frozenset[str] | None = None) -> str | None:
     """Serialize task creation and merge a category without overwriting independent evidence."""
     # Do not hold a pooled slot while the canonical task/spirit APIs use the
     # pool: concurrent project observations would exhaust it and deadlock.
@@ -130,6 +131,11 @@ def record_finding(project_id: str, category: str, observation: dict[str, Any], 
                 raise ValueError("Resolution requires a timestamped observation") from None
             timestamp = datetime.now(UTC)
         previous = ((task.get("verification_result") or {}).get("publication_repair") or {}).get(category) or {}
+        # A narrow cause-specific resolution must not clear other policy or
+        # coverage findings sharing the category. The exact previous category
+        # remains covered by the source proof and compare-and-swap below.
+        if resolved and resolution_reasons is not None and previous.get("reason") not in resolution_reasons:
+            return str(task["id"])
         if previous.get("observed_at"):
             previous_time = datetime.fromisoformat(previous["observed_at"])
             # Equal timestamps prefer the failure: callbacks can arrive in

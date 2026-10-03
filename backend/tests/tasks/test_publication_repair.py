@@ -133,7 +133,7 @@ def test_cancel_or_delete_cannot_hide_independent_findings(test_project_id, clea
     assert get_repair_task(test_project_id) is not None
 
 
-@pytest.mark.parametrize("category", ["publication", "outgoing_security", "codeql"])
+@pytest.mark.parametrize("category", ["publication", "outgoing_security", "codeql", "cloud_ci"])
 @pytest.mark.parametrize(("failed_key", "successful_key", "resolved"), [
     ("failed", "failed", True), ("failed", "fixed", True),
     ("failed", "base", False), ("failed", "divergent", False),
@@ -157,6 +157,27 @@ def test_later_success_must_include_failed_source(
     assert task is not None
     finding = task["verification_result"]["publication_repair"][category]
     assert finding == {**(success if resolved else failed), "state": "resolved" if resolved else "unresolved"}
+
+
+@pytest.mark.parametrize("reason", ["cloud_ci_missing", "ci_policy_needs_review", None])
+def test_restricted_resolution_preserves_other_ci_causes(
+    test_project_id, cleanup_task, source_history, reason,
+):
+    failed = {"observed_at": "2026-10-02T08:00:00+00:00",
+              "source_commit": source_history["failed"], "reason": reason}
+    task_id = record_finding(test_project_id, "cloud_ci", failed, resolved=False)
+    assert task_id is not None
+    cleanup_task(task_id)
+    success = {"observed_at": "2026-10-03T08:00:00+00:00",
+               "source_commit": source_history["fixed"], "reason": "source_publication_verified"}
+    record_finding(test_project_id, "cloud_ci", success, resolved=True,
+                   resolution_reasons=frozenset({"cloud_ci_missing"}))
+    task = get_repair_task(test_project_id)
+    assert task is not None
+    resolved = reason == "cloud_ci_missing"
+    assert task["verification_result"]["publication_repair"]["cloud_ci"] == {
+        **(success if resolved else failed), "state": "resolved" if resolved else "unresolved",
+    }
 
 
 def test_resolution_does_not_substitute_accepted_source_for_actual_failed_source(

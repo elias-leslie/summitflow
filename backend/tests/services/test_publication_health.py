@@ -122,13 +122,37 @@ def test_success_does_not_resolve_independent_codeql_findings(monkeypatch):
     recorder = Mock()
     monkeypatch.setattr(health, "record_finding", recorder)
     health.record_publication_observation("project", verified())
-    assert {call.args[1] for call in recorder.call_args_list} == {"publication", "outgoing_security"}
+    assert "codeql" not in {call.args[1] for call in recorder.call_args_list}
+
+
+def test_verified_publication_resolves_only_known_missing_ci_cause(monkeypatch):
+    recorder = Mock()
+    monkeypatch.setattr(health, "record_finding", recorder)
+    health.record_publication_observation("project", verified())
+    recorder.assert_any_call(
+        "project", "cloud_ci", health.classify_observation(verified()),
+        resolved=True, resolution_reasons=frozenset({"cloud_ci_missing"}),
+    )
+
+
+@pytest.mark.parametrize("override", [
+    {"publication_complete": False},
+    {"ci": {"state": "pending", "sha": SHA}},
+    {"ci": {"state": "failed", "sha": SHA}},
+    {"ci": {"state": "not_applicable", "sha": SHA}},
+])
+def test_missing_ci_is_not_resolved_by_incomplete_or_failed_publication(monkeypatch, override):
+    recorder = Mock()
+    monkeypatch.setattr(health, "record_finding", recorder)
+    health.record_publication_observation("project", verified(**override))
+    assert "cloud_ci" not in {call.args[1] for call in recorder.call_args_list}
 
 
 @pytest.mark.parametrize("state", ["pending", "unknown", "verified", "published"])
-def test_normal_publication_states_allow_local_completion(state, monkeypatch):
+@pytest.mark.parametrize("repair_id", [None, "repair"])
+def test_normal_publication_states_allow_local_completion(state, repair_id, monkeypatch):
     monkeypatch.setattr(health, "get_project_publication_health", lambda _pid: {
-        "state": state, "repair_task_id": None, "unresolved_categories": [],
+        "state": state, "repair_task_id": repair_id, "unresolved_categories": [],
     })
     assert completion_gates({"id": "normal", "project_id": "project", "commits": [SHA],
                              "verification_result": {"acceptance": {"state": "success", "source_commit": SHA}}}) == []
