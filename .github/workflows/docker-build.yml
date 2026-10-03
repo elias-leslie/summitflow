@@ -13,7 +13,36 @@ permissions:
   packages: write
 
 jobs:
+  source-ci:
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+      actions: read
+    steps:
+      - name: Require observed successful CI for the exact image source
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          SOURCE_SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          observed="$(gh api --paginate --slurp "repos/${GITHUB_REPOSITORY}/actions/workflows/ci.yml/runs?head_sha=${SOURCE_SHA}&event=push&per_page=100")"
+          python3 -c '
+          import json, os, sys
+          sha = os.environ["SOURCE_SHA"]
+          runs = [run for page in json.load(sys.stdin) for run in page["workflow_runs"]
+                  if run.get("head_sha") == sha and run.get("event") == "push"]
+          latest = max(runs, key=lambda run: (run["run_number"], run.get("run_attempt", 1))) if runs else None
+          if latest is None or latest.get("status") != "completed":
+              print("Image publication pending: exact-source CI has not completed.")
+              sys.exit(1)
+          if latest.get("conclusion") != "success":
+              print("Image publication refused: latest exact-source CI did not succeed.")
+              sys.exit(1)
+          print("Image source CI verified: " + sha + " run=" + str(latest["id"]))
+          ' <<< "$observed"
+
   pack-workspace:
+    needs: source-ci
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5
@@ -35,10 +64,9 @@ jobs:
           name: workspace-packages
           path: |
             /tmp/workspace-packages/*.tgz
-            /tmp/workspace-packages/*.whl
 
   build:
-    needs: pack-workspace
+    needs: [source-ci, pack-workspace]
     runs-on: ubuntu-24.04
     strategy:
       matrix:
@@ -77,6 +105,7 @@ jobs:
           cache-to: type=gha,mode=max
 
   agent-browser:
+    needs: source-ci
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5

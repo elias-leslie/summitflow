@@ -58,7 +58,7 @@ def queue(monkeypatch: pytest.MonkeyPatch, tmp_path: Path):
             raise outcome
         return {"verification_json": {"offsite": {"status": outcome, "error": "offline"}}}
 
-    def publish(source):
+    def publish(source, *, retained=None):
         state["publish"].append(source["id"])
         outcome = state["publish_outcomes"].get(source["id"], "published")
         if isinstance(outcome, Exception):
@@ -75,6 +75,7 @@ def queue(monkeypatch: pytest.MonkeyPatch, tmp_path: Path):
     monkeypatch.setattr(drain.backup_store, "merge_backup_verification_json", merge)
     publication_module = ModuleType("app.tasks.backup_publish")
     monkeypatch.setattr(publication_module, "publish_source_before_backup", publish, raising=False)
+    monkeypatch.setattr(publication_module, "publication_window_open", lambda: state.get("window_open", True), raising=False)
     monkeypatch.setitem(sys.modules, "app.tasks.backup_publish", publication_module)
     return drain, state
 
@@ -241,6 +242,20 @@ def test_publication_retry_is_gated_by_existing_setting(queue):
     drain, state = queue
     state["publication"] = [record(offsite="verified", publication="failed")]
     assert drain.drain_pending_backups()["publication_pending_before"] == 0
+
+
+def test_publication_window_closure_preserves_retry_and_still_drains_offsite(queue):
+    drain, state = queue
+    state["settings"].backup_publish_before_backup = True
+    state["window_open"] = False
+    retained = record(offsite="failed", publication="pending")
+    state["publication"] = [retained]
+    state["offsite"] = [retained]
+    result = drain.drain_pending_backups()
+    assert state["publish"] == [] and state["merges"] == []
+    assert state["sync"] == [retained["id"]]
+    assert result["publication_remaining"] == 1 and result["publication_skipped"] == 1
+    assert result["offsite_verified"] == 1
     assert not state["publish"]
 
 

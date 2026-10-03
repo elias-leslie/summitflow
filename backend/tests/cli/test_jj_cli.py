@@ -330,6 +330,7 @@ def test_publish_without_task_uses_current_bookmark(tmp_path: Path) -> None:
         patch("cli.lib.jj_publish.revision_info", return_value=revision),
         patch("cli.lib.jj_publish.run_checks", return_value=(True, "ok")),
         patch("cli.lib.jj_publish.run_git", return_value=subprocess.CompletedProcess([], 0, "/tmp/remote.git", "")),
+        patch("cli.lib.jj_publish._verify_jj_outgoing") as verify,
         patch("cli.lib.jj_publish.display_branch", return_value="main"),
         patch("cli.lib.jj_publish.latest_operation_id", return_value="op"),
         patch("cli.lib.jj_publish.run_jj") as mock_run_jj,
@@ -342,8 +343,9 @@ def test_publish_without_task_uses_current_bookmark(tmp_path: Path) -> None:
     assert call(tmp_path, ["bookmark", "set", "main", "-r", "@"]) in mock_run_jj.call_args_list
     assert call(
         tmp_path,
-        ["git", "push", "--remote", "origin", "--bookmark", "main", "--allow-empty-description"],
+        ["git", "push", "--remote", "origin", "--bookmark", "exact:main", "--allow-empty-description"],
     ) in mock_run_jj.call_args_list
+    verify.assert_called_once_with(tmp_path, "/tmp/remote.git", "main", "origin")
 
 
 def test_publish_can_target_named_revision(tmp_path: Path) -> None:
@@ -360,6 +362,7 @@ def test_publish_can_target_named_revision(tmp_path: Path) -> None:
         patch("cli.lib.jj_publish.revision_info", return_value=revision),
         patch("cli.lib.jj_publish.run_checks", return_value=(True, "ok")),
         patch("cli.lib.jj_publish.run_git", return_value=subprocess.CompletedProcess([], 0, "/tmp/remote.git", "")),
+        patch("cli.lib.jj_publish._verify_jj_outgoing"),
         patch("cli.lib.jj_publish.latest_operation_id", return_value="op"),
         patch("cli.lib.jj_publish.run_jj") as mock_run_jj,
     ):
@@ -376,6 +379,7 @@ def test_delete_task_bookmark_pushes_deleted_bookmarks(tmp_path: Path) -> None:
     (tmp_path / ".git").mkdir()
     with (
         patch("cli.lib.jj_publish.latest_operation_id", return_value="op"),
+        patch("cli.lib.jj_publish._verify_jj_outgoing") as verify,
         patch("cli.lib.jj_publish.run_jj") as mock_run_jj,
     ):
         mock_run_jj.return_value = subprocess.CompletedProcess(args=[], returncode=0, stdout="", stderr="")
@@ -387,9 +391,10 @@ def test_delete_task_bookmark_pushes_deleted_bookmarks(tmp_path: Path) -> None:
         call(tmp_path, ["bookmark", "delete", "task/old/main"]),
         call(
             tmp_path,
-            ["git", "push", "--remote", "origin", "--deleted"],
+            ["git", "push", "--remote", "origin", "--bookmark", "exact:task/old/main"],
         ),
     ]
+    verify.assert_called_once_with(tmp_path, "0" * 40, "task/old/main", "origin", deleting=True)
 
 
 def test_delete_task_bookmark_tolerates_already_deleted_local_bookmark(tmp_path: Path) -> None:
@@ -404,6 +409,7 @@ def test_delete_task_bookmark_tolerates_already_deleted_local_bookmark(tmp_path:
     ok = subprocess.CompletedProcess(args=[], returncode=0, stdout="", stderr="")
     with (
         patch("cli.lib.jj_publish.latest_operation_id", return_value="op"),
+        patch("cli.lib.jj_publish._verify_jj_outgoing"),
         patch("cli.lib.jj_publish.run_jj", side_effect=[missing, ok]) as mock_run_jj,
     ):
         result = jj_lib.delete_task_bookmark(tmp_path, bookmark="task/old/main")
@@ -411,7 +417,7 @@ def test_delete_task_bookmark_tolerates_already_deleted_local_bookmark(tmp_path:
     assert result["bookmark"] == "task/old/main"
     assert mock_run_jj.call_args_list == [
         call(tmp_path, ["bookmark", "delete", "task/old/main"]),
-        call(tmp_path, ["git", "push", "--remote", "origin", "--deleted"]),
+        call(tmp_path, ["git", "push", "--remote", "origin", "--bookmark", "exact:task/old/main"]),
     ]
 
 

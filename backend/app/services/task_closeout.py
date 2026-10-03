@@ -16,7 +16,8 @@ from app.storage.tasks.closeout import closeout_lock, pending_closeout_ids, stor
 
 
 def request_closeout(task_id: str, project_id: str, *, source_sha: str,
-                     message: str | None, paths: tuple[str, ...] = ()) -> dict[str, Any]:
+                     message: str | None, paths: tuple[str, ...] = (),
+                     require_remote_confirmation: bool = False) -> dict[str, Any]:
     """Called only after canonical local quality, diff and readiness gates pass."""
     if not re.fullmatch(r"[0-9a-f]{40}|[0-9a-f]{64}", source_sha):
         raise ValueError("Closeout requires a full immutable source commit")
@@ -34,6 +35,7 @@ def request_closeout(task_id: str, project_id: str, *, source_sha: str,
         intent = {"request_id": str(uuid.uuid4()), "state": "pending", "source_sha": source_sha,
                   "project_id": project_id, "task_id": task_id, "message": message or task["title"],
                   "paths": list(paths), "requested_at": datetime.now(UTC).isoformat(),
+                  "require_remote_confirmation": require_remote_confirmation,
                   "local_gates": "canonical_done_prerequisites_satisfied"}
         store_closeout(task_id, project_id, intent)
         from app.storage.events import log_task_event
@@ -83,7 +85,31 @@ def resume_closeout(task_id: str, *, explicit: bool = False) -> dict[str, Any]:
         result: dict[str, Any] = {}
         previous_state = intent["state"]
         try:
-            if not locally_complete and not (intent.get("publication") or {}).get("publication_complete"):
+            if intent.get("require_remote_confirmation"):
+                # Repair confirmation observes nightly evidence only. A daytime
+                # closeout continuation may never publish or merge on its own.
+                from app.services.publication_health import (
+                    confirmation_for_source,
+                    repair_attempt_failed,
+                )
+                result = confirmation_for_source(project_id, intent["source_sha"]) or {}
+                if not result:
+                    failed = repair_attempt_failed(project_id, intent["source_sha"], intent["requested_at"])
+                    intent.update(state="blocked" if failed else "pending",
+                                  reason="nightly_repair_attempt_failed" if failed else "nightly_repair_confirmation_pending",
+                                  observed_at=datetime.now(UTC).isoformat())
+                    if not store_closeout(task_id, project_id, intent, expected_request_id=request_id):
+                        return {"action": "skipped", "task_id": task_id, "reason": "completion_request_superseded"}
+                    if failed:
+                        from app.storage.tasks.closeout import release_closeout_claim
+                        release_closeout_claim(task_id, project_id, request_id)
+                        log_task_event(task_id, "Nightly repair attempt failed; evidence retained and repair returned to pickup.")
+                    return {"action": intent["state"], "task_id": task_id, "project_id": project_id,
+                            "reason": intent["reason"]}
+                intent.update(publication=result, observed_at=datetime.now(UTC).isoformat())
+                if not store_closeout(task_id, project_id, intent, expected_request_id=request_id):
+                    return {"action": "skipped", "task_id": task_id, "reason": "completion_request_superseded"}
+            elif not locally_complete and not (intent.get("publication") or {}).get("publication_complete"):
                 result = publish_git(Path(root), sha=intent["source_sha"], task_id=task_id,
                                      message=str(intent["message"]), run_git=run_git, resume=True)
                 result = _record_task_publication(Path(root), result, task_id=task_id, push=True)
@@ -119,7 +145,7 @@ def resume_closeout(task_id: str, *, explicit: bool = False) -> dict[str, Any]:
             intent.update(state="complete", completed_at=datetime.now(UTC).isoformat(), reason="")
             if not store_closeout(task_id, project_id, intent, expected_request_id=request_id):
                 return {"action": "skipped", "task_id": task_id, "reason": "completion_request_superseded"}
-            log_task_event(task_id, "Closeout cleanup completed from retained acceptance evidence; publication is independent.")
+            log_task_event(task_id, "Closeout cleanup completed from retained acceptance and required confirmation evidence.")
             publication = intent.get("publication")
             published = isinstance(publication, dict) and bool(publication.get("publication_complete"))
             return {"action": "completed", "task_id": task_id, "project_id": project_id,
@@ -137,12 +163,13 @@ def resume_closeout(task_id: str, *, explicit: bool = False) -> dict[str, Any]:
 def checkpoint_state(status: str, verification: dict[str, Any] | None) -> tuple[str, str]:
     """Shared UI/CLI description; a checkpoint does not prove a live agent."""
     verification = verification or {}
-    if status == "completed" and (verification.get("acceptance") or {}).get("state") == "success":
-        return "complete", "Completed locally; publication is independent"
     closeout = verification.get("closeout") or {}
+    if (status == "completed" and (verification.get("acceptance") or {}).get("state") == "success"
+            and not (closeout.get("require_remote_confirmation") and closeout.get("state") != "complete")):
+        return "complete", "Completed locally; publication is independent"
     publication = verification.get("publication") or {}
     if closeout.get("state") == "pending":
-        return "waiting_checks", "Publication closeout continues automatically"
+        return "waiting_checks", "Required nightly repair confirmation continues automatically"
     if closeout.get("state") == "blocked" or (publication.get("ci") or {}).get("state") == "failed":
         return "blocked", closeout.get("reason") or "Retained publication checks need investigation"
     return ("claimed" if status == "running" else "open"), "Open task checkpoint; this does not establish a live agent session"

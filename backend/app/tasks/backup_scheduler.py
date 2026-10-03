@@ -128,7 +128,16 @@ def _process_due_source(
             # Publication is useful redundancy, never a prerequisite for WIP
             # recovery. Avoid persisting raw Git/OAuth diagnostics.
             logger.warning("backup_publication_failed", source_id=source_id)
-            publication = {"status": "failed", "reason": "publication-unavailable"}
+            publication = {"status": "failed", "reason": "publication-unavailable", "publication_complete": False,
+                           "observed_at": datetime.now(UTC).isoformat(), "backup_can_continue": True}
+        # Publication observations are independent of archive capture. In
+        # particular, a failed backup must not discard an actionable finding.
+        if source.get("source_type") == "project" or source.get("project_id"):
+            try:
+                from ..services.publication_health import record_publication_observation
+                record_publication_observation(str(project_id), publication)
+            except Exception:
+                logger.warning("backup_publication_health_ingestion_unavailable", source_id=source_id)
 
     result = create_backup(
         project_id=project_id,
@@ -156,7 +165,9 @@ def _process_due_source(
 
     if publication is not None and result.get("backup_id"):
         try:
-            backup_store.merge_backup_verification_json(str(result["backup_id"]), {"publication": publication})
+            backup_store.merge_backup_verification_json(str(result["backup_id"]), {
+                "publication": publication, "publish_before_backup": publication,
+            })
         except Exception:
             logger.warning("backup_publication_evidence_failed", source_id=source_id)
 

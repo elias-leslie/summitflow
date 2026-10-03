@@ -34,6 +34,28 @@ app = typer.Typer(
     )
 )
 
+
+@app.command("publication")
+@usage(surface="st.vcs.publication", cmd="st vcs publication", when="read last nightly publication and repair status",
+       precautions=("read-only; unknown is not passing CI",), tier="reference")
+def publication_status() -> None:
+    """Read-only lightweight startup status, without a network CI wait."""
+    from app.services.publication_health import (
+        format_publication_health,
+        get_project_publication_health,
+    )
+    from cli.config import get_config_optional
+
+    project_id = get_config_optional().project_id
+    if not project_id:
+        typer.echo("Nightly publication: unknown; no registered project for this directory.")
+        return
+    try:
+        health = get_project_publication_health(project_id)
+        typer.echo(format_publication_health(health))
+    except Exception:
+        typer.echo("Nightly publication: unknown; status unavailable. Inspect ST before claiming completion.")
+
 _IGNORED_WORKSPACE_REPO_NAMES = frozenset({"claude-config", "codex-config"})
 
 

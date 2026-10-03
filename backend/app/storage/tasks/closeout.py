@@ -37,6 +37,18 @@ def pending_closeout_ids() -> list[str]:
         return [row[0] for row in cur.fetchall()]
 
 
+def release_closeout_claim(task_id: str, project_id: str, request_id: str) -> bool:
+    """Release an exact queued request without invalidating its accepted source."""
+    with get_connection() as conn, conn.cursor() as cur:
+        cur.execute("""UPDATE tasks SET status = 'pending', claimed_by = NULL,
+                       claimed_at = NULL, lock_expires_at = NULL, updated_at = NOW()
+                       WHERE id = %s AND project_id = %s AND status IN ('pending','running')
+                       AND verification_result->'closeout'->>'request_id' = %s
+                       AND verification_result->'closeout'->>'state' IN ('pending','blocked')""",
+                    (canonicalize_task_id(task_id), project_id, request_id))
+        return cur.rowcount == 1
+
+
 def store_verification(task_id: str, project_id: str, receipts: dict[str, Any]) -> None:
     """Merge source-bound local evidence without overwriting publication/history."""
     if not receipts or set(receipts) - {"acceptance", "deployment", "live_validation"}:

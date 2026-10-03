@@ -5,6 +5,8 @@ from __future__ import annotations
 from collections.abc import Callable
 from typing import Any
 
+import psycopg
+
 from .._sql import static_sql
 from ..connection import get_connection, get_cursor
 from .models import BACKUP_COLUMNS, row_to_backup
@@ -229,6 +231,7 @@ def get_latest_backup(
     project_id: str | None = None,
     source_id: str | None = None,
     verification_key: str | None = None,
+    *, connection: psycopg.Connection | None = None,
 ) -> dict[str, Any] | None:
     """Get the most recent completed backup for a source or project.
 
@@ -258,7 +261,7 @@ def get_latest_backup(
         filters.append("verification_json ? %s")
         params.append(verification_key)
 
-    with get_cursor() as cur:
+    with (connection.cursor() if connection else get_cursor()) as cur:
         cur.execute(
             static_sql(
                 f"SELECT {BACKUP_COLUMNS} FROM backups "

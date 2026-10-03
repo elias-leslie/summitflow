@@ -4,6 +4,7 @@ from __future__ import annotations
 import base64
 import json
 import subprocess
+from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 from urllib.parse import quote, urlencode
@@ -15,6 +16,33 @@ from .workflow_filters import ordered_match
 
 class GitHubError(RuntimeError):
     """GitHub could not safely complete publication."""
+
+    def __init__(self, message: str, *, unavailable: bool = False,
+                 reason: str = 'remote_publication_failed', status_code: int | None = None,
+                 response_message: str | None = None):
+        super().__init__(message)
+        self.unavailable = unavailable
+        self.reason = reason
+        self.status_code = status_code
+        self.response_message = response_message
+
+
+def _response(output: str) -> tuple[int | None, dict[str, str], str]:
+    """Read gh --include's structured HTTP envelope, never stderr diagnostics."""
+    if not output.startswith('HTTP/'):
+        return None, {}, output
+    envelope, separator, body = output.replace('\r\n', '\n').partition('\n\n')
+    try:
+        code = int(envelope.splitlines()[0].split()[1])
+        headers = {key.lower(): value.strip() for key, value in (
+            line.split(':', 1) for line in envelope.splitlines()[1:] if ':' in line)}
+    except (ValueError, IndexError) as exc:
+        raise GitHubError('GitHub HTTP envelope is unreadable', unavailable=True,
+                          reason='remote_api_unavailable') from exc
+    if not separator:
+        raise GitHubError('GitHub HTTP envelope is incomplete', unavailable=True,
+                          reason='remote_api_unavailable')
+    return code, headers, body
 
 
 def check_state(checks: list[dict[str, Any]], required: list[dict[str, Any]]) -> str:
@@ -35,26 +63,46 @@ class GitHub:
         self.name = name
         self.push_scope: dict[str, Any] | None = None
         self.pull_number: int | None = None
+        self.activity_allowed: Callable[[], bool] | None = None
 
     def api(self, path: str, *, method: str = 'GET', body: dict[str, Any] | None = None,
             absent_ok: bool = False) -> Any:
-        args = ['gh', 'api', f'repos/{self.name}/{path}' if path else f'repos/{self.name}', '--method', method]
+        if self.activity_allowed is not None and not self.activity_allowed():
+            raise GitHubError('Scheduled publication window is closed', unavailable=True,
+                              reason='outside_publication_window')
+        args = ['gh', 'api', f'repos/{self.name}/{path}' if path else f'repos/{self.name}', '--method', method, '--include']
         if body is not None:
             args.extend(['--input', '-'])
         try:
             result = subprocess.run(args, cwd=self.repo, input=json.dumps(body) if body is not None else None,
                                     capture_output=True, text=True, check=False, timeout=60)
         except (OSError, subprocess.TimeoutExpired) as exc:
-            raise GitHubError(f'GitHub {method} {path} unavailable: {type(exc).__name__}') from exc
-        if result.returncode:
-            # Only this exact response means classic protection is absent. Auth errors stay errors.
-            if absent_ok and 'Branch not protected' in result.stdout and '404' in result.stderr:
+            raise GitHubError('GitHub request unavailable', unavailable=True,
+                              reason='remote_api_unavailable') from exc
+        status, headers, body_text = _response(result.stdout)
+        if result.returncode or (status is not None and status >= 400):
+            try:
+                body_data = json.loads(body_text)
+            except ValueError:
+                body_data = {}
+            message = body_data.get('message') if isinstance(body_data, dict) else None
+            # Only this exact structured response means protection is absent.
+            if absent_ok and status == 404 and message == 'Branch not protected':
                 return None
-            raise GitHubError(f'GitHub {method} {path}: {result.stderr.strip() or "request failed"}')
+            unavailable = status is None or status in {401, 403, 404, 429} or status >= 500
+            rate_limited = status == 429 or (status == 403 and (
+                headers.get('x-ratelimit-remaining') == '0' or 'retry-after' in headers))
+            unavailable = unavailable or rate_limited
+            reason = ('remote_rate_limited' if rate_limited else
+                      'remote_authentication_unavailable' if status in {401, 403} or (status is None and result.returncode == 4) else
+                      'remote_api_unavailable' if unavailable else 'remote_publication_failed')
+            raise GitHubError('GitHub request unavailable' if unavailable else 'GitHub request rejected',
+                              unavailable=unavailable, reason=reason, status_code=status, response_message=message)
         try:
-            return json.loads(result.stdout)
+            return json.loads(body_text)
         except ValueError as exc:
-            raise GitHubError(f'GitHub returned unreadable JSON for {path}') from exc
+            raise GitHubError('GitHub returned unreadable JSON', unavailable=True,
+                              reason='remote_api_unavailable') from exc
 
     def pages(self, path: str, key: str | None = None) -> list[dict[str, Any]]:
         rows = []
@@ -72,12 +120,14 @@ class GitHub:
             return self.api(path, absent_ok=absent_ok)
         except GitHubError as exc:
             feature_unavailable = 'Upgrade to GitHub Pro or make this repository public to enable this feature'
-            if private and feature_unavailable in str(exc) and 'HTTP 403' in str(exc):
+            if private and exc.status_code == 403 and exc.response_message in {feature_unavailable, feature_unavailable + '.'}:
                 return None
             raise
 
     def plan(self) -> dict[str, Any]:
         metadata = self.api('')
+        if metadata.get('archived') is True:
+            raise GitHubError('Remote repository is archived', reason='remote_repository_archived')
         base = metadata['default_branch']
         private = metadata.get('private') is True
         rules = self.protection(f'rules/branches/{quote(base, safe="")}?per_page=100', private=private) or []
@@ -253,7 +303,7 @@ class GitHub:
         except GitHubError as exc:
             # A missing default branch is normal only for a verified empty repo.
             # Generic 404/auth failures and missing branches in existing repos fail closed.
-            if 'Branch not found' in str(exc) and 'HTTP 404' in str(exc) and self.api('branches?per_page=1') == []:
+            if exc.status_code == 404 and exc.response_message == 'Branch not found' and self.api('branches?per_page=1') == []:
                 return None
             raise
 

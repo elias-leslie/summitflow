@@ -43,7 +43,8 @@ _UPDATE_SQL = f"""
                     verification_result->'acceptance' ||
                     '{{"state":"stale","reason":"task_lifecycle_changed_requires_acceptance"}}'::jsonb END,
                 'deployment', verification_result->'deployment',
-                'live_validation', verification_result->'live_validation'
+                'live_validation', verification_result->'live_validation',
+                'publication_repair', verification_result->'publication_repair'
             )), '{{}}'::jsonb) END,
         current_phase = CASE WHEN %s = 'completed' THEN 'complete' ELSE current_phase END,
         claimed_by = CASE WHEN %s IN ('completed','failed','cancelled','paused') THEN NULL ELSE claimed_by END,
@@ -79,18 +80,25 @@ def _execute_status_update(
     """Validate and update status atomically under a row lock."""
     resolved_task_id = canonicalize_task_id(task_id)
     with get_connection() as conn, conn.cursor() as cur:
+        if status == "cancelled":
+            from .publication_repair import unresolved_repair
+            cur.execute("SELECT verification_result, labels FROM tasks WHERE id = %s FOR UPDATE", (resolved_task_id,))
+            evidence = cur.fetchone()
+            if evidence and unresolved_repair({"verification_result": evidence[0], "labels": evidence[1]}):
+                raise ValueError("Cannot cancel unresolved repair findings; resolve them with evidence first")
         if status == "completed":
             from app.services.task_acceptance import completion_gates
 
             cur.execute(
-                """SELECT t.verification_result, ts.context, t.commits, t.project_id FROM tasks t
+                """SELECT t.verification_result, ts.context, t.commits, t.project_id, t.labels FROM tasks t
                    LEFT JOIN task_spirit ts ON ts.task_id = t.id
                    WHERE t.id = %s FOR UPDATE OF t""", (resolved_task_id,),
             )
             evidence_row = cur.fetchone()
             if evidence_row:
                 gates = completion_gates({"verification_result": evidence_row[0], "context": evidence_row[1],
-                                          "commits": evidence_row[2], "id": resolved_task_id, "project_id": evidence_row[3]})
+                                          "commits": evidence_row[2], "id": resolved_task_id, "project_id": evidence_row[3],
+                                          "labels": evidence_row[4]}, connection=conn)
                 if gates:
                     raise ValueError(f"Task acceptance remains incomplete: {gates}")
         if expected_closeout_request_id is not None:

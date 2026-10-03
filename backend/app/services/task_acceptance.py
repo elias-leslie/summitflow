@@ -8,8 +8,10 @@ from __future__ import annotations
 import re
 from typing import Any
 
+import psycopg
 
-def completion_gates(task: dict[str, Any]) -> list[dict[str, Any]]:
+
+def completion_gates(task: dict[str, Any], *, connection: psycopg.Connection | None = None) -> list[dict[str, Any]]:
     context = task.get("context") or {}
     requirements = task.get("completion_requirements") or context.get("completion_requirements") or {}
     verification = task.get("verification_result") or {}
@@ -66,4 +68,7 @@ def completion_gates(task: dict[str, Any]) -> list[dict[str, Any]]:
         missing = [name for name in required if name not in passed]
         if missing:
             gates.append({"gate": "live_validation", "pass": False, "detail": missing})
+    if task.get("project_id"):
+        from .publication_health import publication_completion_gates
+        gates.extend(publication_completion_gates(task, source, **({"connection": connection} if connection is not None else {})))
     return gates

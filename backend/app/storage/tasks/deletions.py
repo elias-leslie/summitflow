@@ -92,6 +92,9 @@ def archive_task_snapshots(
 
     for task_id, snapshot in snapshots.items():
         task = snapshot["task"]
+        from .publication_repair import unresolved_repair
+        if unresolved_repair(task):
+            raise ValueError("Cannot delete unresolved repair findings; resolve them with evidence first")
         cur.execute(
             """
             INSERT INTO task_deletions (

@@ -33,11 +33,6 @@ jobs:
         working-directory: backend
     steps:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
-      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
-        with:
-          repository: elias-leslie/agent-hub
-          ref: e23acc82b89f01d974e93aac87f15fb399f2a812
-          path: agent-hub-repo
       - uses: pnpm/action-setup@fc06bc1257f339d1d5d8b3a19a8cae5388b55320 # v5
       - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
         with:
@@ -45,9 +40,6 @@ jobs:
       - uses: astral-sh/setup-uv@fac544c07dec837d0ccb6301d7b5580bf5edae39 # v8.2.0
         with:
           enable-cache: true
-      - name: Build Agent Hub client wheel
-        working-directory: agent-hub-repo/packages/agent-hub-client
-        run: SOURCE_DATE_EPOCH=1577836800 uv build --wheel --out-dir "${{ github.workspace }}/docker/workspace-packages"
       - name: Install backend dependencies
         run: uv sync --locked --all-extras --dev
       - name: Lint backend

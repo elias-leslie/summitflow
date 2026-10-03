@@ -7,6 +7,7 @@ from app.services import task_closeout as closeout
 from app.storage import tasks
 from app.storage.tasks.closeout import (
     closeout_lock,
+    release_closeout_claim,
     store_closeout,
     store_execution_verification,
 )
@@ -174,6 +175,52 @@ def test_pending_closeout_is_not_offered_as_fresh_implementation_work(pending_ta
     tasks.update_task(pending_task['id'], priority=0)
     ready = tasks.list_ready_tasks(pending_task['project_id'], limit=10000)
     assert pending_task['id'] not in {task['id'] for task in ready}
+
+
+def test_queued_confirmation_releases_claim_without_staling_acceptance(pending_task):
+    tid = pending_task['id']
+    intent = closeout.get_closeout(tid)
+    assert intent is not None
+    assert release_closeout_claim(tid, pending_task['project_id'], intent['request_id'])
+    stored = tasks.get_task(tid)
+    assert stored is not None
+    assert stored['status'] == 'pending'
+    assert stored['claimed_by'] is None and stored['lock_expires_at'] is None
+    assert stored['verification_result']['acceptance']['state'] == 'success'
+
+
+def test_nightly_repair_continuation_only_observes_and_never_publishes(pending_task, monkeypatch):
+    tid = pending_task['id']
+    intent = closeout.get_closeout(tid)
+    assert intent is not None
+    intent['require_remote_confirmation'] = True
+    store_closeout(tid, pending_task['project_id'], intent)
+    publisher = Mock(side_effect=AssertionError('daytime continuation must not publish'))
+    monkeypatch.setattr(publish_workflow, 'publish_git', publisher)
+    confirmation = Mock(side_effect=[None, {
+        'publication_complete': True, 'source_sha': SHA, 'verified_head': 'b' * 40,
+        'source_included': True, 'ci': {'state': 'success', 'sha': 'b' * 40},
+    }])
+    monkeypatch.setattr('app.services.publication_health.confirmation_for_source', confirmation)
+    assert closeout.resume_closeout(tid)['action'] == 'pending'
+    stored = tasks.get_task(tid)
+    assert stored is not None and stored['status'] == 'pending'
+    assert closeout.resume_closeout(tid)['action'] == 'completed'
+    publisher.assert_not_called()
+    assert all(call.args == (pending_task['project_id'], SHA) for call in confirmation.call_args_list)
+
+
+def test_conclusive_nightly_repair_failure_returns_to_pickup(pending_task, monkeypatch):
+    tid = pending_task['id']
+    intent = closeout.get_closeout(tid)
+    assert intent is not None
+    intent['require_remote_confirmation'] = True
+    store_closeout(tid, pending_task['project_id'], intent)
+    monkeypatch.setattr('app.services.publication_health.confirmation_for_source', lambda *_args: None)
+    monkeypatch.setattr('app.services.publication_health.repair_attempt_failed', lambda *_args: True, raising=False)
+    assert closeout.resume_closeout(tid)['action'] == 'blocked'
+    ready = tasks.list_ready_tasks(pending_task['project_id'], limit=10000)
+    assert tid in {task['id'] for task in ready}
 
 
 def test_pending_closeout_is_excluded_from_automatic_and_immediate_pickup(pending_task):

@@ -25,7 +25,8 @@ def _preserved_verification_sql(
             {column}->'acceptance' ||
             '{{"state":"stale","reason":"task_lifecycle_changed_requires_acceptance"}}'::jsonb END,
         'deployment', {column}->'deployment',
-        'live_validation', {column}->'live_validation'
+        'live_validation', {column}->'live_validation',
+        'publication_repair', {column}->'publication_repair'
     )), '{{}}'::jsonb)"""
     if not preserve_closeout:
         return evidence
