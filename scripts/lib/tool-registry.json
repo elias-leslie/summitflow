@@ -286,6 +286,18 @@
       ]
     },
     {
+      "id": "neri.observer",
+      "owner": "neri",
+      "namespace": "neriobserve",
+      "manifest": "extensions/neri-observer.json",
+      "executable": "scripts/st-neri-observe",
+      "grant": {
+        "enabled": true,
+        "effects": ["network", "read-local", "process"]
+      },
+      "environment": ["SUMMITFLOW_SERVICE_STATE_ROOT"]
+    },
+    {
       "id": "learn-o-tron.learn",
       "owner": "learn-o-tron",
       "namespace": "learn",
