@@ -45,6 +45,29 @@ def test_write_uploaded_file_replaces_existing_target(tmp_path) -> None:
     assert (target_dir / 'note.txt').read_text() == 'new value'
 
 
+def test_uploaded_target_must_remain_in_declared_scope(tmp_path) -> None:
+    root = tmp_path / 'project'
+    root.mkdir()
+    outside = tmp_path / 'outside.txt'
+    outside.write_text('preserve')
+    (root / 'note.txt').symlink_to(outside)
+
+    with pytest.raises(ValueError):
+        file_browser.write_uploaded_file(root, '', 'note.txt', BytesIO(b'replacement'))
+
+    assert outside.read_text() == 'preserve'
+
+
+def test_uploaded_symlink_within_declared_scope_keeps_feature(tmp_path) -> None:
+    (tmp_path / 'actual.txt').write_text('old')
+    (tmp_path / 'note.txt').symlink_to(tmp_path / 'actual.txt')
+
+    result = file_browser.write_uploaded_file(tmp_path, '', 'note.txt', BytesIO(b'new'))
+
+    assert result['path'] == 'note.txt'
+    assert (tmp_path / 'actual.txt').read_text() == 'new'
+
+
 def test_resolve_safe_path_blocks_escape(tmp_path) -> None:
     with pytest.raises(ValueError):
         file_browser.resolve_safe_path(tmp_path, '../outside.txt')
