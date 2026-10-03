@@ -98,11 +98,14 @@ def history(tmp_path: Path):
     scanner.chmod(0o700)
     tree = git("mktree", data=b"")
 
-    def commit(parent: str | None = None, path: str | None = None, body: bytes = b"ordinary\n") -> str:
+    def commit(parent: str | None = None, path: str | None = None, body: bytes = b"ordinary\n", *, mode: str = "100644") -> str:
         commit_tree = tree
         if path:
             oid = git("hash-object", "-w", "--stdin", data=body)
-            commit_tree = git("mktree", data=f"100644 blob {oid}\t{path}\n".encode())
+            parts = path.split("/")
+            commit_tree = git("mktree", data=f"{mode} blob {oid}\t{parts[-1]}\n".encode())
+            for name in reversed(parts[:-1]):
+                commit_tree = git("mktree", data=f"040000 tree {commit_tree}\t{name}\n".encode())
         return git("commit-tree", commit_tree, *(["-p", parent] if parent else []), data=b"fixture\n")
 
     return repo, policy, scanner, git, commit, hooks
@@ -148,6 +151,69 @@ def test_new_secret_tree_still_refused_with_live_base(history) -> None:
     new = commit(base, "password.pass")
     with pytest.raises(OutgoingVerificationError, match="secret-sensitive"):
         check(history, new, published_bases=(base,))
+
+
+REVIEWED_NPMRC = (
+    b"minimum-release-age=1440\nblock-exotic-subdeps=true\nstrict-dep-builds=true\n"
+    b"dangerously-allow-all-builds=false\nverify-store-integrity=true\n"
+)
+
+
+def test_reviewed_root_npmrc_does_not_disable_history_scanner(history) -> None:
+    _, policy, scanner, _, commit, _ = history
+    policy.joinpath("denylist.txt").write_text(".npmrc\n.env\n")
+    oid = commit(path=".npmrc", body=REVIEWED_NPMRC)
+    assert check(history, oid).commits_scanned == 1
+    scanner.write_text("#!/bin/sh\nexit 2\n")
+    with pytest.raises(OutgoingVerificationError, match="scan"):
+        check(history, oid)
+
+
+@pytest.mark.parametrize("path,body,mode", [
+    ("nested/.npmrc", REVIEWED_NPMRC, "100644"),
+    (".npmrc", REVIEWED_NPMRC, "100755"),
+    (".npmrc", b"minimum-release-age=1440\n", "120000"),
+    (".npmrc", b"//registry.example.invalid/:_authToken=fixture\n", "100644"),
+    (".npmrc", b"registry=https://example.invalid\n", "100644"),
+    (".npmrc", b"verify-store-integrity=${VALUE}\n", "100644"),
+    (".npmrc", b"verify-store-integrity=true\nverify-store-integrity=true\n", "100644"),
+    (".npmrc", b"verify-store-integrity=true\n# arbitrary fixture comment\n", "100644"),
+    (".npmrc", b"verify-store-integrity=true\x00\n", "100644"),
+    (".npmrc", b"verify-store-integrity=true\r\n", "100644"),
+    (".npmrc", b"verify-store-integrity=true\\\n", "100644"),
+    (".npmrc", b"verify-store-integrity=false\n", "100644"),
+    (".npmrc", b"dangerously-allow-all-builds=true\n", "100644"),
+    (".npmrc", b"minimum-release-age=0\n", "100644"),
+    (".npmrc", b"", "100644"),
+])
+def test_unreviewed_npmrc_shape_remains_denied(history, path, body, mode) -> None:
+    history[1].joinpath("denylist.txt").write_text(".npmrc\n.env\n")
+    oid = history[4](path=path, body=body, mode=mode)
+    with pytest.raises(OutgoingVerificationError, match="secret-sensitive"):
+        check(history, oid)
+
+
+def test_reviewed_npmrc_does_not_override_additional_owner_deny_rule(history) -> None:
+    history[1].joinpath("denylist.txt").write_text(".npmrc\n.*\n")
+    oid = history[4](path=".npmrc", body=REVIEWED_NPMRC)
+    with pytest.raises(OutgoingVerificationError, match="secret-sensitive"):
+        check(history, oid)
+
+
+def test_historical_unsafe_npmrc_cannot_be_hidden_by_current_safe_file(history) -> None:
+    history[1].joinpath("denylist.txt").write_text(".npmrc\n.env\n")
+    old = history[4](path=".npmrc", body=b"registry=https://example.invalid\n")
+    new = history[4](old, ".npmrc", REVIEWED_NPMRC)
+    with pytest.raises(OutgoingVerificationError, match="secret-sensitive"):
+        check(history, new)
+
+
+def test_historical_npmrc_mode_change_with_same_blob_is_checked(history) -> None:
+    history[1].joinpath("denylist.txt").write_text(".npmrc\n.env\n")
+    old = history[4](path=".npmrc", body=REVIEWED_NPMRC)
+    new = history[4](old, ".npmrc", REVIEWED_NPMRC, mode="100755")
+    with pytest.raises(OutgoingVerificationError, match="secret-sensitive"):
+        check(history, new)
 
 
 @pytest.mark.parametrize("source", ["HEAD", "oid"])

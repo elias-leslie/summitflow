@@ -170,6 +170,19 @@ def test_publication_preserves_all_active_checkout_state(source, monkeypatch):
     assert (project / "unfinished").read_text() == "untracked"
 
 
+def test_completed_upload_without_ci_is_not_worded_as_verified(source, monkeypatch):
+    head = _git(Path(source["path"]), "rev-parse", "HEAD")
+    delivered = delivery("not_applicable")
+    delivered.update(status="SUCCESS", publication_complete=True,
+                     ci={"state": "not_applicable", "sha": head, "checks": []},
+                     security={"state": "success", "sha": head})
+    monkeypatch.setattr(publish, "_publish_isolated", Mock(return_value=delivered))
+    result = publish.publish_source_before_backup(source)
+    assert result["publication_complete"] and result["backup_can_continue"]
+    assert result["status"] == "published" and result["reason"] == "uploaded_without_ci"
+    assert result["remote_status"] == "uploaded" and result["ci"]["state"] == "not_applicable"
+
+
 @pytest.mark.parametrize("state", ["missing", "invalid", "unavailable"])
 def test_unaccepted_source_never_publishes(source, monkeypatch, state):
     monkeypatch.setattr(publish, "_acceptance_for_head", lambda *_: {"state": state})

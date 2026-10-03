@@ -1,4 +1,5 @@
 """Required checks stay tied to current commit, with missing evidence pending."""
+import json
 import subprocess
 from pathlib import Path
 from unittest.mock import Mock
@@ -116,6 +117,58 @@ def test_same_source_pull_request_lookup_is_branch_independent(monkeypatch):
     monkeypatch.setattr(client, 'pages', Mock(return_value=pulls))
 
     assert client.source_pull_request('main', 'a' * 40) == pulls[0]
+
+
+def test_unpublished_exact_source_pr_lookup_is_absent_not_a_provider_failure(monkeypatch):
+    from cli.lib import github_publish
+
+    sha = 'a' * 40
+    response = subprocess.CompletedProcess([], 1, 'HTTP/2.0 422 Unprocessable Entity\r\n\r\n' +
+        json.dumps({'message': f'No commit found for SHA: {sha}'}), 'untrusted stderr')
+    request = Mock(return_value=response)
+    monkeypatch.setattr(github_publish.subprocess, 'run', request)
+    client = GitHub(Path('/repo'), 'owner/repo')
+    assert client.source_pull_request('main', sha) is None
+    assert request.call_args.args[0][2] == f'repos/owner/repo/commits/{sha}/pulls?per_page=100&page=1'
+    assert '--include' in request.call_args.args[0]
+    assert request.call_args.args[0][request.call_args.args[0].index('--method') + 1] == 'GET'
+
+
+@pytest.mark.parametrize(('status', 'message', 'sha'), [
+    (401, f'No commit found for SHA: {"a" * 40}', 'a' * 40),
+    (403, 'Resource not accessible by integration', 'a' * 40),
+    (404, 'Not Found', 'a' * 40),
+    (429, 'Rate limit exceeded', 'a' * 40),
+    (422, 'Validation Failed', 'a' * 40),
+    (422, f'No commit found for SHA: {"b" * 40}', 'a' * 40),
+    (422, f'No commit found for SHA: {"a" * 40}; try another route', 'a' * 40),
+    (422, 'No commit found for SHA: main', 'main'),
+])
+def test_source_pr_lookup_does_not_suppress_auth_rate_or_other_absence(monkeypatch, status, message, sha):
+    from cli.lib import github_publish
+
+    response = subprocess.CompletedProcess([], 1, f'HTTP/2.0 {status} Response\r\n\r\n' +
+        json.dumps({'message': message}), f'No commit found for SHA: {"a" * 40}')
+    monkeypatch.setattr(github_publish.subprocess, 'run', Mock(return_value=response))
+    with pytest.raises(GitHubError) as exc:
+        GitHub(Path('/repo'), 'owner/repo').source_pull_request('main', sha)
+    assert exc.value.status_code == status and exc.value.response_message == message
+
+
+def test_absence_after_partial_pr_pages_does_not_erase_prior_evidence(monkeypatch):
+    from cli.lib import github_publish
+
+    sha = 'a' * 40
+    responses = [
+        subprocess.CompletedProcess([], 0, 'HTTP/2.0 200 OK\r\n\r\n' + json.dumps([{}] * 100), ''),
+        subprocess.CompletedProcess([], 1, 'HTTP/2.0 422 Unprocessable Entity\r\n\r\n' +
+            json.dumps({'message': f'No commit found for SHA: {sha}'}), ''),
+    ]
+    request = Mock(side_effect=responses)
+    monkeypatch.setattr(github_publish.subprocess, 'run', request)
+    with pytest.raises(GitHubError):
+        GitHub(Path('/repo'), 'owner/repo').source_pull_request('main', sha)
+    assert request.call_count == 2
 
 
 def test_dependency_update_creation_is_separate_from_commit_validation(monkeypatch):

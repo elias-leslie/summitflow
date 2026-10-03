@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import base64
 import json
+import re
 import subprocess
 from collections.abc import Callable
 from pathlib import Path
@@ -19,12 +20,13 @@ class GitHubError(RuntimeError):
 
     def __init__(self, message: str, *, unavailable: bool = False,
                  reason: str = 'remote_publication_failed', status_code: int | None = None,
-                 response_message: str | None = None):
+                 response_message: str | None = None, request_path: str | None = None):
         super().__init__(message)
         self.unavailable = unavailable
         self.reason = reason
         self.status_code = status_code
         self.response_message = response_message
+        self.request_path = request_path
 
 
 def _response(output: str) -> tuple[int | None, dict[str, str], str]:
@@ -97,7 +99,8 @@ class GitHub:
                       'remote_authentication_unavailable' if status in {401, 403} or (status is None and result.returncode == 4) else
                       'remote_api_unavailable' if unavailable else 'remote_publication_failed')
             raise GitHubError('GitHub request unavailable' if unavailable else 'GitHub request rejected',
-                              unavailable=unavailable, reason=reason, status_code=status, response_message=message)
+                              unavailable=unavailable, reason=reason, status_code=status, response_message=message,
+                              request_path=path)
         try:
             return json.loads(body_text)
         except ValueError as exc:
@@ -318,7 +321,18 @@ class GitHub:
 
     def source_pull_request(self, base: str, sha: str) -> dict[str, Any] | None:
         """Find an existing PR for the exact source, independent of its task branch."""
-        pulls = self.pages(f'commits/{sha}/pulls')
+        try:
+            pulls = self.pages(f'commits/{sha}/pulls')
+        except GitHubError as exc:
+            # A first publication has no remotely indexed commit/PR yet. Only
+            # this exact structured negative lookup establishes absence; auth,
+            # rate errors and other validation failures must still block.
+            if (exc.status_code == 422 and not exc.unavailable and exc.reason == 'remote_publication_failed'
+                    and re.fullmatch(r'[0-9a-f]{40}|[0-9a-f]{64}', sha)
+                    and exc.request_path == f'commits/{sha}/pulls?per_page=100&page=1'
+                    and exc.response_message == f'No commit found for SHA: {sha}'):
+                return None
+            raise
         candidates = [
             pull
             for pull in pulls

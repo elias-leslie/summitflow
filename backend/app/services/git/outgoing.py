@@ -118,6 +118,36 @@ def _lone_token(path: str, body: bytes) -> bool:
     )
 
 
+def _reviewed_npmrc(path: str, mode: bytes, body: bytes, denied: Sequence[str]) -> bool:
+    """Only the reviewed root build-safety grammar can bypass its filename deny.
+
+    This never exempts content or scanner checks, nor additional owner deny rules.
+    Unknown package-manager settings require review rather than a broad allowlist.
+    """
+    if path != ".npmrc" or mode != b"100644" or not body.isascii():
+        return False
+    if any(pattern != ".npmrc" for pattern in denied if _matches(path, [pattern])):
+        return False
+    values = {
+        b"minimum-release-age": b"1440",
+        b"block-exotic-subdeps": b"true",
+        b"strict-dep-builds": b"true",
+        b"dangerously-allow-all-builds": b"false",
+        b"verify-store-integrity": b"true",
+    }
+    if any(char < 32 and char != 10 for char in body):
+        return False
+    seen: set[bytes] = set()
+    for line in body.split(b"\n"):
+        if not line:
+            continue
+        key, separator, value = line.partition(b"=")
+        if not separator or key in seen or key not in values or value != values[key]:
+            return False
+        seen.add(key)
+    return bool(seen)
+
+
 def verify_outgoing(
     repo: str | Path, remote_url: str, updates: Sequence[PushUpdate], *,
     scanner: str | None = None, policy_dir: str | Path | None = None,
@@ -187,7 +217,7 @@ def verify_outgoing(
             revision = " ".join([update.local_oid, *("^" + base for base in applicable)])
         revisions.append(revision)
         commits.update(_git(root, "rev-list", *revision.split()).decode("ascii").splitlines())
-    seen: set[tuple[bytes, bytes]] = set()
+    seen: set[tuple[bytes, bytes, bytes]] = set()
     for commit in sorted(commits):
         if _CONTENT.search(_git(root, "cat-file", "commit", commit)):
             raise OutgoingVerificationError("Outgoing commit metadata contains sensitive content (redacted).")
@@ -195,14 +225,15 @@ def verify_outgoing(
             if not entry:
                 continue
             metadata, path_bytes = entry.split(b"\t", 1)
-            _mode, kind, oid = metadata.split()
-            if kind != b"blob" or (path_bytes, oid) in seen:
+            mode, kind, oid = metadata.split()
+            if kind != b"blob" or (path_bytes, mode, oid) in seen:
                 continue
-            seen.add((path_bytes, oid))
+            seen.add((path_bytes, mode, oid))
             path = os.fsdecode(path_bytes)
-            if not _matches(path, allowed) and _matches(path, denied):
-                raise OutgoingVerificationError("Outgoing history contains a secret-sensitive path (content redacted).")
             body = _git(root, "cat-file", "blob", oid.decode("ascii"))
+            if (not _matches(path, allowed) and _matches(path, denied)
+                    and not _reviewed_npmrc(path, mode, body, denied)):
+                raise OutgoingVerificationError("Outgoing history contains a secret-sensitive path (content redacted).")
             if _CONTENT.search(body) or _lone_token(path, body):
                 raise OutgoingVerificationError("Outgoing history contains sensitive content (redacted).")
     if revisions:

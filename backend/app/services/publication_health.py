@@ -56,13 +56,16 @@ def classify_observation(result: dict[str, Any]) -> dict[str, Any]:
         reason = "remote_ci_failed" if ci_state == "failed" else "security_findings_open"
     elif reason in _SETUP_FAILURES or (status in {"failed", "blocked", "failure"} and reason not in _DEFERRED):
         state = "blocked"
-    elif (head and observed_at and result.get("publication_complete") is True and ci_state == "success"
+    elif (head and observed_at and result.get("publication_complete") is True and ci_state in {"success", "not_applicable"}
           and ci.get("sha") and ci.get("sha") in {head, result.get("merge_sha")}
-          and (ci.get("sha") == head or (pr_checks.get("state") == "success" and pr_checks.get("sha") == head))
+          and (ci.get("sha") == head or (pr_checks.get("state") in (
+              {"success", "not_applicable"} if ci_state == "not_applicable" else {"success"}) and pr_checks.get("sha") == head))
           and security.get("state") == "success" and security.get("sha") == head
           and acceptance.get("state") in {"success", "reused"}
           and acceptance.get("source_commit") == head and acceptance.get("acceptance_id")):
-        state = "verified"
+        state = "verified" if ci_state == "success" else "published"
+        if state == "published":
+            reason = "published_without_ci"
     elif status in {"pending", "queued"} or reason in _DEFERRED:
         state = "pending"
     else:

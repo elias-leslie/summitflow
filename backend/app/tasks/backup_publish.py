@@ -358,9 +358,11 @@ def publish_source_before_backup(source: dict[str, Any], *, retained: dict[str, 
             "remote_transport_unavailable", "remote_authentication_unavailable",
             "remote_rate_limited", "remote_api_unavailable",
         }
-        result["remote_status"] = "verified" if delivered.get("publication_complete") else "unknown" if unavailable else "pending" if delivered.get("status") == "PENDING" else "blocked"
+        no_ci = isinstance(delivered.get("ci"), dict) and delivered["ci"].get("state") == "not_applicable"
+        result["remote_status"] = ("uploaded" if no_ci else "verified") if delivered.get("publication_complete") else "unknown" if unavailable else "pending" if delivered.get("status") == "PENDING" else "blocked"
         status = "published" if delivered.get("publication_complete") else "pending" if delivered.get("status") == "PENDING" else "failed"
-        return outcome(status, "source_publication_verified" if delivered.get("publication_complete") else str(delivered.get("reason") or "remote_publication_unverified"))
+        reason = ("uploaded_without_ci" if no_ci else "source_publication_verified") if delivered.get("publication_complete") else str(delivered.get("reason") or "remote_publication_unverified")
+        return outcome(status, reason)
     except _OutgoingFailed:
         result["security"] = {"state": "blocked", "sha": result.get("head")}
         result["action"] = "Inspect st vcs doctor and repair outgoing scanner, policy, history or secret findings before retry"
