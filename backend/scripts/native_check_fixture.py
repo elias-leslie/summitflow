@@ -123,8 +123,8 @@ def database_fixture(*, lifetime_seconds: int = LIFETIME_SECONDS):
 
 def main() -> int:
     mode = sys.argv[1] if len(sys.argv) == 2 else ""
-    if mode not in {"bootstrap", "python"}:
-        raise SystemExit("Usage: native_check_fixture.py bootstrap|python")
+    if mode not in {"bootstrap", "python", "fleet"}:
+        raise SystemExit("Usage: native_check_fixture.py bootstrap|python|fleet")
     with database_fixture(lifetime_seconds=210 if mode == "bootstrap" else LIFETIME_SECONDS) as environment:
         bootstrap = subprocess.run(
             [sys.executable, str(BACKEND / "scripts" / "verify_bootstrap_schema.py")],
@@ -139,9 +139,15 @@ def main() -> int:
         if mode == "bootstrap":
             print(json.dumps({"passed": 1, "failed": 0, "skipped": 0}))
             return 0
-        report = ROOT / ".dev-tools" / "native-python.xml"
+        report = ROOT / ".dev-tools" / ("native-fleet.xml" if mode == "fleet" else "native-python.xml")
+        tests = ["tests"] if mode == "python" else [
+            "tests/storage/test_fleet_events.py", "tests/services/test_fleet_sessions.py",
+            "tests/cli/test_sessions_fleet.py", "tests/api/test_fleet_sessions.py",
+            "tests/cli/test_sessions.py", "tests/cli/test_sessions_close.py",
+            "tests/storage/test_maintenance_retention.py", "tests/test_events_api_filters.py",
+        ]
         result = subprocess.run(
-            [sys.executable, "-m", "pytest", "tests", "--junitxml=" + str(report),
+            [sys.executable, "-m", "pytest", *tests, "--junitxml=" + str(report),
              "-k", "not test_live_owner_lease_proxy_preserves_same_target_and_blocks_resume "
              "and not test_real_detached_result_survives_collection "
              "and not (test_pre_push_chains_same_arguments_and_stdin and global)"],

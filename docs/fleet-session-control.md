@@ -1,0 +1,84 @@
+# Fleet session control
+
+`st sessions start "short sanitized instruction"` registers an opaque `root-…`
+handle in the existing events table and requests a root through Aico's private
+GUI socket. The project root comes from the registered project, not a client path.
+Use `--surface a-term` for the existing local A-Term owner HTTP route; unknown
+surfaces are unsupported. The same role/lead/facet capsule goes to either owner.
+The returned host descriptor is an Aico acknowledgment; it does not attest a
+delivered model or a Codex queue delivery. An unavailable or uncertain launch is
+retained. Retry with `--request-id ROOT` and the same capsule; do not recreate a
+root after an uncertain response.
+
+`st sessions send ROOT "instruction" --source-key REVISION --scope '{...}'`
+retains the exact bounded sanitized instruction, digest and immutable scope for
+the addressed root to consume through `wait`. It reports `capability=fleet-stream`,
+`delivery=available-via-wait` and `native_capability=unavailable`. It never pastes
+into a terminal or claims an accepted model queue. Initial create prompts remain
+transient host input with retained digest/source references only.
+Instructions must not contain credentials, private target data, or transcripts.
+The sanitizer removes common credential forms and control characters, but does
+not prove that arbitrary content is non-secret. The caller owns that content boundary.
+
+`st sessions wait ROOT --cursor SEQUENCE` drains committed pages by exclusive
+stream sequence. The default wait is 300 seconds. An empty timeout prints nothing
+and creates no event. Cancellation also creates no event. Redis wakeups are
+advisory. Wait drains PostgreSQL, subscribes to Redis, and rechecks after subscription
+to cover a commit in that gap. A wake drains by durable sequence, never by the
+advisory message payload. One deadline read recovers a failed publish, and a
+30-second fallback read applies only while Redis is unavailable.
+Use the returned cursor on the next wait, and use `st sessions show ROOT` for the
+current capsule instead of replaying the entire history to refresh context.
+
+Existing `show` and `close` accept opaque root handles, and `list --fleet` lists
+fleet roots. Other session readers continue using their existing Agent Hub path.
+`st sessions activate ROOT` uses the exact stored generation to show or reattach
+the root. `st sessions position ROOT X Y WIDTH HEIGHT` arranges Aico roots with
+validated bounds; A-Term positioning reports unsupported.
+Close requests native End through Aico's existing private owner socket with the
+stored exact widget identity and generation fence. An acknowledged End or an exact
+matching provider-owned ended tombstone closes the allocation and releases its
+facet. Missing, stale, or failed End
+retains `close-uncertain`, which blocks replacement and cannot free native capacity.
+A closed or uncertain root is never automatically relaunched.
+
+Portfolio roots remain independent. A focus allocation adds one
+`--role neri-target-root --scope '{"target":"…","claim":"…","run":"…"}'`
+lead and bounded `--role neri-support-root --lead-root ROOT --facet REF` roots.
+Support roots use the lead's exact target/claim/run scope and are offline by
+default; each open facet is disjoint by exact reference. Capsules must supply
+the source material needed for that facet. This linkage grants no target
+authority or qualification for simultaneous live operators. Neri owns those
+decisions. Closing a support lane permits a new opaque root for the same facet,
+retaining the old lineage. Current role, lead, facet and scope survive restart in
+retained lifecycle rows.
+
+The owner-authenticated versioned endpoint
+`POST /api/fleet/v1/roots/ROOT/events` accepts a compact sanitized source reference,
+event type, stable source revision key and canonical content digest. External
+extensions use `st_sdk.fleet.FleetClient.append`; it computes the SHA-256 digest
+over canonical JSON `[event_type, attributes]`. Control events use their owning
+commands. No full transcript or terminal output belongs in these attributes.
+Roots can use `st sessions emit ROOT EVENT_TYPE --source-key REVISION --attributes '{...}'`
+to return compact typed result/progress refs and change deltas through the same seam.
+Per-trace transaction advisory locking orders allocation with commit, and a
+same-key/same-digest retry returns the same retained identity. A mismatch is 409.
+Database failure never wakes Redis; Redis failure never removes committed rows.
+
+Retention preserves lifecycle rows and the latest high-water event under the
+same lock, so append never reuses a pruned sequence. A skipped retained sequence
+returns explicit `stale_cursor` with the next retained sequence. Reconcile current
+source revisions and the current capsule before choosing a new cursor. Delivery
+is at least once and advisory, not exactly once. Idempotency keys are guaranteed
+while their rows are retained; producers must reconcile an expired revision
+against the source before retrying after a retention gap.
+
+The API host socket defaults to `/run/user/<uid>/aico/gui-control.sock` and supports
+`AICO_GUI_CONTROL_SOCKET` for the existing host configuration. Native End uses
+`/run/user/<uid>/aico/control.sock` or `AICO_CONTROL_SOCKET`. No new dependency,
+queue, scheduler, session store, or mandatory Agent Hub telemetry is introduced.
+The schema migration and SDK wheel must be installed through the existing release
+workflow before these commands are available in an accepted runtime.
+A-Term defaults to `http://127.0.0.1:8002` and supports the local
+`A_TERM_ROOT_CONTROL_URL` override. Existing password/proxy mode rejection is
+reported as unavailable; the adapter does not supply or invent credentials.

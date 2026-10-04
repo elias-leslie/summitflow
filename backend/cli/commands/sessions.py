@@ -30,6 +30,7 @@ from .session_events_follow import follow_session_events
 from .session_events_formatter import format_event
 from .sessions_diagnostics import render_diagnostics as _render_diagnostics
 from .sessions_filter import normalize_status_filter, session_matches_status_alias
+from .sessions_fleet import register as _register_fleet
 from .sessions_format import compact_session_line, monitor_summary
 from .sessions_monitor import (
     monitor_detail_more as _monitor_detail_more,
@@ -87,6 +88,8 @@ app = typer.Typer(
 )
 
 app.command("inspect")(inspect_native_session)
+
+_register_fleet(app)
 
 
 def _managed_codex_runtime() -> tuple[str, Path]:
@@ -430,6 +433,7 @@ def list_sessions(
     agent_slug: SessionAgentOption = None,
     parent_session_id: ParentSessionOption = None,
     project_id: ProjectOption = None,
+    fleet: Annotated[bool, typer.Option(help="List fleet root handles using the same lifecycle")] = False,
 ) -> None:
     """List agent sessions.
 
@@ -441,6 +445,11 @@ def list_sessions(
         st sessions list --status active
         st sessions list -s active --include-unassigned
     """
+    if fleet:
+        from .sessions_fleet import _call
+
+        output_json(_call("list", project_id=project_id or get_project_override(), limit=limit))
+        return
     _render_session_list(
         status_filter,
         limit,
@@ -536,6 +545,11 @@ def show_session(
     Examples:
         st sessions show abc123
     """
+    if session_id.startswith("root-"):
+        from .sessions_fleet import _call
+
+        output_json(_call("show", session_id))
+        return
     client = STClient(require_project=False)
     resolved_id = _resolve_session_id(session_id, client, project_id=project_id)
 
@@ -567,6 +581,11 @@ def close_session(
 
     Works from any directory — no project context required.
     """
+    if session_id.startswith("root-"):
+        from .sessions_fleet import _call
+
+        output_json(_call("close", session_id))
+        return
     client = STClient(require_project=False)
     resolved_id = _resolve_session_id(session_id, client, project_id=project_id)
 
