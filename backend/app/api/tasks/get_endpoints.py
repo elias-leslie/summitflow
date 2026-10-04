@@ -86,7 +86,10 @@ async def get_task_global(
 
     from ...storage.task_spirit import get_task_spirit
     spirit = await asyncio.to_thread(get_task_spirit, str(task["id"]))
+    stored_subtasks = task.get("subtasks")
     task = _hydrate_export_task(task, spirit)
+    # Logical plan entries belong in context, not the persisted subtask response schema.
+    task["subtasks"] = stored_subtasks
     task_response = task_to_response(task)
 
     # Return TOON format if requested
@@ -109,7 +112,9 @@ async def get_task(
 
     from ...storage.task_spirit import get_task_spirit
     spirit = await asyncio.to_thread(get_task_spirit, str(task["id"]))
+    stored_subtasks = task.get("subtasks")
     task = _hydrate_export_task(task, spirit)
+    task["subtasks"] = stored_subtasks
     task_response = task_to_response(task)
 
     # Return TOON format if requested

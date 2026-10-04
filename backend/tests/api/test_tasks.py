@@ -45,14 +45,20 @@ class TestTaskSpiritJoin:
         from app.storage.task_spirit import upsert_task_spirit
         spirit = get_task_spirit(task_id)
         assert spirit is not None
+        plan_subtasks = [{"subtask_id": "1.1", "description": "Create and verify the module",
+                          "steps": ["Implement the module", "Verify the route"]}]
         upsert_task_spirit(task_id, done_when=spirit["done_when"], complexity=spirit.get("complexity"),
-                          context={**spirit["context"], "completion_requirements": requirements})
+                          context={**spirit["context"], "completion_requirements": requirements,
+                                   "subtasks": plan_subtasks})
         for route in (f"/api/tasks/{task_id}", f"/api/projects/{test_project_id}/tasks/{task_id}"):
             fetched = client.get(route)
             assert fetched.status_code == 200
             task = fetched.json()
             assert task["context"]["files_to_create"] == scope
             assert task["context"]["completion_requirements"] == requirements
+            assert task["context"]["subtasks"] == plan_subtasks
+            # Plan entries have logical IDs; they are not persisted SubtaskResponse rows.
+            assert task["subtasks"] is None
             _print_claim_brief(task_id, {"task": task})
             brief = capsys.readouterr().out
             assert "Scope: backend/new_module.py" in brief
