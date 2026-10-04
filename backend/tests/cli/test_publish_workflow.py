@@ -208,38 +208,38 @@ def test_reconcile_preserves_dirty_work_without_blocking_remote_result():
     assert git.call_count == 2
 
 
-def test_closed_scheduled_window_never_inspects_or_publishes():
-    git = Mock(side_effect=AssertionError('No activity after night window'))
-    with pytest.raises(publish.PublishError, match='window is closed'):
-        publish.publish_git(Path('/repo'), sha='a'*40, task_id='nightly', message='nightly',
+def test_unavailable_publication_ownership_never_inspects_or_publishes():
+    git = Mock(side_effect=AssertionError('No activity without repository ownership'))
+    with pytest.raises(publish.PublishError, match='ownership is unavailable'):
+        publish.publish_git(Path('/repo'), sha='a'*40, task_id='manual', message='Share accepted source',
                             run_git=git, activity_allowed=lambda: False)
     git.assert_not_called()
 
 
-def test_scheduled_window_closure_before_push_retains_source(monkeypatch):
+def test_publication_ownership_loss_before_push_retains_source(monkeypatch):
     client = Mock()
     client.plan.return_value = {'base': 'main', 'requires_pr': True, 'required': [], 'merge_method': 'merge'}
     client.base_sha.return_value = 'b'*40
     client.source_pull_request.return_value = None
     monkeypatch.setattr(publish, 'GitHub', Mock(return_value=client))
-    window = Mock(side_effect=[True, False])
+    ownership = Mock(side_effect=[True, False])
     git = Mock(return_value=Mock(returncode=0, stdout='git@github.com:owner/repo.git'))
-    with pytest.raises(publish.PublishError, match='window is closed'):
-        publish.publish_git(Path('/repo'), sha='a'*40, task_id='nightly', message='nightly',
-                            run_git=git, activity_allowed=window)
+    with pytest.raises(publish.PublishError, match='ownership is unavailable'):
+        publish.publish_git(Path('/repo'), sha='a'*40, task_id='manual', message='Share accepted source',
+                            run_git=git, activity_allowed=ownership)
     assert git.call_count == 1
     client.pull_request.assert_not_called()
 
 
-def test_github_reads_and_merge_requests_stop_after_window_closure(monkeypatch):
+def test_github_reads_and_merge_requests_stop_after_ownership_loss(monkeypatch):
     from cli.lib import github_publish
 
     client = github_publish.GitHub(Path('/repo'), 'owner/repo')
     client.activity_allowed = lambda: False
-    external = Mock(side_effect=AssertionError('No GitHub request after window'))
+    external = Mock(side_effect=AssertionError('No GitHub request without repository ownership'))
     monkeypatch.setattr(github_publish.subprocess, 'run', external)
     for method in ('GET', 'PUT', 'POST'):
-        with pytest.raises(github_publish.GitHubError, match='window is closed'):
+        with pytest.raises(github_publish.GitHubError, match='ownership is unavailable'):
             client.api('pulls/7/merge', method=method)
     external.assert_not_called()
 

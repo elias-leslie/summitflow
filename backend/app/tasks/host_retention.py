@@ -98,7 +98,8 @@ def _prune_images(
 
 
 
-def _active_veeam_session(run: Any = _run_command) -> tuple[bool | None, str | None]:
+def _active_veeam_session(run: Any = None) -> tuple[bool | None, str | None]:
+    run = _run_command if run is None else run
     proc = run(["sudo", "-n", "veeamconfig", "session", "list"], timeout=30)
     if proc.returncode != 0:
         return None, _tail_output(proc.stderr or proc.stdout)
@@ -113,7 +114,8 @@ def _tail_output(text: str, *, limit: int = 400) -> str:
     return text.strip()[-limit:] if text else ""
 
 
-def _root_btrfs_source(run: Any = _run_command) -> str | None:
+def _root_btrfs_source(run: Any = None) -> str | None:
+    run = _run_command if run is None else run
     proc = run(["findmnt", "-no", "SOURCE,FSTYPE", "/"], timeout=15)
     if proc.returncode != 0:
         return None
@@ -123,7 +125,8 @@ def _root_btrfs_source(run: Any = _run_command) -> str | None:
     return " ".join(parts[:-1]).split("[", 1)[0]
 
 
-def _btrfs_subvolume_paths(mount_point: Path, run: Any = _run_command) -> list[str]:
+def _btrfs_subvolume_paths(mount_point: Path, run: Any = None) -> list[str]:
+    run = _run_command if run is None else run
     proc = run(["sudo", "-n", "btrfs", "subvolume", "list", str(mount_point)], timeout=60)
     if proc.returncode != 0:
         return []
@@ -139,10 +142,11 @@ def cleanup_stale_veeam_snapshots(
     *,
     policy: HostRetentionPolicy,
     now: datetime,
-    run: Any = _run_command,
+    run: Any = None,
     mount_point: Path | None = None,
 ) -> VeeamSnapshotResult:
     """Delete stale Veeam btrfs temp snapshots that pin freed disk blocks."""
+    run = _run_command if run is None else run
     active, reason = _active_veeam_session(run)
     if active is True:
         return {"status": "skipped", "reason": "veeam_session_active", "deleted": [], "skipped": []}

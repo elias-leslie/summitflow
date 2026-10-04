@@ -1,4 +1,4 @@
-"""One rolling publication/security repair task per project, in existing task storage."""
+"""Retained publication findings and project-owned repair work."""
 from __future__ import annotations
 
 import os
@@ -17,7 +17,7 @@ from .core import create_task
 from .mapping import row_to_dict_with_spirit
 
 REPAIR_LABEL = "publication-repair"
-_POLICY_APPROVER = "owner-approved-nightly-repair-policy"
+_POLICY_APPROVER = "owner-approved-local-repair-policy"
 _SOURCE_OID = re.compile(r"[0-9a-f]{40}|[0-9a-f]{64}")
 
 
@@ -37,7 +37,7 @@ def _ensure_policy_plan(task_id: str) -> None:
             task_id, "1.1",
             "Inspect retained source-bound findings, repair their causes and any demonstrated workflow gaps, "
             "add focused regression coverage, and run canonical local acceptance. Submit the accepted "
-            "repair for nightly confirmation without holding a claim, checkpoint, or checkout lease.",
+            "repair with local acceptance and any explicit runtime evidence. Publication is independent.",
             display_order=0, phase="implementation",
         )
     if fresh and spirit.get("plan_status") != "approved":
@@ -49,7 +49,7 @@ def unresolved_repair(task: dict[str, Any]) -> list[str]:
         return []
     findings = (task.get("verification_result") or {}).get("publication_repair") or {}
     return [key for key, finding in findings.items()
-            if isinstance(finding, dict) and finding.get("state") != "resolved"]
+            if isinstance(finding, dict) and finding_actionable(finding)]
 
 
 def get_repair_task(project_id: str, *, connection: psycopg.Connection | None = None) -> dict[str, Any] | None:
@@ -106,18 +106,18 @@ def record_finding(project_id: str, category: str, observation: dict[str, Any], 
             if resolved:
                 return None
             task = create_task(
-                project_id=project_id, title="Repair nightly publication and verified code health",
-                description=("Resolve the retained, source-bound nightly publication/CI/security findings. "
+                project_id=project_id, title="Investigate retained publication and secure-code findings",
+                description=("Investigate retained source-bound findings and repair demonstrated product/security defects. "
                              "Use normal ST pickup and local checkpoints; preserve backups and unrelated work. "
                              "Do not weaken checks, disable hooks, change visibility, or enable autonomous execution. "
-                             "Repair process defects that caused the failure. Closure requires local acceptance "
-                             "and remote confirmation that includes the accepted repair source."),
+                             "Repair process defects that caused the failure. Closure requires relevant local acceptance "
+                             "and explicit task runtime evidence; publication is independent."),
                 priority=1, task_type="bug", complexity="STANDARD", execution_mode="manual",
                 labels=[REPAIR_LABEL], initial_spirit={
                     "complexity": "STANDARD", "context": {"publication_repair": True},
                     "done_when": ["All retained actionable findings are resolved with evidence.",
                                   "Canonical local acceptance passes for the repair source.",
-                                  "Nightly remote checks confirm the accepted repair source; no gate was bypassed."],
+                                  "Required local and runtime evidence is retained; no gate was bypassed."],
                 },
             )
         _ensure_policy_plan(task["id"])
@@ -157,3 +157,56 @@ def record_finding(project_id: str, category: str, observation: dict[str, Any], 
                                       "state": "resolved" if resolved else "unresolved"}}),
                      task["id"], project_id, category, Jsonb(previous)))
         return str(task["id"])
+
+
+_ADMINISTRATIVE_REASONS = frozenset({"cloud_ci_missing", "outside_publication_window",
+    "outside_nightly_window", "nightly_repair_confirmation_pending"})
+
+
+def finding_actionable(finding: dict[str, Any]) -> bool:
+    if finding.get("state") == "resolved":
+        return False
+    disposition = finding.get("disposition") or {}
+    return not (disposition.get("kind") == "publication_disposition.v1"
+                and disposition.get("classification") == "administrative"
+                and disposition.get("state") == "no_longer_required"
+                and finding.get("reason") in _ADMINISTRATIVE_REASONS
+                and disposition.get("prior_finding") == {key: value for key, value in finding.items() if key != "disposition"})
+
+
+def classify_retained_finding(category: str, finding: dict[str, Any]) -> str:
+    """Classify administration narrowly; remote failures need investigation."""
+    if finding.get("reason") in _ADMINISTRATIVE_REASONS:
+        return "administrative"
+    if category in {"codeql", "outgoing_security"}:
+        return "security_investigation"
+    return "investigation"
+
+
+def disposition_finding(task_id: str, project_id: str, category: str, *,
+                        expected_finding: dict[str, Any], classification: str,
+                        reason: str, evidence: str) -> bool:
+    """Owner operation: compare the full finding and retain truthful disposition."""
+    if classification not in {"administrative", "product_defect", "security_investigation", "investigation"}:
+        raise ValueError("Unknown finding classification")
+    if not reason.strip() or not evidence.strip():
+        raise ValueError("Disposition requires an owner reason and evidence reference")
+    if classification == "administrative" and expected_finding.get("reason") not in _ADMINISTRATIVE_REASONS:
+        raise ValueError("A product/security or untriaged failure cannot be retired as administration")
+    if expected_finding.get("state") == "resolved":
+        return False
+    from ..connection import get_connection
+    disposition = {"kind": "publication_disposition.v1", "classification": classification,
+        "state": "no_longer_required" if classification == "administrative" else "actionable",
+        "reason": reason, "evidence": evidence, "observed_at": datetime.now(UTC).isoformat(),
+        "prior_finding": expected_finding}
+    updated = {**expected_finding, "disposition": disposition}
+    with get_connection() as conn, conn.cursor() as cur:
+        cur.execute("""UPDATE tasks SET verification_result = jsonb_set(
+            COALESCE(verification_result, '{}'::jsonb), ARRAY['publication_repair', %s], %s::jsonb),
+            updated_at = NOW() WHERE id = %s AND project_id = %s
+            AND verification_result->'publication_repair'->%s = %s::jsonb""",
+            (category, Jsonb(updated), task_id, project_id, category, Jsonb(expected_finding)))
+        changed = cur.rowcount == 1
+        conn.commit()
+    return changed

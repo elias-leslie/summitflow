@@ -24,6 +24,49 @@ from app.storage.task_spirit import get_task_spirit
 class TestTaskSpiritJoin:
     """Test task_spirit LEFT JOIN functionality."""
 
+    def test_task_get_delivers_claim_scope_and_claim_timestamp(
+        self, client: Any, test_project_id: str, cleanup_task: Callable[[str], None], capsys: Any,
+    ) -> None:
+        from cli.commands.claim_helpers import _print_claim_brief
+
+        response = client.post(f"/api/projects/{test_project_id}/tasks", json={
+            "title": "Implement a scoped runtime change", "description": "Create the declared module",
+        })
+        assert response.status_code == 200
+        task_id = response.json()["id"]
+        cleanup_task(task_id)
+        scope = ["backend/new_module.py"]
+        requirements = {"deployment": True, "live_checks": ["development-ui"]}
+        updated = client.patch(f"/api/projects/{test_project_id}/tasks/{task_id}", json={
+            "files_to_create": scope,
+            "done_when": ["Module and live route verified"],
+        })
+        assert updated.status_code == 200
+        from app.storage.task_spirit import upsert_task_spirit
+        spirit = get_task_spirit(task_id)
+        assert spirit is not None
+        upsert_task_spirit(task_id, done_when=spirit["done_when"], complexity=spirit.get("complexity"),
+                          context={**spirit["context"], "completion_requirements": requirements})
+        for route in (f"/api/tasks/{task_id}", f"/api/projects/{test_project_id}/tasks/{task_id}"):
+            fetched = client.get(route)
+            assert fetched.status_code == 200
+            task = fetched.json()
+            assert task["context"]["files_to_create"] == scope
+            assert task["context"]["completion_requirements"] == requirements
+            _print_claim_brief(task_id, {"task": task})
+            brief = capsys.readouterr().out
+            assert "Scope: backend/new_module.py" in brief
+            assert "development-ui" in brief
+            assert "Module and live route verified" in brief
+        claimed = client.post(f"/api/projects/{test_project_id}/tasks/{task_id}/claim", json={
+            "worker_id": "scope-worker", "lock_minutes": 30,
+        })
+        assert claimed.status_code == 200
+        stored = task_store.get_task(task_id)
+        assert stored is not None
+        from datetime import datetime
+        assert datetime.fromisoformat(claimed.json()["claimed_at"]) == stored["claimed_at"]
+
     def test_get_task_with_spirit_data(
         self, client: Any, test_project_id: str, cleanup_task: Callable[[str], None]
     ) -> None:

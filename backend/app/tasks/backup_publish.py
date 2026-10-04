@@ -1,9 +1,7 @@
-"""Best-effort publication of existing default-branch commits before backups.
+"""Guarded manual publication of one accepted immutable source.
 
-The scheduler opts in through backup_publish_before_backup. Every result permits
-backup capture to continue; failed/pending publication stays retryable through
-the existing completed-backup verification record. This helper creates no commit
-and never modifies the worktree, index, branch or upstream configuration.
+Legacy callers without an explicit source are retired. This helper creates no
+commit and never modifies the worktree, index, branch or upstream configuration.
 """
 
 from __future__ import annotations
@@ -18,7 +16,6 @@ from collections.abc import Callable
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
-from zoneinfo import ZoneInfo
 
 from ..services.git.utils import network_repository_identity
 from ..utils import safe_subprocess
@@ -38,12 +35,6 @@ class _OutgoingFailed(RuntimeError):
 
 class _AdmissionUnavailable(RuntimeError):
     """Shared validation admission is unavailable, not a source finding."""
-
-
-def publication_window_open(now: datetime | None = None) -> bool:
-    """Scheduled publication is limited to 02:00-06:00 New York, including DST."""
-    local = (now or datetime.now(UTC)).astimezone(ZoneInfo("America/New_York"))
-    return 2 <= local.hour < 6
 
 
 def _git(project: Path, *arguments: str) -> subprocess.CompletedProcess[str]:
@@ -122,34 +113,10 @@ def _public_evidence(value: Any) -> Any:
     return value
 
 
-def _reviewed_jj_source(project: Path, default_head: str) -> str:
-    """Resolve reviewed immutable JJ work without snapshotting its mutable @."""
-    try:
-        common = Path(_value(project, "rev-parse", "--path-format=absolute", "--git-common-dir"))
-        artifacts = sorted((common / "st" / "acceptance").glob("*.json"), key=lambda path: path.stat().st_mtime_ns, reverse=True)[:64]
-        for artifact in artifacts:
-            if artifact.is_symlink() or not artifact.is_file() or artifact.stat().st_size > 4 * 1024 * 1024:
-                continue
-            try:
-                receipt = json.loads(artifact.read_text())
-                receipt_source = receipt.get("source") if isinstance(receipt, dict) else None
-                candidate = receipt_source.get("commit") if isinstance(receipt_source, dict) else None
-                if not isinstance(candidate, str) or not re.fullmatch(r"[0-9a-f]{40}|[0-9a-f]{64}", candidate):
-                    continue
-                if _git(project, "merge-base", "--is-ancestor", default_head, candidate).returncode != 0:
-                    continue
-                if _acceptance_for_head(project, candidate).get("state") == "reused":
-                    return candidate
-            except (OSError, ValueError, TypeError, RuntimeError):
-                continue
-    except (OSError, RuntimeError):
-        pass
-    return default_head
-
-
 def _publish_isolated(project: Path, head: str, branch: str, remote: str,
                       remote_url: str, source_id: str, *, resume: bool,
-                      activity_allowed: Callable[[], bool] | None = None) -> dict[str, Any]:
+                      activity_allowed: Callable[[], bool] | None = None,
+                      authorized_workflows: tuple[str, ...] = ()) -> dict[str, Any]:
     """Use canonical rules/PR/CI machinery without touching the active checkout."""
     from cli.lib.publish_workflow import PublishError, publish_git
 
@@ -160,8 +127,8 @@ def _publish_isolated(project: Path, head: str, branch: str, remote: str,
         verify_outgoing,
     )
 
-    allowed = publication_window_open if activity_allowed is None else activity_allowed
-    with tempfile.TemporaryDirectory(prefix="st-nightly-publish-") as directory:
+    allowed = activity_allowed if activity_allowed is not None else lambda: True
+    with tempfile.TemporaryDirectory(prefix="st-manual-publish-") as directory:
         isolated = Path(directory) / "source"
         cloned = _git(project, "clone", "--shared", "--no-checkout", "--no-hardlinks", str(project), str(isolated))
         if cloned.returncode:
@@ -239,36 +206,53 @@ def _publish_isolated(project: Path, head: str, branch: str, remote: str,
         security.update(state="success", commits_scanned=verified.commits_scanned,
                         refs_checked=verified.refs_checked, scope="outgoing_history", base_sha=old,
                         destination_ref=base_ref, published_bases=list(published_bases))
+        workflow_authority: dict[str, Any] = {}
+
+        def authorize_delivery(base_sha: str | None, base_branch: str, staging_branch: str | None) -> None:
+            from cli.lib.publication_effects import delivery_workflow_authority
+
+            try:
+                workflow_authority.update(delivery_workflow_authority(
+                    isolated, head, base_sha, base_branch or branch, staging_branch,
+                    git=_git, authorized=authorized_workflows))
+            except ValueError as exc:
+                raise PublishError('Workflow base effects are unavailable; explicitly refresh the remote before retrying',
+                                   unavailable=True, reason='workflow_effects_unknown') from exc
+            if workflow_authority['unauthorized_workflows']:
+                raise PublishError('Explicit authority is required for the listed source/base workflows',
+                                   unavailable=True, reason='workflow_effects_authorization_required')
+
         try:
-            delivery = publish_git(isolated, sha=head, task_id=f"nightly-{source_id}-{head[:16]}",
+            delivery = publish_git(isolated, sha=head, task_id=f"manual-{source_id}-{head[:16]}",
                 message=f"Publish reviewed local source {head[:12]}", run_git=run_git,
                 remote_name=remote, destination=branch, resume=resume,
-                reconcile_checkout=False, activity_allowed=allowed)
+                reconcile_checkout=False, activity_allowed=allowed, before_delivery=authorize_delivery)
         except PublishError as exc:
             activity_open = allowed()
             delivery = {"status": "BLOCKED" if activity_open and not exc.unavailable else "PENDING", "pushed": False,
                         "publication_complete": False, "ci": {"state": "unavailable", "sha": head},
-                        "reason": exc.reason if activity_open else "outside_publication_window"}
-        return {**_public_evidence(delivery), "security": security}
+                        "reason": exc.reason if activity_open else "publication_busy"}
+        return {**_public_evidence(delivery), "security": security, "workflow_authority": workflow_authority,
+                "unauthorized_workflows": workflow_authority.get("unauthorized_workflows", [])}
 
 
 def publish_source_before_backup(source: dict[str, Any], *, retained: dict[str, Any] | None = None,
                                  manual_source_commit: str | None = None,
+                                 authorized_workflows: tuple[str, ...] = (),
                                  activity_allowed: Callable[[], bool] | None = None) -> dict[str, Any]:
     """Publish accepted source; an explicit owner call pins its immutable OID.
 
     The owning CLI/API authorizes manual calls. This changes only that call's
     activity window; route, acceptance, outgoing and remote checks still apply.
     """
-    manual = manual_source_commit is not None
+    if manual_source_commit is None:
+        return {"status": "retired", "reason": "scheduled_publication_no_longer_required",
+                "publication_complete": False, "attempted": False, "backup_can_continue": True}
     deferred_reason: str | None = None
 
     def can_publish() -> bool:
         nonlocal deferred_reason
         if deferred_reason is not None:
-            return False
-        if not manual and not publication_window_open():
-            deferred_reason = "outside_publication_window"
             return False
         try:
             if activity_allowed is not None and activity_allowed() is not True:
@@ -285,25 +269,22 @@ def publish_source_before_backup(source: dict[str, Any], *, retained: dict[str, 
         "publication_complete": False, "observed_at": datetime.now(UTC).isoformat(),
         "source_status": "unknown", "remote_status": "unobserved",
         "ci": {"state": "unobserved"}, "security": {"state": "not_run"},
-        "publication_mode": "manual" if manual else "scheduled",
+        "publication_mode": "manual",
         "requested_source_commit": None, "captured_source_commit": None,
     }
 
     def outcome(status: str, reason: str) -> dict[str, Any]:
         return {**result, "status": status, "reason": reason, "observed_at": datetime.now(UTC).isoformat()}
 
-    if manual:
-        if not isinstance(manual_source_commit, str) or not re.fullmatch(r"[0-9a-f]{40}|[0-9a-f]{64}", manual_source_commit):
-            return outcome("failed", "invalid_manual_source")
-        result["requested_source_commit"] = manual_source_commit
-        if retained and "head" in retained:
-            retained_head = retained["head"]
-            if not isinstance(retained_head, str) or not re.fullmatch(r"[0-9a-f]{40}|[0-9a-f]{64}", retained_head):
-                return outcome("failed", "invalid_retained_source")
-            if retained_head != manual_source_commit:
-                return outcome("failed", "manual_retained_source_conflict")
-    if not manual and not publication_window_open():
-        return outcome("pending", "outside_publication_window")
+    if not isinstance(manual_source_commit, str) or not re.fullmatch(r"[0-9a-f]{40}|[0-9a-f]{64}", manual_source_commit):
+        return outcome("failed", "invalid_manual_source")
+    result["requested_source_commit"] = manual_source_commit
+    if retained and "head" in retained:
+        retained_head = retained["head"]
+        if not isinstance(retained_head, str) or not re.fullmatch(r"[0-9a-f]{40}|[0-9a-f]{64}", retained_head):
+            return outcome("failed", "invalid_retained_source")
+        if retained_head != manual_source_commit:
+            return outcome("failed", "manual_retained_source_conflict")
     if source.get("source_type") != "project":
         return outcome("skipped", "non_project_source")
     if not source.get("id") or not source.get("path"):
@@ -320,33 +301,18 @@ def publish_source_before_backup(source: dict[str, Any], *, retained: dict[str, 
             return outcome("skipped", "not_git_repository")
         if Path(top.stdout.strip()).resolve() != project:
             return outcome("skipped", "repository_root_mismatch")
-        symbolic = _git(project, "symbolic-ref", "--quiet", "--short", "HEAD")
-        branch = symbolic.stdout.strip()
-        if retained and retained.get("branch") in {"main", "master"}:
-            branch = retained["branch"]
-        if colocated or manual:
-            # Manual source is independent of a later active branch or JJ @.
-            # The existing default route is still verified against GitHub.
-            branches = [name for name in ("main", "master") if _git(project, "show-ref", "--verify", "--quiet", f"refs/heads/{name}").returncode == 0]
-            if len(branches) != 1:
-                return outcome("pending", "jj_default_bookmark_required" if colocated else "manual_default_branch_required")
-            branch = branches[0]
-        elif symbolic.returncode != 0 and not (retained and retained.get("branch") in {"main", "master"}):
-            return outcome("skipped", "detached_head")
-        if branch not in {"main", "master"}:
-            return outcome("skipped", "non_default_branch")
-        revision = (manual_source_commit if manual_source_commit is not None
-                    else str(retained.get("head")) if retained and retained.get("head") else f"refs/heads/{branch}")
-        if retained and retained.get("head") and not re.fullmatch(r"[0-9a-f]{40}|[0-9a-f]{64}", revision):
-            return outcome("failed", "invalid_retained_source")
+        # The selected source is independent of the mutable branch or JJ @.
+        branches = [name for name in ("main", "master") if _git(project, "show-ref", "--verify", "--quiet", f"refs/heads/{name}").returncode == 0]
+        if len(branches) != 1:
+            return outcome("pending", "jj_default_bookmark_required" if colocated else "manual_default_branch_required")
+        branch = branches[0]
+        revision = manual_source_commit
         head_result = _git(project, "rev-parse", "--verify", f"{revision}^{{commit}}")
         if head_result.returncode != 0:
-            return outcome("failed", "manual_source_unavailable") if manual else outcome("skipped", "unborn_head")
-        head = head_result.stdout.strip()
-        if manual and head != manual_source_commit:
             return outcome("failed", "manual_source_unavailable")
-        if colocated and not manual and not (retained and retained.get("head")):
-            head = _reviewed_jj_source(project, head)
+        head = head_result.stdout.strip()
+        if head != manual_source_commit:
+            return outcome("failed", "manual_source_unavailable")
         result.update(head=head, branch=branch, source_status="captured", vcs="jj" if colocated else "git",
                       captured_source_commit=head,
                       source_tree=_value(project, "rev-parse", f"{head}^{{tree}}"))
@@ -394,16 +360,32 @@ def publish_source_before_backup(source: dict[str, Any], *, retained: dict[str, 
         result["acceptance"] = _acceptance_for_head(project, head)
         if result["acceptance"].get("state") != "reused":
             result["source_status"] = "acceptance_required"
-            result["action"] = "Run st check --acceptance for the exact committed source, then retry nightly publication"
+            result["action"] = "Run st check --acceptance for the exact committed source, then explicitly publish that source"
             return outcome("pending", "source_acceptance_required")
         if _value(project, "remote", "get-url", "--push", "--all", remote).splitlines() != push_urls:
             return outcome("pending", "repository_changed")
         result["source_status"] = "accepted"
+        from cli.lib.publication_effects import workflow_effects
+
+        try:
+            from cli.lib.publish_workflow import publication_branch
+
+            staging = publication_branch(f"manual-{source['id']}-{head[:16]}", head)
+            effects = workflow_effects(project, head, branch, git=_git, push_branches=(staging,))
+        except ValueError:
+            return outcome("pending", "workflow_effects_unknown")
+        result["workflow_effects"] = effects
+        missing_authority = sorted(set(effects) - set(authorized_workflows))
+        if missing_authority:
+            result["unauthorized_workflows"] = missing_authority
+            result["action"] = "Authorize the listed workflow effects explicitly for this accepted source before publication"
+            return outcome("pending", "workflow_effects_authorization_required")
         if not can_publish():
             return outcome("pending", deferred_reason or "publication_busy")
         result["attempted"] = True
         delivered = _publish_isolated(project, head, branch, remote, push_urls[0], str(source["id"]),
-                                      resume=bool(retained and retained.get("pushed")), activity_allowed=can_publish)
+                                      resume=bool(retained and retained.get("pushed")), activity_allowed=can_publish,
+                                      authorized_workflows=authorized_workflows)
         if deferred_reason and not delivered.get("publication_complete"):
             delivered = {**delivered, "status": "PENDING", "reason": deferred_reason}
         result.update(delivered)

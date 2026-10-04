@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from typing import Annotated
+
 from pydantic import BaseModel, Field
 
 
@@ -253,3 +255,10 @@ class ProjectDashboardResponse(BaseModel):
     recent_commits: list[CommitInfo]
     snapshots: list[SnapshotInfo]
     conflicts: list[ConflictInfo]
+
+
+class ProjectPublishRequest(BaseModel):
+    """Publication always names a complete accepted source identity."""
+
+    source_sha: str = Field(pattern=r"^(?:[0-9a-f]{40}|[0-9a-f]{64})$")
+    authorized_workflows: list[Annotated[str, Field(pattern=r"^(?:(?:[0-9a-f]{40}|[0-9a-f]{64}):)?\.github/workflows/[^/]+\.ya?ml$")]] = Field(default_factory=list)

@@ -116,8 +116,13 @@ async def build_project_pulse(project_id: str) -> dict[str, Any]:
         raw_running_tasks, owner_task_ids, specialist_task_ids, session_linked_task_ids
     )
     cleanup = build_project_cleanup_status(project_id)
-    from app.services.publication_health import get_project_publication_health
-    publication = get_project_publication_health(project_id)
+    from pathlib import Path
+
+    from app.services.development import build_development_projection
+    from app.storage.projects import get_project_root_path
+    root = get_project_root_path(project_id)
+    development = (build_development_projection(project_id, Path(root)) if root else
+                   {"version": "development.v1", "state": "unavailable", "reason": "Project root unavailable"})
     return {
         "project_id": project_id,
         "generated_at": datetime.now(UTC).isoformat(),
@@ -142,5 +147,5 @@ async def build_project_pulse(project_id: str) -> dict[str, Any]:
         "active_sessions": active_sessions,
         "stale_sessions": stale_sessions,
         "cleanup": cleanup,
-        "publication": publication,
+        "development": development,
     }

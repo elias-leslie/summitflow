@@ -52,9 +52,7 @@ def _finalize_active_missing_snapshot(
     project_id = deps["task_project_id"](task)
     repo_root = deps["checkpoint_repo_root"](project_id)
     scoped_task = deps["task_with_export_context"](client, task_id, task)
-    if repo_root and not deps["is_working_tree_clean"](repo_root) and not deps[
-        "task_has_published_commit_event"
-    ](task_id):
+    if repo_root and not deps["is_working_tree_clean"](repo_root):
         deps["commit_active_task_work"](repo_root, task_id, message)
     if repo_root:
         result = _close_active_missing_snapshot_if_ready(

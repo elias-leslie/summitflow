@@ -36,7 +36,7 @@ app = typer.Typer(
 
 
 @app.command("publication")
-@usage(surface="st.vcs.publication", cmd="st vcs publication", when="read last nightly publication and repair status",
+@usage(surface="st.vcs.publication", cmd="st vcs publication", when="read retained manual publication and finding status",
        precautions=("read-only; unknown is not passing CI",), tier="reference")
 def publication_status() -> None:
     """Read-only lightweight startup status, without a network CI wait."""
@@ -48,33 +48,35 @@ def publication_status() -> None:
 
     project_id = get_config_optional().project_id
     if not project_id:
-        typer.echo("Nightly publication: unknown; no registered project for this directory.")
+        typer.echo("Manual publication: unknown; no registered project for this directory.")
         return
     try:
         health = get_project_publication_health(project_id)
         typer.echo(format_publication_health(health))
     except Exception:
-        typer.echo("Nightly publication: unknown; status unavailable. Inspect ST before claiming completion.")
+        typer.echo("Manual publication: unknown; status unavailable. Inspect ST before claiming completion.")
 
 
 @app.command("publish")
 @usage(surface="st.vcs.publish", cmd="st vcs publish --source ID --sha FULL_OID --now",
        when="owner-authorized immediate publication of an accepted exact commit",
        precautions=("requires explicit publication authority; never creates commits or reconciles the checkout",
-                    "all acceptance, outgoing-history, repository-rule and CI gates remain required"), tier="reference")
+                    "acceptance, outgoing-history and actual repository requirements remain guarded"), tier="reference")
 def publish_now(
-    source: Annotated[str, typer.Option("--source", help="Enabled registered project backup source ID")],
+    source: Annotated[str, typer.Option("--source", help="Registered project ID (or existing project source ID)")],
     sha: Annotated[str, typer.Option("--sha", help="Exact accepted lowercase full commit OID")],
-    now: Annotated[bool, typer.Option("--now", help="Explicit owner-triggered publication outside the nightly schedule")] = False,
+    now: Annotated[bool, typer.Option("--now", help="Explicit owner-triggered publication of the supplied source")] = False,
+    authorize_workflow: Annotated[list[str] | None, typer.Option("--authorize-workflow", help="Explicit authority for a listed workflow: exact path for selected source, BASE_SHA:path for a different base workflow; repeat as needed")] = None,
+    json_output: Annotated[bool, typer.Option("--json", help="Show the complete retained structured observation")] = False,
 ) -> None:
     """Publish an exact accepted source in isolation and retain its real CI evidence."""
     if not now:
-        typer.echo("Immediate publication requires --now and explicit owner authorization; the nightly schedule is unchanged.")
+        typer.echo("Immediate publication requires --now and explicit owner authorization; no scheduled publication runs.")
         raise typer.Exit(2)
     from app.tasks.backup_manual_publish import publish_project_now
 
     try:
-        result = publish_project_now(source, sha)
+        result = publish_project_now(source, sha, authorized_workflows=tuple(authorize_workflow)) if authorize_workflow else publish_project_now(source, sha)
     except ValueError as exc:
         typer.echo(str(exc))
         raise typer.Exit(2) from None
@@ -82,9 +84,24 @@ def publish_now(
         # Transport/DB errors can contain credentials. Never print raw diagnostics.
         typer.echo("Publication could not establish durable evidence. Inspect canonical publication health before retrying.")
         raise typer.Exit(2) from None
-    output_json(result)
-    if not (result.get("publication_complete") and result.get("evidence_recorded")
-            and (result.get("health") or {}).get("state") == "verified"):
+    from app.tasks.backup_publish import _public_evidence
+
+    safe_result = _public_evidence(result)
+    if json_output:
+        output_json(safe_result)
+    else:
+        details = write_details(Path.cwd(), "publication", json.dumps(safe_result, indent=2, sort_keys=True))
+        delivery = result.get("delivery") or {}
+        complete = bool(result.get("publication_complete") and result.get("evidence_recorded"))
+        output_json({"outcome": result.get("status", "completed" if complete else "pending"),
+                     "source": sha, "uploaded_source": delivery.get("uploaded_source"),
+                     "pull_request": delivery.get("pull_request_state", "unknown"),
+                     "merged_source": delivery.get("merged_source"),
+                     "blockers": [] if complete else [result.get("reason", "publication_evidence_incomplete")],
+                     "unauthorized_workflows": result.get("unauthorized_workflows", []),
+                     "next_action": "none" if complete else "Inspect retained evidence; explicitly reobserve this source after resolving the blocker",
+                     "evidence": result.get("evidence"), "details": display_path(Path.cwd(), details)})
+    if not (result.get("publication_complete") and result.get("evidence_recorded")):
         raise typer.Exit(2)
 
 _IGNORED_WORKSPACE_REPO_NAMES = frozenset({"claude-config", "codex-config"})

@@ -204,6 +204,10 @@ def test_cleanup_host_artifacts_prunes_stale_tmp_backups_and_hermes_checkpoints(
         ],
     )
     mocker.patch("app.tasks.host_retention.shutil.which", return_value=None)
+    mocker.patch(
+        "app.tasks.host_retention._run_command",
+        return_value=type("Proc", (), {"returncode": 1, "stdout": "", "stderr": "fixture unavailable"})(),
+    )
 
     result = cast(dict[str, Any], cleanup_host_artifacts(home_dir=home_dir, tmp_dir=tmp_dir))
 
@@ -215,6 +219,21 @@ def test_cleanup_host_artifacts_prunes_stale_tmp_backups_and_hermes_checkpoints(
     assert not tmp_checkpoint.exists()
     assert not internal_checkpoint.exists()
     assert keep_checkpoint.exists()
+
+
+def test_veeam_cleanup_resolves_patched_command_at_call_time(mocker, tmp_path: Path) -> None:
+    from app.tasks.host_retention import HostRetentionPolicy, cleanup_stale_veeam_snapshots
+
+    command = mocker.patch(
+        "app.tasks.host_retention._run_command",
+        return_value=type("Proc", (), {"returncode": 0, "stdout": "Running", "stderr": ""})(),
+    )
+    result = cleanup_stale_veeam_snapshots(
+        policy=HostRetentionPolicy(), now=datetime.now(UTC), mount_point=tmp_path
+    )
+
+    assert result["reason"] == "veeam_session_active"
+    command.assert_called_once_with(["sudo", "-n", "veeamconfig", "session", "list"], timeout=30)
 
 
 def test_cleanup_stale_veeam_snapshots_deletes_old_btrfs_subvolumes(tmp_path: Path) -> None:

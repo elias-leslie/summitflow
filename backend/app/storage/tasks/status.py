@@ -12,6 +12,7 @@ from typing import Any
 from psycopg.types.json import Jsonb
 
 from ..connection import get_connection
+from .claims import _preserved_verification_sql
 from .core import TASK_COLUMNS, _row_to_dict, canonicalize_task_id
 
 # Valid task status transitions (simplified)
@@ -38,14 +39,7 @@ _UPDATE_SQL = f"""
         END,
         error_message = CASE WHEN %s IN ('pending','running','paused') THEN NULL WHEN %s IN ('completed','failed','cancelled') THEN %s ELSE error_message END,
         verification_result = CASE WHEN %s = 'completed' THEN verification_result ELSE
-            NULLIF(jsonb_strip_nulls(jsonb_build_object(
-                'acceptance', CASE WHEN verification_result ? 'acceptance' THEN
-                    verification_result->'acceptance' ||
-                    '{{"state":"stale","reason":"task_lifecycle_changed_requires_acceptance"}}'::jsonb END,
-                'deployment', verification_result->'deployment',
-                'live_validation', verification_result->'live_validation',
-                'publication_repair', verification_result->'publication_repair'
-            )), '{{}}'::jsonb) END,
+            {_preserved_verification_sql()} END,
         current_phase = CASE WHEN %s = 'completed' THEN 'complete' ELSE current_phase END,
         claimed_by = CASE WHEN %s IN ('completed','failed','cancelled','paused') THEN NULL ELSE claimed_by END,
         claimed_at = CASE WHEN %s IN ('completed','failed','cancelled','paused') THEN NULL ELSE claimed_at END,
@@ -102,11 +96,17 @@ def _execute_status_update(
                 if gates:
                     raise ValueError(f"Task acceptance remains incomplete: {gates}")
         if expected_closeout_request_id is not None:
-            cur.execute("SELECT status, verification_result FROM tasks WHERE id = %s FOR UPDATE", (resolved_task_id,))
+            cur.execute("SELECT status, verification_result, project_id FROM tasks WHERE id = %s FOR UPDATE", (resolved_task_id,))
             current = cur.fetchone()
-            intent = ((current[1] or {}).get("closeout") or {}) if current else {}
+            verification = (current[1] or {}) if current else {}
+            intent = verification.get("closeout") or {}
+            acceptance = verification.get("acceptance") or {}
             if (not current or current[0] not in {"pending", "running", "completed"}
-                    or status != "completed" or intent.get("request_id") != expected_closeout_request_id):
+                    or status != "completed" or intent.get("request_id") != expected_closeout_request_id
+                    or intent.get("kind") != "local_closeout.v1"
+                    or intent.get("project_id") != current[2]
+                    or acceptance.get("state") != "success"
+                    or acceptance.get("source_commit") != intent.get("source_sha")):
                 raise ValueError("Completion request was superseded by a task lifecycle change")
         if validate_transition:
             cur.execute(

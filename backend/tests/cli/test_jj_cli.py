@@ -226,40 +226,6 @@ def test_log_falls_back_to_git_for_plain_git_repo(
 
 
 @patch("cli.commands.jj.log_task_event")
-@patch("cli.commands.jj.publish_current_revision")
-@patch("cli.commands.jj.current_git_repo")
-def test_push_uses_task_bookmark_and_logs(
-    mock_repo: MagicMock,
-    mock_publish: MagicMock,
-    mock_log: MagicMock,
-) -> None:
-    mock_repo.return_value = Path("/repo")
-    mock_publish.return_value = {
-        "repo": "repo",
-        "status": "SUCCESS",
-        "bookmark": "task/task-1",
-        "change_id": "chg",
-        "commit_id": "commit",
-        "operation_id": "op",
-        "pushed": True,
-    }
-
-    result = runner.invoke(jj.app, ["push", "--task", "task-1"], obj=OutputContext(compact=True))
-
-    assert result.exit_code == 0
-    mock_publish.assert_called_once_with(
-        Path("/repo"),
-        task_id="task-1",
-        bookmark="",
-        revision="@",
-        remote="origin",
-        dry_run=False,
-    )
-    mock_log.assert_called_once()
-    assert "JJPUSH:repo:SUCCESS" in result.stdout
-
-
-@patch("cli.commands.jj.log_task_event")
 @patch("cli.commands.jj.delete_task_bookmark")
 @patch("cli.commands.jj.current_git_repo")
 def test_push_delete_bookmark_cleans_task_bookmark(
@@ -292,86 +258,6 @@ def test_push_delete_bookmark_cleans_task_bookmark(
     )
     mock_log.assert_called_once_with("task-1", "st jj push --delete-bookmark task/task-1 op=op")
     assert "JJPUSH:repo:SUCCESS:bookmark=task/task-1 deleted=true" in result.stdout
-
-
-def test_publish_rejects_failed_quality_gate(tmp_path: Path) -> None:
-    (tmp_path / ".jj").mkdir()
-    (tmp_path / ".git").mkdir()
-    revision = JJRevisionInfo(
-        change_id="chg",
-        commit_id="commit",
-        empty=False,
-        conflict=False,
-        description="ready",
-    )
-    with (
-        patch("cli.lib.jj_publish.revision_info", return_value=revision),
-        patch("cli.lib.jj_publish.run_checks", return_value=(False, "boom")) as checks,
-        patch("cli.lib.jj_publish.run_jj", return_value=subprocess.CompletedProcess([], 0, "a.py", "")) as mock_run_jj,
-        pytest.raises(jj_lib.JJError, match="quality gates failed before jj push"),
-    ):
-        jj_lib.publish_current_revision(tmp_path, task_id="task-1")
-
-    checks.assert_called_once_with(tmp_path, paths=["a.py"], full=True)
-    assert all(call.args[1][0] == "diff" for call in mock_run_jj.call_args_list)
-
-
-def test_publish_without_task_uses_current_bookmark(tmp_path: Path) -> None:
-    (tmp_path / ".jj").mkdir()
-    (tmp_path / ".git").mkdir()
-    revision = JJRevisionInfo(
-        change_id="chg",
-        commit_id="commit",
-        empty=False,
-        conflict=False,
-        description="ready",
-    )
-    with (
-        patch("cli.lib.jj_publish.revision_info", return_value=revision),
-        patch("cli.lib.jj_publish.run_checks", return_value=(True, "ok")),
-        patch("cli.lib.jj_publish.run_git", return_value=subprocess.CompletedProcess([], 0, "/tmp/remote.git", "")),
-        patch("cli.lib.jj_publish._verify_jj_outgoing") as verify,
-        patch("cli.lib.jj_publish.display_branch", return_value="main"),
-        patch("cli.lib.jj_publish.latest_operation_id", return_value="op"),
-        patch("cli.lib.jj_publish.run_jj") as mock_run_jj,
-    ):
-        mock_run_jj.return_value = subprocess.CompletedProcess(args=[], returncode=0, stdout="", stderr="")
-
-        result = jj_lib.publish_current_revision(tmp_path)
-
-    assert result["bookmark"] == "main"
-    assert call(tmp_path, ["bookmark", "set", "main", "-r", "@"]) in mock_run_jj.call_args_list
-    assert call(
-        tmp_path,
-        ["git", "push", "--remote", "origin", "--bookmark", "exact:main", "--allow-empty-description"],
-    ) in mock_run_jj.call_args_list
-    verify.assert_called_once_with(tmp_path, "/tmp/remote.git", "main", "origin")
-
-
-def test_publish_can_target_named_revision(tmp_path: Path) -> None:
-    (tmp_path / ".jj").mkdir()
-    (tmp_path / ".git").mkdir()
-    revision = JJRevisionInfo(
-        change_id="chg",
-        commit_id="commit",
-        empty=False,
-        conflict=False,
-        description="ready",
-    )
-    with (
-        patch("cli.lib.jj_publish.revision_info", return_value=revision),
-        patch("cli.lib.jj_publish.run_checks", return_value=(True, "ok")),
-        patch("cli.lib.jj_publish.run_git", return_value=subprocess.CompletedProcess([], 0, "/tmp/remote.git", "")),
-        patch("cli.lib.jj_publish._verify_jj_outgoing"),
-        patch("cli.lib.jj_publish.latest_operation_id", return_value="op"),
-        patch("cli.lib.jj_publish.run_jj") as mock_run_jj,
-    ):
-        mock_run_jj.return_value = subprocess.CompletedProcess(args=[], returncode=0, stdout="", stderr="")
-
-        result = jj_lib.publish_current_revision(tmp_path, bookmark="task/main", revision="main")
-
-    assert result["bookmark"] == "task/main"
-    assert call(tmp_path, ["bookmark", "set", "task/main", "-r", "main"]) in mock_run_jj.call_args_list
 
 
 def test_delete_task_bookmark_pushes_deleted_bookmarks(tmp_path: Path) -> None:
@@ -419,14 +305,6 @@ def test_delete_task_bookmark_tolerates_already_deleted_local_bookmark(tmp_path:
         call(tmp_path, ["bookmark", "delete", "task/old/main"]),
         call(tmp_path, ["git", "push", "--remote", "origin", "--bookmark", "exact:task/old/main"]),
     ]
-
-
-def test_commit_rejects_skip_checks_when_publishing(tmp_path: Path) -> None:
-    (tmp_path / ".jj").mkdir()
-    (tmp_path / ".git").mkdir()
-
-    with pytest.raises(jj_lib.JJError, match="refusing to publish jj revision with --skip-checks"):
-        jj_lib.commit_current_revision(tmp_path, message="test", push=True, skip_checks=True)
 
 
 def test_commit_selected_paths_quotes_fileset_meta_characters(tmp_path: Path) -> None:
@@ -494,44 +372,6 @@ def test_commit_selected_paths_rejects_no_matching_changes(tmp_path: Path) -> No
             ],
         )
     ]
-
-
-def test_commit_advances_to_clean_working_copy_after_publish(tmp_path: Path) -> None:
-    (tmp_path / ".jj").mkdir()
-    (tmp_path / ".git").mkdir()
-    status = jj_lib.JJRepoStatus(
-        repo="repo",
-        path=str(tmp_path),
-        branch="main",
-        colocated=True,
-        state="dirty",
-        described=False,
-        conflicted=False,
-        unpublished=0,
-        change_id="old",
-        commit_id="oldcommit",
-    )
-    revision = JJRevisionInfo(
-        change_id="chg",
-        commit_id="commit",
-        empty=False,
-        conflict=False,
-        description="ready",
-    )
-
-    with (
-        patch("cli.lib.jj_publish.status_summary", return_value=status),
-        patch("cli.lib.jj_publish.current_revision_info", return_value=revision),
-        patch("cli.lib.jj_publish.publish_current_revision", return_value={"status": "SUCCESS", "pushed": True, "publication_complete": True}),
-        patch("cli.lib.jj_publish.run_jj") as mock_run_jj,
-    ):
-        mock_run_jj.return_value = subprocess.CompletedProcess(args=[], returncode=0, stdout="", stderr="")
-
-        result = jj_lib.commit_current_revision(tmp_path, message="test", push=True)
-
-    assert result["working_copy"] == "advanced"
-    assert call(tmp_path, ["describe", "-m", "test"]) in mock_run_jj.call_args_list
-    assert call(tmp_path, ["new"]) in mock_run_jj.call_args_list
 
 
 @patch("cli.commands.jj.log_task_event")
@@ -609,39 +449,81 @@ def test_conflicts_no_conflicts_is_success(
     assert result.exit_code == 0
     assert "CONFLICTS[0]" in result.stdout
 
+@pytest.mark.parametrize("entrypoint", ["commit_current_revision", "commit_selected_paths"])
+@pytest.mark.parametrize("skip_checks", [False, True])
+def test_jj_checkpoint_push_rejects_before_any_command(tmp_path, entrypoint, skip_checks):
+    with (
+        patch("cli.lib.jj_publish.run_jj") as jj_command,
+        patch("cli.lib.jj_publish.run_git") as git_command,
+        patch("cli.lib.jj_publish.is_colocated") as inspect,
+        pytest.raises(jj_lib.JJError, match="st vcs publish --source ID --sha FULL_OID --now"),
+    ):
+        kwargs = {"paths": ("owned.py",)} if entrypoint == "commit_selected_paths" else {}
+        getattr(jj_lib, entrypoint)(tmp_path, message="publish", push=True, skip_checks=skip_checks, **kwargs)
+    jj_command.assert_not_called()
+    git_command.assert_not_called()
+    inspect.assert_not_called()
 
-@patch("cli.commands.jj.log_task_event")
-@patch("cli.commands.jj.publish_current_revision")
-@patch("cli.commands.jj.run_jj")
-@patch("cli.commands.jj.current_git_repo")
-def test_revert_creates_pushed_rollback_change(
-    mock_repo: MagicMock,
-    mock_run_jj: MagicMock,
-    mock_publish: MagicMock,
-    mock_log: MagicMock,
-) -> None:
-    mock_repo.return_value = Path("/repo")
-    mock_run_jj.return_value = subprocess.CompletedProcess(args=[], returncode=0, stdout="", stderr="")
-    mock_publish.return_value = {
-        "repo": "repo",
-        "status": "SUCCESS",
-        "bookmark": "task/task-1",
-        "change_id": "chg",
-        "commit_id": "commit",
-        "operation_id": "op",
-        "pushed": True,
-    }
 
-    result = runner.invoke(
-        jj.app,
-        ["revert", "badrev", "--message", "rollback badrev", "--push", "--task", "task-1"],
-    )
+@pytest.mark.parametrize("dry_run", [False, True])
+def test_retired_jj_publication_rejects_before_ref_or_network_mutation(tmp_path, dry_run):
+    with (
+        patch("cli.lib.jj_publish.run_jj") as jj_command,
+        patch("cli.lib.jj_publish.run_git") as git_command,
+        pytest.raises(jj_lib.JJError, match="st vcs publish --source ID --sha FULL_OID --now"),
+    ):
+        jj_lib.publish_current_revision(tmp_path, dry_run=dry_run)
+    jj_command.assert_not_called()
+    git_command.assert_not_called()
 
+
+def test_jj_revert_push_rejects_before_local_rollback_and_event():
+    with (
+        patch("cli.commands.jj.current_git_repo") as resolve,
+        patch("cli.commands.jj.run_jj") as mutation,
+        patch("cli.commands.jj.log_task_event") as event,
+    ):
+        result = runner.invoke(jj.app, ["revert", "badrev", "-m", "rollback", "--push", "--task", "task-1"])
+    assert result.exit_code == 1
+    assert "st vcs publish --source ID --sha FULL_OID --now" in result.output
+    resolve.assert_not_called()
+    mutation.assert_not_called()
+    event.assert_not_called()
+
+
+def test_local_jj_revert_preserves_rollback_description_and_audit():
+    with (
+        patch("cli.commands.jj.current_git_repo", return_value=Path("/repo")),
+        patch("cli.commands.jj.run_jj", return_value=subprocess.CompletedProcess([], 0, "", "")) as mutation,
+        patch("cli.commands.jj.log_task_event") as event,
+    ):
+        result = runner.invoke(jj.app, ["revert", "badrev", "-m", "rollback", "--task", "task-1"])
     assert result.exit_code == 0
-    assert mock_run_jj.call_args_list[:2] == [
+    assert mutation.call_args_list == [
         call(Path("/repo"), ["revert", "-r", "badrev", "--onto", "@"]),
-        call(Path("/repo"), ["describe", "-m", "rollback badrev"]),
+        call(Path("/repo"), ["describe", "-m", "rollback"]),
     ]
-    mock_publish.assert_called_once_with(Path("/repo"), task_id="task-1")
-    assert call("task-1", "st jj revert badrev onto=@ executed") in mock_log.call_args_list
-    assert "JJREVERT:repo:SUCCESS" in result.stdout
+    event.assert_called_once_with("task-1", "st jj revert badrev onto=@ executed")
+
+
+def test_local_jj_current_checkpoint_describes_without_publication(tmp_path):
+    (tmp_path / ".jj").mkdir()
+    (tmp_path / ".git").mkdir()
+    state = JJRepoStatus(
+        repo="repo", path=str(tmp_path), branch="main", colocated=True,
+        state="dirty", described=False, conflicted=False, unpublished=0,
+        change_id="old", commit_id="oldcommit",
+    )
+    revision = JJRevisionInfo("change", "commit", False, False, "checkpoint")
+    with (
+        patch("cli.lib.jj_publish.status_summary", return_value=state),
+        patch("cli.lib.jj_publish.current_revision_info", return_value=revision),
+        patch("cli.lib.jj_publish.run_jj", return_value=subprocess.CompletedProcess([], 0, "", "")) as mutation,
+        patch("cli.lib.jj_publish.publish_current_revision") as publish,
+    ):
+        result = jj_lib.commit_current_revision(tmp_path, message="checkpoint")
+    assert result["status"] == "SUCCESS"
+    assert result["pushed"] is False
+    assert result["commit_id"] == "commit"
+    mutation.assert_called_once_with(tmp_path, ["describe", "-m", "checkpoint"])
+    publish.assert_not_called()

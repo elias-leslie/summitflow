@@ -34,12 +34,12 @@ def test_publish_exact_source_only_and_no_hygiene_actions():
     cleanup.assert_not_called()
 
 
-def test_publish_pending_is_not_a_green_completion():
+def test_retained_findings_do_not_relabel_successful_explicit_publication():
     with patch("app.tasks.backup_manual_publish.publish_project_now", return_value={
         "publication_complete": True, "evidence_recorded": True, "health": {"state": "blocked"},
     }):
         result = runner.invoke(vcs.app, ["publish", "--source", "source", "--sha", "a" * 40, "--now"])
-    assert result.exit_code == 2
+    assert result.exit_code == 0
 
 
 def test_publish_never_prints_unexpected_diagnostics():
@@ -203,3 +203,11 @@ def test_discover_unmanaged_repos_ignores_config_mirrors(tmp_path: Path) -> None
 
     with patch.object(vcs, "get_projects_base_dir", return_value=projects):
         assert vcs._discover_unmanaged_repos([]) == [extra]
+
+
+def test_pending_publication_is_not_reported_complete():
+    with patch("app.tasks.backup_manual_publish.publish_project_now", return_value={
+        "publication_complete": False, "pushed": True, "evidence_recorded": True, "ci": {"state": "pending"},
+    }):
+        result = runner.invoke(vcs.app, ["publish", "--source", "source", "--sha", "a" * 40, "--now"])
+    assert result.exit_code == 2

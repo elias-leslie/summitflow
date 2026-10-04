@@ -7,7 +7,7 @@ from cli.commands import done_task
 def test_commit_during_closeout_is_local():
     result = {"status": "SUCCESS", "sha": "a" * 40, "pushed": False}
     with patch.object(done_task, "commit_repo", return_value=result) as commit, patch("app.storage.events.log_task_event"):
-        done_task._commit_active_task_work("/repo", "task-local", "local change")
+        done_task._commit_active_task_work("/repo", "task-local", "local change", paths=("app.py",))
     assert commit.call_args.kwargs["push"] is False
 
 
@@ -23,3 +23,29 @@ def test_closeout_persists_local_acceptance_without_publisher(tmp_path):
         done_task._accept_completed_work("task-local", "summitflow")
     accept.assert_called_once()
     store.assert_called_once_with("task-local", "summitflow", {"acceptance": receipt})
+
+
+def test_retained_acceptance_reused_with_foreign_work_present(tmp_path, monkeypatch):
+    from contextlib import nullcontext
+
+    from app.storage import tasks
+    from cli.lib import acceptance
+
+    receipt = {"state": "success", "source_commit": "a" * 40}
+    monkeypatch.setattr(done_task, "get_project_root_path", lambda _: str(tmp_path))
+    monkeypatch.setattr(tasks, "get_task", lambda _: {"project_id": "example", "verification_result": {"acceptance": receipt}})
+    monkeypatch.setattr(acceptance, "repo_lock", lambda *a, **kw: nullcontext())
+    monkeypatch.setattr(done_task, "_selected_work_is_clean", lambda *a, **kw: True)
+    monkeypatch.setattr("cli.commands.done_task_acceptance.require_scope_matches_revision", MagicMock())
+    validator = MagicMock(return_value=receipt)
+    monkeypatch.setattr(acceptance, "validate_acceptance_receipt", validator)
+    rerun = MagicMock(side_effect=AssertionError("Valid full acceptance reused"))
+    monkeypatch.setattr(acceptance, "accept_revision", rerun)
+    store = MagicMock()
+    monkeypatch.setattr("app.storage.tasks.closeout.store_verification", store)
+    (tmp_path / "foreign.py").write_text("foreign WIP")
+    result = done_task._accept_completed_work("task-local", "example", paths=("owned.py",))
+    assert result["reused"] is True
+    assert validator.call_args.kwargs["sha"] == receipt["source_commit"]
+    assert (tmp_path / "foreign.py").read_text() == "foreign WIP"
+    rerun.assert_not_called()

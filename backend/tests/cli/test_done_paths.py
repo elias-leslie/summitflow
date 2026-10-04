@@ -34,7 +34,7 @@ def test_done_rejects_path_selection_for_subtask_before_api(monkeypatch):
 
 
 @pytest.mark.parametrize("selected", [True, False])
-def test_done_forwards_explicit_acceptance_only_with_paths(tmp_path, monkeypatch, selected):
+def test_done_forwards_acceptance_with_explicit_or_established_paths(tmp_path, monkeypatch, selected):
     client = Mock()
     client.get_task.return_value = {"status": "running", "project_id": "example"}
     monkeypatch.setattr(done, "STClient", Mock(return_value=client))
@@ -51,14 +51,9 @@ def test_done_forwards_explicit_acceptance_only_with_paths(tmp_path, monkeypatch
     if selected:
         arguments.extend(["--paths", "src"])
     result = CliRunner().invoke(done.app, arguments)
-    if selected:
-        assert result.exit_code == 0, result.output
-        assert complete.call_args.kwargs == {"paths": ("src",), "acceptance_receipt": receipt}
-    else:
-        assert result.exit_code != 0
-        assert "requires explicit --paths" in result.output
-        stored.assert_not_called()
-        complete.assert_not_called()
+    assert result.exit_code == 0, result.output
+    assert complete.call_args.kwargs == {"paths": ("src",) if selected else (), "acceptance_receipt": receipt}
+    stored.assert_called_once()
 
 
 @pytest.mark.parametrize('has_snapshot', [True, False])
@@ -96,10 +91,8 @@ def test_scoped_done_preserves_unrelated_index_and_worktree(tmp_path: Path, monk
     monkeypatch.setattr(commit_workflow, 'run_checks', checks)
     renew_claim = Mock(return_value={'id': 'task-1', 'status': 'running'})
     monkeypatch.setattr(commit_workflow, 'renew_owned_claim', renew_claim)
-    monkeypatch.setattr(commit_workflow, 'publish_git', lambda _repo, *, sha, **_kwargs: {
-        'status': 'SUCCESS', 'publication_complete': True,
-        'ci': {'state': 'success', 'sha': sha, 'checks': []},
-    })
+    publish = Mock(side_effect=AssertionError('local completion must not publish'))
+    monkeypatch.setattr('cli.lib.publish_workflow.publish_git', publish)
     monkeypatch.setattr('cli.lib.execution_context.resolve_checkout_project_id', lambda _repo: 'example')
     monkeypatch.setattr('app.storage.tasks.add_commit', Mock(return_value={'id': 'task-1'}))
     acceptances = []
@@ -108,6 +101,7 @@ def test_scoped_done_preserves_unrelated_index_and_worktree(tmp_path: Path, monk
         acceptances.append(paths)
 
     monkeypatch.setattr(done_task, '_accept_completed_work', accept)
+    monkeypatch.setattr(done_task, '_finish_local_completion', Mock(return_value={'action': 'completed'}))
     stash = Mock(side_effect=AssertionError('must not move unrelated work'))
     monkeypatch.setattr('cli.commands.done_git.git_stash_push', stash)
     if not gate_passes:
@@ -118,6 +112,7 @@ def test_scoped_done_preserves_unrelated_index_and_worktree(tmp_path: Path, monk
         assert (tmp_path / '.index.yaml').read_text() == 'unrelated host metadata'
         client.update_status.assert_not_called()
         capture_snapshot.assert_not_called()
+        publish.assert_not_called()
         renew_claim.assert_called_once_with(tmp_path, 'task-1')
         return
     result = done_task.complete_task(client, 'task-1', paths=('task.txt',))
@@ -130,14 +125,59 @@ def test_scoped_done_preserves_unrelated_index_and_worktree(tmp_path: Path, monk
     checks.assert_called()
     renew_claim.assert_called_once_with(tmp_path, 'task-1')
     stash.assert_not_called()
+    publish.assert_not_called()
 
 
 
-def test_final_publish_subprocess_receives_repeated_paths(tmp_path, monkeypatch):
-    monkeypatch.setattr('app.storage.projects.get_project_root_path', lambda _: str(tmp_path))
-    run = Mock(return_value=subprocess.CompletedProcess([], 0, '{"status":"SUCCESS","publication_complete":true}', ''))
-    monkeypatch.setattr(done_task.subprocess, 'run', run)
-    monkeypatch.setattr(done_task.shutil, 'which', lambda _: '/test/st')
-    monkeypatch.setattr(done_task, 'cleanup_completed_bookmark', Mock())
-    done_task._publish_completed_work('task-1', 'example', paths=('src', 'tests'))
-    assert run.call_args.args[0][-4:] == ['--paths', 'src', '--paths', 'tests']
+
+@pytest.mark.parametrize("has_snapshot", [True, False])
+@pytest.mark.parametrize("inference", ["declaration", "create", "lease"])
+def test_automatic_done_selects_only_established_paths(tmp_path, monkeypatch, has_snapshot, inference):
+    from datetime import UTC, datetime
+
+    from cli.commands.done_task_scope import closeout_paths
+    from cli.lib.leases import Lease
+
+    subprocess.run(["git", "init", "-q", str(tmp_path)], check=True)
+    (tmp_path / "owned.py").write_text("task work")
+    (tmp_path / "foreign.py").write_text("foreign work")
+    now = datetime.now(UTC).isoformat()
+    current = Lease("own", "worker", "worker", "session", "test", [str(tmp_path / "owned.py")], "task-1", now, now)
+    foreign = Lease("foreign", "other", "other", "other", "test", [str(tmp_path / "foreign.py")], "task-other", now, now)
+    monkeypatch.setattr("cli.lib.leases.identify_agent", lambda: ("worker", "worker", "session", "test"))
+    monkeypatch.setattr("cli.lib.leases.list_active", lambda _: [current, foreign])
+    task = {"context": {"files_to_modify" if inference == "declaration" else "files_to_create": ["owned.py"]}} if inference != "lease" else {}
+    assert closeout_paths(str(tmp_path), "task-1", task, project_id="example") == ("owned.py",)
+
+
+def test_prose_mentions_do_not_authorize_checkpoint(tmp_path, monkeypatch):
+    from cli.commands.done_task_scope import closeout_paths
+    subprocess.run(["git", "init", "-q", str(tmp_path)], check=True)
+    (tmp_path / "mentioned.py").write_text("unrelated work")
+    monkeypatch.setattr("cli.lib.leases.list_active", lambda _: [])
+    with pytest.raises(ValueError, match="Rerun st done task-1 --paths"):
+        closeout_paths(str(tmp_path), "task-1", {"description": "Review mentioned.py"}, project_id="example")
+
+
+@pytest.mark.parametrize("path", ["../foreign.py", ":(glob)**", "*.py"])
+def test_checkpoint_scope_rejects_paths_outside_literal_ownership(tmp_path, monkeypatch, path):
+    from cli.commands.done_task_scope import closeout_paths
+    subprocess.run(["git", "init", "-q", str(tmp_path)], check=True)
+    monkeypatch.setattr("cli.lib.leases.list_active", lambda _: [])
+    with pytest.raises(ValueError):
+        closeout_paths(str(tmp_path), "task-1", {}, project_id="example", paths=(path,))
+
+
+def test_explicit_foreign_lease_is_preserved(tmp_path, monkeypatch):
+    from datetime import UTC, datetime
+
+    from cli.commands.done_task_scope import closeout_paths
+    from cli.lib.leases import Lease
+    subprocess.run(["git", "init", "-q", str(tmp_path)], check=True)
+    (tmp_path / "foreign.py").write_text("foreign work")
+    now = datetime.now(UTC).isoformat()
+    lease = Lease("foreign", "other", "other", "other", "test", [str(tmp_path / "foreign.py")], "task-other", now, now)
+    monkeypatch.setattr("cli.lib.leases.list_active", lambda _: [lease])
+    with pytest.raises(ValueError, match="another active owner"):
+        closeout_paths(str(tmp_path), "task-1", {}, project_id="example", paths=("foreign.py",))
+    assert (tmp_path / "foreign.py").read_text() == "foreign work"

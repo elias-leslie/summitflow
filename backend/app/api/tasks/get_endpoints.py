@@ -26,6 +26,7 @@ from .helpers import (
     verify_task_project,
 )
 from .response import task_to_response
+from .workflow_export import _hydrate_export_task
 
 router = APIRouter()
 
@@ -83,6 +84,9 @@ async def get_task_global(
     if not task:
         raise HTTPException(status_code=404, detail=f"Task {task_id} not found")
 
+    from ...storage.task_spirit import get_task_spirit
+    spirit = await asyncio.to_thread(get_task_spirit, str(task["id"]))
+    task = _hydrate_export_task(task, spirit)
     task_response = task_to_response(task)
 
     # Return TOON format if requested
@@ -103,6 +107,9 @@ async def get_task(
     """Get task by ID within project context."""
     task = await asyncio.to_thread(verify_task_project, task_id, project_id)
 
+    from ...storage.task_spirit import get_task_spirit
+    spirit = await asyncio.to_thread(get_task_spirit, str(task["id"]))
+    task = _hydrate_export_task(task, spirit)
     task_response = task_to_response(task)
 
     # Return TOON format if requested

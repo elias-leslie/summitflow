@@ -1,15 +1,34 @@
-"""Nightly evidence is source-bound; ordinary local completion stays independent."""
-from datetime import UTC, datetime
+"""Retained publication evidence is source-bound; ordinary local completion stays independent."""
+from datetime import datetime
 from unittest.mock import Mock
 
 import pytest
 
 from app.services import publication_health as health
 from app.services.task_acceptance import completion_gates
-from app.services.task_closeout import checkpoint_state
 
 SHA = "a" * 40
 MERGE = "b" * 40
+
+
+@pytest.fixture(autouse=True)
+def no_registered_root(monkeypatch):
+    monkeypatch.setattr(health, "get_project_root_path", lambda _: None)
+
+
+def test_manual_receipt_is_read_without_backup_publication_dependency(monkeypatch, tmp_path):
+    monkeypatch.setattr(health, "get_project_root_path", lambda _: str(tmp_path))
+    monkeypatch.setattr(health, "get_repair_task", lambda *_args, **_kwargs: None)
+    monkeypatch.setattr(health, "get_latest_backup", lambda **_kwargs: {
+        "id": "old", "verification_json": {"publish_before_backup": {"status": "failed"}}})
+    monkeypatch.setattr("app.tasks.backup_manual_publish.latest_publication_receipt", lambda *_args: (
+        tmp_path / "manual.json", {"observed_at": "2026-10-03T08:00:00+00:00", "observation": verified()}))
+
+    result = health.get_project_publication_health("project")
+
+    assert result["state"] == "verified"
+    assert result["backup_id"] is None
+    assert result["evidence"] == str(tmp_path / "manual.json")
 
 
 def verified(**overrides):
@@ -45,7 +64,7 @@ def test_accepted_uploaded_source_without_ci_is_published_not_verified():
     assert observation["state"] == "published"
     assert observation["reason"] == "published_without_ci"
     text = health.format_publication_health(observation)
-    assert "Nightly publication: published;" in text and "CI=not_applicable;" in text
+    assert "Manual publication: published;" in text and "CI=not_applicable;" in text
     assert "verified" not in text
 
 
@@ -69,18 +88,6 @@ def test_no_ci_upload_still_requires_exact_acceptance_security_and_source(overri
     assert health.classify_observation(result)["state"] not in {"published", "verified"}
 
 
-def test_no_ci_publication_never_resolves_findings_or_confirms_repair(monkeypatch):
-    recorder = Mock()
-    monkeypatch.setattr(health, "record_finding", recorder)
-    result = verified(ci={"state": "not_applicable", "sha": SHA})
-    assert health.record_publication_observation("project", result) is None
-    recorder.assert_not_called()
-    observation = health.classify_observation(result)
-    assert health.confirmation_for_source("project", SHA, health=observation) is None
-    monkeypatch.setattr(health, "get_project_publication_health", lambda _pid: {
-        **observation, "repair_task_id": "repair", "unresolved_categories": [],
-    })
-    assert health.publication_completion_gates({"id": "repair", "project_id": "project"}, SHA)[0]["gate"] == "remote_confirmation"
 
 
 @pytest.mark.parametrize("category", ["publication", "outgoing_security", "codeql"])
@@ -158,43 +165,9 @@ def test_normal_publication_states_allow_local_completion(state, repair_id, monk
                              "verification_result": {"acceptance": {"state": "success", "source_commit": SHA}}}) == []
 
 
-def test_actionable_project_defect_blocks_shared_completion(monkeypatch):
+def test_unrelated_publication_defect_does_not_gate_local_completion(monkeypatch):
     monkeypatch.setattr(health, "get_project_publication_health", lambda _pid: {
         "state": "blocked", "repair_task_id": "repair", "unresolved_categories": ["codeql"],
     })
     gates = completion_gates({"id": "normal", "project_id": "project", "verification_result": {}})
-    assert [gate["gate"] for gate in gates] == ["project_repair"]
-
-
-def test_repair_needs_confirmed_accepted_source(monkeypatch):
-    monkeypatch.setattr(health, "get_project_publication_health", lambda _pid: {
-        "state": "verified", "repair_task_id": "repair", "unresolved_categories": [],
-    })
-    monkeypatch.setattr(health, "confirmation_for_source", lambda _pid, _source: None)
-    assert health.publication_completion_gates({"id": "repair", "project_id": "project"}, SHA)[0]["gate"] == "remote_confirmation"
-
-
-def test_remote_wait_not_shown_complete_even_if_status_drifted():
-    assert checkpoint_state("completed", {"acceptance": {"state": "success"},
-        "closeout": {"state": "pending", "require_remote_confirmation": True}})[0] == "waiting_checks"
-
-
-@pytest.mark.parametrize(("observed", "source", "failed"), [
-    ("2026-10-01T08:00:00+00:00", SHA, False),
-    ("2026-10-03T08:00:00+00:00", SHA, True),
-    ("2026-10-03T08:00:00+00:00", None, False),
-])
-def test_only_new_candidate_bound_failure_ends_wait(observed, source, failed, monkeypatch):
-    monkeypatch.setattr(health, "get_project_publication_health", lambda _pid: {
-        "state": "blocked", "observed_at": observed, "source_commit": source, "findings": {},
-    })
-    assert health.repair_attempt_failed("project", SHA, "2026-10-02T08:00:00+00:00") is failed
-
-
-@pytest.mark.parametrize(("now", "start"), [
-    ("2026-10-02T09:59:00+00:00", "2026-10-01T06:00:00+00:00"),
-    ("2026-10-02T10:00:00+00:00", "2026-10-02T06:00:00+00:00"),
-    ("2026-11-02T11:00:00+00:00", "2026-11-02T07:00:00+00:00"),
-])
-def test_last_due_window_obeys_owner_timezone_and_dst(now, start):
-    assert health._last_due_window(datetime.fromisoformat(now)) == datetime.fromisoformat(start).astimezone(UTC)
+    assert gates == []

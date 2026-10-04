@@ -218,7 +218,7 @@ def _format_ownerless_review(project_id: Any, summary: dict[str, Any], cleanup: 
         f"REVIEW:{project_id}|ownerless=yes|dirty={_dirty_residue_count(cleanup)}|"
         f"checkpoints={_truthy_count(cleanup.get('active_checkpoints'))}|"
         f"stranded={_truthy_count(summary.get('stranded_tasks'))}|"
-        "action=agent-inspect-context-status-logs-then-commit-push-prune-or-leave-explicit-handoff"
+        "action=agent-inspect-context-status-logs-then-checkpoint-or-leave-explicit-handoff"
     )
 
 
@@ -235,24 +235,18 @@ def _format_vcs_review(project_id: Any, cleanup: dict[str, Any], jj_status: JJRe
     if jj_status is None:
         if not dirty:
             return None
-        return f"VCS-REVIEW:{project_id}|dirty={dirty}|action=commit-push-or-continue-narrow"
+        return f"VCS-REVIEW:{project_id}|dirty={dirty}|action=checkpoint-or-continue-narrow"
 
     needs_revision_commit = jj_status.state not in {"clean", "described", "unpublished"}
     needs_review = bool(
         dirty
         or needs_revision_commit
         or jj_status.conflicted
-        or jj_status.unpublished
     )
     if not needs_review:
         return None
 
-    if jj_status.conflicted:
-        action = "resolve-jj-conflicts"
-    elif dirty or needs_revision_commit:
-        action = "commit-push-or-continue-narrow"
-    else:
-        action = "push-unpublished"
+    action = "resolve-jj-conflicts" if jj_status.conflicted else "checkpoint-or-continue-narrow"
     return (
         f"VCS-REVIEW:{project_id}|dirty={dirty}|jj_state={jj_status.state}|"
         f"described={str(jj_status.described).lower()}|unpublished={jj_status.unpublished}|"
@@ -400,9 +394,16 @@ def print_compact_payload(
     project_id = payload.get("project_id", "?")
     jj_status = jj_status_for_project(project_id)
     _print_summary_line(project_id, summary, cleanup)
-    if payload.get("publication"):
-        from app.services.publication_health import format_publication_health
-        print(format_publication_health(payload["publication"]))
+    if development := payload.get("development"):
+        working = development.get("working_tree") or {}
+        accepted = development.get("accepted") or {}
+        running = development.get("running") or {}
+        print(f"DEVELOPMENT:{project_id}|working={working.get('state', 'unknown')}"
+              f"|source={str(working.get('source_commit') or 'unknown')[:12]}"
+              f"|acceptance={accepted.get('state', 'unknown')}"
+              f"|accepted={str(accepted.get('source_commit') or 'unknown')[:12]}"
+              f"|running={str(running.get('source_commit') or 'unknown')[:12]}"
+              f"|evidence={accepted.get('evidence') or 'unavailable'}")
     if jj_status is not None:
         print(_format_jj_state(project_id, jj_status))
     print(_format_preflight(project_id, summary, cleanup, jj_status, payload))

@@ -135,6 +135,7 @@ def task_to_response(task: dict[str, Any]) -> TaskResponse:
         started_at=task.get("started_at"),
         completed_at=task.get("completed_at"),
         claimed_by=task.get("claimed_by"),
+        claimed_at=task.get("claimed_at"),
         lock_expires_at=task.get("lock_expires_at"),
         priority=task.get("priority", 2),
         labels=task.get("labels") or [],

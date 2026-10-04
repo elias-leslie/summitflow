@@ -52,15 +52,15 @@ def test_review_refuses_unexpected_definition() -> None:
 def test_startup_uses_native_context_and_warns_pending(event, tmp_path: Path) -> None:
     with (
         patch.object(hooks, "codex_hook_status", return_value=[{"event": "PreToolUse", "trust": "untrusted"}]),
-        patch.object(hooks.subprocess, "run", return_value=subprocess.CompletedProcess([], 0, "Nightly: pending", "")) as run,
+        patch.object(hooks.subprocess, "run", side_effect=AssertionError("Startup must not inspect publication")) as run,
         patch.object(Path, "home", return_value=tmp_path),
     ):
         result = hooks.startup_context({"hook_event_name": event, "cwd": str(tmp_path)})
     context = result["hookSpecificOutput"]
     assert context["hookEventName"] == event
     assert "review pending" in context["additionalContext"]
-    assert "Nightly: pending" in context["additionalContext"]
-    assert run.call_args.args[0] == ["st", "vcs", "publication"]
+    assert "Nightly" not in context["additionalContext"]
+    run.assert_not_called()
 
 
 def test_jj_verifies_live_exact_objects_before_transport(tmp_path: Path) -> None:

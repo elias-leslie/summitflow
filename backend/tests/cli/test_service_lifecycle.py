@@ -110,6 +110,25 @@ def test_full_rebuild_preserves_optional_worker_intent(lifecycle):
     assert restarted == ["backend.service", "required.service", "active.service", "frontend.service"]
 
 
+def test_rebuild_runs_preflight_once_before_lifecycle_work(lifecycle, unit_service_preflight):
+    result = CliRunner().invoke(service.app, ["rebuild", "example"])
+    assert result.exit_code == 0, result.output
+    unit_service_preflight.assert_called_once_with("example")
+
+
+def test_rebuild_preflight_block_preserves_source_and_services(lifecycle, unit_service_preflight, monkeypatch):
+    import typer
+
+    unit_service_preflight.side_effect = typer.Exit(2)
+    acceptance = Mock()
+    monkeypatch.setattr(service_ops, "prepare_accepted_release", acceptance)
+    result = CliRunner().invoke(service.app, ["rebuild", "example"])
+
+    assert result.exit_code == 2
+    acceptance.assert_not_called()
+    assert all(not operation.called for operation in lifecycle.values())
+
+
 @pytest.mark.parametrize("scope", ["full", "backend", "worker"])
 def test_summitflow_rebuild_refuses_busy_backup_before_mutation(lifecycle, project, monkeypatch, scope):
     from app.tasks.backup_lock import BackupLockLeaseError

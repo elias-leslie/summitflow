@@ -19,6 +19,7 @@ from ..lib.confirm_token import confirm_gate
 from ..lib.neri_runner_deploy import bootstrap_runner, deploy_runner, recover_runner_fixture
 from ..lib.usage import usage
 from ..output import output_error
+from .pulse import require_pulse_gate
 
 app = typer.Typer(
     help=(
@@ -261,7 +262,7 @@ def status(
         "or systemctl restart"
     ),
     precautions=(
-        "st pulse --gate first",
+        "ST runs the project preflight before lifecycle work; resolve reported blockers",
         "explicit project, not cwd-implicit",
         "required application workers belong in project.identity.json services.default_workers and rebuild automatically",
         "active optional workers restart with backend changes; inactive optional workers stay stopped",
@@ -314,6 +315,7 @@ def rebuild(
     if unknown or (scope == RebuildScope.frontend and (requested_workers or include_all_workers)):
         output_error("Unknown worker or frontend-only scope combined with worker selection.")
         raise typer.Exit(1)
+    require_pulse_gate(services.project_id)
     overlapping_components = (
         services.backend_dir.is_relative_to(services.frontend_dir)
         or services.frontend_dir.is_relative_to(services.backend_dir)

@@ -566,7 +566,8 @@ def test_lifecycle_scope_and_runner_failure_precede_host_mutations(monkeypatch, 
     monkeypatch.setattr(service, "deploy_runner", adapter)
     infrastructure = Mock(return_value=0)
     monkeypatch.setattr(service_ops, "ensure_infra", infrastructure)
-    for name in ("build_frontend", "sync_systemd_units", "restart_service", "verify_health", "sync_seeds"):
+    monkeypatch.setattr(service_ops, "release_references_for_services", lambda _: set())
+    for name in ("sync_backend", "build_frontend", "sync_systemd_units", "restart_service", "verify_health", "sync_seeds"):
         monkeypatch.setattr(service_ops, name, Mock(return_value=0))
     result = CliRunner().invoke(service.app, ["rebuild", "neri", "--scope", scope])
     assert result.exit_code == int(called), result.output

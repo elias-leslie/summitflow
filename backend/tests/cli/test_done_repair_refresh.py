@@ -47,6 +47,7 @@ def repair_refresh(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> dict[str,
     queued = MagicMock(return_value={"request_id": "fixture-closeout"})
     monkeypatch.setattr("app.services.task_closeout.get_closeout", lambda _task: None)
     monkeypatch.setattr("app.services.task_closeout.request_closeout", queued)
+    monkeypatch.setattr("app.services.task_closeout.resume_closeout", lambda *a, **kw: {"action": "completed", "published": False})
     monkeypatch.setattr("app.storage.tasks.closeout.release_closeout_claim", lambda *args: True)
     monkeypatch.setattr("app.storage.tasks.publication_repair.get_repair_task", lambda _project: task)
     monkeypatch.setattr("app.storage.events.get_events_by_trace", lambda *args, **kwargs: events)
@@ -71,14 +72,14 @@ def finish(fixture: dict[str, Any], **kwargs: Any):
     return complete_task(fixture["client"], fixture["task"]["id"], **options)
 
 
-def test_reclaimed_repair_requeues_exact_accepted_audited_source(repair_refresh):
+def test_reclaimed_repair_finishes_locally_from_exact_accepted_audited_source(repair_refresh):
     repair_refresh["events"].insert(0, {
         "trace_id": repair_refresh["task"]["id"],
         "project_id": repair_refresh["task"]["project_id"],
         "message": f"st commit commit={repair_refresh['git']('rev-parse', 'HEAD^')} pushed=false",
     })
     result = finish(repair_refresh)
-    assert result["reason"] == "nightly_repair_confirmation_pending"
+    assert result["action"] == "completed"
     assert repair_refresh["queued"].call_args.kwargs["source_sha"] == repair_refresh["head"]
     repair_refresh["client"].update_status.assert_not_called()
 
@@ -86,7 +87,7 @@ def test_reclaimed_repair_requeues_exact_accepted_audited_source(repair_refresh)
 def test_reclaimed_repair_preserves_unrelated_uncommitted_work(repair_refresh):
     unrelated = repair_refresh["repo"] / "other-agent.py"
     unrelated.write_text("print('unrelated work')\n")
-    assert finish(repair_refresh)["action"] == "pending"
+    assert finish(repair_refresh)["action"] == "completed"
     assert unrelated.read_text() == "print('unrelated work')\n"
     assert repair_refresh["git"]("status", "--porcelain") == "?? other-agent.py"
 

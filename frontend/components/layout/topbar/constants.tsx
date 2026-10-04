@@ -39,7 +39,7 @@ export const navItems = [
   },
   {
     id: 'git',
-    label: 'Git',
+    label: 'Development',
     href: '/git',
     icon: GitBranch,
     activeColor: 'violet',

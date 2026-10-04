@@ -30,7 +30,12 @@ def load_completion_evidence(path: Path, *, project_root: Path, project_id: str 
         if not artifact.is_absolute():
             artifact = path.parent / artifact
         try:
-            receipts["acceptance"] = validate_acceptance_receipt(project_root, artifact, sha="HEAD")
+            # Validate the immutable evidence source. Task scope equality is
+            # checked under the closeout lock before this can complete work.
+            stored = json.loads(artifact.read_text())
+            source = stored.get("source", {}) if isinstance(stored, dict) else {}
+            source_sha = source.get("commit") if isinstance(source, dict) else None
+            receipts["acceptance"] = validate_acceptance_receipt(project_root, artifact, sha=str(source_sha or ""))
         except AcceptanceError as exc:
             raise ValueError(str(exc)) from exc
     if deployment := payload.get("deployment_receipt"):

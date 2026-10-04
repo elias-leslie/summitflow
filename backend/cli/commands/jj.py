@@ -37,11 +37,11 @@ HELP_TEXT = (
     "  - All commands run with --no-pager and non-interactive editor config.\n\n"
     "Common workflows:\n"
     "  st jj status | init --repo /path | new -m \"msg\" | describe -m \"msg\"\n"
-    "  st commit -m \"fix\" --push --task task-abc\n"
-    "  st jj push --bookmark main --revision main\n"
+    "  st commit -m \"fix\" --task task-abc\n"
+    "  st vcs publish --source PROJECT --sha ACCEPTED_FULL_OID --now\n"
     "  st jj log --limit 20 | op-log --limit 20 | remote-bookmarks <name>\n"
     "  st jj undo --task task-abc | op-restore <op-id> --task task-abc\n"
-    "  st jj conflicts | revert <rev> --message \"rollback\" --push --task task-abc"
+    "  st jj conflicts | revert <rev> --message \"rollback\" --task task-abc"
 )
 
 app = typer.Typer(help=HELP_TEXT, rich_markup_mode=None)
@@ -115,20 +115,6 @@ def _push_compact(result: dict, delete_bookmark: bool) -> None:
         print(f"JJPUSH:{result['repo']}:{result['status']}:bookmark={result['bookmark']} deleted={str(result['deleted']).lower()}")
     else:
         print(f"JJPUSH:{result['repo']}:{result['status']}:bookmark={result['bookmark']} change={result['change_id']} commit={result['commit_id']} pushed={str(result['pushed']).lower()}")
-
-
-def _revert_publish(path: Path, task_id: str) -> None:
-    try:
-        result = publish_current_revision(path, task_id=task_id)
-    except JJError as exc:
-        output_error(str(exc))
-        raise typer.Exit(1) from None
-    if task_id:
-        log_task_event(
-            task_id,
-            f"st jj revert push {result['bookmark']} change={result['change_id']} commit={result['commit_id']} op={result['operation_id']}",
-        )
-    print(f"JJREVERT:{result['repo']}:{result['status']}:bookmark={result['bookmark']} change={result['change_id']} commit={result['commit_id']} pushed={str(result['pushed']).lower()}")
 
 
 @app.command()
@@ -312,7 +298,7 @@ def push(
     dry_run: Annotated[bool, typer.Option("--dry-run", help="Show push result without publishing.")] = False,
     delete_bookmark: Annotated[bool, typer.Option("--delete-bookmark", help="Delete the task bookmark locally and remotely.")] = False,
 ) -> None:
-    """Run st check, set a deterministic bookmark, and push current jj revision."""
+    """Compatibility entry; use accepted-source publication or explicit bookmark deletion."""
     path = _repo_or_current(repo)
     try:
         if delete_bookmark:
@@ -440,16 +426,17 @@ def revert(
     revision: Annotated[str, typer.Argument(help="Published revision to revert with a new change.")],
     message: Annotated[str, typer.Option("--message", "-m", help="Optional rollback description.")] = "",
     onto: Annotated[str, typer.Option("--onto", help="Revision to apply the revert onto.")] = "@",
-    push: Annotated[bool, typer.Option("--push/--no-push", help="Publish the rollback after st check.")] = False,
+    push: Annotated[bool, typer.Option("--push/--no-push", help="Unsupported; publish accepted source with st vcs publish.")] = False,
     task_id: Annotated[str, typer.Option("--task", help="Task id for bookmark and audit log.")] = "",
     repo: Annotated[Path | None, typer.Option("--repo", "-R", help="Repository path.")] = None,
 ) -> None:
     """Revert already-pushed work by creating a new rollback change."""
+    if push:
+        output_error("publish an accepted source explicitly with st vcs publish --source ID --sha FULL_OID --now")
+        raise typer.Exit(1)
     path = _repo_or_current(repo)
     _run_or_exit(path, ["revert", "-r", revision, "--onto", onto])
     if message.strip():
         _run_or_exit(path, ["describe", "-m", message])
     if task_id:
         log_task_event(task_id, f"st jj revert {revision} onto={onto} executed")
-    if push:
-        _revert_publish(path, task_id)

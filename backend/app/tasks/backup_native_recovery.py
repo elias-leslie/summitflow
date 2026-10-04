@@ -11,6 +11,7 @@ import sqlite3
 import stat
 import subprocess
 import tempfile
+from contextlib import suppress
 from dataclasses import dataclass
 from pathlib import Path, PurePosixPath
 from typing import Any, cast
@@ -25,6 +26,8 @@ GIT_BUNDLE_NAME = "git.bundle"
 GIT_INDEX_NAME = "git-index"
 GIT_SHARED_INDEX_NAME = "git-shared-index"
 GIT_RECOVERY_FORMAT = 1
+ST_METADATA_DIR_NAME = "st-metadata"
+ST_METADATA_ROOTS = ("st/acceptance", "st/native-stages", "st/publication", "st-publication")
 SQLITE_TRANSIENT_SUFFIXES = ("-wal", "-shm", "-journal")
 JJ_GIT_IMPORT_EXPORT_LOCK = ".jj/repo/git_import_export.lock"
 
@@ -507,6 +510,203 @@ def _git_remote_config(project_dir: Path) -> list[dict[str, str]]:
     return entries
 
 
+def _open_metadata_directory(path: Path, *, create: bool = False, missing_ok: bool = False) -> int | None:
+    """Walk every parent using directory descriptors, never following links."""
+    absolute = Path(os.path.abspath(path))
+    descriptor = os.open(absolute.anchor, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW)
+    try:
+        for part in absolute.parts[1:]:
+            if create:
+                with suppress(FileExistsError):
+                    os.mkdir(part, mode=0o700, dir_fd=descriptor)
+            try:
+                child = os.open(part, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW, dir_fd=descriptor)
+            except FileNotFoundError:
+                if missing_ok:
+                    return None
+                raise
+            os.close(descriptor)
+            descriptor = child
+        result, descriptor = descriptor, -1
+        return result
+    finally:
+        if descriptor >= 0:
+            os.close(descriptor)
+
+
+def _metadata_file(path: Path, *, expected: SnapshotEntry | None = None, destination: Path | None = None) -> tuple[SnapshotEntry, str]:
+    """Hash/copy exact regular bytes through non-linked parents and file handles."""
+    parent = _open_metadata_directory(path.parent)
+    assert parent is not None
+    try:
+        descriptor = os.open(path.name, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK, dir_fd=parent)
+    finally:
+        os.close(parent)
+    with os.fdopen(descriptor, "rb") as source:
+        metadata = os.fstat(source.fileno())
+        if not stat.S_ISREG(metadata.st_mode):
+            raise RuntimeError("ST recovery metadata must contain only regular files")
+        entry = SnapshotEntry(kind="file", mode=stat.S_IMODE(metadata.st_mode), size=metadata.st_size, mtime_ns=metadata.st_mtime_ns, inode=metadata.st_ino)
+        if expected is not None and entry != expected:
+            raise RuntimeError("ST recovery metadata changed during capture")
+        output = None
+        if destination is not None:
+            output_parent = _open_metadata_directory(destination.parent, create=True)
+            assert output_parent is not None
+            try:
+                output_descriptor = os.open(destination.name, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW, 0o600, dir_fd=output_parent)
+                output = os.fdopen(output_descriptor, "wb")
+            finally:
+                os.close(output_parent)
+        try:
+            digest = hashlib.sha256()
+            while True:
+                check_backup_cancelled()
+                chunk = source.read(1024 * 1024)
+                if not chunk:
+                    break
+                digest.update(chunk)
+                if output is not None:
+                    output.write(chunk)
+            if not _regular_identity_matches(os.fstat(source.fileno()), entry):
+                raise RuntimeError("ST recovery metadata changed during capture")
+            if output is not None:
+                os.fchmod(output.fileno(), entry.mode & 0o777)
+        finally:
+            if output is not None:
+                output.close()
+    return entry, f"sha256:{digest.hexdigest()}"
+
+
+def _st_metadata_path_allowed(relative: str) -> bool:
+    if not _safe_manifest_path(relative):
+        return False
+    parts = relative.split("/")
+    if any(part.startswith(".") or part.endswith((".lock", ".tmp")) for part in parts):
+        return False
+    for root in ST_METADATA_ROOTS:
+        if relative.startswith(root + "/"):
+            suffix = relative[len(root) + 1:]
+            if root in {"st/publication", "st-publication"}:
+                return "/" not in suffix and suffix.endswith(".json")
+            if root == "st/acceptance":
+                return ("/" not in suffix and suffix.endswith(".json")) or suffix.startswith("isolated-observations/")
+            # Native stage writers finalize proofs as <cache hash>-<stage id>
+            # JSON and artifact blobs as their content hash. Interrupted
+            # NamedTemporaryFile writes (tmp*) are not finalized evidence.
+            return re.fullmatch(r"(?:[0-9a-f]{64}-[A-Za-z0-9][A-Za-z0-9_.-]*\.json|artifacts/[0-9a-f]{64})", suffix) is not None
+    return False
+
+
+def _st_metadata_directory_allowed(relative: str) -> bool:
+    if not _safe_manifest_path(relative) or any(part.startswith(".") or part.endswith((".lock", ".tmp")) for part in relative.split("/")):
+        return False
+    return (
+        any(root == relative or root.startswith(relative + "/") for root in ST_METADATA_ROOTS)
+        or relative == "st/native-stages/artifacts"
+        or relative == "st/acceptance/isolated-observations"
+        or relative.startswith("st/acceptance/isolated-observations/")
+    )
+
+
+def _st_metadata_roots(project_dir: Path) -> dict[str, Path]:
+    common = _run_git(project_dir, ["rev-parse", "--path-format=absolute", "--git-common-dir"])
+    publication = _run_git(project_dir, ["rev-parse", "--path-format=absolute", "--git-path", "st-publication"])
+    if common.returncode or publication.returncode:
+        raise RuntimeError("Unable to locate ST recovery metadata")
+    common_dir = Path(common.stdout.strip())
+    return {**{root: common_dir / root for root in ST_METADATA_ROOTS if root != "st-publication"}, "st-publication": Path(publication.stdout.strip())}
+
+
+def _inventory_st_metadata(roots: dict[str, Path], *, payload: bool = False, missing_ok: bool | None = None) -> dict[str, tuple[SnapshotEntry, str]]:
+    inventory: dict[str, tuple[SnapshotEntry, str]] = {}
+
+    def walk(directory: Path, relative: str, descriptor: int) -> None:
+        with os.scandir(descriptor) as entries:
+            names = sorted(entry.name for entry in entries)
+        for name in names:
+            check_backup_cancelled()
+            rel = f"{relative}/{name}" if relative else name
+            metadata = os.stat(name, dir_fd=descriptor, follow_symlinks=False)
+            if stat.S_ISDIR(metadata.st_mode):
+                if not _st_metadata_directory_allowed(rel):
+                    if payload:
+                        raise RuntimeError("ST recovery payload contains an unlisted metadata path")
+                    continue
+                child = os.open(name, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW, dir_fd=descriptor)
+                try:
+                    walk(directory / name, rel, child)
+                finally:
+                    os.close(child)
+            elif _st_metadata_path_allowed(rel) or _st_metadata_directory_allowed(rel):
+                if not stat.S_ISREG(metadata.st_mode) or not _st_metadata_path_allowed(rel):
+                    raise RuntimeError("ST recovery metadata must contain only regular files")
+                inventory[rel] = _metadata_file(directory / name)
+            elif payload:
+                raise RuntimeError("ST recovery payload contains an unlisted metadata path")
+
+    try:
+        for relative, root in roots.items():
+            descriptor = _open_metadata_directory(root, missing_ok=not payload if missing_ok is None else missing_ok)
+            if descriptor is None:
+                continue
+            try:
+                walk(root, relative, descriptor)
+            finally:
+                os.close(descriptor)
+    except OSError as exc:
+        raise RuntimeError("ST recovery metadata path is unsafe or changed") from exc
+    return inventory
+
+
+def _copy_st_metadata(roots: dict[str, Path], destination: Path, inventory: dict[str, tuple[SnapshotEntry, str]]) -> dict[str, Any]:
+    destination.mkdir(mode=0o700)
+    files = []
+    for relative, (entry, digest) in sorted(inventory.items()):
+        root = next(root for root in roots if relative.startswith(root + "/"))
+        source = roots[root] / relative[len(root) + 1:]
+        _, copied_digest = _metadata_file(source, expected=entry, destination=destination / relative)
+        if copied_digest != digest:
+            raise RuntimeError("ST recovery metadata changed during capture")
+        files.append({"path": relative, "sha256": digest, "size": entry.size, "mode": entry.mode & 0o777})
+    return {"version": 1, "files": files}
+
+
+def _validate_st_metadata_restore(project_dir: Path, recovery_dir: Path, manifest: dict[str, Any]) -> dict[str, tuple[SnapshotEntry, str]] | None:
+    if "st_metadata" not in manifest:
+        return None  # Older backups retain their existing recovery behavior.
+    metadata = manifest["st_metadata"]
+    if not isinstance(metadata, dict) or type(metadata.get("version")) is not int or metadata["version"] != 1 or not isinstance(metadata.get("files"), list):
+        raise RuntimeError("Invalid ST recovery metadata manifest")
+    expected: dict[str, dict[str, Any]] = {}
+    for item in metadata["files"]:
+        if (not isinstance(item, dict) or set(item) != {"path", "sha256", "size", "mode"}
+                or not isinstance(item.get("path"), str) or not _st_metadata_path_allowed(item["path"])
+                or item["path"] in expected or type(item.get("mode")) is not int or not 0 <= item["mode"] <= 0o777
+                or type(item.get("size")) is not int or item["size"] < 0
+                or not isinstance(item.get("sha256"), str) or not re.fullmatch(r"sha256:[0-9a-f]{64}", item["sha256"])):
+            raise RuntimeError("Invalid ST recovery metadata entry")
+        expected[item["path"]] = item
+    # Native archives contain regular files, so a genuinely empty payload has
+    # no directory member. A nonempty manifest must always have its payload.
+    inventory = _inventory_st_metadata({"": recovery_dir / ST_METADATA_DIR_NAME}, payload=True, missing_ok=not expected)
+    if inventory.keys() != expected.keys() or any(digest != expected[rel]["sha256"] or entry.size != expected[rel]["size"] or entry.mode != expected[rel]["mode"] for rel, (entry, digest) in inventory.items()):
+        raise RuntimeError("ST recovery metadata checksum or file inventory mismatch")
+    # This payload belongs only to an isolated reconstructed repository. Existing
+    # metadata may be a foreign repository or pointer to another checkout.
+    if (project_dir / ".git").exists() or (project_dir / ".git").is_symlink():
+        raise RuntimeError("ST recovery refuses existing destination Git metadata")
+    if any(os.environ.get(key) for key in (
+        "GIT_DIR", "GIT_WORK_TREE", "GIT_COMMON_DIR", "GIT_INDEX_FILE",
+        "GIT_OBJECT_DIRECTORY", "GIT_ALTERNATE_OBJECT_DIRECTORIES",
+    )):
+        raise RuntimeError("ST recovery refuses a redirected Git environment")
+    descriptor = _open_metadata_directory(project_dir)
+    assert descriptor is not None
+    os.close(descriptor)
+    return inventory
+
+
 def _compact_git_plan(project_dir: Path, state: dict[str, Any]) -> dict[str, Any]:
     """Select unpublished ancestry and published edge trees, or retain all Git.
 
@@ -819,13 +1019,19 @@ def build_consistent_snapshot(
     effective_excludes = (*excludes, RECOVERY_DIR_NAME, *key_excludes)
     before = inventory_project_tree(project_dir, effective_excludes, should_exclude, source_roots=source_roots, sensitive_paths=sensitive_paths)
     git_before = None if file_source or not capture_git else git_state(project_dir)
+    st_roots = _st_metadata_roots(project_dir) if git_before is not None else {}
+    st_before = _inventory_st_metadata(st_roots)
     if not before and git_before is None:
         raise RuntimeError("Backup source contains no regular files")
     snapshot_dir = staging / "project-snapshot"
     copy_inventory_snapshot(project_dir, snapshot_dir, before)
     recovery = create_git_recovery_payload(project_dir, snapshot_dir, git_before, git_bundle_reuse=git_bundle_reuse, git_history_mode=git_history_mode)
+    if git_before is not None:
+        recovery["st_metadata"] = _copy_st_metadata(st_roots, snapshot_dir / RECOVERY_DIR_NAME / ST_METADATA_DIR_NAME, st_before)
     after = inventory_project_tree(project_dir, effective_excludes, should_exclude, source_roots=source_roots, sensitive_paths=sensitive_paths)
     git_after = None if file_source or not capture_git else git_state(project_dir)
+    st_roots_after = _st_metadata_roots(project_dir) if git_after is not None else {}
+    st_after = _inventory_st_metadata(st_roots_after)
     changed = sorted(
         relative_path
         for relative_path in set(before) | set(after)
@@ -837,7 +1043,7 @@ def build_consistent_snapshot(
             after.get(relative_path),
         )
     )
-    if changed or git_before != git_after:
+    if changed or git_before != git_after or st_roots != st_roots_after or st_before != st_after:
         raise RuntimeError(
             "Backup source changed during capture"
             + (f": {', '.join(changed[:5])}" if changed else "")
@@ -1000,6 +1206,7 @@ def restore_git_recovery(project_dir: Path) -> dict[str, Any]:
     git_manifest = manifest.get("git")
     if not isinstance(git_manifest, dict):
         return {"git_restored": False, "reason": "archive has no Git repository"}
+    st_inventory = _validate_st_metadata_restore(project_dir, recovery_dir, manifest)
     if git_manifest.get("recovery_format", 1) not in {1, 2}:
         raise RuntimeError("Unsupported Git recovery format")
     object_format = git_manifest.get("object_format", "sha1")
@@ -1083,10 +1290,20 @@ def restore_git_recovery(project_dir: Path) -> dict[str, Any]:
         shutil.copy2(saved_index, index_path)
         if _sha256(index_path) != git_manifest.get("index_checksum"):
             raise RuntimeError("Git recovery index checksum mismatch")
+    if st_inventory is not None:
+        for relative, (entry, digest) in sorted(st_inventory.items()):
+            _, restored_digest = _metadata_file(
+                recovery_dir / ST_METADATA_DIR_NAME / relative,
+                expected=entry,
+                destination=project_dir / ".git" / relative,
+            )
+            if restored_digest != digest:
+                raise RuntimeError("ST recovery metadata changed during restore")
     return {
         "git_restored": True,
         "head": git_manifest["head"],
         "head_ref": head_ref,
         "refs_restored": len(git_manifest.get("refs", [])),
         "jj_present": bool(manifest.get("jj_present")),
+        "st_metadata_files_restored": len(st_inventory) if st_inventory is not None else 0,
     }

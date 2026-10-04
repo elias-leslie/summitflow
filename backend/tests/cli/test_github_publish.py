@@ -19,7 +19,7 @@ def test_required_app_identity_must_match():
 
 
 def test_failed_check_is_not_hidden_by_success():
-    assert check_state([{'name': 'backend', 'state': 'failed'}, {'name': 'frontend', 'state': 'success'}], []) == 'failed'
+    assert check_state([{'name': 'backend', 'state': 'failed'}, {'name': 'frontend', 'state': 'success'}], [{'context': 'backend'}]) == 'failed'
 
 
 def test_rule_discovery_preserves_required_names(monkeypatch):
@@ -63,7 +63,8 @@ def test_registered_ci_without_runs_remains_pending(monkeypatch):
     client = GitHub(Path('/repo'), 'owner/repo')
     monkeypatch.setattr(client, 'pages', Mock(side_effect=[[], [], [], [{'state': 'active', 'path': 'dynamic/github-code-scanning/codeql'}]]))
     monkeypatch.setattr(client, 'api', Mock(return_value={'tree': []}))
-    assert client.observe('a'*40, [])['state'] == 'pending'
+    result = client.observe('a'*40, [])
+    assert result['state'] == 'success' and result['optional_state'] == 'pending'
 
 
 def test_merged_pr_resume_observes_merge_sha(monkeypatch):
@@ -231,7 +232,8 @@ def test_new_workflow_before_actions_index_updates_remains_pending(monkeypatch):
         {'content': base64.b64encode(b'on: [push]\njobs: {}').decode()},
     ])
     monkeypatch.setattr(client, 'api', api)
-    assert client.observe('a'*40, [], branch='main')['state'] == 'pending'
+    result = client.observe('a'*40, [], branch='main')
+    assert result['state'] == 'success' and result['optional_state'] == 'pending'
     assert api.call_args_list[0].args == (f"git/trees/{'a'*40}?recursive=1",)
 
 
@@ -254,7 +256,8 @@ def test_successful_check_does_not_hide_workflow_still_waiting_to_start(monkeypa
         {'content': base64.b64encode(b'on: [push]\njobs: {}').decode()},
     ]))
     required = [{'context': 'early'}] if existing_required else []
-    assert client.observe('a'*40, required, branch='main')['state'] == 'pending'
+    result = client.observe('a'*40, required, branch='main')
+    assert result['state'] == 'success' and result['optional_state'] == 'pending'
 
 
 def test_deleted_workflow_index_entry_cannot_block_no_ci_commit(monkeypatch):
@@ -327,7 +330,9 @@ def test_filtered_missing_workflow_uses_only_exact_push_evidence(monkeypatch, sc
         {'tree': [{'path': '.github/workflows/mac.yml', 'type': 'blob'}]},
         {'content': base64.b64encode(b'on:\n  push:\n    paths: ["backend/**"]\n').decode()},
     ]))
-    assert client.observe('a'*40, [], branch='main')['state'] == expected
+    result = client.observe('a'*40, [], branch='main')
+    assert result['state'] == 'success'
+    assert result['optional_state'] == ('pending' if expected == 'pending' else 'success')
 
 
 @pytest.mark.parametrize(('head', 'count', 'expected'), [('a'*40, 1, False), ('b'*40, 1, True), ('a'*40, 2, True)])
@@ -405,3 +410,22 @@ def test_success_and_absent_protection_parse_included_headers(monkeypatch):
     assert client.api('') == {'default_branch': 'main'}
     assert client.api('branches/main/protection', absent_ok=True) is None
     assert '--include' in runner.call_args.args[0]
+
+
+def test_optional_failure_does_not_hide_required_success():
+    checks = [{"name": "required", "state": "success"}, {"name": "optional", "state": "failed"}]
+    assert check_state(checks, [{"context": "required"}]) == "success"
+    assert check_state(checks, []) == "success"
+
+
+def test_optional_checks_remain_visible_when_requirements_pass(monkeypatch):
+    client = GitHub(Path("/repo"), "owner/repo")
+    responses = {"actions/runs?head_sha=" + "a" * 40: [],
+        "commits/" + "a" * 40 + "/check-runs?filter=latest": [{"name": "extra", "status": "completed", "conclusion": "failure"}],
+        "commits/" + "a" * 40 + "/statuses": [], "actions/workflows": []}
+    monkeypatch.setattr(client, "pages", lambda path, *_: responses[path])
+    monkeypatch.setattr(client, "api", lambda *_: {"tree": []})
+    result = client.observe("a" * 40, [])
+    assert result["state"] == "success"
+    assert result["requirements_state"] == "known"
+    assert result["optional_checks"] == [{"name": "extra", "state": "failed", "app_id": None, "url": None}]

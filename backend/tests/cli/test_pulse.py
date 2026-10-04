@@ -255,7 +255,7 @@ def test_pulse_compact_reports_jj_state_without_checkpoint_preflight_block() -> 
     assert result.exit_code == 0
     assert "JJSTATE:monkey-fight|state=described|described=true|conflicts=false|unpublished=1|change=chg|commit=commit" in result.output
     assert "PREFLIGHT:monkey-fight|claim=clear|edit=clear|reasons=-|source=st-pulse" in result.output
-    assert "VCS-REVIEW:monkey-fight|dirty=0|jj_state=described|described=true|unpublished=1|action=push-unpublished" in result.output
+    assert "VCS-REVIEW:monkey-fight" not in result.output
 
 
 def test_pulse_compact_does_not_report_vcs_review_for_clean_empty_jj_change() -> None:
@@ -340,7 +340,7 @@ def test_pulse_compact_counts_dirty_main_repo_without_checkpoints() -> None:
     assert "PULSE:test2|tasks=0|writers=0|readers=0|specialists=0|sessions=0|stale=0|reapable=0|checkpoints=0|dirty=1|cleanup=yes|stranded=0" in result.output
     assert "PREFLIGHT:test2|claim=clear|edit=clear|reasons=-|source=st-pulse" in result.output
     assert "REVIEW:test2|ownerless=yes|dirty=1|checkpoints=0|stranded=0|" in result.output
-    assert "VCS-REVIEW:test2|dirty=1|action=commit-push-or-continue-narrow" in result.output
+    assert "VCS-REVIEW:test2|dirty=1|action=checkpoint-or-continue-narrow" in result.output
 
 
 def test_pulse_compact_requires_review_for_ownerless_clean_checkpoint() -> None:
@@ -376,7 +376,7 @@ def test_pulse_compact_requires_review_for_ownerless_clean_checkpoint() -> None:
     assert "PREFLIGHT:portfolio-ai|claim=clear|edit=clear|reasons=-|source=st-pulse" in result.output
     assert "REVIEW:portfolio-ai|ownerless=yes|dirty=0|checkpoints=1|stranded=0|" in result.output
     assert "ownership=diagnostic-only" in result.output
-    assert "commit-push-prune-or-leave-explicit-handoff" in result.output
+    assert "checkpoint-or-leave-explicit-handoff" in result.output
 
 
 def test_pulse_gate_allows_dirty_cleanup_with_read_only_session() -> None:

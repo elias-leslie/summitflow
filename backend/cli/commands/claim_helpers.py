@@ -96,11 +96,41 @@ def handle_existing_checkpoint(task_id: str, existing: dict[str, Any]) -> dict[s
     return {"task_id": task_id, "action": "resumed"}
 
 
+def _print_claim_brief(task_id: str, result: dict[str, Any]) -> None:
+    """Use the already fetched task; no repeated gates or full context fetch."""
+    from .done_task_scope import task_scope_paths
+
+    task = result.get("task") or {}
+    if not isinstance(task, dict):
+        return
+    typer.echo("Ownership: this task is claimed; preflight clear.")
+    if task.get("title"):
+        typer.echo(f"Task: {task['title']}")
+    if task.get("description"):
+        typer.echo(str(task["description"]))
+    paths = sorted(task_scope_paths(task))
+    if paths:
+        shown = ", ".join(paths[:3])
+        remaining = f"; {len(paths) - 3} more declared paths" if len(paths) > 3 else ""
+        typer.echo(f"Scope: {shown}{remaining}")
+    else:
+        typer.echo("Scope: no paths declared; establish task ownership before checkpointing changed files.")
+    if criteria := task.get("done_when"):
+        typer.echo("Done when: " + " | ".join(criteria))
+    context = task.get("context") or {}
+    requirements = task.get("completion_requirements") or context.get("completion_requirements") or {}
+    if requirements.get("deployment") or requirements.get("live_checks"):
+        typer.echo(f"Runtime evidence: deployment={bool(requirements.get('deployment'))}; checks={','.join(requirements.get('live_checks') or [])}")
+    typer.echo(f"Next: develop and use st done {task_id} for local completion; st context {task_id} has full details.")
+
+
 def print_resumed(task_id: str, _result: dict[str, Any]) -> None:
     """Print output for a resumed task."""
     output_success(f"Task {task_id} resumed on current checkout.")
+    _print_claim_brief(task_id, _result)
 
 
 def print_claimed(task_id: str, _result: dict[str, Any]) -> None:
     """Print output for a newly claimed task."""
     output_success(f"Task {task_id} claimed. Checkpoint recorded; work commits direct to main.")
+    _print_claim_brief(task_id, _result)

@@ -135,3 +135,19 @@ def test_done_dotted_id_uses_subtask_completion_path() -> None:
         acknowledge_none=False,
     )
     mock_complete_task.assert_not_called()
+
+
+def test_completed_task_without_checkpoint_resumes_incomplete_local_cleanup():
+    from cli.commands import done
+    client = MagicMock()
+    client.get_task.return_value = {"status": "completed", "project_id": "example", "verification_result": {
+        "closeout": {"kind": "local_closeout.v1", "state": "blocked"}}}
+    with (
+        patch.object(done, "get_snapshot_info", return_value=None),
+        patch.object(done, "preflight"),
+        patch.object(done, "STClient", return_value=client),
+        patch.object(done, "complete_task", return_value={"action": "completed"}) as complete,
+        patch.object(done, "_release_task_leases"),
+    ):
+        done._handle_task_completion(client, "task-local", None)
+    complete.assert_called_once_with(client, "task-local", None)

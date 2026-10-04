@@ -745,11 +745,12 @@ def test_quick_config_change_still_runs_directly_changed_test(tmp_path: Path) ->
     run_tool.assert_called_once_with("pytest", configs["pytest"], ["tests/test_check.py"])
 
 
-def test_publication_changed_only_keeps_broad_pytest_for_config_changes() -> None:
+def test_acceptance_changed_only_keeps_broad_pytest_for_config_changes(tmp_path: Path) -> None:
     configs = {
         "pytest": {"label": "TEST", "binary": "pytest", "pass_path": False},
     }
     with (
+        patch("cli.commands.check._resolve_repo_root", return_value=tmp_path),
         patch("cli.commands.check._tool_configs", return_value=configs),
         patch("cli.commands.check._changed_files", return_value=["pyproject.toml"]),
         patch("cli.commands.check._run_tool", return_value=0) as run_tool,

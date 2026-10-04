@@ -392,72 +392,61 @@ class TestPREndpoints:
         assert "not found" in response.json()["detail"].lower()
 
 
-class TestProjectPublishParsing:
-    """Tests for project publish output parsing."""
+class TestExactPublication:
+    """The manual API must never infer a revision or commit uncommitted work."""
 
-    def test_parse_project_publish_output_prefers_detail_for_errors(self) -> None:
-        from app.api.git_helpers.endpoints import _parse_project_publish_output
+    @pytest.mark.parametrize("body", [None, {}, {"source_sha": "HEAD"}, {"source_sha": "abc123"}])
+    def test_publish_requires_full_source_sha(self, body: Any, mocker: MockerFixture) -> None:
+        publisher = mocker.patch("app.tasks.backup_manual_publish.publish_project_now")
+        response = client.post("/api/projects/alpha/git/publish", json=body)
+        assert response.status_code == 422
+        publisher.assert_not_called()
 
-        payload = (
-            '{"status":"FAILED","repos":[{"status":"ERROR","reason":"push_failed",'
-            '"detail":"remote rejected the push","message":"Publish change","pushed":false}]}'
-        )
+    def test_publish_calls_guarded_helper_with_exact_source(self, mocker: MockerFixture) -> None:
+        sha = "a" * 40
+        publisher = mocker.patch("app.tasks.backup_manual_publish.publish_project_now", return_value={
+            "status": "pending", "requested_source_commit": sha, "publication_complete": False,
+        })
+        response = client.post("/api/projects/alpha/git/publish", json={"source_sha": sha})
+        assert response.status_code == 200
+        publisher.assert_called_once_with("alpha", sha)
+        assert response.json()["requested_source_commit"] == sha
 
-        result = _parse_project_publish_output(payload, "", 1)
 
-        assert result["success"] is False
-        assert result["reason"] == "push_failed"
-        assert result["detail"] == "remote rejected the push"
-        assert result["errors"] == ["remote rejected the push"]
-        assert result["message"] == "Publish change"
+def test_legacy_push_is_retired_without_publication(mocker: MockerFixture) -> None:
+    publisher = mocker.patch("app.tasks.backup_manual_publish.publish_project_now")
+    response = client.post("/api/projects/alpha/git/push")
+    assert response.status_code == 410
+    assert response.json()["reason"] == "exact_accepted_source_required"
+    assert response.json()["endpoint"] == "/api/projects/alpha/git/publish"
+    publisher.assert_not_called()
 
-    def test_parse_project_publish_output_uses_stderr_when_json_missing_detail(self) -> None:
-        from app.api.git_helpers.endpoints import _parse_project_publish_output
 
-        payload = '{"status":"FAILED","repos":[{"status":"ERROR","reason":"push_failed","pushed":false}]}'
+def test_development_inventory_preserves_unavailable_repository(mocker: MockerFixture) -> None:
+    from pathlib import Path
 
-        result = _parse_project_publish_output(payload, "ssh: connect to host github.com timed out", 1)
+    from app.api.models.git_models import RepoStatus
 
-        assert result["detail"] == "ssh: connect to host github.com timed out"
-        assert result["errors"] == ["ssh: connect to host github.com timed out"]
-        assert result["raw_output"].endswith("ssh: connect to host github.com timed out")
+    mocker.patch("app.api.git.get_managed_repos", return_value=[Path("/test/alpha"), Path("/test/beta")])
+    mocker.patch("app.api.git.get_repo_status", side_effect=[RepoStatus(
+        path="/test/alpha", name="alpha", project_id="alpha", branch="main",
+        uncommitted=0, ahead=0, behind=0, state="clean",
+    ), None])
+    builder = mocker.patch("app.services.development.build_development_projection", return_value={"version": "development.v1", "project_id": "alpha"})
+    response = client.get("/api/development/status")
+    assert response.status_code == 200
+    assert response.json()["total"] == 2
+    assert response.json()["unavailable_repositories"][0]["name"] == "beta"
+    assert len(response.json()["repositories"]) == 1
+    builder.assert_called_once_with("alpha", Path("/test/alpha"))
 
-    def test_parse_project_publish_output_allows_warning_before_json(self) -> None:
-        from app.api.git_helpers.endpoints import _parse_project_publish_output
 
-        payload = (
-            "2026-05-01 13:45:31 [warning  ] Task project-publish not found, cannot log event\n"
-            '{"status":"SUCCESS","repos":[{"repo":"summitflow","status":"SUCCESS","pushed":true}]}'
-        )
+def test_project_development_uses_shared_projection(mocker: MockerFixture) -> None:
+    from pathlib import Path
 
-        result = _parse_project_publish_output(payload, "", 0)
-
-        assert result["success"] is True
-        assert result["status"] == "SUCCESS"
-        assert result["pushed"] is True
-        assert result["errors"] == []
-
-    def test_parse_project_publish_output_preserves_workflow_metadata(self) -> None:
-        from app.api.git_helpers.endpoints import _parse_project_publish_output
-
-        payload = (
-            '{"status":"SUCCESS","repos":[{"status":"SUCCESS","message":"Publish change",'
-            '"pushed":true,"workflow_summary":"CI=success@main#107 | release=success@v0.2.1#2",'
-            '"workflow_hint":"gh run watch 107 --repo elias-leslie/a-term --exit-status",'
-            '"workflow_runs":[{"workflow":"CI","state":"success","ref":"main","number":107,"url":"https://example.invalid/ci"}]}]}'
-        )
-
-        result = _parse_project_publish_output(payload, "", 0)
-
-        assert result["success"] is True
-        assert result["workflow_summary"] == "CI=success@main#107 | release=success@v0.2.1#2"
-        assert result["workflow_hint"] == "gh run watch 107 --repo elias-leslie/a-term --exit-status"
-        assert result["workflow_runs"] == [
-            {
-                "workflow": "CI",
-                "state": "success",
-                "ref": "main",
-                "number": 107,
-                "url": "https://example.invalid/ci",
-            }
-        ]
+    mocker.patch("app.api.git.get_project_root_with_fallback", return_value=Path("/test/alpha"))
+    builder = mocker.patch("app.services.development.build_development_projection", return_value={"version": "development.v1", "project_id": "alpha"})
+    response = client.get("/api/projects/alpha/development/status")
+    assert response.status_code == 200
+    assert response.json()["version"] == "development.v1"
+    builder.assert_called_once_with("alpha", Path("/test/alpha"))

@@ -1,4 +1,4 @@
-"""Completion continuation retains immutable work and honors lifecycle changes."""
+"""Local continuation protects accepted source and lifecycle without remote I/O."""
 from unittest.mock import Mock
 
 import pytest
@@ -7,230 +7,227 @@ from app.services import task_closeout as closeout
 from app.storage import tasks
 from app.storage.tasks.closeout import (
     closeout_lock,
-    release_closeout_claim,
+    finish_closeout_cleanup,
+    retire_remote_closeout,
     store_closeout,
     store_execution_verification,
+    store_owned_acceptance,
+    store_verification,
 )
-from cli.lib import publish_workflow
 
-SHA = 'a' * 40
+SHA = "a" * 40
+
+
+def stored_task(task_id: str) -> dict:
+    value = tasks.get_task(task_id)
+    assert value is not None
+    return value
+
+
+def stored_closeout(task_id: str) -> dict:
+    value = closeout.get_closeout(task_id)
+    assert value is not None
+    return value
 
 
 @pytest.fixture
 def pending_task(test_project_id, cleanup_task, monkeypatch, tmp_path):
-    task = tasks.create_task(test_project_id, 'Resume exact-source closeout')
-    cleanup_task(task['id'])
-    tasks.update_task(task['id'], verification_result={
-        'independent': {'retained': True},
-        'acceptance': {'state': 'success', 'source_commit': SHA},
+    task = tasks.create_task(test_project_id, "Resume exact-source local closeout")
+    cleanup_task(task["id"])
+    tasks.update_task(task["id"], verification_result={
+        "independent": {"retained": True}, "acceptance": {"state": "success", "source_commit": SHA},
+        "publication": {"ci": {"state": "failed"}},
     })
-    closeout.request_closeout(task['id'], test_project_id, source_sha=SHA, message='Finish tested work')
-    monkeypatch.setattr('app.storage.projects.get_project_root_path', lambda _pid: str(tmp_path))
-    monkeypatch.setattr('cli.lib.execution_context.resolve_checkout_project_id', lambda _root: test_project_id)
-    monkeypatch.setattr('cli.client.STClient', Mock())
-    monkeypatch.setattr('cli.commands.done_task._auto_verify_readiness', Mock())
-    monkeypatch.setattr('cli.commands.done._release_task_leases', Mock())
+    closeout.request_closeout(task["id"], test_project_id, source_sha=SHA, message="Finish tested work")
+    monkeypatch.setattr("app.storage.projects.get_project_root_path", lambda _: str(tmp_path))
+    monkeypatch.setattr("cli.lib.acceptance.validate_acceptance_receipt", Mock())
+    from contextlib import nullcontext
+    monkeypatch.setattr("cli.lib.acceptance.repo_lock", lambda *a, **kw: nullcontext())
+    monkeypatch.setattr("cli.client.STClient", Mock())
+    monkeypatch.setattr("cli.commands.done_task._auto_verify_readiness", Mock())
+    monkeypatch.setattr("cli.commands.done_task._selected_work_is_clean", lambda *a, **kw: True)
+    monkeypatch.setattr("cli.commands.done_task_acceptance.require_scope_matches_revision", Mock())
+    monkeypatch.setattr("cli.commands.done_task._capture_and_remove_snapshot", Mock())
+    monkeypatch.setattr("cli.commands.done._release_task_leases", Mock())
+    monkeypatch.setattr("cli.lib.publish_workflow.publish_git", Mock(side_effect=AssertionError("No remote publication")))
+    monkeypatch.setattr("cli.lib.commit_workflow.commit_repo", Mock(side_effect=AssertionError("No later work checkpoint")))
     return task
 
 
-def evidence(state='pending', sha=SHA):
-    return {'status': {'pending': 'PENDING', 'success': 'SUCCESS', 'failed': 'BLOCKED'}[state],
-            'sha': SHA, 'publication_complete': state == 'success',
-            'reason': f'remote_ci_{state}', 'ci': {'state': state, 'sha': sha, 'checks': []}}
+def test_local_completion_preserves_remote_history_and_unrelated_work(pending_task, tmp_path):
+    (tmp_path / "later-work").write_text("uncommitted")
+    tid = pending_task["id"]
+    assert closeout.resume_closeout(tid)["action"] == "completed"
+    assert closeout.resume_closeout(tid)["action"] == "completed"
+    stored = stored_task(tid)
+    assert stored["status"] == "completed"
+    verification = stored["verification_result"]
+    assert verification["independent"] == {"retained": True}
+    assert verification["publication"]["ci"]["state"] == "failed"
+    assert verification["closeout"]["source_sha"] == SHA
+    assert verification["closeout"]["state"] == "complete"
+    assert (tmp_path / "later-work").read_text() == "uncommitted"
 
 
-def test_execution_facts_merge_without_replacing_closeout_receipts(
-    pending_task,
-) -> None:
-    tid = pending_task['id']
-    tasks.update_task(
-        tid,
-        verification_result={
-            'acceptance': {'state': 'success', 'source_commit': SHA},
-            'deployment': {'state': 'succeeded', 'source_commit': SHA},
-            'live_validation': {'source_commit': SHA, 'checks': []},
-        },
-    )
-
-    store_execution_verification(
-        tid,
-        pending_task['project_id'],
-        {
-            'evidence_verified': True,
-            'verification_source': 'autonomous_quality_gate',
-            'execution_clean': True,
-            'subtask_count': 1,
-            'total_self_fix_attempts': 0,
-            'total_supervisor_attempts': 0,
-            'total_extensions_granted': 0,
-        },
-    )
-
-    stored = tasks.get_task(tid)
-    assert stored is not None
-    verification = stored['verification_result']
-    assert verification['acceptance']['source_commit'] == SHA
-    assert verification['deployment']['source_commit'] == SHA
-    assert verification['live_validation']['source_commit'] == SHA
-    assert verification['verification_source'] == 'autonomous_quality_gate'
+def test_cleanup_failure_retains_completed_source_for_explicit_recovery(pending_task, monkeypatch):
+    cleanup = Mock(side_effect=RuntimeError("snapshot store unavailable"))
+    monkeypatch.setattr("cli.commands.done_task._capture_and_remove_snapshot", cleanup)
+    tid = pending_task["id"]
+    assert closeout.resume_closeout(tid)["action"] == "blocked"
+    assert stored_task(tid)["status"] == "completed"
+    assert closeout.resume_closeout(tid)["action"] == "blocked"
+    assert cleanup.call_count == 1
+    cleanup.side_effect = None
+    assert closeout.resume_closeout(tid, explicit=True)["action"] == "completed"
 
 
-def test_pending_to_complete_preserves_source_and_other_receipts(pending_task, monkeypatch, tmp_path):
-    publisher = Mock(side_effect=[evidence(), evidence('success')])
-    monkeypatch.setattr(publish_workflow, 'publish_git', publisher)
-    # Later work exists, but continuation may neither commit it nor choose its HEAD.
-    (tmp_path / 'later-user-work').write_text('uncommitted')
-    monkeypatch.setattr('cli.lib.commit_workflow.commit_repo', Mock(side_effect=AssertionError('must not commit')))
-    tid = pending_task['id']
-    assert closeout.resume_closeout(tid)['action'] == 'pending'
-    assert closeout.resume_closeout(tid)['action'] == 'completed'
-    assert closeout.resume_closeout(tid)['action'] == 'completed'
-    assert publisher.call_count == 2
-    assert all(call.kwargs['sha'] == SHA and call.kwargs['resume'] for call in publisher.call_args_list)
-    stored = tasks.get_task(tid)
-    assert stored and stored['status'] == 'completed'
-    assert stored['verification_result']['independent'] == {'retained': True}
-    assert stored['verification_result']['publication']['source_commit'] == SHA
-    assert stored['verification_result']['closeout']['state'] == 'complete'
-    assert (tmp_path / 'later-user-work').read_text() == 'uncommitted'
+def test_changed_acceptance_source_cannot_close(pending_task):
+    store_verification(pending_task["id"], pending_task["project_id"], {"acceptance": {"state": "success", "source_commit": "b" * 40}})
+    result = closeout.resume_closeout(pending_task["id"])
+    assert result["action"] == "blocked"
+    assert "acceptance source changed" in result["reason"]
+    assert stored_task(pending_task["id"])[ "status"] == "pending"
 
 
-def test_failure_is_retained_and_not_automatically_retried(pending_task, monkeypatch):
-    publisher = Mock(return_value=evidence('failed'))
-    monkeypatch.setattr(publish_workflow, 'publish_git', publisher)
-    tid = pending_task['id']
-    assert closeout.resume_closeout(tid)['action'] == 'blocked'
-    assert closeout.resume_closeout(tid)['action'] == 'blocked'
-    assert publisher.call_count == 1
-    publisher.return_value = evidence('success')
-    assert closeout.resume_closeout(tid, explicit=True)['action'] == 'completed'
+def test_pause_at_final_status_boundary_cannot_resurrect_completion(pending_task, monkeypatch):
+    monkeypatch.setattr("cli.commands.done_task._auto_verify_readiness", lambda *_: tasks.update_task_status(pending_task["id"], "paused"))
+    assert closeout.resume_closeout(pending_task["id"])["action"] == "skipped"
+    assert stored_task(pending_task["id"])[ "status"] == "paused"
 
 
-def test_mismatched_ci_cannot_complete(pending_task, monkeypatch):
-    monkeypatch.setattr(publish_workflow, 'publish_git', Mock(return_value=evidence('success', 'b' * 40)))
-    result = closeout.resume_closeout(pending_task['id'])
-    assert result['action'] == 'blocked'
-    assert 'CI revision' in result['reason']
-    stored = tasks.get_task(pending_task['id'])
-    assert stored and stored['status'] == 'pending'
+def test_source_change_at_final_status_boundary_is_revision_protected(pending_task, monkeypatch):
+    monkeypatch.setattr("cli.commands.done_task._auto_verify_readiness", lambda *_: store_verification(
+        pending_task["id"], pending_task["project_id"], {"acceptance": {"state": "success", "source_commit": "b" * 40}}))
+    assert closeout.resume_closeout(pending_task["id"])["action"] == "blocked"
+    assert stored_task(pending_task["id"])[ "status"] == "pending"
 
 
-def test_pause_during_remote_observation_cannot_resurrect_request(pending_task, monkeypatch):
-    def pause(*args, **kwargs):
-        tasks.update_task_status(pending_task['id'], 'paused')
-        return evidence('success')
-    monkeypatch.setattr(publish_workflow, 'publish_git', pause)
-    assert closeout.resume_closeout(pending_task['id'])['action'] == 'skipped'
-    stored = tasks.get_task(pending_task['id'])
-    assert stored and stored['status'] == 'paused'
-    assert closeout.get_closeout(pending_task['id']) is None
-
-
-def test_pause_at_final_status_boundary_cannot_close(pending_task, monkeypatch):
-    monkeypatch.setattr(publish_workflow, 'publish_git', Mock(return_value=evidence('success')))
-    monkeypatch.setattr('cli.commands.done_task._auto_verify_readiness',
-                        lambda *_args: tasks.update_task_status(pending_task['id'], 'paused'))
-    assert closeout.resume_closeout(pending_task['id'])['action'] == 'skipped'
-    stored = tasks.get_task(pending_task['id'])
-    assert stored and stored['status'] == 'paused'
-
-
-def test_expired_claim_preserves_queued_closeout_but_new_claim_cancels_it(pending_task):
-    tid = pending_task['id']
-    # Existing claim-expiry semantics, with an already expired test claim.
-    tasks.claim_task(tid, 'test-worker', lock_duration_minutes=-1)
-    closeout.request_closeout(tid, pending_task['project_id'], source_sha=SHA, message='done')
-    tasks.reset_expired_claims()
-    queued = closeout.get_closeout(tid)
-    assert queued and queued['state'] == 'pending'
-    tasks.claim_task(tid, 'new-worker')
-    assert closeout.get_closeout(tid) is None
-
-
-def test_concurrent_continuation_does_not_publish(pending_task, monkeypatch):
-    publisher = Mock(side_effect=AssertionError('another closeout holds the lock'))
-    monkeypatch.setattr(publish_workflow, 'publish_git', publisher)
-    with closeout_lock(pending_task['id']) as acquired:
+def test_concurrent_continuation_preserves_inflight_request(pending_task):
+    with closeout_lock(pending_task["id"]) as acquired:
         assert acquired
-        assert closeout.resume_closeout(pending_task['id'])['reason'] == 'closeout_in_progress'
-    publisher.assert_not_called()
+        assert closeout.resume_closeout(pending_task["id"])["reason"] == "closeout_in_progress"
 
 
-def test_crash_after_status_completion_resumes_cleanup_without_publishing(pending_task, monkeypatch):
-    tid = pending_task['id']
-    intent = closeout.get_closeout(tid)
-    assert intent is not None
-    intent['publication'] = evidence('success')
-    store_closeout(tid, pending_task['project_id'], intent)
-    tasks.update_task_status(tid, 'completed', validate_transition=False)
-    publisher = Mock(side_effect=AssertionError('successful publication already retained'))
-    monkeypatch.setattr(publish_workflow, 'publish_git', publisher)
-    assert closeout.resume_closeout(tid)['action'] == 'completed'
-    completed = closeout.get_closeout(tid)
-    assert completed and completed['state'] == 'complete'
-    publisher.assert_not_called()
+def test_cleanup_guard_rejects_superseded_request_without_touching_metadata(pending_task):
+    tasks.update_task_status(pending_task["id"], "completed", validate_transition=False)
+    cleanup = Mock()
+    assert not finish_closeout_cleanup(pending_task["id"], pending_task["project_id"], "other-request", SHA, cleanup)
+    cleanup.assert_not_called()
 
 
-def test_pending_closeout_is_not_offered_as_fresh_implementation_work(pending_task):
-    tasks.update_task(pending_task['id'], priority=0)
-    ready = tasks.list_ready_tasks(pending_task['project_id'], limit=10000)
-    assert pending_task['id'] not in {task['id'] for task in ready}
+def test_completed_cleanup_tolerates_later_work_without_reacceptance(pending_task, monkeypatch):
+    tasks.update_task_status(pending_task["id"], "completed", validate_transition=False)
+    validator = Mock(side_effect=AssertionError("Accepted status needs metadata cleanup only"))
+    monkeypatch.setattr("cli.lib.acceptance.validate_acceptance_receipt", validator)
+    assert closeout.resume_closeout(pending_task["id"])["action"] == "completed"
+    validator.assert_not_called()
 
 
-def test_queued_confirmation_releases_claim_without_staling_acceptance(pending_task):
-    tid = pending_task['id']
-    intent = closeout.get_closeout(tid)
-    assert intent is not None
-    assert release_closeout_claim(tid, pending_task['project_id'], intent['request_id'])
-    stored = tasks.get_task(tid)
-    assert stored is not None
-    assert stored['status'] == 'pending'
-    assert stored['claimed_by'] is None and stored['lock_expires_at'] is None
-    assert stored['verification_result']['acceptance']['state'] == 'success'
+def test_completed_request_does_not_report_reopened_task_complete(pending_task):
+    intent = stored_closeout(pending_task["id"])
+    intent["state"] = "complete"
+    store_closeout(pending_task["id"], pending_task["project_id"], intent)
+    result = closeout.resume_closeout(pending_task["id"])
+    assert result["action"] == "skipped"
+    assert stored_task(pending_task["id"])["status"] == "pending"
 
 
-def test_nightly_repair_continuation_only_observes_and_never_publishes(pending_task, monkeypatch):
-    tid = pending_task['id']
-    intent = closeout.get_closeout(tid)
-    assert intent is not None
-    intent['require_remote_confirmation'] = True
-    store_closeout(tid, pending_task['project_id'], intent)
-    publisher = Mock(side_effect=AssertionError('daytime continuation must not publish'))
-    monkeypatch.setattr(publish_workflow, 'publish_git', publisher)
-    confirmation = Mock(side_effect=[None, {
-        'publication_complete': True, 'source_sha': SHA, 'verified_head': 'b' * 40,
-        'source_included': True, 'ci': {'state': 'success', 'sha': 'b' * 40},
-    }])
-    monkeypatch.setattr('app.services.publication_health.confirmation_for_source', confirmation)
-    assert closeout.resume_closeout(tid)['action'] == 'pending'
-    stored = tasks.get_task(tid)
-    assert stored is not None and stored['status'] == 'pending'
-    assert closeout.resume_closeout(tid)['action'] == 'completed'
-    publisher.assert_not_called()
-    assert all(call.args == (pending_task['project_id'], SHA) for call in confirmation.call_args_list)
+def test_lifecycle_invalidates_local_request_without_losing_its_history(pending_task):
+    tid = pending_task["id"]
+    before = stored_closeout(tid)
+    tasks.claim_task(tid, "fixture-worker")
+    stored = stored_closeout(tid)
+    assert stored["kind"] == "lifecycle_closeout_history.v1"
+    assert stored["previous_closeout"] == before
+    assert closeout.resume_closeout(tid, explicit=True)["action"] == "skipped"
 
 
-def test_conclusive_nightly_repair_failure_returns_to_pickup(pending_task, monkeypatch):
-    tid = pending_task['id']
-    intent = closeout.get_closeout(tid)
-    assert intent is not None
-    intent['require_remote_confirmation'] = True
-    store_closeout(tid, pending_task['project_id'], intent)
-    monkeypatch.setattr('app.services.publication_health.confirmation_for_source', lambda *_args: None)
-    monkeypatch.setattr('app.services.publication_health.repair_attempt_failed', lambda *_args: True, raising=False)
-    assert closeout.resume_closeout(tid)['action'] == 'blocked'
-    ready = tasks.list_ready_tasks(pending_task['project_id'], limit=10000)
-    assert tid in {task['id'] for task in ready}
+def test_execution_facts_preserve_independent_receipts(pending_task):
+    tid = pending_task["id"]
+    store_execution_verification(tid, pending_task["project_id"], {"execution_clean": True, "subtask_count": 1})
+    verification = stored_task(tid)["verification_result"]
+    assert verification["execution_clean"] is True
+    assert verification["acceptance"]["source_commit"] == SHA
+    assert verification["closeout"]["kind"] == "local_closeout.v1"
 
 
-def test_pending_closeout_is_excluded_from_automatic_and_immediate_pickup(pending_task):
-    from app.tasks.autonomous.pickup_guards import check_task_dispatchable
-    from app.tasks.autonomous.pickup_queries import get_queued_autonomous_tasks
+def test_legacy_remote_intent_is_inert_and_retirement_preserves_history(pending_task):
+    tid = pending_task["id"]
+    legacy = {"request_id": "old", "state": "pending", "source_sha": SHA,
+              "project_id": pending_task["project_id"], "require_remote_confirmation": True,
+              "publication": {"ci": {"state": "failed"}}}
+    store_closeout(tid, pending_task["project_id"], legacy)
+    assert closeout.resume_closeout(tid, explicit=True)["action"] == "skipped"
+    assert not retire_remote_closeout(tid, pending_task["project_id"], expected_closeout={**legacy, "state": "blocked"})
+    assert retire_remote_closeout(tid, pending_task["project_id"], expected_closeout=legacy)
+    stored = stored_task(tid)
+    assert stored["status"] == "pending"
+    intent = stored["verification_result"]["closeout"]
+    assert intent["state"] == "retired" and intent["reason"] == "no_longer_required"
+    assert intent["previous_closeout"] == legacy
+    assert stored["verification_result"]["acceptance"]["source_commit"] == SHA
+    assert not retire_remote_closeout(tid, pending_task["project_id"], expected_closeout=legacy)
 
-    tasks.update_task(pending_task['id'], priority=0, execution_mode='autonomous')
-    queued = get_queued_autonomous_tasks(pending_task['project_id'], limit=10000)
-    assert pending_task['id'] not in {task['id'] for task in queued}
-    task = tasks.get_task(pending_task['id'])
-    assert task is not None
-    result = check_task_dispatchable(task)
-    assert result and result['reason'] == 'publication_closeout_pending'
+
+def test_retirement_cannot_target_local_cleanup(pending_task):
+    with pytest.raises(ValueError, match="legacy remote"):
+        retire_remote_closeout(pending_task["id"], pending_task["project_id"], expected_closeout=stored_closeout(pending_task["id"]))
+
+
+def test_selected_work_changed_after_request_cannot_close(pending_task, monkeypatch):
+    monkeypatch.setattr("cli.commands.done_task._selected_work_is_clean", lambda *a, **kw: False)
+    result = closeout.resume_closeout(pending_task["id"])
+    assert result["action"] == "blocked"
+    assert "Selected task paths changed" in result["reason"]
+    assert stored_task(pending_task["id"])[ "status"] == "pending"
+
+
+def test_historical_owned_revision_drift_is_checked_again_at_closeout(pending_task, monkeypatch):
+    checker = Mock(side_effect=ValueError("Task-owned source changed since the selected acceptance revision"))
+    monkeypatch.setattr("cli.commands.done_task_acceptance.require_scope_matches_revision", checker)
+    result = closeout.resume_closeout(pending_task["id"])
+    assert result["action"] == "blocked"
+    assert "Task-owned source changed" in result["reason"]
+    assert stored_task(pending_task["id"])["status"] == "pending"
+    checker.assert_called_once()
+
+
+def test_request_creation_is_source_and_previous_intent_protected(pending_task, monkeypatch):
+    tid = pending_task["id"]
+    previous = stored_closeout(tid)
+    previous["state"] = "retired"
+    store_closeout(tid, pending_task["project_id"], previous)
+    original_store = closeout.store_closeout
+
+    def change_source_then_store(*args, **kwargs):
+        store_verification(tid, pending_task["project_id"], {"acceptance": {"state": "success", "source_commit": "b" * 40}})
+        return original_store(*args, **kwargs)
+
+    monkeypatch.setattr(closeout, "store_closeout", change_source_then_store)
+    result = closeout.request_closeout(tid, pending_task["project_id"], source_sha=SHA, message="done")
+    assert result["reason"] == "completion_request_superseded"
+    assert closeout.get_closeout(tid) == previous
+
+
+@pytest.mark.parametrize("change", ["none", "acceptance", "paused", "reclaimed", "expired"])
+def test_check_proof_attachment_is_exact_claim_and_evidence_protected(pending_task, change):
+    tid = pending_task["id"]
+    tasks.claim_task(tid, "fixture-worker", lock_duration_minutes=-1 if change == "expired" else 30)
+    before = stored_task(tid)
+    previous = before["verification_result"]["acceptance"]
+    receipt = {"state": "success", "source_commit": SHA, "acceptance_id": "new-proof"}
+    if change == "acceptance":
+        store_verification(tid, before["project_id"], {"acceptance": {"state": "success", "source_commit": "b" * 40}})
+    elif change in {"paused", "reclaimed"}:
+        tasks.update_task_status(tid, "paused")
+        if change == "reclaimed":
+            tasks.claim_task(tid, "fixture-worker")
+    attached = store_owned_acceptance(tid, before["project_id"], receipt,
+        expected_worker="fixture-worker", expected_claimed_at=before["claimed_at"], expected_acceptance=previous)
+    assert attached is (change == "none")
+    after = stored_task(tid)
+    if attached:
+        assert after["verification_result"]["acceptance"] == receipt
+        assert after["verification_result"]["publication"]["ci"]["state"] == "failed"
+    else:
+        assert after["verification_result"]["acceptance"] != receipt

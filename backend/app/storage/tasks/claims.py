@@ -20,20 +20,23 @@ def _preserved_verification_sql(
     column: LiteralString = "verification_result", *, preserve_closeout: bool = False
 ) -> LiteralString:
     """Build the established lifecycle projection for durable task evidence."""
-    evidence: LiteralString = f"""NULLIF(jsonb_strip_nulls(jsonb_build_object(
+    keep_active: LiteralString = "TRUE" if preserve_closeout else "FALSE"
+    return f"""NULLIF((SELECT jsonb_object_agg(e.key, e.value) FROM jsonb_each(jsonb_build_object(
         'acceptance', CASE WHEN {column} ? 'acceptance' THEN
             {column}->'acceptance' ||
             '{{"state":"stale","reason":"task_lifecycle_changed_requires_acceptance"}}'::jsonb END,
         'deployment', {column}->'deployment',
         'live_validation', {column}->'live_validation',
-        'publication_repair', {column}->'publication_repair'
-    )), '{{}}'::jsonb)"""
-    if not preserve_closeout:
-        return evidence
-    return f"""CASE WHEN {column}->'closeout'->>'state' IN ('pending', 'blocked')
-        THEN COALESCE({evidence}, '{{}}'::jsonb) ||
-            jsonb_build_object('closeout', {column}->'closeout')
-        ELSE {evidence} END"""
+        'publication', {column}->'publication',
+        'publication_repair', {column}->'publication_repair',
+        'closeout', CASE
+            WHEN {column}->'closeout' IS NULL THEN NULL
+            WHEN {column}->'closeout'->>'kind' = 'local_closeout.v1'
+                AND NOT ({keep_active} AND {column}->'closeout'->>'state' IN ('pending','blocked'))
+            THEN jsonb_build_object('kind', 'lifecycle_closeout_history.v1', 'state', 'historical',
+                'reason', 'task_lifecycle_changed', 'previous_closeout', {column}->'closeout')
+            ELSE {column}->'closeout' END
+    )) AS e WHERE e.value <> 'null'::jsonb), '{{}}'::jsonb)"""
 
 
 def _has_valid_lock(task: dict[str, Any], cur: Any) -> bool:

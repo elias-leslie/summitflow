@@ -95,12 +95,17 @@ def _handle_task_completion(
     client: STClient,
     id: str,
     message: str | None,
-    *, paths: tuple[str, ...] = (), evidence: Path | None = None,
+    *, paths: tuple[str, ...] = (), evidence: Path | None = None, record_only: bool = False,
 ) -> None:
     """Handle task completion (idempotent; docs/admin auto-routed)."""
+    if record_only and paths:
+        output_error("--record-only cannot select implementation paths")
+        raise typer.Exit(1)
     task = client.get_task(id)
     status = str(task.get("status") or "")
-    if status == "completed" and not get_snapshot_info(id):
+    closeout = (task.get("verification_result") or {}).get("closeout") or {}
+    cleanup_pending = closeout.get("kind") == "local_closeout.v1" and closeout.get("state") in {"pending", "blocked"}
+    if status == "completed" and not get_snapshot_info(id) and not cleanup_pending:
         output_success(f"Task {id} already complete (no-op).")
         return
     _refuse_if_autocode_owned(task, id)
@@ -119,21 +124,25 @@ def _handle_task_completion(
         try:
             receipts = load_completion_evidence(evidence, project_root=Path(root), project_id=project_id)
             acceptance_receipt = receipts.get("acceptance")
-            if acceptance_receipt is not None and not paths:
-                raise ValueError("Imported acceptance requires explicit --paths for task closeout")
+            if acceptance_receipt is not None and record_only:
+                raise ValueError("--record-only cannot import implementation acceptance")
             store_verification(id, project_id, receipts)
         except (ValueError, OSError) as exc:
             output_error(f"Completion evidence rejected: {exc}")
             raise typer.Exit(1) from None
     task_client = STClient(project_id=project_id) if project_id else client
-    if acceptance_receipt is not None:
+    if record_only:
+        if acceptance_receipt is not None or paths:
+            output_error("--record-only cannot select implementation paths or acceptance evidence")
+            raise typer.Exit(1)
+        result = complete_task(task_client, id, message, admin=True)
+    elif acceptance_receipt is not None:
         result = complete_task(task_client, id, message, paths=paths, acceptance_receipt=acceptance_receipt)
     else:
         result = (complete_task(task_client, id, message, paths=paths) if paths
                   else complete_task(task_client, id, message))
     if result.get("action") == "pending":
-        output_success(f"Task {id}: publication is waiting for remote checks. Closeout will continue automatically.")
-        _release_task_leases(project_id, id)
+        output_success(f"Task {id}: local closeout is already in progress; rerun st done after it finishes.")
         return
     if result.get("action") == "blocked":
         output_error(f"Task {id} closeout needs attention: {result.get('reason', 'see retained evidence')}")
@@ -187,11 +196,15 @@ def done_command(
     ] = None,
     acknowledge_none: Annotated[
         bool,
-        typer.Option("--none", help="Acknowledge no memories were needed (subtask form)."),
+        typer.Option("--none", help="Optional legacy acknowledgement that no memories were needed (subtask form)."),
+    ] = False,
+    record_only: Annotated[
+        bool,
+        typer.Option("--record-only", help="Complete administrative or read-only work without a code checkpoint; declared task readiness still applies."),
     ] = False,
     evidence: Annotated[
         Path | None,
-        typer.Option("--evidence", help="JSON with acceptance_receipt (requires --paths), native_deployment_receipt, deployment_receipt and/or source-bound live_validation checks."),
+        typer.Option("--evidence", help="JSON with acceptance_receipt (uses established task paths), native_deployment_receipt, deployment_receipt and/or source-bound live_validation checks."),
     ] = None,
 ) -> None:
     """Complete a task or subtask.
@@ -200,11 +213,11 @@ def done_command(
     diffs are detected automatically; admin/no-merge paths are routed by DB state.
     `ST_DIFF_GATE=off` bypasses the gate; use only for explicitly authorized recovery.
 
-    Subtasks: pass --citation or --none to record memory citations before close.
+    Subtasks: optionally pass --citation when useful memory evidence exists.
     Already-completed task/subtask is a no-op (exit 0).
     """
     if is_subtask_id(id):
-        if paths or evidence:
+        if paths or evidence or record_only:
             output_error("--path / --paths and --evidence only apply to task completion.")
             raise typer.Exit(1)
         client = STClient()
@@ -220,4 +233,4 @@ def done_command(
             )
             raise typer.Exit(1)
         client = STClient(require_project=False)
-        _handle_task_completion(client, id, message, paths=tuple(paths or ()), evidence=evidence)
+        _handle_task_completion(client, id, message, paths=tuple(paths or ()), evidence=evidence, record_only=record_only)

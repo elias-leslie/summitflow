@@ -229,3 +229,45 @@ def test_resolution_cas_preserves_finding_replaced_during_ancestry_proof(
     task = get_repair_task(test_project_id)
     assert task is not None
     assert task["verification_result"]["publication_repair"]["publication"] == replacement
+
+
+def test_administration_disposition_preserves_failed_receipt_without_remote_pass(test_project_id, cleanup_task):
+    observation = {"observed_at": "2026-10-02T08:00:00+00:00", "source_commit": "a" * 40, "reason": "cloud_ci_missing"}
+    task_id = record_finding(test_project_id, "cloud_ci", observation, resolved=False)
+    assert task_id is not None
+    cleanup_task(task_id)
+    original = tasks.get_task(task_id)
+    assert original is not None
+    finding = original["verification_result"]["publication_repair"]["cloud_ci"]
+    assert repair.disposition_finding(task_id, test_project_id, "cloud_ci", expected_finding=finding,
+        classification="administrative", reason="Owner retired scheduled publication", evidence="fixture://owner-plan")
+    updated = tasks.get_task(task_id)
+    assert updated is not None
+    retained = updated["verification_result"]["publication_repair"]["cloud_ci"]
+    assert retained["state"] == "unresolved"
+    assert retained["disposition"]["state"] == "no_longer_required"
+    assert retained["disposition"]["prior_finding"] == finding
+    assert repair.unresolved_repair(updated) == []
+    assert not repair.disposition_finding(task_id, test_project_id, "cloud_ci", expected_finding=finding,
+        classification="administrative", reason="Stale writer", evidence="fixture://old")
+    record_finding(test_project_id, "cloud_ci", {**observation, "observed_at": "2026-10-03T08:00:00+00:00"}, resolved=False)
+    later = tasks.get_task(task_id)
+    assert later is not None
+    assert repair.unresolved_repair(later) == ["cloud_ci"]
+
+
+def test_security_cannot_be_retired_as_optional_administration(test_project_id):
+    finding = {"reason": "security_findings_open", "state": "unresolved"}
+    with pytest.raises(ValueError, match="cannot be retired"):
+        repair.disposition_finding("task", test_project_id, "outgoing_security", expected_finding=finding,
+            classification="administrative", reason="Ignore", evidence="fixture://invalid")
+    forged = {**finding, "disposition": {"kind": "publication_disposition.v1", "classification": "administrative", "state": "no_longer_required"}}
+    assert repair.finding_actionable(forged)
+
+
+def test_failed_remote_repair_requires_investigation(test_project_id):
+    finding = {"reason": "nightly_repair_attempt_failed", "state": "unresolved"}
+    assert repair.classify_retained_finding("publication", finding) == "investigation"
+    with pytest.raises(ValueError, match="cannot be retired"):
+        repair.disposition_finding("task", test_project_id, "publication", expected_finding=finding,
+            classification="administrative", reason="Retire a wait", evidence="fixture://owner-plan")

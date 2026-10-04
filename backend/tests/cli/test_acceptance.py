@@ -176,6 +176,18 @@ def repo(tmp_path: Path) -> Path:
     return tmp_path
 
 
+def test_source_inspection_preserves_stale_index_bytes(repo: Path) -> None:
+    import os
+
+    index = repo / ".git/index"
+    before = index.read_bytes()
+    source = repo / "pyproject.toml"
+    info = source.stat()
+    os.utime(source, ns=(info.st_atime_ns, info.st_mtime_ns + 1_000_000_000))
+    assert acceptance.source_identity(repo)["clean"] is True
+    assert index.read_bytes() == before
+
+
 def successful_runner(calls: list[list[str]]):
     def run(command: list[str], cwd: Path):
         calls.append(command)
@@ -221,6 +233,250 @@ def test_accept_revision_rejects_dirty_candidate(repo: Path) -> None:
 
     with pytest.raises(acceptance.AcceptanceError, match="clean checkout"):
         acceptance.accept_revision(repo, sha="HEAD", runner=successful_runner([]))
+
+
+def test_accept_revision_reuses_accepted_head_while_preserving_unrelated_wip(repo: Path) -> None:
+    calls: list[list[str]] = []
+    accepted = acceptance.accept_revision(repo, sha="HEAD", runner=successful_runner(calls))
+    (repo / "unrelated.py").write_text("other agent work\n")
+    reused = acceptance.accept_revision(repo, sha="HEAD", runner=successful_runner(calls))
+    assert reused["acceptance_id"] == accepted["acceptance_id"]
+    assert reused["reused"] is True
+    assert reused["working_tree_clean"] is False
+    assert reused["source_commit"] == git(repo, "rev-parse", "HEAD")
+    assert len(calls) == 1
+    assert (repo / "unrelated.py").read_text() == "other agent work\n"
+    assert acceptance.validate_acceptance_receipt(repo, reused)["state"] == "success"
+    with pytest.raises(acceptance.AcceptanceError, match="clean checkout"):
+        acceptance.accept_revision(repo, sha="HEAD", reuse=False, runner=successful_runner(calls))
+    assert len(calls) == 1
+
+
+def test_permission_only_change_refuses_receipt_reuse_and_runs_the_guard(repo: Path) -> None:
+    protected = repo / "protected.json"
+    protected.write_text('{}\n')
+    protected.chmod(0o644)
+    git(repo, "add", "protected.json")
+    git(repo, "commit", "-qm", "protected input")
+    calls = []
+
+    def guard(command: list[str], cwd: Path):
+        calls.append(command)
+        return subprocess.CompletedProcess(command, int(bool((cwd / 'protected.json').stat().st_mode & 0o022)), "guard", "")
+
+    accepted = acceptance.accept_revision(repo, sha="HEAD", runner=guard)
+    artifact = Path(accepted["acceptance_artifact"])
+    retained = artifact.read_bytes()
+    protected.chmod(0o664)
+    assert acceptance.source_identity(repo)["clean"] is True
+    with pytest.raises(acceptance.AcceptanceError, match="permission inputs"):
+        acceptance.validate_acceptance_receipt(repo, accepted)
+    with pytest.raises(acceptance.AcceptanceError, match="acceptance_checks_failed"):
+        acceptance.accept_revision(repo, sha="HEAD", runner=guard)
+    assert len(calls) == 2
+    assert artifact.read_bytes() == retained
+    assert protected.stat().st_mode & 0o777 == 0o664
+
+
+def test_acceptance_blocks_permission_drift_even_when_checks_exit_zero(repo: Path) -> None:
+    selected = repo / "app.py"
+    selected.chmod(0o644)
+
+    def mutate(command: list[str], cwd: Path):
+        (cwd / "app.py").chmod(0o664)
+        return subprocess.CompletedProcess(command, 0, "passed before permission drift", "")
+
+    with pytest.raises(acceptance.AcceptanceError, match="source_changed_during_acceptance"):
+        acceptance.accept_revision(repo, sha="HEAD", runner=mutate)
+    assert acceptance.source_identity(repo)["clean"] is True
+
+
+def _committed_crlf_source(repo: Path) -> Path:
+    selected = repo / "app.py"
+    (repo / ".gitattributes").write_text("app.py text eol=crlf\n")
+    selected.write_bytes(b"value = 1\r\n")
+    selected.chmod(0o644)
+    git(repo, "add", ".gitattributes", "app.py")
+    git(repo, "commit", "-qm", "Git-clean CRLF checkout")
+    assert git(repo, "status", "--porcelain") == ""
+    return selected
+
+
+@pytest.mark.parametrize("change", ["mode", "content"])
+def test_git_clean_physical_drift_refuses_full_receipt_reuse(repo: Path, change: str) -> None:
+    selected = _committed_crlf_source(repo)
+    calls = []
+
+    def guard(command: list[str], cwd: Path):
+        calls.append(command)
+        source = cwd / "app.py"
+        passed = source.read_bytes() == b"value = 1\r\n" and source.stat().st_mode & 0o777 == 0o644
+        return subprocess.CompletedProcess(command, int(not passed), "physical input guard", "")
+
+    accepted = acceptance.accept_revision(repo, sha="HEAD", runner=guard)
+    artifact = Path(accepted["acceptance_artifact"])
+    retained = artifact.read_bytes()
+    if change == "mode":
+        selected.chmod(0o664)
+    else:
+        selected.write_bytes(b"value = 1\n")
+        git(repo, "add", "app.py")  # Refresh stat data without changing the accepted Git blob.
+    assert git(repo, "status", "--porcelain") == ""
+    with pytest.raises(acceptance.AcceptanceError, match=r"permission inputs|materialization"):
+        acceptance.validate_acceptance_receipt(repo, accepted)
+    with pytest.raises(acceptance.AcceptanceError, match="acceptance_checks_failed"):
+        acceptance.accept_revision(repo, sha="HEAD", runner=guard)
+    assert len(calls) == 2
+    assert artifact.read_bytes() == retained
+
+
+def test_acceptance_blocks_git_clean_raw_byte_drift_during_checks(repo: Path) -> None:
+    _committed_crlf_source(repo)
+
+    def mutate(command: list[str], cwd: Path):
+        (cwd / "app.py").write_bytes(b"value = 1\n")
+        git(cwd, "add", "app.py")
+        return subprocess.CompletedProcess(command, 0, "passed before physical drift", "")
+
+    with pytest.raises(acceptance.AcceptanceError, match="source_changed_during_acceptance"):
+        acceptance.accept_revision(repo, sha="HEAD", runner=mutate)
+    assert git(repo, "status", "--porcelain") == ""
+
+
+def test_isolated_basis_requires_actual_canonical_materialization(repo: Path) -> None:
+    _committed_crlf_source(repo)
+    calls = []
+    with pytest.raises(acceptance.AcceptanceError, match="isolated source materialization"):
+        acceptance.accept_revision(repo, sha="HEAD", execution_basis="isolated", runner=successful_runner(calls))
+    assert calls == []
+
+
+def test_receipt_without_consumed_source_binding_remains_immutable(repo: Path) -> None:
+    accepted = acceptance.accept_revision(repo, sha="HEAD", runner=successful_runner([]))
+    artifact = Path(accepted["acceptance_artifact"])
+    retained = artifact.read_bytes()
+    historical = json.loads(retained)
+    historical["inputs"].pop("execution")
+    historical["acceptance_id"] = acceptance._receipt_digest(historical)
+    with pytest.raises(acceptance.AcceptanceError, match="consumed source binding"):
+        acceptance.persist_validated_receipt(repo, historical, sha="HEAD")
+    assert "execution" not in historical["inputs"]
+    assert artifact.read_bytes() == retained
+
+
+def test_ignored_local_file_link_count_invalidates_acceptance(repo: Path) -> None:
+    import os
+
+    config = repo / ".env.test"
+    config.write_text("FIXTURE_MODE=local\n")
+    ignored = repo / ".links"
+    ignored.mkdir()
+    (repo / ".gitignore").write_text(".env.test\n.links/\n")
+    git(repo, "add", ".gitignore")
+    git(repo, "commit", "-qm", "ignored local configuration")
+    calls = []
+
+    def guard(command: list[str], cwd: Path):
+        calls.append(command)
+        return subprocess.CompletedProcess(command, int((cwd / ".env.test").stat().st_nlink != 1), "local metadata guard", "")
+
+    accepted = acceptance.accept_revision(repo, sha="HEAD", runner=guard)
+    artifact = Path(accepted["acceptance_artifact"])
+    retained = artifact.read_bytes()
+    os.link(config, ignored / "outside-source.env")
+    assert git(repo, "status", "--porcelain") == ""
+    with pytest.raises(acceptance.AcceptanceError, match="local environment/configuration"):
+        acceptance.validate_acceptance_receipt(repo, accepted)
+    with pytest.raises(acceptance.AcceptanceError, match="acceptance_checks_failed"):
+        acceptance.accept_revision(repo, sha="HEAD", runner=guard)
+    assert len(calls) == 2
+    assert artifact.read_bytes() == retained
+
+
+@pytest.mark.parametrize("change", ["tracked_mode", "tracked_content", "untracked_mode"])
+def test_historical_source_guard_captures_newer_working_paths(repo: Path, change: str) -> None:
+    old_sha = git(repo, "rev-parse", "HEAD")
+    selected = repo / "later.txt"
+    selected.write_bytes(b"later source\r\n")
+    selected.chmod(0o644)
+    (repo / ".gitattributes").write_text("later.txt text eol=crlf\n")
+    git(repo, "add", ".gitattributes", "later.txt")
+    git(repo, "commit", "-qm", "newer source outside historical paths")
+    if change == "untracked_mode":
+        selected = repo / "foreign.txt"
+        selected.write_text("untracked owner work\n")
+        selected.chmod(0o644)
+    before = acceptance.source_identity(repo, sha=old_sha)
+    if change == "tracked_content":
+        selected.write_bytes(b"later source\n")
+        git(repo, "add", "later.txt")
+    else:
+        selected.chmod(0o664)
+    after = acceptance.source_identity(repo, sha=old_sha)
+    assert before["execution"] == after["execution"]
+    assert before["workspace_fingerprint"] == after["workspace_fingerprint"]
+    assert before["working_materialization"] != after["working_materialization"]
+
+
+def test_receipt_without_permission_binding_stays_historical(repo: Path) -> None:
+    accepted = acceptance.accept_revision(repo, sha="HEAD", runner=successful_runner([]))
+    historical = json.loads(Path(accepted['acceptance_artifact']).read_text())
+    historical['inputs'].pop('source_modes')
+    historical['acceptance_id'] = acceptance._receipt_digest(historical)
+    with pytest.raises(acceptance.AcceptanceError, match=r"permission inputs.*not recorded"):
+        acceptance.validate_acceptance_receipt(repo, historical)
+    assert 'source_modes' not in historical['inputs']
+
+
+def test_projected_permission_modes_use_old_blob_defaults_and_actual_equivalent_files(repo: Path) -> None:
+    original = repo / "app.py"
+    original.chmod(0o664)
+    old_sha = git(repo, "rev-parse", "HEAD")
+    original.write_text('later source\n')
+    git(repo, 'commit', '--only', '-qm', 'different current source', '--', 'app.py')
+    modes = acceptance.projected_source_modes(repo, old_sha)
+    assert modes['app.py'] == 0o644
+    assert modes['pyproject.toml'] == (repo / 'pyproject.toml').stat().st_mode & 0o777
+
+
+@pytest.mark.parametrize('object_format', ['sha1', 'sha256'])
+def test_projected_modes_compare_actual_git_blob_identities(tmp_path: Path, object_format: str) -> None:
+    git(tmp_path, 'init', '-q', f'--object-format={object_format}', '--initial-branch=main')
+    git(tmp_path, 'config', 'user.name', 'Fixture')
+    git(tmp_path, 'config', 'user.email', 'fixture@example.invalid')
+    selected = tmp_path / 'binary-source'
+    selected.write_bytes(b'blob\0actual\xffcontent\n')
+    selected.chmod(0o664)
+    git(tmp_path, 'add', '.')
+    git(tmp_path, 'commit', '-qm', 'actual Git object')
+    assert acceptance.projected_source_modes(tmp_path, 'HEAD')['binary-source'] == 0o664
+    selected.write_bytes(b'blob\0altered\xffcontent\n')
+    assert acceptance.projected_source_modes(tmp_path, 'HEAD')['binary-source'] == 0o644
+
+
+def test_successful_rerun_preserves_prior_immutable_receipt(repo: Path) -> None:
+    first = acceptance.accept_revision(repo, sha="HEAD", runner=successful_runner([]))
+    artifact = Path(first["acceptance_artifact"])
+    original = artifact.read_bytes()
+    second = acceptance.accept_revision(repo, sha="HEAD", reuse=False, runner=successful_runner([]))
+    assert Path(second["acceptance_artifact"]) != artifact
+    assert artifact.read_bytes() == original
+    assert acceptance.validate_acceptance_receipt(repo, first)["state"] == "success"
+
+
+def test_persist_validated_receipt_retains_exact_source_cache_under_wip(repo: Path) -> None:
+    receipt = acceptance.accept_revision(repo, sha="HEAD", runner=successful_runner([]))
+    artifact = Path(receipt["acceptance_artifact"])
+    retained = artifact.read_bytes()
+    (repo / "unrelated.py").write_text("owner work\n")
+    persisted = acceptance.persist_validated_receipt(repo, receipt, sha="HEAD")
+    calls: list[list[str]] = []
+    reused = acceptance.accept_revision(repo, sha="HEAD", runner=successful_runner(calls))
+    assert persisted["acceptance_id"] == reused["acceptance_id"]
+    assert reused["reused"] is True
+    assert calls == []
+    assert (repo / "unrelated.py").read_text() == "owner work\n"
+    assert artifact.read_bytes() == retained
 
 
 def test_accept_revision_detects_checkout_mutation_during_checks(repo: Path) -> None:

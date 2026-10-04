@@ -216,11 +216,9 @@ class TestUpdateSubtaskPasses:
     """Tests for update_subtask_passes function."""
 
     def test_update_passes_true(self, test_task: dict[str, Any]) -> None:
-        """Test marking subtask as passing (citations acknowledged)."""
+        """Test marking subtask as passing without compulsory citation housekeeping."""
         subtask_store.create_subtask(test_task["id"], "1.1", "Test", 0)
 
-        # Acknowledge citations (required before completing subtask)
-        subtask_store.acknowledge_no_citations(test_task["id"], "1.1")
 
         updated = subtask_store.update_subtask_passes(test_task["id"], "1.1", True)
 

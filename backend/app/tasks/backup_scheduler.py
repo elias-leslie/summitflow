@@ -119,26 +119,6 @@ def _process_due_source(
         frequency=frequency,
     )
 
-    publication: dict[str, Any] | None = None
-    if get_settings().backup_publish_before_backup:
-        from .backup_publish import publish_source_before_backup
-        try:
-            publication = publish_source_before_backup(source)
-        except Exception:
-            # Publication is useful redundancy, never a prerequisite for WIP
-            # recovery. Avoid persisting raw Git/OAuth diagnostics.
-            logger.warning("backup_publication_failed", source_id=source_id)
-            publication = {"status": "failed", "reason": "publication-unavailable", "publication_complete": False,
-                           "observed_at": datetime.now(UTC).isoformat(), "backup_can_continue": True}
-        # Publication observations are independent of archive capture. In
-        # particular, a failed backup must not discard an actionable finding.
-        if source.get("source_type") == "project" or source.get("project_id"):
-            try:
-                from ..services.publication_health import record_publication_observation
-                record_publication_observation(str(project_id), publication)
-            except Exception:
-                logger.warning("backup_publication_health_ingestion_unavailable", source_id=source_id)
-
     result = create_backup(
         project_id=project_id,
         backup_type="scheduled",
@@ -163,14 +143,6 @@ def _process_due_source(
             "error": result.get("error"),
         }
 
-    if publication is not None and result.get("backup_id"):
-        try:
-            backup_store.merge_backup_verification_json(str(result["backup_id"]), {
-                "publication": publication, "publish_before_backup": publication,
-            })
-        except Exception:
-            logger.warning("backup_publication_evidence_failed", source_id=source_id)
-
     next_run = calculate_next_run(frequency)
     if frequency in {"daily", "weekly", "monthly"}:
         next_run = _align_next_run_to_window(next_run, datetime.now(UTC))
@@ -180,7 +152,6 @@ def _process_due_source(
         "status": status,
         "next_run": next_run.isoformat() if next_run else None,
         "backup_id": result.get("backup_id"),
-        **({"publication": publication} if publication is not None else {}),
     }
 
 

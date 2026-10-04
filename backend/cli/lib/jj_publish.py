@@ -16,13 +16,10 @@ from app.services.git.outgoing import (
 from .jj_common import JJError, JJRevisionInfo, is_colocated, require_success, run_git, run_jj
 from .jj_status import (
     current_revision_info,
-    display_branch,
     latest_operation_id,
     revision_info,
-    run_checks,
     status_summary,
 )
-from .publish_workflow import PublishError, publish_git
 
 
 def task_bookmark(task_id: str, bookmark: str = "") -> str:
@@ -44,78 +41,11 @@ def publish_current_revision(
     check_paths: Sequence[str] = (),
     dry_run: bool = False,
 ) -> dict[str, Any]:
-    """Publish the current jj revision under a deterministic bookmark."""
-    if not is_colocated(repo):
-        raise JJError(f"{repo} is not a jj-colocated repository")
-    info = revision_info(repo, revision)
-    _validate_publishable_revision(info, revision)
-
-    if run_quality_gate:
-        changed = run_jj(repo, ["diff", "--name-only", "-r", f"remote_bookmarks(remote={remote})..{revision}"])
-        require_success(changed, "jj outgoing check scope")
-        scope = sorted(set([*changed.stdout.splitlines(), *check_paths]))
-        ok, detail = run_checks(repo, paths=scope, full=True)
-        if not ok:
-            raise JJError(f"quality gates failed before jj push: {detail[-1200:]}")
-
-    resolved_bookmark = task_bookmark(task_id, bookmark) or display_branch(repo)
-    if resolved_bookmark == "HEAD":
-        raise JJError("bookmark or task id is required when no current bookmark is available")
-    bookmark_set = run_jj(repo, ["bookmark", "set", resolved_bookmark, "-r", revision])
-    if bookmark_set.returncode != 0:
-        detail = (bookmark_set.stderr or bookmark_set.stdout or "").strip()
-        if "Refusing to move bookmark backwards or sideways" in detail:
-            raise JJError(
-                f"sideways revision: @ has diverged from {resolved_bookmark}. "
-                f"Run `jj rebase -d {resolved_bookmark}` and resolve any conflicts, then retry st commit."
-            )
-        raise JJError(f"jj bookmark set failed: {detail}")
-
-    def push_revision(protected_bookmark: str | None) -> Any:
-        nonlocal resolved_bookmark
-        if protected_bookmark and protected_bookmark != resolved_bookmark:
-            require_success(run_jj(repo, ["bookmark", "set", protected_bookmark, "-r", source.stdout.strip()]), "jj protected bookmark")
-            resolved_bookmark = protected_bookmark
-        if not dry_run:
-            _verify_jj_outgoing(repo, source.stdout.strip(), resolved_bookmark, remote)
-        return run_jj(repo, _push_args(remote, resolved_bookmark, dry_run))
-
-    if dry_run:
-        require_success(push_revision(None), "jj git push dry run")
-        delivery: dict[str, Any] = {"status": "SUCCESS", "pushed": False, "publication_complete": False}
-    else:
-        try:
-            # Display metadata uses an abbreviated ID; checks and task receipts
-            # must observe the immutable full commit that this bookmark publishes.
-            source = run_git(repo, ["rev-parse", "--verify", f"{info.commit_id}^{{commit}}"])
-            require_success(source, "resolve publication commit")
-            delivery = publish_git(repo, sha=source.stdout.strip(), task_id=task_id, message=info.description,
-                                   run_git=run_git, push_revision=push_revision, remote_name=remote)
-        except PublishError as exc:
-            raise JJError(str(exc)) from exc
-    return {
-        "repo": repo.name,
-        "path": str(repo),
-        "change_id": info.change_id,
-        "commit_id": info.commit_id,
-        "operation_id": latest_operation_id(repo),
-        "bookmark": resolved_bookmark,
-        **delivery,
-    }
-
-
-def _validate_publishable_revision(info: JJRevisionInfo, revision: str) -> None:
-    if not info.description.strip():
-        raise JJError(f"refusing to publish {revision} without a description")
-    if info.conflict:
-        raise JJError(f"refusing to publish conflicted revision {revision}")
-
-
-def _push_args(remote: str, bookmark: str, dry_run: bool) -> list[str]:
-    args = ["git", "push", "--remote", remote, "--bookmark", "exact:" + bookmark, "--allow-empty-description"]
-    if dry_run:
-        args.append("--dry-run")
-    return args
+    """Retired publication entry point; require the accepted-source publisher."""
+    raise JJError(
+        "publish an accepted source explicitly with "
+        "st vcs publish --source ID --sha FULL_OID --now"
+    )
 
 
 def _verify_jj_outgoing(repo: Path, sha: str, bookmark: str, remote: str, *, deleting: bool = False) -> None:
@@ -199,11 +129,11 @@ def commit_selected_paths(
     message: str,
     paths: Sequence[str],
     task_id: str = "",
-    push: bool = True,
+    push: bool = False,
     skip_checks: bool = False,
     bookmark: str = "",
 ) -> dict[str, Any]:
-    """Split selected paths from @, describe that revision, and optionally publish it."""
+    """Split selected paths from @ and describe a local checkpoint."""
     _validate_commit(repo, message, push, skip_checks)
     selected_paths = _normalize_selected_paths(repo, paths)
     selected_filesets = _selected_path_filesets(repo, selected_paths)
@@ -211,19 +141,6 @@ def commit_selected_paths(
     require_success(run_jj(repo, ["split", "-m", message, "--", *selected_filesets]), "jj split")
     info = revision_info(repo, "@-")
     result = _commit_result(repo, info, message, selected_paths=selected_paths, working_copy="remaining")
-    if push:
-        result.update(
-            publish_current_revision(
-                repo,
-                task_id=task_id,
-                bookmark=bookmark,
-                revision="@-",
-                run_quality_gate=not skip_checks,
-                check_paths=selected_paths,
-            )
-        )
-        result["selected_paths"] = selected_paths
-        result["working_copy"] = "remaining"
     return result
 
 
@@ -271,12 +188,12 @@ def commit_current_revision(
     *,
     message: str,
     task_id: str = "",
-    push: bool = True,
+    push: bool = False,
     skip_checks: bool = False,
     bookmark: str = "",
     paths: Sequence[str] = (),
 ) -> dict[str, Any]:
-    """Describe the current jj revision and optionally publish it."""
+    """Describe the current jj revision as a local checkpoint."""
     _validate_commit(repo, message, push, skip_checks)
     if paths:
         return commit_selected_paths(
@@ -291,28 +208,24 @@ def commit_current_revision(
 
     before = status_summary(repo)
     if before.state == "clean" and before.unpublished == 0:
-        if push:
-            return publish_current_revision(repo, task_id=task_id, bookmark=bookmark, revision="@-", run_quality_gate=False)
         return {"repo": repo.name, "path": str(repo), "status": "SKIP", "reason": "clean", "pushed": False}
 
     require_success(run_jj(repo, ["describe", "-m", message]), "jj describe")
     info = current_revision_info(repo)
     result = _commit_result(repo, info, message)
-    if push:
-        result.update(publish_current_revision(repo, task_id=task_id, bookmark=bookmark, run_quality_gate=not skip_checks))
-        if result.get("publication_complete"):
-            require_success(run_jj(repo, ["new"]), "jj new")
-            result["working_copy"] = "advanced"
     return result
 
 
 def _validate_commit(repo: Path, message: str, push: bool, skip_checks: bool) -> None:
+    if push:
+        raise JJError(
+            "jj checkpoints are local; publish an accepted source explicitly with "
+            "st vcs publish --source ID --sha FULL_OID --now"
+        )
     if not is_colocated(repo):
         raise JJError(f"{repo} is not a jj-colocated repository")
     if not message.strip():
         raise JJError("commit message is required for jj-backed commit")
-    if push and skip_checks:
-        raise JJError("refusing to publish jj revision with --skip-checks")
 
 
 def _commit_result(repo: Path, info: JJRevisionInfo, message: str, **extra: Any) -> dict[str, Any]:

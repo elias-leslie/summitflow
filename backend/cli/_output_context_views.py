@@ -77,7 +77,6 @@ def output_subtask_context(
                     "objective": task.get("objective"),
                     "spirit_anti": task.get("spirit_anti"),
                     "done_when": task.get("done_when"),
-                    "publication_health": task.get("publication_health"),
                 },
                 "subtask": subtask,
                 "dependencies": dependencies,

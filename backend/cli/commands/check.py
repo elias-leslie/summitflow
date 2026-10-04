@@ -2,12 +2,16 @@
 
 from __future__ import annotations
 
+import hashlib
+import io
 import json
 import os
 import re
 import shlex
 import shutil
 import subprocess
+import time
+from contextlib import redirect_stdout
 from pathlib import Path
 from typing import cast
 from uuid import uuid4
@@ -55,6 +59,7 @@ from .check_execution import (
     tool_output,
     tool_result_line,
 )
+from .check_native import NativeCheckError, legacy_applicability, native_plan, run_native
 from .check_project_identity import run_project_identity_check
 from .check_runner import (
     _normalize_explicit_args,
@@ -340,6 +345,35 @@ def _acceptance_summary(receipt: dict[str, object]) -> str:
 
 def _handle_check_args(ctx: typer.Context, configs: dict[str, dict[str, object]]) -> int:
     args = list(ctx.args)
+    if args and args[0] in {"--native", "--check", "-c"}:
+        try:
+            root = _resolve_repo_root()
+            plan = native_plan(root)
+            if plan is not None:
+                stage_id = None
+                native_args = args[1:]
+                json_output = "--json" in native_args
+                native_reuse = "--no-reuse" not in native_args and os.environ.get("ST_NATIVE_NO_REUSE") != "1"
+                native_args = [arg for arg in native_args if arg not in {"--json", "--no-reuse"}]
+                if native_args:
+                    if args[0] != "--native" or len(native_args) != 2 or native_args[0] != "--stage":
+                        raise NativeCheckError("native full gates do not accept scope/fix arguments; use --native --stage ID")
+                    stage_id = native_args[1]
+                result = run_native(root, plan, stage_id=stage_id, reuse=native_reuse, full_gate=args[0] in {"--check", "-c"})
+                if args[0] in {"--check", "-c"} and plan["legacy_tools"]:
+                    result["legacy"] = _native_legacy_checks(root, plan, configs, print_output=not json_output)
+                    if result["legacy"]["state"] != "pass":
+                        result["state"] = "fail"
+                if not json_output:
+                    for stage in result["stages"]:
+                        print(f"NATIVE:{stage['state']}:{stage['id']}|coverage:{stage['coverage']}|reason:{stage['reason']}")
+                print("NATIVE_EVIDENCE:" + json.dumps(result, sort_keys=True, separators=(",", ":")))
+                return 0 if result["state"] == "pass" else 1
+            if args[0] == "--native":
+                raise NativeCheckError("project has no versioned native stage declaration")
+        except NativeCheckError as exc:
+            output_error(str(exc))
+            return 2
     if args and args[0] == "--acceptance":
         if any(option in {"-h", "--help"} for option in args[1:]):
             print(
@@ -376,11 +410,23 @@ def _handle_check_args(ctx: typer.Context, configs: dict[str, dict[str, object]]
             index += 2
         try:
             root = _resolve_repo_root()
+            owned_task = None
             if task_id:
-                renew_owned_claim(root, task_id)
-            receipt = accept_revision(
-                root, sha=sha, task_id=task_id, scope=scope, reuse=reuse
-            )
+                owned_task = renew_owned_claim(root, task_id)
+            from cli.lib.commit_workflow import run_git
+            selected = run_git(root, ["rev-parse", "--verify", f"{sha}^{{commit}}"])
+            head = run_git(root, ["rev-parse", "HEAD"])
+            if selected.returncode == 0 and head.returncode == 0 and selected.stdout.strip() != head.stdout.strip():
+                if not task_id or not scope:
+                    raise AcceptanceError("Historical acceptance requires --task and explicit --scope task-owned paths")
+                from .done_task_acceptance import accept_isolated_revision
+                receipt = accept_isolated_revision(root, sha=selected.stdout.strip(), task_id=task_id, scope=tuple(scope), reuse=reuse)
+            else:
+                receipt = accept_revision(root, sha=sha, task_id=task_id, scope=scope, reuse=reuse)
+            if owned_task and receipt.get("state") == "success":
+                from cli.lib.task_claims import attach_owned_acceptance
+                if not attach_owned_acceptance(root, owned_task, receipt):
+                    output_error("Acceptance artifact retained; task proof was not attached because the local claim/evidence changed or the API is remote. Reclaim and revalidate before completion.")
         except (AcceptanceError, TaskClaimRenewalError) as exc:
             output_error(str(exc))
             return 2
@@ -390,6 +436,37 @@ def _handle_check_args(ctx: typer.Context, configs: dict[str, dict[str, object]]
             print(_acceptance_summary(receipt))
         return 0 if receipt.get("state") == "success" else 1
     return handle_check_args(ctx, configs, runtime=_runtime())
+
+
+def _native_legacy_checks(root: Path, plan: dict[str, object], configs: dict[str, dict[str, object]], *, print_output: bool) -> dict[str, object]:
+    started = time.monotonic()
+    selected, outcomes = legacy_applicability(root, cast(list[str], plan["legacy_tools"]))
+    missing = [name for name in selected if name not in configs]
+    outcomes.extend({"id": name, "state": "unavailable", "reason": "check_configuration_missing"} for name in missing)
+    captured = io.StringIO()
+    with redirect_stdout(captured):
+        code = _run_selected([name for name in selected if name in configs], configs, fix=False, changed_only=False)
+    output = captured.getvalue()
+    if print_output:
+        print(output, end="")
+    for line in output.splitlines():
+        skipped = re.search(r"^([^:]+):SKIP:([^:]+):(.+)$", line)
+        if skipped:
+            reason = skipped[3]
+            applicable_skip = any(value in reason for value in ("no_local_rules", "no_candidate_lockfiles", "no_candidate_files", "no_tsconfig", "no_relevant_paths"))
+            outcomes.append({"id": skipped[2], "state": "not-applicable" if applicable_skip else "unavailable", "reason": reason})
+        elif ":OK:" in line or ":FAIL:" in line:
+            outcomes.append({"id": line.split(":", 1)[0].lower(), "state": "fail" if ":FAIL:" in line else "pass", "result": line})
+    for name in selected:
+        labels = {str(configs.get(name, {}).get("label") or name.upper())}
+        if name == "security":
+            labels = {"GITLEAKS", "SEMGREP", "OSV"}
+        if any(not any(line.startswith(label + ":") and any(marker in line for marker in (":OK:", ":FAIL:", ":SKIP:")) for line in output.splitlines()) for label in labels):
+            outcomes.append({"id": name, "state": "unavailable", "reason": "check_outcome_missing"})
+    unavailable = bool(missing) or any(outcome["state"] == "unavailable" for outcome in outcomes)
+    return {"coverage": "full", "state": "pass" if code == 0 and not unavailable else "fail", "stages": outcomes,
+            "duration_ms": round((time.monotonic() - started) * 1000, 3), "output_sha256": hashlib.sha256(output.encode()).hexdigest(),
+            "detail": output[-1200:], "security_coverage": "local_candidate_codeql_equivalence_not_claimed"}
 
 
 @usage(

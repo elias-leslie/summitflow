@@ -171,24 +171,239 @@ export async function checkProjectGitRemote(
 }
 
 export interface ProjectPublishResponse {
-  success: boolean
   status: string
-  gates: string
-  errors: string[]
-  message: string
-  reason: string
-  pushed: boolean
-  raw_output: string
+  reason?: string
+  pushed?: boolean
+  publication_complete: boolean
+  evidence_recorded?: boolean
+  requested_source_commit: string
+  observed_at?: string
+  head?: string
+  ci?: { state?: string; optional_state?: string; requirements_state?: string }
+  security?: { status?: string }
+  delivery?: {
+    uploaded_source: string | null
+    pull_request_state: 'pending' | 'merged' | 'not_applicable'
+    merged_source: string | null
+    pull_request_url?: string | null
+  }
 }
 
 export async function publishProjectChanges(
   projectId: string,
+  sourceSha: string,
 ): Promise<ProjectPublishResponse> {
   return fetchWithErrorHandling<ProjectPublishResponse>(
     `${getApiBaseUrl()}/api/projects/${projectId}/git/publish`,
     {
       method: 'POST',
-      errorMessage: 'Failed to publish project changes',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ source_sha: sourceSha }),
+      errorMessage: 'Failed to publish accepted source',
     },
   )
+}
+
+export interface DevelopmentEvidence {
+  state: string
+  source_commit: string | null
+  observed_at: string | number | null
+  evidence: string | null
+  reason: string
+  drift?: boolean
+  full_coverage?: boolean
+  check_count?: number
+  uncommitted?: number
+  unpublished?: number | null
+  snapshot_id?: string | null
+  runtime_health?: string
+  publication_complete?: boolean
+}
+
+export interface DevelopmentProjection {
+  version: 'development.v1'
+  project_id: string
+  observed_at: string
+  working_tree: DevelopmentEvidence
+  accepted: DevelopmentEvidence
+  running: DevelopmentEvidence
+  recovery: Record<
+    'capture' | 'offsite' | 'snapshot' | 'restore',
+    DevelopmentEvidence
+  >
+  publication: DevelopmentEvidence
+  blockers: {
+    state: string
+    reason?: string
+    items: Array<{
+      task_id: string
+      title: string
+      status: string
+      reason: string
+    }>
+  }
+}
+
+export interface DevelopmentStatusResponse {
+  version: 'development.v1'
+  repositories: Array<{ repo: RepoStatus; development: DevelopmentProjection }>
+  total: number
+  unavailable_repositories: Array<{
+    path: string
+    name: string
+    reason: string
+  }>
+}
+
+function object(value: unknown): Record<string, unknown> {
+  if (value === null || typeof value !== 'object' || Array.isArray(value)) {
+    throw new Error('Development evidence is malformed')
+  }
+  return value as Record<string, unknown>
+}
+
+function decodeEvidence(value: unknown): DevelopmentEvidence {
+  const row = object(value)
+  if (
+    typeof row.state !== 'string' ||
+    typeof row.reason !== 'string' ||
+    !(
+      row.source_commit === null ||
+      (typeof row.source_commit === 'string' &&
+        /^(?:[0-9a-f]{40}|[0-9a-f]{64})$/.test(row.source_commit))
+    ) ||
+    !(row.evidence === null || typeof row.evidence === 'string') ||
+    !(
+      row.observed_at === null ||
+      typeof row.observed_at === 'string' ||
+      typeof row.observed_at === 'number'
+    )
+  )
+    throw new Error('Development evidence is malformed')
+  for (const key of ['drift', 'full_coverage', 'publication_complete']) {
+    if (row[key] !== undefined && typeof row[key] !== 'boolean')
+      throw new Error('Development evidence is malformed')
+  }
+  for (const key of ['snapshot_id', 'runtime_health']) {
+    if (
+      row[key] !== undefined &&
+      row[key] !== null &&
+      typeof row[key] !== 'string'
+    )
+      throw new Error('Development evidence is malformed')
+  }
+  for (const key of ['check_count', 'uncommitted', 'unpublished']) {
+    if (
+      row[key] !== undefined &&
+      row[key] !== null &&
+      typeof row[key] !== 'number'
+    )
+      throw new Error('Development evidence is malformed')
+  }
+  return row as unknown as DevelopmentEvidence
+}
+
+export function decodeDevelopmentProjection(
+  value: unknown,
+): DevelopmentProjection {
+  const row = object(value)
+  if (
+    row.version !== 'development.v1' ||
+    typeof row.project_id !== 'string' ||
+    typeof row.observed_at !== 'string'
+  ) {
+    throw new Error('Unsupported development evidence')
+  }
+  const recovery = object(row.recovery)
+  const blockers = object(row.blockers)
+  if (typeof blockers.state !== 'string' || !Array.isArray(blockers.items))
+    throw new Error('Task evidence is malformed')
+  const items = blockers.items.map((item: unknown) => {
+    const task = object(item)
+    if (
+      ['task_id', 'title', 'status', 'reason'].some(
+        (key) => typeof task[key] !== 'string',
+      )
+    )
+      throw new Error('Task evidence is malformed')
+    return task as unknown as DevelopmentProjection['blockers']['items'][number]
+  })
+  return {
+    version: row.version,
+    project_id: row.project_id,
+    observed_at: row.observed_at,
+    working_tree: decodeEvidence(row.working_tree),
+    accepted: decodeEvidence(row.accepted),
+    running: decodeEvidence(row.running),
+    publication: decodeEvidence(row.publication),
+    recovery: {
+      capture: decodeEvidence(recovery.capture),
+      offsite: decodeEvidence(recovery.offsite),
+      snapshot: decodeEvidence(recovery.snapshot),
+      restore: decodeEvidence(recovery.restore),
+    },
+    blockers: {
+      state: blockers.state,
+      reason: typeof blockers.reason === 'string' ? blockers.reason : undefined,
+      items,
+    },
+  }
+}
+
+export async function fetchProjectDevelopmentStatus(
+  projectId: string,
+): Promise<DevelopmentProjection> {
+  const value = await fetchWithErrorHandling<unknown>(
+    `${getApiBaseUrl()}/api/projects/${projectId}/development/status`,
+    { errorMessage: 'Could not load development evidence' },
+  )
+  return decodeDevelopmentProjection(value)
+}
+
+export async function fetchDevelopmentStatus(): Promise<DevelopmentStatusResponse> {
+  const value = object(
+    await fetchWithErrorHandling<unknown>(
+      `${getApiBaseUrl()}/api/development/status`,
+      { errorMessage: 'Could not load development evidence' },
+    ),
+  )
+  if (
+    value.version !== 'development.v1' ||
+    !Array.isArray(value.repositories) ||
+    typeof value.total !== 'number'
+  )
+    throw new Error('Unsupported development evidence')
+  return {
+    version: value.version,
+    total: value.total,
+    unavailable_repositories: Array.isArray(value.unavailable_repositories)
+      ? value.unavailable_repositories.map((item: unknown) => {
+          const row = object(item)
+          if (
+            ['path', 'name', 'reason'].some(
+              (key) => typeof row[key] !== 'string',
+            )
+          )
+            throw new Error('Repository evidence is malformed')
+          return row as unknown as DevelopmentStatusResponse['unavailable_repositories'][number]
+        })
+      : [],
+    repositories: value.repositories.map((item: unknown) => {
+      const row = object(item)
+      const repo = object(row.repo)
+      if (
+        ['path', 'name', 'branch'].some(
+          (key) => typeof repo[key] !== 'string',
+        ) ||
+        ['uncommitted', 'ahead', 'behind'].some(
+          (key) => typeof repo[key] !== 'number',
+        )
+      )
+        throw new Error('Repository evidence is malformed')
+      return {
+        repo: repo as unknown as RepoStatus,
+        development: decodeDevelopmentProjection(row.development),
+      }
+    }),
+  }
 }

@@ -291,7 +291,7 @@ app.command("exec-log")(_COMMANDS["exec_monitor"].exec_log_command)
     precautions=(
         "review the diff for secrets, destructive changes, and task scope before committing",
         "use --paths to preserve unrelated work; include generated changes belonging to the checkpoint",
-        "after publish, trust printed COMMIT summary not local-clean state",
+        "publish accepted source separately with st vcs publish --source ID --sha FULL_OID --now",
         "commit before destructive ops (abandon, rollback)",
     ),
     tier="mandate",
@@ -299,28 +299,32 @@ app.command("exec-log")(_COMMANDS["exec_monitor"].exec_log_command)
 def commit_command(
     ctx: typer.Context,
     message: Annotated[str, typer.Option("--message", "--msg", "-m", help="Required commit/change description.")],
-    push: Annotated[bool, typer.Option("--push/--no-push", help="Explicitly publish after the local commit.")] = False,
+    push: Annotated[bool, typer.Option("--push/--no-push", help="Unsupported; publish accepted source with st vcs publish.")] = False,
     task_id: Annotated[str, typer.Option("--task", help="Task id for bookmark and audit log.")] = "",
     repo: Annotated[str | None, typer.Option("--repo", "-R", help="Repository path. Defaults to current repo.")] = None,
     skip_checks: Annotated[
         bool,
         typer.Option("--skip-checks", help="Skip local check gate for local-only recovery commits."),
     ] = False,
-    bookmark: Annotated[str, typer.Option("--bookmark", help="Explicit jj bookmark to publish.")] = "",
+    bookmark: Annotated[str, typer.Option("--bookmark", help="Reserved compatibility option for jj checkpoints.")] = "",
     paths: Annotated[
         list[str] | None,
         typer.Option(
             "--path",
             "--paths",
             help=(
-                "Only commit/publish selected path(s); repeat for multiple paths "
+                "Only commit selected path(s); repeat for multiple paths "
                 "(--paths a --paths b). Works for jj and plain-Git repos."
             ),
         ),
     ] = None,
 ) -> None:
-    """Run checks and commit locally. Add --push to publish explicitly."""
+    """Run checks and create a local checkpoint; publish accepted source separately."""
     try:
+        if push:
+            from .lib.commit_workflow import COMMIT_PUBLICATION_GUIDANCE
+
+            raise CommitError(COMMIT_PUBLICATION_GUIDANCE)
         repo_path = current_repo() if repo is None else Path(repo).expanduser().resolve()
         result = commit_repo(
             repo_path,

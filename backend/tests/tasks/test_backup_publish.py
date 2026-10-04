@@ -1,11 +1,10 @@
-"""Nightly publication uses accepted immutable source and independent backups."""
+"""Manual publication pins accepted immutable source and preserves working files."""
 from __future__ import annotations
 
 import json
 import os
 import subprocess
 import time
-from datetime import datetime
 from pathlib import Path
 from unittest.mock import Mock
 
@@ -18,7 +17,7 @@ from tests.tasks.test_backup_native_recovery import _git
 _acceptance_lookup = publish._acceptance_for_head
 
 
-@pytest.mark.parametrize("manual", [False, True])
+@pytest.mark.parametrize("manual", [True])
 @pytest.mark.parametrize('unavailable,expected', [(True, 'pending'), (False, 'failed')])
 def test_typed_publication_error_is_pending_only_for_outages(source, monkeypatch, unavailable, expected, manual):
     from app.services.git import outgoing
@@ -34,8 +33,6 @@ def test_typed_publication_error_is_pending_only_for_outages(source, monkeypatch
     reason = 'remote_authentication_unavailable' if unavailable else 'remote_publication_failed'
     monkeypatch.setattr(publish_workflow, 'publish_git', Mock(side_effect=publish_workflow.PublishError('fixture-token-never-persist', unavailable=unavailable, reason=reason)))
     head = _git(project, 'rev-parse', 'HEAD')
-    if manual:
-        monkeypatch.setattr(publish, 'publication_window_open', lambda: False)
     result = publish.publish_source_before_backup(source, manual_source_commit=head if manual else None)
     assert result['status'] == expected and result['reason'] == reason
     assert result['backup_can_continue'] and not result['publication_complete']
@@ -66,7 +63,7 @@ def test_network_transport_failure_never_becomes_project_repair(source, monkeypa
         kwargs['run_git'](repo, ['push', 'origin', f"{kwargs['sha']}:refs/heads/main"])
         raise AssertionError('No completed delivery after outage')
     monkeypatch.setattr(publish_workflow, 'publish_git', canonical)
-    result = publish.publish_source_before_backup(source)
+    result = publish.publish_source_before_backup(source, manual_source_commit=_git(Path(source["path"]), "rev-parse", "HEAD"))
     assert result['status'] == 'pending' and result['reason'] == 'remote_transport_unavailable'
     assert result['remote_status'] == 'unknown' and not result['publication_complete']
     assert result['backup_can_continue'] and 'fixture-secret' not in json.dumps(result)
@@ -105,7 +102,7 @@ def test_porcelain_ref_rejection_remains_actionable(source, monkeypatch):
         assert pushed.returncode == 1
         raise publish_workflow.PublishError('secret-diagnostic')
     monkeypatch.setattr(publish_workflow, 'publish_git', canonical)
-    result = publish.publish_source_before_backup(source)
+    result = publish.publish_source_before_backup(source, manual_source_commit=_git(Path(source["path"]), "rev-parse", "HEAD"))
     assert result['status'] == 'failed' and result['reason'] == 'remote_publication_failed'
     assert result['backup_can_continue'] and not result['publication_complete']
     assert 'secret-diagnostic' not in json.dumps(result)
@@ -128,7 +125,6 @@ def source(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> dict:
     (project / "note").write_text("committed unpublished")
     _git(project, "add", "note")
     _git(project, "commit", "-m", "unpublished")
-    monkeypatch.setattr(publish, "publication_window_open", lambda: True)
     monkeypatch.setattr(publish, "_acceptance_for_head", lambda _repo, head: {"state": "reused", "acceptance_id": "fixture", "source_commit": head})
     monkeypatch.setattr(publish, "_codeql_after_publication", lambda *_: {"state": "unavailable", "reason": "fixture_only"})
     return {"id": "fixture", "path": str(project), "source_type": "project", "enabled": True, "project_id": "fixture"}
@@ -140,14 +136,6 @@ def delivery(state="success", *, pushed=True):
             "security": {"state": "success"}, "reason": f"remote_ci_{state}"}
 
 
-@pytest.mark.parametrize("instant,expected", [
-    ("2026-01-10T06:59:00+00:00", False), ("2026-01-10T07:00:00+00:00", True),
-    ("2026-01-10T11:00:00+00:00", False), ("2026-07-10T06:00:00+00:00", True),
-    ("2026-07-10T10:00:00+00:00", False), ("2026-03-08T07:00:00+00:00", True),
-    ("2026-11-01T06:30:00+00:00", False), ("2026-11-01T07:00:00+00:00", True),
-])
-def test_night_window_tracks_dst(instant, expected):
-    assert publish.publication_window_open(datetime.fromisoformat(instant)) is expected
 
 
 def test_publication_preserves_all_active_checkout_state(source, monkeypatch):
@@ -162,7 +150,7 @@ def test_publication_preserves_all_active_checkout_state(source, monkeypatch):
     refs = _git(project, "show-ref")
     isolated = Mock(return_value=delivery())
     monkeypatch.setattr(publish, "_publish_isolated", isolated)
-    result = publish.publish_source_before_backup(source)
+    result = publish.publish_source_before_backup(source, manual_source_commit=_git(Path(source["path"]), "rev-parse", "HEAD"))
     assert result["status"] == "published" and result["publication_complete"]
     assert result["head"] == head and result["observed_at"]
     assert result["backup_can_continue"]
@@ -181,7 +169,7 @@ def test_completed_upload_without_ci_is_not_worded_as_verified(source, monkeypat
                      ci={"state": "not_applicable", "sha": head, "checks": []},
                      security={"state": "success", "sha": head})
     monkeypatch.setattr(publish, "_publish_isolated", Mock(return_value=delivered))
-    result = publish.publish_source_before_backup(source)
+    result = publish.publish_source_before_backup(source, manual_source_commit=_git(Path(source["path"]), "rev-parse", "HEAD"))
     assert result["publication_complete"] and result["backup_can_continue"]
     assert result["status"] == "published" and result["reason"] == "uploaded_without_ci"
     assert result["remote_status"] == "uploaded" and result["ci"]["state"] == "not_applicable"
@@ -192,7 +180,7 @@ def test_unaccepted_source_never_publishes(source, monkeypatch, state):
     monkeypatch.setattr(publish, "_acceptance_for_head", lambda *_: {"state": state})
     publisher = Mock(side_effect=AssertionError("Unreviewed source publication"))
     monkeypatch.setattr(publish, "_publish_isolated", publisher)
-    result = publish.publish_source_before_backup(source)
+    result = publish.publish_source_before_backup(source, manual_source_commit=_git(Path(source["path"]), "rev-parse", "HEAD"))
     assert result["status"] == "pending" and result["reason"] == "source_acceptance_required"
     assert result["action"] and result["backup_can_continue"]
     publisher.assert_not_called()
@@ -206,7 +194,7 @@ def test_configured_empty_repository_bootstrap_retains_accepted_source_and_wip(s
     index = (project / ".git/index").read_bytes()
     publisher = Mock(return_value=delivery("pending"))
     monkeypatch.setattr(publish, "_publish_isolated", publisher)
-    result = publish.publish_source_before_backup(source)
+    result = publish.publish_source_before_backup(source, manual_source_commit=_git(Path(source["path"]), "rev-parse", "HEAD"))
     assert result["head"] == head and result["status"] == "pending"
     assert result["ahead"] is None and result["upstream_status"] == "unobserved_locally"
     assert publisher.call_args.args[1] == head
@@ -221,22 +209,11 @@ def test_empty_repository_without_acceptance_never_bootstraps(source, monkeypatc
     monkeypatch.setattr(publish, "_acceptance_for_head", lambda *_: {"state": "missing"})
     publisher = Mock(side_effect=AssertionError("No unaccepted initialization"))
     monkeypatch.setattr(publish, "_publish_isolated", publisher)
-    result = publish.publish_source_before_backup(source)
+    result = publish.publish_source_before_backup(source, manual_source_commit=_git(Path(source["path"]), "rev-parse", "HEAD"))
     assert result["reason"] == "source_acceptance_required" and result["backup_can_continue"]
     publisher.assert_not_called()
 
 
-def test_window_closure_never_attempts_publication(source, monkeypatch):
-    monkeypatch.setattr(publish, "publication_window_open", lambda: False)
-    publisher = Mock()
-    monkeypatch.setattr(publish, "_publish_isolated", publisher)
-    policy = Mock(return_value=True)
-    result = publish.publish_source_before_backup(source, activity_allowed=policy)
-    assert result["status"] == "pending" and not result["attempted"]
-    assert result["reason"] == "outside_publication_window"
-    assert result["publication_mode"] == "scheduled" and result["requested_source_commit"] is None
-    publisher.assert_not_called()
-    policy.assert_not_called()
 
 
 def test_manual_daytime_publication_pins_source_and_preserves_later_checkout(source, monkeypatch):
@@ -253,8 +230,6 @@ def test_manual_daytime_publication_pins_source_and_preserves_later_checkout(sou
     (project / "unfinished").write_text("untracked")
     index = (project / ".git/index").read_bytes()
     refs = _git(project, "show-ref")
-    window = Mock(return_value=False)
-    monkeypatch.setattr(publish, "publication_window_open", window)
     publisher = Mock(return_value=delivery())
     monkeypatch.setattr(publish, "_publish_isolated", publisher)
     acceptance = Mock(return_value={"state": "reused", "acceptance_id": "exact", "source_commit": accepted})
@@ -267,7 +242,6 @@ def test_manual_daytime_publication_pins_source_and_preserves_later_checkout(sou
     acceptance.assert_called_once_with(project, accepted)
     assert publisher.call_args.args[1:3] == (accepted, "main")
     assert publisher.call_args.kwargs["activity_allowed"]() is True
-    window.assert_not_called()
     assert (project / ".git/index").read_bytes() == index
     assert _git(project, "show-ref") == refs and _git(project, "rev-parse", "HEAD") == later_head
     assert _git(project, "branch", "--show-current") == "later-work"
@@ -304,7 +278,6 @@ def test_manual_source_rejects_conflicting_or_invalid_retained_head(source, monk
 
 @pytest.mark.parametrize("requested", ["a" * 40, "a" * 64])
 def test_missing_manual_object_never_substitutes_head(source, monkeypatch, requested):
-    monkeypatch.setattr(publish, "publication_window_open", lambda: False)
     publisher = Mock(side_effect=AssertionError("No fallback to current HEAD"))
     monkeypatch.setattr(publish, "_publish_isolated", publisher)
     policy = Mock(side_effect=AssertionError("Validate source before owner policy"))
@@ -318,7 +291,6 @@ def test_missing_manual_object_never_substitutes_head(source, monkeypatch, reque
 @pytest.mark.parametrize("state", ["missing", "invalid", "unavailable"])
 def test_manual_daytime_source_still_requires_full_acceptance(source, monkeypatch, state):
     accepted = _git(Path(source["path"]), "rev-parse", "HEAD")
-    monkeypatch.setattr(publish, "publication_window_open", lambda: False)
     monkeypatch.setattr(publish, "_acceptance_for_head", lambda *_: {"state": state})
     publisher = Mock(side_effect=AssertionError("No unaccepted manual publication"))
     monkeypatch.setattr(publish, "_publish_isolated", publisher)
@@ -333,21 +305,16 @@ def test_manual_jj_source_never_uses_receipt_selected_or_mutable_head(source, mo
     accepted = _git(project, "rev-parse", "main")
     (project / ".jj").mkdir()
     _git(project, "checkout", "--detach", "HEAD~1")
-    monkeypatch.setattr(publish, "publication_window_open", lambda: False)
-    selector = Mock(side_effect=AssertionError("Do not select another JJ source"))
-    monkeypatch.setattr(publish, "_reviewed_jj_source", selector)
     publisher = Mock(return_value=delivery("pending"))
     monkeypatch.setattr(publish, "_publish_isolated", publisher)
     result = publish.publish_source_before_backup(source, manual_source_commit=accepted)
     assert result["head"] == accepted and result["vcs"] == "jj"
     assert publisher.call_args.args[1] == accepted
     assert _git(project, "rev-parse", "HEAD") != accepted
-    selector.assert_not_called()
 
 
 def test_manual_matching_retained_source_preserves_resume_policy(source, monkeypatch):
     accepted = _git(Path(source["path"]), "rev-parse", "HEAD")
-    monkeypatch.setattr(publish, "publication_window_open", lambda: False)
     publisher = Mock(return_value=delivery("pending", pushed=False))
     monkeypatch.setattr(publish, "_publish_isolated", publisher)
     result = publish.publish_source_before_backup(
@@ -355,6 +322,28 @@ def test_manual_matching_retained_source_preserves_resume_policy(source, monkeyp
     assert result["head"] == accepted and result["pushed"] is True
     assert publisher.call_args.kwargs["resume"] is True
     assert publisher.call_args.kwargs["activity_allowed"]() is True
+
+
+def test_deployment_workflow_requires_separate_explicit_authority(source, monkeypatch):
+    project = Path(source["path"])
+    workflow = project / ".github/workflows/deploy.yml"
+    workflow.parent.mkdir(parents=True)
+    workflow.write_text("on: push\njobs:\n  deploy:\n    environment: production\n    steps:\n      - run: scripts/deploy.sh\n")
+    _git(project, "add", ".github")
+    _git(project, "commit", "-m", "Declare deployment effects")
+    sha = _git(project, "rev-parse", "HEAD")
+    publisher = Mock(return_value=delivery("pending"))
+    monkeypatch.setattr(publish, "_publish_isolated", publisher)
+    # Later WIP cannot erase effects in the selected immutable source.
+    workflow.write_text("on: workflow_dispatch\njobs: {}\n")
+    pending = publish.publish_source_before_backup(source, manual_source_commit=sha)
+    assert pending["reason"] == "workflow_effects_authorization_required"
+    assert pending["unauthorized_workflows"] == [".github/workflows/deploy.yml"]
+    publisher.assert_not_called()
+    authorized = publish.publish_source_before_backup(source, manual_source_commit=sha,
+        authorized_workflows=(".github/workflows/deploy.yml",))
+    assert authorized["attempted"] is True
+    assert publisher.call_args.args[1] == sha
 
 
 @pytest.mark.parametrize("failure", ["rejected", "exception"])
@@ -380,7 +369,6 @@ def test_manual_owner_loss_stops_nested_publication_and_latches_closed(source, m
     accepted = _git(Path(source["path"]), "rev-parse", "HEAD")
     ownership = {"allowed": True}
     policy = Mock(side_effect=lambda: ownership["allowed"])
-    monkeypatch.setattr(publish, "publication_window_open", lambda: False)
     original = publish._git
     pushes = []
 
@@ -444,7 +432,6 @@ def test_manual_resolved_source_mismatch_never_reaches_acceptance(source, monkey
 def test_manual_daytime_still_rejects_uncertain_project_routes(source, monkeypatch, case):
     project = Path(source["path"])
     accepted = _git(project, "rev-parse", "HEAD")
-    monkeypatch.setattr(publish, "publication_window_open", lambda: False)
     publisher = Mock(side_effect=AssertionError("No unsafe manual route"))
     monkeypatch.setattr(publish, "_publish_isolated", publisher)
     if case == "disabled":
@@ -463,8 +450,7 @@ def test_manual_daytime_still_rejects_uncertain_project_routes(source, monkeypat
     publisher.assert_not_called()
 
 
-@pytest.mark.parametrize("case", ["disabled", "non_project", "unregistered", "detached", "feature",
-                                 "no_upstream", "local", "loopback", "wrong_push_route", "multiple_routes",
+@pytest.mark.parametrize("case", ["disabled", "non_project", "unregistered",                                  "no_upstream", "local", "loopback", "wrong_push_route", "multiple_routes",
                                  "wrong_upstream", "mirror"])
 def test_uncertain_sources_never_reach_publisher(source, monkeypatch, case):
     project = Path(source["path"])
@@ -495,7 +481,7 @@ def test_uncertain_sources_never_reach_publisher(source, monkeypatch, case):
         _git(project, "config", "branch.main.merge", "refs/heads/private")
     else:
         _git(project, "config", "remote.origin.mirror", "true")
-    result = publish.publish_source_before_backup(source)
+    result = publish.publish_source_before_backup(source, manual_source_commit=_git(Path(source["path"]), "rev-parse", "HEAD"))
     assert result["status"] == "skipped" and result["backup_can_continue"]
     publisher.assert_not_called()
 
@@ -506,89 +492,23 @@ def test_remote_presence_still_observes_ci(source, monkeypatch, ci):
     _git(project, "update-ref", "refs/remotes/origin/main", "HEAD")
     publisher = Mock(return_value=delivery(ci, pushed=False))
     monkeypatch.setattr(publish, "_publish_isolated", publisher)
-    result = publish.publish_source_before_backup(source)
+    result = publish.publish_source_before_backup(source, manual_source_commit=_git(Path(source["path"]), "rev-parse", "HEAD"))
     assert result["ci"]["state"] == ci
     assert result["publication_complete"] is (ci == "success")
     publisher.assert_called_once()
 
 
-def test_retry_retains_source_after_new_commits(source, monkeypatch):
-    project = Path(source["path"])
-    accepted = _git(project, "rev-parse", "HEAD")
-    (project / "later").write_text("new work")
-    _git(project, "add", "later")
-    _git(project, "commit", "-m", "later")
-    publisher = Mock(return_value=delivery("pending", pushed=False))
-    monkeypatch.setattr(publish, "_publish_isolated", publisher)
-    result = publish.publish_source_before_backup(source, retained={"head": accepted, "pushed": True})
-    assert result["head"] == accepted
-    assert publisher.call_args.kwargs["resume"] is True
-    assert publisher.call_args.kwargs["activity_allowed"]() is True
-    assert _git(project, "rev-parse", "HEAD") != accepted
 
 
-def test_retained_source_retries_without_switching_later_active_branch(source, monkeypatch):
-    project = Path(source["path"])
-    accepted = _git(project, "rev-parse", "main")
-    _git(project, "checkout", "-b", "later-work")
-    publisher = Mock(return_value=delivery("pending", pushed=False))
-    monkeypatch.setattr(publish, "_publish_isolated", publisher)
-    result = publish.publish_source_before_backup(source, retained={"head": accepted, "branch": "main", "pushed": True})
-    assert result["head"] == accepted and result["pushed"] is True
-    assert _git(project, "branch", "--show-current") == "later-work"
 
 
-def test_jj_uses_accepted_default_bookmark_not_mutable_git_head(source, monkeypatch):
-    project = Path(source["path"])
-    accepted = _git(project, "rev-parse", "main")
-    (project / ".jj").mkdir()
-    _git(project, "checkout", "--detach", "HEAD~1")
-    _git(project, "config", "--unset-all", "branch.main.remote")
-    _git(project, "config", "--unset-all", "branch.main.merge")
-    publisher = Mock(return_value=delivery())
-    monkeypatch.setattr(publish, "_publish_isolated", publisher)
-    result = publish.publish_source_before_backup(source)
-    assert result["vcs"] == "jj" and result["head"] == accepted
-    assert _git(project, "rev-parse", "HEAD") != accepted
 
 
-def test_jj_publishes_reviewed_revision_descending_from_stale_default_bookmark(source, monkeypatch):
-    from cli.lib import acceptance
-
-    project = Path(source["path"])
-    default_head = _git(project, "rev-parse", "main")
-    (project / ".jj").mkdir()
-    _git(project, "checkout", "--detach")
-    (project / "reviewed").write_text("accepted JJ work")
-    _git(project, "add", "reviewed")
-    _git(project, "commit", "-m", "reviewed JJ revision")
-    accepted = _git(project, "rev-parse", "HEAD")
-    receipt = project / ".git/st/acceptance/reviewed.json"
-    receipt.parent.mkdir(parents=True)
-    receipt.write_text(json.dumps({"source": {"commit": accepted}}))
-    # Later @ work is unrelated to the accepted immutable source.
-    (project / "unfinished").write_text("new JJ work")
-    publisher = Mock(return_value=delivery())
-    monkeypatch.setattr(publish, "_publish_isolated", publisher)
-    monkeypatch.setattr(publish, "_acceptance_for_head", _acceptance_lookup)
-    monkeypatch.setattr(acceptance, "validate_acceptance_receipt", Mock(return_value={"acceptance_id": "reviewed", "source_commit": accepted}))
-    result = publish.publish_source_before_backup(source)
-    assert result["head"] == accepted
-    assert publisher.call_args.args[1:3] == (accepted, "main")
-    assert _git(project, "rev-parse", "main") == default_head
-    assert (project / "unfinished").read_text() == "new JJ work"
 
 
-def test_jj_malformed_receipt_does_not_select_mutable_head(source):
-    project = Path(source["path"])
-    default_head = _git(project, "rev-parse", "main")
-    receipt = project / ".git/st/acceptance/malformed.json"
-    receipt.parent.mkdir(parents=True)
-    receipt.write_text(json.dumps({"source": "untrusted shape"}))
-    assert publish._reviewed_jj_source(project, default_head) == default_head
 
 
-@pytest.mark.parametrize("manual", [False, True])
+@pytest.mark.parametrize("manual", [True])
 def test_canonical_publisher_runs_in_disposable_checkout_with_explicit_verifier(source, monkeypatch, manual):
     from app.services.git import outgoing
     from cli.lib import publish_workflow
@@ -606,8 +526,6 @@ def test_canonical_publisher_runs_in_disposable_checkout_with_explicit_verifier(
         return original_git(repo, *args)
 
     monkeypatch.setattr(publish, "_git", safe_git)
-    if manual:
-        monkeypatch.setattr(publish, "publication_window_open", lambda: False)
     codeql = Mock(return_value={"state": "unavailable", "reason": "fixture_only"})
     monkeypatch.setattr(publish, "_codeql_after_publication", codeql)
     seen = []
@@ -632,19 +550,17 @@ def test_canonical_publisher_runs_in_disposable_checkout_with_explicit_verifier(
     assert codeql.call_args.args[-1] == head
 
 
-@pytest.mark.parametrize("manual", [False, True])
+@pytest.mark.parametrize("manual", [True])
 def test_security_failure_never_pushes_or_discloses_diagnostics(source, monkeypatch, manual):
     monkeypatch.setattr(publish, "_publish_isolated", Mock(side_effect=publish._OutgoingFailed("private token")))
     head = _git(Path(source["path"]), "rev-parse", "HEAD")
-    if manual:
-        monkeypatch.setattr(publish, "publication_window_open", lambda: False)
     result = publish.publish_source_before_backup(source, manual_source_commit=head if manual else None)
     assert result["security"]["state"] == "blocked" and result["backup_can_continue"]
     assert result["reason"] == "outgoing_verification_failed"
     assert "private token" not in json.dumps(result)
 
 
-@pytest.mark.parametrize("manual", [False, True])
+@pytest.mark.parametrize("manual", [True])
 @pytest.mark.parametrize("phase", ["initial", "push"])
 def test_shared_admission_outage_defers_publication_without_push_or_repair(source, monkeypatch, phase, manual):
     from app.services import publication_health
@@ -673,8 +589,6 @@ def test_shared_admission_outage_defers_publication_without_push_or_repair(sourc
     publisher = Mock(side_effect=canonical)
     monkeypatch.setattr(publish_workflow, "publish_git", publisher)
     head = _git(Path(source["path"]), "rev-parse", "HEAD")
-    if manual:
-        monkeypatch.setattr(publish, "publication_window_open", lambda: False)
     result = publish.publish_source_before_backup(source, manual_source_commit=head if manual else None)
     assert result["status"] == "pending" and result["reason"] == "heavy_work_admission_unavailable"
     assert result["backup_can_continue"] and not result["publication_complete"]
@@ -792,3 +706,11 @@ def test_timeout_watchdog_terminates_fixture_git_and_its_transport_child(tmp_pat
     child_pid = int(child_marker.read_text())
     child_status = Path(f"/proc/{child_pid}/stat")
     assert not child_status.exists() or child_status.read_text().split(") ", 1)[1].startswith("Z")
+
+
+def test_legacy_publication_call_is_retired_before_any_inspection(source, monkeypatch):
+    inspect = Mock(side_effect=AssertionError("No implicit publication"))
+    monkeypatch.setattr(publish, "_git", inspect)
+    result = publish.publish_source_before_backup(source)
+    assert result["status"] == "retired" and not result["publication_complete"]
+    inspect.assert_not_called()

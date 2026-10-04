@@ -1,5 +1,6 @@
 """GitHub ordered path patterns; unsupported syntax cannot prove exclusion."""
 import re
+from typing import Any
 
 
 def pattern_match(value: str, pattern: str) -> bool | None:
@@ -55,3 +56,36 @@ def ordered_match(value: str, patterns: list[str]) -> bool | None:
         elif hit:
             matched = not negative
     return matched
+
+
+def document_applies(document: dict[Any, Any], *, event: str, branch: str | None,
+                     changed_paths: list[str] | None = None) -> bool:
+    """Prove exclusion only from supported immutable workflow trigger filters."""
+    triggers = document.get('on', document.get(True))
+    if isinstance(triggers, str):
+        return triggers == event
+    if isinstance(triggers, list):
+        return event in triggers
+    if not isinstance(triggers, dict) or event not in triggers:
+        return False
+    filters = triggers[event] or {}
+    if not isinstance(filters, dict):
+        return True
+    if branch:
+        if event == 'push' and ({'tags', 'tags-ignore'} & filters.keys()) and not (
+                {'branches', 'branches-ignore'} & filters.keys()):
+            return False
+        included = filters.get('branches')
+        excluded = filters.get('branches-ignore', [])
+        if included and ordered_match(branch, included) is False:
+            return False
+        if excluded and ordered_match(branch, excluded) is True:
+            return False
+    if changed_paths is not None and event in {'push', 'pull_request'}:
+        included = filters.get('paths')
+        excluded = filters.get('paths-ignore')
+        if included is not None and all(ordered_match(path, included) is False for path in changed_paths):
+            return False
+        if excluded is not None and all(ordered_match(path, excluded) is True for path in changed_paths):
+            return False
+    return True

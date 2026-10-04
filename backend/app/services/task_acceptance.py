@@ -46,6 +46,7 @@ def completion_gates(task: dict[str, Any], *, connection: psycopg.Connection | N
     # requirement cannot use that exception to bypass local acceptance.
     requires_acceptance = bool(
         task.get("commits") or task.get("files_to_modify") or context.get("files_to_modify")
+        or task.get("files_to_create") or context.get("files_to_create")
         or requirements.get("acceptance") or requirements.get("deployment") or requirements.get("live_checks")
     )
     if requires_acceptance and not source:
@@ -68,7 +69,4 @@ def completion_gates(task: dict[str, Any], *, connection: psycopg.Connection | N
         missing = [name for name in required if name not in passed]
         if missing:
             gates.append({"gate": "live_validation", "pass": False, "detail": missing})
-    if task.get("project_id"):
-        from .publication_health import publication_completion_gates
-        gates.extend(publication_completion_gates(task, source, **({"connection": connection} if connection is not None else {})))
     return gates

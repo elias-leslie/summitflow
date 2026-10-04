@@ -57,7 +57,7 @@ export function RemoteStatusBadge({
         ? 'border-cyan-500/25 bg-cyan-500/10 text-cyan-300'
         : 'border-emerald-500/20 bg-emerald-500/10 text-emerald-300'
   const checkedText = formatCheckedAt(checkedAt)
-  const tooltip = `${label} vs origin/${branch}. Remote refs ${checkedText}. Use Check Remote to refresh.`
+  const tooltip = `${label} vs origin/${branch}. Remote refs ${checkedText}. Use Refresh remote refs to update.`
 
   return (
     <span className="group relative inline-flex shrink-0">

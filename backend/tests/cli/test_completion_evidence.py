@@ -39,16 +39,17 @@ def test_recorded_artifact_digest_cannot_change(tmp_path):
         load_completion_evidence(evidence, project_root=tmp_path)
 
 
-def test_acceptance_artifact_is_resolved_and_validated_at_exact_head(tmp_path, monkeypatch):
+def test_acceptance_artifact_is_resolved_and_validated_at_its_exact_source(tmp_path, monkeypatch):
     from unittest.mock import Mock
 
     validated = {"state": "success", "source_commit": "a" * 40}
     validator = Mock(return_value=validated)
     monkeypatch.setattr("cli.lib.acceptance.validate_acceptance_receipt", validator)
+    (tmp_path / "accepted.json").write_text(json.dumps({"source": {"commit": validated["source_commit"]}}))
     evidence = tmp_path / "evidence.json"
     evidence.write_text(json.dumps({"acceptance_receipt": "accepted.json"}))
     assert load_completion_evidence(evidence, project_root=tmp_path) == {"acceptance": validated}
-    validator.assert_called_once_with(tmp_path, tmp_path / "accepted.json", sha="HEAD")
+    validator.assert_called_once_with(tmp_path, tmp_path / "accepted.json", sha=validated["source_commit"])
 
 
 def test_native_reference_uses_the_task_project_instead_of_ambient_context(tmp_path, monkeypatch):

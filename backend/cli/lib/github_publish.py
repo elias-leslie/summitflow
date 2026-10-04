@@ -12,7 +12,7 @@ from urllib.parse import quote, urlencode
 
 import yaml
 
-from .workflow_filters import ordered_match
+from .workflow_filters import document_applies
 
 
 class GitHubError(RuntimeError):
@@ -48,15 +48,16 @@ def _response(output: str) -> tuple[int | None, dict[str, str], str]:
 
 
 def check_state(checks: list[dict[str, Any]], required: list[dict[str, Any]]) -> str:
-    if any(check['state'] == 'failed' for check in checks):
-        return 'failed'
     for rule in required:
         matches = [check for check in checks if check['name'] == rule['context'] and (
             rule.get('integration_id') in {None, 0, -1} or check.get('app_id') == rule['integration_id']
         )]
+        if any(check['state'] == 'failed' for check in matches):
+            return 'failed'
         if not matches or any(check['state'] != 'success' for check in matches):
             return 'pending'
-    return 'success' if checks and all(check['state'] == 'success' for check in checks) else 'pending'
+    return 'success'
+
 
 
 class GitHub:
@@ -70,8 +71,8 @@ class GitHub:
     def api(self, path: str, *, method: str = 'GET', body: dict[str, Any] | None = None,
             absent_ok: bool = False) -> Any:
         if self.activity_allowed is not None and not self.activity_allowed():
-            raise GitHubError('Scheduled publication window is closed', unavailable=True,
-                              reason='outside_publication_window')
+            raise GitHubError('Publication ownership is unavailable', unavailable=True,
+                              reason='publication_busy')
         args = ['gh', 'api', f'repos/{self.name}/{path}' if path else f'repos/{self.name}', '--method', method, '--include']
         if body is not None:
             args.extend(['--input', '-'])
@@ -220,8 +221,13 @@ class GitHub:
                            and (event != 'push' or not branch or run.get('head_branch') == branch)
                            for run in workflows_for_sha):
                     checks.append({'name': f'workflow: {path}', 'state': 'pending'})
-            state = check_state(checks, required) if checks or required else 'not_applicable'
-        return {'state': state, 'sha': sha, 'checks': checks,
+            state = check_state(checks, required)
+        optional_checks = [check for check in checks if check['name'] not in required_names]
+        return {'state': state if required or checks else 'not_applicable', 'sha': sha, 'checks': checks,
+                'requirements_state': 'known', 'required_checks': required, 'optional_checks': optional_checks,
+                'optional_state': ('failed' if any(check['state'] == 'failed' for check in optional_checks) else
+                                   'pending' if any(check['state'] == 'pending' for check in optional_checks) else
+                                   'success' if optional_checks else 'not_applicable'),
                 'unrelated_workflows': [{'name': run['name'], 'url': run.get('html_url'),
                                          'conclusion': run.get('conclusion')} for run in unrelated]}
 
@@ -241,24 +247,8 @@ class GitHub:
             raise GitHubError(f'Cannot read workflow triggers for {path}') from exc
         if not isinstance(document, dict):
             raise GitHubError(f'Invalid workflow document: {path}')
-        triggers = document.get('on', document.get(True))  # YAML 1.1 treats unquoted on as True.
-        if isinstance(triggers, str):
-            return triggers == event
-        if isinstance(triggers, list):
-            return event in triggers
-        if not isinstance(triggers, dict) or event not in triggers:
-            return False
-        filters = triggers[event] or {}
-        if branch and isinstance(filters, dict):
-            if event == 'push' and ({'tags', 'tags-ignore'} & filters.keys()) and not (
-                    {'branches', 'branches-ignore'} & filters.keys()):
-                return False
-            included = filters.get('branches')
-            excluded = filters.get('branches-ignore', [])
-            if included and ordered_match(branch, included) is False:
-                return False
-            if excluded and ordered_match(branch, excluded) is True:
-                return False
+        triggers = document.get('on', document.get(True))
+        filters = triggers.get(event) or {} if isinstance(triggers, dict) else {}
         if (isinstance(filters, dict) and {'paths', 'paths-ignore'} & filters.keys()
                 and event == 'pull_request' and self.pull_number is not None):
             files = self.pages(f'pulls/{self.pull_number}/files')
@@ -266,16 +256,7 @@ class GitHub:
             if current['head']['sha'] == sha and len(files) == current.get('changed_files'):
                 changed_paths = sorted({path for file in files for path in
                                         (file['filename'], file.get('previous_filename', file['filename']))})
-        if isinstance(filters, dict) and changed_paths is not None and event in {'push', 'pull_request'}:
-            included_paths = filters.get('paths')
-            excluded_paths = filters.get('paths-ignore')
-            if included_paths is not None and all(ordered_match(path, included_paths) is False
-                                                  for path in changed_paths):
-                return False
-            if excluded_paths is not None and all(ordered_match(path, excluded_paths) is True
-                                                   for path in changed_paths):
-                return False
-        return True
+        return document_applies(document, event=event, branch=branch, changed_paths=changed_paths)
 
     def observe_feature_branch(self, sha: str, required: list[dict[str, Any]], branch: str) -> dict[str, Any]:
         """Observe existing PR triggers without taking ownership of their merge."""

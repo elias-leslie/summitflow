@@ -142,13 +142,6 @@ def startup_context(payload: dict[str, Any]) -> dict[str, Any]:
     except OSError:
         claude_installed = False
     lines.append("Claude publication adapter: " + ("installed." if claude_installed else "unavailable; enforcement is not verified."))
-    try:
-        result = subprocess.run(["st", "vcs", "publication"], cwd=cwd, capture_output=True,
-                                text=True, timeout=8, check=False)
-        lines.append(result.stdout.strip() if result.returncode == 0 and result.stdout.strip()
-                     else "Publication status unavailable; inspect st vcs publication.")
-    except (OSError, subprocess.TimeoutExpired):
-        lines.append("Publication status unavailable; inspect st vcs publication.")
     return {"hookSpecificOutput": {"hookEventName": event, "additionalContext": "\n".join(lines)}}
 
 

@@ -107,6 +107,7 @@ def _claim_task(
 
     # Idempotent re-claim: same caller, already running, existing checkpoint → resume.
     if status == "running" and existing and _is_same_caller(task.get("claimed_by")):
+        preflight(task_id, pid_str, op="claim")
         try:
             client.claim_task(task_id, renew_only=True)
         except APIError as api_error:
@@ -126,6 +127,7 @@ def _claim_task(
             "task_id": task_id,
             "action": "resumed",
             "base_branch": str(existing.get("base_branch", "main")),
+            "task": task,
         }
 
     if status == "running" and not force and not _is_same_caller(task.get("claimed_by")):
@@ -151,7 +153,7 @@ def _claim_task(
         except APIError as e:
             output_error(f"Failed to claim task: {e.detail}")
             raise typer.Exit(1) from None
-        return handle_existing_checkpoint(task_id, existing)
+        return {**handle_existing_checkpoint(task_id, existing), "task": task}
 
     preflight(task_id, pid_str, op="claim")
 
@@ -176,6 +178,7 @@ def _claim_task(
         "task_id": task_id,
         "action": "claimed",
         "base_branch": meta.base_branch,
+        "task": task,
     }
 
 

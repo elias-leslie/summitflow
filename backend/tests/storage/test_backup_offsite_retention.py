@@ -92,36 +92,3 @@ def test_native_retry_selector_keeps_every_outstanding_archive_and_excludes_rest
     selected = [row["id"] for row in backups.get_pending_native_offsite_backups() if row["source_id"] == catalogue["source"]]
     assert selected == expected
     assert not set(excluded) & set(selected)
-
-
-@pytest.mark.parametrize("new_status", [None, "published", "up_to_date", "skipped"])
-def test_latest_completed_publication_supersedes_older_failure(catalogue, new_status):
-    old = catalogue["create"](publication="failed")
-    catalogue["create"](publication=new_status)
-    selected = [row["id"] for row in backups.get_pending_backup_publications() if row["source_id"] == catalogue["source"]]
-    assert selected == []
-    assert backups.get_backup(old) is not None
-
-
-@pytest.mark.parametrize("publication", ["failed", "pending"])
-def test_publication_selector_retries_only_latest_completed_record(catalogue, publication):
-    catalogue["create"](publication="failed")
-    latest = catalogue["create"](publication=publication)
-    catalogue["create"](status="failed", publication="failed")
-    selected = [row["id"] for row in backups.get_pending_backup_publications() if row["source_id"] == catalogue["source"]]
-    assert selected == [latest]
-
-
-def test_publication_selector_excludes_disabled_source(catalogue):
-    catalogue["create"](publication="failed")
-    backups.update_source(catalogue["source"], enabled=False)
-    assert not any(row["source_id"] == catalogue["source"] for row in backups.get_pending_backup_publications())
-
-
-def test_publication_latest_point_follows_completion_not_queue_creation_order(catalogue):
-    queued_first = catalogue["create"](publication="failed")
-    catalogue["create"](publication="published")
-    # A previously queued capture can complete after a later-created point.
-    backups.update_backup_status(queued_first, "completed")
-    selected = [row["id"] for row in backups.get_pending_backup_publications() if row["source_id"] == catalogue["source"]]
-    assert selected == [queued_first]

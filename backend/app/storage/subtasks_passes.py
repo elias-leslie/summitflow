@@ -1,7 +1,7 @@
 """Subtask passes update - gate logic for marking subtasks complete or incomplete.
 
 This module handles the update_subtask_passes operation, enforcing step completion
-and citation acknowledgment gates before allowing a subtask to be marked as passed.
+and dependency gates before allowing a subtask to be marked as passed.
 """
 
 from __future__ import annotations
@@ -13,7 +13,7 @@ import psycopg
 from ..logging_config import get_logger
 from .connection import get_connection
 from .subtasks_helpers import SUBTASK_COLUMNS, generate_subtask_id, row_to_dict
-from .subtasks_validation import SubtaskGateError, validate_citations_acknowledged
+from .subtasks_validation import SubtaskGateError
 
 logger = get_logger(__name__)
 
@@ -50,15 +50,7 @@ def _set_subtask_passes(
 
     try:
         with get_connection() as conn, conn.cursor() as cur:
-            # Lock the row to prevent TOCTOU race between read and update
-            cur.execute(
-                "SELECT citations_acknowledged_at FROM task_subtasks WHERE id = %s FOR UPDATE",
-                (table_id,),
-            )
-            row = cur.fetchone()
-            acknowledged_at = row[0] if row else None
-
-            validate_citations_acknowledged(table_id, subtask_id, acknowledged_at)
+            cur.execute("SELECT id FROM task_subtasks WHERE id = %s FOR UPDATE", (table_id,))
             cur.execute(
                 """
                 SELECT ts.subtask_id

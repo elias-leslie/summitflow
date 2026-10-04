@@ -1,0 +1,118 @@
+[native]
+schema_version = 1
+locks = ["backend/uv.lock", "backend/pyproject.toml", "backend/pytest.ini", "pnpm-lock.yaml", "package.json", "frontend/package.json", "frontend/vitest.config.ts", "backend/scripts/native_fixture_image.txt", "backend/scripts/native_check_fixture.py", "backend/scripts/verify_bootstrap_schema.py", "docker/compose/summitflow-schema.sql"]
+paths = ["backend/.venv/bin", "frontend/node_modules/.bin"]
+
+[native.tools]
+node = "/usr/local/bin/node"
+npm = "/usr/local/bin/npm"
+pnpm = "/home/kasadis/.cache/node/corepack/v1/pnpm/10.28.0/bin/pnpm.cjs"
+docker = "/usr/bin/docker"
+git = "/usr/bin/git"
+bwrap = "/usr/bin/bwrap"
+bash = "/usr/bin/bash"
+sh = "/usr/bin/sh"
+timeout = "/usr/bin/timeout"
+age = "/usr/bin/age"
+age-keygen = "/usr/bin/age-keygen"
+gitleaks = "/home/kasadis/.local/bin/gitleaks"
+semgrep = "/home/kasadis/.local/bin/semgrep"
+restic = "/home/kasadis/.local/bin/restic"
+ruff = "/home/kasadis/.local/bin/ruff"
+ty = "/home/kasadis/.local/bin/ty"
+ionice = "/usr/bin/ionice"
+nice = "/usr/bin/nice"
+hostname = "/usr/bin/hostname"
+tar = "/usr/bin/tar"
+flock = "/usr/bin/flock"
+journalctl = "/usr/bin/journalctl"
+realpath = "/usr/bin/realpath"
+stat = "/usr/bin/stat"
+uname = "/usr/bin/uname"
+id = "/usr/bin/id"
+seq = "/usr/bin/seq"
+wc = "/usr/bin/wc"
+tr = "/usr/bin/tr"
+gzip = "/usr/bin/gzip"
+gunzip = "/usr/bin/gunzip"
+rg = "/usr/bin/rg"
+readlink = "/usr/bin/readlink"
+dirname = "/usr/bin/dirname"
+basename = "/usr/bin/basename"
+mktemp = "/usr/bin/mktemp"
+chmod = "/usr/bin/chmod"
+cat = "/usr/bin/cat"
+rm = "/usr/bin/rm"
+mkdir = "/usr/bin/mkdir"
+cp = "/usr/bin/cp"
+mv = "/usr/bin/mv"
+find = "/usr/bin/find"
+sort = "/usr/bin/sort"
+sed = "/usr/bin/sed"
+grep = "/usr/bin/grep"
+awk = "/usr/bin/awk"
+cut = "/usr/bin/cut"
+head = "/usr/bin/head"
+tail = "/usr/bin/tail"
+sleep = "/usr/bin/sleep"
+touch = "/usr/bin/touch"
+date = "/usr/bin/date"
+env = "/usr/bin/env"
+
+[[native.stages]]
+id = "fresh-schema"
+kind = "test"
+coverage = "full"
+argv = ["backend/.venv/bin/python", "backend/scripts/native_check_fixture.py", "bootstrap"]
+timeout_seconds = 240
+[native.stages.evidence]
+format = "json"
+source = "stdout"
+
+[[native.stages]]
+id = "python"
+kind = "test"
+coverage = "full"
+argv = ["backend/.venv/bin/python", "backend/scripts/native_check_fixture.py", "python"]
+timeout_seconds = 1800
+[native.stages.evidence]
+format = "junit"
+path = ".dev-tools/native-python.xml"
+
+[[native.stages]]
+id = "frontend"
+kind = "test"
+coverage = "full"
+cwd = "frontend"
+argv = ["node", "node_modules/vitest/vitest.mjs", "run", "--cache=false", "--reporter=junit", "--outputFile=../.dev-tools/native-frontend.xml"]
+timeout_seconds = 600
+[native.stages.evidence]
+format = "junit"
+path = ".dev-tools/native-frontend.xml"
+
+[[native.stages]]
+id = "live-integrations"
+kind = "check"
+coverage = "full"
+argv = ["backend/.venv/bin/python", "-V"]
+required = false
+applicable = false
+reason = "Live Agent Hub, memory, deployed API and browser E2E tests require separately authorized services and credentials; pytest excludes e2e and slow markers, frontend excludes tests/e2e."
+
+[[native.stages]]
+id = "live-browser-systemd"
+kind = "check"
+coverage = "full"
+argv = ["backend/.venv/bin/python", "-V"]
+required = false
+applicable = false
+reason = "Explicit ST_BROWSER_LIVE_FIXTURE and ST_RUN_SERVICE_SYSTEMD_TESTS owner fixtures are not authorized by local acceptance; their named tests are deselected."
+
+[[native.stages]]
+id = "operator-global-hook"
+kind = "check"
+coverage = "full"
+argv = ["backend/.venv/bin/python", "-V"]
+required = false
+applicable = false
+reason = "An operator-installed global Git hook is outside clean native fixture scope; only the tracked hook adapter regression runs."

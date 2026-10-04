@@ -105,9 +105,6 @@ def format_subtask_context_task_summary(task: dict[str, Any]) -> str:
     task_id = task.get("id", "unknown")
     title = task.get("title", "")
     lines = [f"TASK:{task_id}|{title}"]
-    if isinstance(task.get("publication_health"), dict):
-        from app.services.publication_health import format_publication_health
-        lines.append(format_publication_health(task["publication_health"]))
     if objective := task.get("objective"):
         lines.append(f"OBJECTIVE:{objective}")
     if spirit_anti := task.get("spirit_anti"):

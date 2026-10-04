@@ -2,9 +2,6 @@
 
 from __future__ import annotations
 
-import json
-import os
-import shutil
 import subprocess
 from pathlib import Path
 from typing import Any
@@ -24,7 +21,6 @@ from ...utils.git_helpers import (
     list_snapshots,
     revert_to_snapshot,
 )
-from ...utils.shared_paths import get_repo_root
 from ..models.git_models import (
     CommitInfo,
     ConflictInfo,
@@ -46,102 +42,19 @@ from .db_helpers import (
 _logger = get_logger(__name__)
 
 
-def _project_publish_env() -> tuple[list[str], dict[str, str] | None]:
-    """Return (command prefix, env) for the st commit project publish invocation."""
-    host_root = os.environ.get("BACKUP_HOST_ROOT")
-    st_path = shutil.which("st") or str(get_repo_root() / "backend" / ".venv" / "bin" / "st")
-    if not host_root:
-        return [st_path, "--no-compact", "commit"], None
-
-    env = os.environ.copy()
-    env["HOME"] = host_root
-    host_bin_dirs = [f"{host_root}/.local/bin", f"{host_root}/bin", f"{host_root}/.cargo/bin"]
-    env["PATH"] = ":".join(host_bin_dirs) + ":" + env.get("PATH", "")
-    ssh_dir = f"{host_root}/.ssh"
-    env["GIT_SSH_COMMAND"] = (
-        f"ssh -i {ssh_dir}/id_ed25519 -o UserKnownHostsFile={ssh_dir}/known_hosts"
-    )
-    return ["st", "--no-compact", "commit"], env
-
-
-def _parse_project_publish_output(output: str, stderr_text: str, returncode: int) -> dict[str, Any]:
-    """Parse st commit JSON output into a normalized response dict."""
-    raw_output = output + stderr_text
-    try:
-        data = json.loads(output)
-    except json.JSONDecodeError:
-        data = _extract_project_publish_json(raw_output)
-        if data is None:
-            return {
-                "success": False,
-                "status": "UNKNOWN",
-                "gates": "",
-                "errors": [stderr_text[:200]],
-                "message": "",
-                "reason": "json_parse_failed",
-                "detail": stderr_text[:200],
-                "pushed": False,
-                "raw_output": raw_output,
-            }
-    repo_data = data.get("repos", [{}])[0] if data.get("repos") else data
-    detail = str(repo_data.get("detail", "") or stderr_text or "")
-    error_text = detail or str(repo_data.get("reason", "") or "")
-    return {
-        "success": returncode == 0,
-        "status": repo_data.get("status", data.get("status", "UNKNOWN")),
-        "gates": repo_data.get("gates", ""),
-        "errors": [error_text] if error_text else [],
-        "message": repo_data.get("message", ""),
-        "reason": repo_data.get("reason", ""),
-        "detail": detail,
-        "pushed": repo_data.get("pushed", False),
-        "workflow_summary": repo_data.get("workflow_summary", ""),
-        "workflow_hint": repo_data.get("workflow_hint", ""),
-        "workflow_runs": repo_data.get("workflow_runs", []),
-        "raw_output": raw_output,
-    }
-
-
-def _extract_project_publish_json(raw_output: str) -> dict[str, Any] | None:
-    """Extract the first JSON object from output mixed with warnings/log lines."""
-    decoder = json.JSONDecoder()
-    for index, char in enumerate(raw_output):
-        if char != "{":
-            continue
-        try:
-            data, _end = decoder.raw_decode(raw_output[index:])
-        except json.JSONDecodeError:
-            continue
-        if isinstance(data, dict):
-            return data
-    return None
-
-
-async def execute_project_publish(project_root: Path) -> dict[str, Any]:
-    """Publish project work using st commit."""
+async def execute_project_publish(project_id: str, source_sha: str, *, authorized_workflows: tuple[str, ...] = ()) -> dict[str, Any]:
+    """Call the sole guarded exact-source publisher without staging or committing."""
     import asyncio
 
-    command_prefix, env = _project_publish_env()
+    from ...tasks.backup_manual_publish import publish_project_now
+    from ...tasks.backup_publish import _public_evidence
+
     try:
-        result = await asyncio.to_thread(
-            safe_subprocess.run,
-            [
-                *command_prefix,
-                "--push",
-                "--bookmark",
-                "main",
-                "--message",
-                "publish project work",
-                "-R",
-                str(project_root),
-            ],
-            env=env,
-            capture_output=True,
-            text=True,
-        )
-        return _parse_project_publish_output(result.stdout, result.stderr, result.returncode)
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e)) from e
+        options = {"authorized_workflows": authorized_workflows} if authorized_workflows else {}
+        result = await asyncio.to_thread(publish_project_now, project_id, source_sha, **options)
+        return _public_evidence(result)
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
 
 
 def find_repo_for_sha(commit_sha: str) -> Path | None:

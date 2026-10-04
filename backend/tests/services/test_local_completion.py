@@ -56,6 +56,11 @@ def test_recorded_commit_requires_acceptance_even_without_file_plan():
     assert [gate["gate"] for gate in gates] == ["acceptance"]
 
 
+def test_declared_new_file_requires_implementation_acceptance():
+    gates = completion_gates({"context": {"files_to_create": ["new.py"]}, "verification_result": {}})
+    assert [gate["gate"] for gate in gates] == ["acceptance"]
+
+
 def test_administrative_task_does_not_invent_implementation_acceptance():
     assert completion_gates({"context": {}, "verification_result": {}}) == []
 
@@ -66,3 +71,17 @@ def test_live_pass_without_durable_evidence_is_not_enough():
         live_validation={"source_commit": SHA, "checks": [{"id": "login-isolation", "state": "success"}]},
     ))
     assert [gate["gate"] for gate in gates] == ["live_validation"]
+
+
+def test_project_publication_failure_is_not_a_completion_gate(monkeypatch):
+    monkeypatch.setattr("app.services.publication_health.publication_completion_gates",
+                        lambda *a, **kw: (_ for _ in ()).throw(AssertionError("No project publication gate")), raising=False)
+    assert completion_gates({"id": "task-local", "project_id": "example", "commits": [SHA],
+                             "verification_result": {"acceptance": {"state": "success", "source_commit": SHA}}}) == []
+
+
+def test_retained_remote_wait_is_not_shown_as_active_local_work():
+    state, message = checkpoint_state("pending", {"closeout": {"state": "pending", "require_remote_confirmation": True},
+                                                  "publication": {"ci": {"state": "failed"}}})
+    assert state == "open"
+    assert "does not establish a live agent" in message

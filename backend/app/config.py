@@ -102,7 +102,6 @@ class Settings(BaseSettings):
     backup_restic_pilot_backend_id: str = ""
     backup_restic_pilot_daily_utc: str = "02:00"
     backup_restic_pilot_interface: str = "enp8s0"
-    backup_publish_before_backup: bool = False
 
     # Optional local-time window for the existing scheduled backup workflow.
     # Unset hours preserve unrestricted scheduling; manual backups are separate.

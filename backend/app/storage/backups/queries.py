@@ -475,28 +475,3 @@ def get_pending_native_offsite_backups() -> list[dict[str, Any]]:
         )
         rows = cur.fetchall()
     return [row_to_backup(row) for row in rows]
-
-
-def get_pending_backup_publications() -> list[dict[str, Any]]:
-    """Retry only publication evidence on the latest local project recovery point.
-
-    A newer successful/skipped publication supersedes older failures. The
-    queue is derived from existing backup evidence, never from discovering or
-    publishing unrelated repositories.
-    """
-    with get_cursor() as cur:
-        cur.execute(
-            static_sql(
-                f"SELECT {BACKUP_COLUMNS} FROM backups "
-                "WHERE id IN ("
-                "SELECT DISTINCT ON (COALESCE(b.source_id, b.project_id)) b.id "
-                "FROM backups b JOIN backup_sources bs ON bs.id = COALESCE(b.source_id, b.project_id) "
-                "WHERE b.status IN ('completed', 'completed_pending_upload') "
-                "AND bs.enabled = TRUE AND bs.source_type = 'project' "
-                "ORDER BY COALESCE(b.source_id, b.project_id), b.completed_at DESC NULLS LAST, b.created_at DESC, b.id DESC"
-                ") AND verification_json #>> '{publication,status}' IN ('pending', 'failed') "
-                "ORDER BY created_at ASC, id ASC"
-            ),
-        )
-        rows = cur.fetchall()
-    return [row_to_backup(row) for row in rows]

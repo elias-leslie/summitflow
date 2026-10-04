@@ -1,329 +1,317 @@
 'use client'
 
 import { useMutation, useQueryClient } from '@tanstack/react-query'
-import clsx from 'clsx'
+import Link from 'next/link'
+import { useState } from 'react'
 import {
-  AlertTriangle,
-  ArrowDown,
-  ChevronRight,
-  GitBranch,
-  Loader2,
-  Scissors,
-  Unplug,
-  Upload,
-} from 'lucide-react'
-import { useEffect, useRef, useState } from 'react'
-import { getStateInfo } from '@/app/(app)/git/utils'
-import {
+  checkProjectGitRemote,
+  type DevelopmentProjection,
   publishProjectChanges,
   pullRepository,
   type RepoStatus,
-} from '@/lib/api'
+} from '@/lib/api/git'
+import { DevelopmentEvidence, evidenceTime } from './DevelopmentEvidence'
 import { DashboardContent } from './project-row/DashboardContent'
 import { PublishResultBlock } from './project-row/PublishResultBlock'
 import { RemoteStatusBadge } from './RemoteStatusBadge'
 
-interface ProjectRowProps {
+export function ProjectRow({
+  repo,
+  development,
+}: {
   repo: RepoStatus
-  remoteCheckedAt?: Date | null
-}
-
-const PUBLISH_RESULT_AUTO_DISMISS_MS = 4000
-
-export function ProjectRow({ repo, remoteCheckedAt }: ProjectRowProps) {
-  const [expanded, setExpanded] = useState(false)
-  const [publishResult, setPublishResult] = useState<Awaited<
-    ReturnType<typeof publishProjectChanges>
-  > | null>(null)
-  const contentRef = useRef<HTMLDivElement>(null)
-  const stateInfo = getStateInfo(repo.state)
-  const StateIcon = stateInfo.icon
+  development: DevelopmentProjection
+}) {
   const queryClient = useQueryClient()
-  const workspaceSummary = repo.workspace_summary
-  const repoKey = repo.project_id ?? repo.name
-  const dirtyWorkspaceCount =
-    (workspaceSummary?.dirty_checkpoints ?? 0) +
-    (workspaceSummary?.dirty_main_repo ? 1 : 0)
-  const canPublish = repo.uncommitted > 0 || repo.ahead > 0
-
-  const syncMutation = useMutation({
-    mutationFn: () => pullRepository(repoKey),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['git-status'] })
-      queryClient.invalidateQueries({
-        queryKey: ['project-dashboard', repoKey],
-      })
-      queryClient.invalidateQueries({ queryKey: ['git-conflicts'] })
-    },
-  })
-
-  const publishMutation = useMutation({
-    mutationFn: () => publishProjectChanges(repoKey),
-    onMutate: () => {
-      setPublishResult(null)
-    },
-    onSuccess: (result) => {
-      setPublishResult(result)
-      queryClient.invalidateQueries({ queryKey: ['git-status'] })
-      queryClient.invalidateQueries({
-        queryKey: ['project-dashboard', repoKey],
-      })
-    },
-    onError: () => {
-      setPublishResult(null)
-    },
-  })
-
-  useEffect(() => {
-    if (!publishResult?.success) return undefined
-    const id = window.setTimeout(
-      () => setPublishResult(null),
-      PUBLISH_RESULT_AUTO_DISMISS_MS,
-    )
-    return () => window.clearTimeout(id)
-  }, [publishResult])
-
-  const wsBadges: Array<{
-    icon: typeof GitBranch
-    count: number
-    label: string
-    tone: string
-  }> = []
-  if (workspaceSummary) {
-    if (workspaceSummary.active_checkpoints > 0)
-      wsBadges.push({
-        icon: GitBranch,
-        count: workspaceSummary.active_checkpoints,
-        label: 'cp',
-        tone: 'text-phosphor-400',
-      })
-    if (dirtyWorkspaceCount > 0)
-      wsBadges.push({
-        icon: AlertTriangle,
-        count: dirtyWorkspaceCount,
-        label: 'dirty',
-        tone: 'text-rose-400',
-      })
-    if (workspaceSummary.orphan_branches > 0)
-      wsBadges.push({
-        icon: Unplug,
-        count: workspaceSummary.orphan_branches,
-        label: 'orphan',
-        tone: 'text-amber-400',
-      })
-    if (workspaceSummary.prunable_branches > 0)
-      wsBadges.push({
-        icon: Scissors,
-        count: workspaceSummary.prunable_branches,
-        label: 'prune',
-        tone: 'text-rose-400',
-      })
+  const [remoteCheckedAt, setRemoteCheckedAt] = useState<Date | null>(null)
+  const projectId = development.project_id
+  const accepted = development.accepted
+  const canPublish =
+    accepted.state === 'accepted' &&
+    accepted.full_coverage === true &&
+    !!accepted.source_commit
+  const invalidate = () => {
+    queryClient.invalidateQueries({ queryKey: ['development-status'] })
+    queryClient.invalidateQueries({ queryKey: ['git-status'] })
+    queryClient.invalidateQueries({
+      queryKey: ['project-dashboard', projectId],
+    })
   }
+  const publish = useMutation({
+    mutationFn: () => {
+      if (!canPublish || !accepted.source_commit)
+        throw new Error(
+          'Current source needs full acceptance before publication',
+        )
+      return publishProjectChanges(projectId, accepted.source_commit)
+    },
+    onSuccess: invalidate,
+  })
+  const fetchRemote = useMutation({
+    mutationFn: () => checkProjectGitRemote(projectId),
+    onSuccess: (result) => {
+      if (
+        result.results.some(
+          (row) => row.status === 'updated' || row.status === 'up_to_date',
+        )
+      )
+        setRemoteCheckedAt(new Date())
+      invalidate()
+    },
+  })
+  const pull = useMutation({
+    mutationFn: () => pullRepository(projectId),
+    onSuccess: invalidate,
+  })
+  const busy = publish.isPending || fetchRemote.isPending || pull.isPending
+  const working = development.working_tree
 
   return (
-    <div
-      className={clsx(
-        'rounded-lg border overflow-hidden transition-all duration-200 relative',
-        'bg-slate-900/40',
-        expanded
-          ? 'border-slate-700/80 shadow-lg shadow-black/30 shadow-outrun-500/[0.03]'
-          : 'border-slate-800/60 hover:border-slate-700/60',
-      )}
+    <article
+      className="card space-y-4 p-4"
+      aria-label={`${repo.name} development`}
     >
-      {/* State accent strip */}
-      <div
-        className={clsx(
-          'absolute left-0 top-0 bottom-0 w-[2px] rounded-l-lg transition-colors duration-200',
-          stateInfo.stripColor ?? 'bg-transparent',
-        )}
-        aria-hidden="true"
-      />
-      {/* Header — entire row is clickable for expand */}
-      <div
-        role="button"
-        tabIndex={0}
-        onClick={() => setExpanded(!expanded)}
-        onKeyDown={(e) => {
-          if (
-            e.target === e.currentTarget &&
-            (e.key === 'Enter' || e.key === ' ')
-          ) {
-            e.preventDefault()
-            setExpanded(!expanded)
-          }
-        }}
-        aria-expanded={expanded}
-        aria-label={`${repo.name} repository details`}
-        className="group flex cursor-pointer select-none flex-wrap items-center gap-2 px-3 py-3 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-phosphor-500/40 sm:flex-nowrap sm:gap-3 sm:px-4 sm:py-2.5"
-      >
-        {/* Chevron */}
-        <ChevronRight
-          className={clsx(
-            'w-3.5 h-3.5 text-slate-600 group-hover:text-slate-400 transition-all duration-200 shrink-0',
-            expanded && 'rotate-90',
+      <header className="flex flex-wrap items-baseline justify-between gap-2">
+        <h2 className="text-base font-semibold text-slate-100">
+          <Link
+            className="hover:text-phosphor-300 focus-visible:outline focus-visible:outline-2 focus-visible:outline-phosphor-400"
+            href={`/projects/${projectId}/git`}
+          >
+            {repo.name}
+          </Link>
+        </h2>
+        <span className="text-xs text-slate-400">
+          Local evidence read {evidenceTime(development.observed_at)}
+        </span>
+      </header>
+      <dl className="grid grid-cols-1 gap-4 md:grid-cols-3">
+        <div className="space-y-1">
+          <dt className="text-xs font-medium text-slate-300">Working tree</dt>
+          <dd className="text-sm text-slate-100">
+            {working.uncommitted === undefined
+              ? working.state
+              : `${working.uncommitted} uncommitted files`}
+          </dd>
+          <dd className="text-xs text-slate-400">
+            {working.unpublished === null || working.unpublished === undefined
+              ? 'Unpublished count unavailable'
+              : `${working.unpublished} unpublished commits against local remote refs`}
+          </dd>
+          {working.source_commit && (
+            <dd className="break-all font-mono text-xs text-slate-300">
+              {working.source_commit}
+            </dd>
           )}
+          {working.state === 'error' && (
+            <dd className="text-xs text-rose-300">{working.reason}</dd>
+          )}
+        </div>
+        <DevelopmentEvidence label="Accepted source" evidence={accepted} />
+        <DevelopmentEvidence
+          label="Running source"
+          evidence={development.running}
         />
-
-        {/* Repo name */}
-        <span className="min-w-0 max-w-[70%] truncate text-sm font-semibold tracking-tight text-slate-100 sm:max-w-none sm:shrink-0">
-          {repo.name}
-        </span>
-
-        {/* Branch */}
-        <span className="text-2xs font-mono text-slate-500 truncate min-w-0">
-          {repo.branch}
-        </span>
-
-        {/* Workspace badges — compact inline */}
-        {wsBadges.map((b) => (
-          <span
-            key={b.label}
-            className={clsx(
-              'hidden md:flex items-center gap-0.5 text-[10px] font-mono shrink-0',
-              b.tone,
-            )}
-            title={`${b.count} ${b.label}`}
-          >
-            <b.icon className="w-2.5 h-2.5" />
-            {b.count}
-          </span>
-        ))}
-
-        {/* Right side — status cluster */}
-        <div
-          data-testid="repository-actions"
-          className="order-last flex basis-full flex-wrap items-center gap-2 pl-5 sm:order-none sm:ml-auto sm:basis-auto sm:shrink-0 sm:flex-nowrap sm:gap-2.5 sm:pl-0"
-        >
-          {/* State pill */}
-          <span
-            className={clsx(
-              'flex items-center gap-1 text-2xs px-2 py-0.5 rounded-md',
-              stateInfo.bg,
-              stateInfo.color,
-            )}
-          >
-            <StateIcon className="w-3 h-3" />
-            {stateInfo.label}
-            {repo.state === 'dirty' && repo.uncommitted > 0 && (
-              <span className="opacity-70">({repo.uncommitted})</span>
-            )}
-          </span>
-
-          {/* Ahead / behind */}
-          <RemoteStatusBadge
-            ahead={repo.ahead}
-            behind={repo.behind}
-            branch={repo.branch}
-            checkedAt={remoteCheckedAt}
-            compact
+      </dl>
+      <section
+        className="border-t border-slate-800 pt-3"
+        aria-label="Recovery evidence"
+      >
+        <h3 className="mb-3 text-xs font-medium text-slate-300">Recovery</h3>
+        <dl className="grid grid-cols-2 gap-4 xl:grid-cols-4">
+          <DevelopmentEvidence
+            label="Capture"
+            evidence={development.recovery.capture}
           />
-
-          {/* Sync button — stops propagation so it doesn't toggle expand */}
-          <button
-            type="button"
-            disabled={syncMutation.isPending || publishMutation.isPending}
-            onClick={(e) => {
-              e.stopPropagation()
-              syncMutation.mutate()
-            }}
-            title="Pull latest remote changes with fast-forward only."
-            className={clsx(
-              'flex min-h-8 items-center gap-1 rounded-md px-2.5 py-1 text-2xs font-medium transition-all',
-              syncMutation.isPending
-                ? 'bg-slate-800 text-slate-500 cursor-not-allowed'
-                : 'bg-cyan-500/10 text-cyan-300 border border-cyan-500/20 hover:bg-cyan-500/15 hover:border-cyan-500/40',
-            )}
-          >
-            {syncMutation.isPending ? (
-              <Loader2 className="w-3 h-3 animate-spin" />
-            ) : (
-              <ArrowDown className="w-3 h-3" />
-            )}
-            {syncMutation.isPending ? 'Syncing' : 'Sync'}
-          </button>
-
-          {canPublish && (
+          <DevelopmentEvidence
+            label="Offsite copy"
+            evidence={development.recovery.offsite}
+          />
+          <DevelopmentEvidence
+            label="Repository snapshot"
+            evidence={development.recovery.snapshot}
+          />
+          <DevelopmentEvidence
+            label="Restore drill"
+            evidence={development.recovery.restore}
+          />
+        </dl>
+      </section>
+      <section
+        className="border-t border-slate-800 pt-3"
+        aria-label="Task blockers"
+      >
+        <h3 className="text-xs font-medium text-slate-300">Task blockers</h3>
+        {development.blockers.state !== 'available' && (
+          <p className="mt-1 text-xs text-amber-300">
+            {development.blockers.reason || 'Task evidence is partial'}
+          </p>
+        )}
+        {development.blockers.state === 'available' &&
+          development.blockers.items.length === 0 && (
+            <p className="mt-1 text-xs text-slate-400">
+              No blocked or failed tasks recorded
+            </p>
+          )}
+        <ul className="mt-1 space-y-2">
+          {development.blockers.items.slice(0, 3).map((task) => (
+            <TaskBlocker key={task.task_id} task={task} projectId={projectId} />
+          ))}
+        </ul>
+        {development.blockers.items.length > 3 && (
+          <details className="mt-2">
+            <summary className="cursor-pointer text-xs text-amber-200 focus-visible:outline focus-visible:outline-2 focus-visible:outline-phosphor-400">
+              {development.blockers.items.length - 3} more blocked or failed
+              tasks
+            </summary>
+            <ul className="mt-2 space-y-2">
+              {development.blockers.items.slice(3).map((task) => (
+                <TaskBlocker
+                  key={task.task_id}
+                  task={task}
+                  projectId={projectId}
+                />
+              ))}
+            </ul>
+          </details>
+        )}
+      </section>
+      <details className="border-t border-slate-800 pt-3">
+        <summary className="cursor-pointer text-sm text-slate-300 focus-visible:outline focus-visible:outline-2 focus-visible:outline-phosphor-400">
+          Evidence references
+        </summary>
+        <dl className="mt-3 grid gap-3 text-xs text-slate-400 sm:grid-cols-2">
+          {Object.entries({
+            acceptance: accepted,
+            running: development.running,
+            ...development.recovery,
+            publication: development.publication,
+          }).map(([label, item]) => (
+            <div key={label}>
+              <dt className="capitalize text-slate-300">{label}</dt>
+              <dd className="break-all font-mono">
+                {item.evidence || 'No retained artifact'}
+              </dd>
+              {item.snapshot_id && (
+                <dd className="break-all font-mono">
+                  Snapshot {item.snapshot_id}
+                </dd>
+              )}
+            </div>
+          ))}
+        </dl>
+      </details>
+      <details className="border-t border-slate-800 pt-3">
+        <summary className="cursor-pointer text-sm text-slate-300 focus-visible:outline focus-visible:outline-2 focus-visible:outline-phosphor-400">
+          Branches, checkpoints and history
+        </summary>
+        <div className="mt-3">
+          <DashboardContent projectId={projectId} />
+        </div>
+      </details>
+      <details className="border-t border-slate-800 pt-3">
+        <summary className="cursor-pointer text-sm text-slate-300 focus-visible:outline focus-visible:outline-2 focus-visible:outline-phosphor-400">
+          Publication and remote actions
+        </summary>
+        <div className="mt-3 space-y-3">
+          <dl>
+            <DevelopmentEvidence
+              label="Last manual publication"
+              evidence={development.publication}
+            />
+          </dl>
+          <div className="flex flex-wrap items-center gap-2">
+            <RemoteStatusBadge
+              ahead={repo.ahead}
+              behind={repo.behind}
+              branch={repo.branch}
+              checkedAt={remoteCheckedAt}
+            />
             <button
               type="button"
-              disabled={publishMutation.isPending || syncMutation.isPending}
-              onClick={(e) => {
-                e.stopPropagation()
-                publishMutation.mutate()
-              }}
-              title="Run st commit for this project, then push published work."
-              className={clsx(
-                'flex min-h-8 items-center gap-1 rounded-md px-2.5 py-1 text-2xs font-medium transition-all',
-                publishMutation.isPending
-                  ? 'bg-slate-800 text-slate-500 cursor-not-allowed'
-                  : 'bg-outrun-500/12 text-outrun-400 border border-outrun-500/20 hover:bg-outrun-500/20 hover:border-outrun-500/40',
-              )}
+              className="btn-secondary text-xs"
+              disabled={busy}
+              onClick={() => fetchRemote.mutate()}
             >
-              {publishMutation.isPending ? (
-                <Loader2 className="w-3 h-3 animate-spin" />
-              ) : (
-                <Upload className="w-3 h-3" />
-              )}
-              {publishMutation.isPending ? 'Publishing' : 'Commit + Push'}
+              {fetchRemote.isPending
+                ? 'Refreshing remote…'
+                : 'Refresh remote refs'}
             </button>
-          )}
-        </div>
-      </div>
-
-      {syncMutation.isError && (
-        <p role="alert" className="px-4 pb-3 text-sm text-rose-300">
-          {syncMutation.error.message}
-        </p>
-      )}
-      {syncMutation.data?.results.map((result) => (
-        <p
-          key={result.path}
-          role={
-            result.status === 'failed' || result.status === 'skipped'
-              ? 'alert'
-              : 'status'
-          }
-          className="px-4 pb-3 text-sm text-slate-300"
-        >
-          {result.status === 'failed'
-            ? 'Sync failed'
-            : result.status === 'skipped'
-              ? 'Sync skipped'
-              : result.status === 'up_to_date'
-                ? 'Already up to date'
-                : 'Remote changes synced'}
-          {result.error || result.reason
-            ? `: ${result.error || result.reason}`
-            : ''}
-        </p>
-      ))}
-      {publishMutation.isError && (
-        <p role="alert" className="px-4 pb-3 text-sm text-rose-300">
-          {publishMutation.error.message}
-        </p>
-      )}
-      {/* Publish result */}
-      {publishResult && (
-        <div className="px-4 pb-2.5">
-          <PublishResultBlock result={publishResult} />
-        </div>
-      )}
-
-      {/* Expandable dashboard */}
-      <div
-        ref={contentRef}
-        className={clsx(
-          'grid transition-all duration-200 ease-out',
-          expanded
-            ? 'grid-rows-[1fr] opacity-100'
-            : 'grid-rows-[0fr] opacity-0',
-        )}
-      >
-        <div className="overflow-hidden">
-          <div className="border-t border-slate-800/40 px-4 py-3">
-            {expanded ? <DashboardContent projectId={repoKey} /> : null}
+            <button
+              type="button"
+              className="btn-secondary text-xs"
+              disabled={busy}
+              onClick={() => pull.mutate()}
+            >
+              {pull.isPending ? 'Pulling…' : 'Pull remote changes'}
+            </button>
+            <button
+              type="button"
+              className="btn-secondary text-xs"
+              disabled={busy || !canPublish}
+              onClick={() => publish.mutate()}
+            >
+              {publish.isPending ? 'Publishing…' : 'Publish accepted source'}
+            </button>
           </div>
+          <p className="text-xs text-slate-400">
+            {canPublish
+              ? `Publishes ${accepted.source_commit}. Local edits remain uncommitted.`
+              : 'Current source needs full acceptance before publication.'}
+          </p>
+          {[fetchRemote, pull].map((operation, index) => (
+            <div key={index}>
+              {operation.error && (
+                <p role="alert" className="text-sm text-rose-300">
+                  {operation.error.message}
+                </p>
+              )}
+              {operation.data?.results.map((row) => (
+                <p
+                  key={row.path}
+                  role={
+                    row.status === 'failed' || row.status === 'skipped'
+                      ? 'alert'
+                      : 'status'
+                  }
+                  className="text-xs text-slate-300"
+                >
+                  {row.name}: {row.status.replaceAll('_', ' ')}
+                  {row.error || row.reason
+                    ? `: ${row.error || row.reason}`
+                    : ''}
+                </p>
+              ))}
+            </div>
+          ))}
+          {publish.error && (
+            <p role="alert" className="text-sm text-rose-300">
+              {publish.error.message}
+            </p>
+          )}
+          {publish.data && <PublishResultBlock result={publish.data} />}
         </div>
-      </div>
-    </div>
+      </details>
+    </article>
+  )
+}
+
+function TaskBlocker({
+  task,
+  projectId,
+}: {
+  task: DevelopmentProjection['blockers']['items'][number]
+  projectId: string
+}) {
+  return (
+    <li className="text-sm">
+      <Link
+        className="text-amber-200 underline underline-offset-2 focus-visible:outline focus-visible:outline-2 focus-visible:outline-phosphor-400"
+        href={`/projects/${projectId}?tab=tasks&task=${task.task_id}`}
+      >
+        {task.title}
+      </Link>
+      <span className="ml-2 text-xs text-amber-300">{task.status}</span>
+      <p className="text-xs text-slate-400">{task.reason}</p>
+    </li>
   )
 }

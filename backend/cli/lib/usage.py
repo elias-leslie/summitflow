@@ -204,7 +204,7 @@ def render_inject(specs: Iterable[UsageSpec]) -> str:
           st.service.rebuild:
             cmd: st service rebuild <project> --detach
             when: service/config/worker change
-            careful: st pulse --gate first; explicit project; --include-all-workers only when intentional
+            careful: ST owns lifecycle preflight; explicit project; --include-all-workers only when intentional
         references:
           st.pulse: {cmd: st pulse --gate, when: implementation ownership + lane state}
 

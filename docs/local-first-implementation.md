@@ -7,6 +7,61 @@ workflow change, not a new reusable instruction store. GitHub publication is not
 requested. Existing security controls, histories, unrelated work, and necessary
 live validation must remain protected.
 
+## Local development contract, 2026-10-03
+
+Current implementation task: `task-a11c59594e404791`. This dated section records
+its rollout; the September evidence below remains historical evidence. Final
+acceptance, live rollout, retained-record transition and blind evaluation are
+still being verified. GitHub publication has not been requested.
+
+ST now owns local completion: claim the task, edit and use focused `st check`
+commands as needed, then `st done <task> -m "summary"`. It checkpoints declared or
+leased task paths, validates the diff, runs or reuses full acceptance and records
+recoverable closeout. An ambiguous scope asks for literal `--paths`; foreign
+leases and unrelated edits remain untouched. Code-only work needs no deployment
+or publication. Runtime work uses an explicit managed rebuild/live observation
+before completion reuses the resulting same-source evidence.
+
+`.st-check.toml` native schema 1 declares required project suites, locked and
+prepared inputs, executable identities and counted test evidence. `st check
+--check` runs those suites and configured legacy quality/security tools. A
+focused stage (`--native --stage ID`) cannot prove full acceptance. Missing tools,
+empty suites, failed evidence or undeclared skips remain unavailable/failed;
+optional inapplicable stages have recorded reasons. Environment preparation is
+explicit, separate from check execution. Acceptance schema 2 retains stage
+coverage, duration, execution and artifact hashes. Old receipts remain readable
+and are validated conservatively. Equivalent unchanged full proofs can be
+reused; changed source/configuration/tools/prepared dependencies invalidate them.
+
+Development retains the `/git` routes. The shared read-only `development.v1`
+projection exposes working source, acceptance/coverage, running source, task
+blockers and separate capture/offsite/snapshot/restore evidence. WIP and local
+unpublished commits are ordinary states. Runtime health and recorded restore
+proof are separately labelled. Rendering/status does not run quality checks or
+remote operations.
+
+Manual sharing uses `st vcs publish --source PROJECT --sha FULL_ACCEPTED_OID
+--now`. It selects that source without checkpointing, reconciling or deploying.
+Outgoing history, secret checks, destination authorization and actual repository
+requirements stay guarded. Listed deployment/publication workflow effects need
+explicit authority (`--authorize-workflow EXACT_PATH`). Uploaded source, pending
+PR requirements and merged source are distinct; optional cloud checks do not
+gate local completion. Retained observations can be explicitly refreshed for
+the same source. Backup capture/offsite retry no longer initiates publication.
+
+Canonical operating instructions are the scoped Agent Hub prompt and computed
+ST capability guidance. Four supported client contracts include the revised
+prompt, and adapter installation checks pass. These results prove generation
+and installation; binding, retrieval, actual provider delivery and saved-context
+resume are separate evidence stages. Internal coder preview changed from
+14,550 to 14,456 bytes and 2,758 to 2,749 estimated tokens in matched observations;
+these are context estimates, not billed usage.
+
+Current verification artifacts, including complete failed native-run evidence,
+are retained under `.dev-tools/local-first-*`, `.dev-tools/native-*` and the
+normal ST detail/receipt directories. The current task record tracks rollout,
+source-bound acceptance and live verification evidence.
+
 ## Final result, 2026-09-23
 
 **Completed locally.** Task `task-a6bee0c09e0e4a3c` and all five subtasks are

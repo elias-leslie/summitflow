@@ -1,268 +1,67 @@
 'use client'
 
-import { useMutation, useQueryClient } from '@tanstack/react-query'
-import clsx from 'clsx'
-import {
-  AlertTriangle,
-  GitBranch,
-  RefreshCw,
-  Scissors,
-  XCircle,
-} from 'lucide-react'
-import { motion } from 'motion/react'
-import { useState } from 'react'
-import { ConflictAlerts } from '@/components/git/ConflictAlerts'
+import { useQuery } from '@tanstack/react-query'
 import { ProjectRow } from '@/components/git/ProjectRow'
-import { checkGitRemotes } from '@/lib/api'
-import { useGitStatus } from './useGitStatus'
-
-const fadeUp = {
-  initial: { opacity: 0, y: 14 },
-  animate: { opacity: 1, y: 0 },
-}
-
-function StatPill({
-  icon: Icon,
-  value,
-  label,
-  tone,
-}: {
-  icon: typeof GitBranch
-  value: number
-  label: string
-  tone: string
-}) {
-  if (value === 0) return null
-  return (
-    <div
-      className={clsx(
-        'flex items-center gap-1.5 px-2.5 py-1 rounded-md border text-xs font-mono tabular-nums',
-        tone,
-      )}
-    >
-      <Icon className="w-3 h-3" />
-      <span className="font-semibold">{value}</span>
-      <span className="opacity-60 hidden sm:inline">{label}</span>
-    </div>
-  )
-}
+import { fetchDevelopmentStatus } from '@/lib/api/git'
+import { POLL_SLOW, STALE_GIT } from '@/lib/polling'
 
 export function GitClient() {
-  const queryClient = useQueryClient()
-  const [remoteCheckedAt, setRemoteCheckedAt] = useState<Record<string, Date>>(
-    {},
-  )
-  const { data: gitStatus, isLoading, isError } = useGitStatus()
-  const repos = gitStatus?.repositories ?? []
-  const checkRemoteMutation = useMutation({
-    mutationFn: checkGitRemotes,
-    onSuccess: (result) => {
-      const checkedAt = new Date()
-      setRemoteCheckedAt(
-        Object.fromEntries(
-          result.results
-            .filter(
-              (repo) =>
-                repo.status === 'updated' || repo.status === 'up_to_date',
-            )
-            .map((repo) => [repo.path, checkedAt]),
-        ),
-      )
-      queryClient.invalidateQueries({ queryKey: ['git-status'] })
-    },
+  const query = useQuery({
+    queryKey: ['development-status'],
+    queryFn: fetchDevelopmentStatus,
+    staleTime: STALE_GIT,
+    refetchInterval: POLL_SLOW,
   })
-
-  const remoteRepos = repos.filter((r) => r.ahead > 0 || r.behind > 0).length
-  const checkpointCount = repos.reduce(
-    (s, r) => s + (r.workspace_summary?.active_checkpoints ?? 0),
-    0,
-  )
-  const dirtyCheckpointCount = repos.reduce(
-    (s, r) => s + (r.workspace_summary?.dirty_checkpoints ?? 0),
-    0,
-  )
-  const dirtyMainRepoCount = repos.reduce(
-    (s, r) =>
-      s + (r.uncommitted > 0 || r.workspace_summary?.dirty_main_repo ? 1 : 0),
-    0,
-  )
-  const dirtyCount = dirtyCheckpointCount + dirtyMainRepoCount
-  const cleanupCount = repos.filter(
-    (r) => r.workspace_summary?.needs_cleanup,
-  ).length
-  const hasSignals =
-    dirtyCount + checkpointCount + cleanupCount + remoteRepos > 0
-
   return (
-    <div className="mx-auto max-w-[1400px] space-y-3 px-4 py-3 md:px-5 lg:px-6">
-      <motion.section
-        {...fadeUp}
-        transition={{ duration: 0.3, ease: [0.25, 0.46, 0.45, 0.94] }}
-        className="space-y-3"
-      >
-        <div className="flex flex-col gap-3 xl:flex-row xl:items-center xl:justify-between">
-          <div className="flex items-center gap-3">
-            <GitBranch className="h-5 w-5 text-outrun-400" />
-            <div>
-              <h1 className="display text-xl font-semibold tracking-tight text-slate-50">
-                Git Control Surface
-              </h1>
-              <p className="text-sm text-slate-400">
-                Repo hygiene, checkpoints, and branch cleanup
-              </p>
-            </div>
-          </div>
-
-          <div className="flex flex-wrap items-center gap-2">
-            <button
-              type="button"
-              onClick={() => checkRemoteMutation.mutate()}
-              disabled={checkRemoteMutation.isPending}
-              title="Fetch remote refs without merging so ahead/behind badges use current origin state."
-              className={clsx(
-                'inline-flex items-center gap-1.5 rounded-md border px-2.5 py-1 text-xs font-medium transition-colors',
-                checkRemoteMutation.isPending
-                  ? 'border-slate-700 bg-slate-800 text-slate-500'
-                  : 'border-cyan-500/20 bg-cyan-500/10 text-cyan-200 hover:border-cyan-400/40 hover:bg-cyan-500/15',
-              )}
-            >
-              <RefreshCw
-                className={clsx(
-                  'h-3 w-3',
-                  checkRemoteMutation.isPending && 'animate-spin',
-                )}
-              />
-              Check Remote
-            </button>
-            {isLoading ? (
-              <span className="inline-flex items-center gap-1.5 rounded-full border border-phosphor-500/18 bg-phosphor-500/10 px-2.5 py-1 text-xs text-phosphor-200">
-                <RefreshCw className="h-3 w-3 animate-spin" />
-                Scanning repos...
-              </span>
-            ) : gitStatus && hasSignals ? (
-              <>
-                <StatPill
-                  icon={AlertTriangle}
-                  value={dirtyCount}
-                  label="dirty"
-                  tone="bg-pink-500/8 text-pink-300 border-pink-500/20"
-                />
-                <StatPill
-                  icon={GitBranch}
-                  value={checkpointCount}
-                  label="checkpoints"
-                  tone="bg-phosphor-500/8 text-phosphor-300 border-phosphor-500/20"
-                />
-                <StatPill
-                  icon={Scissors}
-                  value={cleanupCount}
-                  label="cleanup"
-                  tone="bg-amber-500/8 text-amber-300 border-amber-500/20"
-                />
-                <StatPill
-                  icon={RefreshCw}
-                  value={remoteRepos}
-                  label="remote"
-                  tone="bg-cyan-500/8 text-cyan-300 border-cyan-500/20"
-                />
-              </>
-            ) : gitStatus && repos.length > 0 && !isError ? (
-              <span className="rounded-full border border-emerald-500/18 bg-emerald-500/10 px-2.5 py-1 text-xs text-emerald-200">
-                All repos clean
-              </span>
-            ) : null}
-          </div>
-        </div>
-      </motion.section>
-
-      <ConflictAlerts />
-
-      {checkRemoteMutation.isError && (
-        <p role="alert" className="text-sm text-rose-300">
-          {checkRemoteMutation.error.message}
+    <div className="mx-auto max-w-[1800px] space-y-4 px-4 py-4 md:px-6">
+      <header>
+        <h1 className="display text-xl font-semibold text-slate-100">
+          Development
+        </h1>
+        <p className="mt-1 text-sm text-slate-400">
+          Working source, runtime observations and recovery evidence
+        </p>
+      </header>
+      {query.isLoading && (
+        <p role="status" className="card p-6 text-sm text-slate-300">
+          Loading development evidence…
         </p>
       )}
-      {checkRemoteMutation.data?.results
-        .filter(
-          (result) => result.status === 'failed' || result.status === 'skipped',
-        )
-        .map((result) => (
-          <p key={result.path} role="alert" className="text-sm text-amber-300">
-            {result.name}:{' '}
-            {result.error || result.reason || 'Remote check did not complete'}
+      {query.isError && (
+        <div role="alert" className="card space-y-2 p-4 text-sm text-rose-300">
+          <p>
+            {query.data
+              ? 'Showing retained data. Latest refresh failed.'
+              : 'Could not load development evidence.'}
           </p>
+          <button
+            type="button"
+            className="btn-secondary"
+            onClick={() => query.refetch()}
+          >
+            Retry
+          </button>
+        </div>
+      )}
+      {query.data?.total === 0 && (
+        <p className="card p-6 text-sm text-slate-400">
+          No managed repositories found
+        </p>
+      )}
+      {query.data?.unavailable_repositories?.map((repo) => (
+        <p
+          key={repo.path}
+          role="alert"
+          className="card p-4 text-sm text-amber-300"
+        >
+          {repo.name}: {repo.reason}
+        </p>
+      ))}
+      <div className="space-y-4">
+        {query.data?.repositories.map(({ repo, development }) => (
+          <ProjectRow key={repo.path} repo={repo} development={development} />
         ))}
-
-      {gitStatus && !isLoading && (
-        <section className="space-y-3">
-          <div className="flex items-center justify-between">
-            <div>
-              <h2 className="display text-sm font-semibold uppercase tracking-[0.16em] text-slate-300">
-                Repositories
-              </h2>
-              <p className="mt-0.5 text-xs text-slate-500">
-                {repos.length} workspace{repos.length !== 1 ? 's' : ''} with
-                branch and cleanup context
-              </p>
-            </div>
-          </div>
-
-          <div className="space-y-2">
-            {repos.map((repo, i) => (
-              <motion.div
-                key={repo.path}
-                initial={{ opacity: 0, y: 10 }}
-                animate={{ opacity: 1, y: 0 }}
-                transition={{
-                  duration: 0.3,
-                  delay: 0.06 + i * 0.04,
-                  ease: [0.25, 0.46, 0.45, 0.94],
-                }}
-              >
-                <ProjectRow
-                  repo={repo}
-                  remoteCheckedAt={remoteCheckedAt[repo.path]}
-                />
-              </motion.div>
-            ))}
-          </div>
-        </section>
-      )}
-
-      {isLoading && (
-        <div className="card-elevated flex items-center justify-center py-20">
-          <div className="flex items-center gap-2.5 text-sm text-slate-500">
-            <RefreshCw className="w-5 h-5 animate-spin text-phosphor-500" />
-            Scanning checkpoints...
-          </div>
-        </div>
-      )}
-
-      {isError && (
-        <div className="card-elevated flex items-center gap-3 border-rose-500/20 bg-rose-500/8 p-4 text-sm text-rose-300">
-          <XCircle className="w-5 h-5 text-rose-500 shrink-0" />
-          <div>
-            <span className="font-medium text-slate-100">
-              Connection failed.
-            </span>{' '}
-            Verify the backend is running.
-          </div>
-        </div>
-      )}
-
-      {gitStatus?.repositories.length === 0 && (
-        <div className="card-elevated py-20 text-center">
-          <div className="mx-auto mb-4 flex h-14 w-14 items-center justify-center rounded-2xl border border-violet-500/15 bg-violet-500/8">
-            <GitBranch className="w-7 h-7 text-violet-500/50" />
-          </div>
-          <p className="mb-1 text-sm font-medium text-slate-300">
-            No repositories found
-          </p>
-          <p className="text-xs text-slate-500">
-            Register a project to start tracking its git state.
-          </p>
-        </div>
-      )}
+      </div>
     </div>
   )
 }

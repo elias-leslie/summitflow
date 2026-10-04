@@ -8,8 +8,7 @@ plan `the-way-tasks-are-eager-parnas`:
   * `st claim` is idempotent for the same caller.
   * `st done` on an already-completed task is a no-op exit-0.
   * Exactly one preflight call per claim/done op (no double-gate matrix).
-  * Publish runs *before* checkpoint removal; a publish failure leaves the
-    snapshot intact and surfaces a retry hint.
+  * Completion preserves evidence and unrelated work without publication.
   * Every blocked preflight path prints a Resolution: hint.
 """
 
@@ -83,8 +82,8 @@ class TestCreateSurface:
 
 
 class TestClaimIdempotency:
-    def test_same_caller_resume_returns_resumed_no_preflight(self) -> None:
-        """Idempotent re-claim by the same worker is a `resumed` no-op."""
+    def test_same_caller_resume_renews_with_one_preflight(self) -> None:
+        """Renewal retains the checkpoint and checks current ownership once."""
         client = MagicMock()
         client.get_task.return_value = _running_task()
         with (
@@ -95,8 +94,7 @@ class TestClaimIdempotency:
             result = claim._claim_task(client, "task-1")
         assert result["action"] == "resumed"
         client.claim_task.assert_called_once_with("task-1", renew_only=True)
-        # Same-caller resume is the idempotent shortcut — no gates fire.
-        mock_preflight.assert_not_called()
+        mock_preflight.assert_called_once_with("task-1", "summitflow", op="claim")
 
     def test_cross_agent_conflict_emits_resolution_hint(self) -> None:
         """Cross-agent re-claim blocks with a Resolution line."""
@@ -126,6 +124,7 @@ class TestClaimIdempotency:
             patch.object(claim, "get_snapshot_info", return_value={"base_branch": "main"}),
             patch.object(claim, "_is_same_caller", return_value=True),
             patch("cli.config.get_config_optional", return_value=config),
+            patch.object(claim, "preflight"),
             patch.object(claim, "renew_local_owned_claim", return_value={"status": "running"}) as renew,
         ):
             result = claim._claim_task(client, "task-1")
@@ -141,6 +140,7 @@ class TestClaimIdempotency:
         with (
             patch.object(claim, "get_snapshot_info", return_value={"base_branch": "main"}),
             patch.object(claim, "_is_same_caller", return_value=True),
+            patch.object(claim, "preflight"),
             patch.object(claim, "renew_local_owned_claim") as renew,
             patch.object(claim, "output_error"),
             pytest.raises(typer.Exit),
@@ -234,158 +234,54 @@ class TestDoneIdempotency:
 
 
 class TestAcceptanceBeforeCleanup:
-    def test_acceptance_runs_before_snapshot_remove(self) -> None:
-        order: list[str] = []
+    def test_acceptance_and_readiness_precede_recoverable_finalize(self, monkeypatch):
+        order = []
         client = MagicMock()
-        client.get_subtasks.return_value = {"subtasks": []}
-        client.get_task_completion_readiness.return_value = {"ready": True}
-        client.get_task.return_value = {"status": "running"}
-        client.update_status.side_effect = lambda *_args, **_kwargs: order.append("status")
-        snapshot_info = {
-            "task_id": "task-1",
-            "project_id": "summitflow",
-            "base_branch": "main",
-        }
-        with (
-            patch.object(done_task, "get_snapshot_info", return_value=snapshot_info),
-            patch.object(done_task, "_checkpoint_repo_root", return_value="/repo"),
-            patch.object(done_task, "is_working_tree_clean", return_value=True),
-            patch.object(done_task, "_run_diff_gate"),
-            patch.object(done_task, "_run_smart_prereqs"),
-            patch.object(
-                done_task, "_accept_completed_work",
-                side_effect=lambda *_a, **_kw: order.append("accept"),
-            ),
-            patch.object(
-                done_task, "_capture_and_remove_snapshot",
-                side_effect=lambda *_a, **_kw: order.append("snapshot-remove"),
-            ),
-        ):
-            done_task.complete_task(client, "task-1")
-        assert order == ["accept", "status", "snapshot-remove"]
-        client.update_status.assert_called_once_with(
-            "task-1",
-            "completed",
-            skip_gates=False,
-        )
+        client.get_task.return_value = {"status": "running", "files_to_modify": ["app.py"]}
+        receipt = {"state": "success", "source_commit": "a" * 40}
+        monkeypatch.setattr(done_task, "_checkpoint_repo_root", lambda _: "/repo")
+        monkeypatch.setattr(done_task, "closeout_paths", lambda *a, **kw: ("app.py",))
+        monkeypatch.setattr(done_task, "ensure_checkpoint_clean", lambda *a, **kw: order.append("checkpoint"))
+        monkeypatch.setattr(done_task, "_run_diff_gate", lambda *a, **kw: order.append("diff"))
+        monkeypatch.setattr(done_task, "_accept_completed_work", lambda *a, **kw: order.append("accept") or receipt)
+        monkeypatch.setattr(done_task, "_run_smart_prereqs", lambda *a, **kw: order.append("readiness"))
+        monkeypatch.setattr(done_task, "_finish_local_completion", lambda *a, **kw: order.append("recoverable-finalize") or {"action": "completed"})
+        done_task._complete_with_snapshot(client, "task-1", {"project_id": "example", "base_branch": "main"},
+                                         message=None, strict=False, skip_diff_gate=False)
+        assert order == ["checkpoint", "diff", "accept", "readiness", "recoverable-finalize"]
 
-    def test_acceptance_failure_preserves_snapshot_and_surfaces_retry(self) -> None:
+    def test_acceptance_failure_preserves_snapshot_and_surfaces_retry(self, monkeypatch):
         client = MagicMock()
-        client.get_subtasks.return_value = {"subtasks": []}
-        client.get_task_completion_readiness.return_value = {"ready": True}
-        client.get_task.return_value = {"status": "running"}
-        snapshot_info = {
-            "task_id": "task-1",
-            "project_id": "summitflow",
-            "base_branch": "main",
-        }
+        client.get_task.return_value = {"status": "running", "files_to_modify": ["app.py"]}
+        monkeypatch.setattr(done_task, "_checkpoint_repo_root", lambda _: "/repo")
+        monkeypatch.setattr(done_task, "closeout_paths", lambda *a, **kw: ("app.py",))
+        monkeypatch.setattr(done_task, "ensure_checkpoint_clean", MagicMock())
+        monkeypatch.setattr(done_task, "_run_diff_gate", MagicMock())
+        monkeypatch.setattr(done_task, "_accept_completed_work", MagicMock(side_effect=RuntimeError("local check failed")))
+        finalize = MagicMock()
+        monkeypatch.setattr(done_task, "_finish_local_completion", finalize)
+        error = MagicMock()
+        monkeypatch.setattr(done_task, "output_error", error)
+        with pytest.raises(typer.Exit):
+            done_task._complete_with_snapshot(client, "task-1", {"project_id": "example", "base_branch": "main"},
+                                             message=None, strict=False, skip_diff_gate=False)
+        finalize.assert_not_called()
+        assert "local acceptance failed" in error.call_args.args[0]
+        assert "Checkpoint preserved" in error.call_args.args[0]
 
-        with (
-            patch.object(done_task, "get_snapshot_info", return_value=snapshot_info),
-            patch.object(done_task, "_checkpoint_repo_root", return_value="/repo"),
-            patch.object(done_task, "is_working_tree_clean", return_value=True),
-            patch.object(done_task, "_run_diff_gate"),
-            patch.object(done_task, "_run_smart_prereqs"),
-            patch.object(
-                done_task, "_accept_completed_work",
-                side_effect=RuntimeError("local check failed"),
-            ),
-            patch.object(done_task, "_capture_and_remove_snapshot") as mock_cleanup,
-            patch.object(done_task, "output_error") as mock_error,
-            pytest.raises(typer.Exit),
-        ):
-            done_task.complete_task(client, "task-1")
-
-        mock_cleanup.assert_not_called()
-        client.update_status.assert_not_called()
-        msg = mock_error.call_args.args[0]
-        assert "local acceptance failed" in msg
-        assert "Checkpoint preserved" in msg
-        assert "st done task-1" in msg
-
-    def test_completed_checkpoint_cleans_without_publishing_or_reclosing(self) -> None:
+    def test_completed_checkpoint_never_checkpoints_later_work(self, monkeypatch):
         client = MagicMock()
-        client.get_task.return_value = {"status": "completed"}
-        snapshot_info = {
-            "task_id": "task-1",
-            "project_id": "summitflow",
-            "base_branch": "main",
-        }
-
-        with (
-            patch.object(done_task, "get_snapshot_info", return_value=snapshot_info),
-            patch.object(done_task, "_checkpoint_repo_root", return_value="/repo"),
-            patch.object(done_task, "is_working_tree_clean", return_value=True),
-            patch.object(done_task, "_run_diff_gate"),
-            patch.object(done_task, "_run_smart_prereqs") as mock_prereqs,
-            patch.object(done_task, "_finalize_completed_task_status") as mock_finalize,
-            patch.object(done_task, "_publish_completed_work") as mock_publish,
-            patch.object(done_task, "_capture_and_remove_snapshot") as mock_cleanup,
-        ):
-            result = done_task.complete_task(client, "task-1")
-
-        mock_publish.assert_not_called()
-        mock_cleanup.assert_called_once_with("task-1", "summitflow")
-        mock_prereqs.assert_not_called()
-        mock_finalize.assert_not_called()
-        client.update_status.assert_not_called()
-        assert result["published"] is False
-        assert result["snapshot_removed"] is True
-
-    def test_completed_checkpoint_never_commits_new_dirty_work(self) -> None:
-        client = MagicMock()
-        client.get_task.return_value = {"status": "completed"}
-        snapshot_info = {
-            "task_id": "task-1",
-            "project_id": "summitflow",
-            "base_branch": "main",
-        }
-
-        with (
-            patch.object(done_task, "get_snapshot_info", return_value=snapshot_info),
-            patch.object(done_task, "_checkpoint_repo_root", return_value="/repo"),
-            patch.object(done_task, "is_working_tree_clean", return_value=False),
-            patch.object(done_task, "_commit_active_task_work") as mock_commit,
-            patch.object(done_task, "_publish_completed_work") as mock_publish,
-            patch.object(done_task, "_capture_and_remove_snapshot") as mock_cleanup,
-        ):
-            done_task.complete_task(client, "task-1")
-
-        mock_commit.assert_not_called()
-        mock_publish.assert_not_called()
-        # This removes only completed checkpoint metadata, not the working tree.
-        mock_cleanup.assert_called_once_with("task-1", "summitflow")
-
-    def test_status_finalize_failure_preserves_checkpoint(self) -> None:
-        client = MagicMock()
-        client.get_task.return_value = {"status": "running"}
-        client.update_status.side_effect = APIError(503, {"message": "database unavailable"})
-        client.close_task.side_effect = APIError(503, {"message": "database unavailable"})
-        snapshot_info = {
-            "task_id": "task-1",
-            "project_id": "summitflow",
-            "base_branch": "main",
-        }
-
-        with (
-            patch.object(done_task, "get_snapshot_info", return_value=snapshot_info),
-            patch.object(done_task, "_checkpoint_repo_root", return_value="/repo"),
-            patch.object(done_task, "is_working_tree_clean", return_value=True),
-            patch.object(done_task, "_run_diff_gate"),
-            patch.object(done_task, "_run_smart_prereqs"),
-            patch.object(done_task, "_accept_completed_work") as mock_accept,
-            patch.object(done_task, "_publish_completed_work") as mock_publish,
-            patch.object(done_task, "_capture_and_remove_snapshot") as mock_cleanup,
-            patch.object(done_task, "output_error") as mock_error,
-            pytest.raises(typer.Exit),
-        ):
-            done_task.complete_task(client, "task-1")
-
-        mock_accept.assert_called_once_with("task-1", "summitflow")
-        mock_publish.assert_not_called()
-        mock_cleanup.assert_not_called()
-        assert "recovery: st done task-1" in mock_error.call_args.args[0]
-        assert "--admin" not in mock_error.call_args.args[0]
+        receipt = {"state": "success", "source_commit": "a" * 40}
+        client.get_task.return_value = {"status": "completed", "verification_result": {"acceptance": receipt}}
+        monkeypatch.setattr(done_task, "_checkpoint_repo_root", lambda _: "/repo")
+        checkpoint = MagicMock(side_effect=AssertionError("No later checkpoint"))
+        monkeypatch.setattr(done_task, "ensure_checkpoint_clean", checkpoint)
+        finalize = MagicMock(return_value={"action": "completed"})
+        monkeypatch.setattr(done_task, "_finish_local_completion", finalize)
+        done_task._complete_with_snapshot(client, "task-1", {"project_id": "example", "base_branch": "main"},
+                                         message=None, strict=False, skip_diff_gate=False)
+        checkpoint.assert_not_called()
+        assert finalize.call_args.kwargs["receipt"] == receipt
 
 
 # ---------------------------------------------------------------------------

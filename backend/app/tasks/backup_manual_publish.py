@@ -1,74 +1,122 @@
-"""Owner-triggered exact-source publication through the existing isolated publisher.
-
-No capture, commit, checkout reconciliation, deployment or schedule change occurs.
-The existing source lease and genuine backup receipt own durable observations.
-"""
-
+"""Owner-triggered accepted-source publication, independent of backup capture."""
 from __future__ import annotations
 
+import hashlib
+import json
+import os
 import re
+import uuid
 from datetime import UTC, datetime
+from pathlib import Path
 from typing import Any
 
-from ..services.publication_health import (
-    get_project_publication_health,
-    record_publication_observation,
-)
+from cli.lib.acceptance import AcceptanceError, repo_lock
+
+from ..services.publication_health import record_publication_observation
 from ..storage import backups as backup_store
-from .backup_lock import acquire_backup_lock, maintain_backup_lock, owns_backup_lease
-from .backup_publish import publish_source_before_backup
+from ..storage.projects import get_project_root_path
+from .backup_publish import _public_evidence, _value, publish_source_before_backup
 
 _OID = re.compile(r"(?:[0-9a-f]{40}|[0-9a-f]{64})")
 
 
-def publish_project_now(source_id: str, source_commit: str) -> dict[str, Any]:
-    """Publish one explicitly requested, accepted commit without touching its checkout.
+def publication_receipt_directory(project: Path) -> Path:
+    return Path(_value(project, "rev-parse", "--path-format=absolute", "--git-common-dir")) / "st" / "publication"
 
-    This is the manual owner operation, not an automatic scheduling exception.
-    A complete observation is merged into an existing real backup's publication
-    slots so startup health and source-bound completion see the same evidence.
-    """
+
+def read_publication_receipt(project: Path, source_commit: str) -> dict[str, Any] | None:
+    """Read retained same-source evidence without observing the remote."""
+    if not _OID.fullmatch(source_commit):
+        raise ValueError("Publication requires a full immutable source commit")
+    return _read_publication_receipt_path(publication_receipt_directory(project) / (source_commit + ".json"), source_commit)
+
+
+def _read_publication_receipt_path(path: Path, source_commit: str) -> dict[str, Any] | None:
+    if not path.is_file() or path.is_symlink():
+        return None
+    value = json.loads(path.read_text())
+    if (not isinstance(value, dict) or value.get("kind") != "manual_publication.v1"
+            or value.get("schema_version") != 1 or value.get("source_commit") != source_commit
+            or value.get("requested_source_commit") != source_commit):
+        raise ValueError("Publication evidence identity mismatch")
+    body = {key: item for key, item in value.items() if key != "receipt_id"}
+    digest = hashlib.sha256(json.dumps(body, sort_keys=True, separators=(",", ":")).encode()).hexdigest()
+    if value.get("receipt_id") != digest:
+        raise ValueError("Publication evidence integrity mismatch")
+    return value
+
+
+def latest_publication_receipt(project: Path, project_id: str, *, directory: Path | None = None) -> tuple[Path, dict[str, Any]] | None:
+    """Select valid manual evidence pointers; immutable historical files are not new observations."""
+    records = []
+    for path in (directory if directory is not None else publication_receipt_directory(project)).glob("*.json"):
+        if not _OID.fullmatch(path.stem):
+            continue
+        value = _read_publication_receipt_path(path, path.stem)
+        if value and value.get("project_id") == project_id:
+            records.append((path, value))
+    return max(records, key=lambda row: str(row[1].get("observed_at") or "")) if records else None
+
+
+def _retain_publication(project: Path, project_id: str, source_commit: str, observation: dict[str, Any]) -> Path:
+    if observation.get("head") not in {None, source_commit} or (
+            observation.get("publication_complete") is True and observation.get("head") != source_commit):
+        raise ValueError("Publication observation belongs to a different source")
+    directory = publication_receipt_directory(project)
+    directory.mkdir(parents=True, exist_ok=True)
+    previous = read_publication_receipt(project, source_commit)
+    value = {"kind": "manual_publication.v1", "schema_version": 1, "source_commit": source_commit,
+             "requested_source_commit": source_commit, "project_id": project_id,
+             "observed_at": datetime.now(UTC).isoformat(), "observation": _public_evidence(observation),
+             "previous_receipt_id": (previous or {}).get("receipt_id")}
+    digest = hashlib.sha256(json.dumps(value, sort_keys=True, separators=(",", ":")).encode()).hexdigest()
+    value["receipt_id"] = digest
+    encoded = json.dumps(value, indent=2, sort_keys=True) + "\n"
+    immutable = directory / (source_commit + "-" + digest + ".json")
+    immutable.write_text(encoded)
+    temporary = directory / ("." + str(uuid.uuid4()) + ".tmp")
+    try:
+        temporary.write_text(encoded)
+        os.replace(temporary, directory / (source_commit + ".json"))
+    finally:
+        temporary.unlink(missing_ok=True)
+    return immutable
+
+
+def publish_project_now(source_id: str, source_commit: str, *, authorized_workflows: tuple[str, ...] = ()) -> dict[str, Any]:
+    """Publish only the supplied accepted OID; no checkpoint, capture or deployment."""
     if not _OID.fullmatch(source_commit):
         raise ValueError("Publication requires an exact lowercase 40- or 64-character commit OID")
-    result: dict[str, Any] = {
-        "source_id": source_id,
-        "publication_mode": "manual",
-        "requested_source_commit": source_commit,
-        "observed_at": datetime.now(UTC).isoformat(),
-        "publication_complete": False,
-        "evidence_recorded": False,
-    }
-    source = backup_store.get_source(source_id)
-    if not source or not source.get("enabled") or source.get("source_type") != "project" or not source.get("project_id"):
-        return {**result, "status": "failed", "reason": "enabled_project_source_required"}
-    token = acquire_backup_lock(source_id)
-    if token is None:
-        return {**result, "status": "pending", "reason": "source_busy"}
-    with maintain_backup_lock(source_id, token):
-        latest = backup_store.get_latest_backup(source_id=source_id)
-        if not latest:
-            return {**result, "status": "pending", "reason": "publication_receipt_unavailable"}
-        verification = latest.get("verification_json") or {}
-        previous = verification.get("publish_before_backup") or verification.get("publication") or {}
-        # Resume only this exact source. Never adopt an older observation's head.
-        retained = previous if previous.get("head") == source_commit else None
-        publication = publish_source_before_backup(
-            source,
-            retained=retained,
-            manual_source_commit=source_commit,
-            activity_allowed=lambda: owns_backup_lease(source_id, token),
-        )
-        result.update(publication)
-        result["backup_id"] = str(latest["id"])
-        if not owns_backup_lease(source_id, token):
-            return {**result, "status": "pending", "reason": "source_busy", "publication_complete": False}
-        persisted = backup_store.merge_backup_verification_json(str(latest["id"]), {
-            "publication": publication,
-            "publish_before_backup": publication,
-        })
-        if persisted is None:
-            return {**result, "status": "pending", "reason": "publication_receipt_unavailable", "publication_complete": False}
-        record_publication_observation(str(source["project_id"]), publication)
-        result["evidence_recorded"] = True
-        result["health"] = get_project_publication_health(str(source["project_id"]))
+    result: dict[str, Any] = {"source_id": source_id, "publication_mode": "manual",
+        "requested_source_commit": source_commit, "observed_at": datetime.now(UTC).isoformat(),
+        "publication_complete": False, "evidence_recorded": False}
+    # Registered project ownership authorizes source lookup. Backup scheduling,
+    # capture records and Redis are independent of this manually selected source.
+    root = get_project_root_path(source_id)
+    registered = backup_store.get_source(source_id) if not root else None
+    project_id = source_id if root else str((registered or {}).get("project_id") or "")
+    if not root and registered and registered.get("source_type") == "project":
+        root = get_project_root_path(project_id)
+        if root and Path(root).resolve() != Path(str(registered.get("path"))).resolve():
+            return {**result, "status": "failed", "reason": "repository_root_mismatch"}
+    if not root or not project_id:
+        return {**result, "status": "failed", "reason": "registered_project_required"}
+    project = Path(root).resolve()
+    source = {"id": source_id, "project_id": project_id, "path": str(project), "enabled": True, "source_type": "project"}
+    try:
+        with repo_lock(project, purpose="manual publication"):
+            previous = read_publication_receipt(project, source_commit)
+            retained = (previous or {}).get("observation")
+            options = {"authorized_workflows": authorized_workflows} if authorized_workflows else {}
+            publication = publish_source_before_backup(source, retained=retained,
+                manual_source_commit=source_commit, activity_allowed=lambda: True, **options)
+            result.update(publication)
+            try:
+                artifact = _retain_publication(project, project_id, source_commit, publication)
+            except (OSError, ValueError):
+                return {**result, "status": "pending", "reason": "publication_receipt_unavailable", "publication_complete": False}
+            result.update(evidence_recorded=True, evidence=str(artifact))
+            record_publication_observation(project_id, publication)
+    except AcceptanceError:
+        return {**result, "status": "pending", "reason": "repository_busy", "publication_complete": False}
     return result

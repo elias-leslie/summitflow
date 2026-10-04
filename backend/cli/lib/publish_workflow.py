@@ -47,14 +47,19 @@ def evidence_result(evidence: dict[str, Any]) -> dict[str, Any]:
             'deployment': {'state': 'not_run'}}
 
 
+def publication_branch(task_id: str, sha: str) -> str:
+    return 'st/' + (re.sub(r'[^a-zA-Z0-9_-]', '-', task_id) if task_id else sha[:16])
+
+
 def publish_git(repo: Path, *, sha: str, task_id: str, message: str,
                 run_git: Callable[..., Any], push_revision: Callable[[str | None], Any] | None = None,
                 remote_name: str = "origin", resume: bool = False,
                 destination: str | None = None, reconcile_checkout: bool = True,
-                activity_allowed: Callable[[], bool] | None = None) -> dict[str, Any]:
+                activity_allowed: Callable[[], bool] | None = None,
+                before_delivery: Callable[[str | None, str, str | None], None] | None = None) -> dict[str, Any]:
     if activity_allowed is not None and not activity_allowed():
-        raise PublishError('Scheduled publication window is closed', unavailable=True,
-                           reason='outside_publication_window')
+        raise PublishError('Publication ownership is unavailable', unavailable=True,
+                           reason='publication_busy')
     remote = run_git(repo, ['remote', 'get-url', '--push', remote_name])
     if remote.returncode:
         raise PublishError('Cannot resolve origin push remote')
@@ -65,7 +70,7 @@ def publish_git(repo: Path, *, sha: str, task_id: str, message: str,
     try:
         plan = client.plan() if client else None
         if destination is not None and plan and destination != plan['base']:
-            raise GitHubError('Scheduled destination does not match the remote default branch')
+            raise GitHubError('Selected destination does not match the remote default branch')
         remote_sha = client.base_sha(plan["base"]) if client and plan else None
         if client and plan and remote_sha is None and plan['requires_pr']:
             raise GitHubError('Empty repository requires a pull request; initialize its default branch under the applicable repository rules first')
@@ -85,9 +90,15 @@ def publish_git(repo: Path, *, sha: str, task_id: str, message: str,
                 evidence['push_scope'] = client.push_scope
         except GitHubError as exc:
             evidence = _error_evidence(exc, sha)
-        return {'pushed': False, 'sha': sha, 'reason': 'already_on_remote', **evidence_result(evidence)}
+        return {'pushed': False, 'sha': sha, 'reason': 'already_on_remote',
+                'delivery': {'uploaded_source': sha, 'pull_request_state': 'not_applicable', 'merged_source': None},
+                **evidence_result(evidence)}
     destination_branch: str | None = None
-    head = 'st/' + (re.sub(r'[^a-zA-Z0-9_-]', '-', task_id) if task_id else sha[:16])
+    head = publication_branch(task_id, sha)
+    if before_delivery is not None:
+        if activity_allowed is not None and not activity_allowed():
+            raise PublishError('Publication ownership is unavailable', unavailable=True, reason='publication_busy')
+        before_delivery(remote_sha, plan['base'] if plan else destination or '', head if plan and plan['requires_pr'] else None)
     try:
         existing_pull = (
             client.source_pull_request(plan['base'], sha)
@@ -119,8 +130,8 @@ def publish_git(repo: Path, *, sha: str, task_id: str, message: str,
         pushed = None
     else:
         if activity_allowed is not None and not activity_allowed():
-            raise PublishError('Scheduled publication window is closed', unavailable=True,
-                               reason='outside_publication_window')
+            raise PublishError('Publication ownership is unavailable', unavailable=True,
+                               reason='publication_busy')
         pushed = push_revision(head if plan and plan['requires_pr'] else None) if push_revision else run_git(repo, args)
         if pushed.returncode:
             raise PublishError(pushed.stderr.strip() or pushed.stdout.strip() or 'git push failed')
@@ -156,6 +167,9 @@ def publish_git(repo: Path, *, sha: str, task_id: str, message: str,
             evidence = {'state': 'not_applicable', 'sha': sha, 'checks': [], 'reason': 'non_github_remote'}
     except (GitHubError, PublishError) as exc:
         evidence = _error_evidence(exc, sha)
+    result['delivery'] = {'uploaded_source': sha,
+                          'pull_request_state': 'merged' if result.get('merge_sha') else 'pending' if result.get('pr_url') else 'not_applicable',
+                          'merged_source': result.get('merge_sha'), 'pull_request_url': result.get('pr_url')}
     return {**result, **evidence_result(evidence)}
 
 

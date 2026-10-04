@@ -119,3 +119,18 @@ def test_remote_old_api_conflict_never_falls_back_to_local_store(
         task_claims.renew_owned_claim(tmp_path, "task-one")
 
     local.assert_not_called()
+
+
+def test_remote_acceptance_attachment_never_touches_local_store(tmp_path, monkeypatch):
+    monkeypatch.setattr(task_claims, "get_config_optional", lambda: config(tmp_path, api_base="https://st.example/api"))
+    store = Mock(side_effect=AssertionError("Remote claim cannot write local task database"))
+    monkeypatch.setattr("app.storage.tasks.closeout.store_owned_acceptance", store)
+    assert task_claims.attach_owned_acceptance(tmp_path, {"id": "task-one"}, {"state": "success"}) is False
+    store.assert_not_called()
+
+
+def test_acceptance_attachment_checks_local_registered_root(tmp_path, monkeypatch):
+    monkeypatch.setattr(task_claims, "get_config_optional", lambda: config(tmp_path))
+    monkeypatch.setattr("app.storage.projects.get_project_root_path", lambda _: str(tmp_path / "foreign"))
+    with pytest.raises(task_claims.TaskClaimRenewalError, match="does not match"):
+        task_claims.attach_owned_acceptance(tmp_path, {"id": "task-one"}, {"state": "success"})

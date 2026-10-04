@@ -49,6 +49,7 @@ class TaskResponse(BaseModel):
     started_at: datetime | None
     completed_at: datetime | None
     claimed_by: str | None = None
+    claimed_at: datetime | None = None
     lock_expires_at: datetime | None = None
     # Issue tracking fields
     priority: int
