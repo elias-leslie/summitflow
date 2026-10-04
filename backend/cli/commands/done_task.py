@@ -8,6 +8,7 @@ from typing import Any
 
 import typer
 
+from app.services.task_closeout import completion_evidence
 from app.storage.projects import get_project_root_path
 from app.tasks.autonomous.exec_modules.diff_gate import DiffGateResult, check_diff_gate
 from app.utils.git_base import normalize_base_branch
@@ -28,6 +29,13 @@ from .done_task_scope import git_dirty_paths as _git_dirty_paths
 from .done_task_scope import task_scope_paths as _task_scope_paths
 from .done_task_scope import task_with_export_context as _task_with_export_context
 from .tasks_progress import sync_completed_subtasks
+
+
+def _refuse_failed_task(task_id: str, status: object) -> None:
+    if status == "failed":
+        output_error(f"Task {task_id} is failed; completion was not recorded.\n"
+                     f"  Next action: st reopen {task_id}, then st claim {task_id} before completing work.")
+        raise typer.Exit(1)
 
 
 def _done_result(
@@ -527,9 +535,12 @@ def complete_task(client: STClient, task_id: str, message: str | None = None, st
     if intent and intent.get("kind") == "local_closeout.v1" and intent.get("state") in {"pending", "blocked"}:
         return resume_closeout(task_id, explicit=True)
     snapshot_info = get_snapshot_info(task_id)
-    task = _task_with_export_context(client, task_id, client.get_task(task_id))
-    if task.get("status") in {"completed", "failed"} and not snapshot_info:
-        return _done_result(task_id, snapshot_removed=True, project_id=_task_project_id(task))
+    task = client.get_task(task_id)
+    _refuse_failed_task(task_id, task.get("status"))
+    task = _task_with_export_context(client, task_id, task)
+    if task.get("status") == "completed" and not snapshot_info:
+        return {**_done_result(task_id, snapshot_removed=True, project_id=_task_project_id(task)),
+                **completion_evidence((task.get("verification_result") or {}).get("acceptance") or {}, retained=True)}
     record_only = acceptance_receipt is None and _record_only_work(task, task_id, snapshot_info, paths)
     if admin and not record_only:
         output_error("Record-only completion cannot close declared implementation work. Use st done without --record-only to validate its owned source and acceptance.")
@@ -552,7 +563,7 @@ def complete_task(client: STClient, task_id: str, message: str | None = None, st
         if snapshot_info:
             return _complete_admin(client, task_id, snapshot_info, message, owned_claim=claim)
         _close_task_safely(client, task_id, message, owned_claim=claim)
-        return _done_result(task_id, project_id=project_id)
+        return {**_done_result(task_id, project_id=project_id), **completion_evidence({}, record_only=True)}
     if snapshot_info:
         return _complete_with_snapshot(client, task_id, snapshot_info, message=message, strict=strict, skip_diff_gate=skip_diff_gate, paths=paths, acceptance_receipt=acceptance_receipt)
     snapshot_info = _reconstruct_snapshot_info(client, task_id)
@@ -612,6 +623,7 @@ def _complete_admin(client: STClient, task_id: str, snapshot_info: dict[str, str
     if not project_id or (completed_task or owned_claim or {}).get("project_id") != project_id:
         output_error("Checkpoint project differs from task ownership; checkpoint preserved")
         raise typer.Exit(1)
+    already_completed = completed_task is not None
     if completed_task is None:
         if owned_claim is None:
             raise ValueError("Record-only completion requires its exact active claim")
@@ -621,7 +633,8 @@ def _complete_admin(client: STClient, task_id: str, snapshot_info: dict[str, str
             cleanup=lambda: _capture_and_remove_snapshot(task_id, project_id), require_acceptance=False):
         output_error("Completed task changed before metadata cleanup; checkpoint preserved")
         raise typer.Exit(1)
-    return _done_result(task_id, snapshot_removed=True, base_branch=str(snapshot_info.get("base_branch", "main")), project_id=project_id)
+    return {**_done_result(task_id, snapshot_removed=True, base_branch=str(snapshot_info.get("base_branch", "main")), project_id=project_id),
+            **completion_evidence(acceptance, retained=already_completed, record_only=not already_completed)}
 
 
 def _complete_with_snapshot(client: STClient, task_id: str, snapshot_info: dict[str, str | int | None], *, message: str | None, strict: bool, skip_diff_gate: bool, paths: tuple[str, ...] = (), acceptance_receipt: dict[str, Any] | None = None) -> dict[str, str | bool]:
@@ -684,6 +697,7 @@ def _complete_with_snapshot(client: STClient, task_id: str, snapshot_info: dict[
                 expected_acceptance=acceptance,
                 cleanup=lambda: _capture_and_remove_snapshot(task_id, project_id)):
             raise ValueError("Completed task changed before metadata cleanup; checkpoint preserved")
-        return _done_result(task_id, snapshot_removed=True, base_branch=base_branch, project_id=project_id)
+        return {**_done_result(task_id, snapshot_removed=True, base_branch=base_branch, project_id=project_id),
+                **completion_evidence(acceptance, retained=True)}
     except SystemExit as exc:
         raise typer.Exit(exc.code if isinstance(exc.code, int) else 1) from None

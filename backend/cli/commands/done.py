@@ -10,7 +10,7 @@ Use --strict for old gate-check-only behavior.
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Annotated
+from typing import Annotated, Any
 
 import typer
 
@@ -19,11 +19,33 @@ from ..lib.checkpoint import get_snapshot_info
 from ..lib.usage import usage
 from ..output import output_error, output_success
 from .done_subtask import complete_subtask
-from .done_task import complete_task
+from .done_task import _refuse_failed_task, complete_task
 from .done_validators import is_subtask_id
 from .preflight import preflight
 
 app = typer.Typer(help="Complete task or subtask work")
+
+
+def _output_task_completion(task_id: str, result: dict[str, Any], *, noop: bool = False) -> None:
+    """Keep successful completion and its selected evidence readable together."""
+    if noop:
+        output_success(f"Task {task_id} already complete (no-op).")
+    elif result.get("snapshot_removed"):
+        output_success(f"Task {task_id} completed. Checkpoint removed.")
+        typer.echo(f"  Closed on: {result.get('base_branch') or 'main'}")
+    else:
+        output_success(f"Task {task_id} completed.")
+    basis = result.get("evidence_basis") or "unknown"
+    qualification = {"validated": "validated acceptance", "retained": "retained acceptance",
+                     "not_applicable": "record-only"}.get(basis, "acceptance unavailable")
+    if basis == "retained" and result.get("source_commit") == "unknown":
+        qualification = "retained acceptance unavailable"
+    typer.echo(f"  Source: {result.get('source_commit') or 'unknown'} ({qualification})")
+    pointers = [str(result[key]) for key in ("acceptance_id", "acceptance_artifact") if result.get(key)]
+    evidence = "; ".join(pointers) if pointers else "not_applicable" if basis == "not_applicable" else "unknown"
+    typer.echo(f"  Evidence: {evidence} ({qualification})")
+    typer.echo("  Blockers: none")
+    typer.echo("  Next action: none")
 
 
 def _is_autocode_dispatch_claim(claimed_by: object) -> bool:
@@ -103,10 +125,14 @@ def _handle_task_completion(
         raise typer.Exit(1)
     task = client.get_task(id)
     status = str(task.get("status") or "")
+    _refuse_failed_task(id, status)
     closeout = (task.get("verification_result") or {}).get("closeout") or {}
     cleanup_pending = closeout.get("kind") == "local_closeout.v1" and closeout.get("state") in {"pending", "blocked"}
     if status == "completed" and not get_snapshot_info(id) and not cleanup_pending:
-        output_success(f"Task {id} already complete (no-op).")
+        from app.services.task_closeout import completion_evidence
+
+        _output_task_completion(id, completion_evidence(
+            (task.get("verification_result") or {}).get("acceptance") or {}, retained=True), noop=True)
         return
     _refuse_if_autocode_owned(task, id)
     project_id = str(task.get("project_id") or "") or None
@@ -155,12 +181,7 @@ def _handle_task_completion(
     if result.get("action") == "skipped":
         output_error(f"Task {id} was not closed: {result.get('reason', 'completion request changed')}")
         raise typer.Exit(1)
-    base_branch = result.get("base_branch", "main")
-    if result.get("snapshot_removed"):
-        output_success(f"Task {id} completed. Checkpoint removed.")
-        typer.echo(f"  Closed on: {base_branch}")
-    else:
-        output_success(f"Task {id} completed.")
+    _output_task_completion(id, result)
     _release_task_leases(project_id, id)
 
 

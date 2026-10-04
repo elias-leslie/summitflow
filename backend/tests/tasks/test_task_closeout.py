@@ -78,6 +78,39 @@ def test_local_completion_preserves_remote_history_and_unrelated_work(pending_ta
     assert (tmp_path / "later-work").read_text() == "uncommitted"
 
 
+def test_completion_projects_selected_receipt_and_retry_retains_it(pending_task, monkeypatch):
+    receipt = {"state": "success", "source_commit": SHA, "acceptance_id": "proof-id",
+               "acceptance_artifact": "/repo/.git/st/acceptance/proof-id.json",
+               "checks": [{"large_diagnostic": "not part of completion output"}]}
+    store_verification(pending_task["id"], pending_task["project_id"], {"acceptance": receipt})
+    validator = Mock()
+    monkeypatch.setattr("cli.lib.acceptance.validate_acceptance_receipt", validator)
+
+    result = closeout.resume_closeout(pending_task["id"])
+    assert result["source_commit"] == SHA
+    assert result["evidence_basis"] == "validated"
+    assert result["acceptance_id"] == receipt["acceptance_id"]
+    assert result["acceptance_artifact"] == receipt["acceptance_artifact"]
+    assert "checks" not in result
+    validator.assert_called_once()
+
+    retry = closeout.resume_closeout(pending_task["id"])
+    assert retry["source_commit"] == SHA
+    assert retry["evidence_basis"] == "retained"
+    assert retry["acceptance_artifact"] == receipt["acceptance_artifact"]
+    validator.assert_called_once()
+
+
+@pytest.mark.parametrize("acceptance", [
+    {}, {"state": "failed", "source_commit": SHA, "acceptance_id": "failed-proof"},
+    {"state": "success", "source_commit": "abbreviated", "acceptance_id": "unbound-proof"},
+    {"state": "success", "source_commit": "b" * 40, "acceptance_id": "other-source"},
+])
+def test_completion_does_not_project_unselected_or_unbound_proof(acceptance):
+    result = closeout.completion_evidence(acceptance, source_sha=SHA)
+    assert result == {"source_commit": "unknown", "evidence_basis": "unknown"}
+
+
 def test_cleanup_failure_retains_completed_source_for_explicit_recovery(pending_task, monkeypatch):
     cleanup = Mock(side_effect=RuntimeError("snapshot store unavailable"))
     monkeypatch.setattr("cli.commands.done_task._capture_and_remove_snapshot", cleanup)
@@ -128,7 +161,10 @@ def test_completed_cleanup_tolerates_later_work_without_reacceptance(pending_tas
     tasks.update_task_status(pending_task["id"], "completed", validate_transition=False)
     validator = Mock(side_effect=AssertionError("Accepted status needs metadata cleanup only"))
     monkeypatch.setattr("cli.lib.acceptance.validate_acceptance_receipt", validator)
-    assert closeout.resume_closeout(pending_task["id"])["action"] == "completed"
+    result = closeout.resume_closeout(pending_task["id"])
+    assert result["action"] == "completed"
+    assert result["source_commit"] == SHA
+    assert result["evidence_basis"] == "retained"
     validator.assert_not_called()
 
 

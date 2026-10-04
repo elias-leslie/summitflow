@@ -20,6 +20,25 @@ from app.storage.tasks.closeout import (
 )
 
 
+def completion_evidence(acceptance: dict[str, Any], *, source_sha: str | None = None,
+                        retained: bool = False, record_only: bool = False) -> dict[str, str]:
+    """Project selected completion evidence without reading or validating new data."""
+    if record_only:
+        return {"source_commit": "not_applicable", "evidence_basis": "not_applicable"}
+    source = acceptance.get("source_commit")
+    selected = (acceptance.get("state") == "success" and isinstance(source, str)
+                and re.fullmatch(r"[0-9a-f]{40}|[0-9a-f]{64}", source)
+                and (source_sha is None or source == source_sha))
+    result: dict[str, str] = {"source_commit": source if selected and isinstance(source, str) else "unknown",
+              "evidence_basis": "retained" if retained else "validated" if selected else "unknown"}
+    if selected:
+        for key in ("acceptance_id", "acceptance_artifact"):
+            value = acceptance.get(key)
+            if isinstance(value, str) and value:
+                result[key] = value
+    return result
+
+
 def request_closeout(task_id: str, project_id: str, *, source_sha: str,
                      message: str | None, paths: tuple[str, ...] = (),
                      expected_worker: str | None = None, expected_claimed_at: Any = None,
@@ -99,7 +118,10 @@ def resume_closeout(task_id: str, *, explicit: bool = False) -> dict[str, Any]:
         if intent["state"] == "complete":
             if task["status"] != "completed":
                 return {"action": "skipped", "task_id": task_id, "reason": "completed_request_no_longer_current"}
-            return {"action": "completed", "task_id": task_id, "snapshot_removed": True, "published": False}
+            acceptance = (task.get("verification_result") or {}).get("acceptance") or {}
+            return {"action": "completed", "task_id": task_id, "snapshot_removed": True, "published": False,
+                    "base_branch": task.get("base_branch") or "main",
+                    **completion_evidence(acceptance, source_sha=intent["source_sha"], retained=True)}
         if intent["state"] == "blocked" and not explicit:
             return {"action": "blocked", "task_id": task_id, "reason": intent.get("reason")}
         request_id = str(intent["request_id"])
@@ -145,7 +167,9 @@ def resume_closeout(task_id: str, *, explicit: bool = False) -> dict[str, Any]:
             log_task_event(task_id, "Local closeout cleanup completed from retained source-bound acceptance.")
             return {"action": "completed", "task_id": task_id, "project_id": project_id,
                     "snapshot_removed": True, "published": False,
-                    "base_branch": task.get("base_branch") or "main"}
+                    "base_branch": task.get("base_branch") or "main",
+                    **completion_evidence(acceptance, source_sha=intent["source_sha"],
+                                          retained=task["status"] == "completed")}
         except Exception as exc:
             intent.update(state="blocked", reason=str(exc), observed_at=datetime.now(UTC).isoformat())
             if not store_closeout(task_id, project_id, intent, expected_request_id=request_id):

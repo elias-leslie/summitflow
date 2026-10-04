@@ -229,6 +229,9 @@ def test_administrative_completion_needs_no_fabricated_diff(snapshot, monkeypatc
     monkeypatch.setattr("cli.commands.done_task.commit_repo", commit)
     result = complete_task(client, "task-admin")
     assert result["action"] == "completed"
+    assert result["source_commit"] == "not_applicable"
+    assert result["evidence_basis"] == "not_applicable"
+    assert "acceptance_id" not in result and "acceptance_artifact" not in result
     close.assert_called_once_with("task-admin", "completed", expected_worker="fixture",
         expected_claimed_at="claim", expected_project_id="example")
     client.close_task.assert_not_called()
@@ -246,6 +249,36 @@ def test_record_only_cannot_bypass_declared_readiness(monkeypatch):
     with pytest.raises(Exit):
         complete_task(client, "task-implementation", admin=True)
     client.close_task.assert_not_called()
+
+
+@pytest.mark.parametrize("snapshot", [None, {"project_id": "example", "base_branch": "main"}])
+def test_failed_task_cannot_report_completion_or_modify_retained_work(snapshot, monkeypatch, capsys):
+    task = {"status": "failed", "project_id": "example", "verification_result": {
+        "acceptance": {"state": "failed", "source_commit": "a" * 40}}}
+    client = MagicMock()
+    client.get_task.return_value = task
+    monkeypatch.setattr("app.services.task_closeout.get_closeout", lambda _: None)
+    monkeypatch.setattr("cli.commands.done_task.get_snapshot_info", lambda _: snapshot)
+    accept = MagicMock(side_effect=AssertionError("Failed task cannot run acceptance"))
+    cleanup = MagicMock(side_effect=AssertionError("Failed checkpoint must be preserved"))
+    update = MagicMock(side_effect=AssertionError("Failed task must be preserved"))
+    monkeypatch.setattr("cli.commands.done_task._accept_completed_work_or_exit", accept)
+    monkeypatch.setattr("cli.commands.done_task._capture_and_remove_snapshot", cleanup)
+    monkeypatch.setattr("app.storage.tasks.update_task_status", update)
+    with pytest.raises(Exit):
+        complete_task(client, "task-failed")
+    output = capsys.readouterr()
+    assert "is failed" in output.err
+    assert "st reopen task-failed" in output.err and "st claim task-failed" in output.err
+    assert "completed" not in output.out
+    assert "Blockers: none" not in output.out
+    accept.assert_not_called()
+    cleanup.assert_not_called()
+    update.assert_not_called()
+    client.export_task_data.assert_not_called()
+    client.close_task.assert_not_called()
+    assert task == {"status": "failed", "project_id": "example", "verification_result": {
+        "acceptance": {"state": "failed", "source_commit": "a" * 40}}}
 
 
 @pytest.mark.parametrize("scope_key", ["files_to_modify", "files_to_create"])
