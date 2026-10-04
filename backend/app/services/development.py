@@ -6,6 +6,7 @@ checks, deploys, publishes, captures backups, or persists derived status.
 from __future__ import annotations
 
 import json
+import os
 import re
 from datetime import UTC, datetime
 from pathlib import Path
@@ -68,6 +69,22 @@ def _accepted(root: Path, common: Path, head: str) -> dict[str, Any]:
                     full_coverage=True, check_count=accepted.get("check_count"), drift=source != head)
 
 
+def _native_metadata_project(path: Path) -> str | None:
+    """Rejected private receipt metadata can attribute uncertainty, never success."""
+    try:
+        # Match the owning reader's private server-state contract before
+        # inspecting metadata from a record it could not authenticate.
+        for candidate in (path.parent, path):
+            if candidate.is_symlink() or candidate.stat().st_uid != os.getuid() or candidate.stat().st_mode & 0o077:
+                return None
+        if not path.is_file():
+            return None
+        project = _read(path).get("project")
+        return project if isinstance(project, str) and project else None
+    except (OSError, ValueError):
+        return None
+
+
 def _running(project_id: str, root: Path, accepted: dict[str, Any]) -> dict[str, Any]:
     try:
         source_root = current_source_root(project_id)
@@ -81,22 +98,57 @@ def _running(project_id: str, root: Path, accepted: dict[str, Any]) -> dict[str,
                             reason="Health verified at deployment; current live health not polled",
                             runtime_health="recorded_success", drift=bool(accepted.get("source_commit")) and receipt["source_commit"] != accepted["source_commit"])
         from app.services.native_deployment import _record_path, _store_root, read_native_evidence
-        native = []
+        native: list[dict[str, Any]] = []
+        invalid_matching: list[str] = []
+        invalid_foreign = 0
+        invalid_unassignable = 0
         for path in _store_root().glob("*.json"):
             if not re.fullmatch(r"[0-9a-f]{32}", path.stem):
                 continue
-            record = read_native_evidence(path.stem)
-            if record.get("project") == project_id:
+            record = None
+            try:
+                record = read_native_evidence(path.stem)
+                if record.get("project") != project_id:
+                    continue
+                source = record["observation"]["deployed_source_commit"]
+                completed_at = record["completed_at"]
+                if (record["state"] not in {"succeeded", "failed"}
+                        or not isinstance(source, str) or not re.fullmatch(r"[0-9a-f]{40}|[0-9a-f]{64}", source)
+                        or not isinstance(completed_at, (int, float)) or isinstance(completed_at, bool)):
+                    raise ValueError("Native runtime observation is incomplete")
                 native.append(record)
+            except (OSError, ValueError, RuntimeError, KeyError, TypeError):
+                owner = record.get("project") if record is not None else _native_metadata_project(path)
+                if owner == project_id:
+                    invalid_matching.append(str(path))
+                elif isinstance(owner, str) and owner:
+                    invalid_foreign += 1
+                else:
+                    invalid_unassignable += 1
+        result = evidence(reason="No deployment observation recorded", runtime_health="unknown")
         if native:
-            record = max(native, key=lambda item: item.get("completed_at", 0))
-            observation = record["observation"]
-            source = observation["deployed_source_commit"]
-            return evidence(record["state"], source_commit=source, observed_at=record.get("completed_at"),
-                            artifact=str(_record_path(record["receipt_id"])), reason="Retained native runtime observation; current live health not polled",
-                            runtime_health="recorded_success" if record["state"] == "succeeded" else "recorded_failure",
-                            drift=bool(accepted.get("source_commit")) and source != accepted["source_commit"])
-        return evidence(reason="No deployment observation recorded", runtime_health="unknown")
+            record = max(native, key=lambda item: item["completed_at"])
+            source = record["observation"]["deployed_source_commit"]
+            result = evidence(record["state"], source_commit=source, observed_at=record["completed_at"],
+                              artifact=str(_record_path(record["receipt_id"])), reason="Retained native runtime observation; current live health not polled",
+                              runtime_health="recorded_success" if record["state"] == "succeeded" else "recorded_failure",
+                              drift=bool(accepted.get("source_commit")) and source != accepted["source_commit"])
+        invalid_count = len(invalid_matching) + invalid_foreign + invalid_unassignable
+        if invalid_count:
+            noun = "receipt" if invalid_count == 1 else "receipts"
+            note = f"Shared deployment evidence includes {invalid_count} {noun} that could not be validated."
+            integrity = evidence("uncertain", reason=note, invalid_records=invalid_count,
+                                 matching_records=len(invalid_matching), foreign_records=invalid_foreign,
+                                 unassignable_records=invalid_unassignable)
+            if invalid_matching:
+                prior = result
+                result = evidence("error", reason="Deployment evidence for this project could not be validated", runtime_health="unknown",
+                                  invalid_evidence=invalid_matching)
+                if native:
+                    result["validated_observation"] = prior
+            result["reason"] = result["reason"].rstrip(".") + ". " + note
+            result["shared_store_integrity"] = integrity
+        return result
     except (OSError, ValueError, RuntimeError, KeyError):
         return evidence("error", reason="Deployment observation could not be validated", runtime_health="unknown")
 

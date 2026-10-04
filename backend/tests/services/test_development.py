@@ -1,5 +1,8 @@
 """Development status is a read-only projection, not a gate or recovery action."""
+import json
 import subprocess
+
+import pytest
 
 from app.services import development as service
 
@@ -172,3 +175,121 @@ def test_projection_counts_each_file_in_untracked_directory(tmp_path, mocker):
     assert result["working_tree"]["state"] == "uncommitted"
     assert result["working_tree"]["uncommitted"] == 3
     assert result["working_tree"]["unpublished"] is None
+
+
+@pytest.fixture
+def native_store(tmp_path, mocker):
+    directory = tmp_path / "native"
+    directory.mkdir(mode=0o700)
+    mocker.patch.object(service, "current_source_root", return_value=None)
+    mocker.patch("app.services.native_deployment._store_root", return_value=directory)
+    return directory
+
+
+def native_record(directory, receipt_id, project, *, valid=True, state="succeeded", completed_at=100):
+    from app.services.native_deployment import KIND
+
+    path = directory / f"{receipt_id}.json"
+    path.write_text(json.dumps({"kind": KIND if valid else "invalid", "receipt_id": receipt_id,
+        "project": project, "completed_at": completed_at, "state": state,
+        "observation": {"deployed_source_commit": "a" * 40}}))
+    path.chmod(0o600)
+    return path
+
+
+@pytest.mark.parametrize("matching", [False, True])
+def test_shared_invalid_records_do_not_poison_unrelated_runtime(native_store, matching):
+    native_record(native_store, "a" * 32, "foreign")
+    native_record(native_store, "b" * 32, "foreign", valid=False)
+    unknown = native_store / (("c" * 32) + ".json")
+    unknown.write_text("unreadable JSON")
+    unknown.chmod(0o600)
+    if matching:
+        native_record(native_store, "d" * 32, "alpha", completed_at=200)
+    result = service._running("alpha", native_store.parent, {"source_commit": "a" * 40})
+    assert result["state"] == ("succeeded" if matching else "unavailable")
+    assert result["runtime_health"] == ("recorded_success" if matching else "unknown")
+    assert result["source_commit"] == ("a" * 40 if matching else None)
+    integrity = result["shared_store_integrity"]
+    assert integrity["state"] == "uncertain"
+    assert integrity["invalid_records"] == 2
+    assert integrity["matching_records"] == 0
+    assert integrity["foreign_records"] == 1
+    assert integrity["unassignable_records"] == 1
+    assert "Shared deployment evidence includes 2 receipts that could not be validated" in result["reason"]
+    if matching:
+        assert result["drift"] is False
+        assert "current live health not polled" in result["reason"]
+
+
+@pytest.mark.parametrize("valid_matching", [False, True])
+def test_matching_invalid_record_remains_visible_alongside_valid_history(native_store, valid_matching):
+    bad = native_record(native_store, "a" * 32, "alpha", valid=False, completed_at=300)
+    native_record(native_store, "b" * 32, "foreign")
+    if valid_matching:
+        native_record(native_store, "c" * 32, "alpha", completed_at=200)
+    result = service._running("alpha", native_store.parent, {"source_commit": None})
+    assert result["state"] == "error" and result["runtime_health"] == "unknown"
+    assert result["source_commit"] is None
+    assert result["invalid_evidence"] == [str(bad)]
+    assert result["shared_store_integrity"]["matching_records"] == 1
+    assert "for this project could not be validated" in result["reason"]
+    if valid_matching:
+        retained = result["validated_observation"]
+        assert retained["state"] == "succeeded" and retained["source_commit"] == "a" * 40
+        assert retained["runtime_health"] == "recorded_success"
+    else:
+        assert "validated_observation" not in result
+
+
+@pytest.mark.parametrize("problem", ["symlink", "public_file", "public_root", "foreign_owner", "unreadable", "missing_project"])
+def test_unassignable_private_metadata_never_claims_runtime_success(native_store, mocker, problem):
+    path = native_record(native_store, "a" * 32, "alpha", valid=False)
+    if problem == "symlink":
+        original = path.read_text()
+        path.unlink()
+        target = native_store.parent / "other-file"
+        target.write_text(original)
+        path.symlink_to(target)
+    elif problem == "public_file":
+        path.chmod(0o644)
+    elif problem == "public_root":
+        native_store.chmod(0o755)
+    elif problem == "foreign_owner":
+        import os
+        mocker.patch.object(os, "getuid", return_value=path.stat().st_uid + 1)
+    elif problem == "unreadable":
+        mocker.patch.object(service, "_read", side_effect=OSError("metadata unavailable"))
+    else:
+        path.write_text('{"kind":"invalid","state":"succeeded"}')
+    result = service._running("alpha", native_store.parent, {"source_commit": None})
+    assert result["state"] == "unavailable" and result["runtime_health"] == "unknown"
+    assert result["source_commit"] is None
+    integrity = result["shared_store_integrity"]
+    assert integrity["unassignable_records"] == 1 and integrity["matching_records"] == 0
+    assert "Shared deployment evidence" in result["reason"]
+
+
+@pytest.mark.parametrize("state", ["succeeded", "failed"])
+def test_matching_valid_observation_retains_state_and_latest_source(native_store, state):
+    native_record(native_store, "a" * 32, "alpha", completed_at=100)
+    latest = native_record(native_store, "b" * 32, "alpha", state=state, completed_at=200)
+    native_record(native_store, "c" * 32, "foreign", completed_at=300)
+    result = service._running("alpha", native_store.parent, {"source_commit": "b" * 40})
+    assert result["state"] == state
+    assert result["runtime_health"] == ("recorded_success" if state == "succeeded" else "recorded_failure")
+    assert result["source_commit"] == "a" * 40 and result["drift"] is True
+    assert result["evidence"] == str(latest) and result["observed_at"] == 200
+    assert "shared_store_integrity" not in result
+
+
+def test_owner_authenticated_but_malformed_matching_observation_stays_error(native_store):
+    path = native_record(native_store, "a" * 32, "alpha")
+    record = json.loads(path.read_text())
+    del record["observation"]
+    path.write_text(json.dumps(record))
+    result = service._running("alpha", native_store.parent, {})
+    assert result["state"] == "error" and result["runtime_health"] == "unknown"
+    assert result["source_commit"] is None
+    assert result["invalid_evidence"] == [str(path)]
+    assert result["shared_store_integrity"]["matching_records"] == 1

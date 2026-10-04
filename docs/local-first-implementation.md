@@ -74,11 +74,27 @@ Rollout observations on October 4: full acceptance passed 5,751 Python cases,
 `7ab7ba886`; both managed rebuilds passed. Unchanged `7ab7ba886` acceptance was
 attached through the ordinary task workflow in 9.496 seconds without rerunning
 suites. Guarded owner operations retired eight remote waits and seven
-administrative findings while preserving history; 20 genuine security findings
-and untriaged investigations remain actionable. Later ownership/count/context
-repairs still require final-source acceptance and runtime evidence. Fresh blind
-evaluation, current capture/SQL restoration and provider delivery are still
-outstanding, rather than inferred from these earlier observations.
+administrative findings while preserving history; four security findings and
+16 untriaged investigations remain actionable. Ownership/count/context repairs
+were checkpointed locally at `40908e7af` after the canonical scoped gate passed.
+Final-source acceptance and runtime evidence remain required.
+
+Two fresh native workers completed isolated new-file and existing-file tasks,
+preserved foreign WIP and recorded full local acceptance without publication.
+The later trial used normal discovery and completed in an observed 2m10s;
+17 native cases passed. A fresh read-only safety worker passed 29 bounded checks
+and reproduced shared invalid runtime receipts interfering with another
+project's projection. Its per-record isolation repair passed 22 regression cases:
+matching invalid evidence remains an error, while foreign or unattributable
+failures remain visible as shared-store uncertainty. Integrated acceptance is
+still required; mocked refusals do not prove live publication.
+
+Current four-client generation and adapter installation pass with payload
+`2e37afd5…` and lifecycle guidance included. Actual provider delivery remains
+unverified: current native telemetry reports collector-only evidence, while
+retained bindings are older or absent. Fresh startup and provider-request
+payload evidence are still needed per client. Current capture/SQL restoration
+also remains outstanding; earlier recovery evidence is not relabelled.
 
 Current verification artifacts, including complete failed native-run evidence,
 are retained under `.dev-tools/local-first-*`, `.dev-tools/native-*` and the
