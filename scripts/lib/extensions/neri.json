@@ -193,9 +193,8 @@
     "surface history": "Usage: neri surface history [OPTIONS] {target_id} {item_id}\n\nArguments:\n  target_id  [required]\n  item_id    [required]\n\nOptions:\n  --limit <int range>  [default: 40; 1<=x<=100]\n  --cursor <str>\n  --help               Show this message and exit.",
     "surface observe": "Usage: neri surface observe [OPTIONS] {target_id}\n\nArguments:\n  target_id  [required]\n\nOptions:\n  --file <file>  [required]\n  --id <uuid>\n  --help         Show this message and exit.",
     "surface probe": "Usage: neri surface probe [OPTIONS] {investigation_id}\n\nArguments:\n  investigation_id  [required]\n\nOptions:\n  --source <manual|baseline>  [default: manual]\n  --id <uuid>\n  --help                      Show this message and exit.",
-    "portfolio": "Usage: neri portfolio [OPTIONS] COMMAND [ARGS]...\n\n  Join admitted local work and retain exact root reservations\n\nOptions:\n  --help  Show this message and exit.\n\nCommands:\n  join\n  status\n  renew\n  reconcile\n  release",
+    "portfolio": "Usage: neri portfolio [OPTIONS] COMMAND [ARGS]...\n\n  Join admitted local work and retain exact root reservations\n\nOptions:\n  --help  Show this message and exit.\n\nCommands:\n  join\n  renew\n  reconcile\n  release",
     "portfolio join": "Usage: neri portfolio join [OPTIONS] [target_id]\n\nArguments:\n  target_id\n\nOptions:\n  --manifest-id <uuid>\n  --manifest-digest <str>\n  --id <uuid>\n  --ttl-seconds <int range>  [default: 1800; 60<=x<=86400]\n  --help                     Show this message and exit.",
-    "portfolio status": "Usage: neri portfolio status [OPTIONS]\n\nOptions:\n  --help  Show this message and exit.",
     "portfolio renew": "Usage: neri portfolio renew [OPTIONS] {claim_id}\n\nArguments:\n  claim_id  [required]\n\nOptions:\n  --generation <int range>   [x>=1; required]\n  --id <uuid>\n  --ttl-seconds <int range>  [default: 1800; 60<=x<=86400]\n  --help                     Show this message and exit.",
     "portfolio reconcile": "Usage: neri portfolio reconcile [OPTIONS] {claim_id}\n\nArguments:\n  claim_id  [required]\n\nOptions:\n  --generation <int range>        [x>=1; required]\n  --reason <str>                  [required]\n  --evidence <uuid>\n  --no-target-work / --no-no-target-work\n                                  [default: no-no-target-work]\n  --id <uuid>\n  --ttl-seconds <int range>       [default: 1800; 60<=x<=86400]\n  --help                          Show this message and exit.",
     "portfolio release": "Usage: neri portfolio release [OPTIONS] {claim_id}\n\nArguments:\n  claim_id  [required]\n\nOptions:\n  --generation <int range>        [x>=1; required]\n  --reason <str>                  [required]\n  --evidence <uuid>\n  --no-target-work / --no-no-target-work\n                                  [default: no-no-target-work]\n  --id <uuid>\n  --help                          Show this message and exit."
@@ -2118,18 +2117,6 @@
         "without TARGET returns the existing claim or compact work/replenishment context",
         "expiry retains the reservation; reconcile or release with stop evidence",
         "reuse --id after an uncertain response; target selection pins the exact active manifest"
-      ],
-      "task_types": [
-        "neri"
-      ]
-    },
-    {
-      "surface": "st.neri.portfolio.status",
-      "tier": "reference",
-      "cmd": "st neri portfolio status",
-      "when": "inspect this root reservation and available local work",
-      "precautions": [
-        "expires active reservations into reconciling without freeing resources"
       ],
       "task_types": [
         "neri"
