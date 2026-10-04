@@ -22,6 +22,12 @@ leases and unrelated edits remain untouched. Code-only work needs no deployment
 or publication. Runtime work uses an explicit managed rebuild/live observation
 before completion reuses the resulting same-source evidence.
 
+Administrative and read-only tasks also require an active owned claim before
+completion. They need no manufactured code changes, code acceptance or compulsory
+citations. Receipt attachment, prerequisite subtask updates and completion compare
+the exact claim and prior evidence; release/reclaim races preserve newer work.
+Already completed checkpoints permit guarded metadata-only cleanup.
+
 `.st-check.toml` native schema 1 declares required project suites, locked and
 prepared inputs, executable identities and counted test evidence. `st check
 --check` runs those suites and configured legacy quality/security tools. A
@@ -56,6 +62,23 @@ and installation; binding, retrieval, actual provider delivery and saved-context
 resume are separate evidence stages. Internal coder preview changed from
 14,550 to 14,456 bytes and 2,758 to 2,749 estimated tokens in matched observations;
 these are context estimates, not billed usage.
+
+The remaining scoped coder and automated-execution references to automatic
+publication have been removed. Coder preview now measures 14,450 bytes and 2,747
+estimated tokens. A matched task-header comparison reduced output from 9,407 to
+4,277 bytes by keeping the existing key-file summary and removing the duplicate
+full scope. Full scope remains available through detailed context and export.
+
+Rollout observations on October 4: full acceptance passed 5,751 Python cases,
+303 frontend cases and the fresh-schema check on each of `f84068197` and
+`7ab7ba886`; both managed rebuilds passed. Unchanged `7ab7ba886` acceptance was
+attached through the ordinary task workflow in 9.496 seconds without rerunning
+suites. Guarded owner operations retired eight remote waits and seven
+administrative findings while preserving history; 20 genuine security findings
+and untriaged investigations remain actionable. Later ownership/count/context
+repairs still require final-source acceptance and runtime evidence. Fresh blind
+evaluation, current capture/SQL restoration and provider delivery are still
+outstanding, rather than inferred from these earlier observations.
 
 Current verification artifacts, including complete failed native-run evidence,
 are retained under `.dev-tools/local-first-*`, `.dev-tools/native-*` and the

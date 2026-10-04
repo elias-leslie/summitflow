@@ -3,14 +3,14 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import cast
+from typing import Any, cast
 
 import typer
 
 from app.storage._subtask_dep_helpers import CycleError, build_graph, kahn_sort
 
 from ..client import APIError, STClient
-from ..output import handle_api_error, output_success
+from ..output import handle_api_error, output_error, output_success
 from .subtask_validation import is_step_resolved
 
 
@@ -151,10 +151,19 @@ def _mark_subtask_passed(
     subtask_id: str,
     subtask: dict[str, object],
     analysis: SyncAnalysis,
+    owned_claim: dict[str, Any] | None = None,
 ) -> None:
     """Call the API to mark a subtask passed and record it in the analysis."""
     try:
-        client.update_subtask(task_id, subtask_id, passes=True)
+        if owned_claim is None:
+            client.update_subtask(task_id, subtask_id, passes=True)
+        else:
+            from app.storage.subtasks import update_subtask_passes
+            if update_subtask_passes(task_id, subtask_id, True, owned_claim=owned_claim) is None:
+                raise ValueError("Prerequisite subtask no longer exists")
+    except ValueError as exc:
+        output_error(str(exc))
+        raise typer.Exit(1) from None
     except APIError as e:
         handle_api_error(e)
         raise typer.Exit(1) from None
@@ -170,6 +179,7 @@ def _sync_regular_subtask(
     steps: list[dict[str, object]],
     acknowledge_none: bool,
     analysis: SyncAnalysis,
+    owned_claim: dict[str, Any] | None = None,
 ) -> None:
     """Sync a regular subtask, checking step completion and citations."""
     incomplete = _incomplete_step_numbers(steps)
@@ -184,7 +194,7 @@ def _sync_regular_subtask(
         analysis.skipped.append(f"{subtask_id}:citations")
         return
 
-    _mark_subtask_passed(client, task_id, subtask_id, subtask, analysis)
+    _mark_subtask_passed(client, task_id, subtask_id, subtask, analysis, owned_claim)
 
 
 def sync_completed_subtasks(
@@ -192,6 +202,7 @@ def sync_completed_subtasks(
     task_id: str,
     subtasks: list[dict[str, object]],
     acknowledge_none: bool,
+    *, owned_claim: dict[str, Any] | None = None,
 ) -> SyncAnalysis:
     """Mark syncable subtasks passed, optionally acknowledging missing citations."""
     analysis = SyncAnalysis(synced=[], syncable=[], skipped=[])
@@ -211,7 +222,7 @@ def sync_completed_subtasks(
             continue
 
         _sync_regular_subtask(
-            client, task_id, subtask_id, subtask, steps, acknowledge_none, analysis
+            client, task_id, subtask_id, subtask, steps, acknowledge_none, analysis, owned_claim
         )
 
     remaining = analyze_subtask_sync(subtasks)

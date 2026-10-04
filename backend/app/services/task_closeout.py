@@ -21,7 +21,10 @@ from app.storage.tasks.closeout import (
 
 
 def request_closeout(task_id: str, project_id: str, *, source_sha: str,
-                     message: str | None, paths: tuple[str, ...] = ()) -> dict[str, Any]:
+                     message: str | None, paths: tuple[str, ...] = (),
+                     expected_worker: str | None = None, expected_claimed_at: Any = None,
+                     expected_acceptance: dict[str, Any] | None = None,
+                     expected_verification: dict[str, Any] | None = None) -> dict[str, Any]:
     """Retain local prerequisites before a status update or cleanup can fail."""
     if not re.fullmatch(r"[0-9a-f]{40}|[0-9a-f]{64}", source_sha):
         raise ValueError("Closeout requires a full immutable source commit")
@@ -41,6 +44,13 @@ def request_closeout(task_id: str, project_id: str, *, source_sha: str,
             if previous["source_sha"] != source_sha:
                 raise ValueError("An earlier exact-source closeout remains unresolved")
             return previous
+        from cli.lib.task_claims import current_worker_id
+        if (not expected_worker or expected_worker != current_worker_id() or not expected_claimed_at
+                or task["status"] != "running" or task.get("claimed_by") != expected_worker
+                or datetime.fromisoformat(str(task.get("claimed_at"))) != datetime.fromisoformat(str(expected_claimed_at))):
+            raise ValueError("Local completion requires the same active claim that accepted this work")
+        if expected_acceptance is None or acceptance != expected_acceptance:
+            raise ValueError("Local completion acceptance changed after its prerequisite gates")
         intent = {"kind": "local_closeout.v1", "request_id": str(uuid.uuid4()),
                   "state": "pending", "source_sha": source_sha,
                   "project_id": project_id, "task_id": task_id, "message": message or task["title"],
@@ -48,7 +58,9 @@ def request_closeout(task_id: str, project_id: str, *, source_sha: str,
                   "local_gates": "canonical_done_prerequisites_satisfied"}
         if previous:
             intent["previous_closeout"] = previous
-        if not store_closeout(task_id, project_id, intent, expected_closeout=previous, expected_source_sha=source_sha):
+        if not store_closeout(task_id, project_id, intent, expected_closeout=previous, expected_source_sha=source_sha,
+                expected_worker=expected_worker, expected_claimed_at=expected_claimed_at,
+                expected_acceptance=expected_acceptance, expected_verification=expected_verification):
             return {"action": "skipped", "task_id": task_id, "reason": "completion_request_superseded"}
         from app.storage.events import log_task_event
         log_task_event(task_id, f"Local completion requested for {source_sha}; cleanup is recoverable.")

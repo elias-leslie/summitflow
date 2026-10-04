@@ -548,27 +548,45 @@ def test_receipt_success_label_does_not_override_actual_checks(repo: Path, mutat
         acceptance.validate_acceptance_receipt(repo, payload, sha="HEAD")
 
 
-def test_done_reuses_explicit_receipt_without_touching_unrelated_wip(repo: Path, monkeypatch) -> None:
+@pytest.fixture
+def owned_done_claim(repo: Path, monkeypatch):
+    from datetime import UTC, datetime
+
+    from cli.commands import done_task
+    from cli.lib.task_claims import current_worker_id
+
+    claim = {"id": "task", "project_id": "project", "status": "running",
+             "claimed_by": current_worker_id(), "claimed_at": datetime.now(UTC),
+             "verification_result": {}}
+    renewal = Mock(return_value=claim)
+    monkeypatch.setattr("cli.lib.task_claims.renew_local_owned_claim", renewal)
+    monkeypatch.setattr(done_task, "_checkpoint_repo_root", lambda _: str(repo))
+    stored = Mock(return_value=True)
+    monkeypatch.setattr("app.storage.tasks.closeout.store_owned_acceptance", stored)
+    return claim, renewal, stored
+
+
+def test_done_reuses_explicit_receipt_without_touching_unrelated_wip(repo: Path, monkeypatch, owned_done_claim) -> None:
     from cli.commands import done_task
 
     receipt = acceptance.accept_revision(repo, sha="HEAD", runner=successful_runner([]))
     (repo / "unrelated.txt").write_bytes(b"other agent work")
     git(repo, "add", "unrelated.txt")
     before = git(repo, "diff", "--cached", "--binary")
-    monkeypatch.setattr(done_task, "_checkpoint_repo_root", lambda _: str(repo))
-    stored = Mock()
-    monkeypatch.setattr("app.storage.tasks.closeout.store_verification", stored)
+    claim, renewal, stored = owned_done_claim
     monkeypatch.setattr(acceptance, "accept_revision", Mock(side_effect=AssertionError("do not repeat checks")))
     result = done_task._accept_completed_work("task", "project", paths=("app.py",), acceptance_receipt=receipt)
     assert result["source_commit"] == git(repo, "rev-parse", "HEAD")
     assert result["reused"] is True
     assert (repo / "unrelated.txt").read_bytes() == b"other agent work"
     assert git(repo, "diff", "--cached", "--binary") == before
-    stored.assert_called_once()
+    renewal.assert_called_once_with(repo, "task")
+    stored.assert_called_once_with("task", "project", dict(result), expected_worker=claim["claimed_by"],
+        expected_claimed_at=claim["claimed_at"], expected_acceptance={})
 
 
 @pytest.mark.parametrize("blocker", ["no-paths", "selected-dirty", "head-changed"])
-def test_done_receipt_cannot_bypass_scope_or_new_checkpoint(repo: Path, monkeypatch, blocker: str) -> None:
+def test_done_receipt_cannot_bypass_scope_or_new_checkpoint(repo: Path, monkeypatch, blocker: str, owned_done_claim) -> None:
     from cli.commands import done_task
 
     receipt = acceptance.accept_revision(repo, sha="HEAD", runner=successful_runner([]))
@@ -578,11 +596,12 @@ def test_done_receipt_cannot_bypass_scope_or_new_checkpoint(repo: Path, monkeypa
         if blocker == "head-changed":
             git(repo, "add", "app.py")
             git(repo, "commit", "-qm", "task checkpoint")
-    monkeypatch.setattr(done_task, "_checkpoint_repo_root", lambda _: str(repo))
-    stored = Mock()
-    monkeypatch.setattr("app.storage.tasks.closeout.store_verification", stored)
-    with pytest.raises((ValueError, acceptance.AcceptanceError)):
+    _claim, renewal, stored = owned_done_claim
+    expected = {"no-paths": "Imported acceptance requires explicit", "selected-dirty": "Selected task paths must be committed",
+                "head-changed": "Task-owned source changed"}
+    with pytest.raises((ValueError, acceptance.AcceptanceError), match=expected[blocker]):
         done_task._accept_completed_work("task", "project", paths=paths, acceptance_receipt=receipt)
+    renewal.assert_called_once_with(repo, "task")
     stored.assert_not_called()
 
 

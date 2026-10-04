@@ -385,6 +385,31 @@ class TestFormatContextTask:
         assert "NEXT_ACTION:2.1.1 Wire logs" in output
         assert "KEY_FILES[1]:backend/cli/commands/tasks_context.py" in output
 
+    def test_continuity_file_summary_does_not_repeat_full_task_scope(self) -> None:
+        files = [f"backend/feature_{number}.py" for number in range(100)]
+        task = {
+            "id": "task-large-scope",
+            "status": "running",
+            "context": {
+                "files_to_modify": files,
+                "files_to_create": ["backend/new_feature.py"],
+                "risks": ["Preserve other task work"],
+                "testing_strategy": "Use scoped ST checks",
+            },
+            "continuity": {
+                "key_files": [*files[:8], "+93 more omitted"],
+            },
+        }
+
+        output = format_context_task(task)
+
+        assert output.count(files[0]) == 1
+        assert files[-1] not in output
+        assert "backend/new_feature.py" not in output
+        assert "+93 more omitted" in output
+        assert "CONTEXT:risks:1 | testing:Use scoped ST checks" in output
+        assert task["context"]["files_to_modify"] == files
+
 
 
 class TestFormatContextSnapshot:

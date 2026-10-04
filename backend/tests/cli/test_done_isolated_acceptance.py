@@ -73,10 +73,10 @@ def native_source(tmp_path: Path, monkeypatch):
     (repo / "foreign.txt").write_text("foreign staged work\n")
     git(repo, "add", "foreign.txt")
     (repo / "untracked.txt").write_text("foreign untracked work\n")
-    monkeypatch.setattr("app.storage.tasks.get_task", lambda _: None)
+    monkeypatch.setattr(done_task, "_owned_completion_claim", lambda *a: {"project_id": "fixture", "claimed_by": "fixture", "claimed_at": "claim", "verification_result": {}})
     monkeypatch.setattr(done_task, "get_project_root_path", lambda _: str(repo))
-    store = Mock()
-    monkeypatch.setattr("app.storage.tasks.closeout.store_verification", store)
+    store = Mock(return_value=True)
+    monkeypatch.setattr("app.storage.tasks.closeout.store_owned_acceptance", store)
     monkeypatch.setattr("cli.lib.publish_workflow.publish_git", Mock(side_effect=AssertionError("GitHub unavailable")))
     return repo, sha, store
 
@@ -95,7 +95,7 @@ def test_done_accepts_isolated_source_and_reuses_it_on_retry(native_source):
     assert (repo / ".git" / "index").read_bytes() == index
     assert all((repo / name).read_bytes() == content for name, content in foreign.items())
     assert (repo / ".tool-env" / "prepared.txt").read_text() == "locked fixture dependency\n"
-    assert store.call_args.args[2]["acceptance"]["source_commit"] == sha
+    assert store.call_args.args[2]["source_commit"] == sha
     reused = done_task._accept_completed_work("task-source", "fixture", paths=("check.py",))
     assert reused["reused"] is True
     assert (repo / ".git" / "index").read_bytes() == index

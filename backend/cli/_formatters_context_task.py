@@ -16,14 +16,15 @@ def _format_context_lines(
     context: dict[str, Any] | None,
     *,
     include_execution_metadata: bool = True,
+    include_file_paths: bool = True,
 ) -> list[str]:
     """Build CONTEXT line parts from task context dict."""
     if not context or not isinstance(context, dict):
         return []
     parts: list[str] = []
-    if files_mod := context.get("files_to_modify"):
+    if include_file_paths and (files_mod := context.get("files_to_modify")):
         parts.append(f"modify:{','.join(files_mod)}")
-    if files_create := context.get("files_to_create"):
+    if include_file_paths and (files_create := context.get("files_to_create")):
         parts.append(f"create:{','.join(files_create)}")
     if risks := context.get("risks"):
         parts.append(f"risks:{len(risks)}")
@@ -285,6 +286,7 @@ def format_context_task(task: dict[str, Any]) -> str:
         _format_context_lines(
             task.get("context"),
             include_execution_metadata=not final_status,
+            include_file_paths=not isinstance(task.get("continuity"), dict),
         )
     )
     if contract_line := _format_contract_line(task.get("context")):

@@ -114,7 +114,7 @@ def _handle_task_completion(
     acceptance_receipt = None
     if evidence:
         from app.storage.projects import get_project_root_path
-        from app.storage.tasks.closeout import store_verification
+        from app.storage.tasks.closeout import store_owned_verification
         from cli.lib.completion_evidence import load_completion_evidence
 
         root = get_project_root_path(project_id) if project_id else None
@@ -122,12 +122,17 @@ def _handle_task_completion(
             output_error("Completion evidence requires a registered project checkout")
             raise typer.Exit(1)
         try:
+            from .done_task import _owned_completion_claim
+            claim = _owned_completion_claim(Path(root), id, project_id)
             receipts = load_completion_evidence(evidence, project_root=Path(root), project_id=project_id)
             acceptance_receipt = receipts.get("acceptance")
             if acceptance_receipt is not None and record_only:
                 raise ValueError("--record-only cannot import implementation acceptance")
-            store_verification(id, project_id, receipts)
-        except (ValueError, OSError) as exc:
+            if not store_owned_verification(id, project_id, receipts,
+                    expected_worker=str(claim["claimed_by"]), expected_claimed_at=claim["claimed_at"],
+                    expected_verification=claim.get("verification_result") or {}):
+                raise ValueError("Task claim or prior evidence changed during completion evidence import")
+        except (ValueError, OSError, RuntimeError) as exc:
             output_error(f"Completion evidence rejected: {exc}")
             raise typer.Exit(1) from None
     task_client = STClient(project_id=project_id) if project_id else client
@@ -165,7 +170,7 @@ def _handle_task_completion(
     cmd='st done <task-id> -m "summary"',
     when="assigned-task closeout (local acceptance + required evidence + checkpoint cleanup)",
     precautions=(
-        "local commits are normal checkpoints; publication is separate and optional",
+        "completion requires an active owned claim; local checkpoints are normal; publication is separate and optional",
         "use --evidence JSON for required same-source deployment and live checks; do not claim completion while acceptance remains",
     ),
     tier="mandate",

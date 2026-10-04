@@ -30,6 +30,19 @@ def test_memory_write_guidance_survives_startup_filtering(density):
     assert "explicit scope" in " ".join(specs["st.memory.save"]["precautions"])
 
 
+def test_compact_discovery_covers_ordinary_task_work_without_full_catalogue() -> None:
+    result = runner.invoke(tools_app, ["manifest", "--format", "json"])
+    assert result.exit_code == 0, result.output
+    specs = {row["surface"]: row for row in json.loads(result.output)["tools"]}
+    for surface in ("st.context", "st.claim", "st.check", "st.commit", "st.done"):
+        exact = runner.invoke(tools_app, ["manifest", "--surface", surface, "--format", "json"])
+        assert exact.exit_code == 0
+        assert specs[surface] == json.loads(exact.output)["tools"][0]
+    assert not {"st.vcs.publish", "st.design", "st.ui.gif", "st.vm.status"} & specs.keys()
+    assert "read-only inspection needs no claim" in specs["st.context"]["precautions"][0]
+    assert "publication is separate and optional" in specs["st.done"]["precautions"][0]
+
+
 @pytest.mark.parametrize("task", [None, "backend", "verification"])
 def test_specialized_guidance_is_not_selected_by_unrelated_task_or_history(tmp_path, task) -> None:
     scores = tmp_path / "scores.json"
@@ -166,7 +179,7 @@ def test_select_specs_for_core_density_adds_drilldown_surface() -> None:
 
     out = select_specs_for_density(specs, density="core")
 
-    assert [s.surface for s in out] == ["st.search", "st.details"]
+    assert [s.surface for s in out] == ["st.create", "st.search", "st.details"]
 
 
 def test_select_specs_for_task_density_adds_matching_task_surfaces() -> None:
@@ -298,7 +311,7 @@ def test_manifest_command_core_density_is_compact_and_drillable() -> None:
     assert "st.details" in core_surfaces
     assert "st.search" in core_surfaces
     assert "st.create" in full_surfaces
-    assert "st.create" not in core_surfaces
+    assert "st.create" in core_surfaces
     assert len(core_surfaces) < len(full_surfaces)
 
 

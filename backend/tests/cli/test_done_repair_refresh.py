@@ -57,10 +57,13 @@ def repair_refresh(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> dict[str,
     monkeypatch.setattr("cli.commands.done_task.remove_snapshot", lambda *args, **kwargs: None)
     monkeypatch.setattr("cli.commands.done._release_task_leases", lambda *args: None)
 
-    def store(_task, _project, value):
-        task["verification_result"].update(value)
+    monkeypatch.setattr("cli.commands.done_task._owned_completion_claim", lambda *a: {**task, "claimed_by": "fixture", "claimed_at": "claim"})
 
-    monkeypatch.setattr("app.storage.tasks.closeout.store_verification", store)
+    def store(_task, _project, value, **kwargs):
+        task["verification_result"]["acceptance"] = value
+        return True
+
+    monkeypatch.setattr("app.storage.tasks.closeout.store_owned_acceptance", store)
     return {"repo": tmp_path, "git": git, "head": head, "receipt": receipt,
             "task": task, "snapshot": snapshot, "events": events,
             "client": client, "queued": queued}

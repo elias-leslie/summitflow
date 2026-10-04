@@ -270,18 +270,34 @@ class TestAcceptanceBeforeCleanup:
         assert "Checkpoint preserved" in error.call_args.args[0]
 
     def test_completed_checkpoint_never_checkpoints_later_work(self, monkeypatch):
+        from contextlib import nullcontext
+
         client = MagicMock()
         receipt = {"state": "success", "source_commit": "a" * 40}
-        client.get_task.return_value = {"status": "completed", "verification_result": {"acceptance": receipt}}
+        client.get_task.return_value = {"status": "completed", "project_id": "example",
+                                       "verification_result": {"acceptance": receipt}}
+        connection = MagicMock()
+        cursor = connection.cursor.return_value.__enter__.return_value
+        cursor.fetchone.return_value = ("completed", {"acceptance": receipt})
+        monkeypatch.setattr("app.storage.tasks.closeout.get_connection", lambda: nullcontext(connection))
         monkeypatch.setattr(done_task, "_checkpoint_repo_root", lambda _: "/repo")
         checkpoint = MagicMock(side_effect=AssertionError("No later checkpoint"))
         monkeypatch.setattr(done_task, "ensure_checkpoint_clean", checkpoint)
-        finalize = MagicMock(return_value={"action": "completed"})
+        finalize = MagicMock(side_effect=AssertionError("Completed cleanup creates no new intent"))
         monkeypatch.setattr(done_task, "_finish_local_completion", finalize)
-        done_task._complete_with_snapshot(client, "task-1", {"project_id": "example", "base_branch": "main"},
-                                         message=None, strict=False, skip_diff_gate=False)
+        cleanup = MagicMock()
+        monkeypatch.setattr(done_task, "_capture_and_remove_snapshot", cleanup)
+        result = done_task._complete_with_snapshot(client, "task-1", {"project_id": "example", "base_branch": "main"},
+                                                  message=None, strict=False, skip_diff_gate=False)
+        assert result["action"] == "completed" and result["snapshot_removed"] is True
         checkpoint.assert_not_called()
-        assert finalize.call_args.kwargs["receipt"] == receipt
+        finalize.assert_not_called()
+        cleanup.assert_called_once_with("task-1", "example")
+        cursor.execute.assert_called_once_with(
+            "SELECT status, verification_result FROM tasks WHERE id = %s AND project_id = %s FOR UPDATE",
+            ("task-1", "example"),
+        )
+        assert client.get_task.return_value["verification_result"] == {"acceptance": receipt}
 
 
 # ---------------------------------------------------------------------------

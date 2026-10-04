@@ -6,6 +6,8 @@ committed to main with file-level coordination via `st lease`.
 
 from __future__ import annotations
 
+from typing import Any
+
 import typer
 
 from ..client import APIError, STClient
@@ -18,11 +20,20 @@ def _close_subtask(
     task_id: str,
     subtask_id: str,
     project_id: str | None,
+    *, owned_claim: dict[str, Any] | None = None,
 ) -> None:
     """Close subtask via API."""
     del project_id
     try:
-        client.update_subtask(task_id, subtask_id, passes=True)
+        if owned_claim is None:
+            client.update_subtask(task_id, subtask_id, passes=True)
+        else:
+            from app.storage.subtasks import update_subtask_passes
+            if update_subtask_passes(task_id, subtask_id, True, owned_claim=owned_claim) is None:
+                raise ValueError("Prerequisite subtask no longer exists")
+    except ValueError as exc:
+        output_error(str(exc))
+        raise typer.Exit(1) from None
     except APIError as e:
         detail: dict[str, str] = (
             e.detail if isinstance(e.detail, dict) else {"detail": str(e.detail)}
@@ -39,6 +50,7 @@ def auto_close_subtasks(
     client: STClient,
     task_id: str,
     project_id: str | None,
+    *, owned_claim: dict[str, Any] | None = None,
 ) -> None:
     """Auto-close all unpassed subtasks in dependency order."""
     subtasks_resp = client.get_subtasks(task_id)
@@ -70,7 +82,7 @@ def auto_close_subtasks(
             if dependencies - passed_ids:
                 next_remaining.append(subtask)
                 continue
-            _close_subtask(client, task_id, str(subtask_id), project_id)
+            _close_subtask(client, task_id, str(subtask_id), project_id, **({"owned_claim": owned_claim} if owned_claim is not None else {}))
             passed_ids.add(str(subtask_id))
             progressed = True
         if not progressed:

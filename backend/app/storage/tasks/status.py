@@ -70,10 +70,24 @@ def _execute_status_update(
     *,
     validate_transition: bool,
     expected_closeout_request_id: str | None = None,
+    expected_worker: str | None = None, expected_claimed_at: Any = None,
+    expected_project_id: str | None = None,
 ) -> dict[str, Any] | None:
     """Validate and update status atomically under a row lock."""
     resolved_task_id = canonicalize_task_id(task_id)
     with get_connection() as conn, conn.cursor() as cur:
+        if expected_worker is not None:
+            if not expected_claimed_at or not expected_project_id or status != "completed":
+                raise ValueError("Owned completion requires an exact project claim")
+            cur.execute("""SELECT id FROM tasks WHERE id = %s AND project_id = %s
+                           AND status = 'running' AND claimed_by = %s
+                           AND claimed_at = %s::timestamptz AND lock_expires_at > NOW() FOR UPDATE""",
+                        (resolved_task_id, expected_project_id, expected_worker, expected_claimed_at))
+            if not cur.fetchone():
+                raise ValueError("Task claim changed before record-only completion; checkpoint preserved")
+            cur.execute("SELECT subtask_id FROM task_subtasks WHERE task_id = %s AND passes = FALSE", (resolved_task_id,))
+            if incomplete := cur.fetchall():
+                raise ValueError(f"Cannot complete task with incomplete subtasks: {[row[0] for row in incomplete]}")
         if status == "cancelled":
             from .publication_repair import unresolved_repair
             cur.execute("SELECT verification_result, labels FROM tasks WHERE id = %s FOR UPDATE", (resolved_task_id,))
@@ -146,6 +160,8 @@ def update_task_status(
     error_message: str | None = None,
     validate_transition: bool = True,
     *, expected_closeout_request_id: str | None = None,
+    expected_worker: str | None = None, expected_claimed_at: Any = None,
+    expected_project_id: str | None = None,
 ) -> dict[str, Any] | None:
     """Update task status with timestamp handling and transition validation.
 
@@ -169,6 +185,8 @@ def update_task_status(
         error_message,
         validate_transition=validate_transition,
         expected_closeout_request_id=expected_closeout_request_id,
+        expected_worker=expected_worker, expected_claimed_at=expected_claimed_at,
+        expected_project_id=expected_project_id,
     )
 
 

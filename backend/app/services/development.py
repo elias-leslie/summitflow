@@ -156,7 +156,7 @@ def build_development_projection(project_id: str, project_root: Path) -> dict[st
     try:
         head = _git(project_root, "rev-parse", "HEAD")
         common = _git_common_dir(project_root)
-        status = _git(project_root, "status", "--porcelain")
+        status = _git(project_root, "status", "--porcelain", "--untracked-files=all")
         ahead = _git(project_root, "rev-list", "--count", "@{upstream}..HEAD") if _has_upstream(project_root) else None
         result["working_tree"] = evidence("uncommitted" if status else "clean", source_commit=head,
                                            observed_at=result["observed_at"], reason="Local working tree",

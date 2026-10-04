@@ -217,14 +217,21 @@ def test_administrative_completion_needs_no_fabricated_diff(snapshot, monkeypatc
     client.get_subtasks.return_value = {"subtasks": []}
     monkeypatch.setattr("app.services.task_closeout.get_closeout", lambda _: None)
     monkeypatch.setattr("cli.commands.done_task.get_snapshot_info", lambda _: snapshot)
-    monkeypatch.setattr("cli.commands.done_task._checkpoint_repo_root", lambda _: None)
+    monkeypatch.setattr("cli.commands.done_task._checkpoint_repo_root", lambda _: "/repo")
+    claim = {"project_id": "example", "claimed_by": "fixture", "claimed_at": "claim"}
+    monkeypatch.setattr("cli.commands.done_task._owned_completion_claim", lambda *a: claim)
+    close = MagicMock(return_value={"status": "completed", "project_id": "example", "verification_result": {}})
+    monkeypatch.setattr("app.storage.tasks.update_task_status", close)
+    monkeypatch.setattr("app.storage.tasks.closeout.cleanup_completed_checkpoint", lambda *a, **kw: (kw["cleanup"](), True)[1])
     cleanup = MagicMock()
     monkeypatch.setattr("cli.commands.done_task._capture_and_remove_snapshot", cleanup)
     commit = MagicMock(side_effect=AssertionError("No fabricated change"))
     monkeypatch.setattr("cli.commands.done_task.commit_repo", commit)
     result = complete_task(client, "task-admin")
     assert result["action"] == "completed"
-    client.close_task.assert_called_once_with("task-admin", reason=None, skip_gates=True)
+    close.assert_called_once_with("task-admin", "completed", expected_worker="fixture",
+        expected_claimed_at="claim", expected_project_id="example")
+    client.close_task.assert_not_called()
     client.acknowledge_no_citations.assert_not_called()
     commit.assert_not_called()
     assert cleanup.call_count == int(snapshot is not None)

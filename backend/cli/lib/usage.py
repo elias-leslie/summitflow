@@ -35,8 +35,8 @@ _CORE_SURFACES = {
     "st.agents.preview",
 }
 
-# Always-on floor for the `adaptive` density: lifecycle/destructive surfaces that
-# must inject regardless of usage telemetry (telemetry-independent safety net).
+# Implementation floor for compact discovery and `adaptive` density. Ordinary
+# task work must not require retrieving the complete catalogue.
 _FLOOR_SURFACES = {
     "st.pulse",
     "st.search",
@@ -162,7 +162,7 @@ def select_specs_for_density(
                 or (not spec.on_demand and _surface_score(spec.surface, scores) >= score_threshold)
             )
         else:
-            include_core = spec.surface in _CORE_SURFACES and not spec.on_demand
+            include_core = spec.surface in _FLOOR_SURFACES or (spec.surface in _CORE_SURFACES and not spec.on_demand)
             include = include_core or (density != "core" and include_task)
         if not include:
             if spec.on_demand:

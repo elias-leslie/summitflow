@@ -73,11 +73,12 @@ def update_subtask_passes(
     task_id: str,
     subtask_id: str,
     passes: bool,
+    *, owned_claim: dict[str, Any] | None = None,
 ) -> dict[str, Any] | None:
     """Update subtask passes status with validation gates."""
     from .subtasks_passes import update_subtask_passes as _update
 
-    return _update(canonicalize_task_id(task_id), subtask_id, passes)
+    return _update(canonicalize_task_id(task_id), subtask_id, passes, owned_claim=owned_claim)
 
 
 def delete_subtasks_for_task(task_id: str) -> int:

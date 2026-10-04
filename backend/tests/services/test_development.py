@@ -1,4 +1,6 @@
 """Development status is a read-only projection, not a gate or recovery action."""
+import subprocess
+
 from app.services import development as service
 
 
@@ -16,7 +18,7 @@ def test_projection_preserves_neutral_work_and_independent_recovery(tmp_path, mo
     mocker.patch.object(service, "_git_common_dir", return_value=tmp_path)
     git = mocker.patch.object(service, "_git", side_effect=lambda _root, *args: {
         ("rev-parse", "HEAD"): "a" * 40,
-        ("status", "--porcelain"): " M file\n?? new",
+        ("status", "--porcelain", "--untracked-files=all"): " M file\n?? new",
         ("rev-parse", "--verify", "@{upstream}"): "b" * 40,
         ("rev-list", "--count", "@{upstream}..HEAD"): "2",
     }[args])
@@ -147,3 +149,26 @@ def test_retired_administration_is_not_an_actionable_development_blocker(tmp_pat
     ], []])
     result = service.build_development_projection("alpha", tmp_path)
     assert [row["task_id"] for row in result["blockers"]["items"]] == ["task-security"]
+
+
+def test_projection_counts_each_file_in_untracked_directory(tmp_path, mocker):
+    _stores(mocker, tmp_path)
+    subprocess.run(["git", "init", "--quiet", str(tmp_path)], check=True)
+    directory = tmp_path / "new-work"
+    directory.mkdir()
+    for name in ("one.py", "two.py", "three.py"):
+        (directory / name).write_text("# uncommitted task work\n")
+    original_git = service._git
+
+    def local_git(root, *args):
+        if args[0] == "status":
+            return original_git(root, *args)
+        return "a" * 40
+
+    mocker.patch.object(service, "_git", side_effect=local_git)
+    mocker.patch.object(service, "_git_common_dir", return_value=tmp_path / ".git")
+    mocker.patch.object(service, "_has_upstream", return_value=False)
+    result = service.build_development_projection("alpha", tmp_path)
+    assert result["working_tree"]["state"] == "uncommitted"
+    assert result["working_tree"]["uncommitted"] == 3
+    assert result["working_tree"]["unpublished"] is None

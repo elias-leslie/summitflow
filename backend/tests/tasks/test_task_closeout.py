@@ -6,12 +6,14 @@ import pytest
 from app.services import task_closeout as closeout
 from app.storage import tasks
 from app.storage.tasks.closeout import (
+    cleanup_completed_checkpoint,
     closeout_lock,
     finish_closeout_cleanup,
     retire_remote_closeout,
     store_closeout,
     store_execution_verification,
     store_owned_acceptance,
+    store_owned_verification,
     store_verification,
 )
 
@@ -34,11 +36,18 @@ def stored_closeout(task_id: str) -> dict:
 def pending_task(test_project_id, cleanup_task, monkeypatch, tmp_path):
     task = tasks.create_task(test_project_id, "Resume exact-source local closeout")
     cleanup_task(task["id"])
+    monkeypatch.setattr("cli.lib.task_claims.current_worker_id", lambda: "fixture-worker")
+    tasks.claim_task(task["id"], "fixture-worker")
     tasks.update_task(task["id"], verification_result={
         "independent": {"retained": True}, "acceptance": {"state": "success", "source_commit": SHA},
         "publication": {"ci": {"state": "failed"}},
     })
-    closeout.request_closeout(task["id"], test_project_id, source_sha=SHA, message="Finish tested work")
+    owned = stored_task(task["id"])
+    closeout.request_closeout(task["id"], test_project_id, source_sha=SHA, message="Finish tested work",
+        expected_worker="fixture-worker", expected_claimed_at=owned["claimed_at"],
+        expected_acceptance=owned["verification_result"]["acceptance"])
+    from app.storage.tasks.closeout import release_closeout_claim
+    assert release_closeout_claim(task["id"], test_project_id, stored_closeout(task["id"])["request_id"])
     monkeypatch.setattr("app.storage.projects.get_project_root_path", lambda _: str(tmp_path))
     monkeypatch.setattr("cli.lib.acceptance.validate_acceptance_receipt", Mock())
     from contextlib import nullcontext
@@ -204,7 +213,13 @@ def test_request_creation_is_source_and_previous_intent_protected(pending_task, 
         return original_store(*args, **kwargs)
 
     monkeypatch.setattr(closeout, "store_closeout", change_source_then_store)
-    result = closeout.request_closeout(tid, pending_task["project_id"], source_sha=SHA, message="done")
+    owned = tasks.claim_task(tid, "fixture-worker")
+    store_verification(tid, pending_task["project_id"], {"acceptance": {"state": "success", "source_commit": SHA}})
+    owned = stored_task(tid)
+    previous = stored_closeout(tid)
+    result = closeout.request_closeout(tid, pending_task["project_id"], source_sha=SHA, message="done",
+        expected_worker="fixture-worker", expected_claimed_at=owned["claimed_at"],
+        expected_acceptance=owned["verification_result"]["acceptance"])
     assert result["reason"] == "completion_request_superseded"
     assert closeout.get_closeout(tid) == previous
 
@@ -231,3 +246,95 @@ def test_check_proof_attachment_is_exact_claim_and_evidence_protected(pending_ta
         assert after["verification_result"]["publication"]["ci"]["state"] == "failed"
     else:
         assert after["verification_result"]["acceptance"] != receipt
+
+
+@pytest.mark.parametrize("change", ["none", "renewed", "foreign", "reclaimed", "expired", "acceptance"])
+def test_new_completion_intent_is_exact_claim_and_proof_protected(pending_task, monkeypatch, change):
+    tid, pid = pending_task["id"], pending_task["project_id"]
+    tasks.claim_task(tid, "fixture-worker")
+    store_verification(tid, pid, {"acceptance": {"state": "success", "source_commit": SHA}})
+    before = stored_task(tid)
+    original_store = closeout.store_closeout
+
+    def race_then_store(*args, **kwargs):
+        if change in {"foreign", "reclaimed"}:
+            tasks.update_task_status(tid, "paused")
+            tasks.claim_task(tid, "other-worker" if change == "foreign" else "fixture-worker")
+            store_verification(tid, pid, {"acceptance": before["verification_result"]["acceptance"]})
+        elif change in {"expired", "renewed"}:
+            tasks.renew_task_claim(tid, "fixture-worker", lock_duration_minutes=-1 if change == "expired" else 60)
+        elif change == "acceptance":
+            store_verification(tid, pid, {"acceptance": {"state": "success", "source_commit": SHA, "acceptance_id": "newer"}})
+        return original_store(*args, **kwargs)
+
+    monkeypatch.setattr(closeout, "store_closeout", race_then_store)
+    result = closeout.request_closeout(tid, pid, source_sha=SHA, message="done",
+        expected_worker="fixture-worker", expected_claimed_at=before["claimed_at"],
+        expected_acceptance=before["verification_result"]["acceptance"])
+    if change in {"none", "renewed"}:
+        assert result["kind"] == "local_closeout.v1"
+    else:
+        assert result["reason"] == "completion_request_superseded"
+        assert stored_closeout(tid)["kind"] == "lifecycle_closeout_history.v1"
+
+
+@pytest.mark.parametrize("changed_key", [None, "deployment", "live_validation"])
+def test_completion_bundle_import_preserves_selected_prior_evidence(pending_task, changed_key):
+    tid, pid = pending_task["id"], pending_task["project_id"]
+    tasks.claim_task(tid, "fixture-worker")
+    before = stored_task(tid)
+    receipts = {"deployment": {"source_commit": SHA}, "live_validation": {"source_commit": SHA}}
+    if changed_key:
+        store_verification(tid, pid, {changed_key: {"source_commit": "b" * 40}})
+    assert store_owned_verification(tid, pid, receipts,
+        expected_worker="fixture-worker", expected_claimed_at=before["claimed_at"],
+        expected_verification=before["verification_result"]) is (changed_key is None)
+    stored = stored_task(tid)["verification_result"]
+    if changed_key:
+        assert stored[changed_key]["source_commit"] == "b" * 40
+        assert next(key for key in receipts if key != changed_key) not in stored
+    else:
+        assert all(stored[key] == value for key, value in receipts.items())
+
+
+def test_workerless_retry_cannot_overwrite_reclaimed_work(pending_task):
+    tid = pending_task["id"]
+    tasks.claim_task(tid, "other-worker")
+    newer = {"state": "success", "source_commit": "b" * 40}
+    store_verification(tid, pending_task["project_id"], {"acceptance": newer})
+    before = stored_task(tid)
+    assert closeout.resume_closeout(tid, explicit=True)["action"] == "skipped"
+    after = stored_task(tid)
+    assert after["status"] == "running" and after["claimed_by"] == "other-worker"
+    assert after["verification_result"] == before["verification_result"]
+
+
+def test_historical_completed_cleanup_never_creates_a_request_or_updates_evidence(pending_task):
+    tid, pid = pending_task["id"], pending_task["project_id"]
+    tasks.update_task_status(tid, "completed", validate_transition=False)
+    before = stored_task(tid)
+    cleanup = Mock()
+    assert cleanup_completed_checkpoint(tid, pid,
+        expected_acceptance=before["verification_result"]["acceptance"], cleanup=cleanup)
+    cleanup.assert_called_once()
+    assert stored_task(tid)["verification_result"] == before["verification_result"]
+    tasks.update_task_status(tid, "pending")
+    assert not cleanup_completed_checkpoint(tid, pid,
+        expected_acceptance=before["verification_result"]["acceptance"], cleanup=cleanup)
+    assert cleanup.call_count == 1
+
+
+def test_workerless_retry_reclaim_at_final_boundary_preserves_new_work(pending_task, monkeypatch):
+    tid, pid = pending_task["id"], pending_task["project_id"]
+    newer = {"state": "success", "source_commit": "b" * 40}
+
+    def reclaim(*args):
+        tasks.claim_task(tid, "other-worker")
+        store_verification(tid, pid, {"acceptance": newer})
+
+    monkeypatch.setattr("cli.commands.done_task._auto_verify_readiness", reclaim)
+    assert closeout.resume_closeout(tid, explicit=True)["action"] == "skipped"
+    after = stored_task(tid)
+    assert after["status"] == "running" and after["claimed_by"] == "other-worker"
+    assert after["verification_result"]["acceptance"] == newer
+    assert after["verification_result"]["closeout"]["kind"] == "lifecycle_closeout_history.v1"

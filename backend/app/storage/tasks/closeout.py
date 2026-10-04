@@ -17,8 +17,14 @@ from .core import canonicalize_task_id
 def store_closeout(task_id: str, project_id: str, closeout: dict[str, Any], *,
                    expected_request_id: str | None = None,
                    expected_closeout: dict[str, Any] | None = None,
-                   expected_source_sha: str | None = None) -> bool:
+                   expected_source_sha: str | None = None,
+                   expected_worker: str | None = None,
+                   expected_claimed_at: Any = None,
+                   expected_acceptance: dict[str, Any] | None = None,
+                   expected_verification: dict[str, Any] | None = None) -> bool:
     """Merge only the closeout key; preserve independent verification receipts."""
+    if expected_worker is not None and not expected_claimed_at:
+        raise ValueError("An exact active claim is required for a new closeout request")
     with get_connection() as conn, conn.cursor() as cur:
         cur.execute(
             """UPDATE tasks SET verification_result =
@@ -28,12 +34,20 @@ def store_closeout(task_id: str, project_id: str, closeout: dict[str, Any], *,
                AND (%s::jsonb IS NULL OR COALESCE(verification_result->'closeout', '{}'::jsonb) = %s::jsonb)
                AND (%s::text IS NULL OR (status IN ('pending', 'running', 'completed')
                     AND verification_result->'acceptance'->>'state' = 'success'
-                    AND verification_result->'acceptance'->>'source_commit' = %s))""",
+                    AND verification_result->'acceptance'->>'source_commit' = %s))
+               AND (%s::text IS NULL OR (status = 'running' AND claimed_by = %s
+                    AND claimed_at = %s::timestamptz AND lock_expires_at > NOW()))
+               AND (%s::jsonb IS NULL OR COALESCE(verification_result->'acceptance', '{}'::jsonb) = %s::jsonb)
+               AND NOT EXISTS (SELECT 1 FROM jsonb_each(%s::jsonb) AS prior(key, value)
+                    WHERE COALESCE(verification_result->prior.key, '{}'::jsonb) IS DISTINCT FROM prior.value)""",
             (Jsonb({"closeout": closeout}), canonicalize_task_id(task_id), project_id,
              expected_request_id, expected_request_id,
              Jsonb(expected_closeout) if expected_closeout is not None else None,
              Jsonb(expected_closeout) if expected_closeout is not None else None,
-             expected_source_sha, expected_source_sha),
+             expected_source_sha, expected_source_sha, expected_worker, expected_worker, expected_claimed_at,
+             Jsonb(expected_acceptance) if expected_acceptance is not None else None,
+             Jsonb(expected_acceptance) if expected_acceptance is not None else None,
+             Jsonb(expected_verification or {})),
         )
         if cur.rowcount != 1 and expected_request_id is None and expected_closeout is None and expected_source_sha is None:
             raise ValueError("Closeout task does not belong to the selected project")
@@ -83,14 +97,29 @@ def store_owned_acceptance(task_id: str, project_id: str, receipt: dict[str, Any
     """Attach a proof only to the same active claim and prior evidence revision."""
     if not expected_worker or not expected_claimed_at or receipt.get("state") != "success":
         raise ValueError("Successful acceptance and an exact active claim are required")
+    return store_owned_verification(task_id, project_id, {"acceptance": receipt},
+        expected_worker=expected_worker, expected_claimed_at=expected_claimed_at,
+        expected_verification={"acceptance": expected_acceptance})
+
+
+def store_owned_verification(task_id: str, project_id: str, receipts: dict[str, Any], *,
+                             expected_worker: str, expected_claimed_at: Any,
+                             expected_verification: dict[str, Any]) -> bool:
+    """Merge selected receipts only for the same active claim and prior evidence."""
+    if not receipts or set(receipts) - {"acceptance", "deployment", "live_validation"}:
+        raise ValueError("Unsupported local verification receipt")
+    if not expected_worker or not expected_claimed_at:
+        raise ValueError("An exact active claim is required for completion evidence")
+    prior = {key: expected_verification.get(key) or {} for key in receipts}
     with get_connection() as conn, conn.cursor() as cur:
         cur.execute("""UPDATE tasks SET verification_result =
             COALESCE(verification_result, '{}'::jsonb) || %s::jsonb, updated_at = NOW()
             WHERE id = %s AND project_id = %s AND status = 'running'
             AND claimed_by = %s AND claimed_at = %s::timestamptz AND lock_expires_at > NOW()
-            AND COALESCE(verification_result->'acceptance', '{}'::jsonb) = %s::jsonb""",
-            (Jsonb({"acceptance": receipt}), canonicalize_task_id(task_id), project_id,
-             expected_worker, expected_claimed_at, Jsonb(expected_acceptance)))
+            AND NOT EXISTS (SELECT 1 FROM jsonb_each(%s::jsonb) AS prior(key, value)
+                WHERE COALESCE(verification_result->prior.key, '{}'::jsonb) IS DISTINCT FROM prior.value)""",
+            (Jsonb(receipts), canonicalize_task_id(task_id), project_id,
+             expected_worker, expected_claimed_at, Jsonb(prior)))
         return cur.rowcount == 1
 
 
@@ -174,3 +203,18 @@ def finish_closeout_cleanup(task_id: str, project_id: str, request_id: str,
                        updated_at = NOW() WHERE id = %s AND project_id = %s""",
                     (Jsonb({"closeout": finished}), canonicalize_task_id(task_id), project_id))
         return cur.rowcount == 1
+
+
+def cleanup_completed_checkpoint(task_id: str, project_id: str, *,
+                                 expected_acceptance: dict[str, Any], cleanup: Callable[[], None],
+                                 require_acceptance: bool = True) -> bool:
+    """Guard historical metadata cleanup without writing a new completion intent."""
+    with get_connection() as conn, conn.cursor() as cur:
+        cur.execute("SELECT status, verification_result FROM tasks WHERE id = %s AND project_id = %s FOR UPDATE",
+                    (canonicalize_task_id(task_id), project_id))
+        row = cur.fetchone()
+        acceptance = ((row[1] or {}).get("acceptance") or {}) if row else {}
+        if not row or row[0] != "completed" or acceptance != expected_acceptance or (require_acceptance and acceptance.get("state") != "success"):
+            return False
+        cleanup()
+        return True
