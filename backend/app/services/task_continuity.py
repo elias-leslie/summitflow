@@ -2,7 +2,14 @@
 
 from __future__ import annotations
 
+import hashlib
 from typing import Any
+
+# Active continuity keeps three progress entries, each at most this many UTF-8
+# bytes including its omission marker. Exact task logs and exports stay intact.
+# Retained task-log entries on 2026-10-03: p99=1535 bytes; this cap preserves
+# 3730/3767 entries (99.02%) while bounding the observed 11059-byte maximum.
+MAX_PROGRESS_ENTRY_BYTES = 1536
 
 
 def _task_context(task: dict[str, Any], spirit: dict[str, Any] | None) -> dict[str, Any]:
@@ -74,7 +81,41 @@ def _next_action(subtask: dict[str, Any] | None) -> str:
     return _current_slice_text(subtask)
 
 
-def _normalize_progress_entries(progress_log: list[str] | None) -> list[str]:
+def _progress_excerpt(entry: str, task_id: str) -> str:
+    """Bound the projection, retaining the timestamp and latest trailing decision.
+
+    The digest identifies the exact timestamped entry returned by task logs/export,
+    before display whitespace normalization. Source identity is task ID + digest;
+    callers do not provide the underlying storage event ID.
+    """
+    text = entry.strip()
+    original = entry.encode("utf-8")
+    encoded = text.encode("utf-8")
+    if len(original) <= MAX_PROGRESS_ENTRY_BYTES:
+        return text
+
+    digest = hashlib.sha256(original).hexdigest()
+
+    def marker(omitted: int) -> str:
+        return (
+            f"\n[omitted {omitted} bytes; source={task_id}; sha256={digest}; "
+            f"bytes={len(original)}; detail=st export {task_id}]\n"
+        )
+
+    # Reserving the largest omitted count guarantees the final marker fits too.
+    budget = MAX_PROGRESS_ENTRY_BYTES - len(marker(len(original)).encode("utf-8"))
+    if len(encoded) <= budget:
+        head, tail = text, ""
+    else:
+        head_budget = max(budget, 0) * 3 // 4
+        tail_budget = max(budget, 0) - head_budget
+        head = encoded[:head_budget].decode("utf-8", errors="ignore")
+        tail = encoded[-tail_budget:].decode("utf-8", errors="ignore") if tail_budget else ""
+    retained_bytes = len(head.encode("utf-8")) + len(tail.encode("utf-8"))
+    return f"{head}{marker(len(original) - retained_bytes)}{tail}"
+
+
+def _recent_progress(progress_log: list[str] | None, task_id: str) -> list[str]:
     cleaned: list[str] = []
     previous: str | None = None
     for entry in progress_log or []:
@@ -83,14 +124,9 @@ def _normalize_progress_entries(progress_log: list[str] | None) -> list[str]:
             continue
         if previous == text:
             continue
-        cleaned.append(text)
+        cleaned.append(str(entry))
         previous = text
-    return cleaned
-
-
-def _recent_progress(progress_log: list[str] | None) -> list[str]:
-    cleaned = _normalize_progress_entries(progress_log)
-    return cleaned[-3:]
+    return [_progress_excerpt(entry, task_id) for entry in cleaned[-3:]]
 
 
 def _dependency_blockers(
@@ -160,7 +196,7 @@ def build_continuity(
         "objective": _objective(task, spirit),
         "current_slice": _current_slice_text(current_slice),
         "blockers": continuity_blockers,
-        "recent_progress": _recent_progress(progress_log),
+        "recent_progress": _recent_progress(progress_log, str(task.get("id") or "")),
         "next_action": _next_action(current_slice),
         "key_files": _key_files(task, spirit),
     }
