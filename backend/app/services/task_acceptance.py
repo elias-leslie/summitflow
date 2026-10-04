@@ -28,7 +28,19 @@ def completion_gates(task: dict[str, Any], *, connection: psycopg.Connection | N
 
         family = deployment_evidence_family(str(task["project_id"]))
     native_fields = {"receipt_id", "accepted_source_commit", "source_binding"}
-    native = family != "legacy" or bool(native_fields & (set(deployment) | set(live_validation))) or deployment.get("kind") == "native_deployment_observation.v1" or live_validation.get("kind") == "native_deployment_observation.v1"
+    # Native ownership authenticates deployments, not every owner-declared
+    # source-bound check with deployment explicitly waived. Supplied deployment
+    # evidence or native descriptors still require the exact server receipt.
+    native = (
+        (
+            family != "legacy" and (
+                requirements.get("deployment") is not False or bool(deployment) or "kind" in live_validation
+            )
+        )
+        or bool(native_fields & (set(deployment) | set(live_validation)))
+        or deployment.get("kind") == "native_deployment_observation.v1"
+        or live_validation.get("kind") == "native_deployment_observation.v1"
+    )
     native_valid = False
     if native:
         from .native_deployment import NativeDeploymentError, validate_native_evidence

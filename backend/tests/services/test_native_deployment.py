@@ -580,6 +580,80 @@ def test_native_registration_selects_only_the_owner_required_completion_gates(
     assert {gate["gate"] for gate in completion_gates(task)} == expected
 
 
+@pytest.fixture
+def custom_live_task(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> dict:
+    from cli import extensions
+
+    registry = trusted_registry(tmp_path)
+    monkeypatch.setattr(extensions, "tool_registry_path", lambda: registry)
+    task = caller_asserted_legacy_task()
+    task["context"]["completion_requirements"] = {"deployment": False, "live_checks": ["direct-handoff"]}
+    del task["verification_result"]["deployment"]
+    task["verification_result"]["live_validation"]["checks"] = [
+        {"id": "direct-handoff", "state": "success", "artifact": "/fixture/custom.json", "sha256": "b" * 64},
+    ]
+    assert native.deployment_evidence_family(task["project_id"]) == "native"
+    return task
+
+
+def test_native_owner_allows_source_bound_custom_checks_without_deployment_evidence(custom_live_task: dict) -> None:
+    assert completion_gates(custom_live_task) == []
+
+
+def test_native_owner_requires_explicit_deployment_waiver_for_custom_checks(custom_live_task: dict) -> None:
+    del custom_live_task["context"]["completion_requirements"]["deployment"]
+    assert {gate["gate"] for gate in completion_gates(custom_live_task)} == {"live_validation"}
+
+
+@pytest.mark.parametrize("change", ["source", "acceptance", "failed-check", "missing-check", "artifact", "digest"])
+def test_custom_live_checks_require_accepted_source_and_successful_durable_evidence(custom_live_task: dict, change: str) -> None:
+    verification = custom_live_task["verification_result"]
+    live = verification["live_validation"]
+    if change == "source":
+        live["source_commit"] = "c" * 40
+    elif change == "acceptance":
+        verification["acceptance"]["state"] = "failed"
+    else:
+        key, value = {
+            "failed-check": ("state", "failed"), "missing-check": ("id", "another-check"),
+            "artifact": ("artifact", ""), "digest": ("sha256", "invalid"),
+        }[change]
+        live["checks"][0][key] = value
+    assert "live_validation" in {gate["gate"] for gate in completion_gates(custom_live_task)}
+
+
+@pytest.mark.parametrize("descriptor", ["deployment", "live_validation"])
+@pytest.mark.parametrize(("key", "value"), [
+    ("receipt_id", "f" * 32), ("accepted_source_commit", "a" * 40),
+    ("source_binding", {}), ("kind", native.KIND),
+    ("kind", "native_deployment_observation.v2"), ("kind", ""),
+])
+def test_custom_checks_cannot_downgrade_forged_or_mixed_native_evidence(
+    custom_live_task: dict, descriptor: str, key: str, value: object,
+) -> None:
+    custom_live_task["verification_result"].setdefault(descriptor, {})[key] = value
+    assert {gate["gate"] for gate in completion_gates(custom_live_task)} == {"live_validation"}
+
+
+def test_custom_checks_cannot_bypass_required_native_deployment(custom_live_task: dict) -> None:
+    custom_live_task["context"]["completion_requirements"]["deployment"] = True
+    custom_live_task["verification_result"]["deployment"] = {"state": "succeeded", "source_commit": "a" * 40}
+    assert_native_blocked(custom_live_task)
+
+
+def test_custom_checks_with_markerless_deployment_still_require_native_receipt(custom_live_task: dict) -> None:
+    custom_live_task["verification_result"]["deployment"] = {"state": "succeeded", "source_commit": "a" * 40}
+    assert {gate["gate"] for gate in completion_gates(custom_live_task)} == {"live_validation"}
+
+
+def test_native_receipt_is_still_validated_for_live_only_requirement(issued: tuple[dict, dict, Path]) -> None:
+    task, _evidence, path = issued
+    task["context"]["completion_requirements"]["deployment"] = False
+    assert completion_gates(task) == []
+    path.unlink()
+    assert {gate["gate"] for gate in completion_gates(task)} == {"live_validation"}
+
+
 @pytest.mark.parametrize("code_only", [False, True])
 def test_administrative_and_code_only_tasks_do_not_consult_malformed_deployment_registry(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, code_only: bool,
