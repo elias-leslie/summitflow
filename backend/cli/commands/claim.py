@@ -40,7 +40,7 @@ app = typer.Typer(help="Claim task or subtask to start work")
 def _current_caller_id() -> str:
     """Identify the current caller for idempotent re-claim detection.
 
-    Matches the hostname worker convention used by `client.claim_task`. When
+    Matches the opaque worker identity used by `client.claim_task`. When
     both match the existing `claimed_by`, re-claim renews the existing lock.
     """
     return current_worker_id()

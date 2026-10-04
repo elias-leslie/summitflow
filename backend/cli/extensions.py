@@ -137,11 +137,16 @@ def extension_context(output: Any = None) -> dict[str, Any]:
 
 
 def _environment(binding: ExtensionBinding, context: dict[str, Any]) -> dict[str, str]:
+    from .lib.task_claims import current_caller_identity
+
     # PATH is inherited only for the explicitly trusted owner's own dependencies;
     # ST itself resolves a pinned project-relative entrypoint, never a PATH plugin.
     inherited = {"HOME", "USER", "LOGNAME", "PATH", "LANG", "LC_ALL", "LC_CTYPE", "TERM", "COLORTERM", "NO_COLOR", "TMPDIR", "XDG_CACHE_HOME", "XDG_CONFIG_HOME", "XDG_DATA_HOME"}
     env = {key: os.environ[key] for key in inherited | set(binding.environment) if key in os.environ}
     env["ST_EXTENSION_CONTEXT"] = json.dumps(context, separators=(",", ":"))
+    # Always compute this ST-owned envelope; an inherited value cannot override
+    # the identity that core task claim, renewal and completion compare.
+    env["ST_CALLER_IDENTITY"] = json.dumps(current_caller_identity(), separators=(",", ":"))
     return env
 
 

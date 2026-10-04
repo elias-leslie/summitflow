@@ -18,6 +18,7 @@ from __future__ import annotations
 import fcntl
 import json
 import os
+import re
 import time
 import uuid
 from contextlib import contextmanager
@@ -58,22 +59,34 @@ class Lease:
 def identify_agent() -> tuple[str, str, str, str]:
     """Return (agent_id, slug, session_id, provider) from env vars.
 
-    Priority: Claude Code → Codex CLI → Agent Hub → tmux pane → PID.
+    Priority: explicit ST session → Claude Code → Codex CLI → Agent Hub → Pi
+    → tmux pane → PID. Native session identifiers are validated and kept whole
+    in session_id; the abbreviated agent_id remains the legacy lease identity.
     Agent Hub agents/specialists/persona pass AGENT_HUB_AGENT_SLUG +
     AGENT_HUB_SESSION_ID explicitly. CLI invocations from a Claude Code
     session inherit $CLAUDE_SESSION_ID.
     """
-    claude_sid = os.environ.get("CLAUDE_SESSION_ID")
+    def session(key: str) -> str | None:
+        value = os.environ.get(key, "")
+        return value if re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._:-]{0,127}", value) else None
+
+    st_sid = session("ST_SESSION_ID")
+    if st_sid:
+        return f"st:{st_sid[:6]}", "st", st_sid, "st"
+    claude_sid = session("CLAUDE_SESSION_ID")
     if claude_sid:
         return f"cc:{claude_sid[:6]}", "claude-code", claude_sid, "claude_code"
-    codex_sid = os.environ.get("CODEX_SESSION_ID")
+    codex_sid = session("CODEX_SESSION_ID")
     if codex_sid:
         return f"codex:{codex_sid[:6]}", "codex", codex_sid, "codex_cli"
     ah_slug = os.environ.get("AGENT_HUB_AGENT_SLUG")
-    ah_sid = os.environ.get("AGENT_HUB_SESSION_ID")
-    if ah_slug and ah_sid:
+    ah_sid = session("AGENT_HUB_SESSION_ID")
+    if ah_slug and re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._-]{0,127}", ah_slug) and ah_sid:
         provider = "agent_hub_persona" if ah_slug == "jenny" else "agent_hub_specialist"
         return f"{ah_slug}:{ah_sid[:6]}", ah_slug, ah_sid, provider
+    pi_sid = session("PI_SESSION_ID")
+    if pi_sid:
+        return f"pi:{pi_sid[:6]}", "pi", pi_sid, "pi"
     pane = os.environ.get("TMUX_PANE")
     if pane:
         return f"tmux:{pane.lstrip('%')}", "tmux", pane, "unknown"

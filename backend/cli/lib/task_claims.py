@@ -18,9 +18,25 @@ class TaskClaimRenewalError(RuntimeError):
     """Raised when active work cannot safely renew its exact task claim."""
 
 
+def current_caller_identity() -> dict[str, str]:
+    """Normalize one opaque owner ID and optional native session telemetry.
+
+    Full session identifiers distinguish roots sharing a host or prefix. Legacy
+    callers without a stable native session retain their hostname identity;
+    hostname-owned claims are never implicitly adopted by a native session.
+    """
+    from .leases import identify_agent
+
+    _, slug, session_id, provider = identify_agent()
+    if provider != "unknown":
+        return {"member_id": f"{provider}:{slug}:{session_id}",
+                "provider": provider, "session_id": session_id}
+    return {"member_id": socket.gethostname(), "provider": "hostname"}
+
+
 def current_worker_id() -> str:
-    """Return the same default identity used by the public claim client."""
-    return socket.gethostname()
+    """Return the opaque owner identity shared by claim and closeout paths."""
+    return current_caller_identity()["member_id"]
 
 
 def _renewal_config(repo: Path) -> tuple[Config, bool]:
