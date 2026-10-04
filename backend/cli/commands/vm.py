@@ -15,6 +15,7 @@ import typer
 from ..lib.confirm_token import confirm_gate
 from ..lib.proxmox import ProxmoxClient, ProxmoxError, snapshot_name_default
 from ..lib.usage import usage
+from ..lib.vm_clone import managed_clone
 from ..output import output_error
 
 app = typer.Typer(
@@ -151,14 +152,18 @@ def clone(
     template: Annotated[str, typer.Argument(help="Template VM ID")],
     newid: Annotated[str, typer.Argument(help="New VM ID")],
     name: Annotated[str | None, typer.Argument(help="New VM name")] = None,
+    clone_only: Annotated[bool, typer.Option("--clone-only", help="Copy only; do not configure, boot, or claim guest readiness")] = False,
 ) -> None:
-    """Clone a VM from a template."""
+    """Clone, provision explicit owner access, boot, and prove guest readiness."""
     vm_name = name or "test-" + datetime.now(UTC).strftime("%Y%m%d-%H%M%S")
 
     def action(client: ProxmoxClient) -> None:
-        print(f"Cloning template {template} -> VM {newid} ({vm_name})...")
-        client.clone(template, newid, vm_name)
-        print(f"Done: VM {newid}")
+        if clone_only:
+            print(f"COPY ONLY: template {template} -> VM {newid} ({vm_name})...", flush=True)
+            upid = client.clone(template, newid, vm_name)
+            print(f"Copy complete: VM {newid} task={upid}; guest NOT provisioned, started, or ready", flush=True)
+        else:
+            managed_clone(client, template, newid, vm_name)
 
     _run(action)
 
@@ -307,6 +312,7 @@ def repair_agent(
     ssh_target: Annotated[str, typer.Option(help="Existing SSH user@host for this VM")],
     jump_host: Annotated[str | None, typer.Option(help="Existing SSH jump host alias")] = None,
     identity_file: Annotated[Path | None, typer.Option(help="Existing SSH private-key path")] = None,
+    known_hosts_file: Annotated[Path | None, typer.Option(help="Existing trusted SSH known-hosts file")] = None,
     repair_packages: Annotated[bool, typer.Option(help="Repair broken Debian dependencies without removing packages")] = False,
 ) -> None:
     """Repair a Linux guest agent through verified SSH recovery access."""
@@ -327,12 +333,12 @@ def repair_agent(
                 "  sudo -n apt-get update\n",
                 "  sudo -n apt-get update\n  sudo -n env DEBIAN_FRONTEND=noninteractive apt-get --fix-broken --no-remove install -y\n",
             )
-        _ssh_guest(client, vmid, ssh_target, script, jump_host, identity_file)
+        _ssh_guest(client, vmid, ssh_target, script, jump_host, identity_file, known_hosts_file)
 
     _run(action)
 
 
-def _ssh_guest(client, vmid, ssh_target, command, jump_host, identity_file):
+def _ssh_guest(client, vmid, ssh_target, command, jump_host, identity_file, known_hosts_file=None):
     for target in (ssh_target, jump_host):
         if target is not None and not re.fullmatch(r"[A-Za-z0-9_][A-Za-z0-9_.@:\[\]-]*", target):
             raise typer.BadParameter("Use an SSH host alias or user@host, without options")
@@ -361,11 +367,13 @@ def _ssh_guest(client, vmid, ssh_target, command, jump_host, identity_file):
         expected = shlex.quote(str(cfg["name"]))
         script = "set -eu\n" + f'test "$(hostname -s)" = {expected} || {{ echo "Guest hostname does not match VM" >&2; exit 1; }}\n' + command
         remote = "sh -s"
-    args = ["ssh", "-o", "BatchMode=yes", "-o", "ConnectTimeout=10"]
+    args = ["ssh", "-o", "BatchMode=yes", "-o", "ConnectTimeout=10", "-o", "StrictHostKeyChecking=yes"]
     if jump_host:
         args.extend(["-J", jump_host])
     if identity_file:
         args.extend(["-i", str(identity_file)])
+    if known_hosts_file:
+        args.extend(["-o", f"UserKnownHostsFile={known_hosts_file}"])
     args.extend(["--", ssh_target, remote])
     try:
         result = subprocess.run(args, input=script, text=True, capture_output=True, timeout=300)
@@ -383,12 +391,13 @@ def exec_ssh(
     ssh_target: Annotated[str, typer.Option(help="Existing SSH user@host for this VM")],
     jump_host: Annotated[str | None, typer.Option(help="Existing SSH jump host alias")] = None,
     identity_file: Annotated[Path | None, typer.Option(help="Existing SSH private-key path")] = None,
+    known_hosts_file: Annotated[Path | None, typer.Option(help="Existing trusted SSH known-hosts file")] = None,
 ) -> None:
     """Execute through verified SSH when QEMU execution or stdin is unavailable."""
     import sys
 
     script = sys.stdin.read() if command == "-" else command
-    _run(lambda client: _ssh_guest(client, vmid, ssh_target, script, jump_host, identity_file))
+    _run(lambda client: _ssh_guest(client, vmid, ssh_target, script, jump_host, identity_file, known_hosts_file))
 
 
 @app.command("grow-disk")
