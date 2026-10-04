@@ -34,7 +34,7 @@ describe('Development repository', () => {
   it('shows neutral local work separately from acceptance and runtime drift', () => {
     renderRow()
     expect(screen.getByText('2 uncommitted files')).toBeInTheDocument()
-    expect(screen.getByText(/1 unpublished commits/)).toBeInTheDocument()
+    expect(screen.getByText(/1 unpublished commit against/)).toBeInTheDocument()
     expect(screen.getByText('Source drift')).toBeInTheDocument()
     expect(screen.queryByText('Dirty')).not.toBeInTheDocument()
     expect(api.publishProjectChanges).not.toHaveBeenCalled()

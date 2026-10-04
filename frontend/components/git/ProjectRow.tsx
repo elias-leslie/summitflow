@@ -90,12 +90,12 @@ export function ProjectRow({
           <dd className="text-sm text-slate-100">
             {working.uncommitted === undefined
               ? working.state
-              : `${working.uncommitted} uncommitted files`}
+              : `${working.uncommitted} uncommitted ${working.uncommitted === 1 ? 'file' : 'files'}`}
           </dd>
           <dd className="text-xs text-slate-400">
             {working.unpublished === null || working.unpublished === undefined
               ? 'Unpublished count unavailable'
-              : `${working.unpublished} unpublished commits against local remote refs`}
+              : `${working.unpublished} unpublished ${working.unpublished === 1 ? 'commit' : 'commits'} against local remote refs`}
           </dd>
           {working.source_commit && (
             <dd className="break-all font-mono text-xs text-slate-300">
