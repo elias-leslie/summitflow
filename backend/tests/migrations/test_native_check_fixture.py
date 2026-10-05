@@ -106,6 +106,15 @@ def test_python_stage_has_measured_budget_and_bounded_cleanup_reserves(prepared_
     assert runs[0][1]["timeout"] == 180
     # 19.2% headroom over the measured 1560s exhaustion, not an unbounded retry.
     assert runs[1][1]["timeout"] == 1860
+    assert {argument.removeprefix("--deselect=") for argument in runs[1][0]
+            if argument.startswith("--deselect=")} == {
+        "tests/cli/test_saved_work_snapshots.py::test_native_btrfs_shared_capture_readonly_recovery_and_isolated_restore",
+        "tests/cli/test_saved_work_snapshots.py::test_native_nested_saved_source_is_refused_and_disposable_tracked_fixture_preserved",
+    }
+    owner = next(item for item in tomllib.loads(config.read_text())["native"]["stages"]
+                 if item["id"] == "owner-btrfs-snapshots")
+    assert owner["required"] is False and owner["applicable"] is False
+    assert "ST_SNAPSHOT_TEST_ROOT" in owner["reason"]
     create = next(arguments for arguments, _env in operations if arguments[0] == "create")
     assert "sleep 2130; kill -TERM 1" in create[-1]
     ledger = next((root / ".dev-tools" / "native-fixtures").glob("*.json"))

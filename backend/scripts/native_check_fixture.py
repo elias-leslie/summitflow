@@ -170,6 +170,8 @@ def main() -> int:
         ]
         result = subprocess.run(
             [sys.executable, "-m", "pytest", *tests, "--junitxml=" + str(report),
+             "--deselect=tests/cli/test_saved_work_snapshots.py::test_native_btrfs_shared_capture_readonly_recovery_and_isolated_restore",
+             "--deselect=tests/cli/test_saved_work_snapshots.py::test_native_nested_saved_source_is_refused_and_disposable_tracked_fixture_preserved",
              "-k", "not test_live_owner_lease_proxy_preserves_same_target_and_blocks_resume "
              "and not test_real_detached_result_survives_collection "
              "and not (test_pre_push_chains_same_arguments_and_stdin and global)"],

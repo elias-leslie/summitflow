@@ -367,13 +367,14 @@ def run_native(root: Path, plan: dict[str, Any], *, stage_id: str | None = None,
     # Keep tool aliases visible at their same host path when nested bwrap
     # replaces /tmp; the sandbox's private /tmp itself is the short scratch root.
     host_scratch = os.environ.get("ST_NATIVE_TMP_HOST_ROOT", "/var/tmp")
-    with tempfile.TemporaryDirectory(prefix="", dir=host_scratch) as directory:
+    with (tempfile.TemporaryDirectory(prefix="", dir=host_scratch) as directory,
+          tempfile.TemporaryDirectory(prefix="", dir="/tmp") as scratch):
         aliases = Path(directory) / "bin"
         aliases.mkdir(mode=0o700)
         for name, tool in plan["tools"].items():
             target = Path(tool["path"])
             (aliases / name).symlink_to(target if target.is_absolute() else _local(root, tool["path"]))
-        return _run_native(root, plan, aliases=aliases, stage_id=stage_id, reuse=reuse, full_gate=full_gate)
+        return _run_native(root, plan, aliases=aliases, scratch=Path(scratch), stage_id=stage_id, reuse=reuse, full_gate=full_gate)
 
 
 def blocked_native_result(plan: dict[str, Any], reason: str, *, stage_id: str | None = None,
@@ -389,7 +390,7 @@ def blocked_native_result(plan: dict[str, Any], reason: str, *, stage_id: str | 
                 "duration_ms": 0, "reason": reason, "artifacts": [], "reused": False} for stage in stages]}
 
 
-def _run_native(root: Path, plan: dict[str, Any], *, aliases: Path, stage_id: str | None, reuse: bool, full_gate: bool) -> dict[str, Any]:
+def _run_native(root: Path, plan: dict[str, Any], *, aliases: Path, scratch: Path, stage_id: str | None, reuse: bool, full_gate: bool) -> dict[str, Any]:
     from cli.lib.acceptance import AcceptanceError
 
     stages = [stage for stage in plan["stages"] if stage_id is None or stage["id"] == stage_id]
@@ -405,11 +406,10 @@ def _run_native(root: Path, plan: dict[str, Any], *, aliases: Path, stage_id: st
         executable = Path(stage["executable"]) if Path(stage["executable"]).is_absolute() else _local(root, stage["executable"])
         if not executable.is_file() or not os.access(executable, os.X_OK) or not _local(root, stage["cwd"]).is_dir():
             return blocked_native_result(plan, "project_tool_or_cwd_unavailable; prepare explicitly", stage_id=stage_id, full_gate=full_gate)
-    temporary = aliases.parent
     environment = {"HOME": str(root), "LANG": "C.UTF-8", "CI": "true",
                    "XDG_CONFIG_HOME": str(aliases / "config"), "XDG_DATA_HOME": str(aliases / "data"),
                    "XDG_CACHE_HOME": str(aliases / "cache"), "XDG_STATE_HOME": str(aliases / "state"), **plan["environment"],
-                   "TMPDIR": str(temporary), "PYTHONDONTWRITEBYTECODE": "1", "PYTHONPYCACHEPREFIX": str(aliases / "pycache"),
+                   "TMPDIR": str(scratch), "PYTHONDONTWRITEBYTECODE": "1", "PYTHONPYCACHEPREFIX": str(aliases / "pycache"),
                    "UV_NO_SYNC": "1", "UV_OFFLINE": "1", "CARGO_NET_OFFLINE": "true", "GOTOOLCHAIN": "local",
                    "GOPROXY": "off", "GOSUMDB": "off", "npm_config_offline": "true", "COREPACK_ENABLE_NETWORK": "0",
                    "PATH": os.pathsep.join([str(aliases), *(str(_local(root, path)) for path in plan["paths"])])}

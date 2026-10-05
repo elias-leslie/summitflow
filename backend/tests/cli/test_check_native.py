@@ -58,12 +58,17 @@ def test_native_executes_prepared_tools_with_fresh_evidence_and_no_ambient_crede
 
 
 def test_native_stage_can_create_private_temporary_files_without_ambient_environment(native_repo: Path, monkeypatch) -> None:
+    monkeypatch.delenv("ST_NATIVE_TMP_HOST_ROOT", raising=False)
     monkeypatch.setenv("AMBIENT_SECRET", "private")
     suite = native_repo / ".tools/suite.py"
     suite.write_text(suite.read_text() + (
         "import stat, tempfile\n"
         "temporary = Path(os.environ['TMPDIR'])\n"
         "assert temporary.is_dir()\n"
+        "assert temporary.parent == Path('/tmp')\n"
+        "aliases = Path(os.environ['PATH'].split(os.pathsep)[0])\n"
+        "assert aliases.parent.parent == Path('/var/tmp')\n"
+        "assert temporary != aliases.parent\n"
         "assert stat.S_IMODE(temporary.stat().st_mode) == 0o700\n"
         "with tempfile.TemporaryDirectory() as directory:\n"
         "    assert Path(directory).parent == temporary\n"
@@ -910,10 +915,15 @@ def test_native_allowlisted_aliases_survive_nested_private_tmp(native_repo: Path
         "import subprocess,sys,tempfile\n"
         f"sys.path.insert(0,{str(backend)!r})\n"
         "from cli.commands.done_task_acceptance import _sandbox_command\n"
+        "scratch=Path(os.environ['TMPDIR'])\n"
+        "assert scratch.parent == Path('/tmp')\n"
+        "host_only=scratch/'host-only-scratch'\n"
+        "host_only.write_text('must be hidden by private /tmp')\n"
+        f"probe={probe!r} + 'assert not Path(' + repr(str(host_only)) + ').exists()\\n'\n"
         "with tempfile.TemporaryDirectory(dir='/var/tmp') as directory:\n"
         "    repo=Path.cwd()\n"
         "    command=_sandbox_command(repo,repo,repo/'.git',repo/'.git',Path(directory),[],'fixture',(),'fixture',False)\n"
-        f"    result=subprocess.run([*command[:command.index('--')+1],sys.executable,'-P','-c',{probe!r}],capture_output=True,text=True)\n"
+        f"    result=subprocess.run([*command[:command.index('--')+1],sys.executable,'-P','-c',probe],capture_output=True,text=True)\n"
         "    assert result.returncode == 0, result.stderr\n"
     ))
     result = run_native(native_repo, _plan(native_repo), reuse=False)

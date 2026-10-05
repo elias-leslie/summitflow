@@ -48,8 +48,10 @@ def test_native_independent_copy_incremental_backup_and_verified_partial_restore
     unchanged = adapter.save_payload("synthetic-fixture", payload)
     assert unchanged["parent_snapshot_id"] == first["snapshot_id"]
     # Tree metadata can change after the first read even when all file content
-    # is reused. Never claim that a deduplicated snapshot has zero total writes.
-    assert unchanged["data_added_bytes"] < 1024
+    # is reused, including metadata for the fixture's variable-length path.
+    # Added raw bytes must remain below a fresh copy of the payload itself.
+    assert unchanged["data_added_bytes"] < len(original)
+    assert unchanged["snapshot_metrics"]["files_new"] == 0
     assert unchanged["snapshot_metrics"]["files_changed"] == 0
     assert unchanged["snapshot_metrics"]["files_unmodified"] == 1
     bundle.write_bytes(original + b"changed recovery payload")

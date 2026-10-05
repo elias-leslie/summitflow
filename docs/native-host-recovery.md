@@ -95,3 +95,28 @@ The owner's USB must be attached and identified before writing recovery media.
 Check its device identity, preserve any still-needed recovery material and verify
 boot/access against the actual physical host. The isolated UEFI clone boot test
 does not replace a physical USB or blank-disk recovery test.
+
+## Owner Btrfs qualification
+
+Ordinary hermetic acceptance excludes exactly two physical snapshot cases and
+records `owner-btrfs-snapshots` as not applicable. All saved-work unit tests remain
+applicable, and unexpected skips still block acceptance. These physical cases
+require a fresh owner-authorized Btrfs subvolume under
+`/run/sf-recovery-source/snapshot-tests-release-*`, verified source filesystem
+identity, and bounded deletion privilege for their isolated restore fixture.
+They must never target existing workspaces or retained recovery points.
+
+After preparing that fresh fixture, invoke both cases through ST (pytest node
+paths are relative to its backend work directory):
+
+```sh
+ST_SNAPSHOT_TEST_ROOT=/run/sf-recovery-source/snapshot-tests-release-<unique> st check pytest -- tests/cli/test_saved_work_snapshots.py::test_native_btrfs_shared_capture_readonly_recovery_and_isolated_restore tests/cli/test_saved_work_snapshots.py::test_native_nested_saved_source_is_refused_and_disposable_tracked_fixture_preserved -q
+```
+
+Retain the two-case result, actual source HEAD and implementation hashes, then
+remove only that operation's fixture subvolumes. The tests confine their smaller
+free-space floor to the isolated source; production keeps its existing reserve.
+The renewed `2566b89f5792` qualification passed both cases with unchanged
+implementation hashes and verified cleanup; its retained receipt is
+`~/.local/state/summitflow/recovery/backup-migration-20261005/snapshot-release-qualification/receipt.json`.
+That hardware evidence is recorded separately from ordinary hermetic acceptance.

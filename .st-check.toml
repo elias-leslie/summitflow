@@ -130,3 +130,12 @@ argv = ["backend/.venv/bin/python", "-V"]
 required = false
 applicable = false
 reason = "An operator-installed global Git hook is outside clean native fixture scope; only the tracked hook adapter regression runs."
+
+[[native.stages]]
+id = "owner-btrfs-snapshots"
+kind = "check"
+coverage = "full"
+argv = ["backend/.venv/bin/python", "-V"]
+required = false
+applicable = false
+reason = "ST_SNAPSHOT_TEST_ROOT requires an owner-assigned isolated Btrfs subvolume and bounded restore/delete privilege; local hermetic acceptance exactly deselects test_native_btrfs_shared_capture_readonly_recovery_and_isolated_restore and test_native_nested_saved_source_is_refused_and_disposable_tracked_fixture_preserved. Separate physical qualification and invocation are documented in docs/native-host-recovery.md."
