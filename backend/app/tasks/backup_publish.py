@@ -295,16 +295,15 @@ def publish_source_before_backup(source: dict[str, Any], *, retained: dict[str, 
         project = Path(source["path"]).expanduser().resolve(strict=True)
         if not project.is_dir():
             return outcome("skipped", "not_project_directory")
-        colocated = (project / ".jj").is_dir()
         top = _git(project, "rev-parse", "--show-toplevel")
         if top.returncode != 0:
             return outcome("skipped", "not_git_repository")
         if Path(top.stdout.strip()).resolve() != project:
             return outcome("skipped", "repository_root_mismatch")
-        # The selected source is independent of the mutable branch or JJ @.
+        # The selected source is independent of the mutable branch or HEAD.
         branches = [name for name in ("main", "master") if _git(project, "show-ref", "--verify", "--quiet", f"refs/heads/{name}").returncode == 0]
         if len(branches) != 1:
-            return outcome("pending", "jj_default_bookmark_required" if colocated else "manual_default_branch_required")
+            return outcome("pending", "manual_default_branch_required")
         branch = branches[0]
         revision = manual_source_commit
         head_result = _git(project, "rev-parse", "--verify", f"{revision}^{{commit}}")
@@ -313,21 +312,16 @@ def publish_source_before_backup(source: dict[str, Any], *, retained: dict[str, 
         head = head_result.stdout.strip()
         if head != manual_source_commit:
             return outcome("failed", "manual_source_unavailable")
-        result.update(head=head, branch=branch, source_status="captured", vcs="jj" if colocated else "git",
+        result.update(head=head, branch=branch, source_status="captured", vcs="git",
                       captured_source_commit=head,
                       source_tree=_value(project, "rev-parse", f"{head}^{{tree}}"))
         route = _value(project, "for-each-ref", "--format=%(upstream)%00%(upstream:remotename)%00%(upstream:remoteref)", f"refs/heads/{branch}").split("\0")
-        if colocated and (len(route) != 3 or not all(route)):
-            remotes = _value(project, "remote").splitlines()
-            if remotes != ["origin"]:
-                return outcome("pending", "jj_explicit_remote_required")
-            route = [f"refs/remotes/origin/{branch}", "origin", f"refs/heads/{branch}"]
         if len(route) != 3 or not all(route):
             return outcome("skipped", "no_existing_upstream")
         tracking_ref, remote, upstream_ref = route
         if not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._-]*", remote) or upstream_ref != f"refs/heads/{branch}" or tracking_ref != f"refs/remotes/{remote}/{branch}":
             return outcome("skipped", "incorrect_upstream_route")
-        if not colocated and (_value(project, "config", "--get-all", f"branch.{branch}.remote").splitlines() != [remote] or _value(project, "config", "--get-all", f"branch.{branch}.merge").splitlines() != [upstream_ref]):
+        if (_value(project, "config", "--get-all", f"branch.{branch}.remote").splitlines() != [remote] or _value(project, "config", "--get-all", f"branch.{branch}.merge").splitlines() != [upstream_ref]):
             return outcome("skipped", "ambiguous_upstream_route")
         fetch_urls = _value(project, "remote", "get-url", "--all", remote).splitlines()
         push_urls = _value(project, "remote", "get-url", "--push", "--all", remote).splitlines()
@@ -356,7 +350,7 @@ def publish_source_before_backup(source: dict[str, Any], *, retained: dict[str, 
         # adapter establishes its real default/empty state before any push.
         result["upstream_status"] = "observed_locally" if upstream.returncode == 0 else "unobserved_locally"
         result.update(head=head, branch=branch, remote=remote, upstream_ref=upstream_ref, ahead=ahead,
-                      behind=behind, source_status="captured", vcs="jj" if colocated else "git")
+                      behind=behind, source_status="captured", vcs="git")
         result["acceptance"] = _acceptance_for_head(project, head)
         if result["acceptance"].get("state") != "reused":
             result["source_status"] = "acceptance_required"

@@ -19,6 +19,7 @@ _DEFERRED = {"outside_publication_window", "outside_nightly_window", "repository
              "remote_transport_unavailable", "remote_authentication_unavailable", "remote_rate_limited",
              "remote_api_unavailable", "remote_ci_unavailable", "remote_publication_unavailable",
              "heavy_work_admission_unavailable"}
+# Retain legacy reason codes so historical observations keep their meaning.
 _SETUP_FAILURES = {"no_existing_upstream", "unsafe_remote_route", "incorrect_upstream_route",
                    "repository_archived", "remote_repository_archived", "ambiguous_upstream_route",
                    "ambiguous_remote_route", "mirror_remote", "jj_explicit_remote_required",

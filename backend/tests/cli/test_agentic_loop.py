@@ -318,7 +318,7 @@ class TestResolutionHints:
             patch("cli.commands.pulse.fetch_pulse_payload", return_value=payload),
             patch(
                 "cli.commands.pulse.preflight_reasons_for_payload",
-                return_value=["jj_conflicts"],
+                return_value=["task_lane_conflict"],
             ),
             patch("cli.commands.pulse.output_error") as mock_error,
             pytest.raises(typer.Exit),
@@ -327,7 +327,7 @@ class TestResolutionHints:
         msg = mock_error.call_args.args[0]
         assert "Pulse gate blocked" in msg
         assert "Resolution" in msg
-        assert "st vcs reconcile" in msg
+        assert "st pulse --gate" in msg
 
     def test_rejected_plan_blocks_with_resolution(self) -> None:
         """`st claim` on a plan_status=rejected task blocks with a hint."""

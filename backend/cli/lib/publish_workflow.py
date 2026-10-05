@@ -52,7 +52,7 @@ def publication_branch(task_id: str, sha: str) -> str:
 
 
 def publish_git(repo: Path, *, sha: str, task_id: str, message: str,
-                run_git: Callable[..., Any], push_revision: Callable[[str | None], Any] | None = None,
+                run_git: Callable[..., Any],
                 remote_name: str = "origin", resume: bool = False,
                 destination: str | None = None, reconcile_checkout: bool = True,
                 activity_allowed: Callable[[], bool] | None = None,
@@ -109,8 +109,6 @@ def publish_git(repo: Path, *, sha: str, task_id: str, message: str,
         raise PublishError(str(exc), unavailable=exc.unavailable, reason=exc.reason) from exc
     if plan and plan['requires_pr']:
         args = ['push', remote_name, f'{sha}:refs/heads/{head}']
-    elif push_revision:
-        args = []  # JJ callback supplies its explicit remote and bookmark.
     else:
         current = run_git(repo, ['branch', '--show-current']) if destination is None else None
         if destination is None and (current is None or current.returncode or not current.stdout.strip()):
@@ -132,7 +130,7 @@ def publish_git(repo: Path, *, sha: str, task_id: str, message: str,
         if activity_allowed is not None and not activity_allowed():
             raise PublishError('Publication ownership is unavailable', unavailable=True,
                                reason='publication_busy')
-        pushed = push_revision(head if plan and plan['requires_pr'] else None) if push_revision else run_git(repo, args)
+        pushed = run_git(repo, args)
         if pushed.returncode:
             raise PublishError(pushed.stderr.strip() or pushed.stdout.strip() or 'git push failed')
     result: dict[str, Any] = {'pushed': not resume and existing_pull is None, 'sha': sha}

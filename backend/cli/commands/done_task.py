@@ -153,11 +153,11 @@ def _commit_active_task_work(repo_root: str, task_id: str, message: str | None, 
     if result.get("status") == "SUCCESS":
         try:
             from app.storage.events import log_task_event
-            detail_parts = [f"change={result.get('change_id', '')}", f"commit={result.get('commit_id') or result.get('sha') or ''}", f"bookmark={result.get('bookmark', '')}", f"op={result.get('operation_id', '')}", f"pushed={str(result.get('pushed', False)).lower()}", f"publication_complete={str(result.get('publication_complete', False)).lower()}"]
+            detail_parts = [f"commit={result.get('sha') or ''}", f"pushed={str(result.get('pushed', False)).lower()}", f"publication_complete={str(result.get('publication_complete', False)).lower()}"]
             log_task_event(task_id, "st commit " + " ".join(part for part in detail_parts if not part.endswith("=")))
         except Exception:
             pass
-    output_success(f"Committed task work before completion: {result.get('commit_id') or result.get('sha')}")
+    output_success(f"Committed task work before completion: {result.get('sha')}")
 
 
 def _finish_local_completion(task_id: str, project_id: str | None, *, message: str | None,

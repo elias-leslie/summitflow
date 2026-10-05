@@ -42,7 +42,6 @@ _GIT_FETCH_ALL = ["fetch", "--all", "--prune"]
 _GIT_PULL_FF = ["pull", "--ff-only"]
 _GIT_PUSH = ["push"]
 _GIT_REV_LIST_LR_COUNT = ["rev-list", "--left-right", "--count"]
-_GIT_REMOTE_DEFAULT_BRANCH = ["symbolic-ref", "--short", "refs/remotes/origin/HEAD"]
 
 # Status and state values
 _STATUS_FAILED = "failed"
@@ -138,7 +137,19 @@ def _count_uncommitted(repo_path: Path) -> int:
 
 def _get_ahead_behind(repo_path: Path, branch: str) -> tuple[int, int]:
     """Return (ahead, behind) commit counts relative to origin/<branch>."""
-    args = [*_GIT_REV_LIST_LR_COUNT, f"{branch}...origin/{branch}"]
+    if branch == "HEAD":
+        # Compare the actual detached source, never substitute the local branch.
+        default = run_git(["symbolic-ref", "--short", "refs/remotes/origin/HEAD"], repo_path)
+        if default.returncode == 0 and default.stdout.strip():
+            baseline = default.stdout.strip()
+        else:
+            from .git_base import detect_base_branch
+
+            baseline = f"origin/{detect_base_branch(repo_path)}"
+        comparison = f"HEAD...{baseline}"
+    else:
+        comparison = f"{branch}...origin/{branch}"
+    args = [*_GIT_REV_LIST_LR_COUNT, comparison]
     rr = run_git(args, repo_path)
     if rr.returncode != 0:
         return 0, 0
@@ -146,120 +157,6 @@ def _get_ahead_behind(repo_path: Path, branch: str) -> tuple[int, int]:
     if len(parts) != 2:
         return 0, 0
     return int(parts[0]), int(parts[1])
-
-
-def _get_jj_status(repo_path: Path):
-    """Return jj status for colocated repos, falling back to Git on jj errors."""
-    try:
-        from cli.lib.jj import JJError, is_colocated, status_summary
-    except ImportError:
-        return None
-    if not is_colocated(repo_path):
-        return None
-    try:
-        return status_summary(repo_path)
-    except JJError:
-        return None
-
-
-def _git_remote_default_branch(repo_path: Path) -> str:
-    result = run_git(_GIT_REMOTE_DEFAULT_BRANCH, repo_path)
-    if result.returncode != 0:
-        return ""
-    branch = result.stdout.strip()
-    if branch.startswith("origin/"):
-        return branch.removeprefix("origin/")
-    return branch
-
-
-def _make_skipped_sync(repo_path: Path, branch: str) -> SyncResult:
-    from ..api.models.git_models import SyncResult
-
-    return SyncResult(
-        path=str(repo_path),
-        name=repo_path.name,
-        branch=branch,
-        status=_STATUS_SKIPPED,
-        reason=_REASON_UNCOMMITTED,
-    )
-
-
-def _resolve_pull_branch(repo_path: Path, branch: str) -> str:
-    if branch != "HEAD":
-        return branch
-    return _git_remote_default_branch(repo_path)
-
-
-def _can_rebase_empty_jj_working_copy(status_result, current, parent, target) -> bool:
-    return (
-        status_result.returncode == 0
-        and current is not None
-        and parent is not None
-        and target is not None
-        and "The working copy has no changes." in status_result.stdout
-        and current.empty
-        and not current.description.strip()
-        and not current.conflict
-        and target.commit_id not in {current.commit_id, parent.commit_id}
-    )
-
-
-def _maybe_rebase_jj_working_copy(repo_path: Path, branch: str, run_jj, current_revision_info, revision_info, jj_error) -> bool | SyncResult:
-    status_result = run_jj(repo_path, ["status"])
-    try:
-        current = current_revision_info(repo_path)
-        parent = revision_info(repo_path, "@-")
-        target = revision_info(repo_path, branch)
-    except jj_error:
-        current = parent = target = None
-    if not _can_rebase_empty_jj_working_copy(status_result, current, parent, target):
-        return False
-    rebase = run_jj(repo_path, ["rebase", "-r", "@", "-d", branch])
-    if rebase.returncode != 0:
-        return _make_failed_sync(repo_path, branch, (rebase.stderr or rebase.stdout).strip())
-    return True
-
-
-def _pull_jj_repository(repo_path: Path, repo_status: RepoStatus) -> SyncResult | None:
-    """Fetch a colocated jj repo and keep a clean empty workspace on its bookmark."""
-    from ..api.models.git_models import SyncResult
-
-    try:
-        from cli.lib.jj import JJError, current_revision_info, is_colocated, revision_info, run_jj
-    except ImportError:
-        return None
-    if not is_colocated(repo_path):
-        return None
-    if repo_status.uncommitted > 0:
-        return _make_skipped_sync(repo_path, repo_status.branch)
-
-    fetch = run_jj(repo_path, ["git", "fetch", "--remote", "origin"])
-    if fetch.returncode != 0:
-        return _make_failed_sync(repo_path, repo_status.branch, (fetch.stderr or fetch.stdout).strip())
-
-    branch = _resolve_pull_branch(repo_path, repo_status.branch)
-    rebased = False
-    if branch:
-        rebase_result = _maybe_rebase_jj_working_copy(
-            repo_path,
-            branch,
-            run_jj,
-            current_revision_info,
-            revision_info,
-            JJError,
-        )
-        if isinstance(rebase_result, SyncResult):
-            return rebase_result
-        rebased = rebase_result
-
-    detail = "\n".join(part for part in (fetch.stdout, fetch.stderr) if part)
-    status_name = _STATUS_UP_TO_DATE if not rebased and "Nothing changed" in detail else _STATUS_UPDATED
-    return SyncResult(
-        path=str(repo_path),
-        name=repo_path.name,
-        branch=branch or repo_status.branch,
-        status=status_name,
-    )
 
 
 def _classify_state(uncommitted: int, behind: int, ahead: int) -> str:
@@ -273,17 +170,6 @@ def _classify_state(uncommitted: int, behind: int, ahead: int) -> str:
     return _STATE_CLEAN
 
 
-def _repo_branch_and_uncommitted(repo_path: Path, jj_status) -> tuple[str | None, int]:
-    if jj_status is not None:
-        uncommitted = 0 if jj_status.state in {_STATE_CLEAN, "unpublished"} else 1
-        return jj_status.branch, uncommitted
-    branch = _get_current_branch(repo_path)
-    if branch is None:
-        return None, 0
-    return branch, _count_uncommitted(repo_path)
-
-
-
 def _active_checkpoints_for_project(
     resolved_project_id: str | None,
     active_checkpoints_by_project: dict[str, list] | None,
@@ -291,7 +177,6 @@ def _active_checkpoints_for_project(
     if active_checkpoints_by_project is None or not resolved_project_id:
         return None
     return active_checkpoints_by_project.get(resolved_project_id, [])
-
 
 
 def get_repo_status(
@@ -307,13 +192,11 @@ def get_repo_status(
     if not is_valid_git_repo(repo_path):
         return None
 
-    jj_status = _get_jj_status(repo_path)
-    branch, uncommitted = _repo_branch_and_uncommitted(repo_path, jj_status)
+    branch = _get_current_branch(repo_path)
+    uncommitted = _count_uncommitted(repo_path)
     if branch is None:
         return None
     ahead, behind = _get_ahead_behind(repo_path, branch)
-    if jj_status is not None:
-        ahead = max(ahead, jj_status.unpublished)
     state = _classify_state(uncommitted, behind, ahead)
     resolved_project_id = _resolve_project_id(repo_path, project_id)
     active_checkpoints = _active_checkpoints_for_project(
@@ -371,9 +254,6 @@ def pull_repository(repo_path: Path) -> SyncResult:
     repo_status = get_repo_status(repo_path)
     if not repo_status:
         return _make_failed_sync(repo_path)
-    jj_result = _pull_jj_repository(repo_path, repo_status)
-    if jj_result is not None:
-        return jj_result
     if repo_status.uncommitted > 0:
         return SyncResult(
             path=str(repo_path),
@@ -382,6 +262,8 @@ def pull_repository(repo_path: Path) -> SyncResult:
             status=_STATUS_SKIPPED,
             reason=_REASON_UNCOMMITTED,
         )
+    if repo_status.branch == "HEAD":
+        return _make_failed_sync(repo_path, "HEAD", "detached HEAD; select a Git branch before pulling")
     gr = run_git(_GIT_PULL_FF, repo_path)
     if gr.returncode != 0:
         return _make_failed_sync(repo_path, repo_status.branch, gr.stderr.strip())

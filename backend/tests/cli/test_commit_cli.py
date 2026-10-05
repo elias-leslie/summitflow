@@ -8,7 +8,7 @@ from unittest.mock import MagicMock, Mock, patch
 import pytest
 from typer.testing import CliRunner
 
-from cli.lib import jj, leases
+from cli.lib import commit_workflow, leases
 from cli.lib.commit_workflow import CommitError, commit_repo
 from cli.main import app
 
@@ -159,10 +159,7 @@ def test_st_commit_uses_canonical_workflow_and_logs_task(
     mock_commit_repo.return_value = {
         "repo": "repo",
         "status": "SUCCESS",
-        "change_id": "change",
-        "commit_id": "commit",
-        "bookmark": "task/task-1",
-        "operation_id": "op",
+        "sha": "commit",
         "pushed": True,
     }
 
@@ -175,12 +172,11 @@ def test_st_commit_uses_canonical_workflow_and_logs_task(
         task_id="task-1",
         push=False,
         skip_checks=False,
-        bookmark="",
         paths=(),
     )
     mock_log.assert_called_once_with(
         "task-1",
-        "st commit change=change commit=commit bookmark=task/task-1 op=op pushed=true",
+        "st commit commit=commit pushed=true",
     )
     assert "COMMIT[1]:status=SUCCESS pushed=true detail=commit" in result.stdout
 
@@ -226,8 +222,7 @@ def test_st_commit_forwards_selected_paths(
     mock_commit_repo.return_value = {
         "repo": "repo",
         "status": "SUCCESS",
-        "change_id": "change",
-        "commit_id": "commit",
+        "sha": "commit",
         "pushed": True,
     }
 
@@ -240,7 +235,6 @@ def test_st_commit_forwards_selected_paths(
         task_id="",
         push=False,
         skip_checks=False,
-        bookmark="",
         paths=("a.py", "b.py"),
     )
 
@@ -250,35 +244,6 @@ def test_st_commit_help_shows_repeated_paths_form() -> None:
 
     assert result.exit_code == 0
     assert "--paths a --paths b" in result.stdout
-
-
-@patch("cli.main.commit_repo")
-@patch("cli.main.current_repo")
-def test_st_commit_forwards_explicit_bookmark(
-    mock_current_repo: MagicMock,
-    mock_commit_repo: MagicMock,
-) -> None:
-    mock_current_repo.return_value = Path("/repo")
-    mock_commit_repo.return_value = {
-        "repo": "repo",
-        "status": "SUCCESS",
-        "change_id": "change",
-        "commit_id": "commit",
-        "pushed": True,
-    }
-
-    result = runner.invoke(app, ["commit", "-m", "test", "--bookmark", "main"])
-
-    assert result.exit_code == 0
-    mock_commit_repo.assert_called_once_with(
-        Path("/repo"),
-        message="test",
-        task_id="",
-        push=False,
-        skip_checks=False,
-        bookmark="main",
-        paths=(),
-    )
 
 
 def test_commit_repo_skips_gitignored_paths_in_add_step(tmp_path: Path) -> None:
@@ -336,15 +301,15 @@ def test_commit_repo_skips_gitignored_paths_in_add_step(tmp_path: Path) -> None:
     ("full", "mode"),
     [(False, "--quick"), (True, "--check")],
 )
-def test_jj_run_checks_scopes_changed_files_for_selected_paths(
+def test_git_run_checks_scopes_changed_files_for_selected_paths(
     tmp_path: Path, full: bool, mode: str
 ) -> None:
-    with patch("cli.lib.jj.subprocess.run") as run:
+    with patch("cli.lib.commit_workflow.subprocess.run") as run:
         run.return_value.returncode = 0
         run.return_value.stdout = "ok"
         run.return_value.stderr = ""
 
-        ok, detail = jj.run_checks(
+        ok, detail = commit_workflow.run_checks(
             tmp_path,
             paths=("frontend/a.tsx", "backend/b.py"),
             full=full,
@@ -584,3 +549,24 @@ def test_initial_git_commit_checks_new_files_and_preserves_other_staging(tmp_pat
     assert git("ls-tree", "--name-only", "HEAD").splitlines() == (["app.py"] if scoped else ["app.py", "other.txt"])
     if scoped:
         assert git("diff", "--cached", "--name-only").strip() == "other.txt"
+
+
+def test_checkpoint_uses_git_even_with_legacy_metadata(tmp_path: Path) -> None:
+    (tmp_path / ".jj").mkdir()
+    with (
+        patch("cli.lib.commit_workflow.commit_git_revision", return_value={"status": "SKIP"}) as commit,
+        patch("cli.lib.commit_workflow.repo_lock"),
+    ):
+        assert commit_workflow.commit_repo(tmp_path, message="checkpoint", skip_checks=True) == {"status": "SKIP"}
+    commit.assert_called_once_with(tmp_path, message="checkpoint", task_id="", push=False, skip_checks=True, paths=())
+
+
+def test_retired_vcs_command_and_bookmark_option_are_absent() -> None:
+    result = runner.invoke(app, ["--help"])
+    assert result.exit_code == 0
+    assert "Jujutsu" not in result.stdout
+    rejected = runner.invoke(app, ["jj", "status"])
+    assert rejected.exit_code == 2
+    assert "No such command" in rejected.output
+    help_result = runner.invoke(app, ["commit", "--help"])
+    assert "--bookmark" not in help_result.stdout

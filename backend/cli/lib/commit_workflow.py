@@ -12,8 +12,6 @@ from typing import Any
 
 from . import leases
 from .acceptance import AcceptanceError, repo_lock, workspace_fingerprint
-from .jj import JJError, commit_current_revision
-from .jj import run_checks as run_jj_checks
 from .task_claims import TaskClaimRenewalError, renew_owned_claim
 
 
@@ -56,7 +54,6 @@ def run_checks(
     paths: Sequence[str] = (),
     full: bool = False,
 ) -> tuple[bool, str]:
-    # Same canonical changed-file input used by the Jujutsu commit path.
     env = {**os.environ, "ST_CHECK_CHANGED_FILES": "\n".join(paths)} if paths else None
     result = subprocess.run(
         ["st", "check", "--check" if full else "--quick", "--changed-only"],
@@ -288,7 +285,7 @@ def _refresh_symbols_after_publish(repo: Path, result: dict[str, Any]) -> dict[s
     """
     if result.get("status") != "SUCCESS":
         return result
-    sha = str(result.get("commit_id") or result.get("sha") or "").strip()
+    sha = str(result.get("sha") or "").strip()
     if not sha:
         return result
     try:
@@ -316,7 +313,7 @@ def _record_task_commit(repo: Path, result: dict[str, Any], *, task_id: str) -> 
     """Associate a successful local checkpoint with its task immediately."""
     if not task_id or result.get("status") != "SUCCESS":
         return result
-    source = str(result.get("sha") or result.get("commit_id") or "").strip()
+    source = str(result.get("sha") or "").strip()
     if not source:
         raise CommitError("local task commit is missing its source identity")
     from app.storage.tasks import add_commit
@@ -342,7 +339,6 @@ def commit_repo(
     task_id: str = "",
     push: bool = False,
     skip_checks: bool = False,
-    bookmark: str = "",
     paths: Sequence[str] = (),
 ) -> dict[str, Any]:
     if push:
@@ -354,72 +350,14 @@ def commit_repo(
             raise CommitError(str(exc)) from exc
     try:
         with repo_lock(repo, purpose="commit"):
-            if (repo / ".jj").is_dir():
-                if not skip_checks:
-                    before_checks = workspace_fingerprint(repo)
-                    check_started = time.monotonic()
-                    ok, detail = run_jj_checks(repo, paths=paths)
-                    check_duration_ms = round((time.monotonic() - check_started) * 1000, 3)
-                    if workspace_fingerprint(repo) != before_checks:
-                        result = {
-                            "repo": repo.name,
-                            "path": str(repo),
-                            "status": "BLOCKED",
-                            "pushed": False,
-                            "reason": "source_changed_during_checks",
-                            "detail": "checkout inputs changed while checkpoint checks were running; retry the commit",
-                            "check_duration_ms": check_duration_ms,
-                            "check_count": 1,
-                        }
-                    elif not ok:
-                        result = {
-                            "repo": repo.name,
-                            "path": str(repo),
-                            "status": "BLOCKED",
-                            "pushed": False,
-                            "reason": "quality_gates_failed",
-                            "detail": detail,
-                            "check_duration_ms": check_duration_ms,
-                            "check_count": 1,
-                        }
-                    else:
-                        try:
-                            result = commit_current_revision(
-                                repo,
-                                message=message,
-                                task_id=task_id,
-                                push=False,
-                                skip_checks=True,
-                                bookmark=bookmark,
-                                paths=paths,
-                            )
-                        except JJError as exc:
-                            raise CommitError(str(exc)) from exc
-                        result.update(
-                            {"check_duration_ms": check_duration_ms, "check_count": 1}
-                        )
-                else:
-                    try:
-                        result = commit_current_revision(
-                            repo,
-                            message=message,
-                            task_id=task_id,
-                            push=False,
-                            skip_checks=skip_checks,
-                            bookmark=bookmark,
-                            paths=paths,
-                        )
-                    except JJError as exc:
-                        raise CommitError(str(exc)) from exc
-            else:
-                result = commit_git_revision(
-                    repo,
-                    message=message,
-                    task_id=task_id,
-                    push=False,
-                    skip_checks=skip_checks,
-                    paths=paths,
-                )
+            result = commit_git_revision(
+                repo,
+                message=message,
+                task_id=task_id,
+                push=False,
+                skip_checks=skip_checks,
+                paths=paths,
+            )
     except AcceptanceError as exc:
         raise CommitError(str(exc)) from exc
     result = _record_task_commit(repo, result, task_id=task_id)

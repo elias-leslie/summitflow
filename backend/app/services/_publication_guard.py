@@ -55,6 +55,7 @@ def evaluate_publication_command(command: str, cwd: str | Path | None = None) ->
                 index += 2 if token in {"-C", "-c", "--git-dir", "--work-tree", "--config-env", "--namespace", "--exec-path"} else 1
             if index < len(args) and args[index] in {"push", "send-pack"}:
                 return _blocked("direct_publication", "Use the canonical ST publication workflow.")
+        # Retired tools must still not bypass publication protection when installed.
         if executable == "jj" and "push" in args[1:]:
             return _blocked("direct_publication", "Use the canonical ST publication workflow.")
         if executable == "gh" and len(args) > 2:

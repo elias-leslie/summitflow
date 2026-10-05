@@ -62,97 +62,58 @@ def test_get_managed_repos_skips_shadowed_project_entries_from_fallback(mocker, 
     assert repos == [canonical_a_term, config_repo]
 
 
-def test_get_repo_status_uses_jj_bookmark_instead_of_detached_head(mocker, tmp_path: Path) -> None:
-    from cli.lib.jj import JJRepoStatus
-
+def test_detached_status_uses_actual_git_head(mocker, tmp_path: Path) -> None:
     (tmp_path / ".git").mkdir()
+    # Legacy metadata must neither invoke an external VCS nor override Git state.
     (tmp_path / ".jj").mkdir()
-    mocker.patch(
-        "app.utils._git_core._get_jj_status",
-        return_value=JJRepoStatus(
-            repo="repo",
-            path=str(tmp_path),
-            branch="main",
-            colocated=True,
-            state="undescribed",
-            described=False,
-            conflicted=False,
-            unpublished=1,
-            change_id="chg",
-            commit_id="commit",
-        ),
-    )
-    mocker.patch("app.utils._git_core._get_ahead_behind", return_value=(0, 0))
-    mocker.patch("app.utils._git_core._resolve_project_id", return_value="summitflow")
+    mocker.patch("app.utils._git_core._get_current_branch", return_value="HEAD")
+    mocker.patch("app.utils._git_core._count_uncommitted", return_value=0)
+    mocker.patch("app.utils._git_core._get_ahead_behind", return_value=(2, 0))
+    mocker.patch("app.utils._git_core._resolve_project_id", return_value="fixture")
     mocker.patch("app.utils._git_branches.get_all_branches", return_value=[])
-    mocker.patch(
-        "app.utils._git_branches.build_repo_workspace_summary",
-        return_value=RepoWorkspaceSummary(dirty_main_repo=True, needs_cleanup=True),
-    )
-
+    mocker.patch("app.utils._git_branches.build_repo_workspace_summary", return_value=RepoWorkspaceSummary())
     status = _git_core.get_repo_status(tmp_path)
-
     assert status is not None
-    assert status.branch == "main"
-    assert status.state == "dirty"
-    assert status.uncommitted == 1
-    assert status.ahead == 1
+    assert (status.branch, status.ahead, status.uncommitted, status.state) == ("HEAD", 2, 0, "ahead")
 
 
-def test_pull_jj_repository_rebases_clean_head_to_remote_default(mocker, tmp_path: Path) -> None:
-    from cli.lib.jj import JJRepoStatus
-
-    (tmp_path / ".git").mkdir()
-    (tmp_path / ".jj").mkdir()
-    mocker.patch(
-        "app.utils._git_core._get_jj_status",
-        return_value=JJRepoStatus(
-            repo="repo",
-            path=str(tmp_path),
-            branch="HEAD",
-            colocated=True,
-            state="clean",
-            described=False,
-            conflicted=False,
-            unpublished=0,
-            change_id="chg",
-            commit_id="current",
-        ),
-    )
-    mocker.patch("app.utils._git_core._get_ahead_behind", return_value=(0, 0))
-    mocker.patch("app.utils._git_core._resolve_project_id", return_value="summitflow")
-    mocker.patch("app.utils._git_branches.get_all_branches", return_value=[])
-    mocker.patch(
-        "app.utils._git_branches.build_repo_workspace_summary",
-        return_value=RepoWorkspaceSummary(),
-    )
-    mocker.patch(
-        "app.utils._git_core.run_git",
-        return_value=subprocess.CompletedProcess([], 0, "origin/main\n", ""),
-    )
-
-    jj_calls: list[list[str]] = []
-
-    def fake_run_jj(_repo: Path, args: list[str], **_kwargs) -> subprocess.CompletedProcess[str]:
-        jj_calls.append(args)
-        if args[:2] == ["git", "fetch"]:
-            return subprocess.CompletedProcess(args, 0, "", "Nothing changed.")
-        if args == ["status"]:
-            return subprocess.CompletedProcess(args, 0, "The working copy has no changes.\n", "")
-        if args[:3] == ["log", "--no-graph", "-r"]:
-            revision = args[3]
-            commit = {"@": "current", "@-": "oldmain", "main": "newmain"}[revision]
-            return subprocess.CompletedProcess(args, 0, f"chg\t{commit}\tempty\tclean\t\n", "")
-        if args == ["rebase", "-r", "@", "-d", "main"]:
-            return subprocess.CompletedProcess(args, 0, "Rebased 1 commits\n", "")
-        msg = f"unexpected jj args: {args}"
-        return subprocess.CompletedProcess(args, 1, "", msg)
-
-    mocker.patch("cli.lib.jj.run_jj", side_effect=fake_run_jj)
-    mocker.patch("cli.lib.jj_status.run_jj", side_effect=fake_run_jj)
-
+def test_detached_pull_refuses_before_transport(mocker, tmp_path: Path) -> None:
+    from app.api.models.git_models import RepoStatus
+    mocker.patch("app.utils._git_core.get_repo_status", return_value=RepoStatus(
+        path=str(tmp_path), name="fixture", branch="HEAD", ahead=2, behind=0,
+        uncommitted=0, state="ahead"))
+    run = mocker.patch("app.utils._git_core.run_git")
     result = _git_core.pull_repository(tmp_path)
+    assert result.status == "failed"
+    assert result.error is not None
+    assert "detached HEAD" in result.error
+    run.assert_not_called()
 
-    assert result.status == "updated"
-    assert result.branch == "main"
-    assert ["rebase", "-r", "@", "-d", "main"] in jj_calls
+
+def test_detached_ahead_count_uses_remote_default_and_actual_head(mocker, tmp_path: Path) -> None:
+    run = mocker.patch("app.utils._git_core.run_git", side_effect=[
+        subprocess.CompletedProcess([], 0, "origin/main\n", ""),
+        subprocess.CompletedProcess([], 0, "2\t0\n", ""),
+    ])
+    assert _git_core._get_ahead_behind(tmp_path, "HEAD") == (2, 0)
+    assert run.call_args.args[0] == ["rev-list", "--left-right", "--count", "HEAD...origin/main"]
+
+
+def test_clean_git_pull_fast_forwards(mocker, tmp_path: Path) -> None:
+    from app.api.models.git_models import RepoStatus
+    mocker.patch("app.utils._git_core.get_repo_status", return_value=RepoStatus(
+        path=str(tmp_path), name="fixture", branch="main", ahead=0, behind=1,
+        uncommitted=0, state="behind"))
+    run = mocker.patch("app.utils._git_core.run_git", return_value=subprocess.CompletedProcess([], 0, "updated", ""))
+    assert _git_core.pull_repository(tmp_path).status == "updated"
+    run.assert_called_once_with(["pull", "--ff-only"], tmp_path)
+
+
+def test_detached_ahead_count_uses_established_base_when_origin_head_missing(mocker, tmp_path: Path) -> None:
+    mocker.patch("app.utils.git_base.detect_base_branch", return_value="main")
+    run = mocker.patch("app.utils._git_core.run_git", side_effect=[
+        subprocess.CompletedProcess([], 1, "", ""),
+        subprocess.CompletedProcess([], 0, "2\t0\n", ""),
+    ])
+    assert _git_core._get_ahead_behind(tmp_path, "HEAD") == (2, 0)
+    assert run.call_args.args[0] == ["rev-list", "--left-right", "--count", "HEAD...origin/main"]

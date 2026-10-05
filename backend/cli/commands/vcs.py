@@ -11,10 +11,9 @@ import typer
 
 from app.storage.connection import get_cursor
 from app.utils._git_branches import list_safe_task_refs
-from app.utils._git_core import pull_repository
+from app.utils._git_core import fetch_repository, pull_repository
 
 from ..details import display_path, write_details
-from ..lib.jj import JJError, is_colocated, run_jj, status_summary
 from ..lib.usage import usage
 from ..lib.workspace_paths import get_projects_base_dir
 from ..output import output_json
@@ -136,22 +135,6 @@ def _target_repos(all_projects: bool) -> list[Path]:
     return repos[:1] if repos else []
 
 
-def _fetch_jj_repos(repos: list[Path]) -> list[dict[str, str]]:
-    results: list[dict[str, str]] = []
-    for repo in repos:
-        if not is_colocated(repo):
-            continue
-        result = run_jj(repo, ["git", "fetch", "--remote", "origin"])
-        results.append(
-            {
-                "repo": repo.name,
-                "status": "ok" if result.returncode == 0 else "failed",
-                "detail": (result.stderr or result.stdout).strip(),
-            }
-        )
-    return results
-
-
 def _discover_unmanaged_repos(repos: list[Path]) -> list[Path]:
     projects_dir = get_projects_base_dir()
     if not projects_dir.is_dir():
@@ -191,30 +174,6 @@ def _status_rows(repos: list[Path]) -> list[dict[str, Any]]:
     return [status for repo in repos if (status := _get_repo_status(repo))]
 
 
-def _jj_rows(repos: list[Path]) -> list[dict[str, Any]]:
-    rows: list[dict[str, Any]] = []
-    for repo in repos:
-        if not repo.exists():
-            continue
-        try:
-            rows.append(status_summary(repo).__dict__)
-        except JJError as exc:
-            rows.append(
-                {
-                    "repo": repo.name,
-                    "path": str(repo),
-                    "branch": "-",
-                    "colocated": False,
-                    "state": "failed",
-                    "described": False,
-                    "conflicted": False,
-                    "unpublished": 0,
-                    "error": str(exc),
-                }
-            )
-    return rows
-
-
 def _cleanup_payload(all_projects: bool) -> dict[str, Any]:
     return build_cleanup_status_payload(all_projects)
 
@@ -241,7 +200,6 @@ def _safe_task_ref_rows(repos: list[Path]) -> list[dict[str, Any]]:
 
 def _issues(
     git_rows: list[dict[str, Any]],
-    jj_rows: list[dict[str, Any]],
     cleanup_payload: dict[str, Any],
     unmanaged: list[Path],
     task_refs: list[dict[str, Any]],
@@ -250,18 +208,11 @@ def _issues(
     for row in git_rows:
         repo = str(row.get("name") or "?")
         if int(row.get("uncommitted") or 0):
-            issues.append(VcsIssue(repo, "dirty", f"uncommitted:{row['uncommitted']}", f"st -P {repo} jj diff"))
+            issues.append(VcsIssue(repo, "dirty", f"uncommitted:{row['uncommitted']}", "git diff"))
         # Unpublished local history is normal. Keep counts in the summary, not
         # blockers that pressure agents into publishing unrelated work.
         if int(row.get("behind") or 0):
             issues.append(VcsIssue(repo, "behind", f"behind:{row['behind']}", "st vcs reconcile"))
-    for row in jj_rows:
-        repo = str(row.get("repo") or "?")
-        if row.get("conflicted"):
-            issues.append(VcsIssue(repo, "conflict", "jj_conflict:true", f"st -P {repo} jj conflicts"))
-        state = str(row.get("state") or "")
-        if state in {"dirty", "undescribed", "described", "failed"}:
-            issues.append(VcsIssue(repo, "jj_state", f"state:{state}", f"st -P {repo} jj status"))
     for repo in cleanup_payload["repositories"]:
         if not repo["needs_cleanup"] and not repo["active_checkpoints"]:
             continue
@@ -295,7 +246,6 @@ def _issues(
 def _summary(
     repos: list[Path],
     git_rows: list[dict[str, Any]],
-    jj_rows: list[dict[str, Any]],
     cleanup_payload: dict[str, Any],
     unmanaged: list[Path],
     task_refs: list[dict[str, Any]],
@@ -306,8 +256,6 @@ def _summary(
         "dirty": sum(1 for row in git_rows if int(row.get("uncommitted") or 0)),
         "ahead": sum(int(row.get("ahead") or 0) for row in git_rows),
         "behind": sum(int(row.get("behind") or 0) for row in git_rows),
-        "unpublished": sum(int(row.get("unpublished") or 0) for row in jj_rows),
-        "conflicts": sum(1 for row in jj_rows if row.get("conflicted")),
         "cleanup": int(cleanup_summary["repos_needing_cleanup"]),
         "unmanaged": len(unmanaged),
         "task_refs": len(task_refs),
@@ -319,7 +267,6 @@ def _details_text(
     summary: dict[str, int],
     sync: list[dict[str, Any]],
     git_rows: list[dict[str, Any]],
-    jj_rows: list[dict[str, Any]],
     cleanup_payload: dict[str, Any],
     unmanaged: list[Path],
     task_refs: list[dict[str, Any]],
@@ -329,7 +276,6 @@ def _details_text(
         "summary": summary,
         "sync": sync,
         "git": git_rows,
-        "jj": jj_rows,
         "cleanup": cleanup_payload,
         "unmanaged": [str(repo) for repo in unmanaged],
         "task_refs": task_refs,
@@ -342,8 +288,8 @@ def _print_compact(label: str, summary: dict[str, int], issues: list[VcsIssue], 
     status = "OK" if not issues else "ISSUES"
     print(
         f"{label}:{status} repos={summary['repos']} dirty={summary['dirty']} "
-        f"ahead={summary['ahead']} behind={summary['behind']} unpublished={summary['unpublished']} "
-        f"conflicts={summary['conflicts']} cleanup={summary['cleanup']} unmanaged={summary['unmanaged']} "
+        f"ahead={summary['ahead']} behind={summary['behind']} "
+        f"cleanup={summary['cleanup']} unmanaged={summary['unmanaged']} "
         f"task_refs={summary['task_refs']} blockers={len(issues)} details:{display_path(Path.cwd(), details)}"
     )
     for issue in issues[:8]:
@@ -354,14 +300,13 @@ def _print_compact(label: str, summary: dict[str, int], issues: list[VcsIssue], 
 
 def _run_doctor(*, all_projects: bool, fetch: bool) -> tuple[dict[str, Any], list[VcsIssue], Path]:
     repos = _target_repos(all_projects)
-    sync = _fetch_jj_repos(repos) if fetch else []
+    sync = [fetch_repository(repo).model_dump(exclude_none=True) for repo in repos] if fetch else []
     git_rows = _status_rows(repos)
-    jj_rows = _jj_rows(repos)
     cleanup = _cleanup_payload(all_projects)
     unmanaged = _discover_unmanaged_repos(repos) if all_projects else []
     task_refs = _safe_task_ref_rows(repos)
-    summary = _summary(repos, git_rows, jj_rows, cleanup, unmanaged, task_refs)
-    issues = _issues(git_rows, jj_rows, cleanup, unmanaged, task_refs)
+    summary = _summary(repos, git_rows, cleanup, unmanaged, task_refs)
+    issues = _issues(git_rows, cleanup, unmanaged, task_refs)
     details = write_details(
         Path.cwd(),
         "vcs-doctor",
@@ -369,7 +314,6 @@ def _run_doctor(*, all_projects: bool, fetch: bool) -> tuple[dict[str, Any], lis
             summary=summary,
             sync=sync,
             git_rows=git_rows,
-            jj_rows=jj_rows,
             cleanup_payload=cleanup,
             unmanaged=unmanaged,
             task_refs=task_refs,
@@ -389,14 +333,14 @@ def doctor(
     ] = True,
     fetch: Annotated[
         bool,
-        typer.Option("--fetch/--no-fetch", help="Fetch jj remote bookmark state before reporting."),
+        typer.Option("--fetch/--no-fetch", help="Fetch Git remotes before reporting."),
     ] = False,
     fail_on_issues: Annotated[
         bool,
         typer.Option("--fail-on-issues/--no-fail", help="Exit 2 when VCS debt remains."),
     ] = True,
 ) -> None:
-    """Report Git, jj, cleanup, and unmanaged-repo debt in one compact check."""
+    """Report Git, cleanup, and unmanaged-repo debt in one compact check."""
     result, issues, details = _run_doctor(all_projects=all_projects, fetch=fetch)
     if ctx.obj.is_compact:
         _print_compact("VCS", result["summary"], issues, details)

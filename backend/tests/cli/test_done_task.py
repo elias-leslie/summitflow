@@ -97,7 +97,7 @@ def test_reconstruct_snapshot_info_defaults_missing_base_branch_to_main() -> Non
     assert mock_save.call_args.args[0].base_branch == "main"
 
 
-def test_resolve_task_branch_prefers_st_commit_bookmark() -> None:
+def test_resolve_task_branch_preserves_legacy_task_ref() -> None:
     with (
         patch("cli.lib.checkpoint_branches._get_repo_cwd", return_value="/repo"),
         patch(

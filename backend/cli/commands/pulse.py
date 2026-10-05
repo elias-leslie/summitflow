@@ -10,7 +10,6 @@ from .._observability import refresh_agent_observability
 from .._output_state import is_compact
 from ..client import APIError, STClient
 from ..config import get_config_optional
-from ..lib.jj import JJRepoStatus
 from ..lib.usage import usage
 from ..output import handle_api_error, output_error, output_json
 from .pulse_formatters import (
@@ -53,31 +52,16 @@ def _resolve_project_ids(
     ]
 
 
-def _jj_status_for_project(project_id: Any) -> JJRepoStatus | None:
-    try:
-        from ..lib.jj import status_summary
-        from .cleanup import _iter_target_repos
-
-        repos = _iter_target_repos(False, str(project_id))
-        repo = next((path for path in repos if path.name == str(project_id)), None)
-        if repo is None or not (repo / ".jj").is_dir():
-            return None
-        return status_summary(repo)
-    except Exception:
-        return None
-
-
 def preflight_reasons_for_payload(payload: dict[str, Any], *, allow_task_id: str | None = None) -> list[str]:
     filtered = _payload_for_allowed_task(payload, allow_task_id)
     summary = filtered.get("summary", {})
     cleanup = filtered.get("cleanup", {})
-    project_id = filtered.get("project_id", "?")
-    return _preflight_reasons(summary, cleanup, _jj_status_for_project(project_id), filtered)
+    return _preflight_reasons(summary, cleanup, filtered)
 
 
 def _print_compact(payloads: list[dict[str, Any]], *, details: bool = False) -> None:
     for payload in payloads:
-        print_compact_payload(payload, details=details, jj_status_for_project=_jj_status_for_project)
+        print_compact_payload(payload, details=details)
 
 
 def _payload_blocked(payload: dict[str, Any]) -> bool:

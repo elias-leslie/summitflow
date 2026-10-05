@@ -1,15 +1,11 @@
 from __future__ import annotations
 
-import subprocess
 from pathlib import Path
 from unittest.mock import patch
 
 import pytest
 
-from app.services.git.outgoing import OutgoingVerificationError
 from cli.lib import publication_hooks as hooks
-from cli.lib.jj_common import JJError
-from cli.lib.jj_publish import _verify_jj_outgoing
 
 
 def _definitions():
@@ -61,35 +57,3 @@ def test_startup_uses_native_context_and_warns_pending(event, tmp_path: Path) ->
     assert "review pending" in context["additionalContext"]
     assert "Nightly" not in context["additionalContext"]
     run.assert_not_called()
-
-
-def test_jj_verifies_live_exact_objects_before_transport(tmp_path: Path) -> None:
-    sha, old = "a" * 40, "b" * 40
-    def git(repo, args):
-        if args[0] == "remote":
-            stdout = "https://example.invalid/a/b\n"
-        elif args[0] == "ls-remote":
-            stdout = old + "\trefs/heads/main\n"
-        elif args[0] == "rev-parse":
-            stdout = sha + "\n"
-        else:
-            stdout = ""
-        return subprocess.CompletedProcess([], 0, stdout, "")
-    with patch("cli.lib.jj_publish.run_git", side_effect=git), patch("cli.lib.jj_publish.verify_outgoing") as verify:
-        _verify_jj_outgoing(tmp_path, sha, "main", "origin")
-    update = verify.call_args.args[2][0]
-    assert (update.local_oid, update.remote_oid, update.remote_ref) == (sha, old, "refs/heads/main")
-
-
-def test_jj_verifier_failure_refuses_publish(tmp_path: Path) -> None:
-    sha = "a" * 40
-    results = [subprocess.CompletedProcess([], 0, output, "") for output in (
-        "https://example.invalid/a/b\n", "https://example.invalid/a/b\n", "", sha + "\n",
-    )]
-    with (
-        patch("cli.lib.jj_publish.run_git", side_effect=results),
-        patch("cli.lib.jj_publish.live_destination_bases", return_value=()),
-        patch("cli.lib.jj_publish.verify_outgoing", side_effect=OutgoingVerificationError("scan failed")),
-        pytest.raises(JJError, match="scan failed"),
-    ):
-        _verify_jj_outgoing(tmp_path, sha, "main", "origin")

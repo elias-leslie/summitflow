@@ -47,7 +47,7 @@ def test_outgoing_admission_failure_is_typed_before_history_work(monkeypatch, tm
     "gh api -X DELETE repos/a/b/branches/main/protection",
     "gh api repos/a/b/git/refs -f ref=main", "gh api graphql -f query='mutation { x }'",
     "git -c core.hooksPath=/tmp push", "git config --unset core.hooksPath",
-    "GIT_ALLOW_SECRET=1 st jj push", "codex --dangerously-bypass-hook-trust",
+    "GIT_ALLOW_SECRET=1 st vcs publish", "codex --dangerously-bypass-hook-trust",
     "codex --disable hooks", "codex -c features.hooks=false",
 ])
 def test_publication_denied(command: str) -> None:
@@ -63,7 +63,7 @@ def test_shared_runtime_intercepts_github_publication(tmp_path: Path) -> None:
 @pytest.mark.parametrize("command", [
     "git status", "git diff", "git log", "git fetch", "jj log", "gh pr view 4",
     "gh release list", "gh api repos/a/b/releases", "st commit -m 'local'",
-    "st check pytest -- tests", "st jj push", "bash -lc 'st commit -m local'",
+    "st check pytest -- tests", "st vcs publish --source fixture --sha aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa --now", "bash -lc 'st commit -m local'",
     "rg core.hooksPath scripts", "git config --get core.hooksPath",
 ])
 def test_publication_allows_local_and_reads(command: str) -> None:

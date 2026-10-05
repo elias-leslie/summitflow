@@ -300,15 +300,14 @@ def test_manual_daytime_source_still_requires_full_acceptance(source, monkeypatc
     publisher.assert_not_called()
 
 
-def test_manual_jj_source_never_uses_receipt_selected_or_mutable_head(source, monkeypatch):
+def test_manual_detached_source_never_uses_receipt_selected_or_mutable_head(source, monkeypatch):
     project = Path(source["path"])
     accepted = _git(project, "rev-parse", "main")
-    (project / ".jj").mkdir()
     _git(project, "checkout", "--detach", "HEAD~1")
     publisher = Mock(return_value=delivery("pending"))
     monkeypatch.setattr(publish, "_publish_isolated", publisher)
     result = publish.publish_source_before_backup(source, manual_source_commit=accepted)
-    assert result["head"] == accepted and result["vcs"] == "jj"
+    assert result["head"] == accepted and result["vcs"] == "git"
     assert publisher.call_args.args[1] == accepted
     assert _git(project, "rev-parse", "HEAD") != accepted
 

@@ -75,12 +75,10 @@ _GIT_GLOBAL_FLAGS = {
     "-p",
 }
 _GIT_MANAGED_REDIRECTS = {
-    "status": ("git_status_redirect", "BLOCKED:git status:Use 'st jj status' or 'st vcs doctor'."),
-    "diff": ("git_diff_redirect", "BLOCKED:git diff:Use 'st jj diff'."),
-    "log": ("git_log_redirect", "BLOCKED:git log:Use 'st jj log'."),
-    "fetch": ("git_fetch_redirect", "BLOCKED:git fetch:Use 'st vcs reconcile' or 'st jj sync'."),
+    "status": ("git_status_redirect", "BLOCKED:git status:Use 'st git status' or 'st vcs doctor'."),
+    "fetch": ("git_fetch_redirect", "BLOCKED:git fetch:Use 'st vcs reconcile'."),
     "pull": ("git_pull_redirect", "BLOCKED:git pull:Use 'st vcs reconcile'."),
-    "push": ("git_push_redirect", "BLOCKED:git push:Use 'st commit --push' or 'st jj push'."),
+    "push": ("git_push_redirect", "BLOCKED:git push:Use 'st vcs publish --source ID --sha FULL_OID --now'."),
 }
 _ST_GLOBAL_OPTIONS_WITH_VALUE = {
     "-P",
@@ -469,7 +467,7 @@ def _git_decision(segment: Sequence[str], cwd: Path) -> CommandGuardDecision | N
     return None
 
 
-def _jj_decision(segment: Sequence[str], cwd: Path) -> CommandGuardDecision | None:
+def _retired_vcs_decision(segment: Sequence[str], cwd: Path) -> CommandGuardDecision | None:
     unwrapped = unwrap_segment(segment)
     if not unwrapped or unwrapped[0] != "jj":
         return None
@@ -478,8 +476,8 @@ def _jj_decision(segment: Sequence[str], cwd: Path) -> CommandGuardDecision | No
         return None
     return CommandGuardDecision(
         blocked=True,
-        code="jj_redirect",
-        message="BLOCKED:jj:Use 'st jj ...' so no-pager, check, and publish policy applies.",
+        code="retired_vcs",
+        message="BLOCKED:jj:Retired workflow; use Git inspection, st commit for local checkpoints, and st vcs publish for authorized publication.",
         source="jj",
         command=normalize_segment(segment),
     )
@@ -504,7 +502,7 @@ def evaluate_shell_command(command: str, cwd: str | Path | None = None) -> Comma
         decision = _git_decision(segment, working_dir)
         if decision:
             return decision
-        decision = _jj_decision(segment, working_dir)
+        decision = _retired_vcs_decision(segment, working_dir)
         if decision:
             return decision
         decision = evaluate_publication_command(normalize_segment(segment), working_dir)

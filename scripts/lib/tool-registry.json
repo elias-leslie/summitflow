@@ -731,16 +731,15 @@
     },
     {
       "id": "vcs",
-      "canonical": "st done / st commit / st jj / st git",
+      "canonical": "st done / st commit / st git / st vcs",
       "replaces": [
         "commit.sh"
       ],
-      "summary": "Version-control workflow: st done for task closeout; st commit and st jj for blockers/checkpoints; st git only for inspection and residue repair.",
+      "summary": "Version-control workflow: st done for task closeout; st commit for local Git checkpoints; st git for inspection and residue repair; st vcs for hygiene and explicit source-bound publication.",
       "safety": "mutating",
       "commands": [
         "done",
         "commit",
-        "jj",
         "git status",
         "git sync",
         "git resolve-conflict"
@@ -748,7 +747,6 @@
       "examples": [
         "st done task-abc123 -m \"complete\"",
         "st commit --message \"checkpoint\"",
-        "st jj status",
         "st git status"
       ],
       "verify": [
