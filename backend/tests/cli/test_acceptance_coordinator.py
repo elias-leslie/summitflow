@@ -8,7 +8,7 @@ from pathlib import Path
 import pytest
 
 
-def test_typed_result_returns_compact_validated_reference(tmp_path: Path) -> None:
+def test_typed_result_returns_compact_validated_reference(tmp_path: Path, local_gate_tools: None) -> None:
     from cli.lib.acceptance_coordinator import accept_source, validate_source_receipt
 
     for args in (("init", "-q"), ("config", "user.name", "Fixture"),
@@ -27,7 +27,7 @@ def test_typed_result_returns_compact_validated_reference(tmp_path: Path) -> Non
     assert validate_source_receipt(tmp_path, Path(reference["acceptance_artifact"])).reference == result.reference
 
 
-def test_task_receipt_runs_scoped_gate_once_without_claiming_full(tmp_path: Path) -> None:
+def test_task_receipt_runs_scoped_gate_once_without_claiming_full(tmp_path: Path, local_gate_tools: None) -> None:
     from cli.lib.acceptance_coordinator import accept_source, validate_source_receipt
 
     for args in (("init", "-q"), ("config", "user.name", "Fixture"),
@@ -57,7 +57,7 @@ def test_task_receipt_runs_scoped_gate_once_without_claiming_full(tmp_path: Path
         accept_source(tmp_path, sha="HEAD", materialization="actual", coverage="task", scope=("missing.py",), runner=run)
 
 
-def test_task_receipt_cannot_omit_required_scoped_evidence(tmp_path: Path) -> None:
+def test_task_receipt_cannot_omit_required_scoped_evidence(tmp_path: Path, local_gate_tools: None) -> None:
     import json
 
     from cli.lib import acceptance
@@ -80,7 +80,7 @@ def test_task_receipt_cannot_omit_required_scoped_evidence(tmp_path: Path) -> No
 
 @pytest.mark.parametrize("forgery", [None, "scope", "coverage", "required_stages", "outside", "missing", "incomplete", "root-symlink", "raw-outside", "external-evidence",
     "source_commit", "source_tree", "input_fingerprint", "acceptance_plan_fingerprint", "scope_digest", "task_id", "kind", "declared_stages"])
-def test_compact_reference_reopens_only_matching_immutable_proof(tmp_path: Path, forgery) -> None:
+def test_compact_reference_reopens_only_matching_immutable_proof(tmp_path: Path, forgery, local_gate_tools: None) -> None:
     from cli.lib.acceptance import AcceptanceError
     from cli.lib.acceptance_coordinator import accept_source, validate_source_receipt
 
@@ -150,7 +150,7 @@ def test_compact_reference_reopens_only_matching_immutable_proof(tmp_path: Path,
 
 
 @pytest.mark.parametrize("coverage", ["task", "full"])
-def test_reuse_keeps_proof_association_separate_from_current_task(tmp_path: Path, coverage) -> None:
+def test_reuse_keeps_proof_association_separate_from_current_task(tmp_path: Path, coverage, local_gate_tools: None) -> None:
     from cli.lib.acceptance_coordinator import accept_source, validate_source_receipt
 
     for args in (("init", "-q"), ("config", "user.name", "Fixture"),

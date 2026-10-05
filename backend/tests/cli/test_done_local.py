@@ -12,7 +12,7 @@ def test_commit_during_closeout_is_local():
     assert commit.call_args.kwargs["push"] is False
 
 
-def test_closeout_persists_local_acceptance_without_publisher(tmp_path):
+def test_closeout_persists_local_acceptance_without_publisher(tmp_path, local_gate_tools):
     from cli.lib.task_completion_adapter import accept_owned_task_work
 
     receipt = accepted_source(tmp_path)
@@ -27,7 +27,7 @@ def test_closeout_persists_local_acceptance_without_publisher(tmp_path):
     store.assert_called_once_with("task-local", "summitflow", receipt, expected_worker="fixture", expected_claimed_at="claim", expected_acceptance={})
 
 
-def test_retained_acceptance_reused_with_foreign_work_present(tmp_path, monkeypatch):
+def test_retained_acceptance_reused_with_foreign_work_present(tmp_path, monkeypatch, local_gate_tools):
     from cli.lib.task_completion_adapter import accept_owned_task_work
 
     receipt = accepted_source(tmp_path)
