@@ -130,7 +130,7 @@ def test_focused_invocation_never_claims_full_coverage(native_repo: Path) -> Non
     assert result["coverage"] == "focused"
 
 
-def test_task_acceptance_requires_declared_native_evidence_without_claiming_full(native_repo: Path) -> None:
+def test_task_acceptance_requires_declared_native_evidence_without_claiming_full(native_repo: Path, local_gate_tools) -> None:
     from cli.lib.acceptance_coordinator import accept_source, validate_source_receipt
 
     _committed(native_repo)
@@ -155,7 +155,7 @@ def test_task_acceptance_requires_declared_native_evidence_without_claiming_full
                        scope=(".tools/suite.py",), required_stages=("undeclared",), runner=runner)
 
 
-def test_task_required_optional_stage_cannot_omit_artifacts(native_repo: Path) -> None:
+def test_task_required_optional_stage_cannot_omit_artifacts(native_repo: Path, local_gate_tools) -> None:
     from cli.lib.acceptance_coordinator import accept_source, validate_source_receipt
 
     config = native_repo / ".st-check.toml"
@@ -503,7 +503,7 @@ def test_historical_receipt_cannot_be_promoted_to_native_acceptance(native_repo:
         acceptance.validate_acceptance_receipt(native_repo, payload)
 
 
-def test_legacy_skipped_required_tool_blocks_acceptance(native_repo: Path) -> None:
+def test_legacy_skipped_required_tool_blocks_acceptance(native_repo: Path, local_gate_tools) -> None:
     (native_repo / ".st-check.toml").unlink()
     _committed(native_repo)
     with pytest.raises(acceptance.AcceptanceError, match="acceptance_checks_failed"):

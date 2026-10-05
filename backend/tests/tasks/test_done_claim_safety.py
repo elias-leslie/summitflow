@@ -21,7 +21,7 @@ def stored_task(task_id: str) -> dict:
 
 
 @pytest.fixture
-def completion_task(test_project_id, cleanup_task, monkeypatch, tmp_path):
+def completion_task(test_project_id, cleanup_task, monkeypatch, tmp_path, local_gate_tools):
     task = tasks.create_task(test_project_id, "Accept owned source")
     cleanup_task(task["id"])
     tasks.claim_task(task["id"], "worker-A")

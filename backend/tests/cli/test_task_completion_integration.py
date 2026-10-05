@@ -18,7 +18,7 @@ from cli.lib.acceptance_coordinator import accept_source, validate_source_receip
 
 
 @pytest.fixture
-def completion_source(tmp_path: Path, monkeypatch):
+def completion_source(tmp_path: Path, monkeypatch, local_gate_tools):
     for args in (("init", "-q", "--initial-branch=main"), ("config", "user.name", "Fixture"),
                  ("config", "user.email", "fixture@example.invalid"), ("config", "core.hooksPath", "/dev/null")):
         subprocess.run(["git", *args], cwd=tmp_path, check=True)
