@@ -84,13 +84,13 @@ def _environment_identity(root: Path, path: Path, *, commit: str | None = None) 
         tree = _source_tree_entries(root, commit)
         modes = projected_source_modes(root, commit)
 
-    def workspace_source(candidate: Path) -> str | None:
+    def workspace_source(candidate: Path, resolved_directory: Path) -> str | None:
         if not tree:
             return None
-        resolved = candidate.resolve()
-        if not resolved.is_relative_to(root.resolve()):
+        resolved = candidate.resolve() if candidate.is_symlink() else resolved_directory / candidate.name
+        if not resolved.is_relative_to(resolved_root):
             return None
-        relative = resolved.relative_to(root.resolve())
+        relative = resolved.relative_to(resolved_root)
         # Source-backed workspace links resolve through the accepted tree in
         # bwrap, not through the host's ignored dist/WIP. Prepared package-local
         # node_modules still has its explicit read-only dependency mount.
@@ -100,6 +100,9 @@ def _environment_identity(root: Path, path: Path, *, commit: str | None = None) 
         return relative.as_posix() if any(name.startswith(package) for name in tree) else None
 
     try:
+        # Resolve invariant ancestors once; individual symlinks still need their
+        # target resolved before deciding whether they project accepted source.
+        resolved_root = root.resolve() if tree else root
         for directory, subdirs, files in os.walk(path, followlinks=True):
             current = Path(directory)
             info = current.stat()
@@ -107,9 +110,10 @@ def _environment_identity(root: Path, path: Path, *, commit: str | None = None) 
                 subdirs[:] = []
                 continue
             seen.add((info.st_dev, info.st_ino))
+            resolved_directory = current.resolve() if tree else current
             # Prepared executable caches can be consumed by tool runtimes.
             # Bind them conservatively; native Python writes to a fresh prefix.
-            subdirs[:] = sorted(name for name in subdirs if not (relative := workspace_source(current / name))
+            subdirs[:] = sorted(name for name in subdirs if not (relative := workspace_source(current / name, resolved_directory))
                                 or relative in tree or any(item.startswith(relative + "/") for item in tree))
             for name in subdirs:
                 candidate = current / name
@@ -118,7 +122,7 @@ def _environment_identity(root: Path, path: Path, *, commit: str | None = None) 
             for name in sorted(files):
                 candidate = current / name
                 item = identity(path, candidate)
-                if relative := workspace_source(candidate):
+                if relative := workspace_source(candidate, resolved_directory):
                     if relative not in tree:
                         continue
                     from cli.lib.acceptance import _git
