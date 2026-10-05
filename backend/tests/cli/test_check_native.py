@@ -768,6 +768,45 @@ def test_unselected_environment_identity_does_not_resolve_source_projections(tmp
     assert _environment_identity(tmp_path, environment) == before
 
 
+def test_selected_plan_resolves_workspace_root_independently_of_environment_size(native_repo: Path, monkeypatch) -> None:
+    environment = native_repo / "prepared"
+    environment.mkdir()
+    executable = native_repo / ".tools/check"
+    executable.write_text("#!/bin/sh\nexit 0\n")
+    executable.chmod(0o755)
+    (native_repo / ".gitignore").write_text(".dev-tools/\nprepared/\n")
+    (native_repo / ".st-check.toml").write_text(
+        '[native]\nschema_version = 1\nlocks = ["project.lock"]\npaths = []\n'
+        'legacy_tools = []\nenvironment_inputs = ["prepared"]\n'
+        f'[native.tools]\nfixture = "{executable}"\n'
+        '[[native.stages]]\nid = "fixture"\nargv = ["fixture"]\n'
+        'kind = "check"\ncoverage = "full"\nrequired = true\n'
+    )
+    _committed(native_repo)
+    selected = _git(native_repo, "rev-parse", "HEAD")
+    resolve = Path.resolve
+    resolutions = 0
+
+    def counted_resolve(path, *args, **kwargs):
+        nonlocal resolutions
+        if path == native_repo:
+            resolutions += 1
+        return resolve(path, *args, **kwargs)
+
+    monkeypatch.setattr(Path, "resolve", counted_resolve)
+    empty = native_plan(native_repo, commit=selected)
+    empty_resolutions = resolutions
+    for index in range(128):
+        (environment / f"dependency_{index}.py").write_text("prepared dependency\n")
+    resolutions = 0
+    populated = native_plan(native_repo, commit=selected)
+
+    assert empty is not None and populated is not None
+    assert empty["prepared_environment"][0]["file_count"] == 0
+    assert populated["prepared_environment"][0]["file_count"] == 128
+    assert resolutions == empty_resolutions > 0
+
+
 def test_standalone_executable_does_not_require_unused_packaging_python(native_repo: Path) -> None:
     tool_env = native_repo / "managed-tool"
     (tool_env / "bin").mkdir(parents=True)
