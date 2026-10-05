@@ -9,7 +9,7 @@ interface UseFormatProposalOptions {
     api: {
         getFormatProposal: (noteId: string) => Promise<FormatProposal | null>;
         startFormat: (noteId: string, content: string, title: string) => Promise<FormatProposal>;
-        resolveProposal: (proposalId: string, action: 'accept' | 'discard') => Promise<void>;
+        resolveProposal: (proposalId: string, action: 'accept' | 'discard') => Promise<{ resolved: boolean }>;
     };
     onAccepted: (title: string | null, content: string | null) => void;
 }

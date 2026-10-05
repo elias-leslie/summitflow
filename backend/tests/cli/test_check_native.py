@@ -57,6 +57,22 @@ def test_native_executes_prepared_tools_with_fresh_evidence_and_no_ambient_crede
     assert stage["duration_ms"] >= 0
 
 
+def test_native_stage_can_create_private_temporary_files_without_ambient_environment(native_repo: Path, monkeypatch) -> None:
+    monkeypatch.setenv("AMBIENT_SECRET", "private")
+    suite = native_repo / ".tools/suite.py"
+    suite.write_text(suite.read_text() + (
+        "import stat, tempfile\n"
+        "temporary = Path(os.environ['TMPDIR'])\n"
+        "assert temporary.is_dir()\n"
+        "assert stat.S_IMODE(temporary.stat().st_mode) == 0o700\n"
+        "with tempfile.TemporaryDirectory() as directory:\n"
+        "    assert Path(directory).parent == temporary\n"
+        "    Path(directory, 'writable').write_text('private stage scratch')\n"
+    ))
+    result = run_native(native_repo, _plan(native_repo))
+    assert result["state"] == "pass", result["stages"][0]["detail"]
+
+
 @pytest.mark.parametrize("missing", ["project.lock", ".tools/python"])
 def test_missing_preparation_is_unavailable(native_repo: Path, missing: str) -> None:
     (native_repo / missing).unlink()

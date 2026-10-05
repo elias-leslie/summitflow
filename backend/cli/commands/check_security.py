@@ -98,12 +98,13 @@ def _emit_result(root: Path, name: str, result: subprocess.CompletedProcess[str]
     return result.returncode
 
 
-def _run(command: list[str], *, root: Path, name: str) -> int:
+def _run(command: list[str], *, root: Path, name: str, environment: dict[str, str] | None = None) -> int:
     try:
         with heavy_work(f"local scan {name}") as work:
             result = work.run(
                 command,
                 cwd=root,
+                env=environment,
                 text=True,
                 capture_output=True,
                 encoding="utf-8",
@@ -194,8 +195,10 @@ def run_local_security_check(
             print(f"{scanner.upper()}:SKIP:{scanner}:no_candidate_files")
             continue
         with tempfile.TemporaryDirectory(prefix="st-security-") as temporary:
-            candidate = Path(temporary)
+            candidate = Path(temporary) / "candidate"
+            candidate.mkdir()
             _materialize(root, paths, candidate)
+            environment = None
             if scanner == "gitleaks":
                 command = [
                     "gitleaks",
@@ -228,7 +231,9 @@ def run_local_security_check(
                     "--json",
                     str(candidate),
                 ]
-            result = _run(command, root=root, name=scanner)
+                environment = {**os.environ, "SEMGREP_SETTINGS_FILE": str(Path(temporary) / "settings.yml"),
+                               "SEMGREP_LOG_FILE": str(Path(temporary) / "semgrep.log")}
+            result = _run(command, root=root, name=scanner, environment=environment)
             if result:
                 failures.append(result)
     if not failures:

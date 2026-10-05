@@ -113,16 +113,21 @@ def test_isolation_preserves_equivalent_modes_and_fits_real_unix_socket_paths(na
     executable.write_text('#!/bin/sh\nexit 0\n')
     executable.chmod(0o6750)
     check_file = repo / "check.py"
-    check_file.write_text("import os\nimport socket\n" + check_file.read_text() + (
+    check_file.write_text("import os\nimport socket\nimport tempfile\n" + check_file.read_text() + (
         "protected=Path('protected.json').lstat()\n"
         "assert stat.S_ISREG(protected.st_mode) and protected.st_uid == os.getuid()\n"
         "assert protected.st_nlink == 1 and stat.S_IMODE(protected.st_mode) == 0o644\n"
         "assert stat.S_IMODE(Path('fixture-executable').stat().st_mode) == 0o750\n"
-        # Native stages have a clean environment; the tool aliases were
-        # prepared under the isolated gate's actual TMPDIR before that reset.
-        "socket_path=Path(os.environ['PATH'].split(os.pathsep)[0]).parent/'pytest-of-kasadis/pytest-0/test_restricted_dispatch_uses_0/run/user/1000/bus'\n"
+        # Exercise the longest real pytest fixture suffix beneath the stage's
+        # actual temporary root, rather than a shorter tool-directory parent.
+        "socket_path=Path(os.environ['TMPDIR'])/'pytest-of-kasadis/pytest-0/test_restricted_dispatch_uses_0/run/user/1000/bus'\n"
         "socket_path.parent.mkdir(parents=True)\n"
         "with socket.socket(socket.AF_UNIX) as bus:\n    bus.bind(str(socket_path))\n"
+        "with tempfile.TemporaryDirectory(prefix='st-native-db-') as directory:\n"
+        "    assert Path(directory).parent == Path(os.environ['TMPDIR'])\n"
+        "    assert stat.S_IMODE(Path(os.environ['TMPDIR']).stat().st_mode) == 0o700\n"
+        "    with socket.socket(socket.AF_UNIX) as database:\n"
+        "        database.bind(str(Path(directory) / 'socket'))\n"
     ))
     git(repo, "add", "protected.json", "fixture-executable", "check.py")
     git(repo, "commit", "--only", "-qm", "protected config and real socket contract", "--", "protected.json", "fixture-executable", "check.py")

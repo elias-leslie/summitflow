@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 import shutil
 import subprocess
 from pathlib import Path
@@ -98,6 +99,40 @@ def test_semgrep_uses_only_local_rules_without_metrics_or_version_network(
     assert command[:4] == ["semgrep", "scan", "--config", str(tmp_path / ".semgrep.yml")]
     assert command[4:6] == ["--metrics", "off"]
     assert "--disable-version-check" in command
+
+
+def test_semgrep_can_write_private_settings_and_logs_without_changing_home(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    (tmp_path / "app.py").write_text("pass\n")
+    (tmp_path / ".semgrep.yml").write_text("rules: []\n")
+    owner_home = tmp_path / "readonly-home"
+    owner_home.mkdir()
+    monkeypatch.setenv("HOME", str(owner_home))
+    monkeypatch.setenv("SEMGREP_SETTINGS_FILE", str(owner_home / "settings.yml"))
+    monkeypatch.setenv("SEMGREP_LOG_FILE", str(owner_home / "semgrep.log"))
+    private_paths = []
+
+    def run(command, **kwargs):
+        environment = kwargs["env"]
+        assert environment["HOME"] == str(owner_home)
+        candidate = Path(command[-1])
+        for name in ("SEMGREP_SETTINGS_FILE", "SEMGREP_LOG_FILE"):
+            path = Path(environment[name])
+            assert path.parent != owner_home
+            assert not path.is_relative_to(candidate)
+            assert path.parent.stat().st_mode & 0o077 == 0
+            path.write_text("private scanner state\n")
+            private_paths.append(path)
+        assert os.environ["SEMGREP_SETTINGS_FILE"] == str(owner_home / "settings.yml")
+        return subprocess.CompletedProcess(command, 0, "{}", "")
+
+    monkeypatch.setattr(HeavyWork, "run", staticmethod(run))
+    assert check_security.run_local_security_check(
+        "semgrep", tmp_path, ["app.py"], True, []
+    ) == 0
+    assert private_paths and all(not path.exists() for path in private_paths)
+    assert not list(owner_home.iterdir())
 
 
 @pytest.mark.skipif(shutil.which("semgrep") is None, reason="Semgrep is not installed")
