@@ -306,7 +306,8 @@ def _reclaimed_repair_diff(repo_root: str, task_id: str, project_id: str | None,
                            base_commit: str, paths: tuple[str, ...],
                            acceptance_receipt: dict[str, Any]) -> DiffGateResult | None:
     """Recheck the original patch for an exact-source, accepted repair refresh."""
-    from cli.lib.acceptance import AcceptanceError, repo_lock, validate_acceptance_receipt
+    from cli.lib.acceptance import AcceptanceError, repo_lock
+    from cli.lib.acceptance_coordinator import validate_source_receipt
     from cli.lib.commit_workflow import run_git
 
     if not paths or not project_id:
@@ -316,7 +317,7 @@ def _reclaimed_repair_diff(repo_root: str, task_id: str, project_id: str | None,
         with repo_lock(repo, purpose="repair refresh diff validation"):
             if not _selected_work_is_clean(repo_root, paths):
                 return None
-            validated = validate_acceptance_receipt(repo, acceptance_receipt, sha="HEAD")
+            validated = validate_source_receipt(repo, acceptance_receipt, sha="HEAD").reference.to_dict()
             if validated["source_commit"] != base_commit:
                 return None
             task_diff = _task_commit_diff_ref(repo_root, task_id, exact_commit=base_commit, project_id=project_id)
@@ -402,15 +403,6 @@ def _capture_and_remove_snapshot(task_id: str, project_id: str | None) -> None:
     remove_snapshot(task_id, project_id=project_id)
 
 
-class _OwnedCompletionReceipt(dict[str, Any]):
-    """Carry the pre-gate claim in-process without altering durable proof data."""
-
-    def __init__(self, receipt: dict[str, Any], claim: dict[str, Any]):
-        super().__init__(receipt)
-        self.completion_claim = {**claim, "verification_result": {
-            **(claim.get("verification_result") or {}), "acceptance": dict(receipt)}}
-
-
 def _owned_completion_claim(root: Path, task_id: str, project_id: str) -> dict[str, Any]:
     from cli.lib.task_claims import current_worker_id, renew_local_owned_claim
 
@@ -422,75 +414,15 @@ def _owned_completion_claim(root: Path, task_id: str, project_id: str) -> dict[s
 
 
 def _accept_completed_work(task_id: str, project_id: str | None, *, paths: tuple[str, ...] = (), acceptance_receipt: dict[str, Any] | None = None) -> dict[str, Any]:
-    from app.storage.tasks.closeout import store_owned_acceptance
-    from cli.lib.acceptance import (
-        AcceptanceError,
-        accept_revision,
-        repo_lock,
-        validate_acceptance_receipt,
-    )
-    from cli.lib.commit_workflow import run_git
+    from cli.lib.task_completion_adapter import accept_owned_task_work
 
     root = _checkpoint_repo_root(project_id)
     if not root or not project_id:
         raise ValueError("Local acceptance requires a registered project checkout")
     repo = Path(root)
-    from .done_task_acceptance import require_task_created_paths
-    retained_task = _owned_completion_claim(repo, task_id, project_id)
-    prior_acceptance = (retained_task.get("verification_result") or {}).get("acceptance") or {}
-
-    def attach(receipt: dict[str, Any]) -> _OwnedCompletionReceipt:
-        if not store_owned_acceptance(task_id, project_id, receipt,
-                expected_worker=str(retained_task["claimed_by"]),
-                expected_claimed_at=retained_task["claimed_at"], expected_acceptance=prior_acceptance):
-            raise ValueError("Task claim or acceptance changed while validating completion; checkpoint preserved")
-        return _OwnedCompletionReceipt(receipt, retained_task)
-
-    from cli.lib.commit_workflow import run_git as task_git
-    current_head = task_git(repo, ["rev-parse", "HEAD"]).stdout.strip()
-    require_task_created_paths(repo, current_head, retained_task or {})
-    if acceptance_receipt is None:
-        retained = ((retained_task or {}).get("verification_result") or {}).get("acceptance") or {}
-        if (retained_task or {}).get("project_id") == project_id and retained.get("state") == "success":
-            with repo_lock(repo, purpose="retained closeout acceptance validation"):
-                if not _selected_work_is_clean(root, paths):
-                    raise ValueError("Selected task paths changed before local acceptance reuse")
-                try:
-                    from .done_task_acceptance import require_scope_matches_revision
-                    source_sha = str(retained.get("source_commit") or "")
-                    require_scope_matches_revision(repo, source_sha, paths)
-                    validated = validate_acceptance_receipt(repo, retained, sha=source_sha)
-                except (AcceptanceError, ValueError):
-                    pass
-                else:
-                    receipt = {**validated, "task_id": task_id, "scope": list(paths), "reused": True}
-                    return attach(receipt)
-    if acceptance_receipt is not None:
-        if not paths:
-            raise ValueError("Imported acceptance requires explicit --paths for task closeout")
-        with repo_lock(repo, purpose="closeout receipt validation"):
-            if not _selected_work_is_clean(root, paths):
-                raise ValueError("Selected task paths must be committed before accepting closeout evidence")
-            # Check again after checkpointing: an older receipt must never
-            # accept a newly created commit or another agent's later revision.
-            from .done_task_acceptance import require_scope_matches_revision
-            source_sha = str(acceptance_receipt.get("source_commit") or "")
-            require_scope_matches_revision(repo, source_sha, paths)
-            validated = validate_acceptance_receipt(repo, acceptance_receipt, sha=source_sha)
-            receipt = {**validated, "task_id": task_id, "scope": list(paths), "reused": True}
-    else:
-        sha = run_git(repo, ["rev-parse", "HEAD"]).stdout.strip()
-        try:
-            receipt = accept_revision(repo, sha=sha, scope=paths, task_id=task_id)
-        except AcceptanceError as exc:
-            if not paths or "no reusable accepted-source receipt" not in str(exc):
-                raise
-            from .done_task_acceptance import accept_isolated_revision
-
-            if not _selected_work_is_clean(root, paths):
-                raise ValueError("Selected task paths must remain committed for isolated acceptance") from exc
-            receipt = accept_isolated_revision(repo, sha=sha, scope=paths, task_id=task_id)
-    return attach(receipt)
+    return accept_owned_task_work(repo, task_id, project_id,
+        claim=_owned_completion_claim(repo, task_id, project_id), paths=paths,
+        acceptance_receipt=acceptance_receipt)
 
 
 def _accept_completed_work_or_exit(task_id: str, project_id: str | None, *, paths: tuple[str, ...] = (), acceptance_receipt: dict[str, Any] | None = None) -> dict[str, Any]:
@@ -511,7 +443,8 @@ def _record_only_work(task: dict[str, Any], task_id: str, snapshot: dict[str, An
     context = task.get("context") or {}
     requirements = task.get("completion_requirements") or context.get("completion_requirements") or {}
     if (paths or task.get("commits") or _task_scope_paths(task)
-            or requirements.get("acceptance") or requirements.get("deployment") or requirements.get("live_checks")):
+            or requirements.get("acceptance") or requirements.get("acceptance_stages")
+            or requirements.get("deployment") or requirements.get("live_checks")):
         return False
     root = _checkpoint_repo_root(_task_project_id(task) or str((snapshot or {}).get("project_id") or "") or None)
     if not root:
