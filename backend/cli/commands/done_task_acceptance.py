@@ -9,6 +9,7 @@ import subprocess
 import sys
 import tempfile
 import uuid
+from collections.abc import Sequence
 from pathlib import Path
 from typing import Any
 
@@ -45,7 +46,7 @@ def _require_local_objects(repo: Path) -> None:
         raise acceptance.AcceptanceError("Isolated local acceptance requires complete local Git objects; partial/promisor checkout is unavailable")
 
 
-def _preserve_equivalent_modes(repo: Path, source: Path) -> None:
+def _preserve_equivalent_modes(repo: Path, source: Path, mode_entries: dict[str, int] | None = None) -> None:
     """Keep actual permissions only for demonstrably equivalent tracked files.
 
     Git records the owner execute bit, not ordinary permission bits. Prepared
@@ -54,7 +55,7 @@ def _preserve_equivalent_modes(repo: Path, source: Path) -> None:
     inheriting privileged file modes. Historical-only files keep Git defaults.
     """
     commit = _git(source, "rev-parse", "HEAD")
-    for name, permissions in acceptance.projected_source_modes(repo, commit).items():
+    for name, permissions in (mode_entries if mode_entries is not None else acceptance.projected_source_modes(repo, commit)).items():
         candidate = source / name
         if candidate.is_symlink() or not candidate.is_file() or candidate.parent.resolve() != candidate.parent:
             raise acceptance.AcceptanceError("Isolated tracked permission input is not a regular accepted file")
@@ -198,7 +199,8 @@ def _bindings(repo: Path, source: Path) -> list[tuple[Path, Path]]:
 
 def _sandbox_command(repo: Path, source: Path, metadata: Path, common: Path,
                      temporary: Path, bindings: list[tuple[Path, Path]],
-                     sha: str, scope: tuple[str, ...], task_id: str, reuse: bool) -> list[str]:
+                     sha: str, scope: tuple[str, ...], task_id: str, reuse: bool,
+                     coverage: str = "full", required_stages: Sequence[str] = ()) -> list[str]:
     binary = shutil.which("bwrap")
     if not binary:
         raise acceptance.AcceptanceError("Isolated acceptance is unavailable: bwrap is not installed; prepare the managed isolation capability")
@@ -220,27 +222,28 @@ def _sandbox_command(repo: Path, source: Path, metadata: Path, common: Path,
         "import json,sys; sys.path.insert(0,sys.argv.pop(1)); "
         "from pathlib import Path; from cli.lib.acceptance import accept_revision; "
         "args=json.loads(sys.argv[1]); "
-        "receipt=accept_revision(Path(args['repo']),sha=args['sha'],scope=args['scope'],task_id=args['task_id'],reuse=args['reuse'],execution_basis='isolated'); "
+        "options={'coverage':args['coverage'],'required_stages':args['required_stages']} if args['coverage']=='task' else {}; "
+        "receipt=accept_revision(Path(args['repo']),sha=args['sha'],scope=args['scope'],task_id=args['task_id'],reuse=args['reuse'],execution_basis='isolated',**options); "
         "print('ISOLATED_ACCEPTANCE:'+json.dumps(receipt,sort_keys=True))"
     )
     command.extend(["--chdir", str(repo), "--", sys.executable, "-P", "-c", bootstrap,
                     str(Path(acceptance.__file__).resolve().parents[2]),
-                    json.dumps({"repo": str(repo), "sha": sha, "scope": list(scope), "task_id": task_id, "reuse": reuse})])
+                    json.dumps({"repo": str(repo), "sha": sha, "scope": list(scope), "task_id": task_id, "reuse": reuse,
+                                "coverage": coverage, "required_stages": list(required_stages)})])
     return command
 
 
-def accept_isolated_revision(repo: Path, *, sha: str, scope: tuple[str, ...], task_id: str, reuse: bool = True) -> dict[str, Any]:
+def accept_isolated_revision(repo: Path, *, sha: str, scope: tuple[str, ...], task_id: str, reuse: bool = True,
+                             coverage: str = "full", required_stages: Sequence[str] = ()) -> dict[str, Any]:
     """Run canonical full acceptance over the committed tree, preserving WIP."""
     repo = repo.resolve()
-    with acceptance.repo_lock(repo, purpose="isolated task acceptance"), heavy_work("isolated task acceptance") as work:
+    with acceptance.repo_lock(repo, purpose="capture isolated acceptance"):
         _require_local_objects(repo)
-        before = acceptance.source_identity(repo, sha=sha)
-        original_head = _git(repo, "rev-parse", "HEAD")
+        before = acceptance.isolated_input_identity(repo, sha=sha, scope=scope)
         require_scope_matches_revision(repo, before["commit"], scope)
+        plan = acceptance.requested_plan(repo, commit=before["commit"], coverage=coverage, scope=scope, required_stages=required_stages)
         if reuse:
-            execution, modes = acceptance._source_execution(repo, before["commit"], "isolated")
-            plan = acceptance._project_acceptance_plan(repo, commit=before["commit"])
-            key = acceptance._accepted_source_cache_key({**before, "execution": execution, "source_modes": modes}, plan)
+            key = acceptance._accepted_source_cache_key(before, plan)
             artifact = acceptance._receipt_path(repo, key)
             if artifact.is_file():
                 try:
@@ -249,7 +252,8 @@ def accept_isolated_revision(repo: Path, *, sha: str, scope: tuple[str, ...], ta
                     pass
                 else:
                     return {**validated, "task_id": task_id, "scope": list(scope),
-                            "reused": True, "working_tree_clean": before["clean"]}
+                            "reused": True, "working_tree_clean": not _git(repo, "status", "--porcelain=v1", "--untracked-files=all")}
+    with heavy_work("isolated task acceptance") as work:
         # /tmp is private and short inside bwrap. Keep its backing directory
         # visible at the same host path for Docker, including nested acceptance.
         temporary_parent = os.environ.get("ST_NATIVE_TMP_HOST_ROOT", "/var/tmp")
@@ -262,7 +266,7 @@ def accept_isolated_revision(repo: Path, *, sha: str, scope: tuple[str, ...], ta
                  "clone", "--local", "--no-recurse-submodules", "--no-hardlinks", "--no-checkout",
                  "--", str(repo), str(source))
             _git(source, "-c", "core.hooksPath=/dev/null", "checkout", "--detach", before["commit"])
-            _preserve_equivalent_modes(repo, source)
+            _preserve_equivalent_modes(repo, source, before["source_mode_entries"])
             common = acceptance._git_common_dir(repo)
             metadata = source / ".git"
             if common != repo / ".git":
@@ -279,7 +283,13 @@ def accept_isolated_revision(repo: Path, *, sha: str, scope: tuple[str, ...], ta
                 for _original, canonical in bindings:
                     handle.write("/" + canonical.relative_to(repo).as_posix() + "\n")
             command = _sandbox_command(repo, source, metadata, common, temporary, bindings,
-                                       before["commit"], scope, task_id, reuse)
+                                       before["commit"], scope, task_id, reuse, coverage, required_stages)
+            from cli.commands.check_native import transfer_native_stage_receipts
+
+            stage_store = common / "st" / "native-stages"
+            private_stages = metadata / "st" / "native-stages"
+            if reuse:
+                transfer_native_stage_receipts(stage_store, private_stages)
             evidence = metadata / "st" / "native-stages" / "artifacts"
             # Retain failed/interrupted observations without admitting them as
             # successful acceptance; retry creates a fresh isolated source.
@@ -292,6 +302,10 @@ def accept_isolated_revision(repo: Path, *, sha: str, scope: tuple[str, ...], ta
                 log.write_text(f"Isolated acceptance interrupted: {type(exc).__name__}\n", encoding="utf-8")
                 raise
             finally:
+                # Successful exact-source stages remain reusable even when a
+                # later stage fails. This is observation retention, not task
+                # acceptance; each retry still validates its complete inputs.
+                transfer_native_stage_receipts(private_stages, stage_store)
                 retained = observations / log.stem
                 retained.mkdir()
                 for folder in (metadata / "st" / "acceptance", source / ".dev-tools"):
@@ -313,9 +327,12 @@ def accept_isolated_revision(repo: Path, *, sha: str, scope: tuple[str, ...], ta
             if len(lines) != 1:
                 raise acceptance.AcceptanceError(f"Isolated acceptance returned no unique receipt; evidence: {log}")
             receipt = json.loads(lines[0])
-            after = acceptance.source_identity(repo, sha=before["commit"])
-            if after != before or _git(repo, "rev-parse", "HEAD") != original_head:
-                raise acceptance.AcceptanceError("Original task source or local inputs changed during isolated acceptance; retry without changing foreign work")
-            require_scope_matches_revision(repo, before["commit"], scope)
-            persisted = acceptance.persist_validated_receipt(repo, receipt, sha=before["commit"], evidence_directory=evidence)
+            with acceptance.repo_lock(repo, purpose="finalize isolated acceptance"):
+                after = acceptance.isolated_input_identity(repo, sha=before["commit"], captured=before, scope=scope)
+                current_plan = acceptance.requested_plan(repo, commit=before["commit"], coverage=coverage,
+                                                         scope=scope, required_stages=required_stages)
+                if after != before or current_plan != plan:
+                    raise acceptance.AcceptanceError("Consumed source or local inputs changed during isolated acceptance; retry with stable prepared inputs")
+                require_scope_matches_revision(repo, before["commit"], scope)
+                persisted = acceptance.persist_validated_receipt(repo, receipt, sha=before["commit"], evidence_directory=evidence)
             return {**persisted, "task_id": task_id, "scope": list(scope)}

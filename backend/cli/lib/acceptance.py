@@ -31,7 +31,7 @@ class AcceptanceError(RuntimeError):
 
 AcceptanceRunner = Callable[[list[str], Path], subprocess.CompletedProcess[str]]
 
-_SCHEMA_VERSION = 2
+_SCHEMA_VERSION = 3
 _ACCEPTANCE_COMMANDS: tuple[tuple[str, ...], ...] = (("st", "check", "--check"),)
 _INPUT_NAMES = {
     ".st-check.toml",
@@ -433,7 +433,8 @@ def _git_blob_identities(repo: Path, oids: Sequence[str]) -> dict[str, dict[str,
     return identities
 
 
-def _source_execution(repo: Path, commit: str, basis: str) -> tuple[dict[str, Any], dict[str, Any]]:
+def _source_execution(repo: Path, commit: str, basis: str,
+                      mode_entries: Mapping[str, int] | None = None) -> tuple[dict[str, Any], dict[str, Any]]:
     tree = _source_tree_entries(repo, commit)
     if basis == "actual":
         entries = _materialized_source_entries(repo, sorted(tree))
@@ -442,7 +443,11 @@ def _source_execution(repo: Path, commit: str, basis: str) -> tuple[dict[str, An
     elif basis == "isolated":
         if any(mode not in {"100644", "100755", "120000"} for mode, _oid in tree.values()):
             raise AcceptanceError("isolated source materialization contains an unsupported Git file type")
-        modes = projected_source_modes(repo, commit)
+        modes = dict(mode_entries) if mode_entries is not None else projected_source_modes(repo, commit)
+        regular = {name: mode for name, (mode, _oid) in tree.items() if mode in {"100644", "100755"}}
+        if (set(modes) != set(regular) or any(type(value) is not int or not 0 <= value <= 0o777
+                or bool(value & stat.S_IXUSR) != (regular[name] == "100755") for name, value in modes.items())):
+            raise AcceptanceError("isolated source permission entries differ from the immutable Git tree")
         blobs = _git_blob_identities(repo, [oid for _mode, oid in tree.values()])
         # A private checkout creates single-link files owned by the executing
         # user/group. Verify these exact metadata values in the actual clone.
@@ -512,9 +517,37 @@ def source_identity(repo: Path, *, sha: str = "HEAD", execution_basis: str = "ac
         "execution": execution,
         "working_materialization": working_materialization,
         "local_inputs": local_inputs,
+        "source_mode_entries": projected_source_modes(repo, commit) if execution_basis == "isolated" else None,
     }
     source["input_fingerprint"] = _source_input_fingerprint(source)
     return source
+
+
+def isolated_input_identity(repo: Path, *, sha: str,
+                             captured: Mapping[str, Any] | None = None,
+                             scope: Sequence[str] = ()) -> dict[str, Any]:
+    """Capture only immutable source and mutable inputs isolation consumes.
+
+    Unrelated staged/untracked workspace bytes are neither mounted nor checked
+    by the private gate. Owned paths are guarded separately at capture/finalize.
+    """
+    commit = _git_value(repo, ["rev-parse", "--verify", f"{sha}^{{commit}}"], "source unavailable")
+    tree = _git_value(repo, ["rev-parse", "--verify", f"{commit}^{{tree}}"], "tree unavailable")
+    entries = captured["source_mode_entries"] if captured is not None else projected_source_modes(repo, commit)
+    execution, modes = _source_execution(repo, commit, "isolated", entries)
+    metadata = {}
+    for name in _regular_source_blobs(repo, commit):
+        if scope and not any(name == path or name.startswith(path.rstrip("/") + "/") for path in scope):
+            continue
+        try:
+            info = (repo / name).lstat()
+            metadata[name] = [stat.S_IFMT(info.st_mode), stat.S_IMODE(info.st_mode), info.st_uid, info.st_gid, info.st_nlink]
+        except OSError:
+            metadata[name] = None
+    return {"commit": commit, "tree": tree, "execution": execution, "source_modes": modes,
+            "source_mode_entries": entries, "host_source_metadata": _mode_identity(metadata),
+            "source_inputs": _source_inputs(repo, commit), "local_inputs": _local_gate_inputs(repo),
+            "workspace_fingerprint": _hash_parts([b"", b"", b""])}
 
 
 def _file_identity(path: Path, *, name: str, content: bytes | None = None) -> dict[str, Any]:
@@ -557,7 +590,8 @@ def _acceptance_plan(*, repo: Path | None = None, commit: str | None = None,
                           if Path(name).parent == Path("backend/cli/commands") and Path(name).match("check*.py")
                           and Path(name).name != "check_codeql.py" and not Path(name).name.startswith("checkpoints")]
     implementation.extend([
-        Path(__file__), backend / "cli" / "main.py", backend / "cli" / "tool_registry.py",
+        Path(__file__), backend / "cli" / "lib" / "acceptance_coordinator.py",
+        backend / "cli" / "main.py", backend / "cli" / "tool_registry.py",
         backend / "cli" / "commands" / "done_task_acceptance.py",
         backend / "app" / "utils" / "heavy_work.py", backend / "app" / "utils" / "safe_subprocess.py",
     ])
@@ -604,7 +638,8 @@ def _acceptance_plan(*, repo: Path | None = None, commit: str | None = None,
     return plan
 
 
-def _project_acceptance_plan(repo: Path, *, commit: str | None = None) -> dict[str, Any]:
+def _project_acceptance_plan(repo: Path, *, commit: str | None = None,
+                              check_names: Sequence[str] | None = None) -> dict[str, Any]:
     import shlex
 
     from cli.commands.check import _resolve_command
@@ -617,10 +652,10 @@ def _project_acceptance_plan(repo: Path, *, commit: str | None = None) -> dict[s
     from cli.commands.check_runner import _tool_configs, _workdir
 
     try:
-        native = native_plan(repo)
+        native = native_plan(repo, commit=commit)
     except NativeCheckError as exc:
         raise AcceptanceError(str(exc)) from exc
-    names = native["legacy_tools"] if native is not None else ["ruff", "types", "pytest", "biome", "tsc", "vitest", "security"]
+    names = list(check_names) if check_names is not None else native["legacy_tools"] if native is not None else ["ruff", "types", "pytest", "biome", "tsc", "vitest", "security"]
     # Isolation consumes this project's CLI from its selected Git tree. Other
     # projects still consume the separately installed shared gate unchanged.
     source_bound = commit is not None and Path(__file__).resolve().parents[3] == repo.resolve()
@@ -641,7 +676,7 @@ def _project_acceptance_plan(repo: Path, *, commit: str | None = None) -> dict[s
         for marker in (".venv", "venv", "node_modules"):
             if marker in parts:
                 runtime_paths.add(Path(*parts[:parts.index(marker) + 1]))
-    plan["prepared_legacy_environment"] = [_environment_identity(repo, path) for path in sorted(runtime_paths)]
+    plan["prepared_legacy_environment"] = [_environment_identity(repo, path, commit=commit) for path in sorted(runtime_paths)]
     if {"security", "semgrep", "gitleaks"}.intersection(names):
         from cli.commands.check_security import _semgrep_config
 
@@ -658,13 +693,13 @@ def _project_acceptance_plan(repo: Path, *, commit: str | None = None) -> dict[s
                     runtime = python_runtime_root(Path(executable))
                     if runtime is not None:
                         runtime_paths.add(runtime)
-        plan["prepared_legacy_environment"] = [_environment_identity(repo, path) for path in sorted(runtime_paths)]
+        plan["prepared_legacy_environment"] = [_environment_identity(repo, path, commit=commit) for path in sorted(runtime_paths)]
     if native is not None:
         # Preserve and bind applicable approved legacy tools alongside declared
         # native stages. Native suite commands execute once, rather than again
         # through pytest/vitest unless explicitly listed in legacy_tools.
         plan["check_configuration"] = {"checks": legacy}
-        if not {"security", "gitleaks", "semgrep", "osv"}.intersection(native["legacy_tools"]):
+        if not {"security", "gitleaks", "semgrep", "osv"}.intersection(names):
             plan.pop("security_tools", None)
         plan["native"] = {**native, "environment": {
             key: {"sha256": hashlib.sha256(value.encode()).hexdigest()}
@@ -700,6 +735,107 @@ def _gate_evidence(detail: str, plan: Mapping[str, Any]) -> dict[str, Any]:
     return evidence
 
 
+def _coverage_plan(repo: Path, plan: dict[str, Any], *, coverage: str,
+                   scope: Sequence[str], required_stages: Sequence[str]) -> dict[str, Any]:
+    if coverage not in {"task", "full"}:
+        raise AcceptanceError("Acceptance coverage must be task or full")
+    if coverage == "full":
+        if required_stages:
+            declared = {stage["id"] for stage in plan.get("native", {}).get("stages", [])}
+            if not set(required_stages).issubset(declared):
+                raise AcceptanceError("Required acceptance stage is missing from the native declaration")
+        return plan
+    if not scope:
+        raise AcceptanceError("Task acceptance requires explicit literal owned scope")
+    from cli.commands.done_task_acceptance import require_scope_matches_revision
+
+    require_scope_matches_revision(repo, _git_value(repo, ["rev-parse", "HEAD"], "HEAD unavailable"), tuple(scope))
+    declared = {stage["id"]: stage for stage in plan.get("native", {}).get("stages", [])}
+    if any(name not in declared or not declared[name]["applicable"] for name in required_stages):
+        raise AcceptanceError("Required acceptance stage is missing or not applicable")
+    selected = sorted(set(required_stages))
+    value = {**plan, "coverage": "task", "scope": list(scope), "required_stages": selected,
+             "commands": [["st", "check", "--quick", "--changed-only"],
+                          *[["st", "check", "--native", "--stage", name] for name in selected]]}
+    value.pop("fingerprint", None)
+    value["fingerprint"] = hashlib.sha256(json.dumps(value, sort_keys=True, separators=(",", ":")).encode()).hexdigest()
+    return value
+
+
+def requested_plan(repo: Path, *, commit: str | None, coverage: str,
+                    scope: Sequence[str], required_stages: Sequence[str]) -> dict[str, Any]:
+    """Bind the actual gate selection, including quick tools for task proof."""
+    from cli.commands.check_constants import _TOOL_SELECTIONS
+
+    names = _TOOL_SELECTIONS["--quick"][0] if coverage == "task" else None
+    plan = _project_acceptance_plan(repo, commit=commit, check_names=names)
+    return _coverage_plan(repo, plan, coverage=coverage, scope=scope, required_stages=required_stages)
+
+
+def _task_gate_evidence(repo: Path, detail: str, plan: Mapping[str, Any], command: Sequence[str]) -> dict[str, Any]:
+    if "--stage" in command:
+        stage_id = command[-1]
+        selected = next(stage for stage in plan["native"]["stages"] if stage["id"] == stage_id)
+        evidence = _gate_evidence(detail, {"native": {"stages": [selected], "legacy_tools": []}})
+        _validate_task_evidence(evidence, selected)
+        return evidence
+    # Quick checkpoints intentionally defer cross-cutting suites. That is
+    # honest task coverage, never full coverage; explicitly required native
+    # stages execute separately. Missing tools and failed checks still block.
+    blocked = ":OK:" not in detail or any(":FAIL:" in line or (":SKIP:" in line and any(
+        reason in line for reason in ("tool_not_installed", "required", "no_tests"))) for line in detail.splitlines())
+    digest = hashlib.sha256(detail.encode()).hexdigest()
+    directory = _git_common_dir(repo) / "st" / "native-stages" / "artifacts"
+    directory.mkdir(parents=True, exist_ok=True)
+    artifact = directory / digest
+    artifact.write_bytes(detail.encode())
+    return {"coverage": "task", "state": "fail" if blocked else "pass", "format": "scoped_aggregate",
+            "stages": [{"id": "scoped-quality", "state": "fail" if blocked else "pass", "required": True,
+                        "coverage": "task", "command": list(command), "artifacts": [{"path": "output",
+                            "state": "present", "sha256": digest, "retained_path": str(artifact)}]}]}
+
+
+def _validate_task_evidence(evidence: Mapping[str, Any], stage: Mapping[str, Any] | None = None,
+                              command: Sequence[str] = ()) -> None:
+    if evidence.get("state") != "pass":
+        raise AcceptanceError("Task acceptance required evidence is failed or unavailable")
+    if stage is None:
+        if evidence.get("coverage") != "task" or evidence.get("format") != "scoped_aggregate":
+            raise AcceptanceError("Task acceptance is missing scoped quality evidence")
+        stages = evidence.get("stages")
+        if (not isinstance(stages, list) or len(stages) != 1 or stages[0].get("id") != "scoped-quality"
+                or stages[0].get("state") != "pass" or stages[0].get("coverage") != "task"
+                or stages[0].get("required") is not True or stages[0].get("command") != list(command)
+                or not stages[0].get("artifacts")):
+            raise AcceptanceError("Task acceptance is missing its required scoped quality stage")
+        for artifact in stages[0]["artifacts"]:
+            if (artifact.get("state") != "present" or artifact.get("path") != "output"
+                    or not isinstance(artifact.get("sha256"), str) or not re.fullmatch(r"[0-9a-f]{64}", artifact["sha256"])):
+                raise AcceptanceError("Task acceptance is missing scoped quality artifacts")
+        return
+    stages = evidence.get("stages")
+    if not isinstance(stages, list) or len(stages) != 1:
+        raise AcceptanceError("Task acceptance is missing its required native stage")
+    outcome = stages[0]
+    if (outcome.get("id") != stage["id"] or outcome.get("command") != stage["argv"]
+            or outcome.get("state") != "pass" or outcome.get("returncode") != 0
+            or any(outcome.get(key) != stage[key] for key in ("tool", "cwd", "coverage", "required"))):
+        raise AcceptanceError("Task acceptance required native stage identity or success differs")
+    if stage.get("evidence"):
+        artifacts = outcome.get("artifacts")
+        expected = stage["evidence"].get("source", "file")
+        expected = stage["evidence"]["path"] if expected == "file" else expected
+        if (not isinstance(artifacts, list) or not artifacts or artifacts[0].get("path") != expected
+                or any(item.get("state") != "present" or not isinstance(item.get("sha256"), str)
+                       or not re.fullmatch(r"[0-9a-f]{64}", item["sha256"]) for item in artifacts)):
+            raise AcceptanceError("Task acceptance is missing required native artifacts")
+    if stage["kind"] == "test":
+        counts = outcome.get("counts", {})
+        if (any(type(counts.get(key)) is not int or counts[key] < 0 for key in ("executed", "failed", "skipped"))
+                or not counts["executed"] or counts["failed"] or counts["skipped"] > counts.get("not_applicable", 0)):
+            raise AcceptanceError("Task acceptance required native tests were empty, failed or skipped")
+
+
 def _validate_native_evidence(evidence: Any, native: Mapping[str, Any], *, require_success: bool = True) -> None:
     if not isinstance(evidence, dict) or evidence.get("schema_version") != 1 or evidence.get("coverage") not in {"full", "focused"} or evidence.get("state") not in {"pass", "fail"}:
         raise ValueError("invalid native evidence envelope")
@@ -720,6 +856,14 @@ def _validate_native_evidence(evidence: Any, native: Mapping[str, Any], *, requi
             raise ValueError("required native stage was failed, unavailable, skipped or focused")
         if outcome.get("state") not in {"pass", "fail", "unavailable", "not-applicable"}:
             raise ValueError("unknown native stage outcome")
+        if outcome.get("covered_by"):
+            covering = next((item for item in stages if item.get("id") == outcome["covered_by"]), {})
+            declaration = next((item for item in expected if item["id"] == outcome["covered_by"]), {})
+            if (stage.get("covered_by") != outcome["covered_by"] or stage["required"]
+                    or outcome["state"] != "not-applicable" or outcome.get("reason") != f"coverage_provided_by:{outcome['covered_by']}"
+                    or covering.get("state") != "pass" or declaration.get("coverage") != "full"
+                    or not declaration.get("required") or declaration.get("kind") != stage["kind"]):
+                raise ValueError("focused stage coverage is not provided by successful required full coverage")
         if not isinstance(outcome.get("duration_ms"), (float, int)) or outcome["duration_ms"] < 0:
             raise ValueError("native stage duration missing")
         if stage["required"] and outcome.get("state") == "pass" and stage.get("evidence"):
@@ -741,14 +885,15 @@ def _validate_native_evidence(evidence: Any, native: Mapping[str, Any], *, requi
 def _validate_retained_native_artifacts(repo: Path, evidence: Mapping[str, Any], directory: Path | None = None) -> None:
     directory = directory or (_git_common_dir(repo) / "st" / "native-stages" / "artifacts")
     for stage in evidence["stages"]:
-        if stage["required"] and stage["state"] == "pass":
+        if stage["state"] == "pass":
             for artifact in stage["artifacts"]:
                 retained = directory / artifact["sha256"]
                 if not artifact.get("retained_path") or hashlib.sha256(retained.read_bytes()).hexdigest() != artifact["sha256"]:
                     raise ValueError(f"{stage['id']}: native evidence artifact unavailable or changed")
 
 
-def _run(command: list[str], cwd: Path, *, native_reuse: bool = True) -> subprocess.CompletedProcess[str]:
+def _run(command: list[str], cwd: Path, *, native_reuse: bool = True,
+         scope: Sequence[str] = ()) -> subprocess.CompletedProcess[str]:
     if command and command[0] == "st":
         # Invoke the exact implementation fingerprinted above. Safe-path mode
         # excludes the target project's cwd from module lookup; a different
@@ -757,6 +902,8 @@ def _run(command: list[str], cwd: Path, *, native_reuse: bool = True) -> subproc
         # different project's pytest/type/tool children.
         bootstrap = "import sys; sys.path.insert(0, sys.argv.pop(1)); from cli.main import app; app()"
         environment = _canonical_gate_environment()
+        if scope:
+            environment["ST_CHECK_CHANGED_FILES"] = "\n".join(scope)
         if not native_reuse:
             environment["ST_NATIVE_NO_REUSE"] = "1"
         return subprocess.run([sys.executable, "-P", "-c", bootstrap,
@@ -813,6 +960,8 @@ def _load_receipt(receipt: Mapping[str, Any] | Path) -> tuple[dict[str, Any], Pa
             "reused",
             "reuse_lookup_ms",
             "working_tree_clean",
+            "scope_digest",
+            "receipt_reference",
         ):
             value.pop(key, None)
     if not isinstance(value, dict):
@@ -835,7 +984,14 @@ def _descriptor(
         "acceptance_plan_fingerprint": plan["fingerprint"],
         "task_id": task_id if task_id is not None else receipt.get("task_id", ""),
         "reused": reused,
+        "scope_digest": scope_digest(receipt.get("scope", ())),
     }
+
+
+def scope_digest(scope: Sequence[str]) -> str:
+    """Authoritative literal-scope identity shared by proof and intent adapters."""
+    normalized = sorted({path.strip() for path in scope if path.strip()})
+    return hashlib.sha256(json.dumps(normalized, separators=(",", ":")).encode()).hexdigest()
 
 
 def validate_acceptance_receipt(
@@ -851,10 +1007,11 @@ def validate_acceptance_receipt(
     acceptance_id = value.get("acceptance_id")
     if not isinstance(acceptance_id, str) or _receipt_digest(value) != acceptance_id:
         raise AcceptanceError("acceptance receipt integrity check failed")
-    if value.get("schema_version") != _SCHEMA_VERSION or value.get("state") != "success":
+    if value.get("schema_version") not in {2, _SCHEMA_VERSION} or value.get("state") != "success":
         raise AcceptanceError("acceptance receipt does not record successful full acceptance")
-    if value.get("coverage") != "full":
-        raise AcceptanceError("acceptance receipt does not record full coverage")
+    coverage = value.get("coverage")
+    if coverage not in {"full", "task"} or (coverage == "task" and value.get("schema_version") != 3):
+        raise AcceptanceError("acceptance receipt does not record supported acceptance coverage")
     source = value.get("source")
     inputs = value.get("inputs")
     plan = value.get("plan")
@@ -883,7 +1040,23 @@ def validate_acceptance_receipt(
     if (not isinstance(recorded_execution, dict) or recorded_execution.get("schema_version") != 1
             or recorded_execution.get("basis") not in {"actual", "isolated"}):
         raise AcceptanceError("acceptance receipt is missing a supported consumed source binding")
-    execution, source_modes = _source_execution(repo, commit, recorded_execution["basis"])
+    mode_entries = inputs.get("source_mode_entries")
+    if recorded_execution["basis"] == "isolated":
+        if not isinstance(mode_entries, dict):
+            raise AcceptanceError("Legacy isolated receipt lacks immutable source permission entries; fresh proof required")
+        # The selected clone's ordinary permissions are immutable evidence.
+        # Recheck owned permissions, not unrelated WIP bytes or projections.
+        owned = value.get("scope", [])
+        for name, mode in mode_entries.items():
+            if any(name == path or name.startswith(path.rstrip("/") + "/") for path in owned):
+                try:
+                    info = (repo / name).lstat()
+                except OSError as exc:
+                    raise AcceptanceError("Owned source permission inputs are unavailable") from exc
+                if (not stat.S_ISREG(info.st_mode) or info.st_uid != os.getuid() or info.st_nlink != 1
+                        or stat.S_IMODE(info.st_mode) & 0o777 != mode):
+                    raise AcceptanceError("Owned source permission inputs no longer match")
+    execution, source_modes = _source_execution(repo, commit, recorded_execution["basis"], mode_entries)
     if source_modes != inputs.get("source_modes"):
         raise AcceptanceError("accepted source permission inputs no longer match or were not recorded")
     if execution != recorded_execution:
@@ -891,7 +1064,10 @@ def validate_acceptance_receipt(
     local_inputs = _local_gate_inputs(repo)
     if local_inputs != inputs.get("local_inputs"):
         raise AcceptanceError("accepted local environment/configuration inputs no longer match")
-    current_plan = _project_acceptance_plan(repo, commit=commit if recorded_execution["basis"] == "isolated" else None)
+    current_plan = requested_plan(repo, commit=commit if recorded_execution["basis"] == "isolated" else None,
+                                  coverage=coverage, scope=plan.get("scope", ()), required_stages=plan.get("required_stages", ()))
+    if coverage == "task" and value.get("scope") != current_plan["scope"]:
+        raise AcceptanceError("Task acceptance receipt belongs to a different owned scope")
     if current_plan != plan:
         raise AcceptanceError("acceptance plan or local toolchain changed; rerun full acceptance")
     checks = value.get("checks")
@@ -912,6 +1088,18 @@ def validate_acceptance_receipt(
         raise AcceptanceError("acceptance checks do not record successful completion of the full plan")
     for check in checks:
         evidence = check.get("evidence")
+        if coverage == "task":
+            if not isinstance(evidence, dict):
+                raise AcceptanceError("Task acceptance is missing required evidence")
+            selected_stage = None
+            if "--stage" in check["command"]:
+                selected_stage = next(stage for stage in current_plan["native"]["stages"] if stage["id"] == check["command"][-1])
+            _validate_task_evidence(evidence, selected_stage, check["command"])
+            try:
+                _validate_retained_native_artifacts(repo, evidence, evidence_directory)
+            except (OSError, ValueError, KeyError) as exc:
+                raise AcceptanceError(f"invalid task acceptance artifact: {exc}") from exc
+            continue
         if not isinstance(evidence, dict) or evidence.get("coverage") != "full" or evidence.get("state") != "pass":
             raise AcceptanceError("acceptance check evidence does not record full coverage")
         if current_plan.get("native") is not None:
@@ -944,7 +1132,7 @@ def persist_validated_receipt(
     repo = repo.resolve()
     validated = validate_acceptance_receipt(repo, receipt, sha=sha, evidence_directory=evidence_directory)
     value, _ = _load_receipt(validated)
-    if value["plan"].get("native") is not None and evidence_directory is not None:
+    if evidence_directory is not None:
         destination = _git_common_dir(repo) / "st" / "native-stages" / "artifacts"
         destination.mkdir(parents=True, exist_ok=True)
         for check in value["checks"]:
@@ -975,10 +1163,13 @@ def accept_revision(
     reuse: bool = True,
     runner: AcceptanceRunner | None = None,
     execution_basis: str = "actual",
+    coverage: str = "full",
+    required_stages: Sequence[str] = (),
 ) -> dict[str, Any]:
     """Accept actual clean HEAD inputs, or a verified isolated Git materialization."""
     repo = repo.resolve()
-    run = runner or (lambda command, cwd: _run(command, cwd, native_reuse=reuse))
+    run = runner or (lambda command, cwd: _run(command, cwd, native_reuse=reuse,
+                                               scope=normalized_scope if coverage == "task" else ()))
     with repo_lock(repo, purpose="full acceptance"):
         acceptance_started = time.monotonic()
         before = source_identity(repo, sha=sha, execution_basis=execution_basis)
@@ -986,8 +1177,8 @@ def accept_revision(
         if before["commit"] != head:
             raise AcceptanceError("full acceptance requires the requested revision to be checked out at HEAD")
         plan_commit = before["commit"] if execution_basis == "isolated" else None
-        plan = _project_acceptance_plan(repo, commit=plan_commit)
         normalized_scope = sorted({str(path).strip() for path in scope if str(path).strip()})
+        plan = requested_plan(repo, commit=plan_commit, coverage=coverage, scope=normalized_scope, required_stages=required_stages)
         # A previously accepted immutable HEAD remains accepted while unrelated
         # WIP is present. Look up only its clean-source key; never certify that
         # WIP or run a fresh full gate over a dirty candidate.
@@ -1010,36 +1201,40 @@ def accept_revision(
         if not before["clean"]:
             raise AcceptanceError("full acceptance requires a clean checkout including nonignored untracked files; no reusable accepted-source receipt")
 
-        started_at = datetime.now(UTC).isoformat()
-        checks: list[dict[str, Any]] = []
-        failed = False
-        for command in plan["commands"]:
-            check_started = time.monotonic()
-            result = run(list(command), repo)
-            detail = "\n".join(part for part in (result.stdout, result.stderr) if part).strip()
-            evidence = _gate_evidence(detail, plan)
-            if plan.get("native") is not None and evidence["state"] == "pass":
-                try:
-                    _validate_retained_native_artifacts(repo, evidence)
-                except (OSError, ValueError, TypeError, KeyError) as exc:
-                    evidence = {**evidence, "state": "fail", "reason": f"native_artifact_unavailable: {exc}"}
-            passed = result.returncode == 0 and evidence["state"] == "pass" and evidence["coverage"] == "full"
-            checks.append(
-                {
-                    "command": command,
-                    "state": "success" if passed else "failed",
-                    "outcome": "pass" if passed else ("fail" if result.returncode else "unavailable"),
-                    "coverage": evidence["coverage"],
-                    "evidence": evidence,
-                    "returncode": result.returncode,
-                    "duration_ms": round((time.monotonic() - check_started) * 1000, 3),
-                    "output_bytes": len(detail.encode()),
-                    "detail": detail[-1200:],
-                }
-            )
-            if not passed:
-                failed = True
-                break
+    started_at = datetime.now(UTC).isoformat()
+    checks: list[dict[str, Any]] = []
+    failed = False
+    for command in plan["commands"]:
+        check_started = time.monotonic()
+        result = run(list(command), repo)
+        detail = "\n".join(part for part in (result.stdout, result.stderr) if part).strip()
+        try:
+            evidence = _task_gate_evidence(repo, detail, plan, command) if coverage == "task" else _gate_evidence(detail, plan)
+        except AcceptanceError as exc:
+            evidence = {"coverage": "task", "state": "fail", "stages": [], "reason": str(exc)}
+        if (plan.get("native") is not None or coverage == "task") and evidence["state"] == "pass":
+            try:
+                _validate_retained_native_artifacts(repo, evidence)
+            except (OSError, ValueError, TypeError, KeyError) as exc:
+                evidence = {**evidence, "state": "fail", "reason": f"native_artifact_unavailable: {exc}"}
+        passed = result.returncode == 0 and evidence["state"] == "pass" and (coverage == "task" or evidence["coverage"] == "full")
+        checks.append(
+            {
+                "command": command,
+                "state": "success" if passed else "failed",
+                "outcome": "pass" if passed else ("fail" if result.returncode else "unavailable"),
+                "coverage": evidence["coverage"],
+                "evidence": evidence,
+                "returncode": result.returncode,
+                "duration_ms": round((time.monotonic() - check_started) * 1000, 3),
+                "output_bytes": len(detail.encode()),
+                "detail": detail[-1200:],
+            }
+        )
+        if not passed:
+            failed = True
+            break
+    with repo_lock(repo, purpose="finalize acceptance"):
         try:
             after = source_identity(repo, sha=before["commit"], execution_basis=execution_basis)
             mutated = any(
@@ -1048,7 +1243,11 @@ def accept_revision(
             )
         except (AcceptanceError, OSError):
             mutated = True
-        plan_changed = _project_acceptance_plan(repo, commit=plan_commit) != plan
+        try:
+            plan_changed = requested_plan(repo, commit=plan_commit, coverage=coverage, scope=normalized_scope,
+                                           required_stages=required_stages) != plan
+        except AcceptanceError:
+            plan_changed = True
         state = "blocked" if mutated or plan_changed else ("failed" if failed else "success")
         reason = (
             "source_changed_during_acceptance"
@@ -1057,9 +1256,9 @@ def accept_revision(
         )
         receipt: dict[str, Any] = {
             "schema_version": _SCHEMA_VERSION,
-            "kind": "local_full_acceptance",
-            "coverage": "full" if all(check["coverage"] == "full" for check in checks) else "focused",
-            "requested_coverage": "full",
+            "kind": "local_task_acceptance" if coverage == "task" else "local_full_acceptance",
+            "coverage": "task" if coverage == "task" else "full" if all(check["coverage"] == "full" for check in checks) else "focused",
+            "requested_coverage": coverage,
             "state": state,
             "reason": reason,
             "source": {"commit": before["commit"], "tree": before["tree"]},
@@ -1068,6 +1267,7 @@ def accept_revision(
                 "workspace_fingerprint": before["workspace_fingerprint"],
                 "source_inputs": before["source_inputs"],
                 "source_modes": before["source_modes"],
+                "source_mode_entries": before["source_mode_entries"],
                 "execution": before["execution"],
                 "local_inputs": before["local_inputs"],
             },

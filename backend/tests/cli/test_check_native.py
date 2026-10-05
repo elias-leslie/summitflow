@@ -130,6 +130,54 @@ def test_focused_invocation_never_claims_full_coverage(native_repo: Path) -> Non
     assert result["coverage"] == "focused"
 
 
+def test_task_acceptance_requires_declared_native_evidence_without_claiming_full(native_repo: Path) -> None:
+    from cli.lib.acceptance_coordinator import accept_source, validate_source_receipt
+
+    _committed(native_repo)
+    calls = []
+
+    def runner(command, cwd):
+        calls.append(command)
+        if "--quick" in command:
+            return subprocess.CompletedProcess(command, 0, "RUFF:OK:0", "")
+        native = run_native(cwd, _plan(cwd), stage_id=command[-1])
+        return subprocess.CompletedProcess(command, 0 if native["state"] == "pass" else 1,
+                                           "NATIVE_EVIDENCE:" + json.dumps(native), "")
+
+    result = accept_source(native_repo, sha="HEAD", materialization="actual", coverage="task",
+                           scope=(".tools/suite.py",), required_stages=("native-suite",), runner=runner)
+    assert result.reference.coverage == "task"
+    assert [stage["id"] for stage in result.reference.required_stages] == ["scoped-quality", "native-suite"]
+    assert validate_source_receipt(native_repo, Path(result.reference.acceptance_artifact)).reference == result.reference
+    assert len(calls) == 2
+    with pytest.raises(acceptance.AcceptanceError, match="missing"):
+        accept_source(native_repo, sha="HEAD", materialization="actual", coverage="task",
+                       scope=(".tools/suite.py",), required_stages=("undeclared",), runner=runner)
+
+
+def test_task_required_optional_stage_cannot_omit_artifacts(native_repo: Path) -> None:
+    from cli.lib.acceptance_coordinator import accept_source, validate_source_receipt
+
+    config = native_repo / ".st-check.toml"
+    config.write_text(config.read_text() + '\n[[native.stages]]\nid="focused"\nargv=["python", ".tools/suite.py"]\n'
+                      'coverage="focused"\nkind="test"\nrequired=false\n'
+                      '[native.stages.evidence]\nformat="json"\npath=".dev-tools/result.json"\n')
+    _committed(native_repo)
+
+    def runner(command, cwd):
+        if "--quick" in command:
+            return subprocess.CompletedProcess(command, 0, "RUFF:OK:0", "")
+        return subprocess.CompletedProcess(command, 0, "NATIVE_EVIDENCE:" + json.dumps(run_native(cwd, _plan(cwd), stage_id="focused")), "")
+
+    result = accept_source(native_repo, sha="HEAD", materialization="actual", coverage="task",
+                           scope=(".tools/suite.py",), required_stages=("focused",), runner=runner)
+    payload = json.loads(Path(result.reference.acceptance_artifact).read_text())
+    payload["checks"][1]["evidence"]["stages"][0]["artifacts"] = []
+    payload["acceptance_id"] = acceptance._receipt_digest(payload)
+    with pytest.raises(acceptance.AcceptanceError, match="required native artifacts"):
+        validate_source_receipt(native_repo, payload)
+
+
 def test_not_applicable_requires_optional_explicit_reason(native_repo: Path) -> None:
     config = native_repo / ".st-check.toml"
     config.write_text(config.read_text() + '\n[[native.stages]]\nid="optional"\nargv=["python"]\ncoverage="full"\nrequired=false\napplicable=false\nreason="No migration schema in this project"\n')
@@ -219,7 +267,7 @@ def test_native_receipt_stores_structured_evidence_and_reuses_exact_inputs(nativ
 
     first = acceptance.accept_revision(native_repo, sha="HEAD", runner=runner)
     second = acceptance.accept_revision(native_repo, sha="HEAD", runner=runner)
-    assert first["schema_version"] == 2
+    assert first["schema_version"] == 3
     assert first["coverage"] == "full"
     assert first["checks"][0]["evidence"]["stages"][0]["counts"]["executed"] == 2
     assert second["reused"] is True
@@ -567,6 +615,39 @@ def test_missing_legacy_scanner_never_certifies_native_full(native_repo: Path, m
     assert CliRunner().invoke(app, ["check", "--check", "--json"]).exit_code == 1
 
 
+def test_failed_cheap_gate_prevents_native_execution(native_repo: Path, monkeypatch) -> None:
+    config = native_repo / ".st-check.toml"
+    config.write_text(config.read_text().replace('legacy_tools = []', 'legacy_tools = ["security"]'))
+    marker = native_repo / ".dev-tools/native-started"
+    suite = native_repo / ".tools/suite.py"
+    suite.write_text(suite.read_text() + "Path('.dev-tools/native-started').touch()\n")
+    monkeypatch.setattr("cli.commands.check._resolve_repo_root", lambda: native_repo)
+    monkeypatch.setattr("cli.commands.check._run_selected", lambda *args, **kwargs: 1)
+
+    assert CliRunner().invoke(app, ["check", "--check", "--json"]).exit_code == 1
+    assert not marker.exists()
+
+
+def test_full_gate_uses_declared_covering_stage_but_explicit_focus_executes(native_repo: Path) -> None:
+    config = native_repo / ".st-check.toml"
+    config.write_text(config.read_text() + '\n[[native.stages]]\nid="subset"\nargv=["python", ".tools/suite.py"]\n'
+                      'coverage="focused"\nkind="test"\nrequired=false\ncovered_by="native-suite"\n'
+                      '[native.stages.evidence]\nformat="json"\npath=".dev-tools/result.json"\n')
+    full = run_native(native_repo, _plan(native_repo))
+    assert full["state"] == "pass"
+    assert full["stages"][1]["state"] == "not-applicable"
+    assert full["stages"][1]["covered_by"] == "native-suite"
+    assert run_native(native_repo, _plan(native_repo), stage_id="subset")["stages"][0]["state"] == "pass"
+
+
+def test_missing_later_preparation_prevents_earlier_heavy_execution(native_repo: Path) -> None:
+    config = native_repo / ".st-check.toml"
+    config.write_text(config.read_text() + '\n[[native.stages]]\nid="unprepared"\nargv=["missing-tool"]\ncoverage="full"\n')
+    result = run_native(native_repo, _plan(native_repo))
+    assert result["state"] == "fail"
+    assert not (native_repo / ".dev-tools/result.json").exists()
+
+
 def test_entrypoint_help_prose_does_not_invalidate_gate_but_behavior_does(tmp_path: Path) -> None:
     path = tmp_path / "main.py"
     path.write_text("CLI_REFERENCE='old operator guide'\ndef app():\n    return 'unchanged check dispatch'\n")
@@ -651,6 +732,40 @@ def test_changed_executable_runtime_cache_invalidates_stage_proof(native_repo: P
     assert run_native(native_repo, _plan(native_repo))["stages"][0]["reused"] is True
     cached.write_text("cached_runtime = 2\n")
     assert run_native(native_repo, _plan(native_repo))["stages"][0]["reused"] is False
+
+
+def test_selected_plan_omits_unmounted_workspace_dist_but_binds_package_dependencies(native_repo: Path) -> None:
+    package = native_repo / "packages/notes-ui"
+    (package / "src").mkdir(parents=True)
+    (package / "src/index.ts").write_text("export const value = 1\n")
+    dependencies = package / "node_modules"
+    dependencies.mkdir()
+    dependency = dependencies / "dependency.js"
+    dependency.write_text("consumed dependency v1\n")
+    (native_repo / "frontend/node_modules/@fixture").mkdir(parents=True)
+    (native_repo / "frontend/node_modules/@fixture/notes-ui").symlink_to(package)
+    (native_repo / ".gitignore").write_text(".dev-tools/\nnode_modules/\ndist/\n")
+    config = native_repo / ".st-check.toml"
+    config.write_text(config.read_text().replace('paths = [".tools"]', 'paths = [".tools"]\nenvironment_inputs=["frontend/node_modules"]'))
+    _committed(native_repo)
+    selected = _git(native_repo, "rev-parse", "HEAD")
+    before = acceptance._project_acceptance_plan(native_repo, commit=selected)
+    (package / "dist").mkdir()
+    (package / "dist/index.js").write_text("host-only ignored build output\n")
+    assert acceptance._project_acceptance_plan(native_repo, commit=selected) == before
+    dependency.write_text("consumed dependency v2\n")
+    assert acceptance._project_acceptance_plan(native_repo, commit=selected) != before
+
+
+def test_unselected_environment_identity_does_not_resolve_source_projections(tmp_path: Path, monkeypatch) -> None:
+    from cli.commands.check_native import _environment_identity
+
+    environment = tmp_path / "prepared"
+    environment.mkdir()
+    (environment / "dependency.py").write_text("prepared dependency\n")
+    before = _environment_identity(tmp_path, environment)
+    monkeypatch.setattr(Path, "resolve", lambda *args, **kwargs: pytest.fail("unselected environment traversed a source projection"))
+    assert _environment_identity(tmp_path, environment) == before
 
 
 def test_standalone_executable_does_not_require_unused_packaging_python(native_repo: Path) -> None:

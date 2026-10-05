@@ -84,6 +84,7 @@ id = "fleet"
 kind = "test"
 coverage = "focused"
 required = false
+covered_by = "python"
 argv = ["backend/.venv/bin/python", "backend/scripts/native_check_fixture.py", "fleet"]
 timeout_seconds = 600
 [native.stages.evidence]

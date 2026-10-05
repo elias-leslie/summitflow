@@ -17,6 +17,89 @@ from cli.commands.done_task_acceptance import accept_isolated_revision
 from cli.lib import acceptance
 
 
+def test_isolated_retry_reuses_successful_stage_from_failed_attempt(native_source):
+    import http.server
+    import threading
+
+    repo, _sha, _store = native_source
+    attempts = []
+
+    class TransientFixture(http.server.BaseHTTPRequestHandler):
+        def do_GET(self):
+            attempts.append(True)
+            self.send_response(503 if len(attempts) == 1 else 200)
+            self.end_headers()
+
+        def log_message(self, format: str, *args: object) -> None:
+            pass
+
+    server = http.server.ThreadingHTTPServer(("127.0.0.1", 0), TransientFixture)
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    check = repo / "transient.py"
+    check.write_text(f"import urllib.request\nimport json\nurllib.request.urlopen('http://127.0.0.1:{server.server_port}/')\n"
+                     "print(json.dumps({'passed':1,'failed':0,'skipped':0}))\n")
+    config = repo / ".st-check.toml"
+    config.write_text(config.read_text().replace('schema_version=1', 'schema_version=1\nlegacy_tools=[]') +
+                      '\n[[native.stages]]\nid="transient"\nkind="test"\ncoverage="full"\n'
+                      'argv=["python","-B","transient.py"]\n[native.stages.evidence]\nformat="json"\nsource="stdout"\n')
+    git(repo, "add", "transient.py", ".st-check.toml")
+    git(repo, "commit", "--only", "-qm", "transient fixture", "--", "transient.py", ".st-check.toml")
+    sha = git(repo, "rev-parse", "HEAD")
+    try:
+        with pytest.raises(acceptance.AcceptanceError, match="retained check evidence"):
+            accept_isolated_revision(repo, sha=sha, scope=("check.py",), task_id="task-source")
+        second = accept_isolated_revision(repo, sha=sha, scope=("check.py",), task_id="task-source")
+        assert second["checks"][0]["evidence"]["stages"][0]["reused"] is True
+        assert second["checks"][0]["evidence"]["stages"][1]["reused"] is False
+    finally:
+        server.shutdown()
+        server.server_close()
+        thread.join()
+
+
+def test_isolated_acceptance_allows_unrelated_checkpoint_during_checks(native_source, monkeypatch):
+    from cli.commands import done_task_acceptance
+
+    repo, sha, _store = native_source
+    original = done_task_acceptance.heavy_work
+
+    class IndependentCheckpoint:
+        def __enter__(self):
+            self.manager = original("isolated concurrency regression")
+            self.work = self.manager.__enter__()
+            return self
+
+        def run(self, command, **kwargs):
+            with acceptance.repo_lock(repo, purpose="foreign checkpoint"):
+                (repo / "unrelated-new.txt").write_text("concurrent unrelated work\n")
+            return self.work.run(command, **kwargs)
+
+        def __exit__(self, *args):
+            return self.manager.__exit__(*args)
+
+    monkeypatch.setattr(done_task_acceptance, "heavy_work", lambda purpose: IndependentCheckpoint())
+    result = accept_isolated_revision(repo, sha=sha, scope=("check.py",), task_id="task-source")
+    assert result["state"] == "success"
+    assert (repo / "unrelated-new.txt").read_text() == "concurrent unrelated work\n"
+
+
+def test_new_isolated_receipt_freezes_complete_modes_without_certifying_foreign_wip(native_source):
+    repo, sha, _store = native_source
+    receipt = accept_isolated_revision(repo, sha=sha, scope=("check.py",), task_id="task-source")
+    entries = receipt["inputs"]["source_mode_entries"]
+    assert len(entries) == receipt["inputs"]["source_modes"]["file_count"]
+    assert entries["native.lock"] == 0o664
+    (repo / "foreign.txt").write_text("later unrelated work\n")
+    assert acceptance.validate_acceptance_receipt(repo, receipt, sha=sha)["state"] == "success"
+    legacy = acceptance._load_receipt(receipt)[0]
+    legacy["schema_version"] = 2
+    legacy["inputs"].pop("source_mode_entries")
+    legacy["acceptance_id"] = acceptance._receipt_digest(legacy)
+    with pytest.raises(acceptance.AcceptanceError, match="fresh proof required"):
+        acceptance.validate_acceptance_receipt(repo, legacy, sha=sha)
+
+
 def git(repo: Path, *arguments: str) -> str:
     return subprocess.check_output(["git", *arguments], cwd=repo, text=True).strip()
 
@@ -408,7 +491,7 @@ def test_partial_checkout_never_hydrates_objects(native_source):
     store.assert_not_called()
 
 
-def test_isolation_rejects_original_checkout_changes_during_the_gate(native_source, monkeypatch):
+def test_isolation_rejects_owned_checkout_changes_during_the_gate(native_source, monkeypatch):
     from app.utils.heavy_work import HeavyWork
 
     repo, sha, store = native_source
@@ -416,14 +499,14 @@ def test_isolation_rejects_original_checkout_changes_during_the_gate(native_sour
 
     def mutate_original(work, *args, **kwargs):
         result = original(work, *args, **kwargs)
-        (repo / "foreign.txt").write_text("changed during isolated acceptance\n")
+        (repo / "check.py").write_text("changed during isolated acceptance\n")
         return result
 
     monkeypatch.setattr(HeavyWork, "run", mutate_original)
 
-    with pytest.raises(acceptance.AcceptanceError, match="Original task source or local inputs changed"):
+    with pytest.raises(acceptance.AcceptanceError, match="Task-owned paths have uncommitted changes"):
         accept_isolated_revision(repo, sha=sha, scope=("check.py",), task_id="task-source")
-    assert (repo / "foreign.txt").read_text() == "changed during isolated acceptance\n"
+    assert (repo / "check.py").read_text() == "changed during isolated acceptance\n"
     store.assert_not_called()
 
 
@@ -508,7 +591,7 @@ def test_isolation_rejects_unsafe_equivalent_current_file_metadata(native_source
 
 
 @pytest.mark.parametrize("change", ["mode", "content"])
-def test_historical_isolation_guard_detects_newer_head_file_drift(native_source, monkeypatch, change: str):
+def test_historical_isolation_allows_newer_unconsumed_file_drift(native_source, monkeypatch, change: str):
     from app.utils.heavy_work import HeavyWork
 
     repo, sha, store = native_source
@@ -531,8 +614,8 @@ def test_historical_isolation_guard_detects_newer_head_file_drift(native_source,
         return result
 
     monkeypatch.setattr(HeavyWork, "run", drift)
-    with pytest.raises(acceptance.AcceptanceError, match="Original task source or local inputs changed"):
-        accept_isolated_revision(repo, sha=sha, scope=("check.py",), task_id="task-source")
+    result = accept_isolated_revision(repo, sha=sha, scope=("check.py",), task_id="task-source")
+    assert result["state"] == "success" and result["source_commit"] == sha
     store.assert_not_called()
 
 

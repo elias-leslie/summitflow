@@ -490,6 +490,31 @@ def test_accept_revision_detects_checkout_mutation_during_checks(repo: Path) -> 
         acceptance.accept_revision(repo, sha=sha, runner=mutate)
 
 
+def test_acceptance_does_not_hold_repository_mutation_lock_while_checks_run(repo: Path) -> None:
+    def run(command: list[str], cwd: Path):
+        with acceptance.repo_lock(cwd, purpose="independent owned checkpoint"):
+            pass
+        return subprocess.CompletedProcess(command, 0, "ok", "")
+
+    assert acceptance.accept_revision(repo, sha="HEAD", runner=run)["state"] == "success"
+
+
+def test_isolated_plan_uses_selected_native_declaration(repo: Path) -> None:
+    from cli.commands.check_native import native_plan
+
+    config = repo / ".st-check.toml"
+    config.write_text('[native]\nschema_version=1\nlocks=["pyproject.toml"]\nlegacy_tools=[]\n'
+                      '[[native.stages]]\nid="selected"\nargv=["app.py"]\ncoverage="full"\n')
+    git(repo, "add", ".st-check.toml")
+    git(repo, "commit", "-qm", "selected native declaration")
+    sha = git(repo, "rev-parse", "HEAD")
+    expected = native_plan(repo)
+    assert expected is not None
+    config.write_text(config.read_text().replace('id="selected"', 'id="foreign-dirty-plan"'))
+
+    assert acceptance._project_acceptance_plan(repo, commit=sha)["native"]["stages"] == expected["stages"]
+
+
 def test_accept_revision_detects_shared_plan_mutation_during_checks(repo: Path, monkeypatch) -> None:
     scanner = repo.parent / "shared-scanner"
     scanner.write_text("original scanner")
@@ -688,7 +713,7 @@ def test_check_acceptance_surface_forwards_exact_source(repo: Path, monkeypatch)
         }
 
     monkeypatch.setattr("cli.commands.check._resolve_repo_root", lambda: repo)
-    monkeypatch.setattr("cli.commands.check.accept_revision", accept)
+    monkeypatch.setattr("cli.lib.acceptance_coordinator.accept_source", lambda *args, **kwargs: Mock(to_dict=lambda: accept(*args, **kwargs)))
     monkeypatch.setattr(
         "cli.commands.check.renew_owned_claim",
         lambda root, task_id: captured.update({"renewed_root": root, "renewed_task": task_id}),
@@ -715,6 +740,9 @@ def test_check_acceptance_surface_forwards_exact_source(repo: Path, monkeypatch)
         "task_id": "task-one",
         "scope": ["backend"],
         "reuse": False,
+        "materialization": "actual",
+        "coverage": "full",
+        "required_stages": [],
         "renewed_root": repo,
         "renewed_task": "task-one",
     }
@@ -734,7 +762,7 @@ def test_check_acceptance_json_preserves_full_machine_receipt(repo: Path, monkey
         "checks": [{"detail": "retained detail"}],
     }
     monkeypatch.setattr("cli.commands.check._resolve_repo_root", lambda: repo)
-    monkeypatch.setattr("cli.commands.check.accept_revision", lambda *_args, **_kwargs: receipt)
+    monkeypatch.setattr("cli.lib.acceptance_coordinator.accept_source", lambda *_args, **_kwargs: Mock(to_dict=lambda: receipt))
 
     result = CliRunner().invoke(app, ["check", "--acceptance", "--json"])
 
@@ -753,7 +781,7 @@ def test_check_acceptance_blocks_when_owned_claim_cannot_be_renewed(
         lambda *_args: (_ for _ in ()).throw(TaskClaimRenewalError("claim lost")),
     )
     accept = Mock()
-    monkeypatch.setattr("cli.commands.check.accept_revision", accept)
+    monkeypatch.setattr("cli.lib.acceptance_coordinator.accept_source", accept)
 
     result = CliRunner().invoke(app, ["check", "--acceptance", "--task", "task-one"])
 

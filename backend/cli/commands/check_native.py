@@ -71,11 +71,34 @@ def python_runtime_root(executable: Path) -> Path | None:
         return runtime
 
 
-def _environment_identity(root: Path, path: Path) -> dict[str, Any]:
+def _environment_identity(root: Path, path: Path, *, commit: str | None = None) -> dict[str, Any]:
     if not path.is_dir():
         return identity(root, path)
     entries = []
     seen: set[tuple[int, int]] = set()
+    tree: dict[str, tuple[str, str]] = {}
+    modes: dict[str, int] = {}
+    if commit is not None:
+        from cli.lib.acceptance import _source_tree_entries, projected_source_modes
+
+        tree = _source_tree_entries(root, commit)
+        modes = projected_source_modes(root, commit)
+
+    def workspace_source(candidate: Path) -> str | None:
+        if not tree:
+            return None
+        resolved = candidate.resolve()
+        if not resolved.is_relative_to(root.resolve()):
+            return None
+        relative = resolved.relative_to(root.resolve())
+        # Source-backed workspace links resolve through the accepted tree in
+        # bwrap, not through the host's ignored dist/WIP. Prepared package-local
+        # node_modules still has its explicit read-only dependency mount.
+        if len(relative.parts) < 2 or relative.parts[0] != "packages" or "node_modules" in relative.parts:
+            return None
+        package = Path(*relative.parts[:2]).as_posix() + "/"
+        return relative.as_posix() if any(name.startswith(package) for name in tree) else None
+
     try:
         for directory, subdirs, files in os.walk(path, followlinks=True):
             current = Path(directory)
@@ -86,7 +109,8 @@ def _environment_identity(root: Path, path: Path) -> dict[str, Any]:
             seen.add((info.st_dev, info.st_ino))
             # Prepared executable caches can be consumed by tool runtimes.
             # Bind them conservatively; native Python writes to a fresh prefix.
-            subdirs[:] = sorted(subdirs)
+            subdirs[:] = sorted(name for name in subdirs if not (relative := workspace_source(current / name))
+                                or relative in tree or any(item.startswith(relative + "/") for item in tree))
             for name in subdirs:
                 candidate = current / name
                 if candidate.is_symlink():
@@ -94,6 +118,17 @@ def _environment_identity(root: Path, path: Path) -> dict[str, Any]:
             for name in sorted(files):
                 candidate = current / name
                 item = identity(path, candidate)
+                if relative := workspace_source(candidate):
+                    if relative not in tree:
+                        continue
+                    from cli.lib.acceptance import _git
+
+                    selected = _git(root, ["show", f"{commit}:{relative}"], text=False)
+                    if selected.returncode or tree[relative][0] not in {"100644", "100755"}:
+                        raise OSError("selected workspace dependency source unavailable")
+                    item = {"path": candidate.relative_to(path).as_posix(), "state": "present",
+                            "size": len(selected.stdout), "mode": modes[relative],
+                            "sha256": hashlib.sha256(selected.stdout).hexdigest()}
                 if item["state"] != "present":
                     raise OSError("prepared environment entry unavailable")
                 entries.append(item)
@@ -103,13 +138,22 @@ def _environment_identity(root: Path, path: Path) -> dict[str, Any]:
         return {"path": str(path), "state": "unavailable"}
 
 
-def native_plan(root: Path) -> dict[str, Any] | None:
+def native_plan(root: Path, *, commit: str | None = None) -> dict[str, Any] | None:
     """Load declarations strictly; legacy projects remain on their existing gate."""
     config = root / ".st-check.toml"
-    if not config.exists():
+    if commit is None and not config.exists():
         return None
     try:
-        data = tomllib.loads(config.read_text(encoding="utf-8"))
+        if commit is None:
+            content = config.read_text(encoding="utf-8")
+        else:
+            from cli.lib.acceptance import _git
+
+            selected = _git(root, ["show", f"{commit}:.st-check.toml"])
+            if selected.returncode:
+                return None
+            content = selected.stdout
+        data = tomllib.loads(content)
     except (OSError, UnicodeError, tomllib.TOMLDecodeError) as exc:
         raise NativeCheckError(f"invalid .st-check.toml: {exc}") from exc
     native = data.get("native")
@@ -226,6 +270,15 @@ def native_plan(root: Path) -> dict[str, Any] | None:
                            "executable": executable.relative_to(root).as_posix() if executable.is_relative_to(root) else str(executable)})
     if not any(stage["required"] for stage in normalized):
         raise NativeCheckError("native plan must include a required stage")
+    preceding: dict[str, dict[str, Any]] = {}
+    for stage in normalized:
+        if "covered_by" in stage:
+            covering = preceding.get(stage["covered_by"]) if isinstance(stage["covered_by"], str) else None
+            if (stage["required"] or stage["coverage"] != "focused" or not covering
+                    or not covering["required"] or not covering["applicable"]
+                    or covering["coverage"] != "full" or covering["kind"] != stage["kind"]):
+                raise NativeCheckError("covered_by requires an earlier applicable required full stage of the same kind")
+        preceding[stage["id"]] = stage
     runtime_paths = {_local(root, path) for path in environment_inputs} | {Path(path) for path in managed_environment_inputs}
     for path in paths:
         _local(root, path)
@@ -244,7 +297,7 @@ def native_plan(root: Path) -> dict[str, Any] | None:
             "paths": paths, "environment": environment, "stages": normalized,
             "tools": {name: identity(root, Path(path)) for name, path in tools.items()},
             "legacy_tools": list(dict.fromkeys(legacy_tools)),
-            "prepared_environment": [_environment_identity(root, path) for path in sorted(runtime_paths)],
+            "prepared_environment": [_environment_identity(root, path, commit=commit) for path in sorted(runtime_paths)],
             "preparation": "explicit_only_no_installation"}
 
 
@@ -319,12 +372,35 @@ def run_native(root: Path, plan: dict[str, Any], *, stage_id: str | None = None,
         return _run_native(root, plan, aliases=aliases, stage_id=stage_id, reuse=reuse, full_gate=full_gate)
 
 
+def blocked_native_result(plan: dict[str, Any], reason: str, *, stage_id: str | None = None,
+                           full_gate: bool = True) -> dict[str, Any]:
+    """Record every declared stage honestly when cheap preparation blocks work."""
+    stages = [stage for stage in plan["stages"] if stage_id is None or stage["id"] == stage_id]
+    if not stages:
+        raise NativeCheckError(f"unknown native stage: {stage_id}")
+    return {"schema_version": 1, "coverage": "full" if full_gate and stage_id is None else "focused",
+            "state": "fail", "stages": [{"id": stage["id"], "coverage": stage["coverage"],
+                "required": stage["required"], "command": stage["argv"], "cwd": stage["cwd"],
+                "tool": stage["tool"], "state": "unavailable", "returncode": None,
+                "duration_ms": 0, "reason": reason, "artifacts": [], "reused": False} for stage in stages]}
+
+
 def _run_native(root: Path, plan: dict[str, Any], *, aliases: Path, stage_id: str | None, reuse: bool, full_gate: bool) -> dict[str, Any]:
     from cli.lib.acceptance import AcceptanceError
 
     stages = [stage for stage in plan["stages"] if stage_id is None or stage["id"] == stage_id]
     if not stages:
         raise NativeCheckError(f"unknown native stage: {stage_id}")
+    # Validate all required preparation before acquiring any expensive stage
+    # lease. A missing later tool must not waste an earlier suite execution.
+    if any(item["state"] != "present" for item in [*plan["locks"], *plan["prepared_environment"]]):
+        return blocked_native_result(plan, "locked_environment_unavailable; prepare explicitly", stage_id=stage_id, full_gate=full_gate)
+    for stage in stages:
+        if not (stage["required"] or stage_id is not None):
+            continue
+        executable = Path(stage["executable"]) if Path(stage["executable"]).is_absolute() else _local(root, stage["executable"])
+        if not executable.is_file() or not os.access(executable, os.X_OK) or not _local(root, stage["cwd"]).is_dir():
+            return blocked_native_result(plan, "project_tool_or_cwd_unavailable; prepare explicitly", stage_id=stage_id, full_gate=full_gate)
     temporary = aliases.parent
     environment = {"HOME": str(root), "LANG": "C.UTF-8", "CI": "true",
                    "XDG_CONFIG_HOME": str(aliases / "config"), "XDG_DATA_HOME": str(aliases / "data"),
@@ -354,6 +430,12 @@ def _run_native(root: Path, plan: dict[str, Any], *, aliases: Path, stage_id: st
         outcome: dict[str, Any] = {"id": stage["id"], "coverage": stage["coverage"], "required": stage["required"],
                                    "command": stage["argv"], "cwd": stage["cwd"], "tool": stage["tool"], "artifacts": [],
                                    "state": "unavailable", "returncode": None, "reason": ""}
+        if (stage_id is None and full_gate and stage.get("covered_by")
+                and any(item["id"] == stage["covered_by"] and item["state"] == "pass" for item in outcomes)):
+            outcomes.append({**outcome, "state": "not-applicable", "covered_by": stage["covered_by"],
+                             "reason": f"coverage_provided_by:{stage['covered_by']}", "duration_ms": 0,
+                             "output_bytes": 0, "reused": False})
+            continue
         evidence = stage.get("evidence")
         report = _local(root, evidence["path"]) if evidence and evidence.get("source", "file") == "file" else None
         previous = report.stat().st_mtime_ns if report is not None and report.is_file() else None
@@ -550,3 +632,54 @@ def _save_stage(root: Path, cache: dict[str, Any], stage: dict[str, Any], outcom
         _write_receipt(cache["directory"] / f"{cache['key']}-{stage['id']}.json", receipt)
     except (AcceptanceError, NativeCheckError, OSError):
         return
+
+
+def transfer_native_stage_receipts(source: Path, destination: Path) -> None:
+    """Retain successful observations, not acceptance, across private attempts.
+
+    Admission still requires the exact source/plan/implementation cache key and
+    artifact checks in _reuse_stage. Malformed or incomplete observations never
+    become reuse candidates. No directories, symlinks, or arbitrary paths cross.
+    """
+    from cli.lib.acceptance import _write_receipt
+
+    if not source.is_dir():
+        return
+    for path in source.glob("*.json"):
+        if not path.is_file() or path.is_symlink():
+            continue
+        try:
+            receipt = json.loads(path.read_text(encoding="utf-8"))
+            digest = receipt.pop("digest")
+            outcome = receipt["outcome"]
+            key = receipt["key"]
+            stage_id = outcome["id"]
+            if (digest != _digest(receipt) or receipt["schema_version"] != 1
+                    or not re.fullmatch(r"[0-9a-f]{64}", key)
+                    or not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9_.-]*", stage_id)
+                    or path.name != f"{key}-{stage_id}.json"
+                    or outcome["state"] != "pass" or outcome["coverage"] != "full" or outcome["returncode"] != 0):
+                continue
+            artifacts = []
+            for artifact in outcome["artifacts"]:
+                sha = artifact["sha256"]
+                if not re.fullmatch(r"[0-9a-f]{64}", sha):
+                    raise ValueError("invalid artifact identity")
+                retained = source / "artifacts" / sha
+                if retained.is_symlink():
+                    raise ValueError("linked artifact")
+                content = retained.read_bytes()
+                if hashlib.sha256(content).hexdigest() != sha:
+                    raise ValueError("artifact changed")
+                artifacts.append((sha, content))
+            destination.mkdir(parents=True, exist_ok=True)
+            storage = destination / "artifacts"
+            storage.mkdir(exist_ok=True)
+            for sha, content in artifacts:
+                with tempfile.NamedTemporaryFile("wb", dir=storage, delete=False) as handle:
+                    temporary = Path(handle.name)
+                    handle.write(content)
+                temporary.replace(storage / sha)
+            _write_receipt(destination / path.name, {**receipt, "digest": digest})
+        except (OSError, ValueError, TypeError, KeyError):
+            continue
