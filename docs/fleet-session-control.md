@@ -20,6 +20,36 @@ Instructions must not contain credentials, private target data, or transcripts.
 The sanitizer removes common credential forms and control characters, but does
 not prove that arbitrary content is non-secret. The caller owns that content boundary.
 
+For an existing ordinary Codex session, local owner CLI delivery is explicit:
+
+```sh
+st -P PROJECT sessions send EXACT_THREAD_UUID "short non-secret instruction" --delivery native-thread --source-key REVISION
+```
+
+This mode verifies the exact local native provenance and registered project root,
+honors an existing immutable project binding, and reuses the synchronizer's
+canonical Git/Aico owner mapping when no explicit binding exists. Unknown,
+foreign, ambiguous, or spawned subagent identities are rejected. Offline threads
+remain addressable when their retained header and project mapping are verified;
+queued input can execute when that same thread resumes. It addresses the durable
+thread, not an Aico/A-Term process generation, and does not change their owner
+`send` endpoints. No Enter, terminal paste, or agent polling is required.
+
+The existing events table retains a source-key/content reservation before the
+single native `thread/queue/add` attempt. Only the reservation winner dispatches.
+The reservation stores the instruction digest and exact destination, without a
+second prompt copy; the native queue owns the submitted payload.
+Native queue acceptance returns `delivery=queued`, a queue ID and a correlated
+client message ID; `observed=false` means no consumption evidence was checked.
+Retries with the same source key return the retained outcome without resending;
+changed content conflicts. A crash or missing reply leaves `pending-or-uncertain`
+or `uncertain`, including a lost acknowledgment after native acceptance. Do not
+use a new source key to blindly replay an uncertain attempt. Native client IDs
+are correlation identifiers, not a proven provider deduplication guarantee.
+Reservations and receipts survive routine fleet retention to prevent replay.
+This local owner operation requires access to the existing SummitFlow database
+and native client; it is not a remote transport or an exactly-once claim.
+
 `st sessions wait ROOT --cursor SEQUENCE` drains committed pages by exclusive
 stream sequence. The default wait is 300 seconds. An empty timeout prints nothing
 and creates no event. Cancellation also creates no event. Redis wakeups are

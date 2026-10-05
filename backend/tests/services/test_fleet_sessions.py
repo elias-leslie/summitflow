@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import hashlib
 import uuid
+from concurrent.futures import ThreadPoolExecutor
 from contextlib import asynccontextmanager
 from typing import cast
 from unittest.mock import MagicMock
@@ -15,6 +16,31 @@ import pytest
 from app.services import fleet_sessions as service
 from app.storage import fleet_events as fleet
 from app.storage.connection import get_connection
+
+
+def test_native_reservation_has_one_concurrent_winner_and_retains_receipts(ensure_test_project, monkeypatch):
+    trace = "native-send:" + uuid.uuid4().hex
+    monkeypatch.setattr(fleet, "get_redis", lambda: MagicMock())
+    try:
+        def reserve(_):
+            return fleet.append_fleet_event(ensure_test_project, trace, source_key="request", event_type="native.delivery.reserved", attributes={"instruction_digest": "fixture"}, return_created=True)
+        with ThreadPoolExecutor(max_workers=4) as pool:
+            results = list(pool.map(reserve, range(4)))
+        assert sum(result["created"] for result in results) == 1
+        assert len({result["id"] for result in results}) == 1
+        with pytest.raises(fleet.SourceKeyConflict):
+            fleet.append_fleet_event(ensure_test_project, trace, source_key="request", event_type="native.delivery.reserved", attributes={"instruction_digest": "changed"}, return_created=True)
+        fleet.append_fleet_event(ensure_test_project, trace, source_key="result", event_type="native.delivery.result", attributes={"delivery": "queued"})
+        with get_connection() as conn:
+            conn.execute("UPDATE events SET timestamp = NOW() - INTERVAL '40 days' WHERE trace_id = %s", (trace,))
+            conn.commit()
+        fleet.cleanup_fleet_events()
+        assert len(fleet.read_fleet_page(ensure_test_project, trace)) == 2
+        assert reserve(0)["created"] is False
+    finally:
+        with get_connection() as conn:
+            conn.execute("DELETE FROM events WHERE trace_id = %s", (trace,))
+            conn.commit()
 
 
 @pytest.fixture

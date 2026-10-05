@@ -55,6 +55,7 @@ def _record(row: Any) -> dict[str, Any]:
 def append_fleet_event(
     project_id: str, trace_id: str, *, source_key: str, event_type: str,
     attributes: dict[str, Any], digest: str | None = None, require_open: bool = False,
+    return_created: bool = False,
 ) -> dict[str, Any]:
     """Append a compact source reference, returning the same retained retry identity."""
     if not source_key or len(source_key) > 256 or not event_type or len(event_type) > 128:
@@ -75,7 +76,10 @@ def append_fleet_event(
             if existing[1] != project_id or existing[5] != canonical_digest:
                 raise SourceKeyConflict("Source key already retained with different content or scope")
             conn.commit()
-            return _record(existing)
+            record = _record(existing)
+            if return_created:
+                record["created"] = False
+            return record
         if require_open:
             cur.execute(
                 "SELECT 1 FROM events WHERE trace_id = %s AND event_type IN ('root.closed', 'root.close-uncertain') AND stream_sequence IS NOT NULL",
@@ -132,7 +136,10 @@ def append_fleet_event(
         get_redis().publish(f"fleet:{trace_id}", str(sequence))
     except (redis.RedisError, OSError):
         logger.warning("Fleet wake unavailable; committed sequence retained", trace_id=trace_id, sequence=sequence)
-    return _record(row)
+    record = _record(row)
+    if return_created:
+        record["created"] = True
+    return record
 
 
 def read_fleet_page(project_id: str, trace_id: str, *, cursor: int = 0, limit: int = 100) -> list[dict[str, Any]]:
@@ -187,7 +194,8 @@ def cleanup_fleet_events(*, max_age_days: int = 30) -> int:
             _lock(cur, root)
             cur.execute(
                 "DELETE FROM events WHERE trace_id = %s AND stream_sequence IS NOT NULL "
-                "AND event_type NOT LIKE 'root.%%' AND timestamp < NOW() - (%s * INTERVAL '1 day') "
+                "AND event_type NOT LIKE 'root.%%' AND event_type NOT LIKE 'native.delivery.%%' "
+                "AND timestamp < NOW() - (%s * INTERVAL '1 day') "
                 "AND stream_sequence < (SELECT MAX(stream_sequence) FROM events WHERE trace_id = %s)",
                 (root, max_age_days, root),
             )
