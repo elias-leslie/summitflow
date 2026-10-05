@@ -15,7 +15,7 @@ from cli.lib import acceptance
 
 
 @pytest.fixture
-def repair_refresh(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> dict[str, Any]:
+def repair_refresh(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, local_gate_tools: None) -> dict[str, Any]:
     task_id = "task-repair-refresh"
     project_id = "repair-fixture"
 

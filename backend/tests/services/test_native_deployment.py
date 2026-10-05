@@ -30,7 +30,7 @@ def commit(root: Path) -> str:
 
 
 @pytest.fixture
-def repo(tmp_path: Path) -> Path:
+def repo(tmp_path: Path, local_gate_tools: None) -> Path:
     root = tmp_path / "project"
     root.mkdir()
     git(root, "init", "-q", "--initial-branch=main")

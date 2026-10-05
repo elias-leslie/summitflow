@@ -158,7 +158,7 @@ def test_isolated_retry_reuses_successful_stage_from_failed_attempt(native_sourc
     check.write_text(f"import urllib.request\nimport json\nurllib.request.urlopen('http://127.0.0.1:{server.server_port}/')\n"
                      "print(json.dumps({'passed':1,'failed':0,'skipped':0}))\n")
     config = repo / ".st-check.toml"
-    config.write_text(config.read_text().replace('schema_version=1', 'schema_version=1\nlegacy_tools=[]') +
+    config.write_text(config.read_text() +
                       '\n[[native.stages]]\nid="transient"\nkind="test"\ncoverage="full"\n'
                       'argv=["python","-B","transient.py"]\n[native.stages.evidence]\nformat="json"\nsource="stdout"\n')
     git(repo, "add", "transient.py", ".st-check.toml")
@@ -259,10 +259,10 @@ def native_source(tmp_path: Path, monkeypatch):
     )
     (repo / ".gitignore").write_text("__pycache__/\n.tool-env/\n")
     (repo / ".st-check.toml").write_text(
-        '[paths]\ntypes=".tool-env"\n'
-        '[native]\nschema_version=1\nlocks=["native.lock"]\npaths=[".tool-env"]\nenvironment_inputs=[".tool-env"]\n'
+        # The declared real Python stage covers this fixture's contract. Global
+        # linters/type/security runtimes are unrelated to its sandbox assertions.
+        '[native]\nschema_version=1\nlegacy_tools=[]\nlocks=["native.lock"]\npaths=[".tool-env"]\nenvironment_inputs=[".tool-env"]\n'
         '[native.tools]\npython="/usr/bin/python3"\n'
-        f'ty={str(shutil.which("ty") or "/managed-type-checker-unavailable")!r}\n'
         '[[native.stages]]\nid="contract"\nkind="test"\ncoverage="full"\n'
         'argv=["python","-B","check.py"]\n'
         '[native.stages.evidence]\nformat="json"\nsource="stdout"\n'
