@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import Generator
+from pathlib import Path
 from typing import Any
 from uuid import uuid4
 
@@ -92,3 +93,57 @@ def test_native_retry_selector_keeps_every_outstanding_archive_and_excludes_rest
     selected = [row["id"] for row in backups.get_pending_native_offsite_backups() if row["source_id"] == catalogue["source"]]
     assert selected == expected
     assert not set(excluded) & set(selected)
+
+
+def test_expiry_failed_unlink_preserves_catalogue_then_success_removes_it(catalogue, tmp_path, monkeypatch):
+    root = tmp_path / "source"
+    archive = root / "backups" / "fixture.tar.gz.age"
+    archive.parent.mkdir(parents=True)
+    archive.write_bytes(b"synthetic-encrypted-artifact")
+    backups.update_source(catalogue["source"], path=str(root))
+    backup_id = catalogue["create"](offsite="verified")
+    backups.update_backup_status(backup_id, "completed", location=str(archive))
+    catalogue["age"]([backup_id])
+    unlink = Path.unlink
+    def denied(path, *args, **kwargs):
+        if path == archive:
+            raise PermissionError("synthetic failure")
+        return unlink(path, *args, **kwargs)
+    with monkeypatch.context() as patch:
+        patch.setattr(Path, "unlink", denied)
+        assert backups.cleanup_expired_backup_records(min_keep=0) == 0
+    retained = backups.get_backup(backup_id)
+    assert retained is not None
+    assert retained["verification_json"]["offsite"]["status"] == "verified"
+    assert archive.exists()
+    assert backups.cleanup_expired_backup_records(min_keep=0) == 1
+    assert not archive.exists()
+    assert backups.get_backup(backup_id) is None
+
+
+def test_expiry_refuses_unbounded_or_remote_artifact(catalogue, tmp_path):
+    archive = tmp_path / "unowned.tar.gz.age"
+    archive.write_bytes(b"retained evidence")
+    ids = [catalogue["create"](offsite="verified") for _ in range(2)]
+    for backup_id, location in zip(ids, [str(archive), "//remote/retained.tar.gz.age"], strict=True):
+        backups.update_backup_status(backup_id, "completed", location=location)
+    catalogue["age"](ids)
+    assert backups.cleanup_expired_backup_records(min_keep=0) == 0
+    assert archive.exists()
+    assert all(backups.get_backup(backup_id) for backup_id in ids)
+
+
+def test_frequency_change_recalculates_due_without_changing_retention(catalogue):
+    backups.update_source(catalogue["source"], retention_days=37)
+    with get_connection() as conn, conn.cursor() as cur:
+        cur.execute("UPDATE backup_sources SET last_run_at = NOW() - INTERVAL '5 hours', next_run_at = NOW() + INTERVAL '25 days' WHERE id = %s", (catalogue["source"],))
+        conn.commit()
+    # This integration also runs on the existing shared test DB before rollout.
+    # Four-hour admission itself is covered by the isolated migration/API tests.
+    updated = backups.update_source(catalogue["source"], frequency="hourly")
+    assert updated is not None
+    from datetime import datetime
+    last = datetime.fromisoformat(updated["last_run_at"])
+    due = datetime.fromisoformat(updated["next_run_at"])
+    assert (due - last).total_seconds() == 3600
+    assert updated["retention_days"] == 37

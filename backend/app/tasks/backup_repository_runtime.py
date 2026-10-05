@@ -7,6 +7,7 @@ staging has a stable path for Restic parents and is removed after each attempt.
 
 from __future__ import annotations
 
+import copy
 import fcntl
 import hashlib
 import json
@@ -19,6 +20,7 @@ import tempfile
 import time
 from collections.abc import Iterator, Mapping
 from contextlib import contextmanager
+from contextvars import ContextVar
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any, cast
@@ -26,20 +28,108 @@ from typing import Any, cast
 from ..services.backup_keys import backup_key_directory
 from ..storage import backups as backup_store
 from ..utils.shared_paths import get_host_config_root
-from .backup_activity import check_backup_cancelled, record_local_archive
+from ._retention_policy import HostRetentionPolicy
+from .backup_activity import BackupCancelled, check_backup_cancelled, record_local_archive
 from .backup_native_archive import (
     _gzip_payload_file,
     _recoverable_file_filter,
     prepare_project_payload,
 )
 from .backup_native_infra import prepare_infrastructure_payload
-from .backup_native_recovery import GIT_BUNDLE_NAME, RECOVERY_DIR_NAME
+from .backup_native_recovery import GIT_BUNDLE_NAME, RECOVERY_DIR_NAME, _is_sqlite_database
 from .backup_restic import ResticAdapter, ResticConfig, ResticError
 from .backup_utils import (
     REPOSITORY_CRITICAL_RESTORE_DAYS,
     build_storage_env,
     canonical_backup_source_roots,
 )
+
+_capture_batch: ContextVar[dict[str, dict[str, str]] | None] = ContextVar("repository_capture_batch", default=None)
+
+
+def _repository_pair(config: ResticConfig) -> str:
+    return hashlib.sha256((str(config.local_repository.resolve()) + "\n" + (config.remote_repository or "")).encode()).hexdigest()
+
+
+@contextmanager
+def repository_capture_batch() -> Iterator[dict[str, dict[str, str]]]:
+    """Defer copy/check until every serial capture removed its plaintext tree."""
+    batch: dict[str, dict[str, str]] = {}
+    token = _capture_batch.set(batch)
+    try:
+        yield batch
+    finally:
+        _capture_batch.reset(token)
+
+
+def _payload_fingerprint(payload: Mapping[str, Any]) -> str:
+    """Hash saved bytes and recovery state, never filesystem timestamp guesses."""
+    root = Path(payload["snapshot_dir"])
+    digest = hashlib.sha256()
+    for path in sorted(root.rglob("*")):
+        check_backup_cancelled()
+        metadata = path.lstat()
+        digest.update(json.dumps([path.relative_to(root).as_posix(), stat.S_IFMT(metadata.st_mode), stat.S_IMODE(metadata.st_mode)]).encode())
+        if path.is_symlink():
+            digest.update(os.readlink(path).encode())
+        elif path.is_file():
+            with path.open("rb") as stream:
+                for chunk in iter(lambda: stream.read(1024 * 1024), b""):
+                    check_backup_cancelled()
+                    digest.update(chunk)
+    return digest.hexdigest()
+
+
+def _unchanged_snapshot_available(adapter: ResticAdapter, previous: Mapping[str, Any]) -> bool:
+    if adapter.repository_identity()["id"] != previous.get("repository_id"):
+        raise ResticError("Unchanged capture checkpoint repository identity differs")
+    return any(item["id"] == previous.get("snapshot_id") for item in adapter.snapshots())
+
+
+def _payload_has_database(payload: Mapping[str, Any]) -> bool:
+    if payload.get("expects_db") or payload.get("db_bytes"):
+        return True
+    # SQLite is already captured with the existing online backup API. Keep a
+    # fresh point even when its consistent bytes equal the previous capture.
+    return any(_is_sqlite_database(path) for path in Path(payload["snapshot_dir"]).rglob("*") if path.is_file() and not path.is_symlink())
+
+
+def _capacity_admission(config: ResticConfig, state: Mapping[str, Any], source_id: str, *, staged_bytes: int = 0) -> dict[str, Any]:
+    """Reserve existing host-policy headroom plus measured capture/growth peaks."""
+    previous = state.get("sources", {}).get(source_id, {})
+    history = previous.get("capacity", {})
+    staging_peak = max(staged_bytes, int(history.get("staging_peak_bytes") or 0), int(previous.get("result", {}).get("logical_bytes") or 0))
+    growth_peak = max(int(history.get("growth_peak_bytes") or 0), int(previous.get("result", {}).get("stored_bytes") or 0))
+    policy = HostRetentionPolicy.from_env()
+    filesystems: dict[int, dict[str, Any]] = {}
+    for label, path, needed in (("staging", config.key_directory, max(0, staging_peak - staged_bytes)), ("repository", config.local_repository, max(staged_bytes, growth_peak))):
+        while not path.exists():
+            path = path.parent
+        usage = shutil.disk_usage(path)
+        reserve = int(policy.pressure_min_free_gb * 1024**3)
+        entry = filesystems.setdefault(path.stat().st_dev, {"free_bytes": usage.free, "reserve_bytes": reserve, "required_bytes": 0, "paths": [], "under_pressure": 100 * usage.used / usage.total >= policy.pressure_disk_percent})
+        entry["required_bytes"] += needed
+        entry["paths"].append(label)
+    admitted = all(item["free_bytes"] - item["required_bytes"] >= item["reserve_bytes"] for item in filesystems.values())
+    return {"admitted": admitted, "staging_peak_bytes": staging_peak, "growth_peak_bytes": growth_peak, "filesystems": list(filesystems.values()), "reason": None if admitted else "insufficient-host-policy-headroom"}
+
+
+def _copy_admission(adapter: ResticAdapter, state: Mapping[str, Any]) -> dict[str, Any]:
+    """Budget copy from measured growth; first copy uses actual local objects."""
+    journal = state.get("offsite", {})
+    pending = set(journal.get("pending_snapshot_ids") or [])
+    recorded = dict(journal.get("pending_stored_bytes") or {})
+    for item in state["sources"].values():
+        if item.get("snapshot_id") in pending and item.get("result", {}).get("stored_bytes") is not None:
+            recorded[item["snapshot_id"]] = int(item["result"]["stored_bytes"])
+    growth = sum(int(recorded[snapshot_id]) for snapshot_id in pending if snapshot_id in recorded)
+    measured = int(journal.get("copy_growth_peak_bytes") or journal.get("new_object_bytes") or 0)
+    required = max(measured, growth)
+    if not journal.get("verified_at") or pending - recorded.keys() or not required:
+        required = adapter.physical_bytes()
+    free = adapter.quota_free_bytes()
+    reserve = int(HostRetentionPolicy.from_env().pressure_min_free_gb * 1024**3)
+    return {"admitted": free is not None and free - required >= reserve, "required_bytes": required, "free_bytes": free, "reserve_bytes": reserve, "evidence": "measured-copy-growth-and-pending-stored-bytes" if measured or growth else "local-physical-objects"}
 
 
 def is_repository_backup(backup: Mapping[str, Any]) -> bool:
@@ -96,7 +186,7 @@ def _checkpoint(config: ResticConfig) -> Iterator[tuple[Path, dict[str, Any]]]:
     _approved_key_directory(config)
     root = config.key_directory / "restic-state"
     _private_directory(root)
-    identity = hashlib.sha256((str(config.local_repository.resolve()) + "\n" + (config.remote_repository or "")).encode()).hexdigest()
+    identity = _repository_pair(config)
     directory = root / identity
     _private_directory(directory)
     descriptor = os.open(directory / ".state.lock", os.O_CREAT | os.O_RDWR | os.O_NOFOLLOW, 0o600)
@@ -177,6 +267,9 @@ def run_repository_backup(
     config = ResticConfig.from_env(env)
     adapter = ResticAdapter(config)
     with _checkpoint(config) as (directory, state):
+        admission = _capacity_admission(config, state, source_id)
+        if not admission["admitted"]:
+            raise ResticError("Capture blocked: insufficient host-policy headroom")
         payloads = directory / "payloads"
         _private_directory(payloads)
         staging = payloads / hashlib.sha256(source_id.encode()).hexdigest()
@@ -195,13 +288,43 @@ def run_repository_backup(
             if infrastructure:
                 payload = prepare_infrastructure_payload(Path(project_dir), staging, host_config_root=get_host_config_root())
             else:
+                project_id = env.get("BACKUP_PROJECT_ID") or source_id
                 payload = prepare_project_payload(
-                    Path(project_dir), Path(project_dir).name, staging, env,
+                    Path(project_dir), Path(project_dir).name, staging, {**env, "BACKUP_PROJECT_ID": project_id},
                     source_roots=canonical_backup_source_roots(), sensitive_paths=(config.key_directory,),
                     git_bundle_reuse=reuse,
                 )
             payload["snapshot_dir"].chmod(0o700)
-            result = adapter.save_payload(source_id, payload)
+            fingerprint = _payload_fingerprint(payload)
+            batch = _capture_batch.get()
+            if batch is not None:
+                batch[_repository_pair(config)] = env
+            if not infrastructure and not _payload_has_database(payload) and previous.get("payload_fingerprint") == fingerprint and _unchanged_snapshot_available(adapter, previous):
+                # Consistency validation and content hashing already ran. Only
+                # an actual file-only payload may reuse its retained snapshot.
+                result = copy.deepcopy(previous["result"])
+                result.update(unchanged=True, data_added_bytes=0, stored_bytes=0)
+                result["verification"].update(data_added_bytes=0, stored_bytes=0)
+                result["verification"].update(unchanged=True, capture_checked_at=datetime.now(UTC).isoformat())
+                previous["last_checked_at"] = result["verification"]["capture_checked_at"]
+                _save_json(directory / "state.json", state)
+                if local_only:
+                    result["verification"]["offsite"] = {"status": "not_requested"}
+                    result.update(status="completed")
+                    result.pop("pending_path", None)
+                elif batch is None:
+                    synced = _sync(adapter, directory, state, str(result["snapshot_id"]), env)
+                    result["verification"]["offsite"] = synced["verification"]["offsite"]
+                    if synced["status"] == "verified":
+                        result.update(status="completed")
+                        result.pop("pending_path", None)
+                        result["verification"].update(remote_snapshot_id=synced["remote_snapshot_id"], remote_repository_id=synced["remote_repository_id"])
+                record_local_archive(result)
+                return result
+            admission = _capacity_admission(config, state, source_id, staged_bytes=int(payload.get("total_bytes") or 0))
+            if not admission["admitted"]:
+                raise ResticError("Capture blocked after staging: insufficient host-policy headroom")
+            result = adapter.save_payload(source_id, payload, defer_check=True) if batch is not None else adapter.save_payload(source_id, payload)
             result["verification"].update(
                 data_added_bytes=result.get("data_added_bytes"), stored_bytes=result.get("stored_bytes"),
                 logical_bytes=result.get("logical_bytes"), total_files=payload["total_files"],
@@ -216,6 +339,8 @@ def run_repository_backup(
                 "baseline_snapshot_id": previous.get("baseline_snapshot_id", result["snapshot_id"]),
                 "last_good_snapshot_id": previous.get("last_good_snapshot_id", result["snapshot_id"]),
                 "recovery": payload.get("recovery", {}), "result": result,
+                "payload_fingerprint": fingerprint,
+                "capacity": {"staging_peak_bytes": admission["staging_peak_bytes"], "growth_peak_bytes": max(admission["growth_peak_bytes"], int(result.get("stored_bytes") or 0))},
                 "completed_at": datetime.now(UTC).isoformat(),
             }
             state["sources"][source_id] = source_checkpoint
@@ -224,14 +349,19 @@ def run_repository_backup(
                 pending = journal.setdefault("pending_snapshot_ids", [])
                 if result["snapshot_id"] not in pending:
                     pending.append(result["snapshot_id"])
+                if result.get("stored_bytes") is not None:
+                    journal.setdefault("pending_stored_bytes", {})[result["snapshot_id"]] = int(result["stored_bytes"])
             _save_json(directory / "state.json", state)
             record_local_archive(result)
             if local_only:
                 result["verification"]["offsite"] = {"status": "not_requested"}
+            elif batch is not None:
+                result["verification"]["offsite"] = {"status": "pending", "reason": "repository-batch-copy"}
+                result.update(status="completed_pending_upload", pending_path=result["location"])
             else:
                 synced: dict[str, Any]
                 try:
-                    synced = _sync(adapter, directory, state, result["snapshot_id"])
+                    synced = _sync(adapter, directory, state, result["snapshot_id"], env)
                 except (ResticError, OSError) as exc:
                     synced = {"status": "pending", "verification": {"offsite": {"status": "pending", "error": str(exc)}}}
                 result["verification"]["offsite"] = synced["verification"]["offsite"]
@@ -250,12 +380,111 @@ def run_repository_backup(
             shutil.rmtree(staging)
 
 
-def _sync(adapter: ResticAdapter, directory: Path, state: dict[str, Any], snapshot_id: str) -> dict[str, Any]:
+def _sync(adapter: ResticAdapter, directory: Path, state: dict[str, Any], snapshot_id: str, env: Mapping[str, str] | None = None) -> dict[str, Any]:
     def persist(journal: dict[str, Any]) -> None:
         state["offsite"] = journal
         _save_json(directory / "state.json", state)
 
-    return adapter.sync(snapshot_id, state=state.get("offsite"), persist=persist)
+    admission = _copy_admission(adapter, state)
+    if not admission["admitted"]:
+        return {"status": "pending", "capacity": admission, "verification": {"offsite": {"status": "pending", "reason": "insufficient-copy-headroom", "capacity": admission}}}
+    result = adapter.sync(snapshot_id, state=state.get("offsite"), persist=persist)
+    if result.get("status") == "verified":
+        journal = state["offsite"]
+        journal["copy_growth_peak_bytes"] = max(int(journal.get("copy_growth_peak_bytes") or 0), int(journal.get("new_object_bytes") or 0))
+        journal["pending_stored_bytes"] = {key: value for key, value in (journal.get("pending_stored_bytes") or {}).items() if key in journal.get("pending_snapshot_ids", [])}
+        _reconcile_offsite(state, result, env)
+        _save_json(directory / "state.json", state)
+    return result
+
+
+def _repository_rows(env: Mapping[str, str]) -> list[dict[str, Any]]:
+    rows: list[dict[str, Any]] = []
+    offset = 0
+    while True:
+        page, total = backup_store.list_backups(limit=100, offset=offset)
+        rows.extend(row for row in page if is_repository_backup(row) and row.get("storage_backend_id") == env.get("BACKUP_STORAGE_BACKEND_ID") and row.get("status") in {"completed", "completed_pending_upload"})
+        offset += len(page)
+        if not page or offset >= total:
+            return rows
+
+
+def _reconcile_offsite(state: dict[str, Any], result: Mapping[str, Any], env: Mapping[str, str] | None) -> None:
+    journal = state.get("offsite", {})
+    mapping = journal.get("remote_snapshots", {})
+    offsite = result["verification"]["offsite"]
+    for previous in state["sources"].values():
+        snapshot_id = previous.get("snapshot_id")
+        if snapshot_id in mapping:
+            saved = previous["result"]
+            saved["verification"].update(offsite=offsite, remote_snapshot_id=mapping[snapshot_id], remote_repository_id=journal["remote_repository_id"])
+            saved.update(status="completed")
+            saved.pop("pending_path", None)
+            previous["last_good_snapshot_id"] = snapshot_id
+    if env is None:
+        return
+    for row in _repository_rows(env):
+        verification = row.get("verification_json") or {}
+        snapshot_id = verification.get("snapshot_id")
+        if snapshot_id in mapping and verification.get("repository_id") == journal.get("local_repository_id"):
+            backup_store.merge_backup_verification_json(str(row["id"]), {"offsite": offsite, "remote_snapshot_id": mapping[snapshot_id], "remote_repository_id": journal["remote_repository_id"]})
+            if row.get("status") == "completed_pending_upload":
+                backup_store.update_backup_status(str(row["id"]), "completed")
+
+
+def sync_repository_batch(batch: Mapping[str, dict[str, str]]) -> dict[str, Any]:
+    """One structural check/copy per pair; include persisted failed-copy backlog."""
+    from .backup_restic_pilot import pilot_reserves_backend
+    from .backup_utils import storage_config_env
+
+    pairs = dict(batch)
+    for backend in backup_store.list_backends(enabled_only=True):
+        config = backend.get("config") or {}
+        if config.get("engine") != "restic" or config.get("restic_automatic_maintenance") is False or pilot_reserves_backend(str(backend["id"])):
+            continue
+        env = storage_config_env({**config, "__backend_type": backend["backend_type"], "__backend_id": backend["id"]})
+        pairs.setdefault(_repository_pair(ResticConfig.from_env(env)), env)
+    results: dict[str, Any] = {}
+    for identity, env in pairs.items():
+        try:
+            config = ResticConfig.from_env(env)
+            adapter = ResticAdapter(config)
+            with _checkpoint(config) as (directory, state):
+                journal = state.setdefault("offsite", {})
+                pending = journal.setdefault("pending_snapshot_ids", [])
+                local_id = adapter.repository_identity()["id"]
+                for row in _repository_rows(env):
+                    verification = row.get("verification_json") or {}
+                    snapshot_id = verification.get("snapshot_id")
+                    if verification.get("repository_id") == local_id and snapshot_id and verification.get("offsite", {}).get("status") not in {"verified", "not_requested"} and snapshot_id not in pending:
+                        pending.append(snapshot_id)
+                    if snapshot_id in pending and verification.get("stored_bytes") is not None:
+                        journal.setdefault("pending_stored_bytes", {})[snapshot_id] = int(verification["stored_bytes"])
+                for source in state["sources"].values():
+                    saved = source.get("result", {}).get("verification", {})
+                    if saved.get("offsite", {}).get("status") not in {"verified", "not_requested"} and source["snapshot_id"] not in pending:
+                        pending.append(source["snapshot_id"])
+                unchecked = [item for item in state["sources"].values() if item.get("result", {}).get("verification", {}).get("structural_check_pending")]
+                _save_json(directory / "state.json", state)
+                if unchecked:
+                    check = adapter.check()
+                    if not check.get("verified"):
+                        raise ResticError("Repository batch structural check failed")
+                    for item in unchecked:
+                        item["result"]["verification"].update(structural_check_pending=False, structural_check_at=check["checked_at"])
+                    for row in _repository_rows(env):
+                        if (row.get("verification_json") or {}).get("repository_id") == local_id and (row.get("verification_json") or {}).get("structural_check_pending"):
+                            backup_store.merge_backup_verification_json(str(row["id"]), {"structural_check_pending": False, "structural_check_at": check["checked_at"]})
+                    _save_json(directory / "state.json", state)
+                if pending and config.remote_repository:
+                    results[identity] = _sync(adapter, directory, state, pending[-1], env)
+                else:
+                    results[identity] = {"status": "skipped", "reason": "no-pending-offsite-snapshots"}
+        except BackupCancelled:
+            raise
+        except Exception as exc:
+            results[identity] = {"status": "pending", "error": str(exc)}
+    return results
 
 
 def _backup_environment(backup: Mapping[str, Any]) -> dict[str, str]:
@@ -291,7 +520,7 @@ def sync_repository_backup(backup: Mapping[str, Any]) -> dict[str, Any]:
         # Also guard SQL pointing at a repurposed backend using live config.
         if not any(item.get("repository_id") == verification.get("repository_id") for item in state["sources"].values()):
             raise ResticError("Recorded snapshot repository is not the configured repository")
-        return _sync(adapter, directory, state, snapshot_id)
+        return _sync(adapter, directory, state, snapshot_id, _backup_environment(backup))
 
 
 @contextmanager
@@ -435,6 +664,7 @@ def maintain_repository(env: dict[str, str], *, dry_run: bool = True) -> dict[st
         if not preview and pair_healthy:
             results["catalogue_rows_deleted"] = _reconcile_catalogue(adapter, env)
         results["status"] = "failed" if not pair_healthy or repository_maintenance_failed(results) else "completed"
+        results["summary"] = {"result": results["status"], "reclaimed_bytes": sum(int(results.get(label, {}).get("prune", {}).get("reclaimed_bytes") or 0) for label in ("local", "remote")), "free_bytes": {label: results.get(label, {}).get("prune", {}).get("free_bytes") for label in ("local", "remote")}, "blockers": [label for label in ("local", "remote") if results.get(label, {}).get("prune", {}).get("reason")], "evidence": str(directory / "state.json")}
         maintenance["last_run_at"] = now.isoformat()
         maintenance["result"] = results
         _save_json(directory / "state.json", state)

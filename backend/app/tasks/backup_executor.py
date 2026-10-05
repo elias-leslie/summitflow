@@ -300,6 +300,7 @@ def _run_backup(
             raise RuntimeError("Backup lock owner token is required")
         with maintain_backup_lock(resolved_source_id, owner_token):
             run_env = build_storage_env(resolved_source_id, storage_backend_id) if storage_backend_id else build_storage_env(resolved_source_id)
+            run_env["BACKUP_PROJECT_ID"] = project_id
             backup_record = backup_store.create_backup_record(
                 project_id=project_id,
                 backup_type=backup_type,

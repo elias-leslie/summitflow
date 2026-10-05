@@ -27,6 +27,7 @@ REMOTE_SNAPSHOT = "e" * 64
 
 @pytest.fixture
 def repository_fixture(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+    monkeypatch.setenv("SF_HOST_RETENTION_PRESSURE_MIN_FREE_GB", "0")
     keys = tmp_path / "keys"
     keys.mkdir(mode=0o700)
     for filename in ("local-password", "remote-password"):
@@ -45,6 +46,8 @@ def repository_fixture(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
     monkeypatch.setattr(runtime, "backup_key_directory", lambda: keys)
     config = ResticConfig.from_env(env)
     adapter = MagicMock(config=config)
+    adapter.quota_free_bytes.return_value = 1024**3
+    adapter.physical_bytes.return_value = 22
 
     def payload(_source, _name, staging, _env, **_kwargs):
         snapshot = staging / "payload"

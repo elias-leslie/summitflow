@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import Callable
+from pathlib import Path
 from typing import Any
 
 import psycopg
@@ -87,6 +88,7 @@ def cleanup_stale_backup_records(max_age_days: int = 30) -> int:
             """
             DELETE FROM backups
             WHERE status = 'failed'
+              AND location IS NULL
               AND COALESCE(verification_json #>> '{offsite,status}', '') NOT IN ('pending', 'failed')
               AND created_at < NOW() - INTERVAL '%s days'
             RETURNING id
@@ -100,7 +102,7 @@ def cleanup_stale_backup_records(max_age_days: int = 30) -> int:
 
 
 def cleanup_expired_backup_records(default_retention_days: int = 14, min_keep: int = 3) -> int:
-    """Delete completed backup records older than their source's retention_days.
+    """Unlink bounded expired archives before deleting their catalogue evidence.
 
     Uses per-source retention_days from backup_sources table, falling back to
     default_retention_days for backups without a matching source.
@@ -116,13 +118,20 @@ def cleanup_expired_backup_records(default_retention_days: int = 14, min_keep: i
     Returns:
         Number of records deleted
     """
+    from ...tasks.backup_local_cleanup import _configured_local_roots
+    from .sources import list_sources
+
+    roots = _configured_local_roots()
+    roots.extend(Path(source["path"]) / "backups" for source in list_sources() if source.get("path"))
+    bounded_roots = [root.resolve() for root in roots if root.is_absolute() and root.resolve() != Path(root.anchor) and not any(part.is_symlink() for part in (root, *root.parents))]
     with get_connection() as conn, conn.cursor() as cur:
         cur.execute(
             """
-            DELETE FROM backups
+            SELECT id, location FROM backups
             WHERE status = 'completed'
               AND (verification_json ->> 'format') IS DISTINCT FROM 'restic-v1'
               AND (verification_json #>> '{activity,active}') IS DISTINCT FROM 'true'
+              AND (verification_json ->> 'pinned') IS DISTINCT FROM 'true'
               AND COALESCE(verification_json #>> '{offsite,status}', '') NOT IN ('pending', 'failed')
               AND created_at < NOW() - INTERVAL '1 day' * COALESCE(
                 (SELECT bs.retention_days FROM backup_sources bs
@@ -140,14 +149,32 @@ def cleanup_expired_backup_records(default_retention_days: int = 14, min_keep: i
                     AND COALESCE(verification_json #>> '{offsite,status}', '') NOT IN ('pending', 'failed')
                 ) ranked WHERE rn <= %s
               )
-            RETURNING id
+            FOR UPDATE
             """,
             (default_retention_days, min_keep),
         )
-        deleted = cur.fetchall()
+        candidates = cur.fetchall()
+        deleted = 0
+        for backup_id, location in candidates:
+            if location:
+                archive = Path(location)
+                # Remote archives need backend-owned deletion evidence. Never
+                # erase their only catalogue reference merely because they aged.
+                if not archive.is_absolute() or str(location).startswith("//") or not archive.name.endswith((".tar.gz", ".tar.gz.age")):
+                    continue
+                if any(part.is_symlink() for part in (archive, *archive.parents)) or not any(archive.resolve().is_relative_to(root) for root in bounded_roots):
+                    continue
+                try:
+                    archive.unlink(missing_ok=True)
+                except OSError:
+                    continue  # Failed unlink retains every recovery/evidence field.
+                if archive.exists() or archive.is_symlink():
+                    continue  # Replacement bytes appeared; retain the evidence.
+            cur.execute("DELETE FROM backups WHERE id = %s RETURNING id", (backup_id,))
+            deleted += int(cur.fetchone() is not None)
         conn.commit()
 
-    return len(deleted)
+    return deleted
 
 
 def get_storage_summary(

@@ -7,14 +7,17 @@ from typing import Annotated
 import typer
 
 from ..config import get_config
-from ..lib.autosnapshot import DEFAULT_POLICY, prune_all
+from ..lib.autosnapshot import DEFAULT_POLICY, LAST_PRUNE_REPORT, prune_all
 from ..lib.confirm_token import confirm_gate
 from ..lib.quick_snapshots import (
     SnapshotError,
+    apply_recovery,
     capture_snapshot,
     get_snapshot_usage,
     list_snapshots,
     recover_snapshot,
+    recovery_preview,
+    release_recovery,
     restore_snapshot,
 )
 from ..output import output_json
@@ -93,11 +96,12 @@ def snaps_command(ctx: typer.Context) -> None:
 
     usage_by_id = {snapshot.id: get_snapshot_usage(snapshot) for snapshot in snapshots}
     if ctx.obj.is_compact:
-        total_bytes = sum(usage.total_bytes for usage in usage_by_id.values() if usage is not None)
+        complete_usage = all(usage is not None for usage in usage_by_id.values())
+        total_bytes = sum(usage.total_bytes for usage in usage_by_id.values() if usage is not None) if complete_usage else None
         exclusive_bytes = sum(
             usage.exclusive_bytes for usage in usage_by_id.values() if usage is not None
-        )
-        shared_bytes = sum(usage.shared_bytes for usage in usage_by_id.values() if usage is not None)
+        ) if complete_usage else None
+        shared_bytes = sum(usage.shared_bytes for usage in usage_by_id.values() if usage is not None) if complete_usage else None
         print(
             f"SNAPS[{len(snapshots)}]|total:{_format_bytes(total_bytes)}|"
             f"exclusive:{_format_bytes(exclusive_bytes)}|shared:{_format_bytes(shared_bytes)}"
@@ -140,11 +144,25 @@ def recover_command(
         str | None,
         typer.Option("--name", help="Optional recovery project name"),
     ] = None,
+    files: Annotated[list[str] | None, typer.Option("--file", help="Relative file to preview/apply; repeat for multiple files")] = None,
+    owned_paths: Annotated[list[str] | None, typer.Option("--owned", help="Declared scope narrowing active own leases; repeat as needed")] = None,
+    preview_digest: Annotated[str | None, typer.Option("--preview-digest", help="Apply only if current files still match this preview digest")] = None,
+    release: Annotated[bool, typer.Option("--release", help="Release active recovery retention pin after inspection")] = False,
 ) -> None:
-    """Recover a snapshot into a sibling project copy."""
+    """Inspect a read-only side copy or preview/apply selected owned files."""
     config = get_config()
     try:
-        snapshot = recover_snapshot(target, project_id=config.project_id, name=name)
+        if release:
+            snapshot = release_recovery(target, project_id=config.project_id)
+        elif files:
+            if preview_digest:
+                result = apply_recovery(target, project_id=config.project_id, paths=files, owned_paths=owned_paths or [], preview_digest=preview_digest)
+            else:
+                result = recovery_preview(target, project_id=config.project_id, paths=files, owned_paths=owned_paths or [])
+            output_json(result)
+            return
+        else:
+            snapshot = recover_snapshot(target, project_id=config.project_id, name=name)
     except SnapshotError as exc:
         typer.echo(f"Error: {exc}", err=True)
         raise typer.Exit(1) from None
@@ -234,6 +252,11 @@ def prune_command(
     """Remove old auto snapshots per retention policy."""
     results = prune_all(dry_run=dry_run)
     policy = _policy_fields()
+    copies = list(LAST_PRUNE_REPORT)
+    if ctx.obj.is_compact and copies:
+        print(f"RECOVERY_COPIES[{len(copies)}]|deleted:{sum(record['action'] == 'deleted' for record in copies)}|failed:{sum(record['action'] == 'failed' for record in copies)}")
+        for record in copies:
+            print(f"  {record['root_path']}|action:{record['action']}|error:{record['error'] or '-'}")
     if not results:
         if ctx.obj.is_compact:
             action = "would-prune" if dry_run else "pruned"
@@ -246,7 +269,7 @@ def prune_command(
                 f"manual_keep:{policy['manual_keep_per_scope']}"
             )
         else:
-            output_json({"pruned": {}, "total": 0, "dry_run": dry_run, "policy": policy})
+            output_json({"pruned": {}, "total": 0, "dry_run": dry_run, "policy": policy, "recovery_copies": copies})
         return
 
     total = sum(len(v) for v in results.values())
@@ -274,4 +297,5 @@ def prune_command(
             "total": total,
             "dry_run": dry_run,
             "policy": policy,
+            "recovery_copies": copies,
         })

@@ -32,8 +32,11 @@ function statusTone(status: SystemImageBackupStatus | undefined) {
   return 'text-emerald-400'
 }
 
-function statusLabel(status: SystemImageBackupStatus | undefined) {
-  if (!status) return 'Loading'
+function statusLabel(
+  status: SystemImageBackupStatus | undefined,
+  isLoading: boolean,
+) {
+  if (!status) return isLoading ? 'Loading' : 'Unavailable'
   if (status.active_session) return status.active_session.state
   if (status.mok_enrollment_pending) return 'Reboot Required'
   if (status.blocked_reason) return 'Blocked'
@@ -82,7 +85,7 @@ export function SystemImageBackupCard({
 
   return (
     <CollapsibleSection
-      title="System Image"
+      title="Legacy Linux Veeam"
       titleAccessory={
         <span
           className={clsx(
@@ -90,12 +93,15 @@ export function SystemImageBackupCard({
             statusTone(status),
           )}
         >
-          {statusLabel(status)}
+          {statusLabel(status, isLoading)}
         </span>
       }
       summary={summary(status, isLoading)}
       contentClassName="border-t border-slate-800/40 px-4 py-4 space-y-3"
     >
+      <p className="text-xs text-slate-400">
+        Legacy Linux Veeam integration. Native Linux recovery uses btrbk.
+      </p>
       {isLoading ? (
         <div className="flex items-center gap-2 text-xs text-slate-500">
           <Loader2 className="h-3.5 w-3.5 animate-spin text-phosphor-400" />
@@ -189,7 +195,7 @@ export function SystemImageBackupCard({
               type="button"
               onClick={() => runAction('start')}
               disabled={!status.can_start || action != null}
-              className="flex items-center gap-1.5 rounded bg-emerald-500/10 px-2.5 py-1 text-2xs text-emerald-400 transition-colors hover:bg-emerald-500/20 disabled:opacity-40"
+              className="flex items-center gap-1.5 rounded bg-emerald-500/10 px-2.5 py-1 text-2xs text-emerald-400 transition-colors hover:bg-emerald-500/20 disabled:opacity-40 focus-visible:outline focus-visible:outline-2 focus-visible:outline-phosphor-400"
             >
               {action === 'start' ? (
                 <Loader2 className="h-3 w-3 animate-spin" />
@@ -202,7 +208,7 @@ export function SystemImageBackupCard({
               type="button"
               onClick={() => runAction('stop')}
               disabled={!status.active_session || action != null}
-              className="flex items-center gap-1.5 rounded bg-rose-500/10 px-2.5 py-1 text-2xs text-rose-400 transition-colors hover:bg-rose-500/20 disabled:opacity-40"
+              className="flex items-center gap-1.5 rounded bg-rose-500/10 px-2.5 py-1 text-2xs text-rose-400 transition-colors hover:bg-rose-500/20 disabled:opacity-40 focus-visible:outline focus-visible:outline-2 focus-visible:outline-phosphor-400"
             >
               {action === 'stop' ? (
                 <Loader2 className="h-3 w-3 animate-spin" />
@@ -215,7 +221,7 @@ export function SystemImageBackupCard({
               type="button"
               onClick={onRefresh}
               disabled={action != null}
-              className="flex items-center gap-1.5 rounded bg-slate-700/50 px-2.5 py-1 text-2xs text-slate-400 transition-colors hover:bg-slate-700/80 disabled:opacity-40"
+              className="flex items-center gap-1.5 rounded bg-slate-700/50 px-2.5 py-1 text-2xs text-slate-400 transition-colors hover:bg-slate-700/80 disabled:opacity-40 focus-visible:outline focus-visible:outline-2 focus-visible:outline-phosphor-400"
             >
               <RefreshCw className="h-3 w-3" />
               Refresh

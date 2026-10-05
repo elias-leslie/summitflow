@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import os
 import shutil
+import sqlite3
 import subprocess
 from pathlib import Path
 from unittest.mock import patch
@@ -17,9 +18,12 @@ from app.tasks.backup_restic import ResticAdapter, ResticConfig, ResticError
 
 @pytest.fixture
 def repository_env(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> dict[str, str]:
+    monkeypatch.setenv("SF_HOST_RETENTION_PRESSURE_MIN_FREE_GB", "0")
     keys = tmp_path / "keys"
     keys.mkdir(mode=0o700)
     monkeypatch.setattr(runtime, "backup_key_directory", lambda: keys)
+    monkeypatch.setattr(runtime.backup_store, "list_backups", lambda **_: ([], 0))
+    monkeypatch.setattr(runtime.backup_store, "list_backends", lambda **_: [])
     for name in ("local-password", "remote-password"):
         (keys / name).touch(mode=0o600)
         (keys / name).write_text(f"synthetic-fixture-{name}\n")
@@ -137,6 +141,7 @@ def test_real_independent_copy_deduplicates_and_recovers_wip(repository_env: dic
         second = runtime.run_repository_backup(project_dir=str(source), source_id="fixture", env=repository_env)
     assert first["verification"]["offsite"]["status"] == "verified"
     assert second["verification"]["offsite"]["status"] == "verified"
+    assert second["unchanged"] is True
     assert first["verification"]["repository_id"] != first["verification"]["remote_repository_id"]
     assert second["data_added_bytes"] < first["data_added_bytes"] / 2
     assert second["verification"]["offsite"]["new_object_bytes"] < first["verification"]["offsite"]["new_object_bytes"] / 2
@@ -154,3 +159,86 @@ def test_real_independent_copy_deduplicates_and_recovers_wip(repository_env: dic
         assert not any((directory / "payloads").iterdir())
         # The private journal contains references, never password contents.
         assert "synthetic-fixture-local-password" not in json.dumps(state)
+
+
+@pytest.mark.skipif(shutil.which("restic") is None, reason="Pinned Restic binary not installed")
+def test_real_serial_batch_checks_copies_once_and_retries_all_pending(repository_env, tmp_path, monkeypatch):
+    runtime.initialize_repository(repository_env)
+    monkeypatch.setattr(runtime, "canonical_backup_source_roots", lambda: {})
+    sources = [tmp_path / "source-one", tmp_path / "source-two"]
+    for source in sources:
+        source.mkdir()
+        (source / "saved.txt").write_text(source.name)
+    config = ResticConfig.from_env(repository_env)
+    with patch.object(ResticAdapter, "check", wraps=ResticAdapter(config).check) as checked, patch.object(ResticAdapter, "sync", wraps=ResticAdapter(config).sync) as copied:
+        with runtime.repository_capture_batch() as batch:
+            first = runtime.run_repository_backup(project_dir=str(sources[0]), source_id="one", env=repository_env)
+            second = runtime.run_repository_backup(project_dir=str(sources[1]), source_id="two", env=repository_env)
+            assert first["verification"]["structural_check_pending"] is True
+            assert first["verification"]["structural_check_at"] is None
+            with runtime._checkpoint(config) as (directory, state):
+                assert not any((directory / "payloads").iterdir())
+                assert state["offsite"]["pending_snapshot_ids"] == [first["snapshot_id"], second["snapshot_id"]]
+        checked.assert_not_called()
+        copied.assert_not_called()
+        with patch.object(ResticAdapter, "sync", side_effect=ResticError("synthetic unavailable offsite")) as unavailable:
+            failed = runtime.sync_repository_batch(batch)
+            assert next(iter(failed.values()))["status"] == "pending"
+            assert unavailable.call_count == 1
+        with runtime._checkpoint(config) as (_, state):
+            assert state["offsite"]["pending_snapshot_ids"] == [first["snapshot_id"], second["snapshot_id"]]
+            assert all(value["result"]["verification"]["offsite"]["status"] == "pending" for value in state["sources"].values())
+        results = runtime.sync_repository_batch(batch)
+        assert next(iter(results.values()))["status"] == "verified"
+        assert checked.call_count == copied.call_count == 1
+    with runtime._checkpoint(config) as (_, state):
+        assert state["offsite"]["pending_snapshot_ids"] == []
+        assert all(value["result"]["verification"]["offsite"]["status"] == "verified" for value in state["sources"].values())
+        assert all(value["result"]["verification"]["structural_check_pending"] is False for value in state["sources"].values())
+    # Restart retry is independent of newly due captures and includes every
+    # retained SQL snapshot, even when checkpoint sources contain newer points.
+    old = first["snapshot_id"]
+    rows = [{"id": "old-row", "storage_backend_id": "stb-fixture", "status": "completed_pending_upload", "verification_json": {"format": "restic-v1", "repository_id": first["repository_id"], "snapshot_id": old, "offsite": {"status": "pending"}}}]
+    monkeypatch.setattr(runtime.backup_store, "list_backups", lambda **_: (rows, 1))
+    merged = []
+    monkeypatch.setattr(runtime.backup_store, "merge_backup_verification_json", lambda backup_id, update: merged.append((backup_id, update)))
+    monkeypatch.setattr(runtime.backup_store, "update_backup_status", lambda *args: None)
+    results = runtime.sync_repository_batch(batch)
+    assert next(iter(results.values()))["status"] == "verified"
+    assert merged[0][0] == "old-row"
+    assert merged[0][1]["offsite"]["status"] == "verified"
+
+
+def test_database_capture_never_reuses_unchanged_files(repository_env, tmp_path, monkeypatch):
+    source = tmp_path / "source"
+    source.mkdir()
+    dumped = []
+    def dump(project_name, destination, env):
+        dumped.append(project_name)
+        destination.write_bytes(b"consistent fresh SQL")
+        return destination.stat().st_size, True
+    monkeypatch.setattr("app.tasks.backup_native_archive._dump_database", dump)
+    monkeypatch.setattr(runtime, "canonical_backup_source_roots", lambda: {})
+    saved = {"snapshot_id": "a" * 64, "repository_id": "b" * 64, "location": "restic-v1:fixture", "verification": {"verified": True, "capture": {}}}
+    (source / "saved.txt").write_text("unchanged files")
+    with patch.object(ResticAdapter, "save_payload", side_effect=lambda *_args: json.loads(json.dumps(saved))) as save, patch.object(runtime, "record_local_archive"):
+        runtime.run_repository_backup(project_dir=str(source), source_id="source", env=repository_env, local_only=True)
+        runtime.run_repository_backup(project_dir=str(source), source_id="source", env=repository_env, local_only=True)
+    assert len(dumped) == save.call_count == 2
+
+
+def test_sqlite_capture_never_reuses_unchanged_database(repository_env, tmp_path, monkeypatch):
+    from app.tasks import backup_native_recovery as recovery
+
+    source = tmp_path / "source"
+    source.mkdir()
+    with sqlite3.connect(source / "records.sqlite") as connection:
+        connection.execute("CREATE TABLE fixture (value TEXT)")
+        connection.execute("INSERT INTO fixture VALUES ('durable')")
+    monkeypatch.setattr(runtime, "canonical_backup_source_roots", lambda: {})
+    monkeypatch.setattr("app.tasks.backup_native_archive._dump_database", lambda *_: (0, False))
+    saved = {"snapshot_id": "a" * 64, "repository_id": "b" * 64, "location": "restic-v1:fixture", "verification": {"verified": True, "capture": {}}}
+    with patch.object(recovery, "_copy_sqlite_database", wraps=recovery._copy_sqlite_database) as capture, patch.object(ResticAdapter, "save_payload", side_effect=lambda *_args: json.loads(json.dumps(saved))) as save, patch.object(runtime, "record_local_archive"):
+        runtime.run_repository_backup(project_dir=str(source), source_id="source", env=repository_env, local_only=True)
+        runtime.run_repository_backup(project_dir=str(source), source_id="source", env=repository_env, local_only=True)
+    assert capture.call_count == save.call_count == 2

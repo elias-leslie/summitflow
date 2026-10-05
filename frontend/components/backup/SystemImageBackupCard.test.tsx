@@ -50,7 +50,7 @@ describe('SystemImageBackupCard', () => {
       />,
     )
 
-    expect(screen.getByText('System Image')).toBeInTheDocument()
+    expect(screen.getByText('Legacy Linux Veeam')).toBeInTheDocument()
     expect(screen.getByText('Reboot Required')).toBeInTheDocument()
     expect(
       screen.getAllByText(
@@ -68,10 +68,15 @@ describe('SystemImageBackupCard', () => {
       />,
     )
 
-    fireEvent.click(screen.getByRole('button', { name: /system image/i }))
+    fireEvent.click(screen.getByRole('button', { name: /legacy linux veeam/i }))
 
     expect(screen.getByText('SummitFlowSystemImage')).toBeInTheDocument()
     expect(screen.getByText('/dev/nvme0n1p7')).toBeInTheDocument()
+    expect(
+      screen.getByText(
+        'Legacy Linux Veeam integration. Native Linux recovery uses btrbk.',
+      ),
+    ).toBeInTheDocument()
     expect(screen.getByRole('button', { name: /start/i })).toBeDisabled()
   })
 })

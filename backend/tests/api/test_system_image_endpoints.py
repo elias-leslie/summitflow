@@ -88,3 +88,24 @@ def test_system_image_start_rejects_when_blocked(monkeypatch):
 
     assert response.status_code == 409
     assert "Secure Boot is waiting for MOK enrollment at next reboot." in str(response.json())
+
+
+def test_system_image_blocks_compressed_btrfs_before_launch(monkeypatch):
+    monkeypatch.setattr(endpoint, "_compressed_btrfs_root", lambda: True)
+    reason = endpoint._blocked_reason(
+        installed=True, service_active=True, secure_boot_enabled=False,
+        mok_enrolled=False, mok_enrollment_pending=False, module_loaded=True,
+        repository_configured=True, repository_accessible=True,
+        job_configured=True, active_session=None,
+    )
+    assert reason == "This compressed Btrfs Linux source requires native host recovery. Windows remains Veeam-managed."
+
+
+def test_system_image_blocks_unknown_source_support(monkeypatch):
+    monkeypatch.setattr(endpoint, "_compressed_btrfs_root", lambda: None)
+    assert endpoint._blocked_reason(
+        installed=True, service_active=True, secure_boot_enabled=False,
+        mok_enrolled=False, mok_enrollment_pending=False, module_loaded=True,
+        repository_configured=True, repository_accessible=True,
+        job_configured=True, active_session=None,
+    ) == "Veeam source filesystem support could not be verified."

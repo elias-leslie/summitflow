@@ -2,7 +2,8 @@
 
 from __future__ import annotations
 
-from typing import Annotated, Any
+from collections.abc import Mapping
+from typing import Annotated, Any, cast
 
 import httpx
 import typer
@@ -13,6 +14,65 @@ from ..output_context import OutputContext
 
 app = typer.Typer(help="Storage backend management")
 LONG_RUNNING_TIMEOUT = httpx.Timeout(30.0, read=None)
+
+
+def _mapping(value: object) -> Mapping[str, Any]:
+    return cast("Mapping[str, Any]", value) if isinstance(value, Mapping) else {}
+
+
+def _record_count(value: object) -> int:
+    return len(value) if isinstance(value, (Mapping, list, tuple)) else 0
+
+
+def _maintenance_summary(payload: Mapping[str, Any]) -> dict[str, Any]:
+    """Select routine outcomes; never traverse returned object/check journals."""
+    summary = _mapping(payload.get("summary"))
+    blockers = []
+    repositories = {}
+    for label in ("local", "remote"):
+        repository = _mapping(payload.get(label))
+        if not repository:
+            continue
+        repositories[label] = {}
+        for operation in ("monthly", "retention", "prune"):
+            result = _mapping(repository.get(operation))
+            repositories[label][operation] = {key: result[key] for key in ("status", "verified", "reason", "error", "checked_at", "completed_at", "physical_bytes_confirmed") if key in result}
+            if result.get("reason") or result.get("error") or result.get("status") in {"failed", "error", "pending"} or result.get("verified") is False:
+                blockers.append({"repository": label, "operation": operation, **repositories[label][operation]})
+    critical = _mapping(payload.get("critical_restore"))
+    if critical.get("status") in {"failed", "error", "pending"}:
+        blockers.append({"operation": "critical_restore", **{key: critical[key] for key in ("status", "error", "failed_source") if key in critical}})
+    if payload.get("error"):
+        blockers.append({"error": payload["error"]})
+    free = _mapping(summary.get("free_bytes"))
+    return {
+        "result": summary.get("result") or payload.get("status"), "dry_run": payload.get("dry_run"),
+        "reclaimed_bytes": summary.get("reclaimed_bytes"),
+        "free_bytes": {label: free.get(label) for label in ("local", "remote")},
+        "blockers": blockers, "evidence": summary.get("evidence"),
+        "repositories": repositories,
+        "critical_restore": {key: critical[key] for key in ("status", "reason", "verified_at", "error", "failed_source") if key in critical},
+    }
+
+
+def _repository_summary(backend_id: str, payload: Mapping[str, Any]) -> dict[str, Any]:
+    offsite = _mapping(payload.get("offsite"))
+    maintenance = _mapping(payload.get("maintenance"))
+    return {
+        "backend_id": backend_id,
+        **{key: payload[key] for key in ("status", "engine", "ready", "local_only", "error", "prune_qualified", "cutover_qualified", "cutover_status", "local_repository_physical_bytes", "new_object_bytes_are_network_traffic") if key in payload},
+        "source_count": _record_count(payload.get("sources")),
+        "offsite": {
+            **{key: offsite[key] for key in ("status", "verified_at", "new_object_bytes") if key in offsite},
+            "pending_snapshot_count": _record_count(offsite.get("pending_snapshot_ids")),
+            "pending_object_count": _record_count(offsite.get("pending_objects")),
+            "mismatch_count": _record_count(offsite.get("mismatches")),
+        },
+        # Free/reclaimed figures belong to this dated maintenance run, not a
+        # fresh quota measurement initiated by a routine status command.
+        "maintenance": {"last_run_at": maintenance.get("last_run_at"), **_maintenance_summary(_mapping(maintenance.get("result")))},
+        "details_command": f"st backup storage status {backend_id} --details",
+    }
 
 
 @app.callback()
@@ -310,10 +370,12 @@ def initialize_repository(
 def repository_status(
     ctx: typer.Context,
     backend_id: Annotated[str, typer.Argument(help="Restic backend ID")],
+    details: Annotated[bool, typer.Option("--details", help="Show the full response, including object journals")] = False,
 ) -> None:
     """Read repository readiness and durable verification status."""
     try:
-        output_json(_api_get(f"backup-storage/{backend_id}/repository"))
+        result = _api_get(f"backup-storage/{backend_id}/repository")
+        output_json(result if details else _repository_summary(backend_id, _mapping(result)))
     except APIError as e:
         handle_api_error(e)
 
@@ -323,6 +385,7 @@ def repository_maintenance(
     ctx: typer.Context,
     backend_id: Annotated[str, typer.Argument(help="Restic backend ID")],
     preview: Annotated[bool, typer.Option("--preview/--apply", help="Preview maintenance by default; --apply executes it")] = True,
+    details: Annotated[bool, typer.Option("--details", help="Show the full response, including object journals")] = False,
 ) -> None:
     """Preview or explicitly apply repository-scoped maintenance."""
     try:
@@ -330,7 +393,7 @@ def repository_maintenance(
             f"backup-storage/{backend_id}/maintenance?dry_run={str(preview).lower()}",
             timeout=LONG_RUNNING_TIMEOUT,
         )
-        output_json(result)
+        output_json(result if details else {"backend_id": backend_id, **_maintenance_summary(_mapping(result)), "details_command": f"st backup storage status {backend_id} --details"})
     except APIError as e:
         handle_api_error(e)
 

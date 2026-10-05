@@ -7,7 +7,7 @@ from pydantic import BaseModel
 
 BackendType = Literal["smb", "local"]
 SourceType = Literal["project", "config", "infrastructure", "workspace"]
-Frequency = Literal["hourly", "daily", "weekly", "monthly"]
+Frequency = Literal["hourly", "four_hourly", "daily", "weekly", "monthly"]
 
 
 class BackupCreate(BaseModel):

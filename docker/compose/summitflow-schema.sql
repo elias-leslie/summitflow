@@ -357,7 +357,7 @@ CREATE TABLE public.backup_sources (
     last_drill_ok boolean,
     last_drill_backup_id text,
     last_drill_result jsonb,
-    CONSTRAINT source_frequency_check CHECK ((frequency = ANY (ARRAY['daily'::text, 'weekly'::text, 'monthly'::text, 'hourly'::text]))),
+    CONSTRAINT source_frequency_check CHECK ((frequency = ANY (ARRAY['daily'::text, 'weekly'::text, 'monthly'::text, 'hourly'::text, 'four_hourly'::text]))),
     CONSTRAINT source_type_check CHECK ((source_type = ANY (ARRAY['project'::text, 'config'::text, 'workspace'::text, 'infrastructure'::text])))
 );
 

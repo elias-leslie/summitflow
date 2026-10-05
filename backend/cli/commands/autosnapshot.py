@@ -5,7 +5,14 @@ from __future__ import annotations
 import typer
 
 from ..config import get_config
-from ..lib.autosnapshot import ensure_all_baselines, ensure_baseline, prune_all, sweep_periodic
+from ..lib.autosnapshot import (
+    LAST_PRUNE_REPORT,
+    LAST_SWEEP_REPORT,
+    ensure_all_baselines,
+    ensure_baseline,
+    prune_all,
+    sweep_periodic,
+)
 from ..lib.quick_snapshots import SnapshotError
 
 app = typer.Typer(
@@ -44,6 +51,8 @@ def sweep_command() -> None:
     """Run periodic snapshot sweep across all active Btrfs-backed scopes."""
     created = sweep_periodic()
     print(f"SWEEP[{len(created)}]")
+    for record in LAST_SWEEP_REPORT:
+        print(f"  {record['project_id']}|{record['status']}|reason:{record['reason']}")
     for snap in created:
         print(f"  {snap.id}|source:{snap.source}|scope:{snap.scope_type}:{snap.scope_name}")
 
@@ -54,6 +63,8 @@ def prune_command() -> None:
     results = prune_all()
     total = sum(len(v) for v in results.values())
     print(f"PRUNE[{total}]")
+    for record in LAST_PRUNE_REPORT:
+        print(f"  recovery-copy:{record['root_path']}|action:{record['action']}|error:{record['error'] or '-'}")
     for scope_key, entries in results.items():
         for entry in entries:
             print(f"  {entry.id}|source:{entry.source}|scope:{scope_key}")

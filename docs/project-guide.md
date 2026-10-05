@@ -59,12 +59,12 @@ UI (~23 pages), and ~33 Hatchet workflows. Output is compact JSON by default, wi
 - `st graph` (Graphify topology + Fallow JS/TS audits) and `st search` (precision
   code search over symbols/endpoints/tables).
 
-**Version control (jj-first)**
+**Version control (Git)**
 
-- `st commit` (st-owned commit/publish with check-gate and `--push`), `st jj` (full
-  Jujutsu workflow incl. `revert` to roll back already-pushed work), `st git`
-  (inspection), `st vcs doctor`/`reconcile` (cross-repo hygiene), `st checkpoints`,
-  `st cleanup`.
+- `st commit` (checked local Git checkpoints), `st vcs publish --source ID --sha
+  FULL_OID --now` (explicit publication of accepted source), `st git` (inspection),
+  `st vcs doctor`/`reconcile` (cross-repo hygiene), `st checkpoints`, `st cleanup`.
+  Use Git diff/log for source inspection and Git revert for reviewed rollbacks.
 
 **Services, runtime, and data**
 
@@ -277,6 +277,56 @@ Optional values enable integrations:
   should fail clearly instead of crashing the core app.
 
 ## Architecture
+
+### Managed Proxmox clones
+
+`st vm clone TEMPLATE NEWID NAME` configures Linux cloud-init access before
+boot, starts the guest, and succeeds only after guest-agent execution verifies
+the requested hostname, an active SSH daemon, completed cloud-init provisioning,
+and a usable IPv4 address. Copy completion is reported separately from guest
+readiness. It does not guess SSH credentials or repair an unqualified image.
+
+Set this explicit owner access profile in the environment or the ignored
+`docker/compose/.env` alongside the existing `PROXMOX_*` API configuration:
+
+```dotenv
+PROXMOX_CLONE_TEMPLATE=QUALIFIED_TEMPLATE_ID
+PROXMOX_CLONE_USER=OWNER_LINUX_ACCOUNT
+PROXMOX_CLONE_PUBLIC_KEY_FILE=/absolute/path/to/approved-key.pub
+PROXMOX_CLONE_IPCONFIG0=ip=dhcp
+PROXMOX_CLONE_READY_TIMEOUT=300
+```
+
+The selected public-key file must contain public SSH keys; private keys and
+authorized-key options are rejected before allocation. Only the public keys,
+account, and network configuration go to Proxmox. The timeout accepts 1–1800
+seconds; a static IPv4 profile may use `ip=IPv4/CIDR,gw=IPv4`. Package upgrades
+are disabled during clone boot; keep the qualified template patched separately.
+Custom cloud-init snippets are rejected because they can override owner access.
+
+Qualify a template on a disposable guest first: prove cloud-init creates the
+owner account and public-key SSH access, prove the SSH daemon and installed
+`qemu-guest-agent` run, and prove the virtual channel plus IP/benign execution
+survive a reboot. Hardware `agent=1` alone is insufficient. Before converting
+a new guest to a template, clean cloud-init state, machine ID, guest SSH host
+keys, and baked authorized keys, then shut it down. Preserve the old template
+until a fresh clone proves readiness. Template destruction is blocked for all
+templates, including the protected original ID 9000.
+
+For Windows or intentional copy-only operations use
+`st vm clone TEMPLATE NEWID NAME --clone-only`. This reports that the guest is
+not provisioned, started, or ready. Managed failures retain the VM ID, phase,
+and submitted Proxmox copy task identity. Inspect `st vm status ID`,
+`st vm config ID`, and the Proxmox task before recovery; a timed-out guest or
+copy may still be running. Avoid blind recloning or automatic deletion.
+
+`st vm exec-ssh` and `st vm repair-agent` require verified guest identity and
+strict SSH host-key checking. `--identity-file` supplies an existing private
+identity to the SSH client only; `--known-hosts-file` may supply an existing
+trusted host-key file. Obtain trust through an authenticated console or other
+verified source before using those commands. The installer test script still
+has an independent raw clone/SSH workflow; migrating it to this interface is
+a separate follow-up.
 
 ```text
 summitflow/

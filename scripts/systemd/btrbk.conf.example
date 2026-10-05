@@ -1,0 +1,41 @@
+# Install a reviewed copy as /etc/btrbk/summitflow.conf (root:root, 0644).
+# This nonsecret configuration must be readable by the SummitFlow service user.
+# The existing SummitFlow backup workflow owns scheduling; keep the package
+# btrbk.service and btrbk.timer disabled. Mount and unlock the destination first.
+timestamp_format long-iso
+snapshot_preserve_min latest
+snapshot_preserve no
+target_preserve_min latest
+target_preserve 7d
+snapshot_create ondemand
+incremental yes
+# Ubuntu Noble btrbk 0.32.5 uses the standard send protocol. The destination
+# must be mounted with compress=zstd:1; newer versions may additionally use
+# send_protocol 2 and send_compressed_data yes after qualification.
+btrfs_commit_delete yes
+lockfile /run/lock/summitflow-btrbk.lock
+transaction_log /var/log/summitflow-btrbk.log
+
+# Replace this mount with the independently verified Btrfs backup destination.
+target send-receive /mnt/summitflow-native/native
+
+# Explicit coverage remains valid after /srv/workspaces moves to its own
+# filesystem. Nested durable subvolumes require additional explicit sections.
+subvolume /
+  snapshot_name root
+  snapshot_dir /.btrbk
+subvolume /home
+  snapshot_name home
+  snapshot_dir /home/.btrbk
+subvolume /srv/workspaces
+  snapshot_name workspaces
+  snapshot_dir /srv/workspaces/.btrbk
+subvolume /var/lib/docker
+  snapshot_name docker
+  snapshot_dir /var/lib/docker/.btrbk
+subvolume /srv/models
+  snapshot_name models
+  snapshot_dir /srv/models/.btrbk
+subvolume /var/log
+  snapshot_name var_log
+  snapshot_dir /var/log/.btrbk

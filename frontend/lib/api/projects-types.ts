@@ -44,7 +44,7 @@ export interface ProjectPermissionBootstrap {
 
 export interface ProjectOnboardingRequest {
   enable_backup_schedule?: boolean
-  backup_frequency?: 'daily' | 'weekly' | 'monthly' | 'hourly'
+  backup_frequency?: 'daily' | 'weekly' | 'monthly' | 'hourly' | 'four_hourly'
   backup_retention_days?: number
   queue_initial_backup?: boolean
 }

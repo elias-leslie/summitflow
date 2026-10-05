@@ -14,6 +14,8 @@ from pathlib import Path, PurePosixPath
 from typing import Any, BinaryIO
 from urllib.parse import unquote, urlsplit
 
+from ..project_identity import get_project_identity
+from ..services import db_workbench_targets
 from .backup_activity import BackupCancelled, backup_phase, check_backup_cancelled, run_bulk_process
 from .backup_codex_policy import CODEX_CAPTURE_PROFILE, is_codex_recovery_input
 from .backup_native_recovery import (
@@ -107,10 +109,22 @@ def _project_env_name(project_name: str) -> str:
 def _load_db_config(project_name: str, env: dict[str, str]) -> dict[str, str]:
     env_file = _read_env_file(Path.home() / ".env.local")
     merged = {**env_file, **env}
-    url = merged.get(_project_env_name(project_name), "")
+    project_id = env.get("BACKUP_PROJECT_ID") or project_name
+    url = merged.get(_project_env_name(project_id)) or merged.get(_project_env_name(project_name), "")
     if not url:
         generic = merged.get("DATABASE_URL", "")
-        url = generic if project_name in generic else ""
+        url = generic if project_name in generic or project_id == "summitflow" else ""
+    explicit = any(merged.get(key) for key in ("DB_NAME", "DB_PASSWORD", "PGPASSWORD"))
+    identity = get_project_identity(project_id) or {}
+    declared = bool(identity.get("database"))
+    if not url and (declared or not explicit) and not merged.get("DB_NAME"):
+        # Reuse canonical shared-database aliases and approved secret loaders.
+        # A declaration without a resolvable endpoint must never become files.
+        url = db_workbench_targets.project_db_url(project_id) or ""
+        if declared and not url:
+            raise RuntimeError("Declared database configuration cannot be resolved; capture refused")
+    if url and urlsplit(url).scheme not in {"postgres", "postgresql", "postgresql+psycopg", "postgresql+psycopg2"}:
+        raise RuntimeError("Configured project database URL is unsupported; capture refused")
     default_name = project_name.replace("-", "_")
     config = {
         "name": merged.get("DB_NAME", default_name),
@@ -118,8 +132,11 @@ def _load_db_config(project_name: str, env: dict[str, str]) -> dict[str, str]:
         "password": merged.get("DB_PASSWORD", ""),
         "host": merged.get("PGHOST", "localhost"),
         "port": merged.get("PGPORT", "5432"),
+        # A configured endpoint/database is a recovery obligation even if its
+        # credentials disappeared. A missing password is not a file-only source.
+        "configured": "true" if url or explicit or declared else "false",
     }
-    if url.startswith("postgresql://"):
+    if url:
         parsed = urlsplit(url)
         db_name = parsed.path.lstrip("/").split("?", 1)[0]
         config.update(
@@ -255,9 +272,9 @@ def _add_checked_file(
 
 def _dump_database(project_name: str, destination: Path, env: dict[str, str]) -> tuple[int, bool]:
     db = _load_db_config(project_name, env)
-    expects_db = bool(db["password"])
-    if not db["password"]:
-        return 0, expects_db
+    expects_db = db["configured"] == "true"
+    if not expects_db:
+        return 0, False
     destination.parent.mkdir(parents=True, exist_ok=True)
     # Prefer PGUSER/PGPASSWORD (typically superuser) to avoid connection-slot
     # exhaustion for non-superuser roles.
@@ -275,6 +292,8 @@ def _dump_database(project_name: str, destination: Path, env: dict[str, str]) ->
             raise RuntimeError("Backup administrator and project database endpoints differ")
         if admin.username and admin.password:
             user, password = unquote(admin.username), unquote(admin.password)
+    if not password:
+        raise RuntimeError("Configured database credentials are unavailable; capture refused")
     run_env["PGPASSWORD"] = password
     command = ["pg_dump", "-U", user, "-h", db["host"], "-p", db["port"], db["name"]]
     stream = _run_gzip_stream if destination.suffix == ".gz" else _run_plain_stream
@@ -282,6 +301,8 @@ def _dump_database(project_name: str, destination: Path, env: dict[str, str]) ->
     if returncode != 0:
         detail = stderr.decode(errors="ignore").strip()
         raise RuntimeError(f"Database dump failed: {detail or returncode}")
+    if not destination.is_file() or destination.stat().st_size == 0:
+        raise RuntimeError("Configured database dump is empty or missing; capture refused")
     return destination.stat().st_size, expects_db
 
 

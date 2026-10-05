@@ -507,6 +507,9 @@ def test_weekly_prune_is_independent_qualified_headroom_bounded_and_preview_firs
     _, persist = _persisted()
     result = adapter.prune(remote=True, available_bytes=1024**4, dry_run=False, state={"status": "verified"}, persist=persist)
     assert result["status"] == "completed" and result["max_unused"] == "5%"
+    assert result["physical_bytes_confirmed"] is True
+    assert result["physical_bytes_after"] == sum(len(value) for value in process.objects.values())
+    assert result["free_bytes"] == 500000
     commands = [command for command in process.commands if "prune" in command]
     assert len(commands) == 2 and "--dry-run" in commands[0] and "--dry-run" not in commands[1]
     assert all("rclone.args=serve restic --stdio --drive-use-trash=false" in command for command in commands)
@@ -602,6 +605,9 @@ def test_qualified_prune_retires_removed_objects_only_after_verifying_repacked_o
     new_path = next(path for path in process.objects if process.objects[path] == b"new repacked ciphertext")
     assert result["state"]["verified_objects"][new_path]["method"] == "provider-sha256"
     assert result["state"]["maintenance"]["status"] == "completed"
+    assert result["physical_bytes_confirmed"] is True
+    assert result["physical_bytes_after"] == sum(len(value) for value in process.objects.values())
+    assert result["reclaimed_bytes"] == max(0, result["physical_bytes_before"] - result["physical_bytes_after"])
     retry = adapter.sync(SNAPSHOT, state=result["state"], persist=persist)
     assert retry["status"] == "verified"
 

@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from dataclasses import asdict, dataclass
+from dataclasses import asdict, dataclass, field
 from pathlib import Path
 from typing import Any
 
@@ -45,7 +45,19 @@ class QuickSnapshot:
     recovery_path: str | None = None
     recovery_branch: str | None = None
 
-    def to_dict(self) -> dict[str, str | None]:
+    capture_root: str | None = None
+    project_relative_path: str = "."
+    source_digest: str | None = None
+    unfinished: bool | None = False  # None: captured saved-work state is unclassified.
+    pin_reason: str | None = None
+    pin_until: str | None = None
+    recovery_active: bool = False
+    deletion_error: str | None = None
+    nested_subvolumes: list[str] = field(default_factory=list)
+    shared_capture: bool = False
+    recovery_copies: list[dict[str, Any]] = field(default_factory=list)
+
+    def to_dict(self) -> dict[str, Any]:
         return asdict(self)
 
     @classmethod
@@ -53,6 +65,11 @@ class QuickSnapshot:
         scope_path = data.get("scope_path") or data.get("path")
         if not scope_path:
             raise KeyError("scope_path")
+        copies = [dict(copy) for copy in data.get("recovery_copies") or []]
+        for copy in copies:
+            if not isinstance(copy.get("active"), bool) and not copy.get("deleted_at"):
+                copy["active"] = True
+                copy["released_at"] = None
         return cls(
             id=str(data["id"]),
             name=str(data["name"]) if data.get("name") else None,
@@ -82,6 +99,21 @@ class QuickSnapshot:
             recovery_branch=(
                 str(data["recovery_branch"]) if data.get("recovery_branch") else None
             ),
+            capture_root=data.get("capture_root"),
+            project_relative_path=str(data.get("project_relative_path") or "."),
+            source_digest=data.get("source_digest"),
+            # Missing/null legacy evidence is unknown, never proof of clean work.
+            unfinished=data["unfinished"] if isinstance(data.get("unfinished"), bool) else None,
+            pin_reason=data.get("pin_reason"),
+            pin_until=data.get("pin_until"),
+            # Legacy writable side copies can contain unique saved edits. Only
+            # an explicit boolean false establishes that the owner released one.
+            recovery_active=(data["recovery_active"] if isinstance(data.get("recovery_active"), bool)
+                else bool(data.get("recovery_path") or data.get("recovery_copies"))),
+            deletion_error=data.get("deletion_error"),
+            nested_subvolumes=list(data.get("nested_subvolumes") or []),
+            shared_capture=bool(data.get("shared_capture", False)),
+            recovery_copies=copies,
         )
 
 

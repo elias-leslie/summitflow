@@ -3,8 +3,10 @@
 from __future__ import annotations
 
 import json
+import os
 import shutil
 import subprocess
+import tempfile
 from pathlib import Path
 
 from ..workspace_paths import get_workspace_snapshots_base_dir
@@ -50,10 +52,15 @@ def _load_manifest(project_id: str, scope: SnapshotScope) -> list[QuickSnapshot]
 def _save_manifest(project_id: str, scope: SnapshotScope, entries: list[QuickSnapshot]) -> None:
     path = _manifest_path(project_id, scope)
     ordered = sorted(entries, key=lambda entry: entry.created_at, reverse=True)
-    path.write_text(
-        json.dumps([entry.to_dict() for entry in ordered], indent=2),
-        encoding="utf-8",
-    )
+    with tempfile.NamedTemporaryFile(mode="w", dir=path.parent, delete=False, encoding="utf-8") as handle:
+        temporary = Path(handle.name)
+        json.dump([entry.to_dict() for entry in ordered], handle, indent=2)
+        handle.flush()
+        os.fsync(handle.fileno())
+    try:
+        temporary.replace(path)
+    finally:
+        temporary.unlink(missing_ok=True)
 
 
 def _snapshot_destination(project_id: str, scope: SnapshotScope, snapshot_id: str) -> Path:
@@ -122,7 +129,7 @@ def _update_manifest_entries(
     snapshot: QuickSnapshot,
     project_id: str,
     scope: SnapshotScope,
-    **updates: str | None,
+    **updates: object,
 ) -> QuickSnapshot:
     """Update the matching manifest entry with *updates* and persist."""
     updated: list[QuickSnapshot] = []

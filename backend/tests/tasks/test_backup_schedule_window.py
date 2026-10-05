@@ -8,7 +8,13 @@ import pytest
 from pydantic import ValidationError
 
 from app.config import Settings
+from app.tasks import backup_repository_runtime as runtime
 from app.tasks import backup_scheduler as scheduler
+
+
+@pytest.fixture(autouse=True)
+def isolated_host_backup(monkeypatch):
+    monkeypatch.setattr(scheduler, "_scheduled_host_backup", lambda _: {"status": "skipped", "reason": "host-backup-disabled"})
 
 
 @pytest.mark.parametrize(
@@ -58,10 +64,14 @@ def test_outside_window_skips_scheduled_work_without_changing_due_sources(
     monkeypatch.setattr(scheduler.backup_store, "list_due_sources", lambda: [])
     monkeypatch.setattr(scheduler.backup_store, "update_source_last_run", unexpected)
     monkeypatch.setattr(scheduler.maintenance_store, "record_maintenance_run", unexpected)
+    copied = []
+    monkeypatch.setattr(runtime, "sync_repository_batch", lambda batch: copied.append(batch) or {})
 
     assert scheduler.run_scheduled_backups() == {
         "status": "skipped", "reason": "outside-backup-window", "count": 0, "results": [],
+        "host_backup": {"status": "skipped", "reason": "host-backup-disabled"},
     }
+    assert copied == [{}]
 
 
 @pytest.mark.parametrize(

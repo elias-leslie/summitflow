@@ -154,3 +154,46 @@ def test_list_all_snapshots_filters_exact_archived_scope(monkeypatch) -> None:
     assert len(body) == 1
     assert body[0]["scope_name"] == "summitflow-archived"
     assert body[0]["source"] == "auto-baseline"
+
+
+def test_prune_accepts_frontend_json_and_counts_entries(monkeypatch) -> None:
+    seen = []
+    def prune(**kwargs):
+        seen.append(kwargs["dry_run"])
+        return {"scope-a": [object(), object()], "scope-b": [object()]}
+    monkeypatch.setattr("cli.lib.autosnapshot.prune_all", prune)
+    response = client.post("/api/snapshots/prune", json={"dry_run": False})
+    assert response.status_code == 200
+    assert response.json()["ok"] is True
+    assert response.json()["dry_run"] is False
+    assert response.json()["pruned"] == 3
+    assert seen == [False]
+    response = client.post("/api/snapshots/prune?dry_run=true", json={"dry_run": False})
+    assert response.json()["dry_run"] is True
+
+
+def test_summary_usage_is_unknown_instead_of_zero(monkeypatch) -> None:
+    _patch_snapshot_libs(monkeypatch)
+    response = client.get("/api/snapshots/summary")
+    assert response.json()["total_usage_bytes"] is None
+
+
+def test_api_apply_cannot_claim_ownership_from_client_body() -> None:
+    response = client.post("/api/snapshots/point/apply", json={
+        "project_id": "summitflow", "paths": ["source.py"],
+        "owned_paths": ["source.py"], "preview_digest": "invented",
+    })
+    assert response.status_code == 403
+    assert "owned ST coding session" in response.text
+
+
+def test_api_recovery_uses_requested_project_root(monkeypatch, tmp_path) -> None:
+    seen = []
+    def recover(**kwargs):
+        seen.append(kwargs)
+        return type("Recovery", (), {"recovery_path": str(tmp_path / "readonly/project")})()
+    monkeypatch.setattr("cli.lib.quick_snapshots.recover_snapshot", recover)
+    monkeypatch.setattr("cli.lib.workspace_paths.get_projects_base_dir", lambda pid: tmp_path / pid)
+    response = client.post("/api/snapshots/point/recover", json={"project_id": "requested"})
+    assert response.json() == {"ok": True, "recovery_path": str(tmp_path / "readonly/project")}
+    assert seen[0]["cwd"] == tmp_path / "requested"

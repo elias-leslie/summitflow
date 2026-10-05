@@ -31,6 +31,15 @@
     "production_frontend": "localhost:3001",
     "production_api": "localhost:8001"
   },
+  "storage": {
+    "durable_data": [
+      "data/design-studio/mockups",
+      "backups",
+      "backend/logs",
+      "docker/compose/hatchet-config"
+    ],
+    "disposable_outputs": ["host-monitor/target"]
+  },
   "repository": {
     "owner": "elias-leslie",
     "name": "summitflow",

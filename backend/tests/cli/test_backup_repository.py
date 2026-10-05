@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import MagicMock
@@ -212,3 +213,130 @@ def test_long_running_storage_requests_keep_connection_timeout_without_read_dead
     timeout = post.call_args.kwargs["timeout"]
     assert timeout.connect == timeout.write == timeout.pool == 30.0
     assert timeout.read is None
+
+
+@pytest.mark.parametrize("command,tail,method,path", [
+    ("status", [], "_api_get", "backup-storage/pilot/repository"),
+    ("maintenance", [], "_api_post", "backup-storage/pilot/maintenance?dry_run=true"),
+    ("maintenance", ["--apply"], "_api_post", "backup-storage/pilot/maintenance?dry_run=false"),
+])
+def test_repository_routine_output_omits_large_journals_and_details_preserves_full_response(monkeypatch, command, tail, method, path):
+    from cli.commands import backup_storage
+    from cli.main import app
+
+    journal = {"verified_objects": {f"data/{i:05d}": {"sha256": "a" * 64, "size": i} for i in range(20000)},
+               "pending_objects": {f"data/{i:05d}": "ROOT_OBJECT_JOURNAL_SENTINEL" for i in range(20000)}}
+    maintenance = {
+        "status": "completed", "dry_run": command == "maintenance" and not tail,
+        "summary": {"result": "completed", "reclaimed_bytes": 123456, "free_bytes": {"local": 7654321, "remote": None},
+                    "blockers": ["remote"], "evidence": "/fixture/private/state.json"},
+        "local": {"monthly": {"status": "verified", "verified": True, "state": journal},
+                  "retention": {"status": "completed", "keep_ids": ["b" * 64] * 34},
+                  "prune": {"status": "completed", "physical_bytes_confirmed": True, "state": journal}},
+        "remote": {"prune": {"status": "skipped", "reason": "insufficient-headroom", "state": journal}},
+    }
+    payload = maintenance if command == "maintenance" else {
+        "ready": True, "engine": "restic", "prune_qualified": True, "cutover_qualified": False,
+        "sources": {str(i): {"snapshot_id": "b" * 64, "completed_at": "2026-10-05T12:00:00+00:00"} for i in range(34)},
+        "offsite": {"status": "pending", "pending_snapshot_ids": ["b" * 64] * 9, "pending_objects": journal["pending_objects"], "mismatches": ["fixture-mismatch"]},
+        "maintenance": {"last_run_at": "2026-10-05T12:00:00+00:00", "result": maintenance},
+    }
+    original = json.dumps(payload, sort_keys=True)
+    request = MagicMock(return_value=payload)
+    monkeypatch.setattr(backup_storage, method, request)
+    args = ["backup", "storage", command, "pilot", *tail]
+    result = runner.invoke(app, args)
+    assert result.exit_code == 0, result.output
+    assert len(result.output) < 6000
+    assert "ROOT_OBJECT_JOURNAL_SENTINEL" not in result.output
+    assert "verified_objects" not in result.output
+    concise = json.loads(result.output)
+    summary = concise if command == "maintenance" else concise["maintenance"]
+    assert summary["result"] == "completed"
+    assert summary["reclaimed_bytes"] == 123456
+    assert summary["free_bytes"] == {"local": 7654321, "remote": None}
+    assert summary["evidence"] == "/fixture/private/state.json"
+    assert summary["blockers"] == [{"repository": "remote", "operation": "prune", "status": "skipped", "reason": "insufficient-headroom"}]
+    assert concise["details_command"] == "st backup storage status pilot --details"
+    if command == "status":
+        assert concise["source_count"] == 34
+        assert concise["offsite"]["pending_snapshot_count"] == 9
+        assert concise["offsite"]["pending_object_count"] == 20000
+        assert concise["offsite"]["mismatch_count"] == 1
+        assert concise["maintenance"]["last_run_at"] == "2026-10-05T12:00:00+00:00"
+    request.assert_called_once_with(path, **({"timeout": backup_storage.LONG_RUNNING_TIMEOUT} if method == "_api_post" else {}))
+    request.reset_mock()
+    full = runner.invoke(app, [*args, "--details"])
+    assert full.exit_code == 0
+    assert json.loads(full.output) == payload
+    assert "ROOT_OBJECT_JOURNAL_SENTINEL" in full.output
+    assert json.dumps(payload, sort_keys=True) == original
+    request.assert_called_once_with(path, **({"timeout": backup_storage.LONG_RUNNING_TIMEOUT} if method == "_api_post" else {}))
+
+
+def test_repository_summary_preserves_readiness_and_maintenance_failures(monkeypatch):
+    from cli.commands import backup_storage
+    from cli.main import app
+
+    monkeypatch.setattr(backup_storage, "_api_get", lambda _: {"ready": False, "engine": "restic", "error": "fixture missing credential"})
+    status = runner.invoke(app, ["backup", "storage", "status", "pilot"])
+    assert status.exit_code == 0
+    assert json.loads(status.output)["ready"] is False
+    assert json.loads(status.output)["error"] == "fixture missing credential"
+    monkeypatch.setattr(backup_storage, "_api_post", lambda *_, **__: {
+        "status": "failed", "dry_run": True,
+        "local": {"monthly": {"verified": False, "status": "failed", "error": "fixture integrity error"}},
+        "critical_restore": {"status": "failed", "failed_source": "database", "error": "fixture restore error"},
+    })
+    result = runner.invoke(app, ["backup", "storage", "maintenance", "pilot"])
+    assert result.exit_code == 0
+    summary = json.loads(result.output)
+    assert summary["result"] == "failed"
+    assert summary["reclaimed_bytes"] is None
+    assert summary["free_bytes"] == {"local": None, "remote": None}
+    assert [blocker["error"] for blocker in summary["blockers"]] == ["fixture integrity error", "fixture restore error"]
+
+
+@pytest.mark.parametrize("format_args", [["--no-compact"], ["--no-compact", "--human"]])
+def test_repository_json_modes_still_require_details_for_full_journal(monkeypatch, format_args):
+    from cli.commands import backup_storage
+    from cli.main import app
+
+    payload = {"ready": True, "maintenance": {"result": {"local": {"prune": {"state": {"sentinel": "FULL_JOURNAL" * 20000}}}}}}
+    monkeypatch.setattr(backup_storage, "_api_get", lambda _: payload)
+    args = [*format_args, "backup", "storage", "status", "pilot"]
+    concise = runner.invoke(app, args)
+    assert concise.exit_code == 0
+    assert json.loads(concise.output)["ready"] is True
+    assert len(concise.output) < 3000
+    assert "FULL_JOURNAL" not in concise.output
+    details = runner.invoke(app, [*args, "--details"])
+    assert details.exit_code == 0
+    assert json.loads(details.output) == payload
+
+
+@pytest.mark.parametrize("frequency", ["hourly", "four_hourly", "daily", "weekly", "monthly"])
+def test_schedule_accepts_supported_frequency_and_preserves_other_fields(monkeypatch, frequency):
+    from cli.commands import backup
+    from cli.main import app
+
+    update = MagicMock(return_value={"enabled": True, "frequency": frequency, "retention_days": 37})
+    monkeypatch.setattr(backup, "_get_source_api", lambda: SimpleNamespace(update_source=update))
+    result = runner.invoke(app, ["backup", "schedule", "source", "--frequency", frequency])
+    assert result.exit_code == 0, result.output
+    update.assert_called_once_with("source", enabled=None, frequency=frequency, retention_days=None)
+
+
+def test_schedule_help_lists_four_hourly_and_unknown_frequency_fails_before_api(monkeypatch):
+    from cli.commands import backup
+    from cli.main import app
+
+    help_result = runner.invoke(app, ["backup", "schedule", "--help"])
+    assert help_result.exit_code == 0
+    assert "hourly, four_hourly, daily, weekly, monthly" in help_result.output
+    get_api = MagicMock(side_effect=AssertionError("invalid frequency must not contact API"))
+    monkeypatch.setattr(backup, "_get_source_api", get_api)
+    result = runner.invoke(app, ["backup", "schedule", "source", "--frequency", "every-four-hours"])
+    assert result.exit_code == 2
+    assert "four_hourly" in result.output
+    get_api.assert_not_called()

@@ -3,6 +3,7 @@
 import { useMutation, useQueryClient } from '@tanstack/react-query'
 import Link from 'next/link'
 import { useState } from 'react'
+import { SavedWorkEvidence } from '@/components/snapshots/SavedWorkEvidence'
 import {
   checkProjectGitRemote,
   type DevelopmentProjection,
@@ -117,9 +118,10 @@ export function ProjectRow({
         aria-label="Recovery evidence"
       >
         <h3 className="mb-3 text-xs font-medium text-slate-300">Recovery</h3>
-        <dl className="grid grid-cols-2 gap-4 xl:grid-cols-4">
+        <dl className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-5">
+          <SavedWorkEvidence projectId={projectId} />
           <DevelopmentEvidence
-            label="Capture"
+            label="Backup capture"
             evidence={development.recovery.capture}
           />
           <DevelopmentEvidence
@@ -127,7 +129,7 @@ export function ProjectRow({
             evidence={development.recovery.offsite}
           />
           <DevelopmentEvidence
-            label="Repository snapshot"
+            label="Backup repository snapshot"
             evidence={development.recovery.snapshot}
           />
           <DevelopmentEvidence

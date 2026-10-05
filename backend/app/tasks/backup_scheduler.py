@@ -180,6 +180,16 @@ def _cleanup_local_archives() -> dict[str, Any]:
     return result
 
 
+def _scheduled_host_backup(now: datetime) -> dict[str, Any]:
+    try:
+        from .backup_btrbk import run_scheduled_host_backup
+
+        return run_scheduled_host_backup(now)
+    except Exception as exc:
+        logger.exception("scheduled_host_backup_failed")
+        return {"status": "failed", "error": str(exc)}
+
+
 def run_scheduled_backups(*, on_progress: Callable[[], None] | None = None) -> dict[str, Any]:
     """Check and run due scheduled backups.
 
@@ -191,15 +201,28 @@ def run_scheduled_backups(*, on_progress: Callable[[], None] | None = None) -> d
     started_at = datetime.now(UTC)
     window_open = _scheduled_backup_window_open(started_at)
     logger.info("run_scheduled_backups_started")
+    host_backup = _scheduled_host_backup(started_at)
 
     try:
+        from .backup_repository_runtime import repository_capture_batch, sync_repository_batch
+
         due_sources = backup_store.list_due_sources()
         if not window_open:
             window_end = _latest_finished_window_end(started_at)
-            due_sources = [source for source in due_sources if _catchup_source(source, window_end)]
+            due_sources = [source for source in due_sources if source.get("frequency") == "four_hourly" or _catchup_source(source, window_end)]
             if not due_sources:
                 logger.info("scheduled_backups_outside_window")
-                return {"status": "skipped", "reason": "outside-backup-window", "count": 0, "results": []}
+                # Persisted offsite backlog is independent of capture eligibility.
+                # The batch helper retains repository serialization and capacity admission.
+                copies = sync_repository_batch({})
+                skipped_result: dict[str, Any] = {"status": "partial" if host_backup.get("status") in {"blocked", "failed", "error", "partial", "cancelled"} else "skipped", "reason": "outside-backup-window", "count": 0, "results": [], "host_backup": host_backup}
+                if copies:
+                    skipped_result["repository_copy"] = {key: {field: value.get(field) for field in ("status", "error")} for key, value in copies.items()}
+                    if any(value.get("status") in {"pending", "blocked", "failed", "error"} for value in copies.values()):
+                        skipped_result["status"] = "partial"
+                    elif any(value.get("status") == "verified" for value in copies.values()) and skipped_result["status"] == "skipped":
+                        skipped_result["status"] = "success"
+                return skipped_result
             logger.info("scheduled_backups_catching_up", count=len(due_sources))
         stale_failed = _fail_stale_running_records()
         stale_cleaned = _cleanup_stale_records() if window_open else 0
@@ -209,21 +232,14 @@ def run_scheduled_backups(*, on_progress: Callable[[], None] | None = None) -> d
         local_bytes_deleted = int(local_cleanup.get("bytes_deleted") or 0)
 
         results: list[dict[str, Any]] = []
-        for source in due_sources:
-            try:
-                results.append(_process_due_source(source, on_progress=on_progress))
-            except Exception as exc:
-                logger.exception(
-                    "scheduled_backup_source_unhandled_error",
-                    source_id=source.get("id"),
-                )
-                results.append(
-                    {
-                        "source_id": source.get("id"),
-                        "status": "error",
-                        "error": str(exc),
-                    }
-                )
+        with repository_capture_batch() as batch:
+            for source in due_sources:
+                try:
+                    results.append(_process_due_source(source, on_progress=on_progress))
+                except Exception as exc:
+                    logger.exception("scheduled_backup_source_unhandled_error", source_id=source.get("id"))
+                    results.append({"source_id": source.get("id"), "status": "error", "error": str(exc)})
+        copies = sync_repository_batch(batch)
 
         succeeded = sum(1 for result in results if result.get("status") in SUCCESS_STATUSES)
         failed = len(results) - succeeded
@@ -240,9 +256,16 @@ def run_scheduled_backups(*, on_progress: Callable[[], None] | None = None) -> d
             "rows_cleaned": stale_failed + stale_cleaned + expired_count,
             "results": results,
             "catch_up": not window_open,
+            "host_backup": host_backup,
         }
+        if host_backup.get("status") in {"blocked", "failed", "error", "partial", "cancelled"}:
+            result["status"] = "partial"
         if not due_sources:
             result["message"] = "No scheduled backups due"
+        if copies:
+            result["repository_copy"] = {key: {field: value.get(field) for field in ("status", "error")} for key, value in copies.items()}
+            if any(value.get("status") in {"pending", "blocked", "failed", "error"} for value in copies.values()):
+                result["status"] = "partial"
 
         # Restore drill cadence is independent of whether any backup is due.
         try:

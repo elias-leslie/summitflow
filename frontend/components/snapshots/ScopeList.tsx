@@ -2,39 +2,12 @@
 
 import { useQuery } from '@tanstack/react-query'
 import { clsx } from 'clsx'
-import { ChevronRight, Loader2, RotateCcw } from 'lucide-react'
-import { useCallback, useState } from 'react'
-import {
-  type BtrfsScope,
-  type BtrfsSnapshot,
-  fetchSnapshots,
-  recoverSnapshot,
-} from '@/lib/api/snapshots'
+import { ChevronRight, Loader2 } from 'lucide-react'
+import { useId, useState } from 'react'
+import { type BtrfsScope, fetchSnapshots } from '@/lib/api/snapshots'
 import { formatBytes, formatTimeAgo } from '@/lib/format'
 import { STALE_GIT } from '@/lib/polling'
-
-// ─── Source styling ─────────────────────────────────────────────
-
-const SOURCE_DOT: Record<string, string> = {
-  manual: 'bg-phosphor-500',
-  'auto-baseline': 'bg-emerald-500',
-  'auto-periodic': 'bg-slate-500',
-  'auto-claim': 'bg-amber-500',
-}
-
-const SOURCE_BADGE: Record<string, string> = {
-  manual: 'bg-phosphor-500/12 text-phosphor-400 border-phosphor-500/20',
-  'auto-baseline': 'bg-emerald-500/12 text-emerald-400 border-emerald-500/20',
-  'auto-periodic': 'bg-slate-700/50 text-slate-500 border-slate-600/40',
-  'auto-claim': 'bg-amber-500/12 text-amber-400 border-amber-500/20',
-}
-
-const SOURCE_LABEL: Record<string, string> = {
-  manual: 'manual',
-  'auto-baseline': 'baseline',
-  'auto-periodic': 'periodic',
-  'auto-claim': 'claim',
-}
+import { SnapshotRow } from './SnapshotRow'
 
 const SCOPE_TYPE_STYLE: Record<string, string> = {
   project: 'bg-emerald-500/15 text-emerald-400 border-emerald-500/25',
@@ -49,90 +22,18 @@ const STATE_BADGE: Record<string, string> = {
   archived: 'bg-amber-500/12 text-amber-300 border-amber-500/20',
 }
 
-// ─── Snapshot Row ───────────────────────────────────────────────
-
-function SnapshotRow({ snap }: { snap: BtrfsSnapshot }) {
-  const [recovering, setRecovering] = useState(false)
-  const [result, setResult] = useState<string | null>(null)
-
-  const handleRecover = useCallback(async () => {
-    setRecovering(true)
-    setResult(null)
-    try {
-      const res = await recoverSnapshot(snap.id, snap.project_id)
-      setResult(res.ok ? 'Recovered' : (res.error ?? 'Failed'))
-    } catch {
-      setResult('Failed')
-    }
-    setRecovering(false)
-    setTimeout(() => setResult(null), 3000)
-  }, [snap.id, snap.project_id])
-
-  const displayName = snap.name ?? snap.id.slice(0, 20)
-  const dotClass = SOURCE_DOT[snap.source] ?? 'bg-slate-600'
-  const badgeClass = SOURCE_BADGE[snap.source] ?? SOURCE_BADGE['auto-periodic']
-  const label = SOURCE_LABEL[snap.source] ?? snap.source
-
-  return (
-    <div className="flex items-center gap-3 text-xs px-2.5 py-1.5 rounded bg-slate-950/40 border border-slate-800/40">
-      <div className={clsx('w-1.5 h-1.5 rounded-full shrink-0', dotClass)} />
-      <span
-        className={clsx(
-          'inline-flex items-center px-1.5 py-0.5 rounded text-[9px] uppercase tracking-[0.1em] font-medium border leading-none shrink-0',
-          badgeClass,
-        )}
-      >
-        {label}
-      </span>
-      <span className="text-slate-300 truncate min-w-0" title={snap.id}>
-        {displayName}
-      </span>
-      {snap.branch && (
-        <span className="hidden sm:inline text-slate-600 font-mono truncate max-w-[120px]">
-          {snap.branch}
-        </span>
-      )}
-      <span className="text-slate-600 shrink-0 ml-auto">
-        {formatTimeAgo(snap.created_at)}
-      </span>
-      {snap.usage && (
-        <span className="text-slate-600 font-mono shrink-0 hidden sm:inline">
-          {formatBytes(snap.usage.exclusive_bytes)}
-        </span>
-      )}
-      <button
-        type="button"
-        onClick={handleRecover}
-        disabled={recovering}
-        className="flex items-center gap-1 px-1.5 py-0.5 rounded text-[10px] text-slate-500 hover:text-amber-400 hover:bg-amber-500/10 disabled:opacity-40 transition-all shrink-0"
-        title="Recover to sibling project"
-      >
-        {recovering ? (
-          <Loader2 className="w-3 h-3 animate-spin" />
-        ) : (
-          <RotateCcw className="w-3 h-3" />
-        )}
-      </button>
-      {result && (
-        <span
-          className={clsx(
-            'text-[9px] font-mono shrink-0',
-            result === 'Recovered' ? 'text-emerald-400' : 'text-rose-400',
-          )}
-        >
-          {result}
-        </span>
-      )}
-    </div>
-  )
-}
-
 // ─── Scope Card ─────────────────────────────────────────────────
 
 function ScopeCard({ scope }: { scope: BtrfsScope }) {
   const [expanded, setExpanded] = useState(false)
+  const contentId = useId()
 
-  const { data: snapshots, isLoading } = useQuery({
+  const {
+    data: snapshots,
+    isLoading,
+    error,
+    refetch,
+  } = useQuery({
     queryKey: [
       'snapshot-scope',
       scope.project_id,
@@ -170,12 +71,12 @@ function ScopeCard({ scope }: { scope: BtrfsScope }) {
       )}
     >
       {/* Header */}
-      <div
-        role="button"
-        tabIndex={0}
+      <button
+        type="button"
+        aria-expanded={expanded}
+        aria-controls={contentId}
         onClick={() => setExpanded(!expanded)}
-        onKeyDown={(e) => e.key === 'Enter' && setExpanded(!expanded)}
-        className="flex items-center gap-3 px-4 py-2.5 cursor-pointer select-none group"
+        className="flex w-full items-center gap-2 px-4 py-2.5 text-left cursor-pointer select-none group focus-visible:outline focus-visible:outline-2 focus-visible:outline-phosphor-400"
       >
         <ChevronRight
           className={clsx(
@@ -205,25 +106,39 @@ function ScopeCard({ scope }: { scope: BtrfsScope }) {
         <span className="text-[10px] text-slate-600 rounded bg-slate-900/60 px-1.5 py-0.5 shrink-0">
           {scope.snapshot_count}
         </span>
-        <div className="hidden sm:flex items-center gap-3 text-2xs text-slate-500 ml-auto">
-          {scope.total_bytes != null && scope.total_bytes > 0 && (
-            <span className="font-mono">{formatBytes(scope.total_bytes)}</span>
-          )}
+        <span className="hidden sm:flex items-center gap-3 text-2xs text-slate-400 ml-auto">
+          <span className="font-mono">
+            {scope.total_bytes == null
+              ? 'Size unavailable'
+              : scope.total_bytes === 0
+                ? '0 B'
+                : formatBytes(scope.total_bytes)}
+          </span>
           {scope.newest_at && <span>{formatTimeAgo(scope.newest_at)}</span>}
-        </div>
-      </div>
+        </span>
+      </button>
 
       {/* Expanded content */}
-      <div
-        className={clsx(
-          'grid transition-all duration-200 ease-out',
-          expanded
-            ? 'grid-rows-[1fr] opacity-100'
-            : 'grid-rows-[0fr] opacity-0',
-        )}
-      >
+      <div id={contentId} hidden={!expanded}>
         <div className="overflow-hidden">
           <div className="border-t border-slate-800/40 px-4 py-3 space-y-1.5">
+            {error && (
+              <div className="space-y-2 py-1">
+                <p role="alert" className="text-xs text-rose-300">
+                  {snapshots
+                    ? 'Refresh failed; showing last loaded snapshots: '
+                    : 'Snapshots unavailable: '}
+                  {error.message}
+                </p>
+                <button
+                  type="button"
+                  onClick={() => void refetch()}
+                  className="btn-secondary text-xs"
+                >
+                  Retry snapshots
+                </button>
+              </div>
+            )}
             {isLoading ? (
               <div className="flex items-center gap-2 text-xs text-slate-500 py-2">
                 <Loader2 className="w-3 h-3 animate-spin" />
@@ -231,11 +146,11 @@ function ScopeCard({ scope }: { scope: BtrfsScope }) {
               </div>
             ) : snapshots && snapshots.length > 0 ? (
               snapshots.map((snap) => <SnapshotRow key={snap.id} snap={snap} />)
-            ) : (
-              <div className="text-xs text-slate-600 py-1">
+            ) : !error ? (
+              <div className="text-xs text-slate-400 py-1">
                 No snapshots in this scope
               </div>
-            )}
+            ) : null}
           </div>
         </div>
       </div>
@@ -252,7 +167,7 @@ interface ScopeListProps {
 export function ScopeList({ scopes }: ScopeListProps) {
   if (scopes.length === 0) {
     return (
-      <div className="text-xs text-slate-600 py-2">
+      <div className="text-xs text-slate-400 py-2">
         No snapshot scopes found
       </div>
     )

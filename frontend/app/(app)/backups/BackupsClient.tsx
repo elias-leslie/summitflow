@@ -28,6 +28,7 @@ import { useBackupHistoryRefresh } from '@/components/backup/backupPolling'
 import { CollapsibleSection } from '@/components/backup/CollapsibleSection'
 import { CreateBackupModal } from '@/components/backup/CreateBackupModal'
 import { EncryptionSetup } from '@/components/backup/EncryptionSetup'
+import { NativeHostBackupCard } from '@/components/backup/NativeHostBackupCard'
 import { SetupChecklist } from '@/components/backup/SetupChecklist'
 import { SourcesManager } from '@/components/backup/SourcesManager'
 import { SourceTypeBadge } from '@/components/backup/SourceTypeBadge'
@@ -47,6 +48,7 @@ import {
   fetchBackupEncryption,
   fetchBackupHealth,
   fetchBackupSources,
+  fetchNativeHostBackupStatus,
   fetchStorageBackends,
   fetchStorageStatus,
   fetchStorageSummary,
@@ -349,6 +351,17 @@ export function BackupsClient() {
   })
 
   const {
+    data: nativeHostStatus,
+    isLoading: nativeHostLoading,
+    error: nativeHostError,
+    refetch: refetchNativeHost,
+  } = useQuery({
+    queryKey: ['native-host-backup'],
+    queryFn: fetchNativeHostBackupStatus,
+    staleTime: STALE_GIT,
+  })
+
+  const {
     data: systemImageStatus,
     isLoading: systemImageLoading,
     refetch: refetchSystemImage,
@@ -359,13 +372,21 @@ export function BackupsClient() {
       query.state.data?.active_session ? 3000 : false,
   })
 
-  const { data: snapshotSummary, isLoading: snapshotLoading } = useQuery({
+  const {
+    data: snapshotSummary,
+    isLoading: snapshotLoading,
+    error: snapshotError,
+  } = useQuery({
     queryKey: ['snapshot-summary'],
     queryFn: () => fetchSnapshotSummary(),
     staleTime: STALE_GIT,
   })
 
-  const { data: snapshotScopes = [] } = useQuery({
+  const {
+    data: snapshotScopes = [],
+    isLoading: scopesLoading,
+    error: scopesError,
+  } = useQuery({
     queryKey: ['snapshot-scopes'],
     queryFn: () => fetchScopes(undefined, true),
     staleTime: STALE_GIT,
@@ -395,7 +416,11 @@ export function BackupsClient() {
     sources.length === 0
       ? 'No sources configured yet.'
       : `${sources.length} sources, ${enabledSourceCount} scheduled${failingSourceCount > 0 ? `, ${failingSourceCount} failing` : ''}`
-  const snapshotsSummary = `${activeSnapshotScopes.length} active scope${activeSnapshotScopes.length === 1 ? '' : 's'}, ${archivedSnapshotScopes.length} archived`
+  const snapshotsSummary = scopesLoading
+    ? 'Loading saved-work scopes…'
+    : scopesError
+      ? 'Saved-work scope refresh unavailable'
+      : `${activeSnapshotScopes.length} active scope${activeSnapshotScopes.length === 1 ? '' : 's'}, ${archivedSnapshotScopes.length} archived`
   const protectionSummary =
     'Current backup readiness, restore validation, and anything still blocking full protection.'
 
@@ -424,6 +449,8 @@ export function BackupsClient() {
   const refreshSnapshots = () => {
     queryClient.invalidateQueries({ queryKey: ['snapshot-summary'] })
     queryClient.invalidateQueries({ queryKey: ['snapshot-scopes'] })
+    queryClient.invalidateQueries({ queryKey: ['snapshot-scope'] })
+    queryClient.invalidateQueries({ queryKey: ['saved-work-evidence'] })
   }
 
   // ─── Render ─────────────────────────────────────────────────────
@@ -542,6 +569,15 @@ export function BackupsClient() {
         onRefresh={refreshStorage}
       />
 
+      <NativeHostBackupCard
+        status={nativeHostStatus}
+        isLoading={nativeHostLoading}
+        error={nativeHostError}
+        onRefresh={() => {
+          void refetchNativeHost()
+        }}
+      />
+
       <SystemImageBackupCard
         status={systemImageStatus}
         isLoading={systemImageLoading}
@@ -560,14 +596,39 @@ export function BackupsClient() {
           <SnapshotSummaryCard
             summary={snapshotSummary}
             isLoading={snapshotLoading}
+            error={snapshotError}
             onMutated={refreshSnapshots}
           />
+          <p className="text-xs text-slate-400">
+            Btrfs captures protect saved workspace edits locally. Backup
+            repository snapshots and offsite copies are listed separately.
+          </p>
+          {scopesError && (
+            <p role="alert" className="text-xs text-rose-300">
+              Saved-work scopes unavailable: {scopesError.message}
+            </p>
+          )}
+          {(snapshotError || scopesError) && (
+            <button
+              type="button"
+              onClick={refreshSnapshots}
+              className="btn-secondary text-xs"
+            >
+              Retry saved-work status
+            </button>
+          )}
           <div className="space-y-2">
             <div>
               <div className="mb-1.5 text-[10px] uppercase tracking-[0.14em] text-slate-500">
                 Active Protection Scopes
               </div>
-              <ScopeList scopes={activeSnapshotScopes} />
+              {scopesLoading ? (
+                <p role="status" className="text-xs text-slate-400">
+                  Loading saved-work scopes…
+                </p>
+              ) : !scopesError || snapshotScopes.length > 0 ? (
+                <ScopeList scopes={activeSnapshotScopes} />
+              ) : null}
             </div>
             {archivedSnapshotScopes.length > 0 && (
               <details className="rounded-lg border border-slate-700/60 bg-slate-800/30 overflow-hidden">
@@ -577,7 +638,7 @@ export function BackupsClient() {
                       Archived Recovery Scopes
                     </div>
                     <div className="mt-0.5 text-xs text-slate-400">
-                      Retained snapshots for deleted or retired lanes
+                      Retained snapshots for archived project scopes
                     </div>
                   </div>
                   <div className="text-xs font-medium text-amber-300">

@@ -111,6 +111,16 @@ def _module_signer() -> str | None:
     return None
 
 
+def _compressed_btrfs_root() -> bool | None:
+    proc = _safe_command(["findmnt", "-n", "-o", "FSTYPE,OPTIONS", "/"])
+    if not proc or proc.returncode != 0 or not proc.stdout.strip():
+        return None
+    parts = proc.stdout.split()
+    if len(parts) < 2:
+        return None
+    return parts[0] == "btrfs" and any(option.startswith("compress=") or option.startswith("compress-force=") for option in parts[1].split(","))
+
+
 def _split_table_line(line: str) -> list[str]:
     return [part.strip() for part in re.split(r"\s{2,}", line.strip()) if part.strip()]
 
@@ -294,6 +304,11 @@ def _blocked_reason(
         return "Secure Boot blocks the Veeam kernel module until its MOK is enrolled."
     if active_session is not None:
         return "A system-image backup session is already active."
+    compressed_btrfs = _compressed_btrfs_root()
+    if compressed_btrfs is None:
+        return "Veeam source filesystem support could not be verified."
+    if compressed_btrfs:
+        return "This compressed Btrfs Linux source requires native host recovery. Windows remains Veeam-managed."
     return None
 
 
