@@ -51,6 +51,11 @@ pub struct Store {
     pending_count: u8,
 }
 
+fn storage_headroom(bytes: u64, free: u64, max_bytes: u64, min_free: u64) -> bool {
+    bytes.saturating_add(BASELINE_HEADROOM_BYTES) < max_bytes
+        && free >= min_free.saturating_add(BASELINE_HEADROOM_BYTES)
+}
+
 fn sqlite_error(message: &str) -> rusqlite::Error {
     rusqlite::Error::InvalidParameterName(message.to_owned())
 }
@@ -230,10 +235,7 @@ impl Store {
                 "baseline sample too large"
             }));
         }
-        let has_headroom = |store: &Self| {
-            store.bytes().saturating_add(BASELINE_HEADROOM_BYTES) < max_bytes
-                && store.free_bytes() >= min_free.saturating_add(BASELINE_HEADROOM_BYTES)
-        };
+        let has_headroom = |store: &Self| store.has_headroom(max_bytes, min_free);
         if s.mode == "detail" {
             if !has_headroom(self) {
                 return Err(sqlite_error("detail skipped: storage headroom"));
@@ -246,7 +248,9 @@ impl Store {
             }
         } else {
             if !has_headroom(self) {
-                self.prune_to(s.at_ns, max_bytes, min_free)?;
+                self.prune_to(s.at_ns, max_bytes, min_free).map_err(|e| {
+                    sqlite_error(&format!("baseline skipped: storage headroom; {e}"))
+                })?;
             }
             if !has_headroom(self) {
                 return Err(sqlite_error("baseline skipped: storage headroom"));
@@ -305,9 +309,7 @@ impl Store {
         let mut evicted = 0;
         let mut blocked = false;
         while self.detail_bytes.saturating_add(incoming) > quota {
-            if self.bytes().saturating_add(BASELINE_HEADROOM_BYTES) >= MAX_BYTES
-                || self.free_bytes() < MIN_FREE_BYTES.saturating_add(BASELINE_HEADROOM_BYTES)
-            {
+            if !self.has_headroom(MAX_BYTES, MIN_FREE_BYTES) {
                 return Err(sqlite_error("detail skipped: storage headroom"));
             }
             if self.checkpoint_blocked && !self.truncate_checkpoint()? {
@@ -396,24 +398,58 @@ impl Store {
         self.checkpoint_blocked = busy != 0;
         Ok(!self.checkpoint_blocked)
     }
+    fn reclaim_pages(&self, pages: usize, started: Instant) -> rusqlite::Result<()> {
+        // incremental_vacuum returns one row per reclaimed page. execute_batch
+        // steps row-returning pragmas once, silently reducing the page budget
+        // to one page. Consume rows within the existing page/time bounds.
+        let mut statement = self
+            .conn
+            .prepare(&format!("PRAGMA incremental_vacuum({pages})"))?;
+        let mut rows = statement.query([])?;
+        for _ in 0..pages {
+            if started.elapsed() >= PRUNE_WORK_BUDGET || rows.next()?.is_none() {
+                break;
+            }
+        }
+        Ok(())
+    }
+
     fn prune_to(&mut self, now_ns: i64, max_bytes: u64, min_free: u64) -> rusqlite::Result<()> {
         // Stop starting batches after one second of the five-second sample interval.
         // An in-flight SQLite operation can still take longer.
         let started = Instant::now();
-        if self.checkpoint_blocked
-            || self.bytes() > max_bytes.saturating_sub(BASELINE_HEADROOM_BYTES)
-            || self.free_bytes() < min_free
-        {
+        let pressured = !self.has_headroom(max_bytes, min_free);
+        if self.checkpoint_blocked || pressured {
             // A pinned reader prevents physical reclamation. Defer age eviction
             // until the checkpoint can complete, even on a later prune call.
             if !self.truncate_checkpoint()? {
-                return if self.bytes() > max_bytes || self.free_bytes() < min_free {
+                return if !self.has_headroom(max_bytes, min_free) {
                     Err(sqlite_error(
                         "retention could not restore storage headroom: WAL checkpoint busy",
                     ))
                 } else {
                     Ok(())
                 };
+            }
+        }
+        // Reclaim already-free pages before deleting more history. Remember
+        // pressure at entry: checkpointing alone may leave only a few WAL bytes
+        // of apparent slack, so it must not suppress this bounded reclamation.
+        if pressured {
+            for _ in 0..MAX_RETENTION_BATCHES {
+                if started.elapsed() >= PRUNE_WORK_BUDGET {
+                    break;
+                }
+                let pages: i64 = self
+                    .conn
+                    .query_row("PRAGMA freelist_count", [], |r| r.get(0))?;
+                if pages == 0 {
+                    break;
+                }
+                self.reclaim_pages(500, started)?;
+                if !self.truncate_checkpoint()? || self.has_headroom(max_bytes, min_free) {
+                    break;
+                }
             }
         }
         let mut aged = 0;
@@ -439,11 +475,8 @@ impl Store {
                 break;
             }
             aged += samples;
-            if self.bytes() > max_bytes.saturating_sub(BASELINE_HEADROOM_BYTES)
-                || self.free_bytes() < min_free
-                || self.wal_bytes() > 32 * 1024 * 1024
-            {
-                self.conn.execute_batch("PRAGMA incremental_vacuum(100)")?;
+            if !self.has_headroom(max_bytes, min_free) || self.wal_bytes() > 32 * 1024 * 1024 {
+                self.reclaim_pages(100, started)?;
                 if !self.truncate_checkpoint()? {
                     break;
                 }
@@ -464,8 +497,7 @@ impl Store {
                 break;
             }
             let baseline_bytes:i64=self.conn.query_row("SELECT COALESCE(SUM(length(host_json)+length(services_json)+length(process_blob)+length(errors_json)),0) FROM samples WHERE mode='baseline'",[],|r|r.get(0))?;
-            let over_total = self.bytes() > max_bytes.saturating_sub(BASELINE_HEADROOM_BYTES)
-                || self.free_bytes() < min_free;
+            let over_total = !self.has_headroom(max_bytes, min_free);
             if !over_total && baseline_bytes <= BASELINE_RESERVE_BYTES {
                 break;
             }
@@ -484,7 +516,7 @@ impl Store {
                 }
                 baseline_evicted += n;
             }
-            self.conn.execute_batch("PRAGMA incremental_vacuum(500)")?;
+            self.reclaim_pages(500, started)?;
             if !self.truncate_checkpoint()? {
                 break;
             }
@@ -499,24 +531,28 @@ impl Store {
             );
         }
         if (aged > 0 || detail_evicted > 0 || baseline_evicted > 0) && !self.checkpoint_blocked {
-            self.conn.execute_batch("PRAGMA incremental_vacuum(100)")?;
+            self.reclaim_pages(100, started)?;
         }
         let wal_bytes = self.wal_bytes();
-        if (wal_bytes > 32 * 1024 * 1024
-            || self.bytes() > max_bytes
-            || self.free_bytes() < min_free)
+        if (wal_bytes > 32 * 1024 * 1024 || !self.has_headroom(max_bytes, min_free))
             && !self.checkpoint_blocked
         {
             self.truncate_checkpoint()?;
         }
-        if self.bytes() > max_bytes || self.free_bytes() < min_free {
+        if !self.has_headroom(max_bytes, min_free) {
             return Err(sqlite_error(if self.checkpoint_blocked {
                 "retention could not restore storage headroom: WAL checkpoint busy"
+            } else if started.elapsed() >= PRUNE_WORK_BUDGET {
+                "retention could not restore storage headroom: bounded work pending"
             } else {
                 "retention could not restore storage headroom"
             }));
         }
         Ok(())
+    }
+
+    fn has_headroom(&self, max_bytes: u64, min_free: u64) -> bool {
+        storage_headroom(self.bytes(), self.free_bytes(), max_bytes, min_free)
     }
 
     pub fn bytes(&self) -> u64 {
@@ -1026,6 +1062,7 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let mut db = Store::open(dir.path(), "h", "b").unwrap();
         let host = json!({"cpu_busy_pct":5});
+        db.truncate_checkpoint().unwrap();
         let bytes = db.bytes();
         let tight_cap = bytes + BASELINE_HEADROOM_BYTES;
         let error = db
@@ -1277,16 +1314,16 @@ mod tests {
                 .unwrap(),
             20
         );
-        let cap = db.bytes() - 1;
+        let cap = db.bytes() + BASELINE_HEADROOM_BYTES - 1;
         let error = db.prune_to(2 * RECENT_BASELINE_NS, cap, 0).unwrap_err();
         assert!(
             error.to_string().contains("WAL checkpoint busy"),
             "unexpected pruning failure: {error}"
         );
-        assert!(db.bytes() > cap);
+        assert!(!db.has_headroom(cap, 0));
         drop(reader);
         db.prune_to(2 * RECENT_BASELINE_NS, cap, 0).unwrap();
-        assert!(db.bytes() <= cap);
+        assert!(db.has_headroom(cap, 0));
     }
     #[test]
     fn pinned_reader_stops_repeated_retention_eviction() {
@@ -1308,7 +1345,7 @@ mod tests {
                 .unwrap(),
             220
         );
-        let cap = db.bytes() - 1;
+        let cap = db.bytes() + BASELINE_HEADROOM_BYTES - 1;
         for _ in 0..3 {
             assert!(
                 db.write_with_limits(
@@ -1389,10 +1426,20 @@ mod tests {
             .unwrap();
 
         let cap = db.bytes() + BASELINE_HEADROOM_BYTES + 1;
-        db.prune_to(now, cap, 0).unwrap();
+        assert!(
+            db.prune_to(now, cap, 0)
+                .unwrap_err()
+                .to_string()
+                .contains("WAL checkpoint busy")
+        );
         let after_one = counts(&db);
         assert_eq!(after_one, (before.0 - 16, before.1 - 16, before.2 - 16));
-        db.prune_to(now, cap, 0).unwrap();
+        assert!(
+            db.prune_to(now, cap, 0)
+                .unwrap_err()
+                .to_string()
+                .contains("WAL checkpoint busy")
+        );
         assert_eq!(counts(&db), after_one);
 
         drop(reader);
@@ -1586,6 +1633,110 @@ mod tests {
                     .get::<_, i64>(0))
                 .unwrap(),
             4
+        );
+    }
+    #[test]
+    fn headroom_predicate_preserves_strict_capacity_and_free_reserve() {
+        assert!(!storage_headroom(
+            1,
+            u64::MAX,
+            BASELINE_HEADROOM_BYTES + 1,
+            0
+        ));
+        assert!(storage_headroom(
+            1,
+            BASELINE_HEADROOM_BYTES,
+            BASELINE_HEADROOM_BYTES + 2,
+            0
+        ));
+        assert!(!storage_headroom(
+            1,
+            BASELINE_HEADROOM_BYTES - 1,
+            u64::MAX,
+            0
+        ));
+        assert!(!storage_headroom(
+            1,
+            MIN_FREE_BYTES + BASELINE_HEADROOM_BYTES - 1,
+            u64::MAX,
+            MIN_FREE_BYTES
+        ));
+        assert!(storage_headroom(
+            1,
+            MIN_FREE_BYTES + BASELINE_HEADROOM_BYTES,
+            u64::MAX,
+            MIN_FREE_BYTES
+        ));
+    }
+
+    #[test]
+    fn retention_reclaims_existing_freelist_without_evicting_recent_history() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut db = Store::open(dir.path(), "h", "b").unwrap();
+        let host = json!({"cpu_busy_pct":5});
+        db.write(&sample(1, "baseline", &host, &[])).unwrap();
+        db.conn
+            .execute_batch(
+                "CREATE TABLE fixture_padding(payload BLOB);
+            INSERT INTO fixture_padding VALUES(zeroblob(2*1024*1024));
+            DELETE FROM fixture_padding;",
+            )
+            .unwrap();
+        db.truncate_checkpoint().unwrap();
+        let before = db.bytes();
+        let free_pages: i64 = db
+            .conn
+            .query_row("PRAGMA freelist_count", [], |r| r.get(0))
+            .unwrap();
+        assert!(free_pages > 500);
+        let cap = before + BASELINE_HEADROOM_BYTES;
+        assert!(!db.has_headroom(cap, 0));
+        db.prune_to(2, cap, 0).unwrap();
+        assert!(
+            before - db.bytes() >= 400 * 512,
+            "vacuum must consume its bounded page results"
+        );
+        assert!(db.has_headroom(cap, 0));
+        assert_eq!(
+            db.conn
+                .query_row("SELECT COUNT(*) FROM samples", [], |r| r.get::<_, i64>(0))
+                .unwrap(),
+            1
+        );
+        db.write_with_limits(&sample(2, "baseline", &host, &[]), cap, 0)
+            .unwrap();
+        db.write_with_limits(&sample(2, "detail", &host, &[]), cap, 0)
+            .unwrap();
+        db.event_with_limits(
+            2,
+            "fixture",
+            "info",
+            None,
+            &json!({}),
+            cap - BASELINE_HEADROOM_BYTES,
+            0,
+        )
+        .unwrap();
+    }
+
+    #[test]
+    fn retention_reports_unrestored_free_reserve_without_deleting_recent_baseline() {
+        let dir = tempfile::tempdir().unwrap();
+        let mut db = Store::open(dir.path(), "h", "b").unwrap();
+        let host = json!({"cpu_busy_pct":5});
+        db.write(&sample(1, "baseline", &host, &[])).unwrap();
+        let min_free = db.free_bytes();
+        assert!(
+            db.prune_to(2, MAX_BYTES, min_free)
+                .unwrap_err()
+                .to_string()
+                .contains("retention could not restore storage headroom")
+        );
+        assert_eq!(
+            db.conn
+                .query_row("SELECT COUNT(*) FROM samples", [], |r| r.get::<_, i64>(0))
+                .unwrap(),
+            1
         );
     }
 }
