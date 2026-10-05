@@ -74,7 +74,9 @@ id = "python"
 kind = "test"
 coverage = "full"
 argv = ["backend/.venv/bin/python", "backend/scripts/native_check_fixture.py", "python"]
-timeout_seconds = 1800
+# 1860s pytest + 180s bootstrap + 60s readiness + 30s cleanup watchdog,
+# plus 3x30s for Docker image inspection, container creation and startup.
+timeout_seconds = 2220
 [native.stages.evidence]
 format = "junit"
 path = ".dev-tools/native-python.xml"

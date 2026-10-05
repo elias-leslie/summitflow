@@ -20,14 +20,24 @@ import psycopg
 BACKEND = Path(__file__).resolve().parents[1]
 ROOT = BACKEND.parent
 IMAGE_LOCK = Path(__file__).with_name("native_fixture_image.txt")
-LIFETIME_SECONDS = 1800
+# The prior 1560s pytest budget exhausted after a previous 1373.5s full
+# suite. 1860s adds 19.2% headroom over that observed exhaustion.
+PYTHON_TEST_TIMEOUT_SECONDS = 1860
+BOOTSTRAP_TIMEOUT_SECONDS = 180
+READINESS_TIMEOUT_SECONDS = 60
+DOCKER_TIMEOUT_SECONDS = 30
+# Keep bootstrap, readiness and one Docker cleanup operation inside the
+# watchdog. The outer Python stage also reserves three Docker setup operations.
+LIFETIME_SECONDS = (PYTHON_TEST_TIMEOUT_SECONDS + BOOTSTRAP_TIMEOUT_SECONDS
+                    + READINESS_TIMEOUT_SECONDS + DOCKER_TIMEOUT_SECONDS)
+FLEET_LIFETIME_SECONDS = 1800
 DOCKER = "/usr/bin/docker"
 
 
 def docker(*arguments: str, environment: dict[str, str] | None = None) -> str:
     result = subprocess.run(
         [DOCKER, *arguments], env=environment, capture_output=True, text=True,
-        timeout=30, check=False,
+        timeout=DOCKER_TIMEOUT_SECONDS, check=False,
     )
     if result.returncode:
         # Never include container environment/credentials in retained diagnostics.
@@ -98,7 +108,7 @@ def database_fixture(*, lifetime_seconds: int = LIFETIME_SECONDS):
         # tempfile's fixed prefix and generated suffix need no URL escaping;
         # avoiding percent escapes also supports Alembic's ConfigParser URL.
         url = f"postgresql://summitflow_app:{password}@/summitflow_test?host={socket}"
-        deadline = time.monotonic() + 60
+        deadline = time.monotonic() + READINESS_TIMEOUT_SECONDS
         while True:
             try:
                 with psycopg.connect(url, connect_timeout=1) as connection:
@@ -134,10 +144,13 @@ def main() -> int:
     mode = sys.argv[1] if len(sys.argv) == 2 else ""
     if mode not in {"bootstrap", "python", "fleet"}:
         raise SystemExit("Usage: native_check_fixture.py bootstrap|python|fleet")
-    with database_fixture(lifetime_seconds=210 if mode == "bootstrap" else LIFETIME_SECONDS) as environment:
+    lifetime_seconds = (BOOTSTRAP_TIMEOUT_SECONDS + DOCKER_TIMEOUT_SECONDS if mode == "bootstrap"
+                        else LIFETIME_SECONDS if mode == "python" else FLEET_LIFETIME_SECONDS)
+    with database_fixture(lifetime_seconds=lifetime_seconds) as environment:
         bootstrap = subprocess.run(
             [sys.executable, str(BACKEND / "scripts" / "verify_bootstrap_schema.py")],
-            cwd=BACKEND, env=environment, capture_output=True, text=True, timeout=180, check=False,
+            cwd=BACKEND, env=environment, capture_output=True, text=True,
+            timeout=BOOTSTRAP_TIMEOUT_SECONDS, check=False,
         )
         password = urlsplit(environment["DATABASE_URL"]).password
         assert password
@@ -160,7 +173,8 @@ def main() -> int:
              "-k", "not test_live_owner_lease_proxy_preserves_same_target_and_blocks_resume "
              "and not test_real_detached_result_survives_collection "
              "and not (test_pre_push_chains_same_arguments_and_stdin and global)"],
-            cwd=BACKEND, env=environment, timeout=LIFETIME_SECONDS - 240,
+            cwd=BACKEND, env=environment,
+            timeout=PYTHON_TEST_TIMEOUT_SECONDS if mode == "python" else FLEET_LIFETIME_SECONDS - 240,
             capture_output=True, text=True, check=False,
         )
         print(result.stdout.replace(password, "[fixture credential]"), end="")

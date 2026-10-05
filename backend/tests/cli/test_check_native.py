@@ -637,7 +637,35 @@ def test_full_gate_uses_declared_covering_stage_but_explicit_focus_executes(nati
     assert full["state"] == "pass"
     assert full["stages"][1]["state"] == "not-applicable"
     assert full["stages"][1]["covered_by"] == "native-suite"
+    assert full["stages"][1]["reason"] == "coverage_provided_by:native-suite"
+    assert full["stages"][1]["duration_ms"] == 0
+    assert full["stages"][1]["returncode"] is None
+    assert full["stages"][1]["artifacts"] == []
+    assert "counts" not in full["stages"][1]
     assert run_native(native_repo, _plan(native_repo), stage_id="subset")["stages"][0]["state"] == "pass"
+
+
+def test_failed_covering_stage_does_not_elide_focused_diagnostics(native_repo: Path) -> None:
+    suite = native_repo / ".tools/suite.py"
+    suite.write_text(suite.read_text() + "raise SystemExit(1)\n")
+    (native_repo / ".tools/focused.py").write_text(
+        "from pathlib import Path\nPath('.dev-tools').mkdir(exist_ok=True)\n"
+        "Path('.dev-tools/focused.json').write_text('{\"passed\":1,\"failed\":0,\"skipped\":0}')\n"
+    )
+    config = native_repo / ".st-check.toml"
+    config.write_text(config.read_text() + '\n[[native.stages]]\nid="subset"\nargv=["python", ".tools/focused.py"]\n'
+                      'coverage="focused"\nkind="test"\nrequired=false\ncovered_by="native-suite"\n'
+                      '[native.stages.evidence]\nformat="json"\npath=".dev-tools/focused.json"\n')
+
+    result = run_native(native_repo, _plan(native_repo))
+
+    assert result["state"] == "fail"
+    assert result["stages"][0]["state"] == "fail"
+    focused = result["stages"][1]
+    assert focused["state"] == "pass"
+    assert focused["counts"]["executed"] == 1
+    assert "covered_by" not in focused
+    assert (native_repo / ".dev-tools/focused.json").is_file()
 
 
 def test_missing_later_preparation_prevents_earlier_heavy_execution(native_repo: Path) -> None:

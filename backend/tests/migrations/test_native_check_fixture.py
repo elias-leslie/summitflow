@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import json
+import subprocess
+import tomllib
 from pathlib import Path
 from unittest.mock import MagicMock
 from urllib.parse import parse_qs, urlsplit
@@ -83,8 +85,56 @@ def test_fixture_refuses_unavailable_image_without_create(prepared_fixture, monk
 
 
 def test_fixture_lifetime_cannot_exceed_stage_bound():
-    with pytest.raises(RuntimeError, match="stage bound"), fixture.database_fixture(lifetime_seconds=1801):
+    with pytest.raises(RuntimeError, match="stage bound"), fixture.database_fixture(lifetime_seconds=2131):
         pytest.fail("Unbounded fixture must never start")
+
+
+def test_python_stage_has_measured_budget_and_bounded_cleanup_reserves(prepared_fixture, monkeypatch):
+    root, operations, _connection = prepared_fixture
+    config = Path(__file__).resolve().parents[3] / ".st-check.toml"
+    stage = next(stage for stage in tomllib.loads(config.read_text())["native"]["stages"] if stage["id"] == "python")
+    runs = []
+
+    def run(command, **kwargs):
+        runs.append((command, kwargs))
+        return subprocess.CompletedProcess(command, 0, "", "")
+
+    monkeypatch.setattr(fixture.sys, "argv", ["native_check_fixture.py", "python"])
+    monkeypatch.setattr(fixture.subprocess, "run", run)
+
+    assert fixture.main() == 0
+    assert runs[0][1]["timeout"] == 180
+    # 19.2% headroom over the measured 1560s exhaustion, not an unbounded retry.
+    assert runs[1][1]["timeout"] == 1860
+    create = next(arguments for arguments, _env in operations if arguments[0] == "create")
+    assert "sleep 2130; kill -TERM 1" in create[-1]
+    ledger = next((root / ".dev-tools" / "native-fixtures").glob("*.json"))
+    assert json.loads(ledger.read_text())["maximum_lifetime_seconds"] == 2130
+    # The fixture retains bootstrap/readiness/cleanup (180+60+30); the outer
+    # stage also reserves image inspection/create/start (3x30s).
+    assert stage["timeout_seconds"] == 2220
+
+
+def test_python_timeout_still_removes_only_its_bounded_fixture(prepared_fixture, monkeypatch):
+    root, operations, _connection = prepared_fixture
+
+    def run(command, **kwargs):
+        if "-m" in command:
+            raise subprocess.TimeoutExpired(command, kwargs["timeout"])
+        return subprocess.CompletedProcess(command, 0, "", "")
+
+    monkeypatch.setattr(fixture.sys, "argv", ["native_check_fixture.py", "python"])
+    monkeypatch.setattr(fixture.subprocess, "run", run)
+
+    with pytest.raises(subprocess.TimeoutExpired) as error:
+        fixture.main()
+    assert error.value.timeout == 1860
+    create = next(arguments for arguments, _env in operations if arguments[0] == "create")
+    name = create[create.index("--name") + 1]
+    assert operations[-1][0] == ("rm", "--force", name)
+    ledger = json.loads((root / ".dev-tools" / "native-fixtures" / (name + ".json")).read_text())
+    assert ledger["state"] == "removed"
+    assert ledger["maximum_lifetime_seconds"] == 2130
 
 
 def test_fixture_maps_docker_host_mount_but_keeps_sandbox_socket_url(prepared_fixture, monkeypatch, tmp_path):
