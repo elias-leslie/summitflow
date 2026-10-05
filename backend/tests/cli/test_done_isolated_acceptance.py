@@ -254,11 +254,59 @@ def test_isolation_rejects_changed_dependency_config(native_source):
     store.assert_not_called()
 
 
+def test_isolation_uses_selected_tool_registry_without_moving_foreign_changes(native_source):
+    repo, _sha, _store = native_source
+    registry = repo / "scripts" / "lib" / "tool-registry.json"
+    registry.parent.mkdir(parents=True)
+    registry.write_text('{"operator_tools": [{"name": "accepted-tool"}]}\n')
+    check = repo / "check.py"
+    check.write_text(check.read_text() + (
+        "registry=json.loads(Path('scripts/lib/tool-registry.json').read_text())\n"
+        "assert registry['operator_tools'][0]['name'] == 'accepted-tool'\n"
+    ))
+    git(repo, "add", "scripts/lib/tool-registry.json", "check.py")
+    git(repo, "commit", "--only", "-qm", "selected tool registry", "--", "scripts/lib/tool-registry.json", "check.py")
+    sha = git(repo, "rev-parse", "HEAD")
+    registry.write_text('{"operator_tools": [{"name": "foreign-tool"}]}\n')
+    index = (repo / ".git" / "index").read_bytes()
+    foreign = {name: (repo / name).read_bytes() for name in (
+        "scripts/lib/tool-registry.json", "implementation.py", "foreign.txt", "untracked.txt",
+    )}
+
+    receipt = accept_isolated_revision(repo, sha=sha, scope=("check.py",), task_id="task-source")
+
+    assert receipt["state"] == "success" and receipt["source_commit"] == sha
+    acceptance.validate_acceptance_receipt(repo, receipt, sha=sha)
+    assert accept_isolated_revision(repo, sha=sha, scope=("check.py",), task_id="task-source")["reused"] is True
+    assert git(repo, "rev-parse", "HEAD") == sha
+    assert (repo / ".git" / "index").read_bytes() == index
+    assert all((repo / name).read_bytes() == content for name, content in foreign.items())
+
+
 def test_partial_checkout_never_hydrates_objects(native_source):
     repo, sha, store = native_source
     git(repo, "config", "remote.origin.promisor", "true")
     with pytest.raises(acceptance.AcceptanceError, match="partial/promisor"):
         accept_isolated_revision(repo, sha=sha, scope=("check.py",), task_id="task-source")
+    store.assert_not_called()
+
+
+def test_isolation_rejects_original_checkout_changes_during_the_gate(native_source, monkeypatch):
+    from app.utils.heavy_work import HeavyWork
+
+    repo, sha, store = native_source
+    original = HeavyWork.run
+
+    def mutate_original(work, *args, **kwargs):
+        result = original(work, *args, **kwargs)
+        (repo / "foreign.txt").write_text("changed during isolated acceptance\n")
+        return result
+
+    monkeypatch.setattr(HeavyWork, "run", mutate_original)
+
+    with pytest.raises(acceptance.AcceptanceError, match="Original task source or local inputs changed"):
+        accept_isolated_revision(repo, sha=sha, scope=("check.py",), task_id="task-source")
+    assert (repo / "foreign.txt").read_text() == "changed during isolated acceptance\n"
     store.assert_not_called()
 
 

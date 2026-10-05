@@ -151,13 +151,13 @@ def _bindings(repo: Path, source: Path) -> list[tuple[Path, Path]]:
     bindings = [(path, path) for path in _dependency_roots(repo)]
     # Existing prepared environments may only be borrowed for the committed
     # lock/configuration inputs. Foreign dependency updates remain untouched.
-    # Both revisions' quality/dependency inputs must agree. Agent guidance and
-    # cloud workflows remain bound in the historical receipt, but do not
-    # prepare the local Python/frontend environment.
+    # Both revisions' quality/dependency inputs must agree. The gate registry,
+    # agent guidance and cloud workflows stay in the selected source receipt,
+    # but do not prepare the local Python/frontend environment.
     inputs = set(acceptance._source_input_paths(repo, _git(repo, "rev-parse", "HEAD")))
     inputs.update(acceptance._source_input_paths(source, _git(source, "rev-parse", "HEAD")))
     for relative in sorted(inputs):
-        if relative.startswith((".github/workflows/", ".agents/")):
+        if relative == "scripts/lib/tool-registry.json" or relative.startswith((".github/workflows/", ".agents/")):
             continue
         path = repo / relative
         accepted = source / relative
@@ -234,7 +234,7 @@ def accept_isolated_revision(repo: Path, *, sha: str, scope: tuple[str, ...], ta
         require_scope_matches_revision(repo, before["commit"], scope)
         if reuse:
             execution, modes = acceptance._source_execution(repo, before["commit"], "isolated")
-            plan = acceptance._project_acceptance_plan(repo)
+            plan = acceptance._project_acceptance_plan(repo, commit=before["commit"])
             key = acceptance._accepted_source_cache_key({**before, "execution": execution, "source_modes": modes}, plan)
             artifact = acceptance._receipt_path(repo, key)
             if artifact.is_file():

@@ -517,61 +517,83 @@ def source_identity(repo: Path, *, sha: str = "HEAD", execution_basis: str = "ac
     return source
 
 
-def _file_identity(path: Path, *, name: str) -> dict[str, Any]:
+def _file_identity(path: Path, *, name: str, content: bytes | None = None) -> dict[str, Any]:
     try:
-        resolved = path.resolve(strict=True)
-        stat = resolved.stat()
+        if content is None:
+            content = path.resolve(strict=True).read_bytes()
         return {
             "name": name,
-            "size": stat.st_size,
-            "sha256": hashlib.sha256(resolved.read_bytes()).hexdigest(),
+            "size": len(content),
+            "sha256": hashlib.sha256(content).hexdigest(),
         }
     except OSError:
         return {"name": name, "unavailable": True}
 
 
-def _entrypoint_identity(path: Path, *, name: str) -> dict[str, Any]:
+def _entrypoint_identity(path: Path, *, name: str, content: bytes | None = None) -> dict[str, Any]:
     # CLI_REFERENCE is consumed solely as Typer root help. Its prose never
     # chooses or configures the forwarded check execution path.
     try:
-        module = ast.parse(path.read_text(encoding="utf-8"))
+        module = ast.parse(path.read_text(encoding="utf-8") if content is None else content.decode("utf-8"))
         for statement in module.body:
             if isinstance(statement, ast.Assign) and any(isinstance(target, ast.Name) and target.id == "CLI_REFERENCE" for target in statement.targets):
                 statement.value = ast.Constant(value="")
         content = ast.dump(module, include_attributes=False).encode()
         return {"name": name, "size": len(content), "sha256": hashlib.sha256(content).hexdigest(), "format": "python_ast_without_root_help"}
     except (OSError, UnicodeError, SyntaxError):
-        return _file_identity(path, name=name)
+        return _file_identity(path, name=name, content=content)
 
 
-def _acceptance_plan() -> dict[str, Any]:
+def _acceptance_plan(*, repo: Path | None = None, commit: str | None = None,
+                     check_names: Sequence[str] = ("ruff", "types", "pytest", "biome", "tsc", "vitest", "security")) -> dict[str, Any]:
     # Bind content, not checkout location or extraction timestamps. The same
     # accepted source is installed in an immutable managed release directory.
     from cli.tool_registry import tool_registry_path
     backend = Path(__file__).resolve().parents[2]
     implementation = [path for path in sorted((backend / "cli" / "commands").glob("check*.py"))
                       if path.name != "check_codeql.py" and not path.name.startswith("checkpoints")]
+    if repo is not None and commit is not None:
+        implementation = [repo / name for name in sorted(_source_tree_entries(repo, commit))
+                          if Path(name).parent == Path("backend/cli/commands") and Path(name).match("check*.py")
+                          and Path(name).name != "check_codeql.py" and not Path(name).name.startswith("checkpoints")]
     implementation.extend([
         Path(__file__), backend / "cli" / "main.py", backend / "cli" / "tool_registry.py",
         backend / "cli" / "commands" / "done_task_acceptance.py",
         backend / "app" / "utils" / "heavy_work.py", backend / "app" / "utils" / "safe_subprocess.py",
     ])
+
+    def gate_identity(path: Path) -> dict[str, Any]:
+        name = str(path.relative_to(backend.parent))
+        content = None
+        if repo is not None and commit is not None:
+            result = _git(repo, ["show", f"{commit}:{name}"], text=False)
+            if result.returncode:
+                return {"name": name, "unavailable": True}
+            content = result.stdout
+        identify = _entrypoint_identity if path == backend / "cli" / "main.py" else _file_identity
+        return identify(path, name=name, content=content)
+
     # Operator descriptions, prompts and unrelated tool catalogue entries are
     # not read by the full gate. Bind the effective selected check declarations.
     try:
-        registry = json.loads(tool_registry_path().read_text(encoding="utf-8"))
+        if repo is not None and commit is not None:
+            result = _git(repo, ["show", f"{commit}:scripts/lib/tool-registry.json"], text=False)
+            if result.returncode:
+                raise ValueError("accepted tool registry is unavailable")
+            registry = json.loads(result.stdout)
+        else:
+            registry = json.loads(tool_registry_path().read_text(encoding="utf-8"))
         checks = {item["name"]: item["check"] for item in registry.get("tools", [])
                   if isinstance(item, dict) and isinstance(item.get("check"), dict)
-                  and item.get("name") in {"ruff", "types", "pytest", "biome", "tsc", "vitest", "security"}}
+                  and item.get("name") in check_names}
         registry_identity = {"checks": checks}
     except (OSError, ValueError, AttributeError):
-        registry_identity = _file_identity(tool_registry_path(), name="scripts/lib/tool-registry.json")
+        registry_identity = gate_identity(tool_registry_path())
     plan: dict[str, Any] = {
         "commands": [list(command) for command in _ACCEPTANCE_COMMANDS],
         "toolchain": {"st": {"entrypoint": "cli.main:app"}},
         "remote_security": "not_run_local_acceptance_does_not_claim_codeql_equivalence",
-        "gate_implementation": [(_entrypoint_identity if path == backend / "cli" / "main.py" else _file_identity)(
-            path, name=str(path.relative_to(backend.parent))) for path in implementation],
+        "gate_implementation": [gate_identity(path) for path in implementation],
         "check_configuration": registry_identity,
         "security_tools": {name: _file_identity(Path(path), name=name) if (path := shutil.which(name)) else {"unavailable": True}
                            for name in ("gitleaks", "semgrep", "osv-scanner")},
@@ -582,7 +604,7 @@ def _acceptance_plan() -> dict[str, Any]:
     return plan
 
 
-def _project_acceptance_plan(repo: Path) -> dict[str, Any]:
+def _project_acceptance_plan(repo: Path, *, commit: str | None = None) -> dict[str, Any]:
     import shlex
 
     from cli.commands.check import _resolve_command
@@ -594,13 +616,19 @@ def _project_acceptance_plan(repo: Path) -> dict[str, Any]:
     )
     from cli.commands.check_runner import _tool_configs, _workdir
 
-    plan = _acceptance_plan()
     try:
         native = native_plan(repo)
     except NativeCheckError as exc:
         raise AcceptanceError(str(exc)) from exc
-    legacy_configs = _tool_configs()
     names = native["legacy_tools"] if native is not None else ["ruff", "types", "pytest", "biome", "tsc", "vitest", "security"]
+    # Isolation consumes this project's CLI from its selected Git tree. Other
+    # projects still consume the separately installed shared gate unchanged.
+    source_bound = commit is not None and Path(__file__).resolve().parents[3] == repo.resolve()
+    plan = _acceptance_plan(repo=repo, commit=commit, check_names=names) if source_bound else _acceptance_plan()
+    legacy_configs = dict(plan["check_configuration"].get("checks", {})) if source_bound else _tool_configs()
+    if source_bound:
+        for name in ("gitleaks", "semgrep", "osv", "security"):
+            legacy_configs.setdefault(name, {"label": name.upper(), "internal_adapter": True})
     legacy = {name: legacy_configs[name] for name in names if name in legacy_configs}
     plan["legacy_tools"] = {}
     runtime_paths: set[Path] = set()
@@ -863,7 +891,7 @@ def validate_acceptance_receipt(
     local_inputs = _local_gate_inputs(repo)
     if local_inputs != inputs.get("local_inputs"):
         raise AcceptanceError("accepted local environment/configuration inputs no longer match")
-    current_plan = _project_acceptance_plan(repo)
+    current_plan = _project_acceptance_plan(repo, commit=commit if recorded_execution["basis"] == "isolated" else None)
     if current_plan != plan:
         raise AcceptanceError("acceptance plan or local toolchain changed; rerun full acceptance")
     checks = value.get("checks")
@@ -957,7 +985,8 @@ def accept_revision(
         head = _git_value(repo, ["rev-parse", "--verify", "HEAD^{commit}"], "HEAD is unavailable")
         if before["commit"] != head:
             raise AcceptanceError("full acceptance requires the requested revision to be checked out at HEAD")
-        plan = _project_acceptance_plan(repo)
+        plan_commit = before["commit"] if execution_basis == "isolated" else None
+        plan = _project_acceptance_plan(repo, commit=plan_commit)
         normalized_scope = sorted({str(path).strip() for path in scope if str(path).strip()})
         # A previously accepted immutable HEAD remains accepted while unrelated
         # WIP is present. Look up only its clean-source key; never certify that
@@ -1019,7 +1048,7 @@ def accept_revision(
             )
         except (AcceptanceError, OSError):
             mutated = True
-        plan_changed = _project_acceptance_plan(repo) != plan
+        plan_changed = _project_acceptance_plan(repo, commit=plan_commit) != plan
         state = "blocked" if mutated or plan_changed else ("failed" if failed else "success")
         reason = (
             "source_changed_during_acceptance"
