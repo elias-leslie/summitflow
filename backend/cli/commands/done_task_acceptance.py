@@ -207,11 +207,12 @@ def _sandbox_command(repo: Path, source: Path, metadata: Path, common: Path,
     lane = Path(f"/tmp/st-heavy-{os.getuid()}")
     scratch = temporary / "t"
     scratch.mkdir(mode=0o700)
-    home = scratch / "h"
-    home.mkdir(mode=0o700)
-    state = {"HOME": Path("/tmp/h"), "XDG_CONFIG_HOME": Path("/tmp/h/.config"),
-             "XDG_DATA_HOME": Path("/tmp/h/.local/share"), "XDG_CACHE_HOME": Path("/tmp/h/.cache"),
-             "XDG_STATE_HOME": Path("/tmp/h/.local/state")}
+    # Nested runs replace /tmp, so give their private state distinct paths as
+    # well as distinct mounts using the unique temporary-run directory name.
+    home = Path("/tmp") / f"h-{temporary.name}"
+    state = {"HOME": home, "XDG_CONFIG_HOME": home / ".config",
+             "XDG_DATA_HOME": home / ".local/share", "XDG_CACHE_HOME": home / ".cache",
+             "XDG_STATE_HOME": home / ".local/state"}
     for path in state.values():
         (scratch / path.relative_to("/tmp")).mkdir(mode=0o700, parents=True, exist_ok=True)
     command = [binary, "--die-with-parent", "--ro-bind", "/", "/", "--proc", "/proc", "--dev", "/dev",
@@ -230,7 +231,7 @@ def _sandbox_command(repo: Path, source: Path, metadata: Path, common: Path,
     # at its private HOME location; the host home and dependencies stay read-only.
     shared = Path.home() / ".env.local"
     if shared.exists():
-        command.extend(["--ro-bind", str(shared), "/tmp/h/.env.local"])
+        command.extend(["--ro-bind", str(shared), str(home / ".env.local")])
     if common != repo / ".git":
         command.extend(["--bind", str(metadata), str(common)])
     command.extend(["--bind", str(lane), str(lane)])

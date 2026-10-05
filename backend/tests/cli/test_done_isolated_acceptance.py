@@ -8,6 +8,7 @@ import shutil
 import stat
 import subprocess
 import sys
+import tempfile
 from pathlib import Path
 from unittest.mock import Mock
 
@@ -30,15 +31,16 @@ def sandbox_probe(tmp_path: Path):
     repo.mkdir()
     metadata = repo / ".git"
     metadata.mkdir()
-    temporary = tmp_path / "private"
-    temporary.mkdir(mode=0o700)
+    temporary_parent = os.environ.get("ST_NATIVE_TMP_HOST_ROOT", "/var/tmp")
+    with tempfile.TemporaryDirectory(prefix="st-probe-", dir=temporary_parent) as directory:
+        temporary = Path(directory)
 
-    def run(script: str):
-        command = _sandbox_command(repo, repo, metadata, metadata, temporary, [], "fixture", (), "fixture", False)
-        return subprocess.run([*command[:command.index("--") + 1], sys.executable, "-P", "-c", script],
-                              capture_output=True, text=True, check=False)
+        def run(script: str):
+            command = _sandbox_command(repo, repo, metadata, metadata, temporary, [], "fixture", (), "fixture", False)
+            return subprocess.run([*command[:command.index("--") + 1], sys.executable, "-P", "-c", script],
+                                  capture_output=True, text=True, check=False)
 
-    return run
+        yield run
 
 
 def test_isolated_sandbox_has_private_writable_home_and_state(sandbox_probe):
@@ -46,8 +48,13 @@ def test_isolated_sandbox_has_private_writable_home_and_state(sandbox_probe):
     host_home = Path.home()
     host_lock = host_home / '.summitflow/leases/isolated-writable-home-fixture.lock'
     assert not host_lock.exists()
+    inner_probe = (
+        "from pathlib import Path\n"
+        "assert not (Path.home()/'outer-state-marker').exists()\n"
+        "(Path.home()/'inner-state-marker').write_text('private inner state')\n"
+    )
     script = (
-        "import os\nfrom pathlib import Path\nimport sys\n"
+        "import os\nfrom pathlib import Path\nimport subprocess\nimport sys\nimport tempfile\n"
         f"sys.path.insert(0, {str(backend)!r})\n"
         "from cli.lib.leases import list_active\n"
         "assert list_active('isolated-writable-home-fixture') == []\n"
@@ -57,8 +64,20 @@ def test_isolated_sandbox_has_private_writable_home_and_state(sandbox_probe):
         "for key in ('XDG_CONFIG_HOME', 'XDG_DATA_HOME', 'XDG_CACHE_HOME', 'XDG_STATE_HOME'):\n"
         "    directory=Path(os.environ[key])\n"
         "    assert directory.is_relative_to('/tmp')\n"
+        "    assert directory.is_relative_to(Path.home())\n"
         "    directory.mkdir(parents=True, exist_ok=True)\n"
         "    (directory/'test-local-state').write_text('private fixture state')\n"
+        "from cli.commands.done_task_acceptance import _sandbox_command\n"
+        "outer_home=Path.home()\n"
+        "(outer_home/'outer-state-marker').write_text('private outer state')\n"
+        "with tempfile.TemporaryDirectory(prefix='st-inner-',dir=os.environ['ST_NATIVE_TMP_HOST_ROOT']) as directory:\n"
+        "    repo=Path.cwd()\n"
+        "    command=_sandbox_command(repo,repo,repo/'.git',repo/'.git',Path(directory),[],'fixture',(),'fixture',False)\n"
+        f"    probe={inner_probe!r} + 'assert Path.home() != Path(' + repr(str(outer_home)) + ')\\n'\n"
+        "    result=subprocess.run([*command[:command.index('--')+1],sys.executable,'-P','-c',probe],capture_output=True,text=True)\n"
+        "    assert result.returncode == 0, result.stderr\n"
+        "assert (outer_home/'outer-state-marker').read_text() == 'private outer state'\n"
+        "assert not (outer_home/'inner-state-marker').exists()\n"
     )
     result = sandbox_probe(script)
     assert result.returncode == 0, result.stderr
