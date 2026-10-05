@@ -22,6 +22,7 @@ def _git(repo: Path, *args: str) -> str:
 
 def test_changed_ignored_configuration_invalidates_acceptance_reuse(
     tmp_path: Path,
+    local_gate_tools: None,
 ) -> None:
     """A gate result must not survive changes to configuration it can consume."""
     _git(tmp_path, "init", "-q", "--initial-branch=main")
@@ -55,7 +56,7 @@ def test_changed_ignored_configuration_invalidates_acceptance_reuse(
     assert calls == [["st", "check", "--check"], ["st", "check", "--check"]]
 
 
-def test_local_configuration_change_during_gate_blocks_receipt(tmp_path: Path) -> None:
+def test_local_configuration_change_during_gate_blocks_receipt(tmp_path: Path, local_gate_tools: None) -> None:
     _git(tmp_path, "init", "-q", "--initial-branch=main")
     _git(tmp_path, "config", "user.name", "Acceptance Review")
     _git(tmp_path, "config", "user.email", "review@example.invalid")
@@ -77,7 +78,7 @@ def test_local_configuration_change_during_gate_blocks_receipt(tmp_path: Path) -
         acceptance.accept_revision(tmp_path, sha="HEAD", runner=mutate)
 
 
-def test_stale_receipt_rejects_changed_local_configuration(tmp_path: Path) -> None:
+def test_stale_receipt_rejects_changed_local_configuration(tmp_path: Path, local_gate_tools: None) -> None:
     _git(tmp_path, "init", "-q", "--initial-branch=main")
     _git(tmp_path, "config", "user.name", "Acceptance Review")
     _git(tmp_path, "config", "user.email", "review@example.invalid")
@@ -108,6 +109,7 @@ def test_stale_receipt_rejects_changed_local_configuration(tmp_path: Path) -> No
 def test_selected_gate_environment_change_invalidates_receipt(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
+    local_gate_tools: None,
 ) -> None:
     _git(tmp_path, "init", "-q", "--initial-branch=main")
     _git(tmp_path, "config", "user.name", "Acceptance Review")
@@ -141,6 +143,7 @@ def test_selected_gate_environment_change_invalidates_receipt(
 def test_isolated_receipt_keeps_selected_cli_identity_with_unrelated_dirty_gate(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
+    local_gate_tools: None,
     gate_path: str,
     foreign_content: str,
 ) -> None:

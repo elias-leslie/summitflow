@@ -166,7 +166,7 @@ def git(repo: Path, *args: str) -> str:
 
 
 @pytest.fixture
-def repo(tmp_path: Path) -> Path:
+def repo(tmp_path: Path, local_gate_tools: None) -> Path:
     git(tmp_path, "init", "-q", "--initial-branch=main")
     git(tmp_path, "config", "user.name", "Test")
     git(tmp_path, "config", "user.email", "test@example.invalid")
