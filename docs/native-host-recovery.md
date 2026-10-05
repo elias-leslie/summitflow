@@ -1,11 +1,20 @@
 # Linux recovery and portable project backups
 
-Linux host recovery uses native Btrfs points replicated by btrbk. Windows retains
-its separate Veeam backup. Portable project/configuration backups use the existing
+The approved Linux host recovery setup uses native Btrfs points replicated by
+btrbk. Its permanent destination is pending physical cutover and qualification;
+verified temporary native material protects the migration. Windows retains its
+separate Veeam backup. Portable project/configuration backups will use the existing
 Restic repositories and Google Drive; enable the four-hour cadence for each source
 with its qualified Restic backend. Schema migration preserves existing schedules
 so unqualified archive sources cannot start frequent full captures. Git checkpoints and local saved-work snapshots serve code
 recovery between host backups.
+
+Existing daily age sources remain active until their individual Restic cutovers
+pass. Retained archive recovery remains available through the
+[hard-loss runbook](disaster-recovery.md) and [local-first runbook](local-first-recovery.md).
+Linux Veeam is disabled because the installed version cannot capture this host's
+compressed Btrfs layout. Neither installation nor schema migration activates a
+replacement backup policy.
 
 ## Current qualification
 
@@ -72,8 +81,12 @@ whole `data`, `artifacts` or asset directory by its name alone.
 
 ## Physical recovery and cutover
 
-Before Windows resizing, retain a fresh verified native Linux point, the matching
-boot/layout evidence, portable SQL recovery and independent recovery access.
+Before Windows resizing, retain verified independent native Linux recovery,
+matching boot/layout evidence, portable SQL recovery and independent access.
+The migration gate may use the verified native baseline plus independently
+restored current-source, consistent database and durable-file supplements. Record
+their source bindings and limits explicitly; that composite is not a new full
+host point. Preserve its incremental source parents through permanent cutover.
 In Windows, complete a fresh Veeam point in the existing Windows chain, verify
 filesystem/BitLocker status and supported shrink geometry, then shrink only the
 Windows system partition by about 250 GB. Leave the space unallocated and return

@@ -4,6 +4,13 @@ This runbook covers recovery when the SummitFlow API/task database and GitHub ar
 unavailable. It does not overwrite a production checkout or restore a production
 database.
 
+Existing daily age sources stay active during the October 2026 migration. Use
+the archive procedure below for retained age points, or
+[repository payload recovery](#repository-payload-recovery) for a recorded Restic
+point. The approved host and portable backup direction is described in
+[Linux recovery and portable project backups](native-host-recovery.md); permanent
+native capture and four-hour Restic sources require separate cutover qualification.
+
 ## Required material
 
 - The downloaded native SummitFlow project archive. New archives are named
@@ -326,6 +333,8 @@ component results, missing prerequisites, and elapsed time. Under the
 owner-approved lean rollout (2026-09-30), validate project/Git and configuration
 recovery plus actual PostgreSQL and Redis loads on the fresh VM. File extraction
 alone, local-only recovery or an already-configured host does not satisfy that
-gate. Veeam remains the full-system recovery path; a full application rebuild
-within four hours is not required for this rollout. Keep production activation
+gate. That September rollout is historical. The October host recovery plan uses
+Btrfs/btrbk for Linux and Veeam for Windows; see the
+[current host recovery guide](native-host-recovery.md). A full application rebuild
+within four hours was not required for the September rollout. Keep production activation
 and plaintext cleanup as separately reviewed operations.

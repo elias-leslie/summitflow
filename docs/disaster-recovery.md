@@ -4,11 +4,19 @@ Use this runbook when the original computer and its disks are unavailable. It
 recovers SummitFlow from the encrypted archives in the `SummitFlow-Archives`
 Google Drive folder plus the recovery key that the owner saved separately.
 
-Native age archives are the production path for both local and offsite backups;
-the offsite is an identical whole ciphertext copy, not a separate repository.
-Restic automation is disabled. Retained Restic points remain readable using the
+During the October 2026 migration, existing daily age archives remain active
+until each source passes its replacement recovery and offsite checks. Their
+offsite is an identical ciphertext copy. This runbook remains the recovery path
+for those retained archives. Retained Restic points use the
 [repository recovery procedure](local-first-recovery.md#repository-payload-recovery)
-and their own recorded inventory. Veeam remains the full-system recovery path.
+and their recorded inventory.
+
+The approved replacement is [native Linux host recovery](native-host-recovery.md)
+with Btrfs/btrbk, four-hour incremental Restic project/configuration offsites to
+Google Drive, and a separate Windows Veeam backup. The permanent Linux destination
+and per-source offsite cutover remain pending qualification. Linux Veeam cannot
+capture this host's compressed Btrfs layout; do not rely on it for a new Linux
+recovery point. Verified temporary native recovery material protects the migration.
 
 This is not an operating-system image. It does not recreate Linux packages,
 users, groups, device configuration, Google Online Accounts, package caches, or
