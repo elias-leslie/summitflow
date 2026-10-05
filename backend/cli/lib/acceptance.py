@@ -923,8 +923,13 @@ def _receipt_digest(receipt: Mapping[str, Any]) -> str:
     ).hexdigest()
 
 
+def acceptance_artifact_directory(repo: Path) -> Path:
+    """The repository's canonical immutable acceptance evidence root."""
+    return _git_common_dir(repo) / "st" / "acceptance"
+
+
 def _receipt_path(repo: Path, key: str) -> Path:
-    directory = _git_common_dir(repo) / "st" / "acceptance"
+    directory = acceptance_artifact_directory(repo)
     directory.mkdir(parents=True, exist_ok=True)
     return directory / f"{key}.json"
 
@@ -1108,11 +1113,11 @@ def validate_acceptance_receipt(
                 _validate_retained_native_artifacts(repo, evidence, evidence_directory)
             except (OSError, ValueError, TypeError, KeyError) as exc:
                 raise AcceptanceError(f"invalid native acceptance evidence: {exc}") from exc
-    immutable_artifact = _receipt_path(repo, acceptance_id)
+    immutable_artifact = acceptance_artifact_directory(repo) / f"{acceptance_id}.json"
     if immutable_artifact.is_file():
         artifact = immutable_artifact
     if artifact is None:
-        artifact = _receipt_path(repo, acceptance_id)
+        artifact = immutable_artifact
     return _descriptor(value, artifact, reused=False)
 
 

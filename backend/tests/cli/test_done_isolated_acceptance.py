@@ -15,6 +15,8 @@ import pytest
 from cli.commands import done_task
 from cli.commands.done_task_acceptance import accept_isolated_revision
 from cli.lib import acceptance
+from cli.lib.acceptance_coordinator import validate_source_receipt
+from cli.lib.task_completion_adapter import AcceptedTaskWork
 
 
 def test_isolated_retry_reuses_successful_stage_from_failed_attempt(native_source):
@@ -157,7 +159,9 @@ def native_source(tmp_path: Path, monkeypatch):
     (repo / "foreign.txt").write_text("foreign staged work\n")
     git(repo, "add", "foreign.txt")
     (repo / "untracked.txt").write_text("foreign untracked work\n")
-    monkeypatch.setattr(done_task, "_owned_completion_claim", lambda *a: {"project_id": "fixture", "claimed_by": "fixture", "claimed_at": "claim", "verification_result": {}})
+    monkeypatch.setattr(done_task, "_owned_completion_claim", lambda *a: {"project_id": "fixture", "claimed_by": "fixture", "claimed_at": "claim", "verification_result": {},
+        "context": {"completion_requirements": {"acceptance": "full"}}})
+    monkeypatch.setattr("app.storage.task_spirit.get_task_spirit", lambda _: None)
     monkeypatch.setattr(done_task, "get_project_root_path", lambda _: str(repo))
     store = Mock(return_value=True)
     monkeypatch.setattr("app.storage.tasks.closeout.store_owned_acceptance", store)
@@ -174,14 +178,15 @@ def test_done_accepts_isolated_source_and_reuses_it_on_retry(native_source):
     foreign = {name: (repo / name).read_bytes() for name in ("implementation.py", "foreign.txt", "untracked.txt")}
     receipt = done_task._accept_completed_work("task-source", "fixture", paths=("check.py",))
     assert receipt["state"] == "success" and receipt["source_commit"] == sha
-    assert receipt["checks"][0]["evidence"]["stages"][0]["counts"]["executed"] == 1
-    acceptance.validate_acceptance_receipt(repo, receipt, sha=sha)
+    validated = validate_source_receipt(repo, receipt, sha=sha)
+    assert validated.receipt["checks"][0]["evidence"]["stages"][0]["counts"]["executed"] == 1
+    assert not {"inputs", "checks", "plan"}.intersection(receipt)
     assert (repo / ".git" / "index").read_bytes() == index
     assert all((repo / name).read_bytes() == content for name, content in foreign.items())
     assert (repo / ".tool-env" / "prepared.txt").read_text() == "locked fixture dependency\n"
     assert store.call_args.args[2]["source_commit"] == sha
     reused = done_task._accept_completed_work("task-source", "fixture", paths=("check.py",))
-    assert reused["reused"] is True
+    assert isinstance(reused, AcceptedTaskWork) and reused.reused is True
     assert (repo / ".git" / "index").read_bytes() == index
     assert all((repo / name).read_bytes() == content for name, content in foreign.items())
 

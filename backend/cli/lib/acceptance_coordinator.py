@@ -7,7 +7,7 @@ import json
 from collections.abc import Mapping, Sequence
 from dataclasses import asdict, dataclass
 from pathlib import Path
-from typing import Any, Literal
+from typing import Any, Literal, cast
 
 from cli.lib import acceptance
 
@@ -31,6 +31,7 @@ class AcceptanceReference:
     task_id: str
     scope: tuple[str, ...]
     scope_digest: str
+    declared_stages: tuple[str, ...]
     required_stages: tuple[dict[str, Any], ...]
     state: str = "success"
     outcome: str = "pass"
@@ -38,6 +39,7 @@ class AcceptanceReference:
     def to_dict(self) -> dict[str, Any]:
         value = asdict(self)
         value["scope"] = list(self.scope)
+        value["declared_stages"] = list(self.declared_stages)
         value["required_stages"] = list(self.required_stages)
         return value
 
@@ -56,13 +58,13 @@ class AcceptanceResult:
                 "reused": self.reused, "task_id": self.task_id, "scope": list(self.scope)}
 
 
-def _result(receipt: dict[str, Any]) -> AcceptanceResult:
+def _result(receipt: dict[str, Any], proof: dict[str, Any]) -> AcceptanceResult:
     summaries: list[dict[str, Any]] = []
-    for check in receipt["checks"]:
+    for check in proof["checks"]:
         evidence = check["evidence"]
         stages: list[dict[str, Any]] = evidence.get("stages", [])
         if not stages:
-            stages = [{"id": "scoped-quality" if receipt["coverage"] == "task" else "full-quality",
+            stages = [{"id": "scoped-quality" if proof["coverage"] == "task" else "full-quality",
                        "state": evidence["state"], "coverage": evidence["coverage"], "required": True,
                        "command": check["command"]}]
         for stage in stages:
@@ -74,24 +76,46 @@ def _result(receipt: dict[str, Any]) -> AcceptanceResult:
                               "counts": stage.get("counts", {}),
                               "artifact_sha256": [item["sha256"] for item in stage.get("artifacts", [])]})
     reference = AcceptanceReference(
-        acceptance_id=receipt["acceptance_id"], source_commit=receipt["source_commit"],
-        source_tree=receipt["source_tree"], input_fingerprint=receipt["input_fingerprint"],
-        acceptance_plan_fingerprint=receipt["acceptance_plan_fingerprint"],
-        acceptance_artifact=receipt["acceptance_artifact"], coverage=receipt["coverage"],
-        schema_version=receipt["schema_version"], kind=receipt["kind"],
-        task_id=receipt.get("task_id", ""), scope=tuple(receipt.get("scope", ())),
-        scope_digest=receipt["scope_digest"],
+        acceptance_id=proof["acceptance_id"], source_commit=proof["source_commit"],
+        source_tree=proof["source_tree"], input_fingerprint=proof["input_fingerprint"],
+        acceptance_plan_fingerprint=proof["acceptance_plan_fingerprint"],
+        acceptance_artifact=proof["acceptance_artifact"], coverage=proof["coverage"],
+        schema_version=proof["schema_version"], kind=proof["kind"],
+        task_id=proof.get("task_id", ""), scope=tuple(proof.get("scope", ())),
+        scope_digest=proof["scope_digest"], declared_stages=tuple(proof["plan"].get("required_stages", ())),
         required_stages=tuple(summaries),
     )
     return AcceptanceResult(reference, receipt, receipt["inputs"]["execution"]["basis"],
-                            bool(receipt.get("reused")), reference.task_id, reference.scope)
+                            bool(receipt.get("reused")), receipt.get("task_id", ""), tuple(receipt.get("scope", ())))
+
+
+def _reference_artifact(repo: Path, reference: Mapping[str, Any]) -> Path:
+    try:
+        path = Path(str(reference.get("acceptance_artifact") or ""))
+        directory = acceptance.acceptance_artifact_directory(repo)
+        root = directory.resolve(strict=True)
+        resolved = path.resolve(strict=True)
+        if (root != directory.absolute() or not path.is_absolute() or path.is_symlink() or not resolved.is_file()
+                or resolved.parent != root or resolved.name != f"{reference.get('acceptance_id')}.json"):
+            raise acceptance.AcceptanceError("Acceptance reference is outside its immutable evidence root; explicit retention is required")
+        return resolved
+    except OSError as exc:
+        raise acceptance.AcceptanceError("Acceptance reference artifact is unavailable; explicit retention is required") from exc
 
 
 def validate_source_receipt(repo: Path, receipt: Mapping[str, Any] | Path, *, sha: str | None = None,
                             evidence_directory: Path | None = None) -> AcceptanceResult:
-    """Validate the source, consumed inputs, coverage and artifacts once."""
-    return _result(acceptance.validate_acceptance_receipt(repo, receipt, sha=sha,
-                                                        evidence_directory=evidence_directory))
+    """Validate source proof without creating evidence or importing raw material."""
+    reference = cast(Mapping[str, Any], receipt) if isinstance(receipt, Mapping) and "source" not in receipt else None
+    artifact = _reference_artifact(repo, reference) if reference is not None else receipt
+    selected = acceptance.validate_acceptance_receipt(repo, artifact, sha=sha,
+        evidence_directory=evidence_directory if reference is None else None)
+    proof = selected if reference is not None else acceptance.validate_acceptance_receipt(
+        repo, _reference_artifact(repo, selected), sha=sha)
+    result = _result(selected, proof)
+    if reference is not None and json.dumps(dict(reference), sort_keys=True) != json.dumps(result.reference.to_dict(), sort_keys=True):
+        raise acceptance.AcceptanceError("Compact acceptance reference differs from its validated immutable proof")
+    return result
 
 
 def accept_source(repo: Path, *, sha: str, materialization: Materialization,
@@ -113,7 +137,12 @@ def accept_source(repo: Path, *, sha: str, materialization: Materialization,
                                            coverage=coverage, required_stages=required_stages)
     else:
         raise acceptance.AcceptanceError("Acceptance materialization must be actual or isolated")
-    return _result(receipt)
+    proof = acceptance.validate_acceptance_receipt(repo, _reference_artifact(repo, receipt), sha=sha)
+    result = _result(receipt, proof)
+    if result.reused and coverage == "task" and (result.reference.scope != scope
+            or result.reference.declared_stages != tuple(sorted(set(required_stages)))):
+        raise acceptance.AcceptanceError("Task acceptance reuse requires the exact owned scope and declared stages")
+    return result
 
 
 def require_scope_matches_revision(repo: Path, sha: str, scope: tuple[str, ...]) -> None:

@@ -48,6 +48,11 @@ class CompletionRequirements:
         return cls(required, "full" if acceptance == "full" else "task", tuple(stages),
                    bool(declared.get("deployment")), tuple(live_checks))
 
+    def satisfied_by(self, acceptance: dict[str, Any]) -> bool:
+        """A validated source reference must cover the declared task evidence."""
+        source, coverage = _accepted_source(acceptance)
+        return _acceptance_satisfies(acceptance, self, source, coverage)
+
 
 @dataclass(frozen=True)
 class CompletionAssessment:
@@ -152,7 +157,7 @@ def assess_completion(task: dict[str, Any], *, connection: psycopg.Connection | 
     # Administrative/research tasks may complete without inventing code changes.
     # A declared implementation, recorded commit or source-bound live/deploy
     # requirement cannot use that exception to bypass local acceptance.
-    if required_evidence.acceptance and not _acceptance_satisfies(acceptance, required_evidence, source, coverage):
+    if required_evidence.acceptance and not required_evidence.satisfied_by(acceptance):
         gates.append({"gate": "acceptance", "pass": False,
                       "detail": f"Required {required_evidence.coverage} acceptance has not succeeded for the implementation source."})
     if requirements.get("deployment"):
@@ -180,18 +185,28 @@ def completion_gates(task: dict[str, Any], *, connection: psycopg.Connection | N
     return list(assess_completion(task, connection=connection).gates)
 
 
+def hydrate_completion_task(task: dict[str, Any]) -> dict[str, Any]:
+    """Read the canonical task plan without replacing its owned claim revision."""
+    from app.services.task_plan_context import hydrate_task_plan_fields
+    from app.storage.task_spirit import get_task_spirit
+
+    spirit = get_task_spirit(str(task["id"]))
+    if spirit is not None:
+        task = {**task, "context": spirit.get("context") or {}}
+        for field in ("completion_requirements", "files_to_modify", "files_to_create"):
+            task.pop(field, None)
+    return hydrate_task_plan_fields(task)
+
+
 def load_completion_assessment(task_id: str) -> CompletionAssessment:
     """Read the canonical plan and subtask state for CLI and backend readiness."""
     from app.storage.subtasks import get_subtasks_for_task
-    from app.storage.task_spirit import get_task_spirit
     from app.storage.tasks import get_task
 
     task = get_task(task_id)
     if not task:
         raise ValueError("Completion task no longer exists")
-    spirit = get_task_spirit(str(task["id"]))
-    if spirit is not None:
-        task = {**task, "context": spirit.get("context") or {}}
+    task = hydrate_completion_task(task)
     assessment = assess_completion(task)
     synthetic_skips = {str(item).split(":", 1)[0] for item in task.get("syncable_subtasks_skipped") or []
                        if isinstance(item, str) and item.endswith(":no-steps")}

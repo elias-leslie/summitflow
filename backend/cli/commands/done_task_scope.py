@@ -5,6 +5,8 @@ from __future__ import annotations
 import subprocess
 from typing import Any
 
+from app.services.task_plan_context import hydrate_task_plan_fields
+
 from .._client_base import APIError
 from ..client import STClient
 
@@ -95,18 +97,19 @@ def task_with_export_context(client: STClient, task_id: str, task: dict[str, Any
     try:
         exported = client.export_task_data(task_id)
     except APIError:
-        return task
+        return hydrate_task_plan_fields(task)
     exported_task = exported.get("task") if isinstance(exported, dict) else None
     if not isinstance(exported_task, dict):
-        return task
+        return hydrate_task_plan_fields(task)
     merged = dict(task)
-    for key in ("description", "done_when", "context", "files_to_modify", "files_to_create"):
+    for key in ("description", "done_when", "context", "files_to_modify", "files_to_create", "completion_requirements"):
         if exported_task.get(key):
             merged[key] = exported_task[key]
     spirit = exported.get("spirit")
     if isinstance(spirit, dict):
         if spirit.get("done_when"):
             merged["done_when"] = spirit["done_when"]
-        if spirit.get("context"):
-            merged["context"] = spirit["context"]
-    return merged
+        merged["context"] = spirit.get("context") or {}
+        for field in ("completion_requirements", "files_to_modify", "files_to_create"):
+            merged.pop(field, None)
+    return hydrate_task_plan_fields(merged)

@@ -1,4 +1,6 @@
 """Local completion evidence and intent stay with the claim that ran the gates."""
+import subprocess
+import sys
 from copy import deepcopy
 from unittest.mock import Mock
 
@@ -26,9 +28,20 @@ def completion_task(test_project_id, cleanup_task, monkeypatch, tmp_path):
     monkeypatch.setattr("cli.lib.task_claims.current_worker_id", lambda: "worker-A")
     monkeypatch.setattr("cli.lib.task_claims.renew_local_owned_claim", lambda root, tid: stored_task(tid))
     monkeypatch.setattr(done_task, "get_project_root_path", lambda _: str(tmp_path))
-    monkeypatch.setattr("cli.lib.commit_workflow.run_git", Mock(return_value=Mock(stdout=SHA, returncode=0)))
-    monkeypatch.setattr("cli.commands.done_task_acceptance.require_task_created_paths", Mock())
-    monkeypatch.setattr("cli.lib.acceptance.accept_revision", Mock(return_value={"state": "success", "source_commit": SHA}))
+    for args in (("init", "-q"), ("config", "user.name", "Fixture"),
+                 ("config", "user.email", "fixture@example.invalid"), ("config", "core.hooksPath", "/dev/null")):
+        subprocess.run(["git", *args], cwd=tmp_path, check=True)
+    (tmp_path / "owned.py").write_text("value = 1\n")
+    subprocess.run(["git", "add", "."], cwd=tmp_path, check=True)
+    subprocess.run(["git", "commit", "-qm", "owned source"], cwd=tmp_path, check=True)
+    run = subprocess.run
+
+    def gate(command, *args, **kwargs):
+        if command[0] == sys.executable and len(command) > 3 and "from cli.main import app; app()" in command[3]:
+            return subprocess.CompletedProcess(command, 0, "RUFF:OK:0", "")
+        return run(command, *args, **kwargs)
+
+    monkeypatch.setattr(subprocess, "run", gate)
     return stored_task(task["id"])
 
 
@@ -39,7 +52,7 @@ def test_clean_foreign_owner_is_refused_before_acceptance(completion_task, monke
     gate = Mock(side_effect=AssertionError("Foreign claim must be refused first"))
     monkeypatch.setattr("cli.lib.acceptance.accept_revision", gate)
     with pytest.raises(ValueError, match="not actively owned"):
-        done_task._accept_completed_work(tid, completion_task["project_id"])
+        done_task._accept_completed_work(tid, completion_task["project_id"], paths=("owned.py",))
     gate.assert_not_called()
     assert not (stored_task(tid)["verification_result"] or {}).get("acceptance")
 
@@ -49,15 +62,20 @@ def test_reclaim_during_acceptance_does_not_attach_or_request(completion_task, m
     tid, pid = completion_task["id"], completion_task["project_id"]
     newer = {"state": "success", "source_commit": "b" * 40}
 
-    def reclaim(**kwargs):
+    def reclaim():
         tasks.update_task_status(tid, "paused")
         tasks.claim_task(tid, replacement_worker)
         store_verification(tid, pid, {"acceptance": newer})
-        return {"state": "success", "source_commit": SHA}
+    run = subprocess.run
 
-    monkeypatch.setattr("cli.lib.acceptance.accept_revision", lambda *a, **kw: reclaim(**kw))
+    def raced_gate(command, *args, **kwargs):
+        if command[0] == sys.executable and len(command) > 3 and "from cli.main import app; app()" in command[3]:
+            reclaim()
+        return run(command, *args, **kwargs)
+
+    monkeypatch.setattr(subprocess, "run", raced_gate)
     with pytest.raises(ValueError, match="changed while validating"):
-        done_task._accept_completed_work(tid, pid)
+        done_task._accept_completed_work(tid, pid, paths=("owned.py",))
     after = stored_task(tid)
     assert after["verification_result"]["acceptance"] == newer
     assert "closeout" not in after["verification_result"]
@@ -66,9 +84,9 @@ def test_reclaim_during_acceptance_does_not_attach_or_request(completion_task, m
 
 def test_same_owner_proof_and_durable_request_succeed(completion_task, monkeypatch):
     tid, pid = completion_task["id"], completion_task["project_id"]
-    receipt = done_task._accept_completed_work(tid, pid)
+    receipt = done_task._accept_completed_work(tid, pid, paths=("owned.py",))
     monkeypatch.setattr("app.services.task_closeout.resume_closeout", Mock(return_value={"action": "pending"}))
-    assert done_task._finish_local_completion(tid, pid, message="done", paths=(), receipt=receipt)["action"] == "pending"
+    assert done_task._finish_local_completion(tid, pid, message="done", paths=("owned.py",), receipt=receipt)["action"] == "pending"
     stored = stored_task(tid)
     assert stored["verification_result"]["acceptance"] == dict(receipt)
     assert stored["verification_result"]["closeout"]["kind"] == "local_closeout.v1"
@@ -77,12 +95,12 @@ def test_same_owner_proof_and_durable_request_succeed(completion_task, monkeypat
 
 def test_reclaim_after_acceptance_before_intent_is_refused(completion_task):
     tid, pid = completion_task["id"], completion_task["project_id"]
-    receipt = done_task._accept_completed_work(tid, pid)
+    receipt = done_task._accept_completed_work(tid, pid, paths=("owned.py",))
     tasks.update_task_status(tid, "paused")
     tasks.claim_task(tid, "worker-A")
     store_verification(tid, pid, {"acceptance": dict(receipt)})
     with pytest.raises(ValueError, match="same active claim"):
-        done_task._finish_local_completion(tid, pid, message="done", paths=(), receipt=receipt)
+        done_task._finish_local_completion(tid, pid, message="done", paths=("owned.py",), receipt=receipt)
     assert "closeout" not in stored_task(tid)["verification_result"]
 
 
@@ -120,10 +138,10 @@ def test_evidence_import_cannot_overwrite_foreign_claim(completion_task, monkeyp
 @pytest.mark.parametrize("key", ["deployment", "live_validation"])
 def test_selected_evidence_change_after_acceptance_cannot_create_intent(completion_task, key):
     tid, pid = completion_task["id"], completion_task["project_id"]
-    receipt = done_task._accept_completed_work(tid, pid)
+    receipt = done_task._accept_completed_work(tid, pid, paths=("owned.py",))
     newer = {"source_commit": "b" * 40}
     store_verification(tid, pid, {key: newer})
-    result = done_task._finish_local_completion(tid, pid, message="done", paths=(), receipt=receipt)
+    result = done_task._finish_local_completion(tid, pid, message="done", paths=("owned.py",), receipt=receipt)
     assert result["reason"] == "completion_request_superseded"
     stored = stored_task(tid)
     assert "closeout" not in stored["verification_result"]

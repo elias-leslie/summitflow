@@ -10,6 +10,7 @@ import pytest
 from typer.testing import CliRunner
 
 from cli.lib import acceptance
+from cli.lib.task_completion_adapter import AcceptedTaskWork
 from cli.main import app
 
 
@@ -602,7 +603,7 @@ def test_done_reuses_explicit_receipt_without_touching_unrelated_wip(repo: Path,
     monkeypatch.setattr(acceptance, "accept_revision", Mock(side_effect=AssertionError("do not repeat checks")))
     result = done_task._accept_completed_work("task", "project", paths=("app.py",), acceptance_receipt=receipt)
     assert result["source_commit"] == git(repo, "rev-parse", "HEAD")
-    assert result["reused"] is True
+    assert isinstance(result, AcceptedTaskWork) and result.reused is True
     assert (repo / "unrelated.txt").read_bytes() == b"other agent work"
     assert git(repo, "diff", "--cached", "--binary") == before
     renewal.assert_called_once_with(repo, "task")
@@ -622,7 +623,7 @@ def test_done_receipt_cannot_bypass_scope_or_new_checkpoint(repo: Path, monkeypa
             git(repo, "add", "app.py")
             git(repo, "commit", "-qm", "task checkpoint")
     _claim, renewal, stored = owned_done_claim
-    expected = {"no-paths": "Imported acceptance requires explicit", "selected-dirty": "Selected task paths must be committed",
+    expected = {"no-paths": "Imported acceptance requires explicit", "selected-dirty": "Task-owned paths have uncommitted",
                 "head-changed": "Task-owned source changed"}
     with pytest.raises((ValueError, acceptance.AcceptanceError), match=expected[blocker]):
         done_task._accept_completed_work("task", "project", paths=paths, acceptance_receipt=receipt)
