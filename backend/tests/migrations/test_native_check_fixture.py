@@ -3,7 +3,9 @@
 from __future__ import annotations
 
 import json
+from pathlib import Path
 from unittest.mock import MagicMock
+from urllib.parse import parse_qs, urlsplit
 
 import pytest
 
@@ -83,6 +85,29 @@ def test_fixture_refuses_unavailable_image_without_create(prepared_fixture, monk
 def test_fixture_lifetime_cannot_exceed_stage_bound():
     with pytest.raises(RuntimeError, match="stage bound"), fixture.database_fixture(lifetime_seconds=1801):
         pytest.fail("Unbounded fixture must never start")
+
+
+def test_fixture_maps_docker_host_mount_but_keeps_sandbox_socket_url(prepared_fixture, monkeypatch, tmp_path):
+    _root, operations, _connection = prepared_fixture
+    host = tmp_path / "host-scratch"
+    host.mkdir()
+    monkeypatch.setenv("ST_NATIVE_TMP_HOST_ROOT", str(host))
+
+    with fixture.database_fixture(lifetime_seconds=210) as environment:
+        socket = Path(parse_qs(urlsplit(environment["DATABASE_URL"]).query)["host"][0])
+        create = next(arguments for arguments, _env in operations if arguments[0] == "create")
+        mount = create[create.index("--mount") + 1]
+        assert mount == f"type=bind,source={host / socket.relative_to('/tmp')},target=/var/run/postgresql"
+        assert str(host) not in environment["DATABASE_URL"]
+
+
+@pytest.mark.parametrize("mapping", ["relative", "/tmp", "/var/tmp/../tmp"])
+def test_fixture_rejects_invalid_host_scratch_mapping_before_container_create(prepared_fixture, monkeypatch, mapping):
+    _root, operations, _connection = prepared_fixture
+    monkeypatch.setenv("ST_NATIVE_TMP_HOST_ROOT", mapping)
+    with pytest.raises(RuntimeError, match="scratch mapping"), fixture.database_fixture(lifetime_seconds=210):
+        pytest.fail("Invalid mapping must never reach Docker create")
+    assert all(arguments[0] != "create" for arguments, _env in operations)
 
 
 def test_fixture_cleanup_failure_is_visible_and_bounded(prepared_fixture, monkeypatch):

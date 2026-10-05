@@ -6,6 +6,7 @@ import os
 import shutil
 import stat
 import subprocess
+import sys
 from pathlib import Path
 from unittest.mock import Mock
 
@@ -104,6 +105,8 @@ def test_done_accepts_isolated_source_and_reuses_it_on_retry(native_source):
 
 def test_isolation_preserves_equivalent_modes_and_fits_real_unix_socket_paths(native_source, monkeypatch, tmp_path: Path):
     repo, _sha, _store = native_source
+    host_only = tmp_path / "host-only-scratch"
+    host_only.write_text("outside isolated /tmp\n")
     # The actual protected input is safely prepared even under ambient002.
     # Its permission check must inspect equivalent permissions in isolation.
     config = repo / "protected.json"
@@ -118,9 +121,14 @@ def test_isolation_preserves_equivalent_modes_and_fits_real_unix_socket_paths(na
         "assert stat.S_ISREG(protected.st_mode) and protected.st_uid == os.getuid()\n"
         "assert protected.st_nlink == 1 and stat.S_IMODE(protected.st_mode) == 0o644\n"
         "assert stat.S_IMODE(Path('fixture-executable').stat().st_mode) == 0o750\n"
+        f"assert not Path({str(host_only)!r}).exists()\n"
+        "with tempfile.TemporaryDirectory(dir='/tmp') as hardcoded:\n"
+        "    Path(hardcoded, 'writable').write_text('private hard-coded scratch')\n"
+        "    mapped=Path(os.environ['ST_NATIVE_TMP_HOST_ROOT'])/Path(hardcoded).relative_to('/tmp')\n"
+        "    assert mapped.joinpath('writable').read_text() == 'private hard-coded scratch'\n"
         # Exercise the longest real pytest fixture suffix beneath the stage's
         # actual temporary root, rather than a shorter tool-directory parent.
-        "socket_path=Path(os.environ['TMPDIR'])/'pytest-of-kasadis/pytest-0/test_restricted_dispatch_uses_0/run/user/1000/bus'\n"
+        "socket_path=Path(os.environ['TMPDIR'])/'pytest-of-kasadis/pytest-0/test_installed_monitor_prefers_0/state/summitflow/monitor/control.sock'\n"
         "socket_path.parent.mkdir(parents=True)\n"
         "with socket.socket(socket.AF_UNIX) as bus:\n    bus.bind(str(socket_path))\n"
         "with tempfile.TemporaryDirectory(prefix='st-native-db-') as directory:\n"
@@ -156,6 +164,110 @@ def test_isolation_preserves_equivalent_modes_and_fits_real_unix_socket_paths(na
     assert (repo / ".git" / "index").read_bytes() == index
     assert all((repo / name).read_bytes() == content for name, content in foreign.items())
     assert (repo / ".tool-env" / "prepared.txt").read_text() == "locked fixture dependency\n"
+    assert host_only.read_text() == "outside isolated /tmp\n"
+
+
+def test_private_tmp_supports_nested_isolated_acceptance(native_source):
+    repo, _sha, _store = native_source
+    backend = Path(__file__).resolve().parents[2]
+    config = repo / ".st-check.toml"
+    config.write_text(config.read_text().replace('/usr/bin/python3', sys.executable).replace(
+        '[[native.stages]]', 'git="/usr/bin/git"\nbwrap="/usr/bin/bwrap"\n'
+        f'ruff={str(shutil.which("ruff") or "/managed-ruff-unavailable")!r}\n'
+        f'gitleaks={str(shutil.which("gitleaks") or "/managed-gitleaks-unavailable")!r}\n[[native.stages]]',
+    ))
+    nested_check = (
+        "import json\nimport tempfile\nfrom pathlib import Path\n"
+        "with tempfile.TemporaryDirectory(dir='/tmp') as scratch:\n    Path(scratch, 'writable').touch()\n"
+        "print(json.dumps({'passed':1,'failed':0,'skipped':0}))\n"
+    )
+    check = repo / "check.py"
+    check.write_text("import os\nimport shutil\nimport subprocess\nimport sys\nimport tempfile\n" + check.read_text() + (
+        "os.environ['DATABASE_URL']='postgresql://fixture@127.0.0.1:1/summitflow_test'\n"
+        "os.environ['TEST_DATABASE_URL']=os.environ['DATABASE_URL']\n"
+        f"sys.path.insert(0, {str(backend)!r})\n"
+        "accept_isolated_revision=importlib.import_module('cli.commands.done_task_acceptance').accept_isolated_revision\n"
+        "with tempfile.TemporaryDirectory(dir='/tmp') as directory:\n"
+        "    child=Path(directory)\n"
+        "    shutil.copy('.st-check.toml', child/'.st-check.toml')\n"
+        "    shutil.copy('native.lock', child/'native.lock')\n"
+        "    shutil.copytree('.tool-env', child/'.tool-env')\n"
+        "    (child/'.gitignore').write_text('.tool-env/\\n__pycache__/\\n')\n"
+        f"    (child/'check.py').write_text({nested_check!r})\n"
+        "    def git(*args):\n"
+        "        return subprocess.check_output(['/usr/bin/git', '-c', 'user.name=Fixture', '-c', 'user.email=fixture@example.invalid', '-c', 'core.hooksPath=/dev/null', *args], cwd=child, text=True).strip()\n"
+        "    git('init', '-q', '--initial-branch=main')\n"
+        "    git('add', '.')\n"
+        "    git('commit', '-qm', 'nested accepted source')\n"
+        "    try:\n"
+        "        nested=accept_isolated_revision(child, sha=git('rev-parse', 'HEAD'), scope=('check.py',), task_id='nested-fixture')\n"
+        "    except Exception:\n"
+        "        observations=child/'.git/st/acceptance/isolated-observations'\n"
+        "        for artifact in [*observations.glob('*.log'), *observations.glob('*/native-artifacts/*'), *observations.glob('*/*-details.txt')]:\n"
+        "            print(artifact.read_text())\n"
+        "        for artifact in observations.glob('*/*.json'):\n"
+        "            for retained in json.loads(artifact.read_text()).get('checks', []):\n"
+        "                print(retained.get('evidence', {}).get('legacy', {}).get('detail', ''))\n"
+        "        raise\n"
+        "    assert nested['state'] == 'success'\n"
+    ))
+    git(repo, "add", "check.py", ".st-check.toml")
+    git(repo, "commit", "--only", "-qm", "nested isolation control", "--", "check.py", ".st-check.toml")
+
+    try:
+        receipt = accept_isolated_revision(repo, sha=git(repo, "rev-parse", "HEAD"), scope=("check.py",), task_id="task-source")
+    except acceptance.AcceptanceError as exc:
+        artifacts = (repo / '.git/st/acceptance/isolated-observations').glob('*/native-artifacts/*')
+        raise AssertionError("\n".join(path.read_text() for path in artifacts)) from exc
+
+    assert receipt["state"] == "success"
+
+
+def test_workspace_dependency_discovery_borrows_only_locked_ignored_packages(tmp_path: Path):
+    from cli.commands.done_task_acceptance import _dependency_roots
+
+    git(tmp_path, "init", "-q", "--initial-branch=main")
+    (tmp_path / ".gitignore").write_text("node_modules/\ndist/\n")
+    (tmp_path / "pnpm-lock.yaml").write_text("lockfileVersion: '9.0'\n")
+    package = tmp_path / "packages" / "notes-ui"
+    (package / "src").mkdir(parents=True)
+    (package / "src" / "index.ts").write_text("export const tracked = true;\n")
+    (package / "package.json").write_text('{"name":"@fixture/notes-ui"}\n')
+    (package / "node_modules" / "lucide-react").mkdir(parents=True)
+    (package / "node_modules" / "lucide-react" / "package.json").write_text('{"name":"lucide-react"}\n')
+    (package / "dist").mkdir()
+    (package / "dist" / "index.js").write_text("foreign compiled output\n")
+    git(tmp_path, "add", ".")
+
+    assert _dependency_roots(tmp_path) == [package / "node_modules"]
+    (tmp_path / "pnpm-lock.yaml").unlink()
+    with pytest.raises(acceptance.AcceptanceError, match="dependency lock"):
+        _dependency_roots(tmp_path)
+
+
+@pytest.mark.parametrize("invalid", ["tracked", "unignored", "escaped"])
+def test_workspace_dependency_discovery_rejects_unprepared_package_roots(tmp_path: Path, invalid: str):
+    from cli.commands.done_task_acceptance import _dependency_roots
+
+    git(tmp_path, "init", "-q", "--initial-branch=main")
+    (tmp_path / ".gitignore").write_text("node_modules/\n" if invalid != "unignored" else "dist/\n")
+    (tmp_path / "pnpm-lock.yaml").write_text("lockfileVersion: '9.0'\n")
+    package = tmp_path / "packages" / "notes-ui"
+    package.mkdir(parents=True)
+    dependency = package / "node_modules"
+    if invalid == "escaped":
+        dependency.symlink_to(tmp_path.parent, target_is_directory=True)
+    else:
+        dependency.mkdir()
+        (dependency / "index.js").write_text("dependency\n")
+    git(tmp_path, "add", ".gitignore", "pnpm-lock.yaml")
+    if invalid == "tracked":
+        git(tmp_path, "add", "-f", "packages/notes-ui/node_modules/index.js")
+
+    with pytest.raises(acceptance.AcceptanceError, match={
+        "tracked": "tracked source", "unignored": "ignored local tooling", "escaped": "escapes this project",
+    }[invalid]):
+        _dependency_roots(tmp_path)
 
 
 def test_isolation_preserves_unsafe_protected_mode_and_fails_the_real_guard(native_source):

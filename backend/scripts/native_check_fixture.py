@@ -68,6 +68,15 @@ def database_fixture(*, lifetime_seconds: int = LIFETIME_SECONDS):
         socket = directory / "socket"
         socket.mkdir(mode=0o777)
         socket.chmod(0o777)
+        host_socket = socket
+        if mapping := os.environ.get("ST_NATIVE_TMP_HOST_ROOT"):
+            host_root = Path(mapping)
+            if (not host_root.is_absolute() or ".." in host_root.parts or host_root == Path("/tmp")
+                    or not host_root.is_dir() or host_root.resolve() != host_root):
+                raise RuntimeError("Invalid native Docker scratch mapping")
+            if not socket.is_relative_to("/tmp"):
+                raise RuntimeError("Native Docker scratch mapping requires a private /tmp socket")
+            host_socket = host_root / socket.relative_to("/tmp")
         home = directory / "home"
         home.mkdir()
         password = secrets.token_urlsafe(32)
@@ -80,7 +89,7 @@ def database_fixture(*, lifetime_seconds: int = LIFETIME_SECONDS):
         docker("create", "--pull", "never", "--name", name, "--label", "summitflow.native-fixture=true",
                "--network", "none", "--read-only", "--user", "999:999",
                "--tmpfs", "/var/lib/postgresql/data:rw,uid=999,gid=999,mode=0700",
-               "--mount", f"type=bind,source={socket},target=/var/run/postgresql",
+               "--mount", f"type=bind,source={host_socket},target=/var/run/postgresql",
                "--env", "POSTGRES_DB=summitflow_test", "--env", "POSTGRES_USER=summitflow_app",
                "--env", "POSTGRES_PASSWORD", "--entrypoint", "/bin/sh", image,
                "-c", command, environment=environment)

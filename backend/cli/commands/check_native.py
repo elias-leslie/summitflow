@@ -307,8 +307,10 @@ def run_native(root: Path, plan: dict[str, Any], *, stage_id: str | None = None,
     """Run fresh stages under admission without inheriting credentials or tool PATH."""
     # Exact named aliases allow prepared Go/Godot/OS tools without importing an
     # ambient /usr/bin or package-manager PATH into the project's stage.
-    # Keep stage scratch short enough for pytest's real AF_UNIX fixture paths.
-    with tempfile.TemporaryDirectory(prefix="") as directory:
+    # Keep tool aliases visible at their same host path when nested bwrap
+    # replaces /tmp; the sandbox's private /tmp itself is the short scratch root.
+    host_scratch = os.environ.get("ST_NATIVE_TMP_HOST_ROOT")
+    with tempfile.TemporaryDirectory(prefix="", dir=host_scratch) as directory:
         aliases = Path(directory) / "bin"
         aliases.mkdir(mode=0o700)
         for name, tool in plan["tools"].items():
@@ -331,6 +333,11 @@ def _run_native(root: Path, plan: dict[str, Any], *, aliases: Path, stage_id: st
                    "UV_NO_SYNC": "1", "UV_OFFLINE": "1", "CARGO_NET_OFFLINE": "true", "GOTOOLCHAIN": "local",
                    "GOPROXY": "off", "GOSUMDB": "off", "npm_config_offline": "true", "COREPACK_ENABLE_NETWORK": "0",
                    "PATH": os.pathsep.join([str(aliases), *(str(_local(root, path)) for path in plan["paths"])])}
+    # The sandbox's explicit scratch mapping is needed by Docker bind mounts.
+    # Preserve that single execution input without admitting ambient secrets.
+    if host_scratch := os.environ.get("ST_NATIVE_TMP_HOST_ROOT"):
+        environment["ST_NATIVE_TMP_HOST_ROOT"] = host_scratch
+        environment["TMPDIR"] = "/tmp"
     outcomes = []
     try:
         before = _native_source(root)

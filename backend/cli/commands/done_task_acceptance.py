@@ -67,6 +67,10 @@ def _dependency_roots(repo: Path) -> list[Path]:
     from cli.commands.check_native import native_plan
 
     candidates = {".venv", "backend/.venv", "node_modules", "frontend/node_modules"}
+    # Workspace source remains in the accepted tree, but resolves peers from
+    # its own prepared dependency directory (not the app's node_modules).
+    workspace_dependencies = {path.relative_to(repo).as_posix() for path in repo.glob("packages/*/node_modules")}
+    candidates.update(workspace_dependencies)
     declared = list(read_tool_paths(repo).values())
     native = native_plan(repo)
     if native is not None:
@@ -102,7 +106,7 @@ def _dependency_roots(repo: Path) -> list[Path]:
         ignored = subprocess.run(["git", "check-ignore", "-q", "--", value], cwd=repo, check=False)
         if ignored.returncode:
             raise acceptance.AcceptanceError("Prepared dependency directory is not declared as ignored local tooling")
-        if native is None:
+        if native is None or value in workspace_dependencies:
             names = ({"package-lock.json", "pnpm-lock.yaml", "yarn.lock", "bun.lock", "bun.lockb"}
                      if path.name == "node_modules" else {"uv.lock", "requirements.txt", "poetry.lock", "Pipfile.lock"})
             locations = [path.parent, repo]
@@ -199,11 +203,12 @@ def _sandbox_command(repo: Path, source: Path, metadata: Path, common: Path,
     if not binary:
         raise acceptance.AcceptanceError("Isolated acceptance is unavailable: bwrap is not installed; prepare the managed isolation capability")
     lane = Path(f"/tmp/st-heavy-{os.getuid()}")
-    command = [binary, "--die-with-parent", "--ro-bind", "/", "/", "--proc", "/proc", "--dev", "/dev",
-               "--bind", str(temporary), str(temporary), "--bind", str(source), str(repo)]
     scratch = temporary / "t"
-    scratch.mkdir()
-    command.extend(["--setenv", "TMPDIR", str(scratch)])
+    scratch.mkdir(mode=0o700)
+    command = [binary, "--die-with-parent", "--ro-bind", "/", "/", "--proc", "/proc", "--dev", "/dev",
+               "--bind", str(temporary), str(temporary), "--bind", str(scratch), "/tmp",
+               "--bind", str(source), str(repo), "--setenv", "TMPDIR", "/tmp",
+               "--setenv", "ST_NATIVE_TMP_HOST_ROOT", str(scratch)]
     if common != repo / ".git":
         command.extend(["--bind", str(metadata), str(common)])
     command.extend(["--bind", str(lane), str(lane)])
@@ -245,9 +250,10 @@ def accept_isolated_revision(repo: Path, *, sha: str, scope: tuple[str, ...], ta
                 else:
                     return {**validated, "task_id": task_id, "scope": list(scope),
                             "reused": True, "working_tree_clean": before["clean"]}
-        # Keep pytest's real AF_UNIX fixtures below the kernel socket-path
-        # limit even when the worker inherits a long TMPDIR.
-        with tempfile.TemporaryDirectory(prefix="st-a-", dir="/tmp") as directory:
+        # /tmp is private and short inside bwrap. Keep its backing directory
+        # visible at the same host path for Docker, including nested acceptance.
+        temporary_parent = os.environ.get("ST_NATIVE_TMP_HOST_ROOT", "/var/tmp")
+        with tempfile.TemporaryDirectory(prefix="st-a-", dir=temporary_parent) as directory:
             temporary = Path(directory)
             source = temporary / "source"
             # A local object-only clone copies committed history and exact HEAD,

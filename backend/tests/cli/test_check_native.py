@@ -73,6 +73,22 @@ def test_native_stage_can_create_private_temporary_files_without_ambient_environ
     assert result["state"] == "pass", result["stages"][0]["detail"]
 
 
+def test_native_stage_preserves_only_explicit_docker_scratch_mapping(native_repo: Path, monkeypatch, tmp_path: Path) -> None:
+    monkeypatch.setenv("ST_NATIVE_TMP_HOST_ROOT", str(tmp_path))
+    monkeypatch.setenv("AMBIENT_SECRET", "private")
+    suite = native_repo / ".tools/suite.py"
+    suite.write_text(suite.read_text() + (
+        f"assert os.environ['ST_NATIVE_TMP_HOST_ROOT'] == {str(tmp_path)!r}\n"
+        "assert os.environ['TMPDIR'] == '/tmp'\n"
+        "aliases=Path(os.environ['PATH'].split(os.pathsep)[0])\n"
+        "assert aliases.parent.parent == Path(os.environ['ST_NATIVE_TMP_HOST_ROOT'])\n"
+    ))
+
+    result = run_native(native_repo, _plan(native_repo))
+
+    assert result["state"] == "pass", result["stages"][0]["detail"]
+
+
 @pytest.mark.parametrize("missing", ["project.lock", ".tools/python"])
 def test_missing_preparation_is_unavailable(native_repo: Path, missing: str) -> None:
     (native_repo / missing).unlink()
