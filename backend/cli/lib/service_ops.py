@@ -1013,7 +1013,7 @@ def resolve_accepted_source(
             "reused": bool(candidate.get("reused", False)),
             "reuse_lookup_ms": candidate.get("reuse_lookup_ms"),
         }
-    service_release.AcceptedSource.from_descriptor(descriptor)
+    service_release.AcceptedSource.from_descriptor(descriptor, require_full=True)
     return descriptor
 
 
