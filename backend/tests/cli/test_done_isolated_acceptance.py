@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import os
 import shutil
 import stat
@@ -17,6 +18,102 @@ from cli.commands.done_task_acceptance import accept_isolated_revision
 from cli.lib import acceptance
 from cli.lib.acceptance_coordinator import validate_source_receipt
 from cli.lib.task_completion_adapter import AcceptedTaskWork
+
+
+@pytest.fixture
+def sandbox_probe(tmp_path: Path):
+    from cli.commands.done_task_acceptance import _sandbox_command
+
+    if not shutil.which("bwrap"):
+        pytest.skip("Installed managed isolation capability required")
+    repo = tmp_path / "probe"
+    repo.mkdir()
+    metadata = repo / ".git"
+    metadata.mkdir()
+    temporary = tmp_path / "private"
+    temporary.mkdir(mode=0o700)
+
+    def run(script: str):
+        command = _sandbox_command(repo, repo, metadata, metadata, temporary, [], "fixture", (), "fixture", False)
+        return subprocess.run([*command[:command.index("--") + 1], sys.executable, "-P", "-c", script],
+                              capture_output=True, text=True, check=False)
+
+    return run
+
+
+def test_isolated_sandbox_has_private_writable_home_and_state(sandbox_probe):
+    backend = Path(__file__).resolve().parents[2]
+    host_home = Path.home()
+    host_lock = host_home / '.summitflow/leases/isolated-writable-home-fixture.lock'
+    assert not host_lock.exists()
+    script = (
+        "import os\nfrom pathlib import Path\nimport sys\n"
+        f"sys.path.insert(0, {str(backend)!r})\n"
+        "from cli.lib.leases import list_active\n"
+        "assert list_active('isolated-writable-home-fixture') == []\n"
+        "assert Path.home().is_relative_to('/tmp')\n"
+        f"assert Path.home() != Path({str(host_home)!r})\n"
+        "assert Path.home().stat().st_mode & 0o777 == 0o700\n"
+        "for key in ('XDG_CONFIG_HOME', 'XDG_DATA_HOME', 'XDG_CACHE_HOME', 'XDG_STATE_HOME'):\n"
+        "    directory=Path(os.environ[key])\n"
+        "    assert directory.is_relative_to('/tmp')\n"
+        "    directory.mkdir(parents=True, exist_ok=True)\n"
+        "    (directory/'test-local-state').write_text('private fixture state')\n"
+    )
+    result = sandbox_probe(script)
+    assert result.returncode == 0, result.stderr
+    assert not host_lock.exists()
+
+
+def test_isolated_home_retains_only_read_only_fingerprinted_shared_config(sandbox_probe, tmp_path: Path, monkeypatch):
+    host_home = tmp_path / "host-home"
+    host_home.mkdir()
+    shared = host_home / ".env.local"
+    shared.write_text("ISOLATION_FIXTURE=approved-local-input\n")
+    shared.chmod(0o600)
+    foreign = host_home / "unrelated-home-state"
+    foreign.write_text("unrelated host state\n")
+    monkeypatch.setattr(Path, "home", classmethod(lambda _: host_home))
+    expected = acceptance._secret_safe_file_input("~/.env.local", shared)
+    backend = Path(__file__).resolve().parents[2]
+    script = (
+        "import errno\nfrom pathlib import Path\nimport sys\n"
+        f"sys.path.insert(0, {str(backend)!r})\n"
+        "from cli.lib.acceptance import _secret_safe_file_input\n"
+        "shared=Path.home()/'.env.local'\n"
+        f"assert _secret_safe_file_input('~/.env.local',shared) == {expected!r}\n"
+        "assert not (Path.home()/'unrelated-home-state').exists()\n"
+        "try:\n    shared.write_text('unapproved fixture change')\n"
+        "except OSError as exc:\n    assert exc.errno in {errno.EROFS,errno.EACCES}\n"
+        "else:\n    raise AssertionError('Shared configuration must stay read-only')\n"
+    )
+    result = sandbox_probe(script)
+    assert result.returncode == 0, result.stderr
+    assert acceptance._secret_safe_file_input("~/.env.local", shared) == expected
+    assert foreign.read_text() == "unrelated host state\n"
+
+
+def test_isolated_sandbox_pnpm_can_install_local_offline_workspace(sandbox_probe):
+    package_manager = json.loads((Path(__file__).resolve().parents[3] / 'package.json').read_text())['packageManager']
+    script = (
+        "import json\nimport os\nimport subprocess\nimport tempfile\nfrom pathlib import Path\n"
+        "os.environ['COREPACK_ENABLE_NETWORK']='0'\n"
+        "with tempfile.TemporaryDirectory() as directory:\n"
+        "    root=Path(directory)\n"
+        f"    (root/'package.json').write_text(json.dumps({{'private': True, 'packageManager': {package_manager!r}}}))\n"
+        "    (root/'pnpm-workspace.yaml').write_text('packages: [frontend, packages/*]\\n')\n"
+        "    library=root/'packages/library'\n"
+        "    library.mkdir(parents=True)\n"
+        "    (library/'package.json').write_text(json.dumps({'name':'@test/library','version':'1.0.0'}))\n"
+        "    frontend=root/'frontend'\n"
+        "    frontend.mkdir()\n"
+        "    (frontend/'package.json').write_text(json.dumps({'name':'@test/frontend','private':True,'dependencies':{'@test/library':'workspace:*'}}))\n"
+        "    result=subprocess.run(['pnpm','install','--offline','--ignore-scripts'],cwd=root,capture_output=True,text=True)\n"
+        "    assert result.returncode == 0, result.stdout + result.stderr\n"
+        "    assert (frontend/'node_modules/@test/library').is_dir()\n"
+    )
+    result = sandbox_probe(script)
+    assert result.returncode == 0, result.stderr
 
 
 def test_isolated_retry_reuses_successful_stage_from_failed_attempt(native_source):

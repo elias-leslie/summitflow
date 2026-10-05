@@ -207,10 +207,30 @@ def _sandbox_command(repo: Path, source: Path, metadata: Path, common: Path,
     lane = Path(f"/tmp/st-heavy-{os.getuid()}")
     scratch = temporary / "t"
     scratch.mkdir(mode=0o700)
+    home = scratch / "h"
+    home.mkdir(mode=0o700)
+    state = {"HOME": Path("/tmp/h"), "XDG_CONFIG_HOME": Path("/tmp/h/.config"),
+             "XDG_DATA_HOME": Path("/tmp/h/.local/share"), "XDG_CACHE_HOME": Path("/tmp/h/.cache"),
+             "XDG_STATE_HOME": Path("/tmp/h/.local/state")}
+    for path in state.values():
+        (scratch / path.relative_to("/tmp")).mkdir(mode=0o700, parents=True, exist_ok=True)
     command = [binary, "--die-with-parent", "--ro-bind", "/", "/", "--proc", "/proc", "--dev", "/dev",
                "--bind", str(temporary), str(temporary), "--bind", str(scratch), "/tmp",
                "--bind", str(source), str(repo), "--setenv", "TMPDIR", "/tmp",
                "--setenv", "ST_NATIVE_TMP_HOST_ROOT", str(scratch)]
+    for name, path in state.items():
+        command.extend(["--setenv", name, str(path)])
+    # Corepack launches the already-prepared package manager from its own
+    # cache. Relocating XDG_CACHE_HOME must not silently download that tool.
+    if "COREPACK_HOME" not in os.environ:
+        cache = Path(os.environ.get("XDG_CACHE_HOME") or os.environ.get("LOCALAPPDATA") or Path.home() / ".cache")
+        command.extend(["--setenv", "COREPACK_HOME", str(cache / "node/corepack")])
+    # Tests may create leases, package-manager stores and other local state.
+    # Retain only the shared configuration already fingerprinted by acceptance
+    # at its private HOME location; the host home and dependencies stay read-only.
+    shared = Path.home() / ".env.local"
+    if shared.exists():
+        command.extend(["--ro-bind", str(shared), "/tmp/h/.env.local"])
     if common != repo / ".git":
         command.extend(["--bind", str(metadata), str(common)])
     command.extend(["--bind", str(lane), str(lane)])
