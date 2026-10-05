@@ -88,3 +88,15 @@ class TestRefreshSymbolsForPaths:
         result = refresh_symbols_for_paths(project_id, ["backend/twice.py", "backend/twice.py"])
 
         assert result == {"refreshed": 1, "cleared": 0, "skipped": 0}
+
+
+def test_targeted_refresh_skips_artifacts_and_secrets_but_indexes_real_data(refresh_project: tuple[str, Path]) -> None:
+    project_id, root = refresh_project
+    artifact = "data/artifacts/source-scans/id/snapshot/app.py"
+    _write_module(root, artifact, "def target(): pass\n")
+    _write_module(root, "secrets/private.py", "def target(): pass\n")
+    _write_module(root, "data/source.py", "def real_data_target(): pass\n")
+    result = refresh_symbols_for_paths(project_id, [artifact, "secrets/private.py", "data/source.py"])
+    assert result == {"refreshed": 1, "cleared": 1, "skipped": 1}
+    assert explorer_symbols.list_symbols_for_file(project_id, artifact) == []
+    assert explorer_symbols.list_symbols_for_file(project_id, "data/source.py")[0]["name"] == "real_data_target"

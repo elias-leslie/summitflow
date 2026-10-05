@@ -8,6 +8,11 @@ from __future__ import annotations
 
 from pathlib import Path
 
+from code_intelligence.search.search_checkout_paths import (
+    is_code_search_path,
+    normalize_search_path,
+)
+
 from ...logging_config import get_logger
 from ...storage import explorer_symbols
 from .analyzers import extract_symbols
@@ -26,7 +31,15 @@ def refresh_symbols_for_paths(project_id: str, rel_paths: list[str]) -> dict[str
 
     refreshed = cleared = skipped = 0
     for rel_path in dict.fromkeys(rel_paths):
-        normalized = rel_path.strip().lstrip("/")
+        try:
+            normalized = normalize_search_path(root, rel_path, must_exist=False) or ""
+        except ValueError:
+            skipped += 1
+            continue
+        if normalized and not is_code_search_path(normalized):
+            explorer_symbols.replace_file_symbols(project_id, normalized, [])
+            cleared += 1
+            continue
         if not normalized or Path(normalized).suffix.lower() not in SYMBOL_INDEX_EXTENSIONS:
             skipped += 1
             continue

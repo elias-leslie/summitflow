@@ -19,6 +19,14 @@ import asyncio
 from pathlib import Path
 from typing import Any
 
+from code_intelligence.search.search_checkout_paths import (
+    is_search_artifact_path,
+    normalize_search_path,
+)
+from code_intelligence.search.search_checkout_symbols import (
+    _search_checkout_file_symbols,
+    _search_checkout_symbols,
+)
 from fastapi import APIRouter, BackgroundTasks, HTTPException, Query
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel
@@ -96,6 +104,18 @@ async def get_children(
     return explorer.get_children(project_id, type, path, limit)
 
 
+def _search_scope(project_id: str, path: str | None, *, must_exist: bool = True) -> tuple[Path | None, str | None]:
+    root_path = explorer.get_project_root(project_id)
+    root = Path(root_path).resolve() if root_path else None
+    try:
+        normalized = normalize_search_path(root, path, must_exist=must_exist)
+        if normalized and is_search_artifact_path(normalized) and (root is None or not root.is_dir()):
+            raise ValueError("Explicit artifact search needs an available project source root")
+        return root, normalized
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
 @router.get("/{project_id}/explorer/precision-search")
 async def precision_search(
     project_id: str,
@@ -111,6 +131,7 @@ async def precision_search(
         collect_precision_code_search_context,
     )
 
+    _, path_prefix = _search_scope(project_id, path_prefix)
     result = await asyncio.to_thread(
         collect_precision_code_search_context,
         project_id,
@@ -140,6 +161,7 @@ async def search_text(
 ) -> dict[str, Any]:
     """Search indexed project file contents for matching lines."""
     validate_project_exists(project_id)
+    _, path_prefix = _search_scope(project_id, path_prefix)
     result = explorer.search_text(project_id, q, limit=limit, offset=offset, path_prefix=path_prefix)
     return {
         "query": q,
@@ -159,6 +181,17 @@ async def search_symbols(
 ) -> dict[str, Any]:
     """Search project symbols by name, signature, or summary."""
     validate_project_exists(project_id)
+    root, path_prefix = _search_scope(project_id, path_prefix)
+    if root is not None and path_prefix and (
+        is_search_artifact_path(path_prefix) or path_prefix == "data" or path_prefix.startswith("data/")
+    ):
+        # Artifact snapshots are intentionally absent from the persistent index;
+        # generic Explorer inventory also skips data. Query those scopes live.
+        result = await asyncio.to_thread(
+            _search_checkout_symbols, root, q, limit=limit, offset=offset, path_prefix=path_prefix,
+            language=language, kind=kind,
+        )
+        return {"query": q, **result}
     result = explorer_storage.search_symbols_page(
         project_id,
         q,
@@ -188,12 +221,17 @@ async def list_file_symbols(
     match is unique; ambiguous fragments return the candidate paths instead.
     """
     validate_project_exists(project_id)
-    fragment = file_path.lstrip("/").removeprefix("./")
-    if not explorer_storage.is_safe_symbol_path(fragment):
+    if not explorer_storage.is_safe_symbol_path(file_path) and not Path(file_path).is_absolute():
         raise HTTPException(status_code=404, detail="File not found")
+    root, fragment = _search_scope(project_id, file_path, must_exist=False)
+    fragment = fragment or ""
+    if root is not None and is_search_artifact_path(fragment):
+        return await asyncio.to_thread(_search_checkout_file_symbols, root, fragment, limit=limit, offset=offset)
     rows = explorer_storage.list_symbols_for_file(project_id, fragment)
     payload: dict[str, Any] = {"file_path": fragment, "count": 0, "items": []}
     if not rows:
+        if root is not None and (root / fragment).is_file():
+            return await asyncio.to_thread(_search_checkout_file_symbols, root, fragment, limit=limit, offset=offset)
         candidates = explorer_storage.resolve_symbol_file_paths(project_id, fragment)
         if len(candidates) == 1:
             rows = explorer_storage.list_symbols_for_file(project_id, candidates[0])

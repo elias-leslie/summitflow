@@ -123,3 +123,47 @@ def get_file_tree(path: str) -> dict[str, str]:
             )
             is None
         )
+
+
+def test_full_scan_preserves_inventory_but_excludes_evaluation_artifact_symbols(symbol_project: tuple[str, Path]) -> None:
+    project_id, root = symbol_project
+    for rel in ("tests/evaluation/runs/old/module.py", "tests/evaluation/test_runner.py", "src/snapshots/module.py"):
+        file = root / rel
+        file.parent.mkdir(parents=True, exist_ok=True)
+        file.write_text("def target(): pass\n")
+    assert FileScanner(project_id).run().success
+    assert explorer_entries.get_entry(project_id, "file", "tests/evaluation/runs/old/module.py") is not None
+    assert explorer_symbols.list_symbols_for_file(project_id, "tests/evaluation/runs/old/module.py") == []
+    assert explorer_symbols.list_symbols_for_file(project_id, "tests/evaluation/test_runner.py")
+    assert explorer_symbols.list_symbols_for_file(project_id, "src/snapshots/module.py")
+
+
+@pytest.mark.parametrize("data_dir", ["data", "backend/data", "packages/foo/data"])
+def test_full_scan_retains_refreshed_data_symbols_without_inventory_entries(symbol_project: tuple[str, Path], data_dir: str) -> None:
+    from app.services.explorer.symbol_refresh import refresh_symbols_for_paths
+
+    project_id, root = symbol_project
+    rel_source = f"{data_dir}/source.py"
+    source = root / rel_source
+    source.parent.mkdir(parents=True)
+    source.write_text("def data_source_target(): pass\n")
+    artifact = root / "data/artifacts/source-scans/id/snapshot/module.py"
+    artifact.parent.mkdir(parents=True)
+    artifact.write_text("def data_source_target(): pass\n")
+    assert refresh_symbols_for_paths(project_id, [rel_source])["refreshed"] == 1
+    assert FileScanner(project_id).run().success
+    assert explorer_entries.get_entry(project_id, "file", rel_source) is None
+    result = explorer_symbols.search_symbols_page(project_id, "data_source_target")
+    assert result["count"] == 1
+    assert [row["file_path"] for row in result["items"]] == [rel_source]
+
+
+def test_full_symbol_scan_rejects_aliases_to_sensitive_and_artifact_targets(symbol_project: tuple[str, Path]) -> None:
+    project_id, root = symbol_project
+    for index, rel in enumerate(("secrets/private.py", "data/artifacts/source-scans/id/snapshot/module.py")):
+        file = root / rel
+        file.parent.mkdir(parents=True, exist_ok=True)
+        file.write_text("def synthetic_private_target(): pass\n")
+        (root / f"public_{index}.py").symlink_to(file)
+    assert FileScanner(project_id).run().success
+    assert explorer_symbols.search_symbols_page(project_id, "synthetic_private_target")["count"] == 0

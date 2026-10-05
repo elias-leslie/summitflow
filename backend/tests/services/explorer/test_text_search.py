@@ -183,6 +183,7 @@ def test_search_text_path_prefix_filters_indexed_fallback(mocker, tmp_path: Path
     project_root.mkdir()
 
     mocker.patch("app.services.explorer.text_search.get_project_root", return_value=str(project_root))
+    (project_root / "packages/notes-ui").mkdir(parents=True)
     mocker.patch("app.services.explorer.text_search.shutil.which", return_value=None)
     mocker.patch(
         "app.services.explorer.text_search.explorer_storage.get_entries",
@@ -253,5 +254,41 @@ def test_search_text_rejects_symlink_prefix_outside_project(
     result = search_text("project-1", "secret", path_prefix="linked")
 
     assert result["count"] == 0
-    assert result["strategy"] == "ripgrep"
+    assert result["error"] == "invalid_path_prefix"
+    assert "inside selected root" in result["message"]
     run.assert_not_called()
+
+
+def test_text_fallback_recovers_data_and_scoped_artifacts_without_index(mocker, tmp_path: Path) -> None:
+    from app.services.explorer.text_search import search_text
+
+    artifact = "data/artifacts/source-scans/id/snapshot/app.py"
+    for rel in (artifact, "data/source.py", "tests/evaluation/runs/raw/module.py"):
+        file = tmp_path / rel
+        file.parent.mkdir(parents=True, exist_ok=True)
+        file.write_text("target marker\n")
+    mocker.patch("app.services.explorer.text_search.get_project_root", return_value=str(tmp_path))
+    mocker.patch("app.services.explorer.text_search.shutil.which", return_value=None)
+    mocker.patch("app.services.explorer.text_search.explorer_storage.get_entries", return_value=[])
+    result = search_text("one", "target marker")
+    assert {item["path"] for item in result["items"]} == {"data/source.py"}
+    scoped = search_text("one", "target marker", path_prefix=str(tmp_path / artifact).rsplit("/", 1)[0])
+    assert {item["path"] for item in scoped["items"]} == {artifact}
+
+
+def test_text_fallback_rejects_indexed_symlink_to_sensitive_or_artifact_target(mocker, tmp_path: Path) -> None:
+    from app.services.explorer.text_search import search_text
+
+    for index, rel in enumerate(("secrets/private.py", "data/artifacts/source-scans/id/snapshot/module.py")):
+        file = tmp_path / rel
+        file.parent.mkdir(parents=True, exist_ok=True)
+        file.write_text("synthetic private marker\n")
+        (tmp_path / f"public_{index}.py").symlink_to(file)
+    mocker.patch("app.services.explorer.text_search.get_project_root", return_value=str(tmp_path))
+    mocker.patch("app.services.explorer.text_search.shutil.which", return_value=None)
+    mocker.patch("app.services.explorer.text_search.explorer_storage.get_entries", return_value=[
+        {"path": "public_0.py"}, {"path": "public_1.py"},
+    ])
+    read = mocker.patch("app.services.explorer.text_search.read_file")
+    assert search_text("one", "synthetic private marker")["items"] == []
+    read.assert_not_called()

@@ -10,6 +10,12 @@ import os
 from datetime import UTC, datetime
 from pathlib import Path
 
+from code_intelligence.search.search_checkout_paths import (
+    _iter_checkout_files,
+    _normalize_rel_path,
+    is_code_search_path,
+)
+
 from ....logging_config import get_logger
 from ....storage import explorer as explorer_storage
 from ..analyzers import extract_symbols
@@ -60,6 +66,9 @@ class FileScanner(BaseScanner):
         dir_stats: dict[str, dict[str, int]] = {}
 
         for root_dir, dirnames, filenames in os.walk(self.root_path):
+            for dirname in dirnames:
+                if dirname == "data":
+                    self._collect_data_symbols(Path(root_dir) / dirname)
             dirnames[:] = [d for d in dirnames if d not in SKIP_DIRS]
             rel_root = Path(root_dir).relative_to(self.root_path)
             self._scan_dir(root_dir, rel_root, filenames, entries, dir_stats)
@@ -72,6 +81,29 @@ class FileScanner(BaseScanner):
             len(entries), len(entries) - len(dir_entries), len(dir_entries),
         )
         return entries
+
+    def _collect_data_symbols(self, data_root: Path) -> None:
+        """Index legitimate data source independently of generic file inventory.
+
+        Explorer's blanket data skip remains an inventory choice; symbol
+        cleanup must preserve these source rows after a full scan as well.
+        """
+        if self.root_path is None:
+            return
+        root = self.root_path.resolve()
+        if not data_root.is_dir() or not data_root.resolve().is_relative_to(root):
+            return
+        if not is_code_search_path(data_root.resolve().relative_to(root).as_posix()):
+            return
+        for file_path in _iter_checkout_files(root, allowed_suffixes=SYMBOL_INDEX_EXTENSIONS, start_root=data_root):
+            rel_path = _normalize_rel_path(root, file_path)
+            if rel_path is None:
+                continue
+            try:
+                self._extract_file_symbols(file_path, rel_path, file_path.suffix.lower())
+            except Exception:
+                logger.debug("Failed to index data source: %s", rel_path, exc_info=True)
+
 
     def _scan_dir(
         self,
@@ -166,8 +198,13 @@ class FileScanner(BaseScanner):
         ext: str,
     ) -> list[SymbolRecord]:
         """Extract supported symbol metadata for a file."""
-        if ext not in SYMBOL_INDEX_EXTENSIONS:
+        if ext not in SYMBOL_INDEX_EXTENSIONS or not is_code_search_path(rel_path):
             return []
+        if self.root_path is not None:
+            resolved = file_path.resolve()
+            root = self.root_path.resolve()
+            if not resolved.is_relative_to(root) or not is_code_search_path(resolved.relative_to(root).as_posix()):
+                return []
         symbols = extract_symbols(file_path, rel_path)
         self._symbol_snapshots[rel_path] = symbols
         self._indexed_symbol_paths.add(rel_path)
