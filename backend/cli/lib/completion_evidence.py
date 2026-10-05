@@ -24,18 +24,19 @@ def load_completion_evidence(path: Path, *, project_root: Path, project_id: str 
         except APIError as exc:
             raise ValueError(f"Server rejected the native receipt: {exc}") from exc
     if acceptance := payload.get("acceptance_receipt"):
-        from cli.lib.acceptance import AcceptanceError, validate_acceptance_receipt
+        from cli.lib.acceptance import AcceptanceError
+        from cli.lib.acceptance_coordinator import validate_source_receipt
 
+        if not isinstance(acceptance, str):
+            raise ValueError("Acceptance evidence requires an artifact reference")
         artifact = Path(acceptance)
         if not artifact.is_absolute():
             artifact = path.parent / artifact
         try:
-            # Validate the immutable evidence source. Task scope equality is
-            # checked under the closeout lock before this can complete work.
-            stored = json.loads(artifact.read_text())
-            source = stored.get("source", {}) if isinstance(stored, dict) else {}
-            source_sha = source.get("commit") if isinstance(source, dict) else None
-            receipts["acceptance"] = validate_acceptance_receipt(project_root, artifact, sha=str(source_sha or ""))
+            # The canonical validator reads and authenticates the source once.
+            # Retain its compact reference; raw receipt bodies stay immutable
+            # in the artifact store. Closeout revalidates task ownership.
+            receipts["acceptance"] = validate_source_receipt(project_root, artifact).reference.to_dict()
         except AcceptanceError as exc:
             raise ValueError(str(exc)) from exc
     if deployment := payload.get("deployment_receipt"):
@@ -44,8 +45,11 @@ def load_completion_evidence(path: Path, *, project_root: Path, project_id: str 
         artifact = Path(deployment)
         if not artifact.is_absolute():
             artifact = path.parent / artifact
-        receipts["deployment"] = validate_deployment_receipt(artifact, project_root=project_root)
+        validated_deployment = validate_deployment_receipt(artifact, project_root=project_root)
+        receipts["deployment"] = {key: value for key, value in validated_deployment.items() if key != "events"}
     if live := payload.get("live_validation"):
+        if not isinstance(live, dict):
+            raise ValueError("Live validation requires source-bound check evidence")
         source = str(live.get("source_commit") or "")
         if not re.fullmatch(r"[0-9a-f]{40}|[0-9a-f]{64}", source):
             raise ValueError("Live validation requires a full immutable source commit")

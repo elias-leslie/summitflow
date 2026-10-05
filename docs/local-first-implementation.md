@@ -7,6 +7,39 @@ workflow change, not a new reusable instruction store. GitHub publication is not
 requested. Existing security controls, histories, unrelated work, and necessary
 live validation must remain protected.
 
+## Task completion and release readiness, 2026-10-04
+
+Task `task-513682a385f0498e` separates the evidence needed to finish an owned
+task from the evidence needed to release a project. Implementation tasks require
+successful immutable-source task acceptance. That covers the literal owned
+scope and any explicitly declared acceptance stages. A successful full receipt
+also satisfies task acceptance when it contains those required stages. A declared
+focused stage may satisfy the task's exact requirement inside a validated task
+receipt; its focused coverage remains explicit and cannot establish full project
+acceptance. Failed or unavailable required evidence keeps the task open.
+
+Plans can declare `completion_requirements.acceptance` as `"task"` (the default)
+or `"full"`, `acceptance_stages` as exact declared stage IDs, and the existing
+`deployment` and `live_checks` requirements. Administrative work requires no
+invented code proof. A false acceptance declaration never waives evidence for
+recorded implementation changes. Full project acceptance remains the release
+requirement for managed rebuild and publication; finishing a task does not claim
+that release requirement passed.
+
+`app/services/task_acceptance.py` owns the typed task requirements and completion
+assessment. The readiness endpoint and recoverable closeout consume this policy.
+Source receipts remain immutable artifacts; task verification retains compact
+validated references and stage outcomes, not copies of raw receipt bodies.
+`cli/lib/acceptance_coordinator.py` is the public source-evidence interface. The
+single local closeout adapter connects that interface and public checkpoint and
+lease primitives to task policy without calling CLI command handlers.
+
+The exact active claim and prior verification revision still guard proof
+attachment and closeout intent. Recovery revalidates the accepted source, consumed
+inputs, literal owned paths and declared requirements before completing the task.
+Once completed, recovery only removes checkpoint metadata and releases task leases
+under the retained request guard; later work does not need to be accepted again.
+
 ## Local development contract, 2026-10-03
 
 Current implementation task: `task-a11c59594e404791`. This dated section records

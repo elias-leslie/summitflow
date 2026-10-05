@@ -49,15 +49,13 @@ def pending_task(test_project_id, cleanup_task, monkeypatch, tmp_path):
     from app.storage.tasks.closeout import release_closeout_claim
     assert release_closeout_claim(task["id"], test_project_id, stored_closeout(task["id"])["request_id"])
     monkeypatch.setattr("app.storage.projects.get_project_root_path", lambda _: str(tmp_path))
-    monkeypatch.setattr("cli.lib.acceptance.validate_acceptance_receipt", Mock())
+    monkeypatch.setattr("cli.lib.task_closeout_adapter.LocalCloseoutOperations.validate_source",
+                        Mock(side_effect=lambda root, receipt, sha: receipt))
     from contextlib import nullcontext
-    monkeypatch.setattr("cli.lib.acceptance.repo_lock", lambda *a, **kw: nullcontext())
-    monkeypatch.setattr("cli.client.STClient", Mock())
-    monkeypatch.setattr("cli.commands.done_task._auto_verify_readiness", Mock())
-    monkeypatch.setattr("cli.commands.done_task._selected_work_is_clean", lambda *a, **kw: True)
-    monkeypatch.setattr("cli.commands.done_task_acceptance.require_scope_matches_revision", Mock())
-    monkeypatch.setattr("cli.commands.done_task._capture_and_remove_snapshot", Mock())
-    monkeypatch.setattr("cli.commands.done._release_task_leases", Mock())
+    monkeypatch.setattr("cli.lib.task_closeout_adapter.LocalCloseoutOperations.source_lock", lambda *a, **kw: nullcontext())
+    monkeypatch.setattr("app.services.task_acceptance.load_completion_assessment", Mock(return_value=Mock(complete=True)))
+    monkeypatch.setattr("cli.lib.task_closeout_adapter.LocalCloseoutOperations.require_owned_source", Mock())
+    monkeypatch.setattr("cli.lib.task_closeout_adapter.LocalCloseoutOperations.cleanup", Mock())
     monkeypatch.setattr("cli.lib.publish_workflow.publish_git", Mock(side_effect=AssertionError("No remote publication")))
     monkeypatch.setattr("cli.lib.commit_workflow.commit_repo", Mock(side_effect=AssertionError("No later work checkpoint")))
     return task
@@ -83,8 +81,8 @@ def test_completion_projects_selected_receipt_and_retry_retains_it(pending_task,
                "acceptance_artifact": "/repo/.git/st/acceptance/proof-id.json",
                "checks": [{"large_diagnostic": "not part of completion output"}]}
     store_verification(pending_task["id"], pending_task["project_id"], {"acceptance": receipt})
-    validator = Mock()
-    monkeypatch.setattr("cli.lib.acceptance.validate_acceptance_receipt", validator)
+    validator = Mock(side_effect=lambda root, receipt, sha: receipt)
+    monkeypatch.setattr("cli.lib.task_closeout_adapter.LocalCloseoutOperations.validate_source", validator)
 
     result = closeout.resume_closeout(pending_task["id"])
     assert result["source_commit"] == SHA
@@ -113,7 +111,7 @@ def test_completion_does_not_project_unselected_or_unbound_proof(acceptance):
 
 def test_cleanup_failure_retains_completed_source_for_explicit_recovery(pending_task, monkeypatch):
     cleanup = Mock(side_effect=RuntimeError("snapshot store unavailable"))
-    monkeypatch.setattr("cli.commands.done_task._capture_and_remove_snapshot", cleanup)
+    monkeypatch.setattr("cli.lib.task_closeout_adapter.LocalCloseoutOperations.cleanup", cleanup)
     tid = pending_task["id"]
     assert closeout.resume_closeout(tid)["action"] == "blocked"
     assert stored_task(tid)["status"] == "completed"
@@ -132,13 +130,13 @@ def test_changed_acceptance_source_cannot_close(pending_task):
 
 
 def test_pause_at_final_status_boundary_cannot_resurrect_completion(pending_task, monkeypatch):
-    monkeypatch.setattr("cli.commands.done_task._auto_verify_readiness", lambda *_: tasks.update_task_status(pending_task["id"], "paused"))
+    monkeypatch.setattr("app.services.task_acceptance.load_completion_assessment", lambda *_: tasks.update_task_status(pending_task["id"], "paused"))
     assert closeout.resume_closeout(pending_task["id"])["action"] == "skipped"
     assert stored_task(pending_task["id"])[ "status"] == "paused"
 
 
 def test_source_change_at_final_status_boundary_is_revision_protected(pending_task, monkeypatch):
-    monkeypatch.setattr("cli.commands.done_task._auto_verify_readiness", lambda *_: store_verification(
+    monkeypatch.setattr("app.services.task_acceptance.load_completion_assessment", lambda *_: store_verification(
         pending_task["id"], pending_task["project_id"], {"acceptance": {"state": "success", "source_commit": "b" * 40}}))
     assert closeout.resume_closeout(pending_task["id"])["action"] == "blocked"
     assert stored_task(pending_task["id"])[ "status"] == "pending"
@@ -160,7 +158,7 @@ def test_cleanup_guard_rejects_superseded_request_without_touching_metadata(pend
 def test_completed_cleanup_tolerates_later_work_without_reacceptance(pending_task, monkeypatch):
     tasks.update_task_status(pending_task["id"], "completed", validate_transition=False)
     validator = Mock(side_effect=AssertionError("Accepted status needs metadata cleanup only"))
-    monkeypatch.setattr("cli.lib.acceptance.validate_acceptance_receipt", validator)
+    monkeypatch.setattr("cli.lib.task_closeout_adapter.LocalCloseoutOperations.validate_source", validator)
     result = closeout.resume_closeout(pending_task["id"])
     assert result["action"] == "completed"
     assert result["source_commit"] == SHA
@@ -220,16 +218,42 @@ def test_retirement_cannot_target_local_cleanup(pending_task):
 
 
 def test_selected_work_changed_after_request_cannot_close(pending_task, monkeypatch):
-    monkeypatch.setattr("cli.commands.done_task._selected_work_is_clean", lambda *a, **kw: False)
+    monkeypatch.setattr("cli.lib.task_closeout_adapter.LocalCloseoutOperations.require_owned_source",
+                        Mock(side_effect=ValueError("Selected task paths changed after accepted completion request")))
     result = closeout.resume_closeout(pending_task["id"])
     assert result["action"] == "blocked"
     assert "Selected task paths changed" in result["reason"]
     assert stored_task(pending_task["id"])[ "status"] == "pending"
 
 
+@pytest.mark.parametrize("paths", [["owned.py"], ["other.py"], []])
+def test_task_acceptance_covers_exact_selected_closeout_scope(pending_task, paths):
+    tid, pid = pending_task["id"], pending_task["project_id"]
+    intent = stored_closeout(tid)
+    intent["paths"] = paths
+    store_closeout(tid, pid, intent)
+    store_verification(tid, pid, {"acceptance": {"state": "success", "source_commit": SHA, "coverage": "task",
+                                              "scope": ["owned.py"], "required_stages": []}})
+    result = closeout.resume_closeout(tid)
+    assert result["action"] == ("completed" if paths == ["owned.py"] else "blocked")
+
+
+@pytest.mark.parametrize("field,value", [("coverage", "full"), ("required_stages", [{"id": "forged"}]),
+                                       ("source_commit", "b" * 40)])
+def test_stored_compact_reference_must_match_validated_artifact(pending_task, monkeypatch, field, value):
+    tid, pid = pending_task["id"], pending_task["project_id"]
+    canonical = {"state": "success", "source_commit": SHA, "coverage": "task", "scope": [], "required_stages": []}
+    stored = {**canonical, field: value}
+    store_verification(tid, pid, {"acceptance": stored})
+    monkeypatch.setattr("cli.lib.task_closeout_adapter.LocalCloseoutOperations.validate_source", Mock(return_value=canonical))
+    result = closeout.resume_closeout(tid)
+    assert result["action"] == "blocked"
+    assert stored_task(tid)["status"] == "pending"
+
+
 def test_historical_owned_revision_drift_is_checked_again_at_closeout(pending_task, monkeypatch):
     checker = Mock(side_effect=ValueError("Task-owned source changed since the selected acceptance revision"))
-    monkeypatch.setattr("cli.commands.done_task_acceptance.require_scope_matches_revision", checker)
+    monkeypatch.setattr("cli.lib.task_closeout_adapter.LocalCloseoutOperations.require_owned_source", checker)
     result = closeout.resume_closeout(pending_task["id"])
     assert result["action"] == "blocked"
     assert "Task-owned source changed" in result["reason"]
@@ -368,7 +392,7 @@ def test_workerless_retry_reclaim_at_final_boundary_preserves_new_work(pending_t
         tasks.claim_task(tid, "other-worker")
         store_verification(tid, pid, {"acceptance": newer})
 
-    monkeypatch.setattr("cli.commands.done_task._auto_verify_readiness", reclaim)
+    monkeypatch.setattr("app.services.task_acceptance.load_completion_assessment", reclaim)
     assert closeout.resume_closeout(tid, explicit=True)["action"] == "skipped"
     after = stored_task(tid)
     assert after["status"] == "running" and after["claimed_by"] == "other-worker"

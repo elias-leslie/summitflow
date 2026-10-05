@@ -7,9 +7,10 @@ from __future__ import annotations
 
 import re
 import uuid
+from contextlib import AbstractContextManager
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import Any
+from typing import Any, Protocol
 
 from app.storage.tasks import get_task
 from app.storage.tasks.closeout import (
@@ -18,6 +19,36 @@ from app.storage.tasks.closeout import (
     pending_closeout_ids,
     store_closeout,
 )
+
+
+class CloseoutOperations(Protocol):
+    """The local filesystem adapter needed by the task completion module."""
+
+    def caller_identity(self) -> str: ...
+    def source_lock(self, root: Path) -> AbstractContextManager[None]: ...
+    def validate_source(self, root: Path, acceptance: dict[str, Any], source_sha: str) -> dict[str, Any]: ...
+    def require_owned_source(self, root: Path, source_sha: str, paths: tuple[str, ...], task: dict[str, Any]) -> None: ...
+    def cleanup(self, task_id: str, project_id: str, root: Path) -> None: ...
+
+
+def _closeout_operations() -> CloseoutOperations:
+    # The CLI owns local Git/checkpoint infrastructure. Its explicit adapter
+    # keeps command handlers and presentation helpers out of task policy.
+    from cli.lib.task_closeout_adapter import LocalCloseoutOperations
+
+    return LocalCloseoutOperations()
+
+
+def _require_selected_reference(acceptance: dict[str, Any], validated: dict[str, Any], paths: tuple[str, ...]) -> None:
+    """The retained descriptor must describe the proof actually validated."""
+    for key in ("acceptance_id", "source_commit", "source_tree", "coverage", "input_fingerprint",
+                "acceptance_plan_fingerprint", "required_stages", "scope_digest"):
+        if key in acceptance and acceptance[key] != validated.get(key):
+            raise ValueError(f"Closeout acceptance reference changed: {key}")
+    if validated.get("coverage") == "task":
+        scope = validated.get("scope")
+        if not isinstance(scope, list) or scope != sorted(set(paths)) or acceptance.get("scope") != scope:
+            raise ValueError("Task acceptance scope differs from selected closeout paths")
 
 
 def completion_evidence(acceptance: dict[str, Any], *, source_sha: str | None = None,
@@ -32,7 +63,7 @@ def completion_evidence(acceptance: dict[str, Any], *, source_sha: str | None = 
     result: dict[str, str] = {"source_commit": source if selected and isinstance(source, str) else "unknown",
               "evidence_basis": "retained" if retained else "validated" if selected else "unknown"}
     if selected:
-        for key in ("acceptance_id", "acceptance_artifact"):
+        for key in ("acceptance_id", "acceptance_artifact", "coverage", "outcome"):
             value = acceptance.get(key)
             if isinstance(value, str) and value:
                 result[key] = value
@@ -43,7 +74,8 @@ def request_closeout(task_id: str, project_id: str, *, source_sha: str,
                      message: str | None, paths: tuple[str, ...] = (),
                      expected_worker: str | None = None, expected_claimed_at: Any = None,
                      expected_acceptance: dict[str, Any] | None = None,
-                     expected_verification: dict[str, Any] | None = None) -> dict[str, Any]:
+                     expected_verification: dict[str, Any] | None = None,
+                     operations: CloseoutOperations | None = None) -> dict[str, Any]:
     """Retain local prerequisites before a status update or cleanup can fail."""
     if not re.fullmatch(r"[0-9a-f]{40}|[0-9a-f]{64}", source_sha):
         raise ValueError("Closeout requires a full immutable source commit")
@@ -63,8 +95,8 @@ def request_closeout(task_id: str, project_id: str, *, source_sha: str,
             if previous["source_sha"] != source_sha:
                 raise ValueError("An earlier exact-source closeout remains unresolved")
             return previous
-        from cli.lib.task_claims import current_worker_id
-        if (not expected_worker or expected_worker != current_worker_id() or not expected_claimed_at
+        local = operations or _closeout_operations()
+        if (not expected_worker or expected_worker != local.caller_identity() or not expected_claimed_at
                 or task["status"] != "running" or task.get("claimed_by") != expected_worker
                 or datetime.fromisoformat(str(task.get("claimed_at"))) != datetime.fromisoformat(str(expected_claimed_at))):
             raise ValueError("Local completion requires the same active claim that accepted this work")
@@ -96,12 +128,12 @@ def pending_closeouts() -> list[dict[str, str]]:
             for task_id in pending_closeout_ids() if (intent := get_closeout(task_id))]
 
 
-def resume_closeout(task_id: str, *, explicit: bool = False) -> dict[str, Any]:
+def resume_closeout(task_id: str, *, explicit: bool = False,
+                    operations: CloseoutOperations | None = None) -> dict[str, Any]:
     """Recover local cleanup only; never publish, commit, deploy or change source."""
+    from app.services.task_acceptance import load_completion_assessment
     from app.storage.events import log_task_event
     from app.storage.projects import get_project_root_path
-    from cli.client import STClient
-    from cli.lib.acceptance import repo_lock, validate_acceptance_receipt
 
     with closeout_lock(task_id) as acquired:
         if not acquired:
@@ -134,33 +166,22 @@ def resume_closeout(task_id: str, *, explicit: bool = False) -> dict[str, Any]:
             acceptance = (task.get("verification_result") or {}).get("acceptance") or {}
             if acceptance.get("state") != "success" or acceptance.get("source_commit") != intent["source_sha"]:
                 raise ValueError("Closeout acceptance source changed")
-            with repo_lock(Path(root), purpose="local closeout cleanup"):
+            local = operations or _closeout_operations()
+            with local.source_lock(Path(root)):
                 # Completed status already passed the owner contract; recovery
                 # removes metadata only and may coexist with later local work.
                 if task["status"] != "completed":
-                    validate_acceptance_receipt(Path(root), acceptance, sha=intent["source_sha"])
-                    from cli.commands.done_task import (
-                        _auto_verify_readiness,
-                        _selected_work_is_clean,
-                    )
-                    if not _selected_work_is_clean(root, tuple(intent.get("paths") or ())):
-                        raise ValueError("Selected task paths changed after accepted completion request")
-                    from cli.commands.done_task_acceptance import (
-                        require_scope_matches_revision,
-                        require_task_created_paths,
-                    )
-                    require_scope_matches_revision(Path(root), intent["source_sha"], tuple(intent.get("paths") or ()))
-                    require_task_created_paths(Path(root), intent["source_sha"], task)
-                    _auto_verify_readiness(STClient(project_id=project_id), task_id)
+                    validated = local.validate_source(Path(root), acceptance, intent["source_sha"])
+                    _require_selected_reference(acceptance, validated, tuple(intent.get("paths") or ()))
+                    local.require_owned_source(Path(root), intent["source_sha"], tuple(intent.get("paths") or ()), task)
+                    assessment = load_completion_assessment(task_id)
+                    if not assessment.complete:
+                        raise ValueError(f"Task not ready to complete: {list(assessment.gates)}")
                     from app.storage.tasks import update_task_status
                     update_task_status(task_id, "completed", validate_transition=False,
                                        expected_closeout_request_id=request_id)
-                from cli.commands.done import _release_task_leases
-                from cli.commands.done_task import _capture_and_remove_snapshot
-
                 def cleanup() -> None:
-                    _capture_and_remove_snapshot(task_id, project_id)
-                    _release_task_leases(project_id, task_id)
+                    local.cleanup(task_id, project_id, Path(root))
 
                 if not finish_closeout_cleanup(task_id, project_id, request_id, intent["source_sha"], cleanup):
                     return {"action": "skipped", "task_id": task_id, "reason": "completion_request_superseded"}

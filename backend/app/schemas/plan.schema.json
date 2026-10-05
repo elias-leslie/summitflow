@@ -75,8 +75,10 @@
 
     "completion_requirements": {
       "type": "object",
-      "description": "Explicit deployment and live checks required before task completion. Publication is independent.",
+      "description": "Task evidence required before completion. Full project acceptance remains separate release readiness.",
       "properties": {
+        "acceptance": { "enum": ["task", "full", true, false], "description": "Implementation tasks require task acceptance by default; full explicitly requires project coverage." },
+        "acceptance_stages": { "type": "array", "items": { "type": "string", "minLength": 1 }, "uniqueItems": true },
         "deployment": { "type": "boolean", "default": false },
         "live_checks": { "type": "array", "items": { "type": "string", "minLength": 1 }, "uniqueItems": true }
       },

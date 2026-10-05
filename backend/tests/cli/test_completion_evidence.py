@@ -43,13 +43,28 @@ def test_acceptance_artifact_is_resolved_and_validated_at_its_exact_source(tmp_p
     from unittest.mock import Mock
 
     validated = {"state": "success", "source_commit": "a" * 40}
-    validator = Mock(return_value=validated)
-    monkeypatch.setattr("cli.lib.acceptance.validate_acceptance_receipt", validator)
-    (tmp_path / "accepted.json").write_text(json.dumps({"source": {"commit": validated["source_commit"]}}))
+    result = Mock()
+    result.reference.to_dict.return_value = validated
+    validator = Mock(return_value=result)
+    monkeypatch.setattr("cli.lib.acceptance_coordinator.validate_source_receipt", validator)
+    # The validator owns artifact decoding. The adapter must not read it again.
     evidence = tmp_path / "evidence.json"
     evidence.write_text(json.dumps({"acceptance_receipt": "accepted.json"}))
     assert load_completion_evidence(evidence, project_root=tmp_path) == {"acceptance": validated}
-    validator.assert_called_once_with(tmp_path, tmp_path / "accepted.json", sha=validated["source_commit"])
+    validator.assert_called_once_with(tmp_path, tmp_path / "accepted.json")
+
+
+def test_deployment_import_retains_reference_instead_of_lifecycle_body(tmp_path, monkeypatch):
+    from unittest.mock import Mock
+
+    reference = {"state": "succeeded", "source_commit": "a" * 40, "deployment_id": "b" * 64,
+                 "artifact": str(tmp_path / "deployment.json")}
+    validator = Mock(return_value={**reference, "events": [{"phase": "health", "large_output": "raw details"}]})
+    monkeypatch.setattr("cli.lib.service_release.validate_deployment_receipt", validator)
+    evidence = tmp_path / "evidence.json"
+    evidence.write_text(json.dumps({"deployment_receipt": "deployment.json"}))
+    assert load_completion_evidence(evidence, project_root=tmp_path) == {"deployment": reference}
+    validator.assert_called_once_with(tmp_path / "deployment.json", project_root=tmp_path)
 
 
 def test_native_reference_uses_the_task_project_instead_of_ambient_context(tmp_path, monkeypatch):

@@ -301,7 +301,8 @@ class TestShortTaskIdApiResolution:
         }}}
         with (
             patch("app.api.tasks.get_endpoints.get_task_or_404", return_value=task),
-            patch("app.api.tasks.get_endpoints.get_subtasks_for_task", return_value=[]),
+            patch("app.storage.tasks.get_task", return_value=task),
+            patch("app.storage.subtasks.get_subtasks_for_task", return_value=[]),
             patch("app.storage.task_spirit.get_task_spirit", return_value=spirit) as read_spirit,
         ):
             result = client.get(f"/api/tasks/{task_id.removeprefix('task-')}/completion-readiness")
@@ -345,7 +346,9 @@ class TestShortTaskIdApiResolution:
 
         with (
             patch("app.api.tasks.get_endpoints.get_task_or_404", return_value=task),
-            patch("app.api.tasks.get_endpoints.get_subtasks_for_task", return_value=subtasks),
+            patch("app.storage.tasks.get_task", return_value=task),
+            patch("app.storage.task_spirit.get_task_spirit", return_value=None),
+            patch("app.storage.subtasks.get_subtasks_for_task", return_value=subtasks),
         ):
             result = client.get(f"/api/tasks/{task_id}/completion-readiness")
 
@@ -370,7 +373,9 @@ class TestShortTaskIdApiResolution:
 
         with (
             patch("app.api.tasks.get_endpoints.get_task_or_404", return_value=task),
-            patch("app.api.tasks.get_endpoints.get_subtasks_for_task", return_value=subtasks),
+            patch("app.storage.tasks.get_task", return_value=task),
+            patch("app.storage.task_spirit.get_task_spirit", return_value=None),
+            patch("app.storage.subtasks.get_subtasks_for_task", return_value=subtasks),
         ):
             result = client.get(f"/api/tasks/{task_id}/completion-readiness")
 
@@ -390,7 +395,9 @@ class TestShortTaskIdApiResolution:
 
         with (
             patch("app.api.tasks.get_endpoints.get_task_or_404", return_value=task),
-            patch("app.api.tasks.get_endpoints.get_subtasks_for_task", return_value=subtasks),
+            patch("app.storage.tasks.get_task", return_value=task),
+            patch("app.storage.task_spirit.get_task_spirit", return_value=None),
+            patch("app.storage.subtasks.get_subtasks_for_task", return_value=subtasks),
         ):
             result = client.get(f"/api/tasks/{task_id}/completion-readiness")
 

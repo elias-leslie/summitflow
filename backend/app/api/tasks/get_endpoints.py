@@ -18,7 +18,6 @@ from fastapi.responses import PlainTextResponse
 
 from ...schemas.tasks import TaskResponse
 from ...storage import tasks as task_store
-from ...storage.subtasks import get_subtasks_for_task
 from ...tasks.autonomous._project_resolution import resolve_task_project_id
 from .formatting import toon_format_task
 from .helpers import (
@@ -35,41 +34,10 @@ router = APIRouter()
 async def check_completion_readiness(task_id: str) -> dict[str, Any]:
     """Pre-validate completion gates without modifying state."""
     task = get_task_or_404(task_id)
-    from ...storage.task_spirit import get_task_spirit
+    from ...services.task_acceptance import load_completion_assessment
 
-    # Generic task rows expose only the compact spirit summary. Read the
-    # canonical plan context, as the final status-change gate does, rather than
-    # silently omit owner-required deployment and live evidence.
-    spirit = await asyncio.to_thread(get_task_spirit, str(task["id"]))
-    if spirit is not None:
-        task = {**task, "context": spirit.get("context") or {}}
-
-    subtasks = await asyncio.to_thread(get_subtasks_for_task, str(task["id"]), True)
-    incomplete: list[str] = []
-    synthetic_skips = {
-        str(item).split(":", 1)[0]
-        for item in (task.get("syncable_subtasks_skipped") or [])
-        if isinstance(item, str) and item.endswith(":no-steps")
-    }
-    for subtask in subtasks:
-        if subtask.get("passes"):
-            continue
-        subtask_id = str(subtask.get("subtask_id") or "")
-        steps = subtask.get("steps") or subtask.get("steps_from_table") or []
-        step_summary = subtask.get("step_summary") or {}
-        step_total = int(step_summary.get("total") or 0)
-        if subtask_id in synthetic_skips and not steps and step_total == 0:
-            continue
-        incomplete.append(subtask_id)
-
-    gates: list[dict[str, Any]] = []
-    if incomplete:
-        gates.append({"gate": "subtasks", "pass": False, "detail": incomplete[:5]})
-
-    from ...services.task_acceptance import completion_gates
-    gates.extend(completion_gates(task))
-
-    return {"ready": not gates, "gates": gates}
+    assessment = await asyncio.to_thread(load_completion_assessment, str(task["id"]))
+    return {"ready": assessment.complete, "gates": list(assessment.gates)}
 
 
 @router.get("/tasks/{task_id}", response_model=None)
