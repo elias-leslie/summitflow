@@ -366,7 +366,7 @@ def run_native(root: Path, plan: dict[str, Any], *, stage_id: str | None = None,
     # ambient /usr/bin or package-manager PATH into the project's stage.
     # Keep tool aliases visible at their same host path when nested bwrap
     # replaces /tmp; the sandbox's private /tmp itself is the short scratch root.
-    host_scratch = os.environ.get("ST_NATIVE_TMP_HOST_ROOT")
+    host_scratch = os.environ.get("ST_NATIVE_TMP_HOST_ROOT", "/var/tmp")
     with tempfile.TemporaryDirectory(prefix="", dir=host_scratch) as directory:
         aliases = Path(directory) / "bin"
         aliases.mkdir(mode=0o700)

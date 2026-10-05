@@ -880,3 +880,41 @@ def test_managed_python_symlink_binds_lexical_venv_packages(native_repo: Path) -
     second = run_native(native_repo, _plan(native_repo))
     assert second["stages"][0]["reused"] is False
     assert "dependency version 2" in second["stages"][0]["detail"]
+
+
+def test_native_allowlisted_aliases_survive_nested_private_tmp(native_repo: Path, monkeypatch) -> None:
+    if not shutil.which("bwrap"):
+        pytest.skip("Installed managed isolation capability required")
+    monkeypatch.delenv("ST_NATIVE_TMP_HOST_ROOT", raising=False)
+    monkeypatch.setenv("AMBIENT_SECRET", "private")
+    config = native_repo / ".st-check.toml"
+    tools = {"python": sys.executable, "git": shutil.which("git"), "bwrap": shutil.which("bwrap")}
+    assert tools["git"] and tools["bwrap"]
+    declarations = "[native.tools]\n" + "".join(f"{name}={json.dumps(path)}\n" for name, path in tools.items())
+    config.write_text(config.read_text().replace("[[native.stages]]", declarations + "[[native.stages]]"))
+    backend = Path(__file__).resolve().parents[2]
+    probe = (
+        "import os,shutil,subprocess,sys\nfrom pathlib import Path\n"
+        "aliases=Path(os.environ['PATH'].split(os.pathsep)[0])\n"
+        "assert aliases.parent.parent == Path('/var/tmp')\n"
+        "assert 'AMBIENT_SECRET' not in os.environ\n"
+        "for name in ('git','bwrap'):\n"
+        "    assert shutil.which(name) == str(aliases/name), name\n"
+        "subprocess.run(['git','--version'],check=True,capture_output=True)\n"
+        "nested=subprocess.run(['bwrap','--die-with-parent','--ro-bind','/','/','--proc','/proc','--dev','/dev',"
+        "'--',sys.executable,'-P','-c',\"import subprocess; subprocess.run(['git','--version'],check=True)\"],capture_output=True,text=True)\n"
+        "assert nested.returncode == 0, nested.stderr\n"
+    )
+    suite = native_repo / ".tools/suite.py"
+    suite.write_text(suite.read_text() + (
+        "import subprocess,sys,tempfile\n"
+        f"sys.path.insert(0,{str(backend)!r})\n"
+        "from cli.commands.done_task_acceptance import _sandbox_command\n"
+        "with tempfile.TemporaryDirectory(dir='/var/tmp') as directory:\n"
+        "    repo=Path.cwd()\n"
+        "    command=_sandbox_command(repo,repo,repo/'.git',repo/'.git',Path(directory),[],'fixture',(),'fixture',False)\n"
+        f"    result=subprocess.run([*command[:command.index('--')+1],sys.executable,'-P','-c',{probe!r}],capture_output=True,text=True)\n"
+        "    assert result.returncode == 0, result.stderr\n"
+    ))
+    result = run_native(native_repo, _plan(native_repo), reuse=False)
+    assert result["state"] == "pass", result["stages"][0]["detail"]
