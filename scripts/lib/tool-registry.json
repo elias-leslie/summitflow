@@ -450,7 +450,10 @@
       "environment": [
         "WEB_SEARCH_SEARXNG_URL",
         "WEB_FETCH_BROWSER_CDP_URL",
-        "ST_BROWSER_HOST"
+        "ST_BROWSER_HOST",
+        "AGENT_HUB_WEB_LIGHTPANDA_BINARY",
+        "AGENT_HUB_WEB_LIGHTPANDA_SHA256",
+        "AGENT_HUB_WEB_LIGHTPANDA_VERSION"
       ],
       "presentation": "web-details"
     },

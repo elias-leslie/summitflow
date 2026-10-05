@@ -250,7 +250,7 @@ def structured_dispatch(tmp_path, monkeypatch):
 
 @pytest.mark.parametrize("argv,payload", [
     (["observe"], {"interactive": False, "compact": True, "delta": True, "full": False}),
-    (["observe", "--selector", "main", "--interactive", "--full"], {"selector": "main", "interactive": True, "compact": False, "delta": False, "full": True}),
+    (["observe", "--selector", "main", "--interactive", "--full"], {"selector": "main", "interactive": True, "compact": True, "delta": True, "full": True}),
     (["step", "fill", "@e2", "Two words; $(literal)"], {"actions": [["fill", "@e2", "Two words; $(literal)"]]}),
 ])
 def test_v2_operations_have_minimal_session_scoped_wire_and_hold_lock(tmp_path, structured_dispatch, argv, payload):
@@ -262,6 +262,61 @@ def test_v2_operations_have_minimal_session_scoped_wire_and_hold_lock(tmp_path, 
     assert request["command"] == request["operation"]
     assert request["payload"] == payload
     assert request["check"] is request["default_viewport"] is None
+
+
+@pytest.mark.parametrize("compact,full", [(True, True), (False, True), (True, False), (False, False)])
+def test_observe_compactness_and_full_are_independent(structured_dispatch, tmp_path, compact, full):
+    argv = ["observe", "--compact" if compact else "--no-compact", "--depth=3", "--max-chars", "12000"]
+    if full:
+        argv.append("--full")
+    assert browser.run_registered(_v2_record(), argv, _context(tmp_path)) == 7
+    assert structured_dispatch[0]["payload"] == {"interactive": False, "compact": compact, "delta": True,
+                                                "full": full, "depth": 3, "max_chars": 12000}
+
+
+def test_observe_depth_zero_and_no_delta_have_independent_wire():
+    operation, payload = browser._structured_payload("observe", ["--depth", "0", "--no-delta", "--full"])
+    assert operation == "observe"
+    assert payload == {"interactive": False, "compact": True, "delta": False, "full": True, "depth": 0}
+
+
+@pytest.mark.parametrize("tail", [
+    ["--depth", "-1"], ["--depth=1.5"], ["--depth=true"], ["--depth"],
+    ["--max-chars=0"], ["--max-chars=-1"], ["--max-chars=abc"], ["--max-chars"],
+    ["--compact", "--no-compact"], ["--no-compact", "--compact"], ["--delta", "--no-delta"],
+    ["--full", "--full"], ["--compact=true"], ["--depth=2", "--depth=3"],
+])
+def test_invalid_observation_options_fail_before_dispatch(tmp_path, monkeypatch, tail):
+    monkeypatch.setattr("cli.extensions.dispatch_extension", _forbid_dispatch)
+    monkeypatch.setattr(browser, "_agent_browser_bin", lambda: pytest.fail("invalid options reached browser setup"))
+    with pytest.raises(typer.Exit) as exc:
+        browser.run_registered(_v2_record(), ["observe", *tail], _context(tmp_path))
+    assert exc.value.exit_code == 2
+
+
+@pytest.mark.parametrize("command", ["run", "extract"])
+@pytest.mark.parametrize("tail", [["--file", "payload.json", "--max-chars=2000"], ["--max-chars", "2000", "--file=payload.json"]])
+def test_file_operations_forward_optional_stdout_budget(tmp_path, monkeypatch, command, tail):
+    monkeypatch.chdir(tmp_path)
+    (tmp_path / "payload.json").write_text(json.dumps({"max_chars": 9000}))
+    assert browser._structured_payload(command, tail) == (command, {"max_chars": 2000})
+
+
+def test_step_budget_precedes_core_command_without_stealing_core_options():
+    assert browser._structured_payload("step", ["--max-chars=2000", "snapshot", "--compact"]) == (
+        "run", {"max_chars": 2000, "actions": [["snapshot", "--compact"]]})
+    assert browser._structured_payload("step", ["screenshot", "--full"]) == (
+        "run", {"actions": [["screenshot", "--full"]]})
+
+
+@pytest.mark.parametrize("command,tail", [
+    ("run", ["--file=p.json", "--max-chars=0"]),
+    ("extract", ["--file=p.json", "--max-chars=10", "--max-chars=20"]),
+    ("step", ["--max-chars=-1", "snapshot"]), ("step", ["--max-chars"]),
+])
+def test_file_and_step_invalid_budgets_are_rejected(command, tail):
+    with pytest.raises(ValueError):
+        browser._structured_payload(command, tail)
 
 
 @pytest.mark.parametrize("argv,operation,payload", [

@@ -415,26 +415,12 @@ def _structured_payload(command: str, tail: list[str]) -> tuple[str, dict[str, o
     if command == "workflow":
         return command, browser_support.workflow_payload(tail)
     if command in {"run", "extract"}:
-        if len(tail) == 1 and tail[0].startswith("--file="):
-            path = tail[0].split("=", 1)[1]
-        elif len(tail) == 2 and tail[0] == "--file":
-            path = tail[1]
-        else:
-            raise ValueError(f"Usage: st browser {command} --file <JSON-path>")
-        return command, browser_support.read_structured_payload(path)
-    if command == "step":
-        return "run", {"actions": [browser_support.validate_structured_action(tail)]}
-    if command != "observe":
-        raise ValueError("unsupported structured browser operation")
-    payload: dict[str, object] = {"interactive": False, "compact": True, "delta": True, "full": False}
-    index = 0
-    seen = set()
-    while index < len(tail):
-        arg, separator, value = tail[index].partition("=")
-        if arg in seen:
-            raise ValueError(f"Repeated observe option: {arg}")
-        seen.add(arg)
-        if arg in {"--selector", "--screenshot"}:
+        options: dict[str, str] = {}
+        index = 0
+        while index < len(tail):
+            arg, separator, value = tail[index].partition("=")
+            if arg not in {"--file", "--max-chars"} or arg in options:
+                raise ValueError(f"Usage: st browser {command} --file <JSON-path> [--max-chars N]")
             if not separator:
                 index += 1
                 if index == len(tail) or tail[index].startswith("-"):
@@ -442,15 +428,66 @@ def _structured_payload(command: str, tail: list[str]) -> tuple[str, dict[str, o
                 value = tail[index]
             if not value:
                 raise ValueError(f"{arg} requires a value")
-            payload[arg[2:]] = value
+            options[arg] = value
+            index += 1
+        if "--file" not in options:
+            raise ValueError(f"Usage: st browser {command} --file <JSON-path> [--max-chars N]")
+        budget = _structured_integer("--max-chars", options["--max-chars"]) if "--max-chars" in options else None
+        payload = browser_support.read_structured_payload(options["--file"])
+        if budget is not None:
+            payload["max_chars"] = budget
+        return command, payload
+    if command == "step":
+        step_payload: dict[str, object] = {}
+        if tail and tail[0].split("=", 1)[0] == "--max-chars":
+            arg, separator, value = tail[0].partition("=")
+            consumed = 1 if separator else 2
+            if not separator:
+                value = tail[1] if len(tail) > 1 else ""
+            step_payload["max_chars"] = _structured_integer(arg, value)
+            tail = tail[consumed:]
+        step_payload["actions"] = [browser_support.validate_structured_action(tail)]
+        return "run", step_payload
+    if command != "observe":
+        raise ValueError("unsupported structured browser operation")
+    payload: dict[str, object] = {"interactive": False, "compact": True, "delta": True, "full": False}
+    index = 0
+    seen = set()
+    while index < len(tail):
+        arg, separator, value = tail[index].partition("=")
+        option_group = "compact" if arg in {"--compact", "--no-compact"} else "delta" if arg in {"--delta", "--no-delta"} else arg
+        if option_group in seen:
+            raise ValueError(f"Repeated observe option: {arg}")
+        seen.add(option_group)
+        if arg in {"--selector", "--screenshot", "--depth", "--max-chars"}:
+            if not separator:
+                index += 1
+                if index == len(tail) or tail[index].startswith("-"):
+                    raise ValueError(f"{arg} requires a value")
+                value = tail[index]
+            if not value:
+                raise ValueError(f"{arg} requires a value")
+            payload[arg[2:].replace("-", "_")] = _structured_integer(arg, value) if arg in {"--depth", "--max-chars"} else value
         elif arg == "--interactive" and not separator:
             payload["interactive"] = True
         elif arg == "--full" and not separator:
-            payload.update({"compact": False, "delta": False, "full": True})
+            payload["full"] = True
+        elif arg in {"--compact", "--no-compact"} and not separator:
+            payload["compact"] = arg == "--compact"
+        elif arg in {"--delta", "--no-delta"} and not separator:
+            payload["delta"] = arg == "--delta"
         else:
             raise ValueError(f"Unknown observe option: {tail[index]}")
         index += 1
     return command, payload
+
+
+def _structured_integer(option: str, value: str) -> int:
+    minimum = 0 if option == "--depth" else 1
+    if not re.fullmatch(r"[0-9]+", value) or int(value) < minimum:
+        label = "a nonnegative integer" if minimum == 0 else "a positive integer"
+        raise ValueError(f"{option} requires {label}")
+    return int(value)
 
 
 def _resolve_payload_screenshots(payload: dict[str, object]) -> None:
