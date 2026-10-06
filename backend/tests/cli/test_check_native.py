@@ -887,7 +887,9 @@ def test_managed_python_symlink_binds_lexical_venv_packages(native_repo: Path) -
     assert "dependency version 2" in second["stages"][0]["detail"]
 
 
-def test_native_allowlisted_aliases_survive_nested_private_tmp(native_repo: Path, monkeypatch) -> None:
+def test_native_allowlisted_aliases_survive_nested_private_tmp(native_repo: Path, monkeypatch, request) -> None:
+    import tempfile
+
     if not shutil.which("bwrap"):
         pytest.skip("Installed managed isolation capability required")
     monkeypatch.delenv("ST_NATIVE_TMP_HOST_ROOT", raising=False)
@@ -895,12 +897,23 @@ def test_native_allowlisted_aliases_survive_nested_private_tmp(native_repo: Path
     config = native_repo / ".st-check.toml"
     tools = {"python": sys.executable, "git": shutil.which("git"), "bwrap": shutil.which("bwrap")}
     assert tools["git"] and tools["bwrap"]
+    outer_directory = tempfile.TemporaryDirectory(dir="/var/tmp")
+    request.addfinalizer(outer_directory.cleanup)
+    outer_aliases = Path(outer_directory.name) / "bin"
+    outer_aliases.mkdir()
+    for name in ("git", "bwrap"):
+        alias = outer_aliases / name
+        target = tools[name]
+        assert target is not None
+        alias.symlink_to(target)
+        tools[name] = str(alias)
     declarations = "[native.tools]\n" + "".join(f"{name}={json.dumps(path)}\n" for name, path in tools.items())
     config.write_text(config.read_text().replace("[[native.stages]]", declarations + "[[native.stages]]"))
     backend = Path(__file__).resolve().parents[2]
     probe = (
         "import os,shutil,subprocess,sys\nfrom pathlib import Path\n"
         "aliases=Path(os.environ['PATH'].split(os.pathsep)[0])\n"
+        f"assert not Path({str(outer_aliases)!r}).exists()\n"
         "assert aliases.parent.parent == Path('/var/tmp')\n"
         "assert 'AMBIENT_SECRET' not in os.environ\n"
         "assert aliases.parent == Path(os.environ['ST_NATIVE_TOOL_ALIAS_ROOT'])\n"

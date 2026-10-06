@@ -373,7 +373,10 @@ def run_native(root: Path, plan: dict[str, Any], *, stage_id: str | None = None,
         aliases.mkdir(mode=0o700)
         for name, tool in plan["tools"].items():
             target = Path(tool["path"])
-            (aliases / name).symlink_to(target if target.is_absolute() else _local(root, tool["path"]))
+            # Point at the declared executable itself, rather than an inherited
+            # alias that a nested private temporary-directory overlay can hide.
+            target = target if target.is_absolute() else _local(root, tool["path"])
+            (aliases / name).symlink_to(target.resolve())
         return _run_native(root, plan, aliases=aliases, scratch=Path(scratch), stage_id=stage_id, reuse=reuse, full_gate=full_gate)
 
 
