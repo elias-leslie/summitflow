@@ -22,6 +22,7 @@ from ..config import (
     set_project_override,
 )
 from ..details import current_root, display_path, write_details
+from ..lib.aico_session_observation import observe_aico_owners
 from ..lib.usage import usage
 from ..output import handle_api_error, is_compact, output_error, output_json
 from ._session_resolver import resolve_session_id as _resolve_session_id
@@ -314,6 +315,7 @@ def _monitor_single_session(
     debug: bool,
     errors: bool,
     follow: bool,
+    json_output: bool = False,
 ) -> None:
     """Print monitor output for a single session by ID or short prefix."""
     client = STClient(require_project=False)
@@ -324,6 +326,10 @@ def _monitor_single_session(
         handle_api_error(e)
         return
 
+    session = observe_aico_owners([session])[0]
+    if json_output:
+        output_json(session)
+        return
     print(monitor_summary(session))
     session_project = str(session.get("project_id") or project_id or "-")
     project_flag = f" -P {session_project}" if session_project and session_project != "-" else ""
@@ -371,6 +377,7 @@ def _monitor_target(
         debug=debug,
         errors=errors,
         follow=follow,
+        json_output=json_output,
     )
 
 
