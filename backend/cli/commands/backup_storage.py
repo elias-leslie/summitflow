@@ -312,6 +312,8 @@ def update_backend(
     rclone_config: Annotated[str | None, typer.Option("--rclone-config", help="Private rclone config-file reference")] = None,
     key_directory: Annotated[str | None, typer.Option("--key-directory", help="Approved private credential directory")] = None,
     lock_directory: Annotated[str | None, typer.Option("--lock-directory", help="Absolute repository lock directory")] = None,
+    automatic_maintenance: Annotated[bool | None, typer.Option("--automatic-maintenance/--no-automatic-maintenance", help="Enable or disable recurring Restic maintenance and offsite backlog retries")] = None,
+    offsite_prune_qualified: Annotated[bool | None, typer.Option("--offsite-prune-qualified/--no-offsite-prune-qualified", help="Record or revoke operator qualification for Restic offsite prune")] = None,
     default: Annotated[bool | None, typer.Option("--default/--no-default", help="Change the default backend selection")] = None,
 ) -> None:
     """Update offsite or pilot repository settings on an existing backend."""
@@ -319,6 +321,9 @@ def update_backend(
         engine, local_repository, remote_repository, local_password_file,
         remote_password_file, rclone_config, key_directory, lock_directory,
     )
+    for key, value in (("restic_automatic_maintenance", automatic_maintenance), ("restic_offsite_prune_qualified", offsite_prune_qualified)):
+        if value is not None:
+            settings[key] = value
     if offsite_transport is not None and offsite_transport not in {"gio", "rclone"}:
         raise typer.BadParameter("--offsite-transport must be 'gio' or 'rclone'")
     for key, value in (("offsite_transport", offsite_transport), ("offsite_rclone_remote", offsite_rclone_remote), ("offsite_rclone_config", offsite_rclone_config), ("offsite_rclone_root_id", offsite_rclone_root_id), ("offsite_rclone_permanent_expiry", offsite_rclone_permanent_expiry)):

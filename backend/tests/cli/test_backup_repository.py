@@ -176,6 +176,52 @@ def test_storage_update_merges_pilot_settings_without_changing_default(monkeypat
     }}
 
 
+@pytest.mark.parametrize("flag,key,value", [
+    ("--automatic-maintenance", "restic_automatic_maintenance", True),
+    ("--no-automatic-maintenance", "restic_automatic_maintenance", False),
+    ("--offsite-prune-qualified", "restic_offsite_prune_qualified", True),
+    ("--no-offsite-prune-qualified", "restic_offsite_prune_qualified", False),
+])
+def test_storage_update_merges_explicit_policy_without_changing_repository(monkeypatch, flag, key, value):
+    from cli.commands import backup_storage
+    from cli.main import app
+
+    config = {
+        "engine": "restic", "restic_local_repository": "/backup/restic",
+        "restic_remote_repository": "rclone:drive:bounded",
+        "restic_local_password_file": "/private/local-password",
+        "restic_automatic_maintenance": not value,
+        "restic_offsite_prune_qualified": not value,
+    }
+    monkeypatch.setattr(backup_storage, "_api_get", lambda _: {"config": config})
+    put = MagicMock(return_value={"id": "pilot"})
+    monkeypatch.setattr(backup_storage, "_api_put", put)
+
+    result = runner.invoke(app, ["backup", "storage", "update", "pilot", flag])
+
+    assert result.exit_code == 0, result.output
+    put.assert_called_once_with("backup-storage/pilot", {"config": {**config, key: value}})
+
+
+@pytest.mark.parametrize("flag,value", [("--default", True), ("--no-default", False)])
+def test_storage_update_default_only_preserves_repository_and_policy(monkeypatch, flag, value):
+    from cli.commands import backup_storage
+    from cli.main import app
+
+    config = {
+        "engine": "restic", "restic_local_repository": "/backup/restic",
+        "restic_automatic_maintenance": False, "restic_offsite_prune_qualified": True,
+    }
+    monkeypatch.setattr(backup_storage, "_api_get", lambda _: {"config": config})
+    put = MagicMock(return_value={"id": "pilot"})
+    monkeypatch.setattr(backup_storage, "_api_put", put)
+
+    result = runner.invoke(app, ["backup", "storage", "update", "pilot", flag])
+
+    assert result.exit_code == 0, result.output
+    put.assert_called_once_with("backup-storage/pilot", {"config": config, "is_default": value})
+
+
 @pytest.mark.parametrize("command,tail,path,method", [
     ("initialize", [], "backup-storage/pilot/initialize?local_only=false", "_api_post"),
     ("initialize", ["--local-only"], "backup-storage/pilot/initialize?local_only=true", "_api_post"),
