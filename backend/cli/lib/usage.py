@@ -89,8 +89,8 @@ def _detail_spec(deferred_workflows: Iterable[str] = ()) -> UsageSpec:
     workflows = sorted(set(deferred_workflows))
     return UsageSpec(
         surface="st.details",
-        cmd="st tools manifest --surface <surface>",
-        when="before using an omitted surface or starting an on-demand workflow, load its canonical guidance and precautions with --surface; use compact st tools manifest to discover common surfaces, or --density full for the complete catalogue",
+        cmd="st tools manifest --surface <exact-surface-id>",
+        when="before using an omitted surface or starting an on-demand workflow, discover missing IDs from family or workflow labels with st tools manifest --discover <family-or-workflow>; then load canonical guidance and precautions with --surface <exact-surface-id>",
         why="On-demand workflows: " + "; ".join(workflows) if workflows else "",
         tier="mandate",
     )
@@ -125,6 +125,24 @@ def filter_specs(
         if consumer_profile is not None and spec.consumer_profiles and consumer_profile not in spec.consumer_profiles:
             continue
         out.append(spec)
+    return out
+
+
+def discover_specs(specs: Iterable[UsageSpec], query: str) -> list[UsageSpec]:
+    """Index registered ID families and normalized on-demand labels in registry order."""
+    query = query.strip()
+    if not query:
+        raise ValueError("discovery query must not be empty")
+    family = query if query.startswith("st.") else f"st.{query}"
+    workflow = " ".join(query.casefold().replace("-", " ").replace("_", " ").split())
+    out: list[UsageSpec] = []
+    seen: set[str] = set()
+    for spec in specs:
+        label = " ".join(spec.on_demand.casefold().replace("-", " ").replace("_", " ").split())
+        matches = spec.surface == family or spec.surface.startswith(family + ".") or (label and label == workflow)
+        if matches and spec.surface not in seen:
+            seen.add(spec.surface)
+            out.append(spec)
     return out
 
 

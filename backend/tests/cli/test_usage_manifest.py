@@ -13,6 +13,7 @@ from cli.lib.usage import (
     VALID_MANIFEST_DENSITIES,
     UsageSpec,
     collect_usage_specs,
+    discover_specs,
     filter_specs,
     select_specs_for_density,
     usage,
@@ -59,6 +60,9 @@ def test_specialized_guidance_is_not_selected_by_unrelated_task_or_history(tmp_p
     assert "before using" in details["when"]
     assert "precautions" in details["when"]
     assert "starting an on-demand workflow" in details["when"]
+    assert details["cmd"] == "st tools manifest --surface <exact-surface-id>"
+    assert "st tools manifest --discover <family-or-workflow>" in details["when"]
+    assert "family or workflow labels" in details["when"]
     assert "visual design" in details["why"]
 
 
@@ -328,12 +332,13 @@ def test_manifest_default_is_compact_but_explicit_task_and_full_are_available() 
     assert "st.browser" in {spec["surface"] for spec in json.loads(task.output)["tools"]}
 
 
-def test_manifest_unknown_surface_suggests_nearest_and_full_catalogue() -> None:
+def test_manifest_unknown_surface_suggests_nearest_and_compact_discovery() -> None:
     result = runner.invoke(tools_app, ["manifest", "--surface", "st.service.rebulid"])
 
     assert result.exit_code == 1
     assert "st.service.rebuild" in result.output
-    assert "st tools manifest --density full" in result.output
+    assert "st tools manifest --discover <family-or-workflow>" in result.output
+    assert "--density full" in result.output
 
 
 def test_manifest_unique_short_surface_avoids_discovery_retry() -> None:
@@ -376,3 +381,143 @@ def test_manifest_command_rejects_unknown_format() -> None:
     result = runner.invoke(tools_app, ["manifest", "--format", "xml"])
     assert result.exit_code == 1
     assert "Unknown --format" in result.output
+
+
+@pytest.mark.parametrize("query", ["service", "st.service", "sessions", "st.sessions", "backup", "st.backup"])
+def test_manifest_discovers_registered_family_without_full_guidance(query) -> None:
+    from cli.main import app as root_app
+
+    family = query if query.startswith("st.") else f"st.{query}"
+    expected = [spec for spec in collect_usage_specs(root_app) if spec.surface == family or spec.surface.startswith(family + ".")]
+    result = runner.invoke(tools_app, ["manifest", "--discover", query, "--format", "json"])
+    assert result.exit_code == 0, result.output
+    payload = json.loads(result.output)
+    assert payload.keys() == {"manifest_version", "discovery_query", "tools"}
+    assert payload["manifest_version"] == 1
+    assert payload["discovery_query"] == query
+    assert expected
+    assert payload["tools"] == [
+        {key: value for key, value in spec.to_dict().items() if key in {"surface", "cmd", "on_demand"}}
+        for spec in expected
+    ]
+
+
+@pytest.mark.parametrize("query", ["completion", "agent-context", "agent_context", "agent context", "  AGENT   CONTEXT  ", "tool-telemetry"])
+def test_manifest_discovers_normalized_registered_workflow(query) -> None:
+    from cli.main import app as root_app
+
+    label = " ".join(query.casefold().replace("-", " ").replace("_", " ").split())
+    expected = [spec.surface for spec in collect_usage_specs(root_app) if spec.on_demand == label]
+    result = runner.invoke(tools_app, ["manifest", "--discover", query, "--format", "json"])
+    assert result.exit_code == 0, result.output
+    assert expected
+    assert [row["surface"] for row in json.loads(result.output)["tools"]] == expected
+
+
+@pytest.fixture
+def discovery_registry(monkeypatch):
+    from cli.commands import tools
+
+    specs = [
+        UsageSpec(surface="st.family.universal", cmd="st family universal", on_demand="family"),
+        UsageSpec(surface="st.family.task", task_types=("ui-design",)),
+        UsageSpec(surface="st.family.agent", agent_slugs=("owner",)),
+        UsageSpec(surface="st.family.profile", consumer_profiles=("agent_runtime",)),
+        UsageSpec(surface="st.family.all", task_types=("ui-design",), agent_slugs=("owner",), consumer_profiles=("agent_runtime",)),
+        UsageSpec(surface="st.outside.label", on_demand="family"),
+        UsageSpec(surface="st.private", on_demand="restricted", task_types=("devops",), agent_slugs=("owner",), consumer_profiles=("agent_runtime",)),
+    ]
+    monkeypatch.setattr(tools, "collect_usage_specs", lambda app: specs)
+    return specs
+
+
+@pytest.mark.parametrize(("args", "excluded"), [
+    (["--task", "backend"], {"st.family.task", "st.family.all"}),
+    (["--agent", "other"], {"st.family.agent", "st.family.all"}),
+    (["--profile", "agent_startup"], {"st.family.profile", "st.family.all"}),
+    (["--task", "backend", "--agent", "other", "--profile", "agent_startup"], {"st.family.task", "st.family.agent", "st.family.profile", "st.family.all"}),
+])
+def test_manifest_discovery_preserves_applicability_filters(discovery_registry, args, excluded) -> None:
+    result = runner.invoke(tools_app, ["manifest", "--discover", "family", "--format", "json", *args])
+    assert result.exit_code == 0, result.output
+    assert [row["surface"] for row in json.loads(result.output)["tools"]] == [
+        spec.surface for spec in discovery_registry if spec.surface != "st.private" and spec.surface not in excluded
+    ]
+
+
+def test_discovery_task_delimiters_and_family_workflow_overlap(discovery_registry) -> None:
+    outputs = []
+    for task in ("ui-design", "ui_design"):
+        result = runner.invoke(tools_app, ["manifest", "--discover", "family", "--task", task, "--agent", "owner", "--profile", "agent_runtime", "--format", "json"])
+        assert result.exit_code == 0, result.output
+        outputs.append(json.loads(result.output))
+    assert outputs[0] == outputs[1]
+    assert [row["surface"] for row in outputs[0]["tools"]] == [spec.surface for spec in discovery_registry if spec.surface != "st.private"]
+    assert discover_specs([*discovery_registry, discovery_registry[0]], "family") == discovery_registry[:-1]
+
+
+@pytest.mark.parametrize("args", [["--task", "backend"], ["--agent", "other"], ["--profile", "agent_startup"]])
+def test_discovery_distinguishes_filtered_from_unknown_without_excluded_rows(discovery_registry, args) -> None:
+    result = runner.invoke(tools_app, ["manifest", "--discover", "restricted", *args])
+    assert result.exit_code == 1
+    assert "Filtered --discover topic" in result.output
+    assert "st.private" not in result.output
+
+
+@pytest.mark.parametrize("query", ["unknown-workflow", "families", "st.familyish", "agent contexts"])
+def test_discovery_rejects_unknown_topics_without_fuzzy_aliases(discovery_registry, query) -> None:
+    result = runner.invoke(tools_app, ["manifest", "--discover", query])
+    assert result.exit_code == 1
+    assert "Unknown --discover topic" in result.output
+
+
+@pytest.mark.parametrize("args", [["--discover", "   "], ["--discover", "service", "--surface", "st.service.rebuild"]])
+def test_discovery_rejects_invalid_selector_usage(args) -> None:
+    result = runner.invoke(tools_app, ["manifest", *args])
+    assert result.exit_code == 2
+
+
+def test_discovery_density_is_not_sliced_and_does_not_load_scores(monkeypatch, discovery_registry) -> None:
+    from cli.commands import tools
+
+    def forbidden_scores(path):
+        raise AssertionError("explicit discovery must not read scores")
+
+    monkeypatch.setattr(tools, "_load_scores_file", forbidden_scores)
+    outputs = []
+    for density in VALID_MANIFEST_DENSITIES:
+        result = runner.invoke(tools_app, ["manifest", "--discover", "family", "--density", density, "--scores-file", "-", "--format", "json"])
+        assert result.exit_code == 0, result.output
+        outputs.append(json.loads(result.output))
+    assert all(payload == outputs[0] for payload in outputs)
+
+
+@pytest.mark.parametrize(("args", "message"), [(["--density", "tiny"], "Unknown --density"), (["--format", "xml"], "Unknown --format")])
+def test_discovery_preserves_density_and_format_errors(args, message) -> None:
+    result = runner.invoke(tools_app, ["manifest", "--discover", "service", *args])
+    assert result.exit_code == 1
+    assert message in result.output
+
+
+@pytest.mark.parametrize("fmt", ["inject", "yaml", "markdown"])
+def test_discovery_formats_render_same_compact_rows(discovery_registry, fmt) -> None:
+    import yaml
+
+    result = runner.invoke(tools_app, ["manifest", "--discover", "family", "--format", fmt])
+    assert result.exit_code == 0, result.output
+    expected = [spec.surface for spec in discovery_registry[:-1]]
+    if fmt == "markdown":
+        assert "Discovery: family" in result.output
+        assert "**on_demand**: family" in result.output
+        assert [line.removeprefix("### `").removesuffix("`") for line in result.output.splitlines() if line.startswith("### `")] == expected
+    else:
+        payload = yaml.safe_load(result.output)
+        assert payload["discovery_query"] == "family"
+        assert [row["surface"] for row in payload["tools"]] == expected
+        assert all(row.keys() <= {"surface", "cmd", "on_demand"} for row in payload["tools"])
+
+
+def test_discovery_exact_registered_id_returns_its_own_row() -> None:
+    result = runner.invoke(tools_app, ["manifest", "--discover", "st.sessions.send", "--format", "json"])
+    assert result.exit_code == 0, result.output
+    assert [row["surface"] for row in json.loads(result.output)["tools"]] == ["st.sessions.send"]

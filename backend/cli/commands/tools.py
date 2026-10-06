@@ -13,6 +13,7 @@ from ..config import get_agent_hub_url
 from ..lib.usage import (
     VALID_MANIFEST_DENSITIES,
     collect_usage_specs,
+    discover_specs,
     filter_specs,
     render_inject,
     select_specs_for_density,
@@ -1059,10 +1060,14 @@ def cost(
 
 
 def _emit_manifest_markdown(payload: dict[str, Any]) -> None:
+    if "discovery_query" in payload:
+        print(f"Discovery: {payload['discovery_query']}\n")
     for tool in payload["tools"]:
         print(f"### `{tool['surface']}`")
         if tool.get("cmd"):
             print(f"- **cmd**: `{tool['cmd']}`")
+        if "discovery_query" in payload and tool.get("on_demand"):
+            print(f"- **on_demand**: {tool['on_demand']}")
         if tool.get("when"):
             print(f"- **when**: {tool['when']}")
         if tool.get("why"):
@@ -1145,20 +1150,25 @@ def _emit_manifest_payload(
     *,
     density: str,
     fmt: str,
+    discovery_query: str | None = None,
 ) -> None:
-    if fmt == INJECT_FORMAT:
+    if fmt == INJECT_FORMAT and discovery_query is None:
         print(render_inject(specs))
         return
-    payload: dict[str, Any] = {
-        "manifest_version": DEFAULT_MANIFEST_VERSION,
-        "density": density,
-        "tools": [spec.to_dict() for spec in specs],
-    }
+    payload: dict[str, Any] = {"manifest_version": DEFAULT_MANIFEST_VERSION}
+    if discovery_query is not None:
+        payload["discovery_query"] = discovery_query
+        payload["tools"] = [
+            {key: value for key, value in spec.to_dict().items() if key in {"surface", "cmd", "on_demand"}}
+            for spec in specs
+        ]
+    else:
+        payload.update(density=density, tools=[spec.to_dict() for spec in specs])
     if fmt == JSON_FORMAT:
         output_json(payload)
     elif fmt == MARKDOWN_FORMAT:
         _emit_manifest_markdown(payload)
-    elif fmt == YAML_FORMAT:
+    elif fmt == YAML_FORMAT or (fmt == INJECT_FORMAT and discovery_query is not None):
         _emit_manifest_yaml(payload)
     else:
         output_error(f"Unknown --format {fmt!r}; expected {INJECT_FORMAT}|{YAML_FORMAT}|{JSON_FORMAT}|{MARKDOWN_FORMAT}")
@@ -1170,6 +1180,9 @@ def manifest(
     ctx: typer.Context,
     surface: Annotated[
         str | None, typer.Option("--surface", help="Filter to one surface (e.g., st.service.rebuild)")
+    ] = None,
+    discover: Annotated[
+        str | None, typer.Option("--discover", help="Index canonical IDs and commands for a family or workflow label")
     ] = None,
     task: Annotated[
         str | None, typer.Option("--task", help="Filter to surfaces declaring this task_type")
@@ -1206,6 +1219,7 @@ def manifest(
         st tools manifest --task frontend --density task    # compact task context
         st tools manifest --density adaptive --scores-file scores.json
         st tools manifest --surface st.service.rebuild --format yaml
+        st tools manifest --discover service --format json
         st tools manifest --profile claude-code --format json
     """
     from ..main import app as root_app
@@ -1216,6 +1230,23 @@ def manifest(
         expected = "|".join(VALID_MANIFEST_DENSITIES)
         output_error(f"Unknown --density {density!r}; expected {expected}")
         raise typer.Exit(1)
+
+    if discover is not None:
+        if surface is not None:
+            raise typer.BadParameter("--discover and --surface are mutually exclusive")
+        discover = discover.strip()
+        if not discover:
+            raise typer.BadParameter("--discover requires a non-empty family or workflow label")
+        candidates = discover_specs(collect_usage_specs(root_app), discover)
+        if not candidates:
+            output_error(f"Unknown --discover topic {discover!r}; no registered family or workflow label matches.")
+            raise typer.Exit(1)
+        specs = filter_specs(candidates, task_type=task, agent_slug=agent, consumer_profile=profile)
+        if not specs:
+            output_error(f"Filtered --discover topic {discover!r}; no registered surfaces are available for these filters.")
+            raise typer.Exit(1)
+        _emit_manifest_payload(specs, density=density, fmt=fmt, discovery_query=discover)
+        return
 
     scores = _load_scores_file(scores_file)
 
@@ -1244,7 +1275,8 @@ def manifest(
         hint = f" Did you mean: {', '.join(nearby)}?" if nearby else ""
         output_error(
             f"Unknown or filtered --surface {surface!r}.{hint} "
-            "Use st tools manifest --density full to list registered surfaces."
+            "Use st tools manifest --discover <family-or-workflow> to find canonical IDs; "
+            "--density full lists the complete catalogue."
         )
         raise typer.Exit(1)
     _emit_manifest_payload(specs, density=density, fmt=fmt)
