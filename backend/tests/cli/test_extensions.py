@@ -359,6 +359,46 @@ def test_learn_binding_forwards_native_codex_session_identity():
     assert "CODEX_SESSION_ID" in binding["environment"]
 
 
+def test_web_registration_exposes_pinned_dom_and_offline_artifact_workflows():
+    registry_path = Path(__file__).resolve().parents[3] / "scripts/lib/tool-registry.json"
+    record = next(row for row in load_extensions(set(), registry_path=registry_path).records
+                  if row.binding is not None and row.binding.namespace == "web")
+    assert record.status == "unverified"
+    assert record.manifest is not None
+    assert record.binding is not None
+    assert "process" in record.manifest.effects
+    assert "process" in record.binding.grant.effects
+    for command in ("batch", "refocus", "doctor"):
+        assert command in record.manifest.help
+    assert "lightpanda" in record.manifest.help["fetch"]
+    assert "--wait-script" in record.manifest.help["fetch"]
+
+
+def test_web_binding_forwards_pins_and_cache_without_unrelated_environment(
+    tmp_path, capfd, monkeypatch,
+):
+    registry_path = Path(__file__).resolve().parents[3] / "scripts/lib/tool-registry.json"
+    record = next(row for row in load_extensions(set(), registry_path=registry_path).records
+                  if row.binding is not None and row.binding.namespace == "web")
+    assert record.binding is not None
+    record = replace(record, binding=record.binding.model_copy(
+        update={"executable": "fixture", "presentation": None}))
+    keys = ["AGENT_HUB_WEB_LIGHTPANDA_BINARY", "AGENT_HUB_WEB_LIGHTPANDA_SHA256",
+            "AGENT_HUB_WEB_LIGHTPANDA_VERSION", "AGENT_HUB_WEB_CACHE_DIR"]
+    values = {key: f"fixture-{index}" for index, key in enumerate(keys)}
+    for key, value in values.items():
+        monkeypatch.setenv(key, value)
+    monkeypatch.setenv("UNRELATED_SECRET", "must-not-cross")
+    executable = tmp_path / "fixture"
+    executable.write_text(f"#!{sys.executable}\nimport json,os\n"
+                          f"print(json.dumps({{key: os.getenv(key) for key in {[*keys, 'UNRELATED_SECRET']!r}}}))\n")
+    executable.chmod(0o755)
+    assert dispatch_extension(record, [], context=context(tmp_path),
+                              root_resolver=lambda _owner: str(tmp_path)) == 0
+    payload = json.loads(capfd.readouterr().out)
+    assert payload == {**values, "UNRELATED_SECRET": None}
+
+
 @pytest.mark.parametrize("signum", [signal.SIGINT, signal.SIGTERM])
 def test_real_cancellation_forwards_signal_and_reaps(tmp_path, signum):
     registry = registration(tmp_path)

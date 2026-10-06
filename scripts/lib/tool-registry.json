@@ -444,7 +444,8 @@
           "network",
           "read-remote",
           "write-local",
-          "credentials"
+          "credentials",
+          "process"
         ]
       },
       "environment": [
@@ -453,7 +454,8 @@
         "ST_BROWSER_HOST",
         "AGENT_HUB_WEB_LIGHTPANDA_BINARY",
         "AGENT_HUB_WEB_LIGHTPANDA_SHA256",
-        "AGENT_HUB_WEB_LIGHTPANDA_VERSION"
+        "AGENT_HUB_WEB_LIGHTPANDA_VERSION",
+        "AGENT_HUB_WEB_CACHE_DIR"
       ],
       "presentation": "web-details"
     },
