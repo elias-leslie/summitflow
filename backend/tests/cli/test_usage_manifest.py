@@ -23,12 +23,50 @@ runner = CliRunner()
 
 
 @pytest.mark.parametrize("density", ["core", "adaptive"])
-def test_memory_write_guidance_survives_startup_filtering(density):
-    result = runner.invoke(tools_app, ["manifest", "--density", density, "--profile", "agent_startup", "--format", "json"])
-    assert result.exit_code == 0
+def test_memory_guidance_is_deferred_from_startup_even_with_history(density, tmp_path):
+    scores = tmp_path / "scores.json"
+    scores.write_text(json.dumps({f"memory {command}": 100 for command in ("search", "save", "update")}))
+    result = runner.invoke(tools_app, [
+        "manifest", "--density", density, "--profile", "agent_startup",
+        "--scores-file", str(scores), "--format", "json",
+    ])
+    assert result.exit_code == 0, result.output
     specs = {row["surface"]: row for row in json.loads(result.output)["tools"]}
-    assert {"st.memory.save", "st.memory.update"} <= specs.keys()
+    assert not {"st.memory.search", "st.memory.save", "st.memory.update"} & specs.keys()
+    assert "memory authoring" in specs["st.details"]["why"]
+    assert "--discover <family-or-workflow>" in specs["st.details"]["when"]
+
+
+def test_deferred_memory_guidance_is_discoverable_and_complete_in_full_density():
+    surfaces = {"st.memory.search", "st.memory.save", "st.memory.update"}
+    discovery = runner.invoke(tools_app, ["manifest", "--discover", "memory authoring", "--format", "json"])
+    assert discovery.exit_code == 0, discovery.output
+    discovered = {row["surface"]: row for row in json.loads(discovery.output)["tools"]}
+    assert surfaces <= discovered.keys()
+    assert all(discovered[surface]["on_demand"] == "memory authoring" for surface in surfaces)
+
+    full = runner.invoke(tools_app, ["manifest", "--density", "full", "--profile", "agent_startup", "--format", "json"])
+    assert full.exit_code == 0, full.output
+    specs = {row["surface"]: row for row in json.loads(full.output)["tools"]}
+    assert surfaces <= specs.keys()
+    for surface in surfaces:
+        exact = runner.invoke(tools_app, ["manifest", "--surface", surface, "--format", "json"])
+        assert exact.exit_code == 0, exact.output
+        assert specs[surface] == json.loads(exact.output)["tools"][0]
     assert "explicit scope" in " ".join(specs["st.memory.save"]["precautions"])
+
+
+def test_rebuild_guidance_requires_deployed_behavior_changes_and_preserves_managed_scope():
+    result = runner.invoke(tools_app, ["manifest", "--surface", "st.service.rebuild", "--format", "json"])
+    assert result.exit_code == 0, result.output
+    spec = json.loads(result.output)["tools"][0]
+    assert "deployed executable, configuration, or worker behavior changes" in spec["when"]
+    assert "require a build+migrate+restart cycle" in spec["when"]
+    assert "use this managed cycle" in spec["when"]
+    assert "never raw pnpm/npm/uv build or systemctl restart" in spec["when"]
+    assert "any code/config/worker change" not in spec["when"]
+    assert "explicit project, not cwd-implicit" in spec["precautions"]
+    assert "use full scope for shared or uncertain changes; worker scope includes backend consumers" in spec["precautions"]
 
 
 def test_compact_discovery_covers_ordinary_task_work_without_full_catalogue() -> None:

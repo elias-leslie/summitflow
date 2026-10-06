@@ -257,8 +257,9 @@ def status(
     surface="st.service.rebuild",
     cmd="st service rebuild <project> --detach",
     when=(
-        "any code/config/worker change in a managed project needs to go live; "
-        "use this for the build+migrate+restart cycle, never raw pnpm/npm/uv build "
+        "deployed executable, configuration, or worker behavior changes require a "
+        "build+migrate+restart cycle to go live in a managed project; use this managed cycle, "
+        "never raw pnpm/npm/uv build "
         "or systemctl restart"
     ),
     precautions=(
