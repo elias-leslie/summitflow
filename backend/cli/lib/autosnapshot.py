@@ -14,6 +14,7 @@ import logging
 import shutil
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
+from functools import partial
 from pathlib import Path
 
 from .autosnapshot_helpers import (
@@ -25,18 +26,43 @@ from .quick_snapshots import (
     SnapshotScope,
     capture_snapshot,
     cleanup_recovery_copies,
-    delete_subvolume,
     load_manifest,
     recovery_catalogue,
     save_manifest,
 )
 from .snapshots._physical import all_entries, physical_lock, referenced_elsewhere
+from .snapshots._pruning import delete_managed_readonly
 from .workspace_paths import (
     get_workspaces_root,
     workspaces_root_available,
 )
 
 _AUTO_SOURCE_PREFIX = "auto-"
+
+
+def delete_subvolume(path: Path) -> None:
+    """Pruning-only deletion; generic rollback/source deletion stays unprivileged."""
+    recovery_store = get_workspaces_root().absolute() / ".snapshots" / "recoveries"
+    project = path.parent.name if path.parent.parent == recovery_store else None
+    delete_managed_readonly(path, recovery_project=project)
+
+
+def _delete_released_copy(entry: QuickSnapshot, path: Path) -> None:
+    _require_prunable_root(entry, path)
+    # Legacy copies outside .snapshots retain their existing unprivileged cleanup.
+    if path.parent == get_workspaces_root().absolute() / ".snapshots" / "recoveries" / entry.project_id:
+        delete_subvolume(path)
+    else:
+        from .quick_snapshots import delete_subvolume as delete_legacy
+
+        delete_legacy(path)
+
+
+def _require_prunable_root(entry: QuickSnapshot, path: Path) -> None:
+    target = path.absolute()
+    for root in (entry.scope_path, entry.repo_root, entry.capture_root):
+        if root and (target == Path(root).absolute() or target in Path(root).absolute().parents):
+            raise RuntimeError(f"Pruning refuses a live source or capture root: {path}")
 
 
 @dataclass(frozen=True)
@@ -237,6 +263,7 @@ def _delete_entries(*, project_id: str, scope: SnapshotScope, entries: list[Quic
         try:
             if any(not copy.get("deleted_at") for copy in recovery_catalogue(entry)):
                 raise RuntimeError("Recovery copies must be released and physically cleaned before pruning this point")
+            _require_prunable_root(entry, Path(entry.snapshot_path))
             shared = referenced_elsewhere(entry)
             if not shared:
                 delete_subvolume(Path(entry.snapshot_path))
@@ -351,7 +378,7 @@ def prune_scope(
                 project_id, ", ".join(unknown),
             )
         for entry in entries:
-            roots = cleanup_recovery_copies(entry, delete_fn=delete_subvolume, dry_run=dry_run)
+            roots = cleanup_recovery_copies(entry, delete_fn=partial(_delete_released_copy, entry), dry_run=dry_run)
             for root in roots:
                 copy = next(copy for copy in reversed(entry.recovery_copies) if copy["root_path"] == root)
                 action = "would-delete" if dry_run else "failed" if copy.get("deletion_error") else "deleted"

@@ -6,6 +6,7 @@ import json
 import os
 import shutil
 import subprocess
+import sys
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from types import SimpleNamespace
@@ -15,6 +16,7 @@ import pytest
 from cli.lib import autosnapshot as auto
 from cli.lib import leases
 from cli.lib import quick_snapshots as snap
+from cli.lib.snapshots import _pruning as pruning
 from cli.lib.snapshots import _saved_work as saved
 from cli.lib.snapshots._manifest import _manifest_path
 from cli.lib.snapshots._models import QuickSnapshot, SnapshotError
@@ -56,6 +58,7 @@ def workspace(tmp_path, monkeypatch):
         shutil.copytree(source, destination, symlinks=True, ignore=shutil.ignore_patterns(".snapshots"))
     monkeypatch.setattr(snap, "_snapshot_subvolume", snapshot)
     monkeypatch.setattr(snap, "_delete_subvolume", lambda p: shutil.rmtree(p) if p.exists() else None)
+    monkeypatch.setattr(snap, "delete_subvolume", lambda p: shutil.rmtree(p) if p.exists() else None)
     monkeypatch.setattr(auto, "delete_subvolume", lambda p: shutil.rmtree(p) if p.exists() else None)
     return SimpleNamespace(root=root, project=project, calls=calls)
 
@@ -283,6 +286,10 @@ def test_time_retention_hourly_and_protected_points(workspace):
     entries += [point_at(workspace, f"recent-{i}", timedelta(hours=2, minutes=i)) for i in range(3)]
     # Same hour two days ago: newest hour point survives, older one is prunable.
     entries += [point_at(workspace, "hour-first", timedelta(days=2, minutes=1)), point_at(workspace, "hour-second", timedelta(days=2, minutes=2))]
+    # Do not straddle the wall-clock hour when this test runs at minute 1.
+    hour = (datetime.now(UTC) - timedelta(days=2)).replace(minute=30, second=0, microsecond=0)
+    next(point for point in entries if point.id == "hour-first").created_at = hour.isoformat()
+    next(point for point in entries if point.id == "hour-second").created_at = (hour - timedelta(minutes=1)).isoformat()
     entries += [point_at(workspace, "old", timedelta(days=10)), point_at(workspace, "unfinished", timedelta(days=11), unfinished=True), point_at(workspace, "recovery", timedelta(days=12), recovery_active=True), point_at(workspace, "pinned", timedelta(days=13), pin_reason="review", pin_until=(datetime.now(UTC) + timedelta(days=1)).isoformat())]
     assert {p.id for p in auto._retention_candidates(entries, auto.DEFAULT_POLICY)} == {"hour-second", "old"}
 
@@ -336,6 +343,15 @@ def test_native_btrfs_shared_capture_readonly_recovery_and_isolated_restore(tmp_
         (recovery_path(recovered) / "new.txt").write_text("forbidden")
     with pytest.raises(SnapshotError, match="rollback is refused"):
         snap.restore_snapshot(point.id, project_id="fixture", cwd=project)
+    recovery_root = Path(recovered.recovery_copies[0]["root_path"])
+    snap.release_recovery(point.id, project_id="fixture", cwd=project)
+    auto.prune_scope(project_id="fixture", scope=snap.resolve_scope(project, "fixture"))
+    assert not recovery_root.exists()
+    retained = snap.load_manifest("fixture", snap.resolve_scope(project, "fixture"))[0]
+    assert retained.recovery_copies[0]["deleted_at"]
+    assert Path(point.snapshot_path).exists() and project.exists()
+    snap._require_readonly_point(Path(point.snapshot_path))
+    assert shared.snapshot_path == point.snapshot_path
     # Whole-project legacy restore remains available only for isolated native projects.
     isolated = root / "projects/isolated"
     subprocess.run(["btrfs", "subvolume", "create", str(isolated)], check=True, capture_output=True)
@@ -691,3 +707,108 @@ def test_recovery_catalogue_missing_active_flag_cannot_authorize_cleanup(workspa
     assert point.recovery_copies[0]["released_at"] is None
     assert snap.cleanup_recovery_copies(point, delete_fn=shutil.rmtree) == []
     assert unique.read_text() == "unique saved copy edit"
+
+
+@pytest.mark.parametrize("relative", ["projects/fixture", "recoveries/fixture/copy", "fixture/projects/fixture", "../projects/fixture", "fixture/projects/fixture/point/child", "fixture/backup/fixture/point"])
+def test_privileged_pruning_refuses_non_point_leaves(tmp_path, monkeypatch, relative):
+    monkeypatch.setenv("ST_WORKSPACES_ROOT", str(tmp_path))
+    monkeypatch.setattr(pruning.subprocess, "run", lambda *a, **k: pytest.fail("must refuse before sudo"))
+    with pytest.raises(SnapshotError, match="exact managed"):
+        pruning.delete_managed_readonly(tmp_path / ".snapshots" / relative)
+
+
+def test_privileged_pruning_refuses_symlink_component(tmp_path, monkeypatch):
+    monkeypatch.setenv("ST_WORKSPACES_ROOT", str(tmp_path))
+    (tmp_path / ".snapshots").symlink_to(tmp_path / "other", target_is_directory=True)
+    monkeypatch.setattr(pruning.subprocess, "run", lambda *a, **k: pytest.fail("must refuse before sudo"))
+    with pytest.raises(SnapshotError, match="symlink component"):
+        pruning.delete_managed_readonly(tmp_path / ".snapshots/fixture/projects/fixture/point")
+
+
+def test_privileged_pruning_failure_retains_released_copy(workspace, monkeypatch):
+    point = capture(workspace)
+    recovered = snap.recover_snapshot(point.id, project_id="fixture", cwd=workspace.project)
+    snap.release_recovery(point.id, project_id="fixture", cwd=workspace.project)
+    monkeypatch.setattr(auto, "delete_subvolume", lambda path: pruning.delete_managed_readonly(path, recovery_project="fixture"))
+    calls = []
+    def denied(command, **kwargs):
+        calls.append(command)
+        raise subprocess.CalledProcessError(1, command, stderr="read-only deletion denied")
+    monkeypatch.setattr(pruning.subprocess, "run", denied)
+    scope = snap.resolve_scope(workspace.project, "fixture")
+    assert auto.prune_scope(project_id="fixture", scope=scope) == []
+    retained = snap.load_manifest("fixture", scope)[0]
+    assert "read-only deletion denied" in retained.recovery_copies[0]["deletion_error"]
+    assert not retained.recovery_copies[0]["deleted_at"]
+    assert recovery_path(recovered).exists() and Path(point.snapshot_path).exists()
+    assert calls[0][:5] == ["sudo", "-n", "/usr/bin/python3", "-I", "-c"]
+
+
+def test_pruning_refuses_catalogued_live_source_before_deletion(workspace, monkeypatch):
+    point = capture(workspace)
+    point.scope_path = point.snapshot_path
+    monkeypatch.setattr(auto, "delete_subvolume", lambda path: pytest.fail("must refuse a live root"))
+    scope = snap.resolve_scope(workspace.project, "fixture")
+    assert auto._delete_entries(project_id="fixture", scope=scope, entries=[point], manifest_dir=None) == []
+    assert "live source" in str(point.deletion_error)
+    assert Path(point.snapshot_path).exists()
+
+
+@pytest.mark.parametrize("refusal", [None, "writable", "nested", "changed", "mounted", "owner", "different-mount"])
+def test_privileged_pruning_revalidates_physical_leaf(tmp_path, monkeypatch, refusal):
+    """Exercise the actual isolated root script with fake Btrfs metadata only."""
+    store = tmp_path / "store"
+    target = store / "point"
+    target.mkdir(parents=True)
+    actual = target.stat()
+    # Btrfs subvolume roots have distinct devices even within one mount.
+    leaf_device = actual.st_dev + 1
+    info = SimpleNamespace(st_uid=os.getuid(), st_dev=leaf_device, st_ino=256)
+    real_fstat, real_stat = os.fstat, os.stat
+    def fstat(fd):
+        if os.readlink(f"/proc/self/fd/{fd}") == str(target):
+            if refusal == "owner":
+                return SimpleNamespace(st_uid=os.getuid() + 1, st_dev=leaf_device, st_ino=256)
+            return info
+        return real_fstat(fd)
+    def stat(path, *args, **kwargs):
+        return info if path == "point" else real_stat(path, *args, **kwargs)
+    monkeypatch.setattr(os, "fstat", fstat)
+    monkeypatch.setattr(os, "stat", stat)
+    real_read = Path.read_text
+    def read(path, *args, **kwargs):
+        if path.parent == Path("/proc/self/fdinfo"):
+            leaf = os.readlink(f"/proc/self/fd/{path.name}") == str(target)
+            return f"mnt_id:\t{128 if leaf and refusal == 'different-mount' else 127}\n"
+        if path == Path("/proc/self/mountinfo") and refusal == "mounted":
+            return f"1 0 0:0 / {target} rw - btrfs /dev/test rw\n"
+        return real_read(path, *args, **kwargs)
+    monkeypatch.setattr(Path, "read_text", read)
+    calls = []
+    def btrfs(command, **kwargs):
+        calls.append(command)
+        assert command[0] == "/usr/bin/btrfs"
+        if command[1:3] == ["property", "get"]:
+            output = "ro=false" if refusal == "writable" else "ro=true"
+        elif command[1:3] == ["subvolume", "show"]:
+            output = "UUID: changed" if refusal == "changed" and command[-1] == "point" else "UUID: original"
+        elif command[1:3] == ["subvolume", "list"]:
+            output = "ID 123 path nested" if refusal == "nested" else ""
+        else:
+            assert command == ["/usr/bin/btrfs", "subvolume", "delete", "point"]
+            output = ""
+        return SimpleNamespace(stdout=output)
+    monkeypatch.setattr(subprocess, "run", btrfs)
+    monkeypatch.setattr(sys, "argv", ["prune", str(target), str(store), str(os.getuid()), str(leaf_device), "256"])
+    previous = Path.cwd()
+    try:
+        if refusal:
+            with pytest.raises(AssertionError):
+                exec(pruning._DELETE_READONLY, {})
+        else:
+            exec(pruning._DELETE_READONLY, {})
+    finally:
+        os.chdir(previous)
+    deletes = [command for command in calls if command[1:3] == ["subvolume", "delete"]]
+    assert len(deletes) == (0 if refusal else 1)
+    assert target.exists()
