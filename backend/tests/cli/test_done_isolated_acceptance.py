@@ -371,6 +371,91 @@ def test_isolation_preserves_equivalent_modes_and_fits_real_unix_socket_paths(na
     assert host_only.read_text() == "outside isolated /tmp\n"
 
 
+def test_isolated_native_fallback_preserves_nested_aliases_and_host_tmp(native_source, monkeypatch):
+    repo, _sha, _store = native_source
+    backend = Path(__file__).resolve().parents[2]
+    monkeypatch.delenv("ST_NATIVE_TMP_HOST_ROOT", raising=False)
+    inner_probe = """
+import os
+import shutil
+from pathlib import Path
+alias = Path(os.environ['PATH'].split(os.pathsep)[0])
+assert alias.parent.parent == Path('/var/tmp')
+assert shutil.which('python') == str(alias / 'python')
+assert (alias / 'python').is_file()
+assert not Path('/tmp/outer-marker').exists()
+Path('/tmp/inner-marker').write_text('nested private scratch')
+"""
+    native_probe = f"""
+import os
+import shutil
+import subprocess
+import sys
+import tempfile
+from pathlib import Path
+sys.path.insert(0, {str(backend)!r})
+from cli.commands.done_task_acceptance import _sandbox_command
+alias = Path(os.environ['PATH'].split(os.pathsep)[0])
+assert alias.parent.parent == Path('/var/tmp')
+assert shutil.which('python') == str(alias / 'python')
+Path('/tmp/outer-marker').write_text('outer private scratch')
+with tempfile.TemporaryDirectory(dir='/var/tmp') as directory:
+    root = Path.cwd()
+    command = _sandbox_command(root, root, root/'.git', root/'.git', Path(directory), [], 'fixture', (), 'fixture', False)
+    result = subprocess.run([*command[:command.index('--')+1], sys.executable, '-P', '-c', {inner_probe!r}], capture_output=True, text=True, check=False)
+    assert result.returncode == 0, result.stdout + result.stderr
+assert Path('/tmp/outer-marker').read_text() == 'outer private scratch'
+assert not Path('/tmp/inner-marker').exists()
+print('{{"passed":1,"failed":0,"skipped":0}}')
+"""
+    with tempfile.TemporaryDirectory(prefix="st-host-marker-", dir="/var/tmp") as host_directory:
+        marker = Path(host_directory) / "marker"
+        marker.write_text("host remains unchanged")
+        nested_config = (
+            '[native]\nschema_version=1\nlegacy_tools=[]\nlocks=["native.lock"]\n'
+            f'[native.tools]\npython={sys.executable!r}\nbwrap={str(shutil.which("bwrap"))!r}\n'
+            '[[native.stages]]\nid="nested"\nkind="test"\ncoverage="full"\n'
+            'argv=["python","-B","probe.py"]\n'
+            '[native.stages.evidence]\nformat="json"\nsource="stdout"\n'
+        )
+        check = repo / "check.py"
+        check.write_text(check.read_text() + f"""
+import os
+import sys
+import tempfile
+sys.path.insert(0, {str(backend)!r})
+from cli.commands.check_native import native_plan, run_native
+host_marker = Path({str(marker)!r})
+os.environ.pop('ST_NATIVE_TMP_HOST_ROOT', None)
+with tempfile.TemporaryDirectory(dir='/tmp') as directory:
+    child = Path(directory)
+    (child/'.git').mkdir()
+    (child/'native.lock').write_text('locked fixture')
+    (child/'.st-check.toml').write_text({nested_config!r})
+    (child/'probe.py').write_text({native_probe!r})
+    plan = native_plan(child)
+    assert plan is not None
+    result = run_native(child, plan, reuse=False)
+    assert result['state'] == 'pass', result
+assert not host_marker.exists()
+host_marker.parent.mkdir()
+host_marker.write_text('private shadow')
+assert host_marker.read_text() == 'private shadow'
+""")
+        config = repo / ".st-check.toml"
+        config.write_text(config.read_text().replace("/usr/bin/python3", sys.executable))
+        git(repo, "add", "check.py", ".st-check.toml")
+        git(repo, "commit", "--only", "-qm", "native fallback nested isolation contract", "--", "check.py", ".st-check.toml")
+        try:
+            receipt = accept_isolated_revision(repo, sha=git(repo, "rev-parse", "HEAD"), scope=("check.py", ".st-check.toml"), task_id="task-source")
+        except acceptance.AcceptanceError as exc:
+            observations = repo / ".git/st/acceptance/isolated-observations"
+            artifacts = [*observations.glob("*.log"), *observations.glob("*/native-artifacts/*")]
+            raise AssertionError("\n".join(path.read_text() for path in artifacts)) from exc
+        assert receipt["state"] == "success"
+        assert marker.read_text() == "host remains unchanged"
+
+
 def test_private_tmp_supports_nested_isolated_acceptance(native_source):
     repo, _sha, _store = native_source
     backend = Path(__file__).resolve().parents[2]

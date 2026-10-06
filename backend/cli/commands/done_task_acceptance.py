@@ -200,7 +200,8 @@ def _bindings(repo: Path, source: Path) -> list[tuple[Path, Path]]:
 def _sandbox_command(repo: Path, source: Path, metadata: Path, common: Path,
                      temporary: Path, bindings: list[tuple[Path, Path]],
                      sha: str, scope: tuple[str, ...], task_id: str, reuse: bool,
-                     coverage: str = "full", required_stages: Sequence[str] = ()) -> list[str]:
+                     coverage: str = "full", required_stages: Sequence[str] = (), *,
+                     private_var_tmp: Path | None = None) -> list[str]:
     binary = shutil.which("bwrap")
     if not binary:
         raise acceptance.AcceptanceError("Isolated acceptance is unavailable: bwrap is not installed; prepare the managed isolation capability")
@@ -215,10 +216,17 @@ def _sandbox_command(repo: Path, source: Path, metadata: Path, common: Path,
              "XDG_STATE_HOME": home / ".local/state"}
     for path in state.values():
         (scratch / path.relative_to("/tmp")).mkdir(mode=0o700, parents=True, exist_ok=True)
-    command = [binary, "--die-with-parent", "--ro-bind", "/", "/", "--proc", "/proc", "--dev", "/dev",
-               "--bind", str(temporary), str(temporary), "--bind", str(scratch), "/tmp",
-               "--bind", str(source), str(repo), "--setenv", "TMPDIR", "/tmp",
-               "--setenv", "ST_NATIVE_TMP_HOST_ROOT", str(scratch)]
+    command = [binary, "--die-with-parent", "--ro-bind", "/", "/"]
+    if private_var_tmp is not None:
+        # Only outer acceptance requests this private fallback. Nested native
+        # helpers must retain their existing /var/tmp tool aliases instead.
+        command.extend(["--bind", str(private_var_tmp), "/var/tmp"])
+    # Restore the same host path after the optional overlay: temporary itself
+    # may live under /var/tmp, and Docker/native tools consume its backing paths.
+    command.extend(["--proc", "/proc", "--dev", "/dev",
+                    "--bind", str(temporary), str(temporary), "--bind", str(scratch), "/tmp",
+                    "--bind", str(source), str(repo), "--setenv", "TMPDIR", "/tmp",
+                    "--setenv", "ST_NATIVE_TMP_HOST_ROOT", str(scratch)])
     for name, path in state.items():
         command.extend(["--setenv", name, str(path)])
     # Corepack launches the already-prepared package manager from its own
@@ -280,6 +288,12 @@ def accept_isolated_revision(repo: Path, *, sha: str, scope: tuple[str, ...], ta
         temporary_parent = os.environ.get("ST_NATIVE_TMP_HOST_ROOT", "/var/tmp")
         with tempfile.TemporaryDirectory(prefix="st-a-", dir=temporary_parent) as directory:
             temporary = Path(directory)
+            # Preserve an inherited scratch mapping and its caller tool aliases.
+            # Only the outer run needs a new private /var/tmp fallback.
+            private_var_tmp = None
+            if "ST_NATIVE_TMP_HOST_ROOT" not in os.environ:
+                private_var_tmp = temporary / "v"
+                private_var_tmp.mkdir(mode=0o700)
             source = temporary / "source"
             # A local object-only clone copies committed history and exact HEAD,
             # never staged/untracked files, hook configuration, or a mutable @.
@@ -304,7 +318,8 @@ def accept_isolated_revision(repo: Path, *, sha: str, scope: tuple[str, ...], ta
                 for _original, canonical in bindings:
                     handle.write("/" + canonical.relative_to(repo).as_posix() + "\n")
             command = _sandbox_command(repo, source, metadata, common, temporary, bindings,
-                                       before["commit"], scope, task_id, reuse, coverage, required_stages)
+                                       before["commit"], scope, task_id, reuse, coverage, required_stages,
+                                       private_var_tmp=private_var_tmp)
             from cli.commands.check_native import transfer_native_stage_receipts
 
             stage_store = common / "st" / "native-stages"
