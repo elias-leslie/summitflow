@@ -21,6 +21,14 @@ from app.tasks.backup_activity import BackupCancelled
 NOW = datetime(2026, 10, 5, 12, tzinfo=UTC)
 
 
+def test_enabled_reads_persistent_settings_and_respects_process_override(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.delenv("BACKUP_BTRBK_ENABLED", raising=False)
+    monkeypatch.setattr(host, "get_settings", lambda: SimpleNamespace(backup_btrbk_enabled=True))
+    assert host._enabled() is True
+    monkeypatch.setenv("BACKUP_BTRBK_ENABLED", "false")
+    assert host._enabled() is False
+
+
 def test_configuration_inspection_does_not_create_operational_lock(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     config = tmp_path / "btrbk.conf"
     config.write_text("\n".join(("snapshot_preserve_min latest", "snapshot_preserve no", "target_preserve_min latest", "target_preserve 7d", "snapshot_create ondemand")))
@@ -193,7 +201,7 @@ def test_partial_database_association_finishes_without_another_host_capture(capt
 
 
 def test_disabled_and_daily_incomplete_never_start_capture(capture: dict[str, Any], monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.delenv("BACKUP_BTRBK_ENABLED")
+    monkeypatch.setenv("BACKUP_BTRBK_ENABLED", "false")
     assert host.run_scheduled_host_backup(NOW) == {"status": "skipped", "reason": "host-backup-disabled"}
     capture["bulk"].assert_not_called()
     monkeypatch.setenv("BACKUP_BTRBK_ENABLED", "true")

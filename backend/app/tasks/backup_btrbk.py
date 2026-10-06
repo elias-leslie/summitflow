@@ -44,7 +44,10 @@ def _state_root() -> Path:
 
 
 def _enabled() -> bool:
-    return os.environ.get("BACKUP_BTRBK_ENABLED", "").lower() in {"1", "true", "yes"}
+    override = os.environ.get("BACKUP_BTRBK_ENABLED")
+    if override is not None:
+        return override.lower() in {"1", "true", "yes"}
+    return get_settings().backup_btrbk_enabled
 
 
 def _run(args: list[str]) -> subprocess.CompletedProcess[str]:
