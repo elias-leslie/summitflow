@@ -31,7 +31,9 @@ PROFILES = (
 )
 SERVICES = ("neri-proxy.service", "neri-wordpress-proxy.service")
 FILES = ("proxy_runner.py", "proxy_core.py")
-FIXTURE_CONTROLS = ("fixture.lock.json", ".wp-env.json", "package.json", "package-lock.json", "setup.sh", "seed.sh")
+FIXTURE_CONTROLS = (
+    "fixture.lock.json", ".wp-env.json", "package.json", "package-lock.json", "patch-wp-env.cjs", "setup.sh", "seed.sh",
+)
 FIXTURE_FILES = ("reset-profiles.json", "target_reset.py", *("fixture/" + name for name in FIXTURE_CONTROLS))
 FIXTURE_ROOT = Path("/opt/neri-wordpress-fixture")
 RESET_CONFIG = Path("/etc/neri-runner/reset-profiles.json")

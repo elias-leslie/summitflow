@@ -65,7 +65,10 @@ def new_bundle():
 
 
 def fixture_public_files(version="old"):
-    controls = {name: ("fixture-" + name).encode() for name in guest.FIXTURE_CONTROLS if name != "fixture.lock.json"}
+    # Independent fixture contract: runner allowlist omissions must fail these tests.
+    controls = {name: ("fixture-" + name).encode() for name in (
+        ".wp-env.json", "package.json", "package-lock.json", "patch-wp-env.cjs", "setup.sh", "seed.sh",
+    )}
     lock = {
         "schema_version": "neri.wordpress-fixture.v1", "reset_version": "fixture-seed-v1",
         "wordpress": {"version": version},
@@ -130,6 +133,11 @@ def test_runner_bundle_transport_is_bounded_and_round_trips_exact_payload():
 
     assert guest.decode_payload(encoded) == value
     assert len(encoded) < len(raw) // 10
+
+
+def test_fixture_bundle_accepts_exact_fixed_wp_env_patch():
+    files = fixture_public_files()
+    assert guest.fixture_contents(payload(files))[0] == files
 
 
 def test_success_preserves_old_bundle_and_atomically_selects_new(installed):
