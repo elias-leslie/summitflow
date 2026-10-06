@@ -76,7 +76,9 @@ def _configuration() -> list[dict[str, str]]:
     required = {"snapshot_preserve_min latest", "snapshot_preserve no", "target_preserve_min latest", "target_preserve 7d", "snapshot_create ondemand"}
     if not required.issubset(options):
         raise RuntimeError("Host configuration does not declare the approved bounded retention and capture policy")
-    output = _checked(["btrbk", "-c", str(path), "--format", "raw", "list", "config"])
+    # Even `list config` takes btrbk's operational lock without --dry-run.
+    # An unprivileged probe must not create a lock that blocks sudo captures.
+    output = _checked(["btrbk", "-c", str(path), "--dry-run", "--format", "raw", "list", "config"])
     rows = _rows(output)
     sources = {row.get("source_url") for row in rows}
     if not REQUIRED_SOURCES.issubset(sources):

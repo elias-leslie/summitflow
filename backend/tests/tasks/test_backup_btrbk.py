@@ -21,6 +21,28 @@ from app.tasks.backup_activity import BackupCancelled
 NOW = datetime(2026, 10, 5, 12, tzinfo=UTC)
 
 
+def test_configuration_inspection_does_not_create_operational_lock(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    config = tmp_path / "btrbk.conf"
+    config.write_text("\n".join(("snapshot_preserve_min latest", "snapshot_preserve no", "target_preserve_min latest", "target_preserve 7d", "snapshot_create ondemand")))
+    lock = tmp_path / "operational.lock"
+    monkeypatch.setattr(host, "CONFIG_PATH", config)
+    original_lstat = Path.lstat
+    def trusted_lstat(path: Path) -> Any:
+        if path == config or path in config.parents:
+            return SimpleNamespace(st_uid=0, st_mode=0o100644)
+        return original_lstat(path)
+    monkeypatch.setattr(Path, "lstat", trusted_lstat)
+    def btrbk_list(args: list[str]) -> str:
+        # Installed btrbk 0.32.5 opens its operational lock for list commands
+        # too; --dry-run is the documented switch that prevents that mutation.
+        if "--dry-run" not in args:
+            lock.touch()
+        return "\n".join(f"format=raw source_url={source} target_type=send-receive target_path=/independent" for source in host.REQUIRED_SOURCES)
+    monkeypatch.setattr(host, "_checked", btrbk_list)
+    assert len(host._configuration()) == len(host.REQUIRED_SOURCES)
+    assert not lock.exists()
+
+
 @pytest.fixture
 def capture(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> dict[str, Any]:
     root, target = tmp_path / "state", tmp_path / "independent" / "points"
