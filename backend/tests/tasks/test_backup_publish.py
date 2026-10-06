@@ -610,13 +610,72 @@ def test_exact_source_receipt_requires_canonical_validation(source, monkeypatch,
     receipt = project / ".git/st/acceptance/existing.json"
     receipt.parent.mkdir(parents=True)
     receipt.write_text(json.dumps({"source": {"commit": head}}))
-    validator = Mock(return_value={"acceptance_id": "validated"}) if valid else Mock(side_effect=acceptance.AcceptanceError("private diagnostic"))
+    validator = Mock(return_value={"acceptance_id": "validated", "coverage": "full"}) if valid else Mock(side_effect=acceptance.AcceptanceError("private diagnostic"))
     monkeypatch.setattr(acceptance, "validate_acceptance_receipt", validator)
     monkeypatch.setattr(acceptance, "accept_revision", Mock(side_effect=AssertionError("No nightly full gate")))
     result = _acceptance_lookup(project, head)
     assert result["state"] == ("reused" if valid else "invalid")
     validator.assert_called_once_with(project, receipt, sha=head)
     assert "private diagnostic" not in json.dumps(result)
+
+
+@pytest.mark.parametrize("coverage", [None, "unknown", "focused", "task", "FULL"])
+def test_manual_publication_requires_canonical_full_coverage(source, monkeypatch, coverage):
+    from cli.lib import acceptance
+
+    project = Path(source["path"])
+    head = _git(project, "rev-parse", "HEAD")
+    receipt = project / ".git/st/acceptance/existing.json"
+    receipt.parent.mkdir(parents=True)
+    # Raw coverage alone cannot authorize publication; use the validated result.
+    receipt.write_text(json.dumps({"source": {"commit": head}, "coverage": "full"}))
+    validated = {"acceptance_id": "validated"}
+    if coverage is not None:
+        validated["coverage"] = coverage
+    validator = Mock(return_value=validated)
+    monkeypatch.setattr(acceptance, "validate_acceptance_receipt", validator)
+    monkeypatch.setattr(publish, "_acceptance_for_head", _acceptance_lookup)
+    publisher = Mock(side_effect=AssertionError("No non-full manual publication"))
+    monkeypatch.setattr(publish, "_publish_isolated", publisher)
+
+    result = publish.publish_source_before_backup(source, manual_source_commit=head)
+
+    assert result["acceptance"] == {"state": "invalid"}
+    assert result["status"] == "pending" and result["reason"] == "source_acceptance_required"
+    assert not result["attempted"] and result["backup_can_continue"]
+    validator.assert_called_once_with(project, receipt, sha=head)
+    publisher.assert_not_called()
+
+
+@pytest.mark.parametrize("with_full", [False, True])
+def test_valid_task_receipt_does_not_hide_older_exact_full_receipt(source, monkeypatch, local_gate_tools, with_full):
+    from cli.lib import acceptance
+
+    project = Path(source["path"])
+    head = _git(project, "rev-parse", "HEAD")
+    runner = Mock(side_effect=lambda command, cwd: subprocess.CompletedProcess(command, 0, "RUFF:OK:0", ""))
+    if with_full:
+        full = acceptance.accept_revision(project, sha=head, runner=runner)
+        os.utime(full["acceptance_artifact"], ns=(1_000_000_000, 1_000_000_000))
+    task = acceptance.accept_revision(project, sha=head, coverage="task", scope=("note",), runner=runner)
+    os.utime(task["acceptance_artifact"], ns=(2_000_000_000, 2_000_000_000))
+    assert acceptance.validate_acceptance_receipt(project, Path(task["acceptance_artifact"]), sha=head)["coverage"] == "task"
+    monkeypatch.setattr(acceptance, "accept_revision", Mock(side_effect=AssertionError("Reuse only; no acceptance gate")))
+    monkeypatch.setattr(publish, "_acceptance_for_head", _acceptance_lookup)
+    publisher = Mock(return_value=delivery())
+    monkeypatch.setattr(publish, "_publish_isolated", publisher)
+
+    result = publish.publish_source_before_backup(source, manual_source_commit=head)
+
+    if with_full:
+        assert result["acceptance"] == {"state": "reused", "acceptance_id": full["acceptance_id"], "source_commit": head}
+        assert result["status"] == "published" and result["attempted"]
+        publisher.assert_called_once()
+    else:
+        assert result["acceptance"] == {"state": "invalid"}
+        assert result["status"] == "pending" and result["reason"] == "source_acceptance_required"
+        assert not result["attempted"]
+        publisher.assert_not_called()
 
 
 def test_partial_clone_receipts_do_not_lazily_fetch(source, monkeypatch):

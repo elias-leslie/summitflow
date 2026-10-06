@@ -95,6 +95,8 @@ def _acceptance_for_head(project: Path, head: str) -> dict[str, Any]:
                 from cli.lib.acceptance import validate_acceptance_receipt
 
                 validated = validate_acceptance_receipt(project, artifact, sha=head)
+                if validated.get("coverage") != "full":
+                    continue
                 return {"state": "reused", "acceptance_id": validated["acceptance_id"], "source_commit": head}
             except (OSError, ValueError, RuntimeError, subprocess.SubprocessError):
                 continue
