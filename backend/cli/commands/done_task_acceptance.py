@@ -221,6 +221,14 @@ def _sandbox_command(repo: Path, source: Path, metadata: Path, common: Path,
         # Only outer acceptance requests this private fallback. Nested native
         # helpers must retain their existing /var/tmp tool aliases instead.
         command.extend(["--bind", str(private_var_tmp), "/var/tmp"])
+        # A direct native stage prepares its allowlisted tool aliases under
+        # /var/tmp. Preserve that exact root without exposing host scratch.
+        if tool_alias_root := os.environ.get("ST_NATIVE_TOOL_ALIAS_ROOT"):
+            aliases = Path(tool_alias_root)
+            if (aliases.is_absolute() and aliases != Path("/var/tmp")
+                    and aliases.is_relative_to("/var/tmp") and aliases == aliases.resolve()
+                    and aliases.is_dir()):
+                command.extend(["--ro-bind", str(aliases), str(aliases)])
     # Restore the same host path after the optional overlay: temporary itself
     # may live under /var/tmp, and Docker/native tools consume its backing paths.
     command.extend(["--proc", "/proc", "--dev", "/dev",

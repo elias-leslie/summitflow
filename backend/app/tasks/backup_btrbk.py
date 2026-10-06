@@ -17,7 +17,7 @@ import shutil
 import stat
 import subprocess
 import tempfile
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any
 from zoneinfo import ZoneInfo
@@ -25,11 +25,12 @@ from zoneinfo import ZoneInfo
 from ..config import get_settings
 from ..project_identity import get_project_aliases, get_project_identity
 from ..storage import backups as backup_store
-from ..storage.projects import list_projects
+from ..storage.projects import list_projects, testing_project_ids
 from ..utils import safe_subprocess
 from ..utils.shared_paths import get_workspaces_root
 from ._retention_policy import HostRetentionPolicy
 from .backup_activity import BackupCancelled, run_bulk_process
+from .backup_native_archive import PROJECT_DATABASE_PAYLOAD_NAME, _load_db_config
 from .backup_utils import _FREQUENCY_DELTAS
 
 REQUIRED_SOURCES = {"/", "/home", "/srv/workspaces", "/var/lib/docker", "/srv/models", "/var/log"}
@@ -205,31 +206,46 @@ def _target_copy(source: Path, destination: Path) -> None:
 
 
 def _database_manifests(rows: list[dict[str, str]], now: datetime) -> dict[str, Any]:
-    """Associate declared project databases with fresh, qualified catalogue points.
+    """Associate configured project databases with fresh, qualified catalogue points.
 
     These are separate application recovery points, never an atomic claim about
     the online host filesystem. Credentials and raw database URLs are omitted.
     """
     sources = backup_store.list_sources()
+    testing = testing_project_ids()
     projects = {str(item["id"]): item for item in list_projects()}
     for source in sources:
         if source.get("project_id"):
             projects.setdefault(str(source["project_id"]), {"id": source["project_id"], "root_path": source.get("path")})
-    manifests, missing = [], []
+    manifests, missing, excluded = [], [], []
+    endpoints: dict[str, tuple[str, str, str]] = {}
+    cadences: dict[str, timedelta] = {}
     seen_projects: set[str] = set()
     for project_id, project in projects.items():
         path = str(project.get("root_path") or "")
         if not path or not Path(path).is_absolute() or not any(Path(path).is_relative_to(Path(row["source_url"])) for row in rows):
             continue
         identity = get_project_identity(project_id, path) or {}
-        if not identity.get("database"):
-            continue
         canonical_id = str((identity.get("project") or {}).get("id") or project_id)
         if canonical_id in seen_projects:
             continue
         seen_projects.add(canonical_id)
         aliases = set(get_project_aliases(project_id, path)) | {project_id}
         registered = [source for source in sources if source.get("project_id") in aliases and source.get("source_type") == "project"]
+        if registered and all(source.get("frequency") in _FREQUENCY_DELTAS for source in registered):
+            cadences[canonical_id] = min(_FREQUENCY_DELTAS[source["frequency"]] for source in registered)
+        try:
+            config = _load_db_config(Path(path).name, {"BACKUP_PROJECT_ID": canonical_id})
+        except RuntimeError:
+            missing.append({"project_id": canonical_id, "reason": "database-configuration-unresolved", "source_ids": []})
+            continue
+        if config["configured"] != "true":
+            continue
+        if project_id in testing and registered and all(source.get("enabled") is False for source in registered):
+            excluded.append({"project_id": canonical_id, "reason": "disabled-testing-portable-policy", "source_ids": [source["id"] for source in registered], "portable_database_recovery_covered": False, "protection": "Host filesystem points only; database state is crash-consistent, not a portable application recovery point"})
+            continue
+        host = {"localhost": "127.0.0.1", "::1": "127.0.0.1"}.get(config["host"], config["host"])
+        endpoints[canonical_id] = (host, config["port"], config["name"])
         candidates: list[dict[str, Any]] = []
         for source in registered:
             offset = 0
@@ -273,7 +289,18 @@ def _database_manifests(rows: list[dict[str, str]], now: datetime) -> dict[str, 
             manifests.append(max(candidates, key=lambda item: item["captured_at"]))
         else:
             missing.append({"project_id": canonical_id, "reason": "fresh-independent-verified-database-point-unavailable", "source_ids": [source["id"] for source in registered]})
-    return {"as_of": now.isoformat(), "status": "qualified" if not missing else "partial", "manifests": manifests, "missing": missing,
+    unresolved = []
+    for obligation in missing:
+        project_id = obligation["project_id"]
+        shared = next((item for item in manifests if project_id in endpoints and project_id in cadences and endpoints.get(item["project_id"]) == endpoints[project_id]
+                       and now - datetime.fromisoformat(item["captured_at"]) <= cadences[project_id]
+                       and item["repository"].get("format") == "restic-v1" and Path(item.get("db_dump_name") or "").name == PROJECT_DATABASE_PAYLOAD_NAME), None)
+        if shared is None:
+            unresolved.append(obligation)
+        else:
+            manifests.append({**shared, "project_id": project_id, "registered_project_id": project_id, "database_point_project_id": shared["project_id"], "association_method": "verified-same-endpoint-full-database"})
+    missing = unresolved
+    return {"as_of": now.isoformat(), "status": "qualified" if not missing else "partial", "manifests": manifests, "missing": missing, "excluded": excluded,
             "consistency": "Separate portable database points; online host filesystems are not application-consistent"}
 
 

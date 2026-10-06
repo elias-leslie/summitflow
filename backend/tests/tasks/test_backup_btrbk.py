@@ -281,6 +281,7 @@ def test_boot_metadata_cleanup_follows_native_point_lifetime_and_retains_failed_
 
 @pytest.mark.parametrize("fault", [None, "has_db", "unverified", "row-unverified", "pending-check", "stale", "wrong-project", "wrong-source", "no-offsite", "missing-identity"])
 def test_declared_nested_database_requires_fresh_matching_independent_manifest(monkeypatch: pytest.MonkeyPatch, fault: str | None) -> None:
+    monkeypatch.setattr(host, "testing_project_ids", lambda: set())
     project = {"id": "canonical-project", "root_path": "/srv/workspaces/nested/project"}
     source = {"id": "source-alias", "project_id": "legacy-project", "source_type": "project", "frequency": "four_hourly"}
     verification = {"verified": True, "has_db": True, "verified_at": NOW.isoformat(), "format": "restic-v1", "repository_id": "local", "snapshot_id": "point", "remote_repository_id": "independent", "remote_snapshot_id": "remote-point", "offsite": {"status": "verified"}}
@@ -306,6 +307,7 @@ def test_declared_nested_database_requires_fresh_matching_independent_manifest(m
     monkeypatch.setattr(host, "list_projects", lambda: [project])
     monkeypatch.setattr(host.backup_store, "list_sources", lambda: [source])
     monkeypatch.setattr(host, "get_project_identity", lambda *_: {"project": {"id": "canonical-project"}, "database": {"shared_with": "canonical-db"}})
+    monkeypatch.setattr(host, "_load_db_config", lambda *_: {"configured": "true", "host": "localhost", "port": "5432", "name": "canonical_db"})
     monkeypatch.setattr(host, "get_project_aliases", lambda *_: ("canonical-project", "legacy-project"))
     monkeypatch.setattr(host.backup_store, "list_backups", lambda **_: ([record], 1))
     result = host._database_manifests([{"source_url": "/srv/workspaces"}], NOW)
@@ -316,6 +318,78 @@ def test_declared_nested_database_requires_fresh_matching_independent_manifest(m
     else:
         assert result["manifests"][0]["backup_id"] == "db-recovery"
         assert result["manifests"][0]["restore_verified"] is False
+
+
+@pytest.mark.parametrize("configuration", ["true", "false", "unresolved"])
+def test_database_coverage_uses_capture_resolver_without_requiring_manifest_declaration(monkeypatch: pytest.MonkeyPatch, configuration: str) -> None:
+    monkeypatch.setattr(host, "testing_project_ids", lambda: set())
+    monkeypatch.setattr(host, "list_projects", lambda: [{"id": "legacy-project", "root_path": "/srv/workspaces/projects/canonical-project"}])
+    monkeypatch.setattr(host.backup_store, "list_sources", lambda: [])
+    monkeypatch.setattr(host, "get_project_identity", lambda *_: {"project": {"id": "canonical-project"}})
+    monkeypatch.setattr(host, "get_project_aliases", lambda *_: ("canonical-project", "legacy-project"))
+
+    def resolve(name: str, env: dict[str, str]) -> dict[str, str]:
+        assert name == "canonical-project" and env == {"BACKUP_PROJECT_ID": "canonical-project"}
+        if configuration == "unresolved":
+            raise RuntimeError("Private resolver detail must not enter the receipt")
+        return {"configured": configuration, "host": "localhost", "port": "5432", "name": "canonical_db", "password": "private-test-value"}
+
+    monkeypatch.setattr(host, "_load_db_config", resolve)
+    result = host._database_manifests([{"source_url": "/srv/workspaces"}], NOW)
+    assert result["status"] == ("qualified" if configuration == "false" else "partial")
+    assert not result["manifests"]
+    if configuration != "false":
+        assert result["missing"] == [{"project_id": "canonical-project", "reason": "database-configuration-unresolved" if configuration == "unresolved" else "fresh-independent-verified-database-point-unavailable", "source_ids": []}]
+    assert "private" not in json.dumps(result).lower()
+
+
+@pytest.mark.parametrize("category,enabled", [("testing", False), ("testing", None), ("testing", True), ("prod", False), (None, False)])
+def test_only_explicitly_disabled_testing_database_policies_are_excluded(monkeypatch: pytest.MonkeyPatch, category: str | None, enabled: bool | None) -> None:
+    # Production list_projects() deliberately omits category; use its canonical
+    # testing registry query rather than inventing a field in the fixture.
+    monkeypatch.setattr(host, "list_projects", lambda: [{"id": "project", "root_path": "/srv/workspaces/project"}])
+    monkeypatch.setattr(host, "testing_project_ids", lambda: {"project"} if category == "testing" else set())
+    source = {"id": "source", "project_id": "project", "source_type": "project", "enabled": enabled}
+    monkeypatch.setattr(host.backup_store, "list_sources", lambda: [source])
+    monkeypatch.setattr(host, "get_project_identity", lambda *_: {})
+    monkeypatch.setattr(host, "get_project_aliases", lambda *_: ("project",))
+    monkeypatch.setattr(host, "_load_db_config", lambda *_: {"configured": "true", "host": "localhost", "port": "5432", "name": "project"})
+    monkeypatch.setattr(host.backup_store, "list_backups", lambda **_: ([], 0))
+    result = host._database_manifests([{"source_url": "/srv/workspaces"}], NOW)
+    excluded = category == "testing" and enabled is False
+    assert result["status"] == ("qualified" if excluded else "partial")
+    assert bool(result["excluded"]) is excluded
+    assert bool(result["missing"]) is not excluded
+    if excluded:
+        assert result["excluded"][0]["portable_database_recovery_covered"] is False
+
+
+@pytest.mark.parametrize("fault", [None, "host", "port", "name", "dump", "stale"])
+def test_shared_database_association_requires_exact_endpoint_and_qualified_full_dump(monkeypatch: pytest.MonkeyPatch, fault: str | None) -> None:
+    monkeypatch.setattr(host, "testing_project_ids", lambda: set())
+    projects = [{"id": name, "root_path": f"/srv/workspaces/{name}"} for name in ("supplier", "legacy")]
+    sources = [{"id": name, "project_id": name, "source_type": "project", "frequency": "daily" if name == "supplier" else "four_hourly"} for name in ("supplier", "legacy")]
+    verification = {"verified": True, "has_db": True, "verified_at": NOW.isoformat(), "format": "restic-v1", "repository_id": "local", "snapshot_id": "point", "remote_repository_id": "remote", "remote_snapshot_id": "remote-point", "offsite": {"status": "verified"}, "capture": {"db_dump_name": "partial.sql" if fault == "dump" else ".summitflow-recovery/database.sql"}}
+    record = {"id": "db-point", "source_id": "supplier", "project_id": "supplier", "status": "completed", "verified": True, "location": "restic:point", "started_at": (NOW - timedelta(hours=5 if fault == "stale" else 1)).isoformat(), "verification_json": verification}
+    monkeypatch.setattr(host, "list_projects", lambda: projects)
+    monkeypatch.setattr(host.backup_store, "list_sources", lambda: sources)
+    monkeypatch.setattr(host, "get_project_identity", lambda *_: {})
+    monkeypatch.setattr(host, "get_project_aliases", lambda project, *_: (project,))
+    def resolve(name: str, _: dict[str, str]) -> dict[str, str]:
+        config = {"configured": "true", "host": "localhost" if name == "supplier" else "127.0.0.1", "port": "5432", "name": "shared"}
+        if name == "legacy" and fault in {"host", "port", "name"}:
+            config[fault] = "different"
+        return config
+    monkeypatch.setattr(host, "_load_db_config", resolve)
+    monkeypatch.setattr(host.backup_store, "list_backups", lambda source_id, **_: ([record], 1) if source_id == "supplier" else ([], 0))
+    result = host._database_manifests([{"source_url": "/srv/workspaces"}], NOW)
+    assert result["status"] == ("partial" if fault else "qualified")
+    if fault:
+        assert result["missing"][0]["project_id"] == "legacy"
+    else:
+        association = next(item for item in result["manifests"] if item["project_id"] == "legacy")
+        assert association["database_point_project_id"] == "supplier" and association["backup_id"] == "db-point"
+        assert association["restore_verified"] is False
 
 
 @pytest.mark.parametrize("ready", [False, True])

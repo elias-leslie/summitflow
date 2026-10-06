@@ -410,6 +410,7 @@ def _run_native(root: Path, plan: dict[str, Any], *, aliases: Path, scratch: Pat
                    "XDG_CONFIG_HOME": str(aliases / "config"), "XDG_DATA_HOME": str(aliases / "data"),
                    "XDG_CACHE_HOME": str(aliases / "cache"), "XDG_STATE_HOME": str(aliases / "state"), **plan["environment"],
                    "TMPDIR": str(scratch), "PYTHONDONTWRITEBYTECODE": "1", "PYTHONPYCACHEPREFIX": str(aliases / "pycache"),
+                   "ST_NATIVE_TOOL_ALIAS_ROOT": str(aliases.parent),
                    "UV_NO_SYNC": "1", "UV_OFFLINE": "1", "CARGO_NET_OFFLINE": "true", "GOTOOLCHAIN": "local",
                    "GOPROXY": "off", "GOSUMDB": "off", "npm_config_offline": "true", "COREPACK_ENABLE_NETWORK": "0",
                    "PATH": os.pathsep.join([str(aliases), *(str(_local(root, path)) for path in plan["paths"])])}

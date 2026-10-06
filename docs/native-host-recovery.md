@@ -1,8 +1,9 @@
 # Linux recovery and portable project backups
 
 The approved Linux host recovery setup uses native Btrfs points replicated by
-btrbk. Its permanent destination is pending physical cutover and qualification;
-verified temporary native material protects the migration. Windows retains its
+btrbk. The permanent encrypted T7 destination is prepared; capture, application
+coverage and restore qualification are tracked separately in its receipts.
+Verified temporary native material protects the migration. Windows retains its
 separate Veeam backup. Portable project/configuration backups will use the existing
 Restic repositories and Google Drive; enable the four-hour cadence for each source
 with its qualified Restic backend. Schema migration preserves existing schedules
@@ -37,6 +38,16 @@ Explicit host coverage includes `/`, `/home`, `/srv/workspaces`, `/var/lib/docke
 its own section because Btrfs snapshots are not recursive. Managed work points
 are excluded as nested snapshot boundaries. External PostgreSQL remains external;
 application recovery uses associated verified portable database dumps.
+
+Database obligations use the same configured-endpoint resolver as portable
+capture, including projects without a `database` manifest declaration. Only
+registered testing projects whose project backup policies are all explicitly
+disabled are excluded from portable coverage. Receipts list those fixtures
+separately: their host filesystem state is crash-consistent and does not establish
+portable database recovery. Production, unclassified and missing-source
+obligations fail closed. A verified full-database point may also cover a project
+resolving to the exact same endpoint and database, subject to that project's
+freshness requirement; the receipt names the supplying project and point.
 
 The configuration keeps seven daily destination points and necessary source
 incremental parents. Each capture carries matching boot/EFI files, observed disk
