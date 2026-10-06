@@ -70,6 +70,13 @@ def inventory_nested(boundary: Path, *, project: Path | None = None) -> list[str
         rules = classifications(current_path) if (current_path / "project.identity.json").is_file() else {"durable_data": [], "disposable_outputs": []}
         for directory in list(dirs):
             child = current_path / directory
+            # Host-managed backup metadata is private and outside project
+            # source. Do not traverse it while inventorying a shared boundary.
+            if (child == Path("/srv/workspaces/.btrbk") and project is not None
+                    and child != project and child not in project.parents
+                    and project not in child.parents):
+                dirs.remove(directory)
+                continue
             if child.is_symlink():
                 dirs.remove(directory)
                 continue

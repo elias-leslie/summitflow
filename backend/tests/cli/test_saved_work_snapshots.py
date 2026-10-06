@@ -568,6 +568,43 @@ def test_inventory_inspects_disposable_ancestor_of_tracked_nested_fixture(worksp
         _physical.require_complete_project(workspace.root, project, boundaries)
 
 
+@pytest.mark.parametrize("boundary_path,private_path,project_path,opaque", [
+    ("/srv/workspaces", "/srv/workspaces/.btrbk", "/srv/workspaces/projects/fixture", True),
+    ("/srv/workspaces", "/srv/workspaces/.btrbk", "/srv/workspaces/.btrbk/fixture", False),
+    ("/srv/workspaces", "/srv/workspaces/.btrbk", "/srv/workspaces/.btrbk", False),
+    ("/srv/workspaces", "/srv/workspaces/.btrbk", "/srv/workspaces", False),
+    ("/srv/workspaces", "/srv/workspaces/projects/fixture/.btrbk", "/srv/workspaces/projects/fixture", False),
+    ("/other/workspaces", "/other/workspaces/.btrbk", "/other/workspaces/projects/fixture", False),
+    ("/srv/workspaces", "/srv/workspaces/private-sibling", "/srv/workspaces/projects/fixture", False),
+    ("/srv/workspaces", "/srv/workspaces/.btrbk", None, False),
+])
+def test_inventory_keeps_only_canonical_private_backup_sibling_opaque(monkeypatch, boundary_path, private_path, project_path, opaque):
+    from cli.lib.snapshots import _physical
+
+    boundary, private = Path(boundary_path), Path(private_path)
+    project = Path(project_path) if project_path is not None else None
+    original_stat = Path.stat
+    def metadata(path, *args, **kwargs):
+        if path == boundary or boundary in path.parents:
+            return SimpleNamespace(st_ino=100, st_dev=1, st_mode=0o040700)
+        return original_stat(path, *args, **kwargs)
+    monkeypatch.setattr(Path, "stat", metadata)
+    monkeypatch.setattr(_physical, "_git", lambda *_: SimpleNamespace(stdout=""))
+    def walk(_boundary, *, followlinks, onerror):
+        assert _boundary == boundary and followlinks is False
+        directories = [private.name]
+        yield str(private.parent), directories, []
+        if private.name in directories:
+            onerror(PermissionError(13, "Permission denied", str(private)))
+    monkeypatch.setattr(_physical.os, "walk", walk)
+
+    if opaque:
+        assert _physical.inventory_nested(boundary, project=project) == []
+    else:
+        with pytest.raises(SnapshotError, match="Cannot inventory Btrfs boundaries"):
+            _physical.inventory_nested(boundary, project=project)
+
+
 def test_interrupted_capture_keeps_reserved_physical_point_bounded(workspace, monkeypatch):
     original = snap._snapshot_subvolume
     def interrupted(source, destination, *, readonly):
