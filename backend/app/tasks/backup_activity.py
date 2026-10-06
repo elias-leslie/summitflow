@@ -251,6 +251,7 @@ def run_bulk_process(
     command: list[str], *, env: dict[str, str] | None = None, phase: str = "capture",
     object_name: str | None = None, attention_after: float = ATTENTION_AFTER_SECONDS,
     stdout_sink: Callable[[BinaryIO], None] | None = None, text: bool = True,
+    cwd: str | None = None,
 ) -> subprocess.CompletedProcess[Any]:
     """Run owned bulk work without a wall-clock kill; cancellation kills/reaps it.
 
@@ -264,7 +265,7 @@ def run_bulk_process(
         proc = subprocess.Popen(
             command, stdin=subprocess.DEVNULL,
             stdout=subprocess.PIPE if stdout_sink else output,
-            stderr=errors, env=env, start_new_session=True,
+            stderr=errors, env=env, cwd=cwd, start_new_session=True,
         )
         sink_errors: list[BaseException] = []
         sink_thread: Thread | None = None

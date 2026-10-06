@@ -584,6 +584,27 @@
       },
       "arguments": [],
       "environment": []
+    },
+    {
+      "id": "ominull.backup",
+      "owner": "ominull",
+      "namespace": "ominull-backup",
+      "manifest": "extensions/ominull-backup.json",
+      "executable": "scripts/st-ominull-backup",
+      "arguments": [],
+      "environment": [],
+      "grant": {
+        "enabled": true,
+        "effects": [
+          "network",
+          "read-remote",
+          "write-remote",
+          "read-local",
+          "write-local",
+          "credentials",
+          "process"
+        ]
+      }
     }
   ],
   "description": "Centralized tool registry — single source of truth for operator tool discovery, redirects, and check-runner configuration.",

@@ -314,6 +314,12 @@ def _run_backup(
                 on_progress.lease_owned = lambda: owns_backup_lease(resolved_source_id, owner_token)
 
             with bind_backup_activity(backup_id, on_progress):
+                from .backup_ominull import prepare_ominull_backup
+
+                preparation = prepare_ominull_backup(
+                    project_id=project_id, source_id=resolved_source_id,
+                    project_dir=project_dir, backup_id=backup_id,
+                )
                 parsed_output = run_project_backup(
                     project_dir=project_dir,
                     source_id=resolved_source_id,
@@ -323,6 +329,10 @@ def _run_backup(
                     retention_days=retention_days,
                     on_progress=on_progress,
                 )
+                if preparation is not None:
+                    verification = dict(as_mapping(parsed_output.get("verification")) or {})
+                    verification["remote_preparation"] = preparation
+                    parsed_output["verification"] = verification
                 if isinstance(on_progress, BackupActivity):
                     backup_store.merge_backup_verification_json(
                         backup_id, dict(as_mapping(parsed_output.get("verification")) or {}),

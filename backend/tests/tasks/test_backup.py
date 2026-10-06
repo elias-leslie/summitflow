@@ -151,6 +151,17 @@ class TestCreateBackupTask:
         assert result["status"] == "failed"
         assert "not found" in str(result["error"])
 
+    def test_failed_remote_preparation_never_captures_stale_local_data(self, cleanup_project: str) -> None:
+        with (
+            patch("app.tasks.backup_ominull.prepare_ominull_backup", side_effect=RuntimeError("Remote preparation failed")),
+            patch("app.tasks.backup_executor.run_project_backup") as capture,
+        ):
+            result = create_backup(project_id=cleanup_project)
+        capture.assert_not_called()
+        assert result["status"] == "failed"
+        backup = backup_store.get_backup(str(result["backup_id"]))
+        assert backup is not None and backup["status"] == "failed"
+
     def test_create_backup_creates_record(self, cleanup_project: str) -> None:
         """Create backup creates a backup record."""
         # Mock native engine to avoid creating an actual archive
