@@ -59,7 +59,7 @@ def start(
     when="deliver an authorized bounded instruction through the fleet stream or native Codex thread queue",
     precautions=(
         "Default fleet-stream is passive retention consumed through wait; native-thread uses exact project/UUID provenance and local owner transport.",
-        "Native queued receipt is not observed consumption or a process-generation fence; offline input can execute on same-thread resume.",
+        "Native-thread requires exact UUID + stable revision and <=2000 sanitized UTF-8 bytes. Queued/durable does not mean working or observed consumption and is not generation-fenced; offline input can execute on same-thread resume.",
         "Reuse the source key to reconcile pending/uncertain attempts; never blindly replay with a new key. No secrets or transcripts.",
         "Use current-client native delegation for subagents; this addresses existing root threads, not spawned children.",
     ),
@@ -72,6 +72,13 @@ def send(
     source_key: Annotated[str | None, typer.Option(help="Stable instruction revision key; reuse on retry")] = None,
     delivery: Annotated[Literal["fleet-stream", "native-thread"], typer.Option(help="Native mode addresses an exact bound Codex UUID, including offline resume")] = "fleet-stream",
 ) -> None:
+    """Default delivery is passive fleet retention.
+
+    Native-thread requires an exact bound UUID, stable --source-key revision,
+    and <=2000 sanitized UTF-8 bytes. Queued/durable does not mean working or
+    observed consumption and is not generation-fenced; offline input may run
+    when that same thread resumes.
+    """
     if delivery == "native-thread":
         from .sessions_native_delivery import send_native_instruction
 

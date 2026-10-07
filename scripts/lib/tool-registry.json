@@ -2,6 +2,18 @@
   "version": 1,
   "extensions": [
     {
+      "id": "aico.roots",
+      "owner": "aico",
+      "namespace": "aico",
+      "manifest": "extensions/aico.json",
+      "executable": "scripts/aico-root-watch.py",
+      "grant": {
+        "enabled": true,
+        "effects": ["read-local", "process", "network"]
+      },
+      "environment": ["XDG_RUNTIME_DIR", "AICO_GUI_CONTROL_SOCKET", "AICO_CONTROL_SOCKET"]
+    },
+    {
       "id": "agent-hub.agents",
       "owner": "agent-hub",
       "namespace": "agents",
