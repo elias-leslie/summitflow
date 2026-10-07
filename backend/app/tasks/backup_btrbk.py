@@ -37,6 +37,7 @@ REQUIRED_SOURCES = {"/", "/home", "/srv/workspaces", "/var/lib/docker", "/srv/mo
 CONFIG_PATH = Path("/etc/btrbk/summitflow.conf")
 PACKAGE_STATUS_PATH = Path("/var/lib/dpkg/status")
 ADAPTER = "summitflow-btrbk-v1"
+SPACE_GUARD = "/usr/local/libexec/summitflow-btrfs-space-guard"
 _RUN_ID = re.compile(r"\d{8}T\d{6}Z-[0-9a-f]{8}\Z")
 
 
@@ -141,7 +142,19 @@ def _verified_points(rows: list[dict[str, str]], transactions: list[dict[str, st
 
 def _filesystem(path: str) -> dict[str, Any]:
     raw = _checked(["findmnt", "--json", "-T", path, "-o", "TARGET,FSTYPE,UUID,OPTIONS,FSROOT,SOURCE"])
-    return json.loads(raw)["filesystems"][0]
+    requested = Path(os.path.realpath(path))
+    mounts = json.loads(raw)["filesystems"]
+    if not mounts or any(not Path(str(mount.get("target", ""))).is_absolute() or not requested.is_relative_to(Path(mount["target"])) for mount in mounts):
+        raise RuntimeError(f"Cannot qualify the effective filesystem at {path}")
+    # findmnt can report the systemd autofs layer before the real mount. Only
+    # discard that layer at the deepest matching mountpoint; a Btrfs ancestor
+    # must never hide a different filesystem mounted over the requested path.
+    depth = max(len(Path(mount["target"]).parts) for mount in mounts)
+    effective = [mount for mount in mounts if len(Path(mount["target"]).parts) == depth]
+    real = [mount for mount in effective if mount.get("fstype") != "autofs"]
+    if len(real or effective) != 1:
+        raise RuntimeError(f"Ambiguous effective filesystem at {path}")
+    return (real or effective)[0]
 
 
 def _receipt() -> dict[str, Any] | None:
@@ -394,6 +407,27 @@ def _cleanup_superseded(target: Path, current_run: str) -> dict[str, Any]:
             "evidence": "Observed target usage before/after metadata cleanup; concurrent growth can mask reclamation"}
 
 
+def _allocation_headroom(path: str, uuid: str) -> dict[str, Any]:
+    """Read the existing guard's policy and physical allocation measurement."""
+    try:
+        result = _run(["sudo", "-n", SPACE_GUARD, "--check-only", "--path", path, "--uuid", uuid])
+        report = json.loads(result.stdout)
+        if not isinstance(report, dict) or result.returncode not in {0, 1} or result.stderr.strip() or report.get("path") != path or report.get("uuid") != uuid or report.get("error") or report.get("deferred"):
+            raise ValueError("Unqualified Btrfs allocation report")
+        usage, policy = report["after"], report["policy"]
+        values = {name: usage[name] for name in ("size", "unallocated", "missing", "free", "metadata_size", "metadata_used")}
+        values.update({name: policy[name] for name in ("trigger_bytes", "target_bytes")})
+        if any(type(value) is not int or value < 0 for value in values.values()) or not 0 < values["metadata_size"] <= values["size"] or values["metadata_used"] > values["metadata_size"] or max(values["free"], values["unallocated"]) > values["size"] or not 0 < values["trigger_bytes"] <= values["target_bytes"]:
+            raise ValueError("Invalid Btrfs allocation measurement")
+        # Metadata sizes are logical even with DUP. Do not add its unused
+        # bytes to physical unallocated space or change allocation profiles.
+        return {"available": True, **values,
+                "metadata_used_percent": values["metadata_used"] / values["metadata_size"] * 100,
+                "admitted": values["missing"] == 0 and values["unallocated"] >= values["trigger_bytes"]}
+    except (OSError, ValueError, RuntimeError, KeyError, TypeError) as exc:
+        return {"available": False, "admitted": False, "error": str(exc)}
+
+
 def _capacity(rows: list[dict[str, str]], last: dict[str, Any] | None) -> dict[str, Any]:
     policy = HostRetentionPolicy.from_env()
     reserve = int(policy.pressure_min_free_gb * 1024**3)
@@ -412,8 +446,10 @@ def _capacity(rows: list[dict[str, str]], last: dict[str, Any] | None) -> dict[s
             raise RuntimeError("Host recovery destination must be independent of all source filesystems")
         if Path(source).stat().st_ino != 256:
             raise RuntimeError(f"Source is not an actual Btrfs subvolume root: {source}")
-        usage = shutil.disk_usage(source)
-        source_usage[fs["uuid"]] = {"path": source, "used_bytes": usage.used, "free_bytes": usage.free, "under_pressure": usage.used / usage.total * 100 >= policy.pressure_disk_percent}
+        if fs["uuid"] not in source_usage:
+            usage = shutil.disk_usage(source)
+            source_usage[fs["uuid"]] = {"path": source, "filesystem_uuid": fs["uuid"], "used_bytes": usage.used, "free_bytes": usage.free, "under_pressure": usage.used / usage.total * 100 >= policy.pressure_disk_percent,
+                                       "allocation": _allocation_headroom(source, fs["uuid"])}
     # Initially budget the observed physical footprint of each distinct source
     # filesystem. Retain that conservative bound so a missing incremental parent
     # cannot silently turn a small admitted job into an oversized full capture.
@@ -429,8 +465,18 @@ def _capacity(rows: list[dict[str, str]], last: dict[str, Any] | None) -> dict[s
             boot_filesystems.add(boot_fs["uuid"])
     growth = max(sum(item["used_bytes"] for item in source_usage.values()) + boot_bound, int((last or {}).get("growth_peak_bytes", 0)))
     target_usage = shutil.disk_usage(target)
-    admitted = target_usage.free - growth >= reserve and all(item["free_bytes"] >= reserve for item in source_usage.values())
-    return {"admitted": admitted, "expected_growth_bytes": growth, "boot_growth_bound_bytes": boot_bound, "target_filesystem_uuid": target_fs["uuid"], "reserve_bytes": reserve, "free_bytes": target_usage.free, "used_bytes": target_usage.used, "source_filesystems": list(source_usage.values()), "under_pressure": target_usage.used / target_usage.total * 100 >= policy.pressure_disk_percent, "reason": None if admitted else "insufficient-host-policy-headroom"}
+    target_allocation = _allocation_headroom(target, target_fs["uuid"])
+    allocations = [item["allocation"] for item in source_usage.values()] + [target_allocation]
+    reason = None
+    if any(not item["available"] for item in allocations):
+        reason = "btrfs-allocation-headroom-unavailable"
+    elif any(item["missing"] for item in allocations):
+        reason = "btrfs-device-missing"
+    elif any(not item["admitted"] for item in allocations):
+        reason = "insufficient-btrfs-allocation-headroom"
+    elif target_usage.free - growth < reserve or any(item["free_bytes"] < reserve for item in source_usage.values()):
+        reason = "insufficient-host-policy-headroom"
+    return {"admitted": reason is None, "expected_growth_bytes": growth, "boot_growth_bound_bytes": boot_bound, "target_filesystem_uuid": target_fs["uuid"], "reserve_bytes": reserve, "free_bytes": target_usage.free, "used_bytes": target_usage.used, "target_allocation": target_allocation, "source_filesystems": list(source_usage.values()), "under_pressure": target_usage.used / target_usage.total * 100 >= policy.pressure_disk_percent, "reason": reason}
 
 
 def native_host_status() -> dict[str, Any]:

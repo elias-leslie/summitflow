@@ -1,7 +1,7 @@
 # Linux recovery and portable project backups
 
 The approved Linux host recovery setup uses native Btrfs points replicated by
-btrbk. The permanent encrypted T7 destination is prepared; capture, application
+btrbk. The permanent plain Btrfs T7 destination is prepared; capture, application
 coverage and restore qualification are tracked separately in its receipts.
 Verified temporary native material protects the migration. Windows retains its
 separate Veeam backup. Portable project/configuration backups will use the existing
@@ -29,7 +29,7 @@ The reviewed root-owned nonsecret configuration belongs at
 `/etc/btrbk/summitflow.conf`, readable by the service user with mode `0644`.
 Start from `scripts/systemd/btrbk.conf.example`. Keep the package's standalone
 timer disabled: SummitFlow's existing backup orchestration runs the daily host
-capture. The destination must be an independently mounted, unlocked Btrfs
+capture. The destination must be an independently mounted Btrfs
 filesystem with compression enabled. Snapshot directories must already exist.
 Validate the configured source/target relations and a dry run before enablement.
 
@@ -54,7 +54,13 @@ incremental parents. Each capture carries matching boot/EFI files, observed disk
 layout and a receipt. Retirement of matching boot files follows the native points,
 not an unrelated folder age. Failed deletion retains its receipt and error.
 Admission uses the existing host pressure policy and measured physical capacity;
-an unqualified target or insufficient headroom prevents capture.
+an unqualified target or insufficient headroom prevents capture. Admission also
+reads Btrfs device allocation through the existing space guard: ordinary free
+space can conceal exhausted metadata allocation. The guard checks every fifteen
+minutes and uses bounded data reclamation below 8 GiB unallocated, targeting
+12 GiB. It never deletes data or snapshots; deferred or failed reclamation is
+reported. The host guardian follows native receipts rather than retired Linux
+Veeam sessions.
 
 Initial admission conservatively reserves a full source-filesystem footprint,
 matching boot allocation and the existing 25 GiB reserve for every run. This is
@@ -110,7 +116,7 @@ the mount, resume managed services and verify work recovery plus backup coverage
 Keep the original until those checks pass.
 
 The external drive then receives the approved approximate 1 TB NTFS / 1 TB
-encrypted Btrfs layout, preserving NTFS when practical. Existing retained files
+plain Btrfs layout, preserving NTFS when practical. Existing retained files
 must have independently verified staging before any destructive recreation.
 The Windows chain remains protected until workspace expansion passes; finish
 with a fresh Windows Veeam full and Linux native recovery qualification.

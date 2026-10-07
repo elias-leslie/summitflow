@@ -8,10 +8,48 @@ import stat
 from pathlib import Path
 from typing import Any
 
+from ..storage import backups as backup_store
 from .backup_activity import run_bulk_process
 
 SOURCE_ID = "ominull-production-state"
 SOURCE_PATH = Path("/media/kasadis/Backups/ominull-production-state/current")
+
+
+def qualified_previous() -> dict[str, str] | None:
+    """Allow staging retirement only after an independent local capture exists."""
+    manifest = SOURCE_PATH / "manifest.json"
+    if not manifest.exists() or any(path.is_symlink() for path in (manifest, *manifest.parents)):
+        return None
+    try:
+        prior = json.loads(manifest.read_text())
+    except (OSError, ValueError):
+        return None
+    if not isinstance(prior, dict) or prior.get("source_id") != SOURCE_ID:
+        return None
+    backup_id = prior.get("backup_id")
+    if not isinstance(backup_id, str):
+        return None
+    record = backup_store.get_backup(backup_id)
+    if not record or record.get("source_id") != SOURCE_ID or record.get("project_id") != "ominull":
+        return None
+    if record.get("status") not in {"completed", "completed_pending_upload"} or record.get("verified") is not True:
+        return None
+    verification = record.get("verification_json") or {}
+    if isinstance(verification, str):
+        try:
+            verification = json.loads(verification)
+        except ValueError:
+            return None
+    preparation = verification.get("remote_preparation") if isinstance(verification, dict) else None
+    if not isinstance(preparation, dict) or preparation.get("sha256") != prior.get("sha256"):
+        return None
+    values: dict[str, str] = {}
+    for key, value in {"sha256": prior.get("sha256"), "snapshot_id": verification.get("snapshot_id"),
+                       "repository_id": verification.get("repository_id")}.items():
+        if not isinstance(value, str) or not re.fullmatch(r"[a-f0-9]{64}", value):
+            return None
+        values[key] = value
+    return {"backup_id": backup_id, **values}
 
 
 def prepare_ominull_backup(*, project_id: str, source_id: str, project_dir: str, backup_id: str) -> dict[str, Any] | None:
@@ -44,7 +82,7 @@ def prepare_ominull_backup(*, project_id: str, source_id: str, project_dir: str,
     if not root or binding.execution_source != "checkout":
         raise RuntimeError("Ominull backup requires its registered owner checkout")
     request = {"contract_version": 1, "operation": "prepare_backup", "project": "ominull",
-               "source_id": source_id, "backup_id": backup_id}
+               "source_id": source_id, "backup_id": backup_id, "qualified_previous": qualified_previous()}
     context = extension_context()
     context.update(project_id="ominull", project_root=root, cwd=root,
                    output={"human": False, "compact": False, "progress_only": False})

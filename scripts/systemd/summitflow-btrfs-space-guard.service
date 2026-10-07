@@ -1,0 +1,13 @@
+[Unit]
+Description=Maintain allocation headroom on internal Btrfs filesystems
+After=local-fs.target
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/libexec/summitflow-btrfs-space-guard
+Nice=19
+IOSchedulingClass=idle
+TimeoutStartSec=1h
+UMask=0077
+StandardOutput=journal
+StandardError=journal

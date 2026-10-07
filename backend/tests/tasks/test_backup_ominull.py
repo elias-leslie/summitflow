@@ -45,3 +45,27 @@ def test_source_misconfiguration_refuses_before_remote_work() -> None:
     with pytest.raises(RuntimeError, match="binding"):
         backup.prepare_ominull_backup(project_id="ominull", source_id=backup.SOURCE_ID,
                                       project_dir="/tmp/arbitrary", backup_id="bkp-fixture")
+
+
+@pytest.mark.parametrize("fault", [None, "pending-capture", "unverified", "wrong-source", "wrong-generation"])
+def test_staging_retirement_requires_qualified_matching_capture(
+    published: dict, monkeypatch: pytest.MonkeyPatch, fault: str | None,
+) -> None:
+    record = {"id": "bkp-fixture", "project_id": "ominull", "source_id": backup.SOURCE_ID,
+              "status": "completed_pending_upload", "verified": True,
+              "verification_json": {"snapshot_id": "b" * 64, "repository_id": "c" * 64,
+                                    "remote_preparation": published.copy()}}
+    if fault == "pending-capture":
+        record["status"] = "running"
+    elif fault == "unverified":
+        record["verified"] = False
+    elif fault == "wrong-source":
+        record["source_id"] = "other"
+    elif fault == "wrong-generation":
+        record["verification_json"]["remote_preparation"]["sha256"] = "d" * 64
+    monkeypatch.setattr(backup.backup_store, "get_backup", lambda _: record)
+    result = backup.qualified_previous()
+    assert (result is not None) == (fault is None)
+    if result:
+        assert result["backup_id"] == published["backup_id"]
+        assert result["sha256"] == published["sha256"]

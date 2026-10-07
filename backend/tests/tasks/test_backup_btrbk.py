@@ -51,6 +51,25 @@ def test_configuration_inspection_does_not_create_operational_lock(tmp_path: Pat
     assert not lock.exists()
 
 
+@pytest.mark.parametrize("autofs_first", [True, False])
+def test_filesystem_resolves_stacked_automount_to_qualified_real_mount(monkeypatch: pytest.MonkeyPatch, autofs_first: bool) -> None:
+    automount = {"target": "/mnt/native", "fstype": "autofs", "uuid": None, "fsroot": "/", "source": "systemd-1", "options": "rw"}
+    mounted = {"target": "/mnt/native", "fstype": "btrfs", "uuid": "plain-target", "fsroot": "/", "source": "/dev/sda2", "options": "rw,compress=zstd:1"}
+    rows = [automount, mounted] if autofs_first else [mounted, automount]
+    monkeypatch.setattr(host, "_checked", lambda _: json.dumps({"filesystems": rows}))
+    assert host._filesystem("/mnt/native/points") == mounted
+
+
+def test_filesystem_never_selects_btrfs_behind_effective_non_btrfs_mount(monkeypatch: pytest.MonkeyPatch) -> None:
+    ancestor = {"target": "/", "fstype": "btrfs", "uuid": "source"}
+    mounted = {"target": "/mnt/native", "fstype": "ext4", "uuid": "other"}
+    monkeypatch.setattr(host, "_checked", lambda _: json.dumps({"filesystems": [ancestor, mounted]}))
+    assert host._filesystem("/mnt/native/points") == mounted
+    monkeypatch.setattr(host, "_checked", lambda _: json.dumps({"filesystems": [mounted, {**mounted, "fstype": "btrfs"}]}))
+    with pytest.raises(RuntimeError, match="Ambiguous"):
+        host._filesystem("/mnt/native/points")
+
+
 @pytest.fixture
 def capture(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> dict[str, Any]:
     root, target = tmp_path / "state", tmp_path / "independent" / "points"
@@ -429,9 +448,51 @@ def test_capacity_keeps_full_filesystem_bound_even_with_small_previous_increment
     monkeypatch.setattr(host, "_filesystem", lambda path: {"uuid": "source" if path in {"/source", "/boot", "/boot/efi"} else "target", "fstype": "btrfs", "options": "compress=zstd"})
     monkeypatch.setattr(Path, "stat", lambda *_args, **_kwargs: SimpleNamespace(st_ino=256))
     monkeypatch.setattr(host.shutil, "disk_usage", lambda path: SimpleNamespace(total=1000, used=600, free=400) if path == "/source" else SimpleNamespace(total=1000, used=500, free=500))
+    monkeypatch.setattr(host, "_allocation_headroom", lambda *_: {"available": True, "admitted": True, "missing": 0})
     result = host._capacity(rows, {"growth_peak_bytes": 1})
     assert result["expected_growth_bytes"] == 600
     assert result["admitted"] is False
+
+
+@pytest.mark.parametrize("fault", [None, "source-exhausted", "target-exhausted", "unreadable", "invalid", "wrong-uuid"])
+def test_capacity_requires_measured_allocation_headroom_on_each_unique_filesystem(monkeypatch: pytest.MonkeyPatch, fault: str | None) -> None:
+    gib = 1024**3
+    rows = [{"source_url": path, "target_path": "/independent/points"} for path in ("/source", "/source/nested", "/workspace")]
+    monkeypatch.setenv("SF_HOST_RETENTION_PRESSURE_MIN_FREE_GB", "25")
+    def filesystem(path: str) -> dict[str, str]:
+        uuid = "target" if path.startswith("/independent") else "workspace" if path == "/workspace" else "source"
+        return {"uuid": uuid, "fstype": "btrfs", "options": "rw,compress=zstd:1"}
+    monkeypatch.setattr(host, "_filesystem", filesystem)
+    monkeypatch.setattr(Path, "stat", lambda *_args, **_kwargs: SimpleNamespace(st_ino=256))
+    monkeypatch.setattr(host.shutil, "disk_usage", lambda path: SimpleNamespace(total=100 * gib, used=70 * gib, free=30 * gib) if path.startswith("/source") else SimpleNamespace(total=1000 * gib, used=100 * gib, free=900 * gib))
+    calls = []
+    def guard(args: list[str]) -> subprocess.CompletedProcess[str]:
+        assert args[:4] == ["sudo", "-n", host.SPACE_GUARD, "--check-only"]
+        path, uuid = args[5], args[7]
+        calls.append((path, uuid))
+        if fault == "unreadable" and uuid == "source":
+            return subprocess.CompletedProcess(args, 1, json.dumps({"path": path, "error": "usage unavailable"}), "")
+        usage = {"size": 1000 * gib, "free": 30 * gib, "missing": 0, "unallocated": 20 * gib, "metadata_size": 2 * gib, "metadata_used": gib}
+        exhausted = (fault == "source-exhausted" and uuid == "source") or (fault == "target-exhausted" and uuid == "target")
+        if exhausted:
+            usage.update(unallocated=1024**2, metadata_used=int(usage["metadata_size"] * 0.9146))
+        if fault == "invalid" and uuid == "source":
+            usage["metadata_used"] = usage["metadata_size"] + 1
+        report = {"path": path, "uuid": "unexpected" if fault == "wrong-uuid" and uuid == "source" else uuid, "after": usage,
+                  "policy": {"trigger_bytes": 8 * gib, "target_bytes": 12 * gib}}
+        return subprocess.CompletedProcess(args, int(exhausted), json.dumps(report), "")
+    monkeypatch.setattr(host, "_run", guard)
+    result = host._capacity(rows, None)
+    assert calls == [("/source", "source"), ("/workspace", "workspace"), ("/independent/points", "target")]
+    assert result["expected_growth_bytes"] == 170 * gib
+    assert result["admitted"] is (fault is None)
+    assert result["reason"] == (None if fault is None else "insufficient-btrfs-allocation-headroom" if "exhausted" in fault else "btrfs-allocation-headroom-unavailable")
+    assert result["reserve_bytes"] == 25 * gib
+    if fault is None or "exhausted" in fault:
+        allocation = result["target_allocation"] if fault == "target-exhausted" else result["source_filesystems"][0]["allocation"]
+        assert allocation["trigger_bytes"] == 8 * gib and allocation["target_bytes"] == 12 * gib
+        assert allocation["unallocated"] == (1024**2 if fault else 20 * gib)
+        assert allocation["metadata_used_percent"] == pytest.approx(91.46 if fault else 50)
 
 
 @pytest.mark.parametrize("fault", ["missing-layout", "relocated-metadata", "changed-target-uuid"])

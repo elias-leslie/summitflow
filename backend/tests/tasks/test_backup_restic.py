@@ -42,6 +42,7 @@ class FakeProcess:
         self.missing_hashes: set[str] = set()
         self.changed_identity: set[str] = set()
         self.fail_check = False
+        self.check_failure: int | None = None
         self.remote_unavailable = False
         self.added = 10
         self.init_missing: set[str] = set()
@@ -115,7 +116,7 @@ class FakeProcess:
                     raise engine.BackupCancelled("fixture cancellation")
                 code = self.copy_failure or 0
             elif "check" in command:
-                code = 1 if self.fail_check else 0
+                code = self.check_failure or (1 if self.fail_check else 0)
                 stdout = "{}"
             elif "restore" in command:
                 destination = Path(command[command.index("--target") + 1])
@@ -286,6 +287,20 @@ def test_failed_local_check_does_not_claim_verified_success(setup):
     with pytest.raises(engine.ResticError, match="verification failed"):
         adapter.save_payload("fixture", payload)
     assert process.local_snapshots  # Native snapshot still exists for investigation.
+
+
+def test_native_lock_failure_is_reported_without_claiming_integrity_failure(setup):
+    adapter, process, payload = _adapter(setup)
+    process.check_failure = 11
+    with pytest.raises(engine.ResticError, match=r"failed to lock repository \(exit 11\)"):
+        adapter.save_payload("fixture", payload)
+    assert process.local_snapshots  # Shared backup lock succeeds; exclusive check fails.
+    failed = adapter.check(monthly_state={})
+    assert failed["verified"] is False
+    assert failed["state"].get("next_bucket", 1) == 1
+    assert "failed to lock repository" in failed["error"]
+    assert "untrusted credential-like diagnostics" not in failed["error"]
+    assert not any("unlock" in command or "--no-lock" in command for command in process.commands)
 
 
 def test_copy_requires_durable_checkpoint_and_native_copy_only(setup):

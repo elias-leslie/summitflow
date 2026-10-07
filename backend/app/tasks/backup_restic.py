@@ -227,6 +227,8 @@ class ResticAdapter:
         check_backup_cancelled()
         result = self._runner(command, env=self._env(), phase=phase, object_name="Restic repository", **kwargs)
         if result.returncode != 0:
+            if command[0] == "restic" and result.returncode == 11:
+                raise ResticError(f"restic {phase} failed to lock repository (exit 11); inspect active backups and stale native locks")
             raise ResticError(f"{command[0]} {phase} failed (exit {result.returncode}); inspect private operator diagnostics")
         return result
 
