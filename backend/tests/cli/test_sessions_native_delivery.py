@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import sys
 from types import SimpleNamespace
+from typing import Any
 from unittest.mock import MagicMock
 
 import pytest
@@ -14,6 +15,9 @@ from cli.lib import native_session_delivery as native
 
 THREAD = "01a10d76-6031-7383-a230-2b721ed5e408"
 QUEUE = "01a10d79-0011-7341-9dd5-d79a8fd5f56f"
+CLIENT = "761abfd7-aa17-5dc3-a424-d8e6d148b4f9"
+TURN = "01a10d79-0011-7341-9dd5-d79a8fd5f56a"
+OTHER_TURN = "01a10d79-0011-7341-9dd5-d79a8fd5f56b"
 
 
 @pytest.fixture
@@ -91,7 +95,7 @@ def test_receipt_write_failure_leaves_reservation_without_replay(store, monkeypa
     queue.assert_called_once()
 
 
-@pytest.mark.parametrize("instruction,key", [(" \n", "r1"), ("x" * 2001, "r1"), ("Pause", "")])
+@pytest.mark.parametrize("instruction,key", [(" \n", "r1"), ("x" * 2001, "r1"), ("é" * 1001, "r1"), ("Pause", "")])
 def test_invalid_instruction_or_key_never_reserves(store, instruction, key):
     with pytest.raises(ValueError):
         delivery.send_native_instruction(THREAD, instruction, project="fixture", source_key=key)
@@ -188,3 +192,237 @@ def test_cli_native_requires_key_and_fleet_default_preserved(monkeypatch):
     call.assert_called_once()
     result = CliRunner().invoke(app, ["sessions", "send", THREAD, "Pause", "--delivery", "native-thread"])
     assert result.exit_code != 0 and "--source-key" in result.output
+
+
+@pytest.fixture
+def inspection(monkeypatch):
+    private = "private instruction and provider output must not leave inspection"
+    replies: dict[str, Any] = {
+        "thread/read": {"thread": {"id": THREAD, "preview": private,
+                                    "status": {"type": "active", "activeFlags": []}}},
+        "thread/queue/list": {"data": [], "nextCursor": None},
+        "thread/items/list": {"data": [{"turnId": TURN, "item": {
+            "type": "userMessage", "id": "item-fixture", "clientId": CLIENT,
+            "content": [{"type": "text", "text": private}],
+        }}], "nextCursor": None},
+        "thread/turns/list": {"data": [{"id": TURN, "status": "inProgress", "items": [],
+                                        "error": {"message": private}}], "nextCursor": None},
+    }
+    calls = []
+
+    class RPC:
+        def __init__(self, root, timeout):
+            assert root == "/fixture" and timeout <= 30
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *args):
+            pass
+
+        def initialize(self):
+            pass
+
+        def call(self, method, params):
+            calls.append((method, params))
+            assert method in replies, "verification must never submit or mutate"
+            response = replies[method]
+            if isinstance(response, Exception):
+                raise response
+            return response(params) if callable(response) else response
+
+    monkeypatch.setattr(native, "NativeRPC", RPC)
+    return replies, calls, private
+
+
+@pytest.mark.parametrize("turn_status,flags,expected", [
+    ("inProgress", [], "active"),
+    ("inProgress", ["waitingOnApproval"], "waiting_approval"),
+    ("inProgress", ["waitingOnUserInput"], "waiting_user_input"),
+    ("completed", [], "completed"),
+    ("failed", [], "failed"),
+    ("interrupted", [], "interrupted"),
+])
+def test_exact_consumption_and_correlated_execution(inspection, turn_status, flags, expected):
+    replies, calls, private = inspection
+    replies["thread/turns/list"]["data"][0]["status"] = turn_status
+    replies["thread/read"]["thread"]["status"]["activeFlags"] = flags
+    result = native.inspect_native_delivery(THREAD, CLIENT, QUEUE, "/fixture")
+    assert result["delivery"] == "consumed" and result["observed"] is True
+    assert result["turn_id"] == TURN and result["item_id"] == "item-fixture"
+    assert result["execution"] == expected
+    assert result["generation_fenced"] is False
+    assert private not in str(result)
+    assert all("input" not in params for _, params in calls)
+
+
+def test_queue_acceptance_is_not_consumption_and_can_recover_lost_ack(inspection):
+    replies, calls, private = inspection
+    replies["thread/queue/list"]["data"] = [{"id": QUEUE, "clientUserMessageId": CLIENT,
+                                             "input": [{"type": "text", "text": private}]}]
+    result = native.inspect_native_delivery(THREAD, CLIENT, None, "/fixture")
+    assert result["delivery"] == "queued" and result["queue_id"] == QUEUE
+    assert result["observed"] is False and result["execution"] == "not_observed"
+    assert "thread/items/list" not in [method for method, _ in calls]
+    assert private not in str(result)
+
+
+def test_deleted_queue_or_unrelated_active_turn_never_proves_consumption(inspection):
+    replies, _, _ = inspection
+    replies["thread/items/list"]["data"][0]["item"]["clientId"] = "unrelated"
+    result = native.inspect_native_delivery(THREAD, CLIENT, QUEUE, "/fixture")
+    assert result["delivery"] == "deleted-or-unknown" and result["observed"] is False
+    assert result["execution"] == "unknown" and result["thread_state"] == "active"
+    assert "turn_id" not in result
+
+
+def test_unrelated_current_turn_does_not_mark_prior_brief_active(inspection):
+    replies, _, _ = inspection
+    replies["thread/turns/list"]["data"].insert(0, {"id": OTHER_TURN, "status": "inProgress"})
+    result = native.inspect_native_delivery(THREAD, CLIENT, QUEUE, "/fixture")
+    assert result["delivery"] == "consumed" and result["observed"] is True
+    assert result["execution"] == "unknown"
+
+
+def test_turn_transition_during_status_read_fails_closed(inspection):
+    replies, _, _ = inspection
+    original = replies["thread/turns/list"]
+    calls = 0
+
+    def turns(params):
+        nonlocal calls
+        calls += 1
+        return original if calls == 1 else {"data": [{"id": OTHER_TURN, "status": "inProgress"}]}
+
+    replies["thread/turns/list"] = turns
+    result = native.inspect_native_delivery(THREAD, CLIENT, QUEUE, "/fixture")
+    assert result["delivery"] == "consumed" and result["execution"] == "unknown"
+    assert result["reason"] == "correlated_turn_changed_during_inspection"
+
+
+def test_typed_queue_pagination_recovers_exact_client_only(inspection):
+    replies, calls, _ = inspection
+    replies["thread/queue/list"] = lambda params: (
+        {"data": [{"id": QUEUE, "clientUserMessageId": CLIENT, "input": []}], "nextCursor": None}
+        if params.get("cursor") == "next-page" else {"data": [], "nextCursor": "next-page"}
+    )
+    result = native.inspect_native_delivery(THREAD, CLIENT, None, "/fixture")
+    assert result["delivery"] == "queued" and result["queue_id"] == QUEUE
+    assert calls[-1][1]["cursor"] == "next-page"
+    assert "next-page" not in str(result)
+
+
+@pytest.mark.parametrize("queued", [False, True])
+def test_offline_thread_stays_explicit_without_resuming(inspection, queued):
+    replies, calls, _ = inspection
+    replies["thread/read"]["thread"]["status"] = {"type": "notLoaded"}
+    replies["thread/items/list"]["data"] = []
+    if queued:
+        replies["thread/queue/list"]["data"] = [{"id": QUEUE, "clientUserMessageId": CLIENT, "input": []}]
+    result = native.inspect_native_delivery(THREAD, CLIENT, QUEUE, "/fixture")
+    assert result["execution"] == "offline_unloaded"
+    assert result["delivery"] == ("queued" if queued else "deleted-or-unknown")
+    assert result["observed"] is False
+    assert all(method != "thread/resume" for method, _ in calls)
+
+
+@pytest.mark.parametrize("case", ["timeout", "unsupported", "wrong_thread", "queue_mismatch", "duplicate_client", "bad_status"])
+def test_inspection_fails_closed(inspection, case):
+    replies, _, private = inspection
+    if case in {"timeout", "unsupported"}:
+        replies["thread/queue/list"] = native.NativeQueueError(
+            "native_rpc_timeout" if case == "timeout" else "native_method_unavailable")
+    elif case == "wrong_thread":
+        replies["thread/read"]["thread"]["id"] = OTHER_TURN
+    elif case == "queue_mismatch":
+        replies["thread/queue/list"]["data"] = [{"id": QUEUE, "clientUserMessageId": "unrelated", "input": []}]
+    elif case == "duplicate_client":
+        replies["thread/items/list"]["data"] *= 2
+    else:
+        replies["thread/read"]["thread"]["status"] = {"type": "futureStatus", "text": private}
+    result = native.inspect_native_delivery(THREAD, CLIENT, QUEUE, "/fixture")
+    assert result["observed"] is False
+    assert result["delivery"] == "unknown" and result["execution"] == "unknown"
+    assert private not in str(result)
+
+
+def test_verify_prior_source_key_is_read_only_and_lost_ack_never_resends(store, monkeypatch):
+    queue = MagicMock(side_effect=native.NativeQueueError("native_rpc_timeout"))
+    monkeypatch.setattr(delivery, "queue_native_thread", queue)
+    receipt = delivery.send_native_instruction(THREAD, "Pause", project="fixture", source_key="revision:1")
+    inspect = MagicMock(return_value={"delivery": "consumed", "execution": "completed", "observed": True,
+                                     "turn_id": TURN, "item_id": "item-fixture", "queue_id": None})
+    monkeypatch.setattr(delivery, "inspect_native_delivery", inspect)
+    before = list(store)
+    result = delivery.verify_native_instruction(THREAD, project="fixture", source_key="revision:1",
+                                                 request_id=str(receipt["request_id"]),
+                                                 client_id=receipt["client_user_message_id"])
+    assert result["execution"] == "completed" and result["resent"] is False
+    assert result["request_id"] == receipt["request_id"]
+    assert result["client_user_message_id"] == receipt["client_user_message_id"]
+    assert store == before
+    queue.assert_called_once()
+    inspect.assert_called_once_with(THREAD, receipt["client_user_message_id"], None, "/fixture", timeout=5)
+
+
+@pytest.mark.parametrize("guard", ["request_id", "client_id", "queue_id"])
+def test_verify_exact_receipt_guards_reject_without_native_read(store, monkeypatch, guard):
+    def queue(thread, instruction, client, root):
+        return {"thread_id": thread, "queue_id": QUEUE, "client_user_message_id": client}
+
+    monkeypatch.setattr(delivery, "queue_native_thread", queue)
+    delivery.send_native_instruction(THREAD, "Pause", project="fixture", source_key="revision:1")
+    inspect = MagicMock()
+    monkeypatch.setattr(delivery, "inspect_native_delivery", inspect)
+    with pytest.raises(ValueError, match="identity"):
+        guards: dict[str, Any] = {guard: "incorrect"}
+        delivery.verify_native_instruction(THREAD, project="fixture", source_key="revision:1",
+                                            **guards)
+    inspect.assert_not_called()
+
+
+def test_retained_failed_send_needs_no_native_read(store, monkeypatch):
+    monkeypatch.setattr(delivery, "queue_native_thread", MagicMock(side_effect=native.NativeQueueError(
+        "native_server_unavailable", uncertain=False)))
+    delivery.send_native_instruction(THREAD, "Pause", project="fixture", source_key="revision:1")
+    inspect = MagicMock()
+    monkeypatch.setattr(delivery, "inspect_native_delivery", inspect)
+    result = delivery.verify_native_instruction(THREAD, project="fixture", source_key="revision:1")
+    assert result["delivery"] == "failed" and result["observed"] is False and result["resent"] is False
+    inspect.assert_not_called()
+
+
+def test_cli_verify_routes_exact_receipt_and_unknown_timeout(monkeypatch):
+    from cli.commands import sessions_fleet
+    from cli.main import app
+
+    verify = MagicMock(return_value={"delivery": "unknown", "reason": "native_rpc_timeout", "resent": False})
+    monkeypatch.setattr(delivery, "verify_native_instruction", verify)
+    monkeypatch.setattr(sessions_fleet, "get_config", lambda: SimpleNamespace(project_id="fixture"))
+    result = CliRunner().invoke(app, ["sessions", "verify", THREAD, "--source-key", "revision:1", "--timeout", "0.5"])
+    assert result.exit_code == 0 and "native_rpc_timeout" in result.output
+    verify.assert_called_once_with(THREAD, project="fixture", source_key="revision:1",
+                                  request_id=None, queue_id=None, client_id=None, timeout=.5)
+
+
+@pytest.mark.parametrize("case,expected", [("timeout", "native_rpc_timeout"),
+                                          ("error", "native_read_rejected"),
+                                          ("unsupported", "native_method_unavailable")])
+def test_real_rpc_verification_timeout_or_private_provider_error_never_leaks(tmp_path, monkeypatch, case, expected):
+    server = tmp_path / "codex"
+    server.write_text(f"#!{sys.executable}\n" + f"""import sys,json,time
+for line in sys.stdin:
+ w=json.loads(line)
+ if w.get('method')=='initialize': print(json.dumps({{'id':w['id'],'result':{{}}}}),flush=True)
+ if w.get('method')=='thread/read':
+  if {case!r}=='timeout': time.sleep(100)
+  print(json.dumps({{'id':w['id'],'error':{{'code':-32601 if {case!r}=='unsupported' else -1,'message':'private provider response'}}}}),flush=True)
+ if w.get('method') not in {{'initialize','initialized','thread/read'}}: raise Exception('unexpected mutation')
+""")
+    server.chmod(0o700)
+    monkeypatch.setattr(native, "transcript_library", lambda: None)
+    monkeypatch.setattr(native, "import_module", lambda _name: SimpleNamespace(codex_binary=lambda: str(server)))
+    result = native.inspect_native_delivery(THREAD, CLIENT, QUEUE, str(tmp_path), timeout=.1)
+    assert result["delivery"] == "unknown" and result["reason"] == expected
+    assert result["observed"] is False
+    assert "private" not in str(result)

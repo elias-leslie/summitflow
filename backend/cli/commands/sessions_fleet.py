@@ -61,6 +61,7 @@ def start(
         "Default fleet-stream is passive retention consumed through wait; native-thread uses exact project/UUID provenance and local owner transport.",
         "Native-thread requires exact UUID + stable revision and <=2000 sanitized UTF-8 bytes. Queued/durable does not mean working or observed consumption and is not generation-fenced; offline input can execute on same-thread resume.",
         "Reuse the source key to reconcile pending/uncertain attempts; never blindly replay with a new key. No secrets or transcripts.",
+        "Use sessions verify UUID --source-key REVISION for content-free correlated queue/consumption/turn status; missing queue entries alone prove nothing.",
         "Use current-client native delegation for subagents; this addresses existing root threads, not spawned children.",
     ),
     tier="reference",
@@ -115,10 +116,49 @@ def wait(
 def register(app: typer.Typer) -> None:
     app.command("start")(start)
     app.command("send")(send)
+    app.command("verify")(verify)
     app.command("wait")(wait)
     app.command("activate")(activate)
     app.command("position")(position)
     app.command("emit")(emit)
+
+
+@usage(
+    surface="st.sessions.verify",
+    cmd="st -P PROJECT sessions verify UUID --source-key REVISION [--timeout SECONDS]",
+    when="verify a prior native-thread delivery using its exact retained request/queue/client identity without message text",
+    precautions=(
+        "Read-only and bounded (>0, <=30 seconds); never resends, resumes, starts turns, or changes native queues. Timeout/unsupported protocol returns unknown.",
+        "Only a correlated user-message clientId proves consumption. Queue absence is deleted-or-unknown; unrelated active turns do not prove this brief started.",
+        "Reports queue, consumption with turn/item IDs, correlated execution status and offline/unloaded state without content. Queue/history reads are separate observations, not an atomic snapshot.",
+        "Native-thread send remains <=2000 sanitized UTF-8 bytes and source-key idempotent; generation-fenced send and /clear remain owner-side gaps.",
+    ),
+    tier="reference",
+)
+def verify(
+    thread: Annotated[str, typer.Argument(help="Exact native Codex UUID from the prior send receipt")],
+    source_key: Annotated[str, typer.Option(help="Exact stable revision used by the prior native-thread send")],
+    request_id: Annotated[str | None, typer.Option(help="Optional exact retained request ID guard")] = None,
+    queue_id: Annotated[str | None, typer.Option(help="Optional exact native queue UUID guard")] = None,
+    client_id: Annotated[str | None, typer.Option(help="Optional exact client-user-message UUID guard")] = None,
+    timeout: Annotated[float, typer.Option(min=0.001, max=30, help="Bound for read-only native inspection; timeout returns unknown")] = 5,
+) -> None:
+    """Verify prior native delivery without message or terminal text; never resend.
+
+    Queue absence means deleted-or-unknown. Only an exact correlated user-message
+    clientId proves consumption; execution status belongs to that turn. Offline,
+    timeout and unsupported protocol stay explicit. No generation fence or /clear.
+    """
+    from .sessions_native_delivery import verify_native_instruction
+
+    try:
+        result = verify_native_instruction(thread, project=get_project_override() or get_config().project_id,
+                                           source_key=source_key, request_id=request_id, queue_id=queue_id,
+                                           client_id=client_id, timeout=timeout)
+    except (ValueError, OSError) as exc:
+        # Never surface provider/transcript/DB contents through diagnostic text.
+        raise typer.BadParameter("Native receipt identity or provenance is unavailable") from exc
+    output_json(result)
 
 
 def activate(root: str) -> None:
