@@ -14,10 +14,16 @@ RootSurface = Literal["aico", "a-term"]
 _KEY = re.compile(r"[A-Za-z0-9][A-Za-z0-9._:-]{0,127}\Z")
 _GENERATION = re.compile(r"[0-9a-f]{64}\Z")
 _RESPONSE_LIMIT = 16 * 1024
+# ECMAScript TrimString whitespace and line terminators, matching Aico.
+_LABEL_TRIM_CHARS = (
+    "\u0009\u000a\u000b\u000c\u000d\u0020\u00a0\u1680"
+    "\u2000\u2001\u2002\u2003\u2004\u2005\u2006\u2007\u2008\u2009\u200a"
+    "\u2028\u2029\u202f\u205f\u3000\ufeff"
+)
 
 
 def _label(value: str) -> str:
-    label = value.strip()
+    label = value.strip(_LABEL_TRIM_CHARS)
     if any(ord(char) < 32 or 127 <= ord(char) <= 159 or 0xD800 <= ord(char) <= 0xDFFF
            or char in "\u2028\u2029" for char in label):
         raise ValueError("Label requires control-free single-line Unicode")

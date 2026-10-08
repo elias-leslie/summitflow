@@ -42,7 +42,8 @@ def test_title_fences_exact_owner_generation_without_fleet_or_content_output(mon
     assert label not in result.output and "private-owner-content" not in result.output
 
 
-@pytest.mark.parametrize("label", ["", " ", "x" * 161, "🐾" * 41, "\ud800",
+@pytest.mark.parametrize("label", ["", " ", "\ufeff", "\ufeff \ufeff", "x" * 161,
+    "é" * 80 + "x", "🐾" * 40 + "x", "🐾" * 41, "\ud800",
     "Focus\nNext", "Focus\rNext", "Focus\tNext", "Focus\x1b[31m", "Focus\x00",
     "Focus\x7f", "Focus\u2028Next", "Focus\u2029Next"])
 def test_invalid_labels_never_reach_owner_or_echo_input(monkeypatch, label):
@@ -112,9 +113,29 @@ def test_help_advertises_exact_surface_and_byte_bound():
 
 
 @pytest.mark.parametrize("label,expected", [("\nFocus\r", "Focus"), ("Project\u00a0Focus", "Project\u00a0Focus"),
-    ("Focus\u202eNext", "Focus\u202eNext"), ("🐾" * 40, "🐾" * 40)])
+    ("Focus\u202eNext", "Focus\u202eNext"), ("Focus\ufeffNext", "Focus\ufeffNext"),
+    ("e\u0301", "e\u0301"), ("x" * 160, "x" * 160), ("é" * 80, "é" * 80), ("🐾" * 40, "🐾" * 40)])
 def test_label_unicode_contract_matches_owners(label, expected):
     assert root_title._label(label) == expected
+
+
+@pytest.mark.parametrize("codepoint", [*range(0x0009, 0x000E), 0x0020, 0x00A0, 0x1680,
+    *range(0x2000, 0x200B), 0x2028, 0x2029, 0x202F, 0x205F, 0x3000, 0xFEFF],
+    ids=lambda codepoint: f"U+{codepoint:04X}")
+def test_label_trims_every_ecmascript_trim_character(codepoint):
+    char = chr(codepoint)
+    assert root_title._label(f"{char}Focus{char}") == "Focus"
+
+
+@pytest.mark.parametrize("codepoint", [*range(0x001C, 0x0020), 0x0085],
+    ids=lambda codepoint: f"U+{codepoint:04X}")
+@pytest.mark.parametrize("position", ["leading", "trailing", "interior"])
+def test_python_only_trim_controls_never_reach_owner(monkeypatch, codepoint, position):
+    char = chr(codepoint)
+    label = {"leading": f"{char}Focus", "trailing": f"Focus{char}", "interior": f"Focus{char}Next"}[position]
+    monkeypatch.setattr(root_title, "_owner_client", lambda _: pytest.fail("Invalid label reached owner"))
+    with pytest.raises(ValueError, match="control-free"):
+        root_title.title_root("root-fixture", label)
 
 
 def test_local_owner_timeout_never_echoes_transport_details_or_retries(monkeypatch):
