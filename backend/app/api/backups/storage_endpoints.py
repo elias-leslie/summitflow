@@ -311,13 +311,13 @@ async def storage_repository_status(backend_id: str) -> dict[str, object]:
 
 
 @router.post("/backup-storage/{backend_id}/maintenance")
-async def maintain_storage_repository(backend_id: str, request: Request, dry_run: bool = True) -> dict[str, object]:
+async def maintain_storage_repository(backend_id: str, request: Request, dry_run: bool = True, force_critical_restore: bool = False) -> dict[str, object]:
     """Preview repository maintenance unless application is explicitly requested."""
     require_owner(request)
     from ...tasks.backup_repository_runtime import maintain_repository
 
     try:
-        return await asyncio.to_thread(maintain_repository, _restic_backend_env(backend_id), dry_run=dry_run)
+        return await asyncio.to_thread(maintain_repository, _restic_backend_env(backend_id), dry_run=dry_run, force_critical_restore=force_critical_restore)
     except (ResticError, OSError, ValueError) as exc:
         raise HTTPException(status_code=409, detail=str(exc)) from exc
 

@@ -14,6 +14,25 @@ its child receives the same lower priority and bounded worker settings. Nested
 canonical checks inherit admission rather than deadlocking. It is not a route
 for ordinary status or source inspection.
 
+Cleanrooms use the caller's explicit `TMPDIR` as their checkout parent, even if
+Python previously cached another temporary directory. Without that setting,
+the mounted host `/srv/scratch` takes precedence through a private
+`st-cleanrooms-<uid>` directory. Scratch must be a real mount, without symlinks
+or group/other write access; its per-user directory must be owned by that user
+with mode `0700`. A present but unmounted or unsafe scratch path fails before
+copying the checkout. Hosts without `/srv/scratch` retain Python's portable
+temporary-directory selection. Explicit `TMPDIR` must be an existing absolute,
+owner-controlled directory without symlinks; shared namespace directories such
+as `/tmp` must have the sticky bit.
+
+Each job places its repo, isolated home/cache and child `TMPDIR` under the owned
+cleanroom directory. `--env TMPDIR=...` still overrides the child's selection.
+Normal completion, a nonzero command exit, and preparation/launch exceptions
+remove the owned directory; `--keep-dir` retains it and reports its path. This
+routing applies only to newly created cleanrooms. It does not move existing work
+or durable artifacts. On the managed host, `/srv/scratch` is the disposable
+mount excluded from backups; admission locks remain at their fixed `/tmp` path.
+
 The private `/tmp/st-heavy-<uid>` directory is independent of project and HOME.
 Owner, type, mode, link and symlink checks protect its lock files. There is no
 daemon, environment bypass, per-project policy store or new service. A live

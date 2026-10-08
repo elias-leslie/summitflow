@@ -390,12 +390,14 @@ def repository_maintenance(
     ctx: typer.Context,
     backend_id: Annotated[str, typer.Argument(help="Restic backend ID")],
     preview: Annotated[bool, typer.Option("--preview/--apply", help="Preview maintenance by default; --apply executes it")] = True,
+    force_critical_restore: Annotated[bool, typer.Option("--force-critical-restore", help="Repeat the offsite critical restore after a repair, bypassing cached failures and weekly cadence")] = False,
     details: Annotated[bool, typer.Option("--details", help="Show the full response, including object journals")] = False,
 ) -> None:
     """Preview or explicitly apply repository-scoped maintenance."""
     try:
         result = _api_post(
-            f"backup-storage/{backend_id}/maintenance?dry_run={str(preview).lower()}",
+            f"backup-storage/{backend_id}/maintenance?dry_run={str(preview).lower()}"
+            + ("&force_critical_restore=true" if force_critical_restore else ""),
             timeout=LONG_RUNNING_TIMEOUT,
         )
         output_json(result if details else {"backend_id": backend_id, **_maintenance_summary(_mapping(result)), "details_command": f"st backup storage status {backend_id} --details"})

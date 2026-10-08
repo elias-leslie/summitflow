@@ -7,13 +7,285 @@ import os
 import shutil
 import sqlite3
 import subprocess
+import tarfile
+from contextlib import nullcontext
+from datetime import UTC, datetime, timedelta
+from io import BytesIO
 from pathlib import Path
-from unittest.mock import patch
+from unittest.mock import MagicMock, patch
 
 import pytest
 
 from app.tasks import backup_repository_runtime as runtime
 from app.tasks.backup_restic import ResticAdapter, ResticConfig, ResticError
+
+
+@pytest.fixture
+def critical_link_replay(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+    """Replay the canonical Claude zzconsult link with real capture/restore helpers."""
+    from app.tasks import backup_native_recovery as recovery
+
+    skills = tmp_path / "agent-skills"
+    (skills / "skills/available").mkdir(parents=True)
+    (skills / "skills/available/SKILL.md").write_text("synthetic usable skill")
+    claude = tmp_path / "claude-config"
+    (claude / "skills").mkdir(parents=True)
+    (claude / "skills/available").symlink_to(skills / "skills/available")
+    (claude / "skills/zzconsult").symlink_to(skills / "skills/zzconsult")
+    rows = {}
+    archives = {}
+    for index, (source_id, source) in enumerate((("agent-skills", skills), ("claude-config", claude)), 1):
+        snapshot, _ = recovery.build_consistent_snapshot(
+            source, tmp_path / ("stage-" + source_id), (), lambda *_: False,
+            source_roots={"agent-skills": skills},
+        )
+        archive = tmp_path / (source_id + ".tar.gz")
+        with tarfile.open(archive, "w:gz") as payload:
+            payload.add(snapshot, arcname=source_id)
+        archives[source_id] = archive
+        rows[source_id] = {
+            "id": "point-" + source_id, "source_id": source_id,
+            "storage_backend_id": "stb-fixture", "status": "completed",
+            "verification_json": {
+                "format": "restic-v1", "snapshot_id": str(index) * 64,
+                "remote_snapshot_id": str(index + 2) * 64,
+                "offsite": {"status": "verified"},
+            },
+        }
+    monkeypatch.setattr(runtime.backup_store, "list_sources", lambda: [{"id": name, "enabled": True} for name in rows])
+    monkeypatch.setattr(runtime.backup_store, "list_backups", lambda *, source_id, **_: ([rows[source_id]], 1))
+    materialize = MagicMock(side_effect=lambda row, **_: nullcontext(archives[row["source_id"]]))
+    monkeypatch.setattr(runtime, "materialize_repository_archive", materialize)
+    return rows, archives, materialize
+
+
+def test_critical_restore_retains_actual_dangling_mapping_and_selected_points(critical_link_replay):
+    rows, _, _ = critical_link_replay
+    maintenance = {}
+    result = runtime._weekly_critical_restore({"BACKUP_STORAGE_BACKEND_ID": "stb-fixture"}, maintenance)
+
+    assert result["status"] == "failed"
+    assert result["failed_source"] == "claude-config"
+    assert result["error"] == "Canonical configuration links remain unresolved"
+    assert result["sources"]["claude-config"].get("recovery_complete") is False
+    assert result["sources"]["claude-config"]["mapped_links_restored"] == 1
+    assert result["sources"]["claude-config"]["mapped_links_pending"] == [{
+        "path": "skills/zzconsult", "target_source": "agent-skills", "target_relative_path": "skills/zzconsult",
+    }]
+    assert result["selected_backups"]["claude-config"]["backup_id"] == rows["claude-config"]["id"]
+    assert "critical_restore_at" not in maintenance
+
+
+def test_failed_critical_restore_reuses_failure_but_changed_snapshot_retries(critical_link_replay):
+    rows, _, materialize = critical_link_replay
+    maintenance = {}
+    env = {"BACKUP_STORAGE_BACKEND_ID": "stb-fixture"}
+    first = runtime._weekly_critical_restore(env, maintenance)
+    second = runtime._weekly_critical_restore(env, maintenance)
+
+    assert first["status"] == second["status"] == "failed"
+    assert second["cached"] is True
+    assert second["reason"] == "unchanged-failed-recovery-inputs"
+    assert second["sources"]["claude-config"]["mapped_links_pending"] == first["sources"]["claude-config"]["mapped_links_pending"]
+    assert materialize.call_count == 2
+    rows["agent-skills"]["verification_json"]["remote_snapshot_id"] = "9" * 64
+    third = runtime._weekly_critical_restore(env, maintenance)
+    assert third["status"] == "failed"
+    assert third["input_fingerprint"] != first["input_fingerprint"]
+    assert materialize.call_count == 4
+
+
+def test_failed_restore_catalogue_only_changes_do_not_repeat_drill(critical_link_replay):
+    rows, _, materialize = critical_link_replay
+    maintenance = {}
+    env = {"BACKUP_STORAGE_BACKEND_ID": "stb-fixture"}
+    first = runtime._weekly_critical_restore(env, maintenance)
+    for row in rows.values():
+        row["id"] = "new-catalogue-row-" + row["source_id"]
+
+    result = runtime._weekly_critical_restore(env, maintenance)
+    assert result["status"] == "failed"
+    assert result.get("cached") is True
+    assert result["input_fingerprint"] == first["input_fingerprint"]
+    assert materialize.call_count == 2
+
+
+def test_failed_restore_retries_changed_implementation_and_force(critical_link_replay, monkeypatch):
+    _, _, materialize = critical_link_replay
+    maintenance = {}
+    env = {"BACKUP_STORAGE_BACKEND_ID": "stb-fixture"}
+    monkeypatch.setattr(runtime, "_critical_restore_implementation_fingerprint", lambda: "first-implementation")
+    runtime._weekly_critical_restore(env, maintenance)
+    monkeypatch.setattr(runtime, "_critical_restore_implementation_fingerprint", lambda: "repaired-implementation")
+    runtime._weekly_critical_restore(env, maintenance)
+    assert materialize.call_count == 4
+    runtime._weekly_critical_restore(env, maintenance, force=True)
+    assert materialize.call_count == 6
+
+
+def test_repaired_mapping_succeeds_and_keeps_weekly_cadence(critical_link_replay):
+    rows, archives, materialize = critical_link_replay
+    maintenance = {}
+    env = {"BACKUP_STORAGE_BACKEND_ID": "stb-fixture"}
+    runtime._weekly_critical_restore(env, maintenance)
+    # Replay a newly captured Claude point after retiring its obsolete link.
+    archive = archives["claude-config"]
+    with tarfile.open(archive, "r:gz") as payload:
+        members = []
+        for member in payload.getmembers():
+            stream = payload.extractfile(member) if member.isfile() else None
+            members.append((member, stream.read() if stream is not None else None))
+    with tarfile.open(archive, "w:gz") as payload:
+        for member, data in members:
+            if member.name.endswith("/manifest.json"):
+                assert data is not None
+                manifest = json.loads(data)
+                manifest["mapped_links"] = [mapping for mapping in manifest["mapped_links"] if mapping["path"] != "skills/zzconsult"]
+                data = json.dumps(manifest).encode()
+                member.size = len(data)
+            payload.addfile(member, BytesIO(data) if data is not None else None)
+    rows["claude-config"]["verification_json"]["remote_snapshot_id"] = "8" * 64
+
+    result = runtime._weekly_critical_restore(env, maintenance)
+    assert result["status"] == "verified"
+    assert result["sources"]["claude-config"]["recovery_complete"] is True
+    assert result["sources"]["claude-config"]["mapped_links_pending"] == []
+    assert "critical_restore_failure" not in maintenance
+    calls = materialize.call_count
+    assert runtime._weekly_critical_restore(env, maintenance)["reason"] == "weekly-cadence"
+    assert materialize.call_count == calls
+    maintenance["critical_restore_at"] = (datetime.now(UTC) - timedelta(days=8)).isoformat()
+    assert runtime._weekly_critical_restore(env, maintenance)["status"] == "verified"
+    assert materialize.call_count == calls + 2
+
+
+def test_cached_failed_restore_blocks_qualified_retention(repository_env, critical_link_replay, monkeypatch):
+    _, _, materialize = critical_link_replay
+    env = {**repository_env, "RESTIC_OFFSITE_PRUNE_QUALIFIED": "true"}
+    Path(env["RESTIC_LOCAL_REPOSITORY"]).mkdir()
+    adapter = MagicMock()
+    adapter.check.return_value = {"verified": True, "state": {}, "checked_at": datetime.now(UTC).isoformat()}
+    monkeypatch.setattr(runtime, "ResticAdapter", lambda _: adapter)
+    first = runtime.maintain_repository(env, dry_run=False)
+    second = runtime.maintain_repository(env, dry_run=False)
+
+    assert first["status"] == second["status"] == "failed"
+    assert second["critical_restore"]["cached"] is True
+    assert materialize.call_count == 2
+    adapter.retention.assert_not_called()
+    adapter.prune.assert_not_called()
+    assert runtime.maintain_repository(env, dry_run=False, force_critical_restore=True)["status"] == "failed"
+    assert materialize.call_count == 4
+    adapter.retention.assert_not_called()
+    adapter.prune.assert_not_called()
+    with runtime._checkpoint(ResticConfig.from_env(env)) as (_, state):
+        assert state["maintenance"]["critical_restore_result"]["status"] == "failed"
+
+
+def test_failed_restore_cache_survives_subsequent_monthly_check_error(repository_env, critical_link_replay, monkeypatch):
+    _, _, materialize = critical_link_replay
+    adapter = MagicMock()
+    adapter.check.side_effect = ResticError("synthetic repository check unavailable")
+    monkeypatch.setattr(runtime, "ResticAdapter", lambda _: adapter)
+    for _ in range(2):
+        with pytest.raises(ResticError, match="repository check unavailable"):
+            runtime.maintain_repository(repository_env)
+    assert materialize.call_count == 2
+    with runtime._checkpoint(ResticConfig.from_env(repository_env)) as (_, state):
+        assert state["maintenance"]["critical_restore_result"]["status"] == "failed"
+
+
+def test_failed_forced_repair_cannot_be_hidden_by_recent_success(critical_link_replay):
+    _, _, materialize = critical_link_replay
+    maintenance = {
+        "critical_restore_at": datetime.now(UTC).isoformat(),
+        "critical_restore_result": {"status": "verified"},
+    }
+    env = {"BACKUP_STORAGE_BACKEND_ID": "stb-fixture"}
+    assert runtime._weekly_critical_restore(env, maintenance)["reason"] == "weekly-cadence"
+    runtime._weekly_critical_restore(env, maintenance, force=True)
+    result = runtime._weekly_critical_restore(env, maintenance)
+    assert result["status"] == "failed"
+    assert result["cached"] is True
+    assert materialize.call_count == 2
+
+
+@pytest.mark.parametrize("prior_result,allows_cadence", [
+    ({"status": "verified"}, True),
+    ({"status": "skipped", "reason": "weekly-cadence"}, True),
+    ({}, False),
+    ({"status": "pending"}, False),
+    ({"status": "skipped", "reason": "unrelated-skip"}, False),
+])
+def test_cadence_requires_affirmative_verified_result(critical_link_replay, prior_result, allows_cadence):
+    _, _, materialize = critical_link_replay
+    maintenance = {
+        "critical_restore_at": datetime.now(UTC).isoformat(),
+        "critical_restore_result": prior_result,
+    }
+    result = runtime._weekly_critical_restore({"BACKUP_STORAGE_BACKEND_ID": "stb-fixture"}, maintenance)
+    assert result["status"] == ("skipped" if allows_cadence else "failed")
+    assert materialize.call_count == (0 if allows_cadence else 2)
+
+
+@pytest.mark.parametrize("retry", ["same", "changed", "force"])
+def test_failed_repair_survives_missing_coverage_without_pruning(repository_env, critical_link_replay, monkeypatch, retry):
+    rows, _, materialize = critical_link_replay
+    env = {**repository_env, "RESTIC_OFFSITE_PRUNE_QUALIFIED": "true"}
+    config = ResticConfig.from_env(env)
+    Path(env["RESTIC_LOCAL_REPOSITORY"]).mkdir()
+    adapter = MagicMock()
+    adapter.check.return_value = {"verified": True, "state": {}, "checked_at": datetime.now(UTC).isoformat()}
+    monkeypatch.setattr(runtime, "ResticAdapter", lambda _: adapter)
+    with runtime._checkpoint(config) as (directory, state):
+        state["maintenance"] = {
+            "critical_restore_at": datetime.now(UTC).isoformat(),
+            "critical_restore_result": {"status": "verified"},
+        }
+        runtime._save_json(directory / "state.json", state)
+
+    first = runtime.maintain_repository(env, dry_run=False, force_critical_restore=True)
+    assert first["critical_restore"]["status"] == "failed"
+    rows["agent-skills"]["verification_json"]["offsite"]["status"] = "pending"
+    missing = runtime.maintain_repository(env, dry_run=False)
+    assert missing["critical_restore"]["status"] == "pending"
+    assert materialize.call_count == 2
+    rows["agent-skills"]["verification_json"]["offsite"]["status"] = "verified"
+    if retry == "changed":
+        rows["agent-skills"]["verification_json"]["remote_snapshot_id"] = "9" * 64
+
+    result = runtime.maintain_repository(env, dry_run=False, force_critical_restore=retry == "force")
+    assert result["critical_restore"]["status"] == "failed"
+    assert result["status"] == "failed"
+    assert materialize.call_count == (2 if retry == "same" else 4)
+    adapter.retention.assert_not_called()
+    adapter.prune.assert_not_called()
+
+
+def test_legacy_failed_restore_gets_one_evidenced_attempt(critical_link_replay):
+    _, _, materialize = critical_link_replay
+    maintenance = {
+        "critical_restore_at": datetime.now(UTC).isoformat(),
+        "critical_restore_result": {"status": "failed", "failed_source": "claude-config"},
+    }
+    env = {"BACKUP_STORAGE_BACKEND_ID": "stb-fixture"}
+    assert runtime._weekly_critical_restore(env, maintenance)["status"] == "failed"
+    assert runtime._weekly_critical_restore(env, maintenance)["cached"] is True
+    assert materialize.call_count == 2
+
+
+def test_materialization_failure_retains_all_selected_points_and_is_cached(critical_link_replay):
+    rows, _, materialize = critical_link_replay
+    materialize.side_effect = ResticError("synthetic remote unavailable")
+    maintenance = {}
+    env = {"BACKUP_STORAGE_BACKEND_ID": "stb-fixture"}
+    result = runtime._weekly_critical_restore(env, maintenance)
+    assert result["status"] == "failed"
+    assert result["failed_source"] == "agent-skills"
+    assert result["sources"]["agent-skills"]["ok"] is False
+    assert set(result["selected_backups"]) == set(rows)
+    assert runtime._weekly_critical_restore(env, maintenance)["cached"] is True
+    assert materialize.call_count == 1
 
 
 @pytest.fixture

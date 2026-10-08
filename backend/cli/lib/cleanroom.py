@@ -5,6 +5,7 @@ from __future__ import annotations
 import argparse
 import os
 import shutil
+import stat
 import subprocess
 import sys
 import tempfile
@@ -26,6 +27,41 @@ _BASE_UNSET_KEYS = (
     "SF_COMMAND_GUARD_WORDS",
     "VIRTUAL_ENV",
 )
+_SCRATCH_ROOT = Path("/srv/scratch")
+
+
+def _validate_temp_parent(path: Path, *, private: bool = False) -> None:
+    """Reject unsafe routing without changing an existing directory's permissions."""
+    if not path.is_absolute() or path.resolve() != path:
+        raise ValueError("Cleanroom temporary directory must be absolute and not a symlink")
+    info = path.lstat()
+    mode = stat.S_IMODE(info.st_mode)
+    if not stat.S_ISDIR(info.st_mode) or info.st_uid not in {0, os.getuid()}:
+        raise ValueError("Cleanroom temporary directory must be owner-controlled")
+    if private:
+        if info.st_uid != os.getuid() or mode != 0o700:
+            raise ValueError("Cleanroom scratch directory must be private and owned by the current user")
+    elif mode & 0o022 and not mode & stat.S_ISVTX:
+        raise ValueError("Cleanroom shared temporary directory requires the sticky bit")
+
+
+def _cleanroom_temp_parent() -> Path | None:
+    """Use the caller's namespace, or the host's mounted disposable scratch."""
+    if explicit := os.environ.get("TMPDIR"):
+        parent = Path(explicit)
+        _validate_temp_parent(parent)
+        return parent
+    # A missing host convention is portable. A present but unmounted/unsafe
+    # directory must not silently receive a large checkout on the root volume.
+    if not _SCRATCH_ROOT.exists() and not _SCRATCH_ROOT.is_symlink():
+        return None
+    _validate_temp_parent(_SCRATCH_ROOT)
+    if not _SCRATCH_ROOT.is_mount() or _SCRATCH_ROOT.stat().st_mode & 0o022:
+        raise ValueError("Cleanroom scratch root must be a mounted, owner-controlled directory")
+    parent = _SCRATCH_ROOT / f"st-cleanrooms-{os.getuid()}"
+    parent.mkdir(mode=0o700, exist_ok=True)
+    _validate_temp_parent(parent, private=True)
+    return parent
 
 
 def _git_snapshot_paths(project_root: Path) -> list[Path]:
@@ -149,13 +185,17 @@ def run_cleanroom(
     # gates. Admit before copying/staging the checkout as well as spawning the
     # command; ordinary ST inspection does not use this route.
     with heavy_work("isolated validation") as work:
-        temp_dir = tempfile.mkdtemp(prefix=f"{project_root.name}-cleanroom-")
+        temp_dir = tempfile.mkdtemp(
+            prefix=f"{project_root.name}-cleanroom-", dir=_cleanroom_temp_parent(),
+        )
         clean_up = not keep_dir
         snapshot_root = Path(temp_dir) / "repo"
         home_root = Path(temp_dir) / "home"
-        snapshot_root.mkdir(parents=True, exist_ok=True)
+        temp_root = Path(temp_dir) / "tmp"
 
         try:
+            snapshot_root.mkdir(parents=True, exist_ok=True)
+            temp_root.mkdir(mode=0o700)
             create_snapshot(project_root, snapshot_root)
             initialize_snapshot_git(snapshot_root)
             env = build_cleanroom_env(
@@ -165,6 +205,10 @@ def run_cleanroom(
                 env_overrides=env_overrides,
                 unset_keys=unset_keys,
             )
+            # The command's temporary files belong to this disposable job too.
+            # An explicit --env TMPDIR still selects the caller's desired path.
+            if "TMPDIR" not in (env_overrides or {}):
+                env["TMPDIR"] = str(temp_root)
             completed = work.run(command, cwd=snapshot_root, env=env)
             return completed.returncode
         finally:

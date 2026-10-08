@@ -229,6 +229,8 @@ def test_storage_update_default_only_preserves_repository_and_policy(monkeypatch
     ("maintenance", [], "backup-storage/pilot/maintenance?dry_run=true", "_api_post"),
     ("maintenance", ["--preview"], "backup-storage/pilot/maintenance?dry_run=true", "_api_post"),
     ("maintenance", ["--apply"], "backup-storage/pilot/maintenance?dry_run=false", "_api_post"),
+    ("maintenance", ["--force-critical-restore"], "backup-storage/pilot/maintenance?dry_run=true&force_critical_restore=true", "_api_post"),
+    ("maintenance", ["--apply", "--force-critical-restore"], "backup-storage/pilot/maintenance?dry_run=false&force_critical_restore=true", "_api_post"),
 ])
 def test_repository_commands_are_explicit_and_maintenance_defaults_to_preview(monkeypatch, command, tail, path, method):
     from cli.commands import backup_storage

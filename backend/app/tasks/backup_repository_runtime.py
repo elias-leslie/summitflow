@@ -586,7 +586,7 @@ def repository_status(env: dict[str, str]) -> dict[str, Any]:
         }
 
 
-def maintain_repository(env: dict[str, str], *, dry_run: bool = True) -> dict[str, Any]:
+def maintain_repository(env: dict[str, str], *, dry_run: bool = True, force_critical_restore: bool = False) -> dict[str, Any]:
     """Monthly rotating readback, guarded daily expiry and weekly prune.
 
     Both destructive retention paths stay preview-only before cold recovery is
@@ -609,8 +609,11 @@ def maintain_repository(env: dict[str, str], *, dry_run: bool = True) -> dict[st
             pins.extend(value["baseline_snapshot_id"] for value in state["sources"].values())
         results: dict[str, Any] = {"dry_run": preview}
         if config.remote_repository:
-            results["critical_restore"] = _weekly_critical_restore(env, maintenance)
+            results["critical_restore"] = _weekly_critical_restore(env, maintenance, force=True) if force_critical_restore else _weekly_critical_restore(env, maintenance)
             maintenance["critical_restore_result"] = results["critical_restore"]
+            # A later repository check may raise; keep the expensive drill's
+            # result durable independently so that restart retries reuse it.
+            _save_json(directory / "state.json", state)
 
         def persist(journal: dict[str, Any]) -> None:
             state["offsite"] = journal
@@ -671,10 +674,35 @@ def maintain_repository(env: dict[str, str], *, dry_run: bool = True) -> dict[st
         return results
 
 
-def _weekly_critical_restore(env: dict[str, str], maintenance: dict[str, Any]) -> dict[str, Any]:
+def _critical_restore_implementation_fingerprint() -> str:
+    """Invalidate failed drill reuse when its deployed recovery code changes."""
+    from .backup_restore_drill import DRILL_SCRIPT
+
+    digest = hashlib.sha256()
+    for path in (
+        Path(__file__),
+        *(Path(__file__).with_name(name) for name in (
+            "backup_executor.py", "backup_native_recovery.py", "backup_native_restore.py",
+            "backup_native_archive.py", "backup_restic.py", "backup_restore_drill.py",
+        )),
+        DRILL_SCRIPT,
+    ):
+        digest.update(path.name.encode())
+        digest.update(path.read_bytes())
+    return digest.hexdigest()
+
+
+def _weekly_critical_restore(env: dict[str, str], maintenance: dict[str, Any], *, force: bool = False) -> dict[str, Any]:
     """Restore essential configuration and databases weekly from offsite only."""
     previous = maintenance.get("critical_restore_at")
-    if previous and datetime.fromisoformat(previous) > datetime.now(UTC) - timedelta(days=REPOSITORY_CRITICAL_RESTORE_DAYS):
+    last_result = maintenance.get("critical_restore_result") or {}
+    if last_result.get("status") == "failed":
+        maintenance["critical_restore_failure"] = last_result
+    last_failure = maintenance.get("critical_restore_failure") or {}
+    cadence_verified = last_result.get("status") == "verified" or (
+        last_result.get("status") == "skipped" and last_result.get("reason") == "weekly-cadence"
+    )
+    if not force and not last_failure and cadence_verified and previous and datetime.fromisoformat(previous) > datetime.now(UTC) - timedelta(days=REPOSITORY_CRITICAL_RESTORE_DAYS):
         return {"status": "skipped", "reason": "weekly-cadence", "verified_at": previous}
     # Conversation trees remain fully backed up and covered by provider hashes
     # and rotating payload checks. Re-downloading them in full every week adds
@@ -691,10 +719,46 @@ def _weekly_critical_restore(env: dict[str, str], maintenance: dict[str, Any]) -
             selected[source_id] = selected_row
     missing = sorted(required - selected.keys())
     if missing or not selected:
-        return {"status": "pending", "reason": "critical-offsite-coverage-missing", "missing_sources": missing}
+        pending_result = {"status": "pending", "reason": "critical-offsite-coverage-missing", "missing_sources": missing}
+        maintenance["critical_restore_result"] = pending_result
+        return pending_result
     from .backup_executor import _complete_mapped_recovery
     from .backup_native_restore import restore_isolated_archive
     from .backup_restore_drill import _record_drill_result, _run_drill_script
+
+    selected_points = {
+        source_id: {
+            "backup_id": backup["id"],
+            **{field: backup["verification_json"].get(field) for field in (
+                "snapshot_id", "remote_snapshot_id", "repository_id", "remote_repository_id",
+            )},
+        }
+        for source_id, backup in selected.items()
+    }
+    fingerprint = hashlib.sha256(json.dumps({
+        # Catalogue rows may be renewed for an unchanged captured snapshot.
+        # Keep their IDs in attempt evidence, not in recovery input identity.
+        "selected_snapshots": {
+            source_id: {field: value for field, value in point.items() if field != "backup_id"}
+            for source_id, point in selected_points.items()
+        },
+        "backend_id": env.get("BACKUP_STORAGE_BACKEND_ID"),
+        "repository_pair": [env.get("RESTIC_LOCAL_REPOSITORY"), env.get("RESTIC_REMOTE_REPOSITORY")],
+        "implementation": _critical_restore_implementation_fingerprint(),
+    }, sort_keys=True).encode()).hexdigest()
+    if not force and last_failure.get("status") == "failed" and last_failure.get("input_fingerprint") == fingerprint:
+        return {**copy.deepcopy(last_failure), "cached": True, "reason": "unchanged-failed-recovery-inputs"}
+
+    attempted_at = datetime.now(UTC).isoformat()
+
+    def finish(result: dict[str, Any]) -> dict[str, Any]:
+        result.update(input_fingerprint=fingerprint, selected_backups=selected_points, attempted_at=attempted_at)
+        maintenance["critical_restore_result"] = result
+        if result["status"] == "failed":
+            maintenance["critical_restore_failure"] = result
+        elif result["status"] == "verified":
+            maintenance.pop("critical_restore_failure", None)
+        return result
 
     evidence: dict[str, Any] = {}
     with tempfile.TemporaryDirectory(prefix="st-critical-offsite-drill-") as temporary:
@@ -714,20 +778,26 @@ def _weekly_critical_restore(env: dict[str, str], maintenance: dict[str, Any]) -
                         restore_isolated_archive(archive, target)
                         targets[source_id] = target
                 evidence[source_id] = {"ok": True, "backup_id": backup["id"], "remote_snapshot_id": backup["verification_json"]["remote_snapshot_id"]}
+            except BackupCancelled:
+                raise
             except Exception as exc:
                 if source_id == "infrastructure" and drill_result is None:
                     _record_drill_result(source_id, str(backup["id"]), ok=False, error=str(exc))
-                return {"status": "failed", "sources": evidence, "failed_source": source_id, "error": str(exc)}
+                evidence[source_id] = {**selected_points[source_id], "ok": False, "error": str(exc)}
+                return finish({"status": "failed", "sources": evidence, "failed_source": source_id, "error": str(exc)})
         for source_id, target in targets.items():
             try:
                 mapped = _complete_mapped_recovery(target, {key: root for key, root in targets.items() if key in {"codex-config", "claude-config", "agent-skills"}})
+                evidence[source_id].update(mapped)
                 if not mapped["recovery_complete"]:
                     raise ResticError("Canonical configuration links remain unresolved")
-                evidence[source_id].update(mapped)
+            except BackupCancelled:
+                raise
             except Exception as exc:
-                return {"status": "failed", "sources": evidence, "failed_source": source_id, "error": str(exc)}
+                evidence[source_id].update(ok=False, error=str(exc))
+                return finish({"status": "failed", "sources": evidence, "failed_source": source_id, "error": str(exc)})
     maintenance["critical_restore_at"] = datetime.now(UTC).isoformat()
-    return {"status": "verified", "verified_at": maintenance["critical_restore_at"], "sources": evidence, "remote_only": True}
+    return finish({"status": "verified", "verified_at": maintenance["critical_restore_at"], "sources": evidence, "remote_only": True})
 
 
 def repository_maintenance_failed(value: object) -> bool:

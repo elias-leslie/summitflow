@@ -265,7 +265,7 @@ async def test_repository_operations_forward_selected_environment_and_preview_de
     }
     runtime.initialize_repository.assert_called_once_with(env, local_only=True)
     runtime.repository_status.assert_called_once_with(env)
-    runtime.maintain_repository.assert_called_once_with(env, dry_run=True)
+    runtime.maintain_repository.assert_called_once_with(env, dry_run=True, force_critical_restore=False)
 
 
 @pytest.mark.asyncio
@@ -284,8 +284,10 @@ async def test_credentials_in_immediate_private_subdirectory_are_accepted(monkey
 
 @pytest.mark.parametrize("path,operation,expected", [
     ("/api/backup-storage/pilot/initialize?local_only=true", "initialize_repository", {"local_only": True}),
-    ("/api/backup-storage/pilot/maintenance", "maintain_repository", {"dry_run": True}),
-    ("/api/backup-storage/pilot/maintenance?dry_run=false", "maintain_repository", {"dry_run": False}),
+    ("/api/backup-storage/pilot/maintenance", "maintain_repository", {"dry_run": True, "force_critical_restore": False}),
+    ("/api/backup-storage/pilot/maintenance?dry_run=false", "maintain_repository", {"dry_run": False, "force_critical_restore": False}),
+    ("/api/backup-storage/pilot/maintenance?force_critical_restore=true", "maintain_repository", {"dry_run": True, "force_critical_restore": True}),
+    ("/api/backup-storage/pilot/maintenance?dry_run=false&force_critical_restore=true", "maintain_repository", {"dry_run": False, "force_critical_restore": True}),
 ])
 def test_repository_routes_parse_explicit_operation_flags(repository_runtime, path, operation, expected):
     from fastapi.testclient import TestClient
@@ -296,6 +298,58 @@ def test_repository_routes_parse_explicit_operation_flags(repository_runtime, pa
     response = TestClient(app).post(path)
     assert response.status_code == 200, response.text
     assert getattr(runtime, operation).call_args.kwargs == expected
+
+
+@pytest.mark.parametrize("force", [False, True])
+def test_cli_force_restore_reaches_existing_owner_api(repository_runtime, monkeypatch, force):
+    from fastapi.testclient import TestClient
+    from typer.testing import CliRunner
+
+    from app.main import app as api_app
+    from cli.commands import backup_storage
+    from cli.main import app as cli_app
+
+    endpoints, runtime = repository_runtime
+    client = TestClient(api_app)
+
+    def post(path, **_kwargs):
+        response = client.post("/api/" + path)
+        assert response.status_code == 200, response.text
+        return response.json()
+
+    monkeypatch.setattr(backup_storage, "_api_post", post)
+    args = ["backup", "storage", "maintenance", "pilot", "--apply"]
+    if force:
+        args.append("--force-critical-restore")
+    result = CliRunner().invoke(cli_app, args)
+    assert result.exit_code == 0, result.output
+    assert runtime.maintain_repository.call_args.kwargs == {"dry_run": False, "force_critical_restore": force}
+    endpoints.require_owner.assert_called_once()
+
+
+def test_force_restore_query_rejects_invalid_boolean(repository_runtime):
+    from fastapi.testclient import TestClient
+
+    from app.main import app
+
+    _, runtime = repository_runtime
+    response = TestClient(app).post("/api/backup-storage/pilot/maintenance?force_critical_restore=invalid")
+    assert response.status_code == 422
+    runtime.maintain_repository.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_forced_restore_still_requires_owner(repository_runtime, monkeypatch):
+    endpoints, runtime = repository_runtime
+
+    def deny(_request):
+        raise HTTPException(status_code=403, detail="Owner access required")
+
+    monkeypatch.setattr(endpoints, "require_owner", deny)
+    with pytest.raises(HTTPException) as error:
+        await endpoints.maintain_storage_repository("pilot", Request({"type": "http"}), force_critical_restore=True)
+    assert error.value.status_code == 403
+    runtime.maintain_repository.assert_not_called()
 
 
 @pytest.mark.asyncio
