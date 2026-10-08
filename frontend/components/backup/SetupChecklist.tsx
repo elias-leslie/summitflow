@@ -15,6 +15,7 @@ import Link from 'next/link'
 import { useState } from 'react'
 import {
   type BackupHealthItem,
+  type BackupRepositoryHealthItem,
   type BackupSource,
   createBackupSource,
   createSourceBackup,
@@ -37,6 +38,7 @@ function computeSteps(
   sources: BackupSource[],
   healthItems: BackupHealthItem[],
   encryptionReady: boolean,
+  repositories: BackupRepositoryHealthItem[] | undefined,
 ): Step[] {
   const hasStorage = storageStatus?.configured ?? false
   const hasSources = sources.length > 0
@@ -127,15 +129,28 @@ function computeSteps(
     {
       id: 'restore_validation',
       icon: <ShieldCheck className="w-4 h-4" />,
-      title: 'Restore validation',
+      title: 'Infrastructure database restore',
       description: restoreValidated
-        ? `Restore drill passed for ${infraHealth.last_drill_backup_id} on ${infraHealth.last_drill_at?.slice(0, 10)}. ${latestDrillTested ? 'This is the latest backup.' : 'The latest backup has not had a restore drill.'}`
+        ? `Infrastructure database drill passed for ${infraHealth.last_drill_backup_id} on ${infraHealth.last_drill_at?.slice(0, 10)}. ${latestDrillTested ? 'This is the latest backup.' : 'The latest backup has not had a restore drill.'}`
         : infraHealth?.last_drill_ok === false
-          ? 'The last restore drill failed. Review its results before relying on recovery.'
+          ? 'The last infrastructure database drill failed. Review its results before relying on recovery.'
           : restoreConfidence === 'stale'
             ? 'The scheduled restore drill is overdue. Check the backup schedule or run a drill.'
             : 'Run a restore drill to verify backups can actually be restored.',
       complete: restoreValidated,
+    },
+    {
+      id: 'weekly_restore',
+      icon: <ShieldCheck className="w-4 h-4" />,
+      title: 'Weekly critical restore',
+      description:
+        'Combined configuration and infrastructure results are shown above.',
+      complete:
+        repositories !== undefined &&
+        repositories.length > 0 &&
+        repositories.every(
+          (repository) => repository.critical_restore.status === 'verified',
+        ),
     },
   ]
 }
@@ -146,6 +161,8 @@ interface SetupChecklistProps {
   storageStatus: StorageStatus | undefined
   sources: BackupSource[]
   healthItems: BackupHealthItem[]
+  repositories?: BackupRepositoryHealthItem[]
+  healthError?: Error | null
   encryptionReady?: boolean
   isLoading: boolean
   onSourceChanged: () => void
@@ -156,6 +173,8 @@ export function SetupChecklist({
   storageStatus,
   sources,
   healthItems,
+  repositories,
+  healthError,
   encryptionReady = false,
   isLoading,
   onSourceChanged,
@@ -170,9 +189,10 @@ export function SetupChecklist({
     sources,
     healthItems,
     encryptionReady,
+    repositories,
   )
   const doneCount = steps.filter((s) => s.complete).length
-  const allDone = doneCount === steps.length
+  const allDone = !healthError && doneCount === steps.length
   const remainingCount = steps.length - doneCount
   const infraHealth = healthItems.find(
     (item) => item.source_type === 'infrastructure',
@@ -180,11 +200,13 @@ export function SetupChecklist({
   const latestDrillTested =
     infraHealth?.latest_backup_id != null &&
     infraHealth.last_drill_backup_id === infraHealth.latest_backup_id
-  const summary = allDone
-    ? latestDrillTested
-      ? 'Saved key, latest Drive copies and infrastructure restore drill are verified.'
-      : 'Saved key and latest Drive copies are verified. The latest backup has not had a restore drill; a previous backup passed.'
-    : `${doneCount} of ${steps.length} complete. ${remainingCount} ${remainingCount === 1 ? 'step still needs attention.' : 'steps still need attention.'}`
+  const summary = healthError
+    ? 'Backup health refresh failed; these checks may be out of date.'
+    : allDone
+      ? latestDrillTested
+        ? 'Saved key, latest Drive copies, infrastructure database drill and weekly critical restores are verified.'
+        : 'Saved key and latest Drive copies are verified. The latest backup has not had a restore drill; a previous backup passed.'
+      : `${doneCount} of ${steps.length} complete. ${remainingCount} ${remainingCount === 1 ? 'step still needs attention.' : 'steps still need attention.'}`
 
   if (isLoading) return null
 
@@ -245,11 +267,13 @@ export function SetupChecklist({
           />
           <div>
             <h2 className="text-sm font-medium text-slate-100">
-              {allDone
-                ? 'Backup protection checks passed'
-                : doneCount === 0
-                  ? 'Set up backup protection'
-                  : `Backup setup: ${doneCount} of ${steps.length} complete`}
+              {healthError
+                ? 'Backup setup status unavailable'
+                : allDone
+                  ? 'Backup protection checks passed'
+                  : doneCount === 0
+                    ? 'Set up backup protection'
+                    : `Backup setup: ${doneCount} of ${steps.length} complete`}
             </h2>
             <p className="text-xs text-slate-500 mt-0.5">{summary}</p>
           </div>

@@ -38,7 +38,7 @@ import {
 } from '@/components/backup/StatusBadge'
 import { StatusRibbon } from '@/components/backup/StatusRibbon'
 import { StorageCard } from '@/components/backup/StorageCard'
-import { SystemImageBackupCard } from '@/components/backup/SystemImageBackupCard'
+import { WeeklyRestoreStatus } from '@/components/backup/WeeklyRestoreStatus'
 import { ScopeList } from '@/components/snapshots/ScopeList'
 import { SnapshotSummaryCard } from '@/components/snapshots/SnapshotSummaryCard'
 import {
@@ -52,7 +52,6 @@ import {
   fetchStorageBackends,
   fetchStorageStatus,
   fetchStorageSummary,
-  fetchSystemImageBackupStatus,
 } from '@/lib/api/backups'
 import { fetchScopes, fetchSnapshotSummary } from '@/lib/api/snapshots'
 import { formatBytes, formatDate, formatTimeAgo } from '@/lib/format'
@@ -338,7 +337,12 @@ export function BackupsClient() {
     queryFn: fetchBackupEncryption,
   })
 
-  const { data: healthData, isLoading: healthLoading } = useQuery({
+  const {
+    data: healthData,
+    isLoading: healthLoading,
+    error: healthError,
+    refetch: refetchHealth,
+  } = useQuery({
     queryKey: ['backup-health'],
     queryFn: fetchBackupHealth,
     refetchInterval: POLL_NOTIFICATIONS,
@@ -359,17 +363,6 @@ export function BackupsClient() {
     queryKey: ['native-host-backup'],
     queryFn: fetchNativeHostBackupStatus,
     staleTime: STALE_GIT,
-  })
-
-  const {
-    data: systemImageStatus,
-    isLoading: systemImageLoading,
-    refetch: refetchSystemImage,
-  } = useQuery({
-    queryKey: ['system-image-backup'],
-    queryFn: fetchSystemImageBackupStatus,
-    refetchInterval: (query) =>
-      query.state.data?.active_session ? 3000 : false,
   })
 
   const {
@@ -411,7 +404,9 @@ export function BackupsClient() {
   const overviewSummary =
     storageLoading || healthLoading
       ? 'Loading backup health, storage, and retention metrics.'
-      : `${healthySourceCount} healthy, ${failingSourceCount} failing, ${storageSummary?.total_count ?? 0} backups, ${formatBytes(storageSummary?.total_bytes ?? 0)} stored`
+      : healthError
+        ? 'Backup health refresh failed; protection status may be out of date.'
+        : `${healthySourceCount} healthy, ${failingSourceCount} failing, ${storageSummary?.total_count ?? 0} backups, ${formatBytes(storageSummary?.total_bytes ?? 0)} stored`
   const sourcesSummary =
     sources.length === 0
       ? 'No sources configured yet.'
@@ -521,22 +516,38 @@ export function BackupsClient() {
       <section className="space-y-3">
         <SectionHeading title="Overview" summary={overviewSummary} />
         <div className="rounded-lg border border-slate-700/60 bg-slate-900/30 px-4 py-4">
-          <StatusRibbon
-            health={healthData}
-            storageSummary={storageSummary}
-            storageStatus={storageStatus}
-            isLoading={storageLoading || healthLoading}
-          />
+          {healthError && !healthData ? (
+            <p className="text-xs text-rose-300">
+              Backup health is unavailable.
+            </p>
+          ) : (
+            <StatusRibbon
+              health={healthData}
+              storageSummary={storageSummary}
+              storageStatus={storageStatus}
+              isLoading={storageLoading || healthLoading}
+            />
+          )}
         </div>
       </section>
 
       {/* Setup Checklist */}
       <section className="space-y-3">
         <SectionHeading title="Protection Status" summary={protectionSummary} />
+        <WeeklyRestoreStatus
+          health={healthData}
+          isLoading={healthLoading}
+          error={healthError}
+          onRefresh={() => {
+            void refetchHealth()
+          }}
+        />
         <SetupChecklist
           storageStatus={storageStatus}
           sources={sources}
           healthItems={healthData?.sources ?? []}
+          repositories={healthData?.repositories}
+          healthError={healthError}
           encryptionReady={encryptionStatus?.ready === true}
           isLoading={storageLoading || healthLoading}
           onSourceChanged={refreshSources}
@@ -575,15 +586,6 @@ export function BackupsClient() {
         error={nativeHostError}
         onRefresh={() => {
           void refetchNativeHost()
-        }}
-      />
-
-      <SystemImageBackupCard
-        status={systemImageStatus}
-        isLoading={systemImageLoading}
-        onRefresh={() => {
-          refetchSystemImage()
-          queryClient.invalidateQueries({ queryKey: ['system-image-backup'] })
         }}
       />
 

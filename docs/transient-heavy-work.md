@@ -33,6 +33,40 @@ routing applies only to newly created cleanrooms. It does not move existing work
 or durable artifacts. On the managed host, `/srv/scratch` is the disposable
 mount excluded from backups; admission locks remain at their fixed `/tmp` path.
 
+Future repository recovery materialization, weekly mapped configuration trees,
+encrypted-archive plaintext and infrastructure drills require that same mounted
+scratch root through `app.utils.transient_scratch`. Restore work uses a private
+`st-restores-<uid>` parent and a separate `0700` directory per attempt. Unlike
+portable cleanrooms, restores refuse missing, unmounted or unsafe scratch and do
+not follow an inherited `TMPDIR` onto the root volume. This changes future
+attempts only; it does not relocate or interrupt an already running restore.
+
+Capacity checks use free bytes on the actual scratch destination and the
+existing `HostRetentionPolicy.pressure_min_free_gb` reserve (25 GiB by default).
+Repository recovery accounts for known materialized payloads, simultaneous
+archive copies and retained mapped trees; measured payload/archive sizes are
+checked again at phase boundaries. Drill admission counts extracted tar members
+and the additional Redis data copy. Ciphertext size is only a lower bound for
+plaintext staging. During the infrastructure drill, the existing bulk-work
+polling loop also checks that scratch still has the same reserve. Crossing it
+raises a capacity error, stops the owned process group and cleans up its
+disposable containers/data. PostgreSQL restore expansion, filesystem overhead
+and writes from unrelated jobs are not bounded by the initial size estimates.
+Polling is not a disk quota or a guarantee against writes consuming space
+between checks.
+
+The drill binds the entire disposable PostgreSQL data directory and Redis data
+directory beneath its owned scratch job, using the caller's UID/GID. PostgreSQL
+runtime sockets and temporary files use container tmpfs. The Redis RDB is copied
+into its writable scratch data directory; the recovered original is preserved.
+The existing prepared images run with no network and no image pull. The script
+requires the validated private job supplied by SummitFlow. Its normal exit
+cleanup and the Python owner's final cleanup remove only that attempt's named
+containers, including on timeout or cancellation, before removing plaintext
+staging. The established 600-second drill timeout uses the existing bulk
+process-group owner; normal capture/transfer calls retain their unbounded wait
+behavior. Cleanup errors remain visible without replacing a primary cancellation.
+
 The private `/tmp/st-heavy-<uid>` directory is independent of project and HOME.
 Owner, type, mode, link and symlink checks protect its lock files. There is no
 daemon, environment bypass, per-project policy store or new service. A live

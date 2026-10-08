@@ -2,6 +2,7 @@
 
 import subprocess
 import sys
+from pathlib import Path
 from threading import Event
 from unittest.mock import Mock
 
@@ -50,6 +51,63 @@ def test_provider_failure_still_returns_nonzero() -> None:
 
     result = run_bulk_process([sys.executable, "-c", "import sys; sys.exit(7)"])
     assert result.returncode == 7
+
+
+def test_explicit_bulk_timeout_kills_and_reaps_owned_process_group(tmp_path, monkeypatch):
+    from app.tasks import backup_activity
+
+    processes = []
+    original = subprocess.Popen
+
+    def popen(*args, **kwargs):
+        process = original(*args, **kwargs)
+        processes.append(process)
+        return process
+
+    monkeypatch.setattr(backup_activity.subprocess, "Popen", popen)
+    marker = tmp_path / "child-pid"
+    child_code = f"import os,time; from pathlib import Path; Path({str(marker)!r}).write_text(str(os.getpid())); time.sleep(60)"
+    code = f"import subprocess,sys,time; subprocess.Popen([sys.executable,'-c',{child_code!r}]); time.sleep(60)"
+    with pytest.raises(subprocess.TimeoutExpired):
+        backup_activity.run_bulk_process(
+            [sys.executable, "-c", code], timeout=1,
+        )
+    assert len(processes) == 1
+    assert processes[0].poll() is not None
+    child = Path(f"/proc/{marker.read_text()}/stat")
+    assert not child.exists() or child.read_text().rsplit(")", 1)[1].split()[0] == "Z"
+
+
+def test_capacity_refusal_kills_and_reaps_owned_process_group(tmp_path, monkeypatch):
+    from app.tasks import backup_activity
+    from app.utils.transient_scratch import ScratchError
+
+    processes = []
+    original = subprocess.Popen
+
+    def popen(*args, **kwargs):
+        process = original(*args, **kwargs)
+        processes.append(process)
+        return process
+
+    marker = tmp_path / "child-pid"
+    child_code = f"import os,time; from pathlib import Path; Path({str(marker)!r}).write_text(str(os.getpid())); time.sleep(60)"
+    code = f"import subprocess,sys,time; subprocess.Popen([sys.executable,'-c',{child_code!r}]); time.sleep(60)"
+    checks = []
+
+    def capacity():
+        checks.append(True)
+        if marker.exists():
+            raise ScratchError("fixture reserve crossed")
+
+    monkeypatch.setattr(backup_activity.subprocess, "Popen", popen)
+    monkeypatch.setattr(backup_activity, "CONTROL_POLL_SECONDS", 0.01)
+    with pytest.raises(ScratchError, match="fixture reserve crossed"):
+        backup_activity.run_bulk_process([sys.executable, "-c", code], capacity_check=capacity)
+    assert len(checks) >= 2
+    assert len(processes) == 1 and processes[0].poll() is not None
+    child = Path(f"/proc/{marker.read_text()}/stat")
+    assert not child.exists() or child.read_text().rsplit(")", 1)[1].split()[0] == "Z"
 
 
 def test_unknown_wait_is_visible_without_inventing_verified_progress(monkeypatch) -> None:

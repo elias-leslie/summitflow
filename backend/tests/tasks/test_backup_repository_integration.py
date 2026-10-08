@@ -6,6 +6,7 @@ import copy
 import inspect
 import json
 import os
+import shutil
 import tarfile
 from contextlib import contextmanager, nullcontext
 from datetime import UTC, datetime
@@ -17,12 +18,23 @@ import pytest
 
 from app.tasks import backup_repository_runtime as runtime
 from app.tasks.backup_restic import ResticAdapter, ResticConfig, ResticError
+from app.utils import transient_scratch
 
 SNAPSHOT = "a" * 64
 REPOSITORY = "b" * 64
 PREVIOUS = "c" * 64
 LAST_GOOD = "d" * 64
 REMOTE_SNAPSHOT = "e" * 64
+
+
+@pytest.fixture(autouse=True)
+def synthetic_restore_mount(tmp_path, monkeypatch):
+    root = tmp_path / "restore-scratch"
+    root.mkdir(mode=0o700)
+    monkeypatch.setattr(transient_scratch, "SCRATCH_ROOT", root)
+    monkeypatch.setattr(Path, "is_mount", lambda path: path == root)
+    usage = shutil.disk_usage(tmp_path)
+    monkeypatch.setattr(transient_scratch.shutil, "disk_usage", lambda _path: usage._replace(free=100 * 1024**3))
 
 
 @pytest.fixture
@@ -32,6 +44,7 @@ def repository_fixture(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
     redis = MagicMock()
     redis.eval.return_value = 1
     monkeypatch.setattr("app.tasks.backup_lock.get_redis", lambda: redis)
+    monkeypatch.setattr(runtime, "create_notification", MagicMock(return_value={"id": "notification"}))
     monkeypatch.setenv("SF_HOST_RETENTION_PRESSURE_MIN_FREE_GB", "0")
     keys = tmp_path / "keys"
     keys.mkdir(mode=0o700)
@@ -163,7 +176,7 @@ def test_missing_oauth_configuration_keeps_local_completion_and_pending_referenc
 def test_failed_monthly_read_skips_forget_and_prune(repository_fixture, monkeypatch: pytest.MonkeyPatch, failed_remote):
     env, config, adapter, _record = repository_fixture
     monkeypatch.setattr(runtime.backup_store, "list_sources", lambda: [{"id": "source", "enabled": True, "retention_days": 14}])
-    monkeypatch.setattr(runtime, "_weekly_critical_restore", lambda *_args: {"status": "skipped"})
+    monkeypatch.setattr(runtime, "_weekly_critical_restore", lambda *_args, **_kwargs: {"status": "skipped"})
     reconcile = MagicMock(return_value=0)
     monkeypatch.setattr(runtime, "_reconcile_catalogue", reconcile)
     adapter.check.side_effect = lambda **kwargs: {
@@ -191,7 +204,7 @@ def test_failed_monthly_read_skips_forget_and_prune(repository_fixture, monkeypa
 def test_failed_critical_restore_blocks_both_retention_paths(repository_fixture, monkeypatch: pytest.MonkeyPatch):
     env, config, adapter, _record = repository_fixture
     monkeypatch.setattr(runtime.backup_store, "list_sources", lambda: [{"id": "source", "enabled": True, "retention_days": 14}])
-    monkeypatch.setattr(runtime, "_weekly_critical_restore", lambda *_args: {"status": "failed", "failed_source": "source"})
+    monkeypatch.setattr(runtime, "_weekly_critical_restore", lambda *_args, **_kwargs: {"status": "failed", "failed_source": "source"})
     monkeypatch.setattr(runtime, "_reconcile_catalogue", MagicMock(side_effect=AssertionError("No catalogue expiry after failed restore")))
     adapter.check.side_effect = lambda **_kwargs: {
         "verified": True, "state": {"next_bucket": 3}, "checked_at": datetime.now(UTC).isoformat(),
@@ -214,7 +227,7 @@ def test_interrupted_remote_prune_resumes_before_any_fresh_retention(repository_
         state["offsite"] = {"maintenance": {"status": "pending", "operation": "prune", "phase": "prepared"}}
         runtime._save_json(directory / "state.json", state)
     monkeypatch.setattr(runtime.backup_store, "list_sources", lambda: [{"id": "source", "enabled": True, "retention_days": 14}])
-    monkeypatch.setattr(runtime, "_weekly_critical_restore", lambda *_args: {"status": "skipped"})
+    monkeypatch.setattr(runtime, "_weekly_critical_restore", lambda *_args, **_kwargs: {"status": "skipped"})
     monkeypatch.setattr(runtime, "_reconcile_catalogue", lambda *_args: 0)
     adapter.check.side_effect = lambda **_kwargs: {
         "verified": True, "state": {"next_bucket": 3}, "checked_at": datetime.now(UTC).isoformat(),

@@ -17,6 +17,17 @@ from app.tasks.backup_native_restore import (
     restore_archive,
     restore_isolated_archive,
 )
+from app.utils import transient_scratch
+
+
+@pytest.fixture(autouse=True)
+def synthetic_restore_mount(tmp_path, monkeypatch):
+    root = tmp_path / "scratch"
+    root.mkdir(mode=0o700)
+    monkeypatch.setattr(transient_scratch, "SCRATCH_ROOT", root)
+    monkeypatch.setattr(Path, "is_mount", lambda path: path == root)
+    usage = shutil.disk_usage(tmp_path)
+    monkeypatch.setattr(transient_scratch.shutil, "disk_usage", lambda _path: usage._replace(free=100 * 1024**3))
 
 
 def _archive_path(
@@ -420,6 +431,8 @@ def test_restore_decrypts_new_archive_format_but_keeps_legacy_support(
         assert kwargs["attention_after"] == 600
         assert kwargs["phase"] == "decryption"
         output = Path(command[command.index("-o") + 1])
+        assert output.parent.parent.parent == transient_scratch.SCRATCH_ROOT
+        assert stat.S_IMODE(output.parent.stat().st_mode) == 0o700
         shutil.copy2(plaintext, output)
         return CompletedProcess(command, 0, stdout="", stderr="")
 

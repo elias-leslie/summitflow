@@ -15,6 +15,7 @@ from pathlib import Path, PurePosixPath
 from typing import Any
 
 from ..services.backup_keys import get_backup_key_paths
+from ..utils.transient_scratch import ensure_scratch_capacity, restore_scratch
 from .backup_activity import run_bulk_process
 from .backup_native_archive import (
     BACKUP_TIMEOUT,
@@ -33,8 +34,9 @@ def materialize_plaintext_archive(path: Path) -> Iterator[Path]:
         yield path
         return
     _recipient, identity = get_backup_key_paths(require_validated=True)
-    with tempfile.TemporaryDirectory(prefix="backup-restore-") as temp_dir:
-        plaintext = Path(temp_dir) / path.name.removesuffix(".age")
+    # Ciphertext size is a known lower bound, not a claim about decompression.
+    with restore_scratch("backup-restore-", required_bytes=path.stat().st_size) as temp_dir:
+        plaintext = temp_dir / path.name.removesuffix(".age")
         result = run_bulk_process(
             ["age", "--decrypt", "-i", str(identity), "-o", str(plaintext), str(path)],
             phase="decryption", object_name=path.name, attention_after=BACKUP_TIMEOUT,
@@ -43,6 +45,7 @@ def materialize_plaintext_archive(path: Path) -> Iterator[Path]:
             detail = result.stderr.strip()
             raise RuntimeError(f"Backup decryption failed: {detail[-500:] or result.returncode}")
         plaintext.chmod(0o600)
+        ensure_scratch_capacity(temp_dir, 0)
         yield plaintext
 
 

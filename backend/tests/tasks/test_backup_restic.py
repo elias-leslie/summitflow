@@ -251,6 +251,8 @@ def test_checks_use_fresh_temporary_cache_without_reusing_prior_data(setup, remo
     assert all("--no-cache" not in command and "--with-cache" not in command for command in checks)
     assert all("--no-cache" in command for command in process.commands if command[0] == "restic" and "check" not in command)
     assert "--no-cache" in adapter._command("restore", SNAPSHOT, remote=remote)
+    with pytest.raises(engine.ResticError, match="only supported for restore"):
+        adapter._command("check", restore_cache=adapter.config.key_directory)
 
 
 def test_save_changed_and_unchanged_snapshots_use_stable_parent_and_truthful_metrics(setup):
@@ -480,6 +482,75 @@ def test_restore_returns_materialized_payload_root_and_literal_partial_include(s
     assert command[command.index("--include") + 1] == str(payload["snapshot_dir"] / ".summitflow-recovery/repository.bundle")
     with pytest.raises(engine.ResticError, match="empty private"):
         adapter.restore(saved["snapshot_id"], destination)
+
+
+def test_remote_restores_use_unique_empty_private_job_caches_then_remove_them(setup, tmp_path, monkeypatch):
+    adapter, process, payload = _adapter(setup)
+    saved = adapter.save_payload("fixture", payload)
+    remote_snapshot = "4" * 64
+    process.remote_snapshots = [{**process.local_snapshots[0], "id": remote_snapshot}]
+    job = tmp_path / "restore-job"
+    job.mkdir(mode=0o700)
+    existing = job / "existing-cache"
+    existing.mkdir(mode=0o700)
+    (existing / "old-data").write_text("synthetic stale cache")
+    monkeypatch.setenv("RESTIC_CACHE_DIR", str(existing))
+    caches = []
+
+    def observe(command, **kwargs):
+        if "restore" in command:
+            assert "--cache-dir" in command
+            assert "--no-cache" not in command
+            assert "--verify" in command and "--no-lock" not in command
+            assert command[command.index("--repo") + 1] == "rclone:fixture:repository"
+            assert command[command.index("restore") + 1] == remote_snapshot
+            assert "RESTIC_CACHE_DIR" not in kwargs["env"]
+            cache = Path(command[command.index("--cache-dir") + 1])
+            assert cache.parent == job
+            assert cache.is_dir() and not cache.is_symlink() and cache.stat().st_mode & 0o777 == 0o700
+            assert list(cache.iterdir()) == []
+            caches.append(cache)
+            (cache / "downloaded-this-operation").write_text("synthetic remote metadata")
+        return process(command, **kwargs)
+
+    adapter._runner = observe
+    for number in range(2):
+        destination = job / f"destination-{number}"
+        destination.mkdir(mode=0o700)
+        assert adapter.restore(remote_snapshot, destination, remote=True)["verification"]["verified"] is True
+        assert not caches[-1].exists()
+    assert len(set(caches)) == 2
+    assert (existing / "old-data").read_text() == "synthetic stale cache"
+    assert saved["snapshot_id"] == SNAPSHOT
+
+
+@pytest.mark.parametrize("failure", ["native-failure", "cancellation", "invalid-materialization"])
+def test_restore_job_cache_is_removed_on_failure(setup, tmp_path, failure):
+    adapter, process, payload = _adapter(setup)
+    saved = adapter.save_payload("fixture", payload)
+    job = tmp_path / "restore-job"
+    job.mkdir(mode=0o700)
+    destination = job / "destination"
+    destination.mkdir(mode=0o700)
+    caches = []
+
+    def fail(command, **kwargs):
+        if "restore" in command:
+            assert "--cache-dir" in command
+            cache = Path(command[command.index("--cache-dir") + 1])
+            caches.append(cache)
+            (cache / "temporary-metadata").write_text("synthetic remote metadata")
+            if failure == "cancellation":
+                raise engine.BackupCancelled("synthetic cancellation")
+            return subprocess.CompletedProcess(command, 1 if failure == "native-failure" else 0, "{}", "PRIVATE_DIAGNOSTIC")
+        return process(command, **kwargs)
+
+    adapter._runner = fail
+    expected = engine.BackupCancelled if failure == "cancellation" else engine.ResticError
+    with pytest.raises(expected):
+        adapter.restore(saved["snapshot_id"], destination)
+    assert len(caches) == 1
+    assert not caches[0].exists()
 
 
 @pytest.mark.parametrize("include", ["../outside", "/outside", "*", "file[1]"])

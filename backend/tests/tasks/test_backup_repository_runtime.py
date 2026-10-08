@@ -12,12 +12,24 @@ from contextlib import contextmanager, nullcontext
 from datetime import UTC, datetime, timedelta
 from io import BytesIO
 from pathlib import Path
+from typing import Any
 from unittest.mock import MagicMock, patch
 
 import pytest
 
 from app.tasks import backup_repository_runtime as runtime
 from app.tasks.backup_restic import ResticAdapter, ResticConfig, ResticError
+from app.utils import transient_scratch
+
+
+@pytest.fixture(autouse=True)
+def synthetic_restore_mount(tmp_path, monkeypatch):
+    root = tmp_path / "restore-scratch"
+    root.mkdir(mode=0o700)
+    monkeypatch.setattr(transient_scratch, "SCRATCH_ROOT", root)
+    monkeypatch.setattr(Path, "is_mount", lambda path: path == root)
+    usage = shutil.disk_usage(tmp_path)
+    monkeypatch.setattr(transient_scratch.shutil, "disk_usage", lambda _path: usage._replace(free=100 * 1024**3))
 
 
 class _MemoryBackupRedis:
@@ -87,6 +99,76 @@ def test_reserved_restart_refuses_new_repository_maintenance(repository_env, mon
     assert redis.values == {}
 
 
+def test_restart_barrier_also_blocks_batch_offsite_sync(repository_env, monkeypatch):
+    from app.tasks import backup_lock
+
+    redis = _MemoryBackupRedis()
+    monkeypatch.setattr(backup_lock, "get_redis", lambda: redis)
+    checkpoint = MagicMock(side_effect=AssertionError("batch repository work must not start"))
+    monkeypatch.setattr(runtime, "_checkpoint", checkpoint)
+    pair = runtime._repository_pair(ResticConfig.from_env(repository_env))
+    with backup_lock.backup_worker_restart_guard():
+        result = runtime.sync_repository_batch({pair: repository_env})
+    assert result[pair]["status"] == "pending"
+    checkpoint.assert_not_called()
+    assert redis.values == {}
+
+
+def test_batch_sync_holds_pair_restart_admission_and_releases_on_error(repository_env, monkeypatch):
+    from app.tasks import backup_lock
+
+    redis = _MemoryBackupRedis()
+    monkeypatch.setattr(backup_lock, "get_redis", lambda: redis)
+    pair = runtime._repository_pair(ResticConfig.from_env(repository_env))
+
+    @contextmanager
+    def checkpoint(_config):
+        with pytest.raises(backup_lock.BackupLockLeaseError, match="Backups active"), backup_lock.backup_worker_restart_guard():
+            pytest.fail("batch sync must block managed restart")
+        raise ResticError("synthetic batch failure")
+        yield  # pragma: no cover
+
+    monkeypatch.setattr(runtime, "_checkpoint", checkpoint)
+    assert runtime.sync_repository_batch({pair: repository_env})[pair]["status"] == "pending"
+    assert redis.values == {}
+
+
+def test_batch_structural_check_and_copy_hold_restart_admission(repository_env, monkeypatch):
+    from app.tasks import backup_lock
+
+    redis = _MemoryBackupRedis()
+    monkeypatch.setattr(backup_lock, "get_redis", lambda: redis)
+    config = ResticConfig.from_env(repository_env)
+    pair = runtime._repository_pair(config)
+    snapshot = "a" * 64
+    adapter = MagicMock()
+    adapter.repository_identity.return_value = {"id": "b" * 64}
+
+    def held():
+        assert set(redis.values) == {backup_lock.BACKUP_LOCK_PREFIX + "__repository_maintenance__:" + pair}
+        with pytest.raises(backup_lock.BackupLockLeaseError), backup_lock.backup_worker_restart_guard():
+            pytest.fail("active batch work must block restart")
+
+    def check():
+        held()
+        return {"verified": True, "checked_at": datetime.now(UTC).isoformat()}
+
+    def sync(*_args):
+        held()
+        return {"status": "verified"}
+
+    with runtime._checkpoint(config) as (directory, state):
+        state["sources"]["fixture"] = {"snapshot_id": snapshot, "result": {"verification": {"structural_check_pending": True}}}
+        state["offsite"] = {"pending_snapshot_ids": [snapshot]}
+        runtime._save_json(directory / "state.json", state)
+    adapter.check.side_effect = check
+    monkeypatch.setattr(runtime, "ResticAdapter", lambda _: adapter)
+    monkeypatch.setattr(runtime, "_sync", sync)
+    assert runtime.sync_repository_batch({pair: repository_env})[pair]["status"] == "verified"
+    assert adapter.check.call_count == 1
+    assert redis.values == {}
+
+
 def test_same_repository_maintenance_contention_preserves_original_lease(repository_env, monkeypatch):
     from app.tasks import backup_lock
 
@@ -133,7 +215,7 @@ def test_maintenance_lease_covers_restore_checks_retention_prune_and_catalogue(r
         phases.append(phase)
         assert set(redis.values) == {expected}
 
-    def restore(*_args):
+    def restore(*_args, **_kwargs):
         held("restore")
         return {"status": "verified"}
 
@@ -301,9 +383,11 @@ def test_repaired_mapping_succeeds_and_keeps_weekly_cadence(critical_link_replay
     assert result["sources"]["claude-config"]["recovery_complete"] is True
     assert result["sources"]["claude-config"]["mapped_links_pending"] == []
     assert "critical_restore_failure" not in maintenance
+    assert maintenance["critical_restore_success"] == result
     calls = materialize.call_count
     assert runtime._weekly_critical_restore(env, maintenance)["reason"] == "weekly-cadence"
     assert materialize.call_count == calls
+    assert maintenance["critical_restore_success"] == result
     maintenance["critical_restore_at"] = (datetime.now(UTC) - timedelta(days=8)).isoformat()
     assert runtime._weekly_critical_restore(env, maintenance)["status"] == "verified"
     assert materialize.call_count == calls + 2
@@ -438,12 +522,213 @@ def test_materialization_failure_retains_all_selected_points_and_is_cached(criti
     assert materialize.call_count == 1
 
 
+def test_recovery_observation_reads_held_checkpoint_and_preserves_success(repository_env, monkeypatch):
+    config = ResticConfig.from_env(repository_env)
+    verified_at = datetime.now(UTC).isoformat()
+    success = {"status": "verified", "verified_at": verified_at, "sources": {"agent-skills": {"ok": True}}}
+    failure = {"status": "failed", "attempted_at": verified_at, "failed_source": "claude-config", "error": "PRIVATE_DIAGNOSTIC_SENTINEL", "sources": {"claude-config": {"mapped_links_pending": [{"path": "PRIVATE_PATH_SENTINEL"}]}}}
+    with runtime._checkpoint(config) as (directory, state):
+        state["maintenance"] = {
+            "critical_restore_success": success, "critical_restore_attempt": failure,
+            "critical_restore_failure": failure, "critical_restore_result": {"status": "pending", "missing_sources": ["claude-config"]},
+        }
+        runtime._save_json(directory / "state.json", state)
+        monkeypatch.setattr(runtime.time, "sleep", MagicMock(side_effect=AssertionError("status must not wait for checkpoint")))
+        result = runtime.repository_recovery_status(repository_env)
+    assert result["status"] == "failed"
+    assert result["last_success_at"] == verified_at
+    assert result["latest_attempt"]["failed_source_id"] == "claude-config"
+    assert result["latest_attempt"]["reason"] == "mapped-links-unresolved"
+    assert result["verified_source_ids"] == ["agent-skills"]
+    assert "PRIVATE_" not in json.dumps(result)
+
+
+def test_legacy_verified_restore_is_observed_and_hydrated_before_cadence_skip(repository_env, monkeypatch):
+    config = ResticConfig.from_env(repository_env)
+    config.local_repository.mkdir(mode=0o700)
+    now = datetime.now(UTC).isoformat()
+    legacy = {
+        "status": "verified", "verified_at": now,
+        "selected_backups": {"agent-skills": {"backup_id": "legacy-row"}},
+        "sources": {"agent-skills": {"ok": True}},
+    }
+    with runtime._checkpoint(config) as (directory, state):
+        state["maintenance"] = {"critical_restore_at": now, "critical_restore_result": legacy}
+        runtime._save_json(directory / "state.json", state)
+        before = (directory / "state.json").read_bytes()
+        observed = runtime.repository_recovery_status(repository_env)
+        assert (directory / "state.json").read_bytes() == before  # Observation never migrates state.
+    assert observed["verified_source_ids"] == ["agent-skills"]
+    assert observed["latest_attempt"]["status"] == "verified"
+    adapter = MagicMock()
+    adapter.check.return_value = {"verified": True, "state": {}, "checked_at": now}
+    adapter.retention.return_value = {"status": "preview"}
+    adapter.prune.return_value = {"status": "preview"}
+    monkeypatch.setattr(runtime, "ResticAdapter", lambda _: adapter)
+    monkeypatch.setattr(runtime.backup_store, "list_sources", lambda: [])
+    runtime.maintain_repository(repository_env)
+    with runtime._checkpoint(config) as (_, state):
+        maintenance = state["maintenance"]
+        assert maintenance["critical_restore_result"]["reason"] == "weekly-cadence"
+        assert maintenance["critical_restore_success"] == legacy
+        assert maintenance["critical_restore_attempt"] == legacy
+    observed = runtime.repository_recovery_status(repository_env)
+    assert observed["verified_source_ids"] == ["agent-skills"]
+    assert observed["last_success_at"] == now
+    assert observed["latest_attempt"]["status"] == "verified"
+
+
+def test_forced_failure_preserves_legacy_success_before_overwrite(critical_link_replay):
+    legacy = {"status": "verified", "verified_at": datetime.now(UTC).isoformat(), "sources": {"agent-skills": {"ok": True}}}
+    maintenance: dict[str, Any] = {"critical_restore_at": legacy["verified_at"], "critical_restore_result": legacy}
+    result = runtime._weekly_critical_restore({"BACKUP_STORAGE_BACKEND_ID": "stb-fixture"}, maintenance, force=True)
+    assert result["status"] == "failed"
+    assert maintenance["critical_restore_success"] == legacy
+    assert maintenance["critical_restore_attempt"]["status"] == "failed"
+
+
+def test_running_critical_attempt_is_persisted_before_materialization(repository_env, critical_link_replay, monkeypatch):
+    _, _, materialize = critical_link_replay
+    observed = []
+    original = materialize.side_effect
+
+    def observe_then_materialize(*args, **kwargs):
+        observed.append(runtime.repository_recovery_status(repository_env))
+        return original(*args, **kwargs)
+
+    materialize.side_effect = observe_then_materialize
+    adapter = MagicMock()
+    adapter.check.return_value = {"verified": True, "state": {}, "checked_at": datetime.now(UTC).isoformat()}
+    monkeypatch.setattr(runtime, "ResticAdapter", lambda _: adapter)
+    runtime.maintain_repository(repository_env)
+    assert observed[0]["status"] == "running"
+    assert observed[0]["latest_attempt"]["status"] == "running"
+    assert runtime.repository_recovery_status(repository_env)["status"] == "failed"
+
+
+@pytest.mark.parametrize("invalid", ["PRIVATE_TIMESTAMP_SENTINEL", {"secret": "PRIVATE_SENTINEL"}, "2026-10-08T12:00:00"])
+def test_recovery_observation_rejects_invalid_timestamps(repository_env, invalid):
+    config = ResticConfig.from_env(repository_env)
+    with runtime._checkpoint(config) as (directory, state):
+        state["maintenance"] = {"critical_restore_attempt": {"status": "failed", "attempted_at": invalid}}
+        runtime._save_json(directory / "state.json", state)
+    result = runtime.repository_recovery_status(repository_env)
+    assert result["status"] == "unavailable"
+    assert result["latest_attempt"] is None
+    assert "PRIVATE" not in json.dumps(result)
+
+
+def test_genuine_repository_notifications_dedupe_failures_and_report_recovery(repository_env, monkeypatch):
+    notify = MagicMock(return_value={"id": "notification"})
+    monkeypatch.setattr(runtime, "create_notification", notify)
+    state = {}
+    failure = {"status": "failed", "failed_source": "claude-config", "error": "PRIVATE_SECRET_SENTINEL"}
+    runtime._notify_repository_result(state, repository_env, "critical-restore", failure)
+    runtime._notify_repository_result(state, repository_env, "critical-restore", {**failure, "cached": True})
+    runtime._notify_repository_result(state, repository_env, "critical-restore", {"status": "pending"})
+    runtime._notify_repository_result(state, repository_env, "critical-restore", {"status": "skipped", "reason": "weekly-cadence"})
+    assert notify.call_count == 1
+    runtime._notify_repository_result(state, repository_env, "local-integrity", {"verified": False})
+    assert notify.call_count == 2
+    assert notify.call_args.kwargs["dedupe_key"] != notify.call_args_list[0].kwargs["dedupe_key"]
+    runtime._notify_repository_result(state, repository_env, "critical-restore", {"status": "verified"})
+    runtime._notify_repository_result(state, repository_env, "critical-restore", {"status": "verified"})
+    assert notify.call_count == 3
+    assert notify.call_args.kwargs["severity"] == "info"
+    assert "PRIVATE_" not in str(notify.call_args_list)
+
+
+def test_structural_success_does_not_notify_recovery_from_payload_failure(repository_env, monkeypatch):
+    notify = MagicMock(return_value={"id": "notification"})
+    monkeypatch.setattr(runtime, "create_notification", notify)
+    state = {}
+    runtime._notify_repository_result(state, repository_env, "local-integrity", {"verified": False, "method": "restic-monthly-bucket"})
+    runtime._notify_repository_result(state, repository_env, "local-integrity", {"verified": True, "method": "restic-structural-check"})
+    assert notify.call_count == 1
+    runtime._notify_repository_result(state, repository_env, "local-integrity", {"verified": True, "method": "restic-monthly-bucket"})
+    assert notify.call_count == 2
+    state = {}
+    runtime._notify_repository_result(state, repository_env, "local-integrity", {"verified": False, "method": "restic-structural-check"})
+    runtime._notify_repository_result(state, repository_env, "local-integrity", {"verified": True, "method": "restic-monthly-bucket"})
+    assert notify.call_count == 4  # Payload verification includes structural checks.
+
+
+@pytest.mark.parametrize("different_structural_failure", [False, True])
+def test_monthly_failure_scope_survives_dedup_and_later_structural_failure(repository_env, monkeypatch, different_structural_failure):
+    notify = MagicMock(return_value={"id": "notification"})
+    monkeypatch.setattr(runtime, "create_notification", notify)
+    state = {}
+    runtime._notify_repository_result(state, repository_env, "local-integrity", {"verified": False, "method": "restic-structural-check"})
+    runtime._notify_repository_result(state, repository_env, "local-integrity", {"verified": False, "method": "restic-monthly-bucket"})
+    assert notify.call_count == 1  # Same failure does not produce another alert.
+    assert state["repository_notifications"]["local-integrity"]["method"] == "restic-monthly-bucket"
+    if different_structural_failure:
+        runtime._notify_repository_result(state, repository_env, "local-integrity", {
+            "verified": False, "method": "restic-structural-check", "error": "failed to lock repository",
+        })
+        assert notify.call_count == 2
+        assert state["repository_notifications"]["local-integrity"]["method"] == "restic-monthly-bucket"
+    calls = notify.call_count
+    runtime._notify_repository_result(state, repository_env, "local-integrity", {"verified": True, "method": "restic-structural-check"})
+    assert notify.call_count == calls
+    assert state["repository_notifications"]["local-integrity"]["active"] is True
+    runtime._notify_repository_result(state, repository_env, "local-integrity", {"verified": True, "method": "restic-monthly-bucket"})
+    assert notify.call_count == calls + 1
+    assert state["repository_notifications"]["local-integrity"]["active"] is False
+
+
+def test_failed_monthly_check_keeps_its_mode_through_passing_batch_check(repository_env, monkeypatch):
+    config = ResticConfig.from_env(repository_env)
+    adapter = MagicMock()
+    now = datetime.now(UTC).isoformat()
+    # The real adapter omits method on its failed result.
+    adapter.check.side_effect = [
+        {"status": "failed", "verified": False, "state": {}, "error": "PRIVATE_FAILURE"},
+        {"status": "verified", "verified": True, "state": {}, "checked_at": now},
+    ]
+    monkeypatch.setattr(runtime, "ResticAdapter", lambda _: adapter)
+    monkeypatch.setattr(runtime.backup_store, "list_sources", lambda: [])
+    monkeypatch.setattr(runtime, "_weekly_critical_restore", lambda *_args, **_kwargs: {"status": "skipped", "reason": "weekly-cadence"})
+    notify = MagicMock(return_value={"id": "notification"})
+    monkeypatch.setattr(runtime, "create_notification", notify)
+    assert runtime.maintain_repository(repository_env)["status"] == "failed"
+    assert notify.call_count == 1
+    with runtime._checkpoint(config) as (directory, state):
+        assert state["repository_notifications"]["local-integrity"]["method"] == "restic-monthly-bucket"
+        state["sources"]["fixture"] = {
+            "snapshot_id": "a" * 64,
+            "result": {"verification": {"structural_check_pending": True, "offsite": {"status": "verified"}}},
+        }
+        runtime._save_json(directory / "state.json", state)
+    adapter.repository_identity.return_value = {"id": "b" * 64}
+    adapter.check.side_effect = None
+    adapter.check.return_value = {"verified": True, "checked_at": now}
+    pair = runtime._repository_pair(config)
+    assert runtime.sync_repository_batch({pair: repository_env})[pair]["status"] == "skipped"
+    assert notify.call_count == 1
+    with runtime._checkpoint(config) as (_, state):
+        assert state["repository_notifications"]["local-integrity"]["active"] is True
+        assert state["maintenance"]["local"]["monthly_result"]["verified"] is False
+
+
+def test_notification_failure_does_not_suppress_backup_failure(repository_env, monkeypatch):
+    notify = MagicMock(side_effect=RuntimeError("notification storage unavailable"))
+    monkeypatch.setattr(runtime, "create_notification", notify)
+    state = {}
+    failure = {"status": "failed", "failed_source": "claude-config"}
+    runtime._notify_repository_result(state, repository_env, "critical-restore", failure)
+    assert not state["repository_notifications"]
+    runtime._notify_repository_result(state, repository_env, "critical-restore", failure)
+    assert notify.call_count == 2
+
+
 @pytest.fixture
 def repository_env(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> dict[str, str]:
     from app.tasks import backup_lock
 
     redis = _MemoryBackupRedis()
     monkeypatch.setattr(backup_lock, "get_redis", lambda: redis)
+    monkeypatch.setattr(runtime, "create_notification", MagicMock(return_value={"id": "notification"}))
     monkeypatch.setenv("SF_HOST_RETENTION_PRESSURE_MIN_FREE_GB", "0")
     keys = tmp_path / "keys"
     keys.mkdir(mode=0o700)

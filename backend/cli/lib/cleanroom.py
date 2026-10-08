@@ -5,7 +5,6 @@ from __future__ import annotations
 import argparse
 import os
 import shutil
-import stat
 import subprocess
 import sys
 import tempfile
@@ -14,6 +13,11 @@ from pathlib import Path
 
 from app.utils.env_files import project_env_files, scrub_env_keys_from_files
 from app.utils.heavy_work import heavy_work
+from app.utils.transient_scratch import (
+    SCRATCH_ROOT,
+    mounted_scratch_parent,
+    validate_temp_parent,
+)
 
 _BASE_UNSET_KEYS = (
     "BASH_ENV",
@@ -27,22 +31,12 @@ _BASE_UNSET_KEYS = (
     "SF_COMMAND_GUARD_WORDS",
     "VIRTUAL_ENV",
 )
-_SCRATCH_ROOT = Path("/srv/scratch")
+_SCRATCH_ROOT = SCRATCH_ROOT
 
 
 def _validate_temp_parent(path: Path, *, private: bool = False) -> None:
     """Reject unsafe routing without changing an existing directory's permissions."""
-    if not path.is_absolute() or path.resolve() != path:
-        raise ValueError("Cleanroom temporary directory must be absolute and not a symlink")
-    info = path.lstat()
-    mode = stat.S_IMODE(info.st_mode)
-    if not stat.S_ISDIR(info.st_mode) or info.st_uid not in {0, os.getuid()}:
-        raise ValueError("Cleanroom temporary directory must be owner-controlled")
-    if private:
-        if info.st_uid != os.getuid() or mode != 0o700:
-            raise ValueError("Cleanroom scratch directory must be private and owned by the current user")
-    elif mode & 0o022 and not mode & stat.S_ISVTX:
-        raise ValueError("Cleanroom shared temporary directory requires the sticky bit")
+    validate_temp_parent(path, private=private, label="Cleanroom")
 
 
 def _cleanroom_temp_parent() -> Path | None:
@@ -51,17 +45,7 @@ def _cleanroom_temp_parent() -> Path | None:
         parent = Path(explicit)
         _validate_temp_parent(parent)
         return parent
-    # A missing host convention is portable. A present but unmounted/unsafe
-    # directory must not silently receive a large checkout on the root volume.
-    if not _SCRATCH_ROOT.exists() and not _SCRATCH_ROOT.is_symlink():
-        return None
-    _validate_temp_parent(_SCRATCH_ROOT)
-    if not _SCRATCH_ROOT.is_mount() or _SCRATCH_ROOT.stat().st_mode & 0o022:
-        raise ValueError("Cleanroom scratch root must be a mounted, owner-controlled directory")
-    parent = _SCRATCH_ROOT / f"st-cleanrooms-{os.getuid()}"
-    parent.mkdir(mode=0o700, exist_ok=True)
-    _validate_temp_parent(parent, private=True)
-    return parent
+    return mounted_scratch_parent("st-cleanrooms", root=_SCRATCH_ROOT, required=False, label="Cleanroom")
 
 
 def _git_snapshot_paths(project_root: Path) -> list[Path]:

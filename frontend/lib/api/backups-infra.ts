@@ -1,3 +1,4 @@
+import { parseBackupHealth } from './backups-health'
 import { fetchWithErrorHandling, postJson } from './utils'
 
 // ─── Storage Backends ───────────────────────────────────────────
@@ -73,6 +74,42 @@ export interface BackupHealthItem {
 export interface BackupHealthResponse {
   sources: BackupHealthItem[]
   pending_upload_count: number
+  repositories?: BackupRepositoryHealthItem[]
+}
+
+export interface CriticalRestoreAttempt {
+  status: 'verified' | 'failed' | 'running'
+  attempted_at: string | null
+  completed_at: string | null
+  failed_source_id: string | null
+  reason:
+    | 'mapped-links-unresolved'
+    | 'repository-locked'
+    | 'restore-failed'
+    | null
+  cached: boolean
+}
+
+export interface CriticalRestoreHealth {
+  status:
+    | 'verified'
+    | 'failed'
+    | 'pending'
+    | 'running'
+    | 'stale'
+    | 'untested'
+    | 'unavailable'
+  last_success_at: string | null
+  latest_attempt: CriticalRestoreAttempt | null
+  required_source_ids: string[]
+  verified_source_ids: string[]
+  missing_source_ids: string[]
+}
+
+export interface BackupRepositoryHealthItem {
+  backend_id: string
+  backend_name: string
+  critical_restore: CriticalRestoreHealth
 }
 
 export function fetchStorageBackends(): Promise<StorageBackend[]> {
@@ -109,10 +146,11 @@ export function testStorageBackend(
   })
 }
 
-export function fetchBackupHealth(): Promise<BackupHealthResponse> {
-  return fetchWithErrorHandling<BackupHealthResponse>('/api/backups/health', {
+export async function fetchBackupHealth(): Promise<BackupHealthResponse> {
+  const value = await fetchWithErrorHandling<unknown>('/api/backups/health', {
     errorMessage: 'Failed to fetch backup health',
   })
+  return parseBackupHealth(value)
 }
 
 export interface BackupEncryptionStatus {

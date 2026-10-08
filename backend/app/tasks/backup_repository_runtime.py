@@ -18,16 +18,24 @@ import stat
 import tarfile
 import tempfile
 import time
-from collections.abc import Iterator, Mapping
-from contextlib import contextmanager
+from collections.abc import Callable, Iterator, Mapping
+from contextlib import ExitStack, contextmanager
 from contextvars import ContextVar
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any, cast
 
+from ..logging_config import get_logger
 from ..services.backup_keys import backup_key_directory
 from ..storage import backups as backup_store
+from ..storage.notifications import create_notification
 from ..utils.shared_paths import get_host_config_root
+from ..utils.transient_scratch import (
+    ScratchError,
+    ensure_scratch_capacity,
+    restore_scratch,
+    tree_bytes,
+)
 from ._retention_policy import HostRetentionPolicy
 from .backup_activity import BackupCancelled, check_backup_cancelled, record_local_archive
 from .backup_lock import BackupLockLeaseError, acquire_backup_lock, maintain_backup_lock
@@ -46,6 +54,8 @@ from .backup_utils import (
 )
 
 _capture_batch: ContextVar[dict[str, dict[str, str]] | None] = ContextVar("repository_capture_batch", default=None)
+_CRITICAL_SOURCE_IDS = {"infrastructure", "codex-config", "claude-config", "agent-skills", "claude-user-config"}
+logger = get_logger(__name__)
 
 
 def _repository_pair(config: ResticConfig) -> str:
@@ -467,7 +477,7 @@ def sync_repository_batch(batch: Mapping[str, dict[str, str]]) -> dict[str, Any]
         try:
             config = ResticConfig.from_env(env)
             adapter = ResticAdapter(config)
-            with _checkpoint(config) as (directory, state):
+            with _repository_maintenance_admission(config), _checkpoint(config) as (directory, state):
                 journal = state.setdefault("offsite", {})
                 pending = journal.setdefault("pending_snapshot_ids", [])
                 local_id = adapter.repository_identity()["id"]
@@ -486,8 +496,15 @@ def sync_repository_batch(batch: Mapping[str, dict[str, str]]) -> dict[str, Any]
                 _save_json(directory / "state.json", state)
                 if unchecked:
                     check = adapter.check()
+                    check.setdefault("method", "restic-structural-check")
                     if not check.get("verified"):
+                        previous = state.setdefault("maintenance", {}).setdefault("local", {})
+                        previous["monthly_result"] = {key: value for key, value in check.items() if key != "state"}
+                        previous.pop("monthly_checked_at", None)
+                        _notify_repository_result(state, env, "local-integrity", check)
+                        _save_json(directory / "state.json", state)
                         raise ResticError("Repository batch structural check failed")
+                    _notify_repository_result(state, env, "local-integrity", check)
                     for item in unchecked:
                         item["result"]["verification"].update(structural_check_pending=False, structural_check_at=check["checked_at"])
                     for row in _repository_rows(env):
@@ -556,12 +573,14 @@ def materialize_repository_archive(backup: Mapping[str, Any], *, remote: bool = 
     snapshot_id = verification.get("remote_snapshot_id") if remote else verification.get("snapshot_id")
     if not snapshot_id:
         raise ResticError("A verified snapshot reference is required")
-    with tempfile.TemporaryDirectory(prefix="st-repository-restore-") as scratch:
-        scratch_path = Path(scratch)
+    # The restored tree and its tar/gzip copy coexist. Known payload bytes are
+    # admission evidence; remeasure before each additional staging copy.
+    with restore_scratch("st-repository-restore-", required_bytes=2 * _known_restore_bytes(backup)) as scratch_path:
         target = scratch_path / "materialized"
         target.mkdir(mode=0o700)
         restored = adapter.restore(str(snapshot_id), target, remote=remote)
         payload_root = Path(restored["payload_root"])
+        ensure_scratch_capacity(scratch_path, tree_bytes(payload_root))
         infrastructure = str(backup.get("source_id")) == "infrastructure"
         plain_name = "pgdumpall.sql" if infrastructure else "database.sql"
         capture = verification.get("capture", {})
@@ -572,11 +591,19 @@ def materialize_repository_archive(backup: Mapping[str, Any], *, remote: bool = 
         if dump.is_file():
             _gzip_payload_file(dump, payload_root / f"{plain_name}.gz")
             dump.unlink()
+        ensure_scratch_capacity(scratch_path, tree_bytes(payload_root))
         archive = scratch_path / "recovery.tar.gz"
         with tarfile.open(archive, "w:gz") as stream:
             stream.add(payload_root, arcname="infrastructure" if infrastructure else "payload", filter=_recovery_archive_filter)
         archive.chmod(0o600)
+        ensure_scratch_capacity(scratch_path, 0)
         yield archive
+
+
+def _known_restore_bytes(backup: Mapping[str, Any]) -> int:
+    verification = backup.get("verification_json") or {}
+    return max(0, int(verification.get("logical_bytes") or 0),
+               int(backup.get("total_bytes") or backup.get("size_bytes") or 0))
 
 
 def _recovery_archive_filter(member: tarfile.TarInfo) -> tarfile.TarInfo | None:
@@ -604,6 +631,141 @@ def repository_status(env: dict[str, str]) -> dict[str, Any]:
         }
 
 
+def _critical_restore_reason(result: Mapping[str, Any]) -> str | None:
+    if result.get("status") != "failed":
+        return None
+    failed = (result.get("sources") or {}).get(result.get("failed_source"), {})
+    if failed.get("mapped_links_pending"):
+        return "mapped-links-unresolved"
+    if "failed to lock repository" in str(result.get("error") or ""):
+        return "repository-locked"
+    return "restore-failed"
+
+
+def _notify_repository_result(state: dict[str, Any], env: Mapping[str, str], operation: str, result: Mapping[str, Any]) -> None:
+    """Alert on meaningful failed/recovered transitions, not routine attempts."""
+    failed = result.get("status") == "failed" or result.get("verified") is False
+    verified = result.get("status") == "verified" or result.get("verified") is True
+    if not failed and not verified:
+        return
+    journal = state.setdefault("repository_notifications", {})
+    previous = journal.get(operation) or {}
+    method = result.get("method")
+    if failed and previous.get("active") is True and (
+        previous.get("method") == "restic-monthly-bucket" or method == "restic-monthly-bucket"
+    ):
+        # Payload failure is stronger evidence than structural failure. Keep
+        # its scope until payload verification passes, even across deduped or
+        # differently worded structural failures.
+        method = "restic-monthly-bucket"
+        previous["method"] = method
+    source_id = result.get("failed_source") if result.get("failed_source") in _CRITICAL_SOURCE_IDS else None
+    if operation == "critical-restore":
+        reason = _critical_restore_reason(result)
+        source = (result.get("sources") or {}).get(source_id, {})
+        details = source.get("mapped_links_pending") or []
+        title = "Weekly backup restore failed" if failed else "Weekly backup restore recovered"
+        if reason == "mapped-links-unresolved":
+            message = "A required configuration link could not be restored. Backup retention remains blocked. Review backup readiness for the affected source."
+        elif reason == "repository-locked":
+            message = "The repository was locked when the offsite restore ran. Backup retention remains blocked. Review active backup work before retrying."
+        else:
+            message = "The combined offsite restore did not pass. Backup retention remains blocked. Review backup readiness for the failed source."
+        recovered = "All required sources passed the combined offsite restore. Backup readiness shows the test date and results."
+    else:
+        reason = "repository-locked" if "failed to lock repository" in str(result.get("error") or "") else "integrity-check-failed"
+        details = []
+        label = "Local" if operation == "local-integrity" else "Offsite"
+        title = f"{label} backup integrity check {'failed' if failed else 'recovered'}"
+        message = f"The {label.lower()} repository integrity check did not pass. Backup retention remains blocked. Review backup readiness before retrying."
+        recovered = f"The {label.lower()} repository integrity check passed after its earlier failure."
+    fingerprint = hashlib.sha256(json.dumps([reason, source_id, details], sort_keys=True).encode()).hexdigest()
+    if failed and previous.get("active") is True and previous.get("fingerprint") == fingerprint:
+        return
+    if verified and previous.get("active") is not True:
+        return
+    if verified and previous.get("method") == "restic-monthly-bucket" and result.get("method") != "restic-monthly-bucket":
+        return  # A structural check does not clear a failed payload readback.
+    backend_id = str(env.get("BACKUP_STORAGE_BACKEND_ID") or "")
+    event = "failed" if failed else "recovered"
+    try:
+        create_notification(
+            project_id="summitflow", notification_type="system", title=title,
+            message=message if failed else recovered, severity="error" if failed else "info",
+            metadata={"backup_event": event, "backend_id": backend_id, "operation": operation,
+                      "failed_source_id": source_id, "reason": reason if failed else None},
+            dedupe_key=f"backup:{backend_id}:{operation}:{event}:{fingerprint}",
+        )
+    except Exception:
+        logger.warning("repository_backup_notification_failed", backend_id=backend_id, operation=operation)
+        return
+    journal[operation] = {"active": failed, "fingerprint": fingerprint, "method": method}
+
+
+def repository_recovery_status(env: dict[str, str]) -> dict[str, Any]:
+    """Observe atomically replaced recovery evidence without locks or Restic."""
+    def timestamp(value: Any) -> str | None:
+        if value is None:
+            return None
+        if not isinstance(value, str):
+            raise ValueError("Invalid recovery timestamp")
+        parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
+        if parsed.tzinfo is None:
+            raise ValueError("Recovery timestamp needs a timezone")
+        return parsed.astimezone(UTC).isoformat()
+
+    empty: dict[str, Any] = {
+        "status": "untested", "last_success_at": None, "latest_attempt": None,
+        "required_source_ids": [], "verified_source_ids": [], "missing_source_ids": [],
+    }
+    try:
+        config = ResticConfig.from_env(env)
+        _approved_key_directory(config)
+        path = config.key_directory / "restic-state" / _repository_pair(config) / "state.json"
+        if any(component.is_symlink() for component in (path, *path.parents)):
+            raise ResticError("Recovery observation must not follow symlinks")
+        state = _load_json(path)
+        maintenance = state.get("maintenance") or {}
+        result = maintenance.get("critical_restore_result") or {}
+        success = maintenance.get("critical_restore_success") or (result if result.get("status") == "verified" else {})
+        attempt = maintenance.get("critical_restore_attempt") or (
+            result if result.get("status") in {"verified", "failed"} else {}
+        )
+        failure = maintenance.get("critical_restore_failure") or (result if result.get("status") == "failed" else {})
+        last_success = timestamp(success.get("verified_at") or maintenance.get("critical_restore_at"))
+        status = "untested"
+        if failure:
+            status = "failed"
+        elif attempt.get("status") == "running":
+            status = "running"
+        elif result.get("status") == "pending":
+            status = "pending"
+        elif last_success:
+            verified_at = datetime.fromisoformat(last_success.replace("Z", "+00:00"))
+            status = "verified" if verified_at > datetime.now(UTC) - timedelta(days=REPOSITORY_CRITICAL_RESTORE_DAYS) else "stale"
+        latest = None
+        if attempt:
+            if attempt.get("status") not in {"verified", "failed", "running"}:
+                raise ValueError("Unknown recovery attempt status")
+            latest = {
+                "status": attempt.get("status"), "attempted_at": timestamp(attempt.get("attempted_at")),
+                "completed_at": timestamp(attempt.get("completed_at") or attempt.get("verified_at")),
+                "failed_source_id": attempt.get("failed_source") if attempt.get("failed_source") in _CRITICAL_SOURCE_IDS else None,
+                "reason": _critical_restore_reason(attempt),
+                "cached": bool(result.get("cached")),
+            }
+        required = result.get("required_source_ids") or attempt.get("required_source_ids") or list((success.get("selected_backups") or {}).keys())
+        verified = [key for key, value in (success.get("sources") or {}).items() if value.get("ok") is True]
+        return {
+            "status": status, "last_success_at": last_success, "latest_attempt": latest,
+            "required_source_ids": sorted(set(required) & _CRITICAL_SOURCE_IDS),
+            "verified_source_ids": sorted(set(verified) & _CRITICAL_SOURCE_IDS),
+            "missing_source_ids": sorted(set(result.get("missing_sources") or []) & _CRITICAL_SOURCE_IDS),
+        }
+    except (ResticError, OSError, ValueError, TypeError, AttributeError):
+        return {**empty, "status": "unavailable"}
+
+
 def maintain_repository(env: dict[str, str], *, dry_run: bool = True, force_critical_restore: bool = False) -> dict[str, Any]:
     """Monthly rotating readback, guarded daily expiry and weekly prune.
 
@@ -627,8 +789,12 @@ def maintain_repository(env: dict[str, str], *, dry_run: bool = True, force_crit
             pins.extend(value["baseline_snapshot_id"] for value in state["sources"].values())
         results: dict[str, Any] = {"dry_run": preview}
         if config.remote_repository:
-            results["critical_restore"] = _weekly_critical_restore(env, maintenance, force=True) if force_critical_restore else _weekly_critical_restore(env, maintenance)
+            results["critical_restore"] = _weekly_critical_restore(
+                env, maintenance, force=force_critical_restore,
+                persist=lambda: _save_json(directory / "state.json", state),
+            )
             maintenance["critical_restore_result"] = results["critical_restore"]
+            _notify_repository_result(state, env, "critical-restore", results["critical_restore"])
             # A later repository check may raise; keep the expensive drill's
             # result durable independently so that restart retries reuse it.
             _save_json(directory / "state.json", state)
@@ -644,10 +810,12 @@ def maintain_repository(env: dict[str, str], *, dry_run: bool = True, force_crit
             checked_at = previous.get("monthly_checked_at")
             if not checked_at or datetime.fromisoformat(checked_at) < now - timedelta(days=1):
                 check = adapter.check(remote=remote, monthly_state=previous.get("monthly", {}))
+                check.setdefault("method", "restic-monthly-bucket")
                 previous["monthly"] = check["state"]
                 if check["verified"]:
                     previous["monthly_checked_at"] = check["checked_at"]
                 previous["monthly_result"] = {key: value for key, value in check.items() if key != "state"}
+                _notify_repository_result(state, env, f"{label}-integrity", check)
                 _save_json(directory / "state.json", state)
         pair_healthy = all((maintenance["remote" if remote else "local"].get("monthly_result") or {}).get("verified") is True for remote in repositories)
         critical_status = results.get("critical_restore", {}).get("status")
@@ -702,7 +870,9 @@ def _critical_restore_implementation_fingerprint() -> str:
         *(Path(__file__).with_name(name) for name in (
             "backup_executor.py", "backup_native_recovery.py", "backup_native_restore.py",
             "backup_native_archive.py", "backup_restic.py", "backup_restore_drill.py",
+            "backup_activity.py",
         )),
+        Path(__file__).parents[1] / "utils" / "transient_scratch.py",
         DRILL_SCRIPT,
     ):
         digest.update(path.name.encode())
@@ -710,10 +880,20 @@ def _critical_restore_implementation_fingerprint() -> str:
     return digest.hexdigest()
 
 
-def _weekly_critical_restore(env: dict[str, str], maintenance: dict[str, Any], *, force: bool = False) -> dict[str, Any]:
+def _weekly_critical_restore(env: dict[str, str], maintenance: dict[str, Any], *, force: bool = False, persist: Callable[[], None] | None = None) -> dict[str, Any]:
     """Restore essential configuration and databases weekly from offsite only."""
     previous = maintenance.get("critical_restore_at")
     last_result = maintenance.get("critical_restore_result") or {}
+    if last_result.get("status") == "verified":
+        # Upgrade the pre-journal-format success before a cadence skip or new
+        # attempt replaces its only detailed copy. Observation stays read-only.
+        hydrated = False
+        for field in ("critical_restore_success", "critical_restore_attempt"):
+            if not maintenance.get(field):
+                maintenance[field] = copy.deepcopy(last_result)
+                hydrated = True
+        if hydrated and persist:
+            persist()
     if last_result.get("status") == "failed":
         maintenance["critical_restore_failure"] = last_result
     last_failure = maintenance.get("critical_restore_failure") or {}
@@ -726,7 +906,7 @@ def _weekly_critical_restore(env: dict[str, str], maintenance: dict[str, Any], *
     # and rotating payload checks. Re-downloading them in full every week adds
     # transfer/staging cost without exercising the critical configuration or
     # database rebuilds this drill is intended to verify.
-    critical = {"infrastructure", "codex-config", "claude-config", "agent-skills", "claude-user-config"}
+    critical = _CRITICAL_SOURCE_IDS
     enabled = {str(source["id"]) for source in backup_store.list_sources() if source.get("enabled")}
     required = critical & enabled
     selected: dict[str, dict[str, Any]] = {}
@@ -737,7 +917,7 @@ def _weekly_critical_restore(env: dict[str, str], maintenance: dict[str, Any], *
             selected[source_id] = selected_row
     missing = sorted(required - selected.keys())
     if missing or not selected:
-        pending_result = {"status": "pending", "reason": "critical-offsite-coverage-missing", "missing_sources": missing}
+        pending_result = {"status": "pending", "reason": "critical-offsite-coverage-missing", "missing_sources": missing, "required_source_ids": sorted(required)}
         maintenance["critical_restore_result"] = pending_result
         return pending_result
     from .backup_executor import _complete_mapped_recovery
@@ -768,19 +948,39 @@ def _weekly_critical_restore(env: dict[str, str], maintenance: dict[str, Any], *
         return {**copy.deepcopy(last_failure), "cached": True, "reason": "unchanged-failed-recovery-inputs"}
 
     attempted_at = datetime.now(UTC).isoformat()
+    maintenance["critical_restore_attempt"] = {
+        "status": "running", "attempted_at": attempted_at, "selected_backups": selected_points,
+        "input_fingerprint": fingerprint, "required_source_ids": sorted(required),
+    }
+    if persist:
+        persist()
 
     def finish(result: dict[str, Any]) -> dict[str, Any]:
-        result.update(input_fingerprint=fingerprint, selected_backups=selected_points, attempted_at=attempted_at)
+        result.update(input_fingerprint=fingerprint, selected_backups=selected_points, attempted_at=attempted_at, completed_at=datetime.now(UTC).isoformat(), required_source_ids=sorted(required))
         maintenance["critical_restore_result"] = result
+        maintenance["critical_restore_attempt"] = copy.deepcopy(result)
         if result["status"] == "failed":
             maintenance["critical_restore_failure"] = result
         elif result["status"] == "verified":
             maintenance.pop("critical_restore_failure", None)
+            maintenance["critical_restore_success"] = copy.deepcopy(result)
+        if persist:
+            persist()
         return result
 
     evidence: dict[str, Any] = {}
-    with tempfile.TemporaryDirectory(prefix="st-critical-offsite-drill-") as temporary:
-        isolated = Path(temporary)
+    retained_config_bytes = sum(_known_restore_bytes(backup) for source_id, backup in selected.items()
+                                if source_id != "infrastructure")
+    # Persistent mapped trees coexist with one serial restore's payload,
+    # archive and extraction. Arbitrary database expansion remains unknown.
+    peak_copy_bytes = max(3 * _known_restore_bytes(backup) for backup in selected.values())
+    with ExitStack() as staging:
+        try:
+            isolated = staging.enter_context(restore_scratch(
+                "st-critical-offsite-drill-", required_bytes=retained_config_bytes + peak_copy_bytes,
+            ))
+        except (ScratchError, OSError) as exc:
+            return finish({"status": "failed", "sources": evidence, "error": str(exc)})
         targets: dict[str, Path] = {}
         for source_id, backup in selected.items():
             drill_result: dict[str, Any] | None = None
@@ -793,7 +993,9 @@ def _weekly_critical_restore(env: dict[str, str], maintenance: dict[str, Any], *
                             raise ResticError("Infrastructure database/Redis/config restore drill failed")
                     else:
                         target = isolated / source_id
+                        ensure_scratch_capacity(isolated, _known_restore_bytes(backup))
                         restore_isolated_archive(archive, target)
+                        ensure_scratch_capacity(isolated, 0)
                         targets[source_id] = target
                 evidence[source_id] = {"ok": True, "backup_id": backup["id"], "remote_snapshot_id": backup["verification_json"]["remote_snapshot_id"]}
             except BackupCancelled:

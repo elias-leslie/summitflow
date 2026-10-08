@@ -20,6 +20,7 @@ import shutil
 import socket
 import stat
 import subprocess
+import tempfile
 import time
 from collections.abc import Callable, Iterator, Mapping, Sequence
 from contextlib import contextmanager
@@ -232,7 +233,7 @@ class ResticAdapter:
             raise ResticError(f"{command[0]} {phase} failed (exit {result.returncode}); inspect private operator diagnostics")
         return result
 
-    def _command(self, *args: str, remote: bool = False, permanent_delete: bool = False) -> list[str]:
+    def _command(self, *args: str, remote: bool = False, permanent_delete: bool = False, restore_cache: Path | None = None) -> list[str]:
         repository = self.config.remote_repository if remote else str(self.config.local_repository)
         password = self.config.remote_password_file if remote else self.config.local_password_file
         if not repository or not password:
@@ -241,7 +242,11 @@ class ResticAdapter:
         # Check creates and removes its own fresh cache. Disabling that cache
         # repeatedly downloads tree packs within the same check; --with-cache
         # would instead reuse old data and is deliberately never supplied.
-        if not args or args[0] != "check":
+        if restore_cache is not None:
+            if not args or args[0] != "restore":
+                raise ResticError("An operation cache is only supported for restore")
+            command.extend(["--cache-dir", str(restore_cache)])
+        elif not args or args[0] != "check":
             command.append("--no-cache")
         if permanent_delete and repository.startswith("rclone:"):
             if not self.config.offsite_prune_qualified:
@@ -609,7 +614,11 @@ class ResticAdapter:
                 if not path or Path(path).is_absolute() or ".." in Path(path).parts or any(char in path for char in "*?[]"):
                     raise ResticError("Restore include must be a literal path relative to the staged payload")
                 args.extend(["--include", str(payload_path / path)])
-            self._run(self._command(*args, remote=remote), phase="restore")
+            # Repeated tree reads may otherwise re-download remote metadata.
+            # This cache starts empty, belongs only to this restore job, and
+            # cannot reuse an existing cache or an earlier restore's metadata.
+            with tempfile.TemporaryDirectory(prefix="restic-restore-cache-", dir=destination.parent) as cache:
+                self._run(self._command(*args, remote=remote, restore_cache=Path(cache)), phase="restore")
             root = destination / payload_path.relative_to("/")
             if not root.is_dir() or root.is_symlink():
                 raise ResticError("Restic did not materialize the expected payload root")
