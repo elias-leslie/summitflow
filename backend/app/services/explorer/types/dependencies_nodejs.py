@@ -4,8 +4,10 @@ from __future__ import annotations
 
 import fnmatch
 import json
+import os
 import subprocess
 from collections import deque
+from itertools import islice
 from pathlib import Path
 from typing import TypedDict
 
@@ -40,7 +42,8 @@ def scan_nodejs_dependencies(
 
     Local inventory can omit online enrichment; existing callers retain it.
     Descendant discovery never walks arbitrary source trees. Declared workspace
-    patterns are restricted to eight levels and 256 directory visits.
+    patterns are restricted to eight levels and 256 directory visits. Directory
+    listings examine at most 256 entries before filtering and sorting.
     """
     root_path = root_path.resolve()
     workspace_root = _find_pnpm_workspace_root(root_path)
@@ -51,7 +54,11 @@ def scan_nodejs_dependencies(
     if workspace_packages is None:
         return _scan_local_node_projects(project_id, root_path, include_network_checks)
     root_package = workspace_root / "package.json"
-    if root_path == workspace_root and root_package.exists():
+    if (
+        root_path == workspace_root
+        and _safe_node_directory(workspace_root, root_package)
+        and root_package.exists()
+    ):
         workspace_packages = sorted({root_package, *workspace_packages})
     is_in_workspace = _is_project_in_workspace(root_path, workspace_packages)
     has_own_lockfile = _has_own_lockfile(root_path)
@@ -108,20 +115,34 @@ def _safe_node_directory(root_path: Path, candidate: Path) -> bool:
 
 def _node_child_directories(root_path: Path, directory: Path) -> list[Path]:
     try:
-        return sorted(
-            child for child in directory.iterdir()
-            if _safe_node_directory(root_path, child) and child.is_dir()
-        )[:_MAX_WORKSPACE_DIRECTORIES]
+        # Path.iterdir eagerly collects every entry on Python 3.13. Limit the
+        # streaming iterator before constructing paths or checking their status.
+        with os.scandir(directory) as entries:
+            children = (Path(entry.path) for entry in islice(entries, _MAX_WORKSPACE_DIRECTORIES))
+            return sorted(
+                child for child in children
+                if _safe_node_directory(root_path, child) and child.is_dir()
+            )
     except OSError as exc:
         logger.warning("Failed to inspect Node app directories at %s: %s", directory, exc)
         return []
+
+
+def _workspace_excluded(workspace_root: Path, directory: Path, patterns: list[str]) -> bool:
+    if directory == workspace_root or not directory.is_relative_to(workspace_root):
+        return False
+    relative = directory.relative_to(workspace_root)
+    return any(
+        fnmatch.fnmatchcase(parent.as_posix(), pattern[1:].removeprefix("./"))
+        for pattern in patterns if pattern.startswith("!")
+        for parent in (relative, *relative.parents) if parent != Path(".")
+    )
 
 
 def _workspace_manifests(workspace_root: Path, patterns: list[str]) -> list[Path]:
     """Expand only declared paths, with shared exclusions and a fixed visit budget."""
     packages: set[Path] = set()
     visits = 0
-    exclusions = [pattern[1:].removeprefix("./") for pattern in patterns if pattern.startswith("!")]
     for pattern in sorted(set(patterns)):
         if pattern.startswith("!"):
             continue
@@ -132,7 +153,11 @@ def _workspace_manifests(workspace_root: Path, patterns: list[str]) -> list[Path
         seen: set[tuple[Path, int]] = set()
         while pending and visits < _MAX_WORKSPACE_DIRECTORIES:
             directory, index = pending.popleft()
-            if (directory, index) in seen or not _safe_node_directory(workspace_root, directory):
+            if (
+                (directory, index) in seen
+                or _workspace_excluded(workspace_root, directory, patterns)
+                or not _safe_node_directory(workspace_root, directory)
+            ):
                 continue
             seen.add((directory, index))
             visits += 1
@@ -159,18 +184,19 @@ def _workspace_manifests(workspace_root: Path, patterns: list[str]) -> list[Path
             break
     return sorted(
         manifest for manifest in packages
-        if not any(fnmatch.fnmatchcase(
-            manifest.parent.relative_to(workspace_root.resolve()).as_posix(), pattern,
-        ) for pattern in exclusions)
+        if not _workspace_excluded(workspace_root.resolve(), manifest.parent, patterns)
     )
 
 
-def _package_workspace_manifests(root_path: Path) -> list[Path]:
+def _package_workspace_patterns(root_path: Path) -> list[str]:
+    manifest = root_path / "package.json"
+    if not _safe_node_directory(root_path, manifest) or not manifest.is_file():
+        return []
     try:
-        payload = json.loads((root_path / "package.json").read_text())
+        payload = json.loads(manifest.read_text())
         workspaces = payload.get("workspaces", []) if isinstance(payload, dict) else []
         patterns = workspaces.get("packages", []) if isinstance(workspaces, dict) else workspaces
-        return _workspace_manifests(root_path, [p for p in patterns if isinstance(p, str)]) if isinstance(patterns, list) else []
+        return [p for p in patterns if isinstance(p, str)] if isinstance(patterns, list) else []
     except (OSError, ValueError) as exc:
         logger.debug("No readable package workspaces at %s: %s", root_path, exc)
         return []
@@ -179,8 +205,10 @@ def _package_workspace_manifests(root_path: Path) -> list[Path]:
 def _scan_local_node_projects(
     project_id: str, root_path: Path, include_network_checks: bool,
 ) -> list[ExplorerEntryCreate]:
+    workspace_patterns = {root_path: _package_workspace_patterns(root_path)}
     directories = {root_path, *_node_child_directories(root_path, root_path)}
-    if (root_path / "project.identity.json").is_file():
+    identity_manifest = root_path / "project.identity.json"
+    if _safe_node_directory(root_path, identity_manifest) and identity_manifest.is_file():
         try:
             identity = get_project_identity(project_id, str(root_path)) or {}
             frontend_dir = identity.get("runtime", {}).get("frontend_dir")
@@ -192,15 +220,30 @@ def _scan_local_node_projects(
             logger.warning("Failed to read project app directory for %s: %s", project_id, exc)
     manifests: set[Path] = set()
     for directory in sorted(directories):
+        if any(
+            _workspace_excluded(context, directory, patterns)
+            for context, patterns in workspace_patterns.items()
+        ):
+            continue
         manifest = directory / "package.json"
-        if _safe_node_directory(root_path, manifest) and manifest.exists():
-            manifests.add(manifest.resolve())
-        if (directory / "pnpm-workspace.yaml").is_file():
+        if _safe_node_directory(root_path, manifest):
+            if manifest.exists():
+                manifests.add(manifest.resolve())
+            patterns = workspace_patterns.get(directory)
+            if patterns is None:
+                patterns = _package_workspace_patterns(directory)
+                workspace_patterns[directory] = patterns
+            manifests.update(_workspace_manifests(directory, patterns))
+        workspace_manifest = directory / "pnpm-workspace.yaml"
+        if _safe_node_directory(root_path, workspace_manifest) and workspace_manifest.is_file():
             manifests.update(_parse_pnpm_workspace(directory) or [])
-        if manifest.is_file():
-            manifests.update(_package_workspace_manifests(directory))
     entries: list[ExplorerEntryCreate] = []
     for manifest in sorted(manifests):
+        if not _safe_node_directory(root_path, manifest) or any(
+            _workspace_excluded(context, manifest.parent, patterns)
+            for context, patterns in workspace_patterns.items()
+        ):
+            continue
         for entry in _scan_standalone_node_project(manifest, include_network_checks=include_network_checks):
             relative = manifest.parent.relative_to(root_path.resolve())
             if relative != Path("."):
@@ -229,8 +272,11 @@ def _has_own_lockfile(root_path: Path) -> bool:
 
 
 def _parse_pnpm_workspace(workspace_root: Path) -> list[Path] | None:
+    manifest = workspace_root / "pnpm-workspace.yaml"
+    if not _safe_node_directory(workspace_root, manifest):
+        return None
     try:
-        payload = yaml.safe_load((workspace_root / "pnpm-workspace.yaml").read_text())
+        payload = yaml.safe_load(manifest.read_text())
         patterns = payload.get("packages", []) if isinstance(payload, dict) else []
         return _workspace_manifests(workspace_root, [p for p in patterns if isinstance(p, str)]) if isinstance(patterns, list) else []
     except (OSError, ValueError, yaml.YAMLError) as e:

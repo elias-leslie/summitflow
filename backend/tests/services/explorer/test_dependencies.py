@@ -9,6 +9,7 @@ Tests verify multi-context discovery:
 from __future__ import annotations
 
 import json
+import os
 from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
@@ -300,13 +301,13 @@ def test_node_inventory_prunes_ignored_directories(
     _node_manifest(tmp_path / ignored, "ignored-direct")
     _node_manifest(tmp_path / ignored / "nested", "ignored-nested")
     (tmp_path / "pnpm-workspace.yaml").write_text(f"packages:\n  - '*'\n  - '{ignored}/*'\n")
-    real_iterdir = Path.iterdir
+    real_scandir = os.scandir
 
-    def guarded_iterdir(directory: Path):
-        assert ignored not in directory.relative_to(tmp_path).parts
-        return real_iterdir(directory)
+    def guarded_scandir(directory: Path | str):
+        assert ignored not in Path(directory).relative_to(tmp_path).parts
+        return real_scandir(directory)
 
-    with patch.object(Path, "iterdir", guarded_iterdir):
+    with patch("os.scandir", guarded_scandir):
         entries = scan_nodejs_dependencies("test-project", tmp_path, include_network_checks=False)
     assert [entry.name for entry in entries] == ["next"]
 
@@ -402,6 +403,81 @@ def test_node_inventory_tolerates_invalid_discovery_configuration(
     (tmp_path / "project.identity.json").write_text("invalid")
     entries = scan_nodejs_dependencies("test-project", tmp_path, include_network_checks=False)
     assert [entry.name for entry in entries] == ["next"]
+
+
+def test_node_child_discovery_bounds_enumeration_and_stat_work(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(dependencies_nodejs, "_MAX_WORKSPACE_DIRECTORIES", 2)
+    enumerated: list[int] = []
+
+    def directory_entries():
+        for index in range(1000):
+            enumerated.append(index)
+            yield SimpleNamespace(path=str(tmp_path / f"app-{index}"))
+
+    scanner = MagicMock()
+    scanner.__enter__.return_value = directory_entries()
+    with (
+        patch("os.scandir", return_value=scanner),
+        patch.object(dependencies_nodejs, "_safe_node_directory", return_value=True) as safe,
+        patch.object(Path, "is_dir", return_value=True) as stat,
+    ):
+        directories = dependencies_nodejs._node_child_directories(tmp_path, tmp_path)
+    assert len(directories) == 2
+    assert enumerated == [0, 1]
+    assert safe.call_count == 2
+    assert stat.call_count == 2
+    assert directories == sorted(directories)
+
+
+@pytest.mark.parametrize("manifest_name", ["package.json", "pnpm-workspace.yaml"])
+def test_node_inventory_never_reads_rejected_workspace_manifests(
+    tmp_path: Path, local_node_inventory: None, manifest_name: str,
+) -> None:
+    root = tmp_path / "project"
+    frontend = root / "frontend"
+    frontend.mkdir(parents=True)
+    outside = tmp_path / "outside" / manifest_name
+    outside.parent.mkdir()
+    outside.write_text('{"workspaces":[]}' if manifest_name == "package.json" else "packages: []\n")
+    (frontend / manifest_name).symlink_to(outside)
+    real_read_text = Path.read_text
+
+    def contained_read_text(path: Path, *args, **kwargs):
+        assert path.resolve().is_relative_to(root), f"read escaped manifest: {path}"
+        return real_read_text(path, *args, **kwargs)
+
+    with patch.object(Path, "read_text", contained_read_text):
+        assert scan_nodejs_dependencies("test-project", root, include_network_checks=False) == []
+
+
+@pytest.mark.parametrize("workspace_format", ["npm", "yarn"])
+def test_node_child_discovery_honors_declared_workspace_exclusions(
+    tmp_path: Path, local_node_inventory: None, workspace_format: str,
+) -> None:
+    manifest = _node_manifest(tmp_path, "root-dependency")
+    _node_manifest(tmp_path / "frontend")
+    _node_manifest(tmp_path / "example", "excluded-dependency")
+    payload = json.loads(manifest.read_text())
+    patterns = ["*", "!example"]
+    payload["workspaces"] = patterns if workspace_format == "npm" else {"packages": patterns}
+    manifest.write_text(json.dumps(payload))
+    entries = scan_nodejs_dependencies("test-project", tmp_path, include_network_checks=False)
+    assert {entry.name for entry in entries} == {"root-dependency", "next"}
+
+
+def test_node_child_discovery_preserves_undeclared_safe_apps(
+    tmp_path: Path, local_node_inventory: None,
+) -> None:
+    manifest = _node_manifest(tmp_path, "root-dependency")
+    _node_manifest(tmp_path / "frontend")
+    _node_manifest(tmp_path / "example", "excluded-dependency")
+    payload = json.loads(manifest.read_text())
+    payload["workspaces"] = ["packages/*", "!example"]
+    manifest.write_text(json.dumps(payload))
+    entries = scan_nodejs_dependencies("test-project", tmp_path, include_network_checks=False)
+    assert {entry.name for entry in entries} == {"root-dependency", "next"}
 
 
 def test_python_scan_uses_manifest_local_environment(tmp_path: Path) -> None:
