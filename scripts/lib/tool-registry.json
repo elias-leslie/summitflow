@@ -11,7 +11,7 @@
         "enabled": true,
         "effects": ["read-local", "process", "network"]
       },
-      "environment": ["XDG_RUNTIME_DIR", "AICO_GUI_CONTROL_SOCKET", "AICO_CONTROL_SOCKET"]
+      "environment": ["XDG_RUNTIME_DIR", "AICO_GUI_CONTROL_SOCKET", "AICO_CONTROL_SOCKET", "A_TERM_ROOT_CONTROL_URL"]
     },
     {
       "id": "agent-hub.agents",

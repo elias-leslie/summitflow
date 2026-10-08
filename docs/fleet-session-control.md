@@ -112,3 +112,21 @@ workflow before these commands are available in an accepted runtime.
 A-Term defaults to `http://127.0.0.1:8002` and supports the local
 `A_TERM_ROOT_CONTROL_URL` override. Existing password/proxy mode rejection is
 reported as unavailable; the adapter does not supply or invent credentials.
+# Direct exact-thread recovery
+
+`st aico create REQUEST_ID [PROMPT] --project PROJECT --project-root PATH
+--resume-session SESSION_ID [--surface aico|a-term]` forwards directly to the existing
+owner create contract. It retains no prompt or fleet event and supplies no fleet
+orchestration text. The public ID is TUI-agnostic; only the Codex resume adapter
+is currently implemented, requiring a canonical lowercase UUID.
+The default surface is Aico; A-Term uses its established loopback HTTP route and
+enforces configured authentication. Aico shows the allocated root; A-Term creates
+a detached pane. Neither command starts the owner service.
+
+The optional prompt is sanitized and limited to 2000 UTF-8 bytes; `--stdin`
+supplies the same bounded input. Without a prompt, resume uses a fixed instruction
+to reconcile current state after the crash before continuing. Retry with the same
+request ID and complete body; changed content conflicts and ended roots remain
+tombstones. This is explicit exact recovery, not an automatic reboot scheduler.
+Running receipts prove workload presence, not native thread loading or model
+readiness. Owner code changes need a managed rebuild before live use.

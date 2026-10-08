@@ -2,20 +2,33 @@
   "id": "aico.roots",
   "owner": "aico",
   "namespace": "aico",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "st_contract_versions": [1],
-  "summary": "Observe Aico roots and inspect/request generation-pinned terminal administration.",
+  "summary": "Create exact owner roots, observe Aico roots and inspect/request pinned administration.",
   "effects": ["read-local", "process", "network"],
   "help": {
-    "": "Usage: st aico roots [REQUEST_ID] [--watch SECONDS]\n       st aico admin REQUEST_ID [clear|submit] [OPTIONS]\n\nroots: compact verified owner/server/pane identity and advisory TUI status; bounded change-only watch. admin: inspect capability or request an exact generation/thread operation; currently fails closed because native atomic idle/draft/thread control is unavailable. No terminal/draft text in output. Never starts or rearranges Aico.\n\nNative message delivery remains sessions send/verify: exact UUID + stable source revision; queued/durable does not prove consumption or slash execution.",
+    "": "Usage: st aico create REQUEST_ID [PROMPT] --project PROJECT --project-root PATH [--resume-session SESSION_ID] [--surface aico|a-term]\n       st aico roots [REQUEST_ID] [--watch SECONDS]\n       st aico admin REQUEST_ID [clear|submit] [OPTIONS]\n\ncreate: one exact owner root with transient sanitized prompt; optional native Codex resume in a newly allocated root. roots: compact verified identity and advisory TUI status; bounded watch. admin: pinned request; currently fails closed because native atomic idle/draft/thread control is unavailable. Output contains metadata only.\n\nNative message delivery remains sessions send/verify: exact UUID + stable source revision; queued/durable does not prove consumption or slash execution.",
+    "create": "Usage: st aico create REQUEST_ID [PROMPT] --project PROJECT --project-root PATH [OPTIONS]\n\n--resume-session SESSION_ID resumes an exact saved native session in a new owner root; no picker, latest-thread inference or terminal input. Default --tool codex, --surface aico, --role portfolio-root. Use --surface a-term for the existing loopback owner HTTP route (configured authentication remains enforced). --lead-root and --facet are optional opaque metadata. PROMPT or --stdin supplies <=2000 sanitized UTF-8 bytes; no secrets or framing controls. Resume without either uses a fixed post-crash reconciliation prompt. Fresh create requires a prompt.\n\nReuse the same REQUEST_ID and complete body after an uncertain response. Matching retries reconcile the same root; changed body conflicts; ended requests remain tombstones. Output is bounded content-free metadata. No prompt retention or fleet ledger. Creation requires an already running owner; Aico shows its new root, A-Term creates a detached pane. --root-socket PATH selects Aico's private GUI socket; --root-url URL selects A-Term's loopback HTTP owner. No deployment or owner startup.",
     "roots": "Usage: st aico roots [REQUEST_ID] [--watch SECONDS] [--interval SECONDS]\n\nOmit REQUEST_ID to discover running catalog roots. An exact ID can also report a retained unavailable root. Snapshot JSON contains identity/status only; --watch (>0, <=3600 seconds) emits baselines and changed states only. Poll interval defaults to 2 seconds (minimum 0.1). Discovery is bounded to 128 catalog entries and 256 KiB; snapshots have a 10-second bound. Identity races fail closed and watches never re-pin. Unknown/unsupported TUI profiles are ambiguous/unavailable. GUI/owner absence is unavailable; this command never starts Aico.\n\nNative-thread delivery is separate: exact bound UUID + stable --source-key revision, <=2000 sanitized UTF-8 bytes. Passive default. A queued/durable receipt does not prove working/consumption and has no process-generation fence. Terminal admin capability is exposed separately by admin; execution currently fails closed.",
     "admin": "Usage: st aico admin REQUEST_ID [clear|submit] [OPTIONS]\n\nOmit the operation to inspect the owner capability. clear/submit require --generation SHA256 --thread UUID --request-key KEY. submit also requires --stdin (<=2000 UTF-8 bytes; no framing controls). Reuse the same request key after an uncertain response.\n\nCurrently fails closed: native atomic current-thread + idle/empty-draft/input fence and idempotent receipt are unavailable. Returns concise content-free metadata; never sends tmux input, captures text, retries Enter, or changes permissions. An uncertain transport reports applied:null. --root-socket PATH selects an exact private owner socket."
   },
   "help_options": {
+    "create": {"--project": 1, "--project-root": 1, "--tool": 1, "--surface": 1, "--role": 1, "--lead-root": 1, "--facet": 1, "--resume-session": 1, "--stdin": 0, "--root-socket": 1, "--root-url": 1},
     "roots": {"--watch": 1, "--interval": 1, "--root-socket": 1, "--owner-socket": 1},
     "admin": {"--generation": 1, "--thread": 1, "--request-key": 1, "--stdin": 0, "--root-socket": 1}
   },
   "usage": [
+    {
+      "surface": "st.aico.create",
+      "cmd": "st aico create REQUEST_ID [PROMPT] --project PROJECT --project-root PATH [--resume-session SESSION_ID] [--surface aico|a-term]",
+      "when": "create a new owner root or explicitly recover one exact saved Codex thread after a crash",
+      "precautions": [
+        "Owner adapter validates the native ID; only Codex with a lowercase UUID is implemented. New root launch; never paste into an existing pane or choose latest/picker entries.",
+        "Prompt is transient, sanitized and bounded to 2000 UTF-8 bytes. No secrets, transcript or fleet ledger. Default recovery prompt reconciles state before continuation.",
+        "Reuse request ID and full body on retry; conflicts fail closed, ended roots remain tombstones. Running proves workload presence, not authenticated model readiness or prompt completion."
+      ],
+      "tier": "reference"
+    },
     {
       "surface": "st.aico.roots",
       "cmd": "st aico roots [REQUEST_ID] [--watch SECONDS]",
