@@ -24,6 +24,10 @@ import {
   useState,
 } from 'react'
 import { BackupExpandedRow } from '@/components/backup/BackupExpandedRow'
+import {
+  BackupSizeDetails,
+  BackupSizeExplanation,
+} from '@/components/backup/BackupSizeDetails'
 import { useBackupHistoryRefresh } from '@/components/backup/backupPolling'
 import { CollapsibleSection } from '@/components/backup/CollapsibleSection'
 import { CreateBackupModal } from '@/components/backup/CreateBackupModal'
@@ -166,10 +170,10 @@ function BackupGridCard({
       <div className="grid grid-cols-2 gap-1.5">
         <div className="min-w-0 rounded bg-slate-950/50 px-2 py-1.5">
           <div className="text-[10px] uppercase tracking-[0.14em] text-slate-500">
-            Size
+            Size details
           </div>
           <div className="truncate text-xs text-slate-200 font-mono">
-            {formatBytes(backup.size_bytes)}
+            <BackupSizeDetails backup={backup} />
           </div>
         </div>
         <div className="min-w-0 rounded bg-slate-950/50 px-2 py-1.5">
@@ -406,7 +410,7 @@ export function BackupsClient() {
       ? 'Loading backup health, storage, and retention metrics.'
       : healthError
         ? 'Backup health refresh failed; protection status may be out of date.'
-        : `${healthySourceCount} healthy, ${failingSourceCount} failing, ${storageSummary?.total_count ?? 0} backups, ${formatBytes(storageSummary?.total_bytes ?? 0)} stored`
+        : `${healthySourceCount} healthy, ${failingSourceCount} failing, ${storageSummary?.total_count ?? 0} backups, ${formatBytes(storageSummary?.total_bytes ?? 0)} combined backup sizes (not disk usage)`
   const sourcesSummary =
     sources.length === 0
       ? 'No sources configured yet.'
@@ -554,9 +558,9 @@ export function BackupsClient() {
           onBackupTriggered={invalidateAll}
         />
         <p className="text-xs text-slate-400" data-backup-transfer-note>
-          Each backup creates one encrypted local archive. Large Drive copies
-          transfer in verified parts; the recovery utility joins them before
-          restore. Sync retries reuse saved data.
+          Restic backups reuse unchanged data in an encrypted repository. Older
+          archive backups remain available; large Drive archives transfer in
+          verified parts that the recovery utility joins before restore.
         </p>
       </section>
 
@@ -679,6 +683,7 @@ export function BackupsClient() {
           }
         />
 
+        <BackupSizeExplanation />
         {backupsLoading ? (
           <div className="flex items-center justify-center py-20">
             <div className="flex items-center gap-2.5 text-slate-500 text-sm">
@@ -739,7 +744,7 @@ export function BackupsClient() {
                     Type
                   </th>
                   <th className="px-4 py-2.5 text-left text-[10px] font-medium text-slate-500 uppercase tracking-[0.14em] hidden md:table-cell">
-                    Size
+                    Size details
                   </th>
                   <th className="px-4 py-2.5 text-left text-[10px] font-medium text-slate-500 uppercase tracking-[0.14em] hidden lg:table-cell">
                     Created
@@ -820,9 +825,9 @@ export function BackupsClient() {
                           </span>
                         </td>
                         <td className="px-4 py-2.5 hidden md:table-cell">
-                          <span className="text-xs text-slate-300 font-mono">
-                            {formatBytes(backup.size_bytes)}
-                          </span>
+                          <div className="text-xs text-slate-300 font-mono">
+                            <BackupSizeDetails backup={backup} />
+                          </div>
                         </td>
                         <td className="px-4 py-2.5 hidden lg:table-cell">
                           <span className="text-xs text-slate-400">

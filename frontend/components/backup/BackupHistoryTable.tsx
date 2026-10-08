@@ -11,6 +11,7 @@ import {
 import { Fragment, type ReactNode } from 'react'
 import type { Backup, BackupSource } from '@/lib/api/backups'
 import { BackupExpandedRow } from './BackupExpandedRow'
+import { BackupSizeExplanation } from './BackupSizeDetails'
 import { StatusBadge } from './StatusBadge'
 
 export type BackupColumn = {
@@ -95,7 +96,10 @@ export function BackupHistoryTable({
   const expandedColSpan = columns.length + 3
 
   return (
-    <div className="bg-slate-800/50 rounded-lg border border-slate-700 overflow-hidden">
+    <div className="bg-slate-800/50 rounded-lg border border-slate-700 overflow-x-auto">
+      <div className="px-4 py-3">
+        <BackupSizeExplanation />
+      </div>
       <table className="w-full">
         <thead>
           <tr className="border-b border-slate-700 bg-slate-800/80">

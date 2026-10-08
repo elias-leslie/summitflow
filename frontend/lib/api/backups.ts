@@ -57,6 +57,9 @@ export function cancelBackup(
 }
 
 export interface BackupVerification {
+  format?: string
+  logical_bytes?: number | null
+  stored_bytes?: number | null
   activity?: BackupActivity | null
   verified: boolean
   verified_at: string

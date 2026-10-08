@@ -18,6 +18,7 @@ import {
   BackupTypeBadge,
 } from '@/components/backup/BackupHistoryTable'
 import { BackupScheduleConfig } from '@/components/backup/BackupScheduleConfig'
+import { BackupSizeDetails } from '@/components/backup/BackupSizeDetails'
 import { activeBackupRefetchInterval } from '@/components/backup/backupPolling'
 import { SourceTypeBadge } from '@/components/backup/SourceTypeBadge'
 import { isAmbiguousDispatchError } from '@/lib/api/backup-dispatch'
@@ -38,9 +39,9 @@ const SOURCE_BACKUP_COLUMNS: BackupColumn[] = [
   },
   {
     key: 'size',
-    label: 'Size',
+    label: 'Size details',
     className: 'text-sm text-slate-300',
-    render: (backup) => formatBytes(backup.size_bytes),
+    render: (backup) => <BackupSizeDetails backup={backup} />,
   },
   {
     key: 'created',
@@ -184,7 +185,10 @@ export function SourceBackupsClient({ sourceId }: { sourceId: string }) {
             {storageSummary && (
               <>
                 <span>{storageSummary.total_count} backups</span>
-                <span>{formatBytes(storageSummary.total_bytes)}</span>
+                <span>
+                  {formatBytes(storageSummary.total_bytes)} combined backup
+                  sizes (not disk usage)
+                </span>
               </>
             )}
           </div>
