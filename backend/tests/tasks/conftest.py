@@ -12,6 +12,7 @@ _SCRATCH_TEST_MODULES = {
     "test_backup_publish.py", "test_backup_smb_commands.py", "test_backup_independent_review.py",
     "test_backup_disposable_scratch.py",
     "test_backup_activity.py", "test_backup_native_restore_safety.py", "test_backup_capture_activity.py",
+    "test_backup_restic_fixtures.py",
 }
 
 

@@ -9,6 +9,7 @@ import tempfile
 from pathlib import Path
 
 from app.utils.heavy_work import heavy_work
+from app.utils.transient_scratch import managed_temp_parent
 
 from ..details import display_path, summary_hint
 from .check_artifacts import write_check_details
@@ -194,11 +195,16 @@ def run_local_security_check(
         if not paths:
             print(f"{scanner.upper()}:SKIP:{scanner}:no_candidate_files")
             continue
-        with tempfile.TemporaryDirectory(prefix="st-security-") as temporary:
+        required_bytes = sum((root / path).lstat().st_size for path in paths)
+        parent = managed_temp_parent("st-security", label="Security scan", required_bytes=required_bytes)
+        with tempfile.TemporaryDirectory(prefix="st-security-", dir=parent) as temporary:
             candidate = Path(temporary) / "candidate"
             candidate.mkdir()
             _materialize(root, paths, candidate)
-            environment = None
+            cache = Path(temporary) / "cache"
+            cache.mkdir(mode=0o700)
+            environment = {**os.environ, "TMPDIR": temporary, "TMP": temporary, "TEMP": temporary,
+                           "XDG_CACHE_HOME": str(cache)}
             if scanner == "gitleaks":
                 command = [
                     "gitleaks",
@@ -231,8 +237,8 @@ def run_local_security_check(
                     "--json",
                     str(candidate),
                 ]
-                environment = {**os.environ, "SEMGREP_SETTINGS_FILE": str(Path(temporary) / "settings.yml"),
-                               "SEMGREP_LOG_FILE": str(Path(temporary) / "semgrep.log")}
+                environment.update(SEMGREP_SETTINGS_FILE=str(Path(temporary) / "settings.yml"),
+                                   SEMGREP_LOG_FILE=str(Path(temporary) / "semgrep.log"))
             result = _run(command, root=root, name=scanner, environment=environment)
             if result:
                 failures.append(result)

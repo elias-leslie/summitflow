@@ -12,6 +12,8 @@ from contextvars import ContextVar
 from pathlib import Path
 
 SCRATCH_ROOT = Path("/srv/scratch")
+_FSTAB = Path("/etc/fstab")
+_MOUNTINFO = Path("/proc/self/mountinfo")
 _ACTIVE_SCRATCH: ContextVar[Path | None] = ContextVar("active_disposable_scratch", default=None)
 
 
@@ -45,6 +47,14 @@ def mounted_scratch_parent(
     """Only cleanrooms opt into portability; restores require the known mount."""
     root = SCRATCH_ROOT if root is None else root
     if not required and not root.exists() and not root.is_symlink():
+        # A missing mount configured by the host is a storage failure. Only a
+        # machine without that host declaration is eligible for portability.
+        if _FSTAB.exists() and any(
+            len(fields := line.split()) >= 2 and not fields[0].startswith("#")
+            and fields[1].replace("\\040", " ").replace("\\011", "\t").replace("\\134", "\\") == str(root)
+            for line in _FSTAB.read_text().splitlines()
+        ):
+            raise ScratchError(f"{label} configured scratch mount is unavailable at {root}")
         return None
     if not namespace or Path(namespace).name != namespace or namespace in {".", ".."}:
         raise ValueError("Scratch namespace must be a single directory name")
@@ -64,7 +74,7 @@ def mounted_scratch_parent(
 
 def ensure_scratch_capacity(path: Path, additional_bytes: int) -> None:
     """Budget additional known bytes against actual destination free space."""
-    from app.tasks._retention_policy import HostRetentionPolicy
+    from app.utils.host_retention_policy import HostRetentionPolicy
 
     if additional_bytes < 0:
         raise ValueError("Restore staging byte requirement cannot be negative")
@@ -77,6 +87,53 @@ def ensure_scratch_capacity(path: Path, additional_bytes: int) -> None:
             f"Insufficient restore scratch space at {path}: {free} bytes free, "
             f"{additional_bytes} additional known bytes required, {reserve} bytes reserved"
         )
+
+
+def managed_temp_parent(namespace: str, *, label: str, required_bytes: int = 0) -> Path:
+    """Admit managed validation in its inherited private binding or host scratch.
+
+    Hosts without the disposable mount remain portable. A present unsafe mount
+    must never silently redirect materialization onto the root volume.
+    """
+    try:
+        if "ST_NATIVE_TMP_HOST_ROOT" in os.environ:
+            parent = Path(os.environ["ST_NATIVE_TMP_HOST_ROOT"])
+            validate_temp_parent(parent, private=True, label=label)
+        else:
+            # Outer acceptance binds a private scratch-backed /var/tmp. A
+            # nested native stage may deliberately omit the Docker mapping;
+            # retain this proven private overlay instead of writable host state.
+            parent = None
+            private_tmp = Path("/var/tmp")
+            try:
+                validate_temp_parent(private_tmp, private=True, label=label)
+            except (OSError, ValueError):
+                pass
+            else:
+                if any(len(fields := line.split()) >= 6 and fields[4] == "/var/tmp"
+                       for line in _MOUNTINFO.read_text().splitlines()):
+                    # A configured host still requires its excluded backing
+                    # filesystem; a private bind alone could live on root.
+                    if not SCRATCH_ROOT.exists() and not SCRATCH_ROOT.is_symlink():
+                        # This checks the configured-missing guard without
+                        # allocating any namespace on an overlaid read-only host.
+                        mounted_scratch_parent(namespace, required=False, label=label)
+                        parent = private_tmp
+                    else:
+                        validate_temp_parent(SCRATCH_ROOT, label=label)
+                        if not SCRATCH_ROOT.is_mount() or SCRATCH_ROOT.stat().st_mode & 0o022:
+                            raise ValueError(f"{label} scratch root must be a mounted, owner-controlled directory")
+                        if private_tmp.stat().st_dev == SCRATCH_ROOT.stat().st_dev:
+                            parent = private_tmp
+            if parent is None:
+                parent = mounted_scratch_parent(namespace, required=False, label=label)
+            if parent is None:
+                parent = Path("/var/tmp")
+                validate_temp_parent(parent, label=label)
+        ensure_scratch_capacity(parent, required_bytes)
+        return parent
+    except (OSError, ValueError) as exc:
+        raise ScratchError(f"{label} scratch is unavailable or unsafe: {exc}") from exc
 
 
 def tree_bytes(root: Path) -> int:

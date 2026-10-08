@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import os
 import shutil
 import subprocess
 import sys
@@ -57,17 +58,43 @@ def test_native_executes_prepared_tools_with_fresh_evidence_and_no_ambient_crede
     assert stage["duration_ms"] >= 0
 
 
+def test_native_stage_materializes_aliases_and_scratch_on_mounted_scratch(native_repo, monkeypatch):
+    from app.utils import transient_scratch
+
+    root = native_repo / "mounted-scratch"
+    root.mkdir(mode=0o700)
+    monkeypatch.setattr(transient_scratch, "SCRATCH_ROOT", root)
+    monkeypatch.setattr(Path, "is_mount", lambda path: path == root)
+    monkeypatch.delenv("ST_NATIVE_TMP_HOST_ROOT", raising=False)
+    parent = root / f"st-native-{os.getuid()}"
+    suite = native_repo / ".tools/suite.py"
+    suite.write_text(suite.read_text() + (
+        "import stat\n"
+        "scratch=Path(os.environ['TMPDIR'])\n"
+        "aliases=Path(os.environ['PATH'].split(os.pathsep)[0]).parent\n"
+        f"assert scratch.parent == aliases.parent == Path({str(parent)!r})\n"
+        "assert scratch != aliases\n"
+        "assert stat.S_IMODE(scratch.stat().st_mode) == stat.S_IMODE(aliases.stat().st_mode) == 0o700\n"
+    ))
+    result = run_native(native_repo, _plan(native_repo), reuse=False)
+    assert result["state"] == "pass", result["stages"][0]["detail"]
+    assert not list(parent.iterdir())
+
+
 def test_native_stage_can_create_private_temporary_files_without_ambient_environment(native_repo: Path, monkeypatch) -> None:
+    from app.utils.transient_scratch import managed_temp_parent
+
     monkeypatch.delenv("ST_NATIVE_TMP_HOST_ROOT", raising=False)
     monkeypatch.setenv("AMBIENT_SECRET", "private")
+    parent = managed_temp_parent("st-native", label="Native check")
     suite = native_repo / ".tools/suite.py"
     suite.write_text(suite.read_text() + (
         "import stat, tempfile\n"
         "temporary = Path(os.environ['TMPDIR'])\n"
         "assert temporary.is_dir()\n"
-        "assert temporary.parent == Path('/tmp')\n"
+        f"assert temporary.parent == Path({str(parent)!r})\n"
         "aliases = Path(os.environ['PATH'].split(os.pathsep)[0])\n"
-        "assert aliases.parent.parent == Path('/var/tmp')\n"
+        f"assert aliases.parent.parent == Path({str(parent)!r})\n"
         "assert temporary != aliases.parent\n"
         "assert stat.S_IMODE(temporary.stat().st_mode) == 0o700\n"
         "with tempfile.TemporaryDirectory() as directory:\n"
@@ -890,10 +917,13 @@ def test_managed_python_symlink_binds_lexical_venv_packages(native_repo: Path) -
 def test_native_allowlisted_aliases_survive_nested_private_tmp(native_repo: Path, monkeypatch, request) -> None:
     import tempfile
 
+    from app.utils.transient_scratch import managed_temp_parent
+
     if not shutil.which("bwrap"):
         pytest.skip("Installed managed isolation capability required")
     monkeypatch.delenv("ST_NATIVE_TMP_HOST_ROOT", raising=False)
     monkeypatch.setenv("AMBIENT_SECRET", "private")
+    parent = managed_temp_parent("st-native", label="Native check")
     config = native_repo / ".st-check.toml"
     tools = {"python": sys.executable, "git": shutil.which("git"), "bwrap": shutil.which("bwrap")}
     assert tools["git"] and tools["bwrap"]
@@ -914,7 +944,7 @@ def test_native_allowlisted_aliases_survive_nested_private_tmp(native_repo: Path
         "import os,shutil,subprocess,sys\nfrom pathlib import Path\n"
         "aliases=Path(os.environ['PATH'].split(os.pathsep)[0])\n"
         f"assert not Path({str(outer_aliases)!r}).exists()\n"
-        "assert aliases.parent.parent == Path('/var/tmp')\n"
+        f"assert aliases.parent.parent == Path({str(parent)!r})\n"
         "assert 'AMBIENT_SECRET' not in os.environ\n"
         "assert aliases.parent == Path(os.environ['ST_NATIVE_TOOL_ALIAS_ROOT'])\n"
         "try:\n"
@@ -936,7 +966,7 @@ def test_native_allowlisted_aliases_survive_nested_private_tmp(native_repo: Path
         f"sys.path.insert(0,{str(backend)!r})\n"
         "from cli.commands.done_task_acceptance import _sandbox_command\n"
         "scratch=Path(os.environ['TMPDIR'])\n"
-        "assert scratch.parent == Path('/tmp')\n"
+        f"assert scratch.parent == Path({str(parent)!r})\n"
         "host_only=scratch/'host-only-scratch'\n"
         "host_only.write_text('must be hidden by private /tmp')\n"
         f"probe={probe!r} + 'assert not Path(' + repr(str(host_only)) + ').exists()\\n'\n"

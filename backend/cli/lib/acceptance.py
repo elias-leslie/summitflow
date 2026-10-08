@@ -594,6 +594,8 @@ def _acceptance_plan(*, repo: Path | None = None, commit: str | None = None,
         backend / "cli" / "main.py", backend / "cli" / "tool_registry.py",
         backend / "cli" / "commands" / "done_task_acceptance.py",
         backend / "app" / "utils" / "heavy_work.py", backend / "app" / "utils" / "safe_subprocess.py",
+        backend / "app" / "utils" / "transient_scratch.py",
+        backend / "app" / "utils" / "host_retention_policy.py",
     ])
 
     def gate_identity(path: Path) -> dict[str, Any]:

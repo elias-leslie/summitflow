@@ -21,6 +21,34 @@ from cli.lib.acceptance_coordinator import validate_source_receipt
 from cli.lib.task_completion_adapter import AcceptedTaskWork
 
 
+def test_isolated_acceptance_materializes_on_private_mounted_scratch(native_source, monkeypatch, tmp_path):
+    from app.utils import transient_scratch
+
+    repo, sha, _store = native_source
+    root = tmp_path / "mounted-scratch"
+    root.mkdir(mode=0o700)
+    monkeypatch.setattr(transient_scratch, "SCRATCH_ROOT", root)
+    monkeypatch.setattr(Path, "is_mount", lambda path: path == root)
+    monkeypatch.delenv("ST_NATIVE_TMP_HOST_ROOT", raising=False)
+    original = subprocess.run
+    materialized = []
+
+    def stop_before_clone(command, **kwargs):
+        if command[0] == "git" and "clone" in command:
+            temporary = Path(command[-1]).parent
+            materialized.append(temporary)
+            assert temporary.parent == root / f"st-acceptance-{os.getuid()}"
+            assert stat.S_IMODE(temporary.stat().st_mode) == 0o700
+            assert stat.S_IMODE(temporary.parent.stat().st_mode) == 0o700
+            raise acceptance.AcceptanceError("fixture stopped before materialization")
+        return original(command, **kwargs)
+
+    monkeypatch.setattr(subprocess, "run", stop_before_clone)
+    with pytest.raises(acceptance.AcceptanceError, match="fixture stopped"):
+        accept_isolated_revision(repo, sha=sha, scope=("check.py",), task_id="task-source", reuse=False)
+    assert materialized and all(not path.exists() for path in materialized)
+
+
 @pytest.fixture
 def sandbox_probe(tmp_path: Path):
     from cli.commands.done_task_acceptance import _sandbox_command
@@ -82,6 +110,29 @@ def test_isolated_sandbox_has_private_writable_home_and_state(sandbox_probe):
     result = sandbox_probe(script)
     assert result.returncode == 0, result.stderr
     assert not host_lock.exists()
+
+
+def test_portable_native_caller_scratch_stays_hidden_and_aliases_read_only(sandbox_probe, monkeypatch):
+    # Exercise the supported portable physical parent. Its own caller scratch
+    # needs masking even when this sandbox does not overlay all of /var/tmp.
+    with (tempfile.TemporaryDirectory(prefix="st-caller-", dir="/var/tmp") as scratch,
+          tempfile.TemporaryDirectory(prefix="st-alias-", dir="/var/tmp") as aliases):
+        marker = Path(scratch) / "host-only"
+        marker.write_text("private caller state")
+        monkeypatch.setenv("TMPDIR", scratch)
+        monkeypatch.setenv("ST_NATIVE_TOOL_ALIAS_ROOT", aliases)
+        script = (
+            "import errno\nfrom pathlib import Path\n"
+            f"assert not Path({str(marker)!r}).exists()\n"
+            f"aliases=Path({aliases!r})\n"
+            "assert aliases.is_dir()\n"
+            "try:\n    (aliases/'write').touch()\n"
+            "except OSError as exc:\n    assert exc.errno in {errno.EROFS, errno.EACCES}\n"
+            "else:\n    raise AssertionError('native aliases must remain read-only')\n"
+        )
+        result = sandbox_probe(script)
+        assert result.returncode == 0, result.stderr
+        assert marker.read_text() == "private caller state"
 
 
 def test_isolated_home_retains_only_read_only_fingerprinted_shared_config(sandbox_probe, tmp_path: Path, monkeypatch):

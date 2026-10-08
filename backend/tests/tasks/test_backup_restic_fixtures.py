@@ -12,7 +12,7 @@ from app.tasks.backup_restic import ResticAdapter, ResticConfig
 
 @pytest.mark.skipif(shutil.which("restic") is None, reason="Pinned Restic fixture binary is not installed")
 @pytest.mark.timeout(120)
-def test_native_independent_copy_incremental_backup_and_verified_partial_restore(tmp_path: Path):
+def test_native_independent_copy_incremental_backup_and_verified_partial_restore(tmp_path: Path, backup_job_scratch: Path):
     keys = tmp_path / "keys"
     keys.mkdir(mode=0o700)
     local_password = keys / "local-password"
@@ -70,3 +70,4 @@ def test_native_independent_copy_incremental_backup_and_verified_partial_restore
     assert restored_bundle.read_bytes() == bundle.read_bytes()
     check = adapter.check(remote=True, monthly_state={})
     assert check["verified"] and check["state"]["next_bucket"] == 2
+    assert not list(backup_job_scratch.glob("st-backups-*/*"))

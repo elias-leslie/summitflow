@@ -14,6 +14,12 @@ from pathlib import Path
 from typing import Any
 
 from app.utils.heavy_work import heavy_work
+from app.utils.transient_scratch import (
+    ScratchError,
+    managed_temp_parent,
+    tree_bytes,
+    validate_temp_parent,
+)
 from cli.lib import acceptance
 
 
@@ -217,6 +223,23 @@ def _sandbox_command(repo: Path, source: Path, metadata: Path, common: Path,
     for path in state.values():
         (scratch / path.relative_to("/tmp")).mkdir(mode=0o700, parents=True, exist_ok=True)
     command = [binary, "--die-with-parent", "--ro-bind", "/", "/"]
+    # Direct native stages keep bulk temporary files on mounted scratch. Their
+    # private /tmp overlay previously hid this caller state from nested runs;
+    # mask only that validated native sibling, retaining tool aliases read-only.
+    caller_scratch = Path(os.environ.get("TMPDIR", "/tmp"))
+    caller_aliases = Path(os.environ.get("ST_NATIVE_TOOL_ALIAS_ROOT", "/var/tmp"))
+    if ("ST_NATIVE_TOOL_ALIAS_ROOT" in os.environ and caller_scratch != caller_aliases
+            and caller_scratch.parent == caller_aliases.parent):
+        try:
+            validate_temp_parent(caller_scratch, private=True, label="Native caller")
+            validate_temp_parent(caller_aliases, private=True, label="Native aliases")
+        except (OSError, ValueError) as exc:
+            raise acceptance.AcceptanceError(f"Unsafe inherited native scratch: {exc}") from exc
+        hidden = temporary / "n"
+        hidden.mkdir(mode=0o700)
+        if temporary.is_relative_to(caller_scratch):
+            (hidden / temporary.relative_to(caller_scratch)).mkdir(parents=True)
+        command.extend(["--ro-bind", str(hidden), str(caller_scratch)])
     if private_var_tmp is not None:
         # Only outer acceptance requests this private fallback. Nested native
         # helpers must retain their existing /var/tmp tool aliases instead.
@@ -229,8 +252,8 @@ def _sandbox_command(repo: Path, source: Path, metadata: Path, common: Path,
                     and aliases.is_relative_to("/var/tmp") and aliases == aliases.resolve()
                     and aliases.is_dir()):
                 command.extend(["--ro-bind", str(aliases), str(aliases)])
-    # Restore the same host path after the optional overlay: temporary itself
-    # may live under /var/tmp, and Docker/native tools consume its backing paths.
+    # Restore the same host path after the optional overlays: Docker/native
+    # tools consume these private backing paths, including nested acceptance.
     command.extend(["--proc", "/proc", "--dev", "/dev",
                     "--bind", str(temporary), str(temporary), "--bind", str(scratch), "/tmp",
                     "--bind", str(source), str(repo), "--setenv", "TMPDIR", "/tmp",
@@ -293,7 +316,17 @@ def accept_isolated_revision(repo: Path, *, sha: str, scope: tuple[str, ...], ta
     with heavy_work("isolated task acceptance") as work:
         # /tmp is private and short inside bwrap. Keep its backing directory
         # visible at the same host path for Docker, including nested acceptance.
-        temporary_parent = os.environ.get("ST_NATIVE_TMP_HOST_ROOT", "/var/tmp")
+        common = acceptance._git_common_dir(repo)
+        # --no-hardlinks copies local objects as well as the selected tree.
+        # Budget those known bytes before creating the disposable checkout.
+        entries = _git(repo, "ls-tree", "-r", "-l", before["commit"]).splitlines()
+        required_bytes = tree_bytes(common / "objects") + sum(
+            int(size) for entry in entries if (size := entry.split(maxsplit=4)[3]).isdigit()
+        )
+        try:
+            temporary_parent = managed_temp_parent("st-acceptance", label="Isolated acceptance", required_bytes=required_bytes)
+        except ScratchError as exc:
+            raise acceptance.AcceptanceError(str(exc)) from exc
         with tempfile.TemporaryDirectory(prefix="st-a-", dir=temporary_parent) as directory:
             temporary = Path(directory)
             # Preserve an inherited scratch mapping and its caller tool aliases.
@@ -310,7 +343,6 @@ def accept_isolated_revision(repo: Path, *, sha: str, scope: tuple[str, ...], ta
                  "--", str(repo), str(source))
             _git(source, "-c", "core.hooksPath=/dev/null", "checkout", "--detach", before["commit"])
             _preserve_equivalent_modes(repo, source, before["source_mode_entries"])
-            common = acceptance._git_common_dir(repo)
             metadata = source / ".git"
             if common != repo / ".git":
                 relocated = temporary / "metadata"

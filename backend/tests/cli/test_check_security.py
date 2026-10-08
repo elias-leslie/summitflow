@@ -25,6 +25,33 @@ def test_security_admits_before_materializing_candidates(tmp_path, monkeypatch) 
     assert check_security.run_local_security_check("gitleaks", tmp_path, [], False, []) == 0
 
 
+def test_security_candidates_and_child_scratch_use_private_mounted_scratch(tmp_path, monkeypatch):
+    from app.utils import transient_scratch
+
+    root = tmp_path / "mounted-scratch"
+    root.mkdir(mode=0o700)
+    monkeypatch.setattr(transient_scratch, "SCRATCH_ROOT", root)
+    monkeypatch.setattr(Path, "is_mount", lambda path: path == root)
+    monkeypatch.delenv("ST_NATIVE_TMP_HOST_ROOT", raising=False)
+    (tmp_path / "app.py").write_text("safe = True\n")
+    observed = []
+
+    def run(command, **kwargs):
+        candidate = Path(command[-1])
+        temporary = candidate.parent
+        observed.append(temporary)
+        assert temporary.parent == root / f"st-security-{os.getuid()}"
+        assert temporary.stat().st_mode & 0o777 == 0o700
+        assert kwargs["env"]["TMPDIR"] == str(temporary)
+        assert Path(kwargs["env"]["XDG_CACHE_HOME"]).parent == temporary
+        assert (candidate / "app.py").read_text() == "safe = True\n"
+        return subprocess.CompletedProcess(command, 0, "[]", "")
+
+    monkeypatch.setattr(HeavyWork, "run", staticmethod(run))
+    assert check_security.run_local_security_check("gitleaks", tmp_path, ["app.py"], True, []) == 0
+    assert observed and all(not path.exists() for path in observed)
+
+
 def test_gitleaks_materializes_only_changed_candidate_files(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

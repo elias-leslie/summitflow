@@ -16,6 +16,7 @@ from pathlib import Path
 from typing import Any
 
 from app.utils.heavy_work import heavy_work
+from app.utils.transient_scratch import ScratchError, managed_temp_parent
 
 _CONTENT_HASHES: dict[tuple[int, int, int, int, int], str] = {}
 
@@ -366,9 +367,12 @@ def run_native(root: Path, plan: dict[str, Any], *, stage_id: str | None = None,
     # ambient /usr/bin or package-manager PATH into the project's stage.
     # Keep tool aliases visible at their same host path when nested bwrap
     # replaces /tmp; the sandbox's private /tmp itself is the short scratch root.
-    host_scratch = os.environ.get("ST_NATIVE_TMP_HOST_ROOT", "/var/tmp")
+    try:
+        host_scratch = managed_temp_parent("st-native", label="Native check")
+    except ScratchError as exc:
+        raise NativeCheckError(str(exc)) from exc
     with (tempfile.TemporaryDirectory(prefix="", dir=host_scratch) as directory,
-          tempfile.TemporaryDirectory(prefix="", dir="/tmp") as scratch):
+          tempfile.TemporaryDirectory(prefix="", dir=host_scratch) as scratch):
         aliases = Path(directory) / "bin"
         aliases.mkdir(mode=0o700)
         for name, tool in plan["tools"].items():
@@ -570,12 +574,14 @@ def _artifact_storage(root: Path) -> dict[str, Any] | None:
 
 def _native_implementation() -> str:
     from app.utils import heavy_work as admission
-    from app.utils import safe_subprocess
+    from app.utils import host_retention_policy, safe_subprocess, transient_scratch
     from cli.lib import acceptance
 
     return _digest({name: hashlib.sha256(Path(path).read_bytes()).hexdigest() for name, path in (
         ("native", __file__), ("source", acceptance.__file__),
         ("admission", admission.__file__), ("subprocess", safe_subprocess.__file__),
+        ("scratch", transient_scratch.__file__),
+        ("retention", host_retention_policy.__file__),
     )})
 
 
