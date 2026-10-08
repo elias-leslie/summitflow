@@ -27,6 +27,11 @@ REMOTE_SNAPSHOT = "e" * 64
 
 @pytest.fixture
 def repository_fixture(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+    # Normal repository integration uses the existing admission interfaces;
+    # actual restart/maintenance contention is covered with in-memory Redis.
+    redis = MagicMock()
+    redis.eval.return_value = 1
+    monkeypatch.setattr("app.tasks.backup_lock.get_redis", lambda: redis)
     monkeypatch.setenv("SF_HOST_RETENTION_PRESSURE_MIN_FREE_GB", "0")
     keys = tmp_path / "keys"
     keys.mkdir(mode=0o700)

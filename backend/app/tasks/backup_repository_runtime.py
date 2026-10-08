@@ -30,6 +30,7 @@ from ..storage import backups as backup_store
 from ..utils.shared_paths import get_host_config_root
 from ._retention_policy import HostRetentionPolicy
 from .backup_activity import BackupCancelled, check_backup_cancelled, record_local_archive
+from .backup_lock import BackupLockLeaseError, acquire_backup_lock, maintain_backup_lock
 from .backup_native_archive import (
     _gzip_payload_file,
     _recoverable_file_filter,
@@ -49,6 +50,23 @@ _capture_batch: ContextVar[dict[str, dict[str, str]] | None] = ContextVar("repos
 
 def _repository_pair(config: ResticConfig) -> str:
     return hashlib.sha256((str(config.local_repository.resolve()) + "\n" + (config.remote_repository or "")).encode()).hexdigest()
+
+
+@contextmanager
+def _repository_maintenance_admission(config: ResticConfig) -> Iterator[None]:
+    """Share capture admission with managed worker restart protection."""
+    source_id = "__repository_maintenance__:" + _repository_pair(config)
+    try:
+        token = acquire_backup_lock(source_id)
+    except Exception as exc:
+        raise ResticError("Cannot verify repository maintenance admission; restore Redis access before retrying") from exc
+    if token is None:
+        raise ResticError("Repository maintenance admission blocked by active maintenance or a managed worker restart")
+    try:
+        with maintain_backup_lock(source_id, token):
+            yield
+    except BackupLockLeaseError as exc:
+        raise ResticError("Repository maintenance admission ownership was lost; inspect active backups before retrying") from exc
 
 
 @contextmanager
@@ -594,7 +612,7 @@ def maintain_repository(env: dict[str, str], *, dry_run: bool = True, force_crit
     """
     config = ResticConfig.from_env(env)
     adapter = ResticAdapter(config)
-    with _checkpoint(config) as (directory, state):
+    with _repository_maintenance_admission(config), _checkpoint(config) as (directory, state):
         maintenance = state.setdefault("maintenance", {})
         now = datetime.now(UTC)
         preview = dry_run or not config.offsite_prune_qualified

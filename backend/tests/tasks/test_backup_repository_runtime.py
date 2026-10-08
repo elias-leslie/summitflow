@@ -8,7 +8,7 @@ import shutil
 import sqlite3
 import subprocess
 import tarfile
-from contextlib import nullcontext
+from contextlib import contextmanager, nullcontext
 from datetime import UTC, datetime, timedelta
 from io import BytesIO
 from pathlib import Path
@@ -18,6 +18,156 @@ import pytest
 
 from app.tasks import backup_repository_runtime as runtime
 from app.tasks.backup_restic import ResticAdapter, ResticConfig, ResticError
+
+
+class _MemoryBackupRedis:
+    """Exercise the existing admission Lua interfaces without external Redis."""
+
+    def __init__(self):
+        self.values = {}
+
+    def set(self, key, value, *, nx=False, ex=None):
+        if nx and key in self.values:
+            return False
+        self.values[key] = value
+        return True
+
+    def get(self, key):
+        return self.values.get(key)
+
+    def scan_iter(self, *, match):
+        return [key for key in self.values if key.startswith(match.removesuffix("*"))]
+
+    def eval(self, script, count, *args):
+        if count == 2:
+            key, barrier, owner, _ttl = args
+            if barrier in self.values:
+                return 0
+            return int(self.set(key, owner, nx=True))
+        key, owner = args[:2]
+        if self.values.get(key) != owner:
+            return 0
+        if "redis.call('del'" in script:
+            del self.values[key]
+        return 1
+
+
+def test_active_repository_maintenance_refuses_restart_and_releases_on_error(repository_env, monkeypatch):
+    from app.tasks import backup_lock
+
+    redis = _MemoryBackupRedis()
+    monkeypatch.setattr(backup_lock, "get_redis", lambda: redis)
+    config = ResticConfig.from_env(repository_env)
+    expected = "__repository_maintenance__:" + runtime._repository_pair(config)
+
+    @contextmanager
+    def checkpoint(_config):
+        with pytest.raises(backup_lock.BackupLockLeaseError, match="Backups active: " + expected), backup_lock.backup_worker_restart_guard():
+            pytest.fail("active repository maintenance must refuse restart")
+        assert set(redis.values) == {backup_lock.BACKUP_LOCK_PREFIX + expected}
+        raise ValueError("synthetic operation failure")
+        yield  # pragma: no cover
+
+    monkeypatch.setattr(runtime, "_checkpoint", checkpoint)
+    with pytest.raises(ValueError, match="synthetic operation failure"):
+        runtime.maintain_repository(repository_env)
+    assert redis.values == {}
+
+
+def test_reserved_restart_refuses_new_repository_maintenance(repository_env, monkeypatch):
+    from app.tasks import backup_lock
+
+    redis = _MemoryBackupRedis()
+    monkeypatch.setattr(backup_lock, "get_redis", lambda: redis)
+    checkpoint = MagicMock(side_effect=AssertionError("no repository work may start"))
+    monkeypatch.setattr(runtime, "_checkpoint", checkpoint)
+    with backup_lock.backup_worker_restart_guard(), pytest.raises(ResticError, match="maintenance admission"):
+        runtime.maintain_repository(repository_env, dry_run=False, force_critical_restore=True)
+    checkpoint.assert_not_called()
+    assert redis.values == {}
+
+
+def test_same_repository_maintenance_contention_preserves_original_lease(repository_env, monkeypatch):
+    from app.tasks import backup_lock
+
+    redis = _MemoryBackupRedis()
+    monkeypatch.setattr(backup_lock, "get_redis", lambda: redis)
+    source = "__repository_maintenance__:" + runtime._repository_pair(ResticConfig.from_env(repository_env))
+    owner = backup_lock.acquire_backup_lock(source)
+    assert owner is not None
+    checkpoint = MagicMock(side_effect=AssertionError("no concurrent repository work may start"))
+    monkeypatch.setattr(runtime, "_checkpoint", checkpoint)
+    with pytest.raises(ResticError, match="maintenance admission"):
+        runtime.maintain_repository(repository_env)
+    assert redis.values == {backup_lock.BACKUP_LOCK_PREFIX + source: owner}
+    checkpoint.assert_not_called()
+    assert backup_lock.release_backup_lock(source, owner)
+
+
+def test_repository_maintenance_unknown_admission_fails_closed(repository_env, monkeypatch):
+    from app.tasks import backup_lock
+
+    def unavailable():
+        raise ConnectionError("synthetic Redis unavailable")
+
+    monkeypatch.setattr(backup_lock, "get_redis", unavailable)
+    checkpoint = MagicMock(side_effect=AssertionError("no repository work may start"))
+    monkeypatch.setattr(runtime, "_checkpoint", checkpoint)
+    with pytest.raises(ResticError, match="maintenance admission"):
+        runtime.maintain_repository(repository_env)
+    checkpoint.assert_not_called()
+
+
+def test_maintenance_lease_covers_restore_checks_retention_prune_and_catalogue(repository_env, monkeypatch):
+    from app.tasks import backup_lock
+
+    redis = _MemoryBackupRedis()
+    monkeypatch.setattr(backup_lock, "get_redis", lambda: redis)
+    env = {**repository_env, "RESTIC_OFFSITE_PRUNE_QUALIFIED": "true"}
+    Path(env["RESTIC_LOCAL_REPOSITORY"]).mkdir()
+    source = "__repository_maintenance__:" + runtime._repository_pair(ResticConfig.from_env(env))
+    expected = backup_lock.BACKUP_LOCK_PREFIX + source
+    phases = []
+
+    def held(phase):
+        phases.append(phase)
+        assert set(redis.values) == {expected}
+
+    def restore(*_args):
+        held("restore")
+        return {"status": "verified"}
+
+    def check(**_kwargs):
+        held("check")
+        return {"verified": True, "state": {}, "checked_at": datetime.now(UTC).isoformat()}
+
+    def retain(*_args, **_kwargs):
+        held("retention")
+        return {"status": "completed"}
+
+    def prune(**_kwargs):
+        held("prune")
+        with pytest.raises(backup_lock.BackupLockLeaseError, match="Backups active"), backup_lock.backup_worker_restart_guard():
+            pytest.fail("prune must remain protected from restart")
+        return {"status": "skipped", "reason": "weekly-cadence"}
+
+    def catalogue(*_args):
+        held("catalogue")
+        return 0
+
+    adapter = MagicMock()
+    adapter.check.side_effect = check
+    adapter.retention.side_effect = retain
+    adapter.prune.side_effect = prune
+    adapter.quota_free_bytes.return_value = 1024**3
+    monkeypatch.setattr(runtime, "ResticAdapter", lambda _: adapter)
+    monkeypatch.setattr(runtime, "_weekly_critical_restore", restore)
+    monkeypatch.setattr(runtime, "_reconcile_catalogue", catalogue)
+    monkeypatch.setattr(runtime.backup_store, "list_sources", lambda: [])
+
+    assert runtime.maintain_repository(env, dry_run=False)["status"] == "completed"
+    assert phases == ["restore", "check", "check", "retention", "prune", "retention", "prune", "catalogue"]
+    assert redis.values == {}
 
 
 @pytest.fixture
@@ -290,6 +440,10 @@ def test_materialization_failure_retains_all_selected_points_and_is_cached(criti
 
 @pytest.fixture
 def repository_env(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> dict[str, str]:
+    from app.tasks import backup_lock
+
+    redis = _MemoryBackupRedis()
+    monkeypatch.setattr(backup_lock, "get_redis", lambda: redis)
     monkeypatch.setenv("SF_HOST_RETENTION_PRESSURE_MIN_FREE_GB", "0")
     keys = tmp_path / "keys"
     keys.mkdir(mode=0o700)
