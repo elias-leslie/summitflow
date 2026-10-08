@@ -65,6 +65,9 @@ def test_native_stage_materializes_aliases_and_scratch_on_mounted_scratch(native
     root.mkdir(mode=0o700)
     monkeypatch.setattr(transient_scratch, "SCRATCH_ROOT", root)
     monkeypatch.setattr(Path, "is_mount", lambda path: path == root)
+    mountinfo = native_repo / "mountinfo"
+    mountinfo.write_text("")
+    monkeypatch.setattr(transient_scratch, "_MOUNTINFO", mountinfo)
     monkeypatch.delenv("ST_NATIVE_TMP_HOST_ROOT", raising=False)
     parent = root / f"st-native-{os.getuid()}"
     suite = native_repo / ".tools/suite.py"

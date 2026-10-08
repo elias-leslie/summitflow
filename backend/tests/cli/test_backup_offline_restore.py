@@ -8,6 +8,9 @@ from typer.testing import CliRunner
 
 from app.services import backup_keys
 from app.tasks.backup_native_archive import archive_sha256
+from tests.backup_scratch_fixture import backup_job_scratch  # noqa: F401
+
+pytestmark = pytest.mark.usefixtures("backup_job_scratch")
 
 runner = CliRunner()
 

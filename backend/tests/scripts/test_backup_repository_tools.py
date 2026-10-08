@@ -10,6 +10,10 @@ from pathlib import Path
 
 import pytest
 
+from tests.backup_scratch_fixture import backup_job_scratch  # noqa: F401
+
+pytestmark = pytest.mark.usefixtures("backup_job_scratch")
+
 ROOT = Path(__file__).resolve().parents[3]
 RECOVER = ROOT / "scripts" / "backup-repository-recover.sh"
 INVENTORY = ROOT / "scripts" / "backup-cleanup-inventory.py"

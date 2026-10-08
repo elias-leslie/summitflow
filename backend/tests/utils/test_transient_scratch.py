@@ -20,6 +20,9 @@ def mounted(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
     root.mkdir(mode=0o700)
     monkeypatch.setattr(scratch, "SCRATCH_ROOT", root)
     monkeypatch.setattr(Path, "is_mount", lambda path: path == root)
+    mountinfo = tmp_path / "mountinfo"
+    mountinfo.write_text("")
+    monkeypatch.setattr(scratch, "_MOUNTINFO", mountinfo)
     usage = shutil.disk_usage(tmp_path)
     monkeypatch.setattr(scratch.shutil, "disk_usage", lambda _path: usage._replace(free=100 * 1024**3))
     monkeypatch.setenv("SF_HOST_RETENTION_PRESSURE_MIN_FREE_GB", "25")

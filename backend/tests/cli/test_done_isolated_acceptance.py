@@ -29,6 +29,9 @@ def test_isolated_acceptance_materializes_on_private_mounted_scratch(native_sour
     root.mkdir(mode=0o700)
     monkeypatch.setattr(transient_scratch, "SCRATCH_ROOT", root)
     monkeypatch.setattr(Path, "is_mount", lambda path: path == root)
+    mountinfo = tmp_path / "mountinfo"
+    mountinfo.write_text("")
+    monkeypatch.setattr(transient_scratch, "_MOUNTINFO", mountinfo)
     monkeypatch.delenv("ST_NATIVE_TMP_HOST_ROOT", raising=False)
     original = subprocess.run
     materialized = []

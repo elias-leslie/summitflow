@@ -1,9 +1,8 @@
 """Synthetic mounted scratch for backup routes that create disposable jobs."""
 
-import shutil
-from pathlib import Path
-
 import pytest
+
+from tests.backup_scratch_fixture import backup_job_scratch  # noqa: F401
 
 _SCRATCH_TEST_MODULES = {
     "test_backup.py", "test_backup_native_archive.py", "test_backup_native_archive_safety.py",
@@ -13,20 +12,12 @@ _SCRATCH_TEST_MODULES = {
     "test_backup_disposable_scratch.py",
     "test_backup_activity.py", "test_backup_native_restore_safety.py", "test_backup_capture_activity.py",
     "test_backup_restic_fixtures.py",
+    "test_backup_codex_essentials.py", "test_backup_git_index_states.py", "test_backup_portable_lifecycle.py",
+    "test_backup_jsonl_capture.py",
 }
 
 
 @pytest.fixture(autouse=True)
-def backup_job_scratch(request, tmp_path, monkeypatch):
-    if request.path.name not in _SCRATCH_TEST_MODULES:
-        return None
-    from app.utils import transient_scratch as scratch
-
-    root = tmp_path / "mounted-scratch"
-    root.mkdir(mode=0o700)
-    monkeypatch.setattr(scratch, "SCRATCH_ROOT", root)
-    original_is_mount = Path.is_mount
-    monkeypatch.setattr(Path, "is_mount", lambda path: path == root or original_is_mount(path))
-    usage = shutil.disk_usage(tmp_path)
-    monkeypatch.setattr(scratch.shutil, "disk_usage", lambda _path: usage._replace(free=100 * 1024**3))
-    return root
+def backup_task_scratch(request: pytest.FixtureRequest) -> None:
+    if request.path.name in _SCRATCH_TEST_MODULES:
+        request.getfixturevalue("backup_job_scratch")

@@ -32,6 +32,9 @@ def test_security_candidates_and_child_scratch_use_private_mounted_scratch(tmp_p
     root.mkdir(mode=0o700)
     monkeypatch.setattr(transient_scratch, "SCRATCH_ROOT", root)
     monkeypatch.setattr(Path, "is_mount", lambda path: path == root)
+    mountinfo = tmp_path / "mountinfo"
+    mountinfo.write_text("")
+    monkeypatch.setattr(transient_scratch, "_MOUNTINFO", mountinfo)
     monkeypatch.delenv("ST_NATIVE_TMP_HOST_ROOT", raising=False)
     (tmp_path / "app.py").write_text("safe = True\n")
     observed = []
