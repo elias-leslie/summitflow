@@ -35,10 +35,14 @@ def _vitest_config(cwd: Path, config: dict[str, object]) -> dict[str, object]:
             return config
         launcher = package / "vitest.mjs"
         if executable.resolve(strict=True) != launcher.resolve(strict=True):
-            # pnpm uses a shell shim instead of npm's executable symlink. Only
-            # recognize its exact package-relative launch, never a global CLI.
-            shim = re.compile(r'\bexec[^\n]*"\$basedir(?:_win)?/\.\./vitest/vitest\.mjs"\s+"\$@"')
-            if executable.is_symlink() or not shim.search(executable.read_text(encoding="utf-8")):
+            # pnpm launches through either the package link or its versioned
+            # virtual store. Both must resolve to this inspected local launcher.
+            shim = re.compile(
+                r'\bexec[^\n]*"\$basedir(?:_win)?/(\.\./(?:vitest|\.pnpm/vitest@[^/"\n]+/node_modules/vitest)/vitest\.mjs)"\s+"\$@"'
+            )
+            targets = shim.findall(executable.read_text(encoding="utf-8"))
+            if (executable.is_symlink() or not targets
+                    or any((executable.parent / target).resolve(strict=True) != launcher.resolve(strict=True) for target in targets)):
                 return config
         option = re.compile(r"\bconfigLoader:\s*\{[^}]*\brunner\b[^}]*\}")
         cache = re.compile(r"\bcache:\s*\{\s*description:\s*['\"]Enable cache['\"]")

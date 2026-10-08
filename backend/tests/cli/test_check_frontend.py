@@ -125,6 +125,34 @@ def test_supported_loader_resolves_pnpm_vite_dependency(tmp_path: Path) -> None:
     assert selected[1]["args"] == "run --configLoader runner --cache=false"
 
 
+@pytest.mark.parametrize("bound_launcher", [True, False])
+def test_supported_loader_handles_pnpm_virtual_store_shim(tmp_path: Path, bound_launcher: bool) -> None:
+    from cli.commands.check_frontend import frontend_test_config
+
+    manifest(tmp_path, {"test": "vitest run"})
+    package, vite = installed_vitest(tmp_path)
+    sibling = tmp_path / "node_modules" / ".pnpm" / "vitest@4.1.11_vite@7.3.6" / "node_modules"
+    sibling.mkdir(parents=True)
+    package.rename(sibling / "vitest")
+    vite.rename(sibling / "vite")
+    package.symlink_to(".pnpm/vitest@4.1.11_vite@7.3.6/node_modules/vitest", target_is_directory=True)
+    vite.symlink_to(".pnpm/vitest@4.1.11_vite@7.3.6/node_modules/vite", target_is_directory=True)
+    binary = tmp_path / "node_modules" / ".bin" / "vitest"
+    binary.unlink()
+    if not bound_launcher:
+        alternate = tmp_path / "node_modules" / ".pnpm" / "vitest@other" / "node_modules" / "vitest"
+        alternate.mkdir(parents=True)
+        (alternate / "vitest.mjs").write_text("// Different installed CLI\n")
+    store_name = "vitest@4.1.11_vite@7.3.6" if bound_launcher else "vitest@other"
+    binary.write_text(
+        f'#!/bin/sh\nexec node "$basedir/../.pnpm/{store_name}/node_modules/vitest/vitest.mjs" "$@"\n'
+    )
+
+    selected = frontend_test_config(tmp_path, tmp_path, CONFIG)
+    assert selected is not None
+    assert selected[1]["args"] == ("run --configLoader runner --cache=false" if bound_launcher else "run")
+
+
 @pytest.mark.parametrize("package_relative", [True, False])
 def test_supported_loader_handles_pnpm_shell_shim_without_global_fallback(tmp_path: Path, package_relative: bool) -> None:
     from cli.commands.check_frontend import frontend_test_config
