@@ -271,26 +271,28 @@ def test_exact_arguments_context_environment_and_nonzero_exit(tmp_path, capfd, m
     assert err == "child stderr\n"
 
 
-def test_neri_binding_forwards_only_the_native_codex_session_identity():
+def test_neri_binding_forwards_only_the_api_configuration():
     registry_path = Path(__file__).resolve().parents[3] / "scripts/lib/tool-registry.json"
     registry = json.loads(registry_path.read_text())
     binding = next(
         row for row in registry["extensions"] if row["namespace"] == "neri"
     )
 
-    assert binding["environment"] == [
-        "CODEX_SESSION_ID",
-        "NERI_HOOK_STATE_DIR",
-        "ST_NERI_API_URL",
-    ]
-    assert "AICO_SESSION_ID" not in binding["environment"]
+    assert binding["environment"] == ["ST_NERI_API_URL"]
 
 
-def test_neri_manifest_exposes_direct_hunt_and_surface_commands():
+def test_neri_manifest_exposes_bounty_commands_without_retired_workflows():
     registry_path = Path(__file__).resolve().parents[3] / "scripts/lib/tool-registry.json"
+    catalog = load_extensions(set(), registry_path=registry_path)
+    assert not catalog.diagnostics
+    assert not any(
+        row.binding and (row.binding.id == "neri.observer" or row.binding.namespace == "neriobserve")
+        for row in catalog.records
+    )
+    assert not (registry_path.parent / "extensions/neri-observer.json").exists()
     record = next(
         row
-        for row in load_extensions(set(), registry_path=registry_path).records
+        for row in catalog.records
         if row.manifest is not None and row.manifest.namespace == "neri"
     )
     assert record.manifest is not None
@@ -299,9 +301,23 @@ def test_neri_manifest_exposes_direct_hunt_and_surface_commands():
     assert "surface" in record.manifest.help[""]
     assert "hunt begin" in record.manifest.help
     assert "surface digest" in record.manifest.help
+    for path in ("owner-request", "owner-resolve", "portfolio contract", "portfolio references"):
+        assert path in record.manifest.help
+    retired_groups = {"research", "worker", "operator", "jev", "session", "runtime", "execute"}
+    assert not any(path.split()[0] in retired_groups for path in record.manifest.help if path)
+    assert not retired_groups.intersection(record.manifest.help_options)
+    for path in (
+        "record-activity", "control", "operation", "report assign-review",
+        "report retain-review-result", "report review", "closeout save",
+        "closeout training", "surface probe",
+    ):
+        assert path not in record.manifest.help
     surfaces = {row["surface"] for row in record.manifest.usage}
     assert "st.neri.hunt.begin" in surfaces
     assert "st.neri.surface.digest" in surfaces
+    for surface in surfaces:
+        assert isinstance(surface, str)
+        assert surface.removeprefix("st.neri.").split(".")[0] not in retired_groups
 
 
 def test_actual_neri_binding_preserves_only_approved_runtime_context(
@@ -324,14 +340,18 @@ def test_actual_neri_binding_preserves_only_approved_runtime_context(
         "import json,os\n"
         "print(json.dumps({key: os.getenv(key) for key in "
         "['CODEX_SESSION_ID','NERI_HOOK_STATE_DIR','AICO_SESSION_ID',"
-        "'CODEX_THREAD_ID','UNRELATED_SECRET']}))\n"
+        "'CODEX_THREAD_ID','ST_NERI_API_URL','ST_CALLER_IDENTITY','UNRELATED_SECRET']}))\n"
     )
     executable.chmod(0o755)
     monkeypatch.setenv("CODEX_SESSION_ID", "native-root-session")
     monkeypatch.setenv("NERI_HOOK_STATE_DIR", "/tmp/neri-hook-state")
     monkeypatch.setenv("AICO_SESSION_ID", "widget-session")
     monkeypatch.setenv("CODEX_THREAD_ID", "thread-session")
+    monkeypatch.setenv("ST_NERI_API_URL", "http://fixture.invalid")
+    monkeypatch.setenv("ST_CALLER_IDENTITY", '{"member_id":"must-not-cross"}')
     monkeypatch.setenv("UNRELATED_SECRET", "must-not-cross")
+    caller_identity = {"member_id": "fixture-root", "provider": "hostname"}
+    monkeypatch.setattr("cli.lib.task_claims.current_caller_identity", lambda: caller_identity)
 
     assert dispatch_extension(
         record,
@@ -340,11 +360,13 @@ def test_actual_neri_binding_preserves_only_approved_runtime_context(
         root_resolver=lambda _owner: str(tmp_path),
     ) == 0
     payload = json.loads(capfd.readouterr().out)
+    assert json.loads(payload.pop("ST_CALLER_IDENTITY")) == caller_identity
     assert payload == {
-        "CODEX_SESSION_ID": "native-root-session",
-        "NERI_HOOK_STATE_DIR": "/tmp/neri-hook-state",
+        "CODEX_SESSION_ID": None,
+        "NERI_HOOK_STATE_DIR": None,
         "AICO_SESSION_ID": None,
         "CODEX_THREAD_ID": None,
+        "ST_NERI_API_URL": "http://fixture.invalid",
         "UNRELATED_SECRET": None,
     }
 
