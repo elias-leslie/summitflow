@@ -2,11 +2,29 @@
 
 import subprocess
 import sys
+import time
 from pathlib import Path
 from threading import Event
 from unittest.mock import Mock
 
 import pytest
+
+
+def _assert_child_stopped(stat_path: Path) -> None:
+    deadline = time.monotonic() + 1
+    while True:
+        try:
+            state = stat_path.read_text().rsplit(")", 1)[1].split()[0]
+        except (FileNotFoundError, ProcessLookupError):
+            # Reaping may remove /proc after the parent has already waited.
+            return
+        if state == "Z":
+            return
+        # SIGKILL is sent to the whole group before the parent is reaped,
+        # but a descendant may not have been scheduled to exit yet.
+        if time.monotonic() >= deadline:
+            pytest.fail(f"Owned child remains alive after SIGKILL: {stat_path} ({state})")
+        time.sleep(0.01)
 
 
 def test_bulk_wait_past_attention_threshold_does_not_kill_healthy_child(monkeypatch) -> None:
@@ -75,7 +93,7 @@ def test_explicit_bulk_timeout_kills_and_reaps_owned_process_group(tmp_path, mon
     assert len(processes) == 1
     assert processes[0].poll() is not None
     child = Path(f"/proc/{marker.read_text()}/stat")
-    assert not child.exists() or child.read_text().rsplit(")", 1)[1].split()[0] == "Z"
+    _assert_child_stopped(child)
 
 
 def test_capacity_refusal_kills_and_reaps_owned_process_group(tmp_path, monkeypatch):
@@ -107,7 +125,7 @@ def test_capacity_refusal_kills_and_reaps_owned_process_group(tmp_path, monkeypa
     assert len(checks) >= 2
     assert len(processes) == 1 and processes[0].poll() is not None
     child = Path(f"/proc/{marker.read_text()}/stat")
-    assert not child.exists() or child.read_text().rsplit(")", 1)[1].split()[0] == "Z"
+    _assert_child_stopped(child)
 
 
 def test_unknown_wait_is_visible_without_inventing_verified_progress(monkeypatch) -> None:

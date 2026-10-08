@@ -4,6 +4,9 @@ from __future__ import annotations
 
 import gzip
 import io
+import os
+import shutil
+import stat
 import subprocess
 import tarfile
 from pathlib import Path
@@ -68,7 +71,27 @@ def test_infrastructure_restore_test_accepts_new_encrypted_archive(
     monkeypatch,
 ) -> None:
     """The existing restore-test path must materialize `.age` ciphertext first."""
-    from app.tasks import backup_restore_test
+    from app.tasks import backup_native_restore, backup_restore_test
+    from app.utils import transient_scratch
+
+    scratch = tmp_path / "restore-scratch"
+    scratch.mkdir(mode=0o700)
+    monkeypatch.setattr(transient_scratch, "SCRATCH_ROOT", scratch)
+    original_is_mount = Path.is_mount
+    monkeypatch.setattr(Path, "is_mount", lambda path: path == scratch or original_is_mount(path))
+    usage = shutil.disk_usage(tmp_path)
+    monkeypatch.setattr(transient_scratch.shutil, "disk_usage", lambda _path: usage._replace(free=100 * 1024**3))
+    decrypted: list[Path] = []
+    original_bulk = backup_native_restore.run_bulk_process
+
+    def decrypt(command, **kwargs):
+        output = Path(command[command.index("-o") + 1])
+        assert output.parent.parent == scratch / f"st-restores-{os.getuid()}"
+        assert stat.S_IMODE(output.parent.stat().st_mode) == 0o700
+        decrypted.append(output)
+        return original_bulk(command, **kwargs)
+
+    monkeypatch.setattr(backup_native_restore, "run_bulk_process", decrypt)
 
     key_dir = tmp_path / "keys"
     monkeypatch.setenv("SUMMITFLOW_BACKUP_KEY_DIR", str(key_dir))
@@ -118,3 +141,5 @@ def test_infrastructure_restore_test_accepts_new_encrypted_archive(
 
     assert result["ok"] is True, result
     assert recorded == [(True, None)]
+    assert len(decrypted) == 1 and not decrypted[0].exists()
+    assert ciphertext.is_file()

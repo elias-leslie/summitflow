@@ -18,6 +18,47 @@ from app.tasks.backup_restic import ResticConfig
 from app.tasks.backup_utils import _FREQUENCY_DELTAS, calculate_next_run
 
 
+class _LifecycleLeaseRedis:
+    """Exercise owner/barrier lease semantics without an external Redis service."""
+
+    def __init__(self):
+        self.values: dict[str, str] = {}
+
+    def set(self, key, value, *, nx=False, ex=None):
+        if nx and key in self.values:
+            return False
+        self.values[key] = value
+        return True
+
+    def get(self, key):
+        return self.values.get(key)
+
+    def scan_iter(self, *, match):
+        return [key for key in self.values if key.startswith(match.removesuffix("*"))]
+
+    def eval(self, script, count, *args):
+        if count == 2:
+            key, barrier, owner, _ttl = args
+            if barrier in self.values:
+                return 0
+            return int(self.set(key, owner, nx=True))
+        key, owner = args[:2]
+        if self.values.get(key) != owner:
+            return 0
+        if "redis.call('del'" in script:
+            del self.values[key]
+        return 1
+
+
+@pytest.fixture
+def backup_lease_redis(monkeypatch):
+    from app.tasks import backup_lock
+
+    redis = _LifecycleLeaseRedis()
+    monkeypatch.setattr(backup_lock, "get_redis", lambda: redis)
+    return redis
+
+
 def test_four_hourly_frequency_and_daytime_serial_batch(monkeypatch):
     start = datetime.now(UTC)
     assert _FREQUENCY_DELTAS["four_hourly"].total_seconds() == 14400
@@ -166,8 +207,8 @@ def test_host_backup_failure_is_reported_without_stopping_portable_capture(monke
 
 
 @pytest.mark.parametrize("outcome", ["verified", "pending", "pressure"])
-def test_daytime_zero_due_retries_34_persisted_points_once_per_backend(tmp_path, monkeypatch, outcome):
-    from app.tasks import backup_restic_pilot
+def test_daytime_zero_due_retries_34_persisted_points_once_per_backend(tmp_path, monkeypatch, outcome, backup_lease_redis):
+    from app.tasks import backup_lock, backup_restic_pilot
     from app.tasks.backup_utils import storage_config_env
 
     keys = tmp_path / "keys"
@@ -212,10 +253,21 @@ def test_daytime_zero_due_retries_34_persisted_points_once_per_backend(tmp_path,
     def adapter_factory(config):
         i = configs.index(config)
         adapter = Mock()
-        adapter.repository_identity.return_value = {"id": str(i + 1) * 64}
+        lease_source = "__repository_maintenance__:" + runtime._repository_pair(config)
+        lease_key = backup_lock.BACKUP_LOCK_PREFIX + lease_source
+        def identity():
+            assert set(backup_lease_redis.values) == {lease_key}
+            owner = backup_lease_redis.values[lease_key]
+            assert backup_lock.acquire_backup_lock(lease_source) is None
+            assert backup_lease_redis.values[lease_key] == owner
+            with pytest.raises(backup_lock.BackupLockLeaseError, match="Backups active"), backup_lock.backup_worker_restart_guard():
+                pytest.fail("persisted offsite copy must refuse a managed restart")
+            return {"id": str(i + 1) * 64}
+        adapter.repository_identity.side_effect = identity
         adapter.physical_bytes.return_value = 170
         adapter.quota_free_bytes.return_value = None if outcome == "pressure" else 1000000
         def sync(snapshot_id, *, state, persist):
+            assert set(backup_lease_redis.values) == {lease_key}
             expected = [row["verification_json"]["snapshot_id"] for row in rows[str(i)]]
             assert state["pending_snapshot_ids"] == expected
             assert snapshot_id == expected[-1]
@@ -233,6 +285,7 @@ def test_daytime_zero_due_retries_34_persisted_points_once_per_backend(tmp_path,
         return adapter
     monkeypatch.setattr(runtime, "ResticAdapter", adapter_factory)
     result = scheduler.run_scheduled_backups()
+    assert not backup_lease_redis.values  # Both pair leases are released on every outcome.
     assert result["count"] == 0
     assert result["status"] == ("success" if outcome == "verified" else "partial")
     assert len(result["repository_copy"]) == len(adapters) == 2
