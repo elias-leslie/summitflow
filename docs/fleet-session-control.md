@@ -135,15 +135,19 @@ st aico root position REQUEST_ID X Y WIDTH HEIGHT
 st aico root end REQUEST_ID
 ```
 
-They address direct `st aico create` roots and fleet-started roots alike. Each
-mutation reads the exact request, requires a running descriptor, posts its
-generation once and verifies identity and generation in the receipt. Missing,
-ended, pending, uncertain or stale roots cannot authorize an update.
+They address direct `st aico create` roots and fleet-started roots alike. Show,
+title and position read the exact request, require a running descriptor, post its
+generation once and verify identity and generation in the receipt. Missing,
+ended, pending, uncertain or stale roots cannot authorize those view updates.
 `applied: false` means nothing was applied; `applied: null` means the outcome is
 unknown and must be reconciled with `st aico root status`, never blindly retried.
-End uses Aico's headless generation-fenced containment contract (or A-Term's root
-end route). For fleet roots prefer `st sessions close`, which records the outcome
-in the fleet ledger; a direct end leaves fleet state to reconcile on the next close.
+End pins the exact descriptor's generation and may contain a pending or uncertain
+root without requiring a running workload. It uses Aico's headless
+generation-fenced containment contract (or A-Term's root end route). An exact
+ended tombstone is idempotent: End returns `applied: false` without another owner
+mutation. A root without a generation cannot authorize End. For fleet roots
+prefer `st sessions close`, which records the outcome in the fleet ledger; a
+direct end leaves fleet state to reconcile on the next close.
 
 `st sessions title REQUEST_ID "Project · Focus" [--surface aico|a-term]` remains a
 compatibility alias that forwards to `st aico root title`; the owner extension
