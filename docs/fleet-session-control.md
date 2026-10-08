@@ -114,6 +114,19 @@ A-Term defaults to `http://127.0.0.1:8002` and supports the local
 reported as unavailable; the adapter does not supply or invent credentials.
 # Direct exact-thread recovery
 
+`st sessions title REQUEST_ID "Project · Focus" [--surface aico|a-term]` renames
+one exact running retained owner root. The default owner is Aico, matching direct
+create; use `--surface a-term` for A-Term. The command reads that exact request,
+then posts `{generation, label}` to `/v1/roots/REQUEST_ID/title`. Missing, ended,
+uncertain or stale generations cannot authorize an update. After trimming surrounding
+whitespace, labels require 1-160 UTF-8 bytes of control-free single-line Unicode.
+Code points below 32, 127-159, surrogates and U+2028/U+2029 are rejected.
+Supply no secrets or private target data.
+Content exists only in the input and the owner's existing session metadata.
+SummitFlow retains no title, fleet event or duplicate session store, and output
+contains only identity/status metadata. Configured owner authentication applies.
+Owner source changes require their normal managed release before live use.
+
 `st aico create REQUEST_ID [PROMPT] --project PROJECT --project-root PATH
 --resume-session SESSION_ID [--surface aico|a-term]` forwards directly to the existing
 owner create contract. It retains no prompt or fleet event and supplies no fleet

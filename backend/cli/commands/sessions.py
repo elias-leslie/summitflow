@@ -78,6 +78,7 @@ from .sessions_reap import (
 from .sessions_reap import (
     reapable_sessions as _reapable_sessions,
 )
+from .sessions_title import title as title_owner_root
 
 app = typer.Typer(
     help=(
@@ -89,6 +90,7 @@ app = typer.Typer(
 )
 
 app.command("inspect")(inspect_native_session)
+app.command("title")(title_owner_root)
 
 _register_fleet(app)
 
