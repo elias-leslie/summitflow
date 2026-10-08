@@ -23,6 +23,21 @@ def _result_ctes() -> sql.SQL:
             WHERE e.event_type = 'tool_result'
               AND COALESCE(e.source_timestamp, e.created_at) >= now() - (%s * interval '1 hour')
               AND (%s::text IS NULL OR e.session_id = %s)
+              AND NOT (
+                  (e.source_event_id IS NULL OR e.source_event_id LIKE 'native-command:%%')
+                  AND EXISTS (
+                      SELECT 1 FROM session_events authoritative
+                      WHERE authoritative.session_id = e.session_id
+                        AND authoritative.event_type = 'tool_result'
+                        AND authoritative.source_event_id IS NOT NULL
+                        AND authoritative.source_event_id NOT LIKE 'native-command:%%'
+                        AND COALESCE(NULLIF(authoritative.call_id, ''),
+                                     NULLIF(authoritative.tool_output->>'call_id', ''),
+                                     NULLIF(authoritative.tool_output->>'tool_use_id', ''))
+                          = COALESCE(NULLIF(e.call_id, ''), NULLIF(e.tool_output->>'call_id', ''),
+                                     NULLIF(e.tool_output->>'tool_use_id', ''))
+                  )
+              )
         ), ranked AS (
             SELECT *, row_number() OVER (
                 PARTITION BY session_id, COALESCE(call_identity, 'event:' || id::text)
@@ -166,7 +181,12 @@ def result_diagnostics_query() -> sql.Composed:
 
 
 def _label(value: Any, limit: int) -> str:
-    return "".join(character if character.isprintable() else " " for character in str(value))[:limit]
+    label = "".join(character if character.isprintable() else " " for character in str(value))[:limit]
+    # Non-BMP characters use two JSON escapes. Bound labels by escaped size as
+    # well as characters so the mandatory action fits in either output mode.
+    while len(json.dumps(label).encode("utf-8")) > limit * 6 + 2:
+        label = label[:-1]
+    return label
 
 
 def cost_advisory(data: dict[str, Any]) -> dict[str, Any]:
@@ -209,6 +229,7 @@ def render_cost_advisory(data: dict[str, Any]) -> str:
     lines = [
         f"TOOLS_COST:ADVISORY measured={measured}/{results} bytes={summary.get('output_bytes', 'unknown')} "
         f"p50/p95/max={summary.get('p50_bytes')}/{summary.get('p95_bytes')}/{summary.get('max_bytes')}B",
+        advisory["findings"][0],
         f"Truncated={summary.get('truncated_results', 0)}/{measured} ({rate:.1f}% lower bound); "
         f"flags={summary.get('truncation_samples', 0)}/{measured} "
         f"identity={summary.get('call_identity_results', 0)}/{results} role/task={diagnostics.get('role_task_results', 0)}/{results} "
@@ -226,7 +247,7 @@ def render_cost_advisory(data: dict[str, Any]) -> str:
             f"uncached={item.get('uncached_input_tokens') if item.get('uncached_input_tokens') is not None else 'unknown'} "
             f"paired={item.get('uncached_input_tokens_samples', 0)}/{item.get('events', 0)} responses; billed cost unknown."
         )
-    lines.extend(advisory["findings"])
+    lines.extend(advisory["findings"][1:])
     retained: list[str] = []
     for line in lines:
         candidate = "\n".join([*retained, line])

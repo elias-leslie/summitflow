@@ -102,6 +102,23 @@ def test_cost_deduplicates_authoritative_results_and_excludes_backfilled_history
     assert next(row for row in rows if row[0] == "metadata")[5] == 0
 
 
+@pytest.mark.parametrize("provisional_source_time", [None, datetime.now(UTC)])
+def test_old_authoritative_result_suppresses_fresh_or_unknown_age_provisional(test_db_url: str, provisional_source_time: datetime | None) -> None:
+    events = [
+        {"event_type": "tool_use", "call_id": "call", "tool_name": "Bash"},
+        {"call_id": "call", "content": "historical result", "source_event_id": "rollout-result",
+         "source_timestamp": datetime.now(UTC) - timedelta(days=3)},
+        {"call_id": "call", "content": "provisional duplicate", "source_event_id": "native-command:call:result",
+         "source_timestamp": provisional_source_time},
+    ]
+    diagnostics = _diagnostics(test_db_url, events)["result_diagnostics"]
+    assert diagnostics["observed_results"] == 0
+    assert diagnostics["summary"]["measured_results"] == 0
+    with psycopg.connect(test_db_url) as connection:
+        rows = connection.execute(_fixtures(events) + _cost_queries(24, 10)[1], (24, None, None, 10)).fetchall()
+    assert rows == []
+
+
 def test_cost_measures_stdout_stderr_empty_and_legacy_results(test_db_url: str) -> None:
     data = _diagnostics(test_db_url, [
         {"tool_name": "shell", "call_id": "one", "tool_output": {"stdout": "café", "stderr": "!", "exit_code": 0}},
@@ -264,6 +281,36 @@ def test_advisory_json_budget_includes_unicode_and_escaped_labels() -> None:
     assert len(json.dumps({"advisory": rendered}, indent=2).encode()) < 1500
     assert "Truncation:" in rendered
     assert "uncached=unknown" in rendered
+
+
+@pytest.mark.parametrize("finding", ["truncation", "repeat"])
+def test_long_unicode_model_provenance_cannot_starve_the_action(finding: str) -> None:
+    data = {
+        "result_diagnostics": {
+            "summary": {"results": 20, "measured_results": 20, "truncated_results": 2 if finding == "truncation" else 0},
+            "repeated_retrievals": [] if finding == "truncation" else [
+                {"tool_name": "Bash", "agent_role": "worker", "task_identity": "task-1",
+                 "retrievals": 3, "duplicate_bytes": 40000}
+            ],
+        },
+        "native_usage": [
+            {"scope": "response", "model": "語" * 50, "source": "語" * 50, "events": 2}
+        ] * 2,
+    }
+    rendered = render_cost_advisory(data)
+    assert "TOOLS_COST:ADVISORY" in rendered
+    assert ("narrow ranges/filters" if finding == "truncation" else "reuse saved output") in rendered
+    assert len(rendered.encode()) < 1500
+    assert len(json.dumps({"advisory": rendered}, indent=2).encode()) < 1500
+
+
+def test_unicode_retrieval_identity_cannot_consume_the_action_budget() -> None:
+    data = {"result_diagnostics": {"summary": {"results": 3, "measured_results": 3},
+        "repeated_retrievals": [{"tool_name": "😀" * 60, "agent_role": "😀" * 40,
+            "task_identity": "task-" + "😀" * 50, "retrievals": 3, "duplicate_bytes": 40000}]}}
+    rendered = render_cost_advisory(data)
+    assert "reuse saved output" in rendered
+    assert len(json.dumps({"advisory": rendered}, indent=2).encode()) < 1500
 
 
 @pytest.mark.parametrize("flag", ["--advisory", "--gate"])
