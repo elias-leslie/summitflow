@@ -253,13 +253,16 @@ def test_maintenance_lease_covers_restore_checks_retention_prune_and_catalogue(r
 
 
 @pytest.fixture
-def critical_link_replay(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
+def critical_link_replay(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, request: pytest.FixtureRequest):
     """Replay the canonical Claude zzconsult link with real capture/restore helpers."""
     from app.tasks import backup_native_recovery as recovery
 
     skills = tmp_path / "agent-skills"
     (skills / "skills/available").mkdir(parents=True)
     (skills / "skills/available/SKILL.md").write_text("synthetic usable skill")
+    if getattr(request, "param", False):
+        (skills / "skills/zzconsult").mkdir()
+        (skills / "skills/zzconsult/SKILL.md").write_text("synthetic mapped target")
     claude = tmp_path / "claude-config"
     (claude / "skills").mkdir(parents=True)
     (claude / "skills/available").symlink_to(skills / "skills/available")
@@ -289,6 +292,86 @@ def critical_link_replay(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
     materialize = MagicMock(side_effect=lambda row, **_: nullcontext(archives[row["source_id"]]))
     monkeypatch.setattr(runtime, "materialize_repository_archive", materialize)
     return rows, archives, materialize
+
+
+@pytest.fixture
+def critical_infrastructure_replay(critical_link_replay, tmp_path, monkeypatch):
+    from app.tasks import backup_restore_drill
+
+    rows, archives, materialize = critical_link_replay
+    archives["infrastructure"] = tmp_path / "infrastructure.tar.gz"
+    archives["infrastructure"].write_bytes(b"synthetic infrastructure payload")
+    rows["infrastructure"] = {
+        "id": "point-infrastructure", "source_id": "infrastructure",
+        "storage_backend_id": "stb-fixture", "status": "completed",
+        "verification_json": {
+            "format": "restic-v1", "snapshot_id": "5" * 64,
+            "remote_snapshot_id": "6" * 64, "offsite": {"status": "verified"},
+        },
+    }
+    record = MagicMock()
+    monkeypatch.setattr(backup_restore_drill, "_record_drill_result", record)
+    return rows, archives, materialize, record
+
+
+def test_unresolved_combined_config_links_skip_infrastructure_restore(critical_infrastructure_replay, monkeypatch):
+    from app.tasks import backup_restore_drill
+
+    rows, _, materialize, record = critical_infrastructure_replay
+    run = MagicMock(return_value={"ok": True})
+    monkeypatch.setattr(backup_restore_drill, "_run_drill_script", run)
+    maintenance = {}
+    result = runtime._weekly_critical_restore({"BACKUP_STORAGE_BACKEND_ID": "stb-fixture"}, maintenance)
+
+    assert result["status"] == "failed" and result["failed_source"] == "claude-config"
+    assert result["sources"]["claude-config"]["mapped_links_pending"]
+    assert result["selected_backups"]["infrastructure"]["backup_id"] == rows["infrastructure"]["id"]
+    assert [call.args[0]["source_id"] for call in materialize.call_args_list] == ["agent-skills", "claude-config"]
+    assert all(call.kwargs == {"remote": True} for call in materialize.call_args_list)
+    run.assert_not_called()
+    record.assert_not_called()
+    assert maintenance["critical_restore_failure"] == result
+    assert "critical_restore_success" not in maintenance and "critical_restore_at" not in maintenance
+
+
+@pytest.mark.parametrize("critical_link_replay", [True], indirect=True)
+@pytest.mark.parametrize("drill_ok", [False, True])
+def test_complete_config_links_still_require_infrastructure_drill(critical_infrastructure_replay, monkeypatch, drill_ok):
+    from app.tasks import backup_executor, backup_restore_drill
+
+    _, archives, materialize, record = critical_infrastructure_replay
+    completed = []
+    original = backup_executor._complete_mapped_recovery
+
+    def mapped(target, roots):
+        result = original(target, roots)
+        assert result["recovery_complete"] is True
+        completed.append(target.name)
+        return result
+
+    def drill(archive, backup_id):
+        assert completed == ["agent-skills", "claude-config"]
+        assert archive == str(archives["infrastructure"]) and backup_id == "point-infrastructure"
+        return {"ok": drill_ok}
+
+    monkeypatch.setattr(backup_executor, "_complete_mapped_recovery", mapped)
+    run = MagicMock(side_effect=drill)
+    monkeypatch.setattr(backup_restore_drill, "_run_drill_script", run)
+    maintenance = {}
+    result = runtime._weekly_critical_restore({"BACKUP_STORAGE_BACKEND_ID": "stb-fixture"}, maintenance)
+
+    run.assert_called_once()
+    record.assert_called_once_with("infrastructure", "point-infrastructure", ok=drill_ok, result={"ok": drill_ok})
+    assert [call.args[0]["source_id"] for call in materialize.call_args_list] == ["agent-skills", "claude-config", "infrastructure"]
+    assert all(call.kwargs == {"remote": True} for call in materialize.call_args_list)
+    assert result["status"] == ("verified" if drill_ok else "failed")
+    if drill_ok:
+        assert maintenance["critical_restore_success"] == result
+        assert "critical_restore_at" in maintenance
+    else:
+        assert result["failed_source"] == "infrastructure"
+        assert maintenance["critical_restore_failure"] == result
+        assert "critical_restore_success" not in maintenance and "critical_restore_at" not in maintenance
 
 
 def test_critical_restore_retains_actual_dangling_mapping_and_selected_points(critical_link_replay):

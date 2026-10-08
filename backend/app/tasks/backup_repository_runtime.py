@@ -982,7 +982,8 @@ def _weekly_critical_restore(env: dict[str, str], maintenance: dict[str, Any], *
         except (ScratchError, OSError) as exc:
             return finish({"status": "failed", "sources": evidence, "error": str(exc)})
         targets: dict[str, Path] = {}
-        for source_id, backup in selected.items():
+
+        def restore_source(source_id: str, backup: dict[str, Any]) -> dict[str, Any] | None:
             drill_result: dict[str, Any] | None = None
             try:
                 with materialize_repository_archive(backup, remote=True) as archive:
@@ -1005,6 +1006,15 @@ def _weekly_critical_restore(env: dict[str, str], maintenance: dict[str, Any], *
                     _record_drill_result(source_id, str(backup["id"]), ok=False, error=str(exc))
                 evidence[source_id] = {**selected_points[source_id], "ok": False, "error": str(exc)}
                 return finish({"status": "failed", "sources": evidence, "failed_source": source_id, "error": str(exc)})
+            return None
+
+        # Validate the combined configuration first: unresolved cross-source
+        # links must fail before downloading or loading the database archive.
+        for source_id, backup in selected.items():
+            if source_id != "infrastructure":
+                failure = restore_source(source_id, backup)
+                if failure is not None:
+                    return failure
         for source_id, target in targets.items():
             try:
                 mapped = _complete_mapped_recovery(target, {key: root for key, root in targets.items() if key in {"codex-config", "claude-config", "agent-skills"}})
@@ -1016,6 +1026,10 @@ def _weekly_critical_restore(env: dict[str, str], maintenance: dict[str, Any], *
             except Exception as exc:
                 evidence[source_id].update(ok=False, error=str(exc))
                 return finish({"status": "failed", "sources": evidence, "failed_source": source_id, "error": str(exc)})
+        if "infrastructure" in selected:
+            failure = restore_source("infrastructure", selected["infrastructure"])
+            if failure is not None:
+                return failure
     maintenance["critical_restore_at"] = datetime.now(UTC).isoformat()
     return finish({"status": "verified", "verified_at": maintenance["critical_restore_at"], "sources": evidence, "remote_only": True})
 
