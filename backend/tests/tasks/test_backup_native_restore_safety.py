@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import gzip
 import io
+import os
 import shutil
 import stat
 import tarfile
@@ -368,6 +369,11 @@ def test_database_restore_streams_decompressed_dump_from_disk(
         observed["input"] = kwargs["stdin"].read()
         assert "input" not in kwargs
         assert kwargs["timeout"] == 600
+        directory = Path(kwargs["env"]["TMPDIR"]).parent
+        assert directory.is_relative_to(transient_scratch.SCRATCH_ROOT)
+        anonymous_file = os.readlink(f"/proc/self/fd/{kwargs['stdin'].fileno()}").removesuffix(" (deleted)")
+        assert Path(anonymous_file).parent == directory
+        observed["scratch"] = directory
         return CompletedProcess(command, 0, stdout=b"", stderr=b"")
 
     monkeypatch.setattr("app.tasks.backup_native_restore.subprocess.run", fake_run)
@@ -376,6 +382,8 @@ def test_database_restore_streams_decompressed_dump_from_disk(
 
     assert result["db_restored"] == "database.sql.gz"
     assert observed["input"] == sql
+    scratch_directory = observed["scratch"]
+    assert isinstance(scratch_directory, Path) and not scratch_directory.exists()
     command = observed["command"]
     assert isinstance(command, list)
     assert command[-2:] == ["-v", "ON_ERROR_STOP=1"]

@@ -849,6 +849,180 @@ def test_atomic_checkpoint_permissions_and_symlinks(repository_env: dict[str, st
         runtime._load_json(unsafe)
 
 
+@pytest.mark.parametrize("capture_fails", [False, True])
+def test_repository_capture_uses_private_stable_scratch_and_cleans_attempt(repository_env, tmp_path, monkeypatch, capture_fails):
+    source = tmp_path / "source"
+    source.mkdir()
+    (source / "work.txt").write_text("unsaved work")
+    monkeypatch.setattr(runtime, "canonical_backup_source_roots", lambda: {})
+    monkeypatch.setattr(runtime, "record_local_archive", lambda _: None)
+    monkeypatch.setenv("TMPDIR", "/caller/namespace")
+    captures = []
+
+    def save_payload(_adapter, _source_id, payload):
+        snapshot = payload["snapshot_dir"]
+        captures.append(snapshot)
+        assert snapshot.is_relative_to(transient_scratch.SCRATCH_ROOT)
+        assert snapshot.parent.stat().st_mode & 0o777 == 0o700
+        assert (snapshot / "work.txt").read_text() == ("unsaved work" if len(captures) == 1 else "edited work")
+        child_env = transient_scratch.scratch_subprocess_env()
+        assert Path(child_env["TMPDIR"]) == snapshot.parent / "tmp"
+        assert Path(child_env["XDG_CACHE_HOME"]) == snapshot.parent / "cache"
+        if capture_fails:
+            raise ResticError("synthetic capture failure")
+        return {"snapshot_id": "a" * 64, "repository_id": "b" * 64, "location": "restic-v1:fixture", "verification": {"verified": True, "capture": {}}}
+
+    monkeypatch.setattr(ResticAdapter, "save_payload", save_payload)
+    for _ in range(2):
+        if capture_fails:
+            with pytest.raises(ResticError, match="synthetic capture failure"):
+                runtime.run_repository_backup(project_dir=str(source), source_id="fixture", env=repository_env, local_only=True)
+        else:
+            runtime.run_repository_backup(project_dir=str(source), source_id="fixture", env=repository_env, local_only=True)
+        assert not captures[-1].parent.exists()
+        (source / "work.txt").write_text("edited work")
+        with runtime._checkpoint(ResticConfig.from_env(repository_env)) as (directory, state):
+            if not capture_fails:
+                assert state["sources"]["fixture"]["snapshot_id"] == "a" * 64
+            assert directory.is_relative_to(Path(repository_env["RESTIC_KEY_DIRECTORY"]))
+            assert not (directory / "payloads").exists()
+    assert captures[0] == captures[1]
+    assert os.environ["TMPDIR"] == "/caller/namespace"
+
+
+@pytest.mark.parametrize("unsafe", ["missing", "unmounted", "shared", "private-link", "staging-link"])
+def test_repository_capture_refuses_unsafe_scratch_before_materializing(repository_env, tmp_path, monkeypatch, unsafe):
+    root = transient_scratch.SCRATCH_ROOT
+    if unsafe == "missing":
+        monkeypatch.setattr(transient_scratch, "SCRATCH_ROOT", tmp_path / "missing")
+    elif unsafe == "unmounted":
+        monkeypatch.setattr(Path, "is_mount", lambda _: False)
+    elif unsafe == "shared":
+        root.chmod(0o777)
+    elif unsafe == "private-link":
+        (root / f"st-backup-captures-{os.getuid()}").symlink_to(tmp_path)
+    else:
+        pair = runtime._repository_pair(ResticConfig.from_env(repository_env))
+        payloads = root / f"st-backup-captures-{os.getuid()}" / pair / "payloads"
+        payloads.mkdir(parents=True, mode=0o700)
+        payloads.parent.chmod(0o700)
+        payloads.parent.parent.chmod(0o700)
+        protected = tmp_path / "protected"
+        protected.mkdir()
+        (protected / "keep.txt").write_text("unrelated source")
+        staging_link = payloads / runtime.hashlib.sha256(b"fixture").hexdigest()
+        staging_link.symlink_to(protected)
+    save = MagicMock(side_effect=AssertionError("unsafe scratch must not capture"))
+    monkeypatch.setattr(ResticAdapter, "save_payload", save)
+    with pytest.raises((transient_scratch.ScratchError, ResticError), match=r"unsafe|symlink"):
+        runtime.run_repository_backup(project_dir=str(tmp_path), source_id="fixture", env=repository_env, local_only=True)
+    save.assert_not_called()
+    assert not list(Path(repository_env["RESTIC_KEY_DIRECTORY"]).glob("restic-state/*/payloads"))
+    if unsafe == "staging-link":
+        assert staging_link.is_symlink()
+        assert (protected / "keep.txt").read_text() == "unrelated source"
+
+
+def test_repository_capture_reclaims_interrupted_private_stage_before_capacity_admission(repository_env, tmp_path, monkeypatch):
+    source = tmp_path / "source"
+    source.mkdir()
+    (source / "work.txt").write_text("unsaved work")
+    config = ResticConfig.from_env(repository_env)
+    scratch = transient_scratch.mounted_scratch_parent("st-backup-captures")
+    assert scratch is not None
+    staging = scratch / runtime._repository_pair(config) / "payloads" / runtime.hashlib.sha256(b"fixture").hexdigest()
+    runtime._private_directory(staging.parent.parent)
+    runtime._private_directory(staging.parent)
+    runtime._private_directory(staging)
+    leftover = staging / "interrupted-plaintext"
+    leftover.write_bytes(b"owned disposable fixture")
+    unrelated = staging.parent / "unrelated-source"
+    unrelated.mkdir(mode=0o700)
+    (unrelated / "keep.txt").write_text("other capture")
+    monkeypatch.setenv("SF_HOST_RETENTION_PRESSURE_MIN_FREE_GB", "25")
+    monkeypatch.setattr(runtime, "canonical_backup_source_roots", lambda: {})
+    monkeypatch.setattr(runtime, "record_local_archive", lambda _: None)
+    usage = shutil.disk_usage(tmp_path)
+    reserve = 25 * 1024**3
+
+    def free_after_reclaim(_path):
+        return usage._replace(free=reserve - 1 if leftover.exists() else 100 * 1024**3)
+
+    monkeypatch.setattr(runtime.shutil, "disk_usage", free_after_reclaim)
+    saved = {"snapshot_id": "a" * 64, "repository_id": "b" * 64, "location": "restic-v1:fixture", "verification": {"verified": True, "capture": {}}}
+    monkeypatch.setattr(ResticAdapter, "save_payload", lambda *_: saved)
+    result = runtime.run_repository_backup(project_dir=str(source), source_id="fixture", env=repository_env, local_only=True)
+    assert result["snapshot_id"] == "a" * 64
+    assert not staging.exists()
+    assert (unrelated / "keep.txt").read_text() == "other capture"
+
+
+@pytest.mark.parametrize("phase", ["before", "after"])
+def test_repository_capture_admits_actual_scratch_destination_and_cleans_capacity_failure(repository_env, tmp_path, monkeypatch, phase):
+    source = tmp_path / "source"
+    source.mkdir()
+    (source / "work.txt").write_text("unsaved work")
+    config = ResticConfig.from_env(repository_env)
+    with runtime._checkpoint(config) as (directory, state):
+        state["sources"]["fixture"] = {"capacity": {"staging_peak_bytes": 100}}
+        runtime._save_json(directory / "state.json", state)
+    monkeypatch.setenv("SF_HOST_RETENTION_PRESSURE_MIN_FREE_GB", "25")
+    monkeypatch.setattr(runtime, "canonical_backup_source_roots", lambda: {})
+    usage = shutil.disk_usage(tmp_path)
+    observed = []
+    reserve = 25 * 1024**3
+
+    def destination_usage(path):
+        path = Path(path)
+        observed.append(path)
+        if path.is_relative_to(transient_scratch.SCRATCH_ROOT):
+            if phase == "before":
+                return usage._replace(free=reserve + 99)
+            if (path / "project-snapshot").exists():
+                return usage._replace(free=reserve - 1)
+        return usage._replace(free=100 * 1024**3)
+
+    monkeypatch.setattr(runtime.shutil, "disk_usage", destination_usage)
+    save = MagicMock(side_effect=AssertionError("insufficient destination capacity must not capture"))
+    monkeypatch.setattr(ResticAdapter, "save_payload", save)
+    with pytest.raises((ResticError, transient_scratch.ScratchError), match=r"insufficient host-policy headroom|Insufficient restore scratch space"):
+        runtime.run_repository_backup(project_dir=str(source), source_id="fixture", env=repository_env, local_only=True)
+    save.assert_not_called()
+    assert any(path.is_relative_to(transient_scratch.SCRATCH_ROOT) for path in observed)
+    assert config.key_directory not in observed
+    assert not list(transient_scratch.SCRATCH_ROOT.glob("st-backup-captures-*/*/payloads/*"))
+
+
+def test_previous_capture_bundle_stays_on_scratch_and_counts_toward_staging_peak(repository_env, tmp_path, monkeypatch):
+    source = tmp_path / "source"
+    source.mkdir()
+    (source / "work.txt").write_text("unsaved work")
+    config = ResticConfig.from_env(repository_env)
+    with runtime._checkpoint(config) as (directory, state):
+        state["sources"]["fixture"] = {"snapshot_id": "c" * 64, "recovery": {"git": {"head": "fixture"}}}
+        runtime._save_json(directory / "state.json", state)
+    monkeypatch.setattr(runtime, "canonical_backup_source_roots", lambda: {})
+    monkeypatch.setattr(runtime, "record_local_archive", lambda _: None)
+    restored = []
+
+    def restore(_adapter, _snapshot_id, destination, **_kwargs):
+        assert destination.is_relative_to(transient_scratch.SCRATCH_ROOT)
+        restored.append(destination)
+        recovery = destination / runtime.RECOVERY_DIR_NAME
+        recovery.mkdir()
+        (recovery / runtime.GIT_BUNDLE_NAME).write_bytes(b"x" * 16384)
+        return {"payload_root": str(destination)}
+
+    saved = {"snapshot_id": "a" * 64, "repository_id": "b" * 64, "location": "restic-v1:fixture", "verification": {"verified": True, "capture": {}}}
+    monkeypatch.setattr(ResticAdapter, "restore", restore)
+    monkeypatch.setattr(ResticAdapter, "save_payload", lambda *_: saved)
+    runtime.run_repository_backup(project_dir=str(source), source_id="fixture", env=repository_env, local_only=True)
+    assert len(restored) == 1
+    assert not restored[0].parent.exists()
+    with runtime._checkpoint(config) as (_, state):
+        assert state["sources"]["fixture"]["capacity"]["staging_peak_bytes"] >= 16384
+
+
 def test_sql_failure_leaves_durable_local_reference_and_no_plaintext(repository_env: dict[str, str], tmp_path: Path) -> None:
     source = tmp_path / "source"
     source.mkdir()
@@ -859,7 +1033,8 @@ def test_sql_failure_leaves_durable_local_reference_and_no_plaintext(repository_
         runtime.run_repository_backup(project_dir=str(source), source_id="fixture", env=repository_env)
     with runtime._checkpoint(config) as (directory, state):
         assert state["sources"]["fixture"]["snapshot_id"] == "a" * 64
-        assert not any((directory / "payloads").iterdir())
+        assert not (directory / "payloads").exists()
+        assert not list(transient_scratch.SCRATCH_ROOT.glob("st-backup-captures-*/*/payloads/*"))
 
 
 def test_recorded_backend_required_no_current_default_fallback() -> None:
@@ -950,7 +1125,8 @@ def test_real_independent_copy_deduplicates_and_recovers_wip(repository_env: dic
     assert staged.stdout == "staged\n"
     with runtime._checkpoint(ResticConfig.from_env(repository_env)) as (directory, state):
         assert state["offsite"]["pending_objects"] == []
-        assert not any((directory / "payloads").iterdir())
+        assert not (directory / "payloads").exists()
+        assert not list(transient_scratch.SCRATCH_ROOT.glob("st-backup-captures-*/*/payloads/*"))
         # The private journal contains references, never password contents.
         assert "synthetic-fixture-local-password" not in json.dumps(state)
 
@@ -971,7 +1147,8 @@ def test_real_serial_batch_checks_copies_once_and_retries_all_pending(repository
             assert first["verification"]["structural_check_pending"] is True
             assert first["verification"]["structural_check_at"] is None
             with runtime._checkpoint(config) as (directory, state):
-                assert not any((directory / "payloads").iterdir())
+                assert not (directory / "payloads").exists()
+                assert not list(transient_scratch.SCRATCH_ROOT.glob("st-backup-captures-*/*/payloads/*"))
                 assert state["offsite"]["pending_snapshot_ids"] == [first["snapshot_id"], second["snapshot_id"]]
         checked.assert_not_called()
         copied.assert_not_called()

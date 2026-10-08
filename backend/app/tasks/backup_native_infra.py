@@ -8,7 +8,6 @@ import shutil
 import stat
 import subprocess
 import tarfile
-import tempfile
 import time
 from collections.abc import Callable
 from datetime import datetime
@@ -20,6 +19,12 @@ import yaml
 from ..logging_config import get_logger
 from ..services.backup_keys import backup_key_directory
 from ..utils.shared_paths import get_host_config_root, get_repo_root
+from ..utils.transient_scratch import (
+    disposable_scratch,
+    ensure_scratch_capacity,
+    scratch_subprocess_env,
+    tree_bytes,
+)
 from .backup_activity import (
     backup_phase,
     check_backup_cancelled,
@@ -34,6 +39,7 @@ from .backup_native_archive import (
     _regular_file_filter,
     _run_gzip_stream,
     _run_plain_stream,
+    capacity_checked_archive,
     payload_tree_metadata,
     verify_archive,
 )
@@ -67,7 +73,7 @@ def _find_compose_container(service: str) -> str | None:
         ["docker", "ps", "--filter", f"label=com.docker.compose.service={service}", "--format", "{{.Names}}"],
     ]
     for command in commands:
-        result = subprocess.run(command, capture_output=True, text=True, check=False)
+        result = subprocess.run(command, capture_output=True, text=True, check=False, env=scratch_subprocess_env())
         if result.returncode == 0 and result.stdout.strip():
             return result.stdout.strip().splitlines()[0]
     return None
@@ -80,9 +86,9 @@ def _dump_infra_database(destination: Path) -> int:
     stream = _run_gzip_stream if destination.suffix == ".gz" else _run_plain_stream
     if pg_container:
         command = ["docker", "exec", pg_container, "pg_dumpall", "-U", pg_user]
-        returncode, stderr = stream(command, destination, env=None, timeout=INFRA_BACKUP_TIMEOUT)
+        returncode, stderr = stream(command, destination, env=scratch_subprocess_env(), timeout=INFRA_BACKUP_TIMEOUT)
     else:
-        env = {**os.environ, "PGPASSWORD": os.environ.get("PGPASSWORD", "")}
+        env = scratch_subprocess_env({**os.environ, "PGPASSWORD": os.environ.get("PGPASSWORD", "")})
         command = ["pg_dumpall", "-U", pg_user, "-h", pg_host]
         returncode, stderr = stream(command, destination, env=env, timeout=INFRA_BACKUP_TIMEOUT)
     if returncode != 0:
@@ -204,9 +210,9 @@ def _copy_regular_path(
         return excluded(source_base / relative)
 
     destination.parent.mkdir(parents=True, exist_ok=True)
-    with tempfile.TemporaryDirectory(prefix="infra-capture-", dir=destination.parent) as temporary:
+    before = inventory_project_tree(source, (), excluded_relative)
+    with disposable_scratch("infra-capture-", required_bytes=sum(entry.size for entry in before.values() if entry.kind == "file")) as temporary:
         captured = Path(temporary) / "snapshot"
-        before = inventory_project_tree(source, (), excluded_relative)
         copy_inventory_snapshot(source, captured, {rel: entry for rel, entry in before.items() if entry.kind == "file"})
         record_entry(source, Path("."))
         after = inventory_project_tree(source, (), excluded_relative)
@@ -215,6 +221,7 @@ def _copy_regular_path(
             for rel in set(before) | set(after)
         ):
             raise RuntimeError("Infrastructure backup source changed during capture")
+        ensure_scratch_capacity(destination.parent, tree_bytes(captured))
         if stat.S_ISREG(source_mode):
             shutil.copy2(captured / source.name, destination, follow_symlinks=False)
         else:
@@ -564,18 +571,25 @@ def _capture_recovery_state(
 def _collect_redis_dump(destination: Path) -> None:
     redis_cli = shutil.which("redis-cli")
     if redis_cli:
-        result = run_bulk_process([redis_cli, "-h", os.environ.get("REDIS_HOST", "localhost"), "-p", os.environ.get("REDIS_PORT", "6379"), "--rdb", str(destination)], phase="capture", object_name="Redis snapshot")
+        result = run_bulk_process([redis_cli, "-h", os.environ.get("REDIS_HOST", "localhost"), "-p", os.environ.get("REDIS_PORT", "6379"), "--rdb", str(destination)], env=scratch_subprocess_env(), phase="capture", object_name="Redis snapshot", capacity_check=lambda: ensure_scratch_capacity(destination.parent, 0))
         if result.returncode == 0 and destination.exists() and destination.stat().st_size > 0:
             return
     container = _find_compose_container("redis")
     if not container:
         return
-    run_bulk_process(["docker", "exec", container, "redis-cli", "BGSAVE"], phase="capture", object_name="Redis snapshot request")
+    run_bulk_process(["docker", "exec", container, "redis-cli", "BGSAVE"], env=scratch_subprocess_env(), phase="capture", object_name="Redis snapshot request")
     time.sleep(2)
     with destination.open("wb") as out:
+        def copy(source: Any) -> None:
+            while chunk := source.read(1024 * 1024):
+                ensure_scratch_capacity(destination.parent, len(chunk))
+                out.write(chunk)
+
         run_bulk_process(
             ["docker", "exec", container, "cat", "/data/dump.rdb"], phase="capture", object_name="Redis snapshot",
-            stdout_sink=lambda source: shutil.copyfileobj(source, out),
+            env=scratch_subprocess_env(),
+            stdout_sink=copy,
+            capacity_check=lambda: ensure_scratch_capacity(destination.parent, 0),
         )
 
 
@@ -629,7 +643,7 @@ def _build_infra_archive(
     db_dump = staging / INFRASTRUCTURE_DATABASE_DUMP_NAME
     db_size = _gzip_payload_file(snapshot_dir / INFRASTRUCTURE_DATABASE_PAYLOAD_NAME, db_dump)
     archive_path = staging / archive_name
-    with tarfile.open(archive_path, "w:gz") as archive:
+    with capacity_checked_archive(archive_path) as archive:
         archive.add(
             db_dump,
             arcname=f"infrastructure/{INFRASTRUCTURE_DATABASE_DUMP_NAME}",
@@ -727,8 +741,7 @@ def run_infra_backup(
     retention = retention_days or 14
     timestamp = datetime.now().strftime("%Y%m%d-%H%M%S")
     archive_name = f"infrastructure-{timestamp}.tar.gz"
-    with tempfile.TemporaryDirectory(prefix="infrastructure-backup-") as temp_dir:
-        staging = Path(temp_dir)
+    with disposable_scratch("infrastructure-backup-") as staging:
         archive_path, _, result = _build_infra_archive(
             project_dir,
             staging,
@@ -736,6 +749,7 @@ def run_infra_backup(
             host_config_root=host_config_root,
         )
         archive_path.chmod(0o600)
+        ensure_scratch_capacity(staging, archive_path.stat().st_size)
         encrypted_name = f"{archive_name}.age"
         encrypted_path = staging / encrypted_name
         encryption = encrypt_completed_archive(archive_path, encrypted_path, run_env)

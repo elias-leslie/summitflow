@@ -20,7 +20,6 @@ import shutil
 import socket
 import stat
 import subprocess
-import tempfile
 import time
 from collections.abc import Callable, Iterator, Mapping, Sequence
 from contextlib import contextmanager
@@ -29,6 +28,11 @@ from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any
 
+from ..utils.transient_scratch import (
+    disposable_scratch,
+    ensure_scratch_capacity,
+    scratch_subprocess_env,
+)
 from .backup_activity import BackupCancelled, check_backup_cancelled, run_bulk_process
 
 RESTIC_VERSION = "0.19.1"
@@ -224,9 +228,22 @@ class ResticAdapter:
             env["RCLONE_CONFIG"] = str(self.config.rclone_config)
         return env
 
-    def _run(self, command: list[str], *, phase: str, **kwargs: Any) -> subprocess.CompletedProcess[Any]:
+    def _invoke(self, command: list[str], *, phase: str, **kwargs: Any) -> subprocess.CompletedProcess[Any]:
+        """Keep native check caches and child scratch off the system volume."""
         check_backup_cancelled()
-        result = self._runner(command, env=self._env(), phase=phase, object_name="Restic repository", **kwargs)
+        with disposable_scratch("restic-process-") as scratch:
+            existing_check = kwargs.pop("capacity_check", None)
+
+            def capacity_check() -> None:
+                ensure_scratch_capacity(scratch, 0)
+                if existing_check is not None:
+                    existing_check()
+
+            return self._runner(command, env=scratch_subprocess_env(self._env(), path=scratch),
+                                phase=phase, object_name="Restic repository", capacity_check=capacity_check, **kwargs)
+
+    def _run(self, command: list[str], *, phase: str, **kwargs: Any) -> subprocess.CompletedProcess[Any]:
+        result = self._invoke(command, phase=phase, **kwargs)
         if result.returncode != 0:
             if command[0] == "restic" and result.returncode == 11:
                 raise ResticError(f"restic {phase} failed to lock repository (exit 11); inspect active backups and stale native locks")
@@ -295,7 +312,7 @@ class ResticAdapter:
         self.config.validate(remote=not local_only)
         with repository_lock(self.config):
             for remote in ([False] if local_only else [False, True]):
-                result = self._runner(self._command("cat", "config", remote=remote), env=self._env(), phase="configuration", object_name="Restic repository")
+                result = self._invoke(self._command("cat", "config", remote=remote), phase="configuration")
                 if result.returncode == 10:
                     args = ["init", "--repository-version", "2"]
                     if remote:
@@ -617,8 +634,8 @@ class ResticAdapter:
             # Repeated tree reads may otherwise re-download remote metadata.
             # This cache starts empty, belongs only to this restore job, and
             # cannot reuse an existing cache or an earlier restore's metadata.
-            with tempfile.TemporaryDirectory(prefix="restic-restore-cache-", dir=destination.parent) as cache:
-                self._run(self._command(*args, remote=remote, restore_cache=Path(cache)), phase="restore")
+            with disposable_scratch("restic-restore-cache-") as cache:
+                self._run(self._command(*args, remote=remote, restore_cache=cache), phase="restore")
             root = destination / payload_path.relative_to("/")
             if not root.is_dir() or root.is_symlink():
                 raise ResticError("Restic did not materialize the expected payload root")

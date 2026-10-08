@@ -11,7 +11,6 @@ import os
 import re
 import shutil
 import subprocess
-import tempfile
 from collections.abc import Callable
 from datetime import UTC, datetime
 from pathlib import Path
@@ -19,6 +18,7 @@ from typing import Any
 
 from ..services.git.utils import network_repository_identity
 from ..utils import safe_subprocess
+from ..utils.transient_scratch import disposable_scratch, scratch_subprocess_env
 
 
 class _InspectionFailed(RuntimeError):
@@ -38,7 +38,7 @@ class _AdmissionUnavailable(RuntimeError):
 
 
 def _git(project: Path, *arguments: str) -> subprocess.CompletedProcess[str]:
-    environment = {key: value for key, value in os.environ.items() if not key.startswith("GIT_")}
+    environment = {key: value for key, value in scratch_subprocess_env().items() if not key.startswith("GIT_")}
     environment.update(GIT_OPTIONAL_LOCKS="0", GIT_NO_LAZY_FETCH="1", GIT_TERMINAL_PROMPT="0", GIT_NO_REPLACE_OBJECTS="1")
     command = ["git", "-C", str(project), *arguments]
     network = arguments[0] in {"push", "fetch", "ls-remote"}
@@ -130,7 +130,12 @@ def _publish_isolated(project: Path, head: str, branch: str, remote: str,
     )
 
     allowed = activity_allowed if activity_allowed is not None else lambda: True
-    with tempfile.TemporaryDirectory(prefix="st-manual-publish-") as directory:
+    listing = _git(project, "ls-tree", "-r", "-l", head)
+    if listing.returncode:
+        raise _InspectionFailed
+    checkout_bytes = sum(int(line.split("\t", 1)[0].split()[3]) for line in listing.stdout.splitlines()
+                         if line.split("\t", 1)[0].split()[1] == "blob")
+    with disposable_scratch("st-manual-publish-", required_bytes=checkout_bytes) as directory:
         isolated = Path(directory) / "source"
         cloned = _git(project, "clone", "--shared", "--no-checkout", "--no-hardlinks", str(project), str(isolated))
         if cloned.returncode:

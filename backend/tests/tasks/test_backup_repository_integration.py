@@ -114,7 +114,10 @@ def test_pending_snapshot_is_durable_before_sql_failure_and_plaintext_is_removed
 
     directory, checkpoint = _durable_state(config)
     assert checkpoint["offsite"]["pending_snapshot_ids"] == [SNAPSHOT]
-    assert not any((directory / "payloads").iterdir())
+    assert not (directory / "payloads").exists()
+    captured = Path(adapter.save_payload.call_args.args[1]["snapshot_dir"])
+    assert captured.is_relative_to(transient_scratch.SCRATCH_ROOT)
+    assert not captured.parent.exists()
     adapter.sync.assert_not_called()
 
 
@@ -148,7 +151,10 @@ def test_failed_new_copy_keeps_pending_scope_and_prior_last_good(repository_fixt
     assert checkpoint["sources"]["source"]["last_good_snapshot_id"] == LAST_GOOD
     assert checkpoint["sources"]["source"]["baseline_snapshot_id"] == PREVIOUS
     assert checkpoint["offsite"]["pending_snapshot_ids"] == [PREVIOUS, SNAPSHOT]
-    assert not any((directory / "payloads").iterdir())
+    assert not (directory / "payloads").exists()
+    captured = Path(adapter.save_payload.call_args.args[1]["snapshot_dir"])
+    assert captured.is_relative_to(transient_scratch.SCRATCH_ROOT)
+    assert not captured.parent.exists()
 
 
 def test_missing_oauth_configuration_keeps_local_completion_and_pending_reference(repository_fixture, monkeypatch: pytest.MonkeyPatch, tmp_path: Path):

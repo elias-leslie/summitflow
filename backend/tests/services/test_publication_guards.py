@@ -135,6 +135,48 @@ def check(history, oid: str, old: str = ZERO, **kwargs):
                            policy_dir=policy, scanner=str(scanner), **kwargs)
 
 
+def test_backup_publication_scanner_inherits_owned_scratch_without_overrides(history, tmp_path, monkeypatch):
+    from app.services.git import outgoing
+    from app.utils import transient_scratch as scratch
+
+    root = tmp_path / "scratch"
+    root.mkdir(mode=0o700)
+    monkeypatch.setattr(scratch, "SCRATCH_ROOT", root)
+    original_is_mount = Path.is_mount
+    monkeypatch.setattr(Path, "is_mount", lambda path: path == root or original_is_mount(path))
+    monkeypatch.setenv("GITLEAKS_CONFIG", "must-not-reach-scanner")
+    observed = []
+
+    def scanner(command, **kwargs):
+        config = Path(command[command.index("--config") + 1])
+        assert config.is_relative_to(root)
+        assert Path(kwargs["env"]["TMPDIR"]).is_relative_to(root)
+        assert "GITLEAKS_CONFIG" not in kwargs["env"]
+        observed.append(config)
+        return subprocess.CompletedProcess(command, 0, "", "")
+
+    monkeypatch.setattr(outgoing.safe_subprocess, "run_inherited", scanner)
+    with scratch.disposable_scratch("publish-fixture-"):
+        assert check(history, history[4]()).commits_scanned == 1
+    assert observed and all(not path.exists() for path in observed)
+
+
+def test_unbound_publication_keeps_default_temporary_directory_selection(history, monkeypatch):
+    from app.services.git import outgoing
+
+    original = outgoing.tempfile.TemporaryDirectory
+    observed = []
+
+    def temporary_directory(*args, **kwargs):
+        observed.append(kwargs.get("dir"))
+        return original(*args, **kwargs)
+
+    monkeypatch.setenv("TMPDIR", "/nonexistent-publication-fixture")
+    monkeypatch.setattr(outgoing.tempfile, "TemporaryDirectory", temporary_directory)
+    assert check(history, history[4]()).commits_scanned == 1
+    assert observed == [None]
+
+
 def test_new_branch_scans_more_than_200_commits(history) -> None:
     commit = history[4]
     oid = commit()

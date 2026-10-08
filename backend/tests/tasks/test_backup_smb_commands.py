@@ -65,10 +65,10 @@ def test_restore_rejects_invalid_locations_before_temp_creation(module, name, lo
 
 @pytest.mark.parametrize("module,name", [(backup_restore_test, "_download_smb_archive"), (backup_restore_drill, "_download_from_smb")])
 @pytest.mark.parametrize("success", [True, False])
-def test_restore_preserves_spaces_and_cleans_failed_download(module, name, success, monkeypatch, tmp_path):
+def test_restore_preserves_spaces_and_cleans_failed_download(module, name, success, monkeypatch, tmp_path, backup_job_scratch):
     import tempfile
-    directory = tmp_path / "download directory"
-    directory.mkdir()
+    directory = backup_job_scratch / "download directory"
+    directory.mkdir(mode=0o700)
     monkeypatch.setattr(tempfile, "mkdtemp", lambda **_: str(directory))
     def run(args, **kwargs):
         assert args[-1] == f'cd "Team Backups"; get "archive file.age" "{directory}/archive file.age"'
@@ -76,6 +76,7 @@ def test_restore_preserves_spaces_and_cleans_failed_download(module, name, succe
         if success:
             (directory / "archive file.age").touch()
         return subprocess.CompletedProcess(args, 0 if success else 1, "", "")
+    monkeypatch.setattr(module, "run_bulk_process", run, raising=False)
     monkeypatch.setattr(module.subprocess, "run", run)
     result = getattr(module, name)("//host/share/Team Backups/archive file.age")
     assert bool(result) is success

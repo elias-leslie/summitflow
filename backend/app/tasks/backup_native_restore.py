@@ -15,7 +15,12 @@ from pathlib import Path, PurePosixPath
 from typing import Any
 
 from ..services.backup_keys import get_backup_key_paths
-from ..utils.transient_scratch import ensure_scratch_capacity, restore_scratch
+from ..utils.transient_scratch import (
+    ensure_scratch_capacity,
+    restore_scratch,
+    scratch_subprocess_env,
+    subprocess_scratch,
+)
 from .backup_activity import run_bulk_process
 from .backup_native_archive import (
     BACKUP_TIMEOUT,
@@ -280,14 +285,16 @@ def _restore_database_member(
     src = archive.extractfile(member)
     if src is None:
         raise RuntimeError(f"Unable to read database dump: {member.name}")
-    with tempfile.TemporaryFile() as sql_file:
+    with subprocess_scratch() as scratch, tempfile.TemporaryFile(dir=scratch) as sql_file:
         with src, gzip.GzipFile(fileobj=src, mode="rb") as decompressed:
-            shutil.copyfileobj(decompressed, sql_file)
+            while chunk := decompressed.read(1024 * 1024):
+                ensure_scratch_capacity(scratch, len(chunk))
+                sql_file.write(chunk)
         sql_file.seek(0)
         result = subprocess.run(
             command,
             stdin=sql_file,
-            env=run_env,
+            env=scratch_subprocess_env(run_env),
             capture_output=True,
             timeout=BACKUP_TIMEOUT,
             check=False,

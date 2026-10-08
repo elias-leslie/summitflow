@@ -135,12 +135,12 @@ def test_capacity_uses_measured_staging_and_growth_on_shared_filesystem(tmp_path
     monkeypatch.setenv("SF_HOST_RETENTION_PRESSURE_MIN_FREE_GB", "0")
     monkeypatch.setattr(runtime.shutil, "disk_usage", lambda _: SimpleNamespace(total=1000, used=850, free=150))
     state = {"sources": {"source": {"capacity": {"staging_peak_bytes": 100, "growth_peak_bytes": 40}}}}
-    result = runtime._capacity_admission(config, state, "source")
+    result = runtime._capacity_admission(config, state, "source", staging_directory=tmp_path)
     assert result["admitted"]
     assert result["filesystems"][0]["required_bytes"] == 140
     assert result["filesystems"][0]["under_pressure"]
     monkeypatch.setattr(runtime.shutil, "disk_usage", lambda _: SimpleNamespace(total=1000, used=870, free=130))
-    assert not runtime._capacity_admission(config, state, "source")["admitted"]
+    assert not runtime._capacity_admission(config, state, "source", staging_directory=tmp_path)["admitted"]
 
 
 def test_copy_capacity_blocks_unknown_quota_and_keeps_backlog(monkeypatch):

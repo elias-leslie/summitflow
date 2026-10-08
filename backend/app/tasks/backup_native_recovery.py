@@ -10,7 +10,6 @@ import shutil
 import sqlite3
 import stat
 import subprocess
-import tempfile
 from contextlib import suppress
 from dataclasses import dataclass
 from pathlib import Path, PurePosixPath
@@ -18,6 +17,11 @@ from typing import Any, cast
 from urllib.parse import urlsplit, urlunsplit
 
 from ..services.backup_keys import backup_key_directory
+from ..utils.transient_scratch import (
+    disposable_scratch,
+    ensure_scratch_capacity,
+    scratch_subprocess_env,
+)
 from .backup_activity import BackupCancelled, backup_phase, check_backup_cancelled, run_bulk_process
 
 RECOVERY_DIR_NAME = ".summitflow-recovery"
@@ -245,10 +249,17 @@ def _copy_sqlite_database(source: Path, destination: Path) -> None:
     source_uri = f"file:{source.resolve().as_posix()}?mode=ro"
     with sqlite3.connect(source_uri, uri=True) as source_db, sqlite3.connect(destination) as destination_db:
         page_size = int(source_db.execute("PRAGMA page_size").fetchone()[0])
+        page_count = int(source_db.execute("PRAGMA page_count").fetchone()[0])
+        ensure_scratch_capacity(destination.parent, page_count * page_size)
+
+        def progress(_status: int, remaining: int, _total: int) -> None:
+            check_backup_cancelled()
+            ensure_scratch_capacity(destination.parent, remaining * page_size)
+
         source_db.backup(
             destination_db,
             pages=max(1, (1024 * 1024) // page_size),
-            progress=lambda _status, _remaining, _total: check_backup_cancelled(),
+            progress=progress,
         )
     shutil.copystat(source, destination, follow_symlinks=False)
 
@@ -266,6 +277,8 @@ def copy_inventory_snapshot(
         source = project_dir if project_dir.is_file() else project_dir / Path(*PurePosixPath(rel).parts)
         target = destination / Path(*PurePosixPath(rel).parts)
         target.parent.mkdir(parents=True, exist_ok=True)
+        if entry.kind == "file":
+            ensure_scratch_capacity(target.parent, entry.size)
         if entry.kind == "mapped_link":
             continue  # External links are identities in the manifest only.
         if entry.kind == "symlink":
@@ -284,6 +297,7 @@ def copy_inventory_snapshot(
                     chunk = input_file.read(1024 * 1024)
                     if not chunk:
                         break
+                    ensure_scratch_capacity(target.parent, len(chunk))
                     output_file.write(chunk)
                 if not _regular_identity_matches(os.fstat(input_file.fileno()), entry):
                     raise RuntimeError(f"Backup source changed during capture: {rel}")
@@ -332,6 +346,7 @@ def _copy_jsonl_prefix(
                 chunk = input_file.read(min(1024 * 1024, remaining))
                 if not chunk:
                     raise RuntimeError
+                ensure_scratch_capacity(destination.parent, len(chunk))
                 output_file.write(chunk)
                 remaining -= len(chunk)
             if not _jsonl_identity_matches(os.fstat(input_file.fileno()), entry):
@@ -388,11 +403,10 @@ def _run_git(
 ) -> subprocess.CompletedProcess[Any]:
     check_backup_cancelled()
     git_environment = {
-        **os.environ,
+        **scratch_subprocess_env({**os.environ, **(env or {})}),
         "GIT_OPTIONAL_LOCKS": "0",
         "GIT_NO_REPLACE_OBJECTS": "1",
         "GIT_NO_LAZY_FETCH": "1",
-        **(env or {}),
     }
     if args and args[0] in {"bundle", "pack-objects", "index-pack", "unpack-objects", "fsck"}:
         if input_data is not None:
@@ -469,7 +483,7 @@ def _shared_git_index_path(index_path: Path, object_format: str) -> Path | None:
     candidates = list(index_path.parent.glob("sharedindex.*"))
     if not candidates or not index_path.is_file():
         return None
-    with tempfile.TemporaryDirectory(prefix="backup-git-shared-index-") as temporary:
+    with disposable_scratch("backup-git-shared-index-", required_bytes=index_path.stat().st_size + sum(path.lstat().st_size for path in candidates)) as temporary:
         repository = Path(temporary) / "index.git"
         initialized = _run_git(repository.parent, ["init", "--bare", f"--object-format={object_format}", str(repository)])
         if initialized.returncode != 0:
@@ -848,13 +862,14 @@ def _reuse_git_bundle(
         source = Path(reuse["bundle_path"])
         if not stat.S_ISREG(source.lstat().st_mode) or _sha256(source) != previous.get("bundle_checksum"):
             return False
+        ensure_scratch_capacity(destination.parent, source.stat().st_size)
         shutil.copy2(source, destination, follow_symlinks=False)
         if _sha256(destination) != previous.get("bundle_checksum"):
             destination.unlink()
             return False
         # Verification in an empty repository rejects prerequisite/incremental
         # bundles even when the live repository contains their prerequisite.
-        with tempfile.TemporaryDirectory(prefix="backup-git-reuse-") as temporary:
+        with disposable_scratch("backup-git-reuse-") as temporary:
             empty_repo = Path(temporary) / "empty.git"
             initialized = _run_git(empty_repo.parent, ["init", "--bare", f"--object-format={state['object_format']}", str(empty_repo)])
             if initialized.returncode != 0:
@@ -880,7 +895,7 @@ def _create_index_commit(
     """Retain exact index objects, writing synthetic objects only in staging."""
     index_commit_id: str | None = None
     if saved_index is not None:
-        with tempfile.TemporaryDirectory(prefix="backup-git-index-") as temporary:
+        with disposable_scratch("backup-git-index-", required_bytes=saved_index.stat().st_size) as temporary:
             working_index = Path(temporary) / "index"
             shutil.copy2(saved_index, working_index)
             entries = _run_git(
@@ -947,7 +962,7 @@ def _create_git_bundle(
     if object_dir_result.returncode != 0:
         raise RuntimeError("Unable to locate Git object directory")
 
-    with tempfile.TemporaryDirectory(prefix="backup-git-bundle-") as temporary:
+    with disposable_scratch("backup-git-bundle-") as temporary:
         bundle_repo = Path(temporary) / "recovery.git"
         initialized = _run_git(bundle_repo.parent, ["init", "--bare", f"--object-format={state.get('object_format', 'sha1')}", str(bundle_repo)])
         if initialized.returncode != 0:

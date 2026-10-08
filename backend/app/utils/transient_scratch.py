@@ -8,13 +8,20 @@ import stat
 import tempfile
 from collections.abc import Iterator
 from contextlib import contextmanager
+from contextvars import ContextVar
 from pathlib import Path
 
 SCRATCH_ROOT = Path("/srv/scratch")
+_ACTIVE_SCRATCH: ContextVar[Path | None] = ContextVar("active_disposable_scratch", default=None)
 
 
 class ScratchError(RuntimeError):
-    """Restore staging cannot safely use its required scratch destination."""
+    """Transient staging cannot safely use its required scratch destination."""
+
+
+def current_scratch() -> Path | None:
+    """Return the currently owned disposable binding for optional integrations."""
+    return _ACTIVE_SCRATCH.get()
 
 
 def validate_temp_parent(path: Path, *, private: bool = False, label: str = "Restore") -> None:
@@ -79,10 +86,77 @@ def tree_bytes(root: Path) -> int:
 
 
 @contextmanager
-def restore_scratch(prefix: str, *, required_bytes: int = 0) -> Iterator[Path]:
-    """No inherited TMPDIR or root-volume fallback for plaintext restore work."""
-    parent = mounted_scratch_parent("st-restores")
+def bind_scratch(path: Path) -> Iterator[Path]:
+    """Bind an already owned private capture without removing its reusable state."""
+    validate_temp_parent(path, private=True, label="Transient")
+    parent = mounted_scratch_parent("st-backups")
+    assert parent is not None
+    if not path.is_relative_to(parent.parent):
+        raise ScratchError("Transient job must be inside the required scratch mount")
+    ensure_scratch_capacity(path, 0)
+    token = _ACTIVE_SCRATCH.set(path)
+    try:
+        yield path
+    finally:
+        _ACTIVE_SCRATCH.reset(token)
+
+
+@contextmanager
+def disposable_scratch(
+    prefix: str, *, namespace: str = "st-backups", required_bytes: int = 0,
+) -> Iterator[Path]:
+    """Own a private job on the admitted mount, including nested process work."""
+    parent = mounted_scratch_parent(namespace)
     assert parent is not None
     ensure_scratch_capacity(parent, required_bytes)
     with tempfile.TemporaryDirectory(prefix=prefix, dir=parent) as directory:
-        yield Path(directory)
+        job = Path(directory)
+        token = _ACTIVE_SCRATCH.set(job)
+        try:
+            yield job
+        finally:
+            _ACTIVE_SCRATCH.reset(token)
+
+
+@contextmanager
+def subprocess_scratch() -> Iterator[Path]:
+    """Reuse the current job, or own a short process job for standalone callers."""
+    job = _ACTIVE_SCRATCH.get()
+    if job is None:
+        with disposable_scratch("backup-process-") as owned:
+            yield owned
+    else:
+        validate_temp_parent(job, private=True, label="Transient")
+        ensure_scratch_capacity(job, 0)
+        yield job
+
+
+def scratch_subprocess_env(
+    env: dict[str, str] | None = None, *, path: Path | None = None,
+) -> dict[str, str]:
+    """Route child temp/cache writes inside the current owned job, without global changes."""
+    result = dict(os.environ) if env is None else dict(env)
+    job = path if path is not None else _ACTIVE_SCRATCH.get()
+    if job is None:
+        return result
+    if path is not None:
+        parent = mounted_scratch_parent("st-backups")
+        assert parent is not None
+        if not job.is_relative_to(parent.parent):
+            raise ScratchError("Transient process work must be inside the required scratch mount")
+    validate_temp_parent(job, private=True, label="Transient")
+    ensure_scratch_capacity(job, 0)
+    for name in ("tmp", "cache"):
+        child = job / name
+        child.mkdir(mode=0o700, exist_ok=True)
+        validate_temp_parent(child, private=True, label="Transient")
+    result.update(TMPDIR=str(job / "tmp"), TMP=str(job / "tmp"), TEMP=str(job / "tmp"),
+                  XDG_CACHE_HOME=str(job / "cache"))
+    return result
+
+
+@contextmanager
+def restore_scratch(prefix: str, *, required_bytes: int = 0) -> Iterator[Path]:
+    """No inherited TMPDIR or root-volume fallback for plaintext restore work."""
+    with disposable_scratch(prefix, namespace="st-restores", required_bytes=required_bytes) as job:
+        yield job

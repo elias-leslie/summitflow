@@ -3,13 +3,17 @@
 from __future__ import annotations
 
 import shutil
-import tempfile
 import time
 from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
 from ..logging_config import get_logger
+from ..utils.transient_scratch import (
+    disposable_scratch,
+    ensure_scratch_capacity,
+    scratch_subprocess_env,
+)
 from .backup_activity import backup_phase, current_activity, record_local_archive
 from .backup_native_archive import (
     BACKUP_TIMEOUT,
@@ -158,13 +162,14 @@ def run_project_backup(
 
         return run_repository_backup(project_dir=project_dir, source_id=source_id, env=run_env, local_only=local_only)
     retention = retention_days or 14
-    with tempfile.TemporaryDirectory(prefix=f"{project_name}-backup-") as temp_dir:
+    with disposable_scratch(f"{project_name}-backup-") as temp_dir:
         roots = canonical_backup_source_roots()
         capture_options: dict[str, Any] = {"source_roots": roots} if roots else {}
-        result = _create_project_archive(project_path, project_name, Path(temp_dir), run_env, **capture_options)
+        result = _create_project_archive(project_path, project_name, temp_dir, scratch_subprocess_env(run_env), **capture_options)
         require_verified_backup_output(result)
         plaintext_path = Path(result["archive_path"])
         plaintext_path.chmod(0o600)
+        ensure_scratch_capacity(temp_dir, plaintext_path.stat().st_size)
         archive_name = f"{result['archive_name']}.age"
         archive_path = Path(temp_dir) / archive_name
         encryption = encrypt_completed_archive(plaintext_path, archive_path, run_env)

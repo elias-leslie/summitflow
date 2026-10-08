@@ -5,11 +5,21 @@ from __future__ import annotations
 import gzip
 import subprocess
 import tarfile
+from contextlib import ExitStack
 from pathlib import Path
 from typing import Any
 
 from ..logging_config import get_logger
 from ..storage import backups as backup_store
+from ..utils.transient_scratch import (
+    ScratchError,
+    disposable_scratch,
+    ensure_scratch_capacity,
+    mounted_scratch_parent,
+    scratch_subprocess_env,
+    validate_temp_parent,
+)
+from .backup_activity import BackupCancelled, run_bulk_process
 from .backup_coverage import verify_archive_coverage
 from .backup_native_restore import materialize_plaintext_archive
 from .backup_restore import restore_backup
@@ -60,6 +70,8 @@ def run_restore_test_for_source(source_id: str) -> dict[str, Any]:
             dry_run=True,
             source_id=source_id,
         )
+    except BackupCancelled:
+        raise
     except Exception as e:
         error = str(e)
         backup_store.update_source_restore_test(source_id, ok=False, error=error)
@@ -93,13 +105,11 @@ def _validate_infra_archive(source_id: str, backup: dict[str, Any]) -> dict[str,
     name = str(backup.get("name") or "")
     verification_json = backup.get("verification_json")
 
-    archive_path = _locate_archive(location, name, source_id)
-    if archive_path is None:
-        error = f"Cannot locate archive: location={location}, name={name}"
-        backup_store.update_source_restore_test(source_id, ok=False, error=error)
-        return {"ok": False, "source_id": source_id, "backup_id": backup_id, "error": error}
-
+    archive_staging = ExitStack()
     try:
+        archive_path = _locate_archive(location, name, source_id, scratch_stack=archive_staging)
+        if archive_path is None:
+            raise RuntimeError(f"Cannot locate archive: location={location}, name={name}")
         with materialize_plaintext_archive(Path(archive_path)) as plaintext_archive:
             # 1. Tar integrity
             result = subprocess.run(
@@ -107,6 +117,7 @@ def _validate_infra_archive(source_id: str, backup: dict[str, Any]) -> dict[str,
                 capture_output=True,
                 text=True,
                 timeout=120,
+                env=scratch_subprocess_env(),
             )
             if result.returncode != 0:
                 raise RuntimeError(
@@ -133,12 +144,14 @@ def _validate_infra_archive(source_id: str, backup: dict[str, Any]) -> dict[str,
                 errors.append("Redis RDB header validation failed")
 
             all_ok = coverage_ok and pg_ok
+    except BackupCancelled:
+        raise
     except Exception as e:
         error = str(e)
         backup_store.update_source_restore_test(source_id, ok=False, error=error)
         return {"ok": False, "source_id": source_id, "backup_id": backup_id, "error": error}
     finally:
-        _cleanup_temp_archive(archive_path, location)
+        archive_staging.close()
 
     backup_store.update_source_restore_test(source_id, ok=all_ok, error="; ".join(errors) if errors else None)
 
@@ -161,7 +174,7 @@ def _validate_infra_archive(source_id: str, backup: dict[str, Any]) -> dict[str,
     }
 
 
-def _locate_archive(location: str, name: str, source_id: str) -> str | None:
+def _locate_archive(location: str, name: str, source_id: str, *, scratch_stack: ExitStack | None = None) -> str | None:
     """Find the archive file locally, in pending dir, or download from SMB."""
     # Local file
     if location and not location.startswith("//") and Path(location).exists():
@@ -184,12 +197,13 @@ def _locate_archive(location: str, name: str, source_id: str) -> str | None:
             smb_path = f"//{smb_host}/{smb_share}/project-backups/{source_id}/{name}"
 
     if smb_path:
-        return _download_smb_archive(smb_path)
+        destination = scratch_stack.enter_context(disposable_scratch("backup-infra-validation-", namespace="st-restores")) if scratch_stack else None
+        return _download_smb_archive(smb_path, destination=destination)
 
     return None
 
 
-def _download_smb_archive(smb_path: str) -> str | None:
+def _download_smb_archive(smb_path: str, *, destination: Path | None = None) -> str | None:
     """Download an archive from SMB to a temp file. Returns local path or None."""
     import os
     import shutil
@@ -203,28 +217,48 @@ def _download_smb_archive(smb_path: str) -> str | None:
     except SmbCommandError:
         return None
 
-    temp_path = Path(tempfile.mkdtemp()) / filename
+    created_here = destination is None
+    if destination is None:
+        parent = mounted_scratch_parent("st-restores")
+        assert parent is not None
+        ensure_scratch_capacity(parent, 0)
+        destination = Path(tempfile.mkdtemp(prefix="backup-infra-validation-", dir=parent))
+    temp_path = destination / filename
+    download_env = None if created_here else scratch_subprocess_env(path=destination)
+    downloaded = False
     try:
+        if created_here:
+            download_env = scratch_subprocess_env(path=destination)
         cmd = [
             "smbclient", service, "-A", str(creds_file),
             "-c", smb_command(("cd", remote_dir), ("get", filename, str(temp_path))),
         ]
-        result = subprocess.run(cmd, capture_output=True, text=True, timeout=300)
+        result = run_bulk_process(cmd, timeout=300, phase="verification",
+                                  env=download_env,
+                                  capacity_check=lambda: ensure_scratch_capacity(destination, 0))
         if result.returncode == 0 and temp_path.exists():
+            temp_path.chmod(0o600)
+            ensure_scratch_capacity(destination, 0)
+            downloaded = True
             return str(temp_path)
+    except (BackupCancelled, ScratchError):
+        raise
     except Exception:
         pass
-    shutil.rmtree(temp_path.parent, ignore_errors=True)
+    finally:
+        if created_here and not downloaded:
+            shutil.rmtree(temp_path.parent, ignore_errors=True)
     return None
 
 
 def _cleanup_temp_archive(archive_path: str, original_location: str) -> None:
     """Remove temp archive if it was downloaded from SMB."""
-    if original_location.startswith("//") and Path(archive_path).exists():
-        import shutil
-        parent = Path(archive_path).parent
-        if str(parent).startswith("/tmp/"):
-            shutil.rmtree(parent, ignore_errors=True)
+    import shutil
+    parent = Path(archive_path).parent
+    expected = mounted_scratch_parent("st-restores")
+    if parent.parent == expected and parent.name.startswith("backup-infra-validation-"):
+        validate_temp_parent(parent, private=True)
+        shutil.rmtree(parent)
 
 
 def _has_file_in_listing(file_listing: list[str], pattern: str) -> bool:

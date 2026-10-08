@@ -32,7 +32,9 @@ from ..storage.notifications import create_notification
 from ..utils.shared_paths import get_host_config_root
 from ..utils.transient_scratch import (
     ScratchError,
+    bind_scratch,
     ensure_scratch_capacity,
+    mounted_scratch_parent,
     restore_scratch,
     tree_bytes,
 )
@@ -122,7 +124,7 @@ def _payload_has_database(payload: Mapping[str, Any]) -> bool:
     return any(_is_sqlite_database(path) for path in Path(payload["snapshot_dir"]).rglob("*") if path.is_file() and not path.is_symlink())
 
 
-def _capacity_admission(config: ResticConfig, state: Mapping[str, Any], source_id: str, *, staged_bytes: int = 0) -> dict[str, Any]:
+def _capacity_admission(config: ResticConfig, state: Mapping[str, Any], source_id: str, *, staging_directory: Path, staged_bytes: int = 0, payload_bytes: int | None = None) -> dict[str, Any]:
     """Reserve existing host-policy headroom plus measured capture/growth peaks."""
     previous = state.get("sources", {}).get(source_id, {})
     history = previous.get("capacity", {})
@@ -130,7 +132,7 @@ def _capacity_admission(config: ResticConfig, state: Mapping[str, Any], source_i
     growth_peak = max(int(history.get("growth_peak_bytes") or 0), int(previous.get("result", {}).get("stored_bytes") or 0))
     policy = HostRetentionPolicy.from_env()
     filesystems: dict[int, dict[str, Any]] = {}
-    for label, path, needed in (("staging", config.key_directory, max(0, staging_peak - staged_bytes)), ("repository", config.local_repository, max(staged_bytes, growth_peak))):
+    for label, path, needed in (("staging", staging_directory, max(0, staging_peak - staged_bytes)), ("repository", config.local_repository, max(staged_bytes if payload_bytes is None else payload_bytes, growth_peak))):
         while not path.exists():
             path = path.parent
         usage = shutil.disk_usage(path)
@@ -294,21 +296,27 @@ def run_repository_backup(
 ) -> dict[str, Any]:
     config = ResticConfig.from_env(env)
     adapter = ResticAdapter(config)
-    with _checkpoint(config) as (directory, state):
-        admission = _capacity_admission(config, state, source_id)
-        if not admission["admitted"]:
-            raise ResticError("Capture blocked: insufficient host-policy headroom")
-        payloads = directory / "payloads"
+    with _checkpoint(config) as (directory, state), ExitStack() as capture:
+        scratch = mounted_scratch_parent("st-backup-captures", label="Capture")
+        assert scratch is not None
+        pair = scratch / _repository_pair(config)
+        _private_directory(pair)
+        payloads = pair / "payloads"
         _private_directory(payloads)
         staging = payloads / hashlib.sha256(source_id.encode()).hexdigest()
         # Only this task's private materialization is discarded, never a source
         # tree or encrypted snapshot. This also clears interrupted plaintext.
+        if staging.is_symlink():
+            raise ResticError("Staging path must not be a symlink")
         if staging.exists():
-            if staging.is_symlink():
-                raise ResticError("Staging path must not be a symlink")
+            _private_directory(staging)
             shutil.rmtree(staging)
+        admission = _capacity_admission(config, state, source_id, staging_directory=payloads)
+        if not admission["admitted"]:
+            raise ResticError("Capture blocked: insufficient host-policy headroom")
         staging.mkdir(mode=0o700)
         try:
+            capture.enter_context(bind_scratch(staging))
             previous = state["sources"].get(source_id, {})
             # The Codex essentials profile intentionally omits native Git. Do
             # not download its previous multi-GB bundle merely to discard it.
@@ -349,7 +357,10 @@ def run_repository_backup(
                         result["verification"].update(remote_snapshot_id=synced["remote_snapshot_id"], remote_repository_id=synced["remote_repository_id"])
                 record_local_archive(result)
                 return result
-            admission = _capacity_admission(config, state, source_id, staged_bytes=int(payload.get("total_bytes") or 0))
+            admission = _capacity_admission(
+                config, state, source_id, staging_directory=staging,
+                staged_bytes=tree_bytes(staging), payload_bytes=int(payload.get("total_bytes") or 0),
+            )
             if not admission["admitted"]:
                 raise ResticError("Capture blocked after staging: insufficient host-policy headroom")
             result = adapter.save_payload(source_id, payload, defer_check=True) if batch is not None else adapter.save_payload(source_id, payload)
@@ -536,7 +547,7 @@ def _backup_environment(backup: Mapping[str, Any]) -> dict[str, str]:
 
 def _approved_key_directory(config: ResticConfig) -> None:
     if not config.key_directory.resolve().is_relative_to(backup_key_directory().resolve()):
-        raise ResticError("Restic credentials and staging must remain under the globally excluded backup key directory")
+        raise ResticError("Restic credentials and checkpoints must remain under the globally excluded backup key directory")
 
 
 def _assert_repository_identity(adapter: ResticAdapter, verification: Mapping[str, Any], *, remote: bool = False) -> None:

@@ -21,6 +21,7 @@ from urllib.parse import urlsplit
 
 from app.utils import safe_subprocess
 from app.utils.heavy_work import HeavyWork, HeavyWorkError, heavy_work
+from app.utils.transient_scratch import current_scratch, scratch_subprocess_env
 
 
 class OutgoingVerificationError(RuntimeError):
@@ -258,10 +259,12 @@ def _verify_outgoing(
     if revisions:
         # Pin built-in rules and neutralize repo/environment exclusions. Findings
         # and scanner errors are intentionally not echoed, even with --redact.
-        with tempfile.TemporaryDirectory(prefix="st-outgoing-") as directory:
+        process_env = scratch_subprocess_env()
+        temporary_parent = process_env.get("TMPDIR") if current_scratch() is not None else None
+        with tempfile.TemporaryDirectory(prefix="st-outgoing-", dir=temporary_parent) as directory:
             config = Path(directory) / "gitleaks.toml"
             config.write_text("[extend]\nuseDefault = true\n")
-            env = {key: value for key, value in os.environ.items() if not key.startswith(("GITLEAKS_", "GIT_"))}
+            env = {key: value for key, value in process_env.items() if not key.startswith(("GITLEAKS_", "GIT_"))}
             env["GIT_NO_REPLACE_OBJECTS"] = "1"
             for revision in revisions:
                 try:

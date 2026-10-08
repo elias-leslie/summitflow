@@ -310,12 +310,14 @@ def test_smb_download_uses_owned_scratch_and_cleans_success_or_timeout(
         jobs.append(destination.parent)
         assert destination.parent.parent.parent == synthetic_restore_mount
         assert kwargs["timeout"] == drill.SMB_DOWNLOAD_TIMEOUT
+        assert Path(kwargs["env"]["TMPDIR"]).is_relative_to(destination.parent)
+        kwargs["capacity_check"]()
         destination.write_bytes(b"fixture archive")
         if failure:
             raise subprocess.TimeoutExpired(command, kwargs["timeout"])
         return subprocess.CompletedProcess(command, 0, stdout="", stderr="")
 
-    monkeypatch.setattr(drill.subprocess, "run", download)
+    monkeypatch.setattr(drill, "run_bulk_process", download)
     downloaded = drill._download_from_smb("//fixture/share/backups/archive.tar.gz")
     if failure:
         assert downloaded is None

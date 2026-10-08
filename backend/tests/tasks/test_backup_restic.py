@@ -139,7 +139,14 @@ class FakeProcess:
 
 
 @pytest.fixture
-def setup(tmp_path: Path):
+def setup(tmp_path: Path, monkeypatch):
+    from app.utils import transient_scratch
+
+    scratch = tmp_path / "scratch"
+    scratch.mkdir(mode=0o700)
+    monkeypatch.setattr(transient_scratch, "SCRATCH_ROOT", scratch)
+    real_is_mount = Path.is_mount
+    monkeypatch.setattr(Path, "is_mount", lambda path: path == scratch or real_is_mount(path))
     keys = tmp_path / "keys"
     keys.mkdir(mode=0o700)
     for name in ("local-password", "remote-password", "rclone.conf"):
@@ -168,6 +175,33 @@ def _adapter(setup):
 def _persisted():
     saves: list[dict[str, Any]] = []
     return saves, lambda state: saves.append(state)
+
+
+@pytest.mark.parametrize("failure", [False, True])
+def test_repository_commands_use_private_scratch_and_remove_child_work(setup, tmp_path, monkeypatch, failure):
+    config, _, _ = setup
+    observed = []
+    monkeypatch.setenv("TMPDIR", "/tmp")
+    monkeypatch.setenv("RESTIC_PASSWORD", "must-not-reach-child")
+
+    def runner(command, **kwargs):
+        env = kwargs["env"]
+        temporary = Path(env["TMPDIR"])
+        assert temporary.is_relative_to(tmp_path / "scratch")
+        assert temporary.stat().st_mode & 0o777 == 0o700
+        assert Path(env["XDG_CACHE_HOME"]).is_relative_to(tmp_path / "scratch")
+        assert "RESTIC_PASSWORD" not in env
+        (temporary / "fresh-check-cache").write_bytes(b"temporary fixture")
+        observed.append(temporary)
+        return subprocess.CompletedProcess(command, 1 if failure else 0, "{}", "")
+
+    adapter = engine.ResticAdapter(config, runner=runner)
+    if failure:
+        with pytest.raises(engine.ResticError):
+            adapter._run(adapter._command("check"), phase="verification")
+    else:
+        adapter._run(adapter._command("check"), phase="verification")
+    assert observed and all(not path.exists() for path in observed)
 
 
 def test_configuration_references_and_local_readiness(setup, monkeypatch):
@@ -506,7 +540,8 @@ def test_remote_restores_use_unique_empty_private_job_caches_then_remove_them(se
             assert command[command.index("restore") + 1] == remote_snapshot
             assert "RESTIC_CACHE_DIR" not in kwargs["env"]
             cache = Path(command[command.index("--cache-dir") + 1])
-            assert cache.parent == job
+            assert cache.is_relative_to(tmp_path / "scratch")
+            assert not cache.is_relative_to(job)
             assert cache.is_dir() and not cache.is_symlink() and cache.stat().st_mode & 0o777 == 0o700
             assert list(cache.iterdir()) == []
             caches.append(cache)

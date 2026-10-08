@@ -265,15 +265,22 @@ def run_bulk_process(
     activity = current_activity()
     if activity:
         activity.start_phase(phase, object_name, attention_after)
-    with tempfile.TemporaryFile() as output, tempfile.TemporaryFile() as errors:
+    from ..utils.transient_scratch import (
+        ensure_scratch_capacity,
+        scratch_subprocess_env,
+        subprocess_scratch,
+    )
+
+    with subprocess_scratch() as scratch, tempfile.TemporaryFile(dir=scratch) as output, tempfile.TemporaryFile(dir=scratch) as errors:
         proc = subprocess.Popen(
             command, stdin=subprocess.DEVNULL,
             stdout=subprocess.PIPE if stdout_sink else output,
-            stderr=errors, env=env, cwd=cwd, start_new_session=True,
+            stderr=errors, env=scratch_subprocess_env(env), cwd=cwd, start_new_session=True,
         )
         deadline = time.monotonic() + timeout if timeout is not None else None
 
         def check_deadline() -> None:
+            ensure_scratch_capacity(scratch, 0)
             if deadline is not None and time.monotonic() >= deadline:
                 assert timeout is not None
                 raise subprocess.TimeoutExpired(command, timeout)

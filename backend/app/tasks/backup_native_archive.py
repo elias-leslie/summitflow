@@ -9,13 +9,16 @@ import os
 import stat
 import tarfile
 import time
+from collections.abc import Iterator
+from contextlib import contextmanager
 from datetime import UTC, datetime
 from pathlib import Path, PurePosixPath
-from typing import Any, BinaryIO
+from typing import Any, BinaryIO, cast
 from urllib.parse import unquote, urlsplit
 
 from ..project_identity import get_project_identity
 from ..services import db_workbench_targets
+from ..utils.transient_scratch import ensure_scratch_capacity, scratch_subprocess_env
 from .backup_activity import BackupCancelled, backup_phase, check_backup_cancelled, run_bulk_process
 from .backup_codex_policy import CODEX_CAPTURE_PROFILE, is_codex_recovery_input
 from .backup_native_recovery import (
@@ -190,6 +193,25 @@ def _load_excludes(project_dir: Path, project_name: str | None = None) -> tuple[
     return tuple(patterns)
 
 
+class _ScratchWriter(io.BufferedWriter):
+    """Admit the next actual write, including compressed headers and trailers."""
+
+    def __init__(self, raw: BinaryIO, destination: Path) -> None:
+        # All callers open with buffering=0; pathlib's annotation is broader.
+        super().__init__(cast(io.RawIOBase, raw))
+        self.destination = destination
+
+    def write(self, buffer: Any) -> int:
+        ensure_scratch_capacity(self.destination.parent, len(buffer))
+        return super().write(buffer)
+
+
+@contextmanager
+def capacity_checked_archive(destination: Path) -> Iterator[tarfile.TarFile]:
+    with destination.open("wb", buffering=0) as raw, _ScratchWriter(raw, destination) as guarded, tarfile.open(fileobj=guarded, mode="w:gz") as archive:
+        yield archive
+
+
 def _run_gzip_stream(
     command: list[str],
     destination: Path,
@@ -199,7 +221,7 @@ def _run_gzip_stream(
 ) -> tuple[int, bytes]:
     """Stream a dump without a total-duration kill or stderr pipe deadlock."""
     def compress(source: BinaryIO) -> None:
-        with gzip.open(destination, "wb") as out:
+        with destination.open("wb", buffering=0) as raw, _ScratchWriter(raw, destination) as guarded, gzip.GzipFile(filename=str(destination), mode="wb", fileobj=guarded) as out:
             while True:
                 check_backup_cancelled()
                 chunk = source.read(1024 * 1024)
@@ -208,8 +230,9 @@ def _run_gzip_stream(
                 out.write(chunk)
 
     result = run_bulk_process(
-        command, env=env, phase="database_dump", object_name=destination.name,
+        command, env=scratch_subprocess_env(env), phase="database_dump", object_name=destination.name,
         attention_after=timeout, stdout_sink=compress, text=False,
+        capacity_check=lambda: ensure_scratch_capacity(destination.parent, 0),
     )
     return result.returncode, result.stderr
 
@@ -219,7 +242,7 @@ def _run_plain_stream(
 ) -> tuple[int, bytes]:
     """Capture bounded dump output before any archival compression."""
     def copy(source: BinaryIO) -> None:
-        with destination.open("wb") as out:
+        with destination.open("wb", buffering=0) as raw, _ScratchWriter(raw, destination) as out:
             while True:
                 check_backup_cancelled()
                 chunk = source.read(1024 * 1024)
@@ -228,15 +251,16 @@ def _run_plain_stream(
                 out.write(chunk)
 
     result = run_bulk_process(
-        command, env=env, phase="database_dump", object_name=destination.name,
+        command, env=scratch_subprocess_env(env), phase="database_dump", object_name=destination.name,
         attention_after=timeout, stdout_sink=copy, text=False,
+        capacity_check=lambda: ensure_scratch_capacity(destination.parent, 0),
     )
     return result.returncode, result.stderr
 
 
 def _gzip_payload_file(source: Path, destination: Path) -> int:
-    with source.open("rb") as plain, destination.open("wb") as raw, gzip.GzipFile(
-        filename="", mode="wb", fileobj=raw, mtime=0,
+    with source.open("rb") as plain, destination.open("wb", buffering=0) as raw, _ScratchWriter(raw, destination) as guarded, gzip.GzipFile(
+        filename="", mode="wb", fileobj=guarded, mtime=0,
     ) as compressed:
         while True:
             check_backup_cancelled()
@@ -486,7 +510,7 @@ def _create_project_archive(
     if payload["db_bytes"]:
         db_size = _gzip_payload_file(snapshot_dir / payload["db_dump_name"], db_dump)
     backup_phase("archive", archive_name)
-    with tarfile.open(archive_path, "w:gz") as archive:
+    with capacity_checked_archive(archive_path) as archive:
         dump_excludes = (f"./{payload['db_dump_name']}",) if payload["db_bytes"] else ()
         files_count = _add_project_files(archive, snapshot_dir, project_name, dump_excludes)
         if db_dump.exists():

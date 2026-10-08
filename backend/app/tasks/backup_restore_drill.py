@@ -16,6 +16,7 @@ from ..utils.transient_scratch import (
     ensure_scratch_capacity,
     mounted_scratch_parent,
     restore_scratch,
+    scratch_subprocess_env,
     validate_temp_parent,
 )
 from .backup_activity import BackupCancelled, run_bulk_process
@@ -282,10 +283,13 @@ def _download_from_smb(smb_path: str) -> str | None:
     keep = False
 
     try:
-        result = subprocess.run(
+        result = run_bulk_process(
             ["smbclient", service, "-A", str(creds_file),
              "-c", smb_command(("cd", remote_dir), ("get", filename, temp_path))],
-            capture_output=True, text=True, timeout=SMB_DOWNLOAD_TIMEOUT,
+            env=scratch_subprocess_env(path=Path(temp_dir)),
+            phase="download", object_name="SMB restore archive",
+            timeout=SMB_DOWNLOAD_TIMEOUT,
+            capacity_check=lambda: ensure_scratch_capacity(Path(temp_dir), 0),
         )
         if result.returncode == 0 and Path(temp_path).exists():
             Path(temp_path).chmod(0o600)
