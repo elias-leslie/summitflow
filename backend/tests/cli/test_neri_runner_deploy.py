@@ -19,6 +19,7 @@ from cli.commands import service
 from cli.lib import neri_runner_deploy as deploy
 from cli.lib import neri_runner_guest as guest
 from cli.lib import service_ops, service_release
+from cli.lib.neri_runner_guest import verify_fixture
 from cli.lib.proxmox import ProxmoxError
 
 ATTEMPT = "1" * 32
@@ -69,6 +70,7 @@ def fixture_public_files(version="old"):
     controls = {name: ("fixture-" + name).encode() for name in (
         ".wp-env.json", "package.json", "package-lock.json", "patch-wp-env.cjs", "setup.sh", "seed.sh",
     )}
+    controls["package.json"] = b'{"devDependencies": {"@wordpress/env": "11.15.0"}}'
     lock = {
         "schema_version": "neri.wordpress-fixture.v1", "reset_version": "fixture-seed-v1",
         "wordpress": {"version": version},
@@ -117,7 +119,7 @@ def fixture_installation(installed, monkeypatch, tmp_path):
     guest.RUNNER_CONFIG.write_bytes(b'{ "api_key": "private-juice-key", "keep": true }\n')
     guest.RUNNER_CONFIG.chmod(0o640)
     provision = Mock()
-    verify = Mock()
+    verify = Mock(return_value="running")
     monkeypatch.setattr(guest, "provision_fixture", provision)
     monkeypatch.setattr(guest, "verify_fixture", verify)
     return files, private, provision, verify
@@ -629,9 +631,132 @@ def test_identical_fixture_is_verified_noop_without_reseed_or_restart(installed,
     assert result["after"]["installed"] == guest.identity(files)
     assert state["calls"] == []
     provision.assert_not_called()
-    verify.assert_called_once_with()
+    verify.assert_called_once_with(allow_stopped=True)
     assert not (root / ".deploying").exists()
     assert "backup" not in result
+
+
+@pytest.fixture
+def fixture_runtime(
+    fixture_installation, monkeypatch, tmp_path,
+):
+    files, _private, provision, _verify = fixture_installation
+    process = subprocess.run
+
+    def isolated_verifier(command, **kwargs):
+        assert command[:3] == ["/usr/bin/python3", "-B", "-c"]
+        return process([*command[:3], command[3].replace(
+            "/usr/local/lib/neri/target_reset.py", str(guest.RESET_HELPER),
+        )], **kwargs)
+
+    monkeypatch.setattr(guest, "verify_fixture", verify_fixture)
+    monkeypatch.setattr(guest.subprocess, "run", isolated_verifier)
+
+    def configure(runtime, *, offline_failure=False, live_failure=False, version="11.15.0",
+                  stderr="✖ Environment not initialized. Run `wp-env start` first.\n", stdout="",
+                  status_fields=None):
+        status = {"status": runtime, "configPath": str(guest.FIXTURE_ROOT),
+                  "installPath": str(tmp_path / "wp-env/fixture-12345678")}
+        if runtime in {"running", "stopped"}:
+            status["runtime"] = "docker"
+        status.update(status_fields or {})
+        helper = f"""
+import json
+import subprocess
+from pathlib import Path
+WORDPRESS_FIXTURE_ROOT = Path({str(guest.FIXTURE_ROOT)!r})
+WORDPRESS_ENV_HOME = Path({str(tmp_path / 'wp-env')!r})
+def wordpress_lock():
+    if {offline_failure!r}:
+        raise RuntimeError('Offline lock verification failed')
+    return {{}}
+def wp_env(*arguments):
+    assert arguments == ('status', '--json')
+    if {runtime!r} == 'uninitialized-error':
+        raise subprocess.CalledProcessError(1, arguments, output={stdout!r}, stderr={stderr!r})
+    return subprocess.CompletedProcess(arguments, 0, {json.dumps(status)!r}, '')
+def wordpress_state(lock):
+    if {live_failure!r} or {runtime!r} != 'running':
+        raise RuntimeError('Live baseline verification failed')
+"""
+        value = {**files, "target_reset.py": helper.encode()}
+        guest.RESET_HELPER.write_bytes(value["target_reset.py"])
+        package = guest.FIXTURE_ROOT / "node_modules/@wordpress/env/package.json"
+        package.parent.mkdir(parents=True, exist_ok=True)
+        package.write_text(json.dumps({"version": version}))
+        return value
+
+    return configure, provision
+
+
+@pytest.mark.parametrize("runtime", ["stopped", "uninitialized", "uninitialized-error", "running"])
+def test_identical_fixture_verifies_only_running_baseline_without_start_or_reseed(
+    installed, fixture_runtime, runtime,
+):
+    root, _source, state = installed
+    configure, provision = fixture_runtime
+    files = configure(runtime)
+    before = {path: (path.stat(), path.read_bytes()) for path in guest.fixture_paths().values()}
+
+    result = guest.sync_fixture(ATTEMPT, payload(files))
+
+    assert result["state"] == "noop", result
+    assert result["verified"] is True
+    assert result["live_verified"] is (runtime == "running")
+    assert result["runtime_status"] == runtime.removesuffix("-error")
+    assert result["after"]["installed"] == guest.identity(files)
+    assert {path: (path.stat(), path.read_bytes()) for path in before} == before
+    assert not state["calls"]
+    provision.assert_not_called()
+    assert not (root / ".deploying").exists()
+    assert "backup" not in result
+    assert json.loads((root / "deployments" / (ATTEMPT + "-fixture.json")).read_text()) == result
+
+
+@pytest.mark.parametrize("runtime,options", [
+    ("running", {"live_failure": True}),
+    ("stopped", {"offline_failure": True}),
+    ("unknown", {}),
+    ("stopped", {"status_fields": {"runtime": "playground"}}),
+    ("stopped", {"status_fields": {"configPath": "/other/fixture"}}),
+    ("stopped", {"status_fields": {"installPath": "/other/wp-env/fixture"}}),
+    ("uninitialized-error", {"stderr": "Docker daemon unavailable\n"}),
+    ("uninitialized-error", {"stdout": "unexpected output"}),
+    ("uninitialized-error", {"version": "11.14.0"}),
+])
+def test_identical_fixture_verification_refuses_unrelated_errors_and_invalid_baselines(
+    installed, fixture_runtime, runtime, options,
+):
+    root, _source, state = installed
+    configure, provision = fixture_runtime
+    files = configure(runtime, **options)
+
+    result = guest.sync_fixture(ATTEMPT, payload(files))
+
+    assert result["state"] == "failed", result
+    assert result["error"] == "WordPress fixture verification failed"
+    assert "verified" not in result
+    assert not state["calls"]
+    provision.assert_not_called()
+    assert not (root / ".deploying").exists()
+
+
+def test_changed_fixture_keeps_live_verification_and_uncertainty_interlock_when_stopped(
+    installed, fixture_runtime,
+):
+    root, _source, state = installed
+    configure, provision = fixture_runtime
+    files = configure("stopped")
+    files["target_reset.py"] += b"\n# Updated helper\n"
+
+    result = guest.sync_fixture(ATTEMPT, payload(files))
+
+    assert result["state"] == "uncertain", result
+    assert result["failed_phase"] == "verify-fixture"
+    assert result["interlock_retained"] is True
+    assert (root / ".deploying").read_text() == ATTEMPT
+    assert state["calls"] == ["stop"]
+    provision.assert_not_called()
 
 
 @pytest.mark.parametrize("changed", [False, True])

@@ -503,15 +503,49 @@ def restore_fixture_dependencies() -> None:
         raise DeploymentError("Fixed WordPress fixture dependency restoration failed")
 
 
-def verify_fixture() -> None:
+def verify_fixture(*, allow_stopped: bool = False) -> str:
     # Reuse Neri's complete archive/tree/image/config and live baseline checks.
     # The fixed import program receives no target commands or private config.
     program = (
         "import importlib.util; "
         "spec=importlib.util.spec_from_file_location('neri_target_reset', '/usr/local/lib/neri/target_reset.py'); "
         "helper=importlib.util.module_from_spec(spec); spec.loader.exec_module(helper); "
-        "helper.wordpress_state(helper.wordpress_lock())"
     )
+    if allow_stopped:
+        # Only an unchanged, protected bundle may use offline verification.
+        # Runner stopped health describes permits, not the wp-env runtime.
+        program += """
+import json
+import subprocess
+from pathlib import Path
+lock = helper.wordpress_lock()
+try:
+    status = json.loads(helper.wp_env('status', '--json').stdout)
+except subprocess.CalledProcessError as exc:
+    package = helper.WORDPRESS_FIXTURE_ROOT / 'node_modules/@wordpress/env/package.json'
+    pin = json.loads((helper.WORDPRESS_FIXTURE_ROOT / 'package.json').read_text())
+    if (exc.returncode != 1 or exc.stdout != ''
+            or exc.stderr != '✖ Environment not initialized. Run `wp-env start` first.\\n'
+            or json.loads(package.read_text()).get('version') != '11.15.0'
+            or pin.get('devDependencies', {}).get('@wordpress/env') != '11.15.0'):
+        raise
+    runtime_status = 'uninitialized'
+else:
+    install = status.get('installPath')
+    runtime_status = status.get('status')
+    if (runtime_status not in {'running', 'stopped', 'uninitialized'}
+            or status.get('configPath') != str(helper.WORDPRESS_FIXTURE_ROOT)
+            or not isinstance(install, str) or not Path(install).is_absolute()
+            or '..' in Path(install).parts
+            or Path(install).resolve().parent != helper.WORDPRESS_ENV_HOME.resolve()
+            or (runtime_status != 'uninitialized' and status.get('runtime') != 'docker')):
+        raise RuntimeError('WordPress runtime does not match its fixed profile')
+if runtime_status == 'running':
+    helper.wordpress_state(lock)
+print(runtime_status)
+"""
+    else:
+        program += "helper.wordpress_state(helper.wordpress_lock())"
     result = subprocess.run(
         ["/usr/bin/python3", "-B", "-c", program],
         env={"PATH": "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin",
@@ -520,6 +554,12 @@ def verify_fixture() -> None:
     )
     if result.returncode != 0:
         raise DeploymentError("WordPress fixture verification failed")
+    if allow_stopped:
+        runtime_status = result.stdout.decode().strip()
+        if runtime_status not in {"running", "stopped", "uninitialized"}:
+            raise DeploymentError("WordPress fixture verification result is invalid")
+        return runtime_status
+    return "running"
 
 
 def sync_fixture(attempt: str, payload: dict[str, Any]) -> dict[str, Any]:
@@ -562,9 +602,13 @@ def sync_fixture(attempt: str, payload: dict[str, Any]) -> dict[str, Any]:
             record["before"] = before
             if (not legacy and before["installed"] == payload["identity"] and before["artifact_identity"] == artifact
                     and "error" not in before):
-                verify_fixture()
+                runtime_status = verify_fixture(allow_stopped=True)
                 revalidate_pins(config_pins)
-                phase("verified", state="noop", after=before, verified=True)
+                after = fixture_observation()
+                if after != before:
+                    raise DeploymentError("Installed fixture/configuration identity changed during verification")
+                phase("verified", state="noop", after=after, verified=True,
+                      runtime_status=runtime_status, live_verified=runtime_status == "running")
                 return record
 
             # Existing private config must be present and protected; no secrets
