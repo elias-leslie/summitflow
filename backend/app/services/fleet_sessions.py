@@ -25,6 +25,11 @@ from .pubsub import fleet_wake_subscription
 
 RootRole = Literal["portfolio-root", "neri-target-root", "neri-support-root"]
 RootSurface = Literal["aico", "a-term"]
+_KEY = re.compile(r"[A-Za-z0-9][A-Za-z0-9._:-]{0,127}")
+# Owners bound a resumed launch prompt to 2000 UTF-8 bytes of tab/newline-only text.
+_RESUME_PROMPT_BYTES = 2000
+# Fleet directions name the start cursor; reserve its widest decimal form.
+_CURSOR_PLACEHOLDER = 10**19
 _SECRET = re.compile(r"(?i)(?:bearer\s+\S+|(?:password|api[_-]?key|secret|token)\s*[:=]\s*\S+)")
 
 
@@ -92,13 +97,19 @@ def _host_request(surface: str, path: str, payload: dict[str, Any], *, owner_con
 def _host_start(
     root: str, project_id: str, project_root: str, tool: str, prompt: str,
     *, role: str, lead_root: str | None, facet: str | None, surface: RootSurface = "aico",
+    resume_session: str | None = None,
 ) -> dict[str, Any]:
     """Aico's private GUI protocol; acknowledgment is not model/queue evidence."""
-    descriptor = _host_request(surface, "/v1/roots", {
-            "requestId": root, "tool": tool, "projectId": project_id,
-            "projectRoot": project_root, "initialPrompt": prompt,
-            "role": role, "leadRootReference": lead_root, "facetCapsuleRef": facet,
-        })
+    body: dict[str, Any] = {
+        "requestId": root, "tool": tool, "projectId": project_id,
+        "projectRoot": project_root, "initialPrompt": prompt,
+        "role": role, "leadRootReference": lead_root, "facetCapsuleRef": facet,
+    }
+    if resume_session is not None:
+        # The owner's resume adapter validates the exact native ID; fresh
+        # launches keep the original body and digest.
+        body["resumeSessionId"] = resume_session
+    descriptor = _host_request(surface, "/v1/roots", body)
     if (descriptor.get("owner") != surface
             or not descriptor.get("logicalSessionId") or not descriptor.get("hostIdentity")
             or not descriptor.get("surfaceLocator")
@@ -158,16 +169,35 @@ def _host_end(descriptor: dict[str, Any], *, root: str | None = None) -> bool:
     return result == {"status": "ended"}
 
 
+def _host_prompt(prompt: str, root: str, *, role: str, scope: dict[str, str],
+                 lead_root: str | None, facet: str | None, cursor: int) -> str:
+    # Support instructions explicitly carry their bounded assignment.
+    host_prompt = (
+        prompt + f"\nFleet root: {root}. Role: {role}. Scope refs: {json.dumps(scope, sort_keys=True)}. "
+        f"Read follow-up instructions with `st sessions wait {root} --cursor {cursor}` "
+        "and retain each returned cursor. Return only compact non-secret typed source references or change deltas "
+        f"with `st sessions emit {root} EVENT_TYPE --source-key REVISION --attributes JSON`."
+    )
+    if role == "neri-support-root":
+        host_prompt = (
+            f"Support facet: {facet}. Lead: {lead_root}. Scope: {json.dumps(scope, sort_keys=True)}. "
+            "Do not claim or operate the target. Work only on the supplied facet and source capsule.\n" + host_prompt
+        )
+    return host_prompt
+
+
 def start_root(
     project_id: str, project_root: str, *, tool: str, instruction: str,
     scope: dict[str, str], role: RootRole = "portfolio-root", lead_root: str | None = None,
     facet: str | None = None, root: str | None = None,
-    surface: RootSurface = "aico",
+    surface: RootSurface = "aico", resume_session: str | None = None,
 ) -> dict[str, Any]:
     """Register one immutable root capsule before an idempotent Aico launch request.
 
     The lead/facet relationship is descriptive allocation, never target authority.
-    An uncertain launch is retained and never automatically recreated.
+    An uncertain launch is retained and never automatically recreated. An optional
+    exact native resume ID is passed through to the owner's resume adapter in a
+    newly allocated root; the capsule retains only its digest.
     """
     if tool not in {"codex", "claude-code"}:
         raise ValueError("Host tool must be codex or claude-code")
@@ -193,6 +223,14 @@ def start_root(
     root = root or "root-" + uuid.uuid4().hex
     if not re.fullmatch(r"root-[0-9a-f]{32}", root):
         raise ValueError("Invalid opaque root handle")
+    if resume_session is not None:
+        if not _KEY.fullmatch(resume_session):
+            raise ValueError("Resume requires one exact bounded native session ID")
+        # Reject before registering intent: owners refuse a longer resumed prompt.
+        widest = _host_prompt(prompt, root, role=role, scope=scope, lead_root=lead_root,
+                              facet=facet, cursor=_CURSOR_PLACEHOLDER)
+        if len(widest.encode()) > _RESUME_PROMPT_BYTES:
+            raise ValueError("Resume instruction plus fleet directions exceed 2000 UTF-8 bytes")
     capsule = {
         "tool": tool, "surface": surface, "project_root": project_root,
         "instruction_digest": hashlib.sha256(prompt.encode()).hexdigest(),
@@ -200,25 +238,19 @@ def start_root(
         "support_only": role == "neri-support-root",
         "offline": role == "neri-support-root",
     }
+    if resume_session is not None:
+        # Retain no native thread binding; the digest makes a changed retry conflict.
+        capsule["resume_session_digest"] = hashlib.sha256(resume_session.encode()).hexdigest()
     event = append_fleet_event(project_id, root, source_key="root:start", event_type="root.started", attributes=capsule)
     # Already observed or failed/uncertain starts never create another host root.
     if len(fleet_root_events(root)) > 1:
         return root_state(root)
     try:
-        # Support instructions explicitly carry their bounded assignment.
-        host_prompt = (
-            prompt + f"\nFleet root: {root}. Role: {role}. Scope refs: {json.dumps(scope, sort_keys=True)}. "
-            f"Read follow-up instructions with `st sessions wait {root} --cursor {event['sequence']}` "
-            "and retain each returned cursor. Return only compact non-secret typed source references or change deltas "
-            f"with `st sessions emit {root} EVENT_TYPE --source-key REVISION --attributes JSON`."
-        )
-        if role == "neri-support-root":
-            host_prompt = (
-                f"Support facet: {facet}. Lead: {lead_root}. Scope: {json.dumps(scope, sort_keys=True)}. "
-                "Do not claim or operate the target. Work only on the supplied facet and source capsule.\n" + host_prompt
-            )
+        host_prompt = _host_prompt(prompt, root, role=role, scope=scope, lead_root=lead_root,
+                                   facet=facet, cursor=event["sequence"])
         descriptor = _host_start(root, project_id, project_root, tool, host_prompt,
-                                 role=role, lead_root=lead_root, facet=facet, surface=surface)
+                                 role=role, lead_root=lead_root, facet=facet, surface=surface,
+                                 resume_session=resume_session)
     except (httpx.HTTPError, ValueError, OSError):
         append_fleet_event(project_id, root, source_key="root:host", event_type="root.host-unavailable", attributes={
             "capability": "unavailable", "request_id": root, "delivery": "unknown",

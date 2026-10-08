@@ -92,6 +92,58 @@ def test_same_root_retry_does_not_recreate_uncertain_host(roots, monkeypatch):
     cast(MagicMock, service._host_start).assert_called_once()
 
 
+RESUME = "00000000-0000-4000-8000-000000000001"
+
+
+def test_resume_passes_exact_id_to_owner_and_retains_only_its_digest(roots):
+    state = roots(scope={}, resume_session=RESUME)
+    host_start = cast(MagicMock, service._host_start)
+    assert host_start.call_args.kwargs["resume_session"] == RESUME
+    assert len(host_start.call_args.args[4].encode()) <= 2000
+    events = fleet.read_fleet_page(state["project_id"], state["root"])
+    assert RESUME not in str(events)
+    assert events[0]["attributes"]["resume_session_digest"] == hashlib.sha256(RESUME.encode()).hexdigest()
+    with pytest.raises(fleet.SourceKeyConflict):
+        service.start_root(state["project_id"], "/fixture/project", root=state["root"], tool="codex",
+                           instruction="Review exact source refs.", scope={},
+                           resume_session="00000000-0000-4000-8000-000000000002")
+    assert service.start_root(state["project_id"], "/fixture/project", root=state["root"], tool="codex",
+                              instruction="Review exact source refs.", scope={},
+                              resume_session=RESUME)["root"] == state["root"]
+    host_start.assert_called_once()
+
+
+def test_fresh_start_capsule_is_unchanged(roots):
+    state = roots(scope={})
+    assert "resume_session_digest" not in fleet.read_fleet_page(state["project_id"], state["root"])[0]["attributes"]
+    assert cast(MagicMock, service._host_start).call_args.kwargs["resume_session"] is None
+
+
+def test_owner_create_body_names_resume_only_when_requested(monkeypatch):
+    bodies = []
+    monkeypatch.setattr(service, "_host_request", lambda surface, path, body, **_: bodies.append(body) or {
+        "owner": "aico", "hostIdentity": "aabbccdd", "generation": "a" * 64, "status": "running",
+        "logicalSessionId": "aico-root-fixture", "surfaceLocator": "aico://widget/aabbccdd"})
+    for resume in (None, RESUME):
+        service._host_start("root-" + "0" * 32, "neri", "/fixture", "codex", "Prompt", role="portfolio-root",
+                            lead_root=None, facet=None, resume_session=resume)
+    assert "resumeSessionId" not in bodies[0]
+    assert bodies[1]["resumeSessionId"] == RESUME
+
+
+@pytest.mark.parametrize("instruction,resume,message", [
+    ("Review exact source refs.", "-invalid", "exact bounded native session"),
+    ("Review exact source refs.", "x" * 129, "exact bounded native session"),
+    ("x" * 1800, RESUME, "exceed 2000"),
+])
+def test_invalid_resume_is_rejected_before_intent_registration(ensure_test_project, instruction, resume, message):
+    root = "root-" + uuid.uuid4().hex
+    with pytest.raises(ValueError, match=message):
+        service.start_root(ensure_test_project, "/fixture/project", root=root, tool="codex",
+                           instruction=instruction, scope={}, resume_session=resume)
+    assert fleet.fleet_root_events(root) == []
+
+
 def test_focus_allocation_dynamic_disjoint_facets_and_reassignment(roots):
     scope = {"target": "target:fixture", "claim": "claim:fixture", "run": "run:fixture"}
     lead = roots(scope=scope, role="neri-target-root")

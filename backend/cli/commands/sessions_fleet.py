@@ -46,11 +46,22 @@ def start(
     lead_root: Annotated[str | None, typer.Option(help="Opaque target lead root for a support allocation")] = None,
     facet: Annotated[str | None, typer.Option(help="Disjoint bounded support facet or capsule reference")] = None,
     request_id: Annotated[str | None, typer.Option(help="Retained opaque root handle for an idempotent retry")] = None,
+    resume_session: Annotated[str | None, typer.Option(help="Exact saved native session ID to resume in a new root; the owner adapter validates it")] = None,
 ) -> None:
-    result = _call("start", project_id=get_project_override() or get_config().project_id,
-                   tool=tool, surface=surface, instruction=instruction, scope=_scope(scope), role=role,
-                   lead_root=lead_root, facet=facet, root=request_id or "root-" + uuid.uuid4().hex)
-    output_json(result)
+    """Register a fleet root, then request it from the owner.
+
+    --resume-session resumes one exact saved native session in a newly allocated
+    root (no picker or latest-thread inference). The instruction plus fleet
+    directions must fit 2000 UTF-8 bytes. Only a digest of the ID is retained;
+    retry with the same --request-id, instruction and resume ID.
+    """
+    capsule: dict[str, Any] = {"project_id": get_project_override() or get_config().project_id,
+                               "tool": tool, "surface": surface, "instruction": instruction,
+                               "scope": _scope(scope), "role": role, "lead_root": lead_root, "facet": facet,
+                               "root": request_id or "root-" + uuid.uuid4().hex}
+    if resume_session is not None:
+        capsule["resume_session"] = resume_session
+    output_json(_call("start", **capsule))
 
 
 @usage(

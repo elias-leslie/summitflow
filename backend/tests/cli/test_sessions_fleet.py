@@ -79,3 +79,20 @@ def test_emit_returns_compact_delta_through_public_sdk(monkeypatch):
     invalid = runner.invoke(app, ["sessions", "emit", "root-fixture", "root.closed", "--source-key", "bad", "--attributes", '{}'])
     assert invalid.exit_code != 0
     assert client.append.call_count == 1
+
+
+@pytest.mark.parametrize("extra,forwarded", [
+    ([], {}),
+    (["--resume-session", "00000000-0000-4000-8000-000000000001"],
+     {"resume_session": "00000000-0000-4000-8000-000000000001"}),
+])
+def test_start_forwards_resume_only_when_requested(monkeypatch, extra, forwarded):
+    client = MagicMock()
+    client.start.return_value = {"root": "root-" + "0" * 32, "status": "registered"}
+    monkeypatch.setattr(sessions_fleet, "_client", lambda: client)
+    result = runner.invoke(app, ["-P", "neri", "sessions", "start", "Reconcile state.",
+                                 "--request-id", "root-" + "0" * 32, *extra])
+    assert result.exit_code == 0, result.output
+    client.start.assert_called_once_with(
+        project_id="neri", tool="codex", surface="aico", instruction="Reconcile state.", scope={},
+        role="portfolio-root", lead_root=None, facet=None, root="root-" + "0" * 32, **forwarded)

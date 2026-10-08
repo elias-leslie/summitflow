@@ -85,6 +85,9 @@ UI (~23 pages), and ~33 Hatchet workflows. Output is compact JSON by default, wi
   Use these owner commands for titles and bounds before desktop automation;
   [widget controls](fleet-session-control.md#ordinary-aico-widget-controls) use
   the private GUI socket and generation-fenced content-free receipts.
+- `st aico root status|show|title|position|end REQUEST_ID` controls one exact
+  retained owner root, including direct `st aico create` roots;
+  `st sessions title` is a compatibility alias of `st aico root title`.
 - Autonomous runs capture page screenshots, route/health status, and console-error
   counts, and analyze screenshots with a vision model — attached to the task.
 

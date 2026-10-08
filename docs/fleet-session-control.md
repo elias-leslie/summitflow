@@ -10,6 +10,17 @@ delivered model or a Codex queue delivery. An unavailable or uncertain launch is
 retained. Retry with `--request-id ROOT` and the same capsule; do not recreate a
 root after an uncertain response.
 
+`--resume-session SESSION_ID` passes one exact saved native session ID to the
+owner's resume adapter, which launches it in the newly allocated root (Codex
+with a canonical lowercase UUID is the only implemented adapter; others fail
+closed and the root is retained as `launch: unavailable`). There is no picker,
+latest-thread inference or terminal input. Start validates the ID's bounded
+shape and that the instruction plus fleet directions fit the owner's 2000-byte
+resumed-prompt limit before it registers intent. The capsule retains only
+`resume_session_digest`, never the native ID; a retry with a different ID
+conflicts. Generation fencing and `close-uncertain` behave exactly as for fresh
+roots. Fresh starts send the unchanged owner body and capsule.
+
 `st sessions send ROOT "instruction" --source-key REVISION --scope '{...}'`
 retains the exact bounded sanitized instruction, digest and immutable scope for
 the addressed root to consume through `wait`. It reports `capability=fleet-stream`,
@@ -114,18 +125,37 @@ A-Term defaults to `http://127.0.0.1:8002` and supports the local
 reported as unavailable; the adapter does not supply or invent credentials.
 # Direct exact-thread recovery
 
-`st sessions title REQUEST_ID "Project · Focus" [--surface aico|a-term]` renames
-one exact running retained owner root. The default owner is Aico, matching direct
-create; use `--surface a-term` for A-Term. The command reads that exact request,
-then posts `{generation, label}` to `/v1/roots/REQUEST_ID/title`. Missing, ended,
-uncertain or stale generations cannot authorize an update. After trimming surrounding
-whitespace, labels require 1-160 UTF-8 bytes of control-free single-line Unicode.
-Code points below 32, 127-159, surrogates and U+2028/U+2029 are rejected.
-Supply no secrets or private target data.
-Content exists only in the input and the owner's existing session metadata.
-SummitFlow retains no title, fleet event or duplicate session store, and output
-contains only identity/status metadata. Configured owner authentication applies.
-Owner source changes require their normal managed release before live use.
+Owner operations for one exact retained root live under `st aico root`:
+
+```sh
+st aico root status REQUEST_ID [--surface aico|a-term]
+st aico root show REQUEST_ID
+st aico root title REQUEST_ID "Project · Focus"
+st aico root position REQUEST_ID X Y WIDTH HEIGHT
+st aico root end REQUEST_ID
+```
+
+They address direct `st aico create` roots and fleet-started roots alike. Each
+mutation reads the exact request, requires a running descriptor, posts its
+generation once and verifies identity and generation in the receipt. Missing,
+ended, pending, uncertain or stale roots cannot authorize an update.
+`applied: false` means nothing was applied; `applied: null` means the outcome is
+unknown and must be reconciled with `st aico root status`, never blindly retried.
+End uses Aico's headless generation-fenced containment contract (or A-Term's root
+end route). For fleet roots prefer `st sessions close`, which records the outcome
+in the fleet ledger; a direct end leaves fleet state to reconcile on the next close.
+
+`st sessions title REQUEST_ID "Project · Focus" [--surface aico|a-term]` remains a
+compatibility alias that forwards to `st aico root title`; the owner extension
+performs all validation and reports the receipt. Labels require 1-160 UTF-8 bytes
+of control-free single-line Unicode after ECMAScript whitespace trimming. The
+owner's `contracts/view-mutation-vectors.json` pins label and bounds rules for
+both its Electron handler and its Python client, so SummitFlow keeps no separate
+label validator. Supply no secrets or private target data. Content exists only
+in the input and the owner's existing session metadata. SummitFlow retains no
+title, fleet event or duplicate session store, and output contains only
+identity/status metadata. Configured owner authentication applies. Owner source
+changes require their normal managed release before live use.
 
 `st aico create REQUEST_ID [PROMPT] --project PROJECT --project-root PATH
 --resume-session SESSION_ID [--surface aico|a-term]` forwards directly to the existing
