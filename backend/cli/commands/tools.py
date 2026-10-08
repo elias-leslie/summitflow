@@ -24,6 +24,12 @@ from ..output_context import OutputContext
 from ..tool_registry import list_operator_tools, tool_registry_path
 from ._api_paths import ACCESS_CONTROL_METRICS_PATH
 from ._http_errors import parse_error_detail, raise_connect_error, raise_timeout_error
+from .tools_cost import (
+    cost_advisory,
+    render_cost_advisory,
+    result_diagnostics_query,
+    result_hotspots_query,
+)
 
 app = typer.Typer(help="Operator tool catalog and Agent Hub usage metrics")
 
@@ -663,7 +669,7 @@ def _manifest_density_costs(task: str | None) -> list[dict[str, Any]]:
     return costs
 
 
-def _cost_queries(hours: int, limit: int) -> tuple[sql.SQL, sql.SQL]:
+def _cost_queries(hours: int, limit: int) -> tuple[sql.SQL, sql.Composed]:
     request_sql = sql.SQL("""
         SELECT
             COALESCE(tool_name, endpoint, 'unknown') AS tool_name,
@@ -688,29 +694,7 @@ def _cost_queries(hours: int, limit: int) -> tuple[sql.SQL, sql.SQL]:
                  tool_name
         LIMIT %s;
     """)
-    output_sql = sql.SQL("""
-        SELECT
-            COALESCE(tool_name, 'unknown') AS tool_name,
-            count(*)::int AS events,
-            sum(tokens)::bigint AS stored_tokens,
-            sum(length(output_text))::int AS output_chars,
-            COALESCE(avg(duration_ms), 0)::float AS avg_duration_ms,
-            count(output_text)::int AS output_samples,
-            count(tokens)::int AS stored_tokens_samples,
-            count(*) FILTER (WHERE output_text IS NULL AND tokens IS NULL)::int AS unmeasured_events
-        FROM (
-            SELECT tool_name, tokens, duration_ms,
-                COALESCE(NULLIF(tool_output::text, 'null'), content) AS output_text
-            FROM session_events
-            WHERE created_at >= now() - (%s * interval '1 hour')
-              AND (%s::text IS NULL OR session_id = %s)
-              AND tool_name IS NOT NULL
-        ) AS measured_outputs
-        GROUP BY 1
-        ORDER BY output_chars DESC NULLS LAST, events DESC, tool_name
-        LIMIT %s;
-    """)
-    return request_sql, output_sql
+    return request_sql, result_hotspots_query()
 
 
 def _native_usage_query() -> sql.SQL:
@@ -729,14 +713,20 @@ def _native_usage_query() -> sql.SQL:
             count(usage->>'output_tokens') FILTER (WHERE event_type = 'usage')::int AS output_samples,
             count(usage->>'cached_input_tokens') FILTER (WHERE event_type = 'usage')::int AS cached_samples,
             count(usage->>'cache_write_input_tokens') FILTER (WHERE event_type = 'usage')::int AS cache_write_samples,
-            count(usage->>'reasoning_output_tokens') FILTER (WHERE event_type = 'usage')::int AS reasoning_samples
+            count(usage->>'reasoning_output_tokens') FILTER (WHERE event_type = 'usage')::int AS reasoning_samples,
+            COALESCE(model_used, 'unknown') AS model,
+            sum((usage->>'input_tokens')::bigint - (usage->>'cached_input_tokens')::bigint)
+                FILTER (WHERE event_type = 'usage' AND usage->>'scope' = 'response'
+                    AND (usage->>'cached_input_tokens')::bigint BETWEEN 0 AND (usage->>'input_tokens')::bigint) AS uncached_input_tokens,
+            count(*) FILTER (WHERE event_type = 'usage' AND usage->>'scope' = 'response'
+                AND (usage->>'cached_input_tokens')::bigint BETWEEN 0 AND (usage->>'input_tokens')::bigint)::int AS uncached_samples
         FROM session_events
         WHERE event_type IN ('usage', 'usage_counter')
           AND usage IS NOT NULL
           AND COALESCE(source_timestamp, created_at) >= now() - (%s * interval '1 hour')
           AND (%s::text IS NULL OR session_id = %s)
-        GROUP BY 1, 2
-        ORDER BY (usage->>'scope' = 'response') DESC, events DESC, source;
+        GROUP BY 1, 2, model_used
+        ORDER BY (usage->>'scope' = 'response') DESC, events DESC, source, model;
     """)
 
 
@@ -755,11 +745,13 @@ def _fetch_cost_metrics(hours: int, limit: int, task: str | None = DEFAULT_COST_
         psycopg.connect(
             _db_url("agent-hub"),
             application_name="st-tools-cost",
+            options="-c default_transaction_read_only=on -c statement_timeout=10000",
         ) as conn,
     ):
         request_rows = conn.execute(request_sql, (hours, session, session, limit)).fetchall()
         output_rows = conn.execute(output_sql, (hours, session, session, limit)).fetchall()
         native_rows = conn.execute(_native_usage_query(), (hours, session, session)).fetchall()
+        diagnostic_row = conn.execute(result_diagnostics_query(), (hours, session, session)).fetchone()
 
     request_hotspots = [
         {
@@ -796,10 +788,15 @@ def _fetch_cost_metrics(hours: int, limit: int, task: str | None = DEFAULT_COST_
             "output_samples": int(output_samples),
             "stored_tokens_samples": int(stored_tokens_samples),
             "unmeasured_events": int(unmeasured_events),
+            "call_kind": str(call_kind),
+            "output_bytes": int(output_bytes) if output_bytes is not None else None,
+            "p50_bytes": p50_bytes, "p95_bytes": p95_bytes, "max_bytes": max_bytes,
+            "truncated_results": int(truncated_results), "truncation_samples": int(truncation_samples),
         }
         for (
             tool_name, events, stored_tokens, output_chars, avg_duration_ms,
             output_samples, stored_tokens_samples, unmeasured_events,
+            call_kind, output_bytes, p50_bytes, p95_bytes, max_bytes, truncated_results, truncation_samples,
         ) in output_rows
     ]
     native_usage = [
@@ -813,11 +810,14 @@ def _fetch_cost_metrics(hours: int, limit: int, task: str | None = DEFAULT_COST_
             "cached_input_tokens_samples": int(cached_samples),
             "cache_write_input_tokens_samples": int(cache_write_samples),
             "reasoning_output_tokens_samples": int(reasoning_samples),
+            "model": str(model), "uncached_input_tokens": uncached_input_tokens,
+            "uncached_input_tokens_samples": int(uncached_samples),
         }
         for (
             scope, source, events, input_tokens, output_tokens, cached_input_tokens,
             cache_write_input_tokens, reasoning_output_tokens, input_samples,
             output_samples, cached_samples, cache_write_samples, reasoning_samples,
+            model, uncached_input_tokens, uncached_samples,
         ) in native_rows
     ]
     return {
@@ -827,6 +827,7 @@ def _fetch_cost_metrics(hours: int, limit: int, task: str | None = DEFAULT_COST_
         "request_hotspots": request_hotspots,
         "tool_output_hotspots": output_hotspots,
         "native_usage": native_usage,
+        "result_diagnostics": diagnostic_row[0] if diagnostic_row else {},
     }
 
 
@@ -879,7 +880,27 @@ def _format_cost_compact(data: dict[str, Any]) -> None:
                 f" measured={item.get('output_samples', 'unknown')}/{item.get('events', 0)}"
                 f" stored={_token_measurement(item, 'stored_tokens')}"
                 f" missing={item.get('unmeasured_events', 'unknown')}"
+                f" kind={item.get('call_kind', 'unknown')} bytes={item.get('output_bytes', 'unknown')}"
+                f" p50/p95/max={item.get('p50_bytes')}/{item.get('p95_bytes')}/{item.get('max_bytes')}B"
             )
+    diagnostics = data.get("result_diagnostics", {})
+    if diagnostics:
+        summary = diagnostics.get("summary", {})
+        samples = int(summary.get("measured_results") or 0)
+        truncated = int(summary.get("truncated_results") or 0)
+        rate = f"{truncated / samples * 100:.1f}% lower bound" if samples and summary.get("truncation_samples") else "unknown"
+        print(
+            f"  Retained results: measured={samples}/{summary.get('results', 0)} bytes={summary.get('output_bytes')}"
+            f" p50/p95/max={summary.get('p50_bytes')}/{summary.get('p95_bytes')}/{summary.get('max_bytes')}B"
+            f" truncated={rate} flags={summary.get('truncation_samples', 0)}/{samples}"
+        )
+        print(
+            f"  Calls: wrappers={diagnostics.get('wrapper_results', 0)} nested={diagnostics.get('nested_results', 0)}"
+            f" nested excluded from delivery={diagnostics.get('nested_results_excluded', 0)};"
+            f" role/task coverage={diagnostics.get('role_task_results', 0)}/{summary.get('results', 0)} (session agent_slug/external_id)"
+        )
+        for finding in cost_advisory(data)["findings"]:
+            print(f"  Advisory: {finding}")
     native_usage = data.get("native_usage", [])
     if native_usage:
         print("  Native usage (source timestamps; field coverage shown):")
@@ -890,10 +911,11 @@ def _format_cost_compact(data: dict[str, Any]) -> None:
                 print(f"    cumulative counters: {scope}/{source} observations={item.get('events', 0)}; totals excluded")
                 continue
             print(
-                f"    native per-response {source} responses={item.get('events', 0)}"
+                f"    native per-response {source} responses={item.get('events', 0)} model={item.get('model', 'unknown')}"
                 f" in={_token_measurement(item, 'input_tokens')}"
                 f" out={_token_measurement(item, 'output_tokens')}"
                 f" cached={_token_measurement(item, 'cached_input_tokens')}"
+                f" uncached={_token_measurement(item, 'uncached_input_tokens')}"
                 f" cache_write={_token_measurement(item, 'cache_write_input_tokens')}"
                 f" reasoning={_token_measurement(item, 'reasoning_output_tokens')}"
             )
@@ -1026,16 +1048,16 @@ def audit(
 @app.command()
 @usage(
     surface="st.tools.cost",
-    cmd="st tools cost",
+    cmd="st tools cost [--advisory] [--session <id>]",
     when="inspect context/tool-output/request token cost hotspots for st tool governance",
-    precautions=("uses existing Agent Hub request_logs and session_events; estimates text tokens cheaply",),
+    precautions=("read-only retained-result accounting; --advisory/--gate never blocks work; missing telemetry and billed cost remain unknown",),
     task_types=("tool-governance", "prompt-tuning",),
     on_demand="tool telemetry",
 )
 def cost(
     ctx: typer.Context,
-    hours: Annotated[int, typer.Option("--hours", "-h", help="Hours to look back")] = 24,
-    limit: Annotated[int, typer.Option("--limit", "-l", help="Max hotspots to show")] = 10,
+    hours: Annotated[int, typer.Option("--hours", "-h", min=1, help="Hours to look back")] = 24,
+    limit: Annotated[int, typer.Option("--limit", "-l", min=1, max=100, help="Max hotspots to show")] = 10,
     task: Annotated[
         str | None,
         typer.Option("--task", help="Task type used for task-density manifest cost"),
@@ -1048,8 +1070,24 @@ def cost(
         bool,
         typer.Option("--emit-feedback", help="Explain why aggregate-cost feedback is disabled"),
     ] = False,
+    advisory: Annotated[
+        bool,
+        typer.Option("--advisory", "--gate", help="Bounded retrieval advice; always exits successfully, including unknown telemetry."),
+    ] = False,
 ) -> None:
     """Show tool-governance token/cost hotspots from existing telemetry."""
+    if advisory:
+        import psycopg
+
+        try:
+            result = _fetch_cost_metrics(hours, limit, task, session)
+        except (psycopg.Error, OSError, ValueError, typer.Exit):
+            result = {}
+        if ctx.obj.is_compact:
+            print(render_cost_advisory(result))
+        else:
+            output_json({"advisory": render_cost_advisory(result)})
+        return
     result = _fetch_cost_metrics(hours, limit, task, session)
     if ctx.obj.is_compact:
         _format_cost_compact(result)
