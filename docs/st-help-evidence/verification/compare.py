@@ -97,7 +97,7 @@ findings["costs"] = {
 }
 representative = (
     (), ("create",), ("claim",), ("check",), ("db",), ("search",),
-    ("graph",), ("graph", "query"), ("neri",), ("neri", "research"),
+    ("graph",), ("graph", "query"),
     ("jobs",), ("jobs", "search"), ("browser",), ("service",),
 )
 findings["representative_costs"] = [

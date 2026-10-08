@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import json
-import re
 import time
 from contextlib import nullcontext, suppress
 from enum import StrEnum
@@ -16,7 +15,6 @@ from app.tasks.backup_lock import BackupLockLeaseError, backup_worker_restart_gu
 
 from ..lib import service_ops, service_release
 from ..lib.confirm_token import confirm_gate
-from ..lib.neri_runner_deploy import bootstrap_runner, deploy_runner, recover_runner_fixture
 from ..lib.usage import usage
 from ..output import output_error
 from .pulse import require_pulse_gate
@@ -63,85 +61,6 @@ class RebuildScope(StrEnum):
     backend = "backend"
     frontend = "frontend"
     worker = "worker"
-
-
-@app.command("bootstrap-runner")
-@usage(
-    surface="st.service.runner-bootstrap",
-    cmd="st service bootstrap-runner neri",
-    when="perform the one-time controlled adoption of a legacy Neri local-lab runner",
-    precautions=(
-        "run only after inspection proves the fixed legacy two-file layout and no retained deployment interlock",
-        "two-pass confirmation is required because both local-lab runner services are stopped and restarted",
-        "an uncertain result retains the deployment marker; inspect its durable receipt and never retry blindly",
-        "the command is restricted to the fixed Neri runner adapter, VM, services, paths, and source files",
-    ),
-    task_types=("vm-repair", "devops"),
-    on_demand="VM repair",
-    tier="reference",
-)
-def runner_bootstrap(
-    project: Annotated[str, typer.Argument(help="Project id with the fixed Neri runner adapter")],
-    confirm: Annotated[str | None, typer.Option("--confirm", help="Confirm token from preview run")] = None,
-) -> None:
-    """Adopt a legacy Neri runner into guarded release management."""
-    services = _load(project)
-    if services.runner_adapter is None:
-        output_error("Project has no managed runner adapter.")
-        raise typer.Exit(1)
-    confirm_gate(
-        f"service-runner-bootstrap-{services.project_id}",
-        confirm,
-        [
-            f"BOOTSTRAP LEGACY RUNNER: {services.project_id}",
-            "This stops and restarts both fixed local-lab runner services.",
-            "The old source bundle is preserved and all activation steps are durably recorded.",
-            "Any uncertain mutation retains the interlock for manual inspection.",
-        ],
-        f"st service bootstrap-runner {services.project_id}",
-    )
-    raise typer.Exit(bootstrap_runner(services.root, services.runner_adapter))
-
-
-@app.command("recover-runner-fixture")
-@usage(
-    surface="st.service.runner-fixture-recovery",
-    cmd="st service recover-runner-fixture neri <original-attempt>",
-    when="repair fixed fixture inputs after provisioning or verification retained its interlock",
-    precautions=(
-        "requires the exact original 32-hex attempt, matching retained interlock, and post-install failure receipt",
-        "two-pass confirmation is required; both runners must already be stopped or blocked and idle",
-        "installs public fixture files; provisioning-stage recovery restores locked dependencies from local cache only",
-        "updates only the private target artifact identity; never provisions or seeds",
-        "original receipt and backup remain intact; a linked recovery receipt is written and failures retain the interlock",
-    ),
-    task_types=("vm-repair", "devops"),
-    tier="reference",
-)
-def runner_fixture_recovery(
-    project: Annotated[str, typer.Argument(help="Project id with the fixed Neri runner adapter")],
-    attempt: Annotated[str, typer.Argument(help="Exact original 32-hex fixture deployment attempt")],
-    confirm: Annotated[str | None, typer.Option("--confirm", help="Confirm token from preview run")] = None,
-) -> None:
-    """Recover a fixture whose provisioning or verification retained its interlock."""
-    if not re.fullmatch(r"[0-9a-f]{32}", attempt):
-        output_error("Pass the exact original 32-hex fixture deployment attempt.")
-        raise typer.Exit(1)
-    services = _load(project)
-    if services.runner_adapter is None:
-        output_error("Project has no managed runner adapter.")
-        raise typer.Exit(1)
-    confirm_gate(
-        f"service-runner-fixture-recovery-{services.project_id}-{attempt}", confirm,
-        [
-            f"RECOVER RUNNER FIXTURE: {services.project_id}; original attempt={attempt}",
-            "Installs the current fixed public fixture inputs without provisioning or seeding.",
-            "Preserves the original receipt and backup, then verifies the fixture and restarts both runners.",
-            "Clears only the matching interlock after full success; failures retain it.",
-        ],
-        f"st service recover-runner-fixture {services.project_id} {attempt}",
-    )
-    raise typer.Exit(recover_runner_fixture(services.root, services.runner_adapter, attempt))
 
 
 def _load(project: str) -> service_ops.ProjectServices:
@@ -385,16 +304,6 @@ def rebuild(
                 f"Rebuilding {services.project_id} (scope: {scope.value}, "
                 f"source: {release.source.source_commit}, build: {release.build_id})"
             )
-            # Freeze and verify the runner before any host lifecycle mutation. Worker
-            # scope also updates backend consumers, so it follows the same contract.
-            if (
-                backend
-                and services.runner_adapter is not None
-                and deploy_runner(services.root, services.runner_adapter) != 0
-            ):
-                service_release.fail_release(release, "runner")
-                print("[service] rebuild stopped: runner deployment failed")
-                raise typer.Exit(1)
             steps = [("infrastructure", lambda: service_ops.ensure_infra(services))]
             steps.append(("backend_dependencies", lambda: service_ops.sync_backend(services)))
             if backend:

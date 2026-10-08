@@ -133,18 +133,6 @@
       "default_value_differences": []
     },
     {
-      "namespace": "neri",
-      "owner_revision_at_capture": "f2b2612c805c68658ef0f182d38ee678e5478aa5",
-      "owner_help_routes": 141,
-      "manifest_help_routes": 141,
-      "route_differences": {
-        "owner_only": [],
-        "manifest_only": []
-      },
-      "option_name_differences": [],
-      "default_value_differences": []
-    },
-    {
       "namespace": "learn",
       "owner_revision_at_capture": "dcfef116fba7f47a5136f4421e1226da3cdd1ece",
       "owner_help_routes": 46,

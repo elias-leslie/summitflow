@@ -13,7 +13,6 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[3]
 ST = ROOT / "backend/.venv/bin/st"
 OWNER = Path("/srv/workspaces/projects/agent-hub/backend/.venv/bin/agent-hub-st")
-NERI_OWNER = Path("/srv/workspaces/projects/neri/backend/.venv/bin/neri-st")
 CASES = (
     ("st_option_value_equals_command", ST, ("feedback", "--id", "resolve", "--help")),
     ("owner_option_value_equals_command", OWNER, ("feedback", "--id", "resolve", "--help")),
@@ -35,8 +34,6 @@ CASES = (
     ("owner_models_missing_value", OWNER, ("models", "--id", "--help")),
     ("st_models_unknown_option_before_command", ST, ("models", "--unknown", "list", "--help")),
     ("owner_models_unknown_option_before_command", OWNER, ("models", "--unknown", "list", "--help")),
-    ("st_neri_unknown_prefix_before_leaf", ST, ("neri", "research", "bogus", "hypotheses", "--help")),
-    ("owner_neri_unknown_prefix_before_leaf", NERI_OWNER, ("research", "bogus", "hypotheses", "--help")),
 )
 
 
