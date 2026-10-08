@@ -24,7 +24,7 @@ def test_aico_admin_manifest_advertises_pins_and_fail_closed_owner_boundary():
     assert "st.aico.admin" in {row["surface"] for row in record.manifest.usage}
     binding = next(row for row in json.loads(registry.read_text())["extensions"] if row["namespace"] == "aico")
     assert binding["executable"] == "scripts/aico-root-watch.py"
-    assert binding["environment"] == ["XDG_RUNTIME_DIR", "AICO_GUI_CONTROL_SOCKET", "AICO_CONTROL_SOCKET", "A_TERM_ROOT_CONTROL_URL"]
+    assert binding["environment"] == ["XDG_RUNTIME_DIR", "AICO_GUI_CONTROL_SOCKET", "AICO_CONTROL_SOCKET", "A_TERM_ROOT_CONTROL_URL", "AICO_WIDGET_ID"]
 
 
 def test_aico_create_manifest_exposes_exact_resume_without_fleet_retention():

@@ -142,4 +142,39 @@ to reconcile current state after the crash before continuing. Retry with the sam
 request ID and complete body; changed content conflicts and ended roots remain
 tombstones. This is explicit exact recovery, not an automatic reboot scheduler.
 Running receipts prove workload presence, not native thread loading or model
-readiness. Owner code changes need a managed rebuild before live use.
+readiness. Direct `st aico create` roots have no fleet-event ledger; `sessions
+emit` and `sessions wait` apply only to roots registered through fleet start.
+Owner code changes need a managed rebuild before live use.
+
+## Ordinary Aico widget controls
+
+Use the ordinary-widget owner commands for the current managed pane before desktop
+automation:
+
+```sh
+st aico widget status
+st aico widget title "Project · Focus"
+st aico widget position 0 0 960 720
+```
+
+Each command defaults to the exact `AICO_WIDGET_ID` inherited from the managed pane.
+Use `--widget-id 0123abcd` to select another exact widget explicitly; the selector
+requires eight lowercase hexadecimal characters. Missing or invalid identity fails
+closed. Ordinary widgets have no retained root request ID, and these commands do not
+discover fleet roots or infer a widget from a native thread.
+
+The private GUI socket is the same configured `AICO_GUI_CONTROL_SOCKET`, with
+`--root-socket PATH` available for an exact local socket. Status reads
+`GET /v1/widgets/ID`, returning only owner, widget ID, session ID, generation,
+status and availability. A title or position mutation reads this exact descriptor
+immediately first, requires a running available workload, posts the generation to
+`/v1/widgets/ID/title` or `/v1/widgets/ID/position`, and verifies the returned
+identity and generation. GUI absence, missing widgets, changed identity and stale
+generations fail closed; commands never start Aico.
+
+Labels use the same non-secret 1-160 trimmed UTF-8 byte, control-free single-line
+validation as retained root titles. Integer bounds require absolute values at
+most 100000, width at least 360 and height at least 240. Content goes only to the
+owner's existing session metadata. Receipts and errors contain no label, and ST
+adds no fleet event or duplicate session record. Existing retained-root commands
+continue addressing their exact request IDs.
