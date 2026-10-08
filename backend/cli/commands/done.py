@@ -192,6 +192,7 @@ def _handle_task_completion(
     when="assigned-task closeout (local acceptance + required evidence + checkpoint cleanup)",
     precautions=(
         "completion requires an active owned claim; local checkpoints are normal; publication is separate and optional",
+        "when unrelated changes exist and task paths are known, repeat --paths <owned-path> for each task path on the first st done call",
         "use --evidence JSON for required same-source deployment and live checks; do not claim completion while acceptance remains",
     ),
     tier="mandate",
