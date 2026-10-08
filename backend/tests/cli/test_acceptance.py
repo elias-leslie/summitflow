@@ -197,6 +197,79 @@ def successful_runner(calls: list[list[str]]):
     return run
 
 
+@pytest.mark.parametrize("detail", [
+    "BIOME:SKIP:biome:tool_not_installed\nGITLEAKS:OK:0",
+    "\n".join([
+        "ARCH:SKIP:architecture:no_changed_paths",
+        "IDENTITY:OK:slopminer",
+        "LINT:SKIP:ruff:no_changed_paths",
+        "TYPES:SKIP:types:no_changed_paths",
+        "TEST:SKIP:pytest:no_relevant_changed_paths",
+        "BIOME:biome:start",
+        "BIOME:SKIP:biome:tool_not_installed",
+        "TSC:SKIP:tsc:no_relevant_changed_paths",
+        "GITLEAKS:OK:0|details:.dev-tools/security-gitleaks-18dca56742c0534a-3090135-0c0ac543-details.txt|hint:3:43PM INF no leaks found",
+    ]),
+], ids=["minimal", "slopminer-receipt"])
+def test_task_acceptance_allows_undeclared_biome_for_docs_and_profiles(repo: Path, detail: str) -> None:
+    (repo / "guide.md").write_text("Updated guide\n")
+    (repo / "profile.json").write_text('{"rules": []}\n')
+    git(repo, "add", "guide.md", "profile.json")
+    git(repo, "commit", "-qm", "docs and profile")
+
+    def runner(command: list[str], cwd: Path):
+        assert command == ["st", "check", "--quick", "--changed-only"]
+        return subprocess.CompletedProcess(command, 0, detail, "")
+
+    result = acceptance.accept_revision(
+        repo, sha="HEAD", coverage="task", scope=("guide.md", "profile.json"), runner=runner
+    )
+    assert result["state"] == "success"
+    assert result["coverage"] == "task"
+    assert result["checks"][0]["evidence"]["state"] == "pass"
+    assert acceptance.validate_acceptance_receipt(repo, result)["acceptance_id"] == result["acceptance_id"]
+
+
+@pytest.mark.parametrize(("path", "content"), [
+    ("biome.json", "{}\n"),
+    ("frontend/biome.jsonc", "{}\n"),
+    ("package.json", '{"devDependencies":{"@biomejs/biome":"2"}}\n'),
+    ("frontend/package.json", '{"scripts":{"lint":"biome check ."}}\n'),
+    ("package.json", "malformed manifest\n"),
+    (".st-check.toml", '[paths]\nbiome="missing/bin"\n'),
+])
+def test_task_acceptance_blocks_declared_missing_biome(repo: Path, path: str, content: str) -> None:
+    declaration = repo / path
+    declaration.parent.mkdir(parents=True, exist_ok=True)
+    declaration.write_text(content)
+    git(repo, "add", path)
+    git(repo, "commit", "-qm", "declare required formatter")
+    with pytest.raises(acceptance.AcceptanceError, match="acceptance_checks_failed"):
+        acceptance.accept_revision(
+            repo, sha="HEAD", coverage="task", scope=("app.py",),
+            runner=lambda command, _: subprocess.CompletedProcess(
+                command, 0, "BIOME:SKIP:biome:tool_not_installed\nGITLEAKS:OK:0", ""
+            ),
+        )
+
+
+@pytest.mark.parametrize("detail", [
+    "TEST:SKIP:pytest:tool_not_installed\nGITLEAKS:OK:0",
+    "GITLEAKS:SKIP:gitleaks:tool_not_installed\nIDENTITY:OK:fixture",
+    "UNKNOWN:SKIP:unknown:tool_not_installed\nGITLEAKS:OK:0",
+    "BIOME:SKIP:biome:required\nGITLEAKS:OK:0",
+    "BIOME:SKIP:biome:no_tests\nGITLEAKS:OK:0",
+    "BIOME:FAIL:1\nGITLEAKS:OK:0",
+    "BIOME:SKIP:biome:tool_not_installed",
+])
+def test_task_acceptance_retains_required_quality_failures(repo: Path, detail: str) -> None:
+    with pytest.raises(acceptance.AcceptanceError, match="acceptance_checks_failed"):
+        acceptance.accept_revision(
+            repo, sha="HEAD", coverage="task", scope=("app.py",),
+            runner=lambda command, _: subprocess.CompletedProcess(command, 0, detail, ""),
+        )
+
+
 def test_accept_revision_writes_and_reuses_exact_source_receipt(repo: Path) -> None:
     calls: list[list[str]] = []
     sha = git(repo, "rev-parse", "HEAD")

@@ -783,8 +783,17 @@ def _task_gate_evidence(repo: Path, detail: str, plan: Mapping[str, Any], comman
         return evidence
     # Quick checkpoints intentionally defer cross-cutting suites. That is
     # honest task coverage, never full coverage; explicitly required native
-    # stages execute separately. Missing tools and failed checks still block.
-    blocked = ":OK:" not in detail or any(":FAIL:" in line or (":SKIP:" in line and any(
+    # stages execute separately. Reuse project applicability for exact skips;
+    # applicable missing tools and failed checks still block.
+    from cli.commands.check_native import legacy_applicability
+
+    checks = plan.get("check_configuration", {}).get("checks", {})
+    _, inapplicable = legacy_applicability(repo, list(checks))
+    allowed_skips = {
+        f"{checks[stage['id']].get('label') or stage['id'].upper()}:SKIP:{stage['id']}:tool_not_installed"
+        for stage in inapplicable
+    }
+    blocked = ":OK:" not in detail or any(":FAIL:" in line or (":SKIP:" in line and line not in allowed_skips and any(
         reason in line for reason in ("tool_not_installed", "required", "no_tests"))) for line in detail.splitlines())
     digest = hashlib.sha256(detail.encode()).hexdigest()
     directory = _git_common_dir(repo) / "st" / "native-stages" / "artifacts"
