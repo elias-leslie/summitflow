@@ -167,12 +167,12 @@ function BackupGridCard({
       </div>
 
       {/* Metrics */}
-      <div className="grid grid-cols-2 gap-1.5">
+      <div className="grid grid-cols-1 gap-1.5">
         <div className="min-w-0 rounded bg-slate-950/50 px-2 py-1.5">
           <div className="text-[10px] uppercase tracking-[0.14em] text-slate-500">
             Size details
           </div>
-          <div className="truncate text-xs text-slate-200 font-mono">
+          <div className="text-xs text-slate-200">
             <BackupSizeDetails backup={backup} />
           </div>
         </div>

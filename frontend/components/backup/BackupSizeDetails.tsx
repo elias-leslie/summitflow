@@ -25,7 +25,7 @@ export function BackupSizeDetails({
         <span className="text-slate-400">
           {restic ? 'Contents' : 'Archive'}:{' '}
         </span>
-        <span className="font-mono">
+        <span className="font-mono whitespace-nowrap">
           {contents == null
             ? 'Unavailable'
             : contents === 0
@@ -35,7 +35,7 @@ export function BackupSizeDetails({
       </div>
       <div>
         <span className="text-slate-400">New storage: </span>
-        <span className="font-mono">
+        <span className="font-mono whitespace-nowrap">
           {added == null
             ? 'Not recorded'
             : added === 0
