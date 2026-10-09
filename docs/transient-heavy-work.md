@@ -74,6 +74,21 @@ routing applies only to newly created cleanrooms. It does not move existing work
 or durable artifacts. On the managed host, `/srv/scratch` is the disposable
 mount excluded from backups; admission locks remain at their fixed `/tmp` path.
 
+`--deps` installs locked dependencies inside the snapshot before the command
+(backend `uv sync --locked` with `dev` plus validated `--extra` groups; frontend
+`npm ci` or `pnpm install --frozen-lockfile`), using the identity's
+`runtime.backend_dir`/`frontend_dir`. `--collect GLOB` copies build outputs out
+of the snapshot before removal (default `<project>/.dev-tools/cleanroom-artifacts/<UTC>`),
+so release builds never need to write the live checkout's `out/`.
+
+Retention: kept job directories are not removed automatically. Prefer
+`--collect` over `--keep-dir`; when a directory is kept for inspection, remove it
+when done with `st cleanup cleanrooms` (default `--older-than 24h`, filter with
+`--project`, preview with `--dry-run`). Pruning matches only
+`<project>-cleanroom-<suffix>` directories in the cleanroom parent, refuses
+symlinks, skips any directory that is a live process's working directory, and
+reports the bytes freed.
+
 Future repository recovery materialization, weekly mapped configuration trees,
 encrypted-archive plaintext and infrastructure drills require that same mounted
 scratch root through `app.utils.transient_scratch`. Restore work uses a private

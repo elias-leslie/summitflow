@@ -11,7 +11,7 @@ import tempfile
 import time
 import tomllib
 import uuid
-from collections.abc import Callable, Mapping
+from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import Any
@@ -92,6 +92,16 @@ def _dict_value(value: Any) -> dict[str, Any]:
     return value if isinstance(value, dict) else {}
 
 
+def runtime_source_dirs(runtime: Mapping[str, Any], root: Path) -> tuple[Path, Path]:
+    """Resolve identity ``runtime.backend_dir``/``frontend_dir`` beneath ``root``."""
+    backend_subdir = str(runtime.get("backend_dir") or "backend")
+    frontend_subdir = str(runtime.get("frontend_dir") or "frontend")
+    return (
+        root if backend_subdir == "." else root / backend_subdir,
+        root if frontend_subdir == "." else root / frontend_subdir,
+    )
+
+
 def load_project(project_id: str) -> ProjectServices:
     identity = get_project_identity(project_id)
     root_raw = get_project_identity_root(project_id)
@@ -105,8 +115,7 @@ def load_project(project_id: str) -> ProjectServices:
         raise ServiceError("runtime.backend_extras must be a list of nonempty extra names")
     canonical_id = str(project.get("id") or project_id)
     root = Path(root_raw)
-    backend_subdir = str(runtime.get("backend_dir") or "backend")
-    frontend_subdir = str(runtime.get("frontend_dir") or "frontend")
+    backend_dir, frontend_dir = runtime_source_dirs(runtime, root)
     return ProjectServices(
         project_id=canonical_id,
         root=root,
@@ -116,8 +125,8 @@ def load_project(project_id: str) -> ProjectServices:
         optional_workers=_as_str_list(services.get("optional_workers")),
         backend_port=int(runtime.get("backend_port") or 0),
         frontend_port=int(runtime.get("frontend_port") or 0),
-        backend_dir=root if backend_subdir == "." else root / backend_subdir,
-        frontend_dir=root if frontend_subdir == "." else root / frontend_subdir,
+        backend_dir=backend_dir,
+        frontend_dir=frontend_dir,
         health_endpoint=str(runtime.get("health_endpoint") or "/health"),
         backend_extras=tuple(dict.fromkeys(_as_str_list(extras))),
         host_config_root=root,
@@ -603,25 +612,39 @@ def ensure_infra(project: ProjectServices | None = None) -> int:
     return 1
 
 
+def backend_optional_dependencies(backend_dir: Path) -> dict[str, Any] | None:
+    """Declared optional-dependency groups, or None without pyproject.toml + uv.lock."""
+    if not (backend_dir / "pyproject.toml").exists() or not (backend_dir / "uv.lock").exists():
+        return None
+    manifest = tomllib.loads((backend_dir / "pyproject.toml").read_text())
+    declared = manifest.get("project", {}).get("optional-dependencies", {})
+    return declared if isinstance(declared, dict) else {}
+
+
+def locked_backend_sync_command(declared_extras: Mapping[str, Any], extras: Sequence[str]) -> list[str]:
+    """`uv sync --locked` with ``dev`` (when declared) plus the requested extras, deduplicated."""
+    command = ["uv", "sync", "--locked"]
+    selected = dict.fromkeys((*(("dev",) if "dev" in declared_extras else ()), *extras))
+    for extra in selected:
+        command.extend(["--extra", extra])
+    return command
+
+
 def sync_backend(project: ProjectServices) -> int:
     """Install the locked Python environment before migrations or restarts."""
-    if not (project.backend_dir / "pyproject.toml").exists() or not (project.backend_dir / "uv.lock").exists():
+    declared_extras = backend_optional_dependencies(project.backend_dir)
+    if declared_extras is None:
         if project.backend_extras:
             print("[service] configured backend extras require pyproject.toml and uv.lock")
             return 1
         return 0
     print("[service] syncing locked backend dependencies")
-    manifest = tomllib.loads((project.backend_dir / "pyproject.toml").read_text())
-    command = ["uv", "sync", "--locked"]
     # Managed checkouts use this same environment for canonical quality gates.
-    declared_extras = manifest.get("project", {}).get("optional-dependencies", {})
     unknown = set(project.backend_extras) - set(declared_extras)
     if unknown:
         print("[service] configured backend extras are not declared: " + ", ".join(sorted(unknown)))
         return 1
-    extras = dict.fromkeys((*(("dev",) if "dev" in declared_extras else ()), *project.backend_extras))
-    for extra in extras:
-        command.extend(["--extra", extra])
+    command = locked_backend_sync_command(declared_extras, project.backend_extras)
     return run(command, cwd=project.backend_dir, quiet_success=True, _heavy=True)
 
 
@@ -826,40 +849,51 @@ def install_st_monitor_launcher(project: ProjectServices) -> int:
     return 0
 
 
-def build_frontend(project: ProjectServices) -> int:
-    if not (project.frontend_dir / "package.json").exists():
-        return 0
-    print("[service] building frontend")
+@dataclass(frozen=True)
+class FrontendInstall:
+    """Lockfile-selected frontend dependency install."""
+
+    manager: str  # "npm" or "pnpm"
+    command: tuple[str, ...]
+    cwd: Path
+    workspace: bool = False
+
+
+def frontend_install_plan(frontend_dir: Path, root: Path) -> FrontendInstall | None:
+    """Select the locked installer for a frontend, or None without package.json."""
+    if not (frontend_dir / "package.json").exists():
+        return None
     # Some managed products (including Electron shells) keep an npm lock at the
     # project root. Install inside the accepted release before its service unit
     # starts; the unit must never depend on checkout-local node_modules.
-    if (project.frontend_dir / "package-lock.json").exists() and not (
-        project.frontend_dir / "pnpm-lock.yaml"
-    ).exists():
-        install = run(["npm", "ci"], cwd=project.frontend_dir, quiet_success=True, _heavy=True)
-        if install != 0:
-            return install
-        return run(["npm", "run", "build"], cwd=project.frontend_dir, quiet_success=True, _heavy=True)
+    if (frontend_dir / "package-lock.json").exists() and not (frontend_dir / "pnpm-lock.yaml").exists():
+        return FrontendInstall("npm", ("npm", "ci"), frontend_dir)
     # pnpm resolves workspace dependencies at the workspace root. Always verify
     # the frozen lock, even when an existing node_modules directory is present.
-    install_dir = project.frontend_dir
-    workspace = False
-    for directory in (project.frontend_dir, *project.frontend_dir.parents):
-        if not directory.is_relative_to(project.root):
+    for directory in (frontend_dir, *frontend_dir.parents):
+        if not directory.is_relative_to(root):
             break
         if (directory / "pnpm-workspace.yaml").exists():
-            install_dir = directory
-            workspace = True
-            break
-    install = run(["pnpm", "install", "--frozen-lockfile"], cwd=install_dir, quiet_success=True, _heavy=True)
+            return FrontendInstall("pnpm", ("pnpm", "install", "--frozen-lockfile"), directory, workspace=True)
+    return FrontendInstall("pnpm", ("pnpm", "install", "--frozen-lockfile"), frontend_dir)
+
+
+def build_frontend(project: ProjectServices) -> int:
+    plan = frontend_install_plan(project.frontend_dir, project.root)
+    if plan is None:
+        return 0
+    print("[service] building frontend")
+    install = run(list(plan.command), cwd=plan.cwd, quiet_success=True, _heavy=True)
     if install != 0:
         return install
-    if workspace:
+    if plan.manager == "npm":
+        return run(["npm", "run", "build"], cwd=project.frontend_dir, quiet_success=True, _heavy=True)
+    if plan.workspace:
         # Production exports point at dist. pnpm owns dependency selection and
         # build order; build only this frontend's transitive workspace inputs.
-        relative = project.frontend_dir.relative_to(install_dir).as_posix()
+        relative = project.frontend_dir.relative_to(plan.cwd).as_posix()
         dependencies = run(["pnpm", "--filter", f"{{./{relative}}}^...", "--if-present", "run", "build"],
-                           cwd=install_dir, quiet_success=True, _heavy=True)
+                           cwd=plan.cwd, quiet_success=True, _heavy=True)
         if dependencies != 0:
             return dependencies
     return run(["pnpm", "build"], cwd=project.frontend_dir, quiet_success=True, _heavy=True)

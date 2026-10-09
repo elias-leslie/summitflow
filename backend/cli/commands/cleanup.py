@@ -14,11 +14,12 @@ import typer
 from app.utils._git_branches import assess_orphan_task_branches
 from app.utils.git_helpers import build_repo_workspace_summary
 
+from ..lib import cleanroom_prune
 from ..lib.checkpoint import get_active_checkpoints, get_stale_checkpoints, remove_snapshot
 from ..lib.checkpoint_branches import resolve_task_branch
 from ..lib.confirm_token import confirm_gate
 from ..lib.quick_snapshots import SnapshotError, find_snapshot_residue
-from ..output import output_json, output_success
+from ..output import output_error, output_json, output_success
 from ..output_context import OutputContext
 from .cleanup_analysis import (
     CheckpointAnalysis,
@@ -64,7 +65,7 @@ app = typer.Typer(
     help=(
         "Clean up git/checkpoint residue plus managed workspace leftovers.\n"
         "Read-only: status, checkpoints, inspect-orphans.\n"
-        "Cleanup: checkpoints --auto, checkpoints --force, snapshots.\n"
+        "Cleanup: checkpoints --auto, checkpoints --force, snapshots, cleanrooms.\n"
         "Path cleanup removes literal paths only. Globs are rejected and directories require --recursive."
     )
 )
@@ -292,3 +293,48 @@ def cleanup_path(
 ) -> None:
     """Safely remove literal paths after repo and session guardrails pass."""
     cleanup_paths_command(paths, recursive=recursive, dry_run=dry_run)
+
+
+@app.command("cleanrooms")
+def cleanup_cleanrooms(
+    older_than: Annotated[
+        str, typer.Option("--older-than", help="Only jobs idle at least this long (e.g. 30m, 24h, 2d).")
+    ] = "24h",
+    project: Annotated[
+        str | None, typer.Option("--project", help="Only jobs named <project>-cleanroom-*.")
+    ] = None,
+    dry_run: DryRunOpt = False,
+) -> None:
+    """Remove kept `st check cleanroom --keep-dir` job dirs from the cleanroom scratch parent."""
+    try:
+        min_age = cleanroom_prune.parse_age(older_than)
+    except ValueError as exc:
+        typer.echo(f"Error: {exc}", err=True)
+        raise typer.Exit(2) from exc
+    parent = cleanroom_prune.cleanroom_parent()
+    jobs = cleanroom_prune.find_cleanroom_jobs(parent, older_than=min_age, project=project)
+    verb = "Would remove" if dry_run else "Removed"
+    freed = 0
+    removed = 0
+    errors = 0
+    typer.echo(f"Cleanroom parent: {parent}")
+    for job in jobs:
+        label = f"{job.path.name} ({cleanroom_prune.format_bytes(job.size_bytes)}, idle {job.age_seconds / 3600:.1f}h)"
+        if job.skip_reason is not None:
+            typer.echo(f"  Skipped {job.path.name}: {job.skip_reason}")
+            continue
+        if not dry_run:
+            try:
+                cleanroom_prune.remove_job(job)
+            except (OSError, ValueError) as exc:
+                errors += 1
+                typer.echo(f"  ERROR {job.path.name}: {exc}", err=True)
+                continue
+        typer.echo(f"  {verb} {label}")
+        removed += 1
+        freed += job.size_bytes
+    summary = f"{verb} {removed} cleanroom(s), {'would free' if dry_run else 'freed'} {cleanroom_prune.format_bytes(freed)}"
+    if errors:
+        output_error(f"{summary}; {errors} error(s)")
+        raise typer.Exit(1)
+    output_success(summary)
