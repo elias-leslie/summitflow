@@ -25,6 +25,8 @@ def lane(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
     directory.mkdir(mode=0o700)
     monkeypatch.setattr(guard, "_LOCK_DIRECTORY", directory)
     monkeypatch.delenv("ST_HEAVY_LEASE", raising=False)
+    # Strict single-heavy semantics unless a test opts into spare capacity.
+    monkeypatch.setattr(guard, "_spare_capacity", lambda: False)
     return directory
 
 
@@ -34,6 +36,7 @@ def _bootstrap(lane: Path) -> str:
         f"sys.path.insert(0, {str(BACKEND)!r}); "
         "from app.utils import heavy_work as guard; "
         f"guard._LOCK_DIRECTORY = Path({str(lane)!r}); "
+        "guard._spare_capacity = lambda: False; "
     )
 
 
@@ -154,6 +157,86 @@ def test_light_progresses_alongside_heavy_and_has_only_one_slot(lane: Path) -> N
                 contender.join(3)
         assert not errors, errors
         assert entered.is_set() and not owner.is_alive() and not contender.is_alive()
+
+
+def test_spare_heavy_slot_admits_second_owner_only_with_headroom(
+    lane: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    headroom = threading.Event()
+    monkeypatch.setattr(guard, "_spare_capacity", headroom.is_set)
+    entered, third_attempting, third_entered, release = (threading.Event() for _ in range(4))
+    lanes: list[str] = []
+
+    def second() -> None:
+        with guard.heavy_work("second suite") as work:
+            lanes.append(work.lane)
+            entered.set()
+            assert release.wait(5)
+
+    def third() -> None:
+        third_attempting.set()
+        with guard.heavy_work("third suite"):
+            third_entered.set()
+
+    with guard.heavy_work("first suite") as first:
+        assert first.lane == "heavy"
+        contender = threading.Thread(target=second)
+        contender.start()
+        assert not entered.wait(0.3), "spare slot opened without headroom"
+        headroom.set()
+        assert entered.wait(2), "spare slot did not open with headroom"
+        assert lanes == ["heavy2"]
+        late = threading.Thread(target=third)
+        late.start()
+        assert third_attempting.wait(2)
+        assert not third_entered.wait(0.3), "heavy capacity exceeded two"
+        release.set()
+        contender.join(3)
+        assert third_entered.wait(2)
+        late.join(3)
+
+
+def test_spare_slot_descendant_reenters_its_own_lane(lane: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(guard, "_spare_capacity", lambda: True)
+    held, release = threading.Event(), threading.Event()
+
+    def holder() -> None:
+        with guard.heavy_work("slot zero"):
+            held.set()
+            assert release.wait(5)
+
+    thread = threading.Thread(target=holder)
+    thread.start()
+    try:
+        assert held.wait(2)
+        with guard.heavy_work("spare owner") as work:
+            assert work.lane == "heavy2" and work.token.startswith("heavy2:")
+            code = _bootstrap(lane) + (
+                "\nwith guard.heavy_work('descendant suite') as nested:\n"
+                "    assert nested.lane == 'heavy2', nested.lane\n"
+                "with guard.heavy_work('descendant Ruff', work_class='light') as nested:\n"
+                "    assert nested.lane == 'heavy2' and nested.work_class == 'heavy'\n"
+            )
+            result = work.run([sys.executable, "-c", code], capture_output=True, text=True, timeout=5)
+            assert result.returncode == 0, result.stderr
+    finally:
+        release.set()
+        thread.join(3)
+
+
+def test_spare_capacity_requires_memory_headroom_and_low_pressure(monkeypatch: pytest.MonkeyPatch) -> None:
+    files = {"/proc/meminfo": "MemTotal: 30000000 kB\nMemAvailable: 20000000 kB\n",
+             "/proc/pressure/memory": "some avg10=0.50 avg60=0.10 avg300=0.00 total=1\n"}
+    monkeypatch.setattr(guard.Path, "read_text", lambda self, *a, **k: files[str(self)])
+    assert guard._spare_capacity()
+    files["/proc/pressure/memory"] = "some avg10=12.00 avg60=3.00 avg300=1.00 total=1\n"
+    assert not guard._spare_capacity()
+    files["/proc/pressure/memory"] = "some avg10=0.00 avg60=0.00 avg300=0.00 total=1\n"
+    files["/proc/meminfo"] = "MemAvailable: 4000000 kB\n"
+    assert not guard._spare_capacity()
+    del files["/proc/pressure/memory"]
+    monkeypatch.setattr(guard.Path, "read_text", lambda self, *a, **k: (_ for _ in ()).throw(OSError()))
+    assert not guard._spare_capacity()
 
 
 def test_light_cannot_upgrade_to_heavy_in_thread_or_exec_descendant(lane: Path) -> None:

@@ -1,4 +1,4 @@
-"""One same-user heavy lane and one explicit light slot for transient work.
+"""Same-user heavy lanes and one explicit light slot for transient work.
 
 This is advisory scheduling, never publication/security authorization. Linux
 flock and live ancestor descriptors let nested ST calls share an admission even
@@ -32,6 +32,11 @@ _LOCAL = threading.local()
 # The observed 16-CPU/30-GB owner workstation swapped under concurrent suites
 # and auto-sized Node/Go pools. Keep one transient job and two internal workers.
 WORKERS = 2
+# A second heavy slot opens only while the host has ample memory headroom and no
+# PSI memory pressure; otherwise heavy work stays one-at-a-time.
+SPARE_MIN_AVAILABLE_BYTES = 12 * 1024**3
+SPARE_MAX_PRESSURE_AVG10 = 5.0
+_SPARE_LANE = "heavy2"
 WORKER_ENVIRONMENT = (
     "GOMAXPROCS", "RAYON_NUM_THREADS", "UV_THREADPOOL_SIZE", "CARGO_BUILD_JOBS",
     "UV_CONCURRENT_BUILDS", "UV_CONCURRENT_INSTALLS", "UV_CONCURRENT_DOWNLOADS",
@@ -73,15 +78,37 @@ def _open_lane(name: str) -> int:
         raise HeavyWorkError("Heavy-work admission storage is unavailable or unsafe.") from exc
 
 
-def _lane_name(name: str, work_class: str) -> str:
-    return name if work_class == "heavy" else f"light-{name}"
+def _lane_name(name: str, lane: str) -> str:
+    """Slot zero keeps the legacy unprefixed heavy files."""
+    return name if lane == "heavy" else f"{lane}-{name}"
+
+
+def _lane_class(lane: str) -> str:
+    return "light" if lane == "light" else "heavy"
+
+
+def _token_lane(token: str) -> str:
+    prefix = token.split(":", 1)[0]
+    return prefix if prefix in {"light", _SPARE_LANE} else "heavy"
+
+
+def _spare_capacity() -> bool:
+    """Admit a second heavy job only with memory headroom and no pressure."""
+    try:
+        available = next(int(line.split()[1]) * 1024 for line in Path("/proc/meminfo").read_text().splitlines()
+                         if line.startswith("MemAvailable:"))
+        some = Path("/proc/pressure/memory").read_text().splitlines()[0].split()
+        pressure = float(next(field for field in some if field.startswith("avg10=")).removeprefix("avg10="))
+    except (OSError, StopIteration, ValueError, IndexError):
+        return False
+    return available >= SPARE_MIN_AVAILABLE_BYTES and pressure < SPARE_MAX_PRESSURE_AVG10
 
 
 def _inherited(descriptor: int, admission: int, environment: Mapping[str, str],
-               work_class: str = "heavy") -> tuple[str, int] | None:
+               lane: str = "heavy") -> tuple[str, int] | None:
     token = environment.get(_LEASE_ENV, "")
-    if work_class == "light":
-        token = token.removeprefix("light:")
+    if lane != "heavy":
+        token = token.removeprefix(f"{lane}:")
     parts = token.split(":")
     if (len(parts) != 6 or any(not parts[index].isdigit() or len(parts[index]) > 20
                              for index in (0, 1, 3, 4, 5))
@@ -100,7 +127,7 @@ def _inherited(descriptor: int, admission: int, environment: Mapping[str, str],
             return None
         pid = os.getpid()
         branch_info = (os.fstat(admission) if depth == 0
-                       else (_LOCK_DIRECTORY / _lane_name(f"depth-{depth}.lock", work_class)).lstat())
+                       else (_LOCK_DIRECTORY / _lane_name(f"depth-{depth}.lock", lane)).lstat())
         seen: set[int] = set()
         while pid > 1 and pid not in seen:
             seen.add(pid)
@@ -149,6 +176,7 @@ class HeavyWork:
     branch_descriptor: int
     work_class: str = "heavy"
     queue_seconds: float = 0.0
+    lane: str = "heavy"
 
     def environment(self, environment: Mapping[str, str] | None = None) -> dict[str, str]:
         result = dict(os.environ if environment is None else environment)
@@ -222,15 +250,16 @@ def heavy_work(label: str, *, work_class: str = "heavy", project: str | None = N
     requested_class = work_class
     # A verified heavy ancestor covers a nested Ruff stage. A verified light
     # ancestor cannot authorize heavy work, even through an exec/fork boundary.
-    inherited_class = "light" if environment.get(_LEASE_ENV, "").startswith("light:") else "heavy"
-    work_class = inherited_class if environment.get(_LEASE_ENV) else requested_class
-    admission = _open_lane(_lane_name("admission.lock", work_class))
+    token = environment.get(_LEASE_ENV, "")
+    lane = _token_lane(token) if token else requested_class
+    work_class = _lane_class(lane)
+    admission = _open_lane(_lane_name("admission.lock", lane))
     descriptor = None
     branch = None
     try:
-        descriptor = _open_lane(_lane_name("activity.lock", work_class))
-        inherited = _inherited(descriptor, admission, environment, work_class)
-        if inherited is None and work_class != requested_class:
+        descriptor = _open_lane(_lane_name("activity.lock", lane))
+        inherited = _inherited(descriptor, admission, environment, lane)
+        if inherited is None and lane != requested_class:
             new_admission = _open_lane(_lane_name("admission.lock", requested_class))
             try:
                 new_descriptor = _open_lane(_lane_name("activity.lock", requested_class))
@@ -239,7 +268,7 @@ def heavy_work(label: str, *, work_class: str = "heavy", project: str | None = N
                 raise
             os.close(descriptor)
             os.close(admission)
-            work_class = requested_class
+            lane = work_class = requested_class
             admission, descriptor = new_admission, new_descriptor
         queued = time.monotonic()
         if inherited is not None:
@@ -247,21 +276,22 @@ def heavy_work(label: str, *, work_class: str = "heavy", project: str | None = N
                 raise HeavyWorkError("Light admission cannot be upgraded to heavy work.")
             generation, depth = inherited
             depth += 1
-            branch = _open_lane(_lane_name(f"depth-{depth}.lock", work_class))
-            _wait_lock(branch, label, work_class=work_class, project=project, activity=descriptor, admission=admission)
+            branch = _open_lane(_lane_name(f"depth-{depth}.lock", lane))
+            _wait_lock(branch, label, lane=lane, project=project, activity=descriptor, admission=admission)
         else:
             # Owners take these in one order. Descendants join shared activity
             # and the NEXT validated depth: siblings serialize, grandchildren
             # cannot deadlock on a parent's awaited heavy context.
-            _wait_owner(admission, descriptor, label, work_class, project)
+            lane, admission, descriptor = _wait_owner(lane, admission, descriptor, label, project)
             generation = f"{os.getpid()}:{_process(os.getpid())[1]}:{uuid.uuid4().hex}"
             os.ftruncate(admission, 0)
             os.pwrite(admission, generation.encode("ascii"), 0)
             depth, branch = 0, admission
             fcntl.flock(descriptor, fcntl.LOCK_SH)
-            _write_holder(work_class, generation, descriptor, label, project)
-        token = f"{'light:' if work_class == 'light' else ''}{generation}:{descriptor}:{depth}:{branch}"
-        work = HeavyWork(descriptor, token, branch, work_class, time.monotonic() - queued)
+            _write_holder(lane, generation, descriptor, label, project)
+        prefix = "" if lane == "heavy" else f"{lane}:"
+        token = f"{prefix}{generation}:{descriptor}:{depth}:{branch}"
+        work = HeavyWork(descriptor, token, branch, work_class, time.monotonic() - queued, lane)
         _LOCAL.work, _LOCAL.pid = work, os.getpid()
         try:
             yield work
@@ -346,9 +376,9 @@ def _identity(label: str, project: str | None) -> dict[str, Any]:
             "since": time.monotonic()}
 
 
-def _write_holder(work_class: str, generation: str, activity: int, label: str, project: str | None) -> None:
+def _write_holder(lane: str, generation: str, activity: int, label: str, project: str | None) -> None:
     with _metadata():
-        descriptor = _open_lane(f"{work_class}-holder.json")
+        descriptor = _open_lane(f"{lane}-holder.json")
         try:
             record = {**_identity(label, project), "generation": generation, "fd": activity}
             content = json.dumps(record).encode("ascii")
@@ -358,10 +388,11 @@ def _write_holder(work_class: str, generation: str, activity: int, label: str, p
             os.close(descriptor)
 
 
-def _wait_status(work_class: str, label: str, since: float, activity: int, admission: int) -> None:
+def _wait_status(lane: str, label: str, since: float, activity: int, admission: int) -> None:
     holder = "holder=unknown"
+    work_class = _lane_class(lane)
     with _metadata():
-        descriptor = _open_lane(f"{work_class}-holder.json")
+        descriptor = _open_lane(f"{lane}-holder.json")
         try:
             try:
                 record = _record(descriptor)
@@ -382,11 +413,37 @@ def _wait_status(work_class: str, label: str, since: float, activity: int, admis
           f"class={work_class} wait_age={time.monotonic() - since:.1f}s {holder}", flush=True)
 
 
-def _wait_owner(admission: int, activity: int, label: str, work_class: str, project: str | None) -> None:
+def _try_lane(admission: int, activity: int) -> bool:
+    try:
+        fcntl.flock(admission, fcntl.LOCK_EX | fcntl.LOCK_NB)
+    except BlockingIOError:
+        return False
+    try:
+        fcntl.flock(activity, fcntl.LOCK_EX | fcntl.LOCK_NB)
+    except BlockingIOError:
+        # No child was launched on this admission. Releasing our own EX lock
+        # cannot release descendant activity.
+        fcntl.flock(admission, fcntl.LOCK_UN)
+        return False
+    return True
+
+
+def _wait_owner(lane: str, admission: int, activity: int, label: str,
+                project: str | None) -> tuple[str, int, int]:
+    """FIFO per class; the head takes slot zero or, with headroom, the spare."""
+    work_class = _lane_class(lane)
     waiter = None
     name = None
+    spare: tuple[int, int] | None = None
     since = time.monotonic()
     try:
+        if work_class == "heavy":
+            spare_admission = _open_lane(_lane_name("admission.lock", _SPARE_LANE))
+            try:
+                spare = (spare_admission, _open_lane(_lane_name("activity.lock", _SPARE_LANE)))
+            except BaseException:
+                os.close(spare_admission)
+                raise
         with _metadata():
             names = _waiters(work_class)
             order = max(time.monotonic_ns(), int(names[-1].split("-")[2]) + 1 if names else 0)
@@ -398,23 +455,18 @@ def _wait_owner(admission: int, activity: int, label: str, work_class: str, proj
         while True:
             with _metadata():
                 if _waiters(work_class)[0] == name:
-                    try:
-                        fcntl.flock(admission, fcntl.LOCK_EX | fcntl.LOCK_NB)
-                    except BlockingIOError:
-                        pass
-                    else:
-                        try:
-                            fcntl.flock(activity, fcntl.LOCK_EX | fcntl.LOCK_NB)
-                        except BlockingIOError:
-                            # No child was launched on this admission. Releasing
-                            # our own EX lock cannot release descendant activity.
-                            fcntl.flock(admission, fcntl.LOCK_UN)
-                        else:
-                            (_LOCK_DIRECTORY / name).unlink()
-                            name = None
-                            return
+                    chosen = None
+                    if _try_lane(admission, activity):
+                        chosen = (lane, admission, activity)
+                    elif spare is not None and _spare_capacity() and _try_lane(*spare):
+                        chosen = (_SPARE_LANE, *spare)
+                        spare = (admission, activity)  # closed below; caller adopts the spare
+                    if chosen is not None:
+                        (_LOCK_DIRECTORY / name).unlink()
+                        name = None
+                        return chosen
             if time.monotonic() >= next_status:
-                _wait_status(work_class, label, since, activity, admission)
+                _wait_status(lane, label, since, activity, admission)
                 next_status = time.monotonic() + 5
             time.sleep(0.1)
     finally:
@@ -425,9 +477,12 @@ def _wait_owner(admission: int, activity: int, label: str, work_class: str, proj
         finally:
             if waiter is not None:
                 os.close(waiter)
+            if spare is not None:
+                for descriptor in spare:
+                    os.close(descriptor)
 
 
-def _wait_lock(descriptor: int, label: str, *, work_class: str = "heavy", project: str | None = None,
+def _wait_lock(descriptor: int, label: str, *, lane: str = "heavy", project: str | None = None,
                activity: int, admission: int) -> None:
     """Verified descendant branches retain their established depth semantics."""
     since = time.monotonic()
@@ -438,6 +493,6 @@ def _wait_lock(descriptor: int, label: str, *, work_class: str = "heavy", projec
             return
         except BlockingIOError:
             if time.monotonic() >= next_status:
-                _wait_status(work_class, label, since, activity, admission)
+                _wait_status(lane, label, since, activity, admission)
                 next_status = time.monotonic() + 5
             time.sleep(0.1)

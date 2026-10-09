@@ -1,11 +1,19 @@
 # Shared transient-work admission
 
 Canonical ST quality tools, local security candidate preparation, outgoing
-publication history/scans, and managed dependency/build subprocesses share one
-same-user Linux heavy admission lane. One separate light slot is reserved for
-the direct managed Ruff adapter (`name=ruff`, `binary=ruff`). Configured wrappers,
-unknown tools, tests, native stages, builds, installs, scans and composite
-cleanrooms remain heavy. `--quick` selects stages; only its Ruff stage is light.
+publication history/scans, and managed dependency/build subprocesses share a
+same-user Linux heavy admission class. Slot zero (the legacy unprefixed lock
+files) is always available. A second `heavy2` slot admits the FIFO head only
+while `MemAvailable` is at least 12 GiB and PSI memory `some avg10` is below 5;
+under pressure heavy work stays one-at-a-time. The check runs at admission
+time only, so an admitted job is never preempted. Descendants re-enter the slot
+named by their lease token (`heavy2:` prefix).
+
+One separate light slot serves direct adapters of seconds-scale linters
+(`ruff`, `biome`, `actionlint`, `shellcheck`, `squawk`, invoked as their own
+binary or `npx <tool>`). Configured wrappers, unknown tools, tests, type
+checkers, native stages, builds, installs, scans and composite cleanrooms
+remain heavy.
 A light context cannot implicitly upgrade to heavy, including in descendants.
 Ruff nested under a verified heavy owner reuses that heavy admission.
 
