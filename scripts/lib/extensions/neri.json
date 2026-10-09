@@ -37,7 +37,7 @@
     "notes list": "Usage: neri notes list [OPTIONS] {investigation_id}\n\nArguments:\n  investigation_id  [required]\n\nOptions:\n  --help  Show this message and exit.",
     "notes add": "Usage: neri notes add [OPTIONS] {investigation_id}\n\nArguments:\n  investigation_id  [required]\n\nOptions:\n  --file <path>  [required]\n  --id <uuid>\n  --help         Show this message and exit.",
     "notes state": "Usage: neri notes state [OPTIONS] {investigation_id} {note_id}\n                        {state}:<acknowledged|resolved>\n\nArguments:\n  investigation_id               [required]\n  note_id                        [required]\n  state:<acknowledged|resolved>  [required]\n\nOptions:\n  --id <uuid>\n  --help       Show this message and exit.",
-    "report": "Usage: neri report [OPTIONS] COMMAND [ARGS]...\n\n  Read exact report and review revisions, save reports and download drafts\n\nOptions:\n  --help  Show this message and exit.\n\nCommands:\n  show\n  readiness\n  revision                  Read one exact report revision without...\n  review-packet             Read exact report evidence without...\n  review-revision           Read one exact review revision without...\n  impact-checks\n  impact-check\n  record-impact-check\n  decide-impact-check\n  duplicate-dossiers\n  duplicate-dossier\n  record-duplicate-dossier\n  classifications\n  classify\n  save\n  download\n  severity                  Read and save immutable severity assessments...",
+    "report": "Usage: neri report [OPTIONS] COMMAND [ARGS]...\n\n  Read exact report and review revisions, save reports and download drafts\n\nOptions:\n  --help  Show this message and exit.\n\nCommands:\n  show\n  readiness\n  revision                  Read one exact report revision without...\n  review-packet             Read exact report evidence without...\n  review-revision           Read one exact review revision without...\n  impact-checks\n  impact-check\n  record-impact-check\n  decide-impact-check\n  duplicate-dossiers\n  duplicate-dossier\n  record-duplicate-dossier\n  classifications\n  root-causes\n  classify\n  save\n  download\n  severity                  Read and save immutable severity assessments...",
     "report show": "Usage: neri report show [OPTIONS] {investigation_id}\n\nArguments:\n  investigation_id  [required]\n\nOptions:\n  --help  Show this message and exit.",
     "report readiness": "Usage: neri report readiness [OPTIONS] {investigation_id} [report_revision_id]\n                             [program_binding_revision_id]\n\nArguments:\n  investigation_id             [required]\n  report_revision_id\n  program_binding_revision_id\n\nOptions:\n  --help  Show this message and exit.",
     "report revision": "Usage: neri report revision [OPTIONS] {investigation_id} {revision_id}\n\n  Read one exact report revision without loading report history.\n\nArguments:\n  investigation_id  [required]\n  revision_id       [required]\n\nOptions:\n  --help  Show this message and exit.",
@@ -51,6 +51,7 @@
     "report duplicate-dossier": "Usage: neri report duplicate-dossier [OPTIONS] {investigation_id} {dossier_id}\n\nArguments:\n  investigation_id  [required]\n  dossier_id        [required]\n\nOptions:\n  --help  Show this message and exit.",
     "report record-duplicate-dossier": "Usage: neri report record-duplicate-dossier [OPTIONS] {investigation_id}\n\nArguments:\n  investigation_id  [required]\n\nOptions:\n  --file <path>  [required]\n  --id <uuid>\n  --help         Show this message and exit.",
     "report classifications": "Usage: neri report classifications [OPTIONS] {investigation_id}\n\nArguments:\n  investigation_id  [required]\n\nOptions:\n  --report-revision-id <uuid>\n  --finding-id <str>\n  --current-only\n  --help                       Show this message and exit.",
+    "report root-causes": "Usage: neri report root-causes [OPTIONS]\n\nOptions:\n  --target <str>\n  --q <str>\n  --limit <int range>  [1<=x<=200]\n  --help               Show this message and exit.",
     "report classify": "Usage: neri report classify [OPTIONS] {investigation_id}\n\nArguments:\n  investigation_id  [required]\n\nOptions:\n  --file <path>  [required]\n  --id <uuid>\n  --help         Show this message and exit.",
     "report save": "Usage: neri report save [OPTIONS] {investigation_id}\n\nArguments:\n  investigation_id  [required]\n\nOptions:\n  --file <path>  [required]\n  --id <uuid>\n  --help         Show this message and exit.",
     "report download": "Usage: neri report download [OPTIONS] {investigation_id}\n\nArguments:\n  investigation_id  [required]\n\nOptions:\n  --output <path>                 [required]\n  --revision <uuid>               Download this exact report revision\n  --review <uuid>                 Bind this exact review revision and its\n                                  report\n  --program-binding-revision-id <uuid>\n                                  Use this exact program binding revision\n  --severity-through-sequence <int range>\n                                  Freeze severity at this saved activity\n                                  sequence  [x>=0]\n  --help                          Show this message and exit.",
@@ -75,7 +76,7 @@
     "target programs show": "Usage: neri target programs show [OPTIONS] {target_id} {binding_id}\n\nArguments:\n  target_id   [required]\n  binding_id  [required]\n\nOptions:\n  --revision-id <uuid>\n  --help                Show this message and exit.",
     "target programs history": "Usage: neri target programs history [OPTIONS] {target_id} {binding_id}\n\nArguments:\n  target_id   [required]\n  binding_id  [required]\n\nOptions:\n  --limit <int range>  [default: 40; 1<=x<=100]\n  --cursor <str>\n  --help               Show this message and exit.",
     "group": "Usage: neri group [OPTIONS] COMMAND [ARGS]...\n\n  Read and organize passive investigations containing saved attempts\n\nOptions:\n  --help  Show this message and exit.\n\nCommands:\n  list\n  create\n  show\n  timeline\n  classify\n  select-report\n  membership\n  notes          Save investigation direction and read its state history",
-    "group list": "Usage: neri group list [OPTIONS] {target_id}\n\nArguments:\n  target_id  [required]\n\nOptions:\n  --limit <int range>             [default: 40; 1<=x<=100]\n  --cursor <str>\n  --search <str>\n  --class-key <str>\n  --filter <all|active|attention|recorded_blockers|owner_actions|awaiting_review|reviewed_findings|reviewed_results|reviewed_no_findings>\n  --include-empty / --no-include-empty\n                                  [default: no-include-empty]\n  --sections / --no-sections      [default: no-sections]\n  --help                          Show this message and exit.",
+    "group list": "Usage: neri group list [OPTIONS] {target_id}\n\nArguments:\n  target_id  [required]\n\nOptions:\n  --limit <int range>             [default: 40; 1<=x<=100]\n  --cursor <str>\n  --search <str>\n  --class-key <str>\n  --filter <all|active|attention|recorded_blockers|owner_actions|awaiting_review|reviewed_findings|reviewed_results|reviewed_no_findings>\n  --include-empty / --no-include-empty\n                                  [default: no-include-empty]\n  --sections / --no-sections      [default: no-sections]\n  --full / --no-full              [default: no-full]\n  --help                          Show this message and exit.",
     "group create": "Usage: neri group create [OPTIONS] {target_id}\n\nArguments:\n  target_id  [required]\n\nOptions:\n  --file <path>  [required]\n  --id <uuid>\n  --help         Show this message and exit.",
     "group show": "Usage: neri group show [OPTIONS] {target_id} {group_id}\n\nArguments:\n  target_id  [required]\n  group_id   [required]\n\nOptions:\n  --limit, --attempt-limit <int range>\n                                  [default: 40; 1<=x<=100]\n  --cursor, --attempt-cursor <str>\n  --report-limit <int range>      [default: 40; 1<=x<=100]\n  --report-cursor <str>\n  --help                          Show this message and exit.",
     "group timeline": "Usage: neri group timeline [OPTIONS] {target_id} {group_id}\n\nArguments:\n  target_id  [required]\n  group_id   [required]\n\nOptions:\n  --latest <int range>  [1<=x<=100]\n  --cursor <str>\n  --limit <int range>   [1<=x<=100]\n  --help                Show this message and exit.",
@@ -226,7 +227,7 @@
       "when": "default single-run read: hunt state, obligations, activity and evidence references in one call",
       "precautions": [
         "read-only local projection; includes the show summary, so a separate show is unnecessary",
-        "compact evidence omits event_id (equal to id), null and empty-string fields, and a run-matching environment (run_target: true); empty lists and objects are kept as recorded; --full returns the exact projection"
+        "evidence rows are references (id, label, kind, title, summary, signal, completeness, artifact name and size); evidence list or show carries provenance and assessment, --full the exact projection"
       ],
       "task_types": [
         "neri"
@@ -515,6 +516,19 @@
       ]
     },
     {
+      "surface": "st.neri.report.root_causes",
+      "tier": "reference",
+      "cmd": "st neri report root-causes [--target ID] [--q PREFIX] [--limit N]",
+      "when": "list existing root_cause_keys before choosing one for a finding",
+      "precautions": [
+        "read-only; reuse an exact existing key for the same defect instead of inventing a variant",
+        "keys resolve from each finding's newest classification, supported review or report fields"
+      ],
+      "task_types": [
+        "neri"
+      ]
+    },
+    {
       "surface": "st.neri.report.classify",
       "tier": "reference",
       "cmd": "st neri report classify <investigation-id> --file classification.json [--id UUID]",
@@ -750,10 +764,11 @@
     {
       "surface": "st.neri.group.list",
       "tier": "reference",
-      "cmd": "st neri group list <target-id> [--limit 40 --cursor TOKEN --search TEXT --class-key KEY --filter FILTER --include-empty --sections]",
+      "cmd": "st neri group list <target-id> [--limit 40 --cursor TOKEN --search TEXT --class-key KEY --filter FILTER --include-empty --sections --full]",
       "when": "list passive investigations for a logical target",
       "precautions": [
-        "read-only; filters apply before pagination; --sections adds per-class groupings; --include-empty adds empty historical groups"
+        "read-only; filters apply before pagination; --sections adds per-class groupings; --include-empty adds empty historical groups",
+        "rows are compact (ids, state, counts, clipped text); group show has the detail and --full the exact rows"
       ],
       "task_types": [
         "neri"
