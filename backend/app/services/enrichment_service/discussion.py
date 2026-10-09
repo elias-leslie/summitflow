@@ -123,7 +123,6 @@ def _call_llm_for_discussion(prompt: str) -> dict[str, Any]:
     response = client.generate(
         prompt=prompt,
         temperature=0.5,
-        purpose="task_discussion",
     )
     return parse_enrichment_response(response.content)
 

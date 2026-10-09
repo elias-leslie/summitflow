@@ -13,7 +13,9 @@ def test_emit_lifecycle_event_jsonifies_tool_output(mocker) -> None:
     from app.tasks.autonomous.exec_modules import ah_events
 
     mocker.patch.object(ah_events, "_get_session_ids", return_value=["sess-1"])
-    post = mocker.patch.object(ah_events.httpx, "post", return_value=MagicMock())
+    client = MagicMock()
+    client.__enter__.return_value = client
+    mocker.patch.object(ah_events, "get_sync_client", return_value=client)
 
     ah_events.emit_lifecycle_event(
         "task-1",
@@ -23,7 +25,8 @@ def test_emit_lifecycle_event_jsonifies_tool_output(mocker) -> None:
         tool_output={"result": ToolResultLike()},
     )
 
-    payload = post.call_args.kwargs["json"]
+    session_id, payload = client.append_session_event.call_args.args
+    assert session_id == "sess-1"
     assert payload["tool_output"] == {
         "result": {"id": "tool-1", "content": {"ok": True}}
     }

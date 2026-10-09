@@ -343,7 +343,6 @@ def fix_test_failure(
         response = agent.generate(
             prompt=prompt,
             temperature=0.3,
-            purpose="quality_gate_test_fix",
         )
         response_text = response.content.strip()
     except Exception as e:

@@ -145,7 +145,6 @@ async def generate_asset(
         response = client.generate_image(
             prompt=merged_prompt,
             project_id=project_id,
-            purpose="asset_generation",
             agent_slug=agent_slug,
             size=request.size,
             style=request.style,

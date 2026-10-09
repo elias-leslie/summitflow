@@ -70,3 +70,30 @@ class TestListCodingAgents:
             f"{AGENT_HUB_URL}/api/agents",
             params={"is_coding_agent": "false"},
         )
+
+
+class TestListModels:
+    """GET /api/agent-hub/models uses the SDK model catalog."""
+
+    def test_list_models_returns_sdk_catalog(self, mocker: MockerFixture) -> None:
+        sdk = AsyncMock()
+        sdk.__aenter__.return_value = sdk
+        sdk.list_models.return_value = {"models": [{"id": "m1"}]}
+        mocker.patch("app.api.agent_hub.get_async_client", return_value=sdk)
+
+        response = client.get("/api/agent-hub/models")
+
+        assert response.status_code == 200
+        assert response.json() == {"models": [{"id": "m1"}]}
+
+    def test_list_models_maps_sdk_errors(self, mocker: MockerFixture) -> None:
+        from agent_hub.exceptions import ServerError
+
+        sdk = AsyncMock()
+        sdk.__aenter__.return_value = sdk
+        sdk.list_models.side_effect = ServerError("Server error: down", status_code=503)
+        mocker.patch("app.api.agent_hub.get_async_client", return_value=sdk)
+
+        response = client.get("/api/agent-hub/models")
+
+        assert response.status_code == 503

@@ -66,7 +66,7 @@ class AgentHubLLMClient(LLMClient):
     def is_available(self) -> bool:
         """Check if Agent Hub is available."""
         try:
-            self._get_client().list_sessions(page_size=1)
+            self._get_client().health()
             return True
         except Exception as e:
             logger.warning("Agent Hub not available: %s", e)
@@ -81,7 +81,6 @@ class AgentHubLLMClient(LLMClient):
         prompt: str,
         system: str | None = None,
         temperature: float = 1.0,
-        purpose: str | None = None,
         task_id: str | None = None,
         use_memory: bool | None = None,
         memory_group_id: str | None = None,
@@ -106,7 +105,6 @@ class AgentHubLLMClient(LLMClient):
                 temperature=temperature,
                 project_id=self.project_id,
                 session_id=session_id,
-                purpose=purpose,
                 external_id=task_id,
                 enable_caching=enable_caching,
                 use_memory=effective_use_memory,

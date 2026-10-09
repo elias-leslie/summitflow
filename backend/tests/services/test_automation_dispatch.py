@@ -269,3 +269,31 @@ async def test_owner_work_respects_central_autonomous_enabled_gate(mocker) -> No
     assert finish.call_args.kwargs["status"] == "skipped"
     assert finish.call_args.kwargs["result"]["reason"] == "autonomous_enabled_disabled"
     domain.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_completion_and_browser_wait_report_through_sdk(mocker, monkeypatch) -> None:
+    monkeypatch.setenv("INTERNAL_SERVICE_SECRET", "shared-secret")
+    client = AsyncMock()
+    client.__aenter__.return_value = client
+    mocker.patch.object(automation_dispatch, "get_async_client", return_value=client)
+    mark = mocker.patch.object(
+        automation_dispatch.automation_dispatches, "mark_automation_completion_reported"
+    )
+    receipt = {
+        "run_id": "run-1", "owner_run_id": "owner-1", "status": "failed",
+        "error": "boom", "result": {"step": 2},
+    }
+
+    await automation_dispatch._report_completion(receipt)
+    await automation_dispatch._report_browser_wait(receipt)
+
+    client.complete_automation_run.assert_awaited_once_with(
+        "run-1",
+        {"status": "failed", "owner_run_id": "owner-1", "error": "boom", "receipt": {"step": 2}},
+        internal_secret="shared-secret",
+    )
+    client.accept_automation_run.assert_awaited_once_with(
+        "run-1", {"owner_run_id": "owner-1", "receipt": {"step": 2}}, internal_secret="shared-secret"
+    )
+    mark.assert_called_once_with("run-1")

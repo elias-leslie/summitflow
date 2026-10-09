@@ -35,7 +35,6 @@ class LLMClient(ABC):
         prompt: str,
         system: str | None = None,
         temperature: float = 1.0,
-        purpose: str | None = None,
         task_id: str | None = None,
         **kwargs: Any,
     ) -> LLMResponse:
@@ -45,7 +44,6 @@ class LLMClient(ABC):
             prompt: User prompt
             system: System prompt (optional)
             temperature: Sampling temperature
-            purpose: Purpose of this request for session tracking
             task_id: Task ID for session linkage
             **kwargs: Provider-specific options
 

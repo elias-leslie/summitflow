@@ -22,14 +22,14 @@ constraints = [
 
 [[package]]
 name = "agent-hub-client"
-version = "0.4.1"
-source = { path = "../docker/workspace-packages/agent_hub_client-0.4.1-py3-none-any.whl" }
+version = "0.5.0"
+source = { path = "../docker/workspace-packages/agent_hub_client-0.5.0-py3-none-any.whl" }
 dependencies = [
     { name = "httpx" },
     { name = "pydantic" },
 ]
 wheels = [
-    { filename = "agent_hub_client-0.4.1-py3-none-any.whl", hash = "sha256:02f902b78f73d04dd0b20dd523e0748cbc6790a3ccb1c7d18852d016a552140b" },
+    { filename = "agent_hub_client-0.5.0-py3-none-any.whl", hash = "sha256:f0a7083ebde777b20ae8c048408a2417d326e0b22c2d869cfb734790aa07b6bc" },
 ]
 
 [package.metadata]
@@ -48,17 +48,19 @@ name = "agent-hub-st"
 version = "0.1.0"
 source = { path = "../docker/workspace-packages/agent_hub_st-0.1.0-py3-none-any.whl" }
 dependencies = [
+    { name = "agent-hub-client" },
     { name = "httpx" },
     { name = "pyyaml" },
     { name = "summitflow-st-sdk" },
     { name = "typer" },
 ]
 wheels = [
-    { filename = "agent_hub_st-0.1.0-py3-none-any.whl", hash = "sha256:85fc9f1fe25813b4d1c8add164454727f10057fc5875cd1d9f53c0110bd5f9e6" },
+    { filename = "agent_hub_st-0.1.0-py3-none-any.whl", hash = "sha256:7b39d6b52507cd606c5fface08df91cf8edf2fbd43effe79be4466cf6d6b3972" },
 ]
 
 [package.metadata]
 requires-dist = [
+    { name = "agent-hub-client", specifier = "==0.5.0" },
     { name = "httpx", specifier = ">=0.28.0" },
     { name = "pyyaml", specifier = ">=6.0.0" },
     { name = "summitflow-st-sdk", specifier = "==0.1.0" },
@@ -494,12 +496,12 @@ dependencies = [
     { name = "typer" },
 ]
 wheels = [
-    { filename = "design_tools-0.1.0-py3-none-any.whl", hash = "sha256:2aeb2bd7a553a7613e32dc9297f0e9d56c6cf54f250c2bc591165b2a518fe503" },
+    { filename = "design_tools-0.1.0-py3-none-any.whl", hash = "sha256:0dec57de48e22948e049d5c966ad5ceb0ccb69daec2762f7a6253ee2604f9147" },
 ]
 
 [package.metadata]
 requires-dist = [
-    { name = "agent-hub-client", specifier = "==0.4.1" },
+    { name = "agent-hub-client", specifier = "==0.5.0" },
     { name = "agent-hub-st", specifier = "==0.1.0" },
     { name = "defusedxml", specifier = ">=0.7.1" },
     { name = "pillow", specifier = ">=11.3.0" },
@@ -1922,7 +1924,7 @@ dev = [
 
 [package.metadata]
 requires-dist = [
-    { name = "agent-hub-client", path = "../docker/workspace-packages/agent_hub_client-0.4.1-py3-none-any.whl" },
+    { name = "agent-hub-client", path = "../docker/workspace-packages/agent_hub_client-0.5.0-py3-none-any.whl" },
     { name = "agent-hub-st", path = "../docker/workspace-packages/agent_hub_st-0.1.0-py3-none-any.whl" },
     { name = "alembic", specifier = ">=1.13.0" },
     { name = "browser-automation", path = "../docker/workspace-packages/browser_automation-0.1.0-py3-none-any.whl" },

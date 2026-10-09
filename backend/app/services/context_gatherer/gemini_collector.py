@@ -58,7 +58,7 @@ def _call_gemini_client(prompt: str) -> str | None:
         logger.warning("Gemini not available for context gathering")
         return None
 
-    response = client.generate(prompt, temperature=0.3, purpose="context_gathering")
+    response = client.generate(prompt, temperature=0.3)
     return response.content
 
 

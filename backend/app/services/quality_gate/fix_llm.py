@@ -36,7 +36,6 @@ def execute_llm_fix(
     response = agent.generate(
         prompt=prompt,
         temperature=temperature,
-        purpose="quality_gate_fix",
     )
     new_content = response.content.strip()
     cost_usd = estimate_cost_from_response(response)

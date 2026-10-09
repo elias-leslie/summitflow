@@ -49,10 +49,8 @@ class CompletionRequestContract:
         "agent_slug",
         "temperature",
         "session_id",
-        "purpose",
         "external_id",
         "enable_caching",
-        "routing_config",
         "tools",
         "enable_programmatic_tools",
         "container_id",
@@ -241,7 +239,6 @@ class TestCompletionContract:
                     prompt="Hello",
                     system="You are a helpful assistant",
                     temperature=0.7,
-                    purpose="test",
                 )
 
         mock_agent_hub_client.complete.assert_not_called()
@@ -511,11 +508,11 @@ class TestClientConfigurationContract:
 class TestSessionContract:
     """Tests for session management contract."""
 
-    def test_availability_check_uses_list_sessions(self, mock_agent_hub_client: MagicMock) -> None:
-        """Verify is_available() uses list_sessions for health check."""
+    def test_availability_check_uses_health(self, mock_agent_hub_client: MagicMock) -> None:
+        """Verify is_available() uses the SDK health endpoint."""
         from app.services.agent_hub_client import AgentHubLLMClient
 
-        mock_agent_hub_client.list_sessions.return_value = MagicMock()
+        mock_agent_hub_client.health.return_value = {"status": "healthy"}
 
         with patch(
             "app.services.agent_hub_client.get_sync_client",
@@ -525,13 +522,13 @@ class TestSessionContract:
             result = client.is_available()
 
         assert result
-        mock_agent_hub_client.list_sessions.assert_called_once_with(page_size=1)
+        mock_agent_hub_client.health.assert_called_once_with()
 
     def test_availability_check_returns_false_on_error(self, mock_agent_hub_client: MagicMock) -> None:
         """Verify is_available() returns False when Agent Hub is down."""
         from app.services.agent_hub_client import AgentHubLLMClient
 
-        mock_agent_hub_client.list_sessions.side_effect = Exception("Connection refused")
+        mock_agent_hub_client.health.side_effect = Exception("Connection refused")
 
         with patch(
             "app.services.agent_hub_client.get_sync_client",
@@ -565,7 +562,6 @@ def live_client_with_cleanup(live_agent_hub_available: None) -> Any:
         def complete(self, **kwargs: Any) -> Any:
             # Force test project ID to avoid production pollution
             kwargs["project_id"] = CONTRACT_TEST_PROJECT_ID
-            kwargs.setdefault("purpose", "contract_test")
             response = client.complete(**kwargs)
             if response.session_id:
                 created_sessions.append(response.session_id)
@@ -613,7 +609,6 @@ class TestLiveAgentHubContract:
         response = client.generate(
             prompt="Say 'hello' and nothing else.",
             temperature=0.0,
-            purpose="contract_test",
         )
 
         # Validate response structure

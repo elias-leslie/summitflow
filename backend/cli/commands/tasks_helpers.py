@@ -80,44 +80,46 @@ def create_subtask_dependencies(task_id: str, subtasks: list[dict[str, Any]]) ->
             typer.echo(f"  Warning: Failed to create dependencies: {dep_err}")
 
 
-def fetch_triggered_references(task_type: str) -> list[dict[str, Any]]:
-    """Fetch task-type triggered references from Agent Hub."""
+def _fetch_agent_hub_references(path: str, params: dict[str, str]) -> list[dict[str, Any]]:
+    """GET an Agent Hub reference trigger list with ST client credentials.
+
+    agent-hub-client has no public method for the trigger endpoints yet, so this
+    stays a direct call; it must still identify the caller or Agent Hub rejects it.
+    """
     import httpx
 
     from ..config import get_agent_hub_url
+    from ..lib.credentials import load_credentials
 
     try:
-        from ._api_paths import MEMORY_TRIGGERED_REFS_PATH
-
-        url = f"{get_agent_hub_url()}{MEMORY_TRIGGERED_REFS_PATH}"
-        response = httpx.get(url, params={"task_type": task_type}, timeout=5.0)
+        client_id, request_source = load_credentials(default_source="st-context")
+        response = httpx.get(
+            f"{get_agent_hub_url()}{path}",
+            params=params,
+            headers={"X-Client-Id": client_id, "X-Request-Source": request_source},
+            timeout=5.0,
+        )
         if response.status_code == 200:
-            data: dict[str, Any] = response.json()
-            refs: list[dict[str, Any]] = data.get("references", [])
+            refs: list[dict[str, Any]] = response.json().get("references", [])
             return refs
-    except (httpx.HTTPError, OSError):
-        logger.debug("Failed to fetch triggered references for %s", task_type)
+        logger.debug("Agent Hub reference trigger %s returned HTTP %s", path, response.status_code)
+    except (httpx.HTTPError, OSError, ValueError):
+        logger.debug("Failed to fetch Agent Hub references from %s", path)
     return []
+
+
+def fetch_triggered_references(task_type: str) -> list[dict[str, Any]]:
+    """Fetch task-type triggered references from Agent Hub."""
+    from ._api_paths import MEMORY_TRIGGERED_REFS_PATH
+
+    return _fetch_agent_hub_references(MEMORY_TRIGGERED_REFS_PATH, {"task_type": task_type})
 
 
 def fetch_phase_triggered_references(phase: str) -> list[dict[str, Any]]:
     """Fetch phase-triggered references from Agent Hub."""
-    import httpx
+    from ._api_paths import MEMORY_PHASE_TRIGGERED_REFS_PATH
 
-    from ..config import get_agent_hub_url
-
-    try:
-        from ._api_paths import MEMORY_PHASE_TRIGGERED_REFS_PATH
-
-        url = f"{get_agent_hub_url()}{MEMORY_PHASE_TRIGGERED_REFS_PATH}"
-        response = httpx.get(url, params={"phase": phase}, timeout=5.0)
-        if response.status_code == 200:
-            data: dict[str, Any] = response.json()
-            refs: list[dict[str, Any]] = data.get("references", [])
-            return refs
-    except (httpx.HTTPError, OSError):
-        logger.debug("Failed to fetch phase references for %s", phase)
-    return []
+    return _fetch_agent_hub_references(MEMORY_PHASE_TRIGGERED_REFS_PATH, {"phase": phase})
 
 
 def looks_like_task_id(value: str | None) -> bool:

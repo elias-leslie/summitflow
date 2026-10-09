@@ -9,13 +9,8 @@ from __future__ import annotations
 from datetime import date, datetime
 from typing import Any
 
-import httpx
-
 from ....logging_config import get_logger
-from ....services._agent_hub_config import (
-    AGENT_HUB_URL,
-    build_agent_hub_headers,
-)
+from ....services._agent_hub_config import get_sync_client
 
 logger = get_logger(__name__)
 
@@ -35,14 +30,6 @@ def _jsonable(value: Any) -> Any:
     if isinstance(value, str | int | float | bool) or value is None:
         return value
     return str(value)
-
-
-def _get_headers() -> dict[str, str]:
-    """Headers for Agent Hub API calls."""
-    return build_agent_hub_headers(
-        request_source="sf-pipeline",
-        extra_headers={"Content-Type": "application/json"},
-    )
 
 
 def _get_session_ids(task_id: str) -> list[str]:
@@ -73,8 +60,6 @@ def emit_lifecycle_event(
     if not session_ids:
         return
 
-    url_base = AGENT_HUB_URL
-    headers = _get_headers()
     payload: dict[str, Any] = {
         "event_type": event_type,
         "content": content,
@@ -87,20 +72,21 @@ def emit_lifecycle_event(
         payload["agent_id"] = agent_id
     payload = _jsonable(payload)
 
-    for session_id in session_ids:
-        try:
-            httpx.post(
-                f"{url_base}/api/sessions/{session_id}/events",
-                json=payload,
-                headers=headers,
-                timeout=_TIMEOUT,
-            )
-        except Exception:
-            logger.debug(
-                "Failed to emit lifecycle event to AH session %s",
-                session_id,
-                exc_info=True,
-            )
+    try:
+        client = get_sync_client(timeout=_TIMEOUT, client_name="sf-pipeline")
+    except Exception:
+        logger.debug("Failed to create Agent Hub client for lifecycle events", exc_info=True)
+        return
+    with client:
+        for session_id in session_ids:
+            try:
+                client.append_session_event(session_id, payload)
+            except Exception:
+                logger.debug(
+                    "Failed to emit lifecycle event to AH session %s",
+                    session_id,
+                    exc_info=True,
+                )
 
 
 def emit_review_verdict(
@@ -153,21 +139,6 @@ def emit_prompt_harness_snapshot(
         content=f"Prompt harness snapshot: {snapshot.get('mode', 'code_only')}",
         tool_name="prompt_harness",
         tool_output=snapshot,
-        agent_id="orchestrator",
-    )
-
-
-def emit_runtime_evaluator_result(
-    task_id: str,
-    result: dict[str, Any],
-) -> None:
-    """Emit compact runtime-evaluator output for session observability."""
-    emit_lifecycle_event(
-        task_id,
-        event_type="tool_result",
-        content=f"Runtime evaluator: {result.get('summary', result.get('mode', 'runtime_eval'))}",
-        tool_name="runtime_evaluator",
-        tool_output=result,
         agent_id="orchestrator",
     )
 

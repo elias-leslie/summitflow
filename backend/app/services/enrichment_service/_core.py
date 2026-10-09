@@ -81,7 +81,6 @@ def _run_enrichment_with_retries(
             response = client.generate(
                 prompt=prompt,
                 temperature=0.3,
-                purpose="task_enrichment",
             )
             data = parse_enrichment_response(response.content)
             enriched = _build_enriched_task(data)
@@ -176,7 +175,6 @@ def validate_enrichment(enriched_task: EnrichedTask) -> ValidationResult:
         response = client.generate(
             prompt=prompt,
             temperature=0.2,
-            purpose="criteria_validation",
         )
         data = parse_enrichment_response(response.content)
         return ValidationResult(

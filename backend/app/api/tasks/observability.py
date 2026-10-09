@@ -10,6 +10,7 @@ import re
 from typing import Any
 
 import httpx
+from agent_hub.exceptions import AgentHubError
 from fastapi import APIRouter, HTTPException, Query
 from pydantic import BaseModel, Field
 
@@ -18,6 +19,7 @@ from ...services._agent_hub_config import (
     AGENT_HUB_URL,
     SUMMITFLOW_CLIENT_ID,
     build_agent_hub_headers,
+    get_sync_client,
 )
 from ...storage.events import get_events_by_trace
 from ...storage.tasks.core import add_agent_hub_session, get_agent_hub_sessions
@@ -132,21 +134,15 @@ def _fetch_session_events(
     page_size: int = 500,
 ) -> dict[str, Any]:
     """Fetch events from Agent Hub for a single session."""
-    params: dict[str, Any] = {"page": page, "page_size": page_size}
-    if event_type:
-        params["event_type"] = event_type
-    if turn is not None:
-        params["turn"] = turn
-    url = f"{AGENT_HUB_URL}/api/sessions/{session_id}/events"
     try:
-        with httpx.Client(timeout=HTTP_TIMEOUT) as client:
-            response = client.get(url, headers=_build_headers(), params=params)
-        if response.status_code == 404:
-            return EMPTY_SESSION_RESULT
-        if response.status_code >= 400:
-            logger.warning("Agent Hub API error", session_id=session_id, status=response.status_code, detail=response.text[:200])
-            return EMPTY_SESSION_RESULT
-        return dict(response.json())
+        with get_sync_client(timeout=HTTP_TIMEOUT, client_name=DEFAULT_REQUEST_SOURCE) as client:
+            return client.list_session_events(
+                session_id, event_type=event_type, turn=turn, page=page, page_size=page_size
+            )
+    except AgentHubError as e:
+        if e.status_code != 404:
+            logger.warning("Agent Hub API error", session_id=session_id, status=e.status_code, detail=e.message[:200])
+        return EMPTY_SESSION_RESULT
     except httpx.ConnectError:
         logger.warning("Cannot connect to Agent Hub", url=AGENT_HUB_URL)
         return EMPTY_SESSION_RESULT

@@ -19,7 +19,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 # Test the exact packaged SDK scheduled for deployment, without installing it.
-sys.path.insert(0, str(ROOT / "docker/workspace-packages/agent_hub_client-0.4.1-py3-none-any.whl"))
+sys.path.insert(0, str(ROOT / "docker/workspace-packages/agent_hub_client-0.5.0-py3-none-any.whl"))
 sys.path.insert(0, str(ROOT / "scripts/lib"))
 
 from codex_managed_capture import conformance  # noqa: E402
@@ -155,7 +155,7 @@ def run(output: Path, evidence_directory: Path | None = None, *, project: str = 
         serving = threading.Thread(target=provider.serve_forever, daemon=True)
         serving.start()
         (native / "config.toml").write_text(f'model = "canary-model"\nmodel_provider = "canary"\napproval_policy = "on-request"\nsandbox_mode = "read-only"\nmodel_auto_compact_token_limit = 1000000\n[model_providers.canary]\nname = "local-canary"\nbase_url = "http://127.0.0.1:{provider.server_port}/v1"\nwire_api = "responses"\nrequires_openai_auth = false\nrequest_max_retries = 0\nstream_max_retries = 0\n[features]\nunified_exec = true\nmulti_agent = true\n[analytics]\nenabled = false\n[feedback]\nenabled = false\n')
-        env = {"PATH": os.environ["PATH"], "HOME": str(home), "CODEX_REAL": real_binary, "CODEX_HOME": str(native), "PYTHONPATH": str(ROOT / "docker/workspace-packages/agent_hub_client-0.4.1-py3-none-any.whl"), "SUMMITFLOW_CODEX_MANAGED_CAPTURE": "1", "SUMMITFLOW_CODEX_OUTBOX": str(root / "spool/outbox.sqlite"), "SUMMITFLOW_CODEX_OUTBOX_MAX_BYTES": "10485760", "SUMMITFLOW_CODEX_RAW_RETENTION_SECONDS": "0", "SUMMITFLOW_CODEX_PROTOCOL_QUALIFICATION": os.environ.get("SUMMITFLOW_CODEX_PROTOCOL_QUALIFICATION", "0"), "RUST_LOG": "off"}
+        env = {"PATH": os.environ["PATH"], "HOME": str(home), "CODEX_REAL": real_binary, "CODEX_HOME": str(native), "PYTHONPATH": str(ROOT / "docker/workspace-packages/agent_hub_client-0.5.0-py3-none-any.whl"), "SUMMITFLOW_CODEX_MANAGED_CAPTURE": "1", "SUMMITFLOW_CODEX_OUTBOX": str(root / "spool/outbox.sqlite"), "SUMMITFLOW_CODEX_OUTBOX_MAX_BYTES": "10485760", "SUMMITFLOW_CODEX_RAW_RETENTION_SECONDS": "0", "SUMMITFLOW_CODEX_PROTOCOL_QUALIFICATION": os.environ.get("SUMMITFLOW_CODEX_PROTOCOL_QUALIFICATION", "0"), "RUST_LOG": "off"}
         version, fingerprint, _ = conformance(binary, env=env)
         connection = Connection(env=env, root=root)
         connection.initialize()

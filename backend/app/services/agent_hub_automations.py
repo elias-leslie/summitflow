@@ -4,11 +4,10 @@ from __future__ import annotations
 
 import os
 from collections.abc import Mapping
-from typing import Any
 
-import httpx
+from ._agent_hub_config import get_sync_client
 
-from ._agent_hub_config import AGENT_HUB_URL, build_agent_hub_headers
+_PROFILE_LIMIT = 500
 
 
 def legacy_clock_owns(project_id: str, workflow_key: str) -> bool:
@@ -17,23 +16,13 @@ def legacy_clock_owns(project_id: str, workflow_key: str) -> bool:
     if not secret:
         return False
     try:
-        response = httpx.get(
-            f"{AGENT_HUB_URL.rstrip('/')}/api/automations/profiles",
-            params={"project_id": project_id},
-            headers=build_agent_hub_headers(
-                request_source="summitflow-automation-clock",
-                extra_headers={"X-Agent-Hub-Internal": secret},
-            ),
-            timeout=5.0,
-        )
-        response.raise_for_status()
-        payload: Any = response.json()
+        with get_sync_client(timeout=5.0, client_name="summitflow-automation-clock") as client:
+            profiles = client.list_automation_profiles(
+                project_id, internal_secret=secret, limit=_PROFILE_LIMIT
+            )
     except Exception:
         return False
 
-    profiles = payload.get("items") if isinstance(payload, Mapping) else payload
-    if not isinstance(profiles, list):
-        return False
     full_key = f"summitflow/{workflow_key}"
     matches = [
         item

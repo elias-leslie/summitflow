@@ -333,7 +333,7 @@ async def _run_agent_task(
     try:
         client = AgentHubLLMClient(agent_slug=agent_slug, use_memory=(agent_slug != "note-formatter"))
         raw = await asyncio.to_thread(
-            lambda: client.generate(prompt, temperature=0.3, purpose="notes").content
+            lambda: client.generate(prompt, temperature=0.3).content
         )
         if parse_fn == "format":
             parsed = _parse_format_response(raw)
@@ -469,7 +469,7 @@ async def generate_title(content: str = Body(..., embed=True)) -> dict[str, Any]
 
         client = AgentHubLLMClient(agent_slug="note-titler", use_memory=False)
         raw = await asyncio.to_thread(
-            lambda: client.generate(content[:1000], temperature=0.3, purpose="note_title").content
+            lambda: client.generate(content[:1000], temperature=0.3).content
         )
         title = _extract_title(raw)
         if not title:

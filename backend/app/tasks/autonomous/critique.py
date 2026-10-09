@@ -158,7 +158,6 @@ def run_task_shape_critique(
             messages=[{"role": "user", "content": prompt}],
             project_id=project_id,
             external_id=task_id,
-            purpose="task-second-opinion",
             use_memory=False,
             memory_group_id=None,
         )

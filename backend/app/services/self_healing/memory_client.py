@@ -17,6 +17,7 @@ from ...logging_config import get_logger
 from .._agent_hub_config import (
     AGENT_HUB_URL,
     build_agent_hub_headers,
+    get_async_client,
 )
 
 logger = get_logger(__name__)
@@ -160,41 +161,25 @@ class MemoryClient:
         Returns:
             List of search results with patterns
         """
-        headers = {}
-        if scope:
-            headers["x-memory-scope"] = scope
-        if scope_id:
-            headers["x-scope-id"] = scope_id
-
-        params: dict[str, str | int | float] = {
-            "query": query,
-            "limit": limit,
-            "min_score": min_score,
-        }
-
-        async with httpx.AsyncClient(timeout=self.timeout, headers=self._headers_with_source_path()) as client:
-            response = await client.get(
-                f"{self.base_url}/api/memory/search",
-                params=params,
-                headers=headers,
+        async with get_async_client(
+            base_url=self.base_url, timeout=self.timeout, client_name=SOURCE_CLIENT
+        ) as client:
+            data = await client.search_memories(
+                query, limit=limit, min_score=min_score, scope=scope or "global", scope_id=scope_id
             )
-            response.raise_for_status()
-            data = response.json()
 
-            results = []
-            for item in data.get("results", []):
-                results.append(
-                    SearchResult(
-                        pattern=item.get("content", ""),
-                        applies_to=item.get("applies_to", ""),
-                        example=item.get("example"),
-                        score=item.get("score", 0.0),
-                        metadata=item.get("metadata"),
-                    )
-                )
-
-            logger.debug("Found %d patterns for query: %s", len(results), query[:50])
-            return results
+        results = [
+            SearchResult(
+                pattern=item.get("content", ""),
+                applies_to=item.get("applies_to", ""),
+                example=item.get("example"),
+                score=item.get("score", 0.0),
+                metadata=item.get("metadata"),
+            )
+            for item in data.get("results", [])
+        ]
+        logger.debug("Found %d patterns for query: %s", len(results), query[:50])
+        return results
 
     @retry(
         stop=stop_after_attempt(3),

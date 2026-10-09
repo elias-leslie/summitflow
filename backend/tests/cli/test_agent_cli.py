@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import json
 from pathlib import Path
 from unittest.mock import patch
 
@@ -104,76 +103,18 @@ def test_agent_run_surfaces_recovered_tool_errors() -> None:
     assert "command failed" in result.stderr
 
 
-def test_agent_run_adhoc_json_sends_workspec_without_registered_agent(tmp_path: Path) -> None:
-    spec = {
-        "prompt": "Inspect current state.",
-        "routing_judgment": {
-            "workload_profile": "coding_impl",
-            "capabilities": {"coding": 0.9, "tool_use": 0.8},
-            "constraints": {"tool_use": True},
-        },
-    }
-    spec_path = tmp_path / "adhoc.json"
-    spec_path.write_text(json.dumps(spec), encoding="utf-8")
-
+def test_agent_run_rejects_removed_adhoc_routing_flags() -> None:
     with patch("cli.commands.agent.call_complete") as mock_call:
-        mock_call.return_value = {
-            "content": "done",
-            "session_id": "sess-adhoc",
-            "model": "kimi-code/kimi-for-coding",
-        }
+        result = runner.invoke(app, ["run", "--adhoc", "--cost", "low_cost", "--message", "x"])
 
-        result = runner.invoke(
-            app,
-            [
-                "run",
-                "--adhoc",
-                "--json", str(spec_path),
-                "--project", "agent-hub",
-                "--exclude-provider", "codex",
-                "--cost", "low_cost",
-            ],
-        )
-
-    assert result.exit_code == 0
-    kwargs = mock_call.call_args.kwargs
-    assert kwargs["agent_slug"] is None
-    assert kwargs["adhoc"] is True
-    assert kwargs["use_memory"] is False
-    assert kwargs["message"] == "Inspect current state."
-    assert kwargs["adhoc_spec"]["routing_judgment"]["workload_profile"] == "coding_impl"
-    assert kwargs["adhoc_spec"]["routing"]["exclude_providers"] == ["codex"]
-    assert kwargs["routing_exclude_providers"] == ["codex"]
-    assert kwargs["routing_cost_preference"] == "low_cost"
+    assert result.exit_code != 0
+    mock_call.assert_not_called()
 
 
-def test_agent_run_adhoc_derives_coding_workspec_from_task_type() -> None:
+def test_agent_run_requires_exact_agent_slug() -> None:
     with patch("cli.commands.agent.call_complete") as mock_call:
-        mock_call.return_value = {
-            "content": "done",
-            "session_id": "sess-adhoc",
-            "model": "claude-sonnet-5-5",
-        }
+        result = runner.invoke(app, ["run", "--message", "Inspect state"])
 
-        result = runner.invoke(
-            app,
-            [
-                "run",
-                "--adhoc",
-                "--project", "summitflow",
-                "--task-type", "coding_impl",
-                "--message", "Fix a CLI issue",
-            ],
-        )
-
-    assert result.exit_code == 0
-    adhoc_spec = mock_call.call_args.kwargs["adhoc_spec"]
-    assert adhoc_spec["task_type"] == "coding_impl"
-    assert adhoc_spec["workload_profile"] == "coding_impl"
-    assert adhoc_spec["tool_mode"] == "write"
-    assert adhoc_spec["routing_judgment"]["workload_profile"] == "coding_impl"
-    assert adhoc_spec["routing_judgment"]["capabilities"] == {
-        "coding": 0.9,
-        "tool_use": 0.85,
-        "reasoning": 0.75,
-    }
+    assert result.exit_code == 1
+    assert "Missing --agent" in result.stderr
+    mock_call.assert_not_called()

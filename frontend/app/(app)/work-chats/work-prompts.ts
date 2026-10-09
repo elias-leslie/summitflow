@@ -122,7 +122,7 @@ export function startPromptForPane(
   if (pane.routingMode === 'auto') {
     lines.push(
       'Routing mode: Auto Jenny. Answer directly or delegate based on work_context and Agent Hub routing.',
-      'For flexible child work, use bash `st agent run --adhoc --json <workspec>` from work_context.adhoc_spec; do not choose a provider or model.',
+      'For child work, use bash `st agent run --agent <exact Agent Hub agent slug> --message <brief>`; choose an agent, never a provider or model.',
     )
   } else {
     lines.push(`Direct agent mode: ${pane.agentSlug}.`)

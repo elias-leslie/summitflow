@@ -109,7 +109,7 @@ class TestMockupProjectScope:
         analyze_screenshot_with_prompt("agent-hub", screenshot_path, "prompt")
 
         assert mock_client.complete.call_args.kwargs["project_id"] == "agent-hub"
-        assert mock_client.complete.call_args.kwargs["agent_slug"] == "site-checker"
+        assert mock_client.complete.call_args.kwargs["agent_slug"] == "designer"
 
     @patch("app.services.mockup_generator.renderers.gemini.get_sync_client")
     def test_generate_mockup_gemini_uses_passed_project_id(

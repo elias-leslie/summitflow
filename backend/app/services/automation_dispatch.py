@@ -15,10 +15,8 @@ from pathlib import Path
 from typing import Any
 from uuid import NAMESPACE_URL, uuid5
 
-import httpx
-
 from app.api.automation_dispatch import AutomationDispatchRequest
-from app.services._agent_hub_config import AGENT_HUB_URL, build_agent_hub_headers
+from app.services._agent_hub_config import get_async_client
 from app.services.autonomous_policy import use_execution_policy
 from app.storage import automation_dispatches
 
@@ -314,17 +312,8 @@ async def _report_completion(receipt: dict[str, Any]) -> None:
         body["error"] = receipt["error"]
     if result is not None:
         body["receipt"] = result
-    headers = build_agent_hub_headers(
-        request_source="summitflow-automation-completion",
-        extra_headers={"X-Agent-Hub-Internal": secret},
-    )
-    async with httpx.AsyncClient(timeout=10.0) as client:
-        response = await client.post(
-            f"{AGENT_HUB_URL.rstrip('/')}/api/automations/runs/{receipt['run_id']}/complete",
-            json=body,
-            headers=headers,
-        )
-        response.raise_for_status()
+    async with get_async_client(timeout=10.0, client_name="summitflow-automation-completion") as client:
+        await client.complete_automation_run(receipt["run_id"], body, internal_secret=secret)
     automation_dispatches.mark_automation_completion_reported(receipt["run_id"])
 
 
@@ -332,17 +321,12 @@ async def _report_browser_wait(receipt: dict[str, Any]) -> None:
     secret = os.environ.get("INTERNAL_SERVICE_SECRET", "").strip()
     if not secret:
         raise RuntimeError("Agent Hub internal progress authentication is unavailable")
-    headers = build_agent_hub_headers(
-        request_source="summitflow-browser-workflow-progress",
-        extra_headers={"X-Agent-Hub-Internal": secret},
-    )
-    async with httpx.AsyncClient(timeout=10.0) as client:
-        response = await client.post(
-            f"{AGENT_HUB_URL.rstrip('/')}/api/automations/runs/{receipt['run_id']}/accept",
-            json={"owner_run_id": receipt["owner_run_id"], "receipt": receipt["result"]},
-            headers=headers,
+    async with get_async_client(timeout=10.0, client_name="summitflow-browser-workflow-progress") as client:
+        await client.accept_automation_run(
+            receipt["run_id"],
+            {"owner_run_id": receipt["owner_run_id"], "receipt": receipt["result"]},
+            internal_secret=secret,
         )
-        response.raise_for_status()
 
 
 async def execute_automation_run(

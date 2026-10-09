@@ -2,44 +2,23 @@
 
 from __future__ import annotations
 
-import json
 import sys
 from pathlib import Path
 from typing import Annotated, Any
 
 import typer
+from agent_hub_st.completion import call_complete
+from agent_hub_st.completion import completion_failed as _completion_failed
+from agent_hub_st.completion import resolve_message as _resolve_message
 
 from ..client import APIError, STClient
 from ..config import get_config_optional
 from ..output import handle_api_error, output_json
-from ._complete_http import call_complete
-from ._complete_http import completion_failed as _completion_failed
-from ._complete_http import resolve_message as _resolve_message
 from ._session_resolver import resolve_session_id
 
 app = typer.Typer(help="Run Agent Hub agents with tools", no_args_is_help=True)
 
 NORMAL_TERMINATION_REASONS = {"streaming_one_shot_closed"}
-
-ADHOC_WORKLOAD_CAPABILITIES: dict[str, dict[str, float]] = {
-    "coding_impl": {"coding": 0.9, "tool_use": 0.85, "reasoning": 0.75},
-    "frontend_ux": {"coding": 0.75, "design": 0.8, "tool_use": 0.75, "vision": 0.4},
-    "planning": {"planning": 0.8, "reasoning": 0.75, "tool_use": 0.5},
-    "research": {"research": 0.8, "reasoning": 0.7, "tool_use": 0.45},
-    "general": {"reasoning": 0.6, "tool_use": 0.4},
-}
-ADHOC_TASK_TYPE_WORKLOADS: dict[str, str] = {
-    "coding_impl": "coding_impl",
-    "implementation": "coding_impl",
-    "refactor": "coding_impl",
-    "debug": "coding_impl",
-    "frontend_ux": "frontend_ux",
-    "frontend": "frontend_ux",
-    "design": "frontend_ux",
-    "planning": "planning",
-    "research": "research",
-    "general": "general",
-}
 
 
 def _project(project: str | None) -> str:
@@ -57,86 +36,6 @@ def _roles(value: str | None) -> list[str] | None:
 
 def _working_dir(value: str | None) -> str:
     return value or str(Path.cwd())
-
-
-def _read_file_text(value: str | None) -> str | None:
-    if not value:
-        return None
-    path = Path(value)
-    if not path.is_file():
-        typer.echo(f"File not found: {value}", err=True)
-        raise typer.Exit(1)
-    return path.read_text(encoding="utf-8")
-
-
-def _load_adhoc_spec(json_file: str | None, yaml_file: str | None) -> dict[str, Any]:
-    if json_file and yaml_file:
-        typer.echo("Use only one of --json or --yaml.", err=True)
-        raise typer.Exit(1)
-    raw = _read_file_text(json_file or yaml_file)
-    if raw is None:
-        return {}
-    try:
-        if json_file:
-            parsed = json.loads(raw)
-        else:
-            import yaml
-
-            parsed = yaml.safe_load(raw)
-    except Exception as exc:
-        typer.echo(f"Invalid adhoc spec: {exc}", err=True)
-        raise typer.Exit(1) from exc
-    if not isinstance(parsed, dict):
-        typer.echo("Adhoc spec must be a JSON/YAML object.", err=True)
-        raise typer.Exit(1)
-    return parsed
-
-
-def _merge_adhoc_spec(
-    spec: dict[str, Any],
-    *,
-    prompt_text: str | None,
-    exclude_providers: list[str] | None,
-    cost_preference: str | None,
-    task_type: str | None,
-    read_only: bool = False,
-) -> dict[str, Any]:
-    merged = dict(spec)
-    if prompt_text:
-        merged["prompt"] = prompt_text
-    if task_type and not merged.get("task_type"):
-        merged["task_type"] = task_type
-    profile = None
-    if task_type:
-        profile = ADHOC_TASK_TYPE_WORKLOADS.get(task_type.strip().lower())
-    if profile and not merged.get("workload_profile"):
-        merged["workload_profile"] = profile
-    if profile and not merged.get("routing_judgment"):
-        merged["routing_judgment"] = {
-            "workload_profile": profile,
-            "risk_tier": "low" if profile in {"planning", "research", "general"} else "normal",
-            "capabilities": ADHOC_WORKLOAD_CAPABILITIES[profile],
-            "constraints": {"needs_repo_access": not read_only},
-            "confidence": 0.8,
-            "rationale": f"Derived from st agent --task-type {task_type}.",
-        }
-    if profile and not merged.get("tool_mode"):
-        merged["tool_mode"] = "read_only" if read_only else "write"
-    routing = dict(merged.get("routing") or {})
-    if exclude_providers:
-        routing["exclude_providers"] = exclude_providers
-    if cost_preference:
-        routing["cost_preference"] = cost_preference
-    if routing:
-        merged["routing"] = routing
-    return merged
-
-
-def _message_from_adhoc_spec(spec: dict[str, Any]) -> str | None:
-    prompt = spec.get("prompt")
-    if isinstance(prompt, str) and prompt.strip():
-        return prompt
-    return None
 
 
 def _status_from_result(result: dict[str, Any]) -> str:
@@ -221,12 +120,6 @@ def run_agent(
     message_option: Annotated[str | None, typer.Option("--message", help="Message to send without relying on positional ordering")] = None,
     agent: Annotated[str | None, typer.Option("--agent", "-a", help="Exact Agent Hub agent slug")] = None,
     model: Annotated[str | None, typer.Option("--model", "-M", help="Manual model override via Agent Hub @mention")] = None,
-    adhoc: Annotated[bool, typer.Option("--adhoc", help="Run unregistered WorkSpec-driven adhoc execution")] = False,
-    adhoc_json: Annotated[str | None, typer.Option("--json", help="Adhoc WorkSpec JSON file")] = None,
-    adhoc_yaml: Annotated[str | None, typer.Option("--yaml", help="Adhoc WorkSpec YAML file")] = None,
-    adhoc_prompt: Annotated[str | None, typer.Option("--prompt", help="Adhoc prompt file")] = None,
-    exclude_provider: Annotated[list[str] | None, typer.Option("--exclude-provider", help="Provider to exclude from adhoc auto-routing")] = None,
-    cost_preference: Annotated[str | None, typer.Option("--cost", help="Adhoc routing cost bias: quality|balanced|low_cost")] = None,
     project: Annotated[str | None, typer.Option("--project", "-P", "-p", help="Project ID")] = None,
     source: Annotated[str, typer.Option("--source", "-s", help="Source client")] = "st-cli",
     session_id: Annotated[str | None, typer.Option("--session", "-S", help="Continue existing session")] = None,
@@ -248,35 +141,18 @@ def run_agent(
     raw: Annotated[bool, typer.Option("--raw", help="Output raw JSON")] = False,
 ) -> None:
     """Run an Agent Hub agent in real tool-loop mode."""
-    adhoc_spec = _load_adhoc_spec(adhoc_json, adhoc_yaml) if adhoc else {}
-    prompt_text = _read_file_text(adhoc_prompt)
-    adhoc_spec = _merge_adhoc_spec(
-        adhoc_spec,
-        prompt_text=prompt_text,
-        exclude_providers=exclude_provider,
-        cost_preference=cost_preference,
-        task_type=task_type,
-        read_only=read_only,
-    ) if adhoc else {}
-    resolved_message = _resolve_message(message_option or message, file) or (
-        _message_from_adhoc_spec(adhoc_spec) if adhoc else None
-    )
+    resolved_message = _resolve_message(message_option or message, file)
     if not resolved_message:
         typer.echo("Missing message. Provide argument, --message, --file, or stdin.", err=True)
         raise typer.Exit(1)
-    if not adhoc and not agent:
+    if not agent:
         typer.echo("Missing --agent exact Agent Hub slug.", err=True)
-        raise typer.Exit(1)
-    if adhoc and agent:
-        typer.echo("Use either --adhoc or --agent, not both.", err=True)
         raise typer.Exit(1)
     if model:
         resolved_message = f"@{model} {resolved_message}"
-    if adhoc:
-        memory = bool(memory and memory_group)
 
     result = call_complete(
-        agent_slug=None if adhoc else agent,
+        agent_slug=agent,
         message=resolved_message,
         project_id=_project(project),
         source_client=source,
@@ -297,10 +173,6 @@ def run_agent(
         audios=audio or None,
         parent_session_id=parent_session_id,
         read_only=read_only,
-        adhoc=adhoc,
-        adhoc_spec=adhoc_spec or None,
-        routing_exclude_providers=exclude_provider or None,
-        routing_cost_preference=cost_preference,
         tool_name="st agent",
     )
     status = _status_from_result(result)

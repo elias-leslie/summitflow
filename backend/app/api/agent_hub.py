@@ -13,6 +13,7 @@ from collections.abc import AsyncIterator, Mapping
 from typing import cast
 
 import httpx
+from agent_hub.exceptions import AgentHubError
 from fastapi import APIRouter, HTTPException, Query, Request
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
@@ -20,6 +21,7 @@ from pydantic import BaseModel
 from ..services._agent_hub_config import (
     AGENT_HUB_URL,
     build_agent_hub_headers,
+    get_async_client,
 )
 from .automation_dispatch import router as automation_dispatch_router
 
@@ -163,8 +165,17 @@ async def list_coding_agents(
 
 @router.get("/agent-hub/models")
 async def list_models() -> object:
-    """Proxy to Agent Hub to list available models."""
-    return await _get_json(f"{AGENT_HUB_URL}/api/models")
+    """Return the Agent Hub model catalog through the SDK."""
+    try:
+        async with get_async_client(timeout=_TIMEOUT_DEFAULT, client_name=_DEFAULT_REQUEST_SOURCE) as client:
+            return await client.list_models()
+    except AgentHubError as exc:
+        raise HTTPException(
+            status_code=exc.status_code or 502, detail=_ERR_AGENT_HUB.format(detail=exc.message)
+        ) from exc
+    except httpx.RequestError as exc:
+        _raise_from_request_error(exc)
+    return None  # pragma: no cover — unreachable, exceptions always raised above
 
 
 # ---------------------------------------------------------------------------

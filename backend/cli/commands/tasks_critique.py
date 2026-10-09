@@ -280,7 +280,6 @@ def _call_agent(
             messages=[{"role": "user", "content": prompt}],
             project_id=task["project_id"],
             external_id=task_id,
-            purpose="task-second-opinion",
             use_memory=False,
             memory_group_id=None,
         )
