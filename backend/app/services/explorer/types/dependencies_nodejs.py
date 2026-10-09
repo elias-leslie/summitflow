@@ -43,7 +43,7 @@ def scan_nodejs_dependencies(
     Local inventory can omit online enrichment; existing callers retain it.
     Descendant discovery never walks arbitrary source trees. Declared workspace
     patterns are restricted to eight levels and 256 directory visits. Directory
-    listings examine at most 256 entries; a listing that reaches the cap is
+    listings examine at most 257 entries; a listing that exceeds 256 is
     skipped instead of selecting an order-dependent subset. Exact declared and
     configured app paths remain eligible without directory enumeration.
     """
@@ -120,8 +120,9 @@ def _node_child_directories(root_path: Path, directory: Path) -> list[Path]:
         # Path.iterdir eagerly collects every entry on Python 3.13. Limit the
         # streaming iterator before constructing paths or checking their status.
         with os.scandir(directory) as entries:
-            bounded_entries = list(islice(entries, _MAX_WORKSPACE_DIRECTORIES))
-        if len(bounded_entries) >= _MAX_WORKSPACE_DIRECTORIES:
+            # One extra entry distinguishes a listing at the cap from one past it.
+            bounded_entries = list(islice(entries, _MAX_WORKSPACE_DIRECTORIES + 1))
+        if len(bounded_entries) > _MAX_WORKSPACE_DIRECTORIES:
             logger.warning(
                 "Node directory listing limit reached at %s; skipping automatic child discovery",
                 directory,

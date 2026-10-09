@@ -425,7 +425,7 @@ def test_node_child_discovery_bounds_enumeration_and_stat_work(
     ):
         directories = dependencies_nodejs._node_child_directories(tmp_path, tmp_path)
     assert directories == []
-    assert enumerated == [0, 1]
+    assert enumerated == [0, 1, 2]
     assert safe.call_count == 0
     assert stat.call_count == 0
 
@@ -495,9 +495,9 @@ def test_node_child_membership_is_independent_of_enumeration_order(
             )
             with patch("os.scandir", return_value=scanner):
                 results.append(dependencies_nodejs._node_child_directories(tmp_path, tmp_path))
-    assert warning.call_count == (2 if limit <= 3 else 0)
+    assert warning.call_count == (2 if limit < 3 else 0)
     assert results[0] == results[1]
-    expected = [tmp_path / name for name in ("a", "b", "z")] if limit > 3 else []
+    expected = [tmp_path / name for name in ("a", "b", "z")] if limit >= 3 else []
     assert results[0] == expected
 
 
