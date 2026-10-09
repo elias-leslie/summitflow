@@ -20,7 +20,6 @@ describe('Navigation', () => {
 
     expect(screen.getAllByText('Runtime')[0]).toHaveClass('hidden')
     expect(screen.getAllByText('Feedback')[0]).toHaveClass('hidden')
-    expect(screen.getAllByText('Work Chats')[0]).toHaveClass('hidden')
     expect(container.querySelector('nav')).toHaveClass('justify-center')
   })
 
@@ -29,7 +28,6 @@ describe('Navigation', () => {
 
     expect(screen.getAllByText('Runtime')[0]).toHaveClass('inline')
     expect(screen.getAllByText('Feedback')[0]).toHaveClass('inline')
-    expect(screen.getAllByText('Work Chats')[0]).toHaveClass('inline')
     expect(container.querySelector('nav')).toHaveClass('justify-start')
   })
 
@@ -44,10 +42,6 @@ describe('Navigation', () => {
       'href',
       '/',
     )
-    expect(screen.getByRole('link', { name: /work chats/i })).toHaveAttribute(
-      'href',
-      '/work-chats',
-    )
     expect(screen.getByText('Runtime')).toHaveClass('inline')
   })
 
@@ -55,7 +49,7 @@ describe('Navigation', () => {
     const { container } = render(<Navigation measure />)
 
     expect(screen.queryByRole('link')).not.toBeInTheDocument()
-    expect(container.querySelectorAll('nav > span')).toHaveLength(6)
+    expect(container.querySelectorAll('nav > span')).toHaveLength(5)
     expect(screen.getByText('Runtime')).toBeInTheDocument()
   })
 })

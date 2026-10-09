@@ -75,7 +75,7 @@ export function JennyExecutionStrip({ tasks }: JennyExecutionStripProps) {
             </div>
             <div className="truncate text-[10px] text-slate-500">
               Auto-managed project tasks · force verifier/model/parallelism from
-              task detail or Work Chat
+              task detail
             </div>
           </div>
         </div>

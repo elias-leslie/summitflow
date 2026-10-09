@@ -145,7 +145,7 @@ async def get_mockup_context(
     mockup_id: str,
     include_content: bool = Query(False, description="Include full HTML content"),
 ) -> MockupContextResponse:
-    """Get compact mockup context for Work Chats and agents."""
+    """Get compact mockup context for agents."""
     mockup = mockups_storage.get_mockup(project_id, mockup_id, voter_key="owner")
     if not mockup:
         raise HTTPException(status_code=404, detail="Mockup not found")

@@ -9,7 +9,6 @@ import {
   LayoutGrid,
   MessageSquareWarning,
   Package,
-  PanelsTopLeft,
   RefreshCw,
 } from 'lucide-react'
 import type { TaskType } from '@/lib/api'
@@ -57,13 +56,6 @@ export const navItems = [
     href: '/feedback',
     icon: MessageSquareWarning,
     activeColor: 'rose',
-  },
-  {
-    id: 'work-chats',
-    label: 'Work Chats',
-    href: '/work-chats',
-    icon: PanelsTopLeft,
-    activeColor: 'cyan',
   },
   {
     id: 'docker',

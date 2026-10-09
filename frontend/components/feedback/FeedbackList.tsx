@@ -9,7 +9,6 @@ import {
   ExternalLink,
   Loader2,
   MessageSquare,
-  PanelsTopLeft,
   RefreshCw,
   ThumbsUp,
   Trash2,
@@ -107,17 +106,6 @@ function InlineDetail({
         },
       },
     )
-  }
-
-  const openWorkChat = () => {
-    if (!item) return
-    const params = new URLSearchParams({
-      project_id: item.project_id,
-      feedback_id: item.id,
-      artifact_summary: item.title,
-    })
-    if (item.linked_task_id) params.set('task_id', item.linked_task_id)
-    window.open(`/work-chats?${params.toString()}`, '_blank')
   }
 
   if (isLoading) {
@@ -300,15 +288,6 @@ function InlineDetail({
 
       {/* Actions */}
       <div className="flex items-center gap-2 pt-1">
-        <button
-          type="button"
-          onClick={openWorkChat}
-          className="text-2xs px-2 py-1 rounded bg-phosphor-500/10 text-phosphor-300 hover:bg-phosphor-500/20 transition-colors flex items-center gap-1"
-        >
-          <PanelsTopLeft className="w-3 h-3" />
-          Start Chat
-        </button>
-
         {item.status !== 'archived' &&
           (showResolveInput ? (
             <div className="flex items-center gap-2 flex-1">

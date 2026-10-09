@@ -8,7 +8,6 @@ import {
   History,
   Image as ImageIcon,
   Layers3,
-  PanelsTopLeft,
   RefreshCw,
   Trash2,
 } from 'lucide-react'
@@ -58,15 +57,6 @@ export function PreviewArea({
   getImageUrl = getMockupImageUrl,
   getScreenshotUrl: screenshotUrl = getScreenshotUrl,
 }: PreviewAreaProps) {
-  const openWorkChat = () => {
-    const params = new URLSearchParams({
-      project_id: projectId,
-      design_id: mockup.mockup_id,
-      artifact_summary: mockup.name,
-    })
-    window.open(`/work-chats?${params.toString()}`, '_blank')
-  }
-
   const imageUrl = getImageUrl(projectId, mockup.mockup_id)
 
   return (
@@ -173,14 +163,6 @@ export function PreviewArea({
             >
               <Layers3 className="w-4 h-4" />
               New Iteration
-            </button>
-            <button
-              type="button"
-              onClick={openWorkChat}
-              className="btn-secondary flex items-center gap-2"
-            >
-              <PanelsTopLeft className="w-4 h-4" />
-              Work Chat
             </button>
           </>
         )}
