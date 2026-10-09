@@ -9,10 +9,11 @@ This avoids CORS issues and keeps credentials server-side.
 
 from __future__ import annotations
 
-from collections.abc import AsyncIterator, Mapping
+from collections.abc import AsyncIterator, Awaitable, Callable, Mapping
 from typing import cast
 
 import httpx
+from agent_hub import AsyncAgentHubClient
 from agent_hub.exceptions import AgentHubError
 from fastapi import APIRouter, HTTPException, Query, Request
 from fastapi.responses import StreamingResponse
@@ -92,6 +93,20 @@ async def _get_json(
     return None  # pragma: no cover — unreachable, exceptions always raised above
 
 
+async def _sdk_call(call: Callable[[AsyncAgentHubClient], Awaitable[object]]) -> object:
+    """Run one SDK operation, mapping SDK and transport errors to HTTP errors."""
+    try:
+        async with get_async_client(timeout=_TIMEOUT_DEFAULT, client_name=_DEFAULT_REQUEST_SOURCE) as client:
+            return await call(client)
+    except AgentHubError as exc:
+        raise HTTPException(
+            status_code=exc.status_code or 502, detail=_ERR_AGENT_HUB.format(detail=exc.message)
+        ) from exc
+    except httpx.RequestError as exc:
+        _raise_from_request_error(exc)
+    return None  # pragma: no cover — unreachable, exceptions always raised above
+
+
 # ---------------------------------------------------------------------------
 # Agents (existing endpoint)
 # ---------------------------------------------------------------------------
@@ -166,16 +181,7 @@ async def list_coding_agents(
 @router.get("/agent-hub/models")
 async def list_models() -> object:
     """Return the Agent Hub model catalog through the SDK."""
-    try:
-        async with get_async_client(timeout=_TIMEOUT_DEFAULT, client_name=_DEFAULT_REQUEST_SOURCE) as client:
-            return await client.list_models()
-    except AgentHubError as exc:
-        raise HTTPException(
-            status_code=exc.status_code or 502, detail=_ERR_AGENT_HUB.format(detail=exc.message)
-        ) from exc
-    except httpx.RequestError as exc:
-        _raise_from_request_error(exc)
-    return None  # pragma: no cover — unreachable, exceptions always raised above
+    return await _sdk_call(lambda client: client.list_models())
 
 
 # ---------------------------------------------------------------------------
@@ -247,20 +253,8 @@ async def get_session(session_id: str) -> object:
 
 @router.post("/agent-hub/sessions/{session_id}/close")
 async def close_session(session_id: str) -> object:
-    """Proxy to Agent Hub to close a session."""
-    async with httpx.AsyncClient(timeout=_TIMEOUT_DEFAULT) as client:
-        try:
-            response = await client.post(
-                f"{AGENT_HUB_URL}/api/sessions/{session_id}/close",
-                headers=_auth_headers(),
-            )
-            response.raise_for_status()
-            return response.json()
-        except httpx.HTTPStatusError as exc:
-            _raise_from_status_error(exc)
-        except httpx.RequestError as exc:
-            _raise_from_request_error(exc)
-    return None  # pragma: no cover — unreachable
+    """Close an Agent Hub session through the SDK."""
+    return await _sdk_call(lambda client: client.close_session(session_id))
 
 
 @router.get("/agent-hub/ownership/projects/{project_id}/live")

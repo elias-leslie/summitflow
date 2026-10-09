@@ -97,3 +97,16 @@ class TestListModels:
         response = client.get("/api/agent-hub/models")
 
         assert response.status_code == 503
+
+
+def test_close_session_uses_sdk(mocker: MockerFixture) -> None:
+    sdk = AsyncMock()
+    sdk.__aenter__.return_value = sdk
+    sdk.close_session.return_value = {"id": "sess-1", "status": "completed"}
+    mocker.patch("app.api.agent_hub.get_async_client", return_value=sdk)
+
+    response = client.post("/api/agent-hub/sessions/sess-1/close")
+
+    assert response.status_code == 200
+    assert response.json() == {"id": "sess-1", "status": "completed"}
+    sdk.close_session.assert_awaited_once_with("sess-1")
