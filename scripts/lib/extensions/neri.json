@@ -59,9 +59,11 @@
     "report severity list": "Usage: neri report severity list [OPTIONS] {investigation_id} {revision_id}\n\nArguments:\n  investigation_id  [required]\n  revision_id       [required]\n\nOptions:\n  --limit <int range>      [default: 40; 1<=x<=100]\n  --before-sequence <int>  Continue from the returned next_before_sequence\n  --help                   Show this message and exit.",
     "report severity show": "Usage: neri report severity show [OPTIONS] {investigation_id} {revision_id}\n                                 {assessment_id}\n\nArguments:\n  investigation_id  [required]\n  revision_id       [required]\n  assessment_id     [required]\n\nOptions:\n  --help  Show this message and exit.",
     "report severity save": "Usage: neri report severity save [OPTIONS] {investigation_id} {revision_id}\n\nArguments:\n  investigation_id  [required]\n  revision_id       [required]\n\nOptions:\n  --file <path>  [required]\n  --id <uuid>\n  --help         Show this message and exit.",
-    "target": "Usage: neri target [OPTIONS] COMMAND [ARGS]...\n\n  Inspect and maintain registered target metadata\n\nOptions:\n  --help  Show this message and exit.\n\nCommands:\n  list\n  show\n  register\n  status\n  notes     Save target direction and read its state history\n  programs  Record exact target applicability and its revision history",
+    "target": "Usage: neri target [OPTIONS] COMMAND [ARGS]...\n\n  Inspect and maintain registered target metadata\n\nOptions:\n  --help  Show this message and exit.\n\nCommands:\n  list\n  show\n  lab-authority\n  lab-authority-set\n  register\n  status\n  notes              Save target direction and read its state history\n  programs           Record exact target applicability and its revision...",
     "target list": "Usage: neri target list [OPTIONS]\n\nOptions:\n  --workspace / --no-workspace    [default: no-workspace]\n  --limit <int range>             [default: 20; 1<=x<=100]\n  --cursor <str>\n  --search <str>\n  --filter <all|active|attention|recorded_blockers|owner_actions|awaiting_review|reviewed_findings|reviewed_results|reviewed_no_findings>\n  --help                          Show this message and exit.",
     "target show": "Usage: neri target show [OPTIONS] {target_id}\n\nArguments:\n  target_id  [required]\n\nOptions:\n  --workspace / --no-workspace  [default: no-workspace]\n  --help                        Show this message and exit.",
+    "target lab-authority": "Usage: neri target lab-authority [OPTIONS] {target_id}\n\nArguments:\n  target_id  [required]\n\nOptions:\n  --help  Show this message and exit.",
+    "target lab-authority-set": "Usage: neri target lab-authority-set [OPTIONS] {target_id}\n\nArguments:\n  target_id  [required]\n\nOptions:\n  --file <path>  [required]\n  --id <uuid>\n  --help         Show this message and exit.",
     "target register": "Usage: neri target register [OPTIONS]\n\nOptions:\n  --file <path>  [required]\n  --help         Show this message and exit.",
     "target status": "Usage: neri target status [OPTIONS] {target_id}\n\nArguments:\n  target_id  [required]\n\nOptions:\n  --file <path>  [required]\n  --help         Show this message and exit.",
     "target notes": "Usage: neri target notes [OPTIONS] COMMAND [ARGS]...\n\n  Save target direction and read its state history\n\nOptions:\n  --help  Show this message and exit.\n\nCommands:\n  list\n  add\n  show\n  history\n  state    Save a state revision.",
@@ -202,7 +204,7 @@
         "do not file a submission request: submission readiness reaches the owner only through the Inbox ready-to-submit item (the exact readiness projection). Hold the candidate internally and record the hold in the investigation until it is ready",
         "everything agents can resolve under the methodology (review changes, selection, technical blockers, internal decisions) stays in the investigation, never here",
         "cite exact retained evidence and task IDs",
-        "an authorization request must include requested_action {destructive, network_reach: target_only|third_party, spending, real_credentials}; on a lab-authorized target an in-scope request is refused with 409 standing_lab_authority: proceed under that grant",
+        "an authorization request must include requested_action {destructive, network_reach: target_only|third_party, spending, real_credentials}; on a target with standing lab authority (st neri target lab-authority <target-id>) an in-scope request is refused with 409 standing_lab_authority: proceed under that grant",
         "complete shape (replace values): {\"id\":\"00000000-0000-4000-8000-000000000000\",\"decision_kind\":\"credentials\",\"title\":\"Owner login is required\",\"summary\":\"The authorized portal needs an interactive owner login that no agent can perform.\",\"evidence_ids\":[],\"task_ids\":[],\"next_step\":\"Owner logs in and records the resulting access decision.\"}"
       ],
       "task_types": [
@@ -630,6 +632,34 @@
       "when": "read a target manifest or its compact workspace context",
       "precautions": [
         "read-only; read --workspace context before exact attempts"
+      ],
+      "task_types": [
+        "neri"
+      ]
+    },
+    {
+      "surface": "st.neri.target.lab_authority",
+      "tier": "reference",
+      "cmd": "st neri target lab-authority <target-id>",
+      "when": "read a target's standing lab authority: current grant record, effective grant and history",
+      "precautions": [
+        "read-only; effective is null when the grant is revoked or the active manifest no longer qualifies"
+      ],
+      "task_types": [
+        "neri"
+      ]
+    },
+    {
+      "surface": "st.neri.target.lab_authority_set",
+      "tier": "reference",
+      "cmd": "st neri target lab-authority-set <target-id> --file grant.json [--id UUID]",
+      "when": "record the owner's grant or revocation of standing lab authority for one target",
+      "precautions": [
+        "owner decision only: never grant authority the owner did not give",
+        "append-only; does not re-register the manifest, so program bindings stay pinned",
+        "supersedes_grant_id must be the current grant id exactly (null for the first record); read it with st neri target lab-authority <target-id>",
+        "granted requires a native active manifest with a local or owner-lab boundary and a loopback or private origin (422 otherwise); revoked requires a current grant",
+        "complete shape (replace values): {\"id\":\"00000000-0000-4000-8000-000000000000\",\"state\":\"granted\",\"decision\":\"2026-10-09\",\"reason\":\"Owner-hosted local lab; non-destructive local testing.\",\"supersedes_grant_id\":null}"
       ],
       "task_types": [
         "neri"
