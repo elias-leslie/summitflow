@@ -336,8 +336,13 @@ def _waiters(work_class: str) -> list[str]:
 
 
 def _identity(label: str, project: str | None) -> dict[str, Any]:
+    if project is None:
+        try:
+            project = Path.cwd().name
+        except OSError:
+            project = "unknown"
     return {"pid": os.getpid(), "start": _process(os.getpid())[1],
-            "label": _public_label(label), "project": _public_label(project or Path.cwd().name),
+            "label": _public_label(label), "project": _public_label(project),
             "since": time.monotonic()}
 
 

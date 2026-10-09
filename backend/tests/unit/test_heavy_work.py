@@ -197,6 +197,22 @@ def test_wait_status_is_bounded_and_verifies_holder(lane: Path, capsys: pytest.C
     assert entered.is_set() and not thread.is_alive()
 
 
+def test_deleted_working_directory_still_creates_admission_metadata(lane: Path, tmp_path: Path) -> None:
+    cwd = tmp_path / "deleted-cwd"
+    cwd.mkdir()
+    code = _bootstrap(lane) + f"""
+import os
+os.chdir({str(cwd)!r})
+os.rmdir({str(cwd)!r})
+with guard.heavy_work('deleted cwd'):
+    print('admitted', flush=True)
+"""
+    result = subprocess.run([sys.executable, "-c", code], capture_output=True, text=True, timeout=5)
+    assert result.returncode == 0, result.stderr
+    assert result.stdout.strip() == "admitted"
+    assert json.loads((lane / "heavy-holder.json").read_text())["project"] == "unknown"
+
+
 def test_old_protocol_owner_blocks_new_queue_without_replacing_capacity_files(lane: Path, tmp_path: Path) -> None:
     # Seed the exact pre-FIFO capacity protocol without new helper metadata.
     descriptors = [os.open(lane / name, os.O_CREAT | os.O_RDWR, 0o600)
