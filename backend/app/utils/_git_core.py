@@ -254,21 +254,43 @@ def pull_repository(repo_path: Path) -> SyncResult:
     repo_status = get_repo_status(repo_path)
     if not repo_status:
         return _make_failed_sync(repo_path)
+    if repo_status.branch == "HEAD":
+        return _make_failed_sync(repo_path, "HEAD", "detached HEAD; select a Git branch before pulling")
     if repo_status.uncommitted > 0:
+        advanced = fast_forward_same_tree(repo_path, repo_status.branch)
         return SyncResult(
             path=str(repo_path),
             name=repo_path.name,
             branch=repo_status.branch,
-            status=_STATUS_SKIPPED,
-            reason=_REASON_UNCOMMITTED,
+            status=advanced or _STATUS_SKIPPED,
+            reason=None if advanced else _REASON_UNCOMMITTED,
         )
-    if repo_status.branch == "HEAD":
-        return _make_failed_sync(repo_path, "HEAD", "detached HEAD; select a Git branch before pulling")
     gr = run_git(_GIT_PULL_FF, repo_path)
     if gr.returncode != 0:
         return _make_failed_sync(repo_path, repo_status.branch, gr.stderr.strip())
     status = _STATUS_UP_TO_DATE if _GIT_ALREADY_UP_TO_DATE in gr.stdout else _STATUS_UPDATED
     return SyncResult(path=str(repo_path), name=repo_path.name, branch=repo_status.branch, status=status)
+
+
+def fast_forward_same_tree(repo_path: Path, branch: str, *, fetch: bool = True) -> str | None:
+    """Advance a dirty branch only to an upstream descendant with HEAD's exact tree.
+
+    Publication merges the accepted source unchanged, so following that merge
+    moves only the branch ref: the index and uncommitted work are untouched.
+    """
+    if fetch and run_git(["fetch", "--quiet"], repo_path).returncode:
+        return None
+    revs = run_git(["rev-parse", "HEAD", "@{upstream}", "HEAD^{tree}", "@{upstream}^{tree}"], repo_path)
+    resolved = revs.stdout.split()
+    if revs.returncode or len(resolved) != 4:
+        return None
+    head, upstream, head_tree, upstream_tree = resolved
+    if head == upstream:
+        return _STATUS_UP_TO_DATE
+    if head_tree != upstream_tree or run_git(["merge-base", "--is-ancestor", head, upstream], repo_path).returncode:
+        return None
+    moved = run_git(["update-ref", "-m", "st: fast-forward to published merge", f"refs/heads/{branch}", upstream, head], repo_path)
+    return _STATUS_UPDATED if moved.returncode == 0 else None
 
 
 def push_repository(repo_path: Path) -> SyncResult:

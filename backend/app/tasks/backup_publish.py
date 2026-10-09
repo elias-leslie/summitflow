@@ -412,9 +412,15 @@ def publish_source_before_backup(source: dict[str, Any], *, retained: dict[str, 
         result["remote_status"] = "unknown"
         result["action"] = "Restore shared heavy-work admission before retrying required outgoing verification"
         return outcome("pending", "heavy_work_admission_unavailable")
-    except _OutgoingFailed:
+    except _OutgoingFailed as exc:
+        from ..services.git.outgoing import OutgoingVerificationError
+
         result["security"] = {"state": "blocked", "sha": result.get("head")}
-        result["action"] = "Inspect st vcs doctor and repair outgoing scanner, policy, history or secret findings before retry"
+        if isinstance(exc.__cause__, OutgoingVerificationError):
+            # Verifier messages are fixed, already-redacted reasons.
+            result["security"]["reason"] = str(exc.__cause__)
+        result["action"] = ("Inspect st vcs doctor and repair outgoing scanner, policy, history or secret findings before retry; "
+                            "a branch behind its published merge rescans full history until st vcs reconcile --current")
         return outcome("failed", "outgoing_verification_failed")
     except _TransportUnavailable:
         result["remote_status"] = "unknown"

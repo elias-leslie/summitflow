@@ -187,6 +187,18 @@ def _commit_selected_index(repo: Path, message: str, paths: Sequence[str]) -> su
         return committed
 
 
+def _follow_published_merge(repo: Path, result: dict[str, Any]) -> None:
+    """Commit on top of the last publication merge so the next one stays incremental.
+
+    Uses only the locally known upstream; an identical-tree merge moves the ref alone.
+    """
+    from app.utils._git_core import fast_forward_same_tree
+
+    branch = run_git(repo, ["symbolic-ref", "--short", "-q", "HEAD"])
+    if branch.returncode == 0 and fast_forward_same_tree(repo, branch.stdout.strip(), fetch=False) == "updated":
+        result["followed_published_merge"] = True
+
+
 def commit_git_revision(
     repo: Path,
     *,
@@ -210,6 +222,7 @@ def commit_git_revision(
     has_changes = _selected_paths_dirty(repo, selected_paths) if selected_paths else dirty(repo)
     if not has_changes:
         return {**result, "reason": "no_changes_in_selected_paths" if selected_paths else "clean"}
+    _follow_published_merge(repo, result)
     selected_files = _selected_changed_files(repo, selected_paths) if selected_paths and has_changes else []
     changed_scope = (selected_files if selected_paths else _selected_changed_files(repo, ["."])) if has_changes else []
     _require_foreign_leases_clear(repo, changed_scope)

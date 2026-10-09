@@ -559,6 +559,21 @@ def test_security_failure_never_pushes_or_discloses_diagnostics(source, monkeypa
     assert "private token" not in json.dumps(result)
 
 
+def test_security_failure_reports_the_redacted_verifier_reason(source, monkeypatch):
+    from app.services.git.outgoing import OutgoingVerificationError
+
+    def refuse(*_args, **_kwargs):
+        try:
+            raise OutgoingVerificationError("Outgoing secret scan refused history or failed (details redacted).")
+        except OutgoingVerificationError as exc:
+            raise publish._OutgoingFailed from exc
+
+    monkeypatch.setattr(publish, "_publish_isolated", refuse)
+    head = _git(Path(source["path"]), "rev-parse", "HEAD")
+    result = publish.publish_source_before_backup(source, manual_source_commit=head)
+    assert result["security"]["reason"] == "Outgoing secret scan refused history or failed (details redacted)."
+
+
 @pytest.mark.parametrize("manual", [True])
 @pytest.mark.parametrize("phase", ["initial", "push"])
 def test_shared_admission_outage_defers_publication_without_push_or_repair(source, monkeypatch, phase, manual):
