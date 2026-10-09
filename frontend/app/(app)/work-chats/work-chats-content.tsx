@@ -258,8 +258,7 @@ function PaneChrome({
     if (pane.projectId && session.project_id !== pane.projectId) return false
     if (
       pane.taskId &&
-      session.external_id &&
-      session.external_id.startsWith('task-') &&
+      session.external_id?.startsWith('task-') &&
       session.external_id !== pane.taskId
     ) {
       return false
@@ -1450,7 +1449,7 @@ function WorkChatPaneView({
     if (pane.verifierLoopCount >= VERIFIER_MAX_LOOPS) return
     const feedback = report.feedback.trim()
     const controller = builderControllerRef.current
-    if (!controller || controller.status !== 'idle') return
+    if (controller?.status !== 'idle') return
     verifierFeedbackInFlight.current = true
     onPatch({ verifierLoopCount: pane.verifierLoopCount + 1 })
     controller.sendMessage(feedback)

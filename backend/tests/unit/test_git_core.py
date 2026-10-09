@@ -117,3 +117,55 @@ def test_detached_ahead_count_uses_established_base_when_origin_head_missing(moc
     ])
     assert _git_core._get_ahead_behind(tmp_path, "HEAD") == (2, 0)
     assert run.call_args.args[0] == ["rev-list", "--left-right", "--count", "HEAD...origin/main"]
+
+
+def _git(cwd: Path, *args: str) -> str:
+    return subprocess.run(["git", "-C", str(cwd), *args], check=True, capture_output=True, text=True).stdout.strip()
+
+
+def _published_clone(tmp_path: Path) -> tuple[Path, Path]:
+    remote, local = tmp_path / "remote.git", tmp_path / "local"
+    subprocess.run(["git", "init", "--bare", "-b", "main", str(remote)], check=True, capture_output=True)
+    subprocess.run(["git", "clone", str(remote), str(local)], check=True, capture_output=True)
+    for key, value in (("user.name", "Fixture"), ("user.email", "fixture@example.invalid")):
+        _git(local, "config", key, value)
+    (local / "tracked.txt").write_text("base\n")
+    _git(local, "add", "tracked.txt")
+    _git(local, "commit", "-m", "base")
+    _git(local, "push", "-u", "origin", "main")
+    return remote, local
+
+
+def _dirty_status(local: Path):
+    from app.api.models.git_models import RepoStatus
+    return RepoStatus(path=str(local), name="fixture", branch="main", ahead=0, behind=1, uncommitted=1, state="dirty")
+
+
+def test_dirty_pull_follows_published_merge_with_identical_tree(mocker, tmp_path: Path) -> None:
+    _remote, local = _published_clone(tmp_path)
+    head = _git(local, "rev-parse", "HEAD")
+    # A publication merge of the exact accepted source: new commit, same tree.
+    merge = _git(local, "commit-tree", "HEAD^{tree}", "-p", head, "-m", "Merge pull request")
+    _git(local, "push", "origin", f"{merge}:refs/heads/main")
+    (local / "tracked.txt").write_text("someone else's work\n")
+    mocker.patch("app.utils._git_core.get_repo_status", return_value=_dirty_status(local))
+
+    assert _git_core.pull_repository(local).status == "updated"
+    assert _git(local, "rev-parse", "HEAD") == merge
+    assert (local / "tracked.txt").read_text() == "someone else's work\n"
+
+
+def test_dirty_pull_refuses_upstream_with_different_tree(mocker, tmp_path: Path) -> None:
+    remote, local = _published_clone(tmp_path)
+    other = tmp_path / "other"
+    subprocess.run(["git", "clone", str(remote), str(other)], check=True, capture_output=True)
+    (other / "tracked.txt").write_text("changed upstream\n")
+    _git(other, "-c", "user.name=F", "-c", "user.email=f@example.invalid", "commit", "-am", "upstream change")
+    _git(other, "push", "origin", "main")
+    head = _git(local, "rev-parse", "HEAD")
+    (local / "tracked.txt").write_text("someone else's work\n")
+    mocker.patch("app.utils._git_core.get_repo_status", return_value=_dirty_status(local))
+
+    result = _git_core.pull_repository(local)
+    assert (result.status, result.reason) == ("skipped", "uncommitted changes")
+    assert _git(local, "rev-parse", "HEAD") == head

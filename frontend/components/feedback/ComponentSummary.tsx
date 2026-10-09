@@ -244,7 +244,7 @@ export function ComponentSummary({
     )
   }
 
-  if (!summary || !summary.by_component) return null
+  if (!summary?.by_component) return null
 
   const hasAny = Object.values(summary.by_component).some((d) => d.total > 0)
   if (!hasAny) return null
