@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import contextlib
 import json
 import time
 from contextlib import nullcontext, suppress
@@ -506,6 +507,19 @@ def _job_result(job_id: str) -> dict:
         raise typer.Exit(1) from None
 
 
+def _compact_job(record: dict) -> dict:
+    """Keep the job record readable: the embedded acceptance receipt stays on disk."""
+    compact = dict(record)
+    source = compact.get("source")
+    if isinstance(source, dict) and "checks" in source:
+        compact["source"] = {key: value for key, value in source.items() if key != "checks"}
+    log_path = record.get("log_path")
+    if record.get("state") == "failed" and log_path:
+        with contextlib.suppress(OSError):
+            compact["log_tail"] = Path(log_path).read_text(errors="replace").splitlines()[-8:]
+    return compact
+
+
 def _job_exit_code(record: dict) -> int:
     if record["state"] in {"succeeded", "failed"}:
         return record["exit_code"]
@@ -516,7 +530,7 @@ def _job_exit_code(record: dict) -> int:
 def job_result(job_id: Annotated[str, typer.Argument(help="Job id returned by --detach")]) -> None:
     """Read a durable detached rebuild result, including interrupted/unknown state."""
     record = _job_result(job_id)
-    print(json.dumps(record))
+    print(json.dumps(_compact_job(record)))
     raise typer.Exit(_job_exit_code(record))
 
 
@@ -530,7 +544,7 @@ def wait_for_job(
     while True:
         record = _job_result(job_id)
         if record["state"] not in {"queued", "running"} or time.monotonic() >= deadline:
-            print(json.dumps(record))
+            print(json.dumps(_compact_job(record)))
             raise typer.Exit(_job_exit_code(record))
         time.sleep(min(1, max(0, deadline - time.monotonic())))
 

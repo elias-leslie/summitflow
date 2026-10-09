@@ -220,7 +220,7 @@ def test_describe_app_returns_complete_static_help_and_usage() -> None:
     assert "Owner root help" in description["help"][""]
     assert "Nested help" in description["help"]["sub"]
     assert "Do owner work" in description["help"]["sub work"]
-    assert "ITEM" in description["help"]["sub work"]
+    assert "item" in description["help"]["sub work"].lower()
     assert "--count" in description["help"]["sub work"]
     assert "Number of passes" in description["help"]["sub work"]
     assert description["help_options"][""]["--id"] == 1

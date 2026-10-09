@@ -198,13 +198,16 @@ describe('Native Linux status API boundary', () => {
     { ...ready, capacity: { ...ready.capacity, free_bytes: -1 } },
     { ...ready, capacity: { ...ready.capacity, source_filesystems: [null] } },
     { ...ready, last_result: { status: 'completed', reclaimed_bytes: '0' } },
-  ])('rejects malformed status instead of showing successful protection', async (payload) => {
-    vi.stubGlobal(
-      'fetch',
-      vi.fn().mockResolvedValue(new Response(JSON.stringify(payload))),
-    )
-    await expect(fetchNativeHostBackupStatus()).rejects.toThrow(
-      'Native Linux backup status is malformed',
-    )
-  })
+  ])(
+    'rejects malformed status instead of showing successful protection',
+    async (payload) => {
+      vi.stubGlobal(
+        'fetch',
+        vi.fn().mockResolvedValue(new Response(JSON.stringify(payload))),
+      )
+      await expect(fetchNativeHostBackupStatus()).rejects.toThrow(
+        'Native Linux backup status is malformed',
+      )
+    },
+  )
 })

@@ -22,53 +22,50 @@ DEFAULT_TASK_SCHEDULE_TIMEOUT = timedelta(days=7)
 DEFAULT_TASK_EXECUTION_TIMEOUT = timedelta(days=7)
 _HATCHET_SHUTDOWN_404_GUARD_ATTR = "_hatchet_shutdown_404_guard"
 
-PauseTaskAssignmentFn = Callable[[Any], Coroutine[Any, Any, None]]
+PauseWorkerFn = Callable[..., Coroutine[Any, Any, Any]]
 
 
 def _wrap_hatchet_shutdown_404_guard(
-    pause_task_assignment: PauseTaskAssignmentFn,
+    pause_worker: PauseWorkerFn,
     *,
     not_found_exception: type[Exception],
-) -> PauseTaskAssignmentFn:
-    if getattr(pause_task_assignment, _HATCHET_SHUTDOWN_404_GUARD_ATTR, False):
-        return pause_task_assignment
+) -> PauseWorkerFn:
+    if getattr(pause_worker, _HATCHET_SHUTDOWN_404_GUARD_ATTR, False):
+        return pause_worker
 
-    @wraps(pause_task_assignment)
-    async def guarded_pause_task_assignment(process: Any) -> None:
+    @wraps(pause_worker)
+    async def guarded_pause_worker(workers_client: Any, worker_id: str, *args: Any, **kwargs: Any) -> Any:
         try:
-            await pause_task_assignment(process)
+            return await pause_worker(workers_client, worker_id, *args, **kwargs)
         except not_found_exception:
-            worker_id = getattr(getattr(process, "listener", None), "worker_id", None)
             logger.debug(
-                "Hatchet listener worker %s already removed during shutdown pause; suppressing 404",
+                "Hatchet worker %s already removed during shutdown pause; suppressing 404",
                 worker_id,
             )
+            return None
 
-    setattr(guarded_pause_task_assignment, _HATCHET_SHUTDOWN_404_GUARD_ATTR, True)
-    return cast(PauseTaskAssignmentFn, guarded_pause_task_assignment)
+    setattr(guarded_pause_worker, _HATCHET_SHUTDOWN_404_GUARD_ATTR, True)
+    return cast(PauseWorkerFn, guarded_pause_worker)
 
 
 def _install_hatchet_shutdown_404_guard() -> None:
     """Treat shutdown-time Hatchet worker 404s as an already-complete pause.
 
-    During SIGTERM/SIGQUIT shutdown races, Hatchet can evict the listener's
-    worker record before ``pause_task_assignment()`` reaches the REST update.
-    That 404 is effectively "already paused / already gone" and should not
-    bubble out as an unhandled task exception.
+    During SIGTERM/SIGQUIT shutdown races, Hatchet can evict the worker record
+    before the graceful-shutdown pause (``Worker._pause_task_assignment()`` ->
+    ``WorkersClient.aio_pause()``) reaches the REST update. That 404 is
+    effectively "already paused / already gone" and should not surface as a
+    shutdown error.
     """
 
     from hatchet_sdk.clients.rest.exceptions import NotFoundException
-    from hatchet_sdk.worker.action_listener_process import WorkerActionListenerProcess
+    from hatchet_sdk.features.workers import WorkersClient
 
-    guarded_pause_task_assignment = _wrap_hatchet_shutdown_404_guard(
-        WorkerActionListenerProcess.pause_task_assignment,
+    guarded_pause_worker = _wrap_hatchet_shutdown_404_guard(
+        WorkersClient.aio_pause,
         not_found_exception=NotFoundException,
     )
-    type.__setattr__(
-        WorkerActionListenerProcess,
-        "pause_task_assignment",
-        guarded_pause_task_assignment,
-    )
+    type.__setattr__(WorkersClient, "aio_pause", guarded_pause_worker)
 
 
 @lru_cache

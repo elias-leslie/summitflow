@@ -257,3 +257,24 @@ def test_dispatch_exposes_security_without_tool_registry_config(tmp_path: Path) 
     runtime.run_local_security_check.assert_called_once_with(
         "gitleaks", tmp_path, ["app.py"], True, []
     )
+
+
+@pytest.mark.parametrize(("name", "changed_only", "expected"), [
+    ("gitleaks", True, "light"), ("gitleaks", False, "heavy"), ("security", True, "heavy"),
+])
+def test_only_changed_gitleaks_uses_light_lane(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, name: str, changed_only: bool, expected: str,
+) -> None:
+    from contextlib import nullcontext
+
+    observed: list[str] = []
+
+    def admission(_label: str, *, work_class: str = "heavy", project: str | None = None):
+        observed.append(work_class)
+        return nullcontext()
+
+    monkeypatch.setattr(check_security, "heavy_work", admission)
+    monkeypatch.setattr(check_security, "_candidate_paths", lambda *_args: [])
+    monkeypatch.setattr(check_security, "_lockfiles", lambda *_args: [])
+    check_security.run_local_security_check(name, tmp_path, [], changed_only, [])
+    assert observed == [expected]

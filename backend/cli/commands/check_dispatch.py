@@ -10,6 +10,7 @@ from typing import Protocol
 
 import typer
 
+from .check_changed import _vitest_changed_scope
 from .check_frontend import frontend_test_config
 
 ToolConfig = dict[str, object]
@@ -167,6 +168,22 @@ def run_selected(
                 print("TEST:SKIP:frontend-test:no_declared_tests")
                 continue
             name, config = frontend
+            if name == "frontend-test" and quick_checkpoint:
+                # Package scripts cannot be narrowed; the full suite belongs to acceptance.
+                print("TEST:DEFER:frontend-test:requires_full_acceptance:package_script")
+                continue
+            if name == "vitest" and changed_only:
+                label = config.get("label") or name.upper()
+                vitest_args, vitest_skip, deferred = _vitest_changed_scope(
+                    root, cwd, config, changed_files, defer_full=quick_checkpoint
+                )
+                if deferred:
+                    print(f"{label!s}:DEFER:vitest:requires_full_acceptance:cross_cutting_config")
+                if vitest_skip:
+                    print(f"{label!s}:SKIP:vitest:{vitest_skip}")
+                    continue
+                failures += int(runtime.run_tool(name, config, vitest_args) != 0)
+                continue
         # Arbitrary scripts may depend on fixtures/config of any suffix; run their full suite.
         deferred_full_pytest = (
             quick_checkpoint

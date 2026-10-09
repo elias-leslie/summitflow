@@ -89,9 +89,13 @@ def _validate_engine_config(config: dict[str, object], backend_type: str) -> Non
             raise HTTPException(status_code=400, detail="Permanent expiry requires rclone and an approved root identity")
         if transport == "rclone":
             remote = config.get("offsite_rclone_remote")
-            if not isinstance(remote, str) or not re.fullmatch(r"[A-Za-z0-9_-]+:[^\x00\r\n?#\\]+", remote):
+            if not isinstance(remote, str):
                 raise HTTPException(status_code=400, detail="Offsite requires a bounded rclone folder")
-            if any(part in {"", ".", ".."} for part in remote.split(":", 1)[1].split("/")):
+            remote_name, _, remote_path = remote.partition(":")
+            if (not re.fullmatch(r"[A-Za-z0-9_-]+", remote_name) or not remote_path
+                    or any(char in remote_path for char in "\x00\r\n?#\\")):
+                raise HTTPException(status_code=400, detail="Offsite requires a bounded rclone folder")
+            if any(part in {"", ".", ".."} for part in remote_path.split("/")):
                 raise HTTPException(status_code=400, detail="Offsite remote root and traversal are refused")
             config_file = config.get("offsite_rclone_config")
             if not isinstance(config_file, str) or any(char in config_file for char in "\x00\r\n"):

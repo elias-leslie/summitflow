@@ -46,7 +46,11 @@ jobs:
         with:
           enable-cache: true
       - name: Install age for backup encryption tests
-        run: sudo apt-get update -qq && sudo apt-get install -y -qq age
+        # Pinned release (matches Ubuntu 24.04's age 1.1.1) avoids a slow apt-get update.
+        run: |
+          curl -fsSL -o "$RUNNER_TEMP/age.tar.gz" https://github.com/FiloSottile/age/releases/download/v1.1.1/age-v1.1.1-linux-amd64.tar.gz
+          echo "cf16cbb108fc56e2064b00ba2b65d9fb1b8d7002ca5e38260ee1cc34f6aaa8f9  $RUNNER_TEMP/age.tar.gz" | sha256sum -c -
+          sudo tar -xzf "$RUNNER_TEMP/age.tar.gz" -C /usr/local/bin --strip-components=1 age/age age/age-keygen
       - name: Install backend dependencies
         run: uv sync --locked --all-extras --dev
       - name: Lint backend

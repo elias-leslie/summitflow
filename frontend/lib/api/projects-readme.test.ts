@@ -29,12 +29,15 @@ describe('fetchProjectReadme', () => {
     { project_id: 'summitflow', status: 'available', content: null },
     { project_id: 'summitflow', status: 'missing', content: '# Wrong' },
     { project_id: 'summitflow', status: 'unknown', content: null },
-  ])('rejects invalid payloads instead of treating them as empty', async (body) => {
-    respond(body)
-    await expect(fetchProjectReadme('summitflow')).rejects.toThrow(
-      'Invalid README response',
-    )
-  })
+  ])(
+    'rejects invalid payloads instead of treating them as empty',
+    async (body) => {
+      respond(body)
+      await expect(fetchProjectReadme('summitflow')).rejects.toThrow(
+        'Invalid README response',
+      )
+    },
+  )
 
   it('preserves API read failures for the retry state', async () => {
     respond({ message: 'README request failed' }, 503)

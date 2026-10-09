@@ -236,8 +236,10 @@ def test_cleanroom_keeps_requested_directory_and_explicit_child_tmpdir(
         env_overrides={"TMPDIR": str(child_tmp)}, keep_dir=True,
     ) == 0
     captured = capfd.readouterr()
-    job = Path(captured.err.strip().removeprefix("CLEANROOM:kept:"))
+    kept, prune = captured.err.strip().splitlines()[-2:]
+    job = Path(kept.removeprefix("CLEANROOM:kept:"))
     try:
+        assert prune == "CLEANROOM:prune:st cleanup cleanrooms --project project --older-than 24h"
         assert captured.out.strip() == str(child_tmp)
         assert job.parent == parent
         assert (job / "repo" / ".git").is_dir()
@@ -351,3 +353,175 @@ def test_explicit_tmpdir_accepts_sticky_shared_namespace(
     selected.chmod(0o1777)
     monkeypatch.setenv("TMPDIR", str(selected))
     assert cleanroom._cleanroom_temp_parent() == selected
+
+
+# --- --deps / --collect -----------------------------------------------------
+
+
+def _deps_project(tmp_path: Path, *, backend_dir: str = "backend", frontend_dir: str = "frontend") -> Path:
+    project = _project(tmp_path)
+    (project / "project.identity.json").write_text(json.dumps(
+        {"runtime": {"backend_dir": backend_dir, "frontend_dir": frontend_dir}},
+    ))
+    backend = project if backend_dir == "." else project / backend_dir
+    frontend = project if frontend_dir == "." else project / frontend_dir
+    backend.mkdir(exist_ok=True)
+    frontend.mkdir(exist_ok=True)
+    (backend / "pyproject.toml").write_text(
+        "[project]\nname='x'\nversion='0'\n[project.optional-dependencies]\ndev=['a']\nrelease=['b']\n",
+    )
+    (backend / "uv.lock").write_text("version = 1\n")
+    (frontend / "package.json").write_text("{}\n")
+    (frontend / "package-lock.json").write_text("{}\n")
+    return project
+
+
+class _RecordingWork:
+    """Stands in for heavy_work: records every spawned command in order."""
+
+    def __init__(self, fail: str | None = None) -> None:
+        self.calls: list[tuple[list[str], Path]] = []
+        self.fail = fail
+
+    def __enter__(self) -> _RecordingWork:
+        return self
+
+    def __exit__(self, *_exc: object) -> None:
+        return None
+
+    def run(self, command: list[str], *, cwd: Path, env: dict[str, str]) -> subprocess.CompletedProcess[str]:
+        self.calls.append((list(command), Path(cwd)))
+        if command[0] == "build":
+            (Path(cwd) / "out").mkdir()
+            (Path(cwd) / "out" / "App.AppImage").write_text("binary")
+            (Path(cwd) / "out" / "linux-unpacked").mkdir()
+            (Path(cwd) / "out" / "linux-unpacked" / "app").write_text("x")
+        code = 7 if self.fail and command[0] == self.fail else 0
+        return subprocess.CompletedProcess(command, code)
+
+
+def _use_recording_work(monkeypatch: pytest.MonkeyPatch, work: _RecordingWork, parent: Path) -> None:
+    parent.mkdir(mode=0o700, exist_ok=True)
+    monkeypatch.setenv("TMPDIR", str(parent))
+    monkeypatch.setattr(cleanroom, "heavy_work", lambda _label: work)
+
+
+def test_deps_install_backend_then_frontend_before_command_with_extras(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    project = _deps_project(tmp_path)
+    work = _RecordingWork()
+    _use_recording_work(monkeypatch, work, tmp_path / "parent")
+    options = cleanroom.CleanroomOptions(deps=True, extras=("release", "release"), share_caches=False)
+    assert cleanroom.run_cleanroom(project, ["build"], options=options) == 0
+    commands = [command for command, _cwd in work.calls]
+    assert commands == [
+        ["uv", "sync", "--locked", "--extra", "dev", "--extra", "release"],
+        ["npm", "ci"],
+        ["build"],
+    ]
+    cwds = [cwd for _command, cwd in work.calls]
+    snapshot = cwds[2]
+    assert cwds[0] == snapshot / "backend"
+    assert cwds[1] == snapshot / "frontend"
+    assert list((tmp_path / "parent").iterdir()) == []
+
+
+def test_deps_use_identity_root_dirs_and_pnpm_workspace(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    project = _deps_project(tmp_path, backend_dir=".", frontend_dir="web")
+    (project / "web" / "package-lock.json").unlink()
+    (project / "pnpm-workspace.yaml").write_text("packages: [web]\n")
+    work = _RecordingWork()
+    _use_recording_work(monkeypatch, work, tmp_path / "parent")
+    assert cleanroom.run_cleanroom(
+        project, ["build"], options=cleanroom.CleanroomOptions(deps=True, share_caches=False),
+    ) == 0
+    snapshot = work.calls[-1][1]
+    assert work.calls[:2] == [
+        (["uv", "sync", "--locked", "--extra", "dev"], snapshot),
+        (["pnpm", "install", "--frozen-lockfile"], snapshot),
+    ]
+
+
+def test_deps_failure_skips_command_and_cleans_up(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    project = _deps_project(tmp_path)
+    work = _RecordingWork(fail="uv")
+    _use_recording_work(monkeypatch, work, tmp_path / "parent")
+    options = cleanroom.CleanroomOptions(deps=True, share_caches=False)
+    assert cleanroom.run_cleanroom(project, ["build"], options=options) == 7
+    assert [command[0] for command, _cwd in work.calls] == ["uv"]
+    assert list((tmp_path / "parent").iterdir()) == []
+
+
+def test_unknown_extra_is_rejected_with_exit_2_before_any_install(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capfd: pytest.CaptureFixture[str],
+) -> None:
+    project = _deps_project(tmp_path)
+    work = _RecordingWork()
+    _use_recording_work(monkeypatch, work, tmp_path / "parent")
+    code = cleanroom.main([
+        "--project-root", str(project), "--deps", "--extra", "nope", "--", "build",
+    ])
+    assert code == 2
+    assert "unknown backend extra(s): nope (declared: dev, release)" in capfd.readouterr().err
+    assert work.calls == []
+    assert list((tmp_path / "parent").iterdir()) == []
+
+
+def test_extra_without_deps_is_a_usage_error(tmp_path: Path, capfd: pytest.CaptureFixture[str]) -> None:
+    assert cleanroom.main(["--project-root", str(tmp_path), "--extra", "release", "--", "true"]) == 2
+    assert "--extra requires --deps" in capfd.readouterr().err
+
+
+def test_collect_copies_artifacts_before_cleanup(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capfd: pytest.CaptureFixture[str],
+) -> None:
+    project = _deps_project(tmp_path)
+    work = _RecordingWork()
+    _use_recording_work(monkeypatch, work, tmp_path / "parent")
+    destination = tmp_path / "artifacts"
+    options = cleanroom.CleanroomOptions(
+        collect=("out/*.AppImage", "out/linux-unpacked"), collect_to=destination,
+    )
+    assert cleanroom.run_cleanroom(project, ["build"], options=options) == 0
+    assert (destination / "out" / "App.AppImage").read_text() == "binary"
+    assert (destination / "out" / "linux-unpacked" / "app").read_text() == "x"
+    assert f"CLEANROOM:collected:2:{destination}" in capfd.readouterr().err
+    assert list((tmp_path / "parent").iterdir()) == []
+    assert not (project / "out").exists()
+
+
+def test_collect_defaults_to_project_dev_tools_and_flags_empty_globs(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capfd: pytest.CaptureFixture[str],
+) -> None:
+    project = _deps_project(tmp_path)
+    work = _RecordingWork()
+    _use_recording_work(monkeypatch, work, tmp_path / "parent")
+    options = cleanroom.CleanroomOptions(collect=("out/*.AppImage", "dist/*.zip"))
+    assert cleanroom.run_cleanroom(project, ["build"], options=options) == 1
+    err = capfd.readouterr().err
+    assert "CLEANROOM:collect-empty:dist/*.zip" in err
+    (stamp,) = (project / ".dev-tools" / "cleanroom-artifacts").iterdir()
+    assert (stamp / "out" / "App.AppImage").is_file()
+
+
+@pytest.mark.parametrize("pattern", ["/etc/*", "../outside/*", ""])
+def test_collect_rejects_patterns_outside_snapshot(tmp_path: Path, pattern: str) -> None:
+    with pytest.raises(cleanroom.CleanroomUsageError):
+        cleanroom.run_cleanroom(
+            tmp_path, ["true"], options=cleanroom.CleanroomOptions(collect=(pattern,)),
+        )
+
+
+def test_install_env_shares_only_existing_download_caches(tmp_path: Path) -> None:
+    home = tmp_path / "home"
+    (home / ".cache" / "uv").mkdir(parents=True)
+    env = cleanroom._install_env(
+        {"HOME": "/isolated", "UV_PROJECT_ENVIRONMENT": "/elsewhere"}, {"HOME": str(home)},
+    )
+    assert env["UV_CACHE_DIR"] == str(home / ".cache" / "uv")
+    assert "npm_config_cache" not in env
+    assert "UV_PROJECT_ENVIRONMENT" not in env
+    assert env["HOME"] == "/isolated"

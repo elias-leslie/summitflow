@@ -99,9 +99,10 @@ def _emit_result(root: Path, name: str, result: subprocess.CompletedProcess[str]
     return result.returncode
 
 
-def _run(command: list[str], *, root: Path, name: str, environment: dict[str, str] | None = None) -> int:
+def _run(command: list[str], *, root: Path, name: str, environment: dict[str, str] | None = None,
+         work_class: str = "heavy") -> int:
     try:
-        with heavy_work(f"local scan {name}") as work:
+        with heavy_work(f"local scan {name}", work_class=work_class) as work:
             result = work.run(
                 command,
                 cwd=root,
@@ -148,7 +149,6 @@ def _lockfiles(root: Path, paths: list[str], changed_only: bool) -> list[Path]:
     return sorted(path for path in selected if path.is_file())
 
 
-@heavy_work("local security")
 def run_local_security_check(
     name: str,
     root: Path,
@@ -157,6 +157,21 @@ def run_local_security_check(
     explicit_args: list[str],
 ) -> int:
     """Run a local scanner against current candidate files, never ignored caches."""
+    # A changed-file secret scan is sub-second and low-memory; full trees,
+    # semgrep and osv keep the heavy lane.
+    work_class = "light" if name == "gitleaks" and changed_only else "heavy"
+    with heavy_work("local security", work_class=work_class):
+        return _run_local_security_check(name, root, changed_files, changed_only, explicit_args, work_class)
+
+
+def _run_local_security_check(
+    name: str,
+    root: Path,
+    changed_files: list[str],
+    changed_only: bool,
+    explicit_args: list[str],
+    work_class: str,
+) -> int:
     if explicit_args:
         print(f"{name.upper()}:FAIL:2|hint:local security adapters do not accept passthrough arguments")
         return 2
@@ -239,7 +254,7 @@ def run_local_security_check(
                 ]
                 environment.update(SEMGREP_SETTINGS_FILE=str(Path(temporary) / "settings.yml"),
                                    SEMGREP_LOG_FILE=str(Path(temporary) / "semgrep.log"))
-            result = _run(command, root=root, name=scanner, environment=environment)
+            result = _run(command, root=root, name=scanner, environment=environment, work_class=work_class)
             if result:
                 failures.append(result)
     if not failures:
