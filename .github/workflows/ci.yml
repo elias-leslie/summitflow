@@ -19,7 +19,8 @@ jobs:
     timeout-minutes: 20
     services:
       postgres:
-        image: pgvector/pgvector:pg16
+        # Google's Docker Hub cache: same digests, no anonymous Docker Hub pull limit.
+        image: mirror.gcr.io/pgvector/pgvector:pg16
         env:
           POSTGRES_DB: summitflow_test
           POSTGRES_USER: summitflow_app
