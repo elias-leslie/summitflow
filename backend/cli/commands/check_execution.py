@@ -17,6 +17,9 @@ def adjusted_tool_args(
 ) -> tuple[list[str], list[str]]:
     if name == "biome" and any(not arg.startswith("-") for arg in extra_args):
         base_args = [arg for arg in base_args if arg != "."]
+    if name == "vitest" and extra_args[:1] == ["related"] and base_args[:1] == ["run"]:
+        # `vitest related <paths> --run` replaces the configured leading `run`.
+        return [*extra_args, *base_args[1:]], []
     if name != "pytest":
         return base_args, extra_args
 

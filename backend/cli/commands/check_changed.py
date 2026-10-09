@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import ast
 import os
+import shlex
 import subprocess
 from pathlib import Path
 
@@ -236,6 +237,55 @@ def _pytest_requires_full_scope(root: Path, changed_files: list[str]) -> bool:
         ):
             return True
     return False
+
+
+def _vitest_changed_scope(
+    root: Path,
+    cwd: Path,
+    config: dict[str, object],
+    changed_files: list[str],
+    *,
+    defer_full: bool,
+) -> tuple[list[str], str | None, bool]:
+    """Return (extra args, skip reason, deferred full suite) for changed-only Vitest.
+
+    Changed sources under the Vitest cwd run through ``vitest related <paths>
+    --run``. Config, manifest, lockfile, or deleted-source changes need the full
+    suite; a quick checkpoint defers that to full acceptance while still running
+    tests related to the remaining changed sources.
+    """
+    suffixes = _TOOL_FILE_SUFFIXES["vitest"]
+    if shlex.split(str(config.get("args") or ""))[:1] != ["run"]:
+        # Custom arguments cannot be narrowed safely; keep the full suite.
+        relevant = any(
+            Path(rel).name in _TOOL_CONFIG_PATHS["vitest"] or Path(rel).suffix in suffixes
+            for rel in changed_files
+        )
+        return [], None if relevant else "no_relevant_changed_paths", False
+    cwd_resolved = cwd.resolve()
+    full_scope = False
+    paths: list[str] = []
+    for rel_path in changed_files:
+        path = Path(rel_path)
+        absolute = (root / path).resolve()
+        if path.name in _TOOL_CONFIG_PATHS["vitest"]:
+            full_scope = True
+            continue
+        if path.suffix not in suffixes or not absolute.is_relative_to(cwd_resolved):
+            continue
+        if not absolute.is_file():
+            full_scope = True
+            continue
+        rel_posix = absolute.relative_to(cwd_resolved).as_posix()
+        if rel_posix not in paths:
+            paths.append(rel_posix)
+    if full_scope and not defer_full:
+        return [], None, False
+    if paths:
+        return ["related", *paths, "--run"], None, full_scope
+    if full_scope:
+        return [], "requires_full_acceptance:cross_cutting_config", True
+    return [], "no_frontend_source_changes", False
 
 
 def _skip_reason(
