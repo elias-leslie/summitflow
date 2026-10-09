@@ -121,6 +121,8 @@ def _resolve_command(binary: str, root: Path, cwd: Path, base_args: list[str]) -
 
 
 _FRONTEND_TEST_TIMEOUT = 600
+# Seconds-scale linters that must not queue behind full suites and builds.
+_LIGHT_TOOLS = frozenset({"ruff", "biome", "actionlint", "shellcheck", "squawk"})
 
 
 def _run_frontend_script(command: list[str], cwd: Path, env: dict[str, str]) -> subprocess.CompletedProcess[str]:
@@ -180,9 +182,10 @@ def _run_tool(name: str, config: dict[str, object], extra_args: list[str]) -> in
             result = _run_frontend_script(command, cwd, tool_env(root, os.environ, name))
         else:
             queued = time.monotonic()
-            # Only this direct adapter is light. Configured wrappers and all
-            # other tools retain the conservative heavy default.
-            work_class = "light" if name == "ruff" and binary == "ruff" else "heavy"
+            # Only direct adapters of fast, low-memory linters are light.
+            # Configured wrappers and all other tools retain the heavy default.
+            direct = binary == name or (binary == "npx" and base_args[:1] == [name])
+            work_class = "light" if name in _LIGHT_TOOLS and direct else "heavy"
             with heavy_work(f"check {name}", work_class=work_class, project=root.name) as work:
                 started = time.monotonic()
                 queue_ms = (started - queued) * 1000
@@ -502,9 +505,8 @@ def _native_legacy_checks(root: Path, plan: dict[str, object], configs: dict[str
     cmd="st check --quick --changed-only",
     when="verify implementation changes; before committing or claiming a fix",
     precautions=(
-        "use st check for all quality gates (ruff/biome/tsc/types/pytest)",
-        "use st check codeql to verify GitHub CodeQL alert state after code-scanning work",
         "never run raw pytest/vitest/biome/tsc/ruff/sqlfluff/squawk",
+        "st check codeql verifies GitHub CodeQL alert state after code-scanning work",
     ),
     tier="mandate",
 )

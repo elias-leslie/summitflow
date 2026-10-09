@@ -175,11 +175,13 @@ def test_adjusted_tool_args_unchanged_for_non_pytest(tmp_path: Path) -> None:
 
 @pytest.mark.parametrize(("name", "binary", "expected"), [
     ("ruff", "ruff", "light"), ("ruff", "sh", "heavy"),
-    ("pytest", "pytest", "heavy"), ("biome", "biome", "heavy"),
+    ("pytest", "pytest", "heavy"), ("biome", "biome", "light"),
     ("types", "ty", "heavy"), ("unknown", "ruff", "heavy"),
-    ("actionlint", "actionlint", "heavy"),
+    ("actionlint", "actionlint", "light"), ("shellcheck", "shellcheck", "light"),
+    ("squawk", "squawk", "light"), ("biome", "sh", "heavy"),
+    ("tsc", "tsc", "heavy"), ("sqlfluff", "sqlfluff", "heavy"),
 ])
-def test_only_direct_managed_ruff_uses_light_admission(
+def test_only_direct_fast_linters_use_light_admission(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str],
     name: str, binary: str, expected: str,
 ) -> None:
