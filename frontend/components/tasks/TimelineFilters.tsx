@@ -143,5 +143,5 @@ export function TimelineFilters({
   )
 }
 
-export { FILTER_CHIPS }
 export type { FilterChip }
+export { FILTER_CHIPS }

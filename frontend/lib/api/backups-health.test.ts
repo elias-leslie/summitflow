@@ -149,11 +149,14 @@ describe('backup health runtime schema', () => {
         },
       ],
     },
-  ])('rejects malformed external health without a success fallback', (value) => {
-    expect(() => parseBackupHealth(value)).toThrow(
-      'Backup health response is incompatible',
-    )
-  })
+  ])(
+    'rejects malformed external health without a success fallback',
+    (value) => {
+      expect(() => parseBackupHealth(value)).toThrow(
+        'Backup health response is incompatible',
+      )
+    },
+  )
 
   it('validates the actual fetch boundary', async () => {
     vi.spyOn(globalThis, 'fetch').mockResolvedValue(

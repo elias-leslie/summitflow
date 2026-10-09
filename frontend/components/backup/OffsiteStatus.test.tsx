@@ -72,9 +72,12 @@ describe('Backup recovery and activity status', () => {
     ['git_recovery', 'Preserving Git history and working state'],
     ['database_dump', 'Exporting database backup'],
     ['decryption', 'Decrypting backup for verification'],
-  ])('names the emitted %s phase without implying completion', (phase, label) => {
-    expect(backupActivityLabel({ ...activity, phase })).toBe(label)
-  })
+  ])(
+    'names the emitted %s phase without implying completion',
+    (phase, label) => {
+      expect(backupActivityLabel({ ...activity, phase })).toBe(label)
+    },
+  )
 
   it('keeps local success distinct from failed Drive sync and permits saved-archive retry', () => {
     render(<OffsiteStatus health={health} onSaved={() => {}} />)

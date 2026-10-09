@@ -26,9 +26,12 @@ describe('backupDriveFolderUrl', () => {
     'google-drive://owner@example.com/root-id/folder-id/file-id#fragment',
     'google-drive://owner@example.com/root-id/folder%2fid/file-id',
     'google-drive://owner@example.com/root-id/folder-id/file-id/',
-  ])('does not invent a link for ambiguous or unsupported metadata: %s', (location) => {
-    expect(backupDriveFolderUrl(location)).toBeNull()
-  })
+  ])(
+    'does not invent a link for ambiguous or unsupported metadata: %s',
+    (location) => {
+      expect(backupDriveFolderUrl(location)).toBeNull()
+    },
+  )
 })
 
 describe('cancelBackup', () => {
