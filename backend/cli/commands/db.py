@@ -458,8 +458,8 @@ def _tables_counts_sql() -> str:
 @usage(
     surface="st.db",
     cmd='st db query -t "SELECT ..."',
-    when="read DB state; DDL must go through migrations",
-    precautions=("never run write SQL outside migrations",),
+    when="read DB state",
+    precautions=("never run write SQL or DDL outside migrations",),
     task_types=("database", "backend", "verification"),
     tier="mandate",
 )

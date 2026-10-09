@@ -182,13 +182,10 @@ def status(
         "or systemctl restart"
     ),
     precautions=(
-        "ST runs the project preflight before lifecycle work; resolve reported blockers",
         "explicit project, not cwd-implicit",
-        "required application workers belong in project.identity.json services.default_workers and rebuild automatically",
-        "active optional workers restart with backend changes; inactive optional workers stay stopped",
-        "--include-all-workers explicitly starts all optional workers",
+        "ST runs the project preflight first; resolve reported blockers",
         "use full scope for shared or uncertain changes; worker scope includes backend consumers",
-        "never run raw pnpm run build / npm build / uv pip install + manual systemctl restart for a managed project",
+        "required workers (project.identity.json services.default_workers) and active optional workers restart automatically; --include-all-workers also starts inactive optional workers",
     ),
     examples=(
         "st service rebuild summitflow",

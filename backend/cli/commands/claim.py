@@ -218,9 +218,8 @@ def _claim_subtask(
     cmd="st claim <task-id>",
     when="before implementing or completing an assigned task; after st ready picks one",
     precautions=(
-        "subtask form uses dotted ID like 1.2; pass --task <parent> when claiming subtask",
-        "claim records a checkpoint; work commits direct to main, no branch is created",
-        "cross-agent conflicts print a Resolution hint pointing at st pulse",
+        "subtasks: dotted ID like 1.2 plus --task <parent>",
+        "work commits directly to main; conflicts point at st pulse",
     ),
     tier="mandate",
 )

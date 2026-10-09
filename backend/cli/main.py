@@ -284,9 +284,9 @@ app.command("exec-log")(_COMMANDS["exec_monitor"].exec_log_command)
     cmd='st commit -m "msg"',
     when="authorized implementation reaches a verified checkpoint",
     precautions=(
-        "review the diff for secrets, destructive changes, and task scope before committing",
+        "review the diff for secrets, destructive changes, and task scope",
         "use --paths to preserve unrelated work; include generated changes belonging to the checkpoint",
-        "publish accepted source separately with st vcs publish --source ID --sha FULL_OID --now",
+        "local only; publish accepted source separately with st vcs publish --source ID --sha FULL_OID --now",
         "commit before destructive ops (abandon, rollback)",
     ),
     tier="mandate",
