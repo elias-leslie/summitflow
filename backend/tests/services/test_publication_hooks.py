@@ -57,3 +57,16 @@ def test_startup_uses_native_context_and_warns_pending(event, tmp_path: Path) ->
     assert "review pending" in context["additionalContext"]
     assert "Nightly" not in context["additionalContext"]
     run.assert_not_called()
+
+
+def test_startup_is_silent_when_enforcement_is_healthy(tmp_path: Path) -> None:
+    (tmp_path / ".config/git/hooks").mkdir(parents=True)
+    (tmp_path / ".config/git/hooks/pre-push").write_text("scripts/lib/publication-pre-push")
+    (tmp_path / ".claude/hooks").mkdir(parents=True)
+    (tmp_path / ".claude/hooks/PreToolUse.sh").write_text("scripts/lib/publication-pretool-hook")
+    with (
+        patch.object(hooks, "codex_hook_status", return_value=[{"event": "PreToolUse", "trust": "trusted"}]),
+        patch.object(hooks.shutil, "which", return_value="/usr/bin/gitleaks"),
+        patch.object(Path, "home", return_value=tmp_path),
+    ):
+        assert hooks.startup_context({"hook_event_name": "SubagentStart", "cwd": str(tmp_path)}) == {}

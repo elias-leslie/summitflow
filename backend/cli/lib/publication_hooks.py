@@ -121,11 +121,13 @@ def startup_context(payload: dict[str, Any]) -> dict[str, Any]:
     if event not in {"SessionStart", "SubagentStart"}:
         raise ValueError("Unsupported startup event")
     cwd = str(payload.get("cwd") or os.getcwd())
+    # Healthy enforcement is silent; every session and subagent pays for each line.
     lines: list[str] = []
     try:
         status = codex_hook_status(cwd)
         pending = [hook["event"] for hook in status if hook["trust"] not in {"trusted", "managed"}]
-        lines.append("Publication hooks: " + ("review pending for " + ", ".join(pending) if pending else "Codex definitions trusted and enabled."))
+        if pending:
+            lines.append("Publication hooks: review pending for " + ", ".join(pending))
     except Exception:
         lines.append("Publication hooks: Codex trust unavailable; enforcement is not verified.")
     global_hook = Path.home() / ".config/git/hooks/pre-push"
@@ -133,7 +135,8 @@ def startup_context(payload: dict[str, Any]) -> dict[str, Any]:
         installed = "scripts/lib/publication-pre-push" in global_hook.read_text()
     except OSError:
         installed = False
-    lines.append("Git outgoing verifier: " + ("adapter installed." if installed else "adapter unavailable; installation required."))
+    if not installed:
+        lines.append("Git outgoing verifier: adapter unavailable; installation required.")
     if not shutil.which("gitleaks"):
         lines.append("Outgoing secret scanner unavailable; publication fails closed.")
     try:
@@ -141,7 +144,10 @@ def startup_context(payload: dict[str, Any]) -> dict[str, Any]:
         claude_installed = "scripts/lib/publication-pretool-hook" in claude_adapter.read_text()
     except OSError:
         claude_installed = False
-    lines.append("Claude publication adapter: " + ("installed." if claude_installed else "unavailable; enforcement is not verified."))
+    if not claude_installed:
+        lines.append("Claude publication adapter: unavailable; enforcement is not verified.")
+    if not lines:
+        return {}
     return {"hookSpecificOutput": {"hookEventName": event, "additionalContext": "\n".join(lines)}}
 
 
