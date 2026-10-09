@@ -23,23 +23,33 @@ SNAPSHOT = BACKEND.parent / "docker" / "compose" / "summitflow-schema.sql"
 DESIGN_REVISION = "a24e1b127505"
 
 
+def alembic_config() -> Config:
+    config = Config(str(BACKEND / "alembic.ini"))
+    config.set_main_option("script_location", str(BACKEND / "alembic"))
+    return config
+
+
+def restore_snapshot(connection: psycopg.Connection) -> None:
+    """Load the committed base-revision schema snapshot into an empty database."""
+    sql = "\n".join(
+        line for line in SNAPSHOT.read_text().splitlines()
+        if not line.startswith(("\\restrict ", "\\unrestrict "))
+    )
+    connection.execute(cast(LiteralString, sql))
+
+
 def main() -> None:
     database_url = os.environ.get("DATABASE_URL", "")
     if urlsplit(database_url).path != "/summitflow_test":
         raise SystemExit("Bootstrap verification requires explicit DATABASE_URL for summitflow_test")
-    config = Config(str(BACKEND / "alembic.ini"))
-    config.set_main_option("script_location", str(BACKEND / "alembic"))
+    config = alembic_config()
     revisions = ScriptDirectory.from_config(config)
     with psycopg.connect(database_url) as connection:
         tables = connection.execute("SELECT count(*) FROM pg_tables WHERE schemaname = 'public'").fetchone()
         if tables != (0,):
             raise SystemExit("Bootstrap verification requires an empty test database; existing data was not changed")
         # pg_dump's psql safety markers are not SQL; all other snapshot text is executed intact.
-        sql = "\n".join(
-            line for line in SNAPSHOT.read_text().splitlines()
-            if not line.startswith(("\\restrict ", "\\unrestrict "))
-        )
-        connection.execute(cast(LiteralString, sql))
+        restore_snapshot(connection)
         assert connection.execute("SELECT version_num FROM public.alembic_version").fetchone() == (revisions.get_base(),)
 
     command.upgrade(config, "a14ee32465a1")

@@ -24,6 +24,7 @@ IMAGE_LOCK = Path(__file__).with_name("native_fixture_image.txt")
 # suite. 1860s adds 19.2% headroom over that observed exhaustion.
 PYTHON_TEST_TIMEOUT_SECONDS = 1860
 BOOTSTRAP_TIMEOUT_SECONDS = 180
+PYTHON_TEST_WORKERS = max(1, min(8, (os.cpu_count() or 2) // 2))
 READINESS_TIMEOUT_SECONDS = 60
 DOCKER_TIMEOUT_SECONDS = 30
 # Keep bootstrap, readiness and one Docker cleanup operation inside the
@@ -168,8 +169,10 @@ def main() -> int:
             "tests/cli/test_sessions.py", "tests/cli/test_sessions_close.py",
             "tests/storage/test_maintenance_retention.py", "tests/test_events_api_filters.py",
         ]
+        # Each xdist worker bootstraps its own database in this superuser fixture.
+        workers = ["-n", str(PYTHON_TEST_WORKERS)] if mode == "python" else []
         result = subprocess.run(
-            [sys.executable, "-m", "pytest", *tests, "--junitxml=" + str(report),
+            [sys.executable, "-m", "pytest", *tests, *workers, "--junitxml=" + str(report),
              "--deselect=tests/cli/test_saved_work_snapshots.py::test_native_btrfs_shared_capture_readonly_recovery_and_isolated_restore",
              "--deselect=tests/cli/test_saved_work_snapshots.py::test_native_nested_saved_source_is_refused_and_disposable_tracked_fixture_preserved",
              "-k", "not test_live_owner_lease_proxy_preserves_same_target_and_blocks_resume "

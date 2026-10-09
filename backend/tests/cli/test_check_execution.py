@@ -24,6 +24,7 @@ from cli.commands import check
 from cli.commands.check_execution import (
     adjusted_tool_args,
     read_pytest_no_cov,
+    read_pytest_workers,
     read_tool_paths,
     tool_env,
 )
@@ -166,6 +167,21 @@ def test_adjusted_tool_args_skips_no_cov_when_user_passed_it(tmp_path: Path) -> 
     )
     assert "--no-cov" not in extra
     assert "--cov=foo" in extra
+
+
+def test_configured_workers_parallelize_only_full_pytest_runs(tmp_path: Path) -> None:
+    (tmp_path / ".st-check.toml").write_text("[pytest]\nworkers = 8\n")
+    assert read_pytest_workers(tmp_path) == 8
+    assert adjusted_tool_args("pytest", [], ["-q"], root=tmp_path)[1] == ["-n", "8", "-q"]
+    assert adjusted_tool_args("pytest", [], ["tests/foo.py"], root=tmp_path)[1] == ["--no-cov", "tests/foo.py"]
+    assert adjusted_tool_args("pytest", [], ["--numprocesses=2"], root=tmp_path)[1] == ["--numprocesses=2"]
+    assert adjusted_tool_args("pytest", [], ["-pno:xdist"], root=tmp_path)[1] == ["-pno:xdist"]
+
+
+def test_workers_default_to_serial(tmp_path: Path) -> None:
+    assert read_pytest_workers(tmp_path) is None
+    (tmp_path / ".st-check.toml").write_text("[pytest]\nworkers = 1\n")
+    assert adjusted_tool_args("pytest", [], [], root=tmp_path)[1] == []
 
 
 def test_adjusted_tool_args_unchanged_for_non_pytest(tmp_path: Path) -> None:
