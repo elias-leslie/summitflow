@@ -766,3 +766,22 @@ def test_lane_activity_reports_holder_without_queueing_or_admitting(lane: Path) 
         assert guard.lane_activity("light") == []
         assert not list(lane.glob("wait-*.json"))
     assert guard.lane_activity("heavy") == []
+
+
+def test_queued_work_remembers_which_holder_it_waited_behind(lane: Path) -> None:
+    seen: list[str | None] = []
+    entered = threading.Event()
+
+    def waiter() -> None:
+        with guard.heavy_work("vitest", project="aico") as work:
+            seen.append(work.waited_behind)
+            entered.set()
+
+    with guard.heavy_work("acceptance", project="neri"):
+        thread = threading.Thread(target=waiter)
+        thread.start()
+        assert not entered.wait(0.15)
+    thread.join(3)
+    assert seen == ["acceptance project=neri"]
+    with guard.heavy_work("quick") as work:
+        assert work.waited_behind is None

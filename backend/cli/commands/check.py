@@ -7,6 +7,7 @@ import io
 import json
 import os
 import re
+import resource
 import shlex
 import shutil
 import subprocess
@@ -123,6 +124,43 @@ def _resolve_command(binary: str, root: Path, cwd: Path, base_args: list[str]) -
 _FRONTEND_TEST_TIMEOUT = 600
 # Seconds-scale linters that must not queue behind full suites and builds.
 _LIGHT_TOOLS = frozenset({"ruff", "biome", "actionlint", "shellcheck", "squawk"})
+# Name the admission holder in result lines once queueing becomes noticeable.
+_QUEUE_NOTICE_MS = 1000.0
+# Measured per project: a vitest suite whose last run took seconds and little
+# memory (aico: 470 tests, 6.7 s, 164 MB peak) joins the light lane instead of
+# queueing behind full suites. Unmeasured or larger suites stay heavy.
+_MEASURED_LIGHT = {"vitest": (30_000.0, 1024 * 1024)}  # execution ms, peak child RSS KiB
+
+
+def _lane_measurements(root: Path) -> Path | None:
+    state = root / ".git" / "st"
+    return state / "lane-measurements.json" if state.is_dir() else None
+
+
+def _measured_light(root: Path, name: str) -> bool:
+    limits, path = _MEASURED_LIGHT.get(name), _lane_measurements(root)
+    if limits is None or path is None:
+        return False
+    try:
+        last = json.loads(path.read_text()).get(name) or {}
+        return float(last["execution_ms"]) <= limits[0] and int(last["max_rss_kb"]) <= limits[1]
+    except (OSError, ValueError, KeyError, TypeError, AttributeError):
+        return False
+
+
+def _record_measurement(root: Path, name: str, execution_ms: float, max_rss_kb: int, returncode: int) -> None:
+    path = _lane_measurements(root)
+    if name not in _MEASURED_LIGHT or path is None or returncode not in {0, 1}:
+        return
+    try:
+        values = json.loads(path.read_text()) if path.is_file() else {}
+        values = values if isinstance(values, dict) else {}
+        values[name] = {"execution_ms": round(execution_ms, 3), "max_rss_kb": max_rss_kb}
+        temporary = path.with_name(f".{path.name}.{os.getpid()}.tmp")
+        temporary.write_text(json.dumps(values, sort_keys=True))
+        os.replace(temporary, path)
+    except (OSError, ValueError):
+        return
 
 
 def _run_frontend_script(command: list[str], cwd: Path, env: dict[str, str]) -> subprocess.CompletedProcess[str]:
@@ -185,7 +223,7 @@ def _run_tool(name: str, config: dict[str, object], extra_args: list[str]) -> in
             # Only direct adapters of fast, low-memory linters are light.
             # Configured wrappers and all other tools retain the heavy default.
             direct = binary == name or (binary == "npx" and base_args[:1] == [name])
-            work_class = "light" if name in _LIGHT_TOOLS and direct else "heavy"
+            work_class = "light" if (name in _LIGHT_TOOLS and direct) or _measured_light(root, name) else "heavy"
             with heavy_work(f"check {name}", work_class=work_class, project=root.name) as work:
                 started = time.monotonic()
                 queue_ms = (started - queued) * 1000
@@ -199,8 +237,14 @@ def _run_tool(name: str, config: dict[str, object], extra_args: list[str]) -> in
                     errors="replace",
                     check=False,
                 )
+                execution_ms = (time.monotonic() - started) * 1000
+                # Largest single child so far: conservative when earlier tools ran first.
+                _record_measurement(root, name, execution_ms,
+                                    resource.getrusage(resource.RUSAGE_CHILDREN).ru_maxrss, result.returncode)
                 timing = (f"|lane:{work.lane}|queue_ms:{queue_ms:.3f}"
-                          f"|execution_ms:{(time.monotonic() - started) * 1000:.3f}")
+                          f"|execution_ms:{execution_ms:.3f}")
+                if work.waited_behind and queue_ms >= _QUEUE_NOTICE_MS:
+                    timing += f"|queued_behind:{work.waited_behind}"
     except OSError as exc:
         if name not in {"vitest", "frontend-test"} and isinstance(exc, FileNotFoundError) and tool_not_installed(name, root):
             print(f"{label}:SKIP:{name}:tool_not_installed")

@@ -171,6 +171,10 @@ def select_candidate(project_id: str, root: Path, mode: str, hold: dict[str, Any
     from .backup_publish import _acceptance_for_head
 
     accepted = _acceptance_for_head(root, sha).get("state") == "reused"
+    if not accepted and row.get("held_through"):
+        # Full acceptance runs only for a checkout's HEAD; an older released
+        # source needs a valid receipt already (or the hold moved forward).
+        return {**row, "reason": "held_source_needs_acceptance"}
     return {**row, "action": "publish" if accepted else "accept_then_publish",
             "reason": "accepted" if accepted else "acceptance_missing"}
 
@@ -312,7 +316,8 @@ def summary_line(row: dict[str, Any]) -> str:
 def needs_attention(row: dict[str, Any]) -> bool:
     return (row.get("outcome") in {"failed", "blocked", "acceptance_failed"}
             or row.get("reason") in {"diverged_from_remote", "awaiting_repair", "owner_action_required",
-                                     "acceptance_failed", "publication_receipt_unreadable", "hold_source_not_on_branch"}
+                                     "acceptance_failed", "publication_receipt_unreadable", "hold_source_not_on_branch",
+                                     "held_source_needs_acceptance"}
             or row.get("reason") in _OWNER_REASONS)
 
 

@@ -201,6 +201,7 @@ def test_hold_keeps_later_commits_local_and_caps_at_released_source(repo):
     _git(repo, "commit", "-am", "needs review")
     assert nightly.select_candidate("fixture", repo, "nightly", {"through": None})["reason"] == "held"
     row = nightly.select_candidate("fixture", repo, "nightly", {"through": released})
-    assert row["sha"] == released and row["held_through"] == released and row["action"] == "accept_then_publish"
+    assert row["sha"] == released and row["held_through"] == released
+    assert (row["action"], row["reason"]) == ("skip", "held_source_needs_acceptance")
     stray = _git(repo, "commit-tree", "-m", "elsewhere", f"{released}^{{tree}}")
     assert nightly.select_candidate("fixture", repo, "nightly", {"through": stray})["reason"] == "hold_source_not_on_branch"

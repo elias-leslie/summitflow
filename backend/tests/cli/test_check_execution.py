@@ -14,6 +14,7 @@ fallback to the default candidate list).
 
 from __future__ import annotations
 
+import json
 import subprocess
 from pathlib import Path
 
@@ -214,3 +215,32 @@ def test_only_direct_fast_linters_use_light_admission(
     assert admitted == [expected]
     result_line = capsys.readouterr().out.splitlines()[-1]
     assert "|queue_ms:" in result_line and "|execution_ms:" in result_line
+
+
+@pytest.mark.parametrize(("measured", "expected"), [
+    (None, "heavy"),
+    ({"execution_ms": 6701.8, "max_rss_kb": 164524}, "light"),
+    ({"execution_ms": 95_000.0, "max_rss_kb": 164524}, "heavy"),
+    ({"execution_ms": 6701.8, "max_rss_kb": 3 * 1024 * 1024}, "heavy"),
+])
+def test_vitest_lane_follows_its_last_measured_run(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, measured: dict | None, expected: str,
+) -> None:
+    monkeypatch.setattr(guard, "_LOCK_DIRECTORY", tmp_path / "lane")
+    monkeypatch.setattr(check, "_resolve_repo_root", lambda: tmp_path)
+    (tmp_path / ".git" / "st").mkdir(parents=True)
+    store = tmp_path / ".git" / "st" / "lane-measurements.json"
+    if measured is not None:
+        store.write_text(json.dumps({"vitest": measured}))
+    admitted = []
+
+    def run(work: guard.HeavyWork, command: list[str], **_kwargs: object) -> subprocess.CompletedProcess[str]:
+        admitted.append(work.work_class)
+        return subprocess.CompletedProcess(command, 0, "fixture complete", "")
+
+    monkeypatch.setattr(guard.HeavyWork, "run", run)
+    monkeypatch.setattr(check, "_resolve_command", lambda binary, *_args: [binary])
+    check._run_tool("vitest", {"binary": "vitest"}, [])
+    assert admitted == [expected]
+    recorded = json.loads(store.read_text())["vitest"]
+    assert recorded["execution_ms"] >= 0 and recorded["max_rss_kb"] >= 0

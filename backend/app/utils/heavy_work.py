@@ -178,6 +178,8 @@ class HeavyWork:
     work_class: str = "heavy"
     queue_seconds: float = 0.0
     lane: str = "heavy"
+    # Last verified holder observed while queued, e.g. "label project=x".
+    waited_behind: str | None = None
 
     def environment(self, environment: Mapping[str, str] | None = None) -> dict[str, str]:
         result = dict(os.environ if environment is None else environment)
@@ -272,6 +274,7 @@ def heavy_work(label: str, *, work_class: str = "heavy", project: str | None = N
             lane = work_class = requested_class
             admission, descriptor = new_admission, new_descriptor
         queued = time.monotonic()
+        _LOCAL.waited_behind = None
         if inherited is not None:
             if work_class == "light" and requested_class == "heavy":
                 raise HeavyWorkError("Light admission cannot be upgraded to heavy work.")
@@ -292,7 +295,8 @@ def heavy_work(label: str, *, work_class: str = "heavy", project: str | None = N
             _write_holder(lane, generation, descriptor, label, project)
         prefix = "" if lane == "heavy" else f"{lane}:"
         token = f"{prefix}{generation}:{descriptor}:{depth}:{branch}"
-        work = HeavyWork(descriptor, token, branch, work_class, time.monotonic() - queued, lane)
+        work = HeavyWork(descriptor, token, branch, work_class, time.monotonic() - queued, lane,
+                         getattr(_LOCAL, "waited_behind", None))
         _LOCAL.work, _LOCAL.pid = work, os.getpid()
         try:
             yield work
@@ -444,7 +448,10 @@ def lane_activity(work_class: str = "heavy") -> list[dict[str, Any]]:
 
 
 def _wait_status(lane: str, label: str, since: float, activity: int, admission: int) -> None:
-    holder = holder_text(_verified_holder(lane, activity, admission))
+    observed = _verified_holder(lane, activity, admission)
+    if observed is not None:
+        _LOCAL.waited_behind = f"{observed['label']} project={observed['project']}"
+    holder = holder_text(observed)
     work_class = _lane_class(lane)
     print(f"[st] Waiting for shared {work_class}-work lane: {_public_label(label)} "
           f"class={work_class} wait_age={time.monotonic() - since:.1f}s {holder}", file=sys.stderr, flush=True)
