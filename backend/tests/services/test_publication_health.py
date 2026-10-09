@@ -142,6 +142,17 @@ def test_verified_publication_resolves_only_known_missing_ci_cause(monkeypatch):
     )
 
 
+def test_accepted_no_ci_publication_resolves_only_local_acceptance_failure(monkeypatch):
+    recorder = Mock(return_value="repair")
+    monkeypatch.setattr(health, "record_finding", recorder)
+    result = verified(ci={"state": "not_applicable", "sha": SHA})
+    assert health.record_publication_observation("project", result) == "repair"
+    recorder.assert_called_once_with(
+        "project", "publication", health.classify_observation(result),
+        resolved=True, resolution_reasons=frozenset({"local_acceptance_failed"}),
+    )
+
+
 @pytest.mark.parametrize("override", [
     {"publication_complete": False},
     {"ci": {"state": "pending", "sha": SHA}},

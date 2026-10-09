@@ -75,6 +75,12 @@ def classify_observation(result: dict[str, Any]) -> dict[str, Any]:
 
 def record_publication_observation(project_id: str, result: dict[str, Any]) -> str | None:
     observation = classify_observation(result)
+    if observation["state"] == "published":
+        # A CI-less upload of an exactly accepted source proves only that local
+        # acceptance now passes for a source including the failed one (the
+        # stored ancestry proof). It never resolves CI, security or CodeQL.
+        return record_finding(project_id, "publication", observation, resolved=True,
+                              resolution_reasons=frozenset({"local_acceptance_failed"}))
     if observation["state"] not in {"blocked", "verified"}:
         return None
     # Outgoing secret verification and remote CodeQL findings are distinct.
