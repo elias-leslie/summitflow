@@ -110,7 +110,7 @@ def test_failed_night_acceptance_is_not_retried_until_head_changes(repo):
 def _sweep(monkeypatch, repo, rows_by_mode, busy=None):
     monkeypatch.setattr(nightly, "_projects", lambda _ids: [(name, repo) for name in rows_by_mode])
     monkeypatch.setattr(nightly, "publication_mode", lambda name: rows_by_mode[name])
-    monkeypatch.setattr(nightly, "busy_reason", lambda name: (busy or {}).get(name))
+    monkeypatch.setattr(nightly, "busy_reason", lambda name, _root: (busy or {}).get(name))
     executed = Mock(side_effect=lambda row, _root: {**row, "outcome": "published", "reason": "source_publication_verified"})
     monkeypatch.setattr(nightly, "execute_candidate", executed)
     notify = Mock()
@@ -164,3 +164,43 @@ def test_attention_lines_print_the_exact_authorization_command():
     assert nightly.needs_attention(row)
     assert "--authorize-workflow .github/workflows/ci.yml" in nightly.summary_line(row)
     assert not nightly.needs_attention({**row, "reason": "up_to_date", "unauthorized_workflows": []})
+
+
+def test_inputs_changing_during_acceptance_defer_without_a_repair_finding(repo, monkeypatch):
+    head = _git(repo, "rev-parse", "HEAD")
+    monkeypatch.setattr(nightly, "_run_acceptance", lambda *_: {"state": "unavailable", "reason": "acceptance_unavailable"})
+    observed = Mock()
+    monkeypatch.setattr("app.services.publication_health.record_publication_observation", observed)
+    row = nightly.execute_candidate({"project_id": "fixture", "sha": head, "mode": "nightly",
+                                     "action": "accept_then_publish"}, repo)
+    assert row["outcome"] == "deferred"
+    observed.assert_not_called()
+    assert nightly.read_nightly_state(repo) is None
+
+
+def test_only_failed_checks_are_a_sticky_source_finding(repo):
+    head = _git(repo, "rev-parse", "HEAD")
+    receipts = repo / ".git" / "st" / "acceptance"
+    receipts.mkdir(parents=True)
+    (receipts / "a.json").write_text(json.dumps({"source": {"commit": head}, "reason": "acceptance_plan_changed_during_acceptance"}))
+    assert not nightly._checks_failed(repo, head)
+    (receipts / "a.json").write_text(json.dumps({"source": {"commit": head}, "reason": "acceptance_checks_failed"}))
+    assert nightly._checks_failed(repo, head)
+
+
+def test_fresh_uncommitted_edits_mean_someone_is_working(repo):
+    import time
+
+    assert nightly._recently_edited(repo, time.time())  # fixture just wrote WIP
+    assert not nightly._recently_edited(repo, time.time() + 2 * nightly.RECENT_EDIT_SECONDS)
+    assert nightly.busy_reason("fixture", repo) == "recent_edits"
+
+
+def test_hold_keeps_later_commits_local_and_caps_at_released_source(repo):
+    released = _git(repo, "rev-parse", "HEAD")
+    _git(repo, "commit", "-am", "needs review")
+    assert nightly.select_candidate("fixture", repo, "nightly", {"through": None})["reason"] == "held"
+    row = nightly.select_candidate("fixture", repo, "nightly", {"through": released})
+    assert row["sha"] == released and row["held_through"] == released and row["action"] == "accept_then_publish"
+    stray = _git(repo, "commit-tree", "-m", "elsewhere", f"{released}^{{tree}}")
+    assert nightly.select_candidate("fixture", repo, "nightly", {"through": stray})["reason"] == "hold_source_not_on_branch"

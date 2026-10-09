@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import subprocess
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Annotated, Any
@@ -35,13 +36,17 @@ app = typer.Typer(
 
 
 @app.command("publication")
-@usage(surface="st.vcs.publication", cmd="st vcs publication [--mode nightly|mirror|manual]",
-       when="read retained publication status, or set the project's overnight publication mode",
+@usage(surface="st.vcs.publication", cmd="st vcs publication [--mode nightly|mirror|manual] [--hold [--through SHA] | --release]",
+       when="read publication status; set overnight mode; hold reviewed-later commits local",
        precautions=("unknown is not passing CI",
                     "nightly publishes the accepted committed head overnight; mirror skips acceptance for check-less repos"),
        tier="reference")
 def publication_status(
     mode: Annotated[str | None, typer.Option("--mode", help="Set overnight publication: nightly, mirror or manual")] = None,
+    hold: Annotated[bool, typer.Option("--hold", help="Keep committed work local until released")] = False,
+    through: Annotated[str | None, typer.Option("--through", help="With --hold: still publish up to this commit")] = None,
+    reason: Annotated[str, typer.Option("--reason", help="With --hold: why later commits must stay local")] = "owner hold",
+    release: Annotated[bool, typer.Option("--release", help="Clear a publication hold")] = False,
 ) -> None:
     """Read-only lightweight startup status, without a network CI wait."""
     from app.services.publication_health import (
@@ -56,15 +61,37 @@ def publication_status(
         if mode is not None:
             raise typer.Exit(2)
         return
-    from app.tasks.nightly_publication import publication_mode, set_publication_mode
+    from app.tasks.nightly_publication import (
+        publication_hold,
+        publication_mode,
+        release_publication_hold,
+        set_publication_hold,
+        set_publication_mode,
+    )
 
-    if mode is not None:
-        try:
+    try:
+        if mode is not None:
             set_publication_mode(project_id, mode)
-        except ValueError as exc:
-            typer.echo(str(exc))
-            raise typer.Exit(2) from None
-    typer.echo(f"Publication mode: {publication_mode(project_id)}")
+        if hold and release:
+            raise ValueError("--hold and --release are exclusive")
+        if hold:
+            full = None
+            if through:
+                resolved = subprocess.run(["git", "rev-parse", "--verify", f"{through}^{{commit}}"],
+                                          capture_output=True, text=True, check=False)
+                if resolved.returncode:
+                    raise ValueError(f"Unknown commit: {through}")
+                full = resolved.stdout.strip()
+            set_publication_hold(project_id, through=full, reason=reason)
+        elif release:
+            release_publication_hold(project_id)
+    except ValueError as exc:
+        typer.echo(str(exc))
+        raise typer.Exit(2) from None
+    current = publication_hold(project_id)
+    held = ("none" if current is None else f"through {str(current.get('through'))[:12]}" if current.get("through")
+            else "all") + (f" ({current.get('reason')})" if current else "")
+    typer.echo(f"Publication mode: {publication_mode(project_id)}; hold: {held}")
     try:
         health = get_project_publication_health(project_id)
         typer.echo(format_publication_health(health))

@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import TypedDict, cast
+from typing import Any, TypedDict, cast
 
 from psycopg.types.json import Jsonb
 
@@ -53,6 +53,7 @@ class AgentConfig(TypedDict, total=False):
     runtime_hygiene_enabled: bool  # Enable scheduled runtime hygiene audit
     nightly_publication_enabled: bool  # Enable the overnight publication sweep (system kill switch)
     publication_mode: str  # Per project: "nightly", "mirror" or "manual" (default)
+    publication_hold: dict[str, Any] | None  # {"through": OID | None, "reason", "set_at"}; keeps later commits local
     autonomous_max_tasks_per_day: int | None  # Max tasks per day
     autonomous_cooldown_minutes: int  # Gap between autonomous dispatches
     autonomous_allowed_types: list[str] | None  # Allowed task types
