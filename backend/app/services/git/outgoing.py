@@ -7,7 +7,10 @@ pre-push object/ref tuples; this module performs only local inspection.
 from __future__ import annotations
 
 import argparse
+import base64
+import binascii
 import fnmatch
+import json
 import os
 import re
 import shutil
@@ -17,6 +20,7 @@ import tempfile
 from collections.abc import Sequence
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Any
 from urllib.parse import urlsplit
 
 from app.utils import safe_subprocess
@@ -61,6 +65,37 @@ _CONTENT = re.compile(
     rb"|CF-Access-Client-Secret\s*[:=]\s*[A-Za-z0-9]{32,}"
     rb"|eyJ[A-Za-z0-9_-]{10,}\.eyJ[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}"
 )
+
+
+def _public_manifest_key(root: Path, finding: Any) -> bool:
+    """Tolerate only an extension manifest "key" that is a DER public key.
+
+    Chrome and Firefox pin extension IDs with this public half; gitleaks'
+    generic-api-key rule cannot tell it from a secret. The value is re-read from
+    the exact committed blob, never the redacted report, and must parse as a
+    public key. Anything else, including a private key there, stays a finding.
+    """
+    if not isinstance(finding, dict):
+        return False
+    commit, path, line = finding.get("Commit"), finding.get("File"), finding.get("StartLine")
+    if (not isinstance(commit, str) or not _OID.fullmatch(commit) or not isinstance(path, str)
+            or path.rsplit("/", 1)[-1] != "manifest.json" or not isinstance(line, int)):
+        return False
+    try:
+        body = _git(root, "cat-file", "blob", f"{commit}:{path}")
+        manifest = json.loads(body)
+        lines = body.splitlines()
+        if not isinstance(manifest, dict) or "manifest_version" not in manifest or not 0 < line <= len(lines):
+            return False
+        value = manifest.get("key")
+        if not isinstance(value, str) or not re.match(rb'\s*"key"\s*:', lines[line - 1]):
+            return False
+        from cryptography.hazmat.primitives.serialization import load_der_public_key
+
+        load_der_public_key(base64.b64decode(value, validate=True))
+    except (OutgoingVerificationError, ValueError, binascii.Error, TypeError):
+        return False
+    return True
 
 
 def _git(repo: Path, *args: str, timeout: int = 120) -> bytes:
@@ -264,6 +299,7 @@ def _verify_outgoing(
         with tempfile.TemporaryDirectory(prefix="st-outgoing-", dir=temporary_parent) as directory:
             config = Path(directory) / "gitleaks.toml"
             config.write_text("[extend]\nuseDefault = true\n")
+            report = Path(directory) / "findings.json"
             env = {key: value for key, value in process_env.items() if not key.startswith(("GITLEAKS_", "GIT_"))}
             env["GIT_NO_REPLACE_OBJECTS"] = "1"
             for revision in revisions:
@@ -271,14 +307,26 @@ def _verify_outgoing(
                     result = safe_subprocess.run_inherited(
                         work.command([scanner_bin, "git", "--no-banner", "--redact=100", "--log-level", "error",
                          "--ignore-gitleaks-allow", "--config", str(config),
-                         "--gitleaks-ignore-path", directory, "--log-opts=" + revision, str(root)]),
+                         "--gitleaks-ignore-path", directory, "--report-format", "json",
+                         "--report-path", str(report), "--log-opts=" + revision, str(root)]),
                         inherit_fds=work.pass_fds, env=work.environment(env), timeout=300,
                     )
                 except (OSError, subprocess.TimeoutExpired) as exc:
                     raise OutgoingVerificationError("Outgoing secret scan failed or timed out.") from exc
-                if result.returncode:
+                if result.returncode and not _only_public_manifest_keys(root, report):
                     raise OutgoingVerificationError("Outgoing secret scan refused history or failed (details redacted).")
+                report.unlink(missing_ok=True)
     return OutgoingVerification(len(commits), len(updates))
+
+
+def _only_public_manifest_keys(root: Path, report: Path) -> bool:
+    """A nonzero scan passes only with a readable report of tolerated findings."""
+    try:
+        findings = json.loads(report.read_bytes())
+    except (OSError, ValueError):
+        return False
+    return (isinstance(findings, list) and bool(findings)
+            and all(_public_manifest_key(root, finding) for finding in findings))
 
 
 def _is_ancestor(root: Path, base: str, oid: str) -> bool:

@@ -414,3 +414,52 @@ def test_pre_push_chains_same_arguments_and_stdin(history, tmp_path, adapter) ->
     result = subprocess.run(["bash", str(hook_path), "fixture", str(repo)], cwd=repo,
                             input=data, text=True, capture_output=True, env=env, timeout=60)
     assert result.returncode == 0, result.stderr
+
+
+
+def _manifest_scan(history, monkeypatch, key: str, *, line: int = 3, path: str = "extension/manifest.json",
+                   report: bool = True):
+    import json
+
+    from app.services.git import outgoing
+
+    body = json.dumps({"manifest_version": 3, "key": key}, indent=2).encode()
+    oid = history[4](None, "extension/manifest.json", body)
+
+    def scanner(command, **kwargs):
+        if report:
+            Path(command[command.index("--report-path") + 1]).write_text(json.dumps([
+                {"RuleID": "generic-api-key", "Commit": oid, "File": path, "StartLine": line},
+            ]))
+        return subprocess.CompletedProcess(command, 1, "", "")
+
+    monkeypatch.setattr(outgoing.safe_subprocess, "run_inherited", scanner)
+    return check(history, oid)
+
+
+def _der_key(private: bool) -> str:
+    import base64
+
+    from cryptography.hazmat.primitives import serialization
+    from cryptography.hazmat.primitives.asymmetric import ec
+
+    key = ec.generate_private_key(ec.SECP256R1())
+    der = (key.private_bytes(serialization.Encoding.DER, serialization.PrivateFormat.PKCS8,
+                             serialization.NoEncryption()) if private else
+           key.public_key().public_bytes(serialization.Encoding.DER, serialization.PublicFormat.SubjectPublicKeyInfo))
+    return base64.b64encode(der).decode()
+
+
+def test_extension_manifest_public_key_finding_is_tolerated(history, monkeypatch) -> None:
+    assert _manifest_scan(history, monkeypatch, _der_key(private=False)).commits_scanned == 1
+
+
+@pytest.mark.parametrize("private, options", [
+    (True, {}),
+    (False, {"report": False}),
+    (False, {"path": "extension/config.json"}),
+    (False, {"line": 2}),
+])
+def test_other_scanner_findings_still_refused(history, monkeypatch, private, options) -> None:
+    with pytest.raises(OutgoingVerificationError, match="details redacted"):
+        _manifest_scan(history, monkeypatch, _der_key(private), **options)
