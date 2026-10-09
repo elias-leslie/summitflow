@@ -424,11 +424,10 @@ def test_node_child_discovery_bounds_enumeration_and_stat_work(
         patch.object(Path, "is_dir", return_value=True) as stat,
     ):
         directories = dependencies_nodejs._node_child_directories(tmp_path, tmp_path)
-    assert len(directories) == 2
+    assert directories == []
     assert enumerated == [0, 1]
-    assert safe.call_count == 2
-    assert stat.call_count == 2
-    assert directories == sorted(directories)
+    assert safe.call_count == 0
+    assert stat.call_count == 0
 
 
 @pytest.mark.parametrize("manifest_name", ["package.json", "pnpm-workspace.yaml"])
@@ -478,6 +477,87 @@ def test_node_child_discovery_preserves_undeclared_safe_apps(
     manifest.write_text(json.dumps(payload))
     entries = scan_nodejs_dependencies("test-project", tmp_path, include_network_checks=False)
     assert {entry.name for entry in entries} == {"root-dependency", "next"}
+
+
+@pytest.mark.parametrize("limit", [2, 3, 4])
+def test_node_child_membership_is_independent_of_enumeration_order(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, limit: int,
+) -> None:
+    monkeypatch.setattr(dependencies_nodejs, "_MAX_WORKSPACE_DIRECTORIES", limit)
+    for name in ("a", "b", "z"):
+        (tmp_path / name).mkdir()
+    results: list[list[Path]] = []
+    with patch.object(dependencies_nodejs.logger, "warning") as warning:
+        for order in [("a", "z", "b"), ("b", "a", "z")]:
+            scanner = MagicMock()
+            scanner.__enter__.return_value = iter(
+                SimpleNamespace(path=str(tmp_path / name)) for name in order
+            )
+            with patch("os.scandir", return_value=scanner):
+                results.append(dependencies_nodejs._node_child_directories(tmp_path, tmp_path))
+    assert warning.call_count == (2 if limit <= 3 else 0)
+    assert results[0] == results[1]
+    expected = [tmp_path / name for name in ("a", "b", "z")] if limit > 3 else []
+    assert results[0] == expected
+
+
+def test_node_fallback_honors_pnpm_exclusions_without_root_manifest(
+    tmp_path: Path, local_node_inventory: None,
+) -> None:
+    _node_manifest(tmp_path / "frontend")
+    _node_manifest(tmp_path / "example", "excluded-dependency")
+    (tmp_path / "pnpm-workspace.yaml").write_text(
+        "packages:\n  - packages/*\n  - '!example'\n"
+    )
+    entries = scan_nodejs_dependencies("test-project", tmp_path, include_network_checks=False)
+    assert [entry.name for entry in entries] == ["next"]
+
+
+def test_node_nested_app_merges_package_and_pnpm_workspace_patterns(
+    tmp_path: Path, local_node_inventory: None,
+) -> None:
+    app = tmp_path / "app"
+    app.mkdir()
+    (app / "package.json").write_text('{"workspaces":["libs/*"]}')
+    (app / "pnpm-workspace.yaml").write_text("packages:\n  - tools/cli\n  - '!libs/legacy'\n")
+    _node_manifest(app / "libs/current", "current-dependency")
+    _node_manifest(app / "libs/legacy", "legacy-dependency")
+    _node_manifest(app / "tools/cli", "cli-dependency")
+    entries = scan_nodejs_dependencies("test-project", tmp_path, include_network_checks=False)
+    assert {entry.name for entry in entries} == {"current-dependency", "cli-dependency"}
+
+
+@pytest.mark.parametrize("discovery", ["identity", "npm-literal", "pnpm-literal"])
+def test_node_discovery_retains_explicit_paths_when_child_listing_is_ambiguous(
+    tmp_path: Path, local_node_inventory: None,
+    monkeypatch: pytest.MonkeyPatch, discovery: str,
+) -> None:
+    monkeypatch.setattr(dependencies_nodejs, "_MAX_WORKSPACE_DIRECTORIES", 2)
+    for name in ("a", "b"):
+        (tmp_path / name).mkdir()
+    _node_manifest(tmp_path / "frontend")
+    if discovery == "identity":
+        (tmp_path / "project.identity.json").write_text(json.dumps({
+            "project": {"id": "test-project"}, "runtime": {"frontend_dir": "frontend"},
+        }))
+    elif discovery == "npm-literal":
+        (tmp_path / "package.json").write_text('{"workspaces":["*","frontend"]}')
+    else:
+        (tmp_path / "pnpm-workspace.yaml").write_text("packages:\n  - '*'\n  - frontend\n")
+    real_scandir = os.scandir
+
+    def ordered_scandir(directory: Path | str):
+        if Path(directory) != tmp_path:
+            return real_scandir(directory)
+        scanner = MagicMock()
+        scanner.__enter__.return_value = iter(
+            SimpleNamespace(path=str(tmp_path / name)) for name in ("a", "b", "frontend")
+        )
+        return scanner
+
+    with patch("os.scandir", ordered_scandir):
+        entries = scan_nodejs_dependencies("test-project", tmp_path, include_network_checks=False)
+    assert [entry.path for entry in entries] == ["nodejs/frontend/next"]
 
 
 def test_python_scan_uses_manifest_local_environment(tmp_path: Path) -> None:
