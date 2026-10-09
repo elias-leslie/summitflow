@@ -39,7 +39,7 @@ def test_readme_symlinks_cannot_expose_other_files(tmp_path: Path, outside: bool
     assert result.content is None
 
 
-@pytest.mark.parametrize("content", [b"binary\x00content", b"x" * (MAX_FILE_SIZE + 1)])
+@pytest.mark.parametrize("content", [b"binary\x00content", b"x" * (MAX_FILE_SIZE + 1)], ids=["binary", "oversized"])
 def test_unreadable_formats_do_not_show_partial_document(tmp_path: Path, content: bytes) -> None:
     (tmp_path / "README.md").write_bytes(content)
     result = readme.read_project_readme("example", str(tmp_path))
