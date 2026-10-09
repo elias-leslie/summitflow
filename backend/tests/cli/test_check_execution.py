@@ -14,8 +14,13 @@ fallback to the default candidate list).
 
 from __future__ import annotations
 
+import subprocess
 from pathlib import Path
 
+import pytest
+
+from app.utils import heavy_work as guard
+from cli.commands import check
 from cli.commands.check_execution import (
     adjusted_tool_args,
     read_pytest_no_cov,
@@ -166,3 +171,28 @@ def test_adjusted_tool_args_skips_no_cov_when_user_passed_it(tmp_path: Path) -> 
 def test_adjusted_tool_args_unchanged_for_non_pytest(tmp_path: Path) -> None:
     _base, extra = adjusted_tool_args("ruff", [], ["check", "."], root=tmp_path)
     assert extra == ["check", "."]
+
+
+@pytest.mark.parametrize(("name", "binary", "expected"), [
+    ("ruff", "ruff", "light"), ("ruff", "sh", "heavy"),
+    ("pytest", "pytest", "heavy"), ("biome", "biome", "heavy"),
+    ("types", "ty", "heavy"), ("unknown", "ruff", "heavy"),
+    ("actionlint", "actionlint", "heavy"),
+])
+def test_only_direct_managed_ruff_uses_light_admission(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str],
+    name: str, binary: str, expected: str,
+) -> None:
+    monkeypatch.setattr(guard, "_LOCK_DIRECTORY", tmp_path / "lane")
+    monkeypatch.setattr(check, "_resolve_repo_root", lambda: tmp_path)
+    admitted = []
+
+    def run(work: guard.HeavyWork, command: list[str], **_kwargs: object) -> subprocess.CompletedProcess[str]:
+        admitted.append(work.work_class)
+        return subprocess.CompletedProcess(command, 0, "fixture complete", "")
+
+    monkeypatch.setattr(guard.HeavyWork, "run", run)
+    assert check._run_tool(name, {"binary": binary}, []) == 0
+    assert admitted == [expected]
+    result_line = capsys.readouterr().out.splitlines()[-1]
+    assert "|queue_ms:" in result_line and "|execution_ms:" in result_line

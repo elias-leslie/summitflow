@@ -37,6 +37,251 @@ def _bootstrap(lane: Path) -> str:
     )
 
 
+def _queued_actor(lane: Path, tmp_path: Path, label: str, *, paused: bool = False) -> subprocess.Popen[str]:
+    code = _bootstrap(lane) + f"""
+import time
+ready = Path({str(tmp_path / (label + '-ready'))!r})
+resume = Path({str(tmp_path / (label + '-resume'))!r})
+original_sleep = time.sleep
+def sleep(duration):
+    ready.touch()
+    while {paused!r} and not resume.exists():
+        original_sleep(0.01)
+    original_sleep(duration)
+guard.time.sleep = sleep
+with guard.heavy_work({label!r}):
+    with Path({str(tmp_path / 'order')!r}).open('a') as order:
+        order.write({label!r} + '\\n')
+"""
+    return subprocess.Popen([sys.executable, "-c", code], stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+
+
+def test_registered_waiter_cannot_be_overtaken_by_later_process(lane: Path, tmp_path: Path) -> None:
+    actors = []
+    try:
+        with guard.heavy_work("A"):
+            actors.append(_queued_actor(lane, tmp_path, "B", paused=True))
+            _wait_file(tmp_path / "B-ready", actors[0])
+            actors.append(_queued_actor(lane, tmp_path, "C"))
+            _wait_file(tmp_path / "C-ready", actors[1])
+        # B is deliberately descheduled after registering. C must still wait.
+        with pytest.raises(subprocess.TimeoutExpired):
+            actors[1].communicate(timeout=0.3)
+    finally:
+        (tmp_path / "B-resume").touch()
+        for actor in actors:
+            output = actor.communicate(timeout=5)
+            assert actor.returncode == 0, output
+    assert (tmp_path / "order").read_text().splitlines() == ["B", "C"]
+
+
+def test_releasing_owner_reacquires_behind_registered_waiter(lane: Path, tmp_path: Path) -> None:
+    actor = None
+    resume = None
+    try:
+        with guard.heavy_work("A"):
+            actor = _queued_actor(lane, tmp_path, "B", paused=True)
+            _wait_file(tmp_path / "B-ready", actor)
+            resume = threading.Timer(0.3, (tmp_path / "B-resume").touch)
+            resume.start()
+        with guard.heavy_work("A again"), (tmp_path / "order").open("a") as order:
+            order.write("A\n")
+    finally:
+        (tmp_path / "B-resume").touch()
+        if resume is not None:
+            resume.join(2)
+        if actor is not None:
+            output = actor.communicate(timeout=5)
+            assert actor.returncode == 0, output
+    assert (tmp_path / "order").read_text().splitlines() == ["B", "A"]
+
+
+@pytest.mark.parametrize("victim", ["B", "C"])
+def test_killed_head_or_middle_waiter_does_not_block_survivors(lane: Path, tmp_path: Path, victim: str) -> None:
+    actors = {}
+    try:
+        with guard.heavy_work("A"):
+            for label in ("B", "C", "D"):
+                actors[label] = _queued_actor(lane, tmp_path, label)
+                _wait_file(tmp_path / (label + "-ready"), actors[label])
+            actors[victim].kill()
+            actors[victim].wait(timeout=3)
+        for label, actor in actors.items():
+            output = actor.communicate(timeout=5)
+            assert actor.returncode == (-9 if label == victim else 0), output
+    finally:
+        for actor in actors.values():
+            if actor.poll() is None:
+                actor.kill()
+            actor.communicate(timeout=5)
+    assert (tmp_path / "order").read_text().splitlines() == [label for label in ("B", "C", "D") if label != victim]
+
+
+def test_light_progresses_alongside_heavy_and_has_only_one_slot(lane: Path) -> None:
+    entered, attempting, first_entered, release = (threading.Event() for _ in range(4))
+    errors: list[BaseException] = []
+
+    def other_light() -> None:
+        try:
+            attempting.set()
+            with guard.heavy_work("second Ruff", work_class="light"):
+                entered.set()
+        except BaseException as exc:
+            errors.append(exc)
+
+    def light_owner() -> None:
+        try:
+            with guard.heavy_work("first Ruff", work_class="light"):
+                first_entered.set()
+                if not release.wait(5):
+                    raise AssertionError("fixture release did not arrive")
+        except BaseException as exc:
+            errors.append(exc)
+
+    owner, contender = threading.Thread(target=light_owner), threading.Thread(target=other_light)
+    # Independent threads have no same-thread admission to reuse.
+    with guard.heavy_work("suite"):
+        try:
+            owner.start()
+            assert first_entered.wait(2), "light could not progress beside heavy"
+            contender.start()
+            assert attempting.wait(2)
+            assert not entered.wait(0.2), "light capacity exceeded one"
+        finally:
+            release.set()
+            owner.join(3)
+            if contender.ident is not None:
+                contender.join(3)
+        assert not errors, errors
+        assert entered.is_set() and not owner.is_alive() and not contender.is_alive()
+
+
+def test_light_cannot_upgrade_to_heavy_in_thread_or_exec_descendant(lane: Path) -> None:
+    with guard.heavy_work("Ruff", work_class="light") as work:
+        with guard.heavy_work("nested Ruff", work_class="light") as nested:
+            assert nested is work
+        with pytest.raises(guard.HeavyWorkError, match="cannot be upgraded"), guard.heavy_work("suite"):
+            pytest.fail("light upgraded")
+        code = _bootstrap(lane) + """
+try:
+    with guard.heavy_work('descendant suite'):
+        raise AssertionError('light upgraded in descendant')
+except guard.HeavyWorkError as exc:
+    assert 'cannot be upgraded' in str(exc)
+with guard.heavy_work('descendant Ruff', work_class='light'):
+    pass
+"""
+        result = work.run([sys.executable, "-c", code], capture_output=True, text=True, timeout=5)
+        assert result.returncode == 0, result.stderr
+    with guard.heavy_work("heavy owner") as heavy, guard.heavy_work("nested Ruff", work_class="light") as nested:
+        assert nested is heavy and nested.work_class == "heavy"
+
+
+def test_wait_status_is_bounded_and_verifies_holder(lane: Path, capsys: pytest.CaptureFixture[str]) -> None:
+    entered = threading.Event()
+
+    def waiter() -> None:
+        with guard.heavy_work("B") as work:
+            assert work.queue_seconds >= 0.1
+            entered.set()
+
+    with guard.heavy_work("suite", project="fixture-project"):
+        thread = threading.Thread(target=waiter)
+        thread.start()
+        assert not entered.wait(0.15)
+        output = capsys.readouterr().out
+        assert "class=heavy" in output and "wait_age=" in output
+        assert f"holder=suite project=fixture-project pid={os.getpid()} active_age=" in output
+        assert len(output.splitlines()[0]) < 400
+    thread.join(3)
+    assert entered.is_set() and not thread.is_alive()
+
+
+def test_old_protocol_owner_blocks_new_queue_without_replacing_capacity_files(lane: Path, tmp_path: Path) -> None:
+    # Seed the exact pre-FIFO capacity protocol without new helper metadata.
+    descriptors = [os.open(lane / name, os.O_CREAT | os.O_RDWR, 0o600)
+                   for name in ("admission.lock", "activity.lock")]
+    before = [os.fstat(fd).st_ino for fd in descriptors]
+    # Incomplete holder diagnostics are advisory and must remain unknown.
+    (lane / "heavy-holder.json").touch(mode=0o600)
+    (lane / "heavy-holder.json").write_text("incomplete")
+    actor = None
+    try:
+        fcntl.flock(descriptors[0], fcntl.LOCK_EX)
+        fcntl.flock(descriptors[1], fcntl.LOCK_SH)
+        os.write(descriptors[0], f"{os.getpid()}:1:{'a' * 32}".encode())
+        actor = _queued_actor(lane, tmp_path, "B")
+        _wait_file(tmp_path / "B-ready", actor)
+        with pytest.raises(subprocess.TimeoutExpired):
+            actor.communicate(timeout=0.2)
+        # An old owner's admission may close while a descendant keeps activity.
+        os.close(descriptors[0])
+        descriptors[0] = -1
+        with pytest.raises(subprocess.TimeoutExpired):
+            actor.communicate(timeout=0.2)
+    finally:
+        for descriptor in descriptors:
+            if descriptor >= 0:
+                os.close(descriptor)
+        if actor is not None:
+            output = actor.communicate(timeout=5)
+            assert actor.returncode == 0, output
+            assert "holder=unknown" in output[0]
+    assert [(lane / name).stat().st_ino for name in ("admission.lock", "activity.lock")] == before
+
+
+@pytest.mark.parametrize("abandoned", ["start-mismatch", "zombie"])
+def test_abandoned_identity_reclaims_waiter_even_if_another_process_retains_fd(lane: Path, abandoned: str) -> None:
+    record = lane / f"wait-heavy-{'0' * 20}-{'b' * 32}.json"
+    descriptor = os.open(record, os.O_CREAT | os.O_RDWR, 0o600)
+    fcntl.flock(descriptor, fcntl.LOCK_EX)
+    zombie = None
+    contender = None
+    entered = threading.Event()
+    errors: list[BaseException] = []
+    try:
+        if abandoned == "zombie":
+            read_fd, write_fd = os.pipe()
+            zombie = os.fork()
+            if zombie == 0:
+                os.close(write_fd)
+                os.read(read_fd, 1)
+                os._exit(0)
+            os.close(read_fd)
+            pid = zombie
+            start = Path(f"/proc/{pid}/stat").read_text().rsplit(")", 1)[1].split()[19]
+            os.write(descriptor, json.dumps({"pid": pid, "start": start}).encode())
+            os.write(write_fd, b"x")
+            os.close(write_fd)
+            deadline = time.monotonic() + 3
+            while Path(f"/proc/{zombie}/stat").read_text().rsplit(")", 1)[1].split()[0] != "Z":
+                assert time.monotonic() < deadline
+                time.sleep(0.01)
+        else:
+            os.write(descriptor, json.dumps({"pid": os.getpid(), "start": "0"}).encode())
+        def next_owner() -> None:
+            try:
+                with guard.heavy_work("next owner"):
+                    entered.set()
+            except BaseException as exc:
+                errors.append(exc)
+
+        contender = threading.Thread(target=next_owner)
+        contender.start()
+        assert entered.wait(2), "abandoned identity blocked admission"
+        assert not record.exists()
+        # Reclamation affects only metadata, even while this FD stays locked.
+        assert os.fstat(descriptor).st_nlink == 0
+        assert (lane / "admission.lock").exists() and (lane / "activity.lock").exists()
+    finally:
+        os.close(descriptor)
+        if zombie is not None:
+            assert os.waitpid(zombie, 0)[1] == 0
+        if contender is not None:
+            contender.join(3)
+            assert not contender.is_alive() and not errors, errors
+
+
 def test_nested_context_reenters_but_other_thread_queues(lane: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     entered = threading.Event()
     attempted = threading.Event()

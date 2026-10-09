@@ -168,6 +168,7 @@ def _run_tool(name: str, config: dict[str, object], extra_args: list[str]) -> in
         print(tool_result_line(label, name, 127, display_path(root, details), summary_hint(output)))
         return 127
     report: Path | None = None
+    timing = ""
     # A real full-suite failure produced empty stdout/stderr. Retain pytest's
     # built-in report from this same run, not a second diagnostic test run.
     pytest_options = " ".join([*command, os.environ.get("PYTEST_ADDOPTS", "")])
@@ -178,7 +179,13 @@ def _run_tool(name: str, config: dict[str, object], extra_args: list[str]) -> in
         if name == "frontend-test":
             result = _run_frontend_script(command, cwd, tool_env(root, os.environ, name))
         else:
-            with heavy_work(f"check {name}") as work:
+            queued = time.monotonic()
+            # Only this direct adapter is light. Configured wrappers and all
+            # other tools retain the conservative heavy default.
+            work_class = "light" if name == "ruff" and binary == "ruff" else "heavy"
+            with heavy_work(f"check {name}", work_class=work_class, project=root.name) as work:
+                started = time.monotonic()
+                queue_ms = (started - queued) * 1000
                 result = work.run(
                     command,
                     cwd=cwd,
@@ -189,6 +196,7 @@ def _run_tool(name: str, config: dict[str, object], extra_args: list[str]) -> in
                     errors="replace",
                     check=False,
                 )
+                timing = f"|queue_ms:{queue_ms:.3f}|execution_ms:{(time.monotonic() - started) * 1000:.3f}"
     except OSError as exc:
         if name not in {"vitest", "frontend-test"} and isinstance(exc, FileNotFoundError) and tool_not_installed(name, root):
             print(f"{label}:SKIP:{name}:tool_not_installed")
@@ -218,7 +226,7 @@ def _run_tool(name: str, config: dict[str, object], extra_args: list[str]) -> in
             result.returncode,
             display_path(root, details),
             summary_hint(output),
-        ) + (f"|report:{display_path(root, report)}" if report is not None and report.is_file() else "")
+        ) + timing + (f"|report:{display_path(root, report)}" if report is not None and report.is_file() else "")
     )
     return result.returncode
 

@@ -2,8 +2,41 @@
 
 Canonical ST quality tools, local security candidate preparation, outgoing
 publication history/scans, and managed dependency/build subprocesses share one
-same-user Linux admission lane. Queue waits print a plain message; admission
-storage failures fail closed. No tool, required gate, or tool timeout is skipped
+same-user Linux heavy admission lane. One separate light slot is reserved for
+the direct managed Ruff adapter (`name=ruff`, `binary=ruff`). Configured wrappers,
+unknown tools, tests, native stages, builds, installs, scans and composite
+cleanrooms remain heavy. `--quick` selects stages; only its Ruff stage is light.
+A light context cannot implicitly upgrade to heavy, including in descendants.
+Ruff nested under a verified heavy owner reuses that heavy admission.
+
+Independent arrivals register private ordered waiter files under a short
+`queue.lock` metadata lock. Only the earliest live record in its class may try
+the capacity locks. This includes an owner that releases and immediately queues
+again. Waiting does not hold the metadata lock. Cancellation removes only that
+waiter's record; abandoned records are reclaimed using their kernel file-lock
+ownership and verified PID/start identity, including zombies and PID reuse.
+There is no TTL. Capacity and depth lock files are never unlinked or reset.
+Verified descendants retain the established depth/sibling admission semantics.
+
+Wait messages are bounded and report class and wait age every five seconds.
+Holder operation/project names, PID and active age appear only after verifying
+the recorded process identity, activity inode/shared lock and generation.
+Legacy owners and surviving descendants without verified holder metadata are
+reported as unknown. Records contain operation/project names, not commands,
+arguments, credentials or environment dumps. Direct managed tool results report
+queue and execution milliseconds separately; tool timeouts still start at launch.
+
+Transition preserves the existing `admission.lock`, `activity.lock` and
+`depth-*.lock` inodes. New metadata and `light-*` files are created alongside
+them; no migration/reset of `/tmp/st-heavy-<uid>` is needed or permitted. Older
+processes still enforce the heavy capacity lock but do not join the FIFO queue.
+FIFO therefore applies to updated callers; full ordering requires existing
+processes to drain and new CLI/worker code to be loaded through the normal
+owner-authorized service rollout. Do not interrupt jobs to make this transition.
+Old code cannot understand light lease markers; do not mix old descendant code
+under a light context during rollout.
+
+Admission storage failures fail closed. No tool, required gate, or tool timeout is skipped
 or shortened. Runtime services, systemctl, ordinary inspection and the resident
 API/task workers are not reniced or admitted into this lane.
 
