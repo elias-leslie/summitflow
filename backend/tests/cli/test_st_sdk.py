@@ -121,10 +121,8 @@ from st_sdk import config
 requests = []
 def registered_projects(url, **kwargs):
     requests.append(url)
-    return httpx.Response(200, json=[{{
-        "id": "selected-project",
-        "root_path": {str(selected_root)!r},
-    }}])
+    project = {{"id": "selected-project", "root_path": {str(selected_root)!r}}}
+    return httpx.Response(200, json=project if url.endswith("/selected-project") else [project])
 
 config.httpx.get = registered_projects
 config.set_project_override("selected-project")
@@ -151,7 +149,7 @@ print(json.dumps({{
         "project_id": "selected-project",
         "project_root": str(selected_root),
         "source": "flag",
-        "requests": ["http://localhost:8001/api/projects"],
+        "requests": ["http://localhost:8001/api/projects/selected-project"],
     }
 
 

@@ -10,6 +10,7 @@ from dataclasses import dataclass
 from functools import lru_cache
 from pathlib import Path
 from typing import Any, cast
+from urllib.parse import quote
 
 import httpx
 import yaml
@@ -280,6 +281,19 @@ def get_available_projects() -> list[str]:
 
 
 def get_project_root_path(project_id: str) -> str | None:
+    # The single-project read avoids serializing every registered project on
+    # each extension dispatch; the list remains the fallback for older APIs.
+    try:
+        response = httpx.get(f"{_api_base()}/projects/{quote(project_id, safe='')}", timeout=5.0)
+    except httpx.HTTPError:
+        response = None
+    if response is not None and response.status_code == 404:
+        return None
+    if response is not None and response.status_code == 200:
+        data = response.json()
+        if isinstance(data, dict) and data.get("id") == project_id:
+            root_path = data.get("root_path")
+            return str(root_path) if root_path else None
     projects = _fetch_projects_with_retry(_api_base(), max_retries=2)
     if not projects:
         return None
