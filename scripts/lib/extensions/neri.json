@@ -17,7 +17,7 @@
   "namespace": "neri",
   "help": {
     "": "Usage: neri [OPTIONS] COMMAND [ARGS]...\n\n  Read and maintain Neri targets, investigations, notes, reports and\n  disclosure programs\n\nOptions:\n  --install-completion  Install completion for the current shell.\n  --show-completion     Show completion for the current shell, to copy it or\n                        customize the installation.\n  --help                Show this message and exit.\n\nCommands:\n  investigations\n  create          Create an explicit saved attempt; incomplete JSON is...\n  show\n  activity\n  timeline\n  owner-request\n  owner-resolve\n  context\n  capabilities\n  reports\n  evidence        Import evidence and inspect retained artifacts\n  notes           Save contextual notes and direction\n  report          Read exact report and review revisions, save reports...\n  target          Inspect and maintain registered target metadata\n  group           Read and organize passive investigations containing...\n  program         Maintain passive disclosure programs and exact policy...\n  closeout        Inspect authoritative investigation closeout\n  hunt            Begin, inspect, hand off, or exceptionally continue a...\n  surface         Read saved attack-surface state and submit observations\n  portfolio       Join admitted local work and retain exact root...\n  workspace       Manage ten stable workspace paths.",
-    "investigations": "Usage: neri investigations [OPTIONS]\n\nOptions:\n  --limit <int range>  [default: 40; 1<=x<=100]\n  --cursor <str>\n  --help               Show this message and exit.",
+    "investigations": "Usage: neri investigations [OPTIONS]\n\nOptions:\n  --limit <int range>  [default: 20; 1<=x<=100]\n  --cursor <str>\n  --help               Show this message and exit.",
     "create": "Usage: neri create [OPTIONS]\n\n  Create an explicit saved attempt; incomplete JSON is rejected before any\n  write.\n\n  Input JSON requires nonempty target_id, title, and objective. --file - reads\n  stdin. Replace the sample values with the exact current investigation facts.\n  Example: {\"target_id\":\"documents\",\"title\":\"Document review\",\n  \"objective\":\"Review the retained documents.\"}\n\nOptions:\n  --file <path>  [required]\n  --id <uuid>\n  --help         Show this message and exit.",
     "show": "Usage: neri show [OPTIONS] {investigation_id}\n\nArguments:\n  investigation_id  [required]\n\nOptions:\n  --help  Show this message and exit.",
     "activity": "Usage: neri activity [OPTIONS] {investigation_id}\n\nArguments:\n  investigation_id  [required]\n\nOptions:\n  --after <int range>  [default: 0; x>=0]\n  --limit <int range>  [default: 40; 1<=x<=100]\n  --help               Show this message and exit.",
@@ -26,7 +26,7 @@
     "owner-resolve": "Usage: neri owner-resolve [OPTIONS] {investigation_id}\n\nArguments:\n  investigation_id  [required]\n\nOptions:\n  --file <path>  [required]\n  --id <uuid>\n  --help         Show this message and exit.",
     "context": "Usage: neri context [OPTIONS] {investigation_id}\n\nArguments:\n  investigation_id  [required]\n\nOptions:\n  --after <int range>  [default: 0; x>=0]\n  --limit <int range>  [default: 40; 1<=x<=100]\n  --full / --no-full   [default: no-full]\n  --help               Show this message and exit.",
     "capabilities": "Usage: neri capabilities [OPTIONS]\n\nOptions:\n  --full / --no-full  [default: no-full]\n  --section <str>\n  --help              Show this message and exit.",
-    "reports": "Usage: neri reports [OPTIONS]\n\nOptions:\n  --limit <int range>          [default: 40; 1<=x<=100]\n  --cursor <str>\n  --view <investigations>\n  --target, --target-id <str>\n  --help                       Show this message and exit.",
+    "reports": "Usage: neri reports [OPTIONS]\n\nOptions:\n  --limit <int range>          [default: 20; 1<=x<=100]\n  --cursor <str>\n  --view <investigations>\n  --target, --target-id <str>\n  --help                       Show this message and exit.",
     "evidence": "Usage: neri evidence [OPTIONS] COMMAND [ARGS]...\n\n  Import evidence and inspect retained artifacts\n\nOptions:\n  --help  Show this message and exit.\n\nCommands:\n  list\n  show\n  import\n  artifact\n  download",
     "evidence list": "Usage: neri evidence list [OPTIONS] {investigation_id}\n\nArguments:\n  investigation_id  [required]\n\nOptions:\n  --after <int range>  [default: 0; x>=0]\n  --limit <int range>  [default: 40; 1<=x<=100]\n  --full / --no-full   [default: no-full]\n  --help               Show this message and exit.",
     "evidence show": "Usage: neri evidence show [OPTIONS] {investigation_id} {evidence_id}\n\nArguments:\n  investigation_id  [required]\n  evidence_id       UUID, E<number>, or operation:<UUID>  [required]\n\nOptions:\n  --help  Show this message and exit.",
@@ -60,7 +60,7 @@
     "report severity show": "Usage: neri report severity show [OPTIONS] {investigation_id} {revision_id}\n                                 {assessment_id}\n\nArguments:\n  investigation_id  [required]\n  revision_id       [required]\n  assessment_id     [required]\n\nOptions:\n  --help  Show this message and exit.",
     "report severity save": "Usage: neri report severity save [OPTIONS] {investigation_id} {revision_id}\n\nArguments:\n  investigation_id  [required]\n  revision_id       [required]\n\nOptions:\n  --file <path>  [required]\n  --id <uuid>\n  --help         Show this message and exit.",
     "target": "Usage: neri target [OPTIONS] COMMAND [ARGS]...\n\n  Inspect and maintain registered target metadata\n\nOptions:\n  --help  Show this message and exit.\n\nCommands:\n  list\n  show\n  register\n  status\n  notes     Save target direction and read its state history\n  programs  Record exact target applicability and its revision history",
-    "target list": "Usage: neri target list [OPTIONS]\n\nOptions:\n  --workspace / --no-workspace    [default: no-workspace]\n  --limit <int range>             [default: 40; 1<=x<=100]\n  --cursor <str>\n  --search <str>\n  --filter <all|active|attention|recorded_blockers|owner_actions|awaiting_review|reviewed_findings|reviewed_results|reviewed_no_findings>\n  --help                          Show this message and exit.",
+    "target list": "Usage: neri target list [OPTIONS]\n\nOptions:\n  --workspace / --no-workspace    [default: no-workspace]\n  --limit <int range>             [default: 20; 1<=x<=100]\n  --cursor <str>\n  --search <str>\n  --filter <all|active|attention|recorded_blockers|owner_actions|awaiting_review|reviewed_findings|reviewed_results|reviewed_no_findings>\n  --help                          Show this message and exit.",
     "target show": "Usage: neri target show [OPTIONS] {target_id}\n\nArguments:\n  target_id  [required]\n\nOptions:\n  --workspace / --no-workspace  [default: no-workspace]\n  --help                        Show this message and exit.",
     "target register": "Usage: neri target register [OPTIONS]\n\nOptions:\n  --file <path>  [required]\n  --help         Show this message and exit.",
     "target status": "Usage: neri target status [OPTIONS] {target_id}\n\nArguments:\n  target_id  [required]\n\nOptions:\n  --file <path>  [required]\n  --help         Show this message and exit.",
@@ -76,7 +76,7 @@
     "target programs show": "Usage: neri target programs show [OPTIONS] {target_id} {binding_id}\n\nArguments:\n  target_id   [required]\n  binding_id  [required]\n\nOptions:\n  --revision-id <uuid>\n  --help                Show this message and exit.",
     "target programs history": "Usage: neri target programs history [OPTIONS] {target_id} {binding_id}\n\nArguments:\n  target_id   [required]\n  binding_id  [required]\n\nOptions:\n  --limit <int range>  [default: 40; 1<=x<=100]\n  --cursor <str>\n  --help               Show this message and exit.",
     "group": "Usage: neri group [OPTIONS] COMMAND [ARGS]...\n\n  Read and organize passive investigations containing saved attempts\n\nOptions:\n  --help  Show this message and exit.\n\nCommands:\n  list\n  create\n  show\n  timeline\n  classify\n  select-report\n  membership\n  notes          Save investigation direction and read its state history",
-    "group list": "Usage: neri group list [OPTIONS] {target_id}\n\nArguments:\n  target_id  [required]\n\nOptions:\n  --limit <int range>             [default: 40; 1<=x<=100]\n  --cursor <str>\n  --search <str>\n  --class-key <str>\n  --filter <all|active|attention|recorded_blockers|owner_actions|awaiting_review|reviewed_findings|reviewed_results|reviewed_no_findings>\n  --include-empty / --no-include-empty\n                                  [default: no-include-empty]\n  --sections / --no-sections      [default: no-sections]\n  --full / --no-full              [default: no-full]\n  --help                          Show this message and exit.",
+    "group list": "Usage: neri group list [OPTIONS] {target_id}\n\nArguments:\n  target_id  [required]\n\nOptions:\n  --limit <int range>             [default: 20; 1<=x<=100]\n  --cursor <str>\n  --search <str>\n  --class-key <str>\n  --filter <all|active|attention|recorded_blockers|owner_actions|awaiting_review|reviewed_findings|reviewed_results|reviewed_no_findings>\n  --include-empty / --no-include-empty\n                                  [default: no-include-empty]\n  --sections / --no-sections      [default: no-sections]\n  --full / --no-full              [default: no-full]\n  --help                          Show this message and exit.",
     "group create": "Usage: neri group create [OPTIONS] {target_id}\n\nArguments:\n  target_id  [required]\n\nOptions:\n  --file <path>  [required]\n  --id <uuid>\n  --help         Show this message and exit.",
     "group show": "Usage: neri group show [OPTIONS] {target_id} {group_id}\n\nArguments:\n  target_id  [required]\n  group_id   [required]\n\nOptions:\n  --limit, --attempt-limit <int range>\n                                  [default: 40; 1<=x<=100]\n  --cursor, --attempt-cursor <str>\n  --report-limit <int range>      [default: 40; 1<=x<=100]\n  --report-cursor <str>\n  --help                          Show this message and exit.",
     "group timeline": "Usage: neri group timeline [OPTIONS] {target_id} {group_id}\n\nArguments:\n  target_id  [required]\n  group_id   [required]\n\nOptions:\n  --latest <int range>  [1<=x<=100]\n  --cursor <str>\n  --limit <int range>   [1<=x<=100]\n  --help                Show this message and exit.",
@@ -90,7 +90,7 @@
     "group notes history": "Usage: neri group notes history [OPTIONS] {target_id} {group_id} {note_id}\n\nArguments:\n  target_id  [required]\n  group_id   [required]\n  note_id    [required]\n\nOptions:\n  --limit <int range>  [default: 40; 1<=x<=100]\n  --cursor <str>\n  --help               Show this message and exit.",
     "group notes state": "Usage: neri group notes state [OPTIONS] {target_id} {group_id} {note_id}\n\n  Save a state revision. JSON state accepts saved, acknowledged or resolved.\n\nArguments:\n  target_id  [required]\n  group_id   [required]\n  note_id    [required]\n\nOptions:\n  --file <path>  [required]\n  --id <uuid>\n  --help         Show this message and exit.",
     "program": "Usage: neri program [OPTIONS] COMMAND [ARGS]...\n\n  Maintain passive disclosure programs and exact policy revisions\n\nOptions:\n  --help  Show this message and exit.\n\nCommands:\n  list\n  create\n  show\n  revisions\n  revise\n  revision   Read the full policy snapshot at one exact revision.\n  access     Record attributed account Signal and trial capacity; use...",
-    "program list": "Usage: neri program list [OPTIONS]\n\nOptions:\n  --limit <int range>  [default: 40; 1<=x<=100]\n  --cursor <str>\n  --help               Show this message and exit.",
+    "program list": "Usage: neri program list [OPTIONS]\n\nOptions:\n  --limit <int range>  [default: 20; 1<=x<=100]\n  --cursor <str>\n  --help               Show this message and exit.",
     "program create": "Usage: neri program create [OPTIONS]\n\nOptions:\n  --file <path>  [required]\n  --id <uuid>\n  --help         Show this message and exit.",
     "program show": "Usage: neri program show [OPTIONS] {program_id}\n\nArguments:\n  program_id  [required]\n\nOptions:\n  --help  Show this message and exit.",
     "program revisions": "Usage: neri program revisions [OPTIONS] {program_id}\n\nArguments:\n  program_id  [required]\n\nOptions:\n  --limit <int range>  [default: 40; 1<=x<=100]\n  --cursor <str>\n  --help               Show this message and exit.",
@@ -131,7 +131,7 @@
     {
       "surface": "st.neri.investigations",
       "tier": "reference",
-      "cmd": "st neri investigations [--limit 40 --cursor TOKEN]",
+      "cmd": "st neri investigations [--limit 20 --cursor TOKEN]",
       "when": "list saved bounty-hunting attempts",
       "precautions": [
         "read-only; IDs identify runs, not investigation groups; next_cursor resumes the saved listing"
@@ -201,6 +201,7 @@
         "do not file a submission request: submission readiness reaches the owner only through the Inbox ready-to-submit item (the exact readiness projection). Hold the candidate internally and record the hold in the investigation until it is ready",
         "everything agents can resolve under the methodology (review changes, selection, technical blockers, internal decisions) stays in the investigation, never here",
         "cite exact retained evidence and task IDs",
+        "an authorization request must include requested_action {destructive, network_reach: target_only|third_party, spending, real_credentials}; on a lab-authorized target an in-scope request is refused with 409 standing_lab_authority: proceed under that grant",
         "complete shape (replace values): {\"id\":\"00000000-0000-4000-8000-000000000000\",\"decision_kind\":\"credentials\",\"title\":\"Owner login is required\",\"summary\":\"The authorized portal needs an interactive owner login that no agent can perform.\",\"evidence_ids\":[],\"task_ids\":[],\"next_step\":\"Owner logs in and records the resulting access decision.\"}"
       ],
       "task_types": [
@@ -248,7 +249,7 @@
     {
       "surface": "st.neri.reports",
       "tier": "reference",
-      "cmd": "st neri reports [--view investigations --target TARGET --limit 40 --cursor TOKEN]",
+      "cmd": "st neri reports [--view investigations --target TARGET --limit 20 --cursor TOKEN]",
       "when": "list saved attempt reports or explicitly selected investigation reports",
       "precautions": [
         "read-only; default retains run-valued investigation_id; investigations view preserves group, run and exact report/review IDs; next_cursor resumes the listing"
@@ -608,7 +609,7 @@
     {
       "surface": "st.neri.target.list",
       "tier": "reference",
-      "cmd": "st neri target list [--workspace --limit 40 --cursor TOKEN --search TEXT --filter FILTER]",
+      "cmd": "st neri target list [--workspace --limit 20 --cursor TOKEN --search TEXT --filter FILTER]",
       "when": "list compact manifests or logical target workspace summaries",
       "precautions": [
         "read-only; --workspace returns bounded summaries with filter-bound cursors"
@@ -764,7 +765,7 @@
     {
       "surface": "st.neri.group.list",
       "tier": "reference",
-      "cmd": "st neri group list <target-id> [--limit 40 --cursor TOKEN --search TEXT --class-key KEY --filter FILTER --include-empty --sections --full]",
+      "cmd": "st neri group list <target-id> [--limit 20 --cursor TOKEN --search TEXT --class-key KEY --filter FILTER --include-empty --sections --full]",
       "when": "list passive investigations for a logical target",
       "precautions": [
         "read-only; filters apply before pagination; --sections adds per-class groupings; --include-empty adds empty historical groups",
@@ -909,7 +910,7 @@
     {
       "surface": "st.neri.program.list",
       "tier": "reference",
-      "cmd": "st neri program list [--limit 40 --cursor TOKEN]",
+      "cmd": "st neri program list [--limit 20 --cursor TOKEN]",
       "when": "read saved disclosure program identities",
       "precautions": [
         "read-only; program identity is distinct from its immutable policy revisions; preserve next_cursor"
