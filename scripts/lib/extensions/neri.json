@@ -16,7 +16,7 @@
   ],
   "namespace": "neri",
   "help": {
-    "": "Usage: neri [OPTIONS] COMMAND [ARGS]...\n\n  Read and maintain Neri targets, investigations, notes, reports and\n  disclosure programs\n\nOptions:\n  --install-completion  Install completion for the current shell.\n  --show-completion     Show completion for the current shell, to copy it or\n                        customize the installation.\n  --help                Show this message and exit.\n\nCommands:\n  investigations\n  create          Create an explicit saved attempt; incomplete JSON is...\n  show\n  activity\n  owner-request\n  owner-resolve\n  context\n  capabilities\n  reports\n  evidence        Import evidence and inspect retained artifacts\n  notes           Save contextual notes and direction\n  report          Read exact report and review revisions, save reports...\n  target          Inspect and maintain registered target metadata\n  group           Read and organize passive investigations containing...\n  program         Maintain passive disclosure programs and exact policy...\n  closeout        Inspect authoritative investigation closeout\n  hunt            Begin, inspect, hand off, or exceptionally continue a...\n  surface         Read saved attack-surface state and submit observations\n  portfolio       Join admitted local work and retain exact root...",
+    "": "Usage: neri [OPTIONS] COMMAND [ARGS]...\n\n  Read and maintain Neri targets, investigations, notes, reports and\n  disclosure programs\n\nOptions:\n  --install-completion  Install completion for the current shell.\n  --show-completion     Show completion for the current shell, to copy it or\n                        customize the installation.\n  --help                Show this message and exit.\n\nCommands:\n  investigations\n  create          Create an explicit saved attempt; incomplete JSON is...\n  show\n  activity\n  owner-request\n  owner-resolve\n  context\n  capabilities\n  reports\n  evidence        Import evidence and inspect retained artifacts\n  notes           Save contextual notes and direction\n  report          Read exact report and review revisions, save reports...\n  target          Inspect and maintain registered target metadata\n  group           Read and organize passive investigations containing...\n  program         Maintain passive disclosure programs and exact policy...\n  closeout        Inspect authoritative investigation closeout\n  hunt            Begin, inspect, hand off, or exceptionally continue a...\n  surface         Read saved attack-surface state and submit observations\n  portfolio       Join admitted local work and retain exact root...\n  workspace       Allocate, inspect or retire an isolated local hunter...",
     "investigations": "Usage: neri investigations [OPTIONS]\n\nOptions:\n  --limit <int range>  [default: 40; 1<=x<=100]\n  --cursor <str>\n  --help               Show this message and exit.",
     "create": "Usage: neri create [OPTIONS]\n\n  Create an explicit saved attempt; incomplete JSON is rejected before any\n  write.\n\n  Input JSON requires nonempty target_id, title, and objective. --file - reads\n  stdin. Replace the sample values with the exact current investigation facts.\n  Example: {\"target_id\":\"documents\",\"title\":\"Document review\",\n  \"objective\":\"Review the retained documents.\"}\n\nOptions:\n  --file <path>  [required]\n  --id <uuid>\n  --help         Show this message and exit.",
     "show": "Usage: neri show [OPTIONS] {investigation_id}\n\nArguments:\n  investigation_id  [required]\n\nOptions:\n  --help  Show this message and exit.",
@@ -111,7 +111,11 @@
     "portfolio join": "Usage: neri portfolio join [OPTIONS] [target_id]\n\nArguments:\n  target_id\n\nOptions:\n  --manifest-id <uuid>\n  --manifest-digest <str>\n  --id <uuid>\n  --ttl-seconds <int range>  [default: 1800; 60<=x<=86400]\n  --help                     Show this message and exit.",
     "portfolio renew": "Usage: neri portfolio renew [OPTIONS] {claim_id}\n\nArguments:\n  claim_id  [required]\n\nOptions:\n  --generation <int range>   [x>=1; required]\n  --id <uuid>\n  --ttl-seconds <int range>  [default: 1800; 60<=x<=86400]\n  --help                     Show this message and exit.",
     "portfolio reconcile": "Usage: neri portfolio reconcile [OPTIONS] {claim_id}\n\nArguments:\n  claim_id  [required]\n\nOptions:\n  --generation <int range>        [x>=1; required]\n  --reason <str>                  [required]\n  --evidence <uuid>\n  --no-target-work / --no-no-target-work\n                                  [default: no-no-target-work]\n  --id <uuid>\n  --ttl-seconds <int range>       [default: 1800; 60<=x<=86400]\n  --help                          Show this message and exit.",
-    "portfolio release": "Usage: neri portfolio release [OPTIONS] {claim_id}\n\nArguments:\n  claim_id  [required]\n\nOptions:\n  --generation <int range>        [x>=1; required]\n  --reason <str>                  [required]\n  --evidence <uuid>\n  --no-target-work / --no-no-target-work\n                                  [default: no-no-target-work]\n  --id <uuid>\n  --help                          Show this message and exit."
+    "portfolio release": "Usage: neri portfolio release [OPTIONS] {claim_id}\n\nArguments:\n  claim_id  [required]\n\nOptions:\n  --generation <int range>        [x>=1; required]\n  --reason <str>                  [required]\n  --evidence <uuid>\n  --no-target-work / --no-no-target-work\n                                  [default: no-no-target-work]\n  --id <uuid>\n  --help                          Show this message and exit.",
+    "workspace": "Usage: neri workspace [OPTIONS] COMMAND [ARGS]...\n\n  Allocate, inspect or retire an isolated local hunter workspace\n\nOptions:\n  --help  Show this message and exit.\n\nCommands:\n  start    Pin committed Neri source, local skill links and private scratch...\n  inspect  Read exact workspace identity and local Git state.\n  retire   Remove only owned empty scratch after explicit stopped/clean...",
+    "workspace start": "Usage: neri workspace start [OPTIONS] {root}\n\n  Pin committed Neri source, local skill links and private scratch for a root.\n\nArguments:\n  root  [required]\n\nOptions:\n  --owner <str>          [required]\n  --source-commit <str>  [required]\n  --source <path>        [default: /srv/workspaces/projects/neri]\n  --help                 Show this message and exit.",
+    "workspace inspect": "Usage: neri workspace inspect [OPTIONS] {root}\n\n  Read exact workspace identity and local Git state.\n\nArguments:\n  root  [required]\n\nOptions:\n  --owner <str>    [required]\n  --source <path>  [default: /srv/workspaces/projects/neri]\n  --help           Show this message and exit.",
+    "workspace retire": "Usage: neri workspace retire [OPTIONS] {root}\n\n  Remove only owned empty scratch after explicit stopped/clean confirmation.\n\nArguments:\n  root  [required]\n\nOptions:\n  --owner <str>              [required]\n  --source <path>            [default: /srv/workspaces/projects/neri]\n  --stopped / --no-stopped  [default: no-stopped]\n  --clean / --no-clean      [default: no-clean]\n  --help                     Show this message and exit."
   },
   "usage": [
     {
@@ -1115,6 +1119,39 @@
       "task_types": [
         "neri"
       ]
+    },
+    {
+      "surface": "st.neri.workspace.start",
+      "tier": "reference",
+      "cmd": "st neri workspace start ROOT --owner OWNER --source-commit SHA [--source PATH]",
+      "when": "allocate committed source for a concurrent Neri hunter root",
+      "precautions": [
+        "local allocation only; target authority remains separate"
+      ],
+      "task_types": [
+        "neri"
+      ]
+    },
+    {
+      "surface": "st.neri.workspace.inspect",
+      "tier": "reference",
+      "cmd": "st neri workspace inspect ROOT --owner OWNER [--source PATH]",
+      "when": "inspect a concurrent hunter allocation",
+      "task_types": [
+        "neri"
+      ]
+    },
+    {
+      "surface": "st.neri.workspace.retire",
+      "tier": "reference",
+      "cmd": "st neri workspace retire ROOT --owner OWNER --stopped --clean [--source PATH]",
+      "when": "retire owned empty scratch after hunter work has stopped",
+      "precautions": [
+        "retains worktree and branch; refuses material and ambiguous ownership"
+      ],
+      "task_types": [
+        "neri"
+      ]
     }
   ],
   "help_options": {
@@ -1163,6 +1200,9 @@
       "--help": 0
     },
     "portfolio": {
+      "--help": 0
+    },
+    "workspace": {
       "--help": 0
     }
   }

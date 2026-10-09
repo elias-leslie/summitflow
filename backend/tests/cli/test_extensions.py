@@ -320,6 +320,35 @@ def test_neri_manifest_exposes_bounty_commands_without_retired_workflows():
         assert surface.removeprefix("st.neri.").split(".")[0] not in retired_groups
 
 
+def test_actual_neri_workspace_help_and_usage_are_passive(monkeypatch):
+    from cli.main import app
+
+    def forbidden(*args, **kwargs):
+        pytest.fail("workspace discovery attempted owner execution or project resolution")
+
+    monkeypatch.setattr(subprocess, "Popen", forbidden)
+    monkeypatch.setattr("cli.config.get_project_root_path", forbidden)
+    runner = CliRunner()
+    pages = {
+        ("workspace",): ("start", "inspect", "retire"),
+        ("workspace", "start"): ("--owner", "--source-commit", "--source"),
+        ("workspace", "inspect"): ("--owner", "--source"),
+        ("workspace", "retire"): ("--owner", "--stopped", "--clean"),
+    }
+    for path, expected in pages.items():
+        result = runner.invoke(app, ["neri", *path, "--help"])
+        assert result.exit_code == 0, result.output
+        assert f"Usage: neri {' '.join(path)} " in result.output
+        assert all(value in result.output for value in expected)
+
+    specs = collect_usage_specs(app)
+    for command in ("start", "inspect", "retire"):
+        surface = f"st.neri.workspace.{command}"
+        selected = filter_specs(specs, surface=surface)
+        assert len(selected) == 1
+        assert selected[0].cmd.startswith(f"st neri workspace {command} ROOT")
+
+
 def test_actual_neri_binding_preserves_only_approved_runtime_context(
     tmp_path, capfd, monkeypatch,
 ):
