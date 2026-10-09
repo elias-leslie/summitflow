@@ -15,7 +15,6 @@ from unittest.mock import AsyncMock
 
 import pytest
 from pytest_mock import MockerFixture
-from starlette.routing import Route, WebSocketRoute
 
 from app.api.ws_execution import (
     ConnectionManager,
@@ -329,9 +328,8 @@ class TestWebSocketEndpoint:
 
     def test_websocket_route_exists(self) -> None:
         """Test that the WebSocket route is registered."""
-        # Check routes in app - WebSocket routes are WebSocketRoute, not Route
-        routes = [r.path for r in app.routes if isinstance(r, (Route, WebSocketRoute))]
-        assert "/ws/execution/{task_id}" in routes
+        # Resolve through the router tree; FastAPI >=0.142 nests included routers lazily.
+        assert app.url_path_for("websocket_execution", task_id="abc") == "/ws/execution/abc"
 
     @pytest.mark.asyncio
     async def test_websocket_validates_task_id(self, mocker: MockerFixture) -> None:

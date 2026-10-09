@@ -1635,7 +1635,7 @@ class TestBackupCommands:
         result = runner.invoke(backup_app, ["schedule", "--help"])
         # schedule requires a source_id argument; verify help works
         assert result.exit_code == 0
-        assert "SOURCE_ID" in result.output
+        assert "source_id" in result.output.lower()
 
     def test_backup_status(self) -> None:
         """Test st backup status shows latest backup."""
