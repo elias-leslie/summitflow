@@ -714,6 +714,23 @@ def _project_acceptance_plan(repo: Path, *, commit: str | None = None,
     return plan
 
 
+_BLOCKING_SKIPS = ("tool_not_installed", "required", "no_tests")
+
+
+def _blocking_skip(line: str) -> bool:
+    return ":SKIP:" in line and any(reason in line for reason in _BLOCKING_SKIPS)
+
+
+def _receipt_detail(detail: str, limit: int = 1200) -> str:
+    """Keep the lines that decided the gate; admission-wait notices are noise."""
+    lines = [line for line in detail.splitlines() if not line.startswith("[st] Waiting for shared")]
+    tail = "\n".join(lines)[-limit:]
+    decisive = "\n".join(line for line in lines if ":FAIL:" in line or _blocking_skip(line))[: limit // 2]
+    if not decisive or decisive in tail:
+        return tail
+    return decisive + "\n...\n" + tail[-(limit - len(decisive) - 5):]
+
+
 def _gate_evidence(detail: str, plan: Mapping[str, Any]) -> dict[str, Any]:
     native = plan.get("native")
     if native is None:
@@ -1282,7 +1299,7 @@ def accept_revision(
                 "returncode": result.returncode,
                 "duration_ms": round((time.monotonic() - check_started) * 1000, 3),
                 "output_bytes": len(detail.encode()),
-                "detail": detail[-1200:],
+                "detail": _receipt_detail(detail),
             }
         )
         if not passed:
@@ -1350,10 +1367,9 @@ def accept_revision(
             _write_receipt(cache_artifact, receipt)
         if state != "success":
             failed_check = next((check for check in checks if check["state"] == "failed"), None)
-            failure_line = next(
-                (line for line in (failed_check or {}).get("detail", "").splitlines() if ":FAIL:" in line),
-                None,
-            )
+            lines = (failed_check or {}).get("detail", "").splitlines()
+            failure_line = next((line for line in lines if ":FAIL:" in line),
+                                next((line for line in lines if _blocking_skip(line)), None))
             summary = f"{reason}; {failure_line}" if failure_line else reason
             raise AcceptanceError(f"{summary}; acceptance evidence: {artifact}")
         return _descriptor(receipt, artifact, reused=False)

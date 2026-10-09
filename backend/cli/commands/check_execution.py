@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import re
+import subprocess
 import tomllib
 from collections.abc import Mapping
 from pathlib import Path
@@ -65,6 +66,27 @@ def read_tool_paths(root: Path) -> dict[str, str]:
     if not isinstance(paths, dict):
         return {}
     return {str(key): str(value) for key, value in paths.items() if isinstance(value, str)}
+
+
+_TOOL_SOURCES = {
+    "pytest": ("*.py",), "ruff": ("*.py",), "tsc": ("*.ts", "*.tsx"),
+    "biome": ("*.js", "*.jsx", "*.mjs", "*.cjs", "*.ts", "*.tsx", "*.css"),
+}
+
+
+def missing_tool_skip(name: str, root: Path) -> str:
+    """Name an uninstalled tool's skip: not applicable when the repo has none of its sources.
+
+    A tool missing for sources that do exist stays tool_not_installed, which full
+    acceptance never treats as coverage.
+    """
+    patterns = _TOOL_SOURCES.get(name)
+    if patterns:
+        listed = subprocess.run(["git", "-C", str(root), "ls-files", "--", *patterns],
+                                capture_output=True, text=True, check=False)
+        if listed.returncode == 0 and not listed.stdout.strip():
+            return "no_relevant_paths"
+    return "tool_not_installed"
 
 
 def tool_not_installed(name: str, root: Path) -> bool:

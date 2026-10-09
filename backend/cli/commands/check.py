@@ -54,6 +54,7 @@ from .check_dispatch import (
 )
 from .check_execution import (
     adjusted_tool_args,
+    missing_tool_skip,
     read_tool_paths,
     tool_env,
     tool_not_installed,
@@ -197,7 +198,7 @@ def _run_tool(name: str, config: dict[str, object], extra_args: list[str]) -> in
         and resolved_command[1:2] == ["--no-install"]
     ):
         if tool_not_installed(name, root):
-            print(f"{label}:SKIP:{name}:tool_not_installed")
+            print(f"{label}:SKIP:{name}:{missing_tool_skip(name, root)}")
             return 0
         output = (
             "Biome is declared for this project, but no project-local "
@@ -247,7 +248,7 @@ def _run_tool(name: str, config: dict[str, object], extra_args: list[str]) -> in
                     timing += f"|queued_behind:{work.waited_behind}"
     except OSError as exc:
         if name not in {"vitest", "frontend-test"} and isinstance(exc, FileNotFoundError) and tool_not_installed(name, root):
-            print(f"{label}:SKIP:{name}:tool_not_installed")
+            print(f"{label}:SKIP:{name}:{missing_tool_skip(name, root)}")
             return 0
         output = f"{type(exc).__name__}: {exc}"
         details = write_check_details(root, name, output)

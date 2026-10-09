@@ -2055,3 +2055,20 @@ def test_backend_sync_keeps_declared_quality_gate_dependencies(tmp_path):
     with patch.object(service_ops, "run", return_value=0) as run:
         assert service_ops.sync_backend(project) == 0
     run.assert_called_once_with(["uv", "sync", "--locked", "--extra", "dev"], cwd=tmp_path, quiet_success=True, _heavy=True)
+
+
+@pytest.mark.parametrize(("name", "files", "expected"), [
+    ("biome", ["tool.py"], "no_relevant_paths"),
+    ("biome", ["tool.py", "web/app.ts"], "tool_not_installed"),
+    ("pytest", ["README.md"], "no_relevant_paths"),
+    ("pytest", ["scripts/check.py"], "tool_not_installed"),
+])
+def test_missing_tool_is_not_applicable_only_without_its_sources(tmp_path: Path, name, files, expected) -> None:
+    from cli.commands.check_execution import missing_tool_skip
+
+    subprocess.run(["git", "init", "-q", str(tmp_path)], check=True)
+    for relative in files:
+        (tmp_path / relative).parent.mkdir(parents=True, exist_ok=True)
+        (tmp_path / relative).write_text("x\n")
+    subprocess.run(["git", "-C", str(tmp_path), "add", "."], check=True)
+    assert missing_tool_skip(name, tmp_path) == expected

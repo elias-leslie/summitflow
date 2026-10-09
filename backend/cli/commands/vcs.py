@@ -116,9 +116,16 @@ def publish_now(
         typer.echo("Immediate publication requires --now and explicit owner authorization; overnight publication follows st vcs publication --mode.")
         raise typer.Exit(2)
     from app.tasks.backup_manual_publish import publish_project_now
+    from app.tasks.nightly_publication import publication_mode
 
     try:
-        result = publish_project_now(source, sha, authorized_workflows=tuple(authorize_workflow)) if authorize_workflow else publish_project_now(source, sha)
+        # Mirror projects have no acceptance gate; on-demand publication honors that tier.
+        mirror = publication_mode(source) == "mirror"
+        if mirror or authorize_workflow:
+            result = publish_project_now(source, sha, authorized_workflows=tuple(authorize_workflow or ()),
+                                         publication_mode="mirror" if mirror else "manual")
+        else:
+            result = publish_project_now(source, sha)
     except ValueError as exc:
         typer.echo(str(exc))
         raise typer.Exit(2) from None

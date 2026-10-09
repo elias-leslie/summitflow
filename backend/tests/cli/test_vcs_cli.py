@@ -223,3 +223,17 @@ def test_doctor_fetches_git_only_when_requested(tmp_path: Path) -> None:
         result = runner.invoke(vcs.app, ["doctor", "--fetch"], obj=OutputContext(compact=True))
     assert result.exit_code == 0
     fetch.assert_called_once_with(repo)
+
+
+def test_publish_now_honors_mirror_mode_and_workflow_authority():
+    with (
+        patch("app.tasks.nightly_publication.publication_mode", return_value="mirror"),
+        patch("app.tasks.backup_manual_publish.publish_project_now", return_value={
+            "publication_complete": True, "evidence_recorded": True, "health": {"state": "verified"},
+        }) as publish,
+    ):
+        result = runner.invoke(vcs.app, ["publish", "--source", "source", "--sha", "a" * 40, "--now",
+                                         "--authorize-workflow", ".github/workflows/ci.yml"])
+    assert result.exit_code == 0
+    publish.assert_called_once_with("source", "a" * 40, authorized_workflows=(".github/workflows/ci.yml",),
+                                    publication_mode="mirror")

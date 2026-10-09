@@ -888,3 +888,12 @@ def test_check_acceptance_help_is_available_without_running_checks() -> None:
     assert "Usage: st check --acceptance" in result.stdout
     assert "--no-reuse" in result.stdout
     assert "--json" in result.stdout
+
+
+def test_receipt_detail_keeps_decisive_lines_without_admission_noise():
+    noise = "\n".join(f"[st] Waiting for shared heavy-work lane: check pytest wait_age={i}.0s" for i in range(200))
+    detail = "LINT:OK:0\nTEST:FAIL:3|details:.dev-tools/pytest.txt|hint:3 failed\n" + noise + "\nOSV:OK:0"
+    kept = acceptance._receipt_detail(detail)
+    assert "TEST:FAIL:3" in kept and "Waiting for shared" not in kept and len(kept) <= 1200
+    blocked = acceptance._receipt_detail("TEST:SKIP:pytest:tool_not_installed\n" + "x" * 3000)
+    assert blocked.startswith("TEST:SKIP:pytest:tool_not_installed") and len(blocked) <= 1200
