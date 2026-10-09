@@ -96,7 +96,7 @@
           "credentials"
         ]
       },
-      "environment": []
+      "environment": ["AGENT_HUB_CONTEXT_PREINJECTED_CONTRACT", "CLAUDECODE", "CODEX_THREAD_ID"]
     },
     {
       "id": "agent-hub.memory",
