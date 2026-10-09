@@ -80,8 +80,35 @@ def test_up_to_date_and_diverged_heads_are_skipped(repo):
     head = _git(repo, "rev-parse", "HEAD")
     _git(repo, "update-ref", "refs/remotes/origin/main", head)
     assert nightly.select_candidate("fixture", repo, "nightly")["reason"] == "up_to_date"
-    _git(repo, "update-ref", "refs/remotes/origin/main", _git(repo, "commit-tree", "-p", head, "-m", "remote", f"{head}^{{tree}}"))
+    other = _git(repo, "commit-tree", "-p", head, "-m", "remote", _git(repo, "hash-object", "-w", "-t", "tree", "/dev/null"))
+    _git(repo, "update-ref", "refs/remotes/origin/main", other)
     assert nightly.select_candidate("fixture", repo, "nightly")["reason"] == "diverged_from_remote"
+
+
+def test_published_merge_with_known_tree_is_absorbed_without_touching_files(repo):
+    published = _git(repo, "rev-parse", "origin/main")
+    head = _git(repo, "rev-parse", "HEAD")
+    # The retired PR flow merged the published head on GitHub: same tree, new commit.
+    merge = _git(repo, "commit-tree", "-p", published, "-m", "Merge pull request", f"{published}^{{tree}}")
+    _git(repo, "update-ref", "refs/remotes/origin/main", merge)
+    candidate = nightly.select_candidate("fixture", repo, "nightly")
+    assert (candidate["action"], candidate["reason"]) == ("absorb", "published_merge_absorbable")
+    absorbed = nightly.absorb_published_merge(repo, candidate)
+    assert _git(repo, "rev-parse", "HEAD") == absorbed
+    assert _git(repo, "rev-parse", f"{absorbed}^{{tree}}") == _git(repo, "rev-parse", f"{head}^{{tree}}")
+    assert _git(repo, "rev-parse", f"{absorbed}^1", f"{absorbed}^2").split() == [head, merge]
+    assert (repo / "note").read_text() == "work in progress"
+    assert nightly.select_candidate("fixture", repo, "nightly")["behind"] == 0
+
+
+def test_held_or_unknown_remote_content_is_never_absorbed(repo):
+    published = _git(repo, "rev-parse", "origin/main")
+    merge = _git(repo, "commit-tree", "-p", published, "-m", "merge", f"{published}^{{tree}}")
+    _git(repo, "update-ref", "refs/remotes/origin/main", merge)
+    held = nightly.select_candidate("fixture", repo, "nightly", {"through": None, "reason": "owner"})
+    assert held["reason"] == "held"
+    hold = {"through": _git(repo, "rev-parse", "HEAD"), "reason": "owner"}
+    assert nightly.select_candidate("fixture", repo, "nightly", hold)["reason"] == "diverged_from_remote"
 
 
 @pytest.mark.parametrize(("observation", "reason", "action"), [

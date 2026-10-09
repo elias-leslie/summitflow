@@ -109,6 +109,32 @@ def _write_nightly_state(root: Path, value: dict[str, Any]) -> None:
     os.replace(temporary, path)
 
 
+def _absorbable_merge(root: Path, sha: str, upstream: str) -> bool:
+    """True when the remote tip's tree is already a commit in local history.
+
+    Retired PR publication left merge commits on GitHub whose content equals the
+    merged PR head this checkout already has; absorbing them changes no files.
+    """
+    tree = _git(root, "rev-parse", f"{upstream}^{{tree}}")
+    base = _git(root, "merge-base", sha, upstream)
+    if not tree or not base:
+        return False
+    trees = [_git(root, "rev-parse", f"{base}^{{tree}}"), *(_git(root, "log", "--format=%T", f"{base}..{sha}", "--") or "").split()]
+    return tree in trees
+
+
+def absorb_published_merge(root: Path, candidate: dict[str, Any]) -> str:
+    """Record the remote merge as a parent with this head's own tree (no file changes)."""
+    branch, sha, upstream = candidate["branch"], candidate["sha"], candidate["upstream"]
+    tree = _git(root, "rev-parse", f"{sha}^{{tree}}")
+    merged = tree and _git(root, "commit-tree", tree, "-p", sha, "-p", upstream,
+                           "-m", f"Absorb published merge {upstream[:12]} (content already present)")
+    if not merged or _git(root, "update-ref", "-m", "st nightly: absorb published merge",
+                          f"refs/heads/{branch}", merged, sha) is None:
+        raise RuntimeError("published merge absorption failed")
+    return merged
+
+
 def select_candidate(project_id: str, root: Path, mode: str, hold: dict[str, Any] | None = None) -> dict[str, Any]:
     """Decide what tonight would do for one project without side effects."""
     row: dict[str, Any] = {"project_id": project_id, "mode": mode, "action": "skip"}
@@ -142,8 +168,9 @@ def select_candidate(project_id: str, root: Path, mode: str, hold: dict[str, Any
     behind, ahead = map(int, counts.split())
     row.update(ahead=ahead, behind=behind)
     if behind:
-        # Remote work this checkout lacks needs a person (or `st vcs reconcile`
-        # for identical-tree merges); never publish around it.
+        if hold is None and _absorbable_merge(root, sha, upstream):
+            return {**row, "action": "absorb", "reason": "published_merge_absorbable", "upstream": upstream}
+        # Remote work this checkout lacks needs a person; never publish around it.
         return {**row, "reason": "diverged_from_remote"}
     if not ahead:
         return {**row, "reason": "up_to_date"}
@@ -362,7 +389,11 @@ def run_nightly_publication(*, dry_run: bool = False, now: datetime | None = Non
                 candidate = {**candidate, "action": "skip", "reason": "window_closed"}
             elif not dry_run:
                 try:
-                    candidate = execute_candidate(candidate, root)
+                    if candidate["action"] == "absorb":
+                        absorb_published_merge(root, candidate)
+                        candidate = select_candidate(project_id, root, candidate["mode"], None)
+                    if candidate["action"] != "skip":
+                        candidate = execute_candidate(candidate, root)
                 except Exception:
                     logger.warning("nightly_publication_failed", project_id=project_id)
                     candidate = {**candidate, "outcome": "failed", "reason": "nightly_publication_unavailable"}
