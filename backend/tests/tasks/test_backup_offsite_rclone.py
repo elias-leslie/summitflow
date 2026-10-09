@@ -142,6 +142,20 @@ def uploads(drive: dict[str, Any]) -> list[str]:
     return [args[2] for args in drive["commands"] if args[0] == "copyto"]
 
 
+def test_provider_hash_verification_needs_no_full_archive_scratch_copy(drive, monkeypatch, backup_job_scratch):
+    import shutil
+
+    from app.utils import transient_scratch as scratch
+
+    usage = shutil.disk_usage(backup_job_scratch)
+    monkeypatch.setenv("SF_HOST_RETENTION_PRESSURE_MIN_FREE_GB", "25")
+    monkeypatch.setattr(scratch.shutil, "disk_usage", lambda _path: usage._replace(free=25 * 1024**3))
+    result = replicate(drive)
+    assert result["status"] == "verified"
+    assert not list(backup_job_scratch.glob("st-backups-*/*"))
+    assert not any(args[0] == "copyto" and args[2].startswith("/") for args in drive["commands"])
+
+
 def replicate_legacy_parts(drive: dict[str, Any], *, retry: bool = False, on_progress=None) -> dict[str, Any]:
     """Exercise legacy multipart repair independently of whole-file dispatch."""
     from app.tasks import backup_native_offsite as offsite

@@ -239,6 +239,11 @@ def merge_backup_verification_json(
         ):
             return None
         merged = _merge_json_dicts(current_mapping, verification_updates)
+        # These are complete, source-bound observations, never partial updates.
+        # Deep merging can retain another revision's merge SHA or nested checks.
+        for key in ("publication", "publish_before_backup"):
+            if key in verification_updates:
+                merged[key] = verification_updates[key]
         previous_activity = current_mapping.get("activity")
         next_activity = merged.get("activity")
         if (

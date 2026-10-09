@@ -49,7 +49,7 @@ def test_enrich_snapshots_skips_database_when_empty(mock_get_cursor: MagicMock) 
     mock_get_cursor.assert_not_called()
 
 
-def test_checkpoint_rows_show_task_title_and_publication_state(monkeypatch):
+def test_checkpoint_rows_preserve_titles_without_cloud_publication_gates(monkeypatch):
     from types import SimpleNamespace
 
     from app.api.git_helpers.checkpoint_helpers import collect_checkpoints
@@ -63,6 +63,6 @@ def test_checkpoint_rows_show_task_title_and_publication_state(monkeypatch):
             ('task-2', 'Unfinished work', 'pending', None),
         ]
         rows = collect_checkpoints()
-    assert [row.state for row in rows] == ['waiting_checks', 'blocked', 'open']
+    assert [row.state for row in rows] == ['open', 'open', 'open']
     assert rows[0].task_title == 'Publication waiting'
     assert all(not row.is_active for row in rows)

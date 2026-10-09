@@ -12,7 +12,7 @@ from app.tasks.backup_restic import ResticAdapter, ResticConfig
 
 @pytest.mark.skipif(shutil.which("restic") is None, reason="Pinned Restic fixture binary is not installed")
 @pytest.mark.timeout(120)
-def test_native_independent_copy_incremental_backup_and_verified_partial_restore(tmp_path: Path):
+def test_native_independent_copy_incremental_backup_and_verified_partial_restore(tmp_path: Path, backup_job_scratch: Path):
     keys = tmp_path / "keys"
     keys.mkdir(mode=0o700)
     local_password = keys / "local-password"
@@ -48,8 +48,10 @@ def test_native_independent_copy_incremental_backup_and_verified_partial_restore
     unchanged = adapter.save_payload("synthetic-fixture", payload)
     assert unchanged["parent_snapshot_id"] == first["snapshot_id"]
     # Tree metadata can change after the first read even when all file content
-    # is reused. Never claim that a deduplicated snapshot has zero total writes.
-    assert unchanged["data_added_bytes"] < 1024
+    # is reused, including metadata for the fixture's variable-length path.
+    # Added raw bytes must remain below a fresh copy of the payload itself.
+    assert unchanged["data_added_bytes"] < len(original)
+    assert unchanged["snapshot_metrics"]["files_new"] == 0
     assert unchanged["snapshot_metrics"]["files_changed"] == 0
     assert unchanged["snapshot_metrics"]["files_unmodified"] == 1
     bundle.write_bytes(original + b"changed recovery payload")
@@ -68,3 +70,4 @@ def test_native_independent_copy_incremental_backup_and_verified_partial_restore
     assert restored_bundle.read_bytes() == bundle.read_bytes()
     check = adapter.check(remote=True, monthly_state={})
     assert check["verified"] and check["state"]["next_bucket"] == 2
+    assert not list(backup_job_scratch.glob("st-backups-*/*"))

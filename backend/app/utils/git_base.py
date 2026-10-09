@@ -27,7 +27,7 @@ def _run_git(args: list[str], repo_path: str | Path | None = None) -> subprocess
 
 
 def current_branch(repo_path: str | Path | None = None) -> str | None:
-    """Return symbolic current branch, or None for detached/JJ colocated HEAD."""
+    """Return symbolic current branch, or None for detached HEAD."""
     result = _run_git(["symbolic-ref", "--quiet", "--short", "HEAD"], repo_path)
     if result.returncode != 0:
         return None

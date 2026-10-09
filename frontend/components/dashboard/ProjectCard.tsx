@@ -16,6 +16,7 @@ import Image from 'next/image'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { useState } from 'react'
+import { ProjectHealthBadge } from '@/components/projects/ProjectHealthBadge'
 import {
   fetchProjectHealth,
   fetchQualityGateHealth,
@@ -41,22 +42,12 @@ export function ProjectCard({ project }: ProjectCardProps) {
   const [hovered, setHovered] = useState(false)
   const appUrl = project.public_url || project.base_url
 
-  const { data: health, isLoading: healthLoading } = useQuery({
+  const { data: health } = useQuery({
     queryKey: ['project-health', project.id],
     queryFn: () => fetchProjectHealth(project.id),
-    enabled: hovered,
-    initialData: project.health_status
-      ? {
-          project_id: project.id,
-          healthy: project.health_status === 'healthy',
-          error:
-            project.health_status === 'healthy'
-              ? undefined
-              : project.health_status,
-          checked_at: project.created_at,
-        }
-      : undefined,
-    initialDataUpdatedAt: 0,
+    enabled:
+      hovered &&
+      Boolean(project.base_url?.trim() && project.health_endpoint?.trim()),
     staleTime: STALE_STANDARD,
     refetchInterval: hovered ? POLL_STANDARD * 2 : false,
   })
@@ -164,15 +155,15 @@ export function ProjectCard({ project }: ProjectCardProps) {
 
   return (
     <article
-      className={clsx('card-interactive p-5 group')}
+      className={clsx('card-interactive min-w-0 p-5 group')}
       onMouseEnter={() => setHovered(true)}
       onMouseLeave={() => setHovered(false)}
       onFocusCapture={() => setHovered(true)}
     >
-      <div className="flex items-start justify-between">
-        <div className="flex items-center gap-3">
+      <div className="flex min-w-0 items-start justify-between gap-3">
+        <div className="flex min-w-0 flex-1 items-center gap-3">
           {project.logo_url ? (
-            <div className="w-12 h-12 rounded-xl overflow-hidden bg-slate-800 flex items-center justify-center">
+            <div className="h-12 w-12 shrink-0 overflow-hidden rounded-xl bg-slate-800 flex items-center justify-center">
               <Image
                 src={project.logo_url}
                 alt={project.name}
@@ -183,7 +174,7 @@ export function ProjectCard({ project }: ProjectCardProps) {
             </div>
           ) : (
             <div
-              className="w-12 h-12 rounded-xl flex items-center justify-center"
+              className="h-12 w-12 shrink-0 rounded-xl flex items-center justify-center"
               style={{
                 background: `linear-gradient(135deg, ${gradient.from} 0%, ${gradient.to} 100%)`,
               }}
@@ -193,18 +184,23 @@ export function ProjectCard({ project }: ProjectCardProps) {
               </span>
             </div>
           )}
-          <div>
+          <div className="min-w-0 flex-1">
             <Link
               href={`/projects/${project.id}`}
-              className="font-medium text-slate-100 transition-colors hover:text-phosphor-400 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-phosphor-500/60 rounded-sm"
+              className="block break-words font-medium text-slate-100 transition-colors hover:text-phosphor-400 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-phosphor-500/60 rounded-sm"
             >
               {project.name}
             </Link>
             <div className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-slate-500">
-              <span className="font-mono">{projectHost}</span>
+              <span
+                className="max-w-full truncate font-mono"
+                title={projectHost}
+              >
+                {projectHost}
+              </span>
               {project.root_path ? (
                 <span
-                  className="max-w-[240px] truncate font-mono text-slate-600"
+                  className="max-w-full truncate font-mono text-slate-600"
                   title={project.root_path}
                 >
                   {project.root_path}
@@ -234,33 +230,40 @@ export function ProjectCard({ project }: ProjectCardProps) {
               </a>
             </div>
             {checkpoint && (
-              <div className="flex items-center gap-1.5 mt-1 text-xs text-phosphor-400">
+              <div className="flex min-w-0 flex-wrap items-center gap-1.5 mt-1 text-xs text-phosphor-400">
                 <Database className="w-3 h-3" />
                 <span>Active checkpoint</span>
-                <span className="font-mono">{checkpoint.task_id}</span>
+                <span
+                  className="max-w-full truncate font-mono"
+                  title={checkpoint.task_id}
+                >
+                  {checkpoint.task_id}
+                </span>
                 <span className="text-slate-500">{checkpoint.age}</span>
               </div>
             )}
-            {(health || qualityGate) && (
-              <div className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs">
+            {(health || project.health_status || qualityGate) && (
+              <div className="mt-1 flex min-w-0 flex-wrap items-center gap-x-3 gap-y-1 break-words text-xs">
                 <span
                   className={clsx(
-                    'text-slate-500',
+                    'min-w-0 max-w-full text-slate-500',
                     health?.healthy === false && 'text-rose-300',
                   )}
                 >
                   Service:{' '}
-                  {health
-                    ? health.healthy
-                      ? health.response_time_ms != null
-                        ? `${Math.round(health.response_time_ms)}ms`
-                        : 'healthy'
-                      : health.error || 'unhealthy'
-                    : 'pending'}
+                  {!project.base_url?.trim() || !project.health_endpoint?.trim()
+                    ? 'no health endpoint configured'
+                    : health
+                      ? health.healthy
+                        ? health.response_time_ms != null
+                          ? `${Math.round(health.response_time_ms)}ms`
+                          : 'healthy'
+                        : health.error || 'unhealthy'
+                      : project.health_status || 'pending'}
                 </span>
                 <span
                   className={clsx(
-                    'text-slate-500',
+                    'min-w-0 max-w-full text-slate-500',
                     qualityGate &&
                       !qualityGate.overall_pass &&
                       'text-amber-300',
@@ -283,7 +286,7 @@ export function ProjectCard({ project }: ProjectCardProps) {
           </div>
         </div>
 
-        <div className="flex items-center gap-2">
+        <div className="flex shrink-0 items-center gap-2">
           {qualityLoading ? (
             <div className="w-3 h-3 border border-slate-600 border-t-purple-500 rounded-full animate-spin" />
           ) : qualityGate ? (
@@ -314,35 +317,7 @@ export function ProjectCard({ project }: ProjectCardProps) {
             />
           )}
 
-          {healthLoading ? (
-            <div className="w-3 h-3 border border-slate-600 border-t-phosphor-500 rounded-full animate-spin" />
-          ) : health ? (
-            <div
-              className={clsx(
-                'w-3 h-3 rounded-full status-dot-pulse',
-                health.healthy
-                  ? 'bg-green-500 text-green-500'
-                  : 'bg-rose-500 text-rose-500',
-              )}
-              title={
-                health.healthy
-                  ? `Service healthy${health.response_time_ms ? ` (${Math.round(health.response_time_ms)}ms)` : ''}`
-                  : `Service error: ${health.error || 'Unhealthy'}`
-              }
-              aria-label={
-                health.healthy
-                  ? 'Project service healthy'
-                  : `Project service unhealthy${health.error ? `: ${health.error}` : ''}`
-              }
-              data-testid="project-health-indicator"
-            />
-          ) : (
-            <div
-              className="w-3 h-3 rounded-full bg-slate-600"
-              aria-label="Project health status unavailable"
-              data-testid="project-health-indicator"
-            />
-          )}
+          <ProjectHealthBadge project={project} dot />
         </div>
       </div>
 

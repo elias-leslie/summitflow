@@ -11,8 +11,10 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import pwd
 import re
 import shutil
+import stat
 import subprocess
 import sys
 import tempfile
@@ -33,6 +35,8 @@ COMPOSE_DIR = Path(
 COMPOSE_FILE = COMPOSE_DIR / "docker-compose.yml"
 COMPOSE_ENV = COMPOSE_DIR / ".env"
 OPERATOR_USER = os.environ.get("HOST_GUARDIAN_USER", "kasadis")
+NATIVE_CONFIG = Path("/etc/btrbk/summitflow.conf")
+SPACE_GUARD = "/usr/local/libexec/summitflow-btrfs-space-guard"
 CORE_CONTAINERS = (
     "summitflow-stack-postgres-1",
     "summitflow-stack-redis-1",
@@ -119,6 +123,13 @@ def check_filesystems(state: CheckState) -> None:
     root = disk_snapshot(Path("/"))
     state.details["root_disk"] = root
     evaluate_disk(state, root, label="root")
+    try:
+        workspace = disk_snapshot(Path("/srv/workspaces"))
+        state.details["workspace_disk"] = workspace
+        evaluate_disk(state, workspace, label="workspace")
+    except OSError as exc:
+        state.issue("critical", "workspace_disk_unavailable", f"Workspace disk unavailable: {exc}")
+    check_allocation_headroom(state)
 
     try:
         # The path is an automount; statvfs triggers the mount without coupling
@@ -143,6 +154,38 @@ def check_filesystems(state: CheckState) -> None:
         nonzero = {key: value for key, value in stats.items() if value}
         if proc.returncode != 0 or nonzero:
             state.issue("critical", "btrfs_device_errors", f"Btrfs device errors detected: {nonzero or proc.stderr.strip()}")
+
+
+def check_allocation_headroom(state: CheckState) -> None:
+    try:
+        proc = run([SPACE_GUARD, "--check-only"], timeout=300)
+        reports = [json.loads(line) for line in proc.stdout.splitlines() if line.strip()]
+        if proc.returncode not in {0, 1} or proc.stderr.strip() or len(reports) != 2 or {report["path"] for report in reports} != {"/", "/srv/workspaces"}:
+            raise ValueError("No qualified allocation reports for root and workspaces")
+    except (OSError, ValueError, KeyError, TypeError, subprocess.TimeoutExpired) as exc:
+        state.details["btrfs_allocation"] = {"available": False}
+        state.issue("warning", "btrfs_allocation_unavailable", f"Btrfs allocation measurement unavailable: {exc}")
+        return
+    state.details["btrfs_allocation"] = reports
+    for report in reports:
+        label = "root" if report["path"] == "/" else "workspace"
+        try:
+            if report.get("error") or report.get("deferred") or not report.get("uuid"):
+                raise ValueError(report.get("error") or report.get("deferred") or "missing filesystem identity")
+            usage, policy = report["after"], report["policy"]
+            measured = [usage[name] for name in ("size", "free", "unallocated", "missing", "metadata_size", "metadata_used")]
+            measured += [policy[name] for name in ("trigger_bytes", "target_bytes")]
+            if any(type(value) is not int or value < 0 for value in measured) or not 0 < usage["metadata_size"] <= usage["size"] or usage["metadata_used"] > usage["metadata_size"] or max(usage["free"], usage["unallocated"]) > usage["size"] or not 0 < policy["trigger_bytes"] <= policy["target_bytes"]:
+                raise ValueError("invalid allocation measurement")
+        except (ValueError, KeyError, TypeError) as exc:
+            state.issue("warning", f"{label}_allocation_unavailable", f"{label} allocation measurement unavailable: {exc}")
+            continue
+        report["metadata_used_percent"] = round(usage["metadata_used"] / usage["metadata_size"] * 100, 2)
+        message = f"{label} has {usage['unallocated'] / 1024**3:.2f} GiB unallocated and {usage['free'] / 1024**3:.2f} GiB free"
+        if usage["missing"] or usage["unallocated"] < policy["trigger_bytes"]:
+            state.issue("critical", f"{label}_allocation_critical", message)
+        elif usage["unallocated"] < policy["target_bytes"] or usage["free"] < 25 * 1024**3 or report.get("warning"):
+            state.issue("warning", f"{label}_allocation_warning", message)
 
 
 def systemctl_active(unit: str) -> bool:
@@ -235,6 +278,83 @@ def check_smart(state: CheckState) -> None:
         if failed:
             state.issue("critical", "smart_health_failed", f"SMART health failure reported for {device}")
     state.details["smart"] = results
+
+
+def _read_native_receipt(path: Path, uid: int) -> dict[str, Any]:
+    operator_gid = pwd.getpwuid(uid).pw_gid
+    for parent in path.parents:
+        info = parent.lstat()
+        if not stat.S_ISDIR(info.st_mode) or info.st_uid not in {0, uid} or info.st_mode & 0o002 or (info.st_mode & 0o020 and (info.st_uid != uid or info.st_gid != operator_gid)):
+            raise ValueError("Unsafe native receipt directory")
+        if parent == path.parent and (info.st_uid != uid or info.st_mode & 0o077):
+            raise ValueError("Native receipt directory must be private and service-owned")
+    with os.fdopen(os.open(path, os.O_RDONLY | os.O_NOFOLLOW), encoding="utf-8") as handle:
+        info = os.fstat(handle.fileno())
+        if not stat.S_ISREG(info.st_mode) or info.st_uid != uid or info.st_mode & 0o077:
+            raise ValueError("Native receipt must be private and service-owned")
+        receipt = json.load(handle)
+    if not isinstance(receipt, dict) or receipt.get("adapter") != "summitflow-btrbk-v1" or not re.fullmatch(r"\d{8}T\d{6}Z-[0-9a-f]{8}", str(receipt.get("run_id", ""))):
+        raise ValueError("Unqualified native receipt identity")
+    if receipt.get("status") not in ("completed", "partial", "failed", "cancelled", "running", "blocked") or not isinstance(receipt.get("database_recovery", {}), dict) or receipt.get("point_availability") not in (None, "expired"):
+        raise ValueError("Invalid native receipt status or database coverage")
+    return receipt
+
+
+def check_native_backup(state: CheckState) -> None:
+    state.details["linux_backup_engine"] = "btrbk"
+    try:
+        for path in (NATIVE_CONFIG, *NATIVE_CONFIG.parents):
+            info = path.lstat()
+            if stat.S_ISLNK(info.st_mode) or info.st_uid != 0 or info.st_mode & 0o022:
+                raise ValueError("Native configuration must have root-owned, non-writable parents")
+        if not stat.S_ISREG(NATIVE_CONFIG.lstat().st_mode):
+            raise ValueError("Native configuration must be a regular file")
+        operator = pwd.getpwnam(OPERATOR_USER)
+        root = Path(operator.pw_dir) / ".local/state/summitflow/host-recovery"
+        latest = _read_native_receipt(root / "latest.json", operator.pw_uid)
+        good = _read_native_receipt(root / "last-good.json", operator.pw_uid)
+    except (OSError, ValueError, KeyError) as exc:
+        state.issue("warning", "native_backup_unavailable", f"Native backup receipt unavailable: {exc}")
+        return
+    reason = latest.get("reason")
+    safe_reason = reason if isinstance(reason, str) and re.fullmatch(r"[a-z0-9-]{1,100}", reason) else None
+    databases = latest.get("database_recovery") or {}
+    state.details["native_backup"] = {"latest_status": latest.get("status"), "latest_reason": safe_reason,
+                                      "last_good_run_id": good["run_id"], "point_availability": good.get("point_availability"),
+                                      "restore_verified": False}
+    latest_status = latest.get("status")
+    if latest_status in {"failed", "cancelled", "blocked"}:
+        state.issue("critical", "native_backup_failed", f"Latest native backup is {latest_status}")
+    elif latest_status == "partial" or safe_reason:
+        state.issue("warning", "native_backup_partial", f"Latest native backup is incomplete: {safe_reason or 'partial capture'}")
+    elif latest_status not in {"completed", "running"}:
+        state.issue("warning", "native_backup_status_unknown", "Latest native backup status is unqualified")
+    if not isinstance(databases, dict) or databases.get("status") != "qualified" or databases.get("missing"):
+        state.issue("warning", "native_database_recovery_incomplete", "Latest native capture lacks qualified application database recovery coverage")
+    if good.get("point_availability") == "expired" or good.get("status") != "completed" or good.get("capture_complete") is not True or good.get("artifacts_complete") is not True or not isinstance(good.get("points"), list) or not good["points"]:
+        state.issue("critical", "native_backup_points_unavailable", "Last completed native recovery points are expired or unqualified")
+    elif good.get("database_recovery", {}).get("status") != "qualified" or good.get("database_recovery", {}).get("missing"):
+        state.issue("warning", "native_database_recovery_incomplete", "Last completed native capture lacks qualified application database recovery coverage")
+    try:
+        captured = datetime.fromisoformat(str(good.get("finished_at") or good.get("started_at")))
+        if captured.tzinfo is None or captured > now_utc():
+            raise ValueError("unqualified capture timestamp")
+        age = now_utc() - captured
+        state.details["native_backup"]["last_good_captured_at"] = captured.isoformat()
+        if age > timedelta(hours=60):
+            state.issue("critical", "native_backup_stale", f"Last completed native backup is {age.total_seconds() / 3600:.1f} hours old")
+        elif age > timedelta(hours=36):
+            state.issue("warning", "native_backup_stale", f"Last completed native backup is {age.total_seconds() / 3600:.1f} hours old")
+    except (ValueError, TypeError):
+        state.issue("warning", "native_backup_timestamp_unqualified", "Native capture time cannot be qualified")
+
+
+def check_backup(state: CheckState) -> None:
+    if NATIVE_CONFIG.exists() or NATIVE_CONFIG.is_symlink():
+        check_native_backup(state)
+    else:
+        state.details["linux_backup_engine"] = "veeam"
+        check_veeam(state)
 
 
 def check_veeam(state: CheckState) -> None:
@@ -443,7 +563,7 @@ def main() -> int:
     check_filesystems(state)
     check_infrastructure(state, remediate=not args.no_remediate)
     check_smart(state)
-    check_veeam(state)
+    check_backup(state)
     payload = build_payload(state, mode=args.mode)
     persist(payload)
     print(json.dumps(payload, sort_keys=True))

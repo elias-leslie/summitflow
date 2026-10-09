@@ -443,3 +443,52 @@ class TestSymbolRefreshEndpoint:
         assert search.status_code == 200
         assert search.json()["count"] == 1
         assert search.json()["items"][0]["file_path"] == "backend/app/api/qqzz_fresh.py"
+
+
+@pytest.mark.parametrize("primitive", ["precision-search", "symbols/search", "text/search", "symbols/by-file"])
+def test_hosted_explicit_artifacts_are_live_without_persistent_rows(
+    client: TestClient, symbol_api_project: str, primitive: str,
+) -> None:
+    root = Path(str(get_project_root_path(symbol_api_project)))
+    artifact = "data/artifacts/source-scans/id/snapshot/module.py"
+    source = root / artifact
+    source.parent.mkdir(parents=True, exist_ok=True)
+    source.write_text("def artifact_only_target():\n    return 1\n")
+    (root / ".git").mkdir(exist_ok=True)
+    (source.parent / ".gitignore").write_text("*.py\n")
+    params = {"file_path": artifact} if primitive == "symbols/by-file" else {"q": "artifact_only_target", "path_prefix": artifact.rsplit("/", 1)[0]}
+    response = client.get(f"/api/projects/{symbol_api_project}/explorer/{primitive}", params=params)
+    assert response.status_code == 200, response.text
+    data = response.json()
+    if primitive == "precision-search":
+        assert artifact in data["prompt_context"]
+        assert data["metadata"]["source_verified"] is True
+    else:
+        assert data["count"] == 1
+        assert (data["items"][0].get("file_path") or data["items"][0].get("path")) == artifact
+    with get_connection() as conn, conn.cursor() as cur:
+        cur.execute("SELECT COUNT(*) FROM explorer_symbols WHERE project_id = %s AND file_path = %s", (symbol_api_project, artifact))
+        row = cur.fetchone()
+        assert row is not None and row[0] == 0
+
+
+@pytest.mark.parametrize("primitive", ["precision-search", "symbols/search", "text/search"])
+def test_hosted_paths_validate_selected_root_and_recover_data(
+    client: TestClient, symbol_api_project: str, primitive: str,
+) -> None:
+    root = Path(str(get_project_root_path(symbol_api_project)))
+    file = root / "data/source.py"
+    file.parent.mkdir(parents=True, exist_ok=True)
+    file.write_text("def real_data_target(): pass\n")
+    relative = client.get(f"/api/projects/{symbol_api_project}/explorer/{primitive}", params={"q": "real_data_target", "path_prefix": "data"})
+    absolute = client.get(f"/api/projects/{symbol_api_project}/explorer/{primitive}", params={"q": "real_data_target", "path_prefix": str(root / "data")})
+    assert relative.status_code == absolute.status_code == 200
+    if primitive == "precision-search":
+        assert relative.json()["prompt_context"] == absolute.json()["prompt_context"]
+        assert "data/source.py" in relative.json()["prompt_context"]
+    else:
+        assert relative.json()["items"] == absolute.json()["items"]
+        assert relative.json()["count"] == 1
+    for invalid in ("missing", "../outside", "secrets", ".env.local", str(root.parent / "outside")):
+        response = client.get(f"/api/projects/{symbol_api_project}/explorer/{primitive}", params={"q": "target", "path_prefix": invalid})
+        assert response.status_code == 400, response.text

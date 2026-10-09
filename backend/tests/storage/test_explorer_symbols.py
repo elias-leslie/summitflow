@@ -341,3 +341,34 @@ class TestResolveSymbolFilePaths:
             "backend/app/utils.py",
             "backend/cli/utils.py",
         ]
+
+
+class TestArtifactEligibility:
+    def test_existing_artifacts_are_filtered_before_candidate_limits_and_page_counts(self, cleanup_symbols: str) -> None:
+        artifact = "data/artifacts/source-scans/old/snapshot/backend/app.py"
+        # Reproduce stale rows persisted before the owner policy existed.
+        explorer_symbols.replace_file_symbols(cleanup_symbols, "old.py", [
+            _make_symbol(symbol_id=f"old-{i}", name="target", qualified_name=f"archived_{i}")
+            for i in range(60)
+        ])
+        with get_connection() as conn, conn.cursor() as cur:
+            cur.execute("UPDATE explorer_symbols SET file_path = %s WHERE project_id = %s", (artifact, cleanup_symbols))
+            conn.commit()
+        explorer_symbols.replace_file_symbols(cleanup_symbols, "src/target.py", [
+            _make_symbol(symbol_id="current", name="target", qualified_name="current_target"),
+        ])
+        assert [row["symbol_id"] for row in explorer_symbols.search_symbols(cleanup_symbols, "target", limit=1)] == ["current"]
+        page = explorer_symbols.search_symbols_page(cleanup_symbols, "target", limit=1)
+        assert page["count"] == 1 and page["truncated"] is False
+        assert explorer_symbols.search_symbols_page(cleanup_symbols, "target", offset=1)["items"] == []
+        assert explorer_symbols.resolve_symbol_file_paths(cleanup_symbols, "app.py") == []
+        assert explorer_symbols.get_symbol_stats(cleanup_symbols)["count"] == 1
+        assert explorer_symbols.replace_file_symbols(cleanup_symbols, artifact, [_make_symbol(symbol_id="new-archive", name="target")]) == 0
+
+    def test_path_prefix_percent_and_underscore_are_literal(self, cleanup_symbols: str) -> None:
+        for path in ("data/source%_one/target.py", "data/sourceXXone/target.py"):
+            explorer_symbols.replace_file_symbols(cleanup_symbols, path, [_make_symbol(symbol_id=path, name="target")])
+        page = explorer_symbols.search_symbols_page(cleanup_symbols, "target", path_prefix="data/source%_one")
+        assert page["count"] == 1
+        assert [row["file_path"] for row in page["items"]] == ["data/source%_one/target.py"]
+        assert explorer_symbols.resolve_symbol_file_paths(cleanup_symbols, "source%_one/target.py") == ["data/source%_one/target.py"]

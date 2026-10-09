@@ -45,7 +45,8 @@
         "choose explicit scope: project-specific → -s project --scope-id <id>; global only for cross-project knowledge",
         "use ST for agent memory writes; reusable instructions belong in scoped DB prompts",
         "verify success on save; revisions are immutable"
-      ]
+      ],
+      "on_demand": "memory authoring"
     },
     {
       "surface": "st.memory.search",
@@ -54,7 +55,8 @@
       "when": "durable rules / prior incidents / workflow history before retries",
       "precautions": [
         "not for live code/runtime facts — use st search, pulse, db, logs"
-      ]
+      ],
+      "on_demand": "memory authoring"
     },
     {
       "surface": "st.memory.update",
@@ -64,7 +66,8 @@
       "precautions": [
         "scope changes are separate from content edits; --preview does not save",
         "scope edits require service and project authority, preserve revisions and undo"
-      ]
+      ],
+      "on_demand": "memory authoring"
     }
   ]
 }

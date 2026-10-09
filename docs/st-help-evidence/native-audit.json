@@ -2,8 +2,8 @@
   "scope": "native SummitFlow Typer/Click routes in backend/cli/main.py and backend/cli/commands; extension namespace handlers excluded",
   "method": "read-only Click graph via typer.main.get_command; callbacks inspect.unwrap; no command callbacks invoked",
   "captured_at_utc": "2026-09-24T18:45:50.393485+00:00",
-  "route_count": 244,
-  "command_count": 213,
+  "route_count": 243,
+  "command_count": 212,
   "group_count": 31,
   "routes": [
     {
@@ -7071,41 +7071,6 @@
       "summary": "Project service lifecycle through st. Use rebuild/restart instead of raw systemctl or docker commands so build, migrations, unit sync, health checks, and seed sync stay together.",
       "help": "Project service lifecycle through st. Use rebuild/restart instead of raw systemctl or docker commands so build, migrations, unit sync, health checks, and seed sync stay together.",
       "params": []
-    },
-    {
-      "path": "st service bootstrap-runner",
-      "source": "backend/cli/commands/service.py",
-      "line": 38,
-      "hidden": false,
-      "group": false,
-      "summary": "Adopt a legacy Neri runner into guarded release management.",
-      "help": "Adopt a legacy Neri runner into guarded release management.",
-      "params": [
-        {
-          "name": "project",
-          "kind": "TyperArgument",
-          "opts": [
-            "project"
-          ],
-          "secondary_opts": [],
-          "required": true,
-          "default": "None",
-          "help": "Project id with the fixed Neri runner adapter",
-          "hidden": false
-        },
-        {
-          "name": "confirm",
-          "kind": "TyperOption",
-          "opts": [
-            "--confirm"
-          ],
-          "secondary_opts": [],
-          "required": false,
-          "default": "None",
-          "help": "Confirm token from preview run",
-          "hidden": false
-        }
-      ]
     },
     {
       "path": "st service status",

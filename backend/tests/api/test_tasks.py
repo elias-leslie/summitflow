@@ -14,6 +14,8 @@ from typing import Any
 from unittest.mock import patch
 from uuid import uuid4
 
+import pytest
+
 from app.storage import tasks as task_store
 from app.storage.connection import get_connection
 from app.storage.task_spirit import get_task_spirit
@@ -21,6 +23,55 @@ from app.storage.task_spirit import get_task_spirit
 
 class TestTaskSpiritJoin:
     """Test task_spirit LEFT JOIN functionality."""
+
+    def test_task_get_delivers_claim_scope_and_claim_timestamp(
+        self, client: Any, test_project_id: str, cleanup_task: Callable[[str], None], capsys: Any,
+    ) -> None:
+        from cli.commands.claim_helpers import _print_claim_brief
+
+        response = client.post(f"/api/projects/{test_project_id}/tasks", json={
+            "title": "Implement a scoped runtime change", "description": "Create the declared module",
+        })
+        assert response.status_code == 200
+        task_id = response.json()["id"]
+        cleanup_task(task_id)
+        scope = ["backend/new_module.py"]
+        requirements = {"deployment": True, "live_checks": ["development-ui"]}
+        updated = client.patch(f"/api/projects/{test_project_id}/tasks/{task_id}", json={
+            "files_to_create": scope,
+            "done_when": ["Module and live route verified"],
+        })
+        assert updated.status_code == 200
+        from app.storage.task_spirit import upsert_task_spirit
+        spirit = get_task_spirit(task_id)
+        assert spirit is not None
+        plan_subtasks = [{"subtask_id": "1.1", "description": "Create and verify the module",
+                          "steps": ["Implement the module", "Verify the route"]}]
+        upsert_task_spirit(task_id, done_when=spirit["done_when"], complexity=spirit.get("complexity"),
+                          context={**spirit["context"], "completion_requirements": requirements,
+                                   "subtasks": plan_subtasks})
+        for route in (f"/api/tasks/{task_id}", f"/api/projects/{test_project_id}/tasks/{task_id}"):
+            fetched = client.get(route)
+            assert fetched.status_code == 200
+            task = fetched.json()
+            assert task["context"]["files_to_create"] == scope
+            assert task["context"]["completion_requirements"] == requirements
+            assert task["context"]["subtasks"] == plan_subtasks
+            # Plan entries have logical IDs; they are not persisted SubtaskResponse rows.
+            assert task["subtasks"] is None
+            _print_claim_brief(task_id, {"task": task})
+            brief = capsys.readouterr().out
+            assert "Scope: backend/new_module.py" in brief
+            assert "development-ui" in brief
+            assert "Module and live route verified" in brief
+        claimed = client.post(f"/api/projects/{test_project_id}/tasks/{task_id}/claim", json={
+            "worker_id": "scope-worker", "lock_minutes": 30,
+        })
+        assert claimed.status_code == 200
+        stored = task_store.get_task(task_id)
+        assert stored is not None
+        from datetime import datetime
+        assert datetime.fromisoformat(claimed.json()["claimed_at"]) == stored["claimed_at"]
 
     def test_get_task_with_spirit_data(
         self, client: Any, test_project_id: str, cleanup_task: Callable[[str], None]
@@ -235,6 +286,35 @@ class TestTaskUpdates:
 
 
 class TestShortTaskIdApiResolution:
+    @pytest.mark.parametrize("task_context", [None, {"completion_requirements": {"deployment": False}}])
+    def test_completion_readiness_uses_persisted_plan_requirements(
+        self, client: Any, task_context: dict[str, Any] | None,
+    ) -> None:
+        task_id = f"task-{uuid4()}"
+        task = {
+            "id": task_id,
+            "context": task_context,
+            "verification_result": {"acceptance": {"state": "success", "source_commit": "a" * 40}},
+        }
+        spirit = {"context": {"completion_requirements": {
+            "deployment": True, "live_checks": ["publication_health"],
+        }}}
+        with (
+            patch("app.api.tasks.get_endpoints.get_task_or_404", return_value=task),
+            patch("app.storage.tasks.get_task", return_value=task),
+            patch("app.storage.subtasks.get_subtasks_for_task", return_value=[]),
+            patch("app.storage.task_spirit.get_task_spirit", return_value=spirit) as read_spirit,
+        ):
+            result = client.get(f"/api/tasks/{task_id.removeprefix('task-')}/completion-readiness")
+
+        assert result.status_code == 200
+        assert result.json() == {"ready": False, "gates": [
+            {"gate": "deployment", "pass": False,
+             "detail": "Required deployment has not succeeded for the accepted source."},
+            {"gate": "live_validation", "pass": False, "detail": ["publication_health"]},
+        ]}
+        read_spirit.assert_called_once_with(task_id)
+
     def test_get_task_accepts_short_suffix(
         self, client: Any, test_project_id: str, cleanup_task: Callable[[str], None]
     ) -> None:
@@ -266,7 +346,9 @@ class TestShortTaskIdApiResolution:
 
         with (
             patch("app.api.tasks.get_endpoints.get_task_or_404", return_value=task),
-            patch("app.api.tasks.get_endpoints.get_subtasks_for_task", return_value=subtasks),
+            patch("app.storage.tasks.get_task", return_value=task),
+            patch("app.storage.task_spirit.get_task_spirit", return_value=None),
+            patch("app.storage.subtasks.get_subtasks_for_task", return_value=subtasks),
         ):
             result = client.get(f"/api/tasks/{task_id}/completion-readiness")
 
@@ -291,7 +373,9 @@ class TestShortTaskIdApiResolution:
 
         with (
             patch("app.api.tasks.get_endpoints.get_task_or_404", return_value=task),
-            patch("app.api.tasks.get_endpoints.get_subtasks_for_task", return_value=subtasks),
+            patch("app.storage.tasks.get_task", return_value=task),
+            patch("app.storage.task_spirit.get_task_spirit", return_value=None),
+            patch("app.storage.subtasks.get_subtasks_for_task", return_value=subtasks),
         ):
             result = client.get(f"/api/tasks/{task_id}/completion-readiness")
 
@@ -311,7 +395,9 @@ class TestShortTaskIdApiResolution:
 
         with (
             patch("app.api.tasks.get_endpoints.get_task_or_404", return_value=task),
-            patch("app.api.tasks.get_endpoints.get_subtasks_for_task", return_value=subtasks),
+            patch("app.storage.tasks.get_task", return_value=task),
+            patch("app.storage.task_spirit.get_task_spirit", return_value=None),
+            patch("app.storage.subtasks.get_subtasks_for_task", return_value=subtasks),
         ):
             result = client.get(f"/api/tasks/{task_id}/completion-readiness")
 

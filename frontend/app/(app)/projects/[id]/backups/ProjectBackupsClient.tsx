@@ -19,6 +19,7 @@ import {
   BackupHistoryTable,
 } from '@/components/backup/BackupHistoryTable'
 import { BackupScheduleConfig } from '@/components/backup/BackupScheduleConfig'
+import { BackupSizeDetails } from '@/components/backup/BackupSizeDetails'
 import { activeBackupRefetchInterval } from '@/components/backup/backupPolling'
 import { fetchProject } from '@/lib/api'
 import {
@@ -27,17 +28,17 @@ import {
   deleteBackup,
   fetchBackups,
 } from '@/lib/api/backups'
-import { formatBytes, formatDate } from '@/lib/format'
+import { formatDate } from '@/lib/format'
 import { getErrorMessage } from '@/lib/utils'
 
 const PROJECT_BACKUP_COLUMNS: BackupColumn[] = [
   {
     key: 'size',
-    label: 'Size',
+    label: 'Size details',
     render: (backup) => (
       <div className="flex items-center gap-2 text-sm text-slate-300">
         <HardDrive className="w-3.5 h-3.5 text-slate-500" />
-        {formatBytes(backup.size_bytes)}
+        <BackupSizeDetails backup={backup} />
       </div>
     ),
   },

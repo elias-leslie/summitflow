@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import json
-import re
 import time
 from contextlib import nullcontext, suppress
 from enum import StrEnum
@@ -16,9 +15,9 @@ from app.tasks.backup_lock import BackupLockLeaseError, backup_worker_restart_gu
 
 from ..lib import service_ops, service_release
 from ..lib.confirm_token import confirm_gate
-from ..lib.neri_runner_deploy import bootstrap_runner, deploy_runner, recover_runner_fixture
 from ..lib.usage import usage
 from ..output import output_error
+from .pulse import require_pulse_gate
 
 app = typer.Typer(
     help=(
@@ -29,89 +28,39 @@ app = typer.Typer(
 )
 
 
+@app.command("observe")
+@usage(surface="st.service.observe", cmd="st service observe <project> --task <id> --acceptance <receipt> --evidence <json>",
+       when="verify an owner-managed native deployment and issue source-bound task evidence",
+       precautions=("executes the registered read-only observer from fully accepted immutable source",
+                    "records the actual deployed commit and explicit runtime input equivalence; does not deploy",
+                    "the server issues the receipt; arbitrary observation JSON or target overrides are rejected"),
+       tier="reference")
+def observe(
+    project: Annotated[str, typer.Argument(help="Registered native owner project")],
+    task: Annotated[str, typer.Option("--task", help="Claimed task requiring production verification")],
+    acceptance: Annotated[Path, typer.Option("--acceptance", help="Successful full acceptance receipt")],
+    evidence: Annotated[Path, typer.Option("--evidence", help="Write a completion evidence reference to this new file")],
+) -> None:
+    from ..client import APIError, STClient
+
+    try:
+        with STClient(project_id=project) as client:
+            receipts = client.post(client._url(f"/tasks/{task}/deployment-observations"),
+                                   {"acceptance_receipt": str(acceptance.resolve(strict=True))})
+        with evidence.open("x") as stream:
+            json.dump({"native_deployment_receipt": receipts["deployment"]["receipt_id"]}, stream)
+            stream.write("\n")
+        print("NATIVE_DEPLOYMENT:" + json.dumps(receipts, separators=(",", ":")))
+    except (APIError, ValueError, OSError, KeyError) as exc:
+        output_error(str(exc))
+        raise typer.Exit(1) from None
+
+
 class RebuildScope(StrEnum):
     full = "full"
     backend = "backend"
     frontend = "frontend"
     worker = "worker"
-
-
-@app.command("bootstrap-runner")
-@usage(
-    surface="st.service.runner-bootstrap",
-    cmd="st service bootstrap-runner neri",
-    when="perform the one-time controlled adoption of a legacy Neri local-lab runner",
-    precautions=(
-        "run only after inspection proves the fixed legacy two-file layout and no retained deployment interlock",
-        "two-pass confirmation is required because both local-lab runner services are stopped and restarted",
-        "an uncertain result retains the deployment marker; inspect its durable receipt and never retry blindly",
-        "the command is restricted to the fixed Neri runner adapter, VM, services, paths, and source files",
-    ),
-    task_types=("vm-repair", "devops"),
-    on_demand="VM repair",
-    tier="reference",
-)
-def runner_bootstrap(
-    project: Annotated[str, typer.Argument(help="Project id with the fixed Neri runner adapter")],
-    confirm: Annotated[str | None, typer.Option("--confirm", help="Confirm token from preview run")] = None,
-) -> None:
-    """Adopt a legacy Neri runner into guarded release management."""
-    services = _load(project)
-    if services.runner_adapter is None:
-        output_error("Project has no managed runner adapter.")
-        raise typer.Exit(1)
-    confirm_gate(
-        f"service-runner-bootstrap-{services.project_id}",
-        confirm,
-        [
-            f"BOOTSTRAP LEGACY RUNNER: {services.project_id}",
-            "This stops and restarts both fixed local-lab runner services.",
-            "The old source bundle is preserved and all activation steps are durably recorded.",
-            "Any uncertain mutation retains the interlock for manual inspection.",
-        ],
-        f"st service bootstrap-runner {services.project_id}",
-    )
-    raise typer.Exit(bootstrap_runner(services.root, services.runner_adapter))
-
-
-@app.command("recover-runner-fixture")
-@usage(
-    surface="st.service.runner-fixture-recovery",
-    cmd="st service recover-runner-fixture neri <original-attempt>",
-    when="repair fixed fixture verification inputs after provisioning succeeded and retained its interlock",
-    precautions=(
-        "requires the exact original 32-hex attempt, matching retained interlock, and provisioned verification-failure receipt",
-        "two-pass confirmation is required; both runners must already be stopped or blocked and idle",
-        "installs public fixture files and updates only the private target artifact identity; never provisions or seeds",
-        "original receipt and backup remain intact; a linked recovery receipt is written and failures retain the interlock",
-    ),
-    task_types=("vm-repair", "devops"),
-    tier="reference",
-)
-def runner_fixture_recovery(
-    project: Annotated[str, typer.Argument(help="Project id with the fixed Neri runner adapter")],
-    attempt: Annotated[str, typer.Argument(help="Exact original 32-hex fixture deployment attempt")],
-    confirm: Annotated[str | None, typer.Option("--confirm", help="Confirm token from preview run")] = None,
-) -> None:
-    """Recover a provisioned fixture whose verification retained its interlock."""
-    if not re.fullmatch(r"[0-9a-f]{32}", attempt):
-        output_error("Pass the exact original 32-hex fixture deployment attempt.")
-        raise typer.Exit(1)
-    services = _load(project)
-    if services.runner_adapter is None:
-        output_error("Project has no managed runner adapter.")
-        raise typer.Exit(1)
-    confirm_gate(
-        f"service-runner-fixture-recovery-{services.project_id}-{attempt}", confirm,
-        [
-            f"RECOVER RUNNER FIXTURE: {services.project_id}; original attempt={attempt}",
-            "Installs the current fixed public fixture inputs without provisioning or seeding.",
-            "Preserves the original receipt and backup, then verifies the fixture and restarts both runners.",
-            "Clears only the matching interlock after full success; failures retain it.",
-        ],
-        f"st service recover-runner-fixture {services.project_id} {attempt}",
-    )
-    raise typer.Exit(recover_runner_fixture(services.root, services.runner_adapter, attempt))
 
 
 def _load(project: str) -> service_ops.ProjectServices:
@@ -227,18 +176,16 @@ def status(
     surface="st.service.rebuild",
     cmd="st service rebuild <project> --detach",
     when=(
-        "any code/config/worker change in a managed project needs to go live; "
-        "use this for the build+migrate+restart cycle, never raw pnpm/npm/uv build "
+        "deployed executable, configuration, or worker behavior changes require a "
+        "build+migrate+restart cycle to go live in a managed project; use this managed cycle, "
+        "never raw pnpm/npm/uv build "
         "or systemctl restart"
     ),
     precautions=(
-        "st pulse --gate first",
         "explicit project, not cwd-implicit",
-        "required application workers belong in project.identity.json services.default_workers and rebuild automatically",
-        "active optional workers restart with backend changes; inactive optional workers stay stopped",
-        "--include-all-workers explicitly starts all optional workers",
+        "ST runs the project preflight first; resolve reported blockers",
         "use full scope for shared or uncertain changes; worker scope includes backend consumers",
-        "never run raw pnpm run build / npm build / uv pip install + manual systemctl restart for a managed project",
+        "required workers (project.identity.json services.default_workers) and active optional workers restart automatically; --include-all-workers also starts inactive optional workers",
     ),
     examples=(
         "st service rebuild summitflow",
@@ -285,6 +232,7 @@ def rebuild(
     if unknown or (scope == RebuildScope.frontend and (requested_workers or include_all_workers)):
         output_error("Unknown worker or frontend-only scope combined with worker selection.")
         raise typer.Exit(1)
+    require_pulse_gate(services.project_id)
     overlapping_components = (
         services.backend_dir.is_relative_to(services.frontend_dir)
         or services.frontend_dir.is_relative_to(services.backend_dir)
@@ -353,16 +301,6 @@ def rebuild(
                 f"Rebuilding {services.project_id} (scope: {scope.value}, "
                 f"source: {release.source.source_commit}, build: {release.build_id})"
             )
-            # Freeze and verify the runner before any host lifecycle mutation. Worker
-            # scope also updates backend consumers, so it follows the same contract.
-            if (
-                backend
-                and services.runner_adapter is not None
-                and deploy_runner(services.root, services.runner_adapter) != 0
-            ):
-                service_release.fail_release(release, "runner")
-                print("[service] rebuild stopped: runner deployment failed")
-                raise typer.Exit(1)
             steps = [("infrastructure", lambda: service_ops.ensure_infra(services))]
             steps.append(("backend_dependencies", lambda: service_ops.sync_backend(services)))
             if backend:

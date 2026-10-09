@@ -82,6 +82,13 @@ class ExtensionManifest(StrictModel):
     usage: list[dict[str, object]]
     structured_operations: dict[str, StructuredOperation] = Field(default_factory=dict)
 
+    @field_validator("st_contract_versions")
+    @classmethod
+    def validate_contract_versions(cls, values: list[int]) -> list[int]:
+        if any(value < 1 for value in values):
+            raise ValueError("ST envelope contract versions must be positive")
+        return values
+
     @model_validator(mode="after")
     def validate_guidance(self) -> ExtensionManifest:
         if "" not in self.help or not self.help[""]:
@@ -91,11 +98,9 @@ class ExtensionManifest(StrictModel):
                 raise ValueError("help options require a registered help route")
             if any(not name.startswith("-") or name == "--" or arity < 0 for name, arity in options.items()):
                 raise ValueError("help options require option spellings and nonnegative arities")
-        for name, operation in self.structured_operations.items():
+        for name in self.structured_operations:
             if not name or any(character not in "abcdefghijklmnopqrstuvwxyz0123456789_-" for character in name):
                 raise ValueError("invalid structured operation name")
-            if operation.request_contract_version not in self.st_contract_versions:
-                raise ValueError("structured operation requires an unsupported request contract version")
         allowed = {field.name for field in fields(UsageSpec)}
         sequences = {"precautions", "examples", "task_types", "agent_slugs", "consumer_profiles"}
         surfaces: set[str] = set()

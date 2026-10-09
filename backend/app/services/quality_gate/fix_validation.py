@@ -13,6 +13,7 @@ from ...storage.projects import get_project_root_path
 
 logger = get_logger(__name__)
 
+# Protect archived legacy repository metadata as well as current Git state.
 _REPOSITORY_CONTROL_DIRECTORIES = frozenset({".git", ".jj"})
 
 # Supported check types for automatic fixing

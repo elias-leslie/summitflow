@@ -2,6 +2,18 @@
   "version": 1,
   "extensions": [
     {
+      "id": "aico.roots",
+      "owner": "aico",
+      "namespace": "aico",
+      "manifest": "extensions/aico.json",
+      "executable": "scripts/aico-root-watch.py",
+      "grant": {
+        "enabled": true,
+        "effects": ["read-local", "process", "network"]
+      },
+      "environment": ["XDG_RUNTIME_DIR", "AICO_GUI_CONTROL_SOCKET", "AICO_CONTROL_SOCKET", "A_TERM_ROOT_CONTROL_URL", "AICO_WIDGET_ID"]
+    },
+    {
       "id": "agent-hub.agents",
       "owner": "agent-hub",
       "namespace": "agents",
@@ -280,8 +292,6 @@
         ]
       },
       "environment": [
-        "CODEX_SESSION_ID",
-        "NERI_HOOK_STATE_DIR",
         "ST_NERI_API_URL"
       ]
     },
@@ -432,13 +442,18 @@
           "network",
           "read-remote",
           "write-local",
-          "credentials"
+          "credentials",
+          "process"
         ]
       },
       "environment": [
         "WEB_SEARCH_SEARXNG_URL",
         "WEB_FETCH_BROWSER_CDP_URL",
-        "ST_BROWSER_HOST"
+        "ST_BROWSER_HOST",
+        "AGENT_HUB_WEB_LIGHTPANDA_BINARY",
+        "AGENT_HUB_WEB_LIGHTPANDA_SHA256",
+        "AGENT_HUB_WEB_LIGHTPANDA_VERSION",
+        "AGENT_HUB_WEB_CACHE_DIR"
       ],
       "presentation": "web-details"
     },
@@ -455,7 +470,12 @@
         "DBUS_SESSION_BUS_ADDRESS",
         "AGENT_BROWSER_SESSION",
         "AGENT_BROWSER_CONFIG",
-        "AGENT_BROWSER_ALLOW_FILE_ACCESS"
+        "AGENT_BROWSER_ALLOW_FILE_ACCESS",
+        "ST_BROWSER_OWNER",
+        "ST_BROWSER_MANAGED_EXTENSION_TEST",
+        "ST_AGENT_ID",
+        "CODEX_THREAD_ID",
+        "XDG_STATE_HOME"
       ],
       "grant": {
         "enabled": true,
@@ -541,6 +561,46 @@
         "effects": [
           "read-local",
           "network"
+        ]
+      }
+    },
+    {
+      "id": "ominull.production",
+      "owner": "ominull",
+      "namespace": "ominull",
+      "manifest": "extensions/ominull.json",
+      "executable": "scripts/st-ominull",
+      "grant": {
+        "enabled": true,
+        "effects": [
+          "network",
+          "read-remote",
+          "read-local",
+          "credentials",
+          "process"
+        ]
+      },
+      "arguments": [],
+      "environment": []
+    },
+    {
+      "id": "ominull.backup",
+      "owner": "ominull",
+      "namespace": "ominull-backup",
+      "manifest": "extensions/ominull-backup.json",
+      "executable": "scripts/st-ominull-backup",
+      "arguments": [],
+      "environment": [],
+      "grant": {
+        "enabled": true,
+        "effects": [
+          "network",
+          "read-remote",
+          "write-remote",
+          "read-local",
+          "write-local",
+          "credentials",
+          "process"
         ]
       }
     }
@@ -695,16 +755,15 @@
     },
     {
       "id": "vcs",
-      "canonical": "st done / st commit / st jj / st git",
+      "canonical": "st done / st commit / st git / st vcs",
       "replaces": [
         "commit.sh"
       ],
-      "summary": "Version-control workflow: st done for task closeout; st commit and st jj for blockers/checkpoints; st git only for inspection and residue repair.",
+      "summary": "Version-control workflow: st done for task closeout; st commit for local Git checkpoints; st git for inspection and residue repair; st vcs for hygiene and explicit source-bound publication.",
       "safety": "mutating",
       "commands": [
         "done",
         "commit",
-        "jj",
         "git status",
         "git sync",
         "git resolve-conflict"
@@ -712,7 +771,6 @@
       "examples": [
         "st done task-abc123 -m \"complete\"",
         "st commit --message \"checkpoint\"",
-        "st jj status",
         "st git status"
       ],
       "verify": [

@@ -26,9 +26,9 @@ def is_working_tree_clean(path: str | None = None) -> bool:
     if path and not Path(path).exists():
         return True
 
-    cmd = ["git", "status", "--porcelain"]
+    cmd = ["git", "--no-optional-locks", "status", "--porcelain"]
     if path:
-        cmd = ["git", "-C", path, "status", "--porcelain"]
+        cmd = ["git", "--no-optional-locks", "-C", path, "status", "--porcelain"]
 
     try:
         result = subprocess.run(

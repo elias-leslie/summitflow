@@ -1,115 +1,56 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
-import { fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { render, screen } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { development, repo } from '@/components/git/developmentFixtures'
 import { ProjectGitClient } from './ProjectGitClient'
 
-const navigationMocks = vi.hoisted(() => ({
-  useParams: vi.fn(),
-}))
-
-const apiMocks = vi.hoisted(() => ({
-  checkProjectGitRemote: vi.fn(),
+const api = vi.hoisted(() => ({
   fetchProjectGitStatus: vi.fn(),
-  pullRepository: vi.fn(),
+  fetchProjectDevelopmentStatus: vi.fn(),
 }))
-
 vi.mock('next/navigation', () => ({
-  useParams: navigationMocks.useParams,
+  useParams: () => ({ id: 'project-alpha' }),
 }))
-
-vi.mock('@/lib/api', () => ({
-  checkProjectGitRemote: apiMocks.checkProjectGitRemote,
-  fetchProjectGitStatus: apiMocks.fetchProjectGitStatus,
-  pullRepository: apiMocks.pullRepository,
-}))
-
-vi.mock('@/components/git/ConflictAlerts', () => ({
-  ConflictAlerts: ({ projectId }: { projectId?: string }) => (
-    <div data-testid="conflict-alerts">{projectId}</div>
+vi.mock('@/lib/api/git', () => api)
+vi.mock('@/components/git/ProjectRow', () => ({
+  ProjectRow: ({ repo }: { repo: { name: string } }) => (
+    <div>{repo.name} development</div>
   ),
 }))
-
-vi.mock('@/components/git/project-row/DashboardContent', () => ({
-  DashboardContent: ({ projectId }: { projectId: string }) => (
-    <div data-testid="dashboard-content">{projectId}</div>
-  ),
-}))
-
 function renderClient() {
-  const queryClient = new QueryClient({
-    defaultOptions: {
-      queries: { retry: false },
-      mutations: { retry: false },
-    },
+  const client = new QueryClient({
+    defaultOptions: { queries: { retry: false } },
   })
-
   return render(
-    <QueryClientProvider client={queryClient}>
+    <QueryClientProvider client={client}>
       <ProjectGitClient />
     </QueryClientProvider>,
   )
 }
-
-describe('ProjectGitClient', () => {
-  beforeEach(() => {
-    vi.clearAllMocks()
-    navigationMocks.useParams.mockReturnValue({ id: 'project-alpha' })
-    apiMocks.fetchProjectGitStatus.mockResolvedValue({
-      repositories: [
-        {
-          path: '/repos/repo-folder',
-          name: 'repo-folder',
-          project_id: 'project-alpha',
-          branch: 'main',
-          uncommitted: 0,
-          ahead: 0,
-          behind: 0,
-          state: 'clean',
-          workspace_summary: {
-            active_checkpoints: 1,
-            dirty_checkpoints: 0,
-            branches_with_checkpoints: 1,
-            orphan_branches: 0,
-            prunable_branches: 0,
-            needs_cleanup: false,
-            checkpoint_task_ids: ['task-123'],
-          },
-        },
-      ],
+beforeEach(() => vi.clearAllMocks())
+describe('Project Development', () => {
+  it('uses the route project for both evidence sources', async () => {
+    api.fetchProjectGitStatus.mockResolvedValue({
+      repositories: [repo],
       total: 1,
     })
-    apiMocks.pullRepository.mockResolvedValue({
-      results: [
-        {
-          path: '/repos/repo-folder',
-          name: 'repo-folder',
-          branch: 'main',
-          status: 'updated',
-        },
-      ],
-      success: 1,
-      failed: 0,
-      skipped: 0,
-    })
-  })
-
-  it('uses project-scoped pull and passes the route project id to dependent sections', async () => {
+    api.fetchProjectDevelopmentStatus.mockResolvedValue(development)
     renderClient()
-
+    expect(await screen.findByText('alpha development')).toBeInTheDocument()
+    expect(api.fetchProjectDevelopmentStatus).toHaveBeenCalledWith(
+      'project-alpha',
+    )
+    expect(api.fetchProjectGitStatus).toHaveBeenCalledWith('project-alpha')
+  })
+  it('preserves a failed source as an error', async () => {
+    api.fetchProjectGitStatus.mockResolvedValue({ repositories: [repo] })
+    api.fetchProjectDevelopmentStatus.mockRejectedValue(new Error('store down'))
+    renderClient()
     expect(
-      await screen.findByText('Project Git Operations'),
+      await screen.findByText('Could not load development evidence.'),
     ).toBeInTheDocument()
-    expect(screen.getByTestId('conflict-alerts')).toHaveTextContent(
-      'project-alpha',
-    )
-    expect(screen.getByTestId('dashboard-content')).toHaveTextContent(
-      'project-alpha',
-    )
-
-    fireEvent.click(screen.getByRole('button', { name: /sync/i }))
-
-    await waitFor(() => {
-      expect(apiMocks.pullRepository).toHaveBeenCalledWith('project-alpha')
-    })
+    expect(
+      screen.queryByText('No repository found for this project'),
+    ).not.toBeInTheDocument()
   })
 })

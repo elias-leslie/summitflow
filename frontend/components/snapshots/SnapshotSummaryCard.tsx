@@ -13,19 +13,33 @@ import { formatBytes } from '@/lib/format'
 interface SnapshotSummaryCardProps {
   summary: BtrfsSummary | undefined
   isLoading: boolean
+  error?: Error | null
   onMutated: () => void
 }
 
 export function SnapshotSummaryCard({
   summary,
   isLoading,
+  error,
   onMutated,
 }: SnapshotSummaryCardProps) {
   const [snapping, setSnapping] = useState(false)
   const [pruning, setPruning] = useState(false)
   const [feedback, setFeedback] = useState<string | null>(null)
+  const [feedbackFailed, setFeedbackFailed] = useState(false)
 
-  if (isLoading || !summary) return null
+  if (isLoading)
+    return (
+      <p role="status" className="text-xs text-slate-400">
+        Loading saved-work protection…
+      </p>
+    )
+  if (!summary)
+    return (
+      <p role="alert" className="text-xs text-rose-300">
+        Saved-work protection unavailable{error ? `: ${error.message}` : ''}
+      </p>
+    )
 
   const autoCount = Object.entries(summary.by_source)
     .filter(([k]) => k.startsWith('auto'))
@@ -35,13 +49,14 @@ export function SnapshotSummaryCard({
   const handleSnap = async () => {
     setSnapping(true)
     setFeedback(null)
+    setFeedbackFailed(false)
     try {
       const snap = await createSnapshot('summitflow')
       setFeedback(`Snapshot ${snap.name ?? snap.id.slice(0, 16)} created`)
       onMutated()
-      setTimeout(() => setFeedback(null), 3000)
-    } catch {
-      setFeedback('Snapshot failed')
+    } catch (error) {
+      setFeedbackFailed(true)
+      setFeedback(error instanceof Error ? error.message : 'Snapshot failed')
     }
     setSnapping(false)
   }
@@ -49,15 +64,19 @@ export function SnapshotSummaryCard({
   const handlePrune = async () => {
     setPruning(true)
     setFeedback(null)
+    setFeedbackFailed(false)
     try {
       const result = await pruneSnapshots(false)
       setFeedback(
-        result.ok ? `Pruned ${result.pruned} snapshot(s)` : 'Prune failed',
+        result.ok
+          ? `Pruned ${result.pruned} snapshot(s)`
+          : `${Number.isFinite(result.pruned) ? `${result.pruned} snapshot(s) pruned; ` : ''}${result.error ?? 'Prune failed'}`,
       )
+      setFeedbackFailed(!result.ok)
       onMutated()
-      setTimeout(() => setFeedback(null), 3000)
-    } catch {
-      setFeedback('Prune failed')
+    } catch (error) {
+      setFeedbackFailed(true)
+      setFeedback(error instanceof Error ? error.message : 'Prune failed')
     }
     setPruning(false)
   }
@@ -72,11 +91,11 @@ export function SnapshotSummaryCard({
       )}
     >
       {/* Header */}
-      <div className="px-4 py-3 flex items-center justify-between">
+      <div className="px-4 py-3 flex flex-wrap gap-2 items-center justify-between">
         <div className="flex items-center gap-3">
           <Camera className="w-4 h-4 text-slate-500" />
           <span className="text-sm font-medium text-slate-100">
-            Btrfs Snapshots
+            Btrfs Saved Work
           </span>
         </div>
         <div className="flex items-center gap-2">
@@ -109,7 +128,11 @@ export function SnapshotSummaryCard({
               Exclusive
             </div>
             <div className="text-xs text-slate-200 font-mono">
-              {formatBytes(summary.total_usage_bytes)}
+              {summary.total_usage_bytes == null
+                ? 'Unavailable'
+                : summary.total_usage_bytes === 0
+                  ? '0 B'
+                  : formatBytes(summary.total_usage_bytes)}
             </div>
           </div>
           <div className="min-w-0 rounded bg-slate-950/50 px-2 py-1.5">
@@ -133,12 +156,20 @@ export function SnapshotSummaryCard({
           </div>
         </div>
 
+        {error && (
+          <p role="alert" className="mt-2 text-xs text-amber-300">
+            Refresh failed; showing last loaded protection: {error.message}
+          </p>
+        )}
         {/* Policy summary */}
-        <div className="mt-2 text-[10px] text-slate-600 leading-relaxed">
-          Projects: every {Math.round(summary.policy.interval_minutes / 60)}h,
-          keep {summary.policy.auto_keep_per_scope}
+        <div className="mt-2 text-xs text-slate-400 leading-relaxed">
+          Projects: every {summary.policy.interval_minutes} min
+          {summary.policy.recent_hours != null &&
+          summary.policy.hourly_days != null
+            ? `; keep all captures for ${summary.policy.recent_hours}h, then hourly for ${summary.policy.hourly_days} days`
+            : `, keep ${summary.policy.auto_keep_per_scope}`}
         </div>
-        <div className="mt-1 text-[10px] text-slate-600 leading-relaxed">
+        <div className="mt-1 text-[10px] text-slate-400 leading-relaxed">
           Archived auto scopes: keep {summary.policy.archived_keep_per_project}{' '}
           recent scope
           {summary.policy.archived_keep_per_project === 1 ? '' : 's'} per
@@ -147,12 +178,12 @@ export function SnapshotSummaryCard({
         </div>
 
         {/* Actions */}
-        <div className="flex items-center gap-2 mt-3">
+        <div className="flex flex-wrap items-center gap-2 mt-3">
           <button
             type="button"
             onClick={handleSnap}
-            disabled={snapping}
-            className="flex items-center gap-1.5 text-2xs px-2.5 py-1 rounded bg-phosphor-500/10 text-phosphor-400 hover:bg-phosphor-500/20 disabled:opacity-40 transition-colors"
+            disabled={snapping || pruning}
+            className="flex items-center gap-1.5 text-2xs px-2.5 py-1 rounded bg-phosphor-500/10 text-phosphor-400 hover:bg-phosphor-500/20 disabled:opacity-40 transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-phosphor-400"
           >
             {snapping ? (
               <Loader2 className="w-3 h-3 animate-spin" />
@@ -164,8 +195,8 @@ export function SnapshotSummaryCard({
           <button
             type="button"
             onClick={handlePrune}
-            disabled={pruning}
-            className="flex items-center gap-1.5 text-2xs px-2.5 py-1 rounded bg-slate-700/40 text-slate-400 hover:bg-slate-700/60 disabled:opacity-40 transition-colors"
+            disabled={pruning || snapping}
+            className="flex items-center gap-1.5 text-2xs px-2.5 py-1 rounded bg-slate-700/40 text-slate-400 hover:bg-slate-700/60 disabled:opacity-40 transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-phosphor-400"
           >
             {pruning ? (
               <Loader2 className="w-3 h-3 animate-spin" />
@@ -175,7 +206,16 @@ export function SnapshotSummaryCard({
             Prune
           </button>
           {feedback && (
-            <span className="text-2xs text-emerald-400">{feedback}</span>
+            <span
+              role={feedbackFailed ? 'alert' : 'status'}
+              className={
+                feedbackFailed
+                  ? 'text-2xs text-rose-300'
+                  : 'text-2xs text-emerald-300'
+              }
+            >
+              {feedback}
+            </span>
           )}
         </div>
       </div>

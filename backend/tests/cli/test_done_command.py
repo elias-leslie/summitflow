@@ -135,3 +135,133 @@ def test_done_dotted_id_uses_subtask_completion_path() -> None:
         acknowledge_none=False,
     )
     mock_complete_task.assert_not_called()
+
+
+def test_completed_task_without_checkpoint_resumes_incomplete_local_cleanup():
+    from cli.commands import done
+    client = MagicMock()
+    client.get_task.return_value = {"status": "completed", "project_id": "example", "verification_result": {
+        "closeout": {"kind": "local_closeout.v1", "state": "blocked"}}}
+    with (
+        patch.object(done, "get_snapshot_info", return_value=None),
+        patch.object(done, "preflight"),
+        patch.object(done, "STClient", return_value=client),
+        patch.object(done, "complete_task", return_value={"action": "completed"}) as complete,
+        patch.object(done, "_release_task_leases"),
+    ):
+        done._handle_task_completion(client, "task-local", None)
+    complete.assert_called_once_with(client, "task-local", None)
+
+
+@pytest.mark.parametrize("status,basis", [("running", "validated"), ("completed", "retained")])
+def test_quiet_completion_shows_selected_source_and_evidence_without_extra_reads(status, basis, capsys):
+    from app.services.task_closeout import completion_evidence
+    from cli.commands import done
+
+    receipt = {"state": "success", "source_commit": "a" * 40,
+               "acceptance_id": "proof-id", "acceptance_artifact": "/repo/.git/st/acceptance/proof-id.json"}
+    client = MagicMock()
+    client.get_task.return_value = {"status": status, "project_id": "example",
+                                    "verification_result": {"acceptance": receipt}}
+    selected = {"action": "completed", "snapshot_removed": True, "base_branch": "main",
+                **completion_evidence(receipt)}
+    with (
+        patch.object(done, "get_snapshot_info", return_value=None) as snapshot,
+        patch.object(done, "preflight") as gate,
+        patch.object(done, "STClient", return_value=client) as client_factory,
+        patch.object(done, "complete_task", return_value=selected) as complete,
+        patch.object(done, "_release_task_leases"),
+        patch("cli.lib.acceptance.accept_revision", side_effect=AssertionError("No evidence discovery")),
+        patch("cli.lib.acceptance.validate_acceptance_receipt", side_effect=AssertionError("No extra validation")),
+    ):
+        done._handle_task_completion(client, "task-local", None)
+    output = capsys.readouterr().out
+    assert ("already complete (no-op)" if status == "completed" else "completed. Checkpoint removed.") in output
+    assert f"Source: {'a' * 40} ({basis} acceptance)" in output
+    assert "Evidence: proof-id; /repo/.git/st/acceptance/proof-id.json" in output
+    assert "Blockers: none" in output
+    assert "Next action: none" in output
+    client.get_task.assert_called_once_with("task-local")
+    if status == "completed":
+        snapshot.assert_called_once_with("task-local")
+        complete.assert_not_called()
+        gate.assert_not_called()
+        client_factory.assert_not_called()
+    else:
+        snapshot.assert_not_called()
+        complete.assert_called_once_with(client, "task-local", None)
+        gate.assert_called_once_with("task-local", "example", op="done")
+
+
+def test_record_only_completion_does_not_manufacture_source_or_proof(capsys):
+    from app.services.task_closeout import completion_evidence
+    from cli.commands import done
+
+    client = MagicMock()
+    client.get_task.return_value = {"status": "running", "project_id": "example"}
+    with (
+        patch.object(done, "STClient", return_value=client),
+        patch.object(done, "preflight"),
+        patch.object(done, "complete_task", return_value={"action": "completed",
+            **completion_evidence({}, record_only=True)}) as complete,
+        patch.object(done, "_release_task_leases"),
+    ):
+        done._handle_task_completion(client, "task-admin", None, record_only=True)
+    output = capsys.readouterr().out
+    assert "Source: not_applicable (record-only)" in output
+    assert "Evidence: not_applicable (record-only)" in output
+    assert "Blockers: none" in output
+    assert "Next action: none" in output
+    assert "validated" not in output
+    complete.assert_called_once_with(client, "task-admin", None, admin=True)
+
+
+@pytest.mark.parametrize("action", ["pending", "blocked", "skipped"])
+def test_unfinished_closeout_never_prints_complete_summary(action, capsys):
+    from cli.commands import done
+
+    client = MagicMock()
+    client.get_task.return_value = {"status": "running", "project_id": "example"}
+    with (
+        patch.object(done, "STClient", return_value=client),
+        patch.object(done, "preflight"),
+        patch.object(done, "complete_task", return_value={"action": action, "reason": "source changed"}),
+        patch.object(done, "_release_task_leases") as release,
+    ):
+        if action == "pending":
+            done._handle_task_completion(client, "task-local", None)
+        else:
+            with pytest.raises(typer.Exit):
+                done._handle_task_completion(client, "task-local", None)
+    output = capsys.readouterr().out
+    assert "Blockers: none" not in output
+    assert "Next action: none" not in output
+    assert "validated acceptance" not in output
+    release.assert_not_called()
+
+
+def test_failed_task_cli_refuses_before_completion_or_cleanup():
+    from cli.commands import done
+
+    client = MagicMock()
+    client.get_task.return_value = {"status": "failed", "project_id": "example", "verification_result": {
+        "acceptance": {"state": "failed", "source_commit": "a" * 40}}}
+    with (
+        patch.object(done, "STClient", return_value=client),
+        patch.object(done, "get_snapshot_info") as snapshot,
+        patch.object(done, "preflight") as gate,
+        patch.object(done, "complete_task", return_value={"action": "completed"}) as complete,
+        patch.object(done, "_release_task_leases") as release,
+    ):
+        result = runner.invoke(app, ["task-failed"])
+    assert result.exit_code == 1
+    assert "is failed" in result.output
+    assert "st reopen task-failed" in result.output and "st claim task-failed" in result.output
+    assert "completed" not in result.output
+    assert "Blockers: none" not in result.output
+    assert "Next action: none" not in result.output
+    complete.assert_not_called()
+    release.assert_not_called()
+    gate.assert_not_called()
+    snapshot.assert_not_called()
+    client.get_task.assert_called_once_with("task-failed")

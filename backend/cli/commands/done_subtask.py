@@ -6,27 +6,13 @@ committed to main with file-level coordination via `st lease`.
 
 from __future__ import annotations
 
-import contextlib
+from typing import Any
 
 import typer
 
 from ..client import APIError, STClient
-from ..lib.checkpoint import get_snapshot_info
 from ..output import output_error
-from .done_git import is_working_tree_clean
 from .done_validators import parse_db_error
-
-
-def _acknowledge_citations(
-    client: STClient,
-    task_id: str,
-    subtask_id: str,
-    citations_status: str | None,
-) -> None:
-    """Acknowledge citations if not already done."""
-    if not citations_status:
-        with contextlib.suppress(APIError):
-            client.acknowledge_no_citations(task_id, subtask_id)
 
 
 def _close_subtask(
@@ -34,11 +20,20 @@ def _close_subtask(
     task_id: str,
     subtask_id: str,
     project_id: str | None,
+    *, owned_claim: dict[str, Any] | None = None,
 ) -> None:
     """Close subtask via API."""
     del project_id
     try:
-        client.update_subtask(task_id, subtask_id, passes=True)
+        if owned_claim is None:
+            client.update_subtask(task_id, subtask_id, passes=True)
+        else:
+            from app.storage.subtasks import update_subtask_passes
+            if update_subtask_passes(task_id, subtask_id, True, owned_claim=owned_claim) is None:
+                raise ValueError("Prerequisite subtask no longer exists")
+    except ValueError as exc:
+        output_error(str(exc))
+        raise typer.Exit(1) from None
     except APIError as e:
         detail: dict[str, str] = (
             e.detail if isinstance(e.detail, dict) else {"detail": str(e.detail)}
@@ -55,6 +50,7 @@ def auto_close_subtasks(
     client: STClient,
     task_id: str,
     project_id: str | None,
+    *, owned_claim: dict[str, Any] | None = None,
 ) -> None:
     """Auto-close all unpassed subtasks in dependency order."""
     subtasks_resp = client.get_subtasks(task_id)
@@ -86,11 +82,7 @@ def auto_close_subtasks(
             if dependencies - passed_ids:
                 next_remaining.append(subtask)
                 continue
-            citations_status = subtask.get("citations_status") or subtask.get(
-                "citations_acknowledged"
-            )
-            _acknowledge_citations(client, task_id, str(subtask_id), citations_status)
-            _close_subtask(client, task_id, str(subtask_id), project_id)
+            _close_subtask(client, task_id, str(subtask_id), project_id, **({"owned_claim": owned_claim} if owned_claim is not None else {}))
             passed_ids.add(str(subtask_id))
             progressed = True
         if not progressed:
@@ -98,22 +90,6 @@ def auto_close_subtasks(
             output_error(f"Cannot auto-close subtasks; dependency cycle or missing dependency: {blocked}")
             raise typer.Exit(1)
         remaining = next_remaining
-
-
-def _validate_working_tree_clean() -> None:
-    """Ensure working tree has no uncommitted changes."""
-    if not is_working_tree_clean():
-        output_error(
-            "Working tree has uncommitted changes.\nUse task-level closeout: st done <task-id> -m 'message'"
-        )
-        raise typer.Exit(1)
-
-
-def _get_project_id(task_id: str) -> str | None:
-    """Get project_id from snapshot info."""
-    snapshot_info = get_snapshot_info(task_id)
-    raw_pid = snapshot_info.get("project_id") if snapshot_info else None
-    return str(raw_pid) if raw_pid is not None else None
 
 
 def _update_subtask_status(
@@ -151,7 +127,7 @@ def _resolve_citations_for_subtask(
         output_error("Use either --citation or --none, not both.")
         raise typer.Exit(1)
     if not citations and not acknowledge_none:
-        # No-op: API will accept the pass if citations are already on file.
+        # Citations are optional; record them only when supplied.
         return
     from .subtask import _normalize_inline_citations  # local import to avoid cycle
 
@@ -190,9 +166,6 @@ def complete_subtask(
             "action": "noop",
             "merged": False,
         }
-
-    _validate_working_tree_clean()
-    _get_project_id(task_id)
 
     _resolve_citations_for_subtask(client, task_id, subtask_id, citations, acknowledge_none)
     _update_subtask_status(client, task_id, subtask_id)

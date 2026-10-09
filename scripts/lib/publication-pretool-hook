@@ -1,0 +1,9 @@
+#!/usr/bin/env bash
+# Thin adapter: all policy lives in the shared Python guard. Explicit deny on
+# startup failures because native runtimes may continue after hook exit errors.
+set -uo pipefail
+script_path="$(readlink -f "${BASH_SOURCE[0]}")"
+root="$(cd "$(dirname "$script_path")/../.." && pwd)"
+if ! BASH_ENV='' "$root/scripts/lib/command-guard" --publication-hook; then
+  printf '%s\n' '{"hookSpecificOutput":{"hookEventName":"PreToolUse","permissionDecision":"deny","permissionDecisionReason":"Publication guard unavailable; execution refused."}}'
+fi

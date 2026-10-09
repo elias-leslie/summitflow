@@ -34,6 +34,8 @@ interface FilesWorkspaceProps {
   rootHref: string
   emptyTitle: string
   emptyBody: string
+  initialFilePath?: string
+  initialDirectoryPath?: string
 }
 
 interface FileSelection {
@@ -70,13 +72,34 @@ export function FilesWorkspace({
   rootHref,
   emptyTitle,
   emptyBody,
+  initialFilePath,
+  initialDirectoryPath,
 }: FilesWorkspaceProps): React.ReactElement {
   const queryClient = useQueryClient()
   const fileInputRef = useRef<HTMLInputElement>(null)
   const dragState = useRef(false)
 
-  const [browsePath, setBrowsePath] = useState('')
-  const [selectedEntry, setSelectedEntry] = useState<FileSelection | null>(null)
+  const [browsePath, setBrowsePath] = useState(
+    () =>
+      initialDirectoryPath ??
+      (initialFilePath ? getParentDirectory(initialFilePath) : ''),
+  )
+  const [selectedEntry, setSelectedEntry] = useState<FileSelection | null>(
+    () =>
+      initialDirectoryPath !== undefined
+        ? {
+            path: initialDirectoryPath,
+            name: initialDirectoryPath.split('/').pop() || rootLabel,
+            isDirectory: true,
+          }
+        : initialFilePath
+          ? {
+              path: initialFilePath,
+              name: initialFilePath.split('/').pop() || initialFilePath,
+              isDirectory: false,
+            }
+          : null,
+  )
   const [sidebarWidth, setSidebarWidth] = useState(DEFAULT_SIDEBAR_WIDTH)
   const [isUploading, setIsUploading] = useState(false)
 

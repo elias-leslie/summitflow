@@ -31,7 +31,23 @@ def apply_schema_migrations(conn: psycopg.Connection, cur: psycopg.Cursor) -> No
     _backfill_execution_mode(cur)
     _ensure_execution_mode_constraint(cur)
     _create_migration_indexes(cur)
+    _add_fleet_event_columns(cur)
     conn.commit()
+
+
+def _add_fleet_event_columns(cur: psycopg.Cursor) -> None:
+    """Legacy init_schema compatibility; Alembic owns the fleet field constraint."""
+    cur.execute("ALTER TABLE events ADD COLUMN IF NOT EXISTS stream_sequence BIGINT")
+    cur.execute("ALTER TABLE events ADD COLUMN IF NOT EXISTS source_key TEXT")
+    cur.execute("ALTER TABLE events ADD COLUMN IF NOT EXISTS source_digest TEXT")
+    cur.execute(
+        "CREATE UNIQUE INDEX IF NOT EXISTS events_fleet_sequence ON events (trace_id, stream_sequence) "
+        "WHERE stream_sequence IS NOT NULL"
+    )
+    cur.execute(
+        "CREATE UNIQUE INDEX IF NOT EXISTS events_fleet_source_key ON events (trace_id, source_key) "
+        "WHERE stream_sequence IS NOT NULL"
+    )
 
 
 def _create_task_related_tables(cur: psycopg.Cursor) -> None:

@@ -1,9 +1,9 @@
 {
   "date": "2026-09-24",
-  "scope": "24 installed SummitFlow ST extension namespaces; core ST audited separately",
+  "scope": "23 retained SummitFlow ST extension namespaces; core ST audited separately",
   "method": "read-only owner Typer describe_app or argparse parser.format_help; installed manifest plus st namespace --help; no command callbacks",
-  "installed_help_paths": 406,
-  "owner_help_paths": 413,
+  "installed_help_paths": 272,
+  "owner_help_paths": 272,
   "all_root_runtime_help_matches_manifest": true,
   "all_registry_effects_match_manifest": true,
   "namespaces": [
@@ -322,70 +322,6 @@
       "registry_effects_equal_manifest": true,
       "root_runtime_matches_manifest": true,
       "owner_description_sha256": "7530b272a0fc6720d03a380ebfbe7af1ffd2fea78f5e6c8134979e372b806c6f",
-      "usage_comparison": "compared_to_describe_app"
-    },
-    {
-      "namespace": "neri",
-      "owner": "neri",
-      "entrypoint": "backend/.venv/bin/neri-st",
-      "owner_revision": "f2b2612c805c68658ef0f182d38ee678e5478aa5",
-      "owner_dirty_tracked_paths": [],
-      "capture": "extensions/neri.json",
-      "manifest_sha256": "b45a4c12a75e2910aa4d754d2a04a834fdfd48eaf7ef141885c0246a64ba4437",
-      "source_method": "Typer describe_app",
-      "installed_help_paths": 134,
-      "owner_help_paths": 141,
-      "missing_installed_paths": [
-        "report readiness",
-        "research application-model-projection",
-        "research hypotheses",
-        "research hypothesis",
-        "research hypothesis-revision",
-        "research promote-application-source",
-        "research record-hypothesis"
-      ],
-      "extra_installed_paths": [],
-      "text_different_paths": [
-        "execute external-http",
-        "group list",
-        "report",
-        "research"
-      ],
-      "option_name_diffs": [
-        {
-          "path": "execute external-http",
-          "owner_only": [
-            "--full"
-          ],
-          "installed_only": []
-        },
-        {
-          "path": "group list",
-          "owner_only": [
-            "--no-sections",
-            "--sections"
-          ],
-          "installed_only": []
-        }
-      ],
-      "installed_usage_count": 118,
-      "owner_usage_count": 125,
-      "missing_installed_usage_surfaces": [
-        "st.neri.report.readiness",
-        "st.neri.research.application.promote_source",
-        "st.neri.research.application_model.projection",
-        "st.neri.research.hypotheses",
-        "st.neri.research.hypothesis",
-        "st.neri.research.hypothesis.record",
-        "st.neri.research.hypothesis.revision"
-      ],
-      "extra_installed_usage_surfaces": [],
-      "changed_usage_surfaces": [
-        "st.neri.group.list"
-      ],
-      "registry_effects_equal_manifest": true,
-      "root_runtime_matches_manifest": true,
-      "owner_description_sha256": "c21195af018becac15257603be2bace41433f64f3af6cc5d55035c4fcf5fd186",
       "usage_comparison": "compared_to_describe_app"
     },
     {
@@ -764,13 +700,12 @@
   ],
   "pre_repair": true,
   "post_fix": {
-    "metadata_help_paths": 413,
-    "owner_help_paths": 413,
+    "metadata_help_paths": 272,
+    "owner_help_paths": 272,
     "edited_namespaces": [
       "automations",
       "jobs",
       "learn",
-      "neri",
       "slopminer"
     ],
     "unchanged_parent_owned_namespaces": [
@@ -779,8 +714,7 @@
     ],
     "owner_description_exact_help_and_usage": [
       "automations",
-      "learn",
-      "neri"
+      "learn"
     ],
     "owner_description_exact_usage": [
       "jobs"
@@ -790,12 +724,11 @@
     ],
     "resolved_executable_capture_paths": [
       "extensions/automations-resolved-executable.json",
-      "extensions/neri-resolved-executable.json",
       "extensions/learn-resolved-executable.json",
       "extensions/slopminer-resolved-executable.json"
     ],
     "selected_st_help_validation": "extension-post-fix-validation.json",
-    "selected_st_help_paths": 20,
+    "selected_st_help_paths": 9,
     "all_selected_st_help_match_metadata": true,
     "runtime_scope": "local checkout dispatcher; parent owns package/deployment",
     "focused_st_check": {

@@ -10,6 +10,7 @@ from unittest.mock import MagicMock, patch
 
 from app.storage.notifications import (
     _is_duplicate,
+    create_notification,
     create_task_completion_notification,
     create_task_failure_notification,
 )
@@ -62,11 +63,33 @@ class TestIsDuplicate:
         result = _is_duplicate("proj-1", "task_failed", "warning", "task-1")
         assert result  # warning < error → dup
 
-    def test_system_notifications_never_deduped(self) -> None:
-        """System notifications bypass dedup entirely."""
-        # No DB mock needed — should return False before any query
-        result = _is_duplicate("proj-1", "system", "error")
-        assert not result
+    @patch("app.storage.notifications.get_cursor")
+    def test_system_notifications_preserve_existing_cooldown(self, mock_cursor: MagicMock) -> None:
+        cursor = mock_cursor.return_value.__enter__.return_value
+        cursor.fetchone.return_value = None
+        assert not _is_duplicate("proj-1", "system", "error")
+        assert cursor.execute.call_args.args[1] == ("proj-1", "system", None, 30, None, None)
+
+    @patch("app.storage.notifications.get_cursor")
+    def test_optional_key_matches_only_the_same_backup_event(self, mock_cursor: MagicMock) -> None:
+        cursor = mock_cursor.return_value.__enter__.return_value
+        cursor.fetchone.return_value = ("error",)
+        assert _is_duplicate("summitflow", "system", "error", dedupe_key="backup:fixture:restore:failed")
+        sql, params = cursor.execute.call_args.args
+        assert "metadata->>'dedupe_key' = %s" in sql
+        assert params[-2:] == ("backup:fixture:restore:failed", "backup:fixture:restore:failed")
+
+
+@patch("app.storage.notifications._schedule_delivery")
+@patch("app.storage.notifications._insert_notification", return_value={"id": "notification"})
+@patch("app.storage.notifications._is_duplicate", return_value=False)
+def test_optional_dedupe_key_is_saved_without_changing_caller_metadata(duplicate, insert, delivery):
+    metadata = {"backend_id": "fixture"}
+    create_notification("summitflow", "system", "Restore failed", "Review backup readiness.", metadata=metadata, dedupe_key="backup:restore")
+    assert metadata == {"backend_id": "fixture"}
+    duplicate.assert_called_once_with("summitflow", "system", "info", None, dedupe_key="backup:restore")
+    assert insert.call_args.args[-1] == {"backend_id": "fixture", "dedupe_key": "backup:restore"}
+    delivery.assert_called_once_with({"id": "notification"})
 
 
 class TestCreateTaskFailureNotification:

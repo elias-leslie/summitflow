@@ -137,11 +137,16 @@ def extension_context(output: Any = None) -> dict[str, Any]:
 
 
 def _environment(binding: ExtensionBinding, context: dict[str, Any]) -> dict[str, str]:
+    from .lib.task_claims import current_caller_identity
+
     # PATH is inherited only for the explicitly trusted owner's own dependencies;
     # ST itself resolves a pinned project-relative entrypoint, never a PATH plugin.
     inherited = {"HOME", "USER", "LOGNAME", "PATH", "LANG", "LC_ALL", "LC_CTYPE", "TERM", "COLORTERM", "NO_COLOR", "TMPDIR", "XDG_CACHE_HOME", "XDG_CONFIG_HOME", "XDG_DATA_HOME"}
     env = {key: os.environ[key] for key in inherited | set(binding.environment) if key in os.environ}
     env["ST_EXTENSION_CONTEXT"] = json.dumps(context, separators=(",", ":"))
+    # Always compute this ST-owned envelope; an inherited value cannot override
+    # the identity that core task claim, renewal and completion compare.
+    env["ST_CALLER_IDENTITY"] = json.dumps(current_caller_identity(), separators=(",", ":"))
     return env
 
 
@@ -243,9 +248,16 @@ def _help_path(
 def _callback(record: ExtensionRecord):
     def command(ctx: typer.Context) -> None:
         argv = list(ctx.meta["st_extension_argv"])
-        # Never ask the executable for help, even if dependencies are unavailable.
+        # Root and generic extension help remain passive. The browser adapter
+        # negotiates explicit focused core-command help with its owner.
         options = argv[:argv.index("--")] if "--" in argv else argv
-        if "--help" in options or "-h" in options:
+        browser_focused_help = False
+        if (record.status == "unverified" and record.binding and record.binding.policy_adapter == "browser"
+                and ("--help" in options or "-h" in options)):
+            from .commands.browser import focused_help_requested
+
+            browser_focused_help = focused_help_requested(options)
+        if ("--help" in options or "-h" in options) and not browser_focused_help:
             metadata = record.manifest
             if metadata is None:
                 typer.echo(record.diagnostic)

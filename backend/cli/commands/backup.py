@@ -7,6 +7,8 @@ from typing import Annotated, Any
 
 import typer
 
+from app.tasks.backup_utils import _FREQUENCY_DELTAS
+
 from ..client import APIError, STClient
 from ..config import get_config
 from ..lib.usage import usage
@@ -28,6 +30,7 @@ from .backup_formatters import (
     output_task_queued,
 )
 from .backup_infra import app as infra_app
+from .backup_native_host import app as native_host_app
 from .backup_runtime import (
     backup_all_command,
     backup_schedule_command,
@@ -51,6 +54,7 @@ app.add_typer(storage_app, name="storage")
 app.add_typer(infra_app, name="infra")
 app.add_typer(testbed_app, name="testbed")
 app.add_typer(veeam_app, name="veeam")
+app.add_typer(native_host_app, name="host")
 app.add_typer(source_app, name="source")
 
 
@@ -532,10 +536,12 @@ def backup_schedule(
     ctx: typer.Context,
     source_id: Annotated[str, typer.Argument(help="Source ID to configure")],
     enable: Annotated[bool | None, typer.Option("--enable/--disable", help="Enable or disable")] = None,
-    frequency: Annotated[str | None, typer.Option("--frequency", "-f", help="daily, weekly, monthly")] = None,
+    frequency: Annotated[str | None, typer.Option("--frequency", "-f", help=", ".join(_FREQUENCY_DELTAS))] = None,
     retention_days: Annotated[int | None, typer.Option("--retention-days", "-r", help="Days to retain backups")] = None,
 ) -> None:
     """View or configure backup schedule for a source."""
+    if frequency is not None and frequency not in _FREQUENCY_DELTAS:
+        raise typer.BadParameter(f"Use {', '.join(_FREQUENCY_DELTAS)}.", param_hint="--frequency")
     backup_schedule_command(ctx, _get_source_api(), source_id, enable, frequency, retention_days)
 
 

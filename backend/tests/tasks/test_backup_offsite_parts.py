@@ -81,6 +81,25 @@ def replicate(
     )
 
 
+def test_parts_admit_bounded_peak_instead_of_two_complete_archives(drive, monkeypatch, backup_job_scratch):
+    import shutil
+
+    from app.tasks import backup_native_offsite as offsite
+    from app.utils import transient_scratch as scratch
+
+    part_size = 8192
+    drive["archive"].write_bytes(b"ciphertext" * part_size)
+    monkeypatch.setattr(offsite, "PART_SIZE_BYTES", part_size)
+    usage = shutil.disk_usage(backup_job_scratch)
+    monkeypatch.setenv("SF_HOST_RETENTION_PRESSURE_MIN_FREE_GB", "25")
+    monkeypatch.setattr(scratch.shutil, "disk_usage", lambda _path: usage._replace(free=25 * 1024**3 + 2 * part_size))
+    result = replicate(drive)
+    assert result["status"] == "verified"
+    assert result["part_count"] == 10
+    assert max(drive["staged_part_sizes"]) <= 2 * part_size
+    assert not list(backup_job_scratch.glob("st-backups-*/*"))
+
+
 @pytest.mark.parametrize("failure_part", [None, ".part000001", ".part000002"])
 def test_progress_only_follows_verified_parts(drive: dict[str, Any], failure_part: str | None) -> None:
     drive["corrupt_download"] = failure_part

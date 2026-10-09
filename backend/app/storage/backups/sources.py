@@ -109,6 +109,17 @@ def update_source(source_id: str, **fields: Any) -> dict[str, Any] | None:
     if not updates:
         return get_source(source_id)
 
+    if "frequency" in fields:
+        from ...tasks.backup_utils import _FREQUENCY_DELTAS
+
+        frequency = fields["frequency"]
+        if frequency not in _FREQUENCY_DELTAS:
+            raise ValueError("Invalid backup frequency")
+        # Recalculate even when a previous daily/monthly due date is persisted.
+        # A never-run source remains immediately due; overdue work stays due.
+        updates.append("next_run_at = last_run_at + %s::interval")
+        params.append(_FREQUENCY_DELTAS[frequency])
+
     updates.append("updated_at = NOW()")
     params.append(source_id)
 

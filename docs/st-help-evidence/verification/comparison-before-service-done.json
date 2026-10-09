@@ -7,61 +7,25 @@
   "added_extension_namespaces": [],
   "changed_extension_bindings": [],
   "removed_metadata_routes": [],
-  "added_metadata_routes": [
-    [
-      "neri",
-      "report",
-      "readiness"
-    ],
-    [
-      "neri",
-      "research",
-      "application-model-projection"
-    ],
-    [
-      "neri",
-      "research",
-      "hypotheses"
-    ],
-    [
-      "neri",
-      "research",
-      "hypothesis"
-    ],
-    [
-      "neri",
-      "research",
-      "hypothesis-revision"
-    ],
-    [
-      "neri",
-      "research",
-      "promote-application-source"
-    ],
-    [
-      "neri",
-      "research",
-      "record-hypothesis"
-    ]
-  ],
+  "added_metadata_routes": [],
   "metadata_missing_parents": [],
   "failed_or_empty_help": [],
   "metadata_output_mismatch": [],
   "costs": {
     "before": {
       "click": {
-        "routes": 244,
-        "bytes": 105874,
-        "estimated_tokens": 26562,
-        "median_estimated_tokens": 75.0,
+        "routes": 242,
+        "bytes": 104729,
+        "estimated_tokens": 26275,
+        "median_estimated_tokens": 74.5,
         "p90_estimated_tokens": 213
       },
       "extension_metadata": {
-        "routes": 406,
-        "bytes": 152254,
-        "estimated_tokens": 38222,
-        "median_estimated_tokens": 61.0,
-        "p90_estimated_tokens": 201
+        "routes": 272,
+        "bytes": 118901,
+        "estimated_tokens": 29836,
+        "median_estimated_tokens": 69.5,
+        "p90_estimated_tokens": 226
       },
       "manual_help": {
         "routes": 15,
@@ -73,24 +37,24 @@
     },
     "after": {
       "click": {
-        "routes": 244,
-        "bytes": 110789,
-        "estimated_tokens": 27791,
-        "median_estimated_tokens": 77.0,
+        "routes": 242,
+        "bytes": 109813,
+        "estimated_tokens": 27547,
+        "median_estimated_tokens": 77,
         "p90_estimated_tokens": 218
       },
       "extension_metadata": {
-        "routes": 413,
-        "bytes": 158849,
-        "estimated_tokens": 39873,
-        "median_estimated_tokens": 62,
-        "p90_estimated_tokens": 203
+        "routes": 272,
+        "bytes": 123726,
+        "estimated_tokens": 31042,
+        "median_estimated_tokens": 71,
+        "p90_estimated_tokens": 231
       },
       "manual_help": {
         "routes": 24,
         "bytes": 4053,
         "estimated_tokens": 1023,
-        "median_estimated_tokens": 26.0,
+        "median_estimated_tokens": 26,
         "p90_estimated_tokens": 65
       }
     }
@@ -153,21 +117,6 @@
     },
     {
       "path": [
-        "neri"
-      ],
-      "before_estimated_tokens": 335,
-      "after_estimated_tokens": 335
-    },
-    {
-      "path": [
-        "neri",
-        "research"
-      ],
-      "before_estimated_tokens": 186,
-      "after_estimated_tokens": 218
-    },
-    {
-      "path": [
         "jobs"
       ],
       "before_estimated_tokens": 474,
@@ -187,13 +136,6 @@
       ],
       "before_estimated_tokens": 741,
       "after_estimated_tokens": 741
-    },
-    {
-      "path": [
-        "service"
-      ],
-      "before_estimated_tokens": 211,
-      "after_estimated_tokens": 211
     }
   ]
 }

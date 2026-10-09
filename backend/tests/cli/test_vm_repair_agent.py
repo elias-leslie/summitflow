@@ -23,6 +23,7 @@ def test_repair_agent_checks_guest_name_before_restart(monkeypatch):
     assert script.index("hostname -s") < script.index("systemctl restart qemu-guest-agent")
     assert "test-linux" in script
     assert "sudo -n" in script
+    assert "StrictHostKeyChecking=yes" in args
 
 
 def test_repair_agent_rejects_windows_before_ssh(monkeypatch):
@@ -60,3 +61,19 @@ def test_windows_ssh_without_nic_identity_never_connects(monkeypatch):
     result = CliRunner().invoke(vm.app, ["exec-ssh", "110", "hostname", "--ssh-target", "operator@10.0.4.29"])
     assert result.exit_code != 0
     assert "NIC identity" in result.output
+
+
+def test_recovery_uses_explicit_trusted_host_file_and_private_identity_only_as_paths(monkeypatch):
+    monkeypatch.setattr(vm, "_client", lambda: SimpleNamespace(config_get=lambda _: {"name": "test-linux", "ostype": "l26"}))
+    calls = []
+    def run(args, **kwargs):
+        calls.append((args, kwargs))
+        return SimpleNamespace(returncode=0, stdout="verified\n", stderr="")
+    monkeypatch.setattr("subprocess.run", run)
+    result = CliRunner().invoke(vm.app, ["exec-ssh", "112", "true", "--ssh-target", "operator@10.0.4.50", "--identity-file", "/approved/identity", "--known-hosts-file", "/approved/known_hosts"])
+    assert result.exit_code == 0, result.output
+    args, kwargs = calls[0]
+    assert "StrictHostKeyChecking=yes" in args
+    assert "UserKnownHostsFile=/approved/known_hosts" in args
+    assert args[args.index("-i") + 1] == "/approved/identity"
+    assert "/approved/identity" not in kwargs["input"]

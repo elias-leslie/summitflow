@@ -12,6 +12,7 @@ from typing import Any
 from psycopg.types.json import Jsonb
 
 from ..connection import get_connection
+from .claims import _preserved_verification_sql
 from .core import TASK_COLUMNS, _row_to_dict, canonicalize_task_id
 
 # Valid task status transitions (simplified)
@@ -38,13 +39,7 @@ _UPDATE_SQL = f"""
         END,
         error_message = CASE WHEN %s IN ('pending','running','paused') THEN NULL WHEN %s IN ('completed','failed','cancelled') THEN %s ELSE error_message END,
         verification_result = CASE WHEN %s = 'completed' THEN verification_result ELSE
-            NULLIF(jsonb_strip_nulls(jsonb_build_object(
-                'acceptance', CASE WHEN verification_result ? 'acceptance' THEN
-                    verification_result->'acceptance' ||
-                    '{{"state":"stale","reason":"task_lifecycle_changed_requires_acceptance"}}'::jsonb END,
-                'deployment', verification_result->'deployment',
-                'live_validation', verification_result->'live_validation'
-            )), '{{}}'::jsonb) END,
+            {_preserved_verification_sql()} END,
         current_phase = CASE WHEN %s = 'completed' THEN 'complete' ELSE current_phase END,
         claimed_by = CASE WHEN %s IN ('completed','failed','cancelled','paused') THEN NULL ELSE claimed_by END,
         claimed_at = CASE WHEN %s IN ('completed','failed','cancelled','paused') THEN NULL ELSE claimed_at END,
@@ -75,30 +70,57 @@ def _execute_status_update(
     *,
     validate_transition: bool,
     expected_closeout_request_id: str | None = None,
+    expected_worker: str | None = None, expected_claimed_at: Any = None,
+    expected_project_id: str | None = None,
 ) -> dict[str, Any] | None:
     """Validate and update status atomically under a row lock."""
     resolved_task_id = canonicalize_task_id(task_id)
     with get_connection() as conn, conn.cursor() as cur:
+        if expected_worker is not None:
+            if not expected_claimed_at or not expected_project_id or status != "completed":
+                raise ValueError("Owned completion requires an exact project claim")
+            cur.execute("""SELECT id FROM tasks WHERE id = %s AND project_id = %s
+                           AND status = 'running' AND claimed_by = %s
+                           AND claimed_at = %s::timestamptz AND lock_expires_at > NOW() FOR UPDATE""",
+                        (resolved_task_id, expected_project_id, expected_worker, expected_claimed_at))
+            if not cur.fetchone():
+                raise ValueError("Task claim changed before record-only completion; checkpoint preserved")
+            cur.execute("SELECT subtask_id FROM task_subtasks WHERE task_id = %s AND passes = FALSE", (resolved_task_id,))
+            if incomplete := cur.fetchall():
+                raise ValueError(f"Cannot complete task with incomplete subtasks: {[row[0] for row in incomplete]}")
+        if status == "cancelled":
+            from .publication_repair import unresolved_repair
+            cur.execute("SELECT verification_result, labels FROM tasks WHERE id = %s FOR UPDATE", (resolved_task_id,))
+            evidence = cur.fetchone()
+            if evidence and unresolved_repair({"verification_result": evidence[0], "labels": evidence[1]}):
+                raise ValueError("Cannot cancel unresolved repair findings; resolve them with evidence first")
         if status == "completed":
             from app.services.task_acceptance import completion_gates
 
             cur.execute(
-                """SELECT t.verification_result, ts.context, t.commits FROM tasks t
+                """SELECT t.verification_result, ts.context, t.commits, t.project_id, t.labels FROM tasks t
                    LEFT JOIN task_spirit ts ON ts.task_id = t.id
                    WHERE t.id = %s FOR UPDATE OF t""", (resolved_task_id,),
             )
             evidence_row = cur.fetchone()
             if evidence_row:
                 gates = completion_gates({"verification_result": evidence_row[0], "context": evidence_row[1],
-                                          "commits": evidence_row[2]})
+                                          "commits": evidence_row[2], "id": resolved_task_id, "project_id": evidence_row[3],
+                                          "labels": evidence_row[4]}, connection=conn)
                 if gates:
                     raise ValueError(f"Task acceptance remains incomplete: {gates}")
         if expected_closeout_request_id is not None:
-            cur.execute("SELECT status, verification_result FROM tasks WHERE id = %s FOR UPDATE", (resolved_task_id,))
+            cur.execute("SELECT status, verification_result, project_id FROM tasks WHERE id = %s FOR UPDATE", (resolved_task_id,))
             current = cur.fetchone()
-            intent = ((current[1] or {}).get("closeout") or {}) if current else {}
+            verification = (current[1] or {}) if current else {}
+            intent = verification.get("closeout") or {}
+            acceptance = verification.get("acceptance") or {}
             if (not current or current[0] not in {"pending", "running", "completed"}
-                    or status != "completed" or intent.get("request_id") != expected_closeout_request_id):
+                    or status != "completed" or intent.get("request_id") != expected_closeout_request_id
+                    or intent.get("kind") != "local_closeout.v1"
+                    or intent.get("project_id") != current[2]
+                    or acceptance.get("state") != "success"
+                    or acceptance.get("source_commit") != intent.get("source_sha")):
                 raise ValueError("Completion request was superseded by a task lifecycle change")
         if validate_transition:
             cur.execute(
@@ -138,6 +160,8 @@ def update_task_status(
     error_message: str | None = None,
     validate_transition: bool = True,
     *, expected_closeout_request_id: str | None = None,
+    expected_worker: str | None = None, expected_claimed_at: Any = None,
+    expected_project_id: str | None = None,
 ) -> dict[str, Any] | None:
     """Update task status with timestamp handling and transition validation.
 
@@ -161,6 +185,8 @@ def update_task_status(
         error_message,
         validate_transition=validate_transition,
         expected_closeout_request_id=expected_closeout_request_id,
+        expected_worker=expected_worker, expected_claimed_at=expected_claimed_at,
+        expected_project_id=expected_project_id,
     )
 
 

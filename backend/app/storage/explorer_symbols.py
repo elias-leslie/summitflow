@@ -5,9 +5,15 @@ from __future__ import annotations
 from collections import defaultdict
 from collections.abc import Mapping, Sequence
 from datetime import UTC, datetime
-from pathlib import PurePosixPath
 from typing import Any
 
+from code_intelligence.search.search_checkout_paths import (
+    SEARCH_ARTIFACT_PATH_REGEX,
+    SEARCH_UNSEARCHABLE_PATH_REGEX,
+    is_code_search_path,
+    is_search_artifact_path,
+    normalize_search_path,
+)
 from psycopg import sql
 
 from app.services.explorer.redundancy import (
@@ -23,16 +29,11 @@ from ._sql import join_static_sql
 from .connection import get_connection, get_cursor
 from .explorer_helpers import row_to_entry, to_iso_string
 
-_SECRET_PATH_REGEX = r"(^|/)(\.env[^/]*|credentials\.json|secrets\.json|credentials|secrets)(/|$)|\.(pem|key)$"
+_SECRET_PATH_REGEX = SEARCH_UNSEARCHABLE_PATH_REGEX
 
 
 def _safe_symbol_path(path: str) -> bool:
-    return not any(
-        part.lower() in {"credentials", "secrets", "credentials.json", "secrets.json"}
-        or part.lower().startswith(".env")
-        or part.lower().endswith((".pem", ".key"))
-        for part in PurePosixPath(path).parts
-    )
+    return is_code_search_path(path, explicit_file=True)
 
 
 is_safe_symbol_path = _safe_symbol_path
@@ -69,7 +70,7 @@ def replace_file_symbols(
 ) -> int:
     """Replace all symbols for a file with a fresh snapshot."""
     now = datetime.now(UTC)
-    if not _safe_symbol_path(file_path):
+    if not is_code_search_path(file_path):
         symbols = []
 
     with get_connection() as conn, conn.cursor() as cur:
@@ -123,7 +124,7 @@ def replace_file_symbols(
 
 def list_symbols_for_file(project_id: str, file_path: str) -> list[dict[str, Any]]:
     """List symbols for a file ordered by source position."""
-    if not _safe_symbol_path(file_path):
+    if not is_code_search_path(file_path):
         return []
     with get_cursor() as cur:
         cur.execute(
@@ -132,10 +133,10 @@ def list_symbols_for_file(project_id: str, file_path: str) -> list[dict[str, Any
                    signature, language, start_line, end_line, byte_offset, byte_length,
                    content_hash, summary, keywords, created_at, updated_at
             FROM explorer_symbols
-            WHERE project_id = %s AND file_path = %s AND file_path !~* %s
+            WHERE project_id = %s AND file_path = %s AND file_path !~* %s AND file_path !~ %s
             ORDER BY start_line, end_line, name
             """,
-            (project_id, file_path, _SECRET_PATH_REGEX),
+            (project_id, file_path, _SECRET_PATH_REGEX, SEARCH_ARTIFACT_PATH_REGEX),
         )
         return [_row_to_symbol(row) for row in cur.fetchall()]
 
@@ -146,7 +147,7 @@ def resolve_symbol_file_paths(project_id: str, fragment: str, *, limit: int = 5)
     Matches whole path segments only: `ranking.py` does not match
     `_precision_ranking.py`.
     """
-    if not _safe_symbol_path(fragment):
+    if not is_code_search_path(fragment):
         return []
     escaped = fragment.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
     with get_cursor() as cur:
@@ -155,11 +156,11 @@ def resolve_symbol_file_paths(project_id: str, fragment: str, *, limit: int = 5)
             SELECT DISTINCT file_path
             FROM explorer_symbols
             WHERE project_id = %s AND (file_path = %s OR file_path LIKE %s)
-              AND file_path !~* %s
+              AND file_path !~* %s AND file_path !~ %s
             ORDER BY file_path
             LIMIT %s
             """,
-            (project_id, fragment, f"%/{escaped}", _SECRET_PATH_REGEX, limit),
+            (project_id, fragment, f"%/{escaped}", _SECRET_PATH_REGEX, SEARCH_ARTIFACT_PATH_REGEX, limit),
         )
         return [row[0] for row in cur.fetchall()]
 
@@ -173,9 +174,9 @@ def get_symbol(project_id: str, symbol_id: str) -> dict[str, Any] | None:
                    signature, language, start_line, end_line, byte_offset, byte_length,
                    content_hash, summary, keywords, created_at, updated_at
             FROM explorer_symbols
-            WHERE project_id = %s AND symbol_id = %s AND file_path !~* %s
+            WHERE project_id = %s AND symbol_id = %s AND file_path !~* %s AND file_path !~ %s
             """,
-            (project_id, symbol_id, _SECRET_PATH_REGEX),
+            (project_id, symbol_id, _SECRET_PATH_REGEX, SEARCH_ARTIFACT_PATH_REGEX),
         )
         row = cur.fetchone()
         return _row_to_symbol(row) if row else None
@@ -188,9 +189,9 @@ def get_symbol_stats(project_id: str) -> dict[str, Any]:
             """
             SELECT COUNT(*), MAX(updated_at)
             FROM explorer_symbols
-            WHERE project_id = %s
+            WHERE project_id = %s AND file_path !~* %s AND file_path !~ %s
             """,
-            (project_id,),
+            (project_id, _SECRET_PATH_REGEX, SEARCH_ARTIFACT_PATH_REGEX),
         )
         row = cur.fetchone()
     count = row[0] if row else 0
@@ -223,17 +224,19 @@ def list_related_entries_for_file(project_id: str, file_path: str) -> list[dict[
 
 def summarize_symbols_for_file(project_id: str, file_path: str, *, limit: int = 5) -> list[dict[str, Any]]:
     """Return a concise top-symbol summary for a file."""
+    if not is_code_search_path(file_path):
+        return []
     capped = max(1, limit)
     with get_cursor() as cur:
         cur.execute(
             """
             SELECT symbol_id, name, kind, qualified_name, start_line, end_line
             FROM explorer_symbols
-            WHERE project_id = %s AND file_path = %s
+            WHERE project_id = %s AND file_path = %s AND file_path !~* %s AND file_path !~ %s
             ORDER BY start_line, end_line, name
             LIMIT %s
             """,
-            (project_id, file_path, capped),
+            (project_id, file_path, _SECRET_PATH_REGEX, SEARCH_ARTIFACT_PATH_REGEX, capped),
         )
         return [
             {
@@ -246,6 +249,11 @@ def summarize_symbols_for_file(project_id: str, file_path: str, *, limit: int = 
             }
             for row in cur.fetchall()
         ]
+
+
+def _escape_like(path: str) -> str:
+    """Keep user path segments literal within parameterized SQL LIKE."""
+    return path.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
 
 
 def search_symbols(
@@ -266,13 +274,13 @@ def search_symbols(
     query_value = query.strip()
     exact = query_value.lower()
     fuzzy = f"%{query_value}%"
-    normalized_prefix = str(path_prefix or "").strip().replace("\\", "/")
-    if normalized_prefix.startswith("./"):
-        normalized_prefix = normalized_prefix[2:]
-    normalized_prefix = normalized_prefix.strip("/")
+    normalized_prefix = normalize_search_path(None, path_prefix)
 
     conditions = ["project_id = %s", "file_path !~* %s"]
     params: list[Any] = [project_id, _SECRET_PATH_REGEX]
+    if not normalized_prefix or not is_search_artifact_path(normalized_prefix):
+        conditions.append("file_path !~ %s")
+        params.append(SEARCH_ARTIFACT_PATH_REGEX)
     if language:
         conditions.append("language = %s")
         params.append(language)
@@ -281,7 +289,7 @@ def search_symbols(
         params.append(kind)
     if normalized_prefix:
         conditions.append("(file_path = %s OR file_path LIKE %s)")
-        params.extend([normalized_prefix, f"{normalized_prefix}/%"])
+        params.extend([normalized_prefix, f"{_escape_like(normalized_prefix)}/%"])
 
     conditions.append(
         "("
@@ -338,9 +346,12 @@ def search_symbols_page(
         return {"count": 0, "items": [], "truncated": False, "next_offset": None}
     query_value = query.strip()
     fuzzy = f"%{query_value}%"
-    normalized_prefix = str(path_prefix or "").strip().replace("\\", "/").removeprefix("./").strip("/")
+    normalized_prefix = normalize_search_path(None, path_prefix)
     conditions = ["project_id = %s", "file_path !~* %s"]
     params: list[Any] = [project_id, _SECRET_PATH_REGEX]
+    if not normalized_prefix or not is_search_artifact_path(normalized_prefix):
+        conditions.append("file_path !~ %s")
+        params.append(SEARCH_ARTIFACT_PATH_REGEX)
     if language:
         conditions.append("language = %s")
         params.append(language)
@@ -349,7 +360,7 @@ def search_symbols_page(
         params.append(kind)
     if normalized_prefix:
         conditions.append("(file_path = %s OR file_path LIKE %s)")
-        params.extend([normalized_prefix, f"{normalized_prefix}/%"])
+        params.extend([normalized_prefix, f"{_escape_like(normalized_prefix)}/%"])
     conditions.append(
         "(LOWER(name) = %s OR LOWER(symbol_id) = %s OR LOWER(name) LIKE LOWER(%s) "
         "OR LOWER(qualified_name) LIKE LOWER(%s) OR LOWER(file_path) LIKE LOWER(%s) "

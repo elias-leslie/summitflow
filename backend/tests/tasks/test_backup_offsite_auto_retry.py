@@ -1,4 +1,4 @@
-"""The existing drain catches up retained copies/publication after an outage."""
+"""The existing drain catches up retained copies after an outage."""
 
 from __future__ import annotations
 
@@ -6,7 +6,7 @@ import hashlib
 import sys
 from contextlib import contextmanager, nullcontext
 from pathlib import Path
-from types import ModuleType, SimpleNamespace
+from types import ModuleType
 from typing import Any
 from unittest.mock import Mock
 
@@ -30,15 +30,11 @@ def queue(monkeypatch: pytest.MonkeyPatch, tmp_path: Path):
         monkeypatch.delenv(key, raising=False)
     state: dict[str, Any] = {"offsite": [], "legacy": [], "publication": [], "sync": [], "publish": [],
                              "archive_calls": [], "busy": set(), "outcomes": {}, "publish_outcomes": {},
-                             "settings": SimpleNamespace(backup_publish_before_backup=False), "merges": []}
-    monkeypatch.setattr(drain, "get_settings", lambda: state["settings"])
+                             "merges": []}
     monkeypatch.setattr(drain.backup_store, "get_pending_upload_backups", lambda: state["legacy"])
     monkeypatch.setattr(drain.backup_store, "get_pending_native_offsite_backups", lambda: state["offsite"])
-    monkeypatch.setattr(drain.backup_store, "get_pending_backup_publications", lambda: state["publication"])
     monkeypatch.setattr(drain, "build_storage_env", lambda *_args: {"BACKUP_OFFSITE_GIO_URI": "google-drive://fixture/root"})
     monkeypatch.setattr(drain, "has_active_backup_lease", lambda source: source in state["busy"])
-    monkeypatch.setattr(drain, "acquire_backup_lock", lambda source: None if source in state["busy"] else "lease")
-    monkeypatch.setattr(drain, "maintain_backup_lock", lambda *_args: nullcontext())
     monkeypatch.setattr(drain.backup_store, "get_source", lambda source: {
         "id": source, "path": str(tmp_path), "enabled": True, "source_type": "project",
     })
@@ -58,7 +54,7 @@ def queue(monkeypatch: pytest.MonkeyPatch, tmp_path: Path):
             raise outcome
         return {"verification_json": {"offsite": {"status": outcome, "error": "offline"}}}
 
-    def publish(source):
+    def publish(source, *, retained=None):
         state["publish"].append(source["id"])
         outcome = state["publish_outcomes"].get(source["id"], "published")
         if isinstance(outcome, Exception):
@@ -145,15 +141,13 @@ def test_unconfigured_or_disabled_route_does_not_erase_existing_failure(queue, m
 
 def test_dry_run_is_read_only_for_all_queues(queue):
     drain, state = queue
-    state["settings"].backup_publish_before_backup = True
     retained = record(publication="failed")
     state["offsite"] = [retained]
     state["publication"] = [retained]
     result = drain.drain_pending_backups(dry_run=True)
     assert result["status"] == "dry_run"
-    assert result["pending_before"] == 2
+    assert result["pending_before"] == 1
     assert result["offsite_backups"][0]["id"] == "archive-1"
-    assert result["publication_backups"][0]["id"] == "archive-1"
     assert not state["sync"] and not state["publish"] and not state["merges"]
     assert state["archive_calls"] == [True]
 
@@ -237,75 +231,21 @@ def test_auto_retry_enters_existing_lease_and_checksum_guard(queue, tmp_path, mo
         assert archive.read_bytes() == b"exact retained ciphertext"
 
 
-def test_publication_retry_is_gated_by_existing_setting(queue):
+def test_retained_publication_is_never_retried_or_counted_as_backup_work(queue):
     drain, state = queue
-    state["publication"] = [record(offsite="verified", publication="failed")]
-    assert drain.drain_pending_backups()["publication_pending_before"] == 0
-    assert not state["publish"]
-
-
-@pytest.mark.parametrize("outcome", ["published", "up_to_date", "skipped"])
-def test_failed_publication_with_completed_local_point_retries_without_capture(queue, outcome):
-    drain, state = queue
-    state["settings"].backup_publish_before_backup = True
     retained = record(offsite="verified", publication="failed")
     state["publication"] = [retained]
-    state["publish_outcomes"]["source"] = outcome
     result = drain.drain_pending_backups()
-    assert state["publish"] == ["source"]
-    assert not state["sync"]
-    assert state["archive_calls"] == [True]
-    assert retained["status"] == "completed"
-    assert result["publication_completed"] == 1
-    assert result["publication_remaining"] == 0
-    assert state["merges"][0][0] == retained["id"]
-    assert state["merges"][0][1]["publication"]["status"] == outcome
+    assert result["remaining"] == 0
+    assert not state["publish"] and not state["merges"]
+    assert retained["verification_json"]["publication"]["status"] == "failed"
 
 
-def test_publication_failure_does_not_block_drive_or_another_publication(queue):
+def test_offsite_copy_retries_while_publication_history_stays_unchanged(queue):
     drain, state = queue
-    state["settings"].backup_publish_before_backup = True
-    state["publication"] = [record("first", "first-source", publication="failed"),
-                            record("second", "second-source", publication="pending")]
-    state["offsite"] = [state["publication"][0]]
-    state["publish_outcomes"]["first-source"] = "failed"
+    retained = record(offsite="failed", publication="pending")
+    state["offsite"] = state["publication"] = [retained]
     result = drain.drain_pending_backups()
-    assert state["publish"] == ["first-source", "second-source"]
-    assert state["sync"] == ["first"]
-    assert result["publication_completed"] == 1
-    assert result["publication_failed"] == result["publication_remaining"] == 1
     assert result["offsite_verified"] == 1
-    assert result["status"] == "partial"
-
-
-def test_publication_busy_source_is_skipped_without_stealing_lease(queue):
-    drain, state = queue
-    state["settings"].backup_publish_before_backup = True
-    state["publication"] = [record(offsite="verified", publication="failed")]
-    state["busy"].add("source")
-    result = drain.drain_pending_backups()
-    assert result["publication_skipped"] == 1
     assert not state["publish"] and not state["merges"]
-
-
-def test_unexpected_publication_error_preserves_failure_without_exposing_diagnostics(queue):
-    drain, state = queue
-    state["settings"].backup_publish_before_backup = True
-    state["publication"] = [record(offsite="verified", publication="failed")]
-    state["publish_outcomes"]["source"] = RuntimeError("https://private-token@remote")
-    result = drain.drain_pending_backups()
-    assert result["publication_failed"] == 1
-    assert "private-token" not in str(result)
-    assert not state["merges"]
-
-
-def test_newer_publication_evidence_supersedes_selected_failure_under_lease(queue, monkeypatch):
-    drain, state = queue
-    state["settings"].backup_publish_before_backup = True
-    state["publication"] = [record(offsite="verified", publication="failed")]
-    latest = record("newer", offsite="verified", publication="published")
-    monkeypatch.setattr(drain.backup_store, "get_latest_backup", lambda **_kwargs: latest)
-    result = drain.drain_pending_backups()
-    assert result["publication_skipped"] == 1
-    assert result["publication_remaining"] == 0
-    assert not state["publish"] and not state["merges"]
+    assert retained["verification_json"]["publication"]["status"] == "pending"

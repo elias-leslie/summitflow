@@ -22,6 +22,11 @@ interface BackupScheduleConfigProps {
 }
 
 const FREQUENCY_OPTIONS = [
+  {
+    value: 'four_hourly',
+    label: 'Every 4 hours',
+    description: 'Runs throughout the day',
+  },
   { value: 'daily', label: 'Daily', description: 'Backup every day' },
   { value: 'weekly', label: 'Weekly', description: 'Backup once a week' },
   { value: 'monthly', label: 'Monthly', description: 'Backup once a month' },

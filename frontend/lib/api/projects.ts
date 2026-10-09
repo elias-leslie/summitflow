@@ -10,6 +10,7 @@ import type {
   Project,
   ProjectCreate,
   ProjectHealth,
+  ProjectReadme,
   ProjectsWithStatsResponse,
   ProjectUpdate,
   QualityCheckResultsResponse,
@@ -47,6 +48,28 @@ export async function fetchProject(id: string): Promise<Project> {
   return fetchWithErrorHandling(`/api/projects/${id}`, {
     errorMessage: 'Failed to fetch project',
   })
+}
+
+export async function fetchProjectReadme(id: string): Promise<ProjectReadme> {
+  const data = await fetchWithErrorHandling<unknown>(
+    `/api/projects/${id}/readme`,
+    { errorMessage: 'Failed to load README.md' },
+  )
+  if (!data || typeof data !== 'object') {
+    throw new Error('Invalid README response')
+  }
+  const readme = data as Record<string, unknown>
+  if (readme.project_id !== id) throw new Error('Invalid README response')
+  if (readme.status === 'available' && typeof readme.content === 'string') {
+    return { project_id: id, status: 'available', content: readme.content }
+  }
+  if (
+    (readme.status === 'missing' || readme.status === 'unavailable') &&
+    readme.content === null
+  ) {
+    return { project_id: id, status: readme.status, content: null }
+  }
+  throw new Error('Invalid README response')
 }
 
 export async function createProject(project: ProjectCreate): Promise<Project> {

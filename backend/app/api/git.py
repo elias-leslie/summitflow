@@ -16,7 +16,6 @@ from ..utils.git_helpers import (
     get_managed_repos,
     get_repo_status,
     pull_repository,
-    push_repository,
     sync_repository,
 )
 from .git_helpers.checkpoint_helpers import collect_checkpoints
@@ -46,6 +45,7 @@ from .models.git_models import (
     GitStatusResponse,
     GitSyncResponse,
     ProjectDashboardResponse,
+    ProjectPublishRequest,
     RecentCommitsResponse,
     RecentMergesResponse,
     RepoStatus,
@@ -97,7 +97,7 @@ async def get_cleanup_status() -> dict[str, object]:
 )
 async def get_project_git_status(project_id: str) -> GitStatusResponse:
     """Get git status for a specific project's repository."""
-    repo_path = get_project_root(project_id)
+    repo_path = get_project_root_with_fallback(project_id)
     repo_status = get_repo_status(repo_path, project_id=project_id)
     if not repo_status:
         return GitStatusResponse(repositories=[], total=0)
@@ -172,15 +172,14 @@ async def pull_project_repository(project_id: str) -> GitSyncResponse:
     return GitSyncResponse(results=[result], **build_sync_response_from_result(result))
 
 
-@router.post(
-    "/projects/{project_id}/git/push",
-    response_model=GitSyncResponse,
-    tags=["git"],
-)
-async def push_project_repository(project_id: str) -> GitSyncResponse:
-    """Push changes for a specific project's repository."""
-    result = push_repository(get_project_root(project_id))
-    return GitSyncResponse(results=[result], **build_sync_response_from_result(result))
+@router.post("/projects/{project_id}/git/push", tags=["git"])
+async def push_project_repository(project_id: str) -> dict[str, object]:
+    """Legacy raw push is retired; exact accepted-source intent is required."""
+    raise HTTPException(status_code=410, detail={
+        "reason": "exact_accepted_source_required",
+        "message": "Use the publish endpoint with a complete accepted source_sha.",
+        "endpoint": f"/api/projects/{project_id}/git/publish",
+    })
 
 
 @router.post(
@@ -197,9 +196,11 @@ async def fetch_project_repository(project_id: str) -> GitSyncResponse:
 
 
 @router.post("/projects/{project_id}/git/publish", tags=["git"])
-async def publish_project_changes(project_id: str) -> dict[str, object]:
-    """Run st commit for a project and publish if checks pass."""
-    return await execute_project_publish(get_project_root_with_fallback(project_id))
+async def publish_project_changes(project_id: str, request: ProjectPublishRequest) -> dict[str, object]:
+    """Explicitly publish an exact accepted source without committing local work."""
+    if request.authorized_workflows:
+        return await execute_project_publish(project_id, request.source_sha, authorized_workflows=tuple(request.authorized_workflows))
+    return await execute_project_publish(project_id, request.source_sha)
 
 
 # --- Conflict Endpoints ---
@@ -307,3 +308,28 @@ async def get_project_dashboard(
 ) -> ProjectDashboardResponse:
     """Get combined dashboard data for a single project."""
     return await build_project_dashboard(project_id, commits_limit)
+
+
+@router.get("/projects/{project_id}/development/status", tags=["git"])
+def get_project_development_status(project_id: str) -> dict[str, object]:
+    """Read retained local evidence; never perform remote work or gates."""
+    from ..services.development import build_development_projection
+
+    return build_development_projection(project_id, get_project_root_with_fallback(project_id))
+
+
+@router.get("/development/status", tags=["git"])
+def get_development_status() -> dict[str, object]:
+    """Development evidence for the same managed repositories as the Git route."""
+    from ..services.development import build_development_projection
+
+    repositories = []
+    unavailable = []
+    for root in get_managed_repos():
+        repo = get_repo_status(root)
+        if repo:
+            project_id = repo.project_id or repo.name
+            repositories.append({"repo": repo.model_dump(), "development": build_development_projection(project_id, root)})
+        else:
+            unavailable.append({"path": str(root), "name": root.name, "reason": "Local repository status unavailable"})
+    return {"version": "development.v1", "repositories": repositories, "unavailable_repositories": unavailable, "total": len(repositories) + len(unavailable)}

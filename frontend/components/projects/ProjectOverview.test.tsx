@@ -1,15 +1,15 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
-import { render, screen } from '@testing-library/react'
+import { fireEvent, render, screen } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import type { Project } from '@/lib/api'
 import { ProjectOverview } from './ProjectOverview'
 
 const apiMocks = vi.hoisted(() => ({
-  fetchProjectHealth: vi.fn(),
+  fetchProjectReadme: vi.fn(),
 }))
 
 vi.mock('@/lib/api', () => ({
-  fetchProjectHealth: apiMocks.fetchProjectHealth,
+  fetchProjectReadme: apiMocks.fetchProjectReadme,
 }))
 
 vi.mock('../dashboard/ActivityFeed', () => ({
@@ -51,41 +51,79 @@ function renderOverview(projectOverrides: Partial<Project> = {}) {
 describe('ProjectOverview', () => {
   beforeEach(() => {
     vi.clearAllMocks()
-    apiMocks.fetchProjectHealth.mockResolvedValue({
+    apiMocks.fetchProjectReadme.mockResolvedValue({
       project_id: 'summitflow',
-      healthy: true,
-      response_time_ms: 42,
-      checked_at: '2026-04-04T12:00:00Z',
+      status: 'available',
+      content: '# SummitFlow\n\nProject delivery tools.',
     })
   })
 
-  it('renders the public service status surface and project-scoped recent activity', async () => {
+  it('renders the project README and retains recent activity', async () => {
     renderOverview()
-
-    expect(await screen.findByText('42ms response time')).toBeInTheDocument()
-    expect(screen.getByText('Service Status')).toBeInTheDocument()
+    expect(
+      await screen.findByRole('heading', { name: 'SummitFlow' }),
+    ).toBeInTheDocument()
+    expect(screen.getByText('Project delivery tools.')).toBeInTheDocument()
     expect(screen.getByText('Recent Activity')).toBeInTheDocument()
     expect(screen.getByTestId('activity-feed')).toHaveTextContent(
       'Activity feed for summitflow',
     )
-    expect(screen.queryByText('Quality Summary')).not.toBeInTheDocument()
-    expect(screen.queryByText('Workspace')).not.toBeInTheDocument()
-    expect(screen.queryByText('Open Findings')).not.toBeInTheDocument()
+    expect(screen.queryByText('Service Status')).not.toBeInTheDocument()
   })
 
-  it('shows health errors without exposing internal project metadata', async () => {
-    apiMocks.fetchProjectHealth.mockResolvedValue({
-      project_id: 'summitflow',
-      healthy: false,
-      error: 'connection refused',
-      checked_at: '2026-04-04T12:00:00Z',
-    })
-
+  it('shows README loading independently of recent activity', () => {
+    apiMocks.fetchProjectReadme.mockReturnValue(new Promise(() => {}))
     renderOverview()
+    expect(screen.getByRole('status')).toHaveTextContent('Loading README.md')
+    expect(screen.getByTestId('activity-feed')).toBeInTheDocument()
+  })
 
-    expect(await screen.findByText('connection refused')).toBeInTheDocument()
+  it.each([
+    ['missing', null, 'No README.md in the project root.'],
+    ['unavailable', null, 'README.md is unavailable.'],
+    ['available', '   ', 'README.md is empty.'],
+  ])('distinguishes the %s README state', async (status, content, message) => {
+    apiMocks.fetchProjectReadme.mockResolvedValue({
+      project_id: 'summitflow',
+      status,
+      content,
+    })
+    renderOverview()
+    expect(await screen.findByText(message)).toBeInTheDocument()
+  })
+
+  it('retries failed requests and renders the recovered README', async () => {
+    apiMocks.fetchProjectReadme.mockRejectedValueOnce(
+      new Error('README read failed'),
+    )
+    renderOverview()
+    expect(await screen.findByRole('alert')).toHaveTextContent(
+      'README read failed',
+    )
+    fireEvent.click(screen.getByRole('button', { name: 'Retry' }))
     expect(
-      screen.queryByText('/srv/workspaces/projects/summitflow'),
+      await screen.findByRole('heading', { name: 'SummitFlow' }),
+    ).toBeInTheDocument()
+  })
+
+  it('renders repository links and images with safe URLs and skips raw HTML', async () => {
+    apiMocks.fetchProjectReadme.mockResolvedValue({
+      project_id: 'summitflow',
+      status: 'available',
+      content:
+        '[Guide](docs/guide.md)\n\n![Diagram](assets/diagram.png)\n\n[Unsafe](javascript:alert%281%29)\n\n<script>alert(1)</script>',
+    })
+    renderOverview()
+    expect(await screen.findByRole('link', { name: 'Guide' })).toHaveAttribute(
+      'href',
+      '/projects/summitflow/files?path=docs%2Fguide.md',
+    )
+    expect(screen.getByAltText('Diagram').getAttribute('src')).toContain(
+      '/api/projects/summitflow/files/download?path=assets%2Fdiagram.png',
+    )
+    expect(
+      screen.queryByRole('link', { name: 'Unsafe' }),
     ).not.toBeInTheDocument()
+    expect(document.querySelector('script')).toBeNull()
   })
 })

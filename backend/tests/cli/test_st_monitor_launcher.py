@@ -9,6 +9,7 @@ import shutil
 import socket
 import sqlite3
 import subprocess
+import tempfile
 import threading
 from contextlib import contextmanager
 from datetime import UTC, datetime, timedelta
@@ -42,11 +43,14 @@ def installed(tmp_path: Path):
     bin_dir.mkdir()
     link = bin_dir / "st"
     link.symlink_to(root / "scripts" / "st")
-    state = tmp_path / "state" / "summitflow" / "monitor"
-    state.mkdir(parents=True)
-    env = {**os.environ, "SUMMITFLOW_MONITOR_STATE_DIR": str(tmp_path / "state/summitflow/monitor"),
-           "SUMMITFLOW_SERVICE_STATE_ROOT": str(tmp_path / "isolated-services"), "PYTHONNOUSERSITE": "1"}
-    return root, link, state, env
+    # A pytest node directory plus state suffix can exceed AF_UNIX sun_path.
+    # Keep the same protocol fixture in a short private root with teardown.
+    with tempfile.TemporaryDirectory(prefix="st-m-", dir="/tmp") as directory:
+        state = Path(directory) / "summitflow" / "monitor"
+        state.mkdir(parents=True)
+        env = {**os.environ, "SUMMITFLOW_MONITOR_STATE_DIR": str(state),
+               "SUMMITFLOW_SERVICE_STATE_ROOT": str(tmp_path / "isolated-services"), "PYTHONNOUSERSITE": "1"}
+        yield root, link, state, env
 
 
 def _run(link: Path, env: dict[str, str], *args: str) -> subprocess.CompletedProcess[str]:

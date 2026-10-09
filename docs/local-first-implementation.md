@@ -7,6 +7,133 @@ workflow change, not a new reusable instruction store. GitHub publication is not
 requested. Existing security controls, histories, unrelated work, and necessary
 live validation must remain protected.
 
+## Task completion and release readiness, 2026-10-04
+
+Task `task-513682a385f0498e` separates the evidence needed to finish an owned
+task from the evidence needed to release a project. Implementation tasks require
+successful immutable-source task acceptance. That covers the literal owned
+scope and any explicitly declared acceptance stages. A successful full receipt
+also satisfies task acceptance when it contains those required stages. A declared
+focused stage may satisfy the task's exact requirement inside a validated task
+receipt; its focused coverage remains explicit and cannot establish full project
+acceptance. Failed or unavailable required evidence keeps the task open.
+
+Plans can declare `completion_requirements.acceptance` as `"task"` (the default)
+or `"full"`, `acceptance_stages` as exact declared stage IDs, and the existing
+`deployment` and `live_checks` requirements. Administrative work requires no
+invented code proof. A false acceptance declaration never waives evidence for
+recorded implementation changes. Full project acceptance remains the release
+requirement for managed rebuild and publication; finishing a task does not claim
+that release requirement passed.
+
+`app/services/task_acceptance.py` owns the typed task requirements and completion
+assessment. The readiness endpoint and recoverable closeout consume this policy.
+Source receipts remain immutable artifacts; task verification retains compact
+validated references and stage outcomes, not copies of raw receipt bodies.
+`cli/lib/acceptance_coordinator.py` is the public source-evidence interface. The
+single local closeout adapter connects that interface and public checkpoint and
+lease primitives to task policy without calling CLI command handlers.
+
+The exact active claim and prior verification revision still guard proof
+attachment and closeout intent. Recovery revalidates the accepted source, consumed
+inputs, literal owned paths and declared requirements before completing the task.
+Once completed, recovery only removes checkpoint metadata and releases task leases
+under the retained request guard; later work does not need to be accepted again.
+
+## Local development contract, 2026-10-03
+
+Current implementation task: `task-a11c59594e404791`. This dated section records
+its rollout; the September evidence below remains historical evidence. Final
+acceptance, live rollout, retained-record transition and blind evaluation are
+still being verified. GitHub publication has not been requested.
+
+ST now owns local completion: claim the task, edit and use focused `st check`
+commands as needed, then `st done <task> -m "summary"`. It checkpoints declared or
+leased task paths, validates the diff, runs or reuses full acceptance and records
+recoverable closeout. An ambiguous scope asks for literal `--paths`; foreign
+leases and unrelated edits remain untouched. Code-only work needs no deployment
+or publication. Runtime work uses an explicit managed rebuild/live observation
+before completion reuses the resulting same-source evidence.
+
+Administrative and read-only tasks also require an active owned claim before
+completion. They need no manufactured code changes, code acceptance or compulsory
+citations. Receipt attachment, prerequisite subtask updates and completion compare
+the exact claim and prior evidence; release/reclaim races preserve newer work.
+Already completed checkpoints permit guarded metadata-only cleanup.
+
+`.st-check.toml` native schema 1 declares required project suites, locked and
+prepared inputs, executable identities and counted test evidence. `st check
+--check` runs those suites and configured legacy quality/security tools. A
+focused stage (`--native --stage ID`) cannot prove full acceptance. Missing tools,
+empty suites, failed evidence or undeclared skips remain unavailable/failed;
+optional inapplicable stages have recorded reasons. Environment preparation is
+explicit, separate from check execution. Acceptance schema 2 retains stage
+coverage, duration, execution and artifact hashes. Old receipts remain readable
+and are validated conservatively. Equivalent unchanged full proofs can be
+reused; changed source/configuration/tools/prepared dependencies invalidate them.
+
+Development retains the `/git` routes. The shared read-only `development.v1`
+projection exposes working source, acceptance/coverage, running source, task
+blockers and separate capture/offsite/snapshot/restore evidence. WIP and local
+unpublished commits are ordinary states. Runtime health and recorded restore
+proof are separately labelled. Rendering/status does not run quality checks or
+remote operations.
+
+Manual sharing uses `st vcs publish --source PROJECT --sha FULL_ACCEPTED_OID
+--now`. It selects that source without checkpointing, reconciling or deploying.
+Outgoing history, secret checks, destination authorization and actual repository
+requirements stay guarded. Listed deployment/publication workflow effects need
+explicit authority (`--authorize-workflow EXACT_PATH`). Uploaded source, pending
+PR requirements and merged source are distinct; optional cloud checks do not
+gate local completion. Retained observations can be explicitly refreshed for
+the same source. Backup capture/offsite retry no longer initiates publication.
+
+Canonical operating instructions are the scoped Agent Hub prompt and computed
+ST capability guidance. Four supported client contracts include the revised
+prompt, and adapter installation checks pass. These results prove generation
+and installation; binding, retrieval, actual provider delivery and saved-context
+resume are separate evidence stages. Internal coder preview changed from
+14,550 to 14,456 bytes and 2,758 to 2,749 estimated tokens in matched observations;
+these are context estimates, not billed usage.
+
+The remaining scoped coder and automated-execution references to automatic
+publication have been removed. Coder preview now measures 14,450 bytes and 2,747
+estimated tokens. A matched task-header comparison reduced output from 9,407 to
+4,277 bytes by keeping the existing key-file summary and removing the duplicate
+full scope. Full scope remains available through detailed context and export.
+
+Rollout observations on October 4: full acceptance passed 5,751 Python cases,
+303 frontend cases and the fresh-schema check on each of `f84068197` and
+`7ab7ba886`; both managed rebuilds passed. Unchanged `7ab7ba886` acceptance was
+attached through the ordinary task workflow in 9.496 seconds without rerunning
+suites. Guarded owner operations retired eight remote waits and seven
+administrative findings while preserving history; four security findings and
+16 untriaged investigations remain actionable. Ownership/count/context repairs
+were checkpointed locally at `40908e7af` after the canonical scoped gate passed.
+Final-source acceptance and runtime evidence remain required.
+
+Two fresh native workers completed isolated new-file and existing-file tasks,
+preserved foreign WIP and recorded full local acceptance without publication.
+The later trial used normal discovery and completed in an observed 2m10s;
+17 native cases passed. A fresh read-only safety worker passed 29 bounded checks
+and reproduced shared invalid runtime receipts interfering with another
+project's projection. Its per-record isolation repair passed 22 regression cases:
+matching invalid evidence remains an error, while foreign or unattributable
+failures remain visible as shared-store uncertainty. Integrated acceptance is
+still required; mocked refusals do not prove live publication.
+
+Current four-client generation and adapter installation pass with payload
+`2e37afd5…` and lifecycle guidance included. Actual provider delivery remains
+unverified: current native telemetry reports collector-only evidence, while
+retained bindings are older or absent. Fresh startup and provider-request
+payload evidence are still needed per client. Current capture/SQL restoration
+also remains outstanding; earlier recovery evidence is not relabelled.
+
+Current verification artifacts, including complete failed native-run evidence,
+are retained under `.dev-tools/local-first-*`, `.dev-tools/native-*` and the
+normal ST detail/receipt directories. The current task record tracks rollout,
+source-bound acceptance and live verification evidence.
+
 ## Final result, 2026-09-23
 
 **Completed locally.** Task `task-a6bee0c09e0e4a3c` and all five subtasks are

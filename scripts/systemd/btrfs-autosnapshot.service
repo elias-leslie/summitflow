@@ -4,7 +4,15 @@ After=network.target
 
 [Service]
 Type=oneshot
+# Skip this sweep (not a failure) while the host is under memory pressure:
+# snapshot commits flush dirty data and stall writers during thrashing.
+ExecCondition=/bin/sh -c 'awk '\''$1=="some"{s=substr($3,7)} $1=="full"{f=substr($3,7)} END{exit !(s<20 && f<10)}'\'' /proc/pressure/memory'
 ExecStart=%h/bin/st autosnap sweep
 ExecStartPost=%h/bin/st autosnap prune
+Nice=10
+CPUWeight=20
+IOWeight=20
+# Change detection reads every project tree; keep its page cache from crowding out agents.
+MemoryHigh=3G
 StandardOutput=journal
 StandardError=journal

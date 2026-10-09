@@ -44,7 +44,7 @@ export interface ProjectPermissionBootstrap {
 
 export interface ProjectOnboardingRequest {
   enable_backup_schedule?: boolean
-  backup_frequency?: 'daily' | 'weekly' | 'monthly' | 'hourly'
+  backup_frequency?: 'daily' | 'weekly' | 'monthly' | 'hourly' | 'four_hourly'
   backup_retention_days?: number
   queue_initial_backup?: boolean
 }
@@ -109,6 +109,10 @@ export interface ProjectHealth {
   error?: string
   checked_at: string
 }
+
+export type ProjectReadme =
+  | { project_id: string; status: 'available'; content: string }
+  | { project_id: string; status: 'missing' | 'unavailable'; content: null }
 
 export interface QualityGateHealth {
   project_id: string

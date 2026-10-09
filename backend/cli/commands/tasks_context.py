@@ -190,7 +190,6 @@ def get_task_context(
         task = client.get_task(task_id)
         task_id = str(task.get("id", task_id))
         _enrich_task_from_spirit(task, task_id)
-
         subtask_data = client.get_subtasks(task_id, include_steps=True)
         subtasks = subtask_data.get("subtasks", [])
         summary = subtask_data.get("summary") or {}

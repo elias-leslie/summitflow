@@ -44,9 +44,19 @@ class AcceptedSource:
     completed_at: Any = None
     reused: bool = False
     reuse_lookup_ms: float | None = None
+    coverage: str | None = None
 
     @classmethod
-    def from_descriptor(cls, descriptor: Mapping[str, Any]) -> AcceptedSource:
+    def from_descriptor(
+        cls, descriptor: Mapping[str, Any], *, require_full: bool = False
+    ) -> AcceptedSource:
+        coverage = descriptor.get("coverage")
+        # Older retained deployment records omitted coverage. New releases must
+        # carry the canonical full proof; explicit task evidence is never a release.
+        if (require_full or coverage is not None) and coverage != "full":
+            raise ReleaseError(
+                f"Managed releases require full acceptance coverage (received {coverage or 'unknown'})"
+            )
         try:
             source = cls(
                 acceptance_id=str(descriptor["acceptance_id"]),
@@ -75,6 +85,7 @@ class AcceptedSource:
                     if descriptor.get("reuse_lookup_ms") is not None
                     else None
                 ),
+                coverage=coverage,
             )
         except KeyError as exc:
             raise ReleaseError(f"Accepted source is missing {exc.args[0]}") from None
@@ -209,7 +220,9 @@ def _materialize_release(
     state_root: Path | None = None,
 ) -> PreparedRelease:
     """Materialize the exact accepted Git tree into a new stable release."""
-    accepted = source if isinstance(source, AcceptedSource) else AcceptedSource.from_descriptor(source)
+    accepted = AcceptedSource.from_descriptor(
+        source.evidence() if isinstance(source, AcceptedSource) else source
+    )
     commit = _git(repo, "rev-parse", "--verify", f"{accepted.source_commit}^{{commit}}")
     if commit != accepted.source_commit:
         raise ReleaseError("Accepted source commit identity mismatch")
@@ -297,6 +310,7 @@ def prepare_release(
 
     with acceptance.repo_lock(repo, purpose="deployment"):
         descriptor = acceptance.validate_acceptance_receipt(repo, source)
+        AcceptedSource.from_descriptor(descriptor, require_full=True)
         if not isinstance(source, Path):
             descriptor = {
                 **descriptor,
@@ -546,6 +560,7 @@ def validate_deployment_receipt(
         "acceptance_id": accepted.acceptance_id,
         "source_commit": accepted.source_commit,
         "source_tree": accepted.source_tree,
+        "coverage": accepted.coverage,
         "migrations": str(value.get("migrations") or ""),
         "events": events,
         "source_root": str(deployed_source),

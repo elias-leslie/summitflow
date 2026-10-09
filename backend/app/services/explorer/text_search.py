@@ -5,8 +5,16 @@ from __future__ import annotations
 import json
 import shutil
 import subprocess
-from pathlib import Path, PurePosixPath
+from pathlib import Path
 from typing import Any
+
+from code_intelligence.search.search_checkout_paths import (
+    _iter_checkout_files,
+    _normalize_rel_path,
+    code_search_exclude_globs,
+    is_code_search_path,
+    normalize_search_path,
+)
 
 from ...logging_config import get_logger
 from ...storage import explorer as explorer_storage
@@ -20,46 +28,15 @@ _MAX_TEXT_RESULTS = 100
 _MAX_FILE_ENTRIES = 10_000
 _LINE_PREVIEW_LIMIT = 240
 _RG_TIMEOUT_SECONDS = 15
-_RG_EXCLUDE_GLOBS = (
-    "!**/.git/**",
-    "!**/node_modules/**",
-    "!**/.venv/**",
-    "!**/.next/**",
-    "!**/dist/**",
-    "!**/build/**",
-    "!**/coverage/**",
-    "!**/.env*",
-    "!**/*.pem",
-    "!**/*.key",
-    "!**/credentials.json",
-    "!**/secrets.json",
-    "!**/secrets/**",
-    "!**/credentials/**",
-)
-
-_SECRET_PARTS = {"secrets", "credentials", "credentials.json", "secrets.json"}
 
 
-def _safe_search_path(path: str) -> bool:
-    parts = PurePosixPath(path).parts
-    return not any(
-        part.lower() in _SECRET_PARTS or part.lower().startswith(".env") or part.lower().endswith((".pem", ".key"))
-        for part in parts
-    )
+def _safe_search_path(path: str, path_prefix: str | None = None) -> bool:
+    return is_code_search_path(path, path_prefix=path_prefix)
 
 
 def _normalize_path_prefix(path_prefix: str | None) -> str | None:
     """Normalize an optional relative subtree/file prefix for search filtering."""
-    if path_prefix is None:
-        return None
-    normalized = str(path_prefix).strip().replace("\\", "/")
-    if normalized.startswith("./"):
-        normalized = normalized[2:]
-    candidate = PurePosixPath(normalized)
-    if candidate.is_absolute() or ".." in candidate.parts:
-        raise ValueError("Search path prefix must stay inside the project")
-    normalized = normalized.strip("/")
-    return normalized or None
+    return normalize_search_path(None, path_prefix)
 
 
 def _path_matches_prefix(path: str, path_prefix: str | None) -> bool:
@@ -101,7 +78,7 @@ def _search_text_with_ripgrep(
         return None
 
     normalized_prefix = _normalize_path_prefix(path_prefix)
-    if normalized_prefix and not _safe_search_path(normalized_prefix):
+    if normalized_prefix and not _safe_search_path(normalized_prefix, normalized_prefix):
         return {"count": 0, "files_searched": 0, "items": [], "truncated": False, "next_offset": None, "strategy": "ripgrep", "path_prefix": normalized_prefix}
     if normalized_prefix:
         root = Path(root_path).resolve()
@@ -124,10 +101,11 @@ def _search_text_with_ripgrep(
         "--ignore-case",
         "--fixed-strings",
         "--hidden",
+        "--no-ignore",
     ]
-    for glob in _RG_EXCLUDE_GLOBS:
+    for glob in code_search_exclude_globs(normalized_prefix):
         args.extend(["--glob", glob])
-    args.extend([query, normalized_prefix or "."])
+    args.extend(["--", query, normalized_prefix or "."])
 
     try:
         proc = safe_subprocess.run(
@@ -168,7 +146,7 @@ def _search_text_with_ripgrep(
             path = _extract_rg_path(data.get("path"))
             line_number = data.get("line_number")
             line_text = str((data.get("lines") or {}).get("text", "")).rstrip("\n")
-            if not path or not _safe_search_path(path) or not isinstance(line_number, int) or not _path_matches_prefix(path, normalized_prefix):
+            if not path or not _safe_search_path(path, normalized_prefix) or not isinstance(line_number, int) or not _path_matches_prefix(path, normalized_prefix):
                 continue
             total_matches += 1
             if total_matches <= offset or len(items) >= limit:
@@ -229,11 +207,24 @@ def _search_text_from_index(
         },
     )
 
+    # Generic Explorer inventory intentionally skips data; search can recover
+    # legitimate source and explicitly requested artifacts from current files.
+    root = Path(root_path).resolve()
+    target = root / normalized_prefix if normalized_prefix else root
+    indexed_paths = {str(entry.get("path", "")) for entry in file_entries}
+    for file_path in _iter_checkout_files(root, start_root=target):
+        rel_path = _normalize_rel_path(root, file_path)
+        if rel_path and rel_path not in indexed_paths:
+            file_entries.append({"path": rel_path})
+
     for entry in file_entries:
         path = str(entry.get("path", "")).strip()
-        if not path or not _safe_search_path(path):
+        if not path or not _safe_search_path(path, normalized_prefix):
             continue
         if not _path_matches_prefix(path, normalized_prefix):
+            continue
+        resolved = (root / path).resolve()
+        if not resolved.is_relative_to(root) or not _safe_search_path(resolved.relative_to(root).as_posix(), normalized_prefix):
             continue
 
         try:
@@ -282,9 +273,10 @@ def search_text(
 ) -> dict[str, Any]:
     """Search indexed project files for case-insensitive line matches."""
     query_value = query.strip()
+    root_path = get_project_root(project_id)
     try:
-        normalized_prefix = _normalize_path_prefix(path_prefix)
-    except ValueError:
+        normalized_prefix = normalize_search_path(Path(root_path) if root_path else None, path_prefix)
+    except ValueError as exc:
         return {
             "count": 0,
             "files_searched": 0,
@@ -293,6 +285,7 @@ def search_text(
             "next_offset": None,
             "path_prefix": None,
             "error": "invalid_path_prefix",
+            "message": str(exc),
         }
     if not query_value:
         return {
@@ -304,7 +297,6 @@ def search_text(
             "path_prefix": normalized_prefix,
         }
 
-    root_path = get_project_root(project_id)
     if not root_path:
         return {
             "count": 0,

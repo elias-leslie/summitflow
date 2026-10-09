@@ -12,6 +12,12 @@ from collections.abc import Iterable, Mapping
 from pathlib import Path
 
 from app.utils.env_files import project_env_files, scrub_env_keys_from_files
+from app.utils.heavy_work import heavy_work
+from app.utils.transient_scratch import (
+    SCRATCH_ROOT,
+    mounted_scratch_parent,
+    validate_temp_parent,
+)
 
 _BASE_UNSET_KEYS = (
     "BASH_ENV",
@@ -25,6 +31,21 @@ _BASE_UNSET_KEYS = (
     "SF_COMMAND_GUARD_WORDS",
     "VIRTUAL_ENV",
 )
+_SCRATCH_ROOT = SCRATCH_ROOT
+
+
+def _validate_temp_parent(path: Path, *, private: bool = False) -> None:
+    """Reject unsafe routing without changing an existing directory's permissions."""
+    validate_temp_parent(path, private=private, label="Cleanroom")
+
+
+def _cleanroom_temp_parent() -> Path | None:
+    """Use the caller's namespace, or the host's mounted disposable scratch."""
+    if explicit := os.environ.get("TMPDIR"):
+        parent = Path(explicit)
+        _validate_temp_parent(parent)
+        return parent
+    return mounted_scratch_parent("st-cleanrooms", root=_SCRATCH_ROOT, required=False, label="Cleanroom")
 
 
 def _git_snapshot_paths(project_root: Path) -> list[Path]:
@@ -144,29 +165,41 @@ def run_cleanroom(
     if not command:
         raise ValueError("command is required")
 
-    temp_dir = tempfile.mkdtemp(prefix=f"{project_root.name}-cleanroom-")
-    clean_up = not keep_dir
-    snapshot_root = Path(temp_dir) / "repo"
-    home_root = Path(temp_dir) / "home"
-    snapshot_root.mkdir(parents=True, exist_ok=True)
-
-    try:
-        create_snapshot(project_root, snapshot_root)
-        initialize_snapshot_git(snapshot_root)
-        env = build_cleanroom_env(
-            project_root,
-            snapshot_root,
-            home_root,
-            env_overrides=env_overrides,
-            unset_keys=unset_keys,
+    # This isolated execution route is used for installs, lock resolution and
+    # gates. Admit before copying/staging the checkout as well as spawning the
+    # command; ordinary ST inspection does not use this route.
+    with heavy_work("isolated validation") as work:
+        temp_dir = tempfile.mkdtemp(
+            prefix=f"{project_root.name}-cleanroom-", dir=_cleanroom_temp_parent(),
         )
-        completed = subprocess.run(command, cwd=snapshot_root, env=env)
-        return completed.returncode
-    finally:
-        if clean_up:
-            shutil.rmtree(temp_dir, ignore_errors=True)
-        else:
-            print(f"CLEANROOM:kept:{temp_dir}", file=sys.stderr)
+        clean_up = not keep_dir
+        snapshot_root = Path(temp_dir) / "repo"
+        home_root = Path(temp_dir) / "home"
+        temp_root = Path(temp_dir) / "tmp"
+
+        try:
+            snapshot_root.mkdir(parents=True, exist_ok=True)
+            temp_root.mkdir(mode=0o700)
+            create_snapshot(project_root, snapshot_root)
+            initialize_snapshot_git(snapshot_root)
+            env = build_cleanroom_env(
+                project_root,
+                snapshot_root,
+                home_root,
+                env_overrides=env_overrides,
+                unset_keys=unset_keys,
+            )
+            # The command's temporary files belong to this disposable job too.
+            # An explicit --env TMPDIR still selects the caller's desired path.
+            if "TMPDIR" not in (env_overrides or {}):
+                env["TMPDIR"] = str(temp_root)
+            completed = work.run(command, cwd=snapshot_root, env=env)
+            return completed.returncode
+        finally:
+            if clean_up:
+                shutil.rmtree(temp_dir, ignore_errors=True)
+            else:
+                print(f"CLEANROOM:kept:{temp_dir}", file=sys.stderr)
 
 
 def _build_parser() -> argparse.ArgumentParser:

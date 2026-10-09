@@ -11,6 +11,44 @@ from cli.output_context import OutputContext
 runner = CliRunner()
 
 
+def test_publish_requires_explicit_now():
+    with patch("app.tasks.backup_manual_publish.publish_project_now") as publish:
+        result = runner.invoke(vcs.app, ["publish", "--source", "source", "--sha", "a" * 40])
+    assert result.exit_code == 2
+    assert "requires --now" in result.stdout
+    publish.assert_not_called()
+
+
+def test_publish_exact_source_only_and_no_hygiene_actions():
+    with (
+        patch("app.tasks.backup_manual_publish.publish_project_now", return_value={
+            "publication_complete": True, "evidence_recorded": True, "health": {"state": "verified"},
+        }) as publish,
+        patch.object(vcs, "pull_repository") as pull,
+        patch.object(vcs, "cleanup_safe_git_residue") as cleanup,
+    ):
+        result = runner.invoke(vcs.app, ["publish", "--source", "source", "--sha", "a" * 40, "--now"])
+    assert result.exit_code == 0
+    publish.assert_called_once_with("source", "a" * 40)
+    pull.assert_not_called()
+    cleanup.assert_not_called()
+
+
+def test_retained_findings_do_not_relabel_successful_explicit_publication():
+    with patch("app.tasks.backup_manual_publish.publish_project_now", return_value={
+        "publication_complete": True, "evidence_recorded": True, "health": {"state": "blocked"},
+    }):
+        result = runner.invoke(vcs.app, ["publish", "--source", "source", "--sha", "a" * 40, "--now"])
+    assert result.exit_code == 0
+
+
+def test_publish_never_prints_unexpected_diagnostics():
+    with patch("app.tasks.backup_manual_publish.publish_project_now", side_effect=RuntimeError("private-token-diagnostic")):
+        result = runner.invoke(vcs.app, ["publish", "--source", "source", "--sha", "a" * 40, "--now"])
+    assert result.exit_code == 2
+    assert "private-token-diagnostic" not in result.stdout
+
+
 def _cleanup_payload(needs_cleanup: bool = False) -> dict[str, object]:
     return {
         "summary": {
@@ -43,7 +81,7 @@ def test_doctor_prints_one_compact_ok_line(tmp_path: Path) -> None:
     repo.mkdir()
     with (
         patch.object(vcs, "_target_repos", return_value=[repo]),
-        patch.object(vcs, "_fetch_jj_repos", return_value=[]) as fetch,
+        patch.object(vcs, "fetch_repository") as fetch,
         patch.object(
             vcs,
             "_status_rows",
@@ -57,7 +95,6 @@ def test_doctor_prints_one_compact_ok_line(tmp_path: Path) -> None:
                 }
             ],
         ),
-        patch.object(vcs, "_jj_rows", return_value=[]),
         patch.object(vcs, "_cleanup_payload", return_value=_cleanup_payload(False)),
         patch.object(vcs, "_discover_unmanaged_repos", return_value=[]),
         patch.object(vcs, "_safe_task_ref_rows", return_value=[]),
@@ -72,8 +109,7 @@ def test_doctor_prints_one_compact_ok_line(tmp_path: Path) -> None:
 
 def test_unpublished_local_history_is_information_not_a_blocker() -> None:
     git_rows = [{"name": "repo", "path": "/repo", "ahead": 12, "behind": 0, "uncommitted": 0}]
-    jj_rows = [{"repo": "repo", "path": "/repo", "unpublished": 12, "state": "clean"}]
-    assert vcs._issues(git_rows, jj_rows, _cleanup_payload(), [], []) == []
+    assert vcs._issues(git_rows, _cleanup_payload(), [], []) == []
 
 
 def test_doctor_exits_two_with_exact_blockers(tmp_path: Path) -> None:
@@ -81,7 +117,6 @@ def test_doctor_exits_two_with_exact_blockers(tmp_path: Path) -> None:
     repo.mkdir()
     with (
         patch.object(vcs, "_target_repos", return_value=[repo]),
-        patch.object(vcs, "_fetch_jj_repos", return_value=[]),
         patch.object(
             vcs,
             "_status_rows",
@@ -95,7 +130,6 @@ def test_doctor_exits_two_with_exact_blockers(tmp_path: Path) -> None:
                 }
             ],
         ),
-        patch.object(vcs, "_jj_rows", return_value=[]),
         patch.object(vcs, "_cleanup_payload", return_value=_cleanup_payload(True)),
         patch.object(vcs, "_discover_unmanaged_repos", return_value=[tmp_path / "extra"]),
         patch.object(
@@ -135,8 +169,6 @@ def test_reconcile_runs_safe_steps_then_reports_doctor_result(tmp_path: Path) ->
                         "dirty": 0,
                         "ahead": 0,
                         "behind": 0,
-                        "unpublished": 0,
-                        "conflicts": 0,
                         "cleanup": 0,
                         "unmanaged": 0,
                         "task_refs": 0,
@@ -165,3 +197,29 @@ def test_discover_unmanaged_repos_ignores_config_mirrors(tmp_path: Path) -> None
 
     with patch.object(vcs, "get_projects_base_dir", return_value=projects):
         assert vcs._discover_unmanaged_repos([]) == [extra]
+
+
+def test_pending_publication_is_not_reported_complete():
+    with patch("app.tasks.backup_manual_publish.publish_project_now", return_value={
+        "publication_complete": False, "pushed": True, "evidence_recorded": True, "ci": {"state": "pending"},
+    }):
+        result = runner.invoke(vcs.app, ["publish", "--source", "source", "--sha", "a" * 40, "--now"])
+    assert result.exit_code == 2
+
+
+def test_doctor_fetches_git_only_when_requested(tmp_path: Path) -> None:
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    fetched = MagicMock()
+    fetched.model_dump.return_value = {"name": "repo", "status": "updated"}
+    with (
+        patch.object(vcs, "_target_repos", return_value=[repo]),
+        patch.object(vcs, "fetch_repository", return_value=fetched) as fetch,
+        patch.object(vcs, "_status_rows", return_value=[]),
+        patch.object(vcs, "_cleanup_payload", return_value=_cleanup_payload()),
+        patch.object(vcs, "_discover_unmanaged_repos", return_value=[]),
+        patch.object(vcs, "_safe_task_ref_rows", return_value=[]),
+    ):
+        result = runner.invoke(vcs.app, ["doctor", "--fetch"], obj=OutputContext(compact=True))
+    assert result.exit_code == 0
+    fetch.assert_called_once_with(repo)

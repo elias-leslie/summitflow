@@ -11,10 +11,9 @@ import typer
 
 from app.storage.connection import get_cursor
 from app.utils._git_branches import list_safe_task_refs
-from app.utils._git_core import pull_repository
+from app.utils._git_core import fetch_repository, pull_repository
 
 from ..details import display_path, write_details
-from ..lib.jj import JJError, is_colocated, run_jj, status_summary
 from ..lib.usage import usage
 from ..lib.workspace_paths import get_projects_base_dir
 from ..output import output_json
@@ -29,10 +28,80 @@ from .cleanup_handlers import cleanup_safe_git_residue
 
 app = typer.Typer(
     help=(
-        "Canonical VCS hygiene. Prefer `st vcs doctor` and `st vcs reconcile` "
-        "over separate git/jj/cleanup status sweeps."
+        "Canonical VCS hygiene and isolated exact-source publication. Prefer "
+        "`st vcs doctor` and `st vcs reconcile` over separate status sweeps."
     )
 )
+
+
+@app.command("publication")
+@usage(surface="st.vcs.publication", cmd="st vcs publication", when="read retained manual publication and finding status",
+       precautions=("read-only; unknown is not passing CI",), tier="reference")
+def publication_status() -> None:
+    """Read-only lightweight startup status, without a network CI wait."""
+    from app.services.publication_health import (
+        format_publication_health,
+        get_project_publication_health,
+    )
+    from cli.config import get_config_optional
+
+    project_id = get_config_optional().project_id
+    if not project_id:
+        typer.echo("Manual publication: unknown; no registered project for this directory.")
+        return
+    try:
+        health = get_project_publication_health(project_id)
+        typer.echo(format_publication_health(health))
+    except Exception:
+        typer.echo("Manual publication: unknown; status unavailable. Inspect ST before claiming completion.")
+
+
+@app.command("publish")
+@usage(surface="st.vcs.publish", cmd="st vcs publish --source ID --sha FULL_OID --now",
+       when="owner-authorized immediate publication of an accepted exact commit",
+       precautions=("requires explicit publication authority; never creates commits or reconciles the checkout",
+                    "acceptance, outgoing-history and actual repository requirements remain guarded"), tier="reference")
+def publish_now(
+    source: Annotated[str, typer.Option("--source", help="Registered project ID (or existing project source ID)")],
+    sha: Annotated[str, typer.Option("--sha", help="Exact accepted lowercase full commit OID")],
+    now: Annotated[bool, typer.Option("--now", help="Explicit owner-triggered publication of the supplied source")] = False,
+    authorize_workflow: Annotated[list[str] | None, typer.Option("--authorize-workflow", help="Explicit authority for a listed workflow: exact path for selected source, BASE_SHA:path for a different base workflow; repeat as needed")] = None,
+    json_output: Annotated[bool, typer.Option("--json", help="Show the complete retained structured observation")] = False,
+) -> None:
+    """Publish an exact accepted source in isolation and retain its real CI evidence."""
+    if not now:
+        typer.echo("Immediate publication requires --now and explicit owner authorization; no scheduled publication runs.")
+        raise typer.Exit(2)
+    from app.tasks.backup_manual_publish import publish_project_now
+
+    try:
+        result = publish_project_now(source, sha, authorized_workflows=tuple(authorize_workflow)) if authorize_workflow else publish_project_now(source, sha)
+    except ValueError as exc:
+        typer.echo(str(exc))
+        raise typer.Exit(2) from None
+    except Exception:
+        # Transport/DB errors can contain credentials. Never print raw diagnostics.
+        typer.echo("Publication could not establish durable evidence. Inspect canonical publication health before retrying.")
+        raise typer.Exit(2) from None
+    from app.tasks.backup_publish import _public_evidence
+
+    safe_result = _public_evidence(result)
+    if json_output:
+        output_json(safe_result)
+    else:
+        details = write_details(Path.cwd(), "publication", json.dumps(safe_result, indent=2, sort_keys=True))
+        delivery = result.get("delivery") or {}
+        complete = bool(result.get("publication_complete") and result.get("evidence_recorded"))
+        output_json({"outcome": result.get("status", "completed" if complete else "pending"),
+                     "source": sha, "uploaded_source": delivery.get("uploaded_source"),
+                     "pull_request": delivery.get("pull_request_state", "unknown"),
+                     "merged_source": delivery.get("merged_source"),
+                     "blockers": [] if complete else [result.get("reason", "publication_evidence_incomplete")],
+                     "unauthorized_workflows": result.get("unauthorized_workflows", []),
+                     "next_action": "none" if complete else "Inspect retained evidence; explicitly reobserve this source after resolving the blocker",
+                     "evidence": result.get("evidence"), "details": display_path(Path.cwd(), details)})
+    if not (result.get("publication_complete") and result.get("evidence_recorded")):
+        raise typer.Exit(2)
 
 _IGNORED_WORKSPACE_REPO_NAMES = frozenset({"claude-config", "codex-config"})
 
@@ -64,22 +133,6 @@ def _target_repos(all_projects: bool) -> list[Path]:
         except ValueError:
             continue
     return repos[:1] if repos else []
-
-
-def _fetch_jj_repos(repos: list[Path]) -> list[dict[str, str]]:
-    results: list[dict[str, str]] = []
-    for repo in repos:
-        if not is_colocated(repo):
-            continue
-        result = run_jj(repo, ["git", "fetch", "--remote", "origin"])
-        results.append(
-            {
-                "repo": repo.name,
-                "status": "ok" if result.returncode == 0 else "failed",
-                "detail": (result.stderr or result.stdout).strip(),
-            }
-        )
-    return results
 
 
 def _discover_unmanaged_repos(repos: list[Path]) -> list[Path]:
@@ -121,30 +174,6 @@ def _status_rows(repos: list[Path]) -> list[dict[str, Any]]:
     return [status for repo in repos if (status := _get_repo_status(repo))]
 
 
-def _jj_rows(repos: list[Path]) -> list[dict[str, Any]]:
-    rows: list[dict[str, Any]] = []
-    for repo in repos:
-        if not repo.exists():
-            continue
-        try:
-            rows.append(status_summary(repo).__dict__)
-        except JJError as exc:
-            rows.append(
-                {
-                    "repo": repo.name,
-                    "path": str(repo),
-                    "branch": "-",
-                    "colocated": False,
-                    "state": "failed",
-                    "described": False,
-                    "conflicted": False,
-                    "unpublished": 0,
-                    "error": str(exc),
-                }
-            )
-    return rows
-
-
 def _cleanup_payload(all_projects: bool) -> dict[str, Any]:
     return build_cleanup_status_payload(all_projects)
 
@@ -171,7 +200,6 @@ def _safe_task_ref_rows(repos: list[Path]) -> list[dict[str, Any]]:
 
 def _issues(
     git_rows: list[dict[str, Any]],
-    jj_rows: list[dict[str, Any]],
     cleanup_payload: dict[str, Any],
     unmanaged: list[Path],
     task_refs: list[dict[str, Any]],
@@ -180,18 +208,11 @@ def _issues(
     for row in git_rows:
         repo = str(row.get("name") or "?")
         if int(row.get("uncommitted") or 0):
-            issues.append(VcsIssue(repo, "dirty", f"uncommitted:{row['uncommitted']}", f"st -P {repo} jj diff"))
+            issues.append(VcsIssue(repo, "dirty", f"uncommitted:{row['uncommitted']}", "git diff"))
         # Unpublished local history is normal. Keep counts in the summary, not
         # blockers that pressure agents into publishing unrelated work.
         if int(row.get("behind") or 0):
             issues.append(VcsIssue(repo, "behind", f"behind:{row['behind']}", "st vcs reconcile"))
-    for row in jj_rows:
-        repo = str(row.get("repo") or "?")
-        if row.get("conflicted"):
-            issues.append(VcsIssue(repo, "conflict", "jj_conflict:true", f"st -P {repo} jj conflicts"))
-        state = str(row.get("state") or "")
-        if state in {"dirty", "undescribed", "described", "failed"}:
-            issues.append(VcsIssue(repo, "jj_state", f"state:{state}", f"st -P {repo} jj status"))
     for repo in cleanup_payload["repositories"]:
         if not repo["needs_cleanup"] and not repo["active_checkpoints"]:
             continue
@@ -225,7 +246,6 @@ def _issues(
 def _summary(
     repos: list[Path],
     git_rows: list[dict[str, Any]],
-    jj_rows: list[dict[str, Any]],
     cleanup_payload: dict[str, Any],
     unmanaged: list[Path],
     task_refs: list[dict[str, Any]],
@@ -236,8 +256,6 @@ def _summary(
         "dirty": sum(1 for row in git_rows if int(row.get("uncommitted") or 0)),
         "ahead": sum(int(row.get("ahead") or 0) for row in git_rows),
         "behind": sum(int(row.get("behind") or 0) for row in git_rows),
-        "unpublished": sum(int(row.get("unpublished") or 0) for row in jj_rows),
-        "conflicts": sum(1 for row in jj_rows if row.get("conflicted")),
         "cleanup": int(cleanup_summary["repos_needing_cleanup"]),
         "unmanaged": len(unmanaged),
         "task_refs": len(task_refs),
@@ -249,7 +267,6 @@ def _details_text(
     summary: dict[str, int],
     sync: list[dict[str, Any]],
     git_rows: list[dict[str, Any]],
-    jj_rows: list[dict[str, Any]],
     cleanup_payload: dict[str, Any],
     unmanaged: list[Path],
     task_refs: list[dict[str, Any]],
@@ -259,7 +276,6 @@ def _details_text(
         "summary": summary,
         "sync": sync,
         "git": git_rows,
-        "jj": jj_rows,
         "cleanup": cleanup_payload,
         "unmanaged": [str(repo) for repo in unmanaged],
         "task_refs": task_refs,
@@ -272,8 +288,8 @@ def _print_compact(label: str, summary: dict[str, int], issues: list[VcsIssue], 
     status = "OK" if not issues else "ISSUES"
     print(
         f"{label}:{status} repos={summary['repos']} dirty={summary['dirty']} "
-        f"ahead={summary['ahead']} behind={summary['behind']} unpublished={summary['unpublished']} "
-        f"conflicts={summary['conflicts']} cleanup={summary['cleanup']} unmanaged={summary['unmanaged']} "
+        f"ahead={summary['ahead']} behind={summary['behind']} "
+        f"cleanup={summary['cleanup']} unmanaged={summary['unmanaged']} "
         f"task_refs={summary['task_refs']} blockers={len(issues)} details:{display_path(Path.cwd(), details)}"
     )
     for issue in issues[:8]:
@@ -284,14 +300,13 @@ def _print_compact(label: str, summary: dict[str, int], issues: list[VcsIssue], 
 
 def _run_doctor(*, all_projects: bool, fetch: bool) -> tuple[dict[str, Any], list[VcsIssue], Path]:
     repos = _target_repos(all_projects)
-    sync = _fetch_jj_repos(repos) if fetch else []
+    sync = [fetch_repository(repo).model_dump(exclude_none=True) for repo in repos] if fetch else []
     git_rows = _status_rows(repos)
-    jj_rows = _jj_rows(repos)
     cleanup = _cleanup_payload(all_projects)
     unmanaged = _discover_unmanaged_repos(repos) if all_projects else []
     task_refs = _safe_task_ref_rows(repos)
-    summary = _summary(repos, git_rows, jj_rows, cleanup, unmanaged, task_refs)
-    issues = _issues(git_rows, jj_rows, cleanup, unmanaged, task_refs)
+    summary = _summary(repos, git_rows, cleanup, unmanaged, task_refs)
+    issues = _issues(git_rows, cleanup, unmanaged, task_refs)
     details = write_details(
         Path.cwd(),
         "vcs-doctor",
@@ -299,7 +314,6 @@ def _run_doctor(*, all_projects: bool, fetch: bool) -> tuple[dict[str, Any], lis
             summary=summary,
             sync=sync,
             git_rows=git_rows,
-            jj_rows=jj_rows,
             cleanup_payload=cleanup,
             unmanaged=unmanaged,
             task_refs=task_refs,
@@ -319,14 +333,14 @@ def doctor(
     ] = True,
     fetch: Annotated[
         bool,
-        typer.Option("--fetch/--no-fetch", help="Fetch jj remote bookmark state before reporting."),
+        typer.Option("--fetch/--no-fetch", help="Fetch Git remotes before reporting."),
     ] = False,
     fail_on_issues: Annotated[
         bool,
         typer.Option("--fail-on-issues/--no-fail", help="Exit 2 when VCS debt remains."),
     ] = True,
 ) -> None:
-    """Report Git, jj, cleanup, and unmanaged-repo debt in one compact check."""
+    """Report Git, cleanup, and unmanaged-repo debt in one compact check."""
     result, issues, details = _run_doctor(all_projects=all_projects, fetch=fetch)
     if ctx.obj.is_compact:
         _print_compact("VCS", result["summary"], issues, details)

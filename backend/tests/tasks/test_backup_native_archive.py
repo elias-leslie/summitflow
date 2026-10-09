@@ -34,6 +34,7 @@ def test_dump_database_prefers_passed_pg_credentials(
 
     monkeypatch.delenv("PGUSER", raising=False)
     monkeypatch.delenv("PGPASSWORD", raising=False)
+    monkeypatch.delenv("POSTGRES_ADMIN_URL", raising=False)
     monkeypatch.setattr(backup_native_archive, "_read_env_file", lambda _path: {})
     env = {
         "DB_NAME": "summitflow",
@@ -103,3 +104,69 @@ def test_rls_backup_uses_existing_admin_identity(tmp_path: Path, monkeypatch: py
     assert archive._dump_database("jobinator-4000", tmp_path / "db.gz", {
         "DB_NAME": "jobinator", "DB_PASSWORD": "app-fixture", "PGHOST": "127.0.0.1",
     }) == (4, True)
+
+
+@pytest.mark.parametrize("config", [{"EXAMPLE_DB_URL": "postgresql://app@localhost/example"}, {"DB_NAME": "example"}])
+def test_configured_database_without_credentials_fails(tmp_path, monkeypatch, config):
+    from app.tasks import backup_native_archive as archive
+
+    monkeypatch.setattr(archive, "_read_env_file", lambda _: {})
+    monkeypatch.delenv("PGPASSWORD", raising=False)
+    monkeypatch.delenv("POSTGRES_ADMIN_URL", raising=False)
+    with pytest.raises(RuntimeError, match="credentials are unavailable"):
+        archive._dump_database("example", tmp_path / "database.sql", config)
+
+
+@pytest.mark.parametrize("returncode,contents", [(1, b"partial"), (0, b"")])
+def test_configured_database_failed_or_empty_dump_fails(tmp_path, monkeypatch, returncode, contents):
+    from app.tasks import backup_native_archive as archive
+
+    monkeypatch.setattr(archive, "_read_env_file", lambda _: {})
+    def dump(command, destination, **kwargs):
+        destination.write_bytes(contents)
+        return returncode, b""
+    monkeypatch.setattr(archive, "_run_plain_stream", dump)
+    with pytest.raises(RuntimeError, match="dump"):
+        archive._dump_database("example", tmp_path / "database.sql", {"DB_PASSWORD": "synthetic-fixture"})
+
+
+def test_unconfigured_source_remains_file_only(tmp_path, monkeypatch):
+    from app.tasks import backup_native_archive as archive
+
+    monkeypatch.setattr(archive, "_read_env_file", lambda _: {})
+    monkeypatch.setattr(archive.db_workbench_targets, "project_db_url", lambda _: None)
+    monkeypatch.setattr(archive, "get_project_identity", lambda _: None)
+    assert archive._dump_database("example", tmp_path / "database.sql", {}) == (0, False)
+
+
+def test_declared_shared_database_uses_canonical_source_id_and_fresh_dump(tmp_path, monkeypatch):
+    from app.tasks import backup_native_archive as archive
+
+    monkeypatch.setattr(archive, "_read_env_file", lambda _: {})
+    monkeypatch.setattr(archive, "get_project_identity", lambda _: {"database": {"shared_with": "host-project"}})
+    resolved = []
+    def url(project_id):
+        resolved.append(project_id)
+        return "postgresql://fixture:synthetic@fixture.invalid:5433/shared_database"
+    monkeypatch.setattr(archive.db_workbench_targets, "project_db_url", url)
+    monkeypatch.delenv("PGUSER", raising=False)
+    monkeypatch.delenv("PGPASSWORD", raising=False)
+    monkeypatch.delenv("POSTGRES_ADMIN_URL", raising=False)
+    def dump(command, destination, **kwargs):
+        assert command[-1] == "shared_database"
+        assert command[4] == "fixture.invalid"
+        destination.write_bytes(b"consistent SQL")
+        return 0, b""
+    monkeypatch.setattr(archive, "_run_plain_stream", dump)
+    assert archive._dump_database("physical-alias", tmp_path / "database.sql", {"BACKUP_PROJECT_ID": "canonical-project"}) == (14, True)
+    assert resolved == ["canonical-project"]
+
+
+def test_declared_unresolvable_database_fails_before_dump(tmp_path, monkeypatch):
+    from app.tasks import backup_native_archive as archive
+
+    monkeypatch.setattr(archive, "_read_env_file", lambda _: {})
+    monkeypatch.setattr(archive, "get_project_identity", lambda _: {"database": {"shared_with": "missing-project"}})
+    monkeypatch.setattr(archive.db_workbench_targets, "project_db_url", lambda _: None)
+    with pytest.raises(RuntimeError, match="cannot be resolved"):
+        archive._dump_database("physical-alias", tmp_path / "database.sql", {"BACKUP_PROJECT_ID": "canonical-project"})

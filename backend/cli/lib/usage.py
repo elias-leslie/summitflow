@@ -24,9 +24,6 @@ _CORE_SURFACES = {
     "st.check",
     "st.db",
     "st.service.rebuild",
-    "st.memory.search",
-    "st.memory.save",
-    "st.memory.update",
     "st.tools.status",
     "st.tools.adoption",
     "st.tools.audit",
@@ -35,8 +32,8 @@ _CORE_SURFACES = {
     "st.agents.preview",
 }
 
-# Always-on floor for the `adaptive` density: lifecycle/destructive surfaces that
-# must inject regardless of usage telemetry (telemetry-independent safety net).
+# Implementation floor for compact discovery and `adaptive` density. Ordinary
+# task work must not require retrieving the complete catalogue.
 _FLOOR_SURFACES = {
     "st.pulse",
     "st.search",
@@ -48,9 +45,6 @@ _FLOOR_SURFACES = {
     "st.create",
     "st.claim",
     "st.done",
-    "st.memory.search",
-    "st.memory.save",
-    "st.memory.update",
 }
 
 # Normalized (0-100) decay score at or above which a non-floor surface is
@@ -89,8 +83,8 @@ def _detail_spec(deferred_workflows: Iterable[str] = ()) -> UsageSpec:
     workflows = sorted(set(deferred_workflows))
     return UsageSpec(
         surface="st.details",
-        cmd="st tools manifest --surface <surface>",
-        when="before using an omitted surface or starting an on-demand workflow, load its canonical guidance and precautions with --surface; use compact st tools manifest to discover common surfaces, or --density full for the complete catalogue",
+        cmd="st tools manifest --surface <exact-surface-id>",
+        when="before using an omitted surface or starting an on-demand workflow: find IDs from family or workflow labels with st tools manifest --discover <family-or-workflow>, then load its precautions with --surface <exact-surface-id>",
         why="On-demand workflows: " + "; ".join(workflows) if workflows else "",
         tier="mandate",
     )
@@ -128,6 +122,24 @@ def filter_specs(
     return out
 
 
+def discover_specs(specs: Iterable[UsageSpec], query: str) -> list[UsageSpec]:
+    """Index registered ID families and normalized on-demand labels in registry order."""
+    query = query.strip()
+    if not query:
+        raise ValueError("discovery query must not be empty")
+    family = query if query.startswith("st.") else f"st.{query}"
+    workflow = " ".join(query.casefold().replace("-", " ").replace("_", " ").split())
+    out: list[UsageSpec] = []
+    seen: set[str] = set()
+    for spec in specs:
+        label = " ".join(spec.on_demand.casefold().replace("-", " ").replace("_", " ").split())
+        matches = spec.surface == family or spec.surface.startswith(family + ".") or (label and label == workflow)
+        if matches and spec.surface not in seen:
+            seen.add(spec.surface)
+            out.append(spec)
+    return out
+
+
 def select_specs_for_density(
     specs: Iterable[UsageSpec],
     *,
@@ -162,7 +174,7 @@ def select_specs_for_density(
                 or (not spec.on_demand and _surface_score(spec.surface, scores) >= score_threshold)
             )
         else:
-            include_core = spec.surface in _CORE_SURFACES and not spec.on_demand
+            include_core = spec.surface in _FLOOR_SURFACES or (spec.surface in _CORE_SURFACES and not spec.on_demand)
             include = include_core or (density != "core" and include_task)
         if not include:
             if spec.on_demand:
@@ -204,7 +216,7 @@ def render_inject(specs: Iterable[UsageSpec]) -> str:
           st.service.rebuild:
             cmd: st service rebuild <project> --detach
             when: service/config/worker change
-            careful: st pulse --gate first; explicit project; --include-all-workers only when intentional
+            careful: ST owns lifecycle preflight; explicit project; --include-all-workers only when intentional
         references:
           st.pulse: {cmd: st pulse --gate, when: implementation ownership + lane state}
 

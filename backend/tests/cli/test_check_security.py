@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 import shutil
 import subprocess
 from pathlib import Path
@@ -9,7 +10,49 @@ from unittest.mock import Mock
 
 import pytest
 
+from app.utils.heavy_work import HeavyWork
 from cli.commands import check_dispatch, check_security
+
+
+def test_security_admits_before_materializing_candidates(tmp_path, monkeypatch) -> None:
+    from app.utils import heavy_work as guard
+
+    def candidates(*_args):
+        assert getattr(guard._LOCAL, "work", None) is not None
+        return []
+
+    monkeypatch.setattr(check_security, "_candidate_paths", candidates)
+    assert check_security.run_local_security_check("gitleaks", tmp_path, [], False, []) == 0
+
+
+def test_security_candidates_and_child_scratch_use_private_mounted_scratch(tmp_path, monkeypatch):
+    from app.utils import transient_scratch
+
+    root = tmp_path / "mounted-scratch"
+    root.mkdir(mode=0o700)
+    monkeypatch.setattr(transient_scratch, "SCRATCH_ROOT", root)
+    monkeypatch.setattr(Path, "is_mount", lambda path: path == root)
+    mountinfo = tmp_path / "mountinfo"
+    mountinfo.write_text("")
+    monkeypatch.setattr(transient_scratch, "_MOUNTINFO", mountinfo)
+    monkeypatch.delenv("ST_NATIVE_TMP_HOST_ROOT", raising=False)
+    (tmp_path / "app.py").write_text("safe = True\n")
+    observed = []
+
+    def run(command, **kwargs):
+        candidate = Path(command[-1])
+        temporary = candidate.parent
+        observed.append(temporary)
+        assert temporary.parent == root / f"st-security-{os.getuid()}"
+        assert temporary.stat().st_mode & 0o777 == 0o700
+        assert kwargs["env"]["TMPDIR"] == str(temporary)
+        assert Path(kwargs["env"]["XDG_CACHE_HOME"]).parent == temporary
+        assert (candidate / "app.py").read_text() == "safe = True\n"
+        return subprocess.CompletedProcess(command, 0, "[]", "")
+
+    monkeypatch.setattr(HeavyWork, "run", staticmethod(run))
+    assert check_security.run_local_security_check("gitleaks", tmp_path, ["app.py"], True, []) == 0
+    assert observed and all(not path.exists() for path in observed)
 
 
 def test_gitleaks_materializes_only_changed_candidate_files(
@@ -28,7 +71,7 @@ def test_gitleaks_materializes_only_changed_candidate_files(
         assert not (candidate / "node_modules").exists()
         return subprocess.CompletedProcess(command, 0, "[]", "")
 
-    monkeypatch.setattr(check_security.subprocess, "run", run)
+    monkeypatch.setattr(HeavyWork, "run", staticmethod(run))
     assert check_security.run_local_security_check(
         "gitleaks", tmp_path, ["backend/app.py", "node_modules/secret.js"], True, []
     ) == 0
@@ -44,7 +87,7 @@ def test_gitleaks_is_required_and_redacts_findings(
         assert "--redact" in command
         raise FileNotFoundError("gitleaks")
 
-    monkeypatch.setattr(check_security.subprocess, "run", missing)
+    monkeypatch.setattr(HeavyWork, "run", staticmethod(missing))
     assert check_security.run_local_security_check(
         "gitleaks", tmp_path, ["secret.txt"], True, []
     ) == 127
@@ -58,7 +101,7 @@ def test_semgrep_without_local_rules_is_explicit_skip(
     source.write_text("pass\n")
     run = Mock()
     monkeypatch.delenv("SEMGREP_RULES", raising=False)
-    monkeypatch.setattr(check_security.subprocess, "run", run)
+    monkeypatch.setattr(HeavyWork, "run", run)
 
     assert check_security.run_local_security_check(
         "semgrep", tmp_path, ["app.py"], True, []
@@ -76,7 +119,7 @@ def test_semgrep_uses_only_local_rules_without_metrics_or_version_network(
     (tmp_path / "app.py").write_text("pass\n")
     (tmp_path / ".semgrep.yml").write_text("rules: []\n")
     run = Mock(return_value=subprocess.CompletedProcess([], 0, "{}", ""))
-    monkeypatch.setattr(check_security.subprocess, "run", run)
+    monkeypatch.setattr(HeavyWork, "run", run)
 
     assert check_security.run_local_security_check(
         "semgrep", tmp_path, ["app.py"], True, []
@@ -86,6 +129,40 @@ def test_semgrep_uses_only_local_rules_without_metrics_or_version_network(
     assert command[:4] == ["semgrep", "scan", "--config", str(tmp_path / ".semgrep.yml")]
     assert command[4:6] == ["--metrics", "off"]
     assert "--disable-version-check" in command
+
+
+def test_semgrep_can_write_private_settings_and_logs_without_changing_home(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    (tmp_path / "app.py").write_text("pass\n")
+    (tmp_path / ".semgrep.yml").write_text("rules: []\n")
+    owner_home = tmp_path / "readonly-home"
+    owner_home.mkdir()
+    monkeypatch.setenv("HOME", str(owner_home))
+    monkeypatch.setenv("SEMGREP_SETTINGS_FILE", str(owner_home / "settings.yml"))
+    monkeypatch.setenv("SEMGREP_LOG_FILE", str(owner_home / "semgrep.log"))
+    private_paths = []
+
+    def run(command, **kwargs):
+        environment = kwargs["env"]
+        assert environment["HOME"] == str(owner_home)
+        candidate = Path(command[-1])
+        for name in ("SEMGREP_SETTINGS_FILE", "SEMGREP_LOG_FILE"):
+            path = Path(environment[name])
+            assert path.parent != owner_home
+            assert not path.is_relative_to(candidate)
+            assert path.parent.stat().st_mode & 0o077 == 0
+            path.write_text("private scanner state\n")
+            private_paths.append(path)
+        assert os.environ["SEMGREP_SETTINGS_FILE"] == str(owner_home / "settings.yml")
+        return subprocess.CompletedProcess(command, 0, "{}", "")
+
+    monkeypatch.setattr(HeavyWork, "run", staticmethod(run))
+    assert check_security.run_local_security_check(
+        "semgrep", tmp_path, ["app.py"], True, []
+    ) == 0
+    assert private_paths and all(not path.exists() for path in private_paths)
+    assert not list(owner_home.iterdir())
 
 
 @pytest.mark.skipif(shutil.which("semgrep") is None, reason="Semgrep is not installed")
@@ -137,7 +214,7 @@ def test_osv_scans_only_candidate_lockfiles(
     lockfile.write_text("version = 1\n")
     (tmp_path / "pnpm-lock.yaml").write_text("lockfileVersion: '9'\n")
     run = Mock(return_value=subprocess.CompletedProcess([], 0, "{}", ""))
-    monkeypatch.setattr(check_security.subprocess, "run", run)
+    monkeypatch.setattr(HeavyWork, "run", run)
 
     assert check_security.run_local_security_check(
         "osv", tmp_path, ["backend/uv.lock"], True, []

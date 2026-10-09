@@ -267,6 +267,7 @@ def require_verified_backup_output(output: Mapping[str, Any]) -> None:
 
 _FREQUENCY_DELTAS: dict[str, timedelta] = {
     "hourly": timedelta(hours=1),
+    "four_hourly": timedelta(hours=4),
     "daily": timedelta(days=1),
     "weekly": timedelta(weeks=1),
     "monthly": timedelta(days=30),

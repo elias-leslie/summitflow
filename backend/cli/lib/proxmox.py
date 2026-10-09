@@ -20,6 +20,14 @@ class ProxmoxError(RuntimeError):
     """Raised when Proxmox returns an error or required config is missing."""
 
 
+class ProxmoxTaskError(ProxmoxError):
+    """A submitted copy failed or timed out; keep its task identity inspectable."""
+
+    def __init__(self, upid: str) -> None:
+        self.upid = upid
+        super().__init__(f"Clone task {upid} failed or timed out; inspect the task and destination before retrying")
+
+
 @dataclass(frozen=True)
 class ProxmoxConfig:
     host: str
@@ -155,13 +163,20 @@ class ProxmoxClient:
         )
         self.wait_task(str(upid), timeout_seconds=120)
 
-    def clone(self, template: str, newid: str, name: str) -> None:
+    def clone(self, template: str, newid: str, name: str) -> str:
+        """Copy only. Return the submitted task identity; do not imply guest readiness."""
         upid = self.request(
             "POST",
             f"/nodes/{self.config.node}/qemu/{template}/clone",
             data={"newid": newid, "name": name, "full": "1"},
         )
-        self.wait_task(str(upid), timeout_seconds=300)
+        if not isinstance(upid, str) or not upid:
+            raise ProxmoxError("Clone submission returned no task identity; inspect destination before retrying")
+        try:
+            self.wait_task(upid, timeout_seconds=300)
+        except ProxmoxError as exc:
+            raise ProxmoxTaskError(upid) from exc
+        return upid
 
     def start(self, vmid: str) -> None:
         self.request("POST", f"/nodes/{self.config.node}/qemu/{vmid}/status/start")
@@ -170,8 +185,8 @@ class ProxmoxClient:
         self.request("POST", f"/nodes/{self.config.node}/qemu/{vmid}/status/stop")
 
     def destroy(self, vmid: str) -> None:
-        if vmid == "9000":
-            raise ProxmoxError("Cannot destroy template VM 9000")
+        if vmid == "9000" or self.config_get(vmid).get("template"):
+            raise ProxmoxError(f"Cannot destroy template VM {vmid}")
         with suppress(ProxmoxError):
             self.stop(vmid)
         time.sleep(5)
@@ -219,4 +234,3 @@ class ProxmoxClient:
 
 def snapshot_name_default() -> str:
     return "snap-" + datetime.now(UTC).strftime("%Y%m%d-%H%M%S")
-

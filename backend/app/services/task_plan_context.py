@@ -168,6 +168,10 @@ def build_task_plan_context(payload: dict[str, Any] | None) -> dict[str, Any]:
             "deployment": requirements.get("deployment") is True,
             "live_checks": _clean_string_list(requirements.get("live_checks")),
         }
+        if "acceptance" in requirements:
+            context["completion_requirements"]["acceptance"] = requirements["acceptance"]
+        if "acceptance_stages" in requirements:
+            context["completion_requirements"]["acceptance_stages"] = _clean_string_list(requirements["acceptance_stages"])
 
     if subtasks := normalize_plan_subtasks(source.get("subtasks")):
         context["subtasks"] = subtasks

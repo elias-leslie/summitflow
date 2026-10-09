@@ -278,6 +278,7 @@ Required path:
 
 Usage:
   st check --check
+  st check --native [--stage ID] [--no-reuse] [--json]
   st check --acceptance [--sha REV] [--task TASK] [--scope PATH] [--no-reuse] [--json]
   st check --changed-only
   st check --quick [--changed-only]

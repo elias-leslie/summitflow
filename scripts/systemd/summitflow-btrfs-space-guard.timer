@@ -1,0 +1,11 @@
+[Unit]
+Description=Check Btrfs allocation space every fifteen minutes
+
+[Timer]
+OnBootSec=2min
+OnUnitInactiveSec=15min
+RandomizedDelaySec=1min
+Unit=summitflow-btrfs-space-guard.service
+
+[Install]
+WantedBy=timers.target

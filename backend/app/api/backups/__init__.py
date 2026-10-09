@@ -33,6 +33,7 @@ from .models import (
     SystemImageBackupStatus,
     SystemImageSession,
 )
+from .native_host_endpoints import router as native_host_router
 from .project_endpoints import router as project_router
 from .source_endpoints import router as source_router
 from .storage_endpoints import router as storage_router
@@ -46,6 +47,7 @@ router.include_router(storage_router)
 router.include_router(health_router)
 router.include_router(key_router)
 router.include_router(system_image_router)
+router.include_router(native_host_router)
 router.include_router(source_router)
 router.include_router(project_router)
 router.include_router(global_router)

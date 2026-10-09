@@ -1,4 +1,6 @@
 """Required checks stay tied to current commit, with missing evidence pending."""
+import json
+import subprocess
 from pathlib import Path
 from unittest.mock import Mock
 
@@ -17,7 +19,7 @@ def test_required_app_identity_must_match():
 
 
 def test_failed_check_is_not_hidden_by_success():
-    assert check_state([{'name': 'backend', 'state': 'failed'}, {'name': 'frontend', 'state': 'success'}], []) == 'failed'
+    assert check_state([{'name': 'backend', 'state': 'failed'}, {'name': 'frontend', 'state': 'success'}], [{'context': 'backend'}]) == 'failed'
 
 
 def test_rule_discovery_preserves_required_names(monkeypatch):
@@ -28,6 +30,17 @@ def test_rule_discovery_preserves_required_names(monkeypatch):
     assert plan['requires_pr'] is True
     assert plan['required'] == [{'context': 'backend'}]
     assert api.call_args_list[1].args[0] == 'rules/branches/main?per_page=100'
+
+
+def test_verified_archived_repository_is_actionable_before_other_api_calls(monkeypatch):
+    client = GitHub(Path('/repo'), 'owner/repo')
+    api = Mock(return_value={'archived': True})
+    monkeypatch.setattr(client, 'api', api)
+    with pytest.raises(GitHubError) as exc:
+        client.plan()
+    assert not exc.value.unavailable
+    assert exc.value.reason == 'remote_repository_archived'
+    assert api.call_args.args == ('',) and api.call_count == 1
 
 
 def test_pr_head_change_blocks_merge(monkeypatch):
@@ -50,7 +63,8 @@ def test_registered_ci_without_runs_remains_pending(monkeypatch):
     client = GitHub(Path('/repo'), 'owner/repo')
     monkeypatch.setattr(client, 'pages', Mock(side_effect=[[], [], [], [{'state': 'active', 'path': 'dynamic/github-code-scanning/codeql'}]]))
     monkeypatch.setattr(client, 'api', Mock(return_value={'tree': []}))
-    assert client.observe('a'*40, [])['state'] == 'pending'
+    result = client.observe('a'*40, [])
+    assert result['state'] == 'success' and result['optional_state'] == 'pending'
 
 
 def test_merged_pr_resume_observes_merge_sha(monkeypatch):
@@ -106,6 +120,58 @@ def test_same_source_pull_request_lookup_is_branch_independent(monkeypatch):
     assert client.source_pull_request('main', 'a' * 40) == pulls[0]
 
 
+def test_unpublished_exact_source_pr_lookup_is_absent_not_a_provider_failure(monkeypatch):
+    from cli.lib import github_publish
+
+    sha = 'a' * 40
+    response = subprocess.CompletedProcess([], 1, 'HTTP/2.0 422 Unprocessable Entity\r\n\r\n' +
+        json.dumps({'message': f'No commit found for SHA: {sha}'}), 'untrusted stderr')
+    request = Mock(return_value=response)
+    monkeypatch.setattr(github_publish.subprocess, 'run', request)
+    client = GitHub(Path('/repo'), 'owner/repo')
+    assert client.source_pull_request('main', sha) is None
+    assert request.call_args.args[0][2] == f'repos/owner/repo/commits/{sha}/pulls?per_page=100&page=1'
+    assert '--include' in request.call_args.args[0]
+    assert request.call_args.args[0][request.call_args.args[0].index('--method') + 1] == 'GET'
+
+
+@pytest.mark.parametrize(('status', 'message', 'sha'), [
+    (401, f'No commit found for SHA: {"a" * 40}', 'a' * 40),
+    (403, 'Resource not accessible by integration', 'a' * 40),
+    (404, 'Not Found', 'a' * 40),
+    (429, 'Rate limit exceeded', 'a' * 40),
+    (422, 'Validation Failed', 'a' * 40),
+    (422, f'No commit found for SHA: {"b" * 40}', 'a' * 40),
+    (422, f'No commit found for SHA: {"a" * 40}; try another route', 'a' * 40),
+    (422, 'No commit found for SHA: main', 'main'),
+])
+def test_source_pr_lookup_does_not_suppress_auth_rate_or_other_absence(monkeypatch, status, message, sha):
+    from cli.lib import github_publish
+
+    response = subprocess.CompletedProcess([], 1, f'HTTP/2.0 {status} Response\r\n\r\n' +
+        json.dumps({'message': message}), f'No commit found for SHA: {"a" * 40}')
+    monkeypatch.setattr(github_publish.subprocess, 'run', Mock(return_value=response))
+    with pytest.raises(GitHubError) as exc:
+        GitHub(Path('/repo'), 'owner/repo').source_pull_request('main', sha)
+    assert exc.value.status_code == status and exc.value.response_message == message
+
+
+def test_absence_after_partial_pr_pages_does_not_erase_prior_evidence(monkeypatch):
+    from cli.lib import github_publish
+
+    sha = 'a' * 40
+    responses = [
+        subprocess.CompletedProcess([], 0, 'HTTP/2.0 200 OK\r\n\r\n' + json.dumps([{}] * 100), ''),
+        subprocess.CompletedProcess([], 1, 'HTTP/2.0 422 Unprocessable Entity\r\n\r\n' +
+            json.dumps({'message': f'No commit found for SHA: {sha}'}), ''),
+    ]
+    request = Mock(side_effect=responses)
+    monkeypatch.setattr(github_publish.subprocess, 'run', request)
+    with pytest.raises(GitHubError):
+        GitHub(Path('/repo'), 'owner/repo').source_pull_request('main', sha)
+    assert request.call_count == 2
+
+
 def test_dependency_update_creation_is_separate_from_commit_validation(monkeypatch):
     client = GitHub(Path('/repo'), 'owner/repo')
     workflow = {'path': 'dynamic/dependabot/dependabot-updates', 'check_suite_id': 9, 'name': 'Update dependency', 'conclusion': 'failure'}
@@ -126,9 +192,11 @@ def test_explicit_required_dependency_job_cannot_be_excluded(monkeypatch):
     assert client.observe('a'*40, [{'context': 'Dependabot'}])['state'] == 'failed'
 
 
-def test_private_free_plan_has_no_enforceable_protection(monkeypatch):
+@pytest.mark.parametrize('suffix', ['', '.'])
+def test_private_free_plan_has_no_enforceable_protection(monkeypatch, suffix):
     client = GitHub(Path('/repo'), 'owner/repo')
-    unavailable = GitHubError('Upgrade to GitHub Pro or make this repository public to enable this feature (HTTP 403)')
+    unavailable = GitHubError('Private protection unsupported', status_code=403,
+                              response_message='Upgrade to GitHub Pro or make this repository public to enable this feature' + suffix)
     monkeypatch.setattr(client, 'api', Mock(side_effect=[{'private': True, 'default_branch': 'main'}, unavailable, unavailable]))
     assert client.plan()['requires_pr'] is False
 
@@ -164,7 +232,8 @@ def test_new_workflow_before_actions_index_updates_remains_pending(monkeypatch):
         {'content': base64.b64encode(b'on: [push]\njobs: {}').decode()},
     ])
     monkeypatch.setattr(client, 'api', api)
-    assert client.observe('a'*40, [], branch='main')['state'] == 'pending'
+    result = client.observe('a'*40, [], branch='main')
+    assert result['state'] == 'success' and result['optional_state'] == 'pending'
     assert api.call_args_list[0].args == (f"git/trees/{'a'*40}?recursive=1",)
 
 
@@ -187,7 +256,8 @@ def test_successful_check_does_not_hide_workflow_still_waiting_to_start(monkeypa
         {'content': base64.b64encode(b'on: [push]\njobs: {}').decode()},
     ]))
     required = [{'context': 'early'}] if existing_required else []
-    assert client.observe('a'*40, required, branch='main')['state'] == 'pending'
+    result = client.observe('a'*40, required, branch='main')
+    assert result['state'] == 'success' and result['optional_state'] == 'pending'
 
 
 def test_deleted_workflow_index_entry_cannot_block_no_ci_commit(monkeypatch):
@@ -260,7 +330,9 @@ def test_filtered_missing_workflow_uses_only_exact_push_evidence(monkeypatch, sc
         {'tree': [{'path': '.github/workflows/mac.yml', 'type': 'blob'}]},
         {'content': base64.b64encode(b'on:\n  push:\n    paths: ["backend/**"]\n').decode()},
     ]))
-    assert client.observe('a'*40, [], branch='main')['state'] == expected
+    result = client.observe('a'*40, [], branch='main')
+    assert result['state'] == 'success'
+    assert result['optional_state'] == ('pending' if expected == 'pending' else 'success')
 
 
 @pytest.mark.parametrize(('head', 'count', 'expected'), [('a'*40, 1, False), ('b'*40, 1, True), ('a'*40, 2, True)])
@@ -280,7 +352,7 @@ def test_pr_path_scope_requires_complete_current_head_files(monkeypatch, head, c
 @pytest.mark.parametrize("branches", [[], [{"name": "other"}]])
 def test_missing_base_is_initial_only_when_remote_has_no_branches(monkeypatch, branches):
     client = GitHub(Path('/repo'), 'owner/repo')
-    api = Mock(side_effect=[GitHubError('GitHub GET branches/main: gh: Branch not found (HTTP 404)'), branches])
+    api = Mock(side_effect=[GitHubError('Branch not found', status_code=404, response_message='Branch not found'), branches])
     monkeypatch.setattr(client, 'api', api)
     if branches:
         with pytest.raises(GitHubError, match='Branch not found'):
@@ -297,3 +369,63 @@ def test_base_auth_error_is_not_an_empty_repository(monkeypatch):
     with pytest.raises(GitHubError):
         client.base_sha('main')
     assert api.call_count == 1
+
+
+@pytest.mark.parametrize('status,headers,unavailable,reason', [
+    (401, '', True, 'remote_authentication_unavailable'),
+    (403, '', True, 'remote_authentication_unavailable'),
+    (403, 'X-RateLimit-Remaining: 0\r\n', True, 'remote_rate_limited'),
+    (403, 'Retry-After: 60\r\n', True, 'remote_rate_limited'),
+    (404, '', True, 'remote_api_unavailable'),
+    (429, '', True, 'remote_rate_limited'),
+    (503, '', True, 'remote_api_unavailable'),
+    (422, '', False, 'remote_publication_failed'),
+])
+def test_api_outages_use_http_envelope_not_diagnostics(monkeypatch, status, headers, unavailable, reason):
+    from cli.lib import github_publish
+    output = f'HTTP/2.0 {status} Response\r\n{headers}\r\n{{"message":"fixture-private-diagnostic"}}'
+    monkeypatch.setattr(github_publish.subprocess, 'run', Mock(return_value=subprocess.CompletedProcess([], 1, output, 'fixture-secret-token')))
+    with pytest.raises(GitHubError) as exc:
+        GitHub(Path('/repo'), 'owner/repo').api('')
+    assert exc.value.unavailable is unavailable
+    assert exc.value.reason == reason and exc.value.status_code == status
+    assert 'fixture' not in str(exc.value)
+
+
+@pytest.mark.parametrize('code,reason', [(1, 'remote_api_unavailable'), (4, 'remote_authentication_unavailable')])
+def test_cli_failure_without_http_response_is_unknown_not_source_failure(monkeypatch, code, reason):
+    from cli.lib import github_publish
+    monkeypatch.setattr(github_publish.subprocess, 'run', Mock(return_value=subprocess.CompletedProcess([], code, '', 'do not interpret this diagnostic')))
+    with pytest.raises(GitHubError) as exc:
+        GitHub(Path('/repo'), 'owner/repo').api('')
+    assert exc.value.unavailable and exc.value.reason == reason
+
+
+def test_success_and_absent_protection_parse_included_headers(monkeypatch):
+    from cli.lib import github_publish
+    runner = Mock(side_effect=[subprocess.CompletedProcess([], 0, 'HTTP/2.0 200 OK\nX-Request: fixture\n\n{"default_branch":"main"}', ''),
+                               subprocess.CompletedProcess([], 1, 'HTTP/2.0 404 Not Found\n\n{"message":"Branch not protected"}', '')])
+    monkeypatch.setattr(github_publish.subprocess, 'run', runner)
+    client = GitHub(Path('/repo'), 'owner/repo')
+    assert client.api('') == {'default_branch': 'main'}
+    assert client.api('branches/main/protection', absent_ok=True) is None
+    assert '--include' in runner.call_args.args[0]
+
+
+def test_optional_failure_does_not_hide_required_success():
+    checks = [{"name": "required", "state": "success"}, {"name": "optional", "state": "failed"}]
+    assert check_state(checks, [{"context": "required"}]) == "success"
+    assert check_state(checks, []) == "success"
+
+
+def test_optional_checks_remain_visible_when_requirements_pass(monkeypatch):
+    client = GitHub(Path("/repo"), "owner/repo")
+    responses = {"actions/runs?head_sha=" + "a" * 40: [],
+        "commits/" + "a" * 40 + "/check-runs?filter=latest": [{"name": "extra", "status": "completed", "conclusion": "failure"}],
+        "commits/" + "a" * 40 + "/statuses": [], "actions/workflows": []}
+    monkeypatch.setattr(client, "pages", lambda path, *_: responses[path])
+    monkeypatch.setattr(client, "api", lambda *_: {"tree": []})
+    result = client.observe("a" * 40, [])
+    assert result["state"] == "success"
+    assert result["requirements_state"] == "known"
+    assert result["optional_checks"] == [{"name": "extra", "state": "failed", "app_id": None, "url": None}]

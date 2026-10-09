@@ -7,7 +7,6 @@ from unittest.mock import MagicMock, patch
 import pytest
 from typer.testing import CliRunner
 
-from cli.lib.jj import JJRepoStatus
 from cli.main import app
 
 runner = CliRunner()
@@ -18,7 +17,6 @@ def _stub_observability_refresh(monkeypatch: pytest.MonkeyPatch) -> None:
     from cli.commands import pulse as pulse_cmd
 
     monkeypatch.setattr(pulse_cmd, "refresh_agent_observability", lambda: None)
-    monkeypatch.setattr(pulse_cmd, "_jj_status_for_project", lambda _project_id: None)
 
 
 def test_pulse_compact_renders_canonical_summary() -> None:
@@ -209,104 +207,6 @@ def test_pulse_compact_surfaces_stranded_running_tasks() -> None:
     assert "STRANDED task-3 | running | no_owner_session | Refactor tool handlers" in result.output
 
 
-def test_pulse_compact_reports_jj_state_without_checkpoint_preflight_block() -> None:
-    mock_client = MagicMock()
-    mock_client.get.return_value = {
-        "project_id": "monkey-fight",
-        "summary": {
-            "running_tasks": 0,
-            "active_owners": 0,
-            "active_specialists": 0,
-            "active_sessions": 0,
-            "stale_sessions": 0,
-            "reapable_sessions": 0,
-            "stranded_tasks": 0,
-        },
-        "cleanup": {
-            "active_checkpoints": 1,
-            "dirty_checkpoints": 0,
-            "needs_cleanup": True,
-        },
-        "running_tasks": [],
-        "active_owners": [],
-        "active_sessions": [],
-        "stale_sessions": [],
-        "stranded_tasks": [],
-    }
-    jj_status = JJRepoStatus(
-        repo="monkey-fight",
-        path="/srv/workspaces/projects/monkey-fight",
-        branch="main",
-        colocated=True,
-        state="described",
-        described=True,
-        conflicted=False,
-        unpublished=1,
-        change_id="chg",
-        commit_id="commit",
-    )
-
-    with (
-        patch("cli.commands.pulse.STClient", return_value=mock_client),
-        patch("cli.commands.pulse._jj_status_for_project", return_value=jj_status),
-    ):
-        result = runner.invoke(app, ["pulse", "--project", "monkey-fight"])
-
-    assert result.exit_code == 0
-    assert "JJSTATE:monkey-fight|state=described|described=true|conflicts=false|unpublished=1|change=chg|commit=commit" in result.output
-    assert "PREFLIGHT:monkey-fight|claim=clear|edit=clear|reasons=-|source=st-pulse" in result.output
-    assert "VCS-REVIEW:monkey-fight|dirty=0|jj_state=described|described=true|unpublished=1|action=push-unpublished" in result.output
-
-
-def test_pulse_compact_does_not_report_vcs_review_for_clean_empty_jj_change() -> None:
-    mock_client = MagicMock()
-    mock_client.get.return_value = {
-        "project_id": "agent-hub",
-        "summary": {
-            "running_tasks": 0,
-            "active_owners": 0,
-            "active_specialists": 0,
-            "active_sessions": 0,
-            "stale_sessions": 0,
-            "reapable_sessions": 0,
-            "stranded_tasks": 0,
-        },
-        "cleanup": {
-            "active_checkpoints": 0,
-            "dirty_checkpoints": 0,
-            "dirty_main_repo": False,
-            "needs_cleanup": False,
-        },
-        "running_tasks": [],
-        "active_owners": [],
-        "active_sessions": [],
-        "stale_sessions": [],
-        "stranded_tasks": [],
-    }
-    jj_status = JJRepoStatus(
-        repo="agent-hub",
-        path="/srv/workspaces/projects/agent-hub",
-        branch="main",
-        colocated=True,
-        state="clean",
-        described=False,
-        conflicted=False,
-        unpublished=0,
-        change_id="chg",
-        commit_id="commit",
-    )
-
-    with (
-        patch("cli.commands.pulse.STClient", return_value=mock_client),
-        patch("cli.commands.pulse._jj_status_for_project", return_value=jj_status),
-    ):
-        result = runner.invoke(app, ["pulse", "--project", "agent-hub"])
-
-    assert result.exit_code == 0
-    assert "PREFLIGHT:agent-hub|claim=clear|edit=clear|reasons=-|source=st-pulse" in result.output
-    assert "VCS-REVIEW:agent-hub" not in result.output
-
-
 def test_pulse_compact_counts_dirty_main_repo_without_checkpoints() -> None:
     mock_client = MagicMock()
     mock_client.get.return_value = {
@@ -340,7 +240,7 @@ def test_pulse_compact_counts_dirty_main_repo_without_checkpoints() -> None:
     assert "PULSE:test2|tasks=0|writers=0|readers=0|specialists=0|sessions=0|stale=0|reapable=0|checkpoints=0|dirty=1|cleanup=yes|stranded=0" in result.output
     assert "PREFLIGHT:test2|claim=clear|edit=clear|reasons=-|source=st-pulse" in result.output
     assert "REVIEW:test2|ownerless=yes|dirty=1|checkpoints=0|stranded=0|" in result.output
-    assert "VCS-REVIEW:test2|dirty=1|action=commit-push-or-continue-narrow" in result.output
+    assert "VCS-REVIEW:test2|dirty=1|action=checkpoint-or-continue-narrow" in result.output
 
 
 def test_pulse_compact_requires_review_for_ownerless_clean_checkpoint() -> None:
@@ -376,7 +276,7 @@ def test_pulse_compact_requires_review_for_ownerless_clean_checkpoint() -> None:
     assert "PREFLIGHT:portfolio-ai|claim=clear|edit=clear|reasons=-|source=st-pulse" in result.output
     assert "REVIEW:portfolio-ai|ownerless=yes|dirty=0|checkpoints=1|stranded=0|" in result.output
     assert "ownership=diagnostic-only" in result.output
-    assert "commit-push-prune-or-leave-explicit-handoff" in result.output
+    assert "checkpoint-or-leave-explicit-handoff" in result.output
 
 
 def test_pulse_gate_allows_dirty_cleanup_with_read_only_session() -> None:

@@ -14,6 +14,32 @@ from cli.commands import service
 from cli.lib import service_ops, service_release
 
 
+def test_service_admission_is_only_for_explicit_build_dependency_phases(monkeypatch, tmp_path):
+    admitted: list[str] = []
+    worker = Mock()
+    worker.run.return_value = subprocess.CompletedProcess([], 0, "", "")
+    ordinary = Mock(return_value=subprocess.CompletedProcess([], 0, "", ""))
+
+    @contextmanager
+    def admission(label):
+        admitted.append(label)
+        yield worker
+
+    monkeypatch.setattr(service_ops, "heavy_work", admission)
+    monkeypatch.setattr(service_ops.subprocess, "run", ordinary)
+    assert service_ops.run(["systemctl", "--user", "status"], cwd=tmp_path, quiet_success=True) == 0
+    assert admitted == []
+    ordinary.assert_called_once()
+    assert service_ops.run(["uv", "sync", "--locked"], cwd=tmp_path,
+                           env={"FIXTURE": "kept"}, quiet_success=True, _heavy=True) == 0
+    assert admitted == ["managed service build/dependencies"]
+    worker.run.assert_called_once()
+    assert worker.run.call_args.args == (["uv", "sync", "--locked"],)
+    assert worker.run.call_args.kwargs["cwd"] == tmp_path
+    assert worker.run.call_args.kwargs["env"]["FIXTURE"] == "kept"
+    ordinary.assert_called_once()
+
+
 @pytest.fixture
 def project(tmp_path: Path) -> service_ops.ProjectServices:
     return service_ops.ProjectServices(
@@ -82,6 +108,25 @@ def test_full_rebuild_preserves_optional_worker_intent(lifecycle):
     assert result.exit_code == 0, result.output
     restarted = [call.args[0] for call in lifecycle["restart_service"].call_args_list]
     assert restarted == ["backend.service", "required.service", "active.service", "frontend.service"]
+
+
+def test_rebuild_runs_preflight_once_before_lifecycle_work(lifecycle, unit_service_preflight):
+    result = CliRunner().invoke(service.app, ["rebuild", "example"])
+    assert result.exit_code == 0, result.output
+    unit_service_preflight.assert_called_once_with("example")
+
+
+def test_rebuild_preflight_block_preserves_source_and_services(lifecycle, unit_service_preflight, monkeypatch):
+    import typer
+
+    unit_service_preflight.side_effect = typer.Exit(2)
+    acceptance = Mock()
+    monkeypatch.setattr(service_ops, "prepare_accepted_release", acceptance)
+    result = CliRunner().invoke(service.app, ["rebuild", "example"])
+
+    assert result.exit_code == 2
+    acceptance.assert_not_called()
+    assert all(not operation.called for operation in lifecycle.values())
 
 
 @pytest.mark.parametrize("scope", ["full", "backend", "worker"])
@@ -218,6 +263,7 @@ def test_frontend_frozen_install_runs_at_workspace_root_and_keeps_cache(project,
     assert run.call_args_list[0].args[0] == ["pnpm", "install", "--frozen-lockfile"]
     assert run.call_args_list[0].kwargs["cwd"] == project.root
     assert run.call_args_list[-1].args[0] == ["pnpm", "build"]
+    assert all(call.kwargs["_heavy"] is True for call in run.call_args_list)
     assert (cache / "retained").exists()
 
 

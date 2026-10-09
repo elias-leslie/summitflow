@@ -10,10 +10,11 @@ Provides the automation backbone for Btrfs-backed project snapshots:
 
 from __future__ import annotations
 
-import contextlib
+import logging
 import shutil
 from dataclasses import dataclass
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
+from functools import partial
 from pathlib import Path
 
 from .autosnapshot_helpers import (
@@ -24,10 +25,13 @@ from .quick_snapshots import (
     QuickSnapshot,
     SnapshotScope,
     capture_snapshot,
-    delete_subvolume,
+    cleanup_recovery_copies,
     load_manifest,
+    recovery_catalogue,
     save_manifest,
 )
+from .snapshots._physical import all_entries, physical_lock, referenced_elsewhere
+from .snapshots._pruning import delete_managed_readonly
 from .workspace_paths import (
     get_workspaces_root,
     workspaces_root_available,
@@ -36,16 +40,43 @@ from .workspace_paths import (
 _AUTO_SOURCE_PREFIX = "auto-"
 
 
+def delete_subvolume(path: Path) -> None:
+    """Pruning-only deletion; generic rollback/source deletion stays unprivileged."""
+    recovery_store = get_workspaces_root().absolute() / ".snapshots" / "recoveries"
+    project = path.parent.name if path.parent.parent == recovery_store else None
+    delete_managed_readonly(path, recovery_project=project)
+
+
+def _delete_released_copy(entry: QuickSnapshot, path: Path) -> None:
+    _require_prunable_root(entry, path)
+    # Legacy copies outside .snapshots retain their existing unprivileged cleanup.
+    if path.parent == get_workspaces_root().absolute() / ".snapshots" / "recoveries" / entry.project_id:
+        delete_subvolume(path)
+    else:
+        from .quick_snapshots import delete_subvolume as delete_legacy
+
+        delete_legacy(path)
+
+
+def _require_prunable_root(entry: QuickSnapshot, path: Path) -> None:
+    target = path.absolute()
+    for root in (entry.scope_path, entry.repo_root, entry.capture_root):
+        if root and (target == Path(root).absolute() or target in Path(root).absolute().parents):
+            raise RuntimeError(f"Pruning refuses a live source or capture root: {path}")
+
+
 @dataclass(frozen=True)
 class AutosnapshotPolicy:
     """Retention and interval policy for automatic project snapshots."""
 
-    interval_minutes: int = 1440
-    baseline_stale_minutes: int = 30
-    auto_keep_per_scope: int = 7
+    interval_minutes: int = 15
+    baseline_stale_minutes: int = 15
+    auto_keep_per_scope: int = 768
     archived_auto_keep_per_scope: int = 3
     archived_keep_per_project: int = 3
     manual_keep_per_scope: int = 20
+    recent_hours: int = 24
+    hourly_days: int = 7
 
     def to_dict(self) -> dict[str, int]:
         return {
@@ -55,6 +86,8 @@ class AutosnapshotPolicy:
             "archived_auto_keep_per_scope": self.archived_auto_keep_per_scope,
             "archived_keep_per_project": self.archived_keep_per_project,
             "manual_keep_per_scope": self.manual_keep_per_scope,
+            "recent_hours": self.recent_hours,
+            "hourly_days": self.hourly_days,
         }
 
     def auto_keep_for_scope(
@@ -88,17 +121,11 @@ def _latest_entry(entries: list[QuickSnapshot]) -> QuickSnapshot:
 
 
 def _scope_state_needs_snapshot(repo_root: Path, entries: list[QuickSnapshot]) -> bool:
-    """Return True when a new automatic snapshot would capture new clean-state protection."""
     from .quick_snapshots import _head_oid
-    from .snapshots._helpers import _git
-
-    current_head = _head_oid(repo_root)
-    if current_head is None:
-        return True
-    status = _git(repo_root, ["status", "--short", "--untracked-files=all"], check=True)
-    if status.stdout.strip():
-        return True
-    return _latest_entry(entries).head_oid != current_head
+    from .snapshots._saved_work import git_transaction_clear, source_digest
+    git_transaction_clear(repo_root)
+    latest = _latest_entry(entries)
+    return latest.source_digest != source_digest(repo_root, use_cache=True) or latest.head_oid != _head_oid(repo_root)
 
 
 def ensure_baseline(
@@ -178,12 +205,14 @@ def enumerate_active_scopes() -> list[tuple[str, SnapshotScope]]:
 
     scopes: list[tuple[str, SnapshotScope]] = []
     root = get_workspaces_root()
+    recovery_roots = {str(Path(copy["root_path"]).resolve()) for point in all_entries()
+        for copy in recovery_catalogue(point) if not copy.get("deleted_at")}
 
     # Projects: the configured workspace root/projects/<project>/
     projects_root = root / "projects"
     if projects_root.is_dir():
         for project_dir in sorted(projects_root.iterdir()):
-            if project_dir.is_dir() and (project_dir / ".git").exists():
+            if project_dir.is_dir() and (project_dir / ".git").exists() and str(project_dir.resolve()) not in recovery_roots:
                 scopes.append((
                     project_dir.name,
                     SnapshotScope("project", project_dir.name, project_dir.resolve()),
@@ -227,62 +256,107 @@ def enumerate_prunable_scopes() -> list[tuple[str, SnapshotScope]]:
     ]
 
 
-def _delete_entries(
-    *,
-    project_id: str,
-    scope: SnapshotScope,
-    entries: list[QuickSnapshot],
-    manifest_dir: Path | None,
-) -> None:
-    artifact_root = manifest_dir / "artifacts" if manifest_dir is not None else None
-    snapshot_roots: set[Path] = set()
-
+def _delete_entries(*, project_id: str, scope: SnapshotScope, entries: list[QuickSnapshot], manifest_dir: Path | None) -> list[QuickSnapshot]:
+    """Return only physically deleted points. Failed deletion remains retryable."""
+    deleted = []
     for entry in entries:
-        snapshot_path = Path(entry.snapshot_path)
-        if snapshot_path.exists():
-            with contextlib.suppress(Exception):
-                delete_subvolume(snapshot_path)
-        snapshot_roots.add(snapshot_path.parent)
-
-        if artifact_root is not None:
-            artifact_dir = artifact_root / entry.id
-            if artifact_dir.exists():
-                shutil.rmtree(artifact_dir, ignore_errors=True)
-
-    for snapshot_root in snapshot_roots:
-        if snapshot_root.exists():
-            with contextlib.suppress(OSError):
-                snapshot_root.rmdir()
-
-
-def sweep_periodic(
-    *,
-    policy: AutosnapshotPolicy = DEFAULT_POLICY,
-) -> list[QuickSnapshot]:
-    """Create periodic snapshots for active scopes where the interval has elapsed."""
-    created: list[QuickSnapshot] = []
-
-    for project_id, scope in enumerate_active_scopes():
-        entries = load_manifest(project_id, scope)
-        age = _minutes_since(_latest_entry(entries).created_at) if entries else None
-        if age is not None and age < policy.interval_minutes:
-            continue
-        if entries and not _scope_state_needs_snapshot(scope.path, entries):
-            continue
-
         try:
-            snap = capture_snapshot(
-                "auto-periodic",
-                project_id=project_id,
-                cwd=scope.path,
-                source="auto-periodic",
-            )
-            created.append(snap)
-        except Exception:
-            # Periodic snapshots are best-effort
+            if any(not copy.get("deleted_at") for copy in recovery_catalogue(entry)):
+                raise RuntimeError("Recovery copies must be released and physically cleaned before pruning this point")
+            _require_prunable_root(entry, Path(entry.snapshot_path))
+            shared = referenced_elsewhere(entry)
+            if not shared:
+                delete_subvolume(Path(entry.snapshot_path))
+            if not shared and Path(entry.snapshot_path).exists():
+                raise OSError("Physical snapshot remains after deletion")
+        except Exception as exc:
+            entry.deletion_error = str(exc)
+            logging.getLogger(__name__).warning("snapshot deletion deferred %s: %s", entry.id, exc)
             continue
+        deleted.append(entry)
+        if manifest_dir:
+            artifact = manifest_dir / "artifacts" / entry.id
+            if artifact.exists():
+                shutil.rmtree(artifact, ignore_errors=True)
+    return deleted
 
+
+LAST_SWEEP_REPORT: list[dict[str, str]] = []
+LAST_PRUNE_REPORT: list[dict[str, str]] = []
+
+
+def sweep_periodic(*, policy: AutosnapshotPolicy = DEFAULT_POLICY) -> list[QuickSnapshot]:
+    """Capture saved changes; retention runs even during unchanged or pressured periods."""
+    created = []
+    LAST_SWEEP_REPORT.clear()
+    for project_id, scope in enumerate_active_scopes():
+        try:
+            entries = load_manifest(project_id, scope)
+            age = _minutes_since(_latest_entry(entries).created_at) if entries else None
+            if age is not None and age < policy.interval_minutes:
+                LAST_SWEEP_REPORT.append({"project_id": project_id, "status": "skip", "reason": "interval not elapsed"})
+            elif entries and not _scope_state_needs_snapshot(scope.path, entries):
+                LAST_SWEEP_REPORT.append({"project_id": project_id, "status": "skip", "reason": "saved source unchanged"})
+            else:
+                snap = capture_snapshot("auto-periodic", project_id=project_id, cwd=scope.path, source="auto-periodic")
+                created.append(snap)
+                LAST_SWEEP_REPORT.append({"project_id": project_id, "status": "captured", "reason": snap.id})
+        except Exception as exc:
+            LAST_SWEEP_REPORT.append({"project_id": project_id, "status": "skip", "reason": str(exc)})
+        try:
+            report_start = len(LAST_PRUNE_REPORT)
+            prune_scope(project_id=project_id, scope=scope, policy=policy)
+            for report in LAST_PRUNE_REPORT[report_start:]:
+                LAST_SWEEP_REPORT.append({"project_id": project_id, "status": "recovery copy " + report["action"],
+                    "reason": report["error"] or report["root_path"]})
+        except Exception as exc:
+            LAST_SWEEP_REPORT.append({"project_id": project_id, "status": "cleanup deferred", "reason": str(exc)})
     return created
+
+
+def _protected_ids(entries: list[QuickSnapshot], now: datetime) -> set[str]:
+    protected = set()
+    unfinished = [e for e in entries if e.unfinished]
+    if unfinished:
+        protected.add(_latest_entry(unfinished).id)
+    for entry in entries:
+        if entry.unfinished is None:
+            protected.add(entry.id)
+        if entry.recovery_active or any(not copy.get("deleted_at") for copy in recovery_catalogue(entry)):
+            protected.add(entry.id)
+        if entry.pin_reason:
+            expiry = datetime.fromisoformat(entry.pin_until) if entry.pin_until else None
+            if expiry is not None and expiry.tzinfo is None:
+                expiry = expiry.replace(tzinfo=UTC)
+            if expiry is None or expiry > now:
+                protected.add(entry.id)
+    return protected
+
+
+def _retention_candidates(entries: list[QuickSnapshot], policy: AutosnapshotPolicy) -> list[QuickSnapshot]:
+    now = datetime.now(UTC)
+    protected = _protected_ids(entries, now)
+    autos = sorted([e for e in entries if e.source.startswith(_AUTO_SOURCE_PREFIX)], key=lambda e: e.created_at, reverse=True)
+    # Keep the newest point even when a clean project has been idle for over a week.
+    if autos:
+        protected.add(autos[0].id)
+    buckets = set()
+    prune = []
+    for entry in autos:
+        created = datetime.fromisoformat(entry.created_at)
+        if created.tzinfo is None:
+            created = created.replace(tzinfo=UTC)
+        age = now - created
+        bucket = created.astimezone(UTC).strftime("%Y-%m-%dT%H")
+        keep = age <= timedelta(hours=policy.recent_hours)
+        if not keep and age <= timedelta(days=policy.hourly_days) and bucket not in buckets:
+            keep = True
+        buckets.add(bucket)
+        if not keep and entry.id not in protected:
+            prune.append(entry)
+    manuals = sorted([e for e in entries if not e.source.startswith(_AUTO_SOURCE_PREFIX)], key=lambda e: e.created_at, reverse=True)
+    prune.extend(e for e in manuals[policy.manual_keep_per_scope:] if e.id not in protected)
+    return prune
 
 
 def prune_scope(
@@ -294,88 +368,36 @@ def prune_scope(
     dry_run: bool = False,
 ) -> list[QuickSnapshot]:
     """Enforce retention policy for a single scope. Returns pruned entries."""
-    entries = load_manifest(project_id, scope)
-    if not entries:
-        return []
-
-    auto_entries = sorted(
-        [e for e in entries if e.source.startswith(_AUTO_SOURCE_PREFIX)],
-        key=lambda e: e.created_at,
-    )
-    manual_entries = sorted(
-        [e for e in entries if not e.source.startswith(_AUTO_SOURCE_PREFIX)],
-        key=lambda e: e.created_at,
-    )
-
-    auto_limit = policy.auto_keep_for_scope(scope_state=scope_state)
-    to_prune = (
-        auto_entries[: max(0, len(auto_entries) - auto_limit)]
-        + manual_entries[: max(0, len(manual_entries) - policy.manual_keep_per_scope)]
-    )
-    if not to_prune:
-        return []
-
-    if dry_run:
-        return to_prune
-
-    key = _scope_key(project_id, scope)
-    manifest_dir = find_manifest_scope_dir(project_id, scope, key)
-    prune_ids = {e.id for e in to_prune}
-    _delete_entries(
-        project_id=project_id,
-        scope=scope,
-        entries=to_prune,
-        manifest_dir=manifest_dir,
-    )
-
-    remaining = [e for e in entries if e.id not in prune_ids]
-    if remaining:
-        save_manifest(project_id, scope, remaining)
-    elif manifest_dir and manifest_dir.exists():
-        shutil.rmtree(manifest_dir, ignore_errors=True)
-    return to_prune
-
-
-def _build_drop_scope_keys(
-    scopes: list[tuple[str, SnapshotScope, str]],
-    keep_per_project: int,
-) -> set[str]:
-    """Return scope keys for archived auto-only project scopes that exceed the per-project cap."""
-    archived_by_project: dict[str, list[tuple[str, SnapshotScope]]] = {}
-    for project_id, scope, scope_state in scopes:
-        if scope_state != "archived" or scope.scope_type != "project":
-            continue
+    from .snapshots._saved_work import scope_lock
+    with physical_lock(), scope_lock(project_id, scope):
         entries = load_manifest(project_id, scope)
-        if not entries or any(not e.source.startswith(_AUTO_SOURCE_PREFIX) for e in entries):
-            continue
-        latest = max(e.created_at for e in entries)
-        archived_by_project.setdefault(project_id, []).append((latest, scope))
-
-    drop_keys: set[str] = set()
-    for proj_id, items in archived_by_project.items():
-        items.sort(key=lambda item: (item[0], item[1].scope_name), reverse=True)
-        for _, scope in items[keep_per_project:]:
-            drop_keys.add(_scope_key(proj_id, scope))
-    return drop_keys
-
-
-def _drop_scope_entries(
-    *,
-    project_id: str,
-    scope: SnapshotScope,
-    dry_run: bool,
-) -> list[QuickSnapshot]:
-    """Delete all entries for a scope that is being fully dropped; return those entries."""
-    entries = load_manifest(project_id, scope)
-    if not entries:
-        return []
-    if not dry_run:
+        unknown = [entry.id for entry in entries if entry.unfinished is None]
+        if unknown:
+            logging.getLogger(__name__).warning(
+                "snapshot retention skipped %s: saved-work state unknown; inspect/classify captured tree before pruning: %s",
+                project_id, ", ".join(unknown),
+            )
+        for entry in entries:
+            roots = cleanup_recovery_copies(entry, delete_fn=partial(_delete_released_copy, entry), dry_run=dry_run)
+            for root in roots:
+                copy = next(copy for copy in reversed(entry.recovery_copies) if copy["root_path"] == root)
+                action = "would-delete" if dry_run else "failed" if copy.get("deletion_error") else "deleted"
+                LAST_PRUNE_REPORT.append({"project_id": project_id, "point_id": entry.id, "root_path": root,
+                    "action": action, "error": str(copy.get("deletion_error") or "")})
+        if not dry_run:
+            save_manifest(project_id, scope, entries)
+        to_prune = _retention_candidates(entries, policy)
+        if dry_run:
+            return to_prune
+        if not to_prune:
+            return []
         key = _scope_key(project_id, scope)
         manifest_dir = find_manifest_scope_dir(project_id, scope, key)
-        _delete_entries(project_id=project_id, scope=scope, entries=entries, manifest_dir=manifest_dir)
-        if manifest_dir and manifest_dir.exists():
-            shutil.rmtree(manifest_dir, ignore_errors=True)
-    return entries
+        deleted = _delete_entries(project_id=project_id, scope=scope, entries=to_prune, manifest_dir=manifest_dir)
+        deleted_ids = {entry.id for entry in deleted}
+        # Persist errors as well as successes; never erase failed physical points.
+        save_manifest(project_id, scope, [e for e in entries if e.id not in deleted_ids])
+        return deleted
 
 
 def prune_all(
@@ -385,17 +407,10 @@ def prune_all(
 ) -> dict[str, list[QuickSnapshot]]:
     """Enforce retention policy across active and retained orphan scopes."""
     results: dict[str, list[QuickSnapshot]] = {}
+    LAST_PRUNE_REPORT.clear()
     scopes = list(enumerate_snapshot_scopes(include_archived=True))
-    keep_per_project = max(0, policy.archived_keep_per_project)
-    drop_scope_keys = _build_drop_scope_keys(scopes, keep_per_project)
-
     for project_id, scope, scope_state in scopes:
         key = _scope_key(project_id, scope)
-        if key in drop_scope_keys:
-            dropped = _drop_scope_entries(project_id=project_id, scope=scope, dry_run=dry_run)
-            if dropped:
-                results[key] = dropped
-            continue
         pruned = prune_scope(
             project_id=project_id,
             scope=scope,

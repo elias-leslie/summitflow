@@ -15,11 +15,14 @@ from ...tasks.backup_utils import (
     REPOSITORY_CRITICAL_RESTORE_DAYS,
     build_storage_env,
     offsite_is_configured,
+    storage_config_env,
 )
 from .models import (
     BackupHealthItem,
     BackupHealthResponse,
+    BackupRepositoryHealthItem,
     CoverageResponse,
+    CriticalRestoreHealth,
 )
 
 logger = get_logger(__name__)
@@ -164,7 +167,28 @@ async def backup_health() -> BackupHealthResponse:
     return BackupHealthResponse(
         sources=items,
         pending_upload_count=total_pending_upload,
+        repositories=_repository_recovery_health(),
     )
+
+
+def _repository_recovery_health() -> list[BackupRepositoryHealthItem]:
+    from ...tasks.backup_repository_runtime import repository_recovery_status
+
+    items = []
+    for backend in backup_store.list_backends(enabled_only=True):
+        config = backend.get("config") or {}
+        if not isinstance(config, Mapping) or config.get("engine") != "restic" or not config.get("restic_remote_repository"):
+            continue
+        try:
+            env = storage_config_env({**config, "__backend_type": backend["backend_type"], "__backend_id": backend["id"]})
+            recovery = CriticalRestoreHealth.model_validate(repository_recovery_status(env))
+        except (ValueError, OSError):
+            recovery = CriticalRestoreHealth(status="unavailable")
+        items.append(BackupRepositoryHealthItem(
+            backend_id=str(backend["id"]), backend_name=str(backend.get("name") or backend["id"]),
+            critical_restore=recovery,
+        ))
+    return items
 
 
 @router.post("/backups/restore-test/all")

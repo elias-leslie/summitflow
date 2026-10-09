@@ -22,6 +22,7 @@ from .api import (
     auto_fix,
     autonomous,
     backups,
+    browser_sessions,
     checkpoints,
     console_errors,
     db_workbench,
@@ -129,6 +130,7 @@ app.middleware("http")(access_control_middleware)
 # Include routers
 app.include_router(auth.router, prefix="/api/auth", tags=["auth"])
 app.include_router(monitor.router)
+app.include_router(browser_sessions.router)
 app.include_router(viewer.router, prefix="/api/viewer", tags=["viewer"])
 # Register the static managed owner route before the generic project detail route.
 app.include_router(agent_sessions.router, prefix="/api/projects", tags=["agent-sessions"])

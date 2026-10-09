@@ -5,8 +5,8 @@ from __future__ import annotations
 import asyncio
 import os
 import re
-import shlex
 import subprocess
+import tempfile
 import uuid
 from pathlib import Path
 
@@ -18,6 +18,7 @@ from ...storage import backups as backup_store
 from ...tasks.backup_restic import ResticAdapter, ResticConfig, ResticError
 from ...tasks.backup_utils import storage_config_env
 from ...utils import safe_subprocess
+from ...utils.smb_commands import SmbCommandError, smb_command, smb_path, smb_service
 from .models import StorageBackendCreate, StorageBackendResponse, StorageBackendUpdate
 from .utils import as_object_dict, optional_bool, optional_str, parse_iso_datetime
 
@@ -31,10 +32,15 @@ CREDENTIALS_DIR = Path(_HOST_ROOT) if _HOST_ROOT else Path(os.environ.get("HOME"
 def _write_smb_credentials(username: str, password: str) -> str:
     """Write SMB credentials file and return its path."""
     cred_file = CREDENTIALS_DIR / ".smbcredentials"
-    cred_file.write_text(
-        f"username={username}\npassword={password}\ndomain=WORKGROUP\n"
-    )
-    cred_file.chmod(0o600)
+    # mkstemp creates mode 0600 from the outset; replace never follows an old
+    # credential symlink, and readers see either complete old or new contents.
+    fd, temporary = tempfile.mkstemp(prefix=".smbcredentials-", dir=CREDENTIALS_DIR)
+    try:
+        with os.fdopen(fd, "w") as stream:
+            stream.write(f"username={username}\npassword={password}\ndomain=WORKGROUP\n")
+        os.replace(temporary, cred_file)
+    finally:
+        Path(temporary).unlink(missing_ok=True)
     return str(cred_file)
 
 
@@ -62,6 +68,12 @@ def _validate_engine_config(config: dict[str, object], backend_type: str) -> Non
     if not isinstance(engine, str) or engine not in {"native", "restic"}:
         raise HTTPException(status_code=400, detail="Unsupported backup engine")
     if engine != "restic":
+        if backend_type == "smb":
+            try:
+                smb_service(config.get("host"), config.get("share"))
+                smb_path(config.get("path") or ".")
+            except SmbCommandError as exc:
+                raise HTTPException(status_code=400, detail=str(exc)) from exc
         if any(key.startswith("restic_") for key in config):
             raise HTTPException(status_code=400, detail="Restic settings require engine=restic")
         transport = config.get("offsite_transport", "gio")
@@ -299,13 +311,13 @@ async def storage_repository_status(backend_id: str) -> dict[str, object]:
 
 
 @router.post("/backup-storage/{backend_id}/maintenance")
-async def maintain_storage_repository(backend_id: str, request: Request, dry_run: bool = True) -> dict[str, object]:
+async def maintain_storage_repository(backend_id: str, request: Request, dry_run: bool = True, force_critical_restore: bool = False) -> dict[str, object]:
     """Preview repository maintenance unless application is explicitly requested."""
     require_owner(request)
     from ...tasks.backup_repository_runtime import maintain_repository
 
     try:
-        return await asyncio.to_thread(maintain_repository, _restic_backend_env(backend_id), dry_run=dry_run)
+        return await asyncio.to_thread(maintain_repository, _restic_backend_env(backend_id), dry_run=dry_run, force_critical_restore=force_critical_restore)
     except (ResticError, OSError, ValueError) as exc:
         raise HTTPException(status_code=409, detail=str(exc)) from exc
 
@@ -356,10 +368,11 @@ async def test_storage_backend(backend_id: str) -> dict[str, object]:
             message = f"Credentials file not found: {cred_file}"
         else:
             # Test by listing the configured path (root ls may be ACL-denied)
-            ls_cmd = f"cd {shlex.quote(smb_path)}; ls" if smb_path else "ls"
             try:
+                service = smb_service(host, share)
+                ls_cmd = smb_command(("cd", smb_path), ("ls",)) if smb_path else smb_command(("ls",))
                 result = safe_subprocess.run(
-                    ["smbclient", f"//{host}/{share}", "-A", cred_file, "-c", ls_cmd],
+                    ["smbclient", service, "-A", cred_file, "-c", ls_cmd],
                     capture_output=True,
                     text=True,
                     timeout=15,
@@ -370,6 +383,8 @@ async def test_storage_backend(backend_id: str) -> dict[str, object]:
                 message = "Connection timed out (15s)"
             except FileNotFoundError:
                 message = "smbclient not installed"
+            except SmbCommandError as exc:
+                message = str(exc)
     elif backend["backend_type"] == "local":
         target_dir = _local_storage_dir(config)
         if target_dir is None:

@@ -4,8 +4,6 @@ from __future__ import annotations
 
 from typing import Any
 
-from ..lib.jj import JJRepoStatus
-
 
 def _scope_preview(owner: dict[str, Any]) -> str:
     scope = owner.get("scope_paths") or []
@@ -218,50 +216,11 @@ def _format_ownerless_review(project_id: Any, summary: dict[str, Any], cleanup: 
         f"REVIEW:{project_id}|ownerless=yes|dirty={_dirty_residue_count(cleanup)}|"
         f"checkpoints={_truthy_count(cleanup.get('active_checkpoints'))}|"
         f"stranded={_truthy_count(summary.get('stranded_tasks'))}|"
-        "action=agent-inspect-context-status-logs-then-commit-push-prune-or-leave-explicit-handoff"
-    )
-
-
-def _format_jj_state(project_id: Any, status: JJRepoStatus) -> str:
-    return (
-        f"JJSTATE:{project_id}|state={status.state}|described={str(status.described).lower()}|"
-        f"conflicts={str(status.conflicted).lower()}|unpublished={status.unpublished}|"
-        f"change={status.change_id}|commit={status.commit_id}"
-    )
-
-
-def _format_vcs_review(project_id: Any, cleanup: dict[str, Any], jj_status: JJRepoStatus | None) -> str | None:
-    dirty = _dirty_residue_count(cleanup)
-    if jj_status is None:
-        if not dirty:
-            return None
-        return f"VCS-REVIEW:{project_id}|dirty={dirty}|action=commit-push-or-continue-narrow"
-
-    needs_revision_commit = jj_status.state not in {"clean", "described", "unpublished"}
-    needs_review = bool(
-        dirty
-        or needs_revision_commit
-        or jj_status.conflicted
-        or jj_status.unpublished
-    )
-    if not needs_review:
-        return None
-
-    if jj_status.conflicted:
-        action = "resolve-jj-conflicts"
-    elif dirty or needs_revision_commit:
-        action = "commit-push-or-continue-narrow"
-    else:
-        action = "push-unpublished"
-    return (
-        f"VCS-REVIEW:{project_id}|dirty={dirty}|jj_state={jj_status.state}|"
-        f"described={str(jj_status.described).lower()}|unpublished={jj_status.unpublished}|"
-        f"action={action}"
+        "action=agent-inspect-context-status-logs-then-checkpoint-or-leave-explicit-handoff"
     )
 
 
 _RESOLUTION_HINTS: dict[str, str] = {
-    "jj_conflicts": "st vcs reconcile",
     "active_nonwriter_write_session": (
         "st pulse --sessions to inspect, or wait for the writer to release"
     ),
@@ -279,12 +238,9 @@ def resolution_hint(reason: str) -> str | None:
 def _preflight_reasons(
     summary: dict[str, Any],
     cleanup: dict[str, Any],
-    jj_status: JJRepoStatus | None = None,
     payload: dict[str, Any] | None = None,
 ) -> list[str]:
     reasons: list[str] = []
-    if jj_status and jj_status.colocated and jj_status.conflicted:
-        reasons.append("jj_conflicts")
     if _format_nonwriter_session_review("?", summary, cleanup, payload):
         reasons.append("active_nonwriter_write_session")
     return reasons
@@ -294,10 +250,9 @@ def _format_preflight(
     project_id: Any,
     summary: dict[str, Any],
     cleanup: dict[str, Any],
-    jj_status: JJRepoStatus | None = None,
     payload: dict[str, Any] | None = None,
 ) -> str:
-    reasons = _preflight_reasons(summary, cleanup, jj_status, payload)
+    reasons = _preflight_reasons(summary, cleanup, payload)
     state = "blocked" if reasons else "clear"
     detail = ",".join(reasons) if reasons else "-"
     return f"PREFLIGHT:{project_id}|claim={state}|edit={state}|reasons={detail}|source=st-pulse"
@@ -393,17 +348,23 @@ def print_compact_payload(
     payload: dict[str, Any],
     *,
     details: bool,
-    jj_status_for_project: Any,
 ) -> None:
     summary = payload.get("summary", {})
     cleanup = payload.get("cleanup", {})
     project_id = payload.get("project_id", "?")
-    jj_status = jj_status_for_project(project_id)
     _print_summary_line(project_id, summary, cleanup)
-    if jj_status is not None:
-        print(_format_jj_state(project_id, jj_status))
-    print(_format_preflight(project_id, summary, cleanup, jj_status, payload))
-    _print_review_lines(project_id, summary, cleanup, jj_status, payload)
+    if development := payload.get("development"):
+        working = development.get("working_tree") or {}
+        accepted = development.get("accepted") or {}
+        running = development.get("running") or {}
+        print(f"DEVELOPMENT:{project_id}|working={working.get('state', 'unknown')}"
+              f"|source={str(working.get('source_commit') or 'unknown')[:12]}"
+              f"|acceptance={accepted.get('state', 'unknown')}"
+              f"|accepted={str(accepted.get('source_commit') or 'unknown')[:12]}"
+              f"|running={str(running.get('source_commit') or 'unknown')[:12]}"
+              f"|evidence={accepted.get('evidence') or 'unavailable'}")
+    print(_format_preflight(project_id, summary, cleanup, payload))
+    _print_review_lines(project_id, summary, cleanup, payload)
     _print_leases(project_id)
     if details:
         _print_detail_rows(payload)
@@ -451,12 +412,11 @@ def _print_review_lines(
     project_id: Any,
     summary: dict[str, Any],
     cleanup: dict[str, Any],
-    jj_status: JJRepoStatus | None,
     payload: dict[str, Any],
 ) -> None:
     review_line = _format_ownerless_review(project_id, summary, cleanup)
     session_review_line = _format_nonwriter_session_review(project_id, summary, cleanup, payload)
-    vcs_review_line = _format_vcs_review(project_id, cleanup, jj_status)
+    vcs_review_line = _format_vcs_review(project_id, cleanup)
     for line in (review_line, session_review_line, vcs_review_line):
         if line:
             print(line)
@@ -491,3 +451,10 @@ def _print_rows(rows: list[Any], formatter: Any) -> None:
     for row in rows:
         if isinstance(row, dict):
             print(formatter(row))
+
+
+def _format_vcs_review(project_id: Any, cleanup: dict[str, Any]) -> str | None:
+    dirty = _dirty_residue_count(cleanup)
+    if not dirty:
+        return None
+    return f"VCS-REVIEW:{project_id}|dirty={dirty}|action=checkpoint-or-continue-narrow"

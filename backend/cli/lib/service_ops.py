@@ -27,6 +27,7 @@ from app.project_identity import (
     list_project_identities,
 )
 from app.utils.env_files import project_env_files
+from app.utils.heavy_work import heavy_work
 from app.utils.shared_paths import get_repo_root
 
 from ..details import display_path, emit_result_or_details, summary_hint, write_details
@@ -39,7 +40,6 @@ from .monitor_store_migration import (
     retain_restart_interlock,
     update_restart_receipt,
 )
-from .neri_runner_deploy import RunnerAdapter
 
 
 class ServiceError(RuntimeError):
@@ -60,7 +60,6 @@ class ProjectServices:
     frontend_dir: Path
     health_endpoint: str
     backend_extras: tuple[str, ...] = ()
-    runner_adapter: RunnerAdapter | None = None
     host_config_root: Path | None = None
     durable_data_root: Path | None = None
 
@@ -105,13 +104,6 @@ def load_project(project_id: str) -> ProjectServices:
     if not isinstance(extras, list) or any(not isinstance(extra, str) or not extra.strip() for extra in extras):
         raise ServiceError("runtime.backend_extras must be a list of nonempty extra names")
     canonical_id = str(project.get("id") or project_id)
-    adapter_raw = services.get("runner_adapter")
-    try:
-        adapter = RunnerAdapter(adapter_raw) if adapter_raw is not None else None
-    except (ValueError, TypeError):
-        raise ServiceError("services.runner_adapter must be the fixed neri-runner-v1 identifier") from None
-    if adapter is not None and canonical_id != "neri":
-        raise ServiceError("The neri-runner-v1 adapter is restricted to Neri")
     root = Path(root_raw)
     backend_subdir = str(runtime.get("backend_dir") or "backend")
     frontend_subdir = str(runtime.get("frontend_dir") or "frontend")
@@ -128,7 +120,6 @@ def load_project(project_id: str) -> ProjectServices:
         frontend_dir=root if frontend_subdir == "." else root / frontend_subdir,
         health_endpoint=str(runtime.get("health_endpoint") or "/health"),
         backend_extras=tuple(dict.fromkeys(_as_str_list(extras))),
-        runner_adapter=adapter,
         host_config_root=root,
         durable_data_root=root / "data",
     )
@@ -185,17 +176,15 @@ def run(
     cwd: Path | None = None,
     env: dict[str, str] | None = None,
     quiet_success: bool = False,
+    _heavy: bool = False,
 ) -> int:
-    result = subprocess.run(
-        command,
-        cwd=cwd,
-        env=_command_env(command, env),
-        text=True,
-        capture_output=True,
-        encoding="utf-8",
-        errors="replace",
-        check=False,
-    )
+    options: dict[str, Any] = dict(cwd=cwd, env=_command_env(command, env), text=True,
+                   capture_output=True, encoding="utf-8", errors="replace", check=False)
+    if _heavy:
+        with heavy_work("managed service build/dependencies") as work:
+            result = work.run(command, **options)
+    else:
+        result = subprocess.run(command, **options)
     if result.returncode != 0 or not quiet_success:
         emit_result_or_details(cwd or get_repo_root(), _detail_name(command), "SERVICE", result)
     return result.returncode
@@ -633,7 +622,7 @@ def sync_backend(project: ProjectServices) -> int:
     extras = dict.fromkeys((*(("dev",) if "dev" in declared_extras else ()), *project.backend_extras))
     for extra in extras:
         command.extend(["--extra", extra])
-    return run(command, cwd=project.backend_dir, quiet_success=True)
+    return run(command, cwd=project.backend_dir, quiet_success=True, _heavy=True)
 
 
 def build_host_monitor(project: ProjectServices) -> int:
@@ -645,7 +634,7 @@ def build_host_monitor(project: ProjectServices) -> int:
         print("[service] host monitor requires Cargo.toml and Cargo.lock in accepted source")
         return 1
     print("[service] building locked host monitor")
-    code = run(["cargo", "build", "--locked", "--release"], cwd=source, quiet_success=True)
+    code = run(["cargo", "build", "--locked", "--release"], cwd=source, quiet_success=True, _heavy=True)
     if code == 0:
         host_monitor_deploy.build_helper(project.root)
     return code
@@ -841,10 +830,10 @@ def build_frontend(project: ProjectServices) -> int:
     if (project.frontend_dir / "package-lock.json").exists() and not (
         project.frontend_dir / "pnpm-lock.yaml"
     ).exists():
-        install = run(["npm", "ci"], cwd=project.frontend_dir, quiet_success=True)
+        install = run(["npm", "ci"], cwd=project.frontend_dir, quiet_success=True, _heavy=True)
         if install != 0:
             return install
-        return run(["npm", "run", "build"], cwd=project.frontend_dir, quiet_success=True)
+        return run(["npm", "run", "build"], cwd=project.frontend_dir, quiet_success=True, _heavy=True)
     # pnpm resolves workspace dependencies at the workspace root. Always verify
     # the frozen lock, even when an existing node_modules directory is present.
     install_dir = project.frontend_dir
@@ -856,7 +845,7 @@ def build_frontend(project: ProjectServices) -> int:
             install_dir = directory
             workspace = True
             break
-    install = run(["pnpm", "install", "--frozen-lockfile"], cwd=install_dir, quiet_success=True)
+    install = run(["pnpm", "install", "--frozen-lockfile"], cwd=install_dir, quiet_success=True, _heavy=True)
     if install != 0:
         return install
     if workspace:
@@ -864,10 +853,10 @@ def build_frontend(project: ProjectServices) -> int:
         # build order; build only this frontend's transitive workspace inputs.
         relative = project.frontend_dir.relative_to(install_dir).as_posix()
         dependencies = run(["pnpm", "--filter", f"{{./{relative}}}^...", "--if-present", "run", "build"],
-                           cwd=install_dir, quiet_success=True)
+                           cwd=install_dir, quiet_success=True, _heavy=True)
         if dependencies != 0:
             return dependencies
-    return run(["pnpm", "build"], cwd=project.frontend_dir, quiet_success=True)
+    return run(["pnpm", "build"], cwd=project.frontend_dir, quiet_success=True, _heavy=True)
 
 
 def run_migrations(project: ProjectServices) -> int:
@@ -1014,7 +1003,7 @@ def resolve_accepted_source(
             "reused": bool(candidate.get("reused", False)),
             "reuse_lookup_ms": candidate.get("reuse_lookup_ms"),
         }
-    service_release.AcceptedSource.from_descriptor(descriptor)
+    service_release.AcceptedSource.from_descriptor(descriptor, require_full=True)
     return descriptor
 
 

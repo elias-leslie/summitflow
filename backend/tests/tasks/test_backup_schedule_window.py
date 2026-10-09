@@ -8,7 +8,13 @@ import pytest
 from pydantic import ValidationError
 
 from app.config import Settings
+from app.tasks import backup_repository_runtime as runtime
 from app.tasks import backup_scheduler as scheduler
+
+
+@pytest.fixture(autouse=True)
+def isolated_host_backup(monkeypatch):
+    monkeypatch.setattr(scheduler, "_scheduled_host_backup", lambda _: {"status": "skipped", "reason": "host-backup-disabled"})
 
 
 @pytest.mark.parametrize(
@@ -58,10 +64,14 @@ def test_outside_window_skips_scheduled_work_without_changing_due_sources(
     monkeypatch.setattr(scheduler.backup_store, "list_due_sources", lambda: [])
     monkeypatch.setattr(scheduler.backup_store, "update_source_last_run", unexpected)
     monkeypatch.setattr(scheduler.maintenance_store, "record_maintenance_run", unexpected)
+    copied = []
+    monkeypatch.setattr(runtime, "sync_repository_batch", lambda batch: copied.append(batch) or {})
 
     assert scheduler.run_scheduled_backups() == {
         "status": "skipped", "reason": "outside-backup-window", "count": 0, "results": [],
+        "host_backup": {"status": "skipped", "reason": "host-backup-disabled"},
     }
+    assert copied == [{}]
 
 
 @pytest.mark.parametrize(
@@ -212,39 +222,18 @@ def test_daytime_restart_catches_up_only_missed_sources_and_preserves_failures(
     assert advanced == ["offline"]
 
 
-@pytest.mark.parametrize("publication_raises", [False, True])
-def test_failed_publication_does_not_block_local_capture_and_stays_retryable(
-    monkeypatch: pytest.MonkeyPatch, publication_raises: bool,
-) -> None:
+@pytest.mark.parametrize("capture_status", ["completed", "failed"])
+def test_capture_never_publishes_even_with_retained_legacy_setting(monkeypatch, capture_status):
+    from unittest.mock import Mock
+
     from app.tasks import backup_publish
-
     monkeypatch.setattr(scheduler, "get_settings", lambda: SimpleNamespace(
-        backup_publish_before_backup=True, backup_schedule_start_hour=None,
-    ))
-    events: list[str] = []
-    recorded: list[dict[str, Any]] = []
-
-    def publish(_source: dict[str, Any]) -> dict[str, Any]:
-        events.append("publish")
-        if publication_raises:
-            raise OSError("private remote diagnostic must not be retained")
-        return {"status": "failed", "reason": "offline", "backup_can_continue": True}
-
-    def capture(**_kwargs: Any) -> dict[str, Any]:
-        events.append("capture")
-        return {"status": "completed", "backup_id": "saved-local-point"}
-
-    def record(backup_id: str, verification: dict[str, Any]) -> None:
-        assert backup_id == "saved-local-point"
-        recorded.append(verification)
-
+        backup_publish_before_backup=True, backup_schedule_start_hour=None))
+    publish = Mock(side_effect=AssertionError("No remote work during backup"))
     monkeypatch.setattr(backup_publish, "publish_source_before_backup", publish)
-    monkeypatch.setattr(scheduler, "create_backup", capture)
-    monkeypatch.setattr(scheduler.backup_store, "merge_backup_verification_json", record)
+    monkeypatch.setattr(scheduler, "create_backup", lambda **_: {"status": capture_status, "backup_id": "saved"})
     monkeypatch.setattr(scheduler.backup_store, "update_source_last_run", lambda *_: None)
-    result = scheduler._process_due_source({"id": "project", "frequency": "daily"})
-
-    assert events == ["publish", "capture"]
-    assert result["status"] == "completed"
-    assert recorded[0]["publication"]["status"] == "failed"
-    assert "private remote" not in str(recorded)
+    result = scheduler._process_due_source({"id": "source", "frequency": "daily"})
+    assert result["status"] == capture_status
+    assert "publication" not in result
+    publish.assert_not_called()

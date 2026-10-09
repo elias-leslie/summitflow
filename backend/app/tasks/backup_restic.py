@@ -28,6 +28,11 @@ from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any
 
+from ..utils.transient_scratch import (
+    disposable_scratch,
+    ensure_scratch_capacity,
+    scratch_subprocess_env,
+)
 from .backup_activity import BackupCancelled, check_backup_cancelled, run_bulk_process
 
 RESTIC_VERSION = "0.19.1"
@@ -223,14 +228,29 @@ class ResticAdapter:
             env["RCLONE_CONFIG"] = str(self.config.rclone_config)
         return env
 
-    def _run(self, command: list[str], *, phase: str, **kwargs: Any) -> subprocess.CompletedProcess[Any]:
+    def _invoke(self, command: list[str], *, phase: str, **kwargs: Any) -> subprocess.CompletedProcess[Any]:
+        """Keep native check caches and child scratch off the system volume."""
         check_backup_cancelled()
-        result = self._runner(command, env=self._env(), phase=phase, object_name="Restic repository", **kwargs)
+        with disposable_scratch("restic-process-") as scratch:
+            existing_check = kwargs.pop("capacity_check", None)
+
+            def capacity_check() -> None:
+                ensure_scratch_capacity(scratch, 0)
+                if existing_check is not None:
+                    existing_check()
+
+            return self._runner(command, env=scratch_subprocess_env(self._env(), path=scratch),
+                                phase=phase, object_name="Restic repository", capacity_check=capacity_check, **kwargs)
+
+    def _run(self, command: list[str], *, phase: str, **kwargs: Any) -> subprocess.CompletedProcess[Any]:
+        result = self._invoke(command, phase=phase, **kwargs)
         if result.returncode != 0:
+            if command[0] == "restic" and result.returncode == 11:
+                raise ResticError(f"restic {phase} failed to lock repository (exit 11); inspect active backups and stale native locks")
             raise ResticError(f"{command[0]} {phase} failed (exit {result.returncode}); inspect private operator diagnostics")
         return result
 
-    def _command(self, *args: str, remote: bool = False, permanent_delete: bool = False) -> list[str]:
+    def _command(self, *args: str, remote: bool = False, permanent_delete: bool = False, restore_cache: Path | None = None) -> list[str]:
         repository = self.config.remote_repository if remote else str(self.config.local_repository)
         password = self.config.remote_password_file if remote else self.config.local_password_file
         if not repository or not password:
@@ -239,7 +259,11 @@ class ResticAdapter:
         # Check creates and removes its own fresh cache. Disabling that cache
         # repeatedly downloads tree packs within the same check; --with-cache
         # would instead reuse old data and is deliberately never supplied.
-        if not args or args[0] != "check":
+        if restore_cache is not None:
+            if not args or args[0] != "restore":
+                raise ResticError("An operation cache is only supported for restore")
+            command.extend(["--cache-dir", str(restore_cache)])
+        elif not args or args[0] != "check":
             command.append("--no-cache")
         if permanent_delete and repository.startswith("rclone:"):
             if not self.config.offsite_prune_qualified:
@@ -288,7 +312,7 @@ class ResticAdapter:
         self.config.validate(remote=not local_only)
         with repository_lock(self.config):
             for remote in ([False] if local_only else [False, True]):
-                result = self._runner(self._command("cat", "config", remote=remote), env=self._env(), phase="configuration", object_name="Restic repository")
+                result = self._invoke(self._command("cat", "config", remote=remote), phase="configuration")
                 if result.returncode == 10:
                     args = ["init", "--repository-version", "2"]
                     if remote:
@@ -327,7 +351,7 @@ class ResticAdapter:
             raise ResticError("Source ID contains unsupported characters")
         return "source:" + source_id
 
-    def save_payload(self, source_id: str, payload: Mapping[str, Any], *, parent_snapshot: str | None = None) -> dict[str, Any]:
+    def save_payload(self, source_id: str, payload: Mapping[str, Any], *, parent_snapshot: str | None = None, defer_check: bool = False) -> dict[str, Any]:
         """Back up a stable, caller-validated staged tree; never a live source."""
         self.config.validate()
         root = Path(payload["snapshot_dir"])
@@ -357,7 +381,8 @@ class ResticAdapter:
                 snapshot_id = _id(str(summary["snapshot_id"]))
             except (ValueError, KeyError, StopIteration) as exc:
                 raise ResticError("Restic did not return a completed snapshot summary") from exc
-            self._run(self._command("check"), phase="verification")
+            if not defer_check:
+                self._run(self._command("check"), phase="verification")
             logical = int(summary.get("total_bytes_processed", payload.get("total_bytes", 0)))
             stored = int(summary.get("data_added_packed", summary.get("data_added", 0)))
             return {
@@ -370,9 +395,10 @@ class ResticAdapter:
                 "snapshot_metrics": {key: int(summary.get(key, 0)) for key in ("files_new", "files_changed", "files_unmodified", "dirs_new", "dirs_changed", "dirs_unmodified")},
                 "parent_snapshot_id": parent_snapshot,
                 "verification": {
-                    "verified": True, "format": "restic-v1", "method": "restic-backup-and-structural-check",
+                    "verified": True, "format": "restic-v1", "method": "restic-backup-and-consistent-capture" if defer_check else "restic-backup-and-structural-check",
                     "repository_id": repository["id"], "snapshot_id": snapshot_id,
-                    "payload_path": str(resolved), "structural_check_at": _now().isoformat(),
+                    "payload_path": str(resolved), "structural_check_at": None if defer_check else _now().isoformat(),
+                    "structural_check_pending": defer_check,
                     "payload_read_verified": False, "capture": dict(payload["verification"]),
                     "offsite": {"status": "pending"},
                 },
@@ -605,7 +631,11 @@ class ResticAdapter:
                 if not path or Path(path).is_absolute() or ".." in Path(path).parts or any(char in path for char in "*?[]"):
                     raise ResticError("Restore include must be a literal path relative to the staged payload")
                 args.extend(["--include", str(payload_path / path)])
-            self._run(self._command(*args, remote=remote), phase="restore")
+            # Repeated tree reads may otherwise re-download remote metadata.
+            # This cache starts empty, belongs only to this restore job, and
+            # cannot reuse an existing cache or an earlier restore's metadata.
+            with disposable_scratch("restic-restore-cache-") as cache:
+                self._run(self._command(*args, remote=remote, restore_cache=cache), phase="restore")
             root = destination / payload_path.relative_to("/")
             if not root.is_dir() or root.is_symlink():
                 raise ResticError("Restic did not materialize the expected payload root")
@@ -673,6 +703,7 @@ class ResticAdapter:
             "version": 1, "status": "pending", "operation": operation,
             "phase": "prepared", "started_at": _now().isoformat(), "baseline_objects": sorted(inventory),
             "snapshot_ids": sorted({_id(snapshot_id) for snapshot_id in snapshot_ids}),
+            "physical_bytes_before": sum(int(entry["Size"]) for entry in inventory.values()),
         }
         persist(copy.deepcopy(journal))
         return journal
@@ -748,20 +779,30 @@ class ResticAdapter:
     def quota_free_bytes(self) -> int | None:
         """Read provider-reported free bytes; unavailable quota is not headroom."""
         self.config.validate(remote=True)
-        remote = self.config.remote_repository or ""
         with repository_lock(self.config):
-            if not remote.startswith("rclone:"):
-                return shutil.disk_usage(Path(remote)).free
-            result = self._run(["rclone", "about", remote.removeprefix("rclone:"), "--json", "--config", str(self.config.rclone_config)], phase="configuration")
-            try:
-                free = json.loads(result.stdout).get("free")
-                if free is None:
-                    return None
-                if isinstance(free, bool) or not isinstance(free, int) or free < 0:
-                    raise ResticError("Provider free-space response is invalid")
-                return free
-            except (ValueError, TypeError, AttributeError) as exc:
-                raise ResticError("Provider free-space JSON is invalid") from exc
+            return self._quota_free_bytes()
+
+    def _quota_free_bytes(self) -> int | None:
+        """Caller owns the repository lock, including post-prune observation."""
+        remote = self.config.remote_repository or ""
+        if not remote.startswith("rclone:"):
+            return shutil.disk_usage(Path(remote)).free
+        result = self._run(["rclone", "about", remote.removeprefix("rclone:"), "--json", "--config", str(self.config.rclone_config)], phase="configuration")
+        try:
+            free = json.loads(result.stdout).get("free")
+            if free is None:
+                return None
+            if isinstance(free, bool) or not isinstance(free, int) or free < 0:
+                raise ResticError("Provider free-space response is invalid")
+            return free
+        except (ValueError, TypeError, AttributeError) as exc:
+            raise ResticError("Provider free-space JSON is invalid") from exc
+
+    def physical_bytes(self, *, remote: bool = False) -> int:
+        """Measure actual object storage, independently of retained logical size."""
+        if remote:
+            return sum(int(entry["Size"]) for entry in self._inventory().values())
+        return sum(path.stat().st_size for path in self.config.local_repository.rglob("*") if path.is_file() and not path.is_symlink())
 
     def retention(self, retention_days: Mapping[str, int], *, remote: bool = False, pinned: Sequence[str] = (), pending: Sequence[str] = (), last_good: Mapping[str, str] | None = None, state: Mapping[str, Any] | None = None, persist: Persist | None = None, dry_run: bool = True) -> dict[str, Any]:
         """Preview by default; explicit scoped forgetting never invokes prune."""
@@ -844,13 +885,16 @@ class ResticAdapter:
                     # recorded corruption before verification can see it.
                     self._reconcile_maintenance(journal, persist)
                     if command_completed:
-                        return {"status": "completed", "dry_run": False, "resumed": True, "completed_at": journal["maintenance"]["completed_at"], "state": journal}
+                        after_bytes = self.physical_bytes(remote=True)
+                        before_bytes = journal["maintenance"].get("physical_bytes_before")
+                        return {"status": "completed", "dry_run": False, "resumed": True, "completed_at": journal["maintenance"]["completed_at"], "physical_bytes_before": before_bytes, "physical_bytes_after": after_bytes, "physical_bytes_confirmed": True, "reclaimed_bytes": max(0, before_bytes - after_bytes) if before_bytes is not None else None, "free_bytes": self._quota_free_bytes(), "state": journal}
                     # The crash may have preceded native mutation. Reconciliation
                     # verified the old intent; only a new saved intent may rerun
                     # prune, after checking currently available headroom.
                     if free is None or free < minimum_headroom_bytes * 2:
                         return {"status": "skipped", "reason": "insufficient-headroom", "state": journal}
                 assert free is not None  # New mutation always passed the headroom gate.
+                before_bytes = self.physical_bytes(remote=remote)
                 self._run(self._command("check", remote=remote), phase="verification")
                 args = ["prune", "--max-unused", "5%", "--max-repack-size", str(free - minimum_headroom_bytes)]
                 self._run(self._command(*args, "--dry-run", remote=remote, permanent_delete=remote), phase="maintenance")
@@ -864,6 +908,8 @@ class ResticAdapter:
                         journal["maintenance"]["phase"] = "command_completed"
                         persist(copy.deepcopy(journal))
                         self._reconcile_maintenance(journal, persist)
-                return {"status": "preview" if dry_run else "completed", "dry_run": dry_run, "max_unused": "5%", "max_repack_bytes": free - minimum_headroom_bytes, "completed_at": _now().isoformat() if not dry_run else None, "state": journal}
+                after_bytes = self.physical_bytes(remote=remote)
+                observed_free = self._quota_free_bytes() if remote else shutil.disk_usage(self.config.local_repository).free
+                return {"status": "preview" if dry_run else "completed", "dry_run": dry_run, "max_unused": "5%", "max_repack_bytes": free - minimum_headroom_bytes, "completed_at": _now().isoformat() if not dry_run else None, "physical_bytes_before": before_bytes, "physical_bytes_after": after_bytes, "reclaimed_bytes": max(0, before_bytes - after_bytes) if not dry_run else 0, "free_bytes": observed_free, "physical_bytes_confirmed": True, "state": journal}
             except ResticError as exc:
                 return {"status": "failed", "error": str(exc), "backup_verification_unchanged": True, "state": journal}

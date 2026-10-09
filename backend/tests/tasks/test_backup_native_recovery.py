@@ -2,8 +2,13 @@
 
 from __future__ import annotations
 
+import hashlib
+import json
+import os
+import shutil
 import sqlite3
 import subprocess
+import tempfile
 from pathlib import Path
 from typing import Any, cast
 
@@ -179,6 +184,252 @@ def test_archive_restores_git_history_index_worktree_sqlite_and_safe_links(
     assert not (restored / "unsafe-link").exists()
     with sqlite3.connect(restored / "state.sqlite3") as connection:
         assert connection.execute("SELECT value FROM evidence").fetchone() == ("recoverable",)
+
+
+def _st_recovery_project(tmp_path: Path) -> tuple[Path, dict[str, bytes]]:
+    project = tmp_path / "st-project"
+    project.mkdir()
+    _git(project, "init", "-b", "main")
+    _git(project, "config", "user.name", "Fixture")
+    _git(project, "config", "user.email", "fixture@example.invalid")
+    (project / "source.txt").write_text("accepted source\n")
+    _git(project, "add", "source.txt")
+    _git(project, "commit", "-m", "source")
+    source = _git(project, "rev-parse", "HEAD")
+    artifact = b"exact native check evidence\n"
+    artifact_hash = hashlib.sha256(artifact).hexdigest()
+    receipts = {
+        "st/acceptance/old.json": b'{"state":"success","source":{"commit":"historical"}}\n',
+        "st/acceptance/current.json": json.dumps({"state": "success", "source": {"commit": source}, "checks": [{"artifacts": [{"sha256": artifact_hash, "retained_path": str(project / ".git/st/native-stages/artifacts" / artifact_hash)}]}]}).encode(),
+        "st/acceptance/failed.json": b'{"state":"failed","source":{"commit":"original"}}\n',
+        "st/acceptance/isolated-observations/interrupted.log": b"Isolated acceptance interrupted: KeyboardInterrupt\n",
+        "st/acceptance/isolated-observations/failed/native-artifacts/proof": b"retained failed proof\n",
+        f"st/native-stages/artifacts/{artifact_hash}": artifact,
+        f"st/native-stages/{'a' * 64}-stage_name.v1.json": b'{"state":"failed","artifact":"artifacts/retained"}\n',
+        f"st/publication/{source}.json": b'{"kind":"manual_publication.v1","observation":{"state":"pending"}}\n',
+        f"st/publication/{source}-historical.json": b'{"kind":"manual_publication.v1","observation":{"state":"failed"}}\n',
+        "st-publication/range.json": b'{"source":"git_push_porcelain","before":"original"}\n',
+    }
+    for relative, content in receipts.items():
+        path = project / ".git" / relative
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_bytes(content)
+        path.chmod(0o600)
+    (project / ".git/st/acceptance/.unfinished.tmp").write_bytes(b"temporary write")
+    (project / ".git/st/native-stages/runtime.lock").write_bytes(b"runtime lock")
+    (project / ".git/st-publication/unfinished.tmp").write_bytes(b"temporary push write")
+    (project / ".git/config").write_text((project / ".git/config").read_text() + "\n[unrelated]\n\tprivate = administrative-state\n")
+    return project, receipts
+
+
+def _st_recovery_snapshot(tmp_path: Path) -> tuple[Path, dict[str, bytes]]:
+    from app.tasks import backup_native_archive as archive
+    from app.tasks import backup_native_recovery as recovery
+
+    project, receipts = _st_recovery_project(tmp_path)
+    snapshot, _ = recovery.build_consistent_snapshot(project, tmp_path / "stage", archive.DEFAULT_EXCLUDES, archive._should_exclude)
+    return snapshot, receipts
+
+
+def test_archive_roundtrip_preserves_exact_st_receipts_and_artifacts_without_admitting_history(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from app.tasks import backup_native_archive as archive
+    from app.tasks.backup_native_restore import restore_isolated_archive
+
+    project, receipts = _st_recovery_project(tmp_path)
+    monkeypatch.setattr(archive, "_dump_database", lambda *_args: (0, False))
+    staging = tmp_path / "archive-stage"
+    staging.mkdir()
+    captured = archive._create_project_archive(project, "st-project", staging, {})
+    restored = tmp_path / "restored"
+    result = restore_isolated_archive(Path(captured["archive_path"]), restored)
+
+    assert result["recovery"]["st_metadata_files_restored"] == len(receipts)
+    for relative, content in receipts.items():
+        path = restored / ".git" / relative
+        assert path.read_bytes() == content
+        assert path.stat().st_mode & 0o777 == 0o600
+    assert "unrelated" not in (restored / ".git/config").read_text()
+    assert not (restored / ".git/st/acceptance/.unfinished.tmp").exists()
+    assert not (restored / ".git/st/native-stages/runtime.lock").exists()
+    assert not (restored / ".git/st-publication/unfinished.tmp").exists()
+    assert _git(restored, "rev-parse", "HEAD") == _git(project, "rev-parse", "HEAD")
+
+
+def test_st_recovery_resolves_common_metadata_for_linked_worktree(tmp_path: Path) -> None:
+    from app.tasks import backup_native_archive as archive
+    from app.tasks import backup_native_recovery as recovery
+
+    project, receipts = _st_recovery_project(tmp_path)
+    worktree = tmp_path / "linked"
+    _git(project, "worktree", "add", "--detach", str(worktree))
+    publication = Path(_git(worktree, "rev-parse", "--path-format=absolute", "--git-path", "st-publication"))
+    publication.mkdir()
+    (publication / "worktree.json").write_bytes(b'{"worktree":"original"}\n')
+    snapshot, manifest = recovery.build_consistent_snapshot(worktree, tmp_path / "linked-stage", archive.DEFAULT_EXCLUDES, archive._should_exclude)
+    recovery.restore_git_recovery(snapshot)
+    for relative, content in receipts.items():
+        if not relative.startswith("st-publication/"):
+            assert (snapshot / ".git" / relative).read_bytes() == content
+    assert (snapshot / ".git/st-publication/worktree.json").read_bytes() == b'{"worktree":"original"}\n'
+    assert manifest["st_metadata"]["version"] == 1
+
+
+def test_st_recovery_excludes_orphan_artifact_temporary_files_and_retains_final_proofs(tmp_path: Path) -> None:
+    from app.tasks import backup_native_archive as archive
+    from app.tasks import backup_native_recovery as recovery
+
+    project, receipts = _st_recovery_project(tmp_path)
+    artifact_directory = project / ".git/st/native-stages/artifacts"
+    with tempfile.NamedTemporaryFile("wb", dir=artifact_directory, delete=False) as handle:
+        orphan = Path(handle.name)
+        handle.write(b"interrupted artifact retention")
+    snapshot, manifest = recovery.build_consistent_snapshot(project, tmp_path / "stage", archive.DEFAULT_EXCLUDES, archive._should_exclude)
+    assert orphan.exists()  # Capture must not purge interrupted source history.
+    assert {entry["path"] for entry in manifest["st_metadata"]["files"]} == receipts.keys()
+    recovery.restore_git_recovery(snapshot)
+    assert not (snapshot / ".git/st/native-stages/artifacts" / orphan.name).exists()
+    for relative, content in receipts.items():
+        assert (snapshot / ".git" / relative).read_bytes() == content
+
+
+@pytest.mark.parametrize("tamper", ["hash", "path", "duplicate", "mode", "extra", "file_link", "parent_link", "version"])
+def test_st_recovery_rejects_bad_payload_before_git_metadata_is_created(tmp_path: Path, tamper: str) -> None:
+    from app.tasks import backup_native_recovery as recovery
+
+    snapshot, _ = _st_recovery_snapshot(tmp_path)
+    manifest_path = snapshot / recovery.RECOVERY_DIR_NAME / recovery.RECOVERY_MANIFEST_NAME
+    manifest = json.loads(manifest_path.read_text())
+    files = manifest["st_metadata"]["files"]
+    payload = snapshot / recovery.RECOVERY_DIR_NAME / recovery.ST_METADATA_DIR_NAME
+    target = payload / files[0]["path"]
+    outside = tmp_path / "outside"
+    outside.mkdir()
+    sentinel = outside / "sentinel"
+    sentinel.write_bytes(b"foreign bytes")
+    if tamper == "hash":
+        target.write_bytes(b"changed evidence")
+    elif tamper == "path":
+        files[-1]["path"] = "../outside/sentinel"
+    elif tamper == "duplicate":
+        files.append(files[0].copy())
+    elif tamper == "mode":
+        files[-1]["mode"] = 0o4600
+    elif tamper == "extra":
+        (payload / "st/acceptance/unlisted.json").write_bytes(b"extra receipt")
+    elif tamper == "file_link":
+        target.unlink()
+        target.symlink_to(sentinel)
+    elif tamper == "parent_link":
+        shutil.rmtree(payload / "st/acceptance")
+        (payload / "st/acceptance").symlink_to(outside, target_is_directory=True)
+    else:
+        manifest["st_metadata"]["version"] = 2
+    manifest_path.write_text(json.dumps(manifest))
+
+    with pytest.raises(RuntimeError, match="ST recovery"):
+        recovery.restore_git_recovery(snapshot)
+    assert not (snapshot / ".git").exists()
+    assert sentinel.read_bytes() == b"foreign bytes"
+    assert sorted(path.name for path in outside.iterdir()) == ["sentinel"]
+
+
+@pytest.mark.parametrize("existing", ["repository", "symlink", "gitfile"])
+def test_st_recovery_refuses_existing_foreign_git_metadata(tmp_path: Path, existing: str) -> None:
+    from app.tasks import backup_native_recovery as recovery
+
+    snapshot, _ = _st_recovery_snapshot(tmp_path)
+    foreign = tmp_path / "foreign"
+    foreign.mkdir()
+    (foreign / "sentinel").write_bytes(b"foreign bytes")
+    if existing == "repository":
+        _git(snapshot, "init")
+        (snapshot / ".git/sentinel").write_bytes(b"existing repository")
+    elif existing == "symlink":
+        (snapshot / ".git").symlink_to(foreign, target_is_directory=True)
+    else:
+        (snapshot / ".git").write_text(f"gitdir: {foreign}\n")
+    with pytest.raises(RuntimeError, match="existing destination Git metadata"):
+        recovery.restore_git_recovery(snapshot)
+    assert (foreign / "sentinel").read_bytes() == b"foreign bytes"
+    if existing == "repository":
+        assert (snapshot / ".git/sentinel").read_bytes() == b"existing repository"
+
+
+def test_st_recovery_refuses_environment_that_redirects_git_into_foreign_metadata(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from app.tasks import backup_native_recovery as recovery
+
+    snapshot, _ = _st_recovery_snapshot(tmp_path)
+    foreign = tmp_path / "foreign"
+    foreign.mkdir()
+    sentinel = foreign / "sentinel"
+    sentinel.write_bytes(b"foreign bytes")
+    monkeypatch.setenv("GIT_DIR", str(foreign))
+    with pytest.raises(RuntimeError, match="redirected Git environment"):
+        recovery.restore_git_recovery(snapshot)
+    assert not (snapshot / ".git").exists()
+    assert sorted(path.name for path in foreign.iterdir()) == ["sentinel"]
+    assert sentinel.read_bytes() == b"foreign bytes"
+
+
+@pytest.mark.parametrize("linked", ["file", "root", "parent", "observations"])
+def test_st_capture_refuses_linked_receipt_paths(tmp_path: Path, linked: str) -> None:
+    from app.tasks import backup_native_archive as archive
+    from app.tasks import backup_native_recovery as recovery
+
+    project, _ = _st_recovery_project(tmp_path)
+    outside = tmp_path / "foreign"
+    outside.mkdir()
+    (outside / "secret.json").write_bytes(b"foreign metadata must not be copied")
+    relative = {"file": "st/acceptance/current.json", "root": "st/acceptance", "parent": "st", "observations": "st/acceptance/isolated-observations"}[linked]
+    target = project / ".git" / relative
+    if target.is_dir():
+        shutil.rmtree(target)
+    else:
+        target.unlink()
+    target.symlink_to(outside / "secret.json" if linked == "file" else outside)
+    with pytest.raises(RuntimeError, match="ST recovery"):
+        recovery.build_consistent_snapshot(project, tmp_path / "stage", archive.DEFAULT_EXCLUDES, archive._should_exclude)
+    assert not (tmp_path / "stage/project-snapshot/.summitflow-recovery/st-metadata").exists()
+
+
+def test_st_capture_detects_changed_receipt_bytes_even_when_stat_metadata_matches(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from app.tasks import backup_native_archive as archive
+    from app.tasks import backup_native_recovery as recovery
+
+    project, _ = _st_recovery_project(tmp_path)
+    target = project / ".git/st/acceptance/failed.json"
+    before = target.stat()
+    original = recovery._copy_st_metadata
+
+    def change_after_copy(*args: Any, **kwargs: Any) -> dict[str, Any]:
+        result = original(*args, **kwargs)
+        content = target.read_bytes().replace(b"failed", b"passed")
+        target.write_bytes(content)
+        os.utime(target, ns=(before.st_atime_ns, before.st_mtime_ns))
+        return result
+
+    monkeypatch.setattr(recovery, "_copy_st_metadata", change_after_copy)
+    with pytest.raises(RuntimeError, match="source changed during capture"):
+        recovery.build_consistent_snapshot(project, tmp_path / "stage", archive.DEFAULT_EXCLUDES, archive._should_exclude)
+
+
+def test_legacy_git_payload_without_st_metadata_remains_readable(tmp_path: Path) -> None:
+    from app.tasks import backup_native_recovery as recovery
+
+    snapshot, _ = _st_recovery_snapshot(tmp_path)
+    manifest_path = snapshot / recovery.RECOVERY_DIR_NAME / recovery.RECOVERY_MANIFEST_NAME
+    manifest = json.loads(manifest_path.read_text())
+    del manifest["st_metadata"]
+    shutil.rmtree(snapshot / recovery.RECOVERY_DIR_NAME / recovery.ST_METADATA_DIR_NAME)
+    manifest_path.write_text(json.dumps(manifest))
+    assert recovery.restore_git_recovery(snapshot)["git_restored"] is True
+    assert not (snapshot / ".git/st").exists()
 
 
 def test_snapshot_fails_closed_when_source_changes_during_copy(

@@ -39,7 +39,9 @@ def test_create_plan_includes_precision_code_search_context() -> None:
     assert result["status"] == "completed"
     assert "## Precision Code Search" in prompt
     assert "Precision Code Search: symbol-first" in prompt
-    assert "Use the Precision Code Search block as the first code-navigation pass." in prompt
+    assert "Precision Code Search is optional navigation" in prompt
+    assert "rg/rg --files" in prompt
+    assert "exhaustive references" in prompt
     assert call_kwargs["agent_slug"] == "planner"
     assert "model" not in call_kwargs
 
@@ -80,4 +82,22 @@ def test_discuss_task_includes_precision_code_search_context() -> None:
     assert result.response == "Done"
     assert "## Precision Code Search" in prompt
     assert "Precision Code Search: symbol-first" in prompt
-    assert "Use the Precision Code Search block as the first code-navigation pass." in prompt
+    assert "Precision Code Search is optional navigation" in prompt
+    assert "rg/rg --files" in prompt
+    assert "exhaustive references" in prompt
+
+
+def test_registered_search_metadata_delivers_optional_routing() -> None:
+    import json
+    from pathlib import Path
+
+    metadata = json.loads((Path(__file__).resolve().parents[3] / "scripts/lib/extensions/search.json").read_text())
+    assert metadata["id"] == "code-intelligence.search"
+    assert metadata["namespace"] == "search"
+    spec = next(item for item in metadata["usage"] if item["surface"] == "st.search")
+    assert spec["tier"] == "reference"
+    assert "optional precision" in spec["when"]
+    assert "regex" in " ".join(spec["precautions"])
+    assert "exhaustive references" in " ".join(spec["precautions"])
+    assert "case-insensitive literal phrase" in metadata["help"][""]
+    assert "hypothetical" in metadata["help"][""]

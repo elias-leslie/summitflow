@@ -8,7 +8,6 @@ import os
 import re
 import shutil
 import subprocess
-import tempfile
 import time
 from collections.abc import Callable, Collection
 from datetime import UTC, datetime, timedelta
@@ -17,6 +16,11 @@ from typing import Any
 from urllib.parse import quote, urlsplit
 
 from ..services.backup_keys import get_backup_key_paths
+from ..utils.transient_scratch import (
+    disposable_scratch,
+    ensure_scratch_capacity,
+    scratch_subprocess_env,
+)
 from .backup_activity import check_backup_cancelled, current_activity, run_bulk_process
 from .backup_native_rclone import NativeRcloneProvider
 
@@ -45,14 +49,14 @@ def _run(command: list[str], *, timeout: int = TRANSFER_TIMEOUT) -> subprocess.C
             "verification" if command[-2].startswith("google-drive://") else "upload"
         )
         return run_bulk_process(
-            command, env={**os.environ, "LC_ALL": "C"}, phase=phase,
+            command, env=scratch_subprocess_env({**os.environ, "LC_ALL": "C"}), phase=phase,
             object_name=Path(command[-1]).name if phase != "upload" else Path(command[-2]).name,
             attention_after=timeout,
         )
     return subprocess.run(
         command,
         stdin=subprocess.DEVNULL,
-        env={**os.environ, "LC_ALL": "C"},
+        env=scratch_subprocess_env({**os.environ, "LC_ALL": "C"}),
         capture_output=True,
         text=True,
         timeout=timeout,
@@ -425,6 +429,7 @@ def _replicate_parts(
                     chunk = source.read(min(1024 * 1024, PART_SIZE_BYTES - part_bytes))
                     if not chunk:
                         break
+                    ensure_scratch_capacity(temporary_dir, len(chunk))
                     part_file.write(chunk)
                     part_digest.update(chunk)
                     aggregate.update(chunk)
@@ -488,10 +493,9 @@ def _replicate_parts(
         "parts": parts,
     }
     manifest_path = temporary_dir / manifest_name
-    manifest_path.write_text(
-        json.dumps(manifest, indent=2, sort_keys=True) + "\n",
-        encoding="utf-8",
-    )
+    manifest_text = json.dumps(manifest, indent=2, sort_keys=True) + "\n"
+    ensure_scratch_capacity(temporary_dir, len(manifest_text.encode("utf-8")))
+    manifest_path.write_text(manifest_text, encoding="utf-8")
     manifest_path.chmod(0o600)
     manifest_checksum = _checksum(manifest_path)
     published_manifest = publish(
@@ -557,9 +561,12 @@ def replicate_completed_archive(
         safe_source = _safe_source_id(source_id)
         provider = NativeRcloneProvider(merged) if transport == "rclone" else None
         source_folder_uri = provider.ensure_folder(safe_source) if provider else _ensure_display_folder(root_uri, safe_source)
-        with tempfile.TemporaryDirectory(prefix="backup-offsite-") as temporary_dir:
+        encrypted_bytes = archive_path.stat().st_size
+        staging_bytes = 0 if provider else (
+            2 * PART_SIZE_BYTES if encrypted_bytes > PART_SIZE_BYTES else encrypted_bytes
+        )
+        with disposable_scratch("backup-offsite-", required_bytes=staging_bytes) as temporary_dir:
             encrypted_checksum = local_checksum
-            encrypted_bytes = archive_path.stat().st_size
             temp_path = Path(temporary_dir)
             replicated = (
                 _replicate_parts(

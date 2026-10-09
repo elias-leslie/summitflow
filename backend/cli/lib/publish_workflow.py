@@ -14,6 +14,17 @@ from .publish_scope import push_scope
 class PublishError(RuntimeError):
     """Publication failed before remote delivery."""
 
+    def __init__(self, message: str, *, unavailable: bool = False,
+                 reason: str = 'remote_publication_failed'):
+        super().__init__(message)
+        self.unavailable = unavailable
+        self.reason = reason
+
+
+def _error_evidence(exc: GitHubError | PublishError, sha: str) -> dict[str, Any]:
+    return {'state': 'pending' if exc.unavailable else 'unavailable', 'sha': sha,
+            'checks': [], 'failure_reason': exc.reason, 'detail': str(exc)}
+
 
 def github_name(remote: str) -> str | None:
     if remote.startswith('git@github.com:'):
@@ -32,20 +43,34 @@ def evidence_result(evidence: dict[str, Any]) -> dict[str, Any]:
     complete = state in {'success', 'not_applicable'}
     return {'status': 'SUCCESS' if complete else ('PENDING' if state == 'pending' else 'BLOCKED'),
             'publication_complete': complete, 'ci': evidence,
-            'reason': '' if complete else f'remote_ci_{state}',
+            'reason': '' if complete else evidence.get('failure_reason', f'remote_ci_{state}'),
             'deployment': {'state': 'not_run'}}
 
 
+def publication_branch(task_id: str, sha: str) -> str:
+    return 'st/' + (re.sub(r'[^a-zA-Z0-9_-]', '-', task_id) if task_id else sha[:16])
+
+
 def publish_git(repo: Path, *, sha: str, task_id: str, message: str,
-                run_git: Callable[..., Any], push_revision: Callable[[str | None], Any] | None = None,
-                remote_name: str = "origin", resume: bool = False) -> dict[str, Any]:
+                run_git: Callable[..., Any],
+                remote_name: str = "origin", resume: bool = False,
+                destination: str | None = None, reconcile_checkout: bool = True,
+                activity_allowed: Callable[[], bool] | None = None,
+                before_delivery: Callable[[str | None, str, str | None], None] | None = None) -> dict[str, Any]:
+    if activity_allowed is not None and not activity_allowed():
+        raise PublishError('Publication ownership is unavailable', unavailable=True,
+                           reason='publication_busy')
     remote = run_git(repo, ['remote', 'get-url', '--push', remote_name])
     if remote.returncode:
         raise PublishError('Cannot resolve origin push remote')
     name = github_name(remote.stdout.strip())
     client = GitHub(repo, name) if name else None
+    if client is not None and activity_allowed is not None:
+        client.activity_allowed = activity_allowed
     try:
         plan = client.plan() if client else None
+        if destination is not None and plan and destination != plan['base']:
+            raise GitHubError('Selected destination does not match the remote default branch')
         remote_sha = client.base_sha(plan["base"]) if client and plan else None
         if client and plan and remote_sha is None and plan['requires_pr']:
             raise GitHubError('Empty repository requires a pull request; initialize its default branch under the applicable repository rules first')
@@ -56,7 +81,7 @@ def publish_git(repo: Path, *, sha: str, task_id: str, message: str,
             if not already_remote:
                 raise GitHubError('Retained source is no longer on the remote default branch')
     except GitHubError as exc:
-        raise PublishError(str(exc)) from exc
+        raise PublishError(str(exc), unavailable=exc.unavailable, reason=exc.reason) from exc
     if client and plan and already_remote:
         try:
             client.push_scope = push_scope(repo, name or '', plan['base'], sha)
@@ -64,10 +89,16 @@ def publish_git(repo: Path, *, sha: str, task_id: str, message: str,
             if client.push_scope:
                 evidence['push_scope'] = client.push_scope
         except GitHubError as exc:
-            evidence = {'state': 'unavailable', 'sha': sha, 'checks': [], 'detail': str(exc)}
-        return {'pushed': False, 'sha': sha, 'reason': 'already_on_remote', **evidence_result(evidence)}
+            evidence = _error_evidence(exc, sha)
+        return {'pushed': False, 'sha': sha, 'reason': 'already_on_remote',
+                'delivery': {'uploaded_source': sha, 'pull_request_state': 'not_applicable', 'merged_source': None},
+                **evidence_result(evidence)}
     destination_branch: str | None = None
-    head = 'st/' + (re.sub(r'[^a-zA-Z0-9_-]', '-', task_id) if task_id else sha[:16])
+    head = publication_branch(task_id, sha)
+    if before_delivery is not None:
+        if activity_allowed is not None and not activity_allowed():
+            raise PublishError('Publication ownership is unavailable', unavailable=True, reason='publication_busy')
+        before_delivery(remote_sha, plan['base'] if plan else destination or '', head if plan and plan['requires_pr'] else None)
     try:
         existing_pull = (
             client.source_pull_request(plan['base'], sha)
@@ -75,17 +106,19 @@ def publish_git(repo: Path, *, sha: str, task_id: str, message: str,
             else None
         )
     except GitHubError as exc:
-        raise PublishError(str(exc)) from exc
+        raise PublishError(str(exc), unavailable=exc.unavailable, reason=exc.reason) from exc
     if plan and plan['requires_pr']:
         args = ['push', remote_name, f'{sha}:refs/heads/{head}']
-    elif push_revision:
-        args = []  # JJ callback supplies its explicit remote and bookmark.
     else:
-        current = run_git(repo, ['branch', '--show-current'])
-        if current.returncode or not current.stdout.strip():
+        current = run_git(repo, ['branch', '--show-current']) if destination is None else None
+        if destination is None and (current is None or current.returncode or not current.stdout.strip()):
             raise PublishError('Cannot publish detached Git HEAD without an explicit branch')
         # Inspect and push the same remote; do not let push.default select another destination.
-        destination_branch = current.stdout.strip()
+        if destination is None:
+            assert current is not None
+            destination_branch = current.stdout.strip()
+        else:
+            destination_branch = destination
         args = ['push', *(['--porcelain'] if client else []), remote_name, f'{sha}:refs/heads/{destination_branch}']
     if existing_pull is not None:
         pushed = None
@@ -94,7 +127,10 @@ def publish_git(repo: Path, *, sha: str, task_id: str, message: str,
             raise PublishError('Cannot resume publication without retained remote delivery')
         pushed = None
     else:
-        pushed = push_revision(head if plan and plan['requires_pr'] else None) if push_revision else run_git(repo, args)
+        if activity_allowed is not None and not activity_allowed():
+            raise PublishError('Publication ownership is unavailable', unavailable=True,
+                               reason='publication_busy')
+        pushed = run_git(repo, args)
         if pushed.returncode:
             raise PublishError(pushed.stderr.strip() or pushed.stdout.strip() or 'git push failed')
     result: dict[str, Any] = {'pushed': not resume and existing_pull is None, 'sha': sha}
@@ -111,8 +147,10 @@ def publish_git(repo: Path, *, sha: str, task_id: str, message: str,
                 evidence = client.finish_pr(pull['number'], sha, plan)
                 if evidence.get('merge_sha'):
                     result['merge_sha'] = evidence['merge_sha']
-                    current = run_git(repo, ['rev-parse', 'HEAD']) if resume else None
-                    if resume and (current is None or current.returncode or current.stdout.strip() != sha):
+                    current = run_git(repo, ['rev-parse', 'HEAD']) if resume and reconcile_checkout else None
+                    if not reconcile_checkout:
+                        result['local_reconciliation'] = {'state': 'deferred', 'reason': 'isolated_publication'}
+                    elif resume and (current is None or current.returncode or current.stdout.strip() != sha):
                         result['local_reconciliation'] = {'state': 'deferred', 'reason': 'later_checkout_work_preserved'}
                     else:
                         result['local_reconciliation'] = reconcile(repo, plan['base'], run_git, remote=remote_name)
@@ -126,7 +164,10 @@ def publish_git(repo: Path, *, sha: str, task_id: str, message: str,
         else:
             evidence = {'state': 'not_applicable', 'sha': sha, 'checks': [], 'reason': 'non_github_remote'}
     except (GitHubError, PublishError) as exc:
-        evidence = {'state': 'unavailable', 'sha': sha, 'checks': [], 'detail': str(exc)}
+        evidence = _error_evidence(exc, sha)
+    result['delivery'] = {'uploaded_source': sha,
+                          'pull_request_state': 'merged' if result.get('merge_sha') else 'pending' if result.get('pr_url') else 'not_applicable',
+                          'merged_source': result.get('merge_sha'), 'pull_request_url': result.get('pr_url')}
     return {**result, **evidence_result(evidence)}
 
 
@@ -148,18 +189,4 @@ def reconcile(repo: Path, base: str, run_git: Callable[..., Any], *, remote: str
         return {'state': 'success' if result.returncode == 0 else 'deferred', 'detail': result.stderr.strip()}
     if ancestry.returncode != 1:
         return {'state': 'deferred', 'reason': 'ancestry_unavailable'}
-    # Squash/rebase changes commit identities. Retain old main under a local ref;
-    # never reset, force-update, or discard the user's original commits.
-    sha = run_git(repo, ['rev-parse', 'HEAD']).stdout.strip()
-    if not sha:
-        return {'state': 'deferred', 'reason': 'local_revision_unavailable'}
-    preserved = f'st-preserved/{sha[:16]}'
-    exists = run_git(repo, ['show-ref', '--verify', '--quiet', f'refs/heads/{preserved}'])
-    if exists.returncode != 1:
-        return {'state': 'deferred', 'reason': 'preservation_ref_already_exists', 'preserved_branch': preserved}
-    renamed = run_git(repo, ['branch', '-m', preserved])
-    if renamed.returncode:
-        return {'state': 'deferred', 'reason': 'preservation_failed', 'detail': renamed.stderr.strip()}
-    switched = run_git(repo, ['switch', '-c', base, '--track', target])
-    return {'state': 'success' if switched.returncode == 0 else 'deferred',
-            'preserved_branch': preserved, 'detail': switched.stderr.strip()}
+    return {'state': 'deferred', 'reason': 'diverged_history_preserved'}

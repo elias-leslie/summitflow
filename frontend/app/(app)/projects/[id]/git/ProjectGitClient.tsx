@@ -1,151 +1,64 @@
 'use client'
 
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { AlertTriangle } from 'lucide-react'
+import { useQuery } from '@tanstack/react-query'
 import { useParams } from 'next/navigation'
-import { useState } from 'react'
-import { ConflictAlerts } from '@/components/git/ConflictAlerts'
-import { DashboardContent } from '@/components/git/project-row/DashboardContent'
+import { ProjectRow } from '@/components/git/ProjectRow'
 import {
-  checkProjectGitRemote,
+  fetchProjectDevelopmentStatus,
   fetchProjectGitStatus,
-  pullRepository,
-  type SyncResult,
-} from '@/lib/api'
-import { POLL_STANDARD, STALE_STANDARD, TOAST_DISMISS_MS } from '@/lib/polling'
-import { GitPageHeader } from './GitPageHeader'
-import { GitRepoCard } from './GitRepoCard'
-import { GitSyncToast } from './GitSyncToast'
+} from '@/lib/api/git'
+import { POLL_SLOW, STALE_GIT } from '@/lib/polling'
 
 export function ProjectGitClient() {
-  const params = useParams()
-  const projectId = params.id as string
-  const queryClient = useQueryClient()
-  const [syncResults, setSyncResults] = useState<SyncResult[] | null>(null)
-  const [syncToastTitle, setSyncToastTitle] = useState('Git Operation Complete')
-  const [remoteCheckedAt, setRemoteCheckedAt] = useState<Date | null>(null)
-
-  const {
-    data: gitStatus,
-    isLoading,
-    error,
-    refetch,
-  } = useQuery({
-    queryKey: ['git-status', projectId],
-    queryFn: () => fetchProjectGitStatus(projectId),
-    staleTime: STALE_STANDARD,
-    refetchInterval: POLL_STANDARD * 2,
-  })
-
-  const syncMutation = useMutation({
-    mutationFn: () => pullRepository(projectId),
-    onSuccess: (data) => {
-      setSyncToastTitle('Sync Complete')
-      setSyncResults(data.results)
-      queryClient.invalidateQueries({ queryKey: ['git-status', projectId] })
-      queryClient.invalidateQueries({
-        queryKey: ['project-dashboard', projectId],
-      })
-      queryClient.invalidateQueries({ queryKey: ['git-conflicts'] })
-      setTimeout(() => setSyncResults(null), TOAST_DISMISS_MS)
+  const projectId = useParams().id as string
+  const query = useQuery({
+    queryKey: ['development-status', projectId],
+    queryFn: async () => {
+      const [development, git] = await Promise.all([
+        fetchProjectDevelopmentStatus(projectId),
+        fetchProjectGitStatus(projectId),
+      ])
+      return { development, repo: git.repositories[0] }
     },
+    staleTime: STALE_GIT,
+    refetchInterval: POLL_SLOW,
   })
-
-  const checkRemoteMutation = useMutation({
-    mutationFn: () => checkProjectGitRemote(projectId),
-    onSuccess: (data) => {
-      setSyncToastTitle('Remote Check Complete')
-      setSyncResults(data.results)
-      setRemoteCheckedAt(new Date())
-      queryClient.invalidateQueries({ queryKey: ['git-status', projectId] })
-      setTimeout(() => setSyncResults(null), TOAST_DISMISS_MS)
-    },
-  })
-
-  const handleSync = () => {
-    setSyncResults(null)
-    syncMutation.mutate()
-  }
-
-  if (isLoading) {
-    return (
-      <div className="flex items-center justify-center h-[calc(100vh-6rem)]">
-        <div className="w-8 h-8 border-2 border-outrun-500/30 border-t-outrun-500 rounded-full animate-spin" />
-      </div>
-    )
-  }
-
-  if (error) {
-    return (
-      <div className="flex items-center justify-center h-[calc(100vh-6rem)]">
-        <div className="card-elevated p-10 text-center max-w-md relative overflow-hidden">
-          <div className="absolute top-0 left-1/2 -translate-x-1/2 w-64 h-32 bg-amber-500/6 rounded-full blur-3xl pointer-events-none" />
-          <div className="relative">
-            <div className="w-16 h-16 mx-auto mb-5 rounded-2xl bg-amber-500/10 border border-amber-500/20 flex items-center justify-center">
-              <AlertTriangle className="w-8 h-8 text-amber-400" />
-            </div>
-            <h2 className="display text-xl font-bold text-slate-100 mb-2 tracking-tight">
-              Failed to Load
-            </h2>
-            <p className="text-sm text-slate-400 mb-8 leading-relaxed">
-              Could not connect to git status service.
-            </p>
-            <button
-              type="button"
-              onClick={() => refetch()}
-              className="btn-primary"
-            >
-              Retry
-            </button>
-          </div>
-        </div>
-      </div>
-    )
-  }
-
-  const repos = gitStatus?.repositories ?? []
-  const cleanCount = repos.filter((r) => r.state === 'clean').length
-  const attentionCount = repos.filter((r) => r.state !== 'clean').length
-
   return (
-    <div className="p-6 space-y-8">
-      <GitPageHeader
-        cleanCount={cleanCount}
-        dirtyCount={attentionCount}
-        isSyncing={syncMutation.isPending}
-        onSync={handleSync}
-        onCheckRemote={() => checkRemoteMutation.mutate()}
-        isCheckingRemote={checkRemoteMutation.isPending}
-        cleanLabel="Synced"
-        dirtyLabel="Attention"
-        actionLabel="Sync"
-        busyLabel="Syncing..."
-        title="Project Git Operations"
-        description="Inspect repository health, checkpoints, branches, and recent git activity for this project."
-      />
-
-      {syncResults && (
-        <GitSyncToast results={syncResults} title={syncToastTitle} />
+    <div className="mx-auto max-w-[1800px] space-y-4 px-4 py-4 md:px-6">
+      <h1 className="display text-xl font-semibold text-slate-100">
+        Project Development
+      </h1>
+      {query.isLoading && (
+        <p role="status" className="card p-6 text-sm text-slate-300">
+          Loading development evidence…
+        </p>
       )}
-
-      <ConflictAlerts projectId={projectId} />
-
-      <section>
-        <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
-          {repos.map((repo) => (
-            <GitRepoCard
-              key={repo.path}
-              repo={repo}
-              remoteCheckedAt={remoteCheckedAt}
-            />
-          ))}
+      {query.isError && (
+        <div role="alert" className="card space-y-2 p-4 text-sm text-rose-300">
+          <p>
+            {query.data
+              ? 'Showing retained data. Latest refresh failed.'
+              : 'Could not load development evidence.'}
+          </p>
+          <button
+            type="button"
+            className="btn-secondary"
+            onClick={() => query.refetch()}
+          >
+            Retry
+          </button>
         </div>
-      </section>
-
-      {repos.length > 0 && (
-        <section className="card p-5">
-          <DashboardContent projectId={projectId} />
-        </section>
+      )}
+      {query.data && !query.data.repo && (
+        <p className="card p-6 text-sm text-slate-400">
+          Repository status unavailable for this project
+        </p>
+      )}
+      {query.data?.repo && (
+        <ProjectRow
+          repo={query.data.repo}
+          development={query.data.development}
+        />
       )}
     </div>
   )

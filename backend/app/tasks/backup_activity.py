@@ -251,21 +251,39 @@ def run_bulk_process(
     command: list[str], *, env: dict[str, str] | None = None, phase: str = "capture",
     object_name: str | None = None, attention_after: float = ATTENTION_AFTER_SECONDS,
     stdout_sink: Callable[[BinaryIO], None] | None = None, text: bool = True,
+    cwd: str | None = None, timeout: float | None = None,
+    capacity_check: Callable[[], None] | None = None,
 ) -> subprocess.CompletedProcess[Any]:
-    """Run owned bulk work without a wall-clock kill; cancellation kills/reaps it.
+    """Run owned bulk work; cancellation and an optional caller timeout reap it.
 
     stdout can stream into an existing compressor. stderr is drained by the OS
     into a private temporary file, avoiding pipe deadlocks and unbounded RAM.
+    Bulk capture/transfer defaults remain unbounded. Restore drills retain
+    their existing explicit timeout through this process-group owner.
+    A caller's optional capacity check uses the existing cancellation polling.
     """
     activity = current_activity()
     if activity:
         activity.start_phase(phase, object_name, attention_after)
-    with tempfile.TemporaryFile() as output, tempfile.TemporaryFile() as errors:
+    from ..utils.transient_scratch import (
+        ensure_scratch_capacity,
+        scratch_subprocess_env,
+        subprocess_scratch,
+    )
+
+    with subprocess_scratch() as scratch, tempfile.TemporaryFile(dir=scratch) as output, tempfile.TemporaryFile(dir=scratch) as errors:
         proc = subprocess.Popen(
             command, stdin=subprocess.DEVNULL,
             stdout=subprocess.PIPE if stdout_sink else output,
-            stderr=errors, env=env, start_new_session=True,
+            stderr=errors, env=scratch_subprocess_env(env), cwd=cwd, start_new_session=True,
         )
+        deadline = time.monotonic() + timeout if timeout is not None else None
+
+        def check_deadline() -> None:
+            ensure_scratch_capacity(scratch, 0)
+            if deadline is not None and time.monotonic() >= deadline:
+                assert timeout is not None
+                raise subprocess.TimeoutExpired(command, timeout)
         sink_errors: list[BaseException] = []
         sink_thread: Thread | None = None
         if stdout_sink:
@@ -283,19 +301,26 @@ def run_bulk_process(
             sink_thread.start()
         try:
             while True:
+                check_deadline()
                 if activity:
                     activity.check_cancelled()
+                if capacity_check:
+                    capacity_check()
                 if sink_errors:
                     raise sink_errors[0]
                 try:
-                    proc.wait(timeout=CONTROL_POLL_SECONDS)
+                    wait = CONTROL_POLL_SECONDS if deadline is None else min(CONTROL_POLL_SECONDS, max(0, deadline - time.monotonic()))
+                    proc.wait(timeout=wait)
                     break
                 except subprocess.TimeoutExpired:
                     continue
             if sink_thread:
                 while sink_thread.is_alive():
+                    check_deadline()
                     if activity:
                         activity.check_cancelled()
+                    if capacity_check:
+                        capacity_check()
                     sink_thread.join(CONTROL_POLL_SECONDS)
             if sink_errors:
                 raise sink_errors[0]

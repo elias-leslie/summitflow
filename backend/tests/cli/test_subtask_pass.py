@@ -104,11 +104,7 @@ class TestDoneSubtaskCompletion:
             },
         )
 
-        with (
-            patch("cli.commands.done_subtask._validate_working_tree_clean"),
-            patch("cli.commands.done_subtask._get_project_id", return_value=None),
-            pytest.raises(typer.Exit) as exc_info,
-        ):
+        with pytest.raises(typer.Exit) as exc_info:
             complete_subtask(client, "1.2", "task-1", acknowledge_none=True)
 
         assert exc_info.value.exit_code == 1
@@ -148,3 +144,15 @@ class TestClearSubtaskCommand:
             clear_subtask("1.1", "task-1")
 
         client.update_subtask.assert_called_once_with("task-1", "1.1", passes=False)
+
+
+def test_subtask_completion_preserves_unrelated_work_and_needs_no_citation(tmp_path):
+    foreign = tmp_path / "foreign-work.py"
+    foreign.write_text("unfinished")
+    client = MagicMock()
+    client.get_subtasks.return_value = {"subtasks": [{"subtask_id": "1.1", "passes": False}]}
+    assert complete_subtask(client, "1.1", "task-local")["action"] == "completed"
+    client.update_subtask.assert_called_once_with("task-local", "1.1", passes=True)
+    client.acknowledge_no_citations.assert_not_called()
+    client.log_citations.assert_not_called()
+    assert foreign.read_text() == "unfinished"

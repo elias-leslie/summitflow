@@ -179,6 +179,26 @@ def db_schema_initialized(test_db_url: str) -> Generator[None]:
 # =============================================================================
 
 
+@pytest.fixture
+def local_gate_tools(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """Use tiny tool identities with stubbed runners; keep plan fingerprints real."""
+    from cli.commands import check
+    from cli.lib import acceptance
+
+    # Outside the source fixture so tool setup cannot dirty the candidate.
+    tool = tmp_path.parent / f"{tmp_path.name}-gate-tool"
+    tool.write_text("#!/bin/sh\nexit 0\n")
+    tool.chmod(0o755)
+    real_which = acceptance.shutil.which
+    monkeypatch.setattr(
+        acceptance.shutil, "which",
+        lambda name, *args, **kwargs: str(tool)
+        if name in {"gitleaks", "semgrep", "osv-scanner"}
+        else real_which(name, *args, **kwargs),
+    )
+    monkeypatch.setattr(check, "_resolve_command", lambda binary, root, cwd, args: [str(tool), *args])
+
+
 @pytest.fixture(autouse=True)
 def reset_cli_output_state() -> Generator[None]:
     """Reset CLI output module state before each test.

@@ -1,6 +1,20 @@
 # Backup optimization rollout and inventory
 
-## Current direction — 2026-09-30
+## Current direction — 2026-10-05
+
+The owner approved Btrfs/btrbk for Linux host recovery, Veeam for Windows, and
+the existing Restic/Google Drive repositories for incremental portable backups
+across all enabled sources. Four-hour scheduling starts only after each source's
+backend and recovery coverage are qualified. Existing daily age sources remain
+active until that cutover; retained archives, keys, pins, last-good copies and
+pending offsites remain protected. The permanent native destination is still
+disabled pending physical storage preparation and recovery checks.
+
+Use [Linux recovery and portable project backups](native-host-recovery.md) for
+the current implementation and cutover contract. The September policy and earlier
+Restic pilot evidence below remain historical; neither activates the new setup.
+
+## Historical direction — 2026-09-30
 
 The owner superseded the Restic-default rollout below. Use the existing native
 consistency-safe capture, gzip compression and age encryption once per source.
@@ -14,7 +28,9 @@ transport; existing segmented archives and their strict v1 assembler remain
 compatible. Rclone handles chunked upload internally, without making those
 transport chunks separate recovery artifacts.
 Native archive restore and the existing backup UI remain the common recovery path.
-Veeam remains the full-system recovery path.
+At that time Veeam was intended to remain the full-system recovery path. The
+October plan replaces Linux Veeam because it cannot capture this compressed
+Btrfs layout; Windows Veeam remains separate.
 
 The shared selection omits audited build/import output, tool caches, graph indexes,
 exported session diagnostics, logs and nested backup output. These remain local

@@ -6,11 +6,10 @@ import os
 from pathlib import Path
 from typing import Any, cast
 
-from ..config import get_settings
 from ..logging_config import get_logger
 from ..storage import backups as backup_store
 from .backup_executor import sync_backup_offsite
-from .backup_lock import acquire_backup_lock, has_active_backup_lease, maintain_backup_lock
+from .backup_lock import has_active_backup_lease
 from .backup_native import drain_pending_archives
 from .backup_repository_runtime import is_repository_backup
 from .backup_utils import as_mapping, build_storage_env, offsite_is_configured
@@ -29,12 +28,11 @@ def drain_pending_backups(dry_run: bool = False) -> dict[str, Any]:
     """
     pending_before = _native_records(backup_store.get_pending_upload_backups())
     offsite_before = _native_records(backup_store.get_pending_native_offsite_backups())
-    publication_before = backup_store.get_pending_backup_publications() if get_settings().backup_publish_before_backup else []
     pending_count = len(pending_before)
     archive_result = drain_pending_archives(dry_run=True)
     file_pending = int((archive_result or {}).get("pending_before") or 0)
 
-    if pending_count == 0 and file_pending == 0 and not offsite_before and not publication_before:
+    if pending_count == 0 and file_pending == 0 and not offsite_before:
         return _empty_drain_result()
 
     if dry_run:
@@ -43,10 +41,8 @@ def drain_pending_backups(dry_run: bool = False) -> dict[str, Any]:
             file_pending=file_pending,
             archive_result=archive_result,
             offsite_before=offsite_before,
-            publication_before=publication_before,
         )
 
-    publication_result = _retry_pending_publications(publication_before)
     try:
         upload_result = drain_pending_archives(dry_run=False) if pending_count or file_pending else _empty_drain_result()
     except Exception:
@@ -72,76 +68,21 @@ def drain_pending_backups(dry_run: bool = False) -> dict[str, Any]:
     retries = backup_store.get_pending_native_offsite_backups() if promoted else offsite_before
     offsite_result = _retry_native_offsite_backups(retries)
     result.update(offsite_result)
-    result.update(publication_result)
-    result["pending_before"] = pending_count + len(offsite_before) + len(publication_before)
+    result["pending_before"] = pending_count + len(offsite_before)
     result["uploaded"] += offsite_result["offsite_verified"]
-    result["failed"] += offsite_result["offsite_failed"] + publication_result["publication_failed"]
-    result["remaining"] += offsite_result["offsite_remaining"] + publication_result["publication_remaining"]
-    result["db_remaining"] += offsite_result["offsite_remaining"] + publication_result["publication_remaining"]
-    result["failures"] = [*result.get("failures", []), *offsite_result["offsite_failures"], *publication_result["publication_failures"]]
+    result["failed"] += offsite_result["offsite_failed"]
+    result["remaining"] += offsite_result["offsite_remaining"]
+    result["db_remaining"] += offsite_result["offsite_remaining"]
+    result["failures"] = [*result.get("failures", []), *offsite_result["offsite_failures"]]
     result["script_output"] = _format_failures(result["failures"])
     if result["remaining"] or result["failed"]:
         result["status"] = "partial"
-    if retries or publication_before:
+    if retries:
         result["message"] = (
-            f"{result['uploaded']} upload(s) verified; {publication_result['publication_completed']} publication retry/retries completed; "
+            f"{result['uploaded']} upload(s) verified; "
             f"{result['remaining']} pending operation(s) remain"
         )
     return result
-
-
-def _retry_pending_publications(records: list[dict[str, Any]]) -> dict[str, Any]:
-    """Retry durable latest-point publication failures without another capture."""
-    completed = 0
-    superseded = 0
-    skipped: list[dict[str, Any]] = []
-    failures: list[dict[str, Any]] = []
-    for record in records:
-        summary = _pending_backup_summary(record)
-        source_id = str(record.get("source_id") or record.get("project_id") or "")
-        try:
-            source = backup_store.get_source(source_id)
-            if not source or not source.get("enabled") or source.get("source_type") != "project":
-                skipped.append({**summary, "reason": "Project source is no longer enabled"})
-                continue
-            token = acquire_backup_lock(source_id)
-            if token is None:
-                skipped.append({**summary, "reason": "A backup or retry owns the source lease"})
-                continue
-            with maintain_backup_lock(source_id, token):
-                latest = backup_store.get_latest_backup(source_id=source_id)
-                if (
-                    not latest or latest["id"] != record["id"]
-                    or ((latest.get("verification_json") or {}).get("publication") or {}).get("status") not in {"failed", "pending"}
-                ):
-                    skipped.append({**summary, "reason": "Publication evidence was superseded"})
-                    superseded += 1
-                    continue
-                from .backup_publish import publish_source_before_backup
-
-                publication = publish_source_before_backup(source)
-                if publication.get("status") not in {"published", "up_to_date", "skipped", "failed", "pending"}:
-                    raise RuntimeError("Publication helper returned an unknown status")
-                if backup_store.merge_backup_verification_json(str(record["id"]), {"publication": publication}) is None:
-                    raise RuntimeError("Publication retry evidence could not be recorded")
-            if publication["status"] in {"published", "up_to_date", "skipped"}:
-                completed += 1
-            else:
-                failures.append({**summary, "error": str(publication.get("reason") or "Publication remains pending")})
-        except Exception:
-            # Helper outcomes are sanitized; unexpected tool/DB failures must
-            # likewise never persist remote credentials or command diagnostics.
-            failures.append({**summary, "error": "Publication retry unavailable"})
-            logger.warning("backup_publication_auto_retry_failed", backup_id=record["id"])
-    return {
-        "publication_pending_before": len(records),
-        "publication_completed": completed,
-        "publication_failed": len(failures),
-        "publication_skipped": len(skipped),
-        "publication_remaining": len(records) - completed - superseded,
-        "publication_failures": failures,
-        "publication_skips": skipped,
-    }
 
 
 def _native_records(records: list[dict[str, Any]]) -> list[dict[str, Any]]:
@@ -217,13 +158,6 @@ def _empty_drain_result() -> dict[str, Any]:
         "offsite_remaining": 0,
         "offsite_failures": [],
         "offsite_skips": [],
-        "publication_pending_before": 0,
-        "publication_completed": 0,
-        "publication_failed": 0,
-        "publication_skipped": 0,
-        "publication_remaining": 0,
-        "publication_failures": [],
-        "publication_skips": [],
     }
 
 
@@ -233,21 +167,18 @@ def _dry_run_result(
     file_pending: int,
     archive_result: dict[str, Any] | None,
     offsite_before: list[dict[str, Any]],
-    publication_before: list[dict[str, Any]],
 ) -> dict[str, Any]:
     pending_count = len(pending_before)
     return {
         "status": "dry_run",
         "message": f"{pending_count} SMB backup(s), {len(offsite_before)} offsite copy/copies, "
-                   f"{len(publication_before)} publication retry/retries, {file_pending} file(s) pending upload",
-        "pending_before": pending_count + len(offsite_before) + len(publication_before),
+                   f"{file_pending} file(s) pending upload",
+        "pending_before": pending_count + len(offsite_before),
         "file_pending": file_pending,
         "backups": [_pending_backup_summary(backup) for backup in pending_before],
         "archives": (archive_result or {}).get("backups", []),
         "offsite_pending_before": len(offsite_before),
         "offsite_backups": [_pending_backup_summary(backup) for backup in offsite_before],
-        "publication_pending_before": len(publication_before),
-        "publication_backups": [_pending_backup_summary(backup) for backup in publication_before],
     }
 
 

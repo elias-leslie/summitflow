@@ -14,6 +14,7 @@ from __future__ import annotations
 import asyncio
 import json
 from collections.abc import AsyncIterator
+from contextlib import asynccontextmanager, suppress
 
 import redis
 import redis.asyncio as aioredis
@@ -45,6 +46,18 @@ def _get_async_pool() -> aioredis.ConnectionPool:
     if _async_pool is None:
         _async_pool = aioredis.ConnectionPool.from_url(REDIS_URL, max_connections=10)
     return _async_pool
+
+
+@asynccontextmanager
+async def fleet_wake_subscription(root: str) -> AsyncIterator[aioredis.client.PubSub]:
+    """Share the established async pool; cancellation releases the subscription."""
+    subscription = aioredis.Redis(connection_pool=_get_async_pool()).pubsub()
+    try:
+        await subscription.subscribe(f"fleet:{root}")
+        yield subscription
+    finally:
+        with suppress(redis.RedisError, OSError):
+            await subscription.aclose()
 
 
 def get_channel_name(task_id: str) -> str:

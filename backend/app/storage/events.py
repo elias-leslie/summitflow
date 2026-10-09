@@ -191,7 +191,8 @@ def cleanup_old_events(
                 FROM events e
                 JOIN trace_state ts ON ts.trace_id = e.trace_id
                 LEFT JOIN ranked_user ru ON ru.id = e.id
-                WHERE ts.retain_trace = FALSE
+                WHERE e.stream_sequence IS NULL
+                  AND ts.retain_trace = FALSE
                   AND ts.latest_event_at < NOW() - (%s * INTERVAL '1 day')
                   AND (
                       (
@@ -228,8 +229,12 @@ def cleanup_old_events(
 
     user_deleted = int(row[0] or 0) if row else 0
     internal_deleted = int(row[1] or 0) if row else 0
+    from .fleet_events import cleanup_fleet_events
+
+    fleet_deleted = cleanup_fleet_events(max_age_days=max_internal_age_days)
     return {
         "user_deleted": user_deleted,
         "internal_deleted": internal_deleted,
-        "total_deleted": user_deleted + internal_deleted,
+        "fleet_deleted": fleet_deleted,
+        "total_deleted": user_deleted + internal_deleted + fleet_deleted,
     }

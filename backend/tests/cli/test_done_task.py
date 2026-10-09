@@ -5,80 +5,9 @@ from unittest.mock import MagicMock, patch
 import pytest
 from typer import Exit
 
-from cli._client_base import APIError
 from cli.commands.done_lifecycle import _reconstruct_snapshot_info
 from cli.commands.done_task import _task_scope_paths, complete_task
 from cli.lib.checkpoint_branches import resolve_task_branch
-
-
-def test_complete_task_missing_checkpoint_completed_task_is_idempotent_without_publication() -> None:
-    client = MagicMock()
-    client.get_task.return_value = {
-        "status": "completed",
-        "project_id": "summitflow",
-        "base_branch": "main",
-    }
-
-    with (
-        patch("cli.commands.done_task.get_snapshot_info", return_value=None),
-        patch("cli.commands.done_task._reconstruct_snapshot_info", return_value=None),
-        patch("cli.commands.done_task.is_working_tree_clean", return_value=True),
-        patch("cli.commands.done_task._accept_completed_work") as mock_publish,
-    ):
-        result = complete_task(client, "task-123")
-
-    mock_publish.assert_not_called()
-    assert result["merged"] is False
-    assert result["snapshot_removed"] is True
-
-
-def test_complete_task_missing_checkpoint_failed_task_is_idempotent() -> None:
-    client = MagicMock()
-    client.get_task.return_value = {
-        "status": "failed",
-        "project_id": "summitflow",
-        "base_branch": "main",
-    }
-
-    with (
-        patch("cli.commands.done_task.get_snapshot_info", return_value=None),
-        patch("cli.commands.done_task._reconstruct_snapshot_info", return_value=None),
-        patch("cli.commands.done_task.is_working_tree_clean", return_value=True),
-    ):
-        result = complete_task(client, "task-456")
-
-    assert result["merged"] is False
-    assert result["snapshot_removed"] is True
-
-
-def test_complete_task_admin_requires_completion_readiness() -> None:
-    client = MagicMock()
-    client.get_task_completion_readiness.return_value = {
-        "ready": False,
-        "gates": [{"gate": "subtasks"}],
-    }
-
-    with (
-        patch("cli.commands.done_task.get_snapshot_info", return_value=None),
-        patch("cli.commands.done_task.output_error") as mock_output,
-        pytest.raises(Exit) as exc_info,
-    ):
-        complete_task(client, "task-123", admin=True)
-
-    assert exc_info.value.exit_code == 1
-    client.close_task.assert_not_called()
-    assert "Task not ready to complete: subtasks" in mock_output.call_args.args[0]
-
-
-def test_complete_task_admin_closes_when_completion_ready() -> None:
-    client = MagicMock()
-    client.get_task_completion_readiness.return_value = {"ready": True, "gates": []}
-
-    with patch("cli.commands.done_task.get_snapshot_info", return_value=None):
-        result = complete_task(client, "task-123", admin=True)
-
-    client.close_task.assert_called_once_with("task-123", reason=None, skip_gates=True)
-    assert result["merged"] is False
 
 
 def test_st_client_exposes_get_task_completion_readiness() -> None:
@@ -101,247 +30,6 @@ def test_st_client_exposes_get_task_completion_readiness() -> None:
         "http://summitflow.test/tasks/task-123/completion-readiness"
     )
     assert result == {"ready": True, "gates": []}
-
-
-def test_complete_task_missing_checkpoint_pending_task_exits_with_guidance() -> None:
-    client = MagicMock()
-    client.get_task.return_value = {
-        "status": "pending",
-        "project_id": "summitflow",
-        "base_branch": "main",
-    }
-
-    with (
-        patch("cli.commands.done_task.get_snapshot_info", return_value=None),
-        patch("cli.commands.done_task._reconstruct_snapshot_info", return_value=None),
-        patch("cli.commands.done_task.output_error") as mock_output,
-        pytest.raises(Exit) as exc_info,
-    ):
-        complete_task(client, "task-789")
-
-    assert exc_info.value.exit_code == 1
-    assert "active task" in mock_output.call_args.args[0]
-
-
-def test_complete_task_missing_checkpoint_active_task_closes_after_pushed_commit_event() -> None:
-    client = MagicMock()
-    client.get_task.return_value = {
-        "status": "pending",
-        "project_id": "summitflow",
-        "base_branch": "main",
-    }
-
-    with (
-        patch("cli.commands.done_task.get_snapshot_info", return_value=None),
-        patch("cli.commands.done_task._reconstruct_snapshot_info", return_value=None),
-        patch("cli.commands.done_task._checkpoint_repo_root", return_value="/repo"),
-        patch("cli.commands.done_task.is_working_tree_clean", return_value=True),
-        patch("cli.commands.done_task._task_has_published_commit_event", return_value=True),
-        patch("cli.commands.done_task.resolve_task_branch", return_value="task/task-789"),
-        patch("cli.commands.done_task.check_diff_gate") as mock_diff_gate,
-        patch("cli.commands.done_task._accept_completed_work") as mock_publish,
-        patch("cli.commands.done_task._run_smart_prereqs") as mock_prereqs,
-        patch("cli.commands.done_task.output_success"),
-    ):
-        mock_diff_gate.return_value = MagicMock(passed=True, summary="ok")
-        result = complete_task(client, "task-789")
-
-    mock_diff_gate.assert_called_once_with(
-        "/repo",
-        head_ref="task/task-789",
-        base_ref="main",
-    )
-    mock_prereqs.assert_called_once_with(client, "task-789", "summitflow")
-    mock_publish.assert_called_once_with("task-789", "summitflow")
-    client.update_status.assert_called_once_with("task-789", "completed", skip_gates=True)
-    assert result["merged"] is False
-    assert result["snapshot_removed"] is True
-
-
-def test_task_scope_paths_extracts_file_mentions_from_task_text() -> None:
-    assert "backend/scripts/persona_honing/__init__.py" in _task_scope_paths(
-        {
-            "description": "Inspect backend/scripts/persona_honing/__init__.py and fix only if needed.",
-        }
-    )
-
-
-def test_complete_task_missing_checkpoint_active_task_auto_commits_dirty_work() -> None:
-    client = MagicMock()
-    client.get_task.return_value = {
-        "status": "pending",
-        "project_id": "summitflow",
-        "base_branch": "main",
-    }
-    client.export_task_data.return_value = {
-        "task": {"context": {"files_to_modify": ["backend/app/api/heartbeat.py"]}}
-    }
-
-    with (
-        patch("cli.commands.done_task.get_snapshot_info", return_value=None),
-        patch("cli.commands.done_task._reconstruct_snapshot_info", return_value=None),
-        patch("cli.commands.done_task._checkpoint_repo_root", return_value="/repo"),
-        patch("cli.commands.done_task.is_working_tree_clean", side_effect=[False, True, True]),
-        patch("cli.commands.done_task._git_dirty_paths", return_value=["backend/app/api/heartbeat.py"]),
-        patch("cli.commands.done_task._task_has_published_commit_event", side_effect=[False, True, True]),
-        patch("cli.commands.done_task.commit_repo") as mock_commit,
-        patch("app.storage.events.log_task_event") as mock_log,
-        patch("cli.commands.done_task.resolve_task_branch", return_value="task/task-789"),
-        patch("cli.commands.done_task.check_diff_gate") as mock_diff_gate,
-        patch("cli.commands.done_task._accept_completed_work") as mock_publish,
-        patch("cli.commands.done_task._run_smart_prereqs") as mock_prereqs,
-        patch("cli.commands.done_task.output_success"),
-    ):
-        mock_commit.return_value = {
-            "status": "SUCCESS",
-            "commit_id": "abc123",
-            "pushed": True,
-        }
-        mock_diff_gate.return_value = MagicMock(passed=True, summary="ok")
-        result = complete_task(client, "task-789", message="finish task")
-
-    mock_commit.assert_called_once()
-    assert mock_commit.call_args.kwargs["message"] == "finish task"
-    assert mock_commit.call_args.kwargs["task_id"] == "task-789"
-    assert mock_commit.call_args.kwargs["push"] is False
-    mock_log.assert_called_once()
-    assert mock_log.call_args.args[0] == "task-789"
-    client.export_task_data.assert_called_once_with("task-789")
-    mock_prereqs.assert_called_once_with(client, "task-789", "summitflow")
-    mock_publish.assert_called_once_with("task-789", "summitflow")
-    client.update_status.assert_called_once_with("task-789", "completed", skip_gates=True)
-    assert result["merged"] is False
-    assert result["snapshot_removed"] is True
-
-
-def test_complete_task_missing_checkpoint_active_task_commits_combined_dirty_checkpoint() -> None:
-    client = MagicMock()
-    client.get_task.return_value = {
-        "status": "pending",
-        "project_id": "summitflow",
-        "base_branch": "main",
-        "context": {"files_to_modify": ["backend/app/api/heartbeat.py"]},
-    }
-    client.export_task_data.return_value = {}
-
-    with (
-        patch("cli.commands.done_task.get_snapshot_info", return_value=None),
-        patch("cli.commands.done_task._reconstruct_snapshot_info", return_value=None),
-        patch("cli.commands.done_task._checkpoint_repo_root", return_value="/repo"),
-        patch("cli.commands.done_task.is_working_tree_clean", side_effect=[False, True, True]),
-        patch(
-            "cli.commands.done_task._git_dirty_paths",
-            return_value=["backend/app/api/heartbeat.py", "frontend/app/database/page.tsx"],
-        ),
-        patch("cli.commands.done_task._task_has_published_commit_event", side_effect=[False, True]),
-        patch("cli.commands.done_task.commit_repo") as mock_commit,
-        patch("app.storage.events.log_task_event") as mock_log,
-        patch("cli.commands.done_task.resolve_task_branch", return_value="task/task-789"),
-        patch("cli.commands.done_task.check_diff_gate") as mock_diff_gate,
-        patch("cli.commands.done_task._accept_completed_work") as mock_publish,
-        patch("cli.commands.done_task._run_smart_prereqs") as mock_prereqs,
-        patch("cli.commands.done_task.output_success"),
-    ):
-        mock_commit.return_value = {
-            "status": "SUCCESS",
-            "commit_id": "abc123",
-            "pushed": True,
-        }
-        mock_diff_gate.return_value = MagicMock(passed=True, summary="ok")
-        result = complete_task(client, "task-789", message="finish task")
-
-    mock_commit.assert_called_once()
-    assert mock_commit.call_args.kwargs["message"] == "finish task"
-    assert mock_commit.call_args.kwargs["task_id"] == "task-789"
-    assert mock_commit.call_args.kwargs["push"] is False
-    mock_log.assert_called_once()
-    assert mock_log.call_args.args[0] == "task-789"
-    mock_prereqs.assert_called_once_with(client, "task-789", "summitflow")
-    mock_publish.assert_called_once_with("task-789", "summitflow")
-    client.update_status.assert_called_once_with("task-789", "completed", skip_gates=True)
-    assert result["merged"] is False
-    assert result["snapshot_removed"] is True
-
-
-def test_complete_task_claimed_checkpoint_auto_commits_dirty_checkpoint() -> None:
-    client = MagicMock()
-    client.get_subtasks.return_value = {"subtasks": []}
-    client.get_task_completion_readiness.return_value = {"ready": True}
-    client.get_task.return_value = {"status": "running"}
-    snapshot_info = {
-        "task_id": "task-1",
-        "project_id": "summitflow",
-        "base_branch": "main",
-    }
-
-    with (
-        patch("cli.commands.done_task.get_snapshot_info", return_value=snapshot_info),
-        patch("cli.commands.done_task._checkpoint_repo_root", return_value="/repo"),
-        patch("cli.commands.done_task.is_working_tree_clean", side_effect=[False, True, True]),
-        patch("cli.commands.done_task.commit_repo") as mock_commit,
-        patch("app.storage.events.log_task_event") as mock_log,
-        patch("cli.commands.done_task.resolve_task_branch", return_value="task/task-1"),
-        patch("cli.commands.done_task.check_diff_gate") as mock_diff_gate,
-        patch("cli.commands.done_task._capture_and_remove_snapshot"),
-        patch("cli.commands.done_task._accept_completed_work"),
-        patch("cli.commands.done_task.output_success"),
-    ):
-        mock_commit.return_value = {
-            "status": "SUCCESS",
-            "commit_id": "abc123",
-            "pushed": True,
-        }
-        mock_diff_gate.return_value = MagicMock(passed=True, summary="ok")
-
-        result = complete_task(client, "task-1", message="finish task")
-
-    mock_commit.assert_called_once()
-    assert mock_commit.call_args.kwargs["message"] == "finish task"
-    assert mock_commit.call_args.kwargs["task_id"] == "task-1"
-    assert mock_commit.call_args.kwargs["push"] is False
-    mock_log.assert_called_once()
-    assert mock_log.call_args.args[0] == "task-1"
-    client.update_status.assert_called_once_with("task-1", "completed", skip_gates=False)
-    assert result["merged"] is False
-    assert result["published"] is False
-
-
-def test_complete_task_claimed_checkpoint_forces_close_when_status_transition_drifts() -> None:
-    client = MagicMock()
-    client.get_subtasks.return_value = {"subtasks": []}
-    client.get_task_completion_readiness.return_value = {"ready": True}
-    client.get_task.side_effect = [
-        {"status": "running"},
-        {"status": "running"},
-    ]
-    client.update_status.side_effect = APIError(409, {"message": "Invalid transition from 'pending' to 'completed'."})
-    snapshot_info = {
-        "task_id": "task-1",
-        "project_id": "summitflow",
-        "base_branch": "main",
-    }
-
-    with (
-        patch("cli.commands.done_task.get_snapshot_info", return_value=snapshot_info),
-        patch("cli.commands.done_task._checkpoint_repo_root", return_value="/repo"),
-        patch("cli.commands.done_task.is_working_tree_clean", return_value=True),
-        patch("cli.commands.done_task.resolve_task_branch", return_value="task/task-1"),
-        patch("cli.commands.done_task.check_diff_gate") as mock_diff_gate,
-        patch("cli.commands.done_task._capture_and_remove_snapshot") as mock_cleanup,
-        patch("cli.commands.done_task._accept_completed_work") as mock_publish,
-        patch("cli.commands.done_task.output_warning") as mock_warning,
-    ):
-        mock_diff_gate.return_value = MagicMock(passed=True, summary="ok")
-
-        result = complete_task(client, "task-1", message="finish task")
-
-    client.update_status.assert_called_once_with("task-1", "completed", skip_gates=False)
-    client.close_task.assert_called_once_with("task-1", reason="finish task", skip_gates=True)
-    mock_cleanup.assert_called_once_with("task-1", "summitflow")
-    mock_publish.assert_called_once_with("task-1", "summitflow")
-    assert any("forced close after direct-main finalization" in str(call.args[0]).lower() for call in mock_warning.call_args_list)
-    assert result["merged"] is False
-    assert result["published"] is False
 
 
 def test_run_smart_prereqs_auto_closes_unpassed_subtasks() -> None:
@@ -409,138 +97,7 @@ def test_reconstruct_snapshot_info_defaults_missing_base_branch_to_main() -> Non
     assert mock_save.call_args.args[0].base_branch == "main"
 
 
-def test_complete_task_diff_gate_checks_task_branch_not_current_head() -> None:
-    client = MagicMock()
-    client.get_subtasks.return_value = {"subtasks": []}
-    client.get_task_completion_readiness.return_value = {"ready": True}
-    client.get_task.return_value = {"status": "running"}
-    snapshot_info = {
-        "task_id": "task-1",
-        "project_id": "summitflow",
-        "base_branch": "main",
-    }
-
-    with (
-        patch("cli.commands.done_task.get_snapshot_info", return_value=snapshot_info),
-        patch("cli.commands.done_task._checkpoint_repo_root", return_value="/repo"),
-        patch("cli.commands.done_task.is_working_tree_clean", return_value=True),
-        patch("cli.commands.done_task.resolve_task_branch", return_value="task-1/main") as mock_resolve,
-        patch("cli.commands.done_task.check_diff_gate") as mock_diff_gate,
-        patch("cli.commands.done_task._capture_and_remove_snapshot"),
-        patch("cli.commands.done_task._accept_completed_work"),
-    ):
-        mock_diff_gate.return_value = MagicMock(passed=True, summary="ok")
-
-        complete_task(client, "task-1")
-
-    mock_diff_gate.assert_called_once_with(
-        "/repo",
-        head_ref="task-1/main",
-        base_ref="main",
-    )
-    mock_resolve.assert_called_once_with("task-1", project_id="summitflow")
-
-
-def test_complete_task_diff_gate_uses_checkpoint_base_commit_for_direct_main() -> None:
-    client = MagicMock()
-    client.get_subtasks.return_value = {"subtasks": []}
-    client.get_task_completion_readiness.return_value = {"ready": True}
-    client.get_task.return_value = {"status": "running"}
-    snapshot_info = {
-        "task_id": "task-1",
-        "project_id": "summitflow",
-        "base_branch": "main",
-        "base_commit": "abc123",
-    }
-
-    with (
-        patch("cli.commands.done_task.get_snapshot_info", return_value=snapshot_info),
-        patch("cli.commands.done_task._checkpoint_repo_root", return_value="/repo"),
-        patch("cli.commands.done_task.is_working_tree_clean", return_value=True),
-        patch("cli.commands.done_task.resolve_task_branch") as mock_resolve,
-        patch("cli.commands.done_task.check_diff_gate") as mock_diff_gate,
-        patch("cli.commands.done_task._capture_and_remove_snapshot"),
-        patch("cli.commands.done_task._accept_completed_work"),
-    ):
-        mock_diff_gate.return_value = MagicMock(passed=True, summary="ok")
-
-        complete_task(client, "task-1")
-
-    mock_diff_gate.assert_called_once_with(
-        "/repo",
-        head_ref="HEAD",
-        base_ref="abc123",
-    )
-    mock_resolve.assert_not_called()
-
-
-def test_complete_task_diff_gate_checks_published_task_bookmark() -> None:
-    client = MagicMock()
-    client.get_subtasks.return_value = {"subtasks": []}
-    client.get_task_completion_readiness.return_value = {"ready": True}
-    client.get_task.return_value = {"status": "running"}
-    snapshot_info = {
-        "task_id": "task-1",
-        "project_id": "summitflow",
-        "base_branch": "main",
-    }
-
-    with (
-        patch("cli.commands.done_task.get_snapshot_info", return_value=snapshot_info),
-        patch("cli.commands.done_task._checkpoint_repo_root", return_value="/repo"),
-        patch("cli.commands.done_task.is_working_tree_clean", return_value=True),
-        patch("cli.commands.done_task.resolve_task_branch", return_value="task/task-1") as mock_resolve,
-        patch("cli.commands.done_task.check_diff_gate") as mock_diff_gate,
-        patch("cli.commands.done_task._capture_and_remove_snapshot"),
-        patch("cli.commands.done_task._accept_completed_work"),
-    ):
-        mock_diff_gate.return_value = MagicMock(passed=True, summary="ok")
-
-        complete_task(client, "task-1")
-
-    mock_diff_gate.assert_called_once_with(
-        "/repo",
-        head_ref="task/task-1",
-        base_ref="main",
-    )
-    mock_resolve.assert_called_once_with("task-1", project_id="summitflow")
-
-
-def test_complete_task_normalizes_head_base_branch_before_diff_gate() -> None:
-    client = MagicMock()
-    client.get_subtasks.return_value = {"subtasks": []}
-    client.get_task_completion_readiness.return_value = {"ready": True}
-    client.get_task.return_value = {"status": "running"}
-    snapshot_info = {
-        "task_id": "task-1",
-        "project_id": "summitflow",
-        "base_branch": "HEAD",
-    }
-
-    with (
-        patch("cli.commands.done_task.get_snapshot_info", return_value=snapshot_info),
-        patch("cli.commands.done_task._checkpoint_repo_root", return_value="/repo"),
-        patch("cli.commands.done_task.is_working_tree_clean", return_value=True),
-        patch("cli.commands.done_task.resolve_task_branch", return_value="task-1/main"),
-        patch("cli.commands.done_task.check_diff_gate") as mock_diff_gate,
-        patch("cli.commands.done_task._capture_and_remove_snapshot"),
-        patch("cli.commands.done_task._accept_completed_work"),
-        patch("cli.commands.done_task.normalize_base_branch", return_value="main") as mock_normalize,
-    ):
-        mock_diff_gate.return_value = MagicMock(passed=True, summary="ok")
-
-        result = complete_task(client, "task-1")
-
-    mock_normalize.assert_any_call("HEAD", "/repo")
-    mock_diff_gate.assert_called_once_with(
-        "/repo",
-        head_ref="task-1/main",
-        base_ref="main",
-    )
-    assert result["base_branch"] == "main"
-
-
-def test_resolve_task_branch_prefers_st_commit_bookmark() -> None:
+def test_resolve_task_branch_preserves_legacy_task_ref() -> None:
     with (
         patch("cli.lib.checkpoint_branches._get_repo_cwd", return_value="/repo"),
         patch(
@@ -647,37 +204,120 @@ def test_initial_repository_closeout_requires_post_claim_initial_reflog(tmp_path
             _run_diff_gate(str(tmp_path), "task-new", "test", "main", claimed_at=claimed_at)
 
 
-def test_historical_publication_does_not_redirect_local_closeout():
-    client = MagicMock()
-    client.get_task.return_value = {'status': 'running', 'project_id': 'summitflow'}
-    with (
-        patch('app.services.task_closeout.get_closeout', return_value={'state': 'pending'}),
-        patch('app.services.task_closeout.resume_closeout', return_value={'action': 'pending'}) as resume,
-        patch('cli.commands.done_task.get_snapshot_info', return_value={'project_id': 'summitflow', 'base_branch': 'main'}),
-        patch('cli.commands.done_task.ensure_checkpoint_clean'),
-        patch('cli.commands.done_task._accept_completed_work') as accept,
-        patch('cli.commands.done_task._capture_and_remove_snapshot'),
-        patch('cli.commands.done_task._run_diff_gate'),
-    ):
-        assert complete_task(client, 'task-queued')['action'] == 'completed'
-    resume.assert_not_called()
-    accept.assert_called_once()
+def test_task_scope_paths_uses_structured_files_only():
+    assert _task_scope_paths({"description": "Inspect backend/app.py"}) == set()
+    assert _task_scope_paths({"files_to_modify": ["app.py"], "context": {"files_to_modify": ["tests.py"]}}) == {"app.py", "tests.py"}
 
 
-def test_failed_local_acceptance_never_queues_publication_or_closes():
+@pytest.mark.parametrize("snapshot", [None, {"project_id": "example", "base_branch": "main"}])
+def test_administrative_completion_needs_no_fabricated_diff(snapshot, monkeypatch):
     client = MagicMock()
-    client.get_task.return_value = {'status': 'pending'}
-    with (
-        patch('app.services.task_closeout.get_closeout', return_value=None),
-        patch('app.services.task_closeout.request_closeout') as queue,
-        patch('cli.commands.done_task.get_snapshot_info', return_value={'project_id': 'summitflow', 'base_branch': 'main'}),
-        patch('cli.commands.done_task.ensure_checkpoint_clean'),
-        patch('cli.commands.done_task._accept_completed_work', side_effect=ValueError('checks failed')),
-        patch('cli.commands.done_task.is_working_tree_clean', return_value=True),
-        patch('cli.commands.done_task._run_diff_gate'),
-        patch('cli.commands.done_task._run_smart_prereqs', side_effect=Exit(1)),
-        pytest.raises(Exit),
-    ):
-        complete_task(client, 'task-queued')
-    queue.assert_not_called()
-    client.update_status.assert_not_called()
+    client.get_task.return_value = {"status": "running", "context": {}, "project_id": "example"}
+    client.get_task_completion_readiness.return_value = {"ready": True}
+    client.get_subtasks.return_value = {"subtasks": []}
+    monkeypatch.setattr("app.services.task_closeout.get_closeout", lambda _: None)
+    monkeypatch.setattr("cli.commands.done_task.get_snapshot_info", lambda _: snapshot)
+    monkeypatch.setattr("cli.commands.done_task._checkpoint_repo_root", lambda _: "/repo")
+    claim = {"project_id": "example", "claimed_by": "fixture", "claimed_at": "claim"}
+    monkeypatch.setattr("cli.commands.done_task._owned_completion_claim", lambda *a: claim)
+    close = MagicMock(return_value={"status": "completed", "project_id": "example", "verification_result": {}})
+    monkeypatch.setattr("app.storage.tasks.update_task_status", close)
+    monkeypatch.setattr("app.storage.tasks.closeout.cleanup_completed_checkpoint", lambda *a, **kw: (kw["cleanup"](), True)[1])
+    cleanup = MagicMock()
+    monkeypatch.setattr("cli.commands.done_task._capture_and_remove_snapshot", cleanup)
+    commit = MagicMock(side_effect=AssertionError("No fabricated change"))
+    monkeypatch.setattr("cli.commands.done_task.commit_repo", commit)
+    result = complete_task(client, "task-admin")
+    assert result["action"] == "completed"
+    assert result["source_commit"] == "not_applicable"
+    assert result["evidence_basis"] == "not_applicable"
+    assert "acceptance_id" not in result and "acceptance_artifact" not in result
+    close.assert_called_once_with("task-admin", "completed", expected_worker="fixture",
+        expected_claimed_at="claim", expected_project_id="example")
+    client.close_task.assert_not_called()
+    client.acknowledge_no_citations.assert_not_called()
+    commit.assert_not_called()
+    assert cleanup.call_count == int(snapshot is not None)
+
+
+def test_record_only_cannot_bypass_declared_readiness(monkeypatch):
+    client = MagicMock()
+    client.get_task.return_value = {"status": "running", "context": {"files_to_modify": ["app.py"]}}
+    client.get_task_completion_readiness.return_value = {"ready": False, "gates": [{"gate": "acceptance"}]}
+    monkeypatch.setattr("app.services.task_closeout.get_closeout", lambda _: None)
+    monkeypatch.setattr("cli.commands.done_task.get_snapshot_info", lambda _: None)
+    with pytest.raises(Exit):
+        complete_task(client, "task-implementation", admin=True)
+    client.close_task.assert_not_called()
+
+
+@pytest.mark.parametrize("snapshot", [None, {"project_id": "example", "base_branch": "main"}])
+def test_failed_task_cannot_report_completion_or_modify_retained_work(snapshot, monkeypatch, capsys):
+    task = {"status": "failed", "project_id": "example", "verification_result": {
+        "acceptance": {"state": "failed", "source_commit": "a" * 40}}}
+    client = MagicMock()
+    client.get_task.return_value = task
+    monkeypatch.setattr("app.services.task_closeout.get_closeout", lambda _: None)
+    monkeypatch.setattr("cli.commands.done_task.get_snapshot_info", lambda _: snapshot)
+    accept = MagicMock(side_effect=AssertionError("Failed task cannot run acceptance"))
+    cleanup = MagicMock(side_effect=AssertionError("Failed checkpoint must be preserved"))
+    update = MagicMock(side_effect=AssertionError("Failed task must be preserved"))
+    monkeypatch.setattr("cli.commands.done_task._accept_completed_work_or_exit", accept)
+    monkeypatch.setattr("cli.commands.done_task._capture_and_remove_snapshot", cleanup)
+    monkeypatch.setattr("app.storage.tasks.update_task_status", update)
+    with pytest.raises(Exit):
+        complete_task(client, "task-failed")
+    output = capsys.readouterr()
+    assert "is failed" in output.err
+    assert "st reopen task-failed" in output.err and "st claim task-failed" in output.err
+    assert "completed" not in output.out
+    assert "Blockers: none" not in output.out
+    accept.assert_not_called()
+    cleanup.assert_not_called()
+    update.assert_not_called()
+    client.export_task_data.assert_not_called()
+    client.close_task.assert_not_called()
+    assert task == {"status": "failed", "project_id": "example", "verification_result": {
+        "acceptance": {"state": "failed", "source_commit": "a" * 40}}}
+
+
+@pytest.mark.parametrize("scope_key", ["files_to_modify", "files_to_create"])
+def test_record_only_rejects_implementation_with_retained_success(monkeypatch, scope_key):
+    client = MagicMock()
+    client.get_task.return_value = {"status": "running", "context": {scope_key: ["app.py"]},
+                                  "verification_result": {"acceptance": {"state": "success", "source_commit": "a" * 40}}}
+    client.get_task_completion_readiness.return_value = {"ready": True, "gates": []}
+    monkeypatch.setattr("app.services.task_closeout.get_closeout", lambda _: None)
+    monkeypatch.setattr("cli.commands.done_task.get_snapshot_info", lambda _: {"base_commit": "a" * 40})
+    cleanup = MagicMock()
+    monkeypatch.setattr("cli.commands.done_task._complete_admin", cleanup)
+
+    with pytest.raises(Exit) as failure:
+        complete_task(client, "task-implementation", admin=True)
+
+    assert failure.value.exit_code == 2
+    client.close_task.assert_not_called()
+    cleanup.assert_not_called()
+
+
+def test_historical_remote_wait_does_not_resume_or_block_local_completion(monkeypatch):
+    from cli.commands import done_task
+    client = MagicMock()
+    client.get_task.return_value = {"status": "running", "project_id": "example", "files_to_modify": ["app.py"]}
+    monkeypatch.setattr("app.services.task_closeout.get_closeout", lambda _: {"state": "pending", "require_remote_confirmation": True})
+    remote = MagicMock(side_effect=AssertionError("No remote closeout"))
+    monkeypatch.setattr("app.services.task_closeout.resume_closeout", remote)
+    monkeypatch.setattr(done_task, "get_snapshot_info", lambda _: {"project_id": "example", "base_branch": "main"})
+    monkeypatch.setattr(done_task, "_complete_with_snapshot", lambda *args, **kwargs: {"action": "completed"})
+    assert complete_task(client, "task-legacy")["action"] == "completed"
+    remote.assert_not_called()
+
+
+def test_local_pending_cleanup_resumes_without_checkpointing(monkeypatch):
+    monkeypatch.setattr("app.services.task_closeout.get_closeout", lambda _: {"kind": "local_closeout.v1", "state": "pending"})
+    resume = MagicMock(return_value={"action": "completed"})
+    monkeypatch.setattr("app.services.task_closeout.resume_closeout", resume)
+    client = MagicMock()
+    assert complete_task(client, "task-local")["action"] == "completed"
+    resume.assert_called_once_with("task-local", explicit=True)
+    client.get_task.assert_not_called()

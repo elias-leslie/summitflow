@@ -15,6 +15,7 @@ import {
   backupHasDatabase,
 } from '@/lib/api/backups'
 import { formatBytes, formatDate } from '@/lib/format'
+import { BackupSizeDetails } from './BackupSizeDetails'
 
 export function BackupExpandedRow({
   backup,
@@ -70,6 +71,7 @@ export function BackupExpandedRow({
             </div>
           </div>
 
+          <BackupSizeDetails backup={backup} />
           {/* Size breakdown */}
           {(hasDatabase ||
             backup.files_size_bytes != null ||

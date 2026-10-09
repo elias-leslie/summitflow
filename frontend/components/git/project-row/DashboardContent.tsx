@@ -21,7 +21,7 @@ import { SnapshotEntry } from './SnapshotEntry'
 export function DashboardContent({ projectId }: { projectId: string }) {
   const [snapshotsOpen, setSnapshotsOpen] = useState(false)
 
-  const { data, isLoading } = useQuery({
+  const { data, isLoading, isError, refetch } = useQuery({
     queryKey: ['project-dashboard', projectId],
     queryFn: () => fetchProjectDashboard(projectId),
     staleTime: STALE_GIT,
@@ -36,7 +36,21 @@ export function DashboardContent({ projectId }: { projectId: string }) {
     )
   }
 
-  if (!data) return null
+  if (isError)
+    return (
+      <div role="alert" className="space-y-2 text-sm text-rose-300">
+        <p>Could not load branches and history.</p>
+        <button
+          type="button"
+          className="btn-secondary"
+          onClick={() => refetch()}
+        >
+          Retry history
+        </button>
+      </div>
+    )
+  if (!data)
+    return <p className="text-sm text-slate-400">History unavailable</p>
 
   const hasCheckpoints = data.checkpoints.length > 0
   const hasBranches = data.branches.length > 0

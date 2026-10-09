@@ -46,7 +46,7 @@ class ProjectOnboardingRequest(BaseModel):
     """Standard SummitFlow onboarding settings for a project."""
 
     enable_backup_schedule: bool = True
-    backup_frequency: Literal["daily", "weekly", "monthly", "hourly"] = "daily"
+    backup_frequency: Literal["daily", "weekly", "monthly", "hourly", "four_hourly"] = "daily"
     backup_retention_days: int = Field(default=30, ge=1)
     queue_initial_backup: bool = True
 

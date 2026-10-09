@@ -13,14 +13,14 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 30
     steps:
-      - uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5
-      - uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
         with:
           repository: elias-leslie/agent-hub
           ref: e23acc82b89f01d974e93aac87f15fb399f2a812
           path: agent-hub-repo
-      - uses: pnpm/action-setup@b307475762933b98ed359c036b0e51f26b63b74b # v5.0.0
-      - uses: astral-sh/setup-uv@cec208311dfd045dd5311c1add060b2062131d57 # v8.0.0
+      - uses: pnpm/action-setup@fc06bc1257f339d1d5d8b3a19a8cae5388b55320 # v5
+      - uses: astral-sh/setup-uv@fac544c07dec837d0ccb6301d7b5580bf5edae39 # v8.2.0
 
       - name: Create .env file
         working-directory: docker/compose
@@ -58,6 +58,9 @@ jobs:
         env:
           AGENT_HUB_ROOT: ${{ github.workspace }}/agent-hub-repo
         run: docker/scripts/pack-workspace-packages.sh docker/workspace-packages
+
+      - name: Confirm Python wheels remain the checked-in locked releases
+        run: git diff --exit-code -- backend/uv.lock 'docker/workspace-packages/*.whl'
 
       - name: Build SummitFlow images
         run: |

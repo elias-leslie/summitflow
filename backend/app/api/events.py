@@ -16,8 +16,10 @@ from ..storage.events import (
     get_events_by_trace,
     get_events_with_filters,
 )
+from .fleet_sessions import router as fleet_router
 
 router = APIRouter()
+router.include_router(fleet_router)
 
 
 def _serialize_event(e: Event, include_trace_id: bool = False) -> dict[str, Any]:

@@ -76,6 +76,7 @@ def test_materialize_uses_exact_accepted_tree_not_later_checkout_edits(
         "completed_at": None,
         "reused": False,
         "reuse_lookup_ms": None,
+        "coverage": None,
     }
     assert receipt["build_id"] == release.build_id
     assert receipt["state"] == "prepared"
@@ -400,6 +401,7 @@ def test_service_preparation_consumes_canonical_acceptance_receipt(
     accepted_repo: tuple[Path, service_release.AcceptedSource],
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
+    local_gate_tools: None,
 ) -> None:
     from cli.lib import acceptance, service_ops
 
@@ -407,6 +409,8 @@ def test_service_preparation_consumes_canonical_acceptance_receipt(
     descriptor = acceptance.accept_revision(
         repo,
         sha=source.source_commit,
+        scope=("backend/app.py",),
+        task_id="attributed-task",
         runner=lambda command, cwd: subprocess.CompletedProcess(command, 0, "accepted", ""),
     )
     reused = acceptance.accept_revision(
@@ -435,6 +439,8 @@ def test_service_preparation_consumes_canonical_acceptance_receipt(
 
     assert release.source.acceptance_id == descriptor["acceptance_id"]
     assert release.source.source_commit == source.source_commit
+    assert release.source.scope == ("backend/app.py",)
+    assert release.source.coverage == "full"
     assert release.source.reused is True
     assert release.source.reuse_lookup_ms is not None
     assert deployed.root == release.source_root
@@ -443,3 +449,78 @@ def test_service_preparation_consumes_canonical_acceptance_receipt(
     assert deployed.host_config_root == repo
     assert deployed.durable_data_root == repo / "data"
     assert deployed.root != repo
+
+
+@pytest.mark.parametrize("coverage", ["task", "full"])
+@pytest.mark.parametrize("as_path", [False, True])
+@pytest.mark.parametrize("boundary", ["prepare", "resolve"])
+def test_service_boundary_requires_full_acceptance(
+    accepted_repo: tuple[Path, service_release.AcceptedSource],
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    local_gate_tools: None,
+    coverage: str,
+    as_path: bool,
+    boundary: str,
+) -> None:
+    from cli.lib import acceptance, service_ops
+
+    repo, source = accepted_repo
+    descriptor = acceptance.accept_revision(
+        repo, sha=source.source_commit, coverage=coverage,
+        scope=("backend/app.py",) if coverage == "task" else (),
+        task_id="scoped-task" if coverage == "task" else "",
+        runner=lambda command, cwd: subprocess.CompletedProcess(command, 0, "RUFF:OK:0", ""),
+    )
+    receipt = Path(descriptor["acceptance_artifact"]) if as_path else descriptor
+    # Both receipts are canonical valid task-completion evidence.
+    assert acceptance.validate_acceptance_receipt(repo, receipt)["coverage"] == coverage
+    project = service_ops.ProjectServices(
+        project_id="example", root=repo, backend_service="api.service",
+        frontend_service="web.service", default_workers=(), optional_workers=(),
+        backend_port=8001, frontend_port=3001, backend_dir=repo / "backend",
+        frontend_dir=repo / "frontend", health_endpoint="/health",
+    )
+    state = tmp_path / "service-state"
+    monkeypatch.setenv("SUMMITFLOW_SERVICE_STATE_ROOT", str(state))
+    operation = service_ops.prepare_accepted_release if boundary == "prepare" else service_ops.resolve_accepted_source
+
+    if coverage == "task":
+        with pytest.raises(service_release.ReleaseError, match=r"full acceptance coverage.*task"):
+            operation(project, receipt)
+        assert not state.exists()
+    elif boundary == "prepare":
+        release, _ = service_ops.prepare_accepted_release(project, receipt)
+        assert release.source.coverage == "full"
+        assert json.loads(release.receipt_path.read_text())["source"]["coverage"] == "full"
+    else:
+        assert service_ops.resolve_accepted_source(project, receipt)["coverage"] == "full"
+
+
+@pytest.mark.parametrize("coverage", [None, "full", "task"])
+def test_retained_deployment_coverage_is_not_promoted(
+    accepted_repo: tuple[Path, service_release.AcceptedSource],
+    tmp_path: Path,
+    coverage: str | None,
+) -> None:
+    repo, source = accepted_repo
+    release = service_release._materialize_release("example", repo, source, state_root=tmp_path / "state")
+    for phase in ("backend_dependencies", "frontend_build", "migrations", "systemd_units", "restart", "health", "seeds"):
+        service_release.mark_phase(release, phase, status="succeeded")
+    service_release.complete_release(release)
+    retained = json.loads(release.receipt_path.read_text())
+    if coverage is None:
+        # Older full-release records omitted coverage from AcceptedSource.
+        retained["source"].pop("coverage", None)
+    else:
+        retained["source"]["coverage"] = coverage
+    service_release._write_receipt(release.receipt_path, retained)
+
+    if coverage == "task":
+        with pytest.raises(service_release.ReleaseError, match=r"full acceptance coverage.*task"):
+            service_release.validate_deployment_receipt(release.receipt_path)
+    else:
+        evidence = service_release.validate_deployment_receipt(release.receipt_path)
+        assert evidence["state"] == "succeeded"
+        assert evidence["source_commit"] == source.source_commit
+        assert evidence["coverage"] == coverage

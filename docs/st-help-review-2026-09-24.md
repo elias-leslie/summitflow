@@ -2,8 +2,8 @@
 
 The installed ST help surface was reviewed against command registration, owner
 source, active owner executables, and generated extension metadata. The review
-covered 681 actual help invocations: 244 native routes including hidden aliases,
-413 extension pages across all 24 namespaces, and 24 safe manual help forms.
+retains 538 actual help invocations: 242 native outputs including hidden aliases,
+272 extension pages across 23 namespaces, and 24 safe manual help forms.
 Another 46 manually dispatched forms were inventoried structurally. Every captured
 page returned successfully with nonempty output. No native command, flag, default,
 type, requiredness, hidden alias, extension binding, or existing help path was lost.
@@ -19,7 +19,7 @@ type, requiredness, hidden alias, extension binding, or existing help path was l
 - `autocode --at` previously reported scheduling while dispatching immediately.
   It now rejects the unsupported option before calling the client; immediate
   dispatch remains available without `--at`.
-- Generated help exposes seven missing Neri paths, Learn's `--full`, and
+- Generated help exposes Learn's `--full` and
   Automations pagination, defaults, required inputs, and command purposes.
 - Search help matches the delivered capability guidance: start with default
   search, consume returned source, narrow with existing flags, and select checkout
@@ -43,8 +43,8 @@ They measure emitted help, not model tokenizer counts or successful task duratio
 | `st search --help` | 425 | 551 | Current-source behavior and narrow continuation guidance. |
 | `st automations runs --help` | 19 | 75 | Restored pagination, defaults, ranges, and purpose. |
 
-The artificial sum of all captured pages grew from 67,269 to 68,730 estimated
-tokens, with 16 additional captures. This is not a universal token-saving claim.
+The artificial sum of retained captured pages grew from 58,596 to 59,612 estimated
+tokens, with nine additional captures. This is not a universal token-saving claim.
 The demonstrated benefits are correct navigation, complete syntax, and shorter
 targeted database help. Larger pages were retained where the previous version
 omitted information needed to act correctly.

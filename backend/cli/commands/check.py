@@ -2,22 +2,26 @@
 
 from __future__ import annotations
 
+import hashlib
+import io
 import json
 import os
 import re
 import shlex
 import shutil
-import signal
 import subprocess
-from contextlib import suppress
+import time
+from contextlib import redirect_stdout
 from pathlib import Path
 from typing import cast
 from uuid import uuid4
 
 import typer
 
+from app.utils.heavy_work import heavy_work
+
 from ..details import detail_path, display_path, summary_hint, write_details
-from ..lib.acceptance import AcceptanceError, accept_revision
+from ..lib.acceptance import AcceptanceError
 from ..lib.architecture_check import run_architecture_check
 from ..lib.cleanroom import main as cleanroom_main
 from ..lib.task_claims import TaskClaimRenewalError, renew_owned_claim
@@ -54,6 +58,13 @@ from .check_execution import (
     tool_not_installed,
     tool_output,
     tool_result_line,
+)
+from .check_native import (
+    NativeCheckError,
+    blocked_native_result,
+    legacy_applicability,
+    native_plan,
+    run_native,
 )
 from .check_project_identity import run_project_identity_check
 from .check_runner import (
@@ -110,26 +121,25 @@ def _resolve_command(binary: str, root: Path, cwd: Path, base_args: list[str]) -
 
 
 _FRONTEND_TEST_TIMEOUT = 600
+# Seconds-scale linters that must not queue behind full suites and builds.
+_LIGHT_TOOLS = frozenset({"ruff", "biome", "actionlint", "shellcheck", "squawk"})
 
 
 def _run_frontend_script(command: list[str], cwd: Path, env: dict[str, str]) -> subprocess.CompletedProcess[str]:
     """Cap arbitrary manifest scripts and clean up their process group on timeout."""
-    with subprocess.Popen(
-        command, cwd=cwd, env={**env, "CI": "true", "NODE_ENV": "test"},
-        stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, encoding="utf-8",
-        errors="replace", start_new_session=True,
-    ) as process:
+    with heavy_work("frontend tests") as work:
         try:
-            stdout, stderr = process.communicate(timeout=_FRONTEND_TEST_TIMEOUT)
-        except subprocess.TimeoutExpired:
-            # The group may have completed at the deadline.
-            with suppress(ProcessLookupError):
-                os.killpg(process.pid, signal.SIGKILL)
-            stdout, stderr = process.communicate()
+            return work.run(
+                command, cwd=cwd, env={**env, "CI": "true", "NODE_ENV": "test"},
+                capture_output=True, text=True, encoding="utf-8", errors="replace",
+                timeout=_FRONTEND_TEST_TIMEOUT,
+            )
+        except subprocess.TimeoutExpired as exc:
+            stdout = exc.stdout.decode(errors="replace") if isinstance(exc.stdout, bytes) else exc.stdout or ""
+            stderr = exc.stderr.decode(errors="replace") if isinstance(exc.stderr, bytes) else exc.stderr or ""
             return subprocess.CompletedProcess(
                 command, 124, stdout, f"{stderr}\nFrontend tests exceeded {_FRONTEND_TEST_TIMEOUT}s; process group stopped."
             )
-        return subprocess.CompletedProcess(command, process.returncode, stdout, stderr)
 
 
 def _run_tool(name: str, config: dict[str, object], extra_args: list[str]) -> int:
@@ -160,6 +170,7 @@ def _run_tool(name: str, config: dict[str, object], extra_args: list[str]) -> in
         print(tool_result_line(label, name, 127, display_path(root, details), summary_hint(output)))
         return 127
     report: Path | None = None
+    timing = ""
     # A real full-suite failure produced empty stdout/stderr. Retain pytest's
     # built-in report from this same run, not a second diagnostic test run.
     pytest_options = " ".join([*command, os.environ.get("PYTEST_ADDOPTS", "")])
@@ -170,16 +181,25 @@ def _run_tool(name: str, config: dict[str, object], extra_args: list[str]) -> in
         if name == "frontend-test":
             result = _run_frontend_script(command, cwd, tool_env(root, os.environ, name))
         else:
-            result = subprocess.run(
-                command,
-                cwd=cwd,
-                env=tool_env(root, os.environ, name),
-                capture_output=True,
-                text=True,
-                encoding="utf-8",
-                errors="replace",
-                check=False,
-            )
+            queued = time.monotonic()
+            # Only direct adapters of fast, low-memory linters are light.
+            # Configured wrappers and all other tools retain the heavy default.
+            direct = binary == name or (binary == "npx" and base_args[:1] == [name])
+            work_class = "light" if name in _LIGHT_TOOLS and direct else "heavy"
+            with heavy_work(f"check {name}", work_class=work_class, project=root.name) as work:
+                started = time.monotonic()
+                queue_ms = (started - queued) * 1000
+                result = work.run(
+                    command,
+                    cwd=cwd,
+                    env=tool_env(root, os.environ, name),
+                    capture_output=True,
+                    text=True,
+                    encoding="utf-8",
+                    errors="replace",
+                    check=False,
+                )
+                timing = f"|queue_ms:{queue_ms:.3f}|execution_ms:{(time.monotonic() - started) * 1000:.3f}"
     except OSError as exc:
         if name not in {"vitest", "frontend-test"} and isinstance(exc, FileNotFoundError) and tool_not_installed(name, root):
             print(f"{label}:SKIP:{name}:tool_not_installed")
@@ -209,7 +229,7 @@ def _run_tool(name: str, config: dict[str, object], extra_args: list[str]) -> in
             result.returncode,
             display_path(root, details),
             summary_hint(output),
-        ) + (f"|report:{display_path(root, report)}" if report is not None and report.is_file() else "")
+        ) + timing + (f"|report:{display_path(root, report)}" if report is not None and report.is_file() else "")
     )
     return result.returncode
 
@@ -342,16 +362,48 @@ def _acceptance_summary(receipt: dict[str, object]) -> str:
 
 def _handle_check_args(ctx: typer.Context, configs: dict[str, dict[str, object]]) -> int:
     args = list(ctx.args)
+    if args and args[0] in {"--native", "--check", "-c"}:
+        try:
+            root = _resolve_repo_root()
+            plan = native_plan(root)
+            if plan is not None:
+                stage_id = None
+                native_args = args[1:]
+                json_output = "--json" in native_args
+                native_reuse = "--no-reuse" not in native_args and os.environ.get("ST_NATIVE_NO_REUSE") != "1"
+                native_args = [arg for arg in native_args if arg not in {"--json", "--no-reuse"}]
+                if native_args:
+                    if args[0] != "--native" or len(native_args) != 2 or native_args[0] != "--stage":
+                        raise NativeCheckError("native full gates do not accept scope/fix arguments; use --native --stage ID")
+                    stage_id = native_args[1]
+                full_gate = args[0] in {"--check", "-c"}
+                legacy = _native_legacy_checks(root, plan, configs, print_output=not json_output) if full_gate and plan["legacy_tools"] else None
+                result = (blocked_native_result(plan, "cheap_legacy_gate_failed") if legacy and legacy["state"] != "pass"
+                          else run_native(root, plan, stage_id=stage_id, reuse=native_reuse, full_gate=full_gate))
+                if legacy is not None:
+                    result["legacy"] = legacy
+                if not json_output:
+                    for stage in result["stages"]:
+                        print(f"NATIVE:{stage['state']}:{stage['id']}|coverage:{stage['coverage']}|reason:{stage['reason']}")
+                print("NATIVE_EVIDENCE:" + json.dumps(result, sort_keys=True, separators=(",", ":")))
+                return 0 if result["state"] == "pass" else 1
+            if args[0] == "--native":
+                raise NativeCheckError("project has no versioned native stage declaration")
+        except NativeCheckError as exc:
+            output_error(str(exc))
+            return 2
     if args and args[0] == "--acceptance":
         if any(option in {"-h", "--help"} for option in args[1:]):
             print(
                 "Usage: st check --acceptance [--sha REV] [--task TASK] "
-                "[--scope PATH] [--no-reuse] [--json]"
+                "[--scope PATH] [--coverage full|task] [--stage ID] [--no-reuse] [--json]"
             )
             return 0
         sha = "HEAD"
         task_id = ""
         scope: list[str] = []
+        coverage = "full"
+        required_stages: list[str] = []
         reuse = True
         json_output = False
         index = 1
@@ -365,7 +417,7 @@ def _handle_check_args(ctx: typer.Context, configs: dict[str, dict[str, object]]
                 json_output = True
                 index += 1
                 continue
-            if option not in {"--sha", "--task", "--scope"} or index + 1 >= len(args):
+            if option not in {"--sha", "--task", "--scope", "--coverage", "--stage"} or index + 1 >= len(args):
                 output_error(f"Unknown or incomplete st check --acceptance option: {option}")
                 return 2
             value = args[index + 1]
@@ -373,16 +425,39 @@ def _handle_check_args(ctx: typer.Context, configs: dict[str, dict[str, object]]
                 sha = value
             elif option == "--task":
                 task_id = value
+            elif option == "--coverage":
+                if value not in {"task", "full"}:
+                    output_error("Acceptance coverage must be task or full")
+                    return 2
+                coverage = value
+            elif option == "--stage":
+                required_stages.append(value)
             else:
                 scope.append(value)
             index += 2
         try:
             root = _resolve_repo_root()
+            owned_task = None
             if task_id:
-                renew_owned_claim(root, task_id)
-            receipt = accept_revision(
-                root, sha=sha, task_id=task_id, scope=scope, reuse=reuse
-            )
+                owned_task = renew_owned_claim(root, task_id)
+            from cli.lib.acceptance_coordinator import Coverage, Materialization, accept_source
+            from cli.lib.commit_workflow import run_git
+            selected = run_git(root, ["rev-parse", "--verify", f"{sha}^{{commit}}"])
+            head = run_git(root, ["rev-parse", "HEAD"])
+            if (selected.returncode == 0 and head.returncode == 0 and selected.stdout.strip() != head.stdout.strip()
+                    and (not task_id or not scope)):
+                raise AcceptanceError("Historical acceptance requires --task and explicit --scope task-owned paths")
+            dirty = run_git(root, ["status", "--porcelain=v1", "--untracked-files=all"])
+            materialization = "isolated" if dirty.returncode == 0 and dirty.stdout.strip() else "actual"
+            if selected.returncode == 0 and head.returncode == 0 and selected.stdout.strip() != head.stdout.strip():
+                materialization = "isolated"
+            receipt = accept_source(root, sha=sha, materialization=cast(Materialization, materialization), task_id=task_id,
+                                    scope=scope, reuse=reuse, coverage=cast(Coverage, coverage),
+                                    required_stages=required_stages).to_dict()
+            if owned_task and receipt.get("state") == "success":
+                from cli.lib.task_claims import attach_owned_acceptance
+                if not attach_owned_acceptance(root, owned_task, receipt):
+                    output_error("Acceptance artifact retained; task proof was not attached because the local claim/evidence changed or the API is remote. Reclaim and revalidate before completion.")
         except (AcceptanceError, TaskClaimRenewalError) as exc:
             output_error(str(exc))
             return 2
@@ -394,14 +469,44 @@ def _handle_check_args(ctx: typer.Context, configs: dict[str, dict[str, object]]
     return handle_check_args(ctx, configs, runtime=_runtime())
 
 
+def _native_legacy_checks(root: Path, plan: dict[str, object], configs: dict[str, dict[str, object]], *, print_output: bool) -> dict[str, object]:
+    started = time.monotonic()
+    selected, outcomes = legacy_applicability(root, cast(list[str], plan["legacy_tools"]))
+    missing = [name for name in selected if name not in configs]
+    outcomes.extend({"id": name, "state": "unavailable", "reason": "check_configuration_missing"} for name in missing)
+    captured = io.StringIO()
+    with redirect_stdout(captured):
+        code = _run_selected([name for name in selected if name in configs], configs, fix=False, changed_only=False)
+    output = captured.getvalue()
+    if print_output:
+        print(output, end="")
+    for line in output.splitlines():
+        skipped = re.search(r"^([^:]+):SKIP:([^:]+):(.+)$", line)
+        if skipped:
+            reason = skipped[3]
+            applicable_skip = any(value in reason for value in ("no_local_rules", "no_candidate_lockfiles", "no_candidate_files", "no_tsconfig", "no_relevant_paths"))
+            outcomes.append({"id": skipped[2], "state": "not-applicable" if applicable_skip else "unavailable", "reason": reason})
+        elif ":OK:" in line or ":FAIL:" in line:
+            outcomes.append({"id": line.split(":", 1)[0].lower(), "state": "fail" if ":FAIL:" in line else "pass", "result": line})
+    for name in selected:
+        labels = {str(configs.get(name, {}).get("label") or name.upper())}
+        if name == "security":
+            labels = {"GITLEAKS", "SEMGREP", "OSV"}
+        if any(not any(line.startswith(label + ":") and any(marker in line for marker in (":OK:", ":FAIL:", ":SKIP:")) for line in output.splitlines()) for label in labels):
+            outcomes.append({"id": name, "state": "unavailable", "reason": "check_outcome_missing"})
+    unavailable = bool(missing) or any(outcome["state"] == "unavailable" for outcome in outcomes)
+    return {"coverage": "full", "state": "pass" if code == 0 and not unavailable else "fail", "stages": outcomes,
+            "duration_ms": round((time.monotonic() - started) * 1000, 3), "output_sha256": hashlib.sha256(output.encode()).hexdigest(),
+            "detail": output[-1200:], "security_coverage": "local_candidate_codeql_equivalence_not_claimed"}
+
+
 @usage(
     surface="st.check",
     cmd="st check --quick --changed-only",
     when="verify implementation changes; before committing or claiming a fix",
     precautions=(
-        "use st check for all quality gates (ruff/biome/tsc/types/pytest)",
-        "use st check codeql to verify GitHub CodeQL alert state after code-scanning work",
         "never run raw pytest/vitest/biome/tsc/ruff/sqlfluff/squawk",
+        "st check codeql verifies GitHub CodeQL alert state after code-scanning work",
     ),
     tier="mandate",
 )

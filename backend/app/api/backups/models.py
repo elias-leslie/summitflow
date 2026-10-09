@@ -3,11 +3,11 @@
 from datetime import datetime
 from typing import Literal
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 BackendType = Literal["smb", "local"]
 SourceType = Literal["project", "config", "infrastructure", "workspace"]
-Frequency = Literal["hourly", "daily", "weekly", "monthly"]
+Frequency = Literal["hourly", "four_hourly", "daily", "weekly", "monthly"]
 
 
 class BackupCreate(BaseModel):
@@ -206,11 +206,36 @@ class BackupHealthItem(BaseModel):
     backup_activity: dict[str, object] | None = None
 
 
+class CriticalRestoreAttempt(BaseModel):
+    status: Literal["verified", "failed", "running"]
+    attempted_at: str | None = None
+    completed_at: str | None = None
+    failed_source_id: str | None = None
+    reason: Literal["mapped-links-unresolved", "repository-locked", "restore-failed"] | None = None
+    cached: bool = False
+
+
+class CriticalRestoreHealth(BaseModel):
+    status: Literal["verified", "failed", "pending", "running", "stale", "untested", "unavailable"]
+    last_success_at: str | None = None
+    latest_attempt: CriticalRestoreAttempt | None = None
+    required_source_ids: list[str] = Field(default_factory=list)
+    verified_source_ids: list[str] = Field(default_factory=list)
+    missing_source_ids: list[str] = Field(default_factory=list)
+
+
+class BackupRepositoryHealthItem(BaseModel):
+    backend_id: str
+    backend_name: str
+    critical_restore: CriticalRestoreHealth
+
+
 class BackupHealthResponse(BaseModel):
     """Response model for backup health summary."""
 
     sources: list[BackupHealthItem]
     pending_upload_count: int = 0
+    repositories: list[BackupRepositoryHealthItem] = Field(default_factory=list)
 
 
 # ─── System Image / Veeam Models ────────────────────────────────

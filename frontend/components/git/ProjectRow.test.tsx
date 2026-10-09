@@ -1,180 +1,127 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { fireEvent, render, screen, waitFor } from '@testing-library/react'
-import { describe, expect, it, vi } from 'vitest'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
+import type { DevelopmentProjection } from '@/lib/api/git'
+import { development, repo, sourceSha } from './developmentFixtures'
 import { ProjectRow } from './ProjectRow'
 
-const apiMocks = vi.hoisted(() => ({
+const api = vi.hoisted(() => ({
   publishProjectChanges: vi.fn(),
   pullRepository: vi.fn(),
+  checkProjectGitRemote: vi.fn(),
 }))
-
-vi.mock('@/lib/api', () => ({
-  publishProjectChanges: apiMocks.publishProjectChanges,
-  pullRepository: apiMocks.pullRepository,
-}))
-
+vi.mock('@/lib/api/git', () => api)
 vi.mock('./project-row/DashboardContent', () => ({
   DashboardContent: ({ projectId }: { projectId: string }) => (
-    <div data-testid="dashboard-content">{projectId}</div>
+    <div>{projectId} history</div>
   ),
 }))
-
-function renderRow() {
-  const queryClient = new QueryClient({
-    defaultOptions: {
-      queries: { retry: false },
-      mutations: { retry: false },
-    },
+function renderRow(value: DevelopmentProjection = development) {
+  const client = new QueryClient({
+    defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
   })
-
   return render(
-    <QueryClientProvider client={queryClient}>
-      <ProjectRow
-        repo={{
-          path: '/repos/repo-folder',
-          name: 'repo-folder',
-          project_id: 'project-alpha',
-          branch: 'main',
-          uncommitted: 1,
-          ahead: 0,
-          behind: 0,
-          state: 'clean',
-          workspace_summary: {
-            active_checkpoints: 1,
-            dirty_checkpoints: 0,
-            dirty_main_repo: true,
-            branches_with_checkpoints: 1,
-            orphan_branches: 0,
-            prunable_branches: 0,
-            needs_cleanup: false,
-            checkpoint_task_ids: ['task-123'],
-          },
-        }}
-      />
+    <QueryClientProvider client={client}>
+      <ProjectRow repo={repo} development={value} />
     </QueryClientProvider>,
   )
 }
-
-function renderConfigRow() {
-  const queryClient = new QueryClient({
-    defaultOptions: {
-      queries: { retry: false },
-      mutations: { retry: false },
-    },
-  })
-
-  return render(
-    <QueryClientProvider client={queryClient}>
-      <ProjectRow
-        repo={{
-          path: '/repos/.claude',
-          name: '.claude',
-          project_id: null,
-          branch: 'main',
-          uncommitted: 1,
-          ahead: 0,
-          behind: 0,
-          state: 'clean',
-          workspace_summary: {
-            active_checkpoints: 0,
-            dirty_checkpoints: 0,
-            dirty_main_repo: false,
-            branches_with_checkpoints: 0,
-            orphan_branches: 0,
-            prunable_branches: 0,
-            needs_cleanup: false,
-            checkpoint_task_ids: [],
-          },
-        }}
-      />
-    </QueryClientProvider>,
-  )
+function openActions() {
+  fireEvent.click(screen.getByText('Publication and remote actions'))
 }
-
-describe('ProjectRow', () => {
-  it('uses project_id for publish and dashboard expansion', async () => {
-    apiMocks.publishProjectChanges.mockResolvedValue({
-      success: true,
-      status: 'updated',
-      gates: '',
-      errors: [],
-      message: 'ok',
-      reason: '',
-      pushed: false,
-      raw_output: 'ok',
-    })
-
+beforeEach(() => vi.clearAllMocks())
+describe('Development repository', () => {
+  it('shows neutral local work separately from acceptance and runtime drift', () => {
     renderRow()
-
-    expect(screen.queryByTestId('dashboard-content')).not.toBeInTheDocument()
-
-    // Click the row header to expand
-    const row = screen.getByRole('button', { name: /repo-folder/i })
-    fireEvent.click(row)
-    expect(screen.getByTestId('dashboard-content')).toHaveTextContent(
-      'project-alpha',
-    )
-
-    fireEvent.click(screen.getByRole('button', { name: 'Commit + Push' }))
-
-    await waitFor(() => {
-      expect(apiMocks.publishProjectChanges).toHaveBeenCalledWith(
-        'project-alpha',
-      )
-    })
+    expect(screen.getByText('2 uncommitted files')).toBeInTheDocument()
+    expect(screen.getByText(/1 unpublished commit against/)).toBeInTheDocument()
+    expect(screen.getByText('Source drift')).toBeInTheDocument()
+    expect(screen.queryByText('Dirty')).not.toBeInTheDocument()
+    expect(api.publishProjectChanges).not.toHaveBeenCalled()
+    expect(api.checkProjectGitRemote).not.toHaveBeenCalled()
   })
-
-  it('offers publish for config repos', () => {
-    renderConfigRow()
-
+  it('publishes the full accepted SHA and retains the result', async () => {
+    api.publishProjectChanges.mockResolvedValue({
+      status: 'success',
+      publication_complete: true,
+      evidence_recorded: true,
+      pushed: true,
+      requested_source_commit: sourceSha,
+    })
+    renderRow()
+    openActions()
+    fireEvent.click(
+      screen.getByRole('button', { name: 'Publish accepted source' }),
+    )
+    await waitFor(() =>
+      expect(api.publishProjectChanges).toHaveBeenCalledWith(
+        'project-alpha',
+        sourceSha,
+      ),
+    )
+    expect(await screen.findByText('Publication complete')).toBeInTheDocument()
+  })
+  it('disables publication for stale acceptance while preserving history', () => {
+    renderRow({
+      ...development,
+      accepted: { ...development.accepted, state: 'stale', drift: true },
+    })
+    openActions()
     expect(
-      screen.getByRole('button', { name: 'Commit + Push' }),
+      screen.getByRole('button', { name: 'Publish accepted source' }),
+    ).toBeDisabled()
+    fireEvent.click(screen.getByText('Branches, checkpoints and history'))
+    expect(screen.getByText('project-alpha history')).toBeVisible()
+  })
+  it('reports pull and publication failures', async () => {
+    api.pullRepository.mockResolvedValue({
+      results: [
+        {
+          path: repo.path,
+          name: repo.name,
+          status: 'skipped',
+          reason: 'uncommitted changes',
+        },
+      ],
+    })
+    api.publishProjectChanges.mockRejectedValue(
+      new Error('Publication unavailable'),
+    )
+    renderRow()
+    openActions()
+    fireEvent.click(screen.getByRole('button', { name: 'Pull remote changes' }))
+    expect(
+      await screen.findByText(/alpha: skipped: uncommitted changes/),
+    ).toBeInTheDocument()
+    fireEvent.click(
+      screen.getByRole('button', { name: 'Publish accepted source' }),
+    )
+    expect(
+      await screen.findByText('Publication unavailable'),
     ).toBeInTheDocument()
   })
-
-  it('lets repository status and actions wrap into a mobile-safe second row', () => {
-    renderRow()
-
-    expect(
-      screen.getByRole('button', { name: 'repo-folder repository details' }),
-    ).toHaveClass('flex-wrap', 'sm:flex-nowrap')
-    expect(screen.getByTestId('repository-actions')).toHaveClass(
-      'flex-wrap',
-      'basis-full',
-      'sm:basis-auto',
-    )
-  })
-})
-
-it('displays a skipped pull with its reason', async () => {
-  apiMocks.pullRepository.mockResolvedValue({
-    results: [
-      {
-        path: '/repos/repo-folder',
-        name: 'repo-folder',
-        branch: 'main',
-        status: 'skipped',
-        reason: 'uncommitted changes',
+  it('keeps unavailable blockers distinct from an empty queue and links actual task routes', () => {
+    renderRow({
+      ...development,
+      blockers: {
+        state: 'unavailable',
+        reason: 'Task store unavailable',
+        items: [
+          {
+            task_id: 'task-123',
+            title: 'Repair deployment',
+            status: 'blocked',
+            reason: 'Runtime observation failed',
+          },
+        ],
       },
-    ],
-    success: 0,
-    failed: 0,
-    skipped: 1,
+    })
+    expect(screen.getByText('Task store unavailable')).toBeInTheDocument()
+    expect(
+      screen.queryByText('No blocked or failed tasks recorded'),
+    ).not.toBeInTheDocument()
+    expect(
+      screen.getByRole('link', { name: 'Repair deployment' }),
+    ).toHaveAttribute('href', '/projects/project-alpha?tab=tasks&task=task-123')
   })
-  renderRow()
-  fireEvent.click(screen.getByRole('button', { name: 'Sync' }))
-  await waitFor(() =>
-    expect(screen.getByText(/uncommitted changes/)).toBeInTheDocument(),
-  )
-})
-
-it('displays publish transport errors', async () => {
-  apiMocks.publishProjectChanges.mockRejectedValue(
-    new Error('Publication unavailable'),
-  )
-  renderRow()
-  fireEvent.click(screen.getByRole('button', { name: 'Commit + Push' }))
-  await waitFor(() =>
-    expect(screen.getByText('Publication unavailable')).toBeInTheDocument(),
-  )
 })

@@ -271,26 +271,28 @@ def test_exact_arguments_context_environment_and_nonzero_exit(tmp_path, capfd, m
     assert err == "child stderr\n"
 
 
-def test_neri_binding_forwards_only_the_native_codex_session_identity():
+def test_neri_binding_forwards_only_the_api_configuration():
     registry_path = Path(__file__).resolve().parents[3] / "scripts/lib/tool-registry.json"
     registry = json.loads(registry_path.read_text())
     binding = next(
         row for row in registry["extensions"] if row["namespace"] == "neri"
     )
 
-    assert binding["environment"] == [
-        "CODEX_SESSION_ID",
-        "NERI_HOOK_STATE_DIR",
-        "ST_NERI_API_URL",
-    ]
-    assert "AICO_SESSION_ID" not in binding["environment"]
+    assert binding["environment"] == ["ST_NERI_API_URL"]
 
 
-def test_neri_manifest_exposes_direct_hunt_and_surface_commands():
+def test_neri_manifest_exposes_bounty_commands_without_retired_workflows():
     registry_path = Path(__file__).resolve().parents[3] / "scripts/lib/tool-registry.json"
+    catalog = load_extensions(set(), registry_path=registry_path)
+    assert not catalog.diagnostics
+    assert not any(
+        row.binding and (row.binding.id == "neri.observer" or row.binding.namespace == "neriobserve")
+        for row in catalog.records
+    )
+    assert not (registry_path.parent / "extensions/neri-observer.json").exists()
     record = next(
         row
-        for row in load_extensions(set(), registry_path=registry_path).records
+        for row in catalog.records
         if row.manifest is not None and row.manifest.namespace == "neri"
     )
     assert record.manifest is not None
@@ -299,9 +301,52 @@ def test_neri_manifest_exposes_direct_hunt_and_surface_commands():
     assert "surface" in record.manifest.help[""]
     assert "hunt begin" in record.manifest.help
     assert "surface digest" in record.manifest.help
+    for path in ("owner-request", "owner-resolve", "portfolio contract", "portfolio references"):
+        assert path in record.manifest.help
+    retired_groups = {"research", "worker", "operator", "jev", "session", "runtime", "execute"}
+    assert not any(path.split()[0] in retired_groups for path in record.manifest.help if path)
+    assert not retired_groups.intersection(record.manifest.help_options)
+    for path in (
+        "record-activity", "control", "operation", "report assign-review",
+        "report retain-review-result", "report review", "closeout save",
+        "closeout training", "surface probe",
+    ):
+        assert path not in record.manifest.help
     surfaces = {row["surface"] for row in record.manifest.usage}
     assert "st.neri.hunt.begin" in surfaces
     assert "st.neri.surface.digest" in surfaces
+    for surface in surfaces:
+        assert isinstance(surface, str)
+        assert surface.removeprefix("st.neri.").split(".")[0] not in retired_groups
+
+
+def test_actual_neri_workspace_help_and_usage_are_passive(monkeypatch):
+    from cli.main import app
+
+    def forbidden(*args, **kwargs):
+        pytest.fail("workspace discovery attempted owner execution or project resolution")
+
+    monkeypatch.setattr(subprocess, "Popen", forbidden)
+    monkeypatch.setattr("cli.config.get_project_root_path", forbidden)
+    runner = CliRunner()
+    pages = {
+        ("workspace",): ("start", "inspect", "retire"),
+        ("workspace", "start"): ("--owner", "--source-commit", "--source"),
+        ("workspace", "inspect"): ("--owner", "--source"),
+        ("workspace", "retire"): ("--owner", "--stopped", "--clean"),
+    }
+    for path, expected in pages.items():
+        result = runner.invoke(app, ["neri", *path, "--help"])
+        assert result.exit_code == 0, result.output
+        assert f"Usage: neri {' '.join(path)} " in result.output
+        assert all(value in result.output for value in expected)
+
+    specs = collect_usage_specs(app)
+    for command in ("start", "inspect", "retire"):
+        surface = f"st.neri.workspace.{command}"
+        selected = filter_specs(specs, surface=surface)
+        assert len(selected) == 1
+        assert selected[0].cmd.startswith(f"st neri workspace {command} ROOT")
 
 
 def test_actual_neri_binding_preserves_only_approved_runtime_context(
@@ -324,14 +369,18 @@ def test_actual_neri_binding_preserves_only_approved_runtime_context(
         "import json,os\n"
         "print(json.dumps({key: os.getenv(key) for key in "
         "['CODEX_SESSION_ID','NERI_HOOK_STATE_DIR','AICO_SESSION_ID',"
-        "'CODEX_THREAD_ID','UNRELATED_SECRET']}))\n"
+        "'CODEX_THREAD_ID','ST_NERI_API_URL','ST_CALLER_IDENTITY','UNRELATED_SECRET']}))\n"
     )
     executable.chmod(0o755)
     monkeypatch.setenv("CODEX_SESSION_ID", "native-root-session")
     monkeypatch.setenv("NERI_HOOK_STATE_DIR", "/tmp/neri-hook-state")
     monkeypatch.setenv("AICO_SESSION_ID", "widget-session")
     monkeypatch.setenv("CODEX_THREAD_ID", "thread-session")
+    monkeypatch.setenv("ST_NERI_API_URL", "http://fixture.invalid")
+    monkeypatch.setenv("ST_CALLER_IDENTITY", '{"member_id":"must-not-cross"}')
     monkeypatch.setenv("UNRELATED_SECRET", "must-not-cross")
+    caller_identity = {"member_id": "fixture-root", "provider": "hostname"}
+    monkeypatch.setattr("cli.lib.task_claims.current_caller_identity", lambda: caller_identity)
 
     assert dispatch_extension(
         record,
@@ -340,11 +389,13 @@ def test_actual_neri_binding_preserves_only_approved_runtime_context(
         root_resolver=lambda _owner: str(tmp_path),
     ) == 0
     payload = json.loads(capfd.readouterr().out)
+    assert json.loads(payload.pop("ST_CALLER_IDENTITY")) == caller_identity
     assert payload == {
-        "CODEX_SESSION_ID": "native-root-session",
-        "NERI_HOOK_STATE_DIR": "/tmp/neri-hook-state",
+        "CODEX_SESSION_ID": None,
+        "NERI_HOOK_STATE_DIR": None,
         "AICO_SESSION_ID": None,
         "CODEX_THREAD_ID": None,
+        "ST_NERI_API_URL": "http://fixture.invalid",
         "UNRELATED_SECRET": None,
     }
 
@@ -357,6 +408,46 @@ def test_learn_binding_forwards_native_codex_session_identity():
     )
 
     assert "CODEX_SESSION_ID" in binding["environment"]
+
+
+def test_web_registration_exposes_pinned_dom_and_offline_artifact_workflows():
+    registry_path = Path(__file__).resolve().parents[3] / "scripts/lib/tool-registry.json"
+    record = next(row for row in load_extensions(set(), registry_path=registry_path).records
+                  if row.binding is not None and row.binding.namespace == "web")
+    assert record.status == "unverified"
+    assert record.manifest is not None
+    assert record.binding is not None
+    assert "process" in record.manifest.effects
+    assert "process" in record.binding.grant.effects
+    for command in ("batch", "refocus", "doctor"):
+        assert command in record.manifest.help
+    assert "lightpanda" in record.manifest.help["fetch"]
+    assert "--wait-script" in record.manifest.help["fetch"]
+
+
+def test_web_binding_forwards_pins_and_cache_without_unrelated_environment(
+    tmp_path, capfd, monkeypatch,
+):
+    registry_path = Path(__file__).resolve().parents[3] / "scripts/lib/tool-registry.json"
+    record = next(row for row in load_extensions(set(), registry_path=registry_path).records
+                  if row.binding is not None and row.binding.namespace == "web")
+    assert record.binding is not None
+    record = replace(record, binding=record.binding.model_copy(
+        update={"executable": "fixture", "presentation": None}))
+    keys = ["AGENT_HUB_WEB_LIGHTPANDA_BINARY", "AGENT_HUB_WEB_LIGHTPANDA_SHA256",
+            "AGENT_HUB_WEB_LIGHTPANDA_VERSION", "AGENT_HUB_WEB_CACHE_DIR"]
+    values = {key: f"fixture-{index}" for index, key in enumerate(keys)}
+    for key, value in values.items():
+        monkeypatch.setenv(key, value)
+    monkeypatch.setenv("UNRELATED_SECRET", "must-not-cross")
+    executable = tmp_path / "fixture"
+    executable.write_text(f"#!{sys.executable}\nimport json,os\n"
+                          f"print(json.dumps({{key: os.getenv(key) for key in {[*keys, 'UNRELATED_SECRET']!r}}}))\n")
+    executable.chmod(0o755)
+    assert dispatch_extension(record, [], context=context(tmp_path),
+                              root_resolver=lambda _owner: str(tmp_path)) == 0
+    payload = json.loads(capfd.readouterr().out)
+    assert payload == {**values, "UNRELATED_SECRET": None}
 
 
 @pytest.mark.parametrize("signum", [signal.SIGINT, signal.SIGTERM])
@@ -387,18 +478,112 @@ def test_real_cancellation_forwards_signal_and_reaps(tmp_path, signum):
             process.wait()
 
 
-def test_structured_operation_metadata_is_strict_and_version_bound(tmp_path):
-    operation = {"request_contract_version": 1, "response_schema_version": 1}
+def test_structured_operation_metadata_is_strict_and_independent_of_st_envelope_version(tmp_path):
+    operation = {"request_contract_version": 2, "response_schema_version": 1}
     registry = registration(tmp_path, manifest_changes={"structured_operations": {"inventory": operation}})
     record = load_extensions(set(), registry_path=registry).records[0]
     assert record.status == "unverified"
     assert record.manifest is not None
+    assert record.manifest.st_contract_versions == [1]
+    assert record.manifest.structured_operations["inventory"].request_contract_version == 2
     assert record.manifest.structured_operations["inventory"].response_schema_version == 1
     for invalid in (
-        {**operation, "request_contract_version": 2},
+        {**operation, "request_contract_version": 0},
+        {**operation, "request_contract_version": "2"},
+        {**operation, "request_contract_version": True},
         {**operation, "response_schema_version": 0},
         {**operation, "response_schema_version": "1"},
         {**operation, "unexpected": True},
     ):
         registry = registration(tmp_path, manifest_changes={"structured_operations": {"inventory": invalid}})
         assert load_extensions(set(), registry_path=registry).records[0].status == "malformed"
+
+
+@pytest.mark.parametrize("versions", [[0], [-1], [True], ["1"], []])
+def test_st_envelope_versions_remain_strict_positive_metadata(tmp_path, versions):
+    registry = registration(tmp_path, manifest_changes={"st_contract_versions": versions})
+    assert load_extensions(set(), registry_path=registry).records[0].status == "malformed"
+
+
+@pytest.mark.parametrize("command", [["get", "text"], ["session"], ["workflow"], ["workflow", "record-stop"]])
+def test_registered_browser_focused_help_dispatches_v2_but_root_help_stays_passive(tmp_path, monkeypatch, command):
+    registry = registration(tmp_path, namespace="browser", manifest_changes={
+        "structured_operations": {"help": {"request_contract_version": 2, "response_schema_version": 1}},
+    }, binding_changes={"policy_adapter": "browser"})
+    requests = []
+    monkeypatch.setattr("cli.extensions.extension_context", lambda _output: context(tmp_path))
+    monkeypatch.setattr("cli.extensions.dispatch_extension", lambda record, argv, **kwargs: requests.append(json.loads(argv[1])) or 0)
+    monkeypatch.setattr("cli.commands.browser._agent_browser_bin", lambda: "/managed/agent-browser")
+    app = typer.Typer()
+
+    @app.callback()
+    def root():
+        pass
+
+    register_extensions(app, registry_path=registry)
+    runner = CliRunner()
+    assert "Fixture help" in runner.invoke(app, ["browser", "--help"]).output
+    assert "Fixture help" in runner.invoke(app, ["browser", "health", "--help"]).output
+    assert not requests
+    result = runner.invoke(app, ["browser", *command, "--help"])
+    assert result.exit_code == 0, result.output
+    assert requests[0]["operation"] == "help"
+    assert requests[0]["contract_version"] == 2
+    assert requests[0]["payload"] == {"command": command}
+    assert requests[0]["args"] == []
+
+
+@pytest.mark.parametrize("changes,binding_changes", [
+    ({}, {"grant": {"enabled": False, "effects": []}}),
+    ({"effects": ["network"]}, {}),
+    ({"st_contract_versions": [99]}, {}),
+    ({"unexpected": True}, {}),
+])
+@pytest.mark.parametrize("command", ["fill", "session", "workflow"])
+def test_unavailable_browser_focused_help_cannot_enter_policy(tmp_path, monkeypatch, changes, binding_changes, command):
+    registry = registration(tmp_path, namespace="browser", manifest_changes=changes,
+                            binding_changes={"policy_adapter": "browser", **binding_changes})
+    monkeypatch.setattr("cli.commands.browser.run_registered", lambda *a, **k: pytest.fail("unavailable browser help entered policy"))
+    monkeypatch.setattr("cli.extensions.extension_context", lambda *a, **k: pytest.fail("unavailable help resolved context"))
+    app = typer.Typer()
+
+    @app.callback()
+    def root():
+        pass
+
+    register_extensions(app, registry_path=registry)
+    result = CliRunner().invoke(app, ["browser", command, "--help"])
+    assert result.exit_code == (2 if "unexpected" in changes else 0)
+
+
+def test_registered_browser_missing_v2_help_declaration_fails_without_execution(tmp_path, monkeypatch):
+    registry = registration(tmp_path, namespace="browser", binding_changes={"policy_adapter": "browser"})
+    monkeypatch.setattr("cli.extensions.extension_context", lambda _output: context(tmp_path))
+    monkeypatch.setattr("cli.extensions.dispatch_extension", lambda *a, **k: pytest.fail("unsupported help dispatched"))
+    app = typer.Typer()
+
+    @app.callback()
+    def root():
+        pass
+
+    register_extensions(app, registry_path=registry)
+    result = CliRunner().invoke(app, ["browser", "fill", "--help"])
+    assert result.exit_code == 2
+    assert "does not support help request contract version 2" in result.output
+
+
+def test_browser_binding_forwards_only_approved_session_identity_and_state_environment(tmp_path, monkeypatch):
+    from cli.extensions import _environment
+
+    record = next(record for record in load_extensions(set()).records if record.binding and record.binding.namespace == "browser")
+    binding = record.binding
+    assert binding is not None
+    expected = {"ST_BROWSER_OWNER", "ST_AGENT_ID", "CODEX_THREAD_ID", "XDG_STATE_HOME", "XDG_RUNTIME_DIR"}
+    assert expected <= set(binding.environment)
+    for name in expected:
+        monkeypatch.setenv(name, f"fixture-{name}")
+    monkeypatch.setenv("UNAPPROVED_SESSION_SECRET", "not-forwarded")
+    forwarded = _environment(binding, context(tmp_path))
+    for name in expected:
+        assert forwarded[name] == f"fixture-{name}"
+    assert "UNAPPROVED_SESSION_SECRET" not in forwarded

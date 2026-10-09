@@ -3,25 +3,26 @@
 from __future__ import annotations
 
 import os
-import re
 import subprocess
 import tempfile
 import time
 from collections.abc import Sequence
-from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
 from . import leases
 from .acceptance import AcceptanceError, repo_lock, workspace_fingerprint
-from .jj import JJError, commit_current_revision
-from .jj import run_checks as run_jj_checks
-from .publish_workflow import PublishError, publish_git
 from .task_claims import TaskClaimRenewalError, renew_owned_claim
 
 
 class CommitError(RuntimeError):
     """Raised when commit workflow cannot run."""
+
+
+COMMIT_PUBLICATION_GUIDANCE = (
+    "st commit creates local checkpoints; publish an accepted source explicitly with "
+    "st vcs publish --source ID --sha FULL_OID --now"
+)
 
 
 def run_git(repo: Path, args: list[str]) -> subprocess.CompletedProcess[str]:
@@ -53,7 +54,6 @@ def run_checks(
     paths: Sequence[str] = (),
     full: bool = False,
 ) -> tuple[bool, str]:
-    # Same canonical changed-file input used by the Jujutsu commit path.
     env = {**os.environ, "ST_CHECK_CHANGED_FILES": "\n".join(paths)} if paths else None
     result = subprocess.run(
         ["st", "check", "--check" if full else "--quick", "--changed-only"],
@@ -65,46 +65,6 @@ def run_checks(
     )
     detail = (result.stdout + "\n" + result.stderr).strip()
     return result.returncode == 0, detail[-1200:]
-
-
-def outgoing_paths(repo: Path) -> list[str]:
-    """Include committed-but-unpublished inputs, even with a clean working tree."""
-    current = run_git(repo, ["branch", "--show-current"])
-    if current.returncode != 0:
-        raise CommitError(current.stderr.strip() or "cannot determine publication branch")
-    # Native publication targets origin/current, regardless of @{upstream}.
-    destination = f"refs/remotes/origin/{current.stdout.strip()}" if current.stdout.strip() else ""
-    known = run_git(repo, ["rev-parse", "--verify", destination]) if destination else None
-    args = (["diff", "--name-only", "-z", f"{destination}..HEAD"]
-            if known is not None and known.returncode == 0 else ["ls-files", "-z"])
-    result = run_git(repo, args)
-    if result.returncode:
-        raise CommitError(result.stderr.strip() or "cannot determine outgoing check scope")
-    return sorted(set(item for item in result.stdout.split("\0") if item))
-
-
-def _publish_revision(repo: Path, result: dict[str, Any], *, task_id: str, message: str) -> dict[str, Any]:
-    sha = run_git(repo, ["rev-parse", "HEAD"])
-    if sha.returncode or not sha.stdout.strip():
-        raise CommitError("cannot resolve publication commit")
-    try:
-        return {**result, **publish_git(repo, sha=sha.stdout.strip(), task_id=task_id,
-                                       message=message, run_git=run_git)}
-    except PublishError as exc:
-        raise CommitError(str(exc)) from exc
-
-
-def branch(repo: Path) -> str:
-    return run_git(repo, ["rev-parse", "--abbrev-ref", "HEAD"]).stdout.strip() or "HEAD"
-
-
-def push_args(repo: Path) -> list[str]:
-    args = ["push"]
-    upstream = run_git(repo, ["rev-parse", "--abbrev-ref", "--symbolic-full-name", "@{upstream}"])
-    current = branch(repo)
-    if upstream.returncode != 0 and current not in {"HEAD", "main", "master"}:
-        args.extend(["--set-upstream", "origin", current])
-    return args
 
 
 def _normalize_paths(repo: Path, paths: Sequence[str]) -> list[str]:
@@ -173,7 +133,7 @@ def _require_foreign_leases_clear(repo: Path, changed_paths: Sequence[str]) -> N
 
 
 def _addable_paths(repo: Path, paths: Sequence[str]) -> list[str]:
-    """Drop paths that git refuses to `add` (currently gitignored).
+    """Drop paths that git refuses to `add` (gitignored or already-staged deletions).
 
     Common case: user runs `git rm --cached file` then adds the file to
     `.gitignore`, then asks st commit to commit both. The .gitignore change
@@ -186,9 +146,12 @@ def _addable_paths(repo: Path, paths: Sequence[str]) -> list[str]:
         check = run_git(repo, ["check-ignore", "--quiet", "--", path])
         if check.returncode == 0:
             continue
+        # A `git rm` deletion is already staged and has no pathspec left to add.
+        if (not (repo / path).exists()
+                and run_git(repo, ["ls-files", "--error-unmatch", "--", path]).returncode != 0):
+            continue
         addable.append(path)
     return addable
-
 
 
 def _commit_selected_index(repo: Path, message: str, paths: Sequence[str]) -> subprocess.CompletedProcess[str]:
@@ -233,10 +196,10 @@ def commit_git_revision(
     skip_checks: bool = False,
     paths: Sequence[str] = (),
 ) -> dict[str, Any]:
+    if push:
+        raise CommitError(COMMIT_PUBLICATION_GUIDANCE)
     if not message.strip():
         raise CommitError("commit message is required")
-    if push and skip_checks:
-        raise CommitError("refusing to publish with --skip-checks")
     result: dict[str, Any] = {
         "repo": repo.name,
         "path": str(repo),
@@ -245,16 +208,16 @@ def commit_git_revision(
     }
     selected_paths = _normalize_paths(repo, paths) if paths else []
     has_changes = _selected_paths_dirty(repo, selected_paths) if selected_paths else dirty(repo)
-    if not has_changes and not push:
+    if not has_changes:
         return {**result, "reason": "no_changes_in_selected_paths" if selected_paths else "clean"}
     selected_files = _selected_changed_files(repo, selected_paths) if selected_paths and has_changes else []
     changed_scope = (selected_files if selected_paths else _selected_changed_files(repo, ["."])) if has_changes else []
     _require_foreign_leases_clear(repo, changed_scope)
-    scope = sorted(set([*changed_scope, *(outgoing_paths(repo) if push else [])]))
+    scope = changed_scope
     if not skip_checks and (has_changes or scope):
         before_checks = workspace_fingerprint(repo)
         check_started = time.monotonic()
-        ok, detail = run_checks(repo, paths=scope, full=push)
+        ok, detail = run_checks(repo, paths=scope, full=False)
         result["check_duration_ms"] = round((time.monotonic() - check_started) * 1000, 3)
         result["check_count"] = 1
         if workspace_fingerprint(repo) != before_checks:
@@ -266,8 +229,6 @@ def commit_git_revision(
             }
         if not ok:
             return {**result, "status": "BLOCKED", "reason": "quality_gates_failed", "detail": detail}
-    if not has_changes:
-        return _publish_revision(repo, {**result, "reason": "clean"}, task_id=task_id, message=message)
     if selected_paths:
         addable = _addable_paths(repo, selected_files)
         if addable:
@@ -315,34 +276,8 @@ def commit_git_revision(
     result.update({"status": "SUCCESS", "sha": sha, "message": message})
     if selected_paths:
         result["selected_paths"] = selected_paths
-    if push:
-        result = _publish_revision(repo, result, task_id=task_id, message=message)
     if task_id:
         result["task_id"] = task_id
-    return result
-
-
-def _cleanup_after_publish(repo: Path, result: dict[str, Any], *, push: bool) -> dict[str, Any]:
-    """Prune safe task refs after successful publication."""
-    if not push or result.get("status") != "SUCCESS" or not result.get("pushed"):
-        return result
-    try:
-        from cli.commands.cleanup_handlers import cleanup_safe_git_residue
-    except Exception:
-        return result
-    try:
-        counts = cleanup_safe_git_residue([repo], dry_run=False)
-    except Exception:
-        return result
-    result["residue_pruned"] = sum(counts)
-    result["residue_pruned_counts"] = {
-        "legacy_registrations": counts[0],
-        "orphan_merged": counts[1],
-        "orphan_equivalent": counts[2],
-        "orphan_closed": counts[3],
-        "task_local": counts[4],
-        "task_remote": counts[5],
-    }
     return result
 
 
@@ -354,7 +289,7 @@ def _refresh_symbols_after_publish(repo: Path, result: dict[str, Any]) -> dict[s
     """
     if result.get("status") != "SUCCESS":
         return result
-    sha = str(result.get("commit_id") or result.get("sha") or "").strip()
+    sha = str(result.get("sha") or "").strip()
     if not sha:
         return result
     try:
@@ -382,7 +317,7 @@ def _record_task_commit(repo: Path, result: dict[str, Any], *, task_id: str) -> 
     """Associate a successful local checkpoint with its task immediately."""
     if not task_id or result.get("status") != "SUCCESS":
         return result
-    source = str(result.get("sha") or result.get("commit_id") or "").strip()
+    source = str(result.get("sha") or "").strip()
     if not source:
         raise CommitError("local task commit is missing its source identity")
     from app.storage.tasks import add_commit
@@ -401,47 +336,6 @@ def _record_task_commit(repo: Path, result: dict[str, Any], *, task_id: str) -> 
     return {**result, "task_commit": {"task_id": task_id, "source_commit": source}}
 
 
-def _record_task_publication(
-    repo: Path, result: dict[str, Any], *, task_id: str, push: bool,
-) -> dict[str, Any]:
-    """Persist the canonical observer's source-bound evidence before closeout."""
-    if not task_id or not push:
-        return result
-    if not isinstance(result.get("ci"), dict):
-        if result.get("publication_complete"):
-            raise CommitError("task publication is missing observed check evidence")
-        return result
-    from app.storage.tasks import add_commit, canonicalize_task_id
-
-    from .execution_context import resolve_checkout_project_id
-
-    source = str(result.get("merge_sha") or result.get("sha") or result.get("commit_id") or "")
-    ci = result["ci"]
-    if result.get("publication_complete") and ci.get("state") not in {"success", "not_applicable"}:
-        raise CommitError("task publication is not supported by successful check evidence")
-    if not re.fullmatch(r"[0-9a-f]{40}|[0-9a-f]{64}", source) or ci.get("sha") != source:
-        if result.get("publication_complete"):
-            raise CommitError("published task source does not match the observed CI revision")
-        return result  # Partial/legacy observations do not prove a source-bound check.
-    project_id = resolve_checkout_project_id(repo)
-    if not project_id:
-        raise CommitError("cannot correlate task publication with this checkout's project")
-    publication = {
-        "task_id": canonicalize_task_id(task_id), "project_id": project_id,
-        "source_commit": source, "observed_at": datetime.now(UTC).isoformat(),
-        "publication_complete": result.get("publication_complete") is True,
-        "ci": ci,
-    }
-    try:
-        stored = add_commit(task_id, source, project_id=project_id,
-                            publication=publication, merge_sha=result.get("merge_sha"))
-    except Exception as exc:
-        raise CommitError("published revision could not be recorded on the task; retry closeout") from exc
-    if stored is None:
-        raise CommitError("published task does not belong to this checkout's project")
-    return {**result, "task_publication": publication}
-
-
 def commit_repo(
     repo: Path,
     *,
@@ -449,88 +343,26 @@ def commit_repo(
     task_id: str = "",
     push: bool = False,
     skip_checks: bool = False,
-    bookmark: str = "",
     paths: Sequence[str] = (),
 ) -> dict[str, Any]:
-    if push and skip_checks:
-        raise CommitError("refusing to publish with --skip-checks")
-    if task_id and not push:
+    if push:
+        raise CommitError(COMMIT_PUBLICATION_GUIDANCE)
+    if task_id:
         try:
             renew_owned_claim(repo, task_id)
         except TaskClaimRenewalError as exc:
             raise CommitError(str(exc)) from exc
     try:
         with repo_lock(repo, purpose="commit"):
-            if (repo / ".jj").is_dir():
-                if not push and not skip_checks:
-                    before_checks = workspace_fingerprint(repo)
-                    check_started = time.monotonic()
-                    ok, detail = run_jj_checks(repo, paths=paths)
-                    check_duration_ms = round((time.monotonic() - check_started) * 1000, 3)
-                    if workspace_fingerprint(repo) != before_checks:
-                        result = {
-                            "repo": repo.name,
-                            "path": str(repo),
-                            "status": "BLOCKED",
-                            "pushed": False,
-                            "reason": "source_changed_during_checks",
-                            "detail": "checkout inputs changed while checkpoint checks were running; retry the commit",
-                            "check_duration_ms": check_duration_ms,
-                            "check_count": 1,
-                        }
-                    elif not ok:
-                        result = {
-                            "repo": repo.name,
-                            "path": str(repo),
-                            "status": "BLOCKED",
-                            "pushed": False,
-                            "reason": "quality_gates_failed",
-                            "detail": detail,
-                            "check_duration_ms": check_duration_ms,
-                            "check_count": 1,
-                        }
-                    else:
-                        try:
-                            result = commit_current_revision(
-                                repo,
-                                message=message,
-                                task_id=task_id,
-                                push=False,
-                                skip_checks=True,
-                                bookmark=bookmark,
-                                paths=paths,
-                            )
-                        except JJError as exc:
-                            raise CommitError(str(exc)) from exc
-                        result.update(
-                            {"check_duration_ms": check_duration_ms, "check_count": 1}
-                        )
-                else:
-                    try:
-                        result = commit_current_revision(
-                            repo,
-                            message=message,
-                            task_id=task_id,
-                            push=push,
-                            skip_checks=skip_checks,
-                            bookmark=bookmark,
-                            paths=paths,
-                        )
-                    except JJError as exc:
-                        raise CommitError(str(exc)) from exc
-            else:
-                result = commit_git_revision(
-                    repo,
-                    message=message,
-                    task_id=task_id,
-                    push=push,
-                    skip_checks=skip_checks,
-                    paths=paths,
-                )
-            result = _cleanup_after_publish(repo, result, push=push)
+            result = commit_git_revision(
+                repo,
+                message=message,
+                task_id=task_id,
+                push=False,
+                skip_checks=skip_checks,
+                paths=paths,
+            )
     except AcceptanceError as exc:
         raise CommitError(str(exc)) from exc
-    if not push:
-        result = _record_task_commit(repo, result, task_id=task_id)
-    result = _record_task_publication(repo, result, task_id=task_id, push=push)
+    result = _record_task_commit(repo, result, task_id=task_id)
     return _refresh_symbols_after_publish(repo, result)

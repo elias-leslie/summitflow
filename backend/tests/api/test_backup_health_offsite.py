@@ -9,6 +9,37 @@ from unittest.mock import AsyncMock
 import pytest
 
 
+@pytest.fixture(autouse=True)
+def no_repository_database_access(monkeypatch):
+    from app.api.backups import health_endpoints
+
+    monkeypatch.setattr(health_endpoints.backup_store, "list_backends", lambda **_: [])
+
+
+@pytest.mark.asyncio
+async def test_health_adds_sanitized_combined_repository_restore(monkeypatch):
+    from app.api.backups import health_endpoints
+    from app.tasks import backup_repository_runtime as runtime
+
+    monkeypatch.setattr(health_endpoints.backup_store, "get_backup_health_summary", lambda: [])
+    monkeypatch.setattr(health_endpoints.backup_store, "list_backends", lambda **_: [
+        {"id": "remote", "name": "Offsite backup", "backend_type": "local", "config": {"engine": "restic", "restic_remote_repository": "rclone:fixture:bounded"}},
+        {"id": "native", "config": {"engine": "native"}},
+    ])
+    monkeypatch.setattr(health_endpoints, "storage_config_env", lambda _: {"BACKUP_STORAGE_BACKEND_ID": "remote"})
+    monkeypatch.setattr(runtime, "repository_recovery_status", lambda _: {
+        "status": "failed", "last_success_at": "2026-10-01T12:00:00+00:00",
+        "latest_attempt": {"status": "failed", "reason": "mapped-links-unresolved", "failed_source_id": "claude-config", "cached": True},
+    })
+    response = await health_endpoints.backup_health()
+    assert len(response.repositories) == 1
+    repository = response.repositories[0]
+    assert repository.backend_id == "remote"
+    assert repository.critical_restore.status == "failed"
+    assert repository.critical_restore.latest_attempt is not None
+    assert repository.critical_restore.latest_attempt.cached is True
+
+
 @pytest.mark.asyncio
 @pytest.mark.parametrize("engine,remote,hours,expected", [
     ("restic", "rclone:fixture:bounded", 72, "verified"),

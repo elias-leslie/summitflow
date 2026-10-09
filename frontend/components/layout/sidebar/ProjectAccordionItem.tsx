@@ -3,6 +3,7 @@ import { ChevronDown, GripVertical, Settings2 } from 'lucide-react'
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
 import type { ButtonHTMLAttributes } from 'react'
+import { ProjectHealthBadge } from '@/components/projects/ProjectHealthBadge'
 import type { Project } from '@/lib/api'
 import { projectNavItems } from './constants'
 import { ProjectNavItem } from './ProjectNavItem'
@@ -59,7 +60,6 @@ export function ProjectAccordionItem({
   const badge = tier
     ? TIER_BADGE_CONFIG[tier as keyof typeof TIER_BADGE_CONFIG]
     : null
-  const healthLabel = project.health_status === 'healthy' ? 'healthy' : 'watch'
 
   return (
     <div
@@ -99,78 +99,82 @@ export function ProjectAccordionItem({
           isActive ? 'bg-transparent' : 'hover:bg-slate-800/30',
         )}
       >
-        <Link
-          href={`/projects/${project.id}`}
-          data-testid={`project-link-${project.id}`}
-          className="group/project-link flex min-w-0 flex-1 items-start gap-2.5 rounded-[1rem] text-left transition-all duration-200"
-        >
-          {/* Project icon with health indicator */}
-          <div className="relative mt-0.5 flex-shrink-0">
-            <div
-              className={clsx(
-                'flex h-8 w-8 items-center justify-center rounded-xl border transition-all duration-200',
-                isActive
-                  ? 'border-outrun-500/28 bg-gradient-to-br from-outrun-500/22 to-violet-500/14'
-                  : 'border-slate-700/60 bg-slate-800/60 group-hover/project-link:border-slate-600/80',
-              )}
-            >
-              <span
+        <div className="min-w-0 flex-1">
+          <Link
+            href={`/projects/${project.id}`}
+            data-testid={`project-link-${project.id}`}
+            className="group/project-link relative flex min-w-0 items-start gap-2.5 rounded-[1rem] pl-[42px] text-left transition-all duration-200"
+          >
+            {/* Project icon with health indicator */}
+            <div className="absolute left-0 top-0.5 flex-shrink-0">
+              <div
                 className={clsx(
-                  'text-sm font-bold transition-colors',
+                  'flex h-8 w-8 items-center justify-center rounded-xl border transition-all duration-200',
                   isActive
-                    ? 'text-outrun-400'
-                    : 'text-slate-400 group-hover/project-link:text-slate-300',
+                    ? 'border-outrun-500/28 bg-gradient-to-br from-outrun-500/22 to-violet-500/14'
+                    : 'border-slate-700/60 bg-slate-800/60 group-hover/project-link:border-slate-600/80',
                 )}
               >
-                {project.name.charAt(0).toUpperCase()}
-              </span>
+                <span
+                  className={clsx(
+                    'text-sm font-bold transition-colors',
+                    isActive
+                      ? 'text-outrun-400'
+                      : 'text-slate-400 group-hover/project-link:text-slate-300',
+                  )}
+                >
+                  {project.name.charAt(0).toUpperCase()}
+                </span>
+              </div>
+              {/* Health dot */}
+              <div
+                className={clsx(
+                  'absolute -bottom-0.5 -right-0.5 w-2.5 h-2.5 rounded-full border-2 border-slate-900',
+                  project.health_status === 'healthy'
+                    ? 'bg-emerald-400 shadow-[0_0_6px_rgba(52,211,153,0.5)]'
+                    : 'bg-slate-500',
+                )}
+              />
             </div>
-            {/* Health dot */}
-            <div
-              className={clsx(
-                'absolute -bottom-0.5 -right-0.5 w-2.5 h-2.5 rounded-full border-2 border-slate-900',
-                project.health_status === 'healthy'
-                  ? 'bg-emerald-400 shadow-[0_0_6px_rgba(52,211,153,0.5)]'
-                  : 'bg-slate-500',
-              )}
+
+            {/* Project name */}
+            <div className="min-w-0 flex-1 text-left">
+              <div
+                className={clsx(
+                  'break-words text-sm font-semibold leading-5 whitespace-normal transition-colors',
+                  isActive
+                    ? 'text-slate-100'
+                    : 'text-slate-300 group-hover/project-link:text-slate-100',
+                )}
+              >
+                {project.name}
+              </div>
+            </div>
+
+            {/* Permission tier badge */}
+            {badge && (
+              <span
+                className={clsx(
+                  'mt-0.5 flex-shrink-0 rounded border px-1.5 py-0.5 text-[9px] font-bold leading-none',
+                  badge.bg,
+                  badge.text,
+                  badge.border,
+                )}
+                title={`Permission tier: ${tier}`}
+              >
+                {badge.label}
+              </span>
+            )}
+          </Link>
+
+          <div className="ml-[42px] mt-1 flex min-w-0 items-center gap-2 text-[11px] text-slate-500">
+            <span className="min-w-0 truncate font-mono">{project.id}</span>
+            <ProjectHealthBadge
+              project={project}
+              className="px-1.5 text-[9px]"
             />
           </div>
-
-          {/* Project name */}
-          <div className="min-w-0 flex-1 text-left">
-            <div
-              className={clsx(
-                'break-words text-sm font-semibold leading-5 whitespace-normal transition-colors',
-                isActive
-                  ? 'text-slate-100'
-                  : 'text-slate-300 group-hover/project-link:text-slate-100',
-              )}
-            >
-              {project.name}
-            </div>
-            <div className="mt-1 flex items-center gap-2 text-[11px] text-slate-500">
-              <span className="truncate font-mono">{project.id}</span>
-              <span className="rounded-full border border-slate-700/60 bg-slate-900/60 px-1.5 py-0.5 uppercase tracking-[0.16em] text-[9px] text-slate-400">
-                {healthLabel}
-              </span>
-            </div>
-          </div>
-
-          {/* Permission tier badge */}
-          {badge && (
-            <span
-              className={clsx(
-                'mt-0.5 flex-shrink-0 rounded border px-1.5 py-0.5 text-[9px] font-bold leading-none',
-                badge.bg,
-                badge.text,
-                badge.border,
-              )}
-              title={`Permission tier: ${tier}`}
-            >
-              {badge.label}
-            </span>
-          )}
-        </Link>
+        </div>
 
         <button
           type="button"

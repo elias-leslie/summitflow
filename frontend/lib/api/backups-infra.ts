@@ -1,3 +1,4 @@
+import { parseBackupHealth } from './backups-health'
 import { fetchWithErrorHandling, postJson } from './utils'
 
 // ─── Storage Backends ───────────────────────────────────────────
@@ -73,6 +74,42 @@ export interface BackupHealthItem {
 export interface BackupHealthResponse {
   sources: BackupHealthItem[]
   pending_upload_count: number
+  repositories?: BackupRepositoryHealthItem[]
+}
+
+export interface CriticalRestoreAttempt {
+  status: 'verified' | 'failed' | 'running'
+  attempted_at: string | null
+  completed_at: string | null
+  failed_source_id: string | null
+  reason:
+    | 'mapped-links-unresolved'
+    | 'repository-locked'
+    | 'restore-failed'
+    | null
+  cached: boolean
+}
+
+export interface CriticalRestoreHealth {
+  status:
+    | 'verified'
+    | 'failed'
+    | 'pending'
+    | 'running'
+    | 'stale'
+    | 'untested'
+    | 'unavailable'
+  last_success_at: string | null
+  latest_attempt: CriticalRestoreAttempt | null
+  required_source_ids: string[]
+  verified_source_ids: string[]
+  missing_source_ids: string[]
+}
+
+export interface BackupRepositoryHealthItem {
+  backend_id: string
+  backend_name: string
+  critical_restore: CriticalRestoreHealth
 }
 
 export function fetchStorageBackends(): Promise<StorageBackend[]> {
@@ -109,10 +146,11 @@ export function testStorageBackend(
   })
 }
 
-export function fetchBackupHealth(): Promise<BackupHealthResponse> {
-  return fetchWithErrorHandling<BackupHealthResponse>('/api/backups/health', {
+export async function fetchBackupHealth(): Promise<BackupHealthResponse> {
+  const value = await fetchWithErrorHandling<unknown>('/api/backups/health', {
     errorMessage: 'Failed to fetch backup health',
   })
+  return parseBackupHealth(value)
 }
 
 export interface BackupEncryptionStatus {
@@ -313,4 +351,140 @@ export function stopSystemImageBackup(): Promise<SystemImageActionResponse> {
       errorMessage: 'Failed to stop system-image backup',
     },
   )
+}
+
+export interface NativeHostBackupStatus {
+  engine: 'btrbk'
+  enabled: boolean
+  installed: boolean
+  configured: boolean
+  ready: boolean
+  retention: string
+  windows_method: 'Veeam'
+  blocked_reason?: string | null
+  sources?: string[]
+  target?: string
+  capacity?: {
+    admitted: boolean
+    expected_growth_bytes: number
+    reserve_bytes: number
+    free_bytes: number
+    used_bytes: number
+    source_filesystems: Array<{
+      path: string
+      used_bytes: number
+      free_bytes: number
+      under_pressure: boolean
+    }>
+    under_pressure: boolean
+    reason: string | null
+  }
+  last_result?: {
+    status: string
+    started_at?: string | null
+    finished_at?: string | null
+    evidence?: string | null
+    error?: string | null
+    remaining_capacity_bytes?: number
+    reclaimed_bytes?: number
+    boot_path?: string | null
+  } | null
+}
+
+function nativeHostObject(value: unknown): Record<string, unknown> {
+  if (!value || typeof value !== 'object' || Array.isArray(value))
+    throw new Error('Native Linux backup status is malformed')
+  return value as Record<string, unknown>
+}
+
+function validateNativeHostFields(
+  row: Record<string, unknown>,
+  fields: Record<
+    string,
+    'boolean' | 'number' | 'string' | 'optionalString' | 'optionalNumber'
+  >,
+) {
+  for (const [key, kind] of Object.entries(fields)) {
+    const value = row[key]
+    if (kind === 'optionalString' && (value === undefined || value === null))
+      continue
+    if (kind === 'optionalNumber' && value === undefined) continue
+    const type =
+      kind === 'optionalString'
+        ? 'string'
+        : kind === 'optionalNumber'
+          ? 'number'
+          : kind
+    if (
+      typeof value !== type ||
+      (type === 'number' &&
+        (typeof value !== 'number' || !Number.isFinite(value) || value < 0))
+    )
+      throw new Error('Native Linux backup status is malformed')
+  }
+}
+
+export async function fetchNativeHostBackupStatus(): Promise<NativeHostBackupStatus> {
+  const row = nativeHostObject(
+    await fetchWithErrorHandling<unknown>('/api/backups/native-host', {
+      cache: 'no-store',
+      errorMessage: 'Could not load native Linux backup status',
+    }),
+  )
+  validateNativeHostFields(row, {
+    enabled: 'boolean',
+    installed: 'boolean',
+    configured: 'boolean',
+    ready: 'boolean',
+    retention: 'string',
+    blocked_reason: 'optionalString',
+    target: 'optionalString',
+  })
+  if (
+    row.engine !== 'btrbk' ||
+    row.windows_method !== 'Veeam' ||
+    row.target === null ||
+    (row.sources !== undefined &&
+      (!Array.isArray(row.sources) ||
+        row.sources.some((source) => typeof source !== 'string')))
+  )
+    throw new Error('Native Linux backup status is malformed')
+  if (row.capacity !== undefined) {
+    const capacity = nativeHostObject(row.capacity)
+    validateNativeHostFields(capacity, {
+      admitted: 'boolean',
+      expected_growth_bytes: 'number',
+      reserve_bytes: 'number',
+      free_bytes: 'number',
+      used_bytes: 'number',
+      under_pressure: 'boolean',
+      reason: 'optionalString',
+    })
+    if (
+      capacity.reason === undefined ||
+      !Array.isArray(capacity.source_filesystems)
+    )
+      throw new Error('Native Linux backup status is malformed')
+    for (const source of capacity.source_filesystems) {
+      validateNativeHostFields(nativeHostObject(source), {
+        path: 'string',
+        used_bytes: 'number',
+        free_bytes: 'number',
+        under_pressure: 'boolean',
+      })
+    }
+  }
+  if (row.last_result !== undefined && row.last_result !== null) {
+    validateNativeHostFields(nativeHostObject(row.last_result), {
+      status: 'string',
+      started_at: 'optionalString',
+      finished_at: 'optionalString',
+      evidence: 'optionalString',
+      error: 'optionalString',
+      boot_path: 'optionalString',
+      remaining_capacity_bytes: 'optionalNumber',
+      reclaimed_bytes: 'optionalNumber',
+    })
+  }
+  return row as unknown as NativeHostBackupStatus
 }

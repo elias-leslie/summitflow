@@ -2,10 +2,29 @@
 
 import subprocess
 import sys
+import time
+from pathlib import Path
 from threading import Event
 from unittest.mock import Mock
 
 import pytest
+
+
+def _assert_child_stopped(stat_path: Path) -> None:
+    deadline = time.monotonic() + 1
+    while True:
+        try:
+            state = stat_path.read_text().rsplit(")", 1)[1].split()[0]
+        except (FileNotFoundError, ProcessLookupError):
+            # Reaping may remove /proc after the parent has already waited.
+            return
+        if state == "Z":
+            return
+        # SIGKILL is sent to the whole group before the parent is reaped,
+        # but a descendant may not have been scheduled to exit yet.
+        if time.monotonic() >= deadline:
+            pytest.fail(f"Owned child remains alive after SIGKILL: {stat_path} ({state})")
+        time.sleep(0.01)
 
 
 def test_bulk_wait_past_attention_threshold_does_not_kill_healthy_child(monkeypatch) -> None:
@@ -50,6 +69,63 @@ def test_provider_failure_still_returns_nonzero() -> None:
 
     result = run_bulk_process([sys.executable, "-c", "import sys; sys.exit(7)"])
     assert result.returncode == 7
+
+
+def test_explicit_bulk_timeout_kills_and_reaps_owned_process_group(tmp_path, monkeypatch):
+    from app.tasks import backup_activity
+
+    processes = []
+    original = subprocess.Popen
+
+    def popen(*args, **kwargs):
+        process = original(*args, **kwargs)
+        processes.append(process)
+        return process
+
+    monkeypatch.setattr(backup_activity.subprocess, "Popen", popen)
+    marker = tmp_path / "child-pid"
+    child_code = f"import os,time; from pathlib import Path; Path({str(marker)!r}).write_text(str(os.getpid())); time.sleep(60)"
+    code = f"import subprocess,sys,time; subprocess.Popen([sys.executable,'-c',{child_code!r}]); time.sleep(60)"
+    with pytest.raises(subprocess.TimeoutExpired):
+        backup_activity.run_bulk_process(
+            [sys.executable, "-c", code], timeout=1,
+        )
+    assert len(processes) == 1
+    assert processes[0].poll() is not None
+    child = Path(f"/proc/{marker.read_text()}/stat")
+    _assert_child_stopped(child)
+
+
+def test_capacity_refusal_kills_and_reaps_owned_process_group(tmp_path, monkeypatch):
+    from app.tasks import backup_activity
+    from app.utils.transient_scratch import ScratchError
+
+    processes = []
+    original = subprocess.Popen
+
+    def popen(*args, **kwargs):
+        process = original(*args, **kwargs)
+        processes.append(process)
+        return process
+
+    marker = tmp_path / "child-pid"
+    child_code = f"import os,time; from pathlib import Path; Path({str(marker)!r}).write_text(str(os.getpid())); time.sleep(60)"
+    code = f"import subprocess,sys,time; subprocess.Popen([sys.executable,'-c',{child_code!r}]); time.sleep(60)"
+    checks = []
+
+    def capacity():
+        checks.append(True)
+        if marker.exists():
+            raise ScratchError("fixture reserve crossed")
+
+    monkeypatch.setattr(backup_activity.subprocess, "Popen", popen)
+    monkeypatch.setattr(backup_activity, "CONTROL_POLL_SECONDS", 0.01)
+    with pytest.raises(ScratchError, match="fixture reserve crossed"):
+        backup_activity.run_bulk_process([sys.executable, "-c", code], capacity_check=capacity)
+    assert len(checks) >= 2
+    assert len(processes) == 1 and processes[0].poll() is not None
+    child = Path(f"/proc/{marker.read_text()}/stat")
+    _assert_child_stopped(child)
 
 
 def test_unknown_wait_is_visible_without_inventing_verified_progress(monkeypatch) -> None:

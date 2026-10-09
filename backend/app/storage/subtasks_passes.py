@@ -1,19 +1,20 @@
 """Subtask passes update - gate logic for marking subtasks complete or incomplete.
 
 This module handles the update_subtask_passes operation, enforcing step completion
-and citation acknowledgment gates before allowing a subtask to be marked as passed.
+and dependency gates before allowing a subtask to be marked as passed.
 """
 
 from __future__ import annotations
 
 from datetime import UTC, datetime
+from typing import Any
 
 import psycopg
 
 from ..logging_config import get_logger
 from .connection import get_connection
 from .subtasks_helpers import SUBTASK_COLUMNS, generate_subtask_id, row_to_dict
-from .subtasks_validation import SubtaskGateError, validate_citations_acknowledged
+from .subtasks_validation import SubtaskGateError
 
 logger = get_logger(__name__)
 
@@ -42,7 +43,7 @@ def _clear_subtask_passes(table_id: str, task_id: str, subtask_id: str) -> dict[
 
 
 def _set_subtask_passes(
-    table_id: str, task_id: str, subtask_id: str
+    table_id: str, task_id: str, subtask_id: str, *, owned_claim: dict[str, Any] | None = None
 ) -> dict[str, object] | None:
     """Validate gates and mark subtask as passed."""
     # Steps layer removed - skip step completion validation
@@ -50,15 +51,16 @@ def _set_subtask_passes(
 
     try:
         with get_connection() as conn, conn.cursor() as cur:
-            # Lock the row to prevent TOCTOU race between read and update
-            cur.execute(
-                "SELECT citations_acknowledged_at FROM task_subtasks WHERE id = %s FOR UPDATE",
-                (table_id,),
-            )
-            row = cur.fetchone()
-            acknowledged_at = row[0] if row else None
-
-            validate_citations_acknowledged(table_id, subtask_id, acknowledged_at)
+            if owned_claim is not None:
+                if not owned_claim.get("claimed_by") or not owned_claim.get("claimed_at") or not owned_claim.get("project_id"):
+                    raise ValueError("Subtask completion requires an exact project claim")
+                cur.execute("""SELECT id FROM tasks WHERE id = %s AND project_id = %s
+                               AND status = 'running' AND claimed_by = %s
+                               AND claimed_at = %s::timestamptz AND lock_expires_at > NOW() FOR UPDATE""",
+                            (task_id, owned_claim["project_id"], owned_claim["claimed_by"], owned_claim["claimed_at"]))
+                if not cur.fetchone():
+                    raise ValueError("Task claim changed before prerequisite subtask completion")
+            cur.execute("SELECT id FROM task_subtasks WHERE id = %s FOR UPDATE", (table_id,))
             cur.execute(
                 """
                 SELECT ts.subtask_id
@@ -101,7 +103,7 @@ def _set_subtask_passes(
 
 
 def update_subtask_passes(
-    task_id: str, subtask_id: str, passes: bool
+    task_id: str, subtask_id: str, passes: bool, *, owned_claim: dict[str, Any] | None = None
 ) -> dict[str, object] | None:
     """Update subtask passes status.
 
@@ -128,4 +130,4 @@ def update_subtask_passes(
     table_id = generate_subtask_id(task_id, subtask_id)
     if not passes:
         return _clear_subtask_passes(table_id, task_id, subtask_id)
-    return _set_subtask_passes(table_id, task_id, subtask_id)
+    return _set_subtask_passes(table_id, task_id, subtask_id, owned_claim=owned_claim)

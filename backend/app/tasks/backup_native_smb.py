@@ -4,12 +4,14 @@ import json
 import os
 import shutil
 import subprocess
+from collections.abc import Sequence
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
 from app.tasks.backup_activity import run_bulk_process
+from app.utils.smb_commands import SmbCommandError, smb_command, smb_path, smb_service
 
 
 @dataclass(frozen=True)
@@ -84,21 +86,11 @@ def _smb_probe_dir(remote_path: str) -> str:
 def _smb_available(storage: StorageConfig) -> bool:
     if not storage.credentials_file.exists() or not shutil.which("smbclient"):
         return False
-    probe_dir = _smb_probe_dir(storage.remote_path)
-    result = subprocess.run(
-        [
-            "smbclient",
-            f"//{storage.host}/{storage.share}",
-            "-A",
-            str(storage.credentials_file),
-            "-c",
-            f"cd {probe_dir}; ls",
-        ],
-        capture_output=True,
-        text=True,
-        timeout=30,
-        check=False,
-    )
+    try:
+        smb_path(storage.remote_path)
+        result = _smb_command(storage, ("cd", _smb_probe_dir(storage.remote_path)), ("ls",), timeout=30)
+    except SmbCommandError:
+        return False
     return result.returncode == 0
 
 
@@ -108,15 +100,15 @@ def _smb_output(stdout: str, stderr: str, limit: int = 1200) -> str:
 
 
 def _smb_command(
-    storage: StorageConfig, command: str, *, timeout: int, bulk: bool = False,
+    storage: StorageConfig, *commands: Sequence[str], timeout: int, bulk: bool = False,
 ) -> subprocess.CompletedProcess[str]:
     args = [
         "smbclient",
-        f"//{storage.host}/{storage.share}",
+        smb_service(storage.host, storage.share),
         "-A",
         str(storage.credentials_file),
         "-c",
-        command,
+        smb_command(*commands),
     ]
     if bulk:
         return run_bulk_process(args, phase="local-storage", attention_after=timeout)
@@ -130,7 +122,7 @@ def _smb_command(
 
 
 def _smb_cd_ok(storage: StorageConfig, remote_path: str) -> bool:
-    result = _smb_command(storage, f"cd {remote_path}; ls", timeout=30)
+    result = _smb_command(storage, ("cd", remote_path), ("ls",), timeout=30)
     return result.returncode == 0
 
 
@@ -148,9 +140,9 @@ def _ensure_smb_dir(storage: StorageConfig) -> SmbUploadResult:
     last_result: subprocess.CompletedProcess[str] | None = None
     for part in parts:
         current = f"{current}/{part}" if current else part
-        last_result = _smb_command(storage, f"mkdir {current}", timeout=30)
+        last_result = _smb_command(storage, ("mkdir", current), timeout=30)
 
-    check = _smb_command(storage, f"cd {storage.remote_path}; ls", timeout=30)
+    check = _smb_command(storage, ("cd", storage.remote_path), ("ls",), timeout=30)
     if check.returncode == 0:
         return SmbUploadResult(
             ok=True,
@@ -175,6 +167,12 @@ def _ensure_smb_dir(storage: StorageConfig) -> SmbUploadResult:
 
 
 def _smb_upload(path: Path, archive_name: str, storage: StorageConfig) -> SmbUploadResult:
+    try:
+        command_parts = (("cd", storage.remote_path), ("put", str(path), archive_name), ("ls", archive_name))
+        smb_service(storage.host, storage.share)
+        smb_command(*command_parts)
+    except SmbCommandError as exc:
+        return SmbUploadResult(False, archive_name, storage.remote_path, "", error=str(exc))
     if not storage.credentials_file.exists():
         return SmbUploadResult(
             ok=False,
@@ -205,8 +203,7 @@ def _smb_upload(path: Path, archive_name: str, storage: StorageConfig) -> SmbUpl
             stderr=directory.stderr,
         )
 
-    command = f'cd {storage.remote_path}; put "{path}" "{archive_name}"; ls "{archive_name}"'
-    result = _smb_command(storage, command, timeout=300, bulk=True)
+    result = _smb_command(storage, *command_parts, timeout=300, bulk=True)
     output = result.stdout + result.stderr
     ok = result.returncode == 0 and archive_name in output
     error = None if ok else f"upload failed rc={result.returncode}: {_smb_output(result.stdout, result.stderr)}"
@@ -223,6 +220,7 @@ def _smb_upload(path: Path, archive_name: str, storage: StorageConfig) -> SmbUpl
 
 
 def _save_pending(path: Path, archive_name: str, project_name: str, storage: StorageConfig) -> Path:
+    smb_path(archive_name, filename=True)
     pending_dir = Path.home() / ".local" / "share" / "backup-pending"
     pending_dir.mkdir(parents=True, exist_ok=True)
     pending = pending_dir / archive_name

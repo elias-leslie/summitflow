@@ -33,9 +33,7 @@ _DEFAULT_CRITIQUE_AGENT = "specifier"
     cmd='st create "title"',
     when="create a task; project auto-detected from cwd",
     precautions=(
-        "bare title triggers auto-enrichment; pass --draft for kernel-only intake",
-        "--plan plan.json for pre-validated structured plans",
-        "--type bug|idea for typed kernels",
+        "bare title triggers auto-enrichment; --draft for kernel-only intake; --plan and --type in --help",
     ),
     tier="mandate",
 )
@@ -213,7 +211,7 @@ def cancel(
     cmd='st pause <task-id> -r "reason"',
     when="stop work but plan to return; releases claim so others can pick up",
     precautions=(
-        "commit/push work-in-progress before pausing; pause does not preserve dirty state",
+        "save task-owned work in a local checkpoint before pausing; pause requires clean task scope",
         "use st reopen to return; reopen accepts any non-pending state",
     ),
     tier="reference",

@@ -29,8 +29,12 @@ _SEARCH_LIMIT = 5
 _PRECISION_INDEX_MAX_AGE = timedelta(minutes=150)
 
 PRECISION_CODE_SEARCH_GUIDANCE = (
-    "Use the Precision Code Search block as the first code-navigation pass. "
-    "Only broaden to file-wide or text search if these indexed symbols are insufficient, stale, or clearly unrelated."
+    "Precision Code Search is optional navigation; prefer it when ranked discovery or current source excerpts help. "
+    "Use rg/rg --files for exact literals, regex, multiple needles, file enumeration and exhaustive references. "
+    "Search before adding code and extend or reuse a close match. Consume returned source, follow verification "
+    "warnings, and narrow truncated results. ST --text joins arguments into one case-insensitive literal phrase; "
+    "--file lists that file's symbols independently of query; --budget applies only to precision context. "
+    "Whole-file reduction estimates are hypothetical whole-file baselines, not native workflow savings."
 )
 
 

@@ -8,6 +8,7 @@ from typing import Any
 import typer
 
 from ..client import STClient
+from ..lib.aico_session_observation import observe_aico_owners
 from ..output import is_compact, output_json
 from .sessions_filter import normalize_status_filter, session_matches_status_alias
 from .sessions_format import monitor_summary
@@ -88,7 +89,7 @@ def list_monitor_sessions(
         agent_slug=agent_slug,
         project_id=project_id,
     )
-    return [s for s in sessions if session_matches_status_alias(s, status_filter)]
+    return observe_aico_owners([s for s in sessions if session_matches_status_alias(s, status_filter)])
 
 
 def _render_or_output_monitor_sessions(

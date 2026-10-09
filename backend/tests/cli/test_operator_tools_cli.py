@@ -224,7 +224,7 @@ def test_build_frontend_suppresses_successful_build_output() -> None:
         assert service_ops.build_frontend(project) == 0
 
     assert run.call_args_list[0].args[0] == ["pnpm", "install", "--frozen-lockfile"]
-    run.assert_called_with(["pnpm", "build"], cwd=project.frontend_dir, quiet_success=True)
+    run.assert_called_with(["pnpm", "build"], cwd=project.frontend_dir, quiet_success=True, _heavy=True)
 
 
 def test_build_frontend_installs_npm_lock_in_accepted_source(tmp_path: Path) -> None:
@@ -239,7 +239,7 @@ def test_build_frontend_installs_npm_lock_in_accepted_source(tmp_path: Path) -> 
         ["npm", "ci"],
         ["npm", "run", "build"],
     ]
-    assert all(call.kwargs == {"cwd": tmp_path, "quiet_success": True} for call in run.call_args_list)
+    assert all(call.kwargs == {"cwd": tmp_path, "quiet_success": True, "_heavy": True} for call in run.call_args_list)
 
 
 def test_kill_port_parses_ss_listener_pids(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -745,11 +745,12 @@ def test_quick_config_change_still_runs_directly_changed_test(tmp_path: Path) ->
     run_tool.assert_called_once_with("pytest", configs["pytest"], ["tests/test_check.py"])
 
 
-def test_publication_changed_only_keeps_broad_pytest_for_config_changes() -> None:
+def test_acceptance_changed_only_keeps_broad_pytest_for_config_changes(tmp_path: Path) -> None:
     configs = {
         "pytest": {"label": "TEST", "binary": "pytest", "pass_path": False},
     }
     with (
+        patch("cli.commands.check._resolve_repo_root", return_value=tmp_path),
         patch("cli.commands.check._tool_configs", return_value=configs),
         patch("cli.commands.check._changed_files", return_value=["pyproject.toml"]),
         patch("cli.commands.check._run_tool", return_value=0) as run_tool,
@@ -891,7 +892,7 @@ def test_check_biome_explicit_paths_replace_default_dot(
     )
     with (
         patch("cli.commands.check._resolve_repo_root", return_value=tmp_path),
-        patch("cli.commands.check.subprocess.run", return_value=completed) as run,
+        patch("app.utils.heavy_work.HeavyWork.run", return_value=completed) as run,
     ):
         exit_code = check._run_tool(
             "biome",
@@ -924,7 +925,7 @@ def test_check_biome_skips_undeclared_pure_python_repo(
     (tmp_path / "node_modules" / ".bin").mkdir(parents=True)
     with (
         patch("cli.commands.check._resolve_repo_root", return_value=tmp_path),
-        patch("cli.commands.check.subprocess.run") as run,
+        patch("app.utils.heavy_work.HeavyWork.run") as run,
     ):
         exit_code = check._run_tool(
             "biome",
@@ -960,7 +961,7 @@ def test_check_biome_declared_but_missing_fails_without_npx(
             other_binary.write_text("#!/bin/sh\n", encoding="utf-8")
     with (
         patch("cli.commands.check._resolve_repo_root", return_value=tmp_path),
-        patch("cli.commands.check.subprocess.run") as run,
+        patch("app.utils.heavy_work.HeavyWork.run") as run,
     ):
         exit_code = check._run_tool(
             "biome",
@@ -986,7 +987,7 @@ def test_check_biome_uses_declared_local_binary(
     completed = subprocess.CompletedProcess(args=[], returncode=0, stdout="", stderr="")
     with (
         patch("cli.commands.check._resolve_repo_root", return_value=tmp_path),
-        patch("cli.commands.check.subprocess.run", return_value=completed) as run,
+        patch("app.utils.heavy_work.HeavyWork.run", return_value=completed) as run,
     ):
         exit_code = check._run_tool(
             "biome",
@@ -1008,7 +1009,7 @@ def test_check_tool_output_goes_to_details_file(tmp_path: Path, capsys: pytest.C
     )
     with (
         patch("cli.commands.check._resolve_repo_root", return_value=tmp_path),
-        patch("cli.commands.check.subprocess.run", return_value=result),
+        patch("app.utils.heavy_work.HeavyWork.run", return_value=result),
     ):
         exit_code = check._run_tool("pytest", {"label": "TEST", "binary": "pytest"}, [])
 
@@ -1030,7 +1031,7 @@ def test_check_missing_binary_skips_when_no_project_env(
     """No venv anywhere (e.g. pytest in a config repo): skip, don't fail."""
     with (
         patch("cli.commands.check._resolve_repo_root", return_value=tmp_path),
-        patch("cli.commands.check.subprocess.run", side_effect=FileNotFoundError("pytest")),
+        patch("app.utils.heavy_work.HeavyWork.run", side_effect=FileNotFoundError("pytest")),
     ):
         exit_code = check._run_tool("pytest", {"label": "TEST", "binary": "pytest"}, [])
 
@@ -1046,7 +1047,7 @@ def test_check_missing_binary_fails_when_project_env_exists(
     (tmp_path / ".venv" / "bin").mkdir(parents=True)
     with (
         patch("cli.commands.check._resolve_repo_root", return_value=tmp_path),
-        patch("cli.commands.check.subprocess.run", side_effect=FileNotFoundError("pytest")),
+        patch("app.utils.heavy_work.HeavyWork.run", side_effect=FileNotFoundError("pytest")),
     ):
         exit_code = check._run_tool("pytest", {"label": "TEST", "binary": "pytest"}, [])
 
@@ -1062,7 +1063,7 @@ def test_check_pytest_scoped_paths_disable_configured_coverage(
     result = subprocess.CompletedProcess(args=["pytest"], returncode=0, stdout="1 passed\n", stderr="")
     with (
         patch("cli.commands.check._resolve_repo_root", return_value=tmp_path),
-        patch("cli.commands.check.subprocess.run", return_value=result) as run,
+        patch("app.utils.heavy_work.HeavyWork.run", return_value=result) as run,
     ):
         exit_code = check._run_tool(
             "pytest",
@@ -1092,7 +1093,7 @@ def test_check_tool_hint_prefers_result_summary_over_late_runtime_warning(
     )
     with (
         patch("cli.commands.check._resolve_repo_root", return_value=tmp_path),
-        patch("cli.commands.check.subprocess.run", return_value=result),
+        patch("app.utils.heavy_work.HeavyWork.run", return_value=result),
     ):
         exit_code = check._run_tool("pytest", {"label": "TEST", "binary": "pytest"}, [])
 
@@ -1113,7 +1114,7 @@ def test_check_tool_failure_prints_only_hint_and_details_path(
     )
     with (
         patch("cli.commands.check._resolve_repo_root", return_value=tmp_path),
-        patch("cli.commands.check.subprocess.run", return_value=result),
+        patch("app.utils.heavy_work.HeavyWork.run", return_value=result),
     ):
         exit_code = check._run_tool("pytest", {"label": "TEST", "binary": "pytest"}, [])
 
@@ -1959,6 +1960,7 @@ def test_proxmox_destroy_sends_purge_as_query_param() -> None:
 
     with (
         patch("cli.lib.proxmox.httpx.request", return_value=Response()) as request,
+        patch("cli.lib.proxmox.ProxmoxClient.config_get", return_value={"template": 0}),
         patch("cli.lib.proxmox.time.sleep"),
     ):
         ProxmoxClient(config).destroy("101")
@@ -2003,7 +2005,7 @@ def test_backend_sync_uses_lockfile(tmp_path):
     (tmp_path / "uv.lock").touch()
     with patch.object(service_ops, "run", return_value=0) as run:
         assert service_ops.sync_backend(project) == 0
-    run.assert_called_once_with(["uv", "sync", "--locked"], cwd=tmp_path, quiet_success=True)
+    run.assert_called_once_with(["uv", "sync", "--locked"], cwd=tmp_path, quiet_success=True, _heavy=True)
 
 
 def test_systemd_bus_discovery_uses_existing_owned_socket(tmp_path, monkeypatch):
@@ -2052,4 +2054,4 @@ def test_backend_sync_keeps_declared_quality_gate_dependencies(tmp_path):
     (tmp_path / "uv.lock").touch()
     with patch.object(service_ops, "run", return_value=0) as run:
         assert service_ops.sync_backend(project) == 0
-    run.assert_called_once_with(["uv", "sync", "--locked", "--extra", "dev"], cwd=tmp_path, quiet_success=True)
+    run.assert_called_once_with(["uv", "sync", "--locked", "--extra", "dev"], cwd=tmp_path, quiet_success=True, _heavy=True)

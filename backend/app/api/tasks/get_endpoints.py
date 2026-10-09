@@ -18,7 +18,6 @@ from fastapi.responses import PlainTextResponse
 
 from ...schemas.tasks import TaskResponse
 from ...storage import tasks as task_store
-from ...storage.subtasks import get_subtasks_for_task
 from ...tasks.autonomous._project_resolution import resolve_task_project_id
 from .formatting import toon_format_task
 from .helpers import (
@@ -26,6 +25,7 @@ from .helpers import (
     verify_task_project,
 )
 from .response import task_to_response
+from .workflow_export import _hydrate_export_task
 
 router = APIRouter()
 
@@ -34,33 +34,10 @@ router = APIRouter()
 async def check_completion_readiness(task_id: str) -> dict[str, Any]:
     """Pre-validate completion gates without modifying state."""
     task = get_task_or_404(task_id)
+    from ...services.task_acceptance import load_completion_assessment
 
-    subtasks = await asyncio.to_thread(get_subtasks_for_task, str(task["id"]), True)
-    incomplete: list[str] = []
-    synthetic_skips = {
-        str(item).split(":", 1)[0]
-        for item in (task.get("syncable_subtasks_skipped") or [])
-        if isinstance(item, str) and item.endswith(":no-steps")
-    }
-    for subtask in subtasks:
-        if subtask.get("passes"):
-            continue
-        subtask_id = str(subtask.get("subtask_id") or "")
-        steps = subtask.get("steps") or subtask.get("steps_from_table") or []
-        step_summary = subtask.get("step_summary") or {}
-        step_total = int(step_summary.get("total") or 0)
-        if subtask_id in synthetic_skips and not steps and step_total == 0:
-            continue
-        incomplete.append(subtask_id)
-
-    gates: list[dict[str, Any]] = []
-    if incomplete:
-        gates.append({"gate": "subtasks", "pass": False, "detail": incomplete[:5]})
-
-    from ...services.task_acceptance import completion_gates
-    gates.extend(completion_gates(task))
-
-    return {"ready": not gates, "gates": gates}
+    assessment = await asyncio.to_thread(load_completion_assessment, str(task["id"]))
+    return {"ready": assessment.complete, "gates": list(assessment.gates)}
 
 
 @router.get("/tasks/{task_id}", response_model=None)
@@ -75,6 +52,12 @@ async def get_task_global(
     if not task:
         raise HTTPException(status_code=404, detail=f"Task {task_id} not found")
 
+    from ...storage.task_spirit import get_task_spirit
+    spirit = await asyncio.to_thread(get_task_spirit, str(task["id"]))
+    stored_subtasks = task.get("subtasks")
+    task = _hydrate_export_task(task, spirit)
+    # Logical plan entries belong in context, not the persisted subtask response schema.
+    task["subtasks"] = stored_subtasks
     task_response = task_to_response(task)
 
     # Return TOON format if requested
@@ -95,6 +78,11 @@ async def get_task(
     """Get task by ID within project context."""
     task = await asyncio.to_thread(verify_task_project, task_id, project_id)
 
+    from ...storage.task_spirit import get_task_spirit
+    spirit = await asyncio.to_thread(get_task_spirit, str(task["id"]))
+    stored_subtasks = task.get("subtasks")
+    task = _hydrate_export_task(task, spirit)
+    task["subtasks"] = stored_subtasks
     task_response = task_to_response(task)
 
     # Return TOON format if requested

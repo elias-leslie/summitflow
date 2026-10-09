@@ -40,7 +40,7 @@ app = typer.Typer(help="Claim task or subtask to start work")
 def _current_caller_id() -> str:
     """Identify the current caller for idempotent re-claim detection.
 
-    Matches the hostname worker convention used by `client.claim_task`. When
+    Matches the opaque worker identity used by `client.claim_task`. When
     both match the existing `claimed_by`, re-claim renews the existing lock.
     """
     return current_worker_id()
@@ -107,6 +107,7 @@ def _claim_task(
 
     # Idempotent re-claim: same caller, already running, existing checkpoint → resume.
     if status == "running" and existing and _is_same_caller(task.get("claimed_by")):
+        preflight(task_id, pid_str, op="claim")
         try:
             client.claim_task(task_id, renew_only=True)
         except APIError as api_error:
@@ -126,6 +127,7 @@ def _claim_task(
             "task_id": task_id,
             "action": "resumed",
             "base_branch": str(existing.get("base_branch", "main")),
+            "task": task,
         }
 
     if status == "running" and not force and not _is_same_caller(task.get("claimed_by")):
@@ -151,7 +153,7 @@ def _claim_task(
         except APIError as e:
             output_error(f"Failed to claim task: {e.detail}")
             raise typer.Exit(1) from None
-        return handle_existing_checkpoint(task_id, existing)
+        return {**handle_existing_checkpoint(task_id, existing), "task": task}
 
     preflight(task_id, pid_str, op="claim")
 
@@ -176,6 +178,7 @@ def _claim_task(
         "task_id": task_id,
         "action": "claimed",
         "base_branch": meta.base_branch,
+        "task": task,
     }
 
 
@@ -213,11 +216,10 @@ def _claim_subtask(
 @usage(
     surface="st.claim",
     cmd="st claim <task-id>",
-    when="before implementing an assigned task; after st ready picks one",
+    when="before implementing or completing an assigned task; after st ready picks one",
     precautions=(
-        "subtask form uses dotted ID like 1.2; pass --task <parent> when claiming subtask",
-        "claim records a checkpoint; work commits direct to main, no branch is created",
-        "cross-agent conflicts print a Resolution hint pointing at st pulse",
+        "subtasks: dotted ID like 1.2 plus --task <parent>",
+        "work commits directly to main; conflicts point at st pulse",
     ),
     tier="mandate",
 )

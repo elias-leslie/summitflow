@@ -13,6 +13,39 @@ from app.storage.connection import get_connection
 from app.storage.tasks.status import VALID_TRANSITIONS
 
 
+@pytest.mark.parametrize("action", ["claim", "release", "pause", "reopen", "expiry"])
+def test_lifecycle_preserves_retired_remote_intent_and_failed_publication(test_task, action):
+    tid = test_task["id"]
+    if action != "claim":
+        task_store.claim_task(tid, "history-worker", lock_duration_minutes=-1 if action == "expiry" else 30)
+    if action == "reopen":
+        task_store.update_task_status(tid, "completed", validate_transition=False)
+    legacy = {"state": "retired", "reason": "no_longer_required", "source_sha": "a" * 40,
+              "previous_closeout": {"state": "blocked", "require_remote_confirmation": True,
+                                    "publication": {"ci": {"state": "failed", "required": None}}}}
+    publication = {"source_commit": "a" * 40, "ci": {"state": "failed", "findings": ["retained failure"],
+                                                    "required": None, "observations": [{"detail": None}]}}
+    task_store.update_task(tid, verification_result={"closeout": legacy, "publication": publication,
+        "acceptance": {"state": "success", "source_commit": "a" * 40}, "execution_clean": True})
+    if action == "claim":
+        task_store.claim_task(tid, "history-worker")
+    elif action == "release":
+        task_store.release_task(tid, expected_worker_id="history-worker")
+    elif action == "pause":
+        task_store.update_task_status(tid, "paused")
+    elif action == "reopen":
+        task_store.update_task_status(tid, "pending")
+    else:
+        task_store.reset_expired_claims()
+    result = task_store.get_task(tid)
+    assert result is not None
+    verification = result["verification_result"]
+    assert verification["publication"] == publication
+    assert verification["closeout"] == legacy
+    assert verification["acceptance"]["state"] == "stale"
+    assert "execution_clean" not in verification
+
+
 @pytest.fixture
 def project_id(ensure_test_project: str) -> str:
     """Use test project from conftest."""
@@ -352,6 +385,7 @@ class TestUpdateTaskStatus:
             },
             "deployment": {"state": "succeeded", "source_commit": "accepted-sha"},
             "live_validation": {"state": "success", "source_commit": "accepted-sha"},
+            "closeout": {"state": "blocked"},
         }
 
     def test_release_preserves_durable_receipts(self, test_task: dict[str, Any]) -> None:

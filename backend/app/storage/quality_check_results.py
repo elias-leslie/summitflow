@@ -158,7 +158,7 @@ def get_project_health_summary(conn: psycopg.Connection, project_id: str) -> Che
     with conn.cursor() as cur:
         results, unfixed = fetch_health_data(cur, project_id)
     checks: dict[str, Any] = {}
-    overall_pass = True
+    overall_pass = bool(results)
     for check_type, status, error_count, warning_count in results:
         checks[str(check_type)] = {
             "status": status, "error_count": error_count,
@@ -169,6 +169,7 @@ def get_project_health_summary(conn: psycopg.Connection, project_id: str) -> Che
     return {
         "project_id": project_id, "checks": checks,
         "overall_pass": overall_pass, "total_unfixed": sum(unfixed.values()),
+        "evidence_state": "observed" if checks else "unknown",
     }
 
 
@@ -181,7 +182,8 @@ def get_projects_health_summaries(
         project_id: {
             "project_id": project_id,
             "checks": {},
-            "overall_pass": True,
+            "overall_pass": False,
+            "evidence_state": "unknown",
             "total_unfixed": 0,
         }
         for project_id in project_ids
@@ -202,6 +204,9 @@ def get_projects_health_summaries(
         )
         for project_id, check_type, status, error_count, warning_count in cur.fetchall():
             summary = summaries[str(project_id)]
+            if not summary["checks"]:
+                summary["overall_pass"] = True
+                summary["evidence_state"] = "observed"
             summary["checks"][str(check_type)] = {
                 "status": status,
                 "error_count": error_count,

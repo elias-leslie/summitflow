@@ -61,7 +61,6 @@ OPTIONAL_COMMANDS = (
     "exec_monitor",
     "git",
     "health",
-    "jj",
     "lease",
     "logs",
     "monitor",
@@ -92,7 +91,6 @@ SUBCOMMAND_GROUPS = (
     ("sessions", "sessions"),
     ("projects", "projects"),
     ("git", "git"),
-    ("jj", "jj"),
     ("vcs", "vcs"),
     ("backup", "backup"),
     ("service", "service"),
@@ -183,10 +181,7 @@ def _register_forwarded_root_commands() -> None:
 
 def _event_detail_parts(result: dict[str, object]) -> list[str]:
     return [
-        f"change={result.get('change_id', '')}",
-        f"commit={result.get('commit_id') or result.get('sha') or ''}",
-        f"bookmark={result.get('bookmark', '')}",
-        f"op={result.get('operation_id', '')}",
+        f"commit={result.get('sha') or ''}",
         f"pushed={str(result.get('pushed', False)).lower()}",
         *([f"publication_complete={str(result['publication_complete']).lower()}"] if "publication_complete" in result else []),
     ]
@@ -199,7 +194,7 @@ def _log_commit_event(task_id: str, result: dict[str, object]) -> None:
 
 def _emit_commit_output(ctx: typer.Context, result: dict[str, object]) -> None:
     if ctx.obj.is_compact:
-        detail = result.get("commit_id") or result.get("sha") or result.get("reason") or ""
+        detail = result.get("sha") or result.get("reason") or ""
         print(
             COMMIT_COMPACT_TEMPLATE.format(
                 status=result["status"],
@@ -289,38 +284,41 @@ app.command("exec-log")(_COMMANDS["exec_monitor"].exec_log_command)
     cmd='st commit -m "msg"',
     when="authorized implementation reaches a verified checkpoint",
     precautions=(
-        "review the diff for secrets, destructive changes, and task scope before committing",
+        "review the diff for secrets, destructive changes, and task scope",
         "use --paths to preserve unrelated work; include generated changes belonging to the checkpoint",
-        "after publish, trust printed COMMIT summary not local-clean state",
+        "local only; publish accepted source separately with st vcs publish --source ID --sha FULL_OID --now",
         "commit before destructive ops (abandon, rollback)",
     ),
     tier="mandate",
 )
 def commit_command(
     ctx: typer.Context,
-    message: Annotated[str, typer.Option("--message", "--msg", "-m", help="Required commit/change description.")],
-    push: Annotated[bool, typer.Option("--push/--no-push", help="Explicitly publish after the local commit.")] = False,
-    task_id: Annotated[str, typer.Option("--task", help="Task id for bookmark and audit log.")] = "",
+    message: Annotated[str, typer.Option("--message", "--msg", "-m", help="Required commit description.")],
+    push: Annotated[bool, typer.Option("--push/--no-push", help="Unsupported; publish accepted source with st vcs publish.")] = False,
+    task_id: Annotated[str, typer.Option("--task", help="Task id for checkpoint and audit log.")] = "",
     repo: Annotated[str | None, typer.Option("--repo", "-R", help="Repository path. Defaults to current repo.")] = None,
     skip_checks: Annotated[
         bool,
         typer.Option("--skip-checks", help="Skip local check gate for local-only recovery commits."),
     ] = False,
-    bookmark: Annotated[str, typer.Option("--bookmark", help="Explicit jj bookmark to publish.")] = "",
     paths: Annotated[
         list[str] | None,
         typer.Option(
             "--path",
             "--paths",
             help=(
-                "Only commit/publish selected path(s); repeat for multiple paths "
-                "(--paths a --paths b). Works for jj and plain-Git repos."
+                "Only commit selected path(s); repeat for multiple paths "
+                "(--paths a --paths b)."
             ),
         ),
     ] = None,
 ) -> None:
-    """Run checks and commit locally. Add --push to publish explicitly."""
+    """Run checks and create a local checkpoint; publish accepted source separately."""
     try:
+        if push:
+            from .lib.commit_workflow import COMMIT_PUBLICATION_GUIDANCE
+
+            raise CommitError(COMMIT_PUBLICATION_GUIDANCE)
         repo_path = current_repo() if repo is None else Path(repo).expanduser().resolve()
         result = commit_repo(
             repo_path,
@@ -328,7 +326,6 @@ def commit_command(
             task_id=task_id,
             push=push,
             skip_checks=skip_checks,
-            bookmark=bookmark,
             paths=tuple(paths or ()),
         )
     except CommitError as exc:

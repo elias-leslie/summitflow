@@ -31,7 +31,7 @@ def test_cost_query_measures_real_payloads_not_json_null(test_db_url: str) -> No
 
     # Shadow the source relation with read-only fixtures; never write a table.
     fixtures = sql.SQL("""
-        WITH session_events(session_id, tool_name, tool_output, content, tokens, duration_ms, created_at) AS (
+        WITH payloads(session_id, tool_name, tool_output, content, tokens, duration_ms, created_at) AS (
           VALUES
             ('sess-1', 'missing', 'null'::json, NULL::text, NULL::int, 1.0, now()),
             ('sess-1', 'missing', NULL::json, NULL::text, NULL::int, 1.0, now()),
@@ -39,15 +39,20 @@ def test_cost_query_measures_real_payloads_not_json_null(test_db_url: str) -> No
             ('sess-1', 'mixed', NULL::json, NULL::text, 7, 1.0, now()),
             ('sess-1', 'empty', NULL::json, '', 0, 1.0, now()),
             ('sess-2', 'literal', '\"null\"'::json, NULL::text, NULL::int, 1.0, now())
+        ), session_events AS (
+            SELECT payloads.*, row_number() OVER ()::text AS id, 'tool_result'::text AS event_type,
+                   NULL::text AS call_id, NULL::json AS tool_input, NULL::text AS source_event_id,
+                   NULL::timestamptz AS source_timestamp
+            FROM payloads
         )
     """)
     _, query = _cost_queries(24, 10)
     with psycopg.connect(test_db_url) as connection:
-        rows = {row[0]: row[1:] for row in connection.execute(fixtures + query, (24, None, None, 10)).fetchall()}
+        rows = {row[0]: row[1:8] for row in connection.execute(fixtures + query, (24, None, None, 10)).fetchall()}
     assert rows["missing"] == (2, None, None, 1.0, 0, 0, 2)
     assert rows["mixed"] == (2, 7, 4, 1.0, 1, 1, 0)
     assert rows["empty"] == (1, 0, 0, 1.0, 1, 1, 0)
-    assert rows["literal"] == (1, None, 6, 1.0, 1, 0, 0)
+    assert rows["literal"] == (1, None, 4, 1.0, 1, 0, 0)
     with psycopg.connect(test_db_url) as connection:
         scoped = {row[0] for row in connection.execute(fixtures + query, (24, "sess-1", "sess-1", 10)).fetchall()}
     assert "literal" not in scoped
@@ -60,13 +65,15 @@ def test_native_usage_query_separates_response_and_cumulative_evidence(test_db_u
     from cli.commands.tools import _native_usage_query
 
     fixtures = sql.SQL("""
-        WITH session_events(session_id, event_type, usage, source_timestamp, created_at) AS (
+        WITH payloads(session_id, event_type, usage, source_timestamp, created_at) AS (
           VALUES
             ('sess-1', 'usage', '{"scope":"response","source":"native","input_tokens":10,"output_tokens":0,"cached_input_tokens":4}'::json, now(), now()),
             ('sess-1', 'usage', '{"scope":"response","source":"native","input_tokens":5}'::json, now(), now()),
             ('sess-1', 'usage_counter', '{"scope":"thread","source":"counter","input_tokens":100}'::json, now(), now()),
             ('sess-2', 'usage', '{"scope":"response","source":"native","input_tokens":999}'::json, now(), now()),
             ('sess-1', 'usage', '{"scope":"response","source":"native","input_tokens":999}'::json, now() - interval '2 days', now())
+        ), session_events AS (
+            SELECT payloads.*, 'codex-model'::text AS model_used FROM payloads
         )
     """)
     with psycopg.connect(test_db_url) as connection:
@@ -76,6 +83,7 @@ def test_native_usage_query_separates_response_and_cumulative_evidence(test_db_u
     assert response[2] == 2
     assert response[3:8] == (15, 0, 4, None, None)
     assert response[8:13] == (2, 1, 1, 0, 0)
+    assert response[13:] == ("codex-model", 6, 1)
     assert counter[2] == 1
     assert counter[3:8] == (None,) * 5
     assert counter[8:13] == (0,) * 5
@@ -119,6 +127,7 @@ def test_cost_distinguishes_unmeasured_tokens_from_measured_zero() -> None:
         MagicMock(fetchall=lambda: [("unmeasured", "cli", 2, None, 0, 12.0, 100.0, 0, 2)]),
         MagicMock(fetchall=lambda: []),
         MagicMock(fetchall=lambda: []),
+        MagicMock(fetchone=lambda: ({},)),
     ]
     with (
         patch("psycopg.connect", return_value=nullcontext(connection)),

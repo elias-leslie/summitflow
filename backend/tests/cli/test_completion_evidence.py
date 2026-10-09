@@ -39,13 +39,74 @@ def test_recorded_artifact_digest_cannot_change(tmp_path):
         load_completion_evidence(evidence, project_root=tmp_path)
 
 
-def test_acceptance_artifact_is_resolved_and_validated_at_exact_head(tmp_path, monkeypatch):
+def test_acceptance_artifact_is_resolved_and_validated_at_its_exact_source(tmp_path, monkeypatch):
     from unittest.mock import Mock
 
     validated = {"state": "success", "source_commit": "a" * 40}
-    validator = Mock(return_value=validated)
-    monkeypatch.setattr("cli.lib.acceptance.validate_acceptance_receipt", validator)
+    result = Mock()
+    result.reference.to_dict.return_value = validated
+    validator = Mock(return_value=result)
+    monkeypatch.setattr("cli.lib.acceptance_coordinator.validate_source_receipt", validator)
+    # The validator owns artifact decoding. The adapter must not read it again.
     evidence = tmp_path / "evidence.json"
     evidence.write_text(json.dumps({"acceptance_receipt": "accepted.json"}))
     assert load_completion_evidence(evidence, project_root=tmp_path) == {"acceptance": validated}
-    validator.assert_called_once_with(tmp_path, tmp_path / "accepted.json", sha="HEAD")
+    validator.assert_called_once_with(tmp_path, tmp_path / "accepted.json")
+
+
+def test_deployment_import_retains_reference_instead_of_lifecycle_body(tmp_path, monkeypatch):
+    from unittest.mock import Mock
+
+    reference = {"state": "succeeded", "source_commit": "a" * 40, "deployment_id": "b" * 64,
+                 "artifact": str(tmp_path / "deployment.json")}
+    validator = Mock(return_value={**reference, "events": [{"phase": "health", "large_output": "raw details"}]})
+    monkeypatch.setattr("cli.lib.service_release.validate_deployment_receipt", validator)
+    evidence = tmp_path / "evidence.json"
+    evidence.write_text(json.dumps({"deployment_receipt": "deployment.json"}))
+    assert load_completion_evidence(evidence, project_root=tmp_path) == {"deployment": reference}
+    validator.assert_called_once_with(tmp_path / "deployment.json", project_root=tmp_path)
+
+
+def test_native_reference_uses_the_task_project_instead_of_ambient_context(tmp_path, monkeypatch):
+    from unittest.mock import MagicMock, Mock
+
+    client = MagicMock(project_id="owner-project")
+    client.__enter__.return_value = client
+    url = "https://summitflow.example.invalid/api/projects/owner-project/deployment-observations/" + "a" * 32
+    client._url.return_value = url
+    client.get.return_value = {"deployment": {"receipt_id": "a" * 32}}
+    factory = Mock(return_value=client)
+    monkeypatch.setattr("cli.client.STClient", factory)
+    evidence = tmp_path / "evidence.json"
+    evidence.write_text(json.dumps({"native_deployment_receipt": "a" * 32}))
+    assert load_completion_evidence(evidence, project_root=tmp_path, project_id="owner-project") == client.get.return_value
+    factory.assert_called_once_with(project_id="owner-project")
+    client._url.assert_called_once_with("/deployment-observations/" + "a" * 32)
+    client.get.assert_called_once_with(url)
+
+
+@pytest.mark.parametrize("payload", [
+    {"native_deployment_receipt": "../forged"},
+    {"native_deployment_receipt": "a" * 32, "deployment_receipt": "forged.json"},
+    {"native_deployment_receipt": "a" * 32, "live_validation": {"source_commit": "b" * 40}},
+])
+def test_native_import_rejects_mixed_or_arbitrary_evidence(tmp_path, payload):
+    evidence = tmp_path / "evidence.json"
+    evidence.write_text(json.dumps(payload))
+    with pytest.raises(ValueError):
+        load_completion_evidence(evidence, project_root=tmp_path, project_id="owner-project")
+
+
+def test_native_api_rejection_is_a_clean_import_error(tmp_path, monkeypatch):
+    from unittest.mock import MagicMock, Mock
+
+    from cli.client import APIError
+
+    client = MagicMock(project_id="owner-project")
+    client.__enter__.return_value = client
+    client.get.side_effect = APIError(422, "Unknown receipt")
+    monkeypatch.setattr("cli.client.STClient", Mock(return_value=client))
+    evidence = tmp_path / "evidence.json"
+    evidence.write_text(json.dumps({"native_deployment_receipt": "a" * 32}))
+    with pytest.raises(ValueError, match="Server rejected"):
+        load_completion_evidence(evidence, project_root=tmp_path, project_id="owner-project")

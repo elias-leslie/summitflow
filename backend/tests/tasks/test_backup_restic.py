@@ -42,6 +42,7 @@ class FakeProcess:
         self.missing_hashes: set[str] = set()
         self.changed_identity: set[str] = set()
         self.fail_check = False
+        self.check_failure: int | None = None
         self.remote_unavailable = False
         self.added = 10
         self.init_missing: set[str] = set()
@@ -115,7 +116,7 @@ class FakeProcess:
                     raise engine.BackupCancelled("fixture cancellation")
                 code = self.copy_failure or 0
             elif "check" in command:
-                code = 1 if self.fail_check else 0
+                code = self.check_failure or (1 if self.fail_check else 0)
                 stdout = "{}"
             elif "restore" in command:
                 destination = Path(command[command.index("--target") + 1])
@@ -138,7 +139,14 @@ class FakeProcess:
 
 
 @pytest.fixture
-def setup(tmp_path: Path):
+def setup(tmp_path: Path, monkeypatch):
+    from app.utils import transient_scratch
+
+    scratch = tmp_path / "scratch"
+    scratch.mkdir(mode=0o700)
+    monkeypatch.setattr(transient_scratch, "SCRATCH_ROOT", scratch)
+    real_is_mount = Path.is_mount
+    monkeypatch.setattr(Path, "is_mount", lambda path: path == scratch or real_is_mount(path))
     keys = tmp_path / "keys"
     keys.mkdir(mode=0o700)
     for name in ("local-password", "remote-password", "rclone.conf"):
@@ -167,6 +175,33 @@ def _adapter(setup):
 def _persisted():
     saves: list[dict[str, Any]] = []
     return saves, lambda state: saves.append(state)
+
+
+@pytest.mark.parametrize("failure", [False, True])
+def test_repository_commands_use_private_scratch_and_remove_child_work(setup, tmp_path, monkeypatch, failure):
+    config, _, _ = setup
+    observed = []
+    monkeypatch.setenv("TMPDIR", "/tmp")
+    monkeypatch.setenv("RESTIC_PASSWORD", "must-not-reach-child")
+
+    def runner(command, **kwargs):
+        env = kwargs["env"]
+        temporary = Path(env["TMPDIR"])
+        assert temporary.is_relative_to(tmp_path / "scratch")
+        assert temporary.stat().st_mode & 0o777 == 0o700
+        assert Path(env["XDG_CACHE_HOME"]).is_relative_to(tmp_path / "scratch")
+        assert "RESTIC_PASSWORD" not in env
+        (temporary / "fresh-check-cache").write_bytes(b"temporary fixture")
+        observed.append(temporary)
+        return subprocess.CompletedProcess(command, 1 if failure else 0, "{}", "")
+
+    adapter = engine.ResticAdapter(config, runner=runner)
+    if failure:
+        with pytest.raises(engine.ResticError):
+            adapter._run(adapter._command("check"), phase="verification")
+    else:
+        adapter._run(adapter._command("check"), phase="verification")
+    assert observed and all(not path.exists() for path in observed)
 
 
 def test_configuration_references_and_local_readiness(setup, monkeypatch):
@@ -250,6 +285,8 @@ def test_checks_use_fresh_temporary_cache_without_reusing_prior_data(setup, remo
     assert all("--no-cache" not in command and "--with-cache" not in command for command in checks)
     assert all("--no-cache" in command for command in process.commands if command[0] == "restic" and "check" not in command)
     assert "--no-cache" in adapter._command("restore", SNAPSHOT, remote=remote)
+    with pytest.raises(engine.ResticError, match="only supported for restore"):
+        adapter._command("check", restore_cache=adapter.config.key_directory)
 
 
 def test_save_changed_and_unchanged_snapshots_use_stable_parent_and_truthful_metrics(setup):
@@ -286,6 +323,20 @@ def test_failed_local_check_does_not_claim_verified_success(setup):
     with pytest.raises(engine.ResticError, match="verification failed"):
         adapter.save_payload("fixture", payload)
     assert process.local_snapshots  # Native snapshot still exists for investigation.
+
+
+def test_native_lock_failure_is_reported_without_claiming_integrity_failure(setup):
+    adapter, process, payload = _adapter(setup)
+    process.check_failure = 11
+    with pytest.raises(engine.ResticError, match=r"failed to lock repository \(exit 11\)"):
+        adapter.save_payload("fixture", payload)
+    assert process.local_snapshots  # Shared backup lock succeeds; exclusive check fails.
+    failed = adapter.check(monthly_state={})
+    assert failed["verified"] is False
+    assert failed["state"].get("next_bucket", 1) == 1
+    assert "failed to lock repository" in failed["error"]
+    assert "untrusted credential-like diagnostics" not in failed["error"]
+    assert not any("unlock" in command or "--no-lock" in command for command in process.commands)
 
 
 def test_copy_requires_durable_checkpoint_and_native_copy_only(setup):
@@ -467,6 +518,76 @@ def test_restore_returns_materialized_payload_root_and_literal_partial_include(s
         adapter.restore(saved["snapshot_id"], destination)
 
 
+def test_remote_restores_use_unique_empty_private_job_caches_then_remove_them(setup, tmp_path, monkeypatch):
+    adapter, process, payload = _adapter(setup)
+    saved = adapter.save_payload("fixture", payload)
+    remote_snapshot = "4" * 64
+    process.remote_snapshots = [{**process.local_snapshots[0], "id": remote_snapshot}]
+    job = tmp_path / "restore-job"
+    job.mkdir(mode=0o700)
+    existing = job / "existing-cache"
+    existing.mkdir(mode=0o700)
+    (existing / "old-data").write_text("synthetic stale cache")
+    monkeypatch.setenv("RESTIC_CACHE_DIR", str(existing))
+    caches = []
+
+    def observe(command, **kwargs):
+        if "restore" in command:
+            assert "--cache-dir" in command
+            assert "--no-cache" not in command
+            assert "--verify" in command and "--no-lock" not in command
+            assert command[command.index("--repo") + 1] == "rclone:fixture:repository"
+            assert command[command.index("restore") + 1] == remote_snapshot
+            assert "RESTIC_CACHE_DIR" not in kwargs["env"]
+            cache = Path(command[command.index("--cache-dir") + 1])
+            assert cache.is_relative_to(tmp_path / "scratch")
+            assert not cache.is_relative_to(job)
+            assert cache.is_dir() and not cache.is_symlink() and cache.stat().st_mode & 0o777 == 0o700
+            assert list(cache.iterdir()) == []
+            caches.append(cache)
+            (cache / "downloaded-this-operation").write_text("synthetic remote metadata")
+        return process(command, **kwargs)
+
+    adapter._runner = observe
+    for number in range(2):
+        destination = job / f"destination-{number}"
+        destination.mkdir(mode=0o700)
+        assert adapter.restore(remote_snapshot, destination, remote=True)["verification"]["verified"] is True
+        assert not caches[-1].exists()
+    assert len(set(caches)) == 2
+    assert (existing / "old-data").read_text() == "synthetic stale cache"
+    assert saved["snapshot_id"] == SNAPSHOT
+
+
+@pytest.mark.parametrize("failure", ["native-failure", "cancellation", "invalid-materialization"])
+def test_restore_job_cache_is_removed_on_failure(setup, tmp_path, failure):
+    adapter, process, payload = _adapter(setup)
+    saved = adapter.save_payload("fixture", payload)
+    job = tmp_path / "restore-job"
+    job.mkdir(mode=0o700)
+    destination = job / "destination"
+    destination.mkdir(mode=0o700)
+    caches = []
+
+    def fail(command, **kwargs):
+        if "restore" in command:
+            assert "--cache-dir" in command
+            cache = Path(command[command.index("--cache-dir") + 1])
+            caches.append(cache)
+            (cache / "temporary-metadata").write_text("synthetic remote metadata")
+            if failure == "cancellation":
+                raise engine.BackupCancelled("synthetic cancellation")
+            return subprocess.CompletedProcess(command, 1 if failure == "native-failure" else 0, "{}", "PRIVATE_DIAGNOSTIC")
+        return process(command, **kwargs)
+
+    adapter._runner = fail
+    expected = engine.BackupCancelled if failure == "cancellation" else engine.ResticError
+    with pytest.raises(expected):
+        adapter.restore(saved["snapshot_id"], destination)
+    assert len(caches) == 1
+    assert not caches[0].exists()
+
+
 @pytest.mark.parametrize("include", ["../outside", "/outside", "*", "file[1]"])
 def test_restore_rejects_nonliteral_or_escaping_include(setup, tmp_path, include):
     adapter, _, payload = _adapter(setup)
@@ -507,6 +628,9 @@ def test_weekly_prune_is_independent_qualified_headroom_bounded_and_preview_firs
     _, persist = _persisted()
     result = adapter.prune(remote=True, available_bytes=1024**4, dry_run=False, state={"status": "verified"}, persist=persist)
     assert result["status"] == "completed" and result["max_unused"] == "5%"
+    assert result["physical_bytes_confirmed"] is True
+    assert result["physical_bytes_after"] == sum(len(value) for value in process.objects.values())
+    assert result["free_bytes"] == 500000
     commands = [command for command in process.commands if "prune" in command]
     assert len(commands) == 2 and "--dry-run" in commands[0] and "--dry-run" not in commands[1]
     assert all("rclone.args=serve restic --stdio --drive-use-trash=false" in command for command in commands)
@@ -602,6 +726,9 @@ def test_qualified_prune_retires_removed_objects_only_after_verifying_repacked_o
     new_path = next(path for path in process.objects if process.objects[path] == b"new repacked ciphertext")
     assert result["state"]["verified_objects"][new_path]["method"] == "provider-sha256"
     assert result["state"]["maintenance"]["status"] == "completed"
+    assert result["physical_bytes_confirmed"] is True
+    assert result["physical_bytes_after"] == sum(len(value) for value in process.objects.values())
+    assert result["reclaimed_bytes"] == max(0, result["physical_bytes_before"] - result["physical_bytes_after"])
     retry = adapter.sync(SNAPSHOT, state=result["state"], persist=persist)
     assert retry["status"] == "verified"
 

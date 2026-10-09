@@ -48,6 +48,7 @@ const HEALTH_DOT: Record<string, string> = {
 
 const FREQUENCY_OPTIONS = [
   { value: 'hourly', label: 'Hourly' },
+  { value: 'four_hourly', label: 'Every 4 hours' },
   { value: 'daily', label: 'Daily' },
   { value: 'weekly', label: 'Weekly' },
   { value: 'monthly', label: 'Monthly' },
@@ -181,6 +182,9 @@ export function SourceCard({
   const [coverage, setCoverage] = useState<CoverageResponse | null>(null)
 
   const isInfra = source.source_type === 'infrastructure'
+  const frequencyLabel =
+    FREQUENCY_OPTIONS.find((option) => option.value === source.frequency)
+      ?.label ?? source.frequency
   const activity = health?.backup_activity
   const backupActive = isBackingUp || activity?.active === true
 
@@ -276,7 +280,7 @@ export function SourceCard({
           {source.enabled ? (
             <>
               <span className="rounded bg-slate-700/70 px-1.5 py-0.5 text-[10px] uppercase tracking-[0.14em] text-slate-400">
-                {source.frequency}
+                {frequencyLabel}
               </span>
               {health?.last_success_at && (
                 <span>{formatTimeAgo(health.last_success_at)}</span>
@@ -381,7 +385,7 @@ export function SourceCard({
                   Frequency
                 </div>
                 <div className="truncate text-xs text-slate-200">
-                  {source.frequency}
+                  {frequencyLabel}
                 </div>
               </div>
               <div className="min-w-0 rounded bg-slate-950/50 px-2 py-1.5">

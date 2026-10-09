@@ -24,10 +24,15 @@ import {
   useState,
 } from 'react'
 import { BackupExpandedRow } from '@/components/backup/BackupExpandedRow'
+import {
+  BackupSizeDetails,
+  BackupSizeExplanation,
+} from '@/components/backup/BackupSizeDetails'
 import { useBackupHistoryRefresh } from '@/components/backup/backupPolling'
 import { CollapsibleSection } from '@/components/backup/CollapsibleSection'
 import { CreateBackupModal } from '@/components/backup/CreateBackupModal'
 import { EncryptionSetup } from '@/components/backup/EncryptionSetup'
+import { NativeHostBackupCard } from '@/components/backup/NativeHostBackupCard'
 import { SetupChecklist } from '@/components/backup/SetupChecklist'
 import { SourcesManager } from '@/components/backup/SourcesManager'
 import { SourceTypeBadge } from '@/components/backup/SourceTypeBadge'
@@ -37,7 +42,7 @@ import {
 } from '@/components/backup/StatusBadge'
 import { StatusRibbon } from '@/components/backup/StatusRibbon'
 import { StorageCard } from '@/components/backup/StorageCard'
-import { SystemImageBackupCard } from '@/components/backup/SystemImageBackupCard'
+import { WeeklyRestoreStatus } from '@/components/backup/WeeklyRestoreStatus'
 import { ScopeList } from '@/components/snapshots/ScopeList'
 import { SnapshotSummaryCard } from '@/components/snapshots/SnapshotSummaryCard'
 import {
@@ -47,10 +52,10 @@ import {
   fetchBackupEncryption,
   fetchBackupHealth,
   fetchBackupSources,
+  fetchNativeHostBackupStatus,
   fetchStorageBackends,
   fetchStorageStatus,
   fetchStorageSummary,
-  fetchSystemImageBackupStatus,
 } from '@/lib/api/backups'
 import { fetchScopes, fetchSnapshotSummary } from '@/lib/api/snapshots'
 import { formatBytes, formatDate, formatTimeAgo } from '@/lib/format'
@@ -162,13 +167,13 @@ function BackupGridCard({
       </div>
 
       {/* Metrics */}
-      <div className="grid grid-cols-2 gap-1.5">
+      <div className="grid grid-cols-1 gap-1.5">
         <div className="min-w-0 rounded bg-slate-950/50 px-2 py-1.5">
           <div className="text-[10px] uppercase tracking-[0.14em] text-slate-500">
-            Size
+            Size details
           </div>
-          <div className="truncate text-xs text-slate-200 font-mono">
-            {formatBytes(backup.size_bytes)}
+          <div className="text-xs text-slate-200">
+            <BackupSizeDetails backup={backup} />
           </div>
         </div>
         <div className="min-w-0 rounded bg-slate-950/50 px-2 py-1.5">
@@ -336,7 +341,12 @@ export function BackupsClient() {
     queryFn: fetchBackupEncryption,
   })
 
-  const { data: healthData, isLoading: healthLoading } = useQuery({
+  const {
+    data: healthData,
+    isLoading: healthLoading,
+    error: healthError,
+    refetch: refetchHealth,
+  } = useQuery({
     queryKey: ['backup-health'],
     queryFn: fetchBackupHealth,
     refetchInterval: POLL_NOTIFICATIONS,
@@ -349,23 +359,31 @@ export function BackupsClient() {
   })
 
   const {
-    data: systemImageStatus,
-    isLoading: systemImageLoading,
-    refetch: refetchSystemImage,
+    data: nativeHostStatus,
+    isLoading: nativeHostLoading,
+    error: nativeHostError,
+    refetch: refetchNativeHost,
   } = useQuery({
-    queryKey: ['system-image-backup'],
-    queryFn: fetchSystemImageBackupStatus,
-    refetchInterval: (query) =>
-      query.state.data?.active_session ? 3000 : false,
+    queryKey: ['native-host-backup'],
+    queryFn: fetchNativeHostBackupStatus,
+    staleTime: STALE_GIT,
   })
 
-  const { data: snapshotSummary, isLoading: snapshotLoading } = useQuery({
+  const {
+    data: snapshotSummary,
+    isLoading: snapshotLoading,
+    error: snapshotError,
+  } = useQuery({
     queryKey: ['snapshot-summary'],
     queryFn: () => fetchSnapshotSummary(),
     staleTime: STALE_GIT,
   })
 
-  const { data: snapshotScopes = [] } = useQuery({
+  const {
+    data: snapshotScopes = [],
+    isLoading: scopesLoading,
+    error: scopesError,
+  } = useQuery({
     queryKey: ['snapshot-scopes'],
     queryFn: () => fetchScopes(undefined, true),
     staleTime: STALE_GIT,
@@ -390,12 +408,18 @@ export function BackupsClient() {
   const overviewSummary =
     storageLoading || healthLoading
       ? 'Loading backup health, storage, and retention metrics.'
-      : `${healthySourceCount} healthy, ${failingSourceCount} failing, ${storageSummary?.total_count ?? 0} backups, ${formatBytes(storageSummary?.total_bytes ?? 0)} stored`
+      : healthError
+        ? 'Backup health refresh failed; protection status may be out of date.'
+        : `${healthySourceCount} healthy, ${failingSourceCount} failing, ${storageSummary?.total_count ?? 0} backups, ${formatBytes(storageSummary?.total_bytes ?? 0)} combined backup sizes (not disk usage)`
   const sourcesSummary =
     sources.length === 0
       ? 'No sources configured yet.'
       : `${sources.length} sources, ${enabledSourceCount} scheduled${failingSourceCount > 0 ? `, ${failingSourceCount} failing` : ''}`
-  const snapshotsSummary = `${activeSnapshotScopes.length} active scope${activeSnapshotScopes.length === 1 ? '' : 's'}, ${archivedSnapshotScopes.length} archived`
+  const snapshotsSummary = scopesLoading
+    ? 'Loading saved-work scopes…'
+    : scopesError
+      ? 'Saved-work scope refresh unavailable'
+      : `${activeSnapshotScopes.length} active scope${activeSnapshotScopes.length === 1 ? '' : 's'}, ${archivedSnapshotScopes.length} archived`
   const protectionSummary =
     'Current backup readiness, restore validation, and anything still blocking full protection.'
 
@@ -424,6 +448,8 @@ export function BackupsClient() {
   const refreshSnapshots = () => {
     queryClient.invalidateQueries({ queryKey: ['snapshot-summary'] })
     queryClient.invalidateQueries({ queryKey: ['snapshot-scopes'] })
+    queryClient.invalidateQueries({ queryKey: ['snapshot-scope'] })
+    queryClient.invalidateQueries({ queryKey: ['saved-work-evidence'] })
   }
 
   // ─── Render ─────────────────────────────────────────────────────
@@ -494,31 +520,47 @@ export function BackupsClient() {
       <section className="space-y-3">
         <SectionHeading title="Overview" summary={overviewSummary} />
         <div className="rounded-lg border border-slate-700/60 bg-slate-900/30 px-4 py-4">
-          <StatusRibbon
-            health={healthData}
-            storageSummary={storageSummary}
-            storageStatus={storageStatus}
-            isLoading={storageLoading || healthLoading}
-          />
+          {healthError && !healthData ? (
+            <p className="text-xs text-rose-300">
+              Backup health is unavailable.
+            </p>
+          ) : (
+            <StatusRibbon
+              health={healthData}
+              storageSummary={storageSummary}
+              storageStatus={storageStatus}
+              isLoading={storageLoading || healthLoading}
+            />
+          )}
         </div>
       </section>
 
       {/* Setup Checklist */}
       <section className="space-y-3">
         <SectionHeading title="Protection Status" summary={protectionSummary} />
+        <WeeklyRestoreStatus
+          health={healthData}
+          isLoading={healthLoading}
+          error={healthError}
+          onRefresh={() => {
+            void refetchHealth()
+          }}
+        />
         <SetupChecklist
           storageStatus={storageStatus}
           sources={sources}
           healthItems={healthData?.sources ?? []}
+          repositories={healthData?.repositories}
+          healthError={healthError}
           encryptionReady={encryptionStatus?.ready === true}
           isLoading={storageLoading || healthLoading}
           onSourceChanged={refreshSources}
           onBackupTriggered={invalidateAll}
         />
         <p className="text-xs text-slate-400" data-backup-transfer-note>
-          Each backup creates one encrypted local archive. Large Drive copies
-          transfer in verified parts; the recovery utility joins them before
-          restore. Sync retries reuse saved data.
+          Restic backups reuse unchanged data in an encrypted repository. Older
+          archive backups remain available; large Drive archives transfer in
+          verified parts that the recovery utility joins before restore.
         </p>
       </section>
 
@@ -542,12 +584,12 @@ export function BackupsClient() {
         onRefresh={refreshStorage}
       />
 
-      <SystemImageBackupCard
-        status={systemImageStatus}
-        isLoading={systemImageLoading}
+      <NativeHostBackupCard
+        status={nativeHostStatus}
+        isLoading={nativeHostLoading}
+        error={nativeHostError}
         onRefresh={() => {
-          refetchSystemImage()
-          queryClient.invalidateQueries({ queryKey: ['system-image-backup'] })
+          void refetchNativeHost()
         }}
       />
 
@@ -560,14 +602,39 @@ export function BackupsClient() {
           <SnapshotSummaryCard
             summary={snapshotSummary}
             isLoading={snapshotLoading}
+            error={snapshotError}
             onMutated={refreshSnapshots}
           />
+          <p className="text-xs text-slate-400">
+            Btrfs captures protect saved workspace edits locally. Backup
+            repository snapshots and offsite copies are listed separately.
+          </p>
+          {scopesError && (
+            <p role="alert" className="text-xs text-rose-300">
+              Saved-work scopes unavailable: {scopesError.message}
+            </p>
+          )}
+          {(snapshotError || scopesError) && (
+            <button
+              type="button"
+              onClick={refreshSnapshots}
+              className="btn-secondary text-xs"
+            >
+              Retry saved-work status
+            </button>
+          )}
           <div className="space-y-2">
             <div>
               <div className="mb-1.5 text-[10px] uppercase tracking-[0.14em] text-slate-500">
                 Active Protection Scopes
               </div>
-              <ScopeList scopes={activeSnapshotScopes} />
+              {scopesLoading ? (
+                <p role="status" className="text-xs text-slate-400">
+                  Loading saved-work scopes…
+                </p>
+              ) : !scopesError || snapshotScopes.length > 0 ? (
+                <ScopeList scopes={activeSnapshotScopes} />
+              ) : null}
             </div>
             {archivedSnapshotScopes.length > 0 && (
               <details className="rounded-lg border border-slate-700/60 bg-slate-800/30 overflow-hidden">
@@ -577,7 +644,7 @@ export function BackupsClient() {
                       Archived Recovery Scopes
                     </div>
                     <div className="mt-0.5 text-xs text-slate-400">
-                      Retained snapshots for deleted or retired lanes
+                      Retained snapshots for archived project scopes
                     </div>
                   </div>
                   <div className="text-xs font-medium text-amber-300">
@@ -616,6 +683,7 @@ export function BackupsClient() {
           }
         />
 
+        <BackupSizeExplanation />
         {backupsLoading ? (
           <div className="flex items-center justify-center py-20">
             <div className="flex items-center gap-2.5 text-slate-500 text-sm">
@@ -676,7 +744,7 @@ export function BackupsClient() {
                     Type
                   </th>
                   <th className="px-4 py-2.5 text-left text-[10px] font-medium text-slate-500 uppercase tracking-[0.14em] hidden md:table-cell">
-                    Size
+                    Size details
                   </th>
                   <th className="px-4 py-2.5 text-left text-[10px] font-medium text-slate-500 uppercase tracking-[0.14em] hidden lg:table-cell">
                     Created
@@ -757,9 +825,9 @@ export function BackupsClient() {
                           </span>
                         </td>
                         <td className="px-4 py-2.5 hidden md:table-cell">
-                          <span className="text-xs text-slate-300 font-mono">
-                            {formatBytes(backup.size_bytes)}
-                          </span>
+                          <div className="text-xs text-slate-300 font-mono">
+                            <BackupSizeDetails backup={backup} />
+                          </div>
                         </td>
                         <td className="px-4 py-2.5 hidden lg:table-cell">
                           <span className="text-xs text-slate-400">

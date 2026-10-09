@@ -22,6 +22,7 @@ from ..config import (
     set_project_override,
 )
 from ..details import current_root, display_path, write_details
+from ..lib.aico_session_observation import observe_aico_owners
 from ..lib.usage import usage
 from ..output import handle_api_error, is_compact, output_error, output_json
 from ._session_resolver import resolve_session_id as _resolve_session_id
@@ -30,6 +31,7 @@ from .session_events_follow import follow_session_events
 from .session_events_formatter import format_event
 from .sessions_diagnostics import render_diagnostics as _render_diagnostics
 from .sessions_filter import normalize_status_filter, session_matches_status_alias
+from .sessions_fleet import register as _register_fleet
 from .sessions_format import compact_session_line, monitor_summary
 from .sessions_monitor import (
     monitor_detail_more as _monitor_detail_more,
@@ -76,6 +78,7 @@ from .sessions_reap import (
 from .sessions_reap import (
     reapable_sessions as _reapable_sessions,
 )
+from .sessions_title import title as title_owner_root
 
 app = typer.Typer(
     help=(
@@ -87,6 +90,9 @@ app = typer.Typer(
 )
 
 app.command("inspect")(inspect_native_session)
+app.command("title")(title_owner_root)
+
+_register_fleet(app)
 
 
 def _managed_codex_runtime() -> tuple[str, Path]:
@@ -311,6 +317,7 @@ def _monitor_single_session(
     debug: bool,
     errors: bool,
     follow: bool,
+    json_output: bool = False,
 ) -> None:
     """Print monitor output for a single session by ID or short prefix."""
     client = STClient(require_project=False)
@@ -321,6 +328,10 @@ def _monitor_single_session(
         handle_api_error(e)
         return
 
+    session = observe_aico_owners([session])[0]
+    if json_output:
+        output_json(session)
+        return
     print(monitor_summary(session))
     session_project = str(session.get("project_id") or project_id or "-")
     project_flag = f" -P {session_project}" if session_project and session_project != "-" else ""
@@ -368,6 +379,7 @@ def _monitor_target(
         debug=debug,
         errors=errors,
         follow=follow,
+        json_output=json_output,
     )
 
 
@@ -430,6 +442,7 @@ def list_sessions(
     agent_slug: SessionAgentOption = None,
     parent_session_id: ParentSessionOption = None,
     project_id: ProjectOption = None,
+    fleet: Annotated[bool, typer.Option(help="List fleet root handles using the same lifecycle")] = False,
 ) -> None:
     """List agent sessions.
 
@@ -441,6 +454,11 @@ def list_sessions(
         st sessions list --status active
         st sessions list -s active --include-unassigned
     """
+    if fleet:
+        from .sessions_fleet import _call
+
+        output_json(_call("list", project_id=project_id or get_project_override(), limit=limit))
+        return
     _render_session_list(
         status_filter,
         limit,
@@ -536,6 +554,11 @@ def show_session(
     Examples:
         st sessions show abc123
     """
+    if session_id.startswith("root-"):
+        from .sessions_fleet import _call
+
+        output_json(_call("show", session_id))
+        return
     client = STClient(require_project=False)
     resolved_id = _resolve_session_id(session_id, client, project_id=project_id)
 
@@ -567,6 +590,11 @@ def close_session(
 
     Works from any directory — no project context required.
     """
+    if session_id.startswith("root-"):
+        from .sessions_fleet import _call
+
+        output_json(_call("close", session_id))
+        return
     client = STClient(require_project=False)
     resolved_id = _resolve_session_id(session_id, client, project_id=project_id)
 

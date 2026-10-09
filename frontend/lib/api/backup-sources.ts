@@ -13,7 +13,7 @@ export interface BackupSource {
   source_type: 'project' | 'config' | 'workspace' | 'infrastructure'
   project_id: string | null
   enabled: boolean
-  frequency: 'daily' | 'weekly' | 'monthly' | 'hourly'
+  frequency: 'daily' | 'weekly' | 'monthly' | 'hourly' | 'four_hourly'
   retention_days: number
   last_run_at: string | null
   next_run_at: string | null

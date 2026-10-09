@@ -44,6 +44,7 @@ def _git(
         return subprocess.run(
             ["git", *args],
             cwd=repo_root,
+            env={**{key: value for key, value in os.environ.items() if not key.startswith("GIT_")}, "GIT_OPTIONAL_LOCKS": "0", "GIT_NO_LAZY_FETCH": "1"},
             capture_output=True,
             text=True,
             check=check,
@@ -133,6 +134,8 @@ def _require_workspaces() -> None:
 
 
 def _resolve_scope(repo_root: Path, project_id: str) -> SnapshotScope:
+    if not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._-]*", project_id):
+        raise SnapshotError("Invalid project identity for snapshot scope")
     _require_workspaces()
     resolved_root = repo_root.resolve()
 

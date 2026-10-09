@@ -6,13 +6,13 @@ export function GitStatusIndicator({ state }: { state: GitHealthState }) {
 
   const colorClasses = {
     clean: 'bg-phosphor-500 shadow-[0_0_8px_rgba(0,245,255,0.7)]',
-    dirty: 'bg-sunset-orange shadow-[0_0_8px_rgba(255,102,0,0.7)]',
+    dirty: 'bg-slate-400',
     behind: 'bg-outrun-500 shadow-[0_0_8px_rgba(255,0,102,0.7)]',
   }
 
   const pulseClasses = {
     clean: '',
-    dirty: 'animate-pulse',
+    dirty: '',
     behind: 'animate-pulse',
   }
 
@@ -25,10 +25,10 @@ export function GitStatusIndicator({ state }: { state: GitHealthState }) {
       )}
       title={
         state === 'clean'
-          ? 'All repos clean'
+          ? 'No uncommitted changes against local refs'
           : state === 'dirty'
-            ? 'Uncommitted changes or ahead of remote'
-            : 'Behind remote - pull needed'
+            ? 'Local work: uncommitted or unpublished changes'
+            : 'Behind local remote refs; refresh remote to check'
       }
     />
   )

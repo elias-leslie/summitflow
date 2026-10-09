@@ -2,6 +2,7 @@ import { fireEvent, render, screen } from '@testing-library/react'
 import { describe, expect, it, vi } from 'vitest'
 import type {
   BackupHealthItem,
+  BackupRepositoryHealthItem,
   BackupSource,
   StorageStatus,
 } from '@/lib/api/backups'
@@ -27,7 +28,7 @@ describe('SetupChecklist', () => {
     )
 
     expect(
-      screen.getByText('0 of 6 complete. 6 steps still need attention.'),
+      screen.getByText('0 of 7 complete. 7 steps still need attention.'),
     ).toBeInTheDocument()
     expect(screen.queryByText('Backup storage')).not.toBeInTheDocument()
   })
@@ -108,6 +109,20 @@ describe('SetupChecklist', () => {
       sources: [source],
       healthItems: [health],
       encryptionReady: false,
+      repositories: [
+        {
+          backend_id: 'offsite',
+          backend_name: 'Offsite repository',
+          critical_restore: {
+            status: 'verified',
+            last_success_at: '2026-09-21T12:00:00Z',
+            latest_attempt: null,
+            required_source_ids: ['configuration', 'infrastructure'],
+            verified_source_ids: ['configuration', 'infrastructure'],
+            missing_source_ids: [],
+          },
+        },
+      ] satisfies BackupRepositoryHealthItem[],
       isLoading: false,
       onSourceChanged: () => {},
       onBackupTriggered: () => {},
@@ -117,7 +132,7 @@ describe('SetupChecklist', () => {
       screen.queryByText('Backup protection fully configured'),
     ).not.toBeInTheDocument()
     expect(
-      screen.getByText('4 of 6 complete. 2 steps still need attention.'),
+      screen.getByText('5 of 7 complete. 2 steps still need attention.'),
     ).toBeInTheDocument()
 
     rerender(
@@ -129,6 +144,26 @@ describe('SetupChecklist', () => {
     )
     expect(
       screen.getByText('Backup protection checks passed'),
+    ).toBeInTheDocument()
+
+    rerender(
+      <SetupChecklist
+        {...props}
+        encryptionReady
+        healthItems={[{ ...health, offsite_status: 'verified' }]}
+        healthError={new Error('Unavailable')}
+      />,
+    )
+    expect(
+      screen.queryByText('Backup protection checks passed'),
+    ).not.toBeInTheDocument()
+    expect(
+      screen.getByText('Backup setup status unavailable'),
+    ).toBeInTheDocument()
+    expect(
+      screen.getByText(
+        'Backup health refresh failed; these checks may be out of date.',
+      ),
     ).toBeInTheDocument()
 
     rerender(
@@ -151,7 +186,9 @@ describe('SetupChecklist', () => {
       screen.getByRole('button', { name: /backup protection checks passed/i }),
     )
     expect(
-      screen.getByText(/Restore drill passed for older-backup on/),
+      screen.getByText(
+        /Infrastructure database drill passed for older-backup on/,
+      ),
     ).toBeInTheDocument()
     expect(
       screen.getAllByText(/The latest backup has not had a restore drill/)
@@ -212,5 +249,44 @@ describe('SetupChecklist', () => {
         'Required recovery state is missing from the latest system backup.',
       ),
     ).toBeInTheDocument()
+    for (const status of [
+      'failed',
+      'pending',
+      'running',
+      'stale',
+      'untested',
+      'unavailable',
+    ] as const) {
+      rerender(
+        <SetupChecklist
+          {...props}
+          encryptionReady
+          healthItems={[{ ...health, offsite_status: 'verified' }]}
+          repositories={[
+            {
+              ...props.repositories[0],
+              critical_restore: {
+                ...props.repositories[0].critical_restore,
+                status,
+              },
+            },
+          ]}
+        />,
+      )
+      expect(
+        screen.queryByText('Backup protection checks passed'),
+      ).not.toBeInTheDocument()
+    }
+    rerender(
+      <SetupChecklist
+        {...props}
+        encryptionReady
+        healthItems={[{ ...health, offsite_status: 'verified' }]}
+        repositories={undefined}
+      />,
+    )
+    expect(
+      screen.queryByText('Backup protection checks passed'),
+    ).not.toBeInTheDocument()
   })
 })

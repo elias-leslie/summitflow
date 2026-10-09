@@ -7,11 +7,13 @@ USER_SYSTEMD_DIR="$HOME/.config/systemd/user"
 
 sudo install -d -m 0755 /usr/local/libexec /var/lib/summitflow-host-guardian
 sudo install -m 0755 "$ROOT_DIR/scripts/host-guardian.py" /usr/local/libexec/summitflow-host-guardian
+sudo install -m 0755 "$ROOT_DIR/scripts/btrfs-space-guard.py" /usr/local/libexec/summitflow-btrfs-space-guard
 
 units=(
   summitflow-host-guardian.service summitflow-host-guardian.timer
   summitflow-host-maintenance.service summitflow-host-maintenance.timer
   summitflow-btrfs-scrub.service summitflow-btrfs-scrub.timer
+  summitflow-btrfs-space-guard.service summitflow-btrfs-space-guard.timer
   summitflow-nvme-short-test.service summitflow-nvme-short-test.timer
   summitflow-nvme-long-test.service summitflow-nvme-long-test.timer
 )
@@ -75,6 +77,7 @@ sudo systemctl enable --now \
   summitflow-host-guardian.timer \
   summitflow-host-maintenance.timer \
   summitflow-btrfs-scrub.timer \
+  summitflow-btrfs-space-guard.timer \
   summitflow-nvme-short-test.timer \
   summitflow-nvme-long-test.timer
 systemctl --user enable summitflow-infra-reconcile.service

@@ -8,10 +8,10 @@ Reuses CLI library functions from quick_snapshots and autosnapshot.
 from __future__ import annotations
 
 import contextlib
-from typing import Any
+from typing import Annotated, Any
 
-from fastapi import APIRouter, HTTPException
-from pydantic import BaseModel
+from fastapi import APIRouter, Body, HTTPException
+from pydantic import BaseModel, Field
 
 from ..logging_config import get_logger
 from ..utils import safe_subprocess
@@ -35,6 +35,15 @@ class SnapshotResponse(BaseModel):
     created_at: str
     source: str = "manual"
     usage: dict[str, int] | None = None
+    recovery_path: str | None = None
+    recovery_active: bool = False
+    pin_reason: str | None = None
+    deletion_error: str | None = None
+    source_digest: str | None = None
+    shared_capture: bool = False
+    nested_subvolumes: list[str] = []
+    recovery_cleanup_pending: bool = False
+    recovery_deletion_error: str | None = None
 
 
 class ScopeResponse(BaseModel):
@@ -54,12 +63,14 @@ class PolicyResponse(BaseModel):
     auto_keep_per_scope: int
     archived_auto_keep_per_scope: int
     archived_keep_per_project: int
+    recent_hours: int = 24
+    hourly_days: int = 7
     manual_keep_per_scope: int
 
 
 class SnapshotSummaryResponse(BaseModel):
     total_snapshots: int
-    total_usage_bytes: int
+    total_usage_bytes: int | None
     by_source: dict[str, int]
     by_scope_type: dict[str, int]
     scope_count: int
@@ -72,7 +83,7 @@ class SnapshotSummaryResponse(BaseModel):
 
 
 class SnapshotRequest(BaseModel):
-    project_id: str
+    project_id: str = Field(pattern=r"^[A-Za-z0-9][A-Za-z0-9._-]*$")
     name: str | None = None
 
 
@@ -99,6 +110,15 @@ def _snapshot_to_response(snap: Any, usage: Any | None = None) -> SnapshotRespon
         created_at=snap.created_at,
         source=snap.source,
         usage=usage_dict,
+        recovery_path=snap.recovery_path,
+        recovery_active=snap.recovery_active,
+        pin_reason=snap.pin_reason,
+        deletion_error=snap.deletion_error,
+        source_digest=snap.source_digest,
+        shared_capture=snap.shared_capture,
+        nested_subvolumes=snap.nested_subvolumes,
+        recovery_cleanup_pending=any(not copy.get("active") and not copy.get("deleted_at") for copy in snap.recovery_copies),
+        recovery_deletion_error=next((copy.get("deletion_error") for copy in snap.recovery_copies if copy.get("deletion_error")), None),
     )
 
 
@@ -159,7 +179,7 @@ async def snapshot_summary(project_id: str | None = None) -> SnapshotSummaryResp
 
     return SnapshotSummaryResponse(
         total_snapshots=total_snapshots,
-        total_usage_bytes=0,
+        total_usage_bytes=None,
         by_source=by_source,
         by_scope_type=by_scope_type,
         scope_count=len(scopes),
@@ -262,7 +282,8 @@ async def recover_snap(snapshot_id: str, req: SnapshotRequest) -> dict:
     from cli.lib.quick_snapshots import recover_snapshot as do_recover
 
     try:
-        result = do_recover(target=snapshot_id, project_id=req.project_id, name=req.name)
+        from cli.lib.workspace_paths import get_projects_base_dir
+        result = do_recover(target=snapshot_id, project_id=req.project_id, name=req.name, cwd=get_projects_base_dir(req.project_id))
         return {"ok": True, "recovery_path": str(result.recovery_path) if hasattr(result, "recovery_path") else None}
     except Exception as e:
         logger.exception("snapshot_recover_failed", snapshot_id=snapshot_id)
@@ -270,18 +291,64 @@ async def recover_snap(snapshot_id: str, req: SnapshotRequest) -> dict:
 
 
 @router.post("/snapshots/prune")
-async def prune_snapshots(dry_run: bool = True) -> dict:
+async def prune_snapshots(dry_run: bool | None = None, body: Annotated[dict[str, Any] | None, Body()] = None) -> dict:
     """Run retention pruning across all scopes."""
-    from cli.lib.autosnapshot import DEFAULT_POLICY
+    from cli.lib.autosnapshot import DEFAULT_POLICY, LAST_PRUNE_REPORT
     from cli.lib.autosnapshot import prune_all as do_prune
 
     try:
-        results = do_prune(policy=DEFAULT_POLICY, dry_run=dry_run)
+        actual_dry_run = dry_run if dry_run is not None else (body or {}).get("dry_run", True)
+        if not isinstance(actual_dry_run, bool):
+            raise ValueError("dry_run must be a boolean")
+        results = do_prune(policy=DEFAULT_POLICY, dry_run=actual_dry_run)
         return {
             "ok": True,
-            "dry_run": dry_run,
-            "pruned": results if isinstance(results, int) else len(results) if results else 0,
+            "dry_run": actual_dry_run,
+            "pruned": results if isinstance(results, int) else sum(len(entries) for entries in results.values()),
+            "recovery_copies": list(LAST_PRUNE_REPORT),
+            "recovery_copies_deleted": sum(record["action"] == "deleted" for record in LAST_PRUNE_REPORT),
+            "recovery_cleanup_failed": sum(record["action"] == "failed" for record in LAST_PRUNE_REPORT),
         }
     except Exception as e:
         logger.exception("snapshot_prune_failed")
         return {"ok": False, "error": str(e)}
+
+
+class RecoveryFilesRequest(BaseModel):
+    project_id: str = Field(pattern=r"^[A-Za-z0-9][A-Za-z0-9._-]*$")
+    paths: list[str]
+    owned_paths: list[str] = []
+    preview_digest: str | None = None
+
+
+@router.post("/snapshots/{snapshot_id}/preview")
+async def preview_selected_recovery(snapshot_id: str, req: RecoveryFilesRequest) -> dict:
+    from cli.lib.quick_snapshots import recovery_preview
+    from cli.lib.workspace_paths import get_projects_base_dir
+    try:
+        result = recovery_preview(snapshot_id, project_id=req.project_id, paths=req.paths,
+            owned_paths=req.owned_paths, cwd=get_projects_base_dir(req.project_id), verify_ownership=False)
+        return {"ok": True, **result, "apply_available": False,
+            "apply_reason": "Apply through an ST coding session with an active own lease"}
+    except Exception as exc:
+        return {"ok": False, "error": str(exc)}
+
+
+@router.post("/snapshots/{snapshot_id}/apply")
+async def apply_selected_recovery(snapshot_id: str, req: RecoveryFilesRequest) -> dict:
+    # This HTTP surface has no authenticated native actor/claim binding. Never
+    # treat client-provided ownership strings as authority to edit a shared tree.
+    raise HTTPException(status_code=403, detail="Selected-file apply requires an owned ST coding session; use st recover --file --owned --preview-digest")
+
+
+@router.post("/snapshots/{snapshot_id}/release")
+async def release_selected_recovery(snapshot_id: str, req: SnapshotRequest) -> dict:
+    from cli.lib.quick_snapshots import release_recovery
+    from cli.lib.workspace_paths import get_projects_base_dir
+    try:
+        result = release_recovery(snapshot_id, project_id=req.project_id, cwd=get_projects_base_dir(req.project_id))
+        return {"ok": True, "recovery_active": result.recovery_active, "recovery_path": result.recovery_path,
+            "cleanup_pending": any(not copy.get("deleted_at") for copy in result.recovery_copies),
+            "cleanup_policy": "Released copies remain until snapshot prune; failed physical deletion is retained and retried"}
+    except Exception as exc:
+        return {"ok": False, "error": str(exc)}

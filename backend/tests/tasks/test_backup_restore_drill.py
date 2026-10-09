@@ -3,6 +3,9 @@ from __future__ import annotations
 import io
 import json
 import os
+import shlex
+import shutil
+import stat
 import subprocess
 import tarfile
 from contextlib import nullcontext
@@ -10,6 +13,19 @@ from pathlib import Path
 from unittest.mock import MagicMock
 
 import pytest
+
+from app.utils import transient_scratch
+
+
+@pytest.fixture(autouse=True)
+def synthetic_restore_mount(tmp_path, monkeypatch):
+    root = tmp_path / "scratch"
+    root.mkdir(mode=0o700)
+    monkeypatch.setattr(transient_scratch, "SCRATCH_ROOT", root)
+    monkeypatch.setattr(Path, "is_mount", lambda path: path == root)
+    usage = shutil.disk_usage(tmp_path)
+    monkeypatch.setattr(transient_scratch.shutil, "disk_usage", lambda _path: usage._replace(free=100 * 1024**3))
+    return root
 
 
 @pytest.mark.parametrize("mode,expected", [
@@ -69,9 +85,12 @@ exit 99
     sleep.write_text("#!/bin/sh\nexit 0\n")
     sleep.chmod(0o755)
     log = tmp_path / "docker.log"
+    drill_root = tmp_path / "drill"
+    drill_root.mkdir(mode=0o700)
     env = {
         **os.environ, "PATH": f"{fake_bin}:{os.environ['PATH']}",
         "FAKE_REDIS_MODE": mode, "FAKE_DOCKER_LOG": str(log),
+        "ST_RESTORE_DRILL_ROOT": str(drill_root), "ST_RESTORE_DRILL_ID": "infra-drill-fixture",
     }
     env.pop("BASH_ENV", None)
     env.pop("ENV", None)
@@ -87,11 +106,13 @@ exit 99
     commands = log.read_text().splitlines()
     assert commands[-1].startswith("rm -fv sf-drill-pg-")
     redis_start = next(command for command in commands if command.startswith("run "))
-    # The image entrypoint chowns /data; a read-only recovered RDB must not be
-    # changed, even when testing as root. Match the recovery user's file access.
+    # Bypass the image's chown and bind all writable Redis data to owned scratch.
     assert "--entrypoint redis-server" in redis_start
     assert f"--user {os.getuid()}:{os.getgid()}" in redis_start
-    assert "/data/dump.rdb:ro" in redis_start
+    assert f"source={drill_root}/redis,target=/data" in redis_start
+    assert "--network none" in redis_start and "--pull never" in redis_start
+    assert (drill_root / "redis/dump.rdb").read_bytes() == payload
+    assert stat.S_IMODE((drill_root / "redis").stat().st_mode) == 0o700
     assert "--save" in redis_start
     if mode in {"start-failed", "ping-failed", "ping-wrong"}:
         assert not any("dbsize" in command for command in commands)
@@ -157,3 +178,153 @@ def test_drill_materializes_encrypted_archive_before_script(monkeypatch) -> None
 
     assert backup_restore_drill.run_infra_drill()["ok"] is True
     run_script.assert_called_once_with(str(plaintext), "backup-1")
+
+
+@pytest.mark.parametrize("failure", [None, "timeout", "cancel", "capacity", "nonzero"])
+def test_drill_wrapper_owns_scratch_and_exact_container_cleanup(
+    tmp_path, monkeypatch, synthetic_restore_mount, failure,
+):
+    from app.tasks import backup_restore_drill as drill
+    from app.tasks.backup_activity import BackupCancelled
+    from app.utils.transient_scratch import ScratchError
+
+    archive_path = tmp_path / "archive.tar.gz"
+    with tarfile.open(archive_path, "w:gz") as archive:
+        member = tarfile.TarInfo("infrastructure/readme")
+        member.size = 7
+        archive.addfile(member, io.BytesIO(b"fixture"))
+    jobs = []
+    removed = []
+    before = os.environ.get("TMPDIR")
+
+    def execute(command, **kwargs):
+        job = Path(kwargs["env"]["ST_RESTORE_DRILL_ROOT"])
+        jobs.append(job)
+        assert job.parent.parent == synthetic_restore_mount
+        assert kwargs["env"]["TMPDIR"] == str(job)
+        assert kwargs["timeout"] == drill.DRILL_TIMEOUT
+        assert stat.S_IMODE(job.stat().st_mode) == 0o700
+        (job / "plaintext").write_bytes(b"fixture")
+        if failure == "timeout":
+            raise subprocess.TimeoutExpired(command, drill.DRILL_TIMEOUT)
+        if failure == "cancel":
+            raise BackupCancelled("fixture cancellation")
+        kwargs["capacity_check"]()
+        return subprocess.CompletedProcess(command, 23 if failure == "nonzero" else 0, stdout='{"ok":true,"components":[]}', stderr="")
+
+    def cleanup(command, **_kwargs):
+        removed.append(command)
+        assert jobs[0].exists()
+        return subprocess.CompletedProcess(command, 0, stdout="", stderr="")
+
+    monkeypatch.setattr(drill, "run_bulk_process", execute)
+    monkeypatch.setattr(drill.subprocess, "run", cleanup)
+    if failure == "capacity":
+        monkeypatch.setattr(drill, "ensure_scratch_capacity", MagicMock(side_effect=ScratchError("fixture reserve crossed")))
+    if failure in {"timeout", "cancel", "capacity"}:
+        error = {"timeout": subprocess.TimeoutExpired, "cancel": BackupCancelled, "capacity": ScratchError}[failure]
+        with pytest.raises(error):
+            drill._run_drill_script(str(archive_path), "fixture-backup")
+    else:
+        assert drill._run_drill_script(str(archive_path), "fixture-backup")["ok"] is (failure is None)
+    assert removed == [["docker", "rm", "-fv", f"sf-drill-pg-{jobs[0].name}", f"sf-drill-redis-{jobs[0].name}"]]
+    assert not jobs[0].exists()
+    assert os.environ.get("TMPDIR") == before
+
+
+def test_drill_capacity_accounts_extraction_and_redis_copy_before_script(tmp_path, monkeypatch):
+    from app.tasks import backup_restore_drill as drill
+    from app.utils.transient_scratch import ScratchError
+
+    path = tmp_path / "archive.tar.gz"
+    with tarfile.open(path, "w:gz") as archive:
+        member = tarfile.TarInfo("infrastructure/redis-dump.rdb")
+        member.size = 12
+        archive.addfile(member, io.BytesIO(b"REDISfixture"))
+    capacities = []
+
+    def refuse(_path, required):
+        capacities.append(required)
+        raise ScratchError("fixture insufficient capacity")
+
+    monkeypatch.setattr(transient_scratch, "ensure_scratch_capacity", refuse)
+    execute = MagicMock()
+    monkeypatch.setattr(drill, "run_bulk_process", execute)
+    with pytest.raises(ScratchError):
+        drill._run_drill_script(str(path), "fixture")
+    assert capacities == [24]
+    execute.assert_not_called()
+
+
+def test_drill_cleanup_failure_preserves_cancellation_and_records_note(tmp_path, monkeypatch):
+    from app.tasks import backup_restore_drill as drill
+    from app.tasks.backup_activity import BackupCancelled
+
+    path = tmp_path / "archive.tar.gz"
+    with tarfile.open(path, "w:gz") as archive:
+        member = tarfile.TarInfo("infrastructure")
+        member.type = tarfile.DIRTYPE
+        archive.addfile(member)
+    cancelled = BackupCancelled("fixture cancellation")
+    monkeypatch.setattr(drill, "run_bulk_process", MagicMock(side_effect=cancelled))
+    monkeypatch.setattr(drill, "_remove_drill_containers", MagicMock(side_effect=RuntimeError("fixture cleanup failure")))
+    with pytest.raises(BackupCancelled) as observed:
+        drill._run_drill_script(str(path), "fixture")
+    assert "cleanup also failed" in observed.value.__notes__[0]
+
+
+@pytest.mark.parametrize("remaining", ["gone", "present", "unavailable"])
+def test_failed_container_removal_verifies_exact_attempt_and_reports_unknown(monkeypatch, remaining):
+    from app.tasks import backup_restore_drill as drill
+
+    calls = []
+
+    def docker(command, **_kwargs):
+        calls.append(command)
+        if command[1] == "rm":
+            return subprocess.CompletedProcess(command, 1, stdout="", stderr="")
+        return subprocess.CompletedProcess(command, 1 if remaining == "unavailable" else 0,
+                                           stdout="sf-drill-pg-fixture" if remaining == "present" else "", stderr="")
+
+    monkeypatch.setattr(drill.subprocess, "run", docker)
+    names = ["sf-drill-pg-fixture", "sf-drill-redis-fixture"]
+    if remaining == "gone":
+        drill._remove_drill_containers(names)
+    else:
+        with pytest.raises(RuntimeError, match=r"cleanup|remain"):
+            drill._remove_drill_containers(names)
+    assert calls[0] == ["docker", "rm", "-fv", *names]
+    assert calls[1][3:5] == ["--filter", "name=^/(sf-drill-pg-fixture|sf-drill-redis-fixture)$"]
+
+
+@pytest.mark.parametrize("failure", [False, True])
+def test_smb_download_uses_owned_scratch_and_cleans_success_or_timeout(
+    monkeypatch, synthetic_restore_mount, failure,
+):
+    from app.tasks import backup_restore_drill as drill
+
+    jobs = []
+
+    def download(command, **kwargs):
+        destination = Path(shlex.split(command[-1].split("; ")[-1])[-1])
+        jobs.append(destination.parent)
+        assert destination.parent.parent.parent == synthetic_restore_mount
+        assert kwargs["timeout"] == drill.SMB_DOWNLOAD_TIMEOUT
+        assert Path(kwargs["env"]["TMPDIR"]).is_relative_to(destination.parent)
+        kwargs["capacity_check"]()
+        destination.write_bytes(b"fixture archive")
+        if failure:
+            raise subprocess.TimeoutExpired(command, kwargs["timeout"])
+        return subprocess.CompletedProcess(command, 0, stdout="", stderr="")
+
+    monkeypatch.setattr(drill, "run_bulk_process", download)
+    downloaded = drill._download_from_smb("//fixture/share/backups/archive.tar.gz")
+    if failure:
+        assert downloaded is None
+    else:
+        assert downloaded is not None
+        assert stat.S_IMODE(Path(downloaded).stat().st_mode) == 0o600
+        # Downloads inferred from SMB configuration also clean up when the
+        # original location was empty rather than an explicit // reference.
+        drill._cleanup_temp(downloaded, "")
+    assert not jobs[0].exists()

@@ -127,7 +127,7 @@ export function StatusRibbon({
         {totalBytes > 0 && (
           <StatPill
             value={formatBytes(totalBytes)}
-            label="stored"
+            label="combined backup sizes"
             tone="bg-purple-500/8 text-purple-400 border-purple-500/20"
           />
         )}
