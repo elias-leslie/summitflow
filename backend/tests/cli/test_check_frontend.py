@@ -318,7 +318,7 @@ def test_explicit_project_root_beats_actual_cwd(tmp_path: Path, monkeypatch: pyt
     selected.mkdir()
     monkeypatch.chdir(cwd)
     monkeypatch.setattr(config, "_project_override", "selected")
-    with patch.object(config, "_fetch_projects_with_retry", return_value=[{"id": "selected", "root_path": str(selected)}]):
+    with patch.object(config, "_fetch_project", return_value={"id": "selected", "root_path": str(selected)}):
         assert _resolve_repo_root() == selected
 
 
@@ -328,7 +328,7 @@ def test_unknown_explicit_project_cannot_check_wrong_cwd(tmp_path: Path, monkeyp
 
     monkeypatch.chdir(tmp_path)
     monkeypatch.setattr(config, "_project_override", "missing")
-    with patch.object(config, "_fetch_projects_with_retry", return_value=[]), pytest.raises(typer.BadParameter, match="registered root"):
+    with patch.object(config, "_fetch_project", return_value=None), pytest.raises(typer.BadParameter, match="registered root"):
         _resolve_repo_root()
 
 

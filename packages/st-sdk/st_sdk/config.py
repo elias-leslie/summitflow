@@ -280,11 +280,14 @@ def get_available_projects() -> list[str]:
     ]
 
 
-def get_project_root_path(project_id: str) -> str | None:
-    # The single-project read avoids serializing every registered project on
-    # each extension dispatch; the list remains the fallback for older APIs.
+def _fetch_project(api_base: str, project_id: str) -> dict[str, Any] | None:
+    """One registered project, or ``None`` when it is absent or unreadable.
+
+    The single-project read avoids serializing every registered project on each
+    extension dispatch; the list remains the fallback for older APIs.
+    """
     try:
-        response = httpx.get(f"{_api_base()}/projects/{quote(project_id, safe='')}", timeout=5.0)
+        response = httpx.get(f"{api_base}/projects/{quote(project_id, safe='')}", timeout=5.0)
     except httpx.HTTPError:
         response = None
     if response is not None and response.status_code == 404:
@@ -292,11 +295,17 @@ def get_project_root_path(project_id: str) -> str | None:
     if response is not None and response.status_code == 200:
         data = response.json()
         if isinstance(data, dict) and data.get("id") == project_id:
-            root_path = data.get("root_path")
-            return str(root_path) if root_path else None
-    projects = _fetch_projects_with_retry(_api_base(), max_retries=2)
-    if not projects:
-        return None
+            return cast(dict[str, Any], data)
+    for project in _fetch_projects_with_retry(api_base, max_retries=2) or []:
+        if isinstance(project, dict) and project.get("id") == project_id:
+            return cast(dict[str, Any], project)
+    return None
+
+
+def get_project_root_path(project_id: str) -> str | None:
+    project = _fetch_project(_api_base(), project_id)
+    root_path = (project or {}).get("root_path")
+    return str(root_path) if root_path else None
     for project in projects:
         if not isinstance(project, dict):
             continue
