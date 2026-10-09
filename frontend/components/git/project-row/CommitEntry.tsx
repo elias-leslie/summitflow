@@ -120,7 +120,7 @@ export function CommitEntry({
   projectId: string
 }) {
   const [expanded, setExpanded] = useState(false)
-  const agent = commit.author_email.includes('anthropic.com')
+  const agent = commit.author_email.toLowerCase().endsWith('@anthropic.com')
 
   const {
     data: diffData,
