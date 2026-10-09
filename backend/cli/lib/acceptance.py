@@ -942,10 +942,8 @@ def acceptance_artifact_directory(repo: Path) -> Path:
 _RECEIPT_SCAN_LIMIT = 16
 
 
-def _validated_receipt_for_commit(
-    repo: Path, commit: str, plan: Mapping[str, Any], coverage: str,
-) -> dict[str, Any] | None:
-    """Return the newest valid successful receipt for commit under the same plan."""
+def _validated_receipt_for_commit(repo: Path, commit: str, coverage: str) -> dict[str, Any] | None:
+    """Return the newest successful receipt for commit; validation re-derives its plan on its own basis."""
     directory = acceptance_artifact_directory(repo)
     try:
         candidates = sorted(directory.glob("*.json"), key=lambda path: path.stat().st_mtime, reverse=True)
@@ -957,8 +955,7 @@ def _validated_receipt_for_commit(
         except (OSError, ValueError):
             continue
         if (not isinstance(value, dict) or value.get("coverage") != coverage
-                or (value.get("source") or {}).get("commit") != commit
-                or (value.get("plan") or {}).get("fingerprint") != plan["fingerprint"]):
+                or (value.get("source") or {}).get("commit") != commit):
             continue
         try:
             return validate_acceptance_receipt(repo, artifact, sha=commit)
@@ -1246,7 +1243,7 @@ def accept_revision(
             # The cache key binds execution basis and working modes, so an
             # isolated receipt for this HEAD never matches a dirty actual lookup.
             # Fall back to the same validation an explicit --acceptance gets.
-            validated = _validated_receipt_for_commit(repo, before["commit"], plan, coverage) if reuse else None
+            validated = _validated_receipt_for_commit(repo, before["commit"], coverage) if reuse else None
             if validated is not None:
                 return {
                     **validated,
