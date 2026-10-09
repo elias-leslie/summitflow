@@ -11,24 +11,26 @@ from collections.abc import Iterator
 from datetime import UTC, datetime
 from fnmatch import fnmatch
 from pathlib import Path
+from typing import cast
 
 from ._helpers import _absolute_git_dir, _git
 from ._manifest import _manifest_dir
 from ._models import SnapshotError, SnapshotScope
+from ._source_digest_cache import SourceDigestCache
 
 # Rebuildable runtime outputs only. Tracked files always override these defaults.
 _DISPOSABLE = {"node_modules", ".venv", "venv", "__pycache__", ".next", ".pytest_cache", ".ruff_cache", ".mypy_cache", ".dev-tools", ".turbo"}
 
 
-def classifications(root: Path) -> dict[str, list[str]]:
+def classifications(root: Path, cache: SourceDigestCache | None = None) -> dict[str, list[str]]:
     path = root / "project.identity.json"
-    storage = json.loads(path.read_text()).get("storage", {}) if path.is_file() else {}
+    storage = cache.storage(path) if cache else (json.loads(path.read_text()).get("storage", {}) if path.is_file() else {})
     result = {}
     for kind in ("durable_data", "disposable_outputs"):
         paths = storage.get(kind, [])
         if not isinstance(paths, list) or any(not isinstance(p, str) for p in paths):
             raise SnapshotError(f"storage.{kind} must be a list of relative paths")
-        result[kind] = [safe_relative(p) for p in paths]
+        result[kind] = [safe_relative(p) for p in cast(list[str], paths)]
     return result
 
 
@@ -57,9 +59,11 @@ def file_digest(path: Path) -> str:
     return f"{path.stat().st_mode & 0o777:o}:" + digest.hexdigest()
 
 
-def source_digest(root: Path) -> str:
+def source_digest(root: Path, *, use_cache: bool = False) -> str:
     tracked = set(_git(root, ["ls-files", "-z"]).stdout.split("\0")) - {""}
-    rules = classifications(root)
+    git_dir = _absolute_git_dir(root)
+    cache = SourceDigestCache(root, git_dir) if use_cache else None
+    rules = classifications(root, cache)
     paths = set(tracked)
     for current, dirs, files in os.walk(root, followlinks=False):
         rel = Path(current).relative_to(root)
@@ -67,6 +71,10 @@ def source_digest(root: Path) -> str:
         for directory in dirs:
             item = (rel / directory).as_posix()
             if directory == ".git" or beneath(item, rules["durable_data"]):
+                continue
+            if directory == ".snapshots" and not any(
+                path == item or path.startswith(item + "/") for path in tracked
+            ):
                 continue
             disposable = directory in _DISPOSABLE or beneath(item, rules["disposable_outputs"])
             if disposable and not any(p.startswith(item + "/") for p in tracked):
@@ -80,12 +88,17 @@ def source_digest(root: Path) -> str:
     for item in sorted(paths):
         if ".git" in Path(item).parts or beneath(item, rules["durable_data"]):
             continue
+        if ".snapshots" in Path(item).parts and item not in tracked:
+            continue
         if item not in tracked and (beneath(item, rules["disposable_outputs"]) or any(p in _DISPOSABLE for p in Path(item).parts)):
             continue
-        digest.update(item.encode() + b"\0" + file_digest(root / item).encode() + b"\0")
-    git_dir = _absolute_git_dir(root)
+        value = cache.digest(f"tree:{item}", root / item) if cache else file_digest(root / item)
+        digest.update(item.encode() + b"\0" + value.encode() + b"\0")
     for name in ("index", "HEAD"):
-        digest.update(name.encode() + b"\0" + file_digest(git_dir / name).encode())
+        value = cache.digest(f"git:{name}", git_dir / name) if cache else file_digest(git_dir / name)
+        digest.update(name.encode() + b"\0" + value.encode())
+    if cache:
+        cache.save()
     return digest.hexdigest()
 
 

@@ -125,7 +125,7 @@ def _scope_state_needs_snapshot(repo_root: Path, entries: list[QuickSnapshot]) -
     from .snapshots._saved_work import git_transaction_clear, source_digest
     git_transaction_clear(repo_root)
     latest = _latest_entry(entries)
-    return latest.source_digest != source_digest(repo_root) or latest.head_oid != _head_oid(repo_root)
+    return latest.source_digest != source_digest(repo_root, use_cache=True) or latest.head_oid != _head_oid(repo_root)
 
 
 def ensure_baseline(

@@ -18,6 +18,7 @@ from cli.lib import leases
 from cli.lib import quick_snapshots as snap
 from cli.lib.snapshots import _pruning as pruning
 from cli.lib.snapshots import _saved_work as saved
+from cli.lib.snapshots import _source_digest_cache as digest_cache
 from cli.lib.snapshots._manifest import _manifest_path
 from cli.lib.snapshots._models import QuickSnapshot, SnapshotError
 
@@ -175,6 +176,106 @@ def test_dirty_unchanged_sweep_skips_but_runs_cleanup(workspace, monkeypatch):
     assert auto.LAST_SWEEP_REPORT[0]["reason"] == "saved source unchanged"
     (workspace.project / "new.txt").write_text("new saved")
     assert len(auto.sweep_periodic()) == 1
+
+
+def test_warm_periodic_check_reads_no_source_contents(workspace, monkeypatch):
+    project = workspace.project
+    (project / "project.identity.json").write_text(json.dumps({"storage": {"durable_data": [], "disposable_outputs": []}}))
+    (project / "source.txt").write_text("dirty tracked")
+    (project / "ignored.txt").write_text("saved ignored")
+    point = capture(workspace)
+    assert saved.source_digest(project, use_cache=True) == point.source_digest
+    cache_path = project / ".git/st/source-digests-v1.json"
+    assert cache_path.is_file()
+
+    original_open = Path.open
+    def guard_source_reads(path, mode="r", *args, **kwargs):
+        if mode.startswith("r") and path.is_relative_to(project) and ".git" not in path.parts:
+            raise AssertionError(f"warm check opened source contents: {path}")
+        return original_open(path, mode, *args, **kwargs)
+    monkeypatch.setattr(Path, "open", guard_source_reads)
+    assert not auto._scope_state_needs_snapshot(project, [point])
+
+
+def test_cached_digest_matches_uncached_for_path_and_metadata_changes(workspace):
+    project = workspace.project
+    ignored = project / "ignored.txt"
+    ignored.write_text("ignored saved")
+    (project / ".snapshots").mkdir()
+    (project / ".snapshots/point").write_text("excluded")
+    tracked_snapshot_named = project / "docs/.snapshots/example.txt"
+    tracked_snapshot_named.parent.mkdir(parents=True)
+    tracked_snapshot_named.write_text("tracked source")
+    git(project, "add", "docs/.snapshots/example.txt")
+    previous = saved.source_digest(project, use_cache=True)
+    assert previous == saved.source_digest(project)
+    (project / ".snapshots/point").write_text("changed excluded")
+    assert saved.source_digest(project, use_cache=True) == previous
+
+    def expect_change():
+        nonlocal previous
+        current = saved.source_digest(project, use_cache=True)
+        assert current == saved.source_digest(project)
+        assert current != previous
+        previous = current
+
+    ignored.write_text("changed ignored")
+    expect_change()
+    tracked_snapshot_named.write_text("changed tracked source")
+    expect_change()
+    (project / "added.txt").write_text("added")
+    expect_change()
+    (project / "added.txt").rename(project / "renamed.txt")
+    expect_change()
+    (project / "renamed.txt").chmod(0o600)
+    expect_change()
+    (project / "link").symlink_to("source.txt")
+    expect_change()
+    (project / "link").unlink()
+    (project / "link").symlink_to("renamed.txt")
+    expect_change()
+    (project / "renamed.txt").unlink()
+    expect_change()
+    ignored.unlink()
+    expect_change()
+    (project / "source.txt").unlink()
+    expect_change()
+
+
+def test_cached_digest_rehashes_same_size_edit_with_restored_mtime(workspace):
+    project = workspace.project
+    path = project / "source.txt"
+    before = path.stat()
+    old_digest = saved.source_digest(project, use_cache=True)
+    path.write_text("different\n")
+    os.utime(path, ns=(before.st_atime_ns, before.st_mtime_ns))
+    assert path.stat().st_size == before.st_size
+    assert path.stat().st_mtime_ns == before.st_mtime_ns
+    assert path.stat().st_ctime_ns != before.st_ctime_ns
+    assert saved.source_digest(project, use_cache=True) == saved.source_digest(project)
+    assert saved.source_digest(project, use_cache=True) != old_digest
+
+
+def test_invalid_cache_and_mid_read_change_rehash_safely(workspace, monkeypatch):
+    project = workspace.project
+    path = project / "source.txt"
+    original = saved.source_digest(project, use_cache=True)
+    cache_path = project / ".git/st/source-digests-v1.json"
+    cache_path.write_text("{broken json")
+    reads = []
+    original_open = Path.open
+    def race_once(candidate, mode="r", *args, **kwargs):
+        if candidate == path and mode == "rb":
+            reads.append(candidate)
+            if len(reads) == 1:
+                path.write_text("new source\n")
+        return original_open(candidate, mode, *args, **kwargs)
+    monkeypatch.setattr(Path, "open", race_once)
+    current = saved.source_digest(project, use_cache=True)
+    assert len(reads) >= 2
+    assert current == saved.source_digest(project)
+    assert current != original
+    assert json.loads(cache_path.read_text())["version"] == digest_cache._VERSION
 
 
 def test_pressure_skip_is_truthful_and_cleanup_continues(workspace, monkeypatch):
