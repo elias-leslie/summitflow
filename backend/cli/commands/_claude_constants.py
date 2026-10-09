@@ -7,7 +7,8 @@ from pathlib import Path
 from typing import Any
 
 _AGENT_HUB_PROJECT_ID = "agent-hub"
-_DEFAULT_MODEL = "claude-sonnet-4-6"
+# Claude Code CLI alias; the CLI resolves it to the current Sonnet release.
+_DEFAULT_MODEL = "sonnet"
 _DEFAULT_TIMEOUT_SECONDS = 7200
 _DEFAULT_SOURCE = "st-cli"
 _DEFAULT_MAX_SUBAGENTS = 4

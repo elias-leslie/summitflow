@@ -152,7 +152,7 @@ def test_agent_run_adhoc_derives_coding_workspec_from_task_type() -> None:
         mock_call.return_value = {
             "content": "done",
             "session_id": "sess-adhoc",
-            "model": "claude-sonnet-4-6",
+            "model": "claude-sonnet-5-5",
         }
 
         result = runner.invoke(

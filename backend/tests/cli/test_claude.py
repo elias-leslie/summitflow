@@ -120,7 +120,7 @@ def test_claude_task_passes_effort_skills_and_system_prompt(tmp_path: Path) -> N
                 "task",
                 "task-ui",
                 "--model",
-                "claude-opus-4-6",
+                "opus",
                 "--effort",
                 "max",
                 "--append-system-prompt",
