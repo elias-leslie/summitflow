@@ -409,7 +409,7 @@ class TestExactPublication:
         })
         response = client.post("/api/projects/alpha/git/publish", json={"source_sha": sha})
         assert response.status_code == 200
-        publisher.assert_called_once_with("alpha", sha)
+        publisher.assert_called_once_with("alpha", sha, authorized_workflows=())
         assert response.json()["requested_source_commit"] == sha
 
 

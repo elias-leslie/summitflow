@@ -203,6 +203,19 @@ def _bindings(repo: Path, source: Path) -> list[tuple[Path, Path]]:
     return bindings
 
 
+def _create_mount_points(hidden: Path, root: Path, destinations: list[tuple[Path, bool]]) -> None:
+    """Mirror bind destinations under ``root`` inside ``hidden`` as mount points."""
+    for destination, is_dir in destinations:
+        if destination == root or not destination.is_relative_to(root):
+            continue
+        point = hidden / destination.relative_to(root)
+        if is_dir:
+            point.mkdir(mode=0o700, parents=True, exist_ok=True)
+        else:
+            point.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
+            point.touch(mode=0o600, exist_ok=True)
+
+
 def _sandbox_command(repo: Path, source: Path, metadata: Path, common: Path,
                      temporary: Path, bindings: list[tuple[Path, Path]],
                      sha: str, scope: tuple[str, ...], task_id: str, reuse: bool,
@@ -228,6 +241,11 @@ def _sandbox_command(repo: Path, source: Path, metadata: Path, common: Path,
     # mask only that validated native sibling, retaining tool aliases read-only.
     caller_scratch = Path(os.environ.get("TMPDIR", "/tmp"))
     caller_aliases = Path(os.environ.get("ST_NATIVE_TOOL_ALIAS_ROOT", "/var/tmp"))
+    # Callers such as tests may point TMPDIR deeper inside that native scratch;
+    # mask its whole native sibling root, not only the nested directory.
+    if ("ST_NATIVE_TOOL_ALIAS_ROOT" in os.environ and caller_scratch.is_relative_to(caller_aliases.parent)
+            and not caller_scratch.is_relative_to(caller_aliases) and caller_scratch != caller_aliases.parent):
+        caller_scratch = caller_aliases.parent / caller_scratch.relative_to(caller_aliases.parent).parts[0]
     if ("ST_NATIVE_TOOL_ALIAS_ROOT" in os.environ and caller_scratch != caller_aliases
             and caller_scratch.parent == caller_aliases.parent):
         try:
@@ -237,8 +255,13 @@ def _sandbox_command(repo: Path, source: Path, metadata: Path, common: Path,
             raise acceptance.AcceptanceError(f"Unsafe inherited native scratch: {exc}") from exc
         hidden = temporary / "n"
         hidden.mkdir(mode=0o700)
-        if temporary.is_relative_to(caller_scratch):
-            (hidden / temporary.relative_to(caller_scratch)).mkdir(parents=True)
+        # The masked root is read-only, so bwrap cannot create later mount
+        # points beneath it. Pre-create one for every destination it covers.
+        destinations = [(temporary, True), (repo, source.is_dir()), (lane, True)]
+        if common != repo / ".git":
+            destinations.append((common, metadata.is_dir()))
+        destinations.extend((canonical, original.is_dir()) for original, canonical in bindings)
+        _create_mount_points(hidden, caller_scratch, destinations)
         command.extend(["--ro-bind", str(hidden), str(caller_scratch)])
     if private_var_tmp is not None:
         # Only outer acceptance requests this private fallback. Nested native

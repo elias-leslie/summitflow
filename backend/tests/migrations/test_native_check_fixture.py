@@ -111,6 +111,12 @@ def test_python_stage_has_measured_budget_and_bounded_cleanup_reserves(prepared_
         "tests/cli/test_saved_work_snapshots.py::test_native_btrfs_shared_capture_readonly_recovery_and_isolated_restore",
         "tests/cli/test_saved_work_snapshots.py::test_native_nested_saved_source_is_refused_and_disposable_tracked_fixture_preserved",
     }
+    # A short private pytest base keeps tmp_path AF_UNIX sockets under the
+    # 108-byte limit when TMPDIR is deep mounted scratch.
+    basetemp = Path(next(argument for argument in runs[1][0] if argument.startswith("--basetemp="))
+                    .removeprefix("--basetemp="))
+    assert basetemp.parent == Path(fixture.tempfile.gettempdir()) and len(basetemp.name) <= 8
+    assert not basetemp.exists()
     owner = next(item for item in tomllib.loads(config.read_text())["native"]["stages"]
                  if item["id"] == "owner-btrfs-snapshots")
     assert owner["required"] is False and owner["applicable"] is False
@@ -156,6 +162,9 @@ def test_fixture_maps_docker_host_mount_but_keeps_sandbox_socket_url(prepared_fi
         socket = Path(parse_qs(urlsplit(environment["DATABASE_URL"]).query)["host"][0])
         create = next(arguments for arguments, _env in operations if arguments[0] == "create")
         mount = create[create.index("--mount") + 1]
+        # The mapping names this process's private /tmp even when TMPDIR is
+        # deep host scratch, as in direct native stages.
+        assert socket.is_relative_to("/tmp")
         assert mount == f"type=bind,source={host / socket.relative_to('/tmp')},target=/var/run/postgresql"
         assert str(host) not in environment["DATABASE_URL"]
 

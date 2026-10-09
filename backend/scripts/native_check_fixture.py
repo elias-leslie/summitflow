@@ -73,14 +73,17 @@ def database_fixture(*, lifetime_seconds: int = LIFETIME_SECONDS):
 
     signal.signal(signal.SIGTERM, interrupted)
     record("creating")
-    temporary = tempfile.TemporaryDirectory(prefix="st-native-db-")
+    mapping = os.environ.get("ST_NATIVE_TMP_HOST_ROOT")
+    # A scratch mapping translates this process's private /tmp to its host
+    # backing path, so the socket must live there whatever TMPDIR names.
+    temporary = tempfile.TemporaryDirectory(prefix="st-native-db-", dir="/tmp" if mapping else None)
     try:
         directory = Path(temporary.name)
         socket = directory / "socket"
         socket.mkdir(mode=0o777)
         socket.chmod(0o777)
         host_socket = socket
-        if mapping := os.environ.get("ST_NATIVE_TMP_HOST_ROOT"):
+        if mapping:
             host_root = Path(mapping)
             if (not host_root.is_absolute() or ".." in host_root.parts or host_root == Path("/tmp")
                     or not host_root.is_dir() or host_root.resolve() != host_root):
@@ -171,17 +174,25 @@ def main() -> int:
         ]
         # Each xdist worker bootstraps its own database in this superuser fixture.
         workers = ["-n", str(PYTHON_TEST_WORKERS)] if mode == "python" else []
-        result = subprocess.run(
-            [sys.executable, "-m", "pytest", *tests, *workers, "--junitxml=" + str(report),
-             "--deselect=tests/cli/test_saved_work_snapshots.py::test_native_btrfs_shared_capture_readonly_recovery_and_isolated_restore",
-             "--deselect=tests/cli/test_saved_work_snapshots.py::test_native_nested_saved_source_is_refused_and_disposable_tracked_fixture_preserved",
-             "-k", "not test_live_owner_lease_proxy_preserves_same_target_and_blocks_resume "
-             "and not test_real_detached_result_survives_collection "
-             "and not (test_pre_push_chains_same_arguments_and_stdin and global)"],
-            cwd=BACKEND, env=environment,
-            timeout=PYTHON_TEST_TIMEOUT_SECONDS if mode == "python" else FLEET_LIFETIME_SECONDS - 240,
-            capture_output=True, text=True, check=False,
-        )
+        # Direct stages keep TMPDIR on deep mounted scratch. A short private
+        # base keeps tests' tmp_path AF_UNIX sockets within the 108-byte limit
+        # without moving bulk temporary files off that scratch.
+        basetemp = tempfile.TemporaryDirectory(prefix="", ignore_cleanup_errors=True)
+        try:
+            result = subprocess.run(
+                [sys.executable, "-m", "pytest", *tests, *workers, "--junitxml=" + str(report),
+                 "--basetemp=" + basetemp.name,
+                 "--deselect=tests/cli/test_saved_work_snapshots.py::test_native_btrfs_shared_capture_readonly_recovery_and_isolated_restore",
+                 "--deselect=tests/cli/test_saved_work_snapshots.py::test_native_nested_saved_source_is_refused_and_disposable_tracked_fixture_preserved",
+                 "-k", "not test_live_owner_lease_proxy_preserves_same_target_and_blocks_resume "
+                 "and not test_real_detached_result_survives_collection "
+                 "and not (test_pre_push_chains_same_arguments_and_stdin and global)"],
+                cwd=BACKEND, env=environment,
+                timeout=PYTHON_TEST_TIMEOUT_SECONDS if mode == "python" else FLEET_LIFETIME_SECONDS - 240,
+                capture_output=True, text=True, check=False,
+            )
+        finally:
+            basetemp.cleanup()
         print(result.stdout.replace(password, "[fixture credential]"), end="")
         print(result.stderr.replace(password, "[fixture credential]"), file=sys.stderr, end="")
         if report.is_file():

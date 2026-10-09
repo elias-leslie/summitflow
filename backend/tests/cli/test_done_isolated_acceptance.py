@@ -138,6 +138,48 @@ def test_portable_native_caller_scratch_stays_hidden_and_aliases_read_only(sandb
         assert marker.read_text() == "private caller state"
 
 
+def test_masked_caller_scratch_keeps_mount_points_for_binds_beneath_it(monkeypatch):
+    # Regression: direct native stages run pytest with TMPDIR on scratch, so
+    # the project, its metadata and the temporary run all live beneath the
+    # read-only mask. bwrap cannot create their mount points there itself.
+    from cli.commands.done_task_acceptance import _sandbox_command
+
+    if not shutil.which("bwrap"):
+        pytest.skip("Installed managed isolation capability required")
+    with (tempfile.TemporaryDirectory(prefix="st-caller-", dir="/var/tmp") as scratch,
+          tempfile.TemporaryDirectory(prefix="st-alias-", dir="/var/tmp") as aliases):
+        root = Path(scratch)
+        # Tests point TMPDIR deeper inside the stage scratch; mask its root.
+        nested = root / "pytest-of-fixture/inherited"
+        nested.mkdir(parents=True)
+        monkeypatch.setenv("TMPDIR", str(nested))
+        monkeypatch.setenv("ST_NATIVE_TOOL_ALIAS_ROOT", aliases)
+        (root / "host-only").write_text("private caller state")
+        repo = root / "nested/project"
+        source = root / "accepted/source"
+        metadata = root / "accepted/metadata"
+        common = root / "nested/common"
+        for directory in (repo, source, metadata, common):
+            directory.mkdir(parents=True)
+        (source / "marker").write_text("accepted source")
+        local = repo / "local.toml"
+        local.write_text("local input")
+        temporary = root / "runs/attempt"
+        temporary.mkdir(parents=True)
+        command = _sandbox_command(repo, source, metadata, common, temporary, [(local, local)],
+                                   "fixture", (), "fixture", False)
+        script = (
+            "from pathlib import Path\n"
+            f"assert not Path({str(root / 'host-only')!r}).exists()\n"
+            f"assert Path({str(repo / 'marker')!r}).read_text() == 'accepted source'\n"
+            f"assert Path({str(local)!r}).read_text() == 'local input'\n"
+            f"assert Path({str(common)!r}).is_dir()\n"
+        )
+        result = subprocess.run([*command[:command.index("--") + 1], sys.executable, "-P", "-c", script],
+                                capture_output=True, text=True, check=False)
+        assert result.returncode == 0, result.stderr
+
+
 def test_isolated_home_retains_only_read_only_fingerprinted_shared_config(sandbox_probe, tmp_path: Path, monkeypatch):
     host_home = tmp_path / "host-home"
     host_home.mkdir()
