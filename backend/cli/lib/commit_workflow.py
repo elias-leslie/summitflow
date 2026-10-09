@@ -133,7 +133,7 @@ def _require_foreign_leases_clear(repo: Path, changed_paths: Sequence[str]) -> N
 
 
 def _addable_paths(repo: Path, paths: Sequence[str]) -> list[str]:
-    """Drop paths that git refuses to `add` (currently gitignored).
+    """Drop paths that git refuses to `add` (gitignored or already-staged deletions).
 
     Common case: user runs `git rm --cached file` then adds the file to
     `.gitignore`, then asks st commit to commit both. The .gitignore change
@@ -145,6 +145,10 @@ def _addable_paths(repo: Path, paths: Sequence[str]) -> list[str]:
     for path in paths:
         check = run_git(repo, ["check-ignore", "--quiet", "--", path])
         if check.returncode == 0:
+            continue
+        # A `git rm` deletion is already staged and has no pathspec left to add.
+        if (not (repo / path).exists()
+                and run_git(repo, ["ls-files", "--error-unmatch", "--", path]).returncode != 0):
             continue
         addable.append(path)
     return addable

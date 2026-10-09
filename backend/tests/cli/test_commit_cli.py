@@ -297,6 +297,26 @@ def test_commit_repo_skips_gitignored_paths_in_add_step(tmp_path: Path) -> None:
     assert result["status"] == "SUCCESS"
 
 
+def test_addable_paths_skips_already_staged_deletion(tmp_path: Path) -> None:
+    from cli.lib import commit_workflow
+
+    def git(*args: str) -> None:
+        subprocess.run(["git", *args], cwd=tmp_path, check=True, capture_output=True)
+
+    git("init", "-q")
+    for name in ("staged.txt", "unstaged.txt", "kept.txt"):
+        (tmp_path / name).write_text(name)
+    git("add", ".")
+    git("-c", "user.name=t", "-c", "user.email=t@example.invalid", "commit", "-qm", "seed")
+    git("rm", "-q", "staged.txt")
+    (tmp_path / "unstaged.txt").unlink()
+    (tmp_path / "kept.txt").write_text("changed")
+
+    assert commit_workflow._addable_paths(tmp_path, ["staged.txt", "unstaged.txt", "kept.txt"]) == [
+        "unstaged.txt", "kept.txt",
+    ]
+
+
 @pytest.mark.parametrize(
     ("full", "mode"),
     [(False, "--quick"), (True, "--check")],
