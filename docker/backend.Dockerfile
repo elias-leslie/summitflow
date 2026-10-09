@@ -45,6 +45,10 @@ RUN uv sync --frozen --no-dev --no-editable --no-install-project \
 # Copy application source
 COPY backend/app ./app
 COPY backend/cli ./cli
+COPY backend/monitor_control ./monitor_control
+COPY backend/monitor_extended ./monitor_extended
+COPY backend/monitor_observe ./monitor_observe
+COPY backend/monitor_reader ./monitor_reader
 COPY backend/alembic.ini ./
 COPY backend/alembic ./alembic
 
@@ -74,6 +78,10 @@ WORKDIR /app
 COPY --chown=appuser:appuser --from=builder /app/backend/.venv /app/backend/.venv
 COPY --chown=appuser:appuser --from=builder /app/backend/app ./app
 COPY --chown=appuser:appuser --from=builder /app/backend/cli ./cli
+COPY --chown=appuser:appuser --from=builder /app/backend/monitor_control ./monitor_control
+COPY --chown=appuser:appuser --from=builder /app/backend/monitor_extended ./monitor_extended
+COPY --chown=appuser:appuser --from=builder /app/backend/monitor_observe ./monitor_observe
+COPY --chown=appuser:appuser --from=builder /app/backend/monitor_reader ./monitor_reader
 COPY --chown=appuser:appuser --from=builder /app/backend/alembic.ini ./
 COPY --chown=appuser:appuser --from=builder /app/backend/alembic ./alembic
 
