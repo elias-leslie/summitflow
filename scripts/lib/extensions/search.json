@@ -21,12 +21,10 @@
       "surface": "st.search",
       "tier": "reference",
       "cmd": "st search \"query\"",
-      "when": "optional precision navigation for ranked discovery and current definitions; search before adding duplicate code and extend a close match",
+      "when": "optional precision navigation for ranked discovery; search before adding code and extend a close match",
       "precautions": [
-        "prefer ST when ranked discovery or current source excerpts help; use rg/rg --files for exact literals, regex, multiple needles, file enumeration and exhaustive references",
-        "use 1-4 identifier or filename terms and consume the returned source; --text joins arguments as one case-insensitive literal phrase; --file lists symbols independently of query",
-        "--budget applies to precision context only; whole-file reduction estimates are hypothetical, not native workflow savings; --scope checkout supports alternate or offline roots",
-        "on a close match, extend/reuse it rather than adding a near-duplicate"
+        "use rg/rg --files for exact literals, regex, multiple needles, file enumeration and exhaustive references",
+        "query with 1-4 identifier or filename terms; flags and scope options are in st search --help"
       ]
     }
   ],
