@@ -326,6 +326,23 @@ def test_accept_revision_reuses_accepted_head_while_preserving_unrelated_wip(rep
     assert len(calls) == 1
 
 
+def test_dirty_head_reuses_validated_receipt_stored_under_another_basis_key(repo: Path) -> None:
+    calls: list[list[str]] = []
+    accepted = acceptance.accept_revision(repo, sha="HEAD", runner=successful_runner(calls))
+    artifact = Path(accepted["acceptance_artifact"])
+    # An isolated-basis receipt is stored under a key a dirty actual lookup never derives.
+    artifact.rename(artifact.with_name("isolated-basis-key.json"))
+    (repo / "unrelated.py").write_text("other agent work\n")
+
+    reused = acceptance.accept_revision(repo, sha="HEAD", runner=successful_runner(calls))
+
+    assert reused["acceptance_id"] == accepted["acceptance_id"]
+    assert reused["reused"] is True and reused["working_tree_clean"] is False
+    assert len(calls) == 1
+    with pytest.raises(acceptance.AcceptanceError, match="clean checkout"):
+        acceptance.accept_revision(repo, sha="HEAD", reuse=False, runner=successful_runner(calls))
+
+
 def test_permission_only_change_refuses_receipt_reuse_and_runs_the_guard(repo: Path) -> None:
     protected = repo / "protected.json"
     protected.write_text('{}\n')

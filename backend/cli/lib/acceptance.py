@@ -939,6 +939,34 @@ def acceptance_artifact_directory(repo: Path) -> Path:
     return _git_common_dir(repo) / "st" / "acceptance"
 
 
+_RECEIPT_SCAN_LIMIT = 16
+
+
+def _validated_receipt_for_commit(
+    repo: Path, commit: str, plan: Mapping[str, Any], coverage: str,
+) -> dict[str, Any] | None:
+    """Return the newest valid successful receipt for commit under the same plan."""
+    directory = acceptance_artifact_directory(repo)
+    try:
+        candidates = sorted(directory.glob("*.json"), key=lambda path: path.stat().st_mtime, reverse=True)
+    except OSError:
+        return None
+    for artifact in candidates[:_RECEIPT_SCAN_LIMIT]:
+        try:
+            value = json.loads(artifact.read_text())
+        except (OSError, ValueError):
+            continue
+        if (not isinstance(value, dict) or value.get("coverage") != coverage
+                or (value.get("source") or {}).get("commit") != commit
+                or (value.get("plan") or {}).get("fingerprint") != plan["fingerprint"]):
+            continue
+        try:
+            return validate_acceptance_receipt(repo, artifact, sha=commit)
+        except AcceptanceError:
+            continue
+    return None
+
+
 def _receipt_path(repo: Path, key: str) -> Path:
     directory = acceptance_artifact_directory(repo)
     directory.mkdir(parents=True, exist_ok=True)
@@ -1215,6 +1243,19 @@ def accept_revision(
                     "reuse_lookup_ms": round((time.monotonic() - acceptance_started) * 1000, 3),
                 }
         if not before["clean"]:
+            # The cache key binds execution basis and working modes, so an
+            # isolated receipt for this HEAD never matches a dirty actual lookup.
+            # Fall back to the same validation an explicit --acceptance gets.
+            validated = _validated_receipt_for_commit(repo, before["commit"], plan, coverage) if reuse else None
+            if validated is not None:
+                return {
+                    **validated,
+                    "task_id": task_id or validated.get("task_id", ""),
+                    "scope": normalized_scope or validated.get("scope", []),
+                    "reused": True,
+                    "working_tree_clean": False,
+                    "reuse_lookup_ms": round((time.monotonic() - acceptance_started) * 1000, 3),
+                }
             raise AcceptanceError("full acceptance requires a clean checkout including nonignored untracked files; no reusable accepted-source receipt")
 
     started_at = datetime.now(UTC).isoformat()
