@@ -1,9 +1,10 @@
 [Unit]
-Description=Run Btrfs autosnapshot sweep every five minutes
+Description=Run Btrfs autosnapshot sweep every thirty minutes
 
 [Timer]
-OnBootSec=5min
-OnUnitActiveSec=5min
+OnBootSec=10min
+OnUnitActiveSec=30min
+RandomizedDelaySec=2min
 Unit=btrfs-autosnapshot.service
 Persistent=true
 
