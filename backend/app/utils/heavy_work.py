@@ -15,6 +15,7 @@ import re
 import shutil
 import stat
 import subprocess
+import sys
 import threading
 import time
 import uuid
@@ -410,7 +411,7 @@ def _wait_status(lane: str, label: str, since: float, activity: int, admission: 
         finally:
             os.close(descriptor)
     print(f"[st] Waiting for shared {work_class}-work lane: {_public_label(label)} "
-          f"class={work_class} wait_age={time.monotonic() - since:.1f}s {holder}", flush=True)
+          f"class={work_class} wait_age={time.monotonic() - since:.1f}s {holder}", file=sys.stderr, flush=True)
 
 
 def _try_lane(admission: int, activity: int) -> bool:

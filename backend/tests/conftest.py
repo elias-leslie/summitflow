@@ -69,6 +69,53 @@ if _test_db_url:
         f"\n[TEST] Using TEST_DATABASE_URL: {_test_db_url.split('@')[1] if '@' in _test_db_url else _test_db_url}"
     )
 
+
+def _xdist_worker_database(url: str, worker: str) -> str:
+    """Give each pytest-xdist worker its own database beside the shared test one.
+
+    Tests commit shared rows, so concurrent workers on one database deadlock and
+    observe each other's data. The role must be able to create databases (CI and
+    the native fixture own a superuser); otherwise a superuser provisions each
+    `<database>_gw<N>` once as a copy of the shared test database.
+    """
+    from urllib.parse import urlsplit, urlunsplit
+
+    import psycopg
+    from psycopg import sql
+
+    parts = urlsplit(url)
+    name = f"{parts.path.lstrip('/')}_{worker}"
+    with psycopg.connect(url, autocommit=True) as conn:
+        conn.execute("SELECT pg_advisory_lock(hashtext('summitflow-xdist-databases'))")
+        if conn.execute("SELECT 1 FROM pg_database WHERE datname = %s", (name,)).fetchone() is None:
+            try:
+                conn.execute(sql.SQL("CREATE DATABASE {}").format(sql.Identifier(name)))
+            except psycopg.errors.InsufficientPrivilege:
+                sys.exit(f"pytest-xdist worker database {name} is missing and this role cannot create it; "
+                         f"as a superuser run: createdb -O {parts.username} -T {parts.path.lstrip('/')} {name}")
+    return urlunsplit(parts._replace(path=f"/{name}"))
+
+
+def _bootstrap_worker_database(url: str) -> None:
+    """Give a new, empty worker database the bootstrapped schema CI gives the shared one."""
+    import psycopg
+
+    with psycopg.connect(url) as conn:
+        if conn.execute("SELECT count(*) FROM pg_tables WHERE schemaname = 'public'").fetchone() != (0,):
+            return
+        from scripts.verify_bootstrap_schema import alembic_config, restore_snapshot
+
+        restore_snapshot(conn)
+    from alembic import command
+
+    command.upgrade(alembic_config(), "head")
+
+
+if _xdist_worker := os.environ.get("PYTEST_XDIST_WORKER"):
+    os.environ["DATABASE_URL"] = _xdist_worker_database(os.environ["DATABASE_URL"], _xdist_worker)
+    os.environ["TEST_DATABASE_URL"] = os.environ["DATABASE_URL"]
+    _bootstrap_worker_database(os.environ["DATABASE_URL"])
+
 # Unit/API tests should not inherit an operator's live Cloudflare Access config
 # from ~/.env.local. Tests that need Cloudflare mode patch settings directly.
 os.environ["CLOUDFLARE_ACCESS_TEAM_DOMAIN"] = ""

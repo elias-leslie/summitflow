@@ -28,6 +28,10 @@ def adjusted_tool_args(
     should_inject = has_path_arg and not has_cov_control
     if should_inject and (root is None or read_pytest_no_cov(root)):
         return base_args, ["--no-cov", *extra_args]
+    has_worker_control = any(arg.endswith("no:xdist") or arg.startswith(("-n", "--numprocesses")) for arg in extra_args)
+    workers = read_pytest_workers(root) if root is not None and not has_path_arg and not has_worker_control else None
+    if workers is not None:
+        return base_args, ["-n", str(workers), *extra_args]
     return base_args, extra_args
 
 
@@ -128,20 +132,37 @@ def read_pytest_no_cov(root: Path) -> bool:
         [pytest]
         no_cov = false
     """
-    config_path = root / ".st-check.toml"
-    if not config_path.is_file():
-        return True
-    try:
-        data = tomllib.loads(config_path.read_text(encoding="utf-8"))
-    except (OSError, tomllib.TOMLDecodeError):
-        return True
-    section = data.get("pytest")
-    if not isinstance(section, dict):
-        return True
-    value = section.get("no_cov")
+    value = _pytest_section(root).get("no_cov")
     if isinstance(value, bool):
         return value
     return True
+
+
+def read_pytest_workers(root: Path) -> int | None:
+    """Return the pytest-xdist worker count for full-suite runs, if configured.
+
+    Focused runs (path arguments) stay serial: worker start-up would dominate.
+
+    Configured via `.st-check.toml`:
+        [pytest]
+        workers = 8
+    """
+    value = _pytest_section(root).get("workers")
+    if isinstance(value, int) and not isinstance(value, bool) and value > 1:
+        return value
+    return None
+
+
+def _pytest_section(root: Path) -> dict:
+    config_path = root / ".st-check.toml"
+    if not config_path.is_file():
+        return {}
+    try:
+        data = tomllib.loads(config_path.read_text(encoding="utf-8"))
+    except (OSError, tomllib.TOMLDecodeError):
+        return {}
+    section = data.get("pytest")
+    return section if isinstance(section, dict) else {}
 
 
 def tool_env(root: Path, environ: Mapping[str, str], name: str | None = None) -> dict[str, str]:

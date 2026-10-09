@@ -406,11 +406,11 @@ def test_pre_push_chains_same_arguments_and_stdin(history, tmp_path, adapter) ->
     assert capture.read_text() == "fixture\n" + str(repo) + "\n" + data
     repo_hook.write_text("#!/bin/sh\nexit 7\n")
     result = subprocess.run(["bash", str(hook_path), "fixture", str(repo)], cwd=repo,
-                            input=data, text=True, capture_output=True, env=env, timeout=10)
+                            input=data, text=True, capture_output=True, env=env, timeout=60)
     assert result.returncode == 7
     repo_hook.unlink()
     repo_hook.symlink_to(hook_path)
     git("config", "core.hooksPath", str(hook_path.parent))
     result = subprocess.run(["bash", str(hook_path), "fixture", str(repo)], cwd=repo,
-                            input=data, text=True, capture_output=True, env=env, timeout=10)
+                            input=data, text=True, capture_output=True, env=env, timeout=60)
     assert result.returncode == 0, result.stderr

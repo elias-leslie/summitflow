@@ -58,7 +58,7 @@ jobs:
       - name: Verify fresh schema and upgrade compatibility
         run: uv run python scripts/verify_bootstrap_schema.py
       - name: Test backend
-        run: uv run pytest
+        run: uv run pytest -n auto
       - name: Build backend package
         run: uv build
 

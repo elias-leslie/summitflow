@@ -272,7 +272,7 @@ def test_wait_status_is_bounded_and_verifies_holder(lane: Path, capsys: pytest.C
         thread = threading.Thread(target=waiter)
         thread.start()
         assert not entered.wait(0.15)
-        output = capsys.readouterr().out
+        output = capsys.readouterr().err
         assert "class=heavy" in output and "wait_age=" in output
         assert f"holder=suite project=fixture-project pid={os.getpid()} active_age=" in output
         assert len(output.splitlines()[0]) < 400
@@ -325,7 +325,7 @@ def test_old_protocol_owner_blocks_new_queue_without_replacing_capacity_files(la
         if actor is not None:
             output = actor.communicate(timeout=5)
             assert actor.returncode == 0, output
-            assert "holder=unknown" in output[0]
+            assert "holder=unknown" in output[1]
     assert [(lane / name).stat().st_ino for name in ("admission.lock", "activity.lock")] == before
 
 
