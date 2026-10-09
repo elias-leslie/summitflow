@@ -567,6 +567,20 @@ def start(
     raise typer.Exit(service_ops.start_services(_load(project)))
 
 
+@app.command("stop-unit")
+def stop_unit(
+    project: Annotated[str, typer.Argument(help="Project id that created the unit")],
+    unit: Annotated[str, typer.Argument(help="Transient <project>-*.service or .scope unit")],
+) -> None:
+    """Stop one transient user unit a project created (e.g. a leftover smoke-test unit).
+
+    Refuses persistent units, managed services and names outside the project prefix.
+    """
+    code, state = service_ops.stop_transient_unit(_load(project), unit)
+    typer.echo(f"STOP-UNIT:{project}|unit={unit}|state={state}")
+    raise typer.Exit(code)
+
+
 @app.command()
 def stop(
     project: Annotated[str, typer.Argument(help="Project id to stop")] = "summitflow",

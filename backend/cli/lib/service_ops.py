@@ -524,6 +524,34 @@ def stop_services(project: ProjectServices) -> int:
     return errors
 
 
+_TRANSIENT_UNIT = re.compile(r"[A-Za-z0-9][A-Za-z0-9_.@-]{0,200}\.(?:service|scope)")
+
+
+def stop_transient_unit(project: ProjectServices, unit: str) -> tuple[int, str]:
+    """Stop one transient user unit the project created, refusing anything else.
+
+    Qualifying units are named ``<project>-*.service|.scope``, have no unit file
+    (systemd reports Transient=yes) and are outside the managed service set, e.g.
+    smoke-test or harness units left by ``systemd-run --user --unit=...``.
+    """
+    prefix = project.project_id + "-"
+    if not _TRANSIENT_UNIT.fullmatch(unit) or not unit.startswith(prefix):
+        return 2, f"refused:name_outside_{prefix}*.service|.scope"
+    if unit in project.all_services:
+        return 2, "refused:managed_service;use_st_service_stop"
+    shown = systemctl("show", "--property=LoadState,Transient,ActiveState", "--", unit)
+    if shown.returncode:
+        return 1, "unavailable:unit_state_unreadable"
+    state = dict(line.split("=", 1) for line in shown.stdout.splitlines() if "=" in line)
+    if state.get("LoadState") == "not-found":
+        return 0, "absent"
+    if state.get("Transient") != "yes":
+        return 2, "refused:not_transient"
+    if state.get("ActiveState") in {"inactive", "failed"}:
+        return 0, "already_" + state["ActiveState"]
+    return (0, "stopped") if systemctl("stop", "--", unit).returncode == 0 else (1, "stop_failed")
+
+
 def ensure_infra(project: ProjectServices | None = None) -> int:
     compose_root = project.root if project is not None else get_repo_root()
     config_root = (

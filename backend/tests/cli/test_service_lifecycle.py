@@ -722,3 +722,37 @@ def test_host_monitor_build_prefers_rustup_cargo(tmp_path, monkeypatch) -> None:
     assert service_ops._cargo() == str(cargo)
     monkeypatch.setenv("CARGO_HOME", str(tmp_path / "missing"))
     assert service_ops._cargo() == "cargo"
+
+
+@pytest.mark.parametrize("unit, shown, expected, stopped", [
+    ("example-smoke-1.service", "LoadState=loaded\nTransient=yes\nActiveState=active\n", "stopped", True),
+    ("example-harness.scope", "LoadState=loaded\nTransient=yes\nActiveState=inactive\n", "already_inactive", False),
+    ("example-gone.service", "LoadState=not-found\nTransient=no\nActiveState=inactive\n", "absent", False),
+    ("example-persistent.service", "LoadState=loaded\nTransient=no\nActiveState=active\n", "refused:not_transient", False),
+    ("backend.service", None, "refused:name_outside_example-*.service|.scope", False),
+    ("other-smoke.service", None, "refused:name_outside_example-*.service|.scope", False),
+    ("example-x.timer", None, "refused:name_outside_example-*.service|.scope", False),
+    ("example--help.service; true", None, "refused:name_outside_example-*.service|.scope", False),
+])
+def test_stop_unit_only_stops_project_transient_units(monkeypatch, project, unit, shown, expected, stopped):
+    calls = []
+
+    def systemctl(*args):
+        calls.append(args)
+        return subprocess.CompletedProcess(args, 0, shown if args[0] == "show" else "", "")
+
+    monkeypatch.setattr(service_ops, "systemctl", systemctl)
+    monkeypatch.setattr(service, "_load", lambda _: project)
+    result = CliRunner().invoke(service.app, ["stop-unit", "example", unit])
+    assert f"state={expected}" in result.output
+    assert result.exit_code == (2 if expected.startswith("refused") else 0)
+    assert (("stop", "--", unit) in calls) is stopped
+    if shown is None:
+        assert calls == []
+
+
+def test_stop_unit_refuses_managed_service_with_project_prefix(monkeypatch, project):
+    monkeypatch.setattr(service_ops, "systemctl", Mock(side_effect=AssertionError("no systemctl")))
+    managed = replace(project, optional_workers=("example-worker.service",))
+    code, state = service_ops.stop_transient_unit(managed, "example-worker.service")
+    assert (code, state) == (2, "refused:managed_service;use_st_service_stop")
