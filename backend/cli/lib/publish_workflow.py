@@ -144,7 +144,18 @@ def publish_git(repo: Path, *, sha: str, task_id: str, message: str,
                 pull = existing_pull or client.pull_request(head, plan['base'], message, sha)
                 publish_branch = pull.get('head', {}).get('ref') if existing_pull else head
                 result.update({'pr_url': pull['html_url'], 'publish_branch': publish_branch})
-                evidence = client.finish_pr(pull['number'], sha, plan)
+                base = plan['base']
+
+                def fast_forward() -> None:
+                    if activity_allowed is not None and not activity_allowed():
+                        raise PublishError('Publication ownership is unavailable', unavailable=True,
+                                           reason='publication_busy')
+                    moved = run_git(repo, ['push', '--porcelain', remote_name, f'{sha}:refs/heads/{base}'])
+                    if moved.returncode:
+                        raise PublishError('Remote base no longer fast-forwards to this source',
+                                           reason='remote_base_diverged')
+
+                evidence = client.finish_pr(pull['number'], sha, plan, fast_forward=fast_forward)
                 if evidence.get('merge_sha'):
                     result['merge_sha'] = evidence['merge_sha']
                     current = run_git(repo, ['rev-parse', 'HEAD']) if resume and reconcile_checkout else None

@@ -171,3 +171,16 @@ def test_unrelated_publication_defect_does_not_gate_local_completion(monkeypatch
     })
     gates = completion_gates({"id": "normal", "project_id": "project", "verification_result": {}})
     assert gates == []
+
+
+def test_mirror_publication_needs_no_receipt_only_in_mirror_mode():
+    mirrored = {"state": "not_required", "reason": "mirror_publication", "source_commit": SHA}
+    assert health.classify_observation(verified(acceptance=mirrored, publication_mode="mirror"))["state"] == "verified"
+    assert health.classify_observation(verified(acceptance=mirrored, publication_mode="nightly"))["state"] != "verified"
+    assert health.classify_observation(verified(acceptance={**mirrored, "source_commit": MERGE},
+                                                publication_mode="mirror"))["state"] != "verified"
+
+
+def test_fast_forward_publication_is_verified_on_the_accepted_commit_itself():
+    assert health.classify_observation(verified(merge_sha=SHA, ci={
+        "state": "success", "sha": SHA, "pr_checks": {"state": "success", "sha": SHA}}))["state"] == "verified"

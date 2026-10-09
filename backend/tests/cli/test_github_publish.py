@@ -429,3 +429,43 @@ def test_optional_checks_remain_visible_when_requirements_pass(monkeypatch):
     assert result["state"] == "success"
     assert result["requirements_state"] == "known"
     assert result["optional_checks"] == [{"name": "extra", "state": "failed", "app_id": None, "url": None}]
+
+
+@pytest.mark.parametrize(('rules', 'classic', 'fast_forward'), [
+    ([{'type': 'required_status_checks', 'parameters': {'required_status_checks': [{'context': 'backend'}]}}], None, True),
+    ([{'type': 'required_status_checks', 'parameters': {'required_status_checks': [{'context': 'backend'}]}},
+      {'type': 'pull_request', 'parameters': {}}], None, False),
+    ([{'type': 'merge_queue', 'parameters': {}}], None, False),
+    ([], {'required_pull_request_reviews': {'required_approving_review_count': 1}}, False),
+    ([], None, False),
+])
+def test_only_check_gated_bases_fast_forward(monkeypatch, rules, classic, fast_forward):
+    client = GitHub(Path('/repo'), 'owner/repo')
+    metadata = {'default_branch': 'main', 'allow_merge_commit': True}
+    monkeypatch.setattr(client, 'api', Mock(side_effect=[metadata, rules, classic]))
+    assert client.plan()['fast_forward'] is fast_forward
+
+
+def test_checked_source_fast_forwards_base_without_merge_commit(monkeypatch):
+    client = GitHub(Path('/repo'), 'owner/repo')
+    api = Mock(return_value={'head': {'sha': 'a'*40}, 'merged': False})
+    monkeypatch.setattr(client, 'api', api)
+    monkeypatch.setattr(client, 'observe', Mock(side_effect=[{'state': 'success', 'sha': 'a'*40},
+                                                            {'state': 'pending', 'sha': 'a'*40}]))
+    moved = Mock()
+    plan = {'required': [], 'merge_method': 'merge', 'base': 'main', 'fast_forward': True}
+    result = client.finish_pr(7, 'a'*40, plan, fast_forward=moved)
+    moved.assert_called_once_with()
+    assert result['merge_sha'] == 'a'*40 and result['merge_method'] == 'fast_forward'
+    assert result['pr_checks']['state'] == 'success'
+    assert api.call_count == 1  # never PUT pulls/7/merge
+
+
+def test_failed_pr_checks_never_move_the_base(monkeypatch):
+    client = GitHub(Path('/repo'), 'owner/repo')
+    monkeypatch.setattr(client, 'api', Mock(return_value={'head': {'sha': 'a'*40}, 'merged': False}))
+    monkeypatch.setattr(client, 'observe', Mock(return_value={'state': 'failed', 'sha': 'a'*40}))
+    moved = Mock()
+    plan = {'required': [], 'merge_method': 'merge', 'base': 'main', 'fast_forward': True}
+    assert client.finish_pr(7, 'a'*40, plan, fast_forward=moved)['state'] == 'failed'
+    moved.assert_not_called()

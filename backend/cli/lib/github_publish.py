@@ -157,7 +157,12 @@ class GitHub:
         method = next((value for value in methods if value in allowed and metadata.get(f'allow_{value}_merge' if value != 'merge' else 'allow_merge_commit')), None)
         if requires_pr and not method:
             raise GitHubError('No allowed pull request merge method available')
-        return {'base': base, 'required': required, 'requires_pr': requires_pr, 'merge_method': method}
+        # Required checks alone accept a direct push of a commit whose checks
+        # already passed elsewhere; review/queue rules require GitHub's merge.
+        fast_forward = requires_pr and not (classic.get('required_pull_request_reviews') or
+                                            any(rule['type'] in {'pull_request', 'merge_queue'} for rule in rules))
+        return {'base': base, 'required': required, 'requires_pr': requires_pr, 'merge_method': method,
+                'fast_forward': fast_forward}
 
     def observe(self, sha: str, required: list[dict[str, Any]], *, event: str = "push", branch: str | None = None) -> dict[str, Any]:
         checks = []
@@ -324,7 +329,8 @@ class GitHub:
         candidates.sort(key=lambda pull: (pull.get('state') != 'open', pull.get('number', 0)))
         return candidates[0] if candidates else None
 
-    def finish_pr(self, number: int, sha: str, plan: dict[str, Any]) -> dict[str, Any]:
+    def finish_pr(self, number: int, sha: str, plan: dict[str, Any],
+                  fast_forward: Callable[[], None] | None = None) -> dict[str, Any]:
         self.pull_number = number
         pull = self.api(f'pulls/{number}')
         if pull['head']['sha'] != sha:
@@ -336,6 +342,13 @@ class GitHub:
         evidence = self.observe(sha, plan['required'], event='pull_request', branch=plan['base'])
         if evidence['state'] not in {'success', 'not_applicable'}:
             return evidence
+        if plan.get('fast_forward') and fast_forward is not None:
+            # Move the base to the exact checked source: no merge commit, so the
+            # local accepted commit is the published one. GitHub still rejects
+            # the push unless required checks passed on this SHA.
+            fast_forward()
+            return {**self.observe(sha, [], branch=plan['base']), 'merge_sha': sha,
+                    'merge_method': 'fast_forward', 'pr_checks': evidence}
         merged = self.api(f'pulls/{number}/merge', method='PUT', body={'sha': sha, 'merge_method': plan['merge_method']})
         if not merged.get('merged'):
             raise GitHubError(f'Pull request merge not completed: {merged.get("message", "unknown reason")}')

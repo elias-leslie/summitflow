@@ -2,7 +2,7 @@
 import json
 import subprocess
 from pathlib import Path
-from unittest.mock import Mock
+from unittest.mock import ANY, Mock
 
 import pytest
 
@@ -420,4 +420,40 @@ def test_protected_publication_reuses_same_source_pr_on_different_task_branch(mo
     assert result['publish_branch'] == 'st/task-old'
     assert git.call_count == 1
     client.pull_request.assert_not_called()
-    client.finish_pr.assert_called_once_with(9, 'a' * 40, client.plan.return_value)
+    client.finish_pr.assert_called_once_with(9, 'a' * 40, client.plan.return_value, fast_forward=ANY)
+
+
+@pytest.mark.parametrize('rejected', [False, True])
+def test_check_gated_base_fast_forwards_to_the_exact_source(monkeypatch, rejected):
+    sha = 'a' * 40
+    client = Mock()
+    client.plan.return_value = {'base': 'main', 'requires_pr': True, 'required': [{'context': 'backend'}],
+                                'merge_method': 'merge', 'fast_forward': True}
+    client.base_sha.return_value = 'b' * 40
+    client.source_pull_request.return_value = None
+    client.pull_request.return_value = {'number': 7, 'html_url': 'https://github.com/owner/repo/pull/7'}
+
+    def finish(number, source, plan, fast_forward):
+        fast_forward()
+        return {'state': 'success', 'sha': source, 'checks': [], 'merge_sha': source}
+
+    client.finish_pr.side_effect = finish
+    monkeypatch.setattr(publish, 'GitHub', Mock(return_value=client))
+    pushes = []
+
+    def git(_repo, args):
+        if args[0] == 'remote':
+            return Mock(returncode=0, stdout='https://github.com/owner/repo.git\n', stderr='')
+        pushes.append(args)
+        failed = rejected and args[-1].endswith(':refs/heads/main')
+        return Mock(returncode=1 if failed else 0, stdout='', stderr='')
+
+    result = publish.publish_git(Path('/repo'), sha=sha, task_id='nightly', message='m', run_git=git,
+                                 destination='main', reconcile_checkout=False)
+    assert pushes[0] == ['push', 'origin', f'{sha}:refs/heads/st/nightly']
+    assert pushes[1] == ['push', '--porcelain', 'origin', f'{sha}:refs/heads/main']
+    if rejected:
+        assert result['status'] == 'BLOCKED' and result['reason'] == 'remote_base_diverged'
+        assert not result['publication_complete']
+    else:
+        assert result['publication_complete'] and result['delivery']['merged_source'] == sha

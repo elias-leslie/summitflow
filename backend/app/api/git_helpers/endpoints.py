@@ -50,8 +50,8 @@ async def execute_project_publish(project_id: str, source_sha: str, *, authorize
     from ...tasks.backup_publish import _public_evidence
 
     try:
-        options = {"authorized_workflows": authorized_workflows} if authorized_workflows else {}
-        result = await asyncio.to_thread(publish_project_now, project_id, source_sha, **options)
+        result = await asyncio.to_thread(publish_project_now, project_id, source_sha,
+                                         authorized_workflows=authorized_workflows)
         return _public_evidence(result)
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc

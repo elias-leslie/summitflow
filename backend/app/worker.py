@@ -26,6 +26,7 @@ from app.workflows.scheduled import (
     dependency_reviews_wf,
     hatchet_retention_wf,
     health_monitor_wf,
+    nightly_publication_wf,
     pending_drain_wf,
     prod_smoke_test_wf,
     refresh_graphify_graphs_wf,
@@ -86,6 +87,7 @@ def _registered_workflows() -> list[Any]:
         pending_drain_wf,
         restore_tests_wf,
         runtime_hygiene_wf,
+        nightly_publication_wf,
         # Utility (12)
         backup_create_wf,
         backup_offsite_sync_wf,

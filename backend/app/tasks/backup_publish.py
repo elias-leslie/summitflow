@@ -246,12 +246,17 @@ def _publish_isolated(project: Path, head: str, branch: str, remote: str,
 def publish_source_before_backup(source: dict[str, Any], *, retained: dict[str, Any] | None = None,
                                  manual_source_commit: str | None = None,
                                  authorized_workflows: tuple[str, ...] = (),
-                                 activity_allowed: Callable[[], bool] | None = None) -> dict[str, Any]:
+                                 activity_allowed: Callable[[], bool] | None = None,
+                                 publication_mode: str = "manual") -> dict[str, Any]:
     """Publish accepted source; an explicit owner call pins its immutable OID.
 
     The owning CLI/API authorizes manual calls. This changes only that call's
     activity window; route, acceptance, outgoing and remote checks still apply.
+    The owner-selected ``mirror`` mode is for repositories without checks: it
+    records acceptance as not required but keeps every outgoing/remote guard.
     """
+    if publication_mode not in {"manual", "nightly", "mirror"}:
+        raise ValueError("Unknown publication mode")
     if manual_source_commit is None:
         return {"status": "retired", "reason": "scheduled_publication_no_longer_required",
                 "publication_complete": False, "attempted": False, "backup_can_continue": True}
@@ -276,7 +281,7 @@ def publish_source_before_backup(source: dict[str, Any], *, retained: dict[str, 
         "publication_complete": False, "observed_at": datetime.now(UTC).isoformat(),
         "source_status": "unknown", "remote_status": "unobserved",
         "ci": {"state": "unobserved"}, "security": {"state": "not_run"},
-        "publication_mode": "manual",
+        "publication_mode": publication_mode,
         "requested_source_commit": None, "captured_source_commit": None,
     }
 
@@ -358,14 +363,15 @@ def publish_source_before_backup(source: dict[str, Any], *, retained: dict[str, 
         result["upstream_status"] = "observed_locally" if upstream.returncode == 0 else "unobserved_locally"
         result.update(head=head, branch=branch, remote=remote, upstream_ref=upstream_ref, ahead=ahead,
                       behind=behind, source_status="captured", vcs="git")
-        result["acceptance"] = _acceptance_for_head(project, head)
-        if result["acceptance"].get("state") != "reused":
+        result["acceptance"] = (_acceptance_for_head(project, head) if publication_mode != "mirror"
+                                else {"state": "not_required", "reason": "mirror_publication", "source_commit": head})
+        if result["acceptance"].get("state") not in {"reused", "not_required"}:
             result["source_status"] = "acceptance_required"
             result["action"] = "Run st check --acceptance for the exact committed source, then explicitly publish that source"
             return outcome("pending", "source_acceptance_required")
         if _value(project, "remote", "get-url", "--push", "--all", remote).splitlines() != push_urls:
             return outcome("pending", "repository_changed")
-        result["source_status"] = "accepted"
+        result["source_status"] = "accepted" if publication_mode != "mirror" else "mirrored"
         from cli.lib.publication_effects import workflow_effects
 
         try:

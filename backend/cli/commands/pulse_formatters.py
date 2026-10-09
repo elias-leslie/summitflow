@@ -363,6 +363,14 @@ def print_compact_payload(
               f"|accepted={str(accepted.get('source_commit') or 'unknown')[:12]}"
               f"|running={str(running.get('source_commit') or 'unknown')[:12]}"
               f"|evidence={accepted.get('evidence') or 'unavailable'}")
+        publication = development.get("publication") or {}
+        if publication.get("mode") not in {None, "manual"} or publication.get("nightly"):
+            last = publication.get("nightly") or {}
+            print(f"PUBLICATION:{project_id}|mode={publication.get('mode', 'unknown')}"
+                  f"|state={publication.get('state', 'unknown')}"
+                  f"|published={str(publication.get('source_commit') or 'none')[:12]}"
+                  f"|nightly={last.get('outcome') or 'none'}|reason={last.get('reason') or publication.get('reason') or '-'}"
+                  f"|at={last.get('observed_at') or publication.get('observed_at') or '-'}")
     print(_format_preflight(project_id, summary, cleanup, payload))
     _print_review_lines(project_id, summary, cleanup, payload)
     _print_leases(project_id)

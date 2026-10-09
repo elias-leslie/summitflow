@@ -59,8 +59,9 @@ def classify_observation(result: dict[str, Any]) -> dict[str, Any]:
           and (ci.get("sha") == head or (pr_checks.get("state") in (
               {"success", "not_applicable"} if ci_state == "not_applicable" else {"success"}) and pr_checks.get("sha") == head))
           and security.get("state") == "success" and security.get("sha") == head
-          and acceptance.get("state") in {"success", "reused"}
-          and acceptance.get("source_commit") == head and acceptance.get("acceptance_id")):
+          and acceptance.get("source_commit") == head
+          and ((acceptance.get("state") in {"success", "reused"} and acceptance.get("acceptance_id"))
+               or (acceptance.get("state") == "not_required" and result.get("publication_mode") == "mirror"))):
         state = "verified" if ci_state == "success" else "published"
         if state == "published":
             reason = "published_without_ci"

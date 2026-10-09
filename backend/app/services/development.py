@@ -186,15 +186,26 @@ def _recovery(project_id: str) -> dict[str, dict[str, Any]]:
     return result
 
 
+def _nightly(root: Path, project_id: str) -> dict[str, Any]:
+    from app.tasks.nightly_publication import publication_mode, read_nightly_state
+
+    try:
+        mode = publication_mode(project_id)
+    except Exception:
+        mode = "unknown"
+    last = read_nightly_state(root) or {}
+    return {"mode": mode, "nightly": {key: last.get(key) for key in ("outcome", "reason", "sha", "observed_at")} if last else None}
+
+
 def _publication(root: Path, common: Path, project_id: str) -> dict[str, Any]:
     from app.tasks.backup_manual_publish import latest_publication_receipt
 
     retained = latest_publication_receipt(root, project_id, directory=common / "st" / "publication")
     if retained is None:
-        return evidence(reason="No manual publication recorded")
+        return evidence(reason="No publication recorded", **_nightly(root, project_id))
     path, value = retained
     observation = value.get("observation") or {}
-    return evidence(str(observation.get("status") or "unknown"), source_commit=value.get("source_commit"),
+    return evidence(str(observation.get("status") or "unknown"), source_commit=value.get("source_commit"), **_nightly(root, project_id),
                     observed_at=value.get("observed_at"), artifact=str(path),
                     reason=str(observation.get("reason") or "Manual publication observation"),
                     pushed=bool(observation.get("pushed")), publication_complete=bool(observation.get("publication_complete")),

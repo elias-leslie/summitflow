@@ -389,9 +389,8 @@ def _write_holder(lane: str, generation: str, activity: int, label: str, project
             os.close(descriptor)
 
 
-def _wait_status(lane: str, label: str, since: float, activity: int, admission: int) -> None:
-    holder = "holder=unknown"
-    work_class = _lane_class(lane)
+def _verified_holder(lane: str, activity: int, admission: int) -> dict[str, Any] | None:
+    """The recorded owner, only while it still holds this lane generation."""
     with _metadata():
         descriptor = _open_lane(f"{lane}-holder.json")
         try:
@@ -404,12 +403,49 @@ def _wait_status(lane: str, label: str, since: float, activity: int, admission: 
                 if (_live_identity(record) and (remote.st_dev, remote.st_ino) == (local.st_dev, local.st_ino)
                         and re.search(r"\bFLOCK\s+ADVISORY\s+READ\b", fdinfo)
                         and os.pread(admission, 256, 0).decode("ascii") == record["generation"]):
-                    holder = (f"holder={_public_label(record['label'])} project={_public_label(record['project'])} "
-                              f"pid={pid} active_age={max(0, time.monotonic() - float(record['since'])):.1f}s")
+                    return {"label": _public_label(record["label"]), "project": _public_label(record["project"]),
+                            "pid": pid, "active_age": max(0.0, time.monotonic() - float(record["since"]))}
             except (HeavyWorkError, OSError, KeyError, ValueError, TypeError, UnicodeError):
                 pass  # Legacy owners or surviving descendants may lack metadata.
         finally:
             os.close(descriptor)
+    return None
+
+
+def holder_text(holder: dict[str, Any] | None) -> str:
+    if holder is None:
+        return "holder=unknown"
+    return (f"holder={holder['label']} project={holder['project']} "
+            f"pid={holder['pid']} active_age={holder['active_age']:.1f}s")
+
+
+def lane_activity(work_class: str = "heavy") -> list[dict[str, Any]]:
+    """Read-only snapshot of occupied lanes for a class; never queues or admits."""
+    lanes = ["light"] if work_class == "light" else ["heavy", _SPARE_LANE]
+    occupied = []
+    for lane in lanes:
+        admission = _open_lane(_lane_name("admission.lock", lane))
+        try:
+            activity = _open_lane(_lane_name("activity.lock", lane))
+            try:
+                try:
+                    # Owners and admitted descendants hold activity shared, so a
+                    # momentary non-blocking exclusive probe fails while busy.
+                    fcntl.flock(activity, fcntl.LOCK_EX | fcntl.LOCK_NB)
+                    fcntl.flock(activity, fcntl.LOCK_UN)
+                except BlockingIOError:
+                    occupied.append({"lane": lane, **(_verified_holder(lane, activity, admission)
+                                                       or {"label": "unknown", "project": "unknown"})})
+            finally:
+                os.close(activity)
+        finally:
+            os.close(admission)
+    return occupied
+
+
+def _wait_status(lane: str, label: str, since: float, activity: int, admission: int) -> None:
+    holder = holder_text(_verified_holder(lane, activity, admission))
+    work_class = _lane_class(lane)
     print(f"[st] Waiting for shared {work_class}-work lane: {_public_label(label)} "
           f"class={work_class} wait_age={time.monotonic() - since:.1f}s {holder}", file=sys.stderr, flush=True)
 

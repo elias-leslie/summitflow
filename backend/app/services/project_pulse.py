@@ -82,6 +82,21 @@ def _partition_active_ownership(
     return writers, readers
 
 
+async def count_active_writers(project_id: str) -> int:
+    """Live write owners only, using the same session evidence as the pulse."""
+    ownership = await _agent_hub_get(f"/api/ownership/projects/{project_id}/live")
+    sessions = (await _agent_hub_get(
+        _SESSIONS_API,
+        params={"project_id": project_id, "status": "active", "page": 1, "page_size": _SESSION_LIMIT},
+    )).get("sessions", [])
+    active, _, _ = _bucket_sessions(sessions, set(), set())
+    writers, _ = _partition_active_ownership(
+        ownership.get("active_owners", []), {str(session.get("id") or "") for session in active},
+        {str(session.get("id") or "") for session in sessions if isinstance(session, dict)},
+    )
+    return len(writers)
+
+
 async def build_project_pulse(project_id: str) -> dict[str, Any]:
     """Return the canonical live coordination payload for one project."""
     ownership = await _agent_hub_get(f"/api/ownership/projects/{project_id}/live")

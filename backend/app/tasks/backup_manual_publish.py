@@ -83,11 +83,12 @@ def _retain_publication(project: Path, project_id: str, source_commit: str, obse
     return immutable
 
 
-def publish_project_now(source_id: str, source_commit: str, *, authorized_workflows: tuple[str, ...] = ()) -> dict[str, Any]:
+def publish_project_now(source_id: str, source_commit: str, *, authorized_workflows: tuple[str, ...] = (),
+                        publication_mode: str = "manual") -> dict[str, Any]:
     """Publish only the supplied accepted OID; no checkpoint, capture or deployment."""
     if not _OID.fullmatch(source_commit):
         raise ValueError("Publication requires an exact lowercase 40- or 64-character commit OID")
-    result: dict[str, Any] = {"source_id": source_id, "publication_mode": "manual",
+    result: dict[str, Any] = {"source_id": source_id, "publication_mode": publication_mode,
         "requested_source_commit": source_commit, "observed_at": datetime.now(UTC).isoformat(),
         "publication_complete": False, "evidence_recorded": False}
     # Registered project ownership authorizes source lookup. Backup scheduling,
@@ -107,7 +108,9 @@ def publish_project_now(source_id: str, source_commit: str, *, authorized_workfl
         with repo_lock(project, purpose="manual publication"):
             previous = read_publication_receipt(project, source_commit)
             retained = (previous or {}).get("observation")
-            options = {"authorized_workflows": authorized_workflows} if authorized_workflows else {}
+            options: dict[str, Any] = {"authorized_workflows": authorized_workflows} if authorized_workflows else {}
+            if publication_mode != "manual":
+                options["publication_mode"] = publication_mode
             publication = publish_source_before_backup(source, retained=retained,
                 manual_source_commit=source_commit, activity_allowed=lambda: True, **options)
             result.update(publication)

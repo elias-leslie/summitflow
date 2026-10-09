@@ -161,6 +161,14 @@ SCHEDULE_DEFINITIONS: tuple[AutonomousScheduleDefinition, ...] = (
         scope="system",
     ),
     AutonomousScheduleDefinition(
+        schedule_id="nightly_publication",
+        config_key="nightly_publication_enabled",
+        label="Nightly publication",
+        description="Publishes each opted-in project's committed head to GitHub between 01:00 and 06:00 New York time.",
+        cron="5 5-11 * * *",
+        scope="system",
+    ),
+    AutonomousScheduleDefinition(
         schedule_id="runtime_hygiene",
         config_key="runtime_hygiene_enabled",
         label="Runtime hygiene audit",

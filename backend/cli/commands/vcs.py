@@ -35,9 +35,14 @@ app = typer.Typer(
 
 
 @app.command("publication")
-@usage(surface="st.vcs.publication", cmd="st vcs publication", when="read retained manual publication and finding status",
-       precautions=("read-only; unknown is not passing CI",), tier="reference")
-def publication_status() -> None:
+@usage(surface="st.vcs.publication", cmd="st vcs publication [--mode nightly|mirror|manual]",
+       when="read retained publication status, or set the project's overnight publication mode",
+       precautions=("unknown is not passing CI",
+                    "nightly publishes the accepted committed head overnight; mirror skips acceptance for check-less repos"),
+       tier="reference")
+def publication_status(
+    mode: Annotated[str | None, typer.Option("--mode", help="Set overnight publication: nightly, mirror or manual")] = None,
+) -> None:
     """Read-only lightweight startup status, without a network CI wait."""
     from app.services.publication_health import (
         format_publication_health,
@@ -48,7 +53,18 @@ def publication_status() -> None:
     project_id = get_config_optional().project_id
     if not project_id:
         typer.echo("Manual publication: unknown; no registered project for this directory.")
+        if mode is not None:
+            raise typer.Exit(2)
         return
+    from app.tasks.nightly_publication import publication_mode, set_publication_mode
+
+    if mode is not None:
+        try:
+            set_publication_mode(project_id, mode)
+        except ValueError as exc:
+            typer.echo(str(exc))
+            raise typer.Exit(2) from None
+    typer.echo(f"Publication mode: {publication_mode(project_id)}")
     try:
         health = get_project_publication_health(project_id)
         typer.echo(format_publication_health(health))
@@ -70,7 +86,7 @@ def publish_now(
 ) -> None:
     """Publish an exact accepted source in isolation and retain its real CI evidence."""
     if not now:
-        typer.echo("Immediate publication requires --now and explicit owner authorization; no scheduled publication runs.")
+        typer.echo("Immediate publication requires --now and explicit owner authorization; overnight publication follows st vcs publication --mode.")
         raise typer.Exit(2)
     from app.tasks.backup_manual_publish import publish_project_now
 
@@ -102,6 +118,31 @@ def publish_now(
                      "evidence": result.get("evidence"), "details": display_path(Path.cwd(), details)})
     if not (result.get("publication_complete") and result.get("evidence_recorded")):
         raise typer.Exit(2)
+
+@app.command("nightly")
+@usage(surface="st.vcs.nightly", cmd="st vcs nightly --dry-run",
+       when="preview or run the overnight publication sweep for opted-in projects",
+       precautions=("without --dry-run it publishes immediately outside the window; owner-authorized only",
+                    "never commits, changes checkouts or authorizes workflow files"), tier="reference")
+def nightly(
+    dry_run: Annotated[bool, typer.Option("--dry-run/--run", help="Show tonight's selection without side effects")] = True,
+    project: Annotated[list[str] | None, typer.Option("--project", help="Limit to project IDs; repeat as needed")] = None,
+    json_output: Annotated[bool, typer.Option("--json", help="Show complete structured rows")] = False,
+) -> None:
+    """Select (and with --run, execute) one sequential overnight publication pass."""
+    from app.tasks.nightly_publication import run_nightly_publication, summary_line
+
+    # An explicit owner --run is authority to publish outside the quiet window.
+    result = run_nightly_publication(dry_run=dry_run, project_ids=project or None, ignore_window=not dry_run)
+    if json_output:
+        output_json(result)
+        return
+    for row in result.get("projects", []):
+        if row.get("reason") != "manual_mode":
+            typer.echo(summary_line(row))
+    manual = sum(row.get("reason") == "manual_mode" for row in result.get("projects", []))
+    typer.echo(f"NIGHTLY:{result['status']}|projects={len(result.get('projects', []))}|manual={manual}")
+
 
 _IGNORED_WORKSPACE_REPO_NAMES = frozenset({"claude-config", "codex-config"})
 

@@ -1,6 +1,6 @@
 """Scheduled (cron) workflows for SummitFlow.
 
-16 cron workflows on Hatchet schedule; 13 enabled by default.
+17 cron workflows on Hatchet schedule; 14 enabled by default.
 Autonomous work pickup is explicit opt-in so missing project config cannot dispatch work.
 Most use ConcurrencyExpression with CANCEL_IN_PROGRESS; explorer maintenance shares
 CANCEL_NEWEST concurrency so scan/index jobs do not overlap.
@@ -573,3 +573,26 @@ async def runtime_hygiene_wf(input: EmptyInput, ctx: Context) -> dict[str, Any]:
         return _disabled_schedule_result("runtime_hygiene")
 
     return await asyncio.to_thread(run_runtime_hygiene)
+
+
+@hatchet.task(
+    name="summitflow-nightly-publication",
+    input_validator=EmptyInput,
+    # UTC hours 05-11 cover 01:00-06:00 New York across DST; the task applies
+    # the exact local window. Night acceptance can exceed an hour per project.
+    on_crons=["5 5-11 * * *"],
+    execution_timeout="18000s",
+    retries=0,
+    concurrency=ConcurrencyExpression(
+        expression="'summitflow-nightly-publication'",
+        max_runs=1,
+        # A running sweep continues; the next hourly trigger is skipped.
+        limit_strategy=ConcurrencyLimitStrategy.CANCEL_NEWEST,
+    ),
+)
+async def nightly_publication_wf(input: EmptyInput, ctx: Context) -> dict[str, Any]:
+    from ..tasks.nightly_publication import run_nightly_publication
+
+    if not _system_schedule_enabled("nightly_publication"):
+        return _disabled_schedule_result("nightly_publication")
+    return await asyncio.to_thread(run_nightly_publication)

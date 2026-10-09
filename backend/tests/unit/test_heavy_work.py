@@ -756,3 +756,13 @@ def test_two_canonical_checks_share_a_heavy_lane(tmp_path: Path, monkeypatch: py
             second_output = second.communicate(timeout=10) if second is not None else None
     assert first.returncode == 0, first_output
     assert second is not None and second.returncode == 0, second_output
+
+
+def test_lane_activity_reports_holder_without_queueing_or_admitting(lane: Path) -> None:
+    assert guard.lane_activity("heavy") == []
+    with guard.heavy_work("acceptance", project="neri"):
+        occupied = guard.lane_activity("heavy")
+        assert [(row["lane"], row["label"], row["project"]) for row in occupied] == [("heavy", "acceptance", "neri")]
+        assert guard.lane_activity("light") == []
+        assert not list(lane.glob("wait-*.json"))
+    assert guard.lane_activity("heavy") == []

@@ -7,6 +7,33 @@ workflow change, not a new reusable instruction store. GitHub publication is not
 requested. Existing security controls, histories, unrelated work, and necessary
 live validation must remain protected.
 
+## Overnight publication, 2026-10-09
+
+Task `task-39bf8708bef14e8f` restores automatic publication without recoupling it
+to backups or local completion. Each project has an owner-selected
+`publication_mode` (`st vcs publication --mode nightly|mirror|manual`; default
+manual). The `nightly_publication` schedule runs hourly from 01:00 to 06:00 New
+York time, one project at a time, through the same `publish_project_now` path as
+`st vcs publish`. It never commits, changes a checkout, or authorizes workflow files.
+
+- `nightly` publishes the newest committed default-branch head. When that head
+  has no full acceptance receipt, it runs `st check --acceptance` for it first.
+- `mirror` is for repositories without checks. It keeps outgoing history and
+  secret verification and records acceptance as not required.
+- A run skips a project with live writers or a busy heavy lane. Later hourly runs
+  resume pending CI. A failed or diverged source waits until its head changes or
+  the owner acts. It appears in a `PUBLICATION:` pulse line, in the rolling
+  publication repair task, and in one notification after the final window run.
+  `st vcs nightly --dry-run` previews the selection.
+
+Check-gated default branches now fast-forward. The source goes to a staging branch
+and a PR, and the required checks run on that exact commit. ST then pushes the
+commit itself to the base branch instead of creating a merge commit. The local
+accepted commit and its receipt are therefore the published revision. Rulesets
+that require a pull request (rather than checks alone) keep GitHub's merge path.
+The six owner rulesets dropped their `pull_request` rule on 2026-10-09. Deletion,
+non-fast-forward and required-check rules remain.
+
 ## Task completion and release readiness, 2026-10-04
 
 Task `task-513682a385f0498e` separates the evidence needed to finish an owned
