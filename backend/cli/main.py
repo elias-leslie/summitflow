@@ -65,6 +65,7 @@ OPTIONAL_COMMANDS = (
     "logs",
     "monitor",
     "migrate_branches",
+    "package",
     "projects",
     "pulse",
     "refactor",
@@ -166,6 +167,10 @@ def _register_root_task_commands() -> None:
 def _register_subcommand_groups() -> None:
     for command_name, module_name in SUBCOMMAND_GROUPS:
         app.add_typer(_COMMANDS[module_name].app, name=command_name)
+
+
+def _register_root_commands() -> None:
+    app.command("package", help=_COMMANDS["package"].app.info.help)(_COMMANDS["package"].package)
 
 
 def _register_forwarded_root_commands() -> None:
@@ -340,6 +345,7 @@ def commit_command(
 
 
 _register_forwarded_root_commands()
+_register_root_commands()
 
 
 @app.command(PROGRESS_COMMAND, hidden=True)
