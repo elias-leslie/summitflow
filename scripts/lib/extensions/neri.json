@@ -101,11 +101,12 @@
     "program access show": "Usage: neri program access show [OPTIONS] {program_id} {observation_id}\n\nArguments:\n  program_id      [required]\n  observation_id  [required]\n\nOptions:\n  --help  Show this message and exit.",
     "closeout": "Usage: neri closeout [OPTIONS] COMMAND [ARGS]...\n\n  Inspect authoritative investigation closeout\n\nOptions:\n  --help  Show this message and exit.\n\nCommands:\n  readiness",
     "closeout readiness": "Usage: neri closeout readiness [OPTIONS] {investigation_id}\n\nArguments:\n  investigation_id  [required]\n\nOptions:\n  --help  Show this message and exit.",
-    "hunt": "Usage: neri hunt [OPTIONS] COMMAND [ARGS]...\n\n  Begin, inspect, hand off, or exceptionally continue a direct native hunt\n\nOptions:\n  --help  Show this message and exit.\n\nCommands:\n  begin\n  status\n  process\n  result\n  handoff\n  continue",
+    "hunt": "Usage: neri hunt [OPTIONS] COMMAND [ARGS]...\n\n  Begin, inspect, hand off, or exceptionally continue a direct native hunt\n\nOptions:\n  --help  Show this message and exit.\n\nCommands:\n  begin\n  status\n  process\n  result\n  review\n  handoff\n  continue",
     "hunt begin": "Usage: neri hunt begin [OPTIONS] {target_id}\n\nArguments:\n  target_id  [required]\n\nOptions:\n  --question <str>                [required]\n  --id <uuid>\n  --group-id <uuid>\n  --role <primary|retry|verification|supporting>\n                                  [default: primary]\n  --predecessor-run-id <uuid>\n  --verifies-report-event-id <uuid>\n  --help                          Show this message and exit.",
     "hunt status": "Usage: neri hunt status [OPTIONS] {investigation_id}\n\nArguments:\n  investigation_id  [required]\n\nOptions:\n  --help  Show this message and exit.",
     "hunt process": "Usage: neri hunt process [OPTIONS] {investigation_id}\n\nArguments:\n  investigation_id  [required]\n\nOptions:\n  --file, --output <file>  Save the exact JSON response to a new file without\n                           printing it.\n  --help                   Show this message and exit.",
     "hunt result": "Usage: neri hunt result [OPTIONS] {investigation_id}\n\nArguments:\n  investigation_id  [required]\n\nOptions:\n  --file <path>  [required]\n  --help         Show this message and exit.",
+    "hunt review": "Usage: neri hunt review [OPTIONS] {investigation_id}\n\nArguments:\n  investigation_id  [required]\n\nOptions:\n  --packet <path>  [required]\n  --help           Show this message and exit.",
     "hunt handoff": "Usage: neri hunt handoff [OPTIONS] {investigation_id}\n\nArguments:\n  investigation_id  [required]\n\nOptions:\n  --outcome <str>        [required]\n  --statement <str>      [required]\n  --observations <path>\n  --help                 Show this message and exit.",
     "hunt continue": "Usage: neri hunt continue [OPTIONS] {investigation_id}\n\nArguments:\n  investigation_id  [required]\n\nOptions:\n  --file <path>  [required]\n  --id <uuid>\n  --help         Show this message and exit.",
     "surface": "Usage: neri surface [OPTIONS] COMMAND [ARGS]...\n\n  Read saved attack-surface state and submit observations\n\nOptions:\n  --help  Show this message and exit.\n\nCommands:\n  list\n  digest\n  history\n  observe",
@@ -1057,6 +1058,21 @@
       "when": "retain an exact native reporter/reviewer submission against its frozen packet",
       "precautions": [
         "root control plane only; provenance_kind=native_submission; retain exact JSON output, source timestamp and event identity; then run hunt process"
+      ],
+      "task_types": [
+        "neri"
+      ]
+    },
+    {
+      "surface": "st.neri.hunt.review",
+      "tier": "reference",
+      "cmd": "st neri hunt review <investigation-id> --packet PATH",
+      "when": "have Agent Hub's Claude Opus 5.5 review lane act as the fresh reviewer child for one frozen reviewer packet",
+      "precautions": [
+        "root control plane only; PATH is the saved `hunt process --file` response awaiting the reviewer",
+        "fallback-free: a fallback or a different served model is refused and nothing is retained",
+        "draws on the owner's shared Claude Max limits; the Codex native reviewer child remains the default",
+        "then run hunt process"
       ],
       "task_types": [
         "neri"
