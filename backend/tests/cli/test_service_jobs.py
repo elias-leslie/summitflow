@@ -128,6 +128,18 @@ def test_wait_returns_terminal_failure_code(monkeypatch):
     assert result.exit_code == 7, result.output
 
 
+def test_wait_omits_embedded_receipt_and_shows_failure_log_tail(monkeypatch, tmp_path):
+    log = tmp_path / "job.log"
+    log.write_text("\n".join(f"line {index}" for index in range(20)))
+    record = {"job_id": "fixture", "state": "failed", "exit_code": 1, "log_path": str(log),
+              "source": {"acceptance_id": "a1", "checks": [{"detail": "x" * 10000}]}}
+    monkeypatch.setattr(service_ops, "detached_result", lambda _: record)
+    result = CliRunner().invoke(service.app, ["wait", "fixture"])
+    payload = json.loads(result.output)
+    assert payload["source"] == {"acceptance_id": "a1"}
+    assert payload["log_tail"] == [f"line {index}" for index in range(12, 20)]
+
+
 def test_wait_timeout_does_not_claim_success(monkeypatch):
     monkeypatch.setattr(service_ops, "detached_result", lambda _: {"job_id": "fixture", "state": "running", "exit_code": None})
     result = CliRunner().invoke(service.app, ["wait", "fixture", "--timeout", "0"])

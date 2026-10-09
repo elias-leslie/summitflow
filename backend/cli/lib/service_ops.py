@@ -625,6 +625,12 @@ def sync_backend(project: ProjectServices) -> int:
     return run(command, cwd=project.backend_dir, quiet_success=True, _heavy=True)
 
 
+def _cargo() -> str:
+    """Prefer the rustup toolchain; a caller PATH may resolve an older distro cargo."""
+    rustup_cargo = Path(os.environ.get("CARGO_HOME", Path.home() / ".cargo")) / "bin" / "cargo"
+    return str(rustup_cargo) if os.access(rustup_cargo, os.X_OK) else "cargo"
+
+
 def build_host_monitor(project: ProjectServices) -> int:
     """Build the independent host collector in the accepted SummitFlow release."""
     if project.project_id != "summitflow" or "summitflow-host-monitor.service" not in project.default_workers:
@@ -634,7 +640,7 @@ def build_host_monitor(project: ProjectServices) -> int:
         print("[service] host monitor requires Cargo.toml and Cargo.lock in accepted source")
         return 1
     print("[service] building locked host monitor")
-    code = run(["cargo", "build", "--locked", "--release"], cwd=source, quiet_success=True, _heavy=True)
+    code = run([_cargo(), "build", "--locked", "--release"], cwd=source, quiet_success=True, _heavy=True)
     if code == 0:
         host_monitor_deploy.build_helper(project.root)
     return code

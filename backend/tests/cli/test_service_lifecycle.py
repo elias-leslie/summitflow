@@ -711,3 +711,14 @@ def test_failed_workspace_dependency_build_stops_frontend(project, monkeypatch):
     assert service_ops.build_frontend(project) == 1
     assert run.call_count == 2
     assert run.call_args.args[0][-3:] == ['--if-present', 'run', 'build']
+
+
+def test_host_monitor_build_prefers_rustup_cargo(tmp_path, monkeypatch) -> None:
+    cargo = tmp_path / "bin" / "cargo"
+    cargo.parent.mkdir()
+    cargo.write_text("#!/bin/sh\n")
+    cargo.chmod(0o755)
+    monkeypatch.setenv("CARGO_HOME", str(tmp_path))
+    assert service_ops._cargo() == str(cargo)
+    monkeypatch.setenv("CARGO_HOME", str(tmp_path / "missing"))
+    assert service_ops._cargo() == "cargo"
