@@ -199,7 +199,8 @@ def _run_tool(name: str, config: dict[str, object], extra_args: list[str]) -> in
                     errors="replace",
                     check=False,
                 )
-                timing = f"|queue_ms:{queue_ms:.3f}|execution_ms:{(time.monotonic() - started) * 1000:.3f}"
+                timing = (f"|lane:{work.lane}|queue_ms:{queue_ms:.3f}"
+                          f"|execution_ms:{(time.monotonic() - started) * 1000:.3f}")
     except OSError as exc:
         if name not in {"vitest", "frontend-test"} and isinstance(exc, FileNotFoundError) and tool_not_installed(name, root):
             print(f"{label}:SKIP:{name}:tool_not_installed")
