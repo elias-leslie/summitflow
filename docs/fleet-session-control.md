@@ -3,6 +3,24 @@
 `st sessions start "short sanitized instruction"` registers an opaque `root-…`
 handle in the existing events table and requests a root through Aico's private
 GUI socket. The project root comes from the registered project, not a client path.
+`--execution-root PATH` optionally selects a different existing checkout for the
+owner's working directory. The immutable capsule and returned state retain both
+the registered `project_root` and effective `execution_root`; omitting the option
+executes in the registered root. `FleetClient.start(execution_root=PATH, ...)`
+uses the same versioned API field.
+
+Supply an absolute, normalized directory path without symlink aliases. The
+directory must be the registered root or inside it, or a strict descendant of
+`projects` or `worktrees` under the existing `ST_WORKSPACES_ROOT`
+(the shared workspace helper supplies its normal default). It must have the same
+project checkout identity, validated through the existing identity manifest or
+legacy Git checkout validator. Foreign, missing, malformed, or unqualified
+directories fail before intent is retained or launch is requested. This option
+does not create or manage directories. Changing the effective execution directory
+for a retained request ID conflicts; retry with the same complete capsule.
+Older retained capsules without this field expose the registered root as their
+execution root and keep their original create digest on a default retry.
+
 Use `--surface a-term` for the existing local A-Term owner HTTP route; unknown
 surfaces are unsupported. The same role/lead/facet capsule goes to either owner.
 The returned host descriptor is an Aico acknowledgment; it does not attest a

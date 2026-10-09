@@ -53,6 +53,7 @@ class StartRoot(BaseModel):
     facet: str | None = Field(default=None, min_length=1, max_length=128)
     root: str | None = None
     resume_session: str | None = Field(default=None, min_length=1, max_length=128)
+    execution_root: str | None = Field(default=None, min_length=1, max_length=4096)
 
 
 class Instruction(BaseModel):

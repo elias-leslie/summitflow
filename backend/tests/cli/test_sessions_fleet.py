@@ -85,8 +85,9 @@ def test_emit_returns_compact_delta_through_public_sdk(monkeypatch):
     ([], {}),
     (["--resume-session", "00000000-0000-4000-8000-000000000001"],
      {"resume_session": "00000000-0000-4000-8000-000000000001"}),
+    (["--execution-root", "/workspace/fixture"], {"execution_root": "/workspace/fixture"}),
 ])
-def test_start_forwards_resume_only_when_requested(monkeypatch, extra, forwarded):
+def test_start_forwards_optional_fields_only_when_requested(monkeypatch, extra, forwarded):
     client = MagicMock()
     client.start.return_value = {"root": "root-" + "0" * 32, "status": "registered"}
     monkeypatch.setattr(sessions_fleet, "_client", lambda: client)

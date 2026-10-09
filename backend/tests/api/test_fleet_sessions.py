@@ -2,14 +2,23 @@
 
 from __future__ import annotations
 
+import hashlib
+import json
+import uuid
 from contextlib import contextmanager
 from unittest.mock import MagicMock
 
+import httpx
+import pytest
 from fastapi import FastAPI, Request
 from fastapi.testclient import TestClient
+from st_sdk.fleet import FleetClient
+from st_sdk.http import APIError, BaseHTTPClient
 
 from app.access_control import AccessPrincipal
 from app.api import fleet_sessions as api
+from app.storage import fleet_events
+from app.storage.connection import get_connection
 from app.storage.fleet_events import SourceKeyConflict, StaleCursor
 
 
@@ -80,3 +89,148 @@ def test_start_uses_registered_project_root_not_client_path(monkeypatch):
         assert start.call_args.kwargs["project_root"] == "/registered/fixture"
         invalid = client.post("/api/fleet/v1/roots", json={"project_id": "fixture", "project_root": "/injected", "instruction": "Short"})
         assert invalid.status_code == 422
+
+
+@pytest.fixture
+def execution_fleet(ensure_test_project, tmp_path, monkeypatch):
+    canonical = tmp_path / "registered" / ensure_test_project
+    canonical.mkdir(parents=True)
+    workspace = tmp_path / "workspaces"
+    execution = workspace / "worktrees" / ensure_test_project / "fixture"
+    execution.mkdir(parents=True)
+    identity = json.dumps({"project": {"id": ensure_test_project}})
+    for directory in (canonical, execution):
+        (directory / "project.identity.json").write_text(identity)
+    monkeypatch.setenv("ST_WORKSPACES_ROOT", str(workspace))
+    monkeypatch.setattr(api, "get_project_root_path", lambda project: str(canonical))
+    monkeypatch.setattr(fleet_events, "get_redis", lambda: MagicMock())
+    launches = []
+
+    def owner(surface, path, body, **kwargs):
+        if kwargs.get("method") == "GET":
+            raise httpx.ConnectError("Fixture owner has no read endpoint")
+        launches.append(body)
+        return {"owner": surface, "hostIdentity": "aabbccdd", "generation": "a" * 64,
+                "logicalSessionId": "fixture-root", "surfaceLocator": "aico://widget/aabbccdd", "status": "running"}
+
+    monkeypatch.setattr(api.service, "_host_request", owner)
+    root = "root-" + uuid.uuid4().hex
+    capsule = {"project_id": ensure_test_project, "instruction": "Review source.", "root": root}
+    try:
+        with _client() as api_client:
+            def dispatch(request):
+                return api_client.request(request.method, str(request.url), content=request.content,
+                                          headers={"Content-Type": "application/json"})
+
+            with BaseHTTPClient("http://fixture/api", ensure_test_project,
+                                transport=httpx.MockTransport(dispatch)) as transport:
+                yield FleetClient(transport), capsule, canonical, execution, launches
+    finally:
+        with get_connection() as conn:
+            conn.execute("DELETE FROM events WHERE trace_id = %s", (root,))
+            conn.commit()
+
+
+@pytest.mark.parametrize("surface", ["aico", "a-term"])
+@pytest.mark.parametrize("location", ["worktrees", "projects", "canonical", "nested"])
+def test_sdk_start_retains_canonical_root_and_launches_in_execution_directory(execution_fleet, surface, location):
+    sdk, capsule, canonical, execution, launches = execution_fleet
+    if location == "canonical":
+        execution = canonical
+    elif location != "worktrees":
+        destination = (canonical / "execution" if location == "nested"
+                       else execution.parents[2] / "projects" / "fixture")
+        destination.parent.mkdir(parents=True, exist_ok=True)
+        execution.rename(destination)
+        execution = destination
+    state = sdk.start(**capsule, surface=surface, execution_root=str(execution))
+    assert state["project_root"] == str(canonical)
+    assert state["execution_root"] == str(execution)
+    assert state["capabilities"]["launch"] == "host-acknowledged"
+    assert launches[0]["projectRoot"] == str(execution)
+    retained = sdk.show(state["root"])
+    assert retained["project_root"] == str(canonical)
+    assert retained["execution_root"] == str(execution)
+
+
+def test_sdk_execution_directory_is_immutable_on_root_retry(execution_fleet):
+    sdk, capsule, canonical, execution, launches = execution_fleet
+    first = sdk.start(**capsule, execution_root=str(execution))
+    assert sdk.start(**capsule, execution_root=str(execution))["root"] == first["root"]
+    with pytest.raises(APIError) as changed:
+        sdk.start(**capsule, execution_root=str(canonical))
+    assert changed.value.status_code == 409
+    with pytest.raises(APIError) as omitted:
+        sdk.start(**capsule)
+    assert omitted.value.status_code == 409
+    assert len(launches) == 1
+    assert sdk.show(first["root"])["execution_root"] == str(execution)
+
+
+def test_sdk_default_execution_still_uses_registered_project_root(execution_fleet):
+    sdk, capsule, canonical, _, launches = execution_fleet
+    first = sdk.start(**capsule)
+    assert first["project_root"] == first["execution_root"] == str(canonical)
+    assert launches[0]["projectRoot"] == str(canonical)
+    assert sdk.start(**capsule, execution_root=str(canonical))["root"] == first["root"]
+    assert len(launches) == 1
+
+
+@pytest.mark.parametrize("kind", ["relative", "missing", "file", "unnormalized", "symlink", "outside", "workspace-root", "foreign", "no-identity", "malformed-identity", "invalid-identity-shape"])
+def test_sdk_start_rejects_invalid_execution_before_registering_or_launching(execution_fleet, kind):
+    sdk, capsule, canonical, execution, launches = execution_fleet
+    path = str(execution)
+    if kind == "relative":
+        path = "relative/fixture"
+    elif kind == "missing":
+        path = str(execution / "missing")
+    elif kind == "file":
+        path = str(execution / "project.identity.json")
+    elif kind == "unnormalized":
+        path = str(execution) + "/../fixture"
+    elif kind == "symlink":
+        link = execution.parent / "link"
+        link.symlink_to(execution, target_is_directory=True)
+        path = str(link)
+    elif kind == "outside":
+        outside = canonical.parent.parent / "scratch"
+        outside.mkdir()
+        (outside / "project.identity.json").write_text(json.dumps({"project": {"id": capsule["project_id"]}}))
+        path = str(outside)
+    elif kind == "workspace-root":
+        path = str(execution.parents[2])
+    elif kind == "foreign":
+        (execution / "project.identity.json").write_text('{"project":{"id":"another-project"}}')
+    elif kind == "no-identity":
+        (execution / "project.identity.json").unlink()
+    elif kind == "malformed-identity":
+        (execution / "project.identity.json").write_text("not-json")
+    elif kind == "invalid-identity-shape":
+        (execution / "project.identity.json").write_text("[]")
+    with pytest.raises(APIError) as error:
+        sdk.start(**capsule, execution_root=path)
+    assert error.value.status_code == 422
+    assert launches == []
+    with pytest.raises(APIError) as missing:
+        sdk.show(capsule["root"])
+    assert missing.value.status_code == 404
+
+
+def test_sdk_legacy_root_retry_preserves_immutable_capsule(execution_fleet):
+    sdk, capsule, canonical, _, launches = execution_fleet
+    # Seed a retained pre-feature lifecycle row, as encountered after upgrade.
+    fleet_events.append_fleet_event(capsule["project_id"], capsule["root"], source_key="root:start",
+                                   event_type="root.started", attributes={
+        "tool": "codex", "surface": "aico", "project_root": str(canonical),
+        "instruction_digest": hashlib.sha256(b"Review source.").hexdigest(),
+        "scope": {}, "role": "portfolio-root", "lead_root": None, "facet": None,
+        "support_only": False, "offline": False,
+    })
+    fleet_events.append_fleet_event(capsule["project_id"], capsule["root"], source_key="root:host",
+                                   event_type="root.host-unavailable", attributes={"capability": "unavailable"})
+    state = sdk.start(**capsule)
+    assert state["project_root"] == str(canonical)
+    assert state["execution_root"] == str(canonical)
+    assert state["capabilities"]["launch"] == "unavailable"
+    assert sdk.show(capsule["root"])["execution_root"] == str(canonical)
+    assert launches == []

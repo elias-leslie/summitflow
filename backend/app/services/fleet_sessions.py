@@ -9,18 +9,21 @@ import os
 import re
 import time
 import uuid
+from pathlib import Path
 from typing import Any, Literal
 from urllib.parse import quote, urlsplit
 
 import httpx
 import redis
 
+from ..project_identity import validate_project_root
 from ..storage.fleet_events import (
     append_fleet_event,
     content_digest,
     fleet_root_events,
     read_fleet_page,
 )
+from ..utils.shared_paths import get_workspaces_root
 from .pubsub import fleet_wake_subscription
 
 RootRole = Literal["portfolio-root", "neri-target-root", "neri-support-root"]
@@ -42,6 +45,28 @@ def sanitized_instruction(instruction: str) -> str:
     return instruction
 
 
+def _execution_directory(project_id: str, project_root: str, execution_root: str | None) -> str:
+    if execution_root is None:
+        return project_root
+    if (not execution_root or len(execution_root.encode()) > 4096
+            or any(not char.isprintable() for char in execution_root)):
+        raise ValueError("Execution root requires a bounded absolute normalized directory")
+    try:
+        directory = Path(execution_root)
+        if not directory.is_absolute() or str(directory.resolve(strict=True)) != execution_root or not directory.is_dir():
+            raise ValueError("Invalid execution directory")
+        canonical = Path(project_root).resolve()
+        workspace = get_workspaces_root()
+        parents = [workspace / name for name in ("projects", "worktrees")]
+        if (not directory.is_relative_to(canonical)
+                and not any(directory != parent and directory.is_relative_to(parent) for parent in parents)):
+            raise ValueError("Execution directory is outside allowed locations")
+        validate_project_root(project_id, execution_root, require_checkout_identity=True)
+    except (OSError, RuntimeError, ValueError, AttributeError, TypeError) as exc:
+        raise ValueError("Execution root requires an existing normalized directory with matching project identity in an allowed workspace location") from exc
+    return execution_root
+
+
 def root_state(root: str) -> dict[str, Any]:
     events = fleet_root_events(root)
     if not events or events[0]["event_type"] != "root.started":
@@ -52,6 +77,8 @@ def root_state(root: str) -> dict[str, Any]:
         **initial["attributes"], "status": "registered", "host": None,
         "capabilities": {"launch": "unobserved", "send": "fleet-stream", "native_send": "unavailable", "terminate": "unavailable"},
     }
+    # Pre-feature capsules retain their original digest and default directory.
+    state.setdefault("execution_root", state["project_root"])
     for event in events[1:]:
         if event["event_type"] == "root.host-observed":
             state["host"] = event["attributes"]
@@ -191,6 +218,7 @@ def start_root(
     scope: dict[str, str], role: RootRole = "portfolio-root", lead_root: str | None = None,
     facet: str | None = None, root: str | None = None,
     surface: RootSurface = "aico", resume_session: str | None = None,
+    execution_root: str | None = None,
 ) -> dict[str, Any]:
     """Register one immutable root capsule before an idempotent Aico launch request.
 
@@ -205,6 +233,7 @@ def start_root(
         raise ValueError("Unsupported root surface")
     if role not in {"portfolio-root", "neri-target-root", "neri-support-root"}:
         raise ValueError("Unknown fleet root role")
+    execution_root = _execution_directory(project_id, project_root, execution_root)
     prompt = sanitized_instruction(instruction)
     if len(scope) > 32 or not all(len(k) <= 128 and len(v) <= 512 for k, v in scope.items()):
         raise ValueError("Scope must contain bounded source references")
@@ -233,6 +262,7 @@ def start_root(
             raise ValueError("Resume instruction plus fleet directions exceed 2000 UTF-8 bytes")
     capsule = {
         "tool": tool, "surface": surface, "project_root": project_root,
+        "execution_root": execution_root,
         "instruction_digest": hashlib.sha256(prompt.encode()).hexdigest(),
         "scope": scope, "role": role, "lead_root": lead_root, "facet": facet,
         "support_only": role == "neri-support-root",
@@ -241,6 +271,11 @@ def start_root(
     if resume_session is not None:
         # Retain no native thread binding; the digest makes a changed retry conflict.
         capsule["resume_session_digest"] = hashlib.sha256(resume_session.encode()).hexdigest()
+    prior = fleet_root_events(root)
+    if (prior and prior[0]["event_type"] == "root.started"
+            and "execution_root" not in prior[0]["attributes"] and execution_root == project_root):
+        # Do not change a retained pre-feature root:start digest on retry.
+        capsule.pop("execution_root")
     event = append_fleet_event(project_id, root, source_key="root:start", event_type="root.started", attributes=capsule)
     # Already observed or failed/uncertain starts never create another host root.
     if len(fleet_root_events(root)) > 1:
@@ -248,7 +283,7 @@ def start_root(
     try:
         host_prompt = _host_prompt(prompt, root, role=role, scope=scope, lead_root=lead_root,
                                    facet=facet, cursor=event["sequence"])
-        descriptor = _host_start(root, project_id, project_root, tool, host_prompt,
+        descriptor = _host_start(root, project_id, execution_root, tool, host_prompt,
                                  role=role, lead_root=lead_root, facet=facet, surface=surface,
                                  resume_session=resume_session)
     except (httpx.HTTPError, ValueError, OSError):

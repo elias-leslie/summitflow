@@ -47,6 +47,7 @@ def start(
     facet: Annotated[str | None, typer.Option(help="Disjoint bounded support facet or capsule reference")] = None,
     request_id: Annotated[str | None, typer.Option(help="Retained opaque root handle for an idempotent retry")] = None,
     resume_session: Annotated[str | None, typer.Option(help="Exact saved native session ID to resume in a new root; the owner adapter validates it")] = None,
+    execution_root: Annotated[str | None, typer.Option(help="Existing project checkout directory for execution")] = None,
 ) -> None:
     """Register a fleet root, then request it from the owner.
 
@@ -61,6 +62,8 @@ def start(
                                "root": request_id or "root-" + uuid.uuid4().hex}
     if resume_session is not None:
         capsule["resume_session"] = resume_session
+    if execution_root is not None:
+        capsule["execution_root"] = execution_root
     output_json(_call("start", **capsule))
 
 

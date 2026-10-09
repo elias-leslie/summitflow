@@ -23,6 +23,13 @@ class FleetClient:
         return self.client._global_url(path + suffix)
 
     def start(self, **capsule: Any) -> dict[str, Any]:
+        """Start a registered project root with an optional execution_root.
+
+        The server retains the registered project_root and validates a supplied
+        execution_root as an existing matching checkout in an allowed location.
+        Omit it to execute in the registered root. Reuse the complete capsule
+        and root handle on retry; changing the execution directory conflicts.
+        """
         return self.client.post(self._url(), json=capsule)
 
     def show(self, root: str) -> dict[str, Any]:
