@@ -212,6 +212,27 @@ def test_new_secret_tree_still_refused_with_live_base(history) -> None:
         check(history, new, published_bases=(base,))
 
 
+
+@pytest.mark.parametrize("live_base", [False, True])
+def test_unchanged_destination_blob_does_not_block_new_commits(history, live_base) -> None:
+    commit = history[4]
+    published = commit(None, "deploy/password.pass", b"HOST=example\n")
+    new = commit(published, "deploy/password.pass", b"HOST=example\n")
+    if live_base:
+        assert check(history, new, published_bases=(published,)).commits_scanned == 1
+    else:
+        assert check(history, new, published).commits_scanned == 1
+
+
+@pytest.mark.parametrize("body, mode", [(b"HOST=changed\n", "100644"), (b"HOST=example\n", "100755")])
+def test_changed_destination_blob_at_denied_path_still_refused(history, body, mode) -> None:
+    commit = history[4]
+    published = commit(None, "deploy/password.pass", b"HOST=example\n")
+    new = commit(published, "deploy/password.pass", body, mode=mode)
+    with pytest.raises(OutgoingVerificationError, match="secret-sensitive"):
+        check(history, new, published)
+
+
 REVIEWED_NPMRC = (
     b"minimum-release-age=1440\nblock-exotic-subdeps=true\nstrict-dep-builds=true\n"
     b"dangerously-allow-all-builds=false\nverify-store-integrity=true\n"

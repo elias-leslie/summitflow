@@ -234,6 +234,7 @@ def _verify_outgoing(
         raise OutgoingVerificationError("Required outgoing secret scanner is unavailable.")
     revisions: list[str] = []
     commits: set[str] = set()
+    destination_commits: set[str] = set()
     refs: set[str] = set()
     for base in published_bases:
         if not _OID.fullmatch(base):
@@ -267,21 +268,24 @@ def _verify_outgoing(
             elif update.remote_oid != update.local_oid:
                 raise OutgoingVerificationError("Replacing existing publication tags is refused.")
             revision = update.remote_oid + ".." + update.local_oid
+            destination_commits.add(update.remote_oid)
         elif published_bases:
             applicable = [base for base in published_bases if _is_ancestor(root, base, update.local_oid)]
+            destination_commits.update(applicable)
             revision = " ".join([update.local_oid, *("^" + base for base in applicable)])
         revisions.append(revision)
         commits.update(_git(root, "rev-list", *revision.split()).decode("ascii").splitlines())
+    # Unchanged blobs the destination already holds at the same path and mode
+    # disclose nothing new; carrying them forward must not block every push.
+    # Commit metadata, changed blobs and the history scanner still apply.
     seen: set[tuple[bytes, bytes, bytes]] = set()
+    for commit in sorted(destination_commits):
+        seen.update(_tree_entries(root, commit))
     for commit in sorted(commits):
         if _CONTENT.search(_git(root, "cat-file", "commit", commit)):
             raise OutgoingVerificationError("Outgoing commit metadata contains sensitive content (redacted).")
-        for entry in _git(root, "ls-tree", "-rz", "--full-tree", commit).split(b"\0"):
-            if not entry:
-                continue
-            metadata, path_bytes = entry.split(b"\t", 1)
-            mode, kind, oid = metadata.split()
-            if kind != b"blob" or (path_bytes, mode, oid) in seen:
+        for path_bytes, mode, oid in _tree_entries(root, commit):
+            if (path_bytes, mode, oid) in seen:
                 continue
             seen.add((path_bytes, mode, oid))
             path = os.fsdecode(path_bytes)
@@ -317,6 +321,18 @@ def _verify_outgoing(
                     raise OutgoingVerificationError("Outgoing secret scan refused history or failed (details redacted).")
                 report.unlink(missing_ok=True)
     return OutgoingVerification(len(commits), len(updates))
+
+
+def _tree_entries(root: Path, commit: str) -> set[tuple[bytes, bytes, bytes]]:
+    entries = set()
+    for entry in _git(root, "ls-tree", "-rz", "--full-tree", commit).split(b"\0"):
+        if not entry:
+            continue
+        metadata, path_bytes = entry.split(b"\t", 1)
+        mode, kind, oid = metadata.split()
+        if kind == b"blob":
+            entries.add((path_bytes, mode, oid))
+    return entries
 
 
 def _only_public_manifest_keys(root: Path, report: Path) -> bool:
