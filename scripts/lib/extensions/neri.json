@@ -37,7 +37,7 @@
     "notes list": "Usage: neri notes list [OPTIONS] {investigation_id}\n\nArguments:\n  investigation_id  [required]\n\nOptions:\n  --help  Show this message and exit.",
     "notes add": "Usage: neri notes add [OPTIONS] {investigation_id}\n\nArguments:\n  investigation_id  [required]\n\nOptions:\n  --file <path>  [required]\n  --id <uuid>\n  --help         Show this message and exit.",
     "notes state": "Usage: neri notes state [OPTIONS] {investigation_id} {note_id}\n                        {state}:<acknowledged|resolved>\n\nArguments:\n  investigation_id               [required]\n  note_id                        [required]\n  state:<acknowledged|resolved>  [required]\n\nOptions:\n  --id <uuid>\n  --help       Show this message and exit.",
-    "report": "Usage: neri report [OPTIONS] COMMAND [ARGS]...\n\n  Read exact report and review revisions, save reports and download drafts\n\nOptions:\n  --help  Show this message and exit.\n\nCommands:\n  show\n  readiness\n  revision                  Read one exact report revision without...\n  review-packet             Read exact report evidence without...\n  review-revision           Read one exact review revision without...\n  impact-checks\n  impact-check\n  record-impact-check\n  decide-impact-check\n  duplicate-dossiers\n  duplicate-dossier\n  record-duplicate-dossier\n  save\n  download\n  severity                  Read and save immutable severity assessments...",
+    "report": "Usage: neri report [OPTIONS] COMMAND [ARGS]...\n\n  Read exact report and review revisions, save reports and download drafts\n\nOptions:\n  --help  Show this message and exit.\n\nCommands:\n  show\n  readiness\n  revision                  Read one exact report revision without...\n  review-packet             Read exact report evidence without...\n  review-revision           Read one exact review revision without...\n  impact-checks\n  impact-check\n  record-impact-check\n  decide-impact-check\n  duplicate-dossiers\n  duplicate-dossier\n  record-duplicate-dossier\n  classifications\n  classify\n  save\n  download\n  severity                  Read and save immutable severity assessments...",
     "report show": "Usage: neri report show [OPTIONS] {investigation_id}\n\nArguments:\n  investigation_id  [required]\n\nOptions:\n  --help  Show this message and exit.",
     "report readiness": "Usage: neri report readiness [OPTIONS] {investigation_id} [report_revision_id]\n                             [program_binding_revision_id]\n\nArguments:\n  investigation_id             [required]\n  report_revision_id\n  program_binding_revision_id\n\nOptions:\n  --help  Show this message and exit.",
     "report revision": "Usage: neri report revision [OPTIONS] {investigation_id} {revision_id}\n\n  Read one exact report revision without loading report history.\n\nArguments:\n  investigation_id  [required]\n  revision_id       [required]\n\nOptions:\n  --help  Show this message and exit.",
@@ -50,6 +50,8 @@
     "report duplicate-dossiers": "Usage: neri report duplicate-dossiers [OPTIONS] {investigation_id}\n\nArguments:\n  investigation_id  [required]\n\nOptions:\n  --confidence <str>\n  --report-revision-id <uuid>\n  --finding-id <str>\n  --offset <int range>         [default: 0; x>=0]\n  --limit <int range>          [default: 40; 1<=x<=100]\n  --help                       Show this message and exit.",
     "report duplicate-dossier": "Usage: neri report duplicate-dossier [OPTIONS] {investigation_id} {dossier_id}\n\nArguments:\n  investigation_id  [required]\n  dossier_id        [required]\n\nOptions:\n  --help  Show this message and exit.",
     "report record-duplicate-dossier": "Usage: neri report record-duplicate-dossier [OPTIONS] {investigation_id}\n\nArguments:\n  investigation_id  [required]\n\nOptions:\n  --file <path>  [required]\n  --id <uuid>\n  --help         Show this message and exit.",
+    "report classifications": "Usage: neri report classifications [OPTIONS] {investigation_id}\n\nArguments:\n  investigation_id  [required]\n\nOptions:\n  --report-revision-id <uuid>\n  --finding-id <str>\n  --current-only\n  --help                       Show this message and exit.",
+    "report classify": "Usage: neri report classify [OPTIONS] {investigation_id}\n\nArguments:\n  investigation_id  [required]\n\nOptions:\n  --file <path>  [required]\n  --id <uuid>\n  --help         Show this message and exit.",
     "report save": "Usage: neri report save [OPTIONS] {investigation_id}\n\nArguments:\n  investigation_id  [required]\n\nOptions:\n  --file <path>  [required]\n  --id <uuid>\n  --help         Show this message and exit.",
     "report download": "Usage: neri report download [OPTIONS] {investigation_id}\n\nArguments:\n  investigation_id  [required]\n\nOptions:\n  --output <path>                 [required]\n  --revision <uuid>               Download this exact report revision\n  --review <uuid>                 Bind this exact review revision and its\n                                  report\n  --program-binding-revision-id <uuid>\n                                  Use this exact program binding revision\n  --severity-through-sequence <int range>\n                                  Freeze severity at this saved activity\n                                  sequence  [x>=0]\n  --help                          Show this message and exit.",
     "report severity": "Usage: neri report severity [OPTIONS] COMMAND [ARGS]...\n\n  Read and save immutable severity assessments for an exact report revision\n\nOptions:\n  --help  Show this message and exit.\n\nCommands:\n  list\n  show\n  save",
@@ -494,6 +496,32 @@
       "precautions": [
         "passive record only; never access authenticated platforms through this workflow",
         "confidence is unknown, elevated or observed; do not provide a probability"
+      ],
+      "task_types": [
+        "neri"
+      ]
+    },
+    {
+      "surface": "st.neri.report.classifications",
+      "tier": "reference",
+      "cmd": "st neri report classifications <investigation-id> [--report-revision-id UUID --finding-id ID --current-only]",
+      "when": "read structured finding classifications (impact_basis, duplicate_of, root_cause_key)",
+      "precautions": [
+        "read-only; the newest current classification or supported review assessment decides"
+      ],
+      "task_types": [
+        "neri"
+      ]
+    },
+    {
+      "surface": "st.neri.report.classify",
+      "tier": "reference",
+      "cmd": "st neri report classify <investigation-id> --file classification.json [--id UUID]",
+      "when": "record how one exact finding's impact was established and which root cause it shares",
+      "precautions": [
+        "append-only; reclassify by setting supersedes_classification_id to the current classification",
+        "runtime_demonstrated only when retained evidence shows the impact on the running target",
+        "root_cause_key is a product-prefixed slug shared by findings with the same defect"
       ],
       "task_types": [
         "neri"
@@ -990,6 +1018,7 @@
       "when": "start one root-orchestrated native hunt before target work",
       "precautions": [
         "returns the recorded target scope and run ID",
+        "the question (first 120 characters) becomes the investigation title; phrase it as what is being tested",
         "the hunter operates with native tools and submits its bounded outcome through hunt handoff"
       ],
       "task_types": [
