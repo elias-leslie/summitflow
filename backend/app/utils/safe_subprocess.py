@@ -78,26 +78,19 @@ async def run_async(args: Sequence[StrPath], **kwargs: Any) -> subprocess.Comple
 
 def _stop_cli_owned_process(process: subprocess.Popen[Any]) -> None:
     """Cancel only the CLI's captured owned subtree, including new sessions."""
-    def identity(pid: int) -> tuple[int, str]:
+    def identity(pid: int) -> tuple[int, int, str]:
         fields = Path(f"/proc/{pid}/stat").read_text().rsplit(")", 1)[1].split()
-        return int(fields[1]), fields[19]
+        return int(fields[1]), int(fields[2]), fields[19]
 
-    snapshot: dict[int, tuple[int, str]] = {}
-    for entry in Path("/proc").iterdir():
-        if entry.name.isdigit():
-            with contextlib.suppress(OSError, ValueError):
-                snapshot[int(entry.name)] = identity(int(entry.name))
-    owned = {process.pid}
-    while additions := {pid for pid, (parent, _start) in snapshot.items() if parent in owned} - owned:
-        owned.update(additions)
+    snapshot: dict[int, tuple[int, int, str]] = {}
 
     def alive(pid: int) -> bool:
         try:
-            return pid in snapshot and identity(pid)[1] == snapshot[pid][1]
+            return pid in snapshot and identity(pid)[2] == snapshot[pid][2]
         except (OSError, ValueError):
             return False
 
-    for sig in (signal.SIGTERM, signal.SIGKILL):
+    def signal_owned(sig: int, owned: set[int]) -> None:
         # The initial group remains ours after its leader exits. Pipe-holding
         # children must not defeat timeout, but unrelated groups are not ours.
         with contextlib.suppress(ProcessLookupError):
@@ -106,6 +99,35 @@ def _stop_cli_owned_process(process: subprocess.Popen[Any]) -> None:
             if alive(pid):
                 with contextlib.suppress(ProcessLookupError):
                     os.kill(pid, sig)
+
+    # Freeze before signaling: a live owner can fork a new-session child after
+    # a /proc scan and then die, orphaning it outside the captured subtree.
+    # Stopped processes cannot fork, so rescanning until no new owned process
+    # appears captures the whole subtree while parent links still hold.
+    owned = {process.pid}
+    stopped: set[int] = set()
+    while True:
+        current: dict[int, tuple[int, int, str]] = {}
+        for entry in Path("/proc").iterdir():
+            if entry.name.isdigit():
+                with contextlib.suppress(OSError, ValueError):
+                    current[int(entry.name)] = identity(int(entry.name))
+        # Owned identities stay pinned to first sight, so a reused PID is never signaled.
+        snapshot = {**current, **{pid: snapshot[pid] for pid in owned if pid in snapshot}}
+        # Group members whose parent exited are still ours, as are their children.
+        owned |= {pid for pid, (_parent, group, _start) in snapshot.items() if group == process.pid}
+        while additions := {pid for pid, (parent, _group, _start) in snapshot.items() if parent in owned} - owned:
+            owned.update(additions)
+        if owned <= stopped:
+            break
+        stopped |= owned
+        signal_owned(signal.SIGSTOP, owned)
+
+    for sig in (signal.SIGTERM, signal.SIGKILL):
+        signal_owned(sig, owned)
+        if sig == signal.SIGTERM:
+            # Stopped owners must resume to act on SIGTERM, e.g. reap children.
+            signal_owned(signal.SIGCONT, owned)
         try:
             process.communicate(timeout=2)
             if not any(alive(pid) for pid in owned - {process.pid}):

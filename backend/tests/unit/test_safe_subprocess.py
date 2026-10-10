@@ -1,7 +1,10 @@
 from __future__ import annotations
 
+import os
+import signal
 import subprocess
 import sys
+from pathlib import Path
 
 import pytest
 
@@ -226,3 +229,28 @@ def test_cli_owned_adapter_preserves_input_capture_and_check() -> None:
         safe_subprocess.run_cli_owned(command, inherit_fds=(), input="fixture", capture_output=True,
                                       text=True, timeout=5, check=True)
     assert captured.value.returncode == 3 and captured.value.output == "fixture"
+
+
+def test_cli_timeout_cancels_new_session_children_forked_during_cancellation(tmp_path) -> None:
+    """A still-forking owner cannot leak new-session children past the subtree scan."""
+    log = tmp_path / "pids"
+    child_code = (
+        "import subprocess,sys,time\n"
+        f"log=open({str(log)!r},'a')\n"
+        "while True:\n"
+        " c=subprocess.Popen([sys.executable,'-c','import time; time.sleep(60)'],start_new_session=True)\n"
+        " log.write(f'{c.pid}\\n'); log.flush(); time.sleep(0.002)\n"
+    )
+    with pytest.raises(subprocess.TimeoutExpired):
+        safe_subprocess.run_cli_owned([sys.executable, "-c", child_code], inherit_fds=(), capture_output=True,
+                                      timeout=0.5)
+    survivors = []
+    for pid in map(int, log.read_text().split()):
+        try:
+            state = Path(f"/proc/{pid}/stat").read_text().rsplit(")", 1)[1].split()[0]
+        except OSError:
+            continue
+        if state != "Z":
+            survivors.append(pid)
+            os.kill(pid, signal.SIGKILL)
+    assert not survivors, f"new-session children escaped cancellation: {survivors}"
