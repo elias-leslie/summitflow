@@ -35,6 +35,28 @@ class ExtensionCatalog:
     diagnostics: list[str] = field(default_factory=list)
 
 
+def _owner_manifest(binding: ExtensionBinding) -> ExtensionManifest | None:
+    """Prefer the manifest the owner shipped in its accepted release.
+
+    Owners regenerate help in their own repository and deploy it, so SummitFlow
+    is never dirtied. Accepted releases are immutable; the grant stays here.
+    Anything missing or invalid falls back to the bundled manifest.
+    """
+    if binding.owner_manifest is None:
+        return None
+    from .lib.service_release import service_state_root
+
+    project_state = service_state_root() / "projects" / binding.owner
+    try:
+        path = (project_state / "current" / "source" / binding.owner_manifest).resolve(strict=True)
+        if not path.is_relative_to((project_state / "releases").resolve(strict=True)):
+            return None
+        manifest = ExtensionManifest.model_validate_json(path.read_text())
+    except (OSError, ValueError):
+        return None
+    return manifest if (manifest.id, manifest.owner, manifest.namespace) == (binding.id, binding.owner, binding.namespace) else None
+
+
 def load_extensions(core_names: set[str], *, registry_path: Path | None = None) -> ExtensionCatalog:
     """Read only trusted local metadata; never import owners or resolve projects."""
     registry_path = registry_path or tool_registry_path()
@@ -59,7 +81,7 @@ def load_extensions(core_names: set[str], *, registry_path: Path | None = None) 
             metadata_path = (registry_path.parent / binding.manifest).resolve()
             if not metadata_path.is_relative_to((registry_path.parent / "extensions").resolve()):
                 raise ValueError("metadata outside trusted manifest directory")
-            metadata = ExtensionManifest.model_validate_json(metadata_path.read_text())
+            metadata = _owner_manifest(binding) or ExtensionManifest.model_validate_json(metadata_path.read_text())
             if (metadata.id, metadata.owner, metadata.namespace) != (binding.id, binding.owner, binding.namespace):
                 raise ValueError("binding identity mismatch")
             record.manifest = metadata

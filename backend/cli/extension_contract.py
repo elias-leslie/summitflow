@@ -37,6 +37,8 @@ class ExtensionBinding(StrictModel):
     owner: str = Field(pattern=r"^[a-z0-9][a-z0-9-]*$")
     namespace: str = Field(pattern=r"^[a-z][a-z0-9-]*$")
     manifest: str
+    # Path inside the owner's accepted release; overrides `manifest` when present.
+    owner_manifest: str | None = None
     executable: str
     execution_source: Literal["checkout", "accepted_runtime"] = "checkout"
     grant: DispatchGrant
@@ -45,10 +47,10 @@ class ExtensionBinding(StrictModel):
     presentation: Literal["native", "web-details"] = "native"
     policy_adapter: Literal["browser"] | None = None
 
-    @field_validator("manifest", "executable")
+    @field_validator("manifest", "executable", "owner_manifest")
     @classmethod
-    def validate_path(cls, value: str) -> str:
-        return relative_path(value)
+    def validate_path(cls, value: str | None) -> str | None:
+        return None if value is None else relative_path(value)
 
     @field_validator("environment")
     @classmethod

@@ -425,3 +425,27 @@ def test_rejected_capture_is_a_structured_failure(installed):
         worker.join(timeout=2)
     assert result.returncode == 1
     assert json.loads(result.stdout)["errors"][0]["message"] == "unknown_or_expired_lease"
+
+
+def _fake_st(backend: Path) -> None:
+    """A venv whose st prints which tree ran it and the exported checkout root."""
+    bin_dir = backend / ".venv" / "bin"
+    bin_dir.mkdir(parents=True)
+    (bin_dir / "python").symlink_to(sys.executable)
+    (bin_dir / "st").write_text(f'#!/bin/sh\necho "{backend} $SUMMITFLOW_ROOT"\n')
+    (bin_dir / "st").chmod(0o755)
+
+
+def test_st_runs_the_accepted_release_unless_dev_checkout_is_requested(installed, tmp_path):
+    root, link, _state, env = installed
+    services = Path(env["SUMMITFLOW_SERVICE_STATE_ROOT"])
+    release = services / "projects" / "summitflow" / "releases" / ("a" * 32)
+    _fake_st(release / "source" / "backend")
+    (services / "projects" / "summitflow" / "current").symlink_to(release)
+    _fake_st(root / "backend")
+    env = {key: value for key, value in env.items() if key not in {"SUMMITFLOW_ROOT", "ST_DEV_CHECKOUT"}}
+
+    released = _run(link, env, "pulse")
+    assert released.stdout.split() == [str(release / "source" / "backend"), str(root)]
+    developed = _run(link, {**env, "ST_DEV_CHECKOUT": "1"}, "pulse")
+    assert developed.stdout.split() == [str(root / "backend"), str(root)]

@@ -8,9 +8,10 @@ from pathlib import Path
 from typing import Literal, cast
 
 from app.utils.env_files import scrub_env_keys_from_files
+from app.utils.shared_paths import get_repo_root
 
 # Compose file path for the SummitFlow ecosystem
-COMPOSE_DIR = Path(__file__).resolve().parent.parent.parent / "docker" / "compose"
+COMPOSE_DIR = get_repo_root() / "docker" / "compose"
 COMPOSE_FILE = COMPOSE_DIR / "docker-compose.yml"
 COMPOSE_DEV_FILE = COMPOSE_DIR / "docker-compose.dev.yml"
 COMPOSE_ENV_FILE = COMPOSE_DIR / ".env"

@@ -13,7 +13,8 @@ import time
 from pathlib import Path
 from typing import Any
 
-_ROOT = Path(__file__).resolve().parents[3]
+# Hooks name the registered checkout, not the release this code runs from.
+_ROOT = Path(os.environ.get("SUMMITFLOW_ROOT") or Path(__file__).resolve().parents[3])
 _GUARD_COMMAND = f"bash {_ROOT}/scripts/lib/publication-pretool-hook"
 _STARTUP_COMMAND = f"bash {_ROOT}/scripts/lib/publication-startup-hook"
 

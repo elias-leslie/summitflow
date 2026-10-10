@@ -587,3 +587,29 @@ def test_browser_binding_forwards_only_approved_session_identity_and_state_envir
     for name in expected:
         assert forwarded[name] == f"fixture-{name}"
     assert "UNAPPROVED_SESSION_SECRET" not in forwarded
+
+
+def test_owner_release_manifest_overrides_bundled_metadata_but_not_the_grant(tmp_path, monkeypatch):
+    registry = registration(tmp_path, binding_changes={"owner_manifest": "st/manifest.json"})
+    state = tmp_path / "state"
+    monkeypatch.setenv("SUMMITFLOW_SERVICE_STATE_ROOT", str(state))
+    release = state / "projects" / "fixture-owner" / "releases" / ("1" * 32) / "source"
+    (release / "st").mkdir(parents=True)
+    (state / "projects" / "fixture-owner" / "current").symlink_to(release.parent)
+    metadata = json.loads((tmp_path / "extensions" / "fixture.json").read_text())
+
+    def owner_ships(**changes):
+        (release / "st" / "manifest.json").write_text(json.dumps({**metadata, **changes}))
+        return load_extensions(set(), registry_path=registry).records[0]
+
+    record = owner_ships(version="2.0.0")
+    assert record.manifest is not None
+    assert (record.manifest.version, record.status) == ("2.0.0", "unverified")
+    # The SummitFlow-owned grant still bounds effects.
+    assert owner_ships(effects=["credentials"]).status == "denied"
+    # Invalid or mismatched owner metadata falls back to the bundled manifest.
+    fallback = owner_ships(namespace="other").manifest
+    assert fallback is not None and fallback.version == "1.0.0"
+    (release / "st" / "manifest.json").write_text("{")
+    fallback = load_extensions(set(), registry_path=registry).records[0].manifest
+    assert fallback is not None and fallback.version == "1.0.0"

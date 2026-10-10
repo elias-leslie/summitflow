@@ -10,6 +10,8 @@ from typing import Any
 import httpx
 import typer
 
+from app.utils.shared_paths import get_repo_root
+
 from ..output import output_error, output_json
 from ._projects_helpers import get_api_base
 
@@ -34,7 +36,7 @@ def _get_list(path: str, *, required: bool = False) -> tuple[list[dict[str, Any]
 def _checkout(project: dict[str, Any]) -> tuple[dict[str, Any], dict[str, Any] | None]:
     root = project.get("root_path")
     project_id = project.get("id")
-    projects_dir = Path(os.environ["ST_WORKSPACES_ROOT"]) / "projects" if os.getenv("ST_WORKSPACES_ROOT") else Path(__file__).resolve().parents[3].parent
+    projects_dir = Path(os.environ["ST_WORKSPACES_ROOT"]) / "projects" if os.getenv("ST_WORKSPACES_ROOT") else get_repo_root().parent
     candidate = projects_dir / str(project.get("id", ""))
     candidate_manifest = candidate / "project.identity.json"
     canonical = None

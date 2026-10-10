@@ -20,26 +20,52 @@ if [[ ${1-} == monitor ]]; then
     exec /usr/bin/python3 "$monitor_source/backend/monitor_standalone.py" "$@"
 fi
 
-venv_python="$repo_root/backend/.venv/bin/python"
-venv_st="$repo_root/backend/.venv/bin/st"
+# Every agent runs the accepted release, so a half-saved checkout edit or an
+# uncommitted gate change cannot break ST or stale other projects' receipts.
+# ST_DEV_CHECKOUT=1 runs this checkout (developing ST, or repairing a broken
+# release: ST_DEV_CHECKOUT=1 st service rollback summitflow).
+service_state=${SUMMITFLOW_SERVICE_STATE_ROOT:-$HOME/.summitflow/services}
+release_backend="$service_state/projects/summitflow/current/source/backend"
+if [[ ${ST_DEV_CHECKOUT-} == 1 ]]; then
+    backend="$repo_root/backend"
+    export SUMMITFLOW_ROOT="$repo_root" SUMMITFLOW_HOST_CONFIG_ROOT="$repo_root"
+elif [[ -x $release_backend/.venv/bin/st ]]; then
+    # A shared lock keeps release pruning from deleting this tree mid-run.
+    release_dir=$(readlink -f -- "$release_backend/../..")
+    { exec 9<"$release_dir" && flock -s -n 9; } 2>/dev/null || true
+    backend="$release_dir/source/backend"
+else
+    # Only a host that has deployed before is missing something; stay quiet
+    # on fresh hosts and inside sandboxes with a private HOME.
+    if [[ -d $service_state/projects/summitflow ]]; then
+        printf '%s\n' "st: no accepted summitflow release; using the checkout (st service rebuild summitflow)" >&2
+    fi
+    backend="$repo_root/backend"
+fi
+# Host configuration (compose .env, unit templates, job records) stays in the
+# registered checkout wherever the code runs from.
+export SUMMITFLOW_ROOT="${SUMMITFLOW_ROOT:-$repo_root}"
+export SUMMITFLOW_HOST_CONFIG_ROOT="${SUMMITFLOW_HOST_CONFIG_ROOT:-$repo_root}"
+venv_python="$backend/.venv/bin/python"
+venv_st="$backend/.venv/bin/st"
 
 # A missing or emptied backend environment otherwise surfaces as an opaque
 # exec/ImportError (autosnap failed repeatedly on 2026-10-09). Say
 # exactly what broke, alert at CRIT in the journal, and exit EX_CONFIG.
 runtime_unavailable() {
-    local message="st runtime unavailable: $1. Repair: cd $repo_root/backend && uv sync --locked"
+    local message="st runtime unavailable: $1. Repair: cd $backend && uv sync --locked, or ST_DEV_CHECKOUT=1 st service rollback summitflow"
     printf '%s\n' "$message" >&2
     logger -p user.crit -t summitflow-st -- "$message" 2>/dev/null || true
     exit 78
 }
 
 if [[ ! -x $venv_st || ! -x $venv_python ]]; then
-    runtime_unavailable "backend/.venv is missing its st entrypoint or interpreter"
+    runtime_unavailable "$backend/.venv is missing its st entrypoint or interpreter"
 fi
 
 # Unattended timer callers get a real import probe; interactive calls stay fast.
 if [[ ${1-} == autosnap ]] && ! probe_error=$("$venv_python" -I -c 'import cli.main' 2>&1); then
-    runtime_unavailable "backend/.venv cannot import the st CLI (${probe_error##*$'\n'})"
+    runtime_unavailable "$backend/.venv cannot import the st CLI (${probe_error##*$'\n'})"
 fi
 
 exec "$venv_st" "$@"

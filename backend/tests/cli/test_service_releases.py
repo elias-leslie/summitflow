@@ -179,6 +179,24 @@ def test_release_cleanup_preserves_pointers_service_references_receipts_and_logs
     assert retained_log.read_text() == "durable log\n"
 
 
+def test_release_cleanup_keeps_a_release_a_running_st_still_executes(tmp_path: Path) -> None:
+    import fcntl
+    import os
+
+    state = tmp_path / "state"
+    current = _release_for_cleanup(state, "1" * 32)
+    in_use = _release_for_cleanup(state, "4" * 32)
+    (state / "projects" / "example" / "current").symlink_to(current.release_root)
+    descriptor = os.open(in_use.release_root, os.O_RDONLY)
+    try:
+        fcntl.flock(descriptor, fcntl.LOCK_SH)  # what scripts/st holds
+        assert service_release.prune_old_releases(current, service_references=set()) == ()
+        assert in_use.release_root.is_dir()
+    finally:
+        os.close(descriptor)
+    assert service_release.prune_old_releases(current, service_references=set()) == (in_use.release_root,)
+
+
 @pytest.mark.parametrize("references", [None, {Path("/outside/managed/releases")}])
 def test_release_cleanup_fails_closed_for_unknown_or_invalid_service_references(
     tmp_path: Path, references: set[Path] | None

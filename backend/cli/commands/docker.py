@@ -15,6 +15,8 @@ from typing import Annotated
 import typer
 from typer.main import get_command
 
+from app.utils.shared_paths import get_repo_root
+
 from ..details import emit_result_or_details
 from ..runtime import (
     COMPOSE_ENV_FILE,
@@ -130,7 +132,7 @@ def _resolve_project_context(project: str) -> Path | None:
     Prefer sibling repos relative to the current SummitFlow checkout, then fall
     back to historical `$HOME/<project>` paths that exist on older setups.
     """
-    summitflow_root = Path(__file__).resolve().parents[3]
+    summitflow_root = get_repo_root()
     sibling_root = summitflow_root.parent
     candidates = [
         sibling_root / project,

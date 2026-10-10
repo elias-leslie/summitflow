@@ -402,6 +402,21 @@ def _pointer_release(path: Path, releases: Path) -> Path | None:
     return target
 
 
+def _release_in_use(release_dir: Path) -> bool:
+    """scripts/st holds a shared flock on the release it executes."""
+    try:
+        descriptor = os.open(release_dir, os.O_RDONLY)
+    except OSError:
+        return False
+    try:
+        fcntl.flock(descriptor, fcntl.LOCK_EX | fcntl.LOCK_NB)
+    except BlockingIOError:
+        return True
+    finally:
+        os.close(descriptor)
+    return False
+
+
 def prune_old_releases(
     release: PreparedRelease, *, service_references: set[Path] | None
 ) -> tuple[Path, ...]:
@@ -454,6 +469,9 @@ def prune_old_releases(
 
     removed: list[Path] = []
     for candidate in sorted(candidates):
+        if _release_in_use(candidate):
+            print(f"[service] release cleanup kept {candidate.name}: a running st still uses it")
+            continue
         try:
             shutil.rmtree(candidate)
         except OSError as exc:
@@ -462,6 +480,19 @@ def prune_old_releases(
         print(f"[service] removed rebuildable release {candidate.name}")
         removed.append(candidate)
     return tuple(removed)
+
+
+def _smoke_test_st(release_root: Path) -> None:
+    """Every agent's `st` runs `current`; never point it at a CLI that cannot start."""
+    st = release_root / "source" / "backend" / ".venv" / "bin" / "st"
+    for arguments in (["--help"], ["lease", "--list", "--all"]):
+        try:
+            result = subprocess.run([str(st), *arguments], capture_output=True, text=True, timeout=120, check=False)
+        except (OSError, subprocess.TimeoutExpired) as exc:
+            raise ReleaseError(f"Release st smoke test failed ({' '.join(arguments)}): {exc}") from exc
+        if result.returncode != 0:
+            tail = (result.stderr or result.stdout).strip().splitlines()[-1:] or [""]
+            raise ReleaseError(f"Release st smoke test failed ({' '.join(arguments)}): {tail[0]}")
 
 
 def complete_release(
@@ -475,6 +506,8 @@ def complete_release(
     releases = project_state / "releases"
     old_target = _pointer_release(current, releases)
     _pointer_release(previous, releases)
+    if release.project_id == "summitflow":
+        _smoke_test_st(release.release_root)
     if old_target is not None:
         _replace_symlink(previous, old_target)
         receipt["previous_usable_release"] = old_target.name

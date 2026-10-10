@@ -1240,6 +1240,8 @@ def queue_detached(
             "--setenv", f"HOME={Path.home()}",
             "--setenv", f"SUMMITFLOW_ROOT={get_repo_root()}",
             "--setenv", f"SUMMITFLOW_SERVICE_STATE_ROOT={service_release.service_state_root()}",
+            # The documented repair for a broken release must not run it again.
+            *(["--setenv", "ST_DEV_CHECKOUT=1"] if os.environ.get("ST_DEV_CHECKOUT") == "1" else []),
             "st", "service", "_run-job", job_id,
         ]
     )

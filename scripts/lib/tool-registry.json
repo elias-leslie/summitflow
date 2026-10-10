@@ -279,6 +279,7 @@
       "owner": "neri",
       "namespace": "neri",
       "manifest": "extensions/neri.json",
+      "owner_manifest": "backend/app/st_cli/st-extension.json",
       "executable": "backend/.venv/bin/neri-st",
       "grant": {
         "enabled": true,
