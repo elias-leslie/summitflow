@@ -838,7 +838,7 @@
       "when": "read compact investigation context with paginated attempts and report history",
       "precautions": [
         "read-only; limit/cursor apply to attempts; report pagination is independent; preserve membership, selection and exact report/review IDs; no selection is a valid state",
-        "default omits only values the payload repeats: group_id inside selected_report, attempts and available_reports rows (the group's), attempt target_id and target_name equal to target_id, selected_report.highest_severity when it is one finding's severity (highest_severity_finding_id names it), severity report_revision_id and finding_id equal to their report and finding, and in the available_reports row whose report_revision_id is the selected report's, every field equal to selected_report's; objective, recent_activity, selected report and finding text are exact; --full prints the exact payload"
+        "default omits only values the payload repeats: group_id inside selected_report, attempts and available_reports rows (the group's), attempt target_id and the top-level target_name when they equal target_id, selected_report.highest_severity when it is the severity assessed for one finding (highest_severity_finding_id names that finding), severity report_revision_id and finding_id equal to their report and finding, and in the available_reports row whose report_revision_id is the selected report's, the fields equal to selected_report's (as_selected_report lists them); objective, recent_activity, selected report and finding text are exact; --full prints the exact payload"
       ],
       "task_types": [
         "neri"
