@@ -2,25 +2,23 @@
 
 from __future__ import annotations
 
+from datetime import UTC, datetime
 from unittest.mock import MagicMock, patch
 
 import pytest
+from agent_hub.exceptions import AgentHubError
+from agent_hub.models.session import SessionListItem, SessionListResponse
 
 from app.services.task_lane_preflight import check_task_lane_conflicts
 
-
-def _mock_response(payload: dict[str, object]) -> MagicMock:
-    response = MagicMock()
-    response.json.return_value = payload
-    response.raise_for_status.return_value = None
-    return response
+_SESSION_TIME = datetime(2026, 3, 7, 18, tzinfo=UTC)
 
 
 @pytest.fixture
-def mock_httpx_client(mocker):
+def mock_agent_hub_client(mocker):
     mock_client = MagicMock()
-    mock_client_cls = mocker.patch("app.services._lane_inventory.httpx.Client")
-    mock_client_cls.return_value.__enter__.return_value = mock_client
+    mock_get_client = mocker.patch("app.services._lane_inventory.get_sync_client")
+    mock_get_client.return_value.__enter__.return_value = mock_client
     return mock_client
 
 
@@ -31,10 +29,10 @@ class TestTaskLaneOwnership:
     def test_ownership_inventory_payload_maps_to_live_lane_sessions(
         self,
         mock_get_task: MagicMock,
-        mock_httpx_client: MagicMock,
+        mock_agent_hub_client: MagicMock,
     ) -> None:
         mock_get_task.return_value = {"id": "task-999", "status": "running"}
-        mock_httpx_client.get.return_value = _mock_response(
+        mock_agent_hub_client.get_project_ownership.return_value = (
             {
                 "project_id": "summitflow",
                 "generated_at": "2026-03-07T18:00:00Z",
@@ -62,9 +60,9 @@ class TestTaskLaneOwnership:
 
     def test_ownership_inventory_payload_summarizes_active_specialists(
         self,
-        mock_httpx_client: MagicMock,
+        mock_agent_hub_client: MagicMock,
     ) -> None:
-        mock_httpx_client.get.return_value = _mock_response(
+        mock_agent_hub_client.get_project_ownership.return_value = (
             {
                 "project_id": "summitflow",
                 "generated_at": "2026-03-07T18:00:00Z",
@@ -106,24 +104,30 @@ class TestTaskLaneOwnership:
     def test_ownership_endpoint_404_falls_back_to_legacy_sessions(
         self,
         mock_get_task: MagicMock,
-        mock_httpx_client: MagicMock,
+        mock_agent_hub_client: MagicMock,
     ) -> None:
         mock_get_task.return_value = {"id": "task-999", "status": "running"}
-        not_found = _mock_response({})
-        not_found.status_code = 404
-        legacy = _mock_response(
-            {
-                "sessions": [
-                    {
-                        "id": "sess-legacy",
-                        "external_id": "task-999",
-                        "current_branch": "task-999/main",
-                        "working_dir": "/home/testuser/summitflow",
-                    }
-                ]
-            }
+        mock_agent_hub_client.get_project_ownership.side_effect = AgentHubError("Not Found", status_code=404)
+        mock_agent_hub_client.list_sessions.return_value = SessionListResponse(
+            sessions=[
+                SessionListItem(
+                    id="sess-legacy",
+                    project_id="summitflow",
+                    provider="claude",
+                    model="claude-opus-5-5",
+                    status="active",
+                    message_count=0,
+                    external_id="task-999",
+                    current_branch="task-999/main",
+                    working_dir="/home/testuser/summitflow",
+                    created_at=_SESSION_TIME,
+                    updated_at=_SESSION_TIME,
+                )
+            ],
+            total=1,
+            page=1,
+            page_size=100,
         )
-        mock_httpx_client.get.side_effect = [not_found, legacy]
 
         result = check_task_lane_conflicts("task-123", "summitflow")
 

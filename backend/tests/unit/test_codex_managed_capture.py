@@ -155,7 +155,7 @@ def test_process_and_delivery_leases_fence_competing_owners(outbox):
 
 
 def validators():
-    with zipfile.ZipFile(ROOT / "docker/workspace-packages/agent_hub_client-0.5.0-py3-none-any.whl") as wheel:
+    with zipfile.ZipFile(ROOT / "docker/workspace-packages/agent_hub_client-0.6.0-py3-none-any.whl") as wheel:
         return {name: Draft7Validator(json.loads(wheel.read(f"agent_hub/codex_protocol/0.159.3/{name}.json"))) for name in ("ServerRequest", "ServerNotification")}
 
 
@@ -218,7 +218,7 @@ def test_snapshots_and_fork_history_are_never_live_command_events(outbox):
 async def test_agent_hub_downtime_and_lost_ack_resume_exact_receipt(outbox, monkeypatch):
     # Exercise the packaged public models while the host SDK may precede rebuild.
     module = types.ModuleType("agent_hub.models.native_observation")
-    with zipfile.ZipFile(ROOT / "docker/workspace-packages/agent_hub_client-0.5.0-py3-none-any.whl") as wheel:
+    with zipfile.ZipFile(ROOT / "docker/workspace-packages/agent_hub_client-0.6.0-py3-none-any.whl") as wheel:
         exec(compile(wheel.read("agent_hub/models/native_observation.py"), "native_observation.py", "exec"), module.__dict__)
     monkeypatch.setitem(sys.modules, module.__name__, module)
     original = {"method": "turn/completed", "params": {"threadId": "thread", "turn": {"id": "turn", "items": [], "status": "completed"}}}
@@ -556,7 +556,7 @@ def test_bad_policy_fallback_still_fences_a_competing_configured_owner(outbox, m
 @pytest.mark.asyncio
 async def test_delivery_rollout_registration_retains_original_profile_across_upgrade(outbox, tmp_path, monkeypatch):
     module = types.ModuleType("agent_hub.models.native_observation")
-    with zipfile.ZipFile(ROOT / "docker/workspace-packages/agent_hub_client-0.5.0-py3-none-any.whl") as wheel:
+    with zipfile.ZipFile(ROOT / "docker/workspace-packages/agent_hub_client-0.6.0-py3-none-any.whl") as wheel:
         exec(compile(wheel.read("agent_hub/models/native_observation.py"), "native_observation.py", "exec"), module.__dict__)
     monkeypatch.setitem(sys.modules, module.__name__, module)
     outbox.capture("thread", kind="capture_health", payload={"state": "old"})
@@ -587,7 +587,7 @@ async def test_delivery_rollout_registration_retains_original_profile_across_upg
 @pytest.mark.parametrize("offline", [False, True])
 async def test_second_successor_delivers_after_predecessor_cleanup_and_restart(outbox, monkeypatch, offline):
     module = types.ModuleType("agent_hub.models.native_observation")
-    with zipfile.ZipFile(ROOT / "docker/workspace-packages/agent_hub_client-0.5.0-py3-none-any.whl") as wheel:
+    with zipfile.ZipFile(ROOT / "docker/workspace-packages/agent_hub_client-0.6.0-py3-none-any.whl") as wheel:
         exec(compile(wheel.read("agent_hub/models/native_observation.py"), "native_observation.py", "exec"), module.__dict__)
     monkeypatch.setitem(sys.modules, module.__name__, module)
     registrations = []
@@ -671,7 +671,7 @@ def test_malformed_rpc_thread_cannot_grant_ownership_or_snapshot(outbox, method)
 @pytest.mark.asyncio
 async def test_quarantine_lost_ack_replays_exact_original_without_subject(outbox, monkeypatch):
     module = types.ModuleType("agent_hub.models.native_observation")
-    with zipfile.ZipFile(ROOT / "docker/workspace-packages/agent_hub_client-0.5.0-py3-none-any.whl") as wheel:
+    with zipfile.ZipFile(ROOT / "docker/workspace-packages/agent_hub_client-0.6.0-py3-none-any.whl") as wheel:
         exec(compile(wheel.read("agent_hub/models/native_observation.py"), "native_observation.py", "exec"), module.__dict__)
     monkeypatch.setitem(sys.modules, module.__name__, module)
     outbox.quarantine({"method": "future", "params": {"private": "raw"}}, registration={"project_id": "summitflow", "namespace": "fixture", "producer_id": "owner", "epoch": "epoch", "collector_id": "fixture", "provider_version": "fixture", "schema_fingerprint": "fixture"}, reference={"connection_id": "original"})
@@ -740,7 +740,7 @@ def test_future_spool_schema_is_rejected_without_mutating_original_pending(outbo
 @pytest.mark.asyncio
 async def test_public_api_without_raw_metadata_delivers_before_late_path_and_after_restart(outbox, tmp_path, monkeypatch):
     module = types.ModuleType("agent_hub.models.native_observation")
-    with zipfile.ZipFile(ROOT / "docker/workspace-packages/agent_hub_client-0.5.0-py3-none-any.whl") as wheel:
+    with zipfile.ZipFile(ROOT / "docker/workspace-packages/agent_hub_client-0.6.0-py3-none-any.whl") as wheel:
         exec(compile(wheel.read("agent_hub/models/native_observation.py"), "native_observation.py", "exec"), module.__dict__)
     monkeypatch.setitem(sys.modules, module.__name__, module)
     capture = collector(outbox)
@@ -804,7 +804,7 @@ def test_rollout_binding_is_owned_immutable_and_bounded(outbox, tmp_path):
 @pytest.mark.asyncio
 async def test_public_api_project_mismatch_never_registers_or_delivers(outbox, monkeypatch):
     module = types.ModuleType("agent_hub.models.native_observation")
-    with zipfile.ZipFile(ROOT / "docker/workspace-packages/agent_hub_client-0.5.0-py3-none-any.whl") as wheel:
+    with zipfile.ZipFile(ROOT / "docker/workspace-packages/agent_hub_client-0.6.0-py3-none-any.whl") as wheel:
         exec(compile(wheel.read("agent_hub/models/native_observation.py"), "native_observation.py", "exec"), module.__dict__)
     monkeypatch.setitem(sys.modules, module.__name__, module)
     outbox.capture("thread", kind="capture_health", payload={"state": "connected"})

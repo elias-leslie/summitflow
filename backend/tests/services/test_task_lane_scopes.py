@@ -9,18 +9,11 @@ import pytest
 from app.services.task_lane_preflight import check_task_lane_conflicts
 
 
-def _mock_response(payload: dict[str, object]) -> MagicMock:
-    response = MagicMock()
-    response.json.return_value = payload
-    response.raise_for_status.return_value = None
-    return response
-
-
 @pytest.fixture
-def mock_httpx_client(mocker):
+def mock_agent_hub_client(mocker):
     mock_client = MagicMock()
-    mock_client_cls = mocker.patch("app.services._lane_inventory.httpx.Client")
-    mock_client_cls.return_value.__enter__.return_value = mock_client
+    mock_get_client = mocker.patch("app.services._lane_inventory.get_sync_client")
+    mock_get_client.return_value.__enter__.return_value = mock_client
     return mock_client
 
 
@@ -33,10 +26,10 @@ class TestTaskLaneScopes:
         self,
         mock_get_task: MagicMock,
         mock_get_spirit: MagicMock,
-        mock_httpx_client: MagicMock,
+        mock_agent_hub_client: MagicMock,
     ) -> None:
         mock_get_task.return_value = {"id": "task-999", "status": "running"}
-        mock_httpx_client.get.return_value = _mock_response(
+        mock_agent_hub_client.get_project_ownership.return_value = (
             {"sessions": [{"id": "sess-6", "external_id": "task-999", "current_branch": "task-999/main"}]}
         )
 
@@ -61,10 +54,10 @@ class TestTaskLaneScopes:
         self,
         mock_get_task: MagicMock,
         mock_get_spirit: MagicMock,
-        mock_httpx_client: MagicMock,
+        mock_agent_hub_client: MagicMock,
     ) -> None:
         mock_get_task.return_value = {"id": "task-999", "status": "running"}
-        mock_httpx_client.get.return_value = _mock_response(
+        mock_agent_hub_client.get_project_ownership.return_value = (
             {"sessions": [{"id": "sess-7", "external_id": "task-999", "current_branch": "task-999/main"}]}
         )
 
@@ -98,10 +91,10 @@ class TestTaskLaneScopes:
         self,
         mock_get_task: MagicMock,
         mock_get_spirit: MagicMock,
-        mock_httpx_client: MagicMock,
+        mock_agent_hub_client: MagicMock,
     ) -> None:
         mock_get_task.return_value = {"id": "task-999", "status": "running"}
-        mock_httpx_client.get.return_value = _mock_response(
+        mock_agent_hub_client.get_project_ownership.return_value = (
             {"sessions": [{"id": "sess-7", "external_id": "task-999", "current_branch": "task-999/main"}]}
         )
 
@@ -131,10 +124,10 @@ class TestTaskLaneScopes:
         self,
         mock_get_task: MagicMock,
         mock_get_spirit: MagicMock,
-        mock_httpx_client: MagicMock,
+        mock_agent_hub_client: MagicMock,
     ) -> None:
         mock_get_task.return_value = {"id": "task-999", "status": "running"}
-        mock_httpx_client.get.return_value = _mock_response(
+        mock_agent_hub_client.get_project_ownership.return_value = (
             {"sessions": [{"id": "sess-7", "external_id": "task-999", "current_branch": "task-999/main"}]}
         )
 
@@ -158,10 +151,10 @@ class TestTaskLaneScopes:
         self,
         mock_get_task: MagicMock,
         mock_get_spirit: MagicMock,
-        mock_httpx_client: MagicMock,
+        mock_agent_hub_client: MagicMock,
     ) -> None:
         mock_get_task.return_value = {"id": "task-999", "status": "running"}
-        mock_httpx_client.get.return_value = _mock_response(
+        mock_agent_hub_client.get_project_ownership.return_value = (
             {"sessions": [{"id": "sess-8", "external_id": "task-999", "current_branch": "task-999/main"}]}
         )
         mock_get_spirit.side_effect = [
@@ -181,10 +174,10 @@ class TestTaskLaneScopes:
         self,
         mock_get_task: MagicMock,
         mock_get_spirit: MagicMock,
-        mock_httpx_client: MagicMock,
+        mock_agent_hub_client: MagicMock,
     ) -> None:
         mock_get_task.return_value = {"id": "task-999", "status": "running"}
-        mock_httpx_client.get.return_value = _mock_response(
+        mock_agent_hub_client.get_project_ownership.return_value = (
             {"sessions": [{"id": "sess-9", "external_id": "task-999", "current_branch": "task-999/main"}]}
         )
 
@@ -208,10 +201,10 @@ class TestTaskLaneScopes:
         self,
         mock_get_task: MagicMock,
         mock_get_spirit: MagicMock,
-        mock_httpx_client: MagicMock,
+        mock_agent_hub_client: MagicMock,
     ) -> None:
         mock_get_task.return_value = {"id": "task-999", "status": "running"}
-        mock_httpx_client.get.return_value = _mock_response(
+        mock_agent_hub_client.get_project_ownership.return_value = (
             {"sessions": [{"id": "sess-11", "external_id": "task-999", "current_branch": "task-999/main"}]}
         )
 
@@ -237,10 +230,10 @@ class TestTaskLaneScopes:
         self,
         mock_get_task: MagicMock,
         mock_get_spirit: MagicMock,
-        mock_httpx_client: MagicMock,
+        mock_agent_hub_client: MagicMock,
     ) -> None:
         mock_get_task.return_value = {"id": "task-999", "status": "running"}
-        mock_httpx_client.get.return_value = _mock_response(
+        mock_agent_hub_client.get_project_ownership.return_value = (
             {"sessions": [{"id": "sess-11", "external_id": "task-999", "current_branch": "task-999/main"}]}
         )
 
@@ -271,10 +264,10 @@ class TestTaskLaneScopes:
         self,
         mock_get_task: MagicMock,
         mock_get_spirit: MagicMock,
-        mock_httpx_client: MagicMock,
+        mock_agent_hub_client: MagicMock,
     ) -> None:
         mock_get_task.return_value = {"id": "task-999", "status": "running"}
-        mock_httpx_client.get.return_value = _mock_response(
+        mock_agent_hub_client.get_project_ownership.return_value = (
             {
                 "project_id": "summitflow",
                 "active_owners": [
@@ -316,10 +309,10 @@ class TestTaskLaneScopes:
         self,
         mock_get_task: MagicMock,
         mock_get_spirit: MagicMock,
-        mock_httpx_client: MagicMock,
+        mock_agent_hub_client: MagicMock,
     ) -> None:
         mock_get_task.return_value = {"id": "task-999", "status": "running"}
-        mock_httpx_client.get.return_value = _mock_response(
+        mock_agent_hub_client.get_project_ownership.return_value = (
             {
                 "project_id": "summitflow",
                 "active_owners": [
@@ -360,10 +353,10 @@ class TestTaskLaneScopes:
         self,
         mock_get_task: MagicMock,
         mock_get_spirit: MagicMock,
-        mock_httpx_client: MagicMock,
+        mock_agent_hub_client: MagicMock,
     ) -> None:
         mock_get_task.return_value = {"id": "task-999", "status": "running"}
-        mock_httpx_client.get.return_value = _mock_response(
+        mock_agent_hub_client.get_project_ownership.return_value = (
             {"sessions": [{"id": "sess-12", "external_id": "task-999", "current_branch": "task-999/main"}]}
         )
 
@@ -386,10 +379,10 @@ class TestTaskLaneScopes:
         self,
         mock_get_task: MagicMock,
         mock_get_spirit: MagicMock,
-        mock_httpx_client: MagicMock,
+        mock_agent_hub_client: MagicMock,
     ) -> None:
         mock_get_task.return_value = {"id": "task-999", "status": "running"}
-        mock_httpx_client.get.return_value = _mock_response(
+        mock_agent_hub_client.get_project_ownership.return_value = (
             {"sessions": [{"id": "sess-10", "external_id": "task-999", "current_branch": "task-999/main"}]}
         )
 
@@ -412,10 +405,10 @@ class TestTaskLaneScopes:
         self,
         mock_get_task: MagicMock,
         mock_get_spirit: MagicMock,
-        mock_httpx_client: MagicMock,
+        mock_agent_hub_client: MagicMock,
     ) -> None:
         mock_get_task.return_value = {"id": "task-999", "status": "running"}
-        mock_httpx_client.get.return_value = _mock_response(
+        mock_agent_hub_client.get_project_ownership.return_value = (
             {"sessions": [{"id": "sess-10", "external_id": "task-999", "current_branch": "task-999/main"}]}
         )
 
@@ -438,10 +431,10 @@ class TestTaskLaneScopes:
         self,
         mock_get_task: MagicMock,
         mock_get_spirit: MagicMock,
-        mock_httpx_client: MagicMock,
+        mock_agent_hub_client: MagicMock,
     ) -> None:
         mock_get_task.return_value = {"id": "task-aaa", "status": "running"}
-        mock_httpx_client.get.return_value = _mock_response(
+        mock_agent_hub_client.get_project_ownership.return_value = (
             {
                 "sessions": [
                     {"id": "sess-z", "external_id": "task-zzz", "current_branch": "task-zzz/main"},
@@ -472,10 +465,10 @@ class TestTaskLaneScopes:
         self,
         mock_get_task: MagicMock,
         mock_get_spirit: MagicMock,
-        mock_httpx_client: MagicMock,
+        mock_agent_hub_client: MagicMock,
     ) -> None:
         mock_get_task.return_value = {"id": "task-aaa", "status": "running"}
-        mock_httpx_client.get.return_value = _mock_response(
+        mock_agent_hub_client.get_project_ownership.return_value = (
             {
                 "sessions": [
                     {"id": "sess-a", "external_id": "task-aaa", "current_branch": "task-aaa/main"},
@@ -508,10 +501,10 @@ class TestTaskLaneScopes:
         self,
         mock_get_task: MagicMock,
         mock_get_spirit: MagicMock,
-        mock_httpx_client: MagicMock,
+        mock_agent_hub_client: MagicMock,
     ) -> None:
         mock_get_task.return_value = {"id": "task-aaa", "status": "running"}
-        mock_httpx_client.get.return_value = _mock_response(
+        mock_agent_hub_client.get_project_ownership.return_value = (
             {
                 "sessions": [
                     {"id": "sess-a", "external_id": "task-aaa", "current_branch": "task-aaa/main"},
