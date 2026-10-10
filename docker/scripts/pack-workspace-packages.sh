@@ -30,6 +30,13 @@ if [ "$#" -gt 1 ]; then
     exit 2
   fi
   selected_owner="$3"
+  # A rebuilt checked-in wheel changes its hash; backend/uv.lock must move with
+  # it or frozen syncs fail and leave the backend venv empty.
+  refresh_lock() {
+    [ "$OUT_DIR" = "$SUMMITFLOW_ROOT/docker/workspace-packages" ] || return 0
+    echo "Refreshing backend/uv.lock for $1..."
+    uv lock --project "$SUMMITFLOW_ROOT/backend" --upgrade-package "$1" 2>&1
+  }
   if [ "$selected_owner" = "agent-hub-client" ]; then
     owner_root="$(resolve_project_root agent-hub 2>/dev/null || true)"
     if [ -z "$owner_root" ] || [ ! -f "$owner_root/packages/agent-hub-client/pyproject.toml" ]; then
@@ -38,11 +45,13 @@ if [ "$#" -gt 1 ]; then
     fi
     echo "Building agent-hub-client wheel..."
     (cd "$owner_root/packages/agent-hub-client" && SOURCE_DATE_EPOCH=1577836800 uv build --wheel --out-dir "$OUT_DIR" 2>&1)
+    refresh_lock agent-hub-client
     exit 0
   fi
   if [ "$selected_owner" = "summitflow" ]; then
     echo "Building summitflow-st-sdk wheel..."
     (cd "$SUMMITFLOW_ROOT/packages/st-sdk" && SOURCE_DATE_EPOCH=1577836800 uv build --wheel --out-dir "$OUT_DIR" 2>&1)
+    refresh_lock summitflow-st-sdk
     exit 0
   fi
   if [ "$selected_owner" = "agent-hub" ]; then
@@ -53,6 +62,7 @@ if [ "$#" -gt 1 ]; then
     fi
     echo "Building agent-hub-st wheel..."
     (cd "$owner_root/packages/st-cli" && SOURCE_DATE_EPOCH=1577836800 uv build --wheel --out-dir "$OUT_DIR" 2>&1)
+    refresh_lock agent-hub-st
     exit 0
   fi
   known_owner=false
@@ -70,6 +80,7 @@ if [ "$#" -gt 1 ]; then
   fi
   echo "Building $selected_owner wheel..."
   (cd "$owner_root" && SOURCE_DATE_EPOCH=1577836800 uv build --wheel --out-dir "$OUT_DIR" 2>&1)
+  refresh_lock "$selected_owner"
   exit 0
 fi
 
