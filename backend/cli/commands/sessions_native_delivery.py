@@ -71,9 +71,9 @@ def _deliver_live(thread: str, prompt: str, *, project: str, source_key: str) ->
     ledger for the target's next turn hook. None means: not live, use the queue.
     """
     agent_id = coord_route.live_agent_for_session(thread)
-    if agent_id is None or len(prompt) > coord.MAX_TEXT:
+    if agent_id is None or len(prompt) > coord.NATIVE_MAX_TEXT:
         return None
-    row = coord.send(agent_id, prompt, project=project)
+    row = coord.send(agent_id, prompt, project=project, limit=coord.NATIVE_MAX_TEXT)
     base = {"project_id": project, "thread_id": thread, "source_key": source_key, "capability": "native-thread",
             "transport": "coordination-ledger", "agent_id": agent_id, "request_id": row["id"],
             "replayed": bool(row.get("duplicate"))}

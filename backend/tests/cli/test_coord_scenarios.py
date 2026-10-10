@@ -760,3 +760,25 @@ def test_route_resolves_labels_only_to_live_identities(repos, monkeypatch):
     assert coord_route.resolve_label("dead00") == ({}, [])
     found, unreachable = coord_route.resolve_label("Old", [{"id": "dead0000-0000-4000-8000-000000000000", "name": "old"}])
     assert found == {} and unreachable and "dead0000" in unreachable[0]
+
+
+def test_long_native_instruction_rides_the_ledger_and_wakes_with_a_pointer(repos, monkeypatch):
+    """A live Codex thread gets the full instruction on the ledger; its pane only gets a short pointer."""
+    from cli.commands import sessions_native_delivery as delivery
+    from cli.lib import coord_route, coord_wake
+
+    as_claude(monkeypatch, "native-sender-01")
+    monkeypatch.setattr(coord_route, "live_agent_for_session", lambda _thread: "cx:target")
+    monkeypatch.setattr(coord_wake, "codex_watch_pid", lambda _agent: None)
+    body = "step " * 300
+    out = delivery._deliver_live("thread", body, project="fixture", source_key="k1")
+    assert out is not None and (out["transport"], out["delivery"]) == ("coordination-ledger", "queued")
+    row = next(r for r in coord._load_ledger() if r["id"] == out["request_id"])
+    assert row["text"] == " ".join(body.split())
+    assert delivery._deliver_live("thread", "x" * (coord.NATIVE_MAX_TEXT + 1), project="fixture", source_key="k2") is None
+    with pytest.raises(ValueError, match="160"):
+        coord.send("cx:target", body)  # agent-to-agent handshakes stay one short line
+
+    line = coord_wake.pane_line(f"st coordination:\nREQUEST {row['id']} from cc:x: {row['text']}", 1)
+    assert len(line) <= coord_wake.TYPE_MAX and "st sessions inbox" in line and row["text"] not in line
+    assert coord_wake.pane_line("head\nREQUEST ab12 from cc:x: hi", 1) == "head ; REQUEST ab12 from cc:x: hi"

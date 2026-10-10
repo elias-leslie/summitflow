@@ -29,6 +29,8 @@ UNACKED_AFTER = timedelta(minutes=10)
 ACK_VALID_FOR = timedelta(hours=2)
 LEDGER_TTL = timedelta(hours=24)
 MAX_TEXT = 160
+# Owner/fleet instructions to a live Codex thread ride the ledger; same bound as sanitized_instruction.
+NATIVE_MAX_TEXT = 2000
 INTENTS = ("yes", "no")
 _ETA = re.compile(r"eta:(\d{1,4})")
 
@@ -306,12 +308,12 @@ def _save_ledger(rows: list[dict[str, Any]]) -> None:
     coord_lineage.save_doc(doc)
 
 
-def _clean_text(text: str) -> str:
+def _clean_text(text: str, limit: int = MAX_TEXT) -> str:
     flat = " ".join(text.split())
     if not flat:
         raise ValueError("message text is empty")
-    if len(flat) > MAX_TEXT:
-        raise ValueError(f"message text exceeds {MAX_TEXT} chars; keep it to one neutral line")
+    if len(flat) > limit:
+        raise ValueError(f"message text exceeds {limit} chars; keep it to one neutral line")
     return flat
 
 
@@ -350,9 +352,9 @@ def live_agents() -> list[str]:
                   if isinstance(row, dict) and coord_lineage.anchor_alive(row.get("anchor")))
 
 
-def send(to: str, text: str, *, project: str | None = None) -> dict[str, Any]:
+def send(to: str, text: str, *, project: str | None = None, limit: int = MAX_TEXT) -> dict[str, Any]:
     """Record a request; an identical open request returns the existing row."""
-    body = _clean_text(text)
+    body = _clean_text(text, limit)
     agent_id, _, session_id, _ = leases.identify_agent()
     now = datetime.now(UTC).isoformat()
     with leases._lock("_coord"):

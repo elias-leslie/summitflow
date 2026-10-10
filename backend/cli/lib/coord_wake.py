@@ -18,6 +18,8 @@ import time
 from pathlib import Path
 
 STATE = Path(os.environ.get("XDG_RUNTIME_DIR") or "/tmp") / "st-coord-inbox"
+# Longer wake text is not typed: the pane gets a short pointer and the body stays on the ledger.
+TYPE_MAX = 400
 # What a TUI composer line may hold before the cursor when it is empty.
 _EMPTY_PROMPTS = {"", ">", "\u203a", "\u276f"}
 
@@ -52,6 +54,17 @@ def codex_watch_pid(agent_id: str) -> int | None:
     if any(arg.endswith(b"coord_inbox.py") for arg in argv) and b"watch" in argv:
         return pid
     return None
+
+
+def pane_line(rendered: str, requests: int) -> str:
+    """The one line typed into an idle pane: the rendered items, or a short ledger pointer when long."""
+    line = " ; ".join(rendered.splitlines())
+    if len(line) <= TYPE_MAX:
+        return line
+    if requests:
+        return (f"st coordination: {requests} request(s) waiting on you; read them with `st sessions inbox`, "
+                "then answer with `st sessions ack <id> yes|no 'reason'|eta:MIN`")
+    return "st coordination: updates on requests you sent; read them with `st sessions inbox`"
 
 
 def wait_surfaced(agent_id: str, key: str, timeout: float, poll: float = 0.25) -> bool:

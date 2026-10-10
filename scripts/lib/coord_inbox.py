@@ -161,7 +161,8 @@ def watch(provider: str) -> int:
                 text = render(fresh)
                 if provider == "codex":
                     sock = os.environ.get("TMUX", "").split(",")[0]
-                    if not coord_wake.type_line(text.replace("\n", " ; "), sock, os.environ.get("TMUX_PANE", "")):
+                    line = coord_wake.pane_line(text, sum(":req" in key for key, _, _ in fresh))
+                    if not coord_wake.type_line(line, sock, os.environ.get("TMUX_PANE", "")):
                         last_check = now - 60 + RETRY  # busy composer: leave it queued, look again soon
                         time.sleep(POLL)
                         continue
