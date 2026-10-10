@@ -39,8 +39,11 @@ def repos(tmp_path, monkeypatch):
         (repo / "gen.json").write_text("{}\n")
         (repo / ".gitignore").write_text("cache/\n")
         _git(repo, "init", "-q", "-b", "main")
-        _git(repo, "-c", "user.email=t@t", "-c", "user.name=t", "add", "-A")
-        _git(repo, "-c", "user.email=t@t", "-c", "user.name=t", "commit", "-qm", "init")
+        # Repo-local identity: the hermetic acceptance fixture has no global git config.
+        _git(repo, "config", "user.email", "t@t")
+        _git(repo, "config", "user.name", "t")
+        _git(repo, "add", "-A")
+        _git(repo, "commit", "-qm", "init")
         out[name] = repo
     return out
 
