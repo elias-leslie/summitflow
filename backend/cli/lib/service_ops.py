@@ -1057,7 +1057,7 @@ def resolve_accepted_source(
 
     candidate = _acceptance_candidate(project, receipt)
     try:
-        with acceptance.repo_lock(project.root, purpose="deployment"):
+        with acceptance.repo_lock(project.root, purpose="deployment", wait_seconds=acceptance.REPO_LOCK_WAIT_SECONDS):
             descriptor = acceptance.validate_acceptance_receipt(project.root, candidate)
     except Exception as exc:
         if isinstance(exc, (ServiceError, service_release.ReleaseError)):

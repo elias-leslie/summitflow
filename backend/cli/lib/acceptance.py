@@ -202,20 +202,37 @@ def _git_common_dir(repo: Path) -> Path:
     return Path(value)
 
 
+REPO_LOCK_WAIT_SECONDS = 60.0
+
+
 @contextmanager
-def repo_lock(repo: Path, *, purpose: str) -> Iterator[None]:
-    """Acquire the shared, nonblocking lock for mutations of one repository."""
+def repo_lock(repo: Path, *, purpose: str, wait_seconds: float = 0.0) -> Iterator[None]:
+    """Acquire the shared lock for mutations of one repository.
+
+    Short commits/finalizers by other agents are normal; long-running callers
+    pass ``wait_seconds`` to wait them out instead of failing at once.
+    """
     common = _git_common_dir(repo)
     lock_dir = common / "st"
     lock_dir.mkdir(parents=True, exist_ok=True)
     lock_path = lock_dir / "repo-mutation.lock"
     with lock_path.open("a+", encoding="utf-8") as handle:
-        try:
-            fcntl.flock(handle.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
-        except BlockingIOError as exc:
-            raise AcceptanceError(
-                f"repo_mutation_in_progress: cannot start {purpose}; retry after the active repository operation"
-            ) from exc
+        deadline = time.monotonic() + wait_seconds
+        noticed = False
+        while True:
+            try:
+                fcntl.flock(handle.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+                break
+            except BlockingIOError as exc:
+                if time.monotonic() >= deadline:
+                    raise AcceptanceError(
+                        f"repo_mutation_in_progress: cannot start {purpose}; retry after the active repository operation"
+                    ) from exc
+                if not noticed:
+                    print(f"st: another repository operation is running; waiting up to {wait_seconds:.0f}s "
+                          f"to start {purpose}", file=sys.stderr)
+                    noticed = True
+                time.sleep(2.0)
         try:
             yield
         finally:
@@ -1236,7 +1253,7 @@ def _accept_revision(
     repo = repo.resolve()
     run = runner or (lambda command, cwd: _run(command, cwd, native_reuse=reuse,
                                                scope=normalized_scope if coverage == "task" else ()))
-    with repo_lock(repo, purpose="full acceptance"):
+    with repo_lock(repo, purpose="full acceptance", wait_seconds=REPO_LOCK_WAIT_SECONDS):
         acceptance_started = time.monotonic()
         before = source_identity(repo, sha=sha, execution_basis=execution_basis)
         head = _git_value(repo, ["rev-parse", "--verify", "HEAD^{commit}"], "HEAD is unavailable")
@@ -1313,7 +1330,7 @@ def _accept_revision(
         if not passed:
             failed = True
             break
-    with repo_lock(repo, purpose="finalize acceptance"):
+    with repo_lock(repo, purpose="finalize acceptance", wait_seconds=REPO_LOCK_WAIT_SECONDS):
         try:
             after = source_identity(repo, sha=before["commit"], execution_basis=execution_basis)
             mutated = any(

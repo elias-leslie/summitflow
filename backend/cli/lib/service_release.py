@@ -308,7 +308,7 @@ def prepare_release(
     """Validate a receipt and materialize its commit/tree under the shared repo lock."""
     from . import acceptance
 
-    with acceptance.repo_lock(repo, purpose="deployment"):
+    with acceptance.repo_lock(repo, purpose="deployment", wait_seconds=acceptance.REPO_LOCK_WAIT_SECONDS):
         descriptor = acceptance.validate_acceptance_receipt(repo, source)
         AcceptedSource.from_descriptor(descriptor, require_full=True)
         if not isinstance(source, Path):

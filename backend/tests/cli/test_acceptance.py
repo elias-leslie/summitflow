@@ -786,6 +786,25 @@ def test_repo_lock_reports_concurrent_mutation(repo: Path) -> None:
         pass
 
 
+def test_repo_lock_waits_out_a_short_foreign_operation(repo: Path) -> None:
+    import threading
+
+    held, release = threading.Event(), threading.Event()
+
+    def short_commit() -> None:
+        with acceptance.repo_lock(repo, purpose="commit"):
+            held.set()
+            release.wait(5)
+
+    holder = threading.Thread(target=short_commit)
+    holder.start()
+    held.wait(5)
+    threading.Timer(0.3, release.set).start()
+    with acceptance.repo_lock(repo, purpose="full acceptance", wait_seconds=10):
+        pass
+    holder.join(5)
+
+
 def test_check_acceptance_surface_forwards_exact_source(repo: Path, monkeypatch) -> None:
     captured: dict[str, object] = {}
 
