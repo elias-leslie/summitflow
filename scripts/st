@@ -39,6 +39,7 @@ else
     # on fresh hosts and inside sandboxes with a private HOME.
     if [[ -d $service_state/projects/summitflow ]]; then
         printf '%s\n' "st: no accepted summitflow release; using the checkout (st service rebuild summitflow)" >&2
+        unattended_fallback=1
     fi
     backend="$repo_root/backend"
 fi
@@ -64,6 +65,9 @@ if [[ ! -x $venv_st || ! -x $venv_python ]]; then
 fi
 
 # Unattended timer callers get a real import probe; interactive calls stay fast.
+if [[ ${1-} == autosnap && ${unattended_fallback-} == 1 ]]; then
+    runtime_unavailable "the accepted summitflow release is missing; timers never run the mutable checkout"
+fi
 if [[ ${1-} == autosnap ]] && ! probe_error=$("$venv_python" -I -c 'import cli.main' 2>&1); then
     runtime_unavailable "$backend/.venv cannot import the st CLI (${probe_error##*$'\n'})"
 fi

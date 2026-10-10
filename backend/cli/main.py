@@ -7,6 +7,7 @@ from types import ModuleType
 from typing import Annotated, Any, cast
 
 import typer
+from typer.core import TyperGroup
 
 from app.storage.connection import close_pool
 from app.storage.events import log_task_event
@@ -27,7 +28,7 @@ Discover: search "<query>" | tools manifest --surface <surface>.
 Task work: ready | claim <id> | context <id> | pulse --gate | check | commit -m MSG | done <id>.
 Task state: pause <id> | reopen <id> | cancel <id> | update <id>.
 Inspect: vcs doctor | service status | browser --help.
-Use `st <command> --help` for command-specific syntax. Global options precede the command."""
+Use `st <command> --help` for command-specific syntax. Global options precede the command; -P/--project also works after it."""
 
 SESSION_EVENTS_COMMAND = "session-events"
 PROGRESS_COMMAND = "progress"
@@ -259,8 +260,73 @@ def _apply_output_context(ctx: typer.Context, *, human: bool, compact: bool, pro
     set_compact_output(ctx.obj.compact)
     set_progress_only(ctx.obj.progress_only)
 
+_PROJECT_FLAGS = ("-P", "--project")
+
+
+def _declares_project(command: Any) -> bool:
+    return any(flag in _PROJECT_FLAGS for param in command.params for flag in getattr(param, "opts", ()))
+
+
+def _passes_unknown_options(command: Any) -> bool:
+    return bool(command.ignore_unknown_options or command.allow_extra_args)
+
+
+def _project_tokens(args: list[str], start: int) -> tuple[list[str], list[str]]:
+    """Split ``-P X``/``--project X``/``--project=X``/``-PX`` after ``start`` (before ``--``)."""
+    kept, moved = args[:start], []
+    index = start
+    while index < len(args):
+        token = args[index]
+        if token == "--":
+            kept.extend(args[index:])
+            break
+        if token in _PROJECT_FLAGS and index + 1 < len(args):
+            moved.extend(args[index:index + 2])
+            index += 2
+            continue
+        if token.startswith("--project=") or (token.startswith("-P") and len(token) > 2):
+            moved.append(token)
+        else:
+            kept.append(token)
+        index += 1
+    return kept, moved
+
+
+def hoist_global_project(group: Any, ctx: typer.Context, args: list[str]) -> list[str]:
+    """Let ``st <command> ... -P X`` mean ``st -P X <command> ...``.
+
+    Commands that declare their own -P/--project, or pass unknown options
+    through (extensions), keep the flag where it was written.
+    """
+    index = 0
+    while index < len(args) and args[index].startswith("-"):
+        index += 2 if args[index] in _PROJECT_FLAGS else 1
+    if index >= len(args):
+        return args
+    command: Any = group
+    position = index
+    # Typer vendors Click, so recognise groups by interface, not class.
+    while hasattr(command, "get_command") and position < len(args):
+        sub = command.get_command(ctx, args[position])
+        if sub is None:
+            break
+        if _declares_project(sub) or _passes_unknown_options(sub):
+            return args
+        command, position = sub, position + 1
+        while position < len(args) and args[position].startswith("-") and args[position] != "--":
+            position += 1
+    kept, moved = _project_tokens(args, index + 1)
+    return [*moved, *kept] if moved else args
+
+
+class _RootGroup(TyperGroup):
+    def parse_args(self, ctx: Any, args: list[str]) -> list[str]:  # Typer vendors Click's Context
+        return super().parse_args(ctx, hoist_global_project(self, ctx, list(args)))
+
+
 app = typer.Typer(
     name="st",
+    cls=_RootGroup,
     help=CLI_REFERENCE,
     no_args_is_help=True,
     rich_markup_mode=None,
@@ -287,11 +353,11 @@ app.command("exec-log")(_COMMANDS["exec_monitor"].exec_log_command)
 @usage(
     surface="st.commit",
     cmd='st commit -m "msg"',
-    when="authorized implementation reaches a verified checkpoint",
+    when="authorized work reaches a verified checkpoint",
     precautions=(
-        "review the diff for secrets, destructive changes, and task scope",
-        "use --paths to preserve unrelated work; include generated changes belonging to the checkpoint",
-        "local only; publish accepted source separately with st vcs publish --source ID --sha FULL_OID --now",
+        "review the diff for secrets, destructive changes, scope",
+        "--paths preserves unrelated work; include the checkpoint's generated changes",
+        "local only; publish separately: st vcs publish --source ID --sha FULL_OID --now",
         "commit before destructive ops (abandon, rollback)",
     ),
     tier="mandate",
