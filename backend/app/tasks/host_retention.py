@@ -22,6 +22,7 @@ from ._retention_fs import (
     cleanup_stale_hermes_checkpoints,
     cleanup_tmp_backups,
     collect_legacy_review_candidates,
+    playwright_required_children,
 )
 from ._retention_policy import HostRetentionPolicy
 
@@ -155,10 +156,12 @@ def cleanup_host_artifacts(
         max_age_hours=effective_policy.npx_max_age_hours,
         now=effective_now,
     )
+    playwright_root = effective_home / ".cache" / "ms-playwright"
     playwright_result = cleanup_old_children(
-        effective_home / ".cache" / "ms-playwright",
+        playwright_root,
         max_age_hours=effective_policy.playwright_max_age_hours,
         now=effective_now,
+        protected=playwright_required_children(playwright_root),
     )
     tmp_backups_result = cleanup_tmp_backups(
         effective_tmp,

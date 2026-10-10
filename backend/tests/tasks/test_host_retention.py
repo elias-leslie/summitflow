@@ -141,6 +141,55 @@ def test_cleanup_host_artifacts_prunes_rebuildable_data_and_reports_review_candi
     assert result["review_candidates"][0]["path"].endswith("2026-03-01-btrfs-cutover")
 
 
+def test_playwright_retention_keeps_builds_pinned_by_installed_packages(tmp_path: Path) -> None:
+    """Regression: age-pruning removed browser builds a live Playwright install still pins."""
+    import json
+
+    from app.tasks._retention_fs import cleanup_old_children, playwright_required_children
+
+    root = tmp_path / "ms-playwright"
+    package = tmp_path / "project" / "playwright-core"
+    gone_package = tmp_path / "removed" / "playwright-core"
+    package.mkdir(parents=True)
+    (package / "browsers.json").write_text(
+        json.dumps({"browsers": [
+            {"name": "chromium", "revision": "1208"},
+            {"name": "chromium-headless-shell", "revision": "1208"},
+            {"name": "ffmpeg", "revision": "1011"},
+        ]}),
+        encoding="utf-8",
+    )
+    (root / ".links").mkdir(parents=True)
+    (root / ".links" / "live").write_text(str(package), encoding="utf-8")
+    (root / ".links" / "stale").write_text(str(gone_package), encoding="utf-8")
+    names = ("chromium-1208", "chromium_headless_shell-1208", "ffmpeg-1011", "chromium-1100")
+    old_time = (datetime.now(UTC) - timedelta(days=30)).timestamp()
+    for name in (*names, ".links"):
+        (root / name).mkdir(exist_ok=True)
+        os.utime(root / name, (old_time, old_time))
+
+    result = cleanup_old_children(
+        root, max_age_hours=24, now=datetime.now(UTC), protected=playwright_required_children(root),
+    )
+
+    assert result["deleted"] == [str(root / "chromium-1100")]
+    assert sorted(child.name for child in root.iterdir()) == sorted([".links", *names[:3]])
+
+
+def test_playwright_retention_protects_everything_when_registry_unreadable(tmp_path: Path) -> None:
+    from app.tasks._retention_fs import playwright_required_children
+
+    root = tmp_path / "ms-playwright"
+    package = tmp_path / "pkg"
+    package.mkdir()
+    (package / "browsers.json").write_text("not json", encoding="utf-8")
+    (root / ".links").mkdir(parents=True)
+    (root / ".links" / "broken").write_text(str(package), encoding="utf-8")
+    (root / "chromium-1208").mkdir()
+
+    assert playwright_required_children(root) == frozenset({".links", "chromium-1208"})
+
+
 
 def test_cleanup_host_artifacts_prunes_stale_tmp_backups_and_hermes_checkpoints(
     mocker,

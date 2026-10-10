@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import fnmatch
+import json
 import os
 import shutil
 from datetime import UTC, datetime
@@ -64,11 +65,36 @@ def age_hours(path: Path, *, now: datetime) -> float:
     return max((now - modified).total_seconds() / 3600.0, 0.0)
 
 
+def playwright_required_children(root: Path) -> frozenset[str]:
+    """Return ms-playwright entries still required by an installed Playwright package.
+
+    Playwright records each installed package under ``.links``; a browser build is
+    only redownloaded by an explicit ``playwright install``, so pruning a build a
+    live package pins breaks launches. Unreadable registries protect everything.
+    """
+    links = root / ".links"
+    required = {".links"}
+    if not links.is_dir():
+        return frozenset(required)
+    for link in links.iterdir():
+        try:
+            package = Path(link.read_text(encoding="utf-8").strip())
+            if not package.is_dir():
+                continue
+            browsers = json.loads((package / "browsers.json").read_text(encoding="utf-8"))["browsers"]
+            for browser in browsers:
+                required.add(f"{str(browser['name']).replace('-', '_')}-{browser['revision']}")
+        except (OSError, ValueError, KeyError, TypeError):
+            return frozenset(child.name for child in root.iterdir())
+    return frozenset(required)
+
+
 def cleanup_old_children(
     root: Path,
     *,
     max_age_hours: int,
     now: datetime,
+    protected: frozenset[str] = frozenset(),
 ) -> CleanupResult:
     """Delete children of root that exceed max_age_hours and return a summary."""
     if not root.is_dir():
@@ -77,7 +103,7 @@ def cleanup_old_children(
     deleted: list[str] = []
     reclaimed = 0
     for child in root.iterdir():
-        if age_hours(child, now=now) < max_age_hours:
+        if child.name in protected or age_hours(child, now=now) < max_age_hours:
             continue
         reclaimed += delete_path(child)
         deleted.append(str(child))
