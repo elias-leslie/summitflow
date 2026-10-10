@@ -63,13 +63,41 @@ async def test_duplex_owner_receives_eof_and_is_reaped() -> None:
         process.close()
 
 
-def test_duplex_spawn_failure_closes_all_pipe_descriptors(monkeypatch) -> None:
+def _open_pipes() -> set[tuple[str, str]]:
+    """Snapshot this process's open pipe descriptors by (fd, kernel pipe identity).
+
+    A bare descriptor count is shared with the whole pytest process: an
+    unreferenced file or transport left by an earlier test can be finalized by
+    the garbage collector (or another thread) mid-measurement and lower the
+    count, which made these leak checks flaky (89 != 90). The helpers under test
+    only create pipes, and each new pipe has a fresh ``pipe:[inode]`` identity,
+    so a reused descriptor number still shows up as a leak.
+    """
     import os
 
-    before = len(os.listdir("/proc/self/fd"))
+    pipes: set[tuple[str, str]] = set()
+    for fd in os.listdir("/proc/self/fd"):
+        try:
+            target = os.readlink(f"/proc/self/fd/{fd}")
+        except OSError:  # the listdir descriptor itself, or one closed concurrently
+            continue
+        if target.startswith("pipe:"):
+            pipes.add((fd, target))
+    return pipes
+
+
+def _baseline_pipes() -> set[tuple[str, str]]:
+    import gc
+
+    gc.collect()  # finalize earlier tests' garbage before taking the baseline
+    return _open_pipes()
+
+
+def test_duplex_spawn_failure_closes_all_pipe_descriptors(monkeypatch) -> None:
+    before = _baseline_pipes()
     with pytest.raises(FileNotFoundError):
         safe_subprocess.spawn_duplex(["/does/not/exist"])
-    assert len(os.listdir("/proc/self/fd")) == before
+    assert _open_pipes() - before == set()
 
 
 def test_inherited_scan_uses_native_spawn_and_preserves_explicit_lease_fds(tmp_path, monkeypatch) -> None:
@@ -101,16 +129,14 @@ def test_inherited_scan_uses_native_spawn_and_preserves_explicit_lease_fds(tmp_p
 
 
 def test_inherited_spawn_failure_and_timeout_reap_owned_resources(monkeypatch) -> None:
-    import os
-
-    before = len(os.listdir("/proc/self/fd"))
+    before = _baseline_pipes()
     with pytest.raises(FileNotFoundError):
         safe_subprocess.run_inherited(["/does/not/exist"], inherit_fds=())
-    assert len(os.listdir("/proc/self/fd")) == before
+    assert _open_pipes() - before == set()
     with pytest.raises(subprocess.TimeoutExpired):
         safe_subprocess.run_inherited([sys.executable, "-c", "import time; time.sleep(60)"],
                                      inherit_fds=(), timeout=0.1)
-    assert len(os.listdir("/proc/self/fd")) == before
+    assert _open_pipes() - before == set()
 
 
 @pytest.mark.parametrize("adapter", ["native", "cli"])
