@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import threading
 from typing import Any
 
 from ..logging_config import get_logger
@@ -92,16 +93,38 @@ def _is_duplicate(
     return current_rank <= _SEVERITY_RANK.get(row[0], 0)
 
 
-def _schedule_delivery(notification: dict[str, Any]) -> None:
-    """Fire-and-forget push delivery; bridges sync storage into async delivery."""
-    from app.services._agent_hub_config import AGENT_HUB_URL
+def _run_delivery(notification: dict[str, Any]) -> None:
+    """Run async delivery to completion on a private event loop (thread target)."""
+    from app.services.notifications.delivery import deliver
 
-    if not AGENT_HUB_URL:
+    try:
+        asyncio.run(deliver(notification))
+    except Exception:
+        logger.exception("Telegram delivery failed for notification %s", notification.get("id"))
+
+
+def _schedule_delivery(notification: dict[str, Any]) -> None:
+    """Fire-and-forget Telegram delivery; bridges sync storage into async delivery.
+
+    With a running event loop the delivery is scheduled as a task. Sync callers
+    without a loop (CLI, worker threads, scripts) get a short-lived thread so the
+    caller is never blocked and delivery still happens. The thread is not a
+    daemon, so a short-lived process waits for the bounded HTTP call to finish.
+    """
+    from app.services._agent_hub_config import AGENT_HUB_URL
+    from app.services.notifications.delivery import should_deliver
+
+    if not AGENT_HUB_URL or not should_deliver(notification):
         return
     try:
         loop = asyncio.get_running_loop()
     except RuntimeError:
-        return  # No running loop — skip (CLI/test contexts)
+        threading.Thread(
+            target=_run_delivery,
+            args=(notification,),
+            name=f"notification-delivery-{notification.get('id', '')}",
+        ).start()
+        return
 
     async def _deliver() -> None:
         try:
@@ -109,7 +132,7 @@ def _schedule_delivery(notification: dict[str, Any]) -> None:
 
             await deliver(notification)
         except Exception:
-            logger.exception("Push delivery failed for notification %s", notification.get("id"))
+            logger.exception("Telegram delivery failed for notification %s", notification.get("id"))
 
     task = loop.create_task(_deliver())
     _background_tasks.add(task)

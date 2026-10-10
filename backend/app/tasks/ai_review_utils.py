@@ -73,7 +73,7 @@ def _notify_supervisor_review_needed(task_id: str, reason: str) -> None:
             title=f"Review needed: {task_id}",
             message=reason,
             severity="warning",
-            metadata={"task_id": task_id, "escalation_reason": reason, "force_push": True},
+            metadata={"task_id": task_id, "escalation_reason": reason, "force_telegram": True},
         )
         logger.info("supervisor_review_notification_sent", task_id=task_id)
     except Exception as e:

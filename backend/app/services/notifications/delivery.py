@@ -1,6 +1,8 @@
-"""Notification delivery via Agent Hub push service.
+"""Notification delivery via Agent Hub Telegram.
 
-Routes notifications to Agent Hub's shared push delivery based on severity.
+Critical and error notifications go to the household Telegram chat through
+Agent Hub's ``POST /api/notifications/telegram``. The Agent Hub SDK has no
+method for that endpoint, so this uses the standard direct-HTTP header path.
 """
 
 from __future__ import annotations
@@ -22,8 +24,10 @@ logger = get_logger(__name__)
 
 FRONTEND_URL = os.getenv("SUMMITFLOW_FRONTEND_URL", "http://localhost:3001")
 
-_PUSH_SEVERITIES = {"critical", "error"}
+_TELEGRAM_SEVERITIES = {"critical", "error"}
+_FORCE_TELEGRAM_KEY = "force_telegram"
 _DEFAULT_TITLE = "SummitFlow"
+_SOURCE = "summitflow"
 
 # Short display names for project IDs in notification titles
 _PROJECT_DISPLAY: dict[str, str] = {
@@ -34,12 +38,13 @@ _PROJECT_DISPLAY: dict[str, str] = {
     "monkey-fight": "MF",
     "infrastructure": "Infra",
 }
-_PUSH_ENDPOINT = "/api/push/send"
+_TELEGRAM_ENDPOINT = "/api/notifications/telegram"
 _HTTP_TIMEOUT = 10.0
 _HTTP_OK = 200
 _LOG_TEXT_LIMIT = 200
+_TITLE_LIMIT = 200
+_BODY_LIMIT = 8000
 _DEFAULT_PROJECT_ID = "summitflow"
-_PUSH_DELIVERED_KEY = "delivered"
 
 
 def _project_display_name(project_id: str) -> str:
@@ -47,26 +52,24 @@ def _project_display_name(project_id: str) -> str:
     return _PROJECT_DISPLAY.get(project_id, project_id.replace("-", " ").title()[:12])
 
 
-def _log_push_response(resp: httpx.Response, notification_id: str) -> None:
-    """Log outcome of an Agent Hub push response."""
+def _log_telegram_response(resp: httpx.Response, notification_id: str) -> None:
+    """Log the outcome of an Agent Hub Telegram response."""
     if resp.status_code != _HTTP_OK:
         logger.warning(
-            "Agent Hub push send failed: %s %s",
+            "Agent Hub Telegram send failed for %s: %s %s",
+            notification_id,
             resp.status_code,
             resp.text[:_LOG_TEXT_LIMIT],
         )
         return
-    delivered = resp.json().get(_PUSH_DELIVERED_KEY, 0)
-    if delivered > 0:
-        logger.debug(
-            "Delivered notification %s via Agent Hub push (%d devices)",
-            notification_id,
-            delivered,
-        )
+    status = resp.json().get("status")
+    if status == "sent":
+        logger.debug("Delivered notification %s via Agent Hub Telegram", notification_id)
     else:
         logger.warning(
-            "Notification %s accepted by Agent Hub but delivered to 0 devices",
+            "Notification %s accepted by Agent Hub but Telegram status was %s",
             notification_id,
+            status,
         )
 
 
@@ -84,72 +87,63 @@ def _build_task_url(notification: dict[str, Any]) -> str:
 
 
 def _build_payload(notification: dict[str, Any]) -> dict[str, Any]:
-    """Build the push payload dict for Agent Hub delivery.
+    """Build the Agent Hub Telegram payload (``title``, ``body``, ``severity``, ``source``).
 
-    Constructs a rich payload so lock-screen notifications show useful context
-    without requiring the user to unlock the device.
+    The title carries an explicit severity prefix such as ``[CRITICAL]`` or
+    ``[ERROR]`` plus the short project slug.
     """
-    project_id = notification.get("project_id", _DEFAULT_PROJECT_ID)
-    severity = notification.get("severity", "info")
-    task_id = notification.get("task_id")
+    project_id = notification.get("project_id") or _DEFAULT_PROJECT_ID
+    severity = notification.get("severity") or "info"
     metadata = notification.get("metadata") or {}
-    notif_type = notification.get("type", "")
 
-    # --- Rich title: prefix with project slug for multi-project awareness ---
-    raw_title = notification.get("title", _DEFAULT_TITLE)
-    project_slug = _project_display_name(project_id)
-    title = f"[{project_slug}] {raw_title}" if project_slug else raw_title
+    raw_title = notification.get("title") or _DEFAULT_TITLE
+    title = f"[{severity.upper()}] [{_project_display_name(project_id)}] {raw_title}"
 
-    # --- Rich body: add actionable detail beyond the generic message ---
-    body = notification.get("message", "")
-    extras: list[str] = []
+    lines = [notification.get("message") or raw_title]
     if metadata.get("blocker_summary"):
-        extras.append(f"Blocker: {metadata['blocker_summary'][:120]}")
+        lines.append(f"Blocker: {metadata['blocker_summary'][:120]}")
     if metadata.get("recommendation"):
-        extras.append(f"Next: {metadata['recommendation'][:120]}")
-    if extras:
-        body = f"{body}\n{'  '.join(extras)}"
+        lines.append(f"Next: {metadata['recommendation'][:120]}")
+    if notification.get("task_id"):
+        lines.append(f"Task: {notification['task_id']}")
+    lines.append(_build_task_url(notification))
 
     return {
-        "title": title,
-        "body": body,
-        "url": _build_task_url(notification),
-        "tag": notification.get("id", ""),
+        "title": title[:_TITLE_LIMIT],
+        "body": "\n".join(lines)[:_BODY_LIMIT],
         "severity": severity,
-        "task_id": task_id,
-        "notification_id": notification.get("id"),
-        "project_id": project_id,
-        "type": notif_type,
+        "source": _SOURCE,
     }
 
 
+def should_deliver(notification: dict[str, Any]) -> bool:
+    """Return True when the notification is routed to Telegram."""
+    metadata = notification.get("metadata") or {}
+    return notification.get("severity") in _TELEGRAM_SEVERITIES or bool(
+        metadata.get(_FORCE_TELEGRAM_KEY)
+    )
+
+
 async def deliver(notification: dict[str, Any]) -> None:
-    """Route a notification to Agent Hub push delivery.
+    """Route a notification to Agent Hub Telegram delivery.
 
     Severity routing:
-        critical/error → Web Push via Agent Hub
-        warning/info   → DB only (no push) unless metadata.force_push is set
+        critical/error → Telegram via Agent Hub
+        warning/info   → DB only unless metadata.force_telegram is set
 
-    The force_push metadata flag lets callers opt specific warnings into push
-    delivery (e.g., supervisor escalations) without inflating severity.
-
-    Args:
-        notification: Notification dict from storage layer (must have
-            'severity', 'title', 'message', and optionally 'task_id').
+    The force_telegram metadata flag lets callers opt specific warnings into
+    Telegram (e.g., supervisor escalations) without inflating severity.
     """
-    severity = notification.get("severity", "info")
-    metadata = notification.get("metadata") or {}
-    if severity not in _PUSH_SEVERITIES and not metadata.get("force_push"):
+    if not should_deliver(notification):
         return
 
-    headers = build_agent_hub_headers()
     try:
         async with httpx.AsyncClient(timeout=_HTTP_TIMEOUT) as client:
             resp = await client.post(
-                f"{AGENT_HUB_URL}{_PUSH_ENDPOINT}",
+                f"{AGENT_HUB_URL}{_TELEGRAM_ENDPOINT}",
                 json=_build_payload(notification),
-                headers=headers,
+                headers=build_agent_hub_headers(),
             )
-        _log_push_response(resp, notification.get("id") or "")
+        _log_telegram_response(resp, notification.get("id") or "")
     except Exception:
-        logger.exception("Failed to deliver notification via Agent Hub push")
+        logger.exception("Failed to deliver notification via Agent Hub Telegram")

@@ -394,7 +394,7 @@ curl -fsS http://localhost:3001/ >/dev/null
 ## Optional and degraded behavior
 
 SummitFlow can boot without provider API keys. Features that need Agent Hub,
-Hatchet, web push, SMB backups, Docker socket access, or a browser runtime should
+Hatchet, SMB backups, Docker socket access, or a browser runtime should
 show missing-configuration behavior instead of exposing credentials or crashing
 unrelated pages.
 

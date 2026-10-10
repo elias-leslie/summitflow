@@ -1,10 +1,10 @@
 """Notification delivery services.
 
-Routes notifications to Web Push via the delivery module.
+Routes critical and error notifications to Agent Hub Telegram.
 """
 
 from __future__ import annotations
 
-from .delivery import deliver
+from .delivery import deliver, should_deliver
 
-__all__ = ["deliver"]
+__all__ = ["deliver", "should_deliver"]

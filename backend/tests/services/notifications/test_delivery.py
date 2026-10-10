@@ -1,13 +1,16 @@
-"""Tests for notification delivery via Agent Hub push service."""
+"""Tests for notification delivery via Agent Hub Telegram."""
 
 from __future__ import annotations
 
+import asyncio
+import threading
 from typing import Any
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
 from app.services.notifications.delivery import deliver
+from app.storage import notifications as notification_storage
 
 
 def _make_notification(
@@ -33,162 +36,145 @@ def _make_notification(
     }
 
 
-def _mock_push_client() -> tuple[AsyncMock, AsyncMock]:
-    """Return (mock_client, mock_response) wired for a successful push."""
+def _mock_telegram_client(status_code: int = 200) -> AsyncMock:
+    """Return a mock httpx.AsyncClient wired for an Agent Hub Telegram response."""
     mock_response = MagicMock()
-    mock_response.status_code = 200
-    mock_response.json.return_value = {"status": "sent", "delivered": 1}
+    mock_response.status_code = status_code
+    mock_response.text = "error" if status_code != 200 else ""
+    mock_response.json.return_value = {"status": "sent", "chunks": 1}
 
     mock_client = AsyncMock()
     mock_client.post.return_value = mock_response
     mock_client.__aenter__ = AsyncMock(return_value=mock_client)
     mock_client.__aexit__ = AsyncMock(return_value=False)
-    return mock_client, mock_response
+    return mock_client
+
+
+async def _sent_payload(notification: dict[str, Any]) -> tuple[str, dict[str, Any]]:
+    mock_client = _mock_telegram_client()
+    with patch("app.services.notifications.delivery.httpx.AsyncClient", return_value=mock_client):
+        await deliver(notification)
+    mock_client.post.assert_called_once()
+    call = mock_client.post.call_args
+    return call.args[0], call.kwargs["json"]
 
 
 class TestDeliver:
-    """Tests for deliver() dispatcher."""
+    """Tests for deliver() routing and payload."""
 
     @pytest.mark.asyncio
-    async def test_deliver_info_no_push(self) -> None:
-        """Info notifications stay in-app only — no push."""
-        notification = _make_notification(severity="info")
-
+    @pytest.mark.parametrize("severity", ["info", "warning"])
+    async def test_low_severity_stays_in_app(self, severity: str) -> None:
         with patch("app.services.notifications.delivery.httpx.AsyncClient") as mock_client_cls:
-            await deliver(notification)
-            mock_client_cls.assert_not_called()
+            await deliver(_make_notification(severity=severity))
+        mock_client_cls.assert_not_called()
 
     @pytest.mark.asyncio
-    async def test_deliver_warning_no_push(self) -> None:
-        """Warning notifications without force_push stay in-app only."""
-        notification = _make_notification(severity="warning")
-
-        with patch("app.services.notifications.delivery.httpx.AsyncClient") as mock_client_cls:
-            await deliver(notification)
-            mock_client_cls.assert_not_called()
-
-    @pytest.mark.asyncio
-    async def test_deliver_warning_with_force_push(self) -> None:
-        """Warning notifications with force_push metadata trigger push."""
-        notification = _make_notification(severity="warning", metadata={"force_push": True})
-        mock_client, _ = _mock_push_client()
-
-        with patch("app.services.notifications.delivery.httpx.AsyncClient", return_value=mock_client):
-            await deliver(notification)
-
-        mock_client.post.assert_called_once()
-
-    @pytest.mark.asyncio
-    async def test_deliver_error_calls_agent_hub(self) -> None:
-        """Error notifications are sent via Agent Hub push API."""
-        notification = _make_notification(severity="error")
-        mock_client, _ = _mock_push_client()
-
-        with patch("app.services.notifications.delivery.httpx.AsyncClient", return_value=mock_client):
-            await deliver(notification)
-
-        mock_client.post.assert_called_once()
-        call_args = mock_client.post.call_args
-        assert "/api/push/send" in call_args[0][0]
-        payload = call_args[1]["json"]
-        assert payload["title"] == "[Test Project] Test Notification"
-        assert payload["body"] == "Something happened"
-        assert payload["project_id"] == "test-project"
-
-    @pytest.mark.asyncio
-    async def test_deliver_payload_includes_project_prefix(self) -> None:
-        """Push payload title includes project display name prefix."""
-        notification = _make_notification(project_id="summitflow", title="Task failed: Deploy")
-        mock_client, _ = _mock_push_client()
-
-        with patch("app.services.notifications.delivery.httpx.AsyncClient", return_value=mock_client):
-            await deliver(notification)
-
-        payload = mock_client.post.call_args[1]["json"]
-        assert payload["title"] == "[SF] Task failed: Deploy"
-
-    @pytest.mark.asyncio
-    async def test_deliver_payload_includes_blocker_and_recommendation(self) -> None:
-        """Push payload body includes blocker summary and recommendation from metadata."""
-        notification = _make_notification(
-            metadata={"blocker_summary": "Import error in auth.py", "recommendation": "Fix the import path"},
+    async def test_warning_with_force_telegram_is_sent(self) -> None:
+        _, payload = await _sent_payload(
+            _make_notification(severity="warning", metadata={"force_telegram": True})
         )
-        mock_client, _ = _mock_push_client()
-
-        with patch("app.services.notifications.delivery.httpx.AsyncClient", return_value=mock_client):
-            await deliver(notification)
-
-        payload = mock_client.post.call_args[1]["json"]
-        assert "Blocker: Import error in auth.py" in payload["body"]
-        assert "Next: Fix the import path" in payload["body"]
+        assert payload["title"].startswith("[WARNING] ")
 
     @pytest.mark.asyncio
-    async def test_deliver_payload_deep_links_to_chat(self) -> None:
-        """Push payload URL deep-links to /chat with full routing context."""
-        notification = _make_notification(task_id="t-test-789", notification_id="notif-test-456")
-        mock_client, _ = _mock_push_client()
-
-        with patch("app.services.notifications.delivery.httpx.AsyncClient", return_value=mock_client):
-            await deliver(notification)
-
-        payload = mock_client.post.call_args[1]["json"]
-        assert "/chat?" in payload["url"]
-        assert "project_id=test-project" in payload["url"]
-        assert "task_id=t-test-789" in payload["url"]
-        assert "notification_id=notif-test-456" in payload["url"]
+    async def test_error_posts_to_agent_hub_telegram(self) -> None:
+        url, payload = await _sent_payload(_make_notification(severity="error"))
+        assert url.endswith("/api/notifications/telegram")
+        assert "/api/push" not in url
+        assert payload["title"] == "[ERROR] [Test Project] Test Notification"
+        assert payload["severity"] == "error"
+        assert payload["source"] == "summitflow"
+        assert payload["body"].startswith("Something happened\n")
+        assert set(payload) == {"title", "body", "severity", "source"}
 
     @pytest.mark.asyncio
-    async def test_deliver_payload_includes_notification_id(self) -> None:
-        """Push payload includes notification_id field for SW forwarding."""
-        notification = _make_notification(notification_id="notif-test-777")
-        mock_client, _ = _mock_push_client()
-
-        with patch("app.services.notifications.delivery.httpx.AsyncClient", return_value=mock_client):
-            await deliver(notification)
-
-        payload = mock_client.post.call_args[1]["json"]
-        assert payload["notification_id"] == "notif-test-777"
+    async def test_critical_has_critical_prefix_and_project_slug(self) -> None:
+        _, payload = await _sent_payload(
+            _make_notification(severity="critical", project_id="summitflow", title="Backup failed")
+        )
+        assert payload["title"] == "[CRITICAL] [SF] Backup failed"
+        assert payload["severity"] == "critical"
 
     @pytest.mark.asyncio
-    async def test_deliver_no_task_id_falls_back_to_frontend_url(self) -> None:
-        """When task_id is None, URL falls back to frontend root."""
-        notification = _make_notification(task_id=None)
-        mock_client, _ = _mock_push_client()
-
-        with patch("app.services.notifications.delivery.httpx.AsyncClient", return_value=mock_client):
-            await deliver(notification)
-
-        payload = mock_client.post.call_args[1]["json"]
-        assert "task_id" not in payload["url"]
-
-    @pytest.mark.asyncio
-    async def test_deliver_handles_agent_hub_error(self) -> None:
-        """Delivery handles Agent Hub errors gracefully."""
-        notification = _make_notification(severity="error")
-
-        mock_response = MagicMock()
-        mock_response.status_code = 500
-        mock_response.text = "Internal Server Error"
-
-        mock_client = AsyncMock()
-        mock_client.post.return_value = mock_response
-        mock_client.__aenter__ = AsyncMock(return_value=mock_client)
-        mock_client.__aexit__ = AsyncMock(return_value=False)
-
-        with patch("app.services.notifications.delivery.httpx.AsyncClient", return_value=mock_client):
-            # Should not raise
-            await deliver(notification)
+    async def test_body_includes_blocker_recommendation_task_and_link(self) -> None:
+        _, payload = await _sent_payload(
+            _make_notification(
+                task_id="t-test-789",
+                notification_id="notif-test-456",
+                metadata={"blocker_summary": "Import error in auth.py", "recommendation": "Fix the import path"},
+            )
+        )
+        body = payload["body"]
+        assert "Blocker: Import error in auth.py" in body
+        assert "Next: Fix the import path" in body
+        assert "Task: t-test-789" in body
+        assert "/chat?" in body
+        assert "notification_id=notif-test-456" in body
 
     @pytest.mark.asyncio
-    async def test_deliver_handles_network_error(self) -> None:
-        """Delivery handles network errors gracefully."""
-        notification = _make_notification(severity="error")
+    async def test_no_task_id_omits_task_line(self) -> None:
+        _, payload = await _sent_payload(_make_notification(task_id=None))
+        assert "Task:" not in payload["body"]
+        assert "task_id=" not in payload["body"]
 
-        mock_client = AsyncMock()
+    @pytest.mark.asyncio
+    async def test_payload_respects_endpoint_limits(self) -> None:
+        _, payload = await _sent_payload(_make_notification(title="x" * 500, message="y" * 9000))
+        assert len(payload["title"]) <= 200
+        assert len(payload["body"]) <= 8000
+
+    @pytest.mark.asyncio
+    async def test_agent_hub_error_is_swallowed(self) -> None:
+        mock_client = _mock_telegram_client(status_code=503)
+        with patch("app.services.notifications.delivery.httpx.AsyncClient", return_value=mock_client):
+            await deliver(_make_notification())
+
+    @pytest.mark.asyncio
+    async def test_network_error_is_swallowed(self) -> None:
+        mock_client = _mock_telegram_client()
         mock_client.post.side_effect = Exception("Connection refused")
-        mock_client.__aenter__ = AsyncMock(return_value=mock_client)
-        mock_client.__aexit__ = AsyncMock(return_value=False)
-
         with patch("app.services.notifications.delivery.httpx.AsyncClient", return_value=mock_client):
-            # Should not raise
-            await deliver(notification)
+            await deliver(_make_notification())
+
+
+class TestScheduleDelivery:
+    """Sync storage callers must deliver with or without a running event loop."""
+
+    def test_delivers_without_running_event_loop(self) -> None:
+        """Regression: sync callers with no loop used to skip delivery entirely."""
+        delivered = threading.Event()
+        seen: list[dict[str, Any]] = []
+
+        async def _fake_deliver(notification: dict[str, Any]) -> None:
+            seen.append(notification)
+            delivered.set()
+
+        notification = _make_notification(severity="critical")
+        with (
+            patch("app.services._agent_hub_config.AGENT_HUB_URL", "http://agent-hub.test"),
+            patch("app.services.notifications.delivery.deliver", _fake_deliver),
+        ):
+            notification_storage._schedule_delivery(notification)
+            assert delivered.wait(timeout=5)
+        assert seen == [notification]
+
+    def test_skips_low_severity_without_spawning_thread(self) -> None:
+        with (
+            patch("app.services._agent_hub_config.AGENT_HUB_URL", "http://agent-hub.test"),
+            patch.object(notification_storage.threading, "Thread") as thread_cls,
+        ):
+            notification_storage._schedule_delivery(_make_notification(severity="info"))
+        thread_cls.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_running_loop_schedules_task_without_thread(self) -> None:
+        fake_deliver = AsyncMock()
+        with (
+            patch("app.services._agent_hub_config.AGENT_HUB_URL", "http://agent-hub.test"),
+            patch("app.services.notifications.delivery.deliver", fake_deliver),
+            patch.object(notification_storage.threading, "Thread") as thread_cls,
+        ):
+            notification_storage._schedule_delivery(_make_notification(severity="error"))
+            await asyncio.gather(*notification_storage._background_tasks)
+        thread_cls.assert_not_called()
+        fake_deliver.assert_awaited_once()
