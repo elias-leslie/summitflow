@@ -165,7 +165,10 @@ def run_selected(
                 failures += 1
                 continue
             if frontend is None:
-                print("TEST:SKIP:frontend-test:no_declared_tests")
+                # No package at all means no frontend to test; a package that
+                # declares no suite stays a visible acceptance gap.
+                reason = "no_declared_tests" if (cwd / "package.json").exists() else "no_package_json"
+                print(f"TEST:SKIP:frontend-test:{reason}")
                 continue
             name, config = frontend
             if name == "frontend-test" and quick_checkpoint:

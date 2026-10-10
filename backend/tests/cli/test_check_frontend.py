@@ -231,6 +231,17 @@ def test_no_declared_tests_truthfully_skip(tmp_path: Path, capsys: pytest.Captur
     assert "no_declared_tests" in capsys.readouterr().out
 
 
+def test_repo_without_package_json_skips_without_acceptance_gap(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    runner = Mock(return_value=0)
+    assert aggregate(tmp_path, runner) == 0
+    runner.assert_not_called()
+    out = capsys.readouterr().out
+    assert "TEST:SKIP:frontend-test:no_package_json" in out
+    assert "no_declared_tests" not in out
+
+
 def test_vitest_dependency_without_script_still_runs(tmp_path: Path) -> None:
     manifest(tmp_path, devDependencies={"vitest": "^4"})
     runner = Mock(return_value=0)
