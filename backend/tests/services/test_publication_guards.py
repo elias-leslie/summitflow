@@ -49,6 +49,9 @@ def test_outgoing_admission_failure_is_typed_before_history_work(monkeypatch, tm
     "git -c core.hooksPath=/tmp push", "git config --unset core.hooksPath",
     "GIT_ALLOW_SECRET=1 st vcs publish", "codex --dangerously-bypass-hook-trust",
     "codex --disable hooks", "codex -c features.hooks=false",
+    "timeout 5 git push origin main", "timeout 5 git send-pack origin main",
+    "timeout -k 2 30s git push", "timeout --signal=KILL 5 git push",
+    "nice -n 5 timeout 5 git push",
 ])
 def test_publication_denied(command: str) -> None:
     assert evaluate_publication_command(command).blocked
@@ -65,6 +68,7 @@ def test_shared_runtime_intercepts_github_publication(tmp_path: Path) -> None:
     "gh release list", "gh api repos/a/b/releases", "st commit -m 'local'",
     "st check pytest -- tests", "st vcs publish --source fixture --sha aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa --now", "bash -lc 'st commit -m local'",
     "rg core.hooksPath scripts", "git config --get core.hooksPath",
+    "timeout 5 git status",
 ])
 def test_publication_allows_local_and_reads(command: str) -> None:
     assert not evaluate_publication_command(command).blocked

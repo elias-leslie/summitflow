@@ -149,8 +149,10 @@ def unwrap_segment_with_privilege(segment: Sequence[str]) -> tuple[list[str], bo
             while i < len(tokens) and tokens[i].startswith("-"):
                 opt = tokens[i]
                 i += 1
-                if opt in {"-n", "--adjustment", "-s", "--signal", "-k"} and i < len(tokens):
+                if opt in {"-n", "--adjustment", "-s", "--signal", "-k", "--kill-after"} and i < len(tokens):
                     i += 1
+            if lead == "timeout" and i < len(tokens):
+                i += 1  # timeout DURATION COMMAND: skip the positional duration
             tokens = tokens[i:]
         else:
             break
