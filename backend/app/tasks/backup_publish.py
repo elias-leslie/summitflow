@@ -363,8 +363,11 @@ def publish_source_before_backup(source: dict[str, Any], *, retained: dict[str, 
         result["upstream_status"] = "observed_locally" if upstream.returncode == 0 else "unobserved_locally"
         result.update(head=head, branch=branch, remote=remote, upstream_ref=upstream_ref, ahead=ahead,
                       behind=behind, source_status="captured", vcs="git")
-        result["acceptance"] = (_acceptance_for_head(project, head) if publication_mode != "mirror"
-                                else {"state": "not_required", "reason": "mirror_publication", "source_commit": head})
+        result["acceptance"] = _acceptance_for_head(project, head)
+        if publication_mode == "mirror" and result["acceptance"].get("state") != "reused":
+            # Mirror needs no receipt, but a valid one is retained so the
+            # upload can still prove a stale local-acceptance finding fixed.
+            result["acceptance"] = {"state": "not_required", "reason": "mirror_publication", "source_commit": head}
         if result["acceptance"].get("state") not in {"reused", "not_required"}:
             result["source_status"] = "acceptance_required"
             result["action"] = "Run st check --acceptance for the exact committed source, then explicitly publish that source"

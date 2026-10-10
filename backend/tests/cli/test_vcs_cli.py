@@ -237,3 +237,23 @@ def test_publish_now_honors_mirror_mode_and_workflow_authority():
     assert result.exit_code == 0
     publish.assert_called_once_with("source", "a" * 40, authorized_workflows=(".github/workflows/ci.yml",),
                                     publication_mode="mirror")
+
+
+def test_publication_reobserve_replays_retained_receipt_only_on_request():
+    config = MagicMock(project_id="project")
+    health = {"project_id": "project", "state": "verified", "source_commit": "a" * 40, "observed_at": "now",
+              "ci_state": "success", "reason": "source_publication_verified", "repair_task_id": None}
+    with (
+        patch("cli.config.get_config_optional", return_value=config),
+        patch("app.tasks.nightly_publication.publication_mode", return_value="nightly"),
+        patch("app.tasks.nightly_publication.publication_hold", return_value=None),
+        patch("app.services.publication_health.get_project_publication_health", return_value=health),
+        patch("app.services.publication_health.reobserve_retained_publication", return_value={
+            "state": "verified", "source_commit": "a" * 40, "evidence": "/receipt.json"}) as replay,
+    ):
+        plain = runner.invoke(vcs.app, ["publication"])
+        replay.assert_not_called()
+        result = runner.invoke(vcs.app, ["publication", "--reobserve"])
+    assert plain.exit_code == 0 and result.exit_code == 0
+    replay.assert_called_once_with("project")
+    assert "Reobserved: verified; source=aaaaaaaaaaaa; evidence=/receipt.json" in result.stdout

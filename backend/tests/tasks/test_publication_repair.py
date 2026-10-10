@@ -271,3 +271,132 @@ def test_failed_remote_repair_requires_investigation(test_project_id):
     with pytest.raises(ValueError, match="cannot be retired"):
         repair.disposition_finding("task", test_project_id, "publication", expected_finding=finding,
             classification="administrative", reason="Retire a wait", evidence="fixture://owner-plan")
+
+
+@pytest.fixture
+def rewritten_history(tmp_path, monkeypatch):
+    def git(*arguments):
+        return subprocess.run(["git", *arguments], cwd=tmp_path, check=True,
+                              capture_output=True, text=True).stdout.strip()
+
+    git("init", "-q", "--initial-branch=main")
+    git("config", "user.name", "Fixture")
+    git("config", "user.email", "fixture@example.invalid")
+    git("config", "core.hooksPath", "/dev/null")
+    (tmp_path / "source.txt").write_text("base")
+    git("add", "source.txt")
+    git("commit", "-qm", "base")
+    (tmp_path / "source.txt").write_text("blocked by the outgoing scan")
+    git("commit", "-qam", "blocked")
+    blocked = git("rev-parse", "HEAD")
+    # Amended before publication: the blocked commit leaves every ref.
+    git("reset", "-q", "--hard", "HEAD^")
+    (tmp_path / "source.txt").write_text("clean")
+    git("commit", "-qam", "clean")
+    clean = git("rev-parse", "HEAD")
+    monkeypatch.setattr("app.storage.projects.get_project_root_path", lambda *_args, **_kwargs: str(tmp_path))
+    return {"blocked": blocked, "clean": clean, "git": git, "root": tmp_path}
+
+
+@pytest.mark.parametrize(("case", "resolved"), [
+    ("unreachable", True), ("scan_not_proven", False), ("branch_keeps_it", False),
+    ("remote_ref_keeps_it", False), ("worktree_head_keeps_it", False), ("other_category", False),
+    ("verified_source_missing", False), ("shallow_clone", False),
+])
+def test_outgoing_finding_on_rewritten_source_resolves_only_when_unreachable_and_scanned(
+    test_project_id, cleanup_task, rewritten_history, monkeypatch, case, resolved,
+):
+    git, blocked, clean = rewritten_history["git"], rewritten_history["blocked"], rewritten_history["clean"]
+    category = "publication" if case == "other_category" else "outgoing_security"
+    if case == "branch_keeps_it":
+        git("branch", "kept", blocked)
+    elif case == "remote_ref_keeps_it":
+        git("update-ref", "refs/remotes/origin/kept", blocked)
+    elif case == "worktree_head_keeps_it":
+        git("worktree", "add", "-q", "--detach", str(rewritten_history["root"] / "wt"), blocked)
+    elif case == "shallow_clone":
+        real_git = repair._local_git
+        monkeypatch.setattr(repair, "_local_git", lambda root, *arguments: (
+            subprocess.CompletedProcess(arguments, 0, "true\n", "")
+            if arguments == ("rev-parse", "--is-shallow-repository") else real_git(root, *arguments)))
+    failed = {"observed_at": "2026-10-02T08:00:00+00:00", "source_commit": blocked, "reason": "security_findings_open"}
+    task_id = record_finding(test_project_id, category, failed, resolved=False)
+    assert task_id is not None
+    cleanup_task(task_id)
+    success = {"observed_at": "2026-10-03T08:00:00+00:00", "reason": "source_publication_verified",
+               "source_commit": "f" * 40 if case == "verified_source_missing" else clean}
+    record_finding(test_project_id, category, success, resolved=True,
+                   outgoing_scan_verified=case != "scan_not_proven")
+    task = get_repair_task(test_project_id)
+    assert task is not None
+    finding = task["verification_result"]["publication_repair"][category]
+    assert finding == {**(success if resolved else failed), "state": "resolved" if resolved else "unresolved"}
+
+
+def test_rewritten_source_never_outranks_a_newer_failure(test_project_id, cleanup_task, rewritten_history):
+    failed = {"observed_at": "2026-10-03T09:00:00+00:00", "source_commit": rewritten_history["blocked"]}
+    task_id = record_finding(test_project_id, "outgoing_security", failed, resolved=False)
+    assert task_id is not None
+    cleanup_task(task_id)
+    record_finding(test_project_id, "outgoing_security", {"observed_at": "2026-10-03T08:00:00+00:00",
+                   "source_commit": rewritten_history["clean"]}, resolved=True, outgoing_scan_verified=True)
+    task = get_repair_task(test_project_id)
+    assert task is not None
+    assert task["verification_result"]["publication_repair"]["outgoing_security"]["state"] == "unresolved"
+
+
+def _duplicate_repair_task(project_id, findings, *, status="pending"):
+    from app.storage.connection import get_connection
+    from app.storage.tasks.core import create_task
+
+    task = create_task(project_id=project_id, title="Duplicate repair", labels=[repair.REPAIR_LABEL],
+                       execution_mode="manual")
+    with get_connection() as conn, conn.cursor() as cur:
+        cur.execute("""UPDATE tasks SET verification_result = jsonb_build_object('publication_repair', %s::jsonb),
+                       created_at = NOW() + interval '1 minute' WHERE id = %s""", (Jsonb(findings), task["id"]))
+        conn.commit()
+    if status != "pending":
+        tasks.update_task_status(task["id"], status)
+    return task["id"]
+
+
+def test_duplicate_repair_tasks_fold_into_the_oldest_deterministically(test_project_id, cleanup_task):
+    canonical = record_finding(test_project_id, "codeql", {
+        "observed_at": "2026-10-03T08:00:00+00:00", "source_commit": "a" * 40}, resolved=False)
+    assert canonical is not None
+    cleanup_task(canonical)
+    tasks.update_task_status(canonical, "running")
+    record_finding(test_project_id, "publication", {
+        "observed_at": "2026-10-04T08:00:00+00:00", "source_commit": "a" * 40}, resolved=False)
+    duplicate_findings = {
+        "outgoing_security": {"state": "unresolved", "observed_at": "2026-10-02T08:00:00+00:00", "source_commit": "b" * 40},
+        # An older unresolved finding survives a newer resolution without proof.
+        "publication": {"state": "resolved", "observed_at": "2026-10-05T08:00:00+00:00", "source_commit": "c" * 40},
+    }
+    pending = _duplicate_repair_task(test_project_id, duplicate_findings)
+    cleanup_task(pending)
+    claimed = _duplicate_repair_task(test_project_id, {
+        "cloud_ci": {"state": "unresolved", "observed_at": "2026-10-02T08:00:00+00:00", "reason": "cloud_ci_missing"}},
+        status="running")
+    cleanup_task(claimed)
+
+    assert record_finding(test_project_id, "codeql", {
+        "observed_at": "2026-10-06T08:00:00+00:00", "source_commit": "a" * 40}, resolved=False) == canonical
+
+    kept = tasks.get_task(canonical)
+    assert kept is not None
+    findings = kept["verification_result"]["publication_repair"]
+    assert set(findings) == {"codeql", "publication", "outgoing_security", "cloud_ci"}
+    assert findings["publication"]["state"] == "unresolved"
+    assert findings["outgoing_security"]["source_commit"] == "b" * 40
+    assert findings["codeql"]["observed_at"] == "2026-10-06T08:00:00+00:00"
+    cancelled = tasks.get_task(pending)
+    still_claimed = tasks.get_task(claimed)
+    assert cancelled is not None and cancelled["status"] == "cancelled"
+    assert still_claimed is not None and still_claimed["status"] == "running"
+    assert canonical in (cancelled.get("error_message") or "")
+    for duplicate in (cancelled, still_claimed):
+        assert repair.REPAIR_LABEL not in (duplicate.get("labels") or [])
+        assert "publication_repair" not in (duplicate.get("verification_result") or {})
+    found = get_repair_task(test_project_id)
+    assert found is not None and found["id"] == canonical

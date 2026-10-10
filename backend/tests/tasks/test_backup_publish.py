@@ -789,8 +789,9 @@ def test_legacy_publication_call_is_retired_before_any_inspection(source, monkey
     inspect.assert_not_called()
 
 
-def test_mirror_mode_publishes_without_acceptance_but_keeps_outgoing_route(source, monkeypatch):
-    monkeypatch.setattr(publish, "_acceptance_for_head", Mock(side_effect=AssertionError("mirror needs no receipt")))
+@pytest.mark.parametrize("receipt", ["missing", "invalid", "unavailable"])
+def test_mirror_mode_publishes_without_acceptance_but_keeps_outgoing_route(source, monkeypatch, receipt):
+    monkeypatch.setattr(publish, "_acceptance_for_head", Mock(return_value={"state": receipt}))
     isolated = Mock(return_value=delivery())
     monkeypatch.setattr(publish, "_publish_isolated", isolated)
     head = _git(Path(source["path"]), "rev-parse", "HEAD")
@@ -799,6 +800,15 @@ def test_mirror_mode_publishes_without_acceptance_but_keeps_outgoing_route(sourc
     assert result["acceptance"] == {"state": "not_required", "reason": "mirror_publication", "source_commit": head}
     assert result["source_status"] == "mirrored"
     isolated.assert_called_once()
+
+
+def test_mirror_mode_retains_a_valid_acceptance_receipt(source, monkeypatch):
+    head = _git(Path(source["path"]), "rev-parse", "HEAD")
+    accepted = {"state": "reused", "acceptance_id": "receipt", "source_commit": head}
+    monkeypatch.setattr(publish, "_acceptance_for_head", Mock(return_value=accepted))
+    monkeypatch.setattr(publish, "_publish_isolated", Mock(return_value=delivery()))
+    result = publish.publish_source_before_backup(source, manual_source_commit=head, publication_mode="mirror")
+    assert result["status"] == "published" and result["acceptance"] == accepted
 
 
 def test_unknown_publication_mode_is_rejected(source):

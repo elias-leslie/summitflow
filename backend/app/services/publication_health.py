@@ -73,30 +73,77 @@ def classify_observation(result: dict[str, Any]) -> dict[str, Any]:
             "ci_state": ci_state if ci_state in {"success", "failed", "pending", "not_applicable"} else "unknown"}
 
 
+# Local acceptance failures are proven fixed only by an observation that
+# carries a valid acceptance receipt for its own source.
+_ACCEPTANCE_FAILURES = frozenset({"local_acceptance_failed", "nightly_acceptance_failed"})
+
+
+def _accepted_source(result: dict[str, Any], head: str | None) -> bool:
+    acceptance = result.get("acceptance")
+    return (isinstance(acceptance, dict) and head is not None and acceptance.get("source_commit") == head
+            and acceptance.get("state") in {"success", "reused"} and bool(acceptance.get("acceptance_id")))
+
+
 def record_publication_observation(project_id: str, result: dict[str, Any]) -> str | None:
     observation = classify_observation(result)
+    # Published and verified states both require a passing outgoing scan bound
+    # to this exact source (classify_observation); CI is independent of it.
+    accepted = _accepted_source(result, observation["source_commit"])
     if observation["state"] == "published":
-        # A CI-less upload of an exactly accepted source proves only that local
-        # acceptance now passes for a source including the failed one (the
-        # stored ancestry proof). It never resolves CI, security or CodeQL.
-        return record_finding(project_id, "publication", observation, resolved=True,
-                              resolution_reasons=frozenset({"local_acceptance_failed"}))
+        # A CI-less upload proves its outgoing scan and, only when it carries an
+        # exact acceptance receipt (mirror uploads may not), that local
+        # acceptance passes for a source including the failed one (the stored
+        # ancestry proof). It never resolves CI or CodeQL.
+        task_id = None
+        if accepted:
+            task_id = record_finding(project_id, "publication", observation, resolved=True,
+                                     resolution_reasons=frozenset({"local_acceptance_failed"}))
+        return record_finding(project_id, "outgoing_security", observation, resolved=True,
+                              outgoing_scan_verified=True) or task_id
     if observation["state"] not in {"blocked", "verified"}:
         return None
     # Outgoing secret verification and remote CodeQL findings are distinct.
     # A green publication may resolve the former, never independent CodeQL alerts.
     if observation["reason"] == "security_findings_open":
         return record_finding(project_id, "outgoing_security", observation, resolved=False)
-    task_id = record_finding(project_id, "publication", observation, resolved=observation["state"] == "verified")
-    if observation["state"] == "verified":
-        record_finding(project_id, "outgoing_security", observation, resolved=True)
+    verified = observation["state"] == "verified"
+    task_id = record_finding(project_id, "publication", observation, resolved=verified,
+                             retained_reasons=frozenset() if accepted else _ACCEPTANCE_FAILURES)
+    if verified:
+        record_finding(project_id, "outgoing_security", observation, resolved=True, outgoing_scan_verified=True)
         # This proves CI now exists AND passes for the accepted source. Resolve
         # only the known missing-CI setup cause, never arbitrary CI policy or
         # independent CodeQL findings. Storage still requires failed-source
         # inclusion, observation ordering, and an exact-category CAS.
         record_finding(project_id, "cloud_ci", observation, resolved=True,
                        resolution_reasons=frozenset({"cloud_ci_missing"}))
+        # A failed nightly repair awaited remote confirmation of its source; a
+        # verified publication including that source is the confirmation.
+        record_finding(project_id, "nightly_repair_attempt_failed", observation, resolved=True,
+                       resolution_reasons=frozenset({"nightly_repair_attempt_failed"}))
     return task_id
+
+
+def reobserve_retained_publication(project_id: str) -> dict[str, Any] | None:
+    """Re-record the newest retained receipt so current resolution rules apply.
+
+    The receipt is the same integrity-checked observation the publication
+    recorded; replaying it never fetches, and ordering keeps it from clearing
+    any newer finding.
+    """
+    root = get_project_root_path(project_id)
+    if not root:
+        return None
+    from app.tasks.backup_manual_publish import latest_publication_receipt
+
+    retained = latest_publication_receipt(Path(root), project_id)
+    if not retained:
+        return None
+    path, receipt = retained
+    result = {**(receipt.get("observation") or {})}
+    result.setdefault("observed_at", receipt.get("observed_at"))
+    task_id = record_publication_observation(project_id, result)
+    return {**classify_observation(result), "evidence": str(path), "repair_task_id": task_id}
 
 
 def get_project_publication_health(project_id: str, *, now: datetime | None = None,

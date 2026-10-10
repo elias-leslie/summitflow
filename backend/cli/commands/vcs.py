@@ -36,10 +36,11 @@ app = typer.Typer(
 
 
 @app.command("publication")
-@usage(surface="st.vcs.publication", cmd="st vcs publication [--mode nightly|mirror|manual] [--hold [--through SHA] | --release]",
-       when="read publication status; set overnight mode; hold reviewed-later commits local",
+@usage(surface="st.vcs.publication", cmd="st vcs publication [--mode nightly|mirror|manual] [--hold [--through SHA] | --release] [--reobserve]",
+       when="read publication status; set overnight mode; hold reviewed-later commits local; replay the retained receipt",
        precautions=("unknown is not passing CI",
-                    "nightly publishes the accepted committed head overnight; mirror skips acceptance for check-less repos"),
+                    "nightly publishes the accepted committed head overnight; mirror skips acceptance for check-less repos",
+                    "--reobserve replays only the newest retained receipt; it never fetches or publishes"),
        tier="reference")
 def publication_status(
     mode: Annotated[str | None, typer.Option("--mode", help="Set overnight publication: nightly, mirror or manual")] = None,
@@ -47,6 +48,7 @@ def publication_status(
     through: Annotated[str | None, typer.Option("--through", help="With --hold: still publish up to this commit")] = None,
     reason: Annotated[str, typer.Option("--reason", help="With --hold: why later commits must stay local")] = "owner hold",
     release: Annotated[bool, typer.Option("--release", help="Clear a publication hold")] = False,
+    reobserve: Annotated[bool, typer.Option("--reobserve", help="Re-record the newest retained publication receipt against repair findings")] = False,
 ) -> None:
     """Read-only lightweight startup status, without a network CI wait."""
     from app.services.publication_health import (
@@ -85,6 +87,13 @@ def publication_status(
             set_publication_hold(project_id, through=full, reason=reason)
         elif release:
             release_publication_hold(project_id)
+        if reobserve:
+            from app.services.publication_health import reobserve_retained_publication
+
+            replay = reobserve_retained_publication(project_id)
+            typer.echo("Reobserved: none; no retained publication receipt." if replay is None else
+                       f"Reobserved: {replay['state']}; source={str(replay.get('source_commit') or 'unknown')[:12]}; "
+                       f"evidence={replay['evidence']}")
     except ValueError as exc:
         typer.echo(str(exc))
         raise typer.Exit(2) from None

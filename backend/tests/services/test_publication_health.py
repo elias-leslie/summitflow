@@ -142,15 +142,66 @@ def test_verified_publication_resolves_only_known_missing_ci_cause(monkeypatch):
     )
 
 
-def test_accepted_no_ci_publication_resolves_only_local_acceptance_failure(monkeypatch):
+def test_accepted_no_ci_publication_resolves_only_local_acceptance_and_outgoing_scan(monkeypatch):
     recorder = Mock(return_value="repair")
     monkeypatch.setattr(health, "record_finding", recorder)
     result = verified(ci={"state": "not_applicable", "sha": SHA})
     assert health.record_publication_observation("project", result) == "repair"
-    recorder.assert_called_once_with(
-        "project", "publication", health.classify_observation(result),
-        resolved=True, resolution_reasons=frozenset({"local_acceptance_failed"}),
-    )
+    observation = health.classify_observation(result)
+    assert recorder.call_count == 2
+    recorder.assert_any_call("project", "publication", observation,
+                             resolved=True, resolution_reasons=frozenset({"local_acceptance_failed"}))
+    recorder.assert_any_call("project", "outgoing_security", observation, resolved=True, outgoing_scan_verified=True)
+
+
+def test_mirror_upload_without_receipt_never_resolves_local_acceptance(monkeypatch):
+    recorder = Mock(return_value="repair")
+    monkeypatch.setattr(health, "record_finding", recorder)
+    mirrored = {"state": "not_required", "reason": "mirror_publication", "source_commit": SHA}
+    result = verified(ci={"state": "not_applicable", "sha": SHA}, acceptance=mirrored, publication_mode="mirror")
+    assert health.classify_observation(result)["state"] == "published"
+    health.record_publication_observation("project", result)
+    assert [call.args[1] for call in recorder.call_args_list] == ["outgoing_security"]
+
+
+def test_verified_mirror_without_receipt_retains_acceptance_failures(monkeypatch):
+    recorder = Mock(return_value="repair")
+    monkeypatch.setattr(health, "record_finding", recorder)
+    mirrored = {"state": "not_required", "reason": "mirror_publication", "source_commit": SHA}
+    result = verified(acceptance=mirrored, publication_mode="mirror")
+    health.record_publication_observation("project", result)
+    recorder.assert_any_call("project", "publication", health.classify_observation(result), resolved=True,
+                             retained_reasons=frozenset({"local_acceptance_failed", "nightly_acceptance_failed"}))
+    accepted = Mock(return_value="repair")
+    monkeypatch.setattr(health, "record_finding", accepted)
+    health.record_publication_observation("project", verified())
+    accepted.assert_any_call("project", "publication", health.classify_observation(verified()), resolved=True,
+                             retained_reasons=frozenset())
+
+
+def test_verified_publication_confirms_only_failed_nightly_repair_and_outgoing_scan(monkeypatch):
+    recorder = Mock(return_value="repair")
+    monkeypatch.setattr(health, "record_finding", recorder)
+    health.record_publication_observation("project", verified())
+    observation = health.classify_observation(verified())
+    recorder.assert_any_call("project", "nightly_repair_attempt_failed", observation, resolved=True,
+                             resolution_reasons=frozenset({"nightly_repair_attempt_failed"}))
+    recorder.assert_any_call("project", "outgoing_security", observation, resolved=True, outgoing_scan_verified=True)
+
+
+def test_reobserve_replays_the_newest_retained_receipt(monkeypatch, tmp_path):
+    recorder = Mock(return_value="repair")
+    monkeypatch.setattr(health, "record_finding", recorder)
+    monkeypatch.setattr(health, "get_project_root_path", lambda _: str(tmp_path))
+    receipt = {k: v for k, v in verified().items() if k != "observed_at"}
+    monkeypatch.setattr("app.tasks.backup_manual_publish.latest_publication_receipt", lambda *_args: (
+        tmp_path / "receipt.json", {"observed_at": "2026-10-03T08:00:00+00:00", "observation": receipt}))
+    replay = health.reobserve_retained_publication("project")
+    assert replay is not None and replay["state"] == "verified" and replay["repair_task_id"] == "repair"
+    assert replay["observed_at"] == "2026-10-03T08:00:00+00:00"
+    assert {call.args[1] for call in recorder.call_args_list} >= {"publication", "outgoing_security"}
+    monkeypatch.setattr("app.tasks.backup_manual_publish.latest_publication_receipt", lambda *_args: None)
+    assert health.reobserve_retained_publication("project") is None
 
 
 @pytest.mark.parametrize("override", [
