@@ -36,6 +36,18 @@ def test_send_retains_instruction_and_reports_capability(monkeypatch):
     client.send.assert_called_once_with("root-fixture", instruction="Exact short instruction", scope={}, source_key="revision:1")
 
 
+@pytest.mark.parametrize("agent", ["cc:8ae0f1", "codex:b6c1d2", "pi:0a1b2c", "agy:ffee00", "tmux:243"])
+def test_send_to_an_agent_id_defaults_to_the_handshake_ledger(monkeypatch, agent):
+    from cli.commands import sessions_handshake
+
+    sent = []
+    monkeypatch.setattr(sessions_fleet, "_client", lambda: pytest.fail("agent ids are not fleet roots"))
+    monkeypatch.setattr(sessions_handshake, "send_request", lambda root, text: sent.append((root, text)))
+    result = runner.invoke(app, ["sessions", "send", agent, "Self-contained ask"])
+    assert result.exit_code == 0, result.output
+    assert sent == [(agent, "Self-contained ask")]
+
+
 @pytest.mark.parametrize("command", ["show", "close"])
 def test_existing_lifecycle_routes_root_handles(monkeypatch, command):
     client = MagicMock()

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import re
 import uuid
 from typing import Annotated, Any, Literal
 
@@ -85,7 +86,7 @@ def send(
     instruction: Annotated[str, typer.Argument(help="Short non-secret instruction for the fleet root or exact native thread; no credentials/private target data")],
     scope: Annotated[str, typer.Option(help="Must exactly match the root scope JSON")] = "{}",
     source_key: Annotated[str | None, typer.Option(help="Stable instruction revision key; reuse on retry")] = None,
-    delivery: Annotated[Literal["fleet-stream", "native-thread", "handshake"], typer.Option(help="Native mode addresses an exact bound Codex UUID, including offline resume; handshake records an agent request that needs ack and confirm")] = "fleet-stream",
+    delivery: Annotated[Literal["fleet-stream", "native-thread", "handshake"] | None, typer.Option(help="Native mode addresses an exact bound Codex UUID, including offline resume; handshake records an agent request that needs ack and confirm (default for cc:/codex:/pi:/agy:/tmux: agent ids, else fleet-stream)")] = None,
 ) -> None:
     """Default delivery is passive fleet retention.
 
@@ -94,6 +95,9 @@ def send(
     observed consumption and is not generation-fenced; offline input may run
     when that same thread resumes.
     """
+    if delivery is None:
+        # Coordination agent ids are never fleet roots; route them to the ledger.
+        delivery = "handshake" if re.fullmatch(r"(cc|codex|pi|agy|tmux):[\w-]+", root) else "fleet-stream"
     if delivery == "handshake":
         from .sessions_handshake import send_request
 
