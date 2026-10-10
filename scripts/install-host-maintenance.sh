@@ -13,6 +13,8 @@ units=(
   summitflow-host-guardian.service summitflow-host-guardian.timer
   summitflow-host-maintenance.service summitflow-host-maintenance.timer
   summitflow-btrfs-scrub.service summitflow-btrfs-scrub.timer
+  summitflow-btrfs-scrub-workspaces.service summitflow-btrfs-scrub-workspaces.timer
+  summitflow-btrfs-scrub-native.service summitflow-btrfs-scrub-native.timer
   summitflow-btrfs-space-guard.service summitflow-btrfs-space-guard.timer
   summitflow-nvme-short-test.service summitflow-nvme-short-test.timer
   summitflow-nvme-long-test.service summitflow-nvme-long-test.timer
@@ -42,6 +44,20 @@ sudo tee /etc/systemd/journald.conf.d/20-storage-guardrails.conf >/dev/null <<'E
 SystemMaxUse=500M
 SystemKeepFree=5G
 MaxRetentionSec=14day
+EOF
+
+# btrbk appends one transaction log per native capture run.
+sudo tee /etc/logrotate.d/summitflow-btrbk >/dev/null <<'EOF'
+/var/log/summitflow-btrbk.log {
+    monthly
+    rotate 12
+    compress
+    delaycompress
+    missingok
+    notifempty
+    create 0644 root root
+    su root syslog
+}
 EOF
 
 # The older user timer removed every dangling volume immediately and duplicated
@@ -77,6 +93,8 @@ sudo systemctl enable --now \
   summitflow-host-guardian.timer \
   summitflow-host-maintenance.timer \
   summitflow-btrfs-scrub.timer \
+  summitflow-btrfs-scrub-workspaces.timer \
+  summitflow-btrfs-scrub-native.timer \
   summitflow-btrfs-space-guard.timer \
   summitflow-nvme-short-test.timer \
   summitflow-nvme-long-test.timer

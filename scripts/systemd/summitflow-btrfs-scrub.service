@@ -5,7 +5,9 @@ After=local-fs.target
 
 [Service]
 Type=oneshot
-ExecStart=/usr/bin/btrfs scrub start -Bd /
+# Shared lock: scrubs on different filesystems never run together, even after
+# Persistent= catch-up following downtime.
+ExecStart=/usr/bin/flock /run/lock/summitflow-btrfs-scrub.lock /usr/bin/btrfs scrub start -Bd -c 3 /
 Nice=15
 IOSchedulingClass=idle
 TimeoutStartSec=6h

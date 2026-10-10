@@ -175,3 +175,40 @@ def test_native_receipt_read_requires_private_owned_regular_file(monkeypatch, tm
     link.symlink_to(path)
     with pytest.raises(OSError):
         module._read_native_receipt(link, uid)
+
+
+def test_device_stats_cover_every_btrfs_filesystem(monkeypatch) -> None:
+    module = _load_module()
+    calls = []
+
+    def fake_run(args, **kwargs):
+        calls.append(args[-1])
+        errors = 3 if args[-1] == "/mnt/summitflow-native" else 0
+        stdout = f"[/dev/x].write_io_errs    0\n[/dev/x].corruption_errs  {errors}\n"
+        return SimpleNamespace(returncode=0, stdout=stdout, stderr="")
+
+    monkeypatch.setattr(module, "run", fake_run)
+    state = module.CheckState()
+    module.check_device_stats(state)
+
+    assert calls == ["/", "/srv/workspaces", "/mnt/summitflow-native"]
+    assert state.details["btrfs_device_stats"] == {"write_io_errs": 0, "corruption_errs": 3}
+    assert state.issues[-1]["code"] == "btrfs_device_errors"
+    assert "/mnt/summitflow-native" in state.issues[-1]["message"]
+
+
+def test_native_target_disk_uses_shared_thresholds(monkeypatch) -> None:
+    module = _load_module()
+    monkeypatch.setattr(module, "disk_snapshot", lambda path: {"path": str(path), "percent_used": 96.0, "free_gib": 30.0})
+    state = module.CheckState()
+    module.check_native_target_disk(state)
+    assert state.issues[-1]["code"] == "native_target_disk_critical"
+
+    def unavailable(path):
+        raise OSError("not mounted")
+
+    monkeypatch.setattr(module, "disk_snapshot", unavailable)
+    state = module.CheckState()
+    module.check_native_target_disk(state)
+    assert state.issues[-1]["code"] == "native_target_disk_unavailable"
+    assert state.status == "warning"

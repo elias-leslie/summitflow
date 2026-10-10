@@ -1,0 +1,16 @@
+[Unit]
+Description=Monthly Btrfs checksum scrub of the native btrbk backup target
+# The portable drive is optional; skip cleanly when it is not attached.
+ConditionPathExists=/dev/disk/by-uuid/36a930fb-4860-47b5-9d77-f2617ae2e59b
+RequiresMountsFor=/mnt/summitflow-native
+After=local-fs.target
+
+[Service]
+Type=oneshot
+# Shared lock with the other scrub units so scrubs never overlap.
+ExecStart=/usr/bin/flock /run/lock/summitflow-btrfs-scrub.lock /usr/bin/btrfs scrub start -Bd -c 3 /mnt/summitflow-native
+Nice=15
+IOSchedulingClass=idle
+TimeoutStartSec=8h
+StandardOutput=journal
+StandardError=journal

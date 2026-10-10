@@ -36,6 +36,8 @@ COMPOSE_FILE = COMPOSE_DIR / "docker-compose.yml"
 COMPOSE_ENV = COMPOSE_DIR / ".env"
 OPERATOR_USER = os.environ.get("HOST_GUARDIAN_USER", "kasadis")
 NATIVE_CONFIG = Path("/etc/btrbk/summitflow.conf")
+NATIVE_TARGET_PATH = Path(os.environ.get("HOST_GUARDIAN_NATIVE_TARGET_PATH", "/mnt/summitflow-native"))
+DEVICE_STATS_PATHS = ("/", "/srv/workspaces", str(NATIVE_TARGET_PATH))
 SPACE_GUARD = "/usr/local/libexec/summitflow-btrfs-space-guard"
 CORE_CONTAINERS = (
     "summitflow-stack-postgres-1",
@@ -143,17 +145,47 @@ def check_filesystems(state: CheckState) -> None:
         state.details["backup_disk"] = backup
         evaluate_disk(state, backup, label="backup")
 
+    if NATIVE_CONFIG.exists():
+        check_native_target_disk(state)
+
     if command_exists("btrfs"):
-        proc = run(["btrfs", "device", "stats", "/"], timeout=30)
+        check_device_stats(state)
+
+
+def check_native_target_disk(state: CheckState) -> None:
+    # The native btrbk target is an automount on the portable drive; statvfs
+    # triggers the mount, and the same thresholds as the other disks apply.
+    try:
+        target = disk_snapshot(NATIVE_TARGET_PATH)
+    except OSError as exc:
+        state.issue("warning", "native_target_disk_unavailable", f"Native backup target unavailable: {exc}")
+        state.details["native_target_disk"] = {"path": str(NATIVE_TARGET_PATH), "available": False}
+        return
+    target["available"] = True
+    state.details["native_target_disk"] = target
+    evaluate_disk(state, target, label="native_target")
+
+
+def check_device_stats(state: CheckState) -> None:
+    all_stats: dict[str, dict[str, int]] = {}
+    for path in DEVICE_STATS_PATHS:
+        proc = run(["btrfs", "device", "stats", path], timeout=30)
         stats: dict[str, int] = {}
         for line in proc.stdout.splitlines():
             match = re.search(r"\.([a-z_]+)\s+(\d+)$", line.strip())
             if match:
-                stats[match.group(1)] = int(match.group(2))
-        state.details["btrfs_device_stats"] = stats
+                stats[match.group(1)] = stats.get(match.group(1), 0) + int(match.group(2))
+        all_stats[path] = stats
         nonzero = {key: value for key, value in stats.items() if value}
-        if proc.returncode != 0 or nonzero:
-            state.issue("critical", "btrfs_device_errors", f"Btrfs device errors detected: {nonzero or proc.stderr.strip()}")
+        if proc.returncode != 0 or not stats or nonzero:
+            state.issue("critical", "btrfs_device_errors", f"Btrfs device errors detected on {path}: {nonzero or proc.stderr.strip() or 'no device stats'}")
+    totals: dict[str, int] = {}
+    for stats in all_stats.values():
+        for key, value in stats.items():
+            totals[key] = totals.get(key, 0) + value
+    # Flat totals keep the existing consumer contract; per-path detail is additive.
+    state.details["btrfs_device_stats"] = totals
+    state.details["btrfs_device_stats_by_path"] = all_stats
 
 
 def check_allocation_headroom(state: CheckState) -> None:

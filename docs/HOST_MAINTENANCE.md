@@ -9,11 +9,11 @@ Agent Hub is unavailable. `scripts/install-host-maintenance.sh` installs a copy
 of the standard-library-only guardian into `/usr/local/libexec` and installs
 native systemd timers for:
 
-- 15-minute disk, Btrfs, SMART, Veeam, Docker, PostgreSQL, and core-container checks;
+- 15-minute disk (root, workspaces, backup drive, native btrbk target), Btrfs device-error (all three Btrfs filesystems), SMART, Veeam, Docker, PostgreSQL, and core-container checks;
 - direct Docker Compose reconciliation of shared infrastructure, without `st` or API dependencies;
 - daily age-gated Docker/cache/log maintenance;
 - weekly/monthly NVMe self-tests;
-- monthly Btrfs checksum scrubs;
+- monthly Btrfs checksum scrubs, staggered per filesystem and serialized by a shared lock;
 - bounded journald and Docker log growth.
 
 Current state is written atomically to
@@ -44,7 +44,9 @@ guardian's JSON status, but native maintenance never consumes SummitFlow.
 | Veeam system image | daily at 02:00 |
 | SummitFlow daily maintenance | daily at 04:00 |
 | Managed restore tests | Sunday at 06:00 |
-| Btrfs scrub | first Sunday around 08:00 |
+| Btrfs scrub `/` | first Sunday around 08:00 |
+| Btrfs scrub `/srv/workspaces` | second Sunday around 08:00 |
+| Btrfs scrub native target `/mnt/summitflow-native` | third Sunday around 08:00 (skipped when the drive is absent) |
 | NVMe short self-test | Saturday around 03:00 |
 | NVMe extended self-test | first Saturday around 00:30 |
 
