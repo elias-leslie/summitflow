@@ -11,14 +11,12 @@ from typing import Any
 
 import httpx
 from agent_hub.exceptions import AgentHubError
-from fastapi import APIRouter, HTTPException, Query
+from fastapi import APIRouter, Query
 from pydantic import BaseModel, Field
 
 from ...logging_config import get_logger
 from ...services._agent_hub_config import (
     AGENT_HUB_URL,
-    SUMMITFLOW_CLIENT_ID,
-    build_agent_hub_headers,
     get_sync_client,
 )
 from ...storage.events import get_events_by_trace
@@ -112,20 +110,6 @@ HTTP_TIMEOUT = 30.0
 EMPTY_SESSION_RESULT: dict[str, Any] = {"events": [], "total": 0, "max_turn": 0}
 
 
-def _get_client_id() -> str:
-    """Get Agent Hub client ID from centralized config."""
-    if not SUMMITFLOW_CLIENT_ID:
-        raise HTTPException(status_code=500, detail="Missing SUMMITFLOW_CLIENT_ID credential for Agent Hub")
-    return SUMMITFLOW_CLIENT_ID
-
-
-def _build_headers() -> dict[str, str]:
-    return build_agent_hub_headers(
-        client_id=_get_client_id(),
-        default_request_source=DEFAULT_REQUEST_SOURCE,
-    )
-
-
 def _fetch_session_events(
     session_id: str,
     event_type: str | None = None,
@@ -153,16 +137,13 @@ def _fetch_session_events(
 
 def _fetch_session_summary(session_id: str) -> dict[str, Any] | None:
     """Fetch a single Agent Hub session summary."""
-    url = f"{AGENT_HUB_URL}/api/sessions/{session_id}"
     try:
-        with httpx.Client(timeout=HTTP_TIMEOUT) as client:
-            response = client.get(url, headers=_build_headers())
-        if response.status_code == 404:
-            return None
-        if response.status_code >= 400:
-            logger.warning("Agent Hub session API error", session_id=session_id, status=response.status_code, detail=response.text[:200])
-            return None
-        return dict(response.json())
+        with get_sync_client(timeout=HTTP_TIMEOUT, client_name=DEFAULT_REQUEST_SOURCE) as client:
+            return client.get_session(session_id).model_dump(mode="json")
+    except AgentHubError as e:
+        if e.status_code != 404:
+            logger.warning("Agent Hub session API error", session_id=session_id, status=e.status_code, detail=e.message[:200])
+        return None
     except httpx.ConnectError:
         logger.warning("Cannot connect to Agent Hub", url=AGENT_HUB_URL)
         return None
@@ -189,23 +170,13 @@ def _fetch_task_sessions_by_external_id(
     switches to a task branch, so only Agent Hub's explicit external_id link is
     used here.
     """
-    url = f"{AGENT_HUB_URL}/api/sessions"
-    params = {
-        "project_id": project_id,
-        "external_id": task_id,
-        "page": 1,
-        "page_size": page_size,
-    }
     try:
-        with httpx.Client(timeout=HTTP_TIMEOUT) as client:
-            response = client.get(url, headers=_build_headers(), params=params)
-        if response.status_code >= 400:
-            logger.warning("Agent Hub session list API error", task_id=task_id, project_id=project_id, status=response.status_code, detail=response.text[:200])
-            return []
-        raw_sessions = dict(response.json()).get("sessions", [])
-        if not isinstance(raw_sessions, list):
-            return []
-        sessions = [dict(s) for s in raw_sessions if isinstance(s, dict)]
+        with get_sync_client(timeout=HTTP_TIMEOUT, client_name=DEFAULT_REQUEST_SOURCE) as client:
+            listing = client.list_sessions(project_id, page=1, page_size=page_size, external_id=task_id)
+        sessions = [session.model_dump(mode="json") for session in listing.sessions]
+    except AgentHubError as e:
+        logger.warning("Agent Hub session list API error", task_id=task_id, project_id=project_id, status=e.status_code, detail=e.message[:200])
+        return []
     except httpx.ConnectError:
         logger.warning("Cannot connect to Agent Hub", url=AGENT_HUB_URL)
         return []

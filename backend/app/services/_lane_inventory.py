@@ -4,13 +4,11 @@ from __future__ import annotations
 
 from typing import TypedDict, cast
 
-import httpx
+from agent_hub.exceptions import AgentHubError
 
-from ._agent_hub_config import AGENT_HUB_URL, build_agent_hub_headers
+from ._agent_hub_config import get_sync_client, resolve_agent_hub_request_source
 
 _LIST_SESSIONS_TIMEOUT = 10.0
-_LIVE_OWNERSHIP_PATH = "/api/ownership/projects/{project_id}/live"
-_LEGACY_SESSIONS_PATH = "/api/sessions"
 
 
 class SpecialistSummary(TypedDict):
@@ -80,36 +78,19 @@ def fetch_live_project_inventory(
     project_id: str,
 ) -> tuple[list[dict[str, object]], list[dict[str, object]]]:
     """Return (owner_sessions, specialist_rows) for the given project."""
-    headers = build_agent_hub_headers(default_request_source="summitflow-task-session-preflight")
-    with httpx.Client(timeout=_LIST_SESSIONS_TIMEOUT) as client:
-        ownership_url = f"{AGENT_HUB_URL}{_LIVE_OWNERSHIP_PATH.format(project_id=project_id)}"
-        ownership_response = client.get(ownership_url, headers=headers)
-
-        if ownership_response.status_code != 404:
-            ownership_response.raise_for_status()
-            parsed = _parse_ownership_payload(ownership_response.json())
-            if parsed is not None:
-                return parsed
-
-        return _fetch_legacy_sessions(client, headers, project_id)
-
-
-def _fetch_legacy_sessions(
-    client: httpx.Client,
-    headers: dict[str, str],
-    project_id: str,
-) -> tuple[list[dict[str, object]], list[dict[str, object]]]:
-    """Fallback to the legacy /api/sessions endpoint."""
-    response = client.get(
-        f"{AGENT_HUB_URL}{_LEGACY_SESSIONS_PATH}",
-        headers=headers,
-        params={"project_id": project_id, "status": "active", "page_size": 100},
-    )
-    response.raise_for_status()
-    payload = response.json()
-    sessions_raw = payload.get("sessions", [])
-    sessions = [r for r in sessions_raw if isinstance(r, dict)] if isinstance(sessions_raw, list) else []
-    return sessions, []
+    request_source = resolve_agent_hub_request_source("summitflow-task-session-preflight")
+    with get_sync_client(timeout=_LIST_SESSIONS_TIMEOUT, request_source=request_source) as client:
+        try:
+            parsed = _parse_ownership_payload(client.get_project_ownership(project_id))
+        except AgentHubError as exc:
+            if exc.status_code != 404:
+                raise
+            parsed = None
+        if parsed is not None:
+            return parsed
+        # Older Agent Hub servers without the ownership endpoint: active sessions only.
+        listing = client.list_sessions(project_id, "active", page_size=100)
+    return [session.model_dump(mode="json") for session in listing.sessions], []
 
 
 def summarize_active_specialists(

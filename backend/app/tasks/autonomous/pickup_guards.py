@@ -7,7 +7,7 @@ from datetime import datetime, timedelta
 from typing import Any, cast
 
 from app.config import DEFAULT_API_BASE, REDIS_URL
-from app.services._agent_hub_config import AGENT_HUB_URL, build_agent_hub_headers
+from app.services._agent_hub_config import get_sync_client
 from app.services.redis_pool import create_redis_client
 from app.storage import agent_configs
 from app.storage import tasks as task_store
@@ -15,8 +15,7 @@ from app.storage.agent_configs_autonomous import get_allowed_external_origins
 from app.storage.connection import get_cursor
 
 # Constants
-_AGENT_HUB_URL = f"{AGENT_HUB_URL}/api/projects/{{project_id}}/execution-permission"
-_AGENT_HUB_SESSIONS_URL = f"{AGENT_HUB_URL}/api/sessions"
+_REQUEST_SOURCE = "sf-pipeline"
 _REDIS_TIMEOUT = 3
 _HTTP_TIMEOUT = 5.0
 _DISPATCHABLE_STATUSES = ("pending", "failed")
@@ -32,15 +31,9 @@ def check_agent_hub_execution_permission(
     require_enabled: bool = True,
 ) -> dict[str, Any] | None:
     """Return error dict if Agent Hub permission cannot support execution."""
-    import httpx
     try:
-        resp = httpx.get(
-            _AGENT_HUB_URL.format(project_id=project_id),
-            headers=build_agent_hub_headers(request_source="sf-pipeline"),
-            timeout=_HTTP_TIMEOUT,
-        )
-        resp.raise_for_status()
-        data = resp.json()
+        with get_sync_client(timeout=_HTTP_TIMEOUT, request_source=_REQUEST_SOURCE) as client:
+            data = client.get_execution_permission(project_id)
         if require_enabled and not data.get("allowed"):
             return {"status": "disabled", "reason": data.get("reason", "not_allowed")}
         # Execution requires trusted project access. Manual dispatch may bypass
@@ -110,24 +103,14 @@ def _session_counts_for_concurrency(
 
 def count_active_agent_hub_sessions(project_id: str, *, exclude_task_id: str | None = None) -> int:
     """Count live Agent Hub sessions that should consume autonomous project capacity."""
-    import httpx
-
-    resp = httpx.get(
-        _AGENT_HUB_SESSIONS_URL,
-        headers=build_agent_hub_headers(request_source="sf-pipeline"),
-        params={"project_id": project_id, "status": "active", "page_size": 100},
-        timeout=_HTTP_TIMEOUT,
-    )
-    resp.raise_for_status()
-    payload = resp.json()
-    sessions = payload.get("sessions", [])
-    if not isinstance(sessions, list):
-        return 0
+    with get_sync_client(timeout=_HTTP_TIMEOUT, request_source=_REQUEST_SOURCE) as client:
+        listing = client.list_sessions(project_id, "active", page_size=100)
     return sum(
         1
-        for session in sessions
-        if isinstance(session, dict)
-        and _session_counts_for_concurrency(session, project_id=project_id, exclude_task_id=exclude_task_id)
+        for session in listing.sessions
+        if _session_counts_for_concurrency(
+            session.model_dump(mode="json"), project_id=project_id, exclude_task_id=exclude_task_id
+        )
     )
 
 

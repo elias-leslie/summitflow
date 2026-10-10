@@ -95,6 +95,7 @@ def get_sync_client(
     api_key: str | None = None,
     timeout: float | None = None,
     client_name: str = "summitflow",
+    request_source: str | None = None,
 ) -> AgentHubClient:
     """Get a configured sync Agent Hub client with credentials.
 
@@ -104,6 +105,7 @@ def get_sync_client(
         timeout: Optional HTTP request timeout in seconds. Leave unset for
             long-running agent calls.
         client_name: Client identifier for usage tracking
+        request_source: Request source for attribution (defaults to the configured one)
 
     Returns:
         Configured AgentHubClient with credentials injected
@@ -114,7 +116,7 @@ def get_sync_client(
         timeout=_resolve_timeout(timeout),
         client_name=client_name,
         client_id=SUMMITFLOW_CLIENT_ID,
-        request_source=resolve_agent_hub_request_source(),
+        request_source=request_source or resolve_agent_hub_request_source(),
     )
 
 
@@ -123,6 +125,7 @@ def get_async_client(
     api_key: str | None = None,
     timeout: float | None = None,
     client_name: str = "summitflow",
+    request_source: str | None = None,
 ) -> AsyncAgentHubClient:
     """Get a configured async Agent Hub client with credentials.
 
@@ -132,6 +135,7 @@ def get_async_client(
         timeout: Optional HTTP request timeout in seconds. Leave unset for
             long-running agent calls.
         client_name: Client identifier for usage tracking
+        request_source: Request source for attribution (defaults to the configured one)
 
     Returns:
         Configured AsyncAgentHubClient with credentials injected
@@ -142,7 +146,7 @@ def get_async_client(
         timeout=_resolve_timeout(timeout),
         client_name=client_name,
         client_id=SUMMITFLOW_CLIENT_ID,
-        request_source=resolve_agent_hub_request_source(),
+        request_source=request_source or resolve_agent_hub_request_source(),
     )
 
 

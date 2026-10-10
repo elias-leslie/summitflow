@@ -1,12 +1,13 @@
 """Project-wide coordination pulse for cross-agent awareness."""
 from __future__ import annotations
 
+from collections.abc import Awaitable, Callable
 from datetime import UTC, datetime
 from typing import Any
 
-import httpx
+from agent_hub import AsyncAgentHubClient
 
-from app.services._agent_hub_config import AGENT_HUB_URL, build_agent_hub_headers
+from app.services._agent_hub_config import get_async_client, resolve_agent_hub_request_source
 from app.services._ownership_roles import is_read_only_owner
 from app.services._session_classifier import _bucket_sessions, _count_reapable
 from app.services._task_stranding import (
@@ -21,17 +22,25 @@ _TIMEOUT = 10.0
 _TASK_LIMIT = 8
 _SESSION_LIMIT = 25
 _RUNNING_STATUS = "running"
-_SESSIONS_API = "/api/sessions"
 
 
-async def _agent_hub_get(path: str, params: dict[str, Any] | None = None) -> dict[str, Any]:
-    """Fetch a JSON payload from Agent Hub."""
-    headers = build_agent_hub_headers(default_request_source="summitflow-project-pulse")
-    async with httpx.AsyncClient(timeout=_TIMEOUT) as client:
-        response = await client.get(f"{AGENT_HUB_URL}{path}", headers=headers, params=params)
-        response.raise_for_status()
-        payload = response.json()
-        return payload if isinstance(payload, dict) else {}
+async def _agent_hub_get(read: Callable[[AsyncAgentHubClient], Awaitable[dict[str, Any]]]) -> dict[str, Any]:
+    """Run one Agent Hub read through the SDK and return its JSON object."""
+    request_source = resolve_agent_hub_request_source("summitflow-project-pulse")
+    async with get_async_client(timeout=_TIMEOUT, request_source=request_source) as client:
+        return await read(client)
+
+
+def _ownership(project_id: str) -> Callable[[AsyncAgentHubClient], Awaitable[dict[str, Any]]]:
+    return lambda client: client.get_project_ownership(project_id)
+
+
+def _active_sessions(project_id: str) -> Callable[[AsyncAgentHubClient], Awaitable[dict[str, Any]]]:
+    async def read(client: AsyncAgentHubClient) -> dict[str, Any]:
+        listing = await client.list_sessions(project_id, "active", page=1, page_size=_SESSION_LIMIT)
+        return {"sessions": [session.model_dump(mode="json") for session in listing.sessions]}
+
+    return read
 
 
 def _filter_ownership_by_active_sessions(
@@ -84,11 +93,8 @@ def _partition_active_ownership(
 
 async def count_active_writers(project_id: str) -> int:
     """Live write owners only, using the same session evidence as the pulse."""
-    ownership = await _agent_hub_get(f"/api/ownership/projects/{project_id}/live")
-    sessions = (await _agent_hub_get(
-        _SESSIONS_API,
-        params={"project_id": project_id, "status": "active", "page": 1, "page_size": _SESSION_LIMIT},
-    )).get("sessions", [])
+    ownership = await _agent_hub_get(_ownership(project_id))
+    sessions = (await _agent_hub_get(_active_sessions(project_id))).get("sessions", [])
     active, _, _ = _bucket_sessions(sessions, set(), set())
     writers, _ = _partition_active_ownership(
         ownership.get("active_owners", []), {str(session.get("id") or "") for session in active},
@@ -99,11 +105,8 @@ async def count_active_writers(project_id: str) -> int:
 
 async def build_project_pulse(project_id: str) -> dict[str, Any]:
     """Return the canonical live coordination payload for one project."""
-    ownership = await _agent_hub_get(f"/api/ownership/projects/{project_id}/live")
-    sessions_payload = await _agent_hub_get(
-        _SESSIONS_API,
-        params={"project_id": project_id, "status": "active", "page": 1, "page_size": _SESSION_LIMIT},
-    )
+    ownership = await _agent_hub_get(_ownership(project_id))
+    sessions_payload = await _agent_hub_get(_active_sessions(project_id))
     raw_active_owners = ownership.get("active_owners", [])
     raw_active_specialists = ownership.get("active_specialists", [])
     raw_sessions = sessions_payload.get("sessions", [])

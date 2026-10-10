@@ -4,6 +4,8 @@ from __future__ import annotations
 
 from unittest.mock import MagicMock, patch
 
+from agent_hub.models import SessionListResponse
+
 from app.tasks.autonomous.pickup_guards import (
     check_allowed_external_origin,
     check_allowed_task_type,
@@ -47,87 +49,98 @@ def test_manual_dispatch_skips_external_origin_allowlist() -> None:
         ) is None
 
 
-def _mock_response(data: dict) -> MagicMock:
-    """Create a mock httpx response."""
-    resp = MagicMock()
-    resp.json.return_value = data
-    return resp
+class _FakeClient:
+    """Stands in for the Agent Hub SDK client and records each call."""
+
+    def __init__(self, permission: dict | Exception | None = None, sessions: list[dict] | None = None) -> None:
+        self.permission = permission
+        self.sessions = sessions or []
+        self.calls: list[tuple] = []
+        self.factory_kwargs: dict = {}
+
+    def __enter__(self) -> _FakeClient:
+        return self
+
+    def __exit__(self, *exc: object) -> None:
+        return None
+
+    def get_execution_permission(self, project_id: str) -> dict:
+        self.calls.append(("get_execution_permission", project_id))
+        if isinstance(self.permission, Exception):
+            raise self.permission
+        return dict(self.permission or {})
+
+    def list_sessions(self, project_id: str, status: str, **kwargs: object) -> SessionListResponse:
+        self.calls.append(("list_sessions", project_id, status, kwargs))
+        return SessionListResponse.model_validate({
+            "sessions": [_session(**overrides) for overrides in self.sessions],
+            "total": len(self.sessions), "page": 1, "page_size": 100,
+        })
+
+
+def _session(**overrides: object) -> dict:
+    return {
+        "id": f"s-{id(overrides)}", "project_id": "agent-hub", "provider": "codex", "model": "m",
+        "status": "active", "message_count": 0,
+        "created_at": "2026-10-09T00:00:00Z", "updated_at": "2026-10-09T00:00:00Z", **overrides,
+    }
+
+
+def _sdk(fake: _FakeClient):
+    def factory(**kwargs: object) -> _FakeClient:
+        fake.factory_kwargs = kwargs
+        return fake
+
+    return patch("app.tasks.autonomous.pickup_guards.get_sync_client", side_effect=factory)
 
 
 class TestCheckAutonomousEnabled:
     """Tests for check_autonomous_enabled permission tier validation."""
 
-    @patch("httpx.get")
-    def test_legacy_write_tier_alias_permits_execution(self, mock_get: MagicMock) -> None:
+    def test_legacy_write_tier_alias_permits_execution(self) -> None:
         """Legacy write tier is treated as full during rollout."""
-        mock_get.return_value = _mock_response({"allowed": True, "permission_tier": "write"})
-        assert check_autonomous_enabled("proj") is None
+        with _sdk(_FakeClient({"allowed": True, "permission_tier": "write"})):
+            assert check_autonomous_enabled("proj") is None
 
-    @patch("httpx.get")
-    def test_sends_auth_headers(self, mock_get: MagicMock) -> None:
-        """HTTP call includes X-Client-Id and X-Request-Source headers."""
-        mock_get.return_value = _mock_response({"allowed": True, "permission_tier": "full"})
-        check_autonomous_enabled("monkey-fight")
-        mock_get.assert_called_once()
-        call_kwargs = mock_get.call_args
-        headers = call_kwargs.kwargs.get("headers") or call_kwargs[1].get("headers", {})
-        assert "X-Request-Source" in headers
-        assert headers["X-Request-Source"] == "sf-pipeline"
-
-    @patch("httpx.get")
-    def test_auth_headers_include_client_id_when_configured(self, mock_get: MagicMock) -> None:
-        """X-Client-Id header is present when SUMMITFLOW_CLIENT_ID is set."""
-        mock_get.return_value = _mock_response({"allowed": True, "permission_tier": "full"})
-        with patch("app.services._agent_hub_config.SUMMITFLOW_CLIENT_ID", "test-client-123"):
+    def test_reads_the_project_permission_as_the_pipeline(self) -> None:
+        """The SDK read names the project and attributes the call to sf-pipeline."""
+        fake = _FakeClient({"allowed": True, "permission_tier": "full"})
+        with _sdk(fake):
             check_autonomous_enabled("monkey-fight")
-        headers = mock_get.call_args.kwargs.get("headers", {})
-        assert headers.get("X-Client-Id") == "test-client-123"
+        assert fake.calls == [("get_execution_permission", "monkey-fight")]
+        assert fake.factory_kwargs["request_source"] == "sf-pipeline"
 
-    @patch("httpx.get")
-    def test_project_id_interpolated_in_url(self, mock_get: MagicMock) -> None:
-        """URL contains the project_id for monkey-fight."""
-        mock_get.return_value = _mock_response({"allowed": True, "permission_tier": "full"})
-        check_autonomous_enabled("monkey-fight")
-        url = mock_get.call_args[0][0]
-        assert "monkey-fight" in url
-        assert "/execution-permission" in url
-
-    @patch("httpx.get")
-    def test_allowed_full_tier(self, mock_get: MagicMock) -> None:
+    def test_allowed_full_tier(self) -> None:
         """Full tier permits autonomous execution."""
-        mock_get.return_value = _mock_response({"allowed": True, "permission_tier": "full"})
-        assert check_autonomous_enabled("proj") is None
+        with _sdk(_FakeClient({"allowed": True, "permission_tier": "full"})):
+            assert check_autonomous_enabled("proj") is None
 
-    @patch("httpx.get")
-    def test_read_tier_blocked(self, mock_get: MagicMock) -> None:
+    def test_read_tier_blocked(self) -> None:
         """Read-only tier blocks autonomous execution."""
-        mock_get.return_value = _mock_response({"allowed": True, "permission_tier": "read"})
-        result = check_autonomous_enabled("proj")
+        with _sdk(_FakeClient({"allowed": True, "permission_tier": "read"})):
+            result = check_autonomous_enabled("proj")
         assert result is not None
         assert result["status"] == "disabled"
         assert "read" in result["reason"]
 
-    @patch("httpx.get")
-    def test_off_tier_blocked(self, mock_get: MagicMock) -> None:
+    def test_off_tier_blocked(self) -> None:
         """Off tier blocks autonomous execution (even if API says allowed)."""
-        mock_get.return_value = _mock_response({"allowed": True, "permission_tier": "off"})
-        result = check_autonomous_enabled("proj")
+        with _sdk(_FakeClient({"allowed": True, "permission_tier": "off"})):
+            result = check_autonomous_enabled("proj")
         assert result is not None
         assert result["status"] == "disabled"
 
-    @patch("httpx.get")
-    def test_not_allowed_returns_disabled(self, mock_get: MagicMock) -> None:
+    def test_not_allowed_returns_disabled(self) -> None:
         """API returning allowed=false blocks dispatch."""
-        mock_get.return_value = _mock_response({"allowed": False, "reason": "auto_exec_disabled"})
-        result = check_autonomous_enabled("proj")
+        with _sdk(_FakeClient({"allowed": False, "reason": "auto_exec_disabled"})):
+            result = check_autonomous_enabled("proj")
         assert result is not None
         assert result["reason"] == "auto_exec_disabled"
 
-    @patch("httpx.get")
-    def test_unreachable_returns_disabled(self, mock_get: MagicMock) -> None:
+    def test_unreachable_returns_disabled(self) -> None:
         """Network failure blocks dispatch."""
-        mock_get.side_effect = ConnectionError("down")
-        result = check_autonomous_enabled("proj")
+        with _sdk(_FakeClient(ConnectionError("down"))):
+            result = check_autonomous_enabled("proj")
         assert result is not None
         assert "unreachable" in result["reason"]
 
@@ -229,87 +242,30 @@ class TestConcurrencySnapshot:
     """Tests for project concurrency accounting."""
 
     @patch("app.tasks.autonomous.pickup_guards.task_store.get_task", return_value=None)
-    @patch("httpx.get")
-    def test_active_session_count_excludes_current_task_and_transcript_sync(
-        self,
-        mock_get: MagicMock,
-        _mock_get_task: MagicMock,
-    ) -> None:
-        mock_get.return_value = _mock_response(
-            {
-                "sessions": [
-                    {
-                        "status": "active",
-                        "external_id": "task-current",
-                        "request_source": "summitflow",
-                    },
-                    {
-                        "status": "active",
-                        "external_id": None,
-                        "request_source": "codex-transcript-sync",
-                    },
-                    {
-                        "status": "active",
-                        "external_id": None,
-                        "request_source": "summitflow",
-                        "live_activity": {"lifecycle_state": "dead_candidate", "health": "stalled"},
-                    },
-                    {
-                        "status": "active",
-                        "external_id": None,
-                        "request_source": "summitflow",
-                        "live_activity": {"lifecycle_state": "reapable", "health": "stalled"},
-                    },
-                    {
-                        "status": "active",
-                        "external_id": None,
-                        "request_source": "summitflow",
-                        "live_activity": {"lifecycle_state": "quiet", "health": "completed"},
-                    },
-                    {
-                        "status": "active",
-                        "external_id": "task-other",
-                        "request_source": "summitflow",
-                        "live_activity": {"lifecycle_state": "quiet", "health": "quiet"},
-                    },
-                    {
-                        "status": "active",
-                        "external_id": None,
-                        "request_source": "summitflow",
-                        "live_activity": {"lifecycle_state": "quiet", "health": "active"},
-                    },
-                ]
-            }
-        )
-
-        assert count_active_agent_hub_sessions("agent-hub", exclude_task_id="task-current") == 1
+    def test_active_session_count_excludes_current_task_and_transcript_sync(self, _mock_get_task: MagicMock) -> None:
+        fake = _FakeClient(sessions=[
+            {"external_id": "task-current", "request_source": "summitflow"},
+            {"external_id": None, "request_source": "codex-transcript-sync"},
+            {"request_source": "summitflow", "live_activity": {"lifecycle_state": "dead_candidate", "health": "stalled"}},
+            {"request_source": "summitflow", "live_activity": {"lifecycle_state": "reapable", "health": "stalled"}},
+            {"request_source": "summitflow", "live_activity": {"lifecycle_state": "quiet", "health": "completed"}},
+            {"external_id": "task-other", "request_source": "summitflow",
+             "live_activity": {"lifecycle_state": "quiet", "health": "quiet"}},
+            {"request_source": "summitflow", "live_activity": {"lifecycle_state": "quiet", "health": "active"}},
+        ])
+        with _sdk(fake):
+            assert count_active_agent_hub_sessions("agent-hub", exclude_task_id="task-current") == 1
+        assert fake.calls == [("list_sessions", "agent-hub", "active", {"page_size": 100})]
 
     @patch("app.tasks.autonomous.pickup_guards.task_store.get_task")
-    @patch("httpx.get")
-    def test_active_session_for_terminal_task_does_not_consume_capacity(
-        self,
-        mock_get: MagicMock,
-        mock_get_task: MagicMock,
-    ) -> None:
-        mock_get.return_value = _mock_response(
-            {
-                "sessions": [
-                    {
-                        "status": "active",
-                        "external_id": "task-finished",
-                        "request_source": "summitflow",
-                        "live_activity": {"lifecycle_state": "quiet", "health": "quiet"},
-                    },
-                ]
-            }
-        )
-        mock_get_task.return_value = {
-            "id": "task-finished",
-            "project_id": "agent-hub",
-            "status": "failed",
-        }
-
-        assert count_active_agent_hub_sessions("agent-hub") == 0
+    def test_active_session_for_terminal_task_does_not_consume_capacity(self, mock_get_task: MagicMock) -> None:
+        fake = _FakeClient(sessions=[{
+            "external_id": "task-finished", "request_source": "summitflow",
+            "live_activity": {"lifecycle_state": "quiet", "health": "quiet"},
+        }])
+        mock_get_task.return_value = {"id": "task-finished", "project_id": "agent-hub", "status": "failed"}
+        with _sdk(fake):
+            assert count_active_agent_hub_sessions("agent-hub") == 0
 
     @patch("app.tasks.autonomous.pickup_guards.count_active_agent_hub_sessions", return_value=0)
     @patch("app.tasks.autonomous.pickup_guards.task_store.count_running_tasks", return_value=0)

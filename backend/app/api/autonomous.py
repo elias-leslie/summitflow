@@ -6,12 +6,11 @@ import asyncio
 from datetime import datetime
 from typing import Any, Literal
 
-import httpx
+from agent_hub.exceptions import AgentHubError
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, Field
 
-from ..config import AGENT_HUB_URL
-from ..services._agent_hub_config import build_agent_hub_headers
+from ..services._agent_hub_config import get_async_client
 from ..services.autonomous_schedule_registry import (
     AGENT_HUB_OWNED_SCHEDULES,
     get_autonomous_schedule_definition,
@@ -105,45 +104,29 @@ class AutonomousScheduleUpdate(BaseModel):
     enabled: bool
 
 
-async def _fetch_agent_hub_execution_permission(project_id: str) -> dict[str, Any]:
-    """Fetch lightweight Agent Hub execution status without failing settings load."""
-    url = f"{AGENT_HUB_URL}/api/projects/{project_id}/execution-permission"
-    headers = build_agent_hub_headers(request_source="summitflow-autonomous-settings")
-    try:
-        async with httpx.AsyncClient(timeout=5.0, headers=headers) as client:
-            response = await client.get(url)
-    except Exception as exc:
-        return {
-            "allowed": False,
-            "auto_exec_enabled": False,
-            "in_time_window": False,
-            "permission_tier": None,
-            "reason": f"agent_hub_unreachable: {exc}",
-        }
-    if response.status_code == 404:
-        return {
-            "allowed": False,
-            "auto_exec_enabled": False,
-            "in_time_window": False,
-            "permission_tier": None,
-            "reason": "permission_missing",
-        }
-    if response.status_code >= 400:
-        return {
-            "allowed": False,
-            "auto_exec_enabled": False,
-            "in_time_window": False,
-            "permission_tier": None,
-            "reason": f"agent_hub_http_{response.status_code}",
-        }
-    payload = response.json()
-    return payload if isinstance(payload, dict) else {
+def _permission_unavailable(reason: str) -> dict[str, Any]:
+    return {
         "allowed": False,
         "auto_exec_enabled": False,
         "in_time_window": False,
         "permission_tier": None,
-        "reason": "invalid_agent_hub_response",
+        "reason": reason,
     }
+
+
+async def _fetch_agent_hub_execution_permission(project_id: str) -> dict[str, Any]:
+    """Fetch lightweight Agent Hub execution status without failing settings load."""
+    try:
+        async with get_async_client(timeout=5.0, request_source="summitflow-autonomous-settings") as client:
+            return await client.get_execution_permission(project_id)
+    except AgentHubError as exc:
+        if exc.status_code == 404:
+            return _permission_unavailable("permission_missing")
+        if exc.status_code is not None:
+            return _permission_unavailable(f"agent_hub_http_{exc.status_code}")
+        return _permission_unavailable("invalid_agent_hub_response")
+    except Exception as exc:
+        return _permission_unavailable(f"agent_hub_unreachable: {exc}")
 
 
 async def _settings_with_execution_permission(project_id: str) -> AutonomousSettings:
