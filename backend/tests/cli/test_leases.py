@@ -194,3 +194,9 @@ def test_relative_wait_observes_foreign_lease(isolated_store, monkeypatch):
     assert not leases.wait(
         "example", "docs/README.md", timeout=0.01, poll=0.02, project_root=root
     )
+
+
+@pytest.mark.parametrize("project_id", ["../escape", "a/b", "", ".hidden"])
+def test_project_id_cannot_escape_lease_dir(isolated_store, project_id):
+    with pytest.raises(ValueError, match="invalid project id"):
+        leases._store_path(project_id)

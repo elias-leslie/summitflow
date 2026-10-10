@@ -170,12 +170,23 @@ def is_mine(lease: Lease, mine: set[str], anchor: str | None) -> bool:
     return lease.agent_id in mine or bool(anchor and lease.anchor == anchor)
 
 
+def _project_file(project_id: str, suffix: str) -> Path:
+    """Path under LEASES_DIR for a project slug; refuses ids that could escape it."""
+    if not re.fullmatch(r"[A-Za-z0-9_][A-Za-z0-9._-]{0,127}", project_id):
+        raise ValueError(f"invalid project id: {project_id!r}")
+    base = os.path.normpath(LEASES_DIR)
+    path = os.path.normpath(os.path.join(base, project_id + suffix))
+    if not path.startswith(base + os.sep):
+        raise ValueError(f"invalid project id: {project_id!r}")
+    return Path(path)
+
+
 def _store_path(project_id: str) -> Path:
-    return LEASES_DIR / f"{project_id}.json"
+    return _project_file(project_id, ".json")
 
 
 def _lock_path(project_id: str) -> Path:
-    return LEASES_DIR / f"{project_id}.lock"
+    return _project_file(project_id, ".lock")
 
 
 @contextmanager
