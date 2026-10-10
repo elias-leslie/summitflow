@@ -9,9 +9,28 @@ import subprocess
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Any
 
-from ..utils import safe_subprocess
-from ..utils._git_core import get_managed_repos
+# The publication hook imports this module with a stdlib-only interpreter (see
+# scripts/lib/command-guard). Backend utilities load structlog/pydantic, so they
+# are imported only by the functions that need them.
+
+
+class _LazySafeSubprocess:
+    @staticmethod
+    def run(*args: Any, **kwargs: Any) -> subprocess.CompletedProcess[Any]:
+        from ..utils import safe_subprocess as module
+
+        return module.run(*args, **kwargs)
+
+
+safe_subprocess = _LazySafeSubprocess()
+
+
+def get_managed_repos() -> list[Path]:
+    from ..utils._git_core import get_managed_repos as managed_repos
+
+    return managed_repos()
 
 _SHELL_SEPARATORS = frozenset({";", "&&", "||", "|"})
 _ASSIGNMENT_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*=.*$")

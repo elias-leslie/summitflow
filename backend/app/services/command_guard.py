@@ -49,6 +49,7 @@ from .destructive_path_guard import (
     format_guard_report,
     staged_destructive_paths,
 )
+from .publication_hook import publication_hook_main
 
 _ROOT = Path(__file__).resolve().parents[3]
 _REGISTRY_PATH = _ROOT / "scripts" / "lib" / "tool-registry.json"
@@ -574,43 +575,6 @@ def main(argv: Sequence[str] | None = None) -> int:
     elif decision.blocked and decision.message:
         print(decision.message)
     return 2 if decision.blocked else 0
-
-
-def publication_hook_main() -> int:
-    """Claude/Codex shared JSON protocol; valid deny output also on errors."""
-    try:
-        payload = json.load(sys.stdin)
-        tool_input = payload.get("tool_input")
-        if not isinstance(tool_input, dict):
-            raise ValueError("Missing tool input")
-        tool = str(payload.get("tool_name", "")).lower()
-        command = tool_input.get("command", tool_input.get("cmd"))
-        if isinstance(command, list) and all(isinstance(item, str) for item in command):
-            import shlex
-            command = shlex.join(command)
-        if command is None:
-            # Non-shell hooks may match GitHub connector tools directly.
-            mutation = any(word in tool for word in ("merge_pull_request", "create_release", "update_release", "delete_release", "push_files", "create_or_update_file", "create_repository"))
-            if mutation:
-                decision = CommandGuardDecision(True, "direct_publication", "Use the canonical ST publication workflow.", "publication", "")
-            elif any(word in tool for word in ("bash", "exec_command", "shell")):
-                raise ValueError("Missing shell command")
-            else:
-                decision = CommandGuardDecision(False, None, None, None, "")
-        elif not isinstance(command, str) or not command.strip():
-            raise ValueError("Invalid command")
-        else:
-            decision = evaluate_publication_command(command, payload.get("cwd"))
-    except Exception:
-        decision = CommandGuardDecision(True, "publication_error", "Publication guard could not evaluate tool input; execution refused.", "publication", "")
-    if decision.blocked:
-        print(json.dumps({"hookSpecificOutput": {
-            "hookEventName": "PreToolUse", "permissionDecision": "deny",
-            "permissionDecisionReason": decision.message,
-        }}))
-    else:
-        print("{}")
-    return 0
 
 
 if __name__ == "__main__":

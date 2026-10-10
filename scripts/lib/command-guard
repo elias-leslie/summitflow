@@ -6,13 +6,27 @@ SCRIPT_DIR="$(cd "$(dirname "$SCRIPT_PATH")" && pwd)"
 SUMMITFLOW_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
 PYTHON_BIN="$SUMMITFLOW_ROOT/backend/.venv/bin/python"
 
+export SF_COMMAND_GUARD_DISABLE=1
+unset BASH_ENV
+
+# The synchronous PreToolUse hook gates every agent shell. Its policy is
+# stdlib-only, so run it with the OS interpreter in isolated mode: an emptied
+# or half-synced backend/.venv must not block (or unguard) agent shells.
+if [[ "${1-}" == "--publication-hook" && $# -eq 1 ]]; then
+  for interpreter in /usr/bin/python3 "$PYTHON_BIN"; do
+    if [[ -x "$interpreter" ]]; then
+      exec "$interpreter" -I -S "$SCRIPT_DIR/publication_guard_entry.py"
+    fi
+  done
+  echo "Shared command guard unavailable: no usable python interpreter" >&2
+  exit 1
+fi
+
 if [[ ! -x "$PYTHON_BIN" ]]; then
   echo "Shared command guard unavailable: missing $PYTHON_BIN" >&2
   exit 1
 fi
 
-export SF_COMMAND_GUARD_DISABLE=1
-unset BASH_ENV
 export PYTHONPATH="$SUMMITFLOW_ROOT/backend${PYTHONPATH:+:$PYTHONPATH}"
 
 cd "$SUMMITFLOW_ROOT/backend"

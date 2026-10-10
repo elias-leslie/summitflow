@@ -20,4 +20,26 @@ if [[ ${1-} == monitor ]]; then
     exec /usr/bin/python3 "$monitor_source/backend/monitor_standalone.py" "$@"
 fi
 
-exec "$repo_root/backend/.venv/bin/st" "$@"
+venv_python="$repo_root/backend/.venv/bin/python"
+venv_st="$repo_root/backend/.venv/bin/st"
+
+# A missing or emptied backend environment otherwise surfaces as an opaque
+# exec/ImportError (autosnap failed repeatedly on 2026-10-09). Say
+# exactly what broke, alert at CRIT in the journal, and exit EX_CONFIG.
+runtime_unavailable() {
+    local message="st runtime unavailable: $1. Repair: cd $repo_root/backend && uv sync --locked"
+    printf '%s\n' "$message" >&2
+    logger -p user.crit -t summitflow-st -- "$message" 2>/dev/null || true
+    exit 78
+}
+
+if [[ ! -x $venv_st || ! -x $venv_python ]]; then
+    runtime_unavailable "backend/.venv is missing its st entrypoint or interpreter"
+fi
+
+# Unattended timer callers get a real import probe; interactive calls stay fast.
+if [[ ${1-} == autosnap ]] && ! probe_error=$("$venv_python" -I -c 'import cli.main' 2>&1); then
+    runtime_unavailable "backend/.venv cannot import the st CLI (${probe_error##*$'\n'})"
+fi
+
+exec "$venv_st" "$@"
