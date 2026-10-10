@@ -1318,6 +1318,51 @@ class TestReadyEndpoint:
         assert payload["payload"]["summary"]["projects"] == 1
         mock_collect.assert_called_once_with(test_project_id, test_project_id, 2)
 
+    def test_ready_all_overview_skips_testing_and_retired_projects(
+        self,
+        client: Any,
+        test_project_id: str,
+    ) -> None:
+        empty_project = {
+            "project_id": test_project_id,
+            "project_name": test_project_id,
+            "ready_tasks": [],
+            "ready_count": 0,
+            "blocked_tasks": [],
+            "blocked_count": 0,
+            "active_tasks": [],
+            "active_count": 0,
+            "stale_tasks": [],
+            "stale_count": 0,
+        }
+        with (
+            patch(
+                "app.api.tasks.list_endpoints.project_store.list_projects",
+                return_value=[
+                    {"id": test_project_id, "name": test_project_id},
+                    {"id": "demo-fixture", "name": "demo-fixture"},
+                    {"id": "old-project", "name": "old-project"},
+                ],
+            ),
+            patch(
+                "app.api.tasks.list_endpoints.project_store.testing_project_ids",
+                return_value={"demo-fixture"},
+            ),
+            patch(
+                "app.api.tasks.list_endpoints.get_project_lifecycles",
+                return_value={test_project_id: "active", "old-project": "retired"},
+            ),
+            patch(
+                "app.api.tasks.list_endpoints._collect_ready_all_project_data",
+                return_value=empty_project,
+            ) as mock_collect,
+        ):
+            response = client.get("/api/tasks/ready-all?limit=2")
+
+        assert response.status_code == 200
+        assert response.json()["payload"]["summary"]["projects"] == 1
+        mock_collect.assert_called_once_with(test_project_id, test_project_id, 2)
+
     def test_create_task_stays_draft_when_execution_details_missing(
         self, client: Any, test_project_id: str, cleanup_task: Callable[[str], None]
     ) -> None:

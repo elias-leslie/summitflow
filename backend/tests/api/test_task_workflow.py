@@ -11,7 +11,7 @@ from __future__ import annotations
 import json
 from collections.abc import Callable
 from typing import Any
-from unittest.mock import patch
+from unittest.mock import AsyncMock, patch
 
 from app.services.task_lane_preflight import TaskLaneConflictCheck
 from app.storage.connection import get_connection
@@ -761,19 +761,24 @@ class TestTaskStatusEndpoint:
         task_id = response.json()["id"]
         cleanup_task(task_id)
 
-        response = client.patch(
-            f"/api/projects/{test_project_id}/tasks/{task_id}/status",
-            json={"status": "paused", "reason": "waiting"},
-        )
-        assert response.status_code == 200
-        assert response.json()["status"] == "paused"
+        # Resuming to pending triggers autonomous dispatch; keep it off live Agent Hub.
+        with patch(
+            "app.api.tasks.update_endpoints.dispatch_autonomous_task", new_callable=AsyncMock
+        ) as mock_dispatch:
+            response = client.patch(
+                f"/api/projects/{test_project_id}/tasks/{task_id}/status",
+                json={"status": "paused", "reason": "waiting"},
+            )
+            assert response.status_code == 200
+            assert response.json()["status"] == "paused"
 
-        response = client.patch(
-            f"/api/projects/{test_project_id}/tasks/{task_id}/status",
-            json={"status": "pending", "reason": "ready"},
-        )
-        assert response.status_code == 200
-        assert response.json()["status"] == "pending"
+            response = client.patch(
+                f"/api/projects/{test_project_id}/tasks/{task_id}/status",
+                json={"status": "pending", "reason": "ready"},
+            )
+            assert response.status_code == 200
+            assert response.json()["status"] == "pending"
+        mock_dispatch.assert_awaited_with(task_id, "pending", test_project_id)
 
 
     def test_export_preserves_raw_task_status_and_second_opinion_shape(

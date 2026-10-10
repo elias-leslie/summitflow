@@ -18,6 +18,7 @@ from fastapi.responses import PlainTextResponse
 from cli.commands.tasks_ready_all import lane_task_id, render_ready_all_compact, task_sort_key
 
 from ...logging_config import get_logger
+from ...project_identity import get_project_lifecycles
 from ...schemas.tasks import TaskListResponse
 from ...services._lane_inventory import fetch_live_project_inventory
 from ...services.ready_task_ranking import sort_ready_tasks
@@ -224,6 +225,14 @@ def _assemble_ready_all_response(
     }
 
 
+def _discoverable_projects(projects: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Drop testing fixtures and retired projects, matching routine /projects discovery."""
+    testing = project_store.testing_project_ids()
+    candidates = [p for p in projects if p.get("id") and p["id"] not in testing]
+    lifecycles = get_project_lifecycles([str(p["id"]) for p in candidates])
+    return [p for p in candidates if lifecycles[str(p["id"])] == "active"]
+
+
 async def _build_ready_all_overview_response(
     *,
     limit_per_project: int,
@@ -233,6 +242,8 @@ async def _build_ready_all_overview_response(
     projects = await asyncio.to_thread(project_store.list_projects)
     if project_id is not None:
         projects = [p for p in projects if p.get("id") == project_id]
+    else:
+        projects = await asyncio.to_thread(_discoverable_projects, projects)
 
     if not projects:
         return _empty_ready_all_response()
