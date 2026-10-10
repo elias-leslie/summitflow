@@ -20,7 +20,7 @@
     "investigations": "Usage: neri investigations [OPTIONS]\n\nOptions:\n  --limit <int range>  [default: 20; 1<=x<=100]\n  --cursor <str>\n  --full / --no-full   [default: no-full]\n  --help               Show this message and exit.",
     "create": "Usage: neri create [OPTIONS]\n\n  Create an explicit saved attempt; incomplete JSON is rejected before any\n  write.\n\n  Input JSON requires nonempty target_id, title, and objective. --file - reads\n  stdin. Replace the sample values with the exact current investigation facts.\n  Example: {\"target_id\":\"documents\",\"title\":\"Document review\",\n  \"objective\":\"Review the retained documents.\"}\n\nOptions:\n  --file <path>  [required]\n  --id <uuid>\n  --help         Show this message and exit.",
     "show": "Usage: neri show [OPTIONS] {investigation_id}\n\nArguments:\n  investigation_id  [required]\n\nOptions:\n  --help  Show this message and exit.",
-    "activity": "Usage: neri activity [OPTIONS] {investigation_id}\n\nArguments:\n  investigation_id  [required]\n\nOptions:\n  --after <int range>  [default: 0; x>=0]\n  --limit <int range>  [default: 40; 1<=x<=100]\n  --full / --no-full   [default: no-full]\n  --help               Show this message and exit.",
+    "activity": "Usage: neri activity [OPTIONS] {investigation_id}\n\nArguments:\n  investigation_id  [required]\n\nOptions:\n  --after <int range>  [default: 0; x>=0]\n  --limit <int range>  Rows per page (default 30; 40 with --full)  [1<=x<=100]\n  --full / --no-full   [default: no-full]\n  --help               Show this message and exit.",
     "timeline": "Usage: neri timeline [OPTIONS] {investigation_id}\n\nArguments:\n  investigation_id  [required]\n\nOptions:\n  --latest <int range>  [1<=x<=100]\n  --cursor <str>\n  --limit <int range>   [1<=x<=100]\n  --full / --no-full    [default: no-full]\n  --help                Show this message and exit.",
     "owner-request": "Usage: neri owner-request [OPTIONS] {investigation_id}\n\nArguments:\n  investigation_id  [required]\n\nOptions:\n  --file <path>  [required]\n  --id <uuid>\n  --help         Show this message and exit.",
     "owner-resolve": "Usage: neri owner-resolve [OPTIONS] {investigation_id}\n\nArguments:\n  investigation_id  [required]\n\nOptions:\n  --file <path>  [required]\n  --id <uuid>\n  --help         Show this message and exit.",
@@ -80,7 +80,7 @@
     "group": "Usage: neri group [OPTIONS] COMMAND [ARGS]...\n\n  Read and organize passive investigations containing saved attempts\n\nOptions:\n  --help  Show this message and exit.\n\nCommands:\n  list\n  create\n  show\n  timeline\n  classify\n  select-report\n  membership\n  notes          Save investigation direction and read its state history",
     "group list": "Usage: neri group list [OPTIONS] {target_id}\n\nArguments:\n  target_id  [required]\n\nOptions:\n  --limit <int range>             [default: 20; 1<=x<=100]\n  --cursor <str>\n  --search <str>\n  --class-key <str>\n  --filter <all|active|attention|recorded_blockers|owner_actions|awaiting_review|reviewed_findings|reviewed_results|reviewed_no_findings>\n  --include-empty / --no-include-empty\n                                  [default: no-include-empty]\n  --sections / --no-sections      [default: no-sections]\n  --full / --no-full              [default: no-full]\n  --help                          Show this message and exit.",
     "group create": "Usage: neri group create [OPTIONS] {target_id}\n\nArguments:\n  target_id  [required]\n\nOptions:\n  --file <path>  [required]\n  --id <uuid>\n  --help         Show this message and exit.",
-    "group show": "Usage: neri group show [OPTIONS] {target_id} {group_id}\n\nArguments:\n  target_id  [required]\n  group_id   [required]\n\nOptions:\n  --limit, --attempt-limit <int range>\n                                  [default: 40; 1<=x<=100]\n  --cursor, --attempt-cursor <str>\n  --report-limit <int range>      [default: 40; 1<=x<=100]\n  --report-cursor <str>\n  --help                          Show this message and exit.",
+    "group show": "Usage: neri group show [OPTIONS] {target_id} {group_id}\n\nArguments:\n  target_id  [required]\n  group_id   [required]\n\nOptions:\n  --limit, --attempt-limit <int range>\n                                  [default: 40; 1<=x<=100]\n  --cursor, --attempt-cursor <str>\n  --report-limit <int range>      [default: 40; 1<=x<=100]\n  --report-cursor <str>\n  --full / --no-full              [default: no-full]\n  --help                          Show this message and exit.",
     "group timeline": "Usage: neri group timeline [OPTIONS] {target_id} {group_id}\n\nArguments:\n  target_id  [required]\n  group_id   [required]\n\nOptions:\n  --latest <int range>  [1<=x<=100]\n  --cursor <str>\n  --limit <int range>   [1<=x<=100]\n  --full / --no-full    [default: no-full]\n  --help                Show this message and exit.",
     "group classify": "Usage: neri group classify [OPTIONS] {target_id} {group_id}\n\nArguments:\n  target_id  [required]\n  group_id   [required]\n\nOptions:\n  --file <path>  [required]\n  --id <uuid>\n  --help         Show this message and exit.",
     "group select-report": "Usage: neri group select-report [OPTIONS] {target_id} {group_id}\n\nArguments:\n  target_id  [required]\n  group_id   [required]\n\nOptions:\n  --file <path>  [required]\n  --id <uuid>\n  --help         Show this message and exit.",
@@ -173,10 +173,11 @@
     {
       "surface": "st.neri.activity",
       "tier": "reference",
-      "cmd": "st neri activity <investigation-id> [--after 0 --limit 40 --full]",
+      "cmd": "st neri activity <investigation-id> [--after 0 --limit 30 --full]",
       "when": "page further activity of one run or follow it live; context already carries the newest events",
       "precautions": [
         "read-only; resume using the returned event sequence",
+        "default page is 30 rows (40 with --full); has_more says more follow and --after <through_seq> reads them",
         "rows keep id, seq, kind, actor, title, time and short detail facts (text over 80 characters is omitted); --full returns the exact rows"
       ],
       "task_types": [
@@ -833,10 +834,11 @@
     {
       "surface": "st.neri.group.show",
       "tier": "reference",
-      "cmd": "st neri group show <target-id> <group-id> [--limit 40 --cursor TOKEN --report-limit 40 --report-cursor TOKEN]",
+      "cmd": "st neri group show <target-id> <group-id> [--limit 40 --cursor TOKEN --report-limit 40 --report-cursor TOKEN --full]",
       "when": "read compact investigation context with paginated attempts and report history",
       "precautions": [
-        "read-only; limit/cursor apply to attempts; report pagination is independent; preserve membership, selection and exact report/review IDs; no selection is a valid state"
+        "read-only; limit/cursor apply to attempts; report pagination is independent; preserve membership, selection and exact report/review IDs; no selection is a valid state",
+        "default omits only values the payload repeats: group_id inside selected_report, attempts and available_reports rows (the group's), attempt target_id and target_name equal to target_id, selected_report.highest_severity when it is one finding's severity (highest_severity_finding_id names it), severity report_revision_id and finding_id equal to their report and finding, and in the available_reports row whose report_revision_id is the selected report's, every field equal to selected_report's; objective, recent_activity, selected report and finding text are exact; --full prints the exact payload"
       ],
       "task_types": [
         "neri"
