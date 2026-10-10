@@ -177,6 +177,27 @@ def test_crashed_op_holder_is_stale_immediately(repos, monkeypatch):
     assert leases.repo_marks("hostrepo") == []
 
 
+def test_foreign_hold_refuses_acceptance_but_not_the_holder(repos, monkeypatch):
+    from cli.lib import acceptance
+
+    repo = repos["hostrepo"]
+    as_claude(monkeypatch, "integrator-0001")
+    leases.acquire_mark("hostrepo", str(repo), "hold", "integration")
+    coord.guard(repo, "acceptance")
+    as_codex(monkeypatch, "finisher-00001")
+    with pytest.raises(acceptance.AcceptanceError, match=r"hold integration .*acceptance refused"):
+        acceptance.accept_revision(repo)
+    # Concurrent acceptance op leases never block each other.
+    as_claude(monkeypatch, "integrator-0001")
+    proc = _sleeper()
+    try:
+        _foreign_op(repo, proc)
+        coord.guard(repo, "acceptance")
+    finally:
+        proc.kill()
+        proc.wait()
+
+
 def test_idle_hold_expires_and_take_overrides_file_lease(repos, monkeypatch):
     repo = repos["hostrepo"]
     as_claude(monkeypatch, "holder-crash-01")

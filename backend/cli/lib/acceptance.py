@@ -1231,8 +1231,12 @@ def persist_validated_receipt(
 
 def accept_revision(repo: Path, **kwargs: Any) -> dict[str, Any]:
     """Run acceptance under an op lease so other agents' edits wait instead of invalidating it."""
-    from .coord import op_lease
+    from .coord import CoordBlocked, guard, op_lease
 
+    try:
+        guard(repo, "acceptance")
+    except CoordBlocked as exc:
+        raise AcceptanceError(str(exc)) from exc
     with op_lease(repo, "acceptance"):
         return _accept_revision(repo, **kwargs)
 

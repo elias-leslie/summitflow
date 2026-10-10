@@ -131,7 +131,8 @@ def op_lease(repo: Path, purpose: str) -> Iterator[None]:
 def guard(repo: Path, operation: str, *, paths: Sequence[str] = (), with_ack: str | None = None) -> None:
     """Refuse a repo-mutating or outward operation that another live agent would collide with.
 
-    commit: blocked by any live op, or another agent's hold. Path overlap stays
+    commit: blocked by any live op, or another agent's hold. acceptance: only by
+    another agent's hold. Path overlap stays
     with the existing commit lease check. publish/rebuild/reconcile: also
     blocked by another agent's file lease touched within ACTIVE_WINDOW.
     An acked request (``--with-ack``) from that holder authorizes the operation.
@@ -142,7 +143,8 @@ def guard(repo: Path, operation: str, *, paths: Sequence[str] = (), with_ack: st
     project_id, root = resolved
     coord_lineage.observe()
     mine, anchor = leases.self_ids(), leases.my_anchor()
-    kinds = ("op", "hold") if operation == "commit" else ("op", "hold", "file")
+    # Acceptance only yields to an integration hold; concurrent runs are fine.
+    kinds = {"commit": ("op", "hold"), "acceptance": ("hold",)}.get(operation, ("op", "hold", "file"))
     now = datetime.now(UTC)
     for lease in leases.list_active(project_id, kinds=kinds):
         if lease.kind == "op":
