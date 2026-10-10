@@ -15,7 +15,7 @@
     "test:coverage": "vitest run --coverage"
   },
   "dependencies": {
-    "@agent-hub/chat-ui": "file:../docker/workspace-packages/agent-hub-chat-ui-0.1.0.tgz",
+    "@agent-hub/chat-ui": "file:../docker/workspace-packages/agent-hub-chat-ui-0.1.1.tgz",
     "@codemirror/lang-cpp": "^6.0.3",
     "@codemirror/lang-css": "^6.3.1",
     "@codemirror/lang-go": "^6.0.1",

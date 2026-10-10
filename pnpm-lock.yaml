@@ -24,8 +24,8 @@ importers:
   frontend:
     dependencies:
       '@agent-hub/chat-ui':
-        specifier: file:../docker/workspace-packages/agent-hub-chat-ui-0.1.0.tgz
-        version: file:docker/workspace-packages/agent-hub-chat-ui-0.1.0.tgz(@types/react@19.3.0)(react-dom@19.3.0(react@19.3.0))(react@19.3.0)
+        specifier: file:../docker/workspace-packages/agent-hub-chat-ui-0.1.1.tgz
+        version: file:docker/workspace-packages/agent-hub-chat-ui-0.1.1.tgz(@types/react@19.3.0)(react-dom@19.3.0(react@19.3.0))(react@19.3.0)
       '@codemirror/lang-cpp':
         specifier: ^6.0.3
         version: 6.0.3
@@ -226,9 +226,9 @@ packages:
   '@adobe/css-tools@4.4.4':
     resolution: {integrity: sha512-Elp+iwUx5rN5+Y8xLt5/GRoG20WGoDCQ/1Fb+1LiGtvwbDavuSk0jhD/eZdckHAuzcDzccnkv+rEjyWfRx18gg==}
 
-  '@agent-hub/chat-ui@file:docker/workspace-packages/agent-hub-chat-ui-0.1.0.tgz':
-    resolution: {integrity: sha512-u2rhLjyYRcZl9Wm304KaEiz9Z8wOhd+1Dtxhn5f7VZDMPR8veO2br9ggJF0RA6av9FueGRBz89NqvQmdLhvARw==, tarball: file:docker/workspace-packages/agent-hub-chat-ui-0.1.0.tgz}
-    version: 0.1.0
+  '@agent-hub/chat-ui@file:docker/workspace-packages/agent-hub-chat-ui-0.1.1.tgz':
+    resolution: {integrity: sha512-SsyHnNzDiyVSRu4VjrpW+GSryvQ42ljTaZl0F+NCgagQg4G8qAgBSD0KU+QMnRvYI4eFDvMUgmGcFdH3TfNivQ==, tarball: file:docker/workspace-packages/agent-hub-chat-ui-0.1.1.tgz}
+    version: 0.1.1
     peerDependencies:
       react: '>=18 || ^19.0.0'
       react-dom: '>=18 || ^19.0.0'
@@ -2966,7 +2966,7 @@ snapshots:
 
   '@adobe/css-tools@4.4.4': {}
 
-  '@agent-hub/chat-ui@file:docker/workspace-packages/agent-hub-chat-ui-0.1.0.tgz(@types/react@19.3.0)(react-dom@19.3.0(react@19.3.0))(react@19.3.0)':
+  '@agent-hub/chat-ui@file:docker/workspace-packages/agent-hub-chat-ui-0.1.1.tgz(@types/react@19.3.0)(react-dom@19.3.0(react@19.3.0))(react@19.3.0)':
     dependencies:
       '@agent-hub/passport-client': file:docker/workspace-packages/agent-hub-passport-client-0.1.0.tgz(react-dom@19.3.0(react@19.3.0))(react@19.3.0)
       '@tanstack/react-query': 5.104.1(react@19.3.0)
