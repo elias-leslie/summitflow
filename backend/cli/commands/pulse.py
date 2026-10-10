@@ -134,8 +134,7 @@ def _pulse_payloads(
     cmd="st pulse --gate",
     when="implementation ownership or cross-project lane state matters",
     precautions=(
-        "run once; if PREFLIGHT clear, edit without further inspection",
-        "if blocked, fix only listed reasons",
+        "run once; PREFLIGHT clear: edit without re-checking; blocked: fix only listed reasons",
     ),
     tier="mandate",
 )

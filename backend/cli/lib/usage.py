@@ -84,8 +84,8 @@ def _detail_spec(deferred_workflows: Iterable[str] = ()) -> UsageSpec:
     return UsageSpec(
         surface="st.details",
         cmd="st tools manifest --surface <exact-surface-id>",
-        when="before using an omitted surface or starting an on-demand workflow: find IDs from family or workflow labels with st tools manifest --discover <family-or-workflow>, then load its precautions with --surface <exact-surface-id>",
-        why="On-demand workflows: " + "; ".join(workflows) if workflows else "",
+        when="load precautions before using an omitted surface or on-demand workflow; IDs via --discover <family-or-workflow>",
+        why="on-demand workflows: " + ", ".join(workflows) if workflows else "",
         tier="mandate",
     )
 
@@ -193,37 +193,19 @@ def select_specs_for_density(
 _TIER_GROUP = {"mandate": "mandates", "guardrail": "guardrails", "reference": "references"}
 
 
-def _quote_yaml(value: str) -> str:
-    """Quote a YAML scalar only when required by structure-sensitive characters."""
-    needs_quote = (
-        not value
-        or value[0] in "!&*?|>%@`,[]{}#"
-        or ": " in value
-        or value.endswith(":")
-        or value.strip() != value
-    )
-    if not needs_quote:
-        return value
-    escaped = value.replace("\\", "\\\\").replace('"', '\\"')
-    return f'"{escaped}"'
-
-
 def render_inject(specs: Iterable[UsageSpec]) -> str:
-    """Render specs in the token-optimal injection form.
+    """Render specs in the token-lean injection form, one line per command.
 
     Shape:
         mandates:
-          st.service.rebuild:
-            cmd: st service rebuild <project> --detach
-            when: service/config/worker change
-            careful: ST owns lifecycle preflight; explicit project; --include-all-workers only when intentional
+        - st service rebuild <project> --detach — service/config/worker change — careful: explicit project; ...
         references:
-          st.pulse: {cmd: st pulse --gate, when: implementation ownership + lane state}
+        - st pulse --gate — implementation ownership + lane state
 
     Rules:
       - Group by tier as `mandates|guardrails|references:`
-      - Surfaces with only `cmd` (+ optional `when`) inline as flow-mapping
-      - Precautions collapse into one `dont:` line, semicolon-joined
+      - Each line is `cmd — when — why — careful: precautions`, omitting empty parts;
+        surface ids stay out (`st tools manifest --surface` serves them)
       - `examples`, `task_types`, `agent_slugs`, `consumer_profiles`, and per-entry tier are stripped
     """
     grouped: dict[str, list[UsageSpec]] = {"mandates": [], "guardrails": [], "references": []}
@@ -237,23 +219,8 @@ def render_inject(specs: Iterable[UsageSpec]) -> str:
             continue
         lines.append(f"{group}:")
         for spec in bucket:
-            inline_ok = spec.cmd and not spec.precautions and not spec.why
-            if inline_ok and not spec.when:
-                lines.append(f"  {spec.surface}: {_quote_yaml(spec.cmd)}")
-                continue
-            if inline_ok:
-                lines.append(
-                    f"  {spec.surface}: {{cmd: {_quote_yaml(spec.cmd)}, when: {_quote_yaml(spec.when)}}}"
-                )
-                continue
-            lines.append(f"  {spec.surface}:")
-            if spec.cmd:
-                lines.append(f"    cmd: {_quote_yaml(spec.cmd)}")
-            if spec.when:
-                lines.append(f"    when: {_quote_yaml(spec.when)}")
-            if spec.why:
-                lines.append(f"    why: {_quote_yaml(spec.why)}")
+            parts = [spec.cmd or spec.surface, spec.when, spec.why]
             if spec.precautions:
-                joined = "; ".join(spec.precautions)
-                lines.append(f"    careful: {_quote_yaml(joined)}")
+                parts.append("careful: " + "; ".join(spec.precautions))
+            lines.append("- " + " — ".join(part for part in parts if part))
     return "\n".join(lines)

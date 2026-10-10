@@ -189,11 +189,11 @@ def _handle_task_completion(
 @usage(
     surface="st.done",
     cmd='st done <task-id> -m "summary"',
-    when="assigned-task closeout (local acceptance + required evidence + checkpoint cleanup)",
+    when="assigned-task closeout: acceptance, evidence, checkpoint cleanup",
     precautions=(
-        "completion requires an active owned claim; local checkpoints are normal; publication is separate and optional",
+        "needs an active owned claim; local checkpoints are normal; publication is separate and optional",
         "with unrelated changes, repeat --paths <owned-path> per task path on the first call",
-        "pass --evidence JSON for required deployment and live checks; never claim completion while acceptance remains",
+        "--evidence JSON for required deployment/live checks; never claim done while acceptance remains",
     ),
     tier="mandate",
 )

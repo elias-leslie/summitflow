@@ -553,10 +553,10 @@ def _native_legacy_checks(root: Path, plan: dict[str, object], configs: dict[str
 @usage(
     surface="st.check",
     cmd="st check --quick --changed-only",
-    when="verify implementation changes; before committing or claiming a fix",
+    when="verify changes before committing or claiming a fix",
     precautions=(
-        "never run raw pytest/vitest/biome/tsc/ruff/sqlfluff/squawk",
-        "st check codeql verifies GitHub CodeQL alert state after code-scanning work",
+        "never raw pytest/vitest/biome/tsc/ruff/sqlfluff/squawk",
+        "st check codeql: GitHub CodeQL alert state after code-scanning work",
     ),
     tier="mandate",
 )

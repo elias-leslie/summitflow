@@ -210,16 +210,13 @@ def status(
     surface="st.service.rebuild",
     cmd="st service rebuild <project> --detach",
     when=(
-        "deployed executable, configuration, or worker behavior changes require a "
-        "build+migrate+restart cycle to go live in a managed project; use this managed cycle, "
-        "never raw pnpm/npm/uv build "
-        "or systemctl restart"
+        "deployed code/config/worker behavior changed (managed build+migrate+restart); "
+        "never raw pnpm/npm/uv build or systemctl restart"
     ),
     precautions=(
-        "explicit project, not cwd-implicit",
-        "ST runs the project preflight first; resolve reported blockers",
-        "use full scope for shared or uncertain changes; worker scope includes backend consumers",
-        "required workers (project.identity.json services.default_workers) and active optional workers restart automatically; --include-all-workers also starts inactive optional workers",
+        "explicit project, not cwd; resolve blockers its preflight reports",
+        "full scope for shared or uncertain changes; worker scope includes backend consumers",
+        "required (project.identity.json services.default_workers) and active optional workers restart automatically; --include-all-workers also starts inactive ones",
     ),
     examples=(
         "st service rebuild summitflow",

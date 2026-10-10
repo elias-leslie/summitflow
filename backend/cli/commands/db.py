@@ -459,7 +459,7 @@ def _tables_counts_sql() -> str:
     surface="st.db",
     cmd='st db query -t "SELECT ..."',
     when="read DB state",
-    precautions=("never run write SQL or DDL outside migrations",),
+    precautions=("write SQL/DDL only via migrations",),
     task_types=("database", "backend", "verification"),
     tier="mandate",
 )

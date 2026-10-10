@@ -15,6 +15,7 @@ from cli.lib.usage import (
     collect_usage_specs,
     discover_specs,
     filter_specs,
+    render_inject,
     select_specs_for_density,
     usage,
 )
@@ -56,17 +57,24 @@ def test_deferred_memory_guidance_is_discoverable_and_complete_in_full_density()
     assert "explicit scope" in " ".join(specs["st.memory.save"]["precautions"])
 
 
+def test_inject_renders_one_line_per_command_with_every_precaution() -> None:
+    specs = [
+        UsageSpec(surface="st.a", cmd="st a", when="do a", precautions=("p1", "p2"), tier="mandate"),
+        UsageSpec(surface="st.b", cmd="st b", tier="reference"),
+    ]
+    assert render_inject(specs) == "mandates:\n- st a — do a — careful: p1; p2\nreferences:\n- st b"
+
+
 def test_rebuild_guidance_requires_deployed_behavior_changes_and_preserves_managed_scope():
     result = runner.invoke(tools_app, ["manifest", "--surface", "st.service.rebuild", "--format", "json"])
     assert result.exit_code == 0, result.output
     spec = json.loads(result.output)["tools"][0]
-    assert "deployed executable, configuration, or worker behavior changes" in spec["when"]
-    assert "require a build+migrate+restart cycle" in spec["when"]
-    assert "use this managed cycle" in spec["when"]
+    assert "deployed code/config/worker behavior changed" in spec["when"]
+    assert "managed build+migrate+restart" in spec["when"]
     assert "never raw pnpm/npm/uv build or systemctl restart" in spec["when"]
     assert "any code/config/worker change" not in spec["when"]
-    assert "explicit project, not cwd-implicit" in spec["precautions"]
-    assert "use full scope for shared or uncertain changes; worker scope includes backend consumers" in spec["precautions"]
+    assert "explicit project, not cwd" in spec["precautions"][0]
+    assert "full scope for shared or uncertain changes; worker scope includes backend consumers" in spec["precautions"]
 
 
 def test_compact_discovery_covers_ordinary_task_work_without_full_catalogue() -> None:
@@ -95,12 +103,9 @@ def test_specialized_guidance_is_not_selected_by_unrelated_task_or_history(tmp_p
     assert {"st.claim", "st.context", "st.check", "st.db", "st.service.rebuild"} <= specs.keys()
     assert not {"st.design", "st.models", "st.tools.cost", "st.ui.gif", "st.vm.status", "st.agents.get", "st.autonomous.upkeep"} & specs.keys()
     details = specs["st.details"]
-    assert "before using" in details["when"]
-    assert "precautions" in details["when"]
-    assert "starting an on-demand workflow" in details["when"]
+    assert "precautions before using an omitted surface or on-demand workflow" in details["when"]
     assert details["cmd"] == "st tools manifest --surface <exact-surface-id>"
-    assert "st tools manifest --discover <family-or-workflow>" in details["when"]
-    assert "family or workflow labels" in details["when"]
+    assert "--discover <family-or-workflow>" in details["when"]
     assert "visual design" in details["why"]
 
 

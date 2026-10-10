@@ -31,10 +31,8 @@ _DEFAULT_CRITIQUE_AGENT = "specifier"
 @usage(
     surface="st.create",
     cmd='st create "title"',
-    when="create a task; project auto-detected from cwd",
-    precautions=(
-        "bare title triggers auto-enrichment; --draft for kernel-only intake; --plan and --type in --help",
-    ),
+    when="create a task; project from cwd",
+    precautions=("bare title auto-enriches; --draft for kernel-only intake; --plan/--type in --help",),
     tier="mandate",
 )
 def create(
@@ -149,11 +147,8 @@ def ready_all(
 @usage(
     surface="st.context",
     cmd="st context <task-id>",
-    when="read task brief, plan, and history",
-    precautions=(
-        "claim before implementation; read-only inspection needs no claim",
-        "use --subtask X.Y for subtask context inside a task",
-    ),
+    when="read task brief, plan, history",
+    precautions=("claim before implementation; read-only inspection needs no claim", "--subtask X.Y for a subtask"),
     tier="mandate",
 )
 def context(
