@@ -9,6 +9,7 @@ import shutil
 import socket
 import sqlite3
 import subprocess
+import sys
 import tempfile
 import threading
 from contextlib import contextmanager
@@ -398,6 +399,7 @@ def test_other_commands_exec_original_entry_point_with_exact_arguments(installed
     entry.parent.mkdir(parents=True)
     entry.write_text("#!/usr/bin/python3\nimport json, sys\nprint(json.dumps(sys.argv[1:]))\nsys.exit(23)\n")
     entry.chmod(0o755)
+    (entry.parent / "python").symlink_to(sys.executable)
     result = _run(link, env, "service", "status", "a b", "")
     assert result.returncode == 23
     assert json.loads(result.stdout) == ["service", "status", "a b", ""]
