@@ -1233,10 +1233,15 @@ def accept_revision(repo: Path, **kwargs: Any) -> dict[str, Any]:
     """Run acceptance under an op lease so other agents' edits wait instead of invalidating it."""
     from .coord import CoordBlocked, guard, op_lease
 
-    try:
-        guard(repo, "acceptance")
-    except CoordBlocked as exc:
-        raise AcceptanceError(str(exc)) from exc
+    # The isolated child sees a private, possibly read-only store; its outer
+    # caller is the one other agents can see.
+    if kwargs.get("execution_basis") != "isolated":
+        try:
+            guard(repo, "acceptance")
+        except CoordBlocked as exc:
+            raise AcceptanceError(str(exc)) from exc
+        except OSError:
+            pass  # coordination is best effort; acceptance itself must not depend on it
     with op_lease(repo, "acceptance"):
         return _accept_revision(repo, **kwargs)
 
