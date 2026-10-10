@@ -69,7 +69,7 @@ def read_tool_paths(root: Path) -> dict[str, str]:
 
 
 _TOOL_SOURCES = {
-    "pytest": ("*.py",), "ruff": ("*.py",), "tsc": ("*.ts", "*.tsx"),
+    "pytest": ("test_*.py", "*/test_*.py", "*_test.py", "*conftest.py"), "ruff": ("*.py",), "tsc": ("*.ts", "*.tsx"),
     "biome": ("*.js", "*.jsx", "*.mjs", "*.cjs", "*.ts", "*.tsx", "*.css"),
 }
 

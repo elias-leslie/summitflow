@@ -247,9 +247,13 @@ def _run_tool(name: str, config: dict[str, object], extra_args: list[str]) -> in
                 if work.waited_behind and queue_ms >= _QUEUE_NOTICE_MS:
                     timing += f"|queued_behind:{work.waited_behind}"
     except OSError as exc:
-        if name not in {"vitest", "frontend-test"} and isinstance(exc, FileNotFoundError) and tool_not_installed(name, root):
-            print(f"{label}:SKIP:{name}:{missing_tool_skip(name, root)}")
-            return 0
+        if name not in {"vitest", "frontend-test"} and isinstance(exc, FileNotFoundError):
+            # A missing tool skips when it was never installable, or when the
+            # repo has none of its sources even though an environment exists.
+            skip = missing_tool_skip(name, root)
+            if skip == "no_relevant_paths" or tool_not_installed(name, root):
+                print(f"{label}:SKIP:{name}:{skip}")
+                return 0
         output = f"{type(exc).__name__}: {exc}"
         details = write_check_details(root, name, output)
         print(

@@ -1056,6 +1056,26 @@ def test_check_missing_binary_fails_when_project_env_exists(
     assert "TEST:FAIL:127" in captured.out
 
 
+def test_check_missing_pytest_with_env_skips_when_repo_has_no_tests(
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    """A venv for scripts alone does not make pytest applicable."""
+    (tmp_path / ".venv" / "bin").mkdir(parents=True)
+    (tmp_path / "scripts").mkdir()
+    (tmp_path / "scripts" / "tool.py").write_text("x = 1\n")
+    subprocess.run(["git", "init", "-q", str(tmp_path)], check=True)
+    subprocess.run(["git", "-C", str(tmp_path), "add", "scripts"], check=True)
+    with (
+        patch("cli.commands.check._resolve_repo_root", return_value=tmp_path),
+        patch("app.utils.heavy_work.HeavyWork.run", side_effect=FileNotFoundError("pytest")),
+    ):
+        exit_code = check._run_tool("pytest", {"label": "TEST", "binary": "pytest"}, [])
+
+    assert exit_code == 0
+    assert "TEST:SKIP:pytest:no_relevant_paths" in capsys.readouterr().out
+
+
 def test_check_pytest_scoped_paths_disable_configured_coverage(
     tmp_path: Path,
     capsys: pytest.CaptureFixture[str],
@@ -2061,7 +2081,11 @@ def test_backend_sync_keeps_declared_quality_gate_dependencies(tmp_path):
     ("biome", ["tool.py"], "no_relevant_paths"),
     ("biome", ["tool.py", "web/app.ts"], "tool_not_installed"),
     ("pytest", ["README.md"], "no_relevant_paths"),
-    ("pytest", ["scripts/check.py"], "tool_not_installed"),
+    ("pytest", ["scripts/check.py"], "no_relevant_paths"),
+    ("pytest", ["scripts/check.py", "tests/test_check.py"], "tool_not_installed"),
+    ("pytest", ["test_root.py"], "tool_not_installed"),
+    ("pytest", ["pkg/check_test.py"], "tool_not_installed"),
+    ("pytest", ["pkg/conftest.py"], "tool_not_installed"),
 ])
 def test_missing_tool_is_not_applicable_only_without_its_sources(tmp_path: Path, name, files, expected) -> None:
     from cli.commands.check_execution import missing_tool_skip
