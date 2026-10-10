@@ -256,6 +256,7 @@ def delete(
     when="fix in-flight task fields (title, priority, labels, description, plan); not for lifecycle changes",
     precautions=(
         "--plan swaps the spirit plan content and resets plan_status to draft",
+        "--waive-check/--replace-check amend one live check or done_when entry; --reason (the owner decision) is required and audited",
         "use st cancel/pause/reopen/abandon for status transitions, not st update",
     ),
     tier="reference",
@@ -267,10 +268,21 @@ def update(
     labels: Annotated[str | None, typer.Option("--labels", help="Comma-separated label list")] = None,
     description: Annotated[str | None, typer.Option("--description", "-d")] = None,
     plan: Annotated[Path | None, typer.Option("--plan", help="Swap the task plan from a plan.json")] = None,
+    waive_check: Annotated[str | None, typer.Option("--waive-check", help="Waive one live check or done_when entry (exact text); st done treats it as satisfied by waiver")] = None,
+    replace_check: Annotated[str | None, typer.Option("--replace-check", help="Replace one live check or done_when entry: '<old>=<new>'")] = None,
+    reason: Annotated[str | None, typer.Option("--reason", help="Owner decision behind --waive-check/--replace-check (required, recorded)")] = None,
 ) -> None:
     """Update in-flight task fields."""
-    from .tasks_lifecycle import update_task_command
+    from .tasks_lifecycle import amend_requirement_command, update_task_command
 
+    if waive_check is not None or replace_check is not None:
+        if any(value is not None for value in (title, priority, labels, description, plan)):
+            from ..output import output_error
+
+            output_error("Amend a completion requirement on its own, without other field changes")
+            raise typer.Exit(1)
+        amend_requirement_command(task_id, waive=waive_check, replace=replace_check, reason=reason)
+        return
     update_task_command(task_id, title=title, priority=priority, labels=labels,
                         description=description, plan=plan)
 

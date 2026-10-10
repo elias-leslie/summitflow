@@ -731,6 +731,20 @@ def _project_acceptance_plan(repo: Path, *, commit: str | None = None,
     return plan
 
 
+def plan_differences(recorded: Mapping[str, Any], current: Mapping[str, Any], limit: int = 6) -> list[str]:
+    """Name the plan inputs that differ, e.g. ``gate_implementation:cli/commands/check.py``."""
+    names: list[str] = []
+    for key in sorted(set(recorded) | set(current)):
+        if key == "fingerprint" or recorded.get(key) == current.get(key):
+            continue
+        old, new = recorded.get(key), current.get(key)
+        if isinstance(old, Mapping) and isinstance(new, Mapping):
+            names.extend(f"{key}:{sub}" for sub in sorted(set(old) | set(new)) if old.get(sub) != new.get(sub))
+        else:
+            names.append(str(key))
+    return names[:limit] + ([f"+{len(names) - limit} more"] if len(names) > limit else [])
+
+
 _BLOCKING_SKIPS = ("tool_not_installed", "required", "no_tests")
 
 
@@ -1144,7 +1158,8 @@ def validate_acceptance_receipt(
     if coverage == "task" and value.get("scope") != current_plan["scope"]:
         raise AcceptanceError("Task acceptance receipt belongs to a different owned scope")
     if current_plan != plan:
-        raise AcceptanceError("acceptance plan or local toolchain changed; rerun full acceptance")
+        raise AcceptanceError("acceptance plan or local toolchain changed "
+                              f"({', '.join(plan_differences(plan, current_plan)) or 'unknown input'}); rerun full acceptance")
     checks = value.get("checks")
     commands = current_plan["commands"]
     if (

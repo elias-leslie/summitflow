@@ -136,7 +136,7 @@ def require_scope_matches_revision(repo: Path, sha: str, scope: tuple[str, ...])
         candidate = Path(path)
         if (not path or candidate.is_absolute() or path in {".", "./"}
                 or any(part in {"..", ".git"} for part in candidate.parts)
-                or any(char in path for char in "*?[\\")):
+                or any(char in path for char in "*?\\")):
             raise acceptance.AcceptanceError("Acceptance scope must contain project-local literal task paths")
     literal = [f":(literal){path}" for path in scope]
     if not _git(repo, "ls-tree", "-r", "--name-only", sha, "--", *literal):

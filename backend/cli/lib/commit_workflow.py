@@ -38,6 +38,16 @@ def run_git(repo: Path, args: list[str]) -> subprocess.CompletedProcess[str]:
     return subprocess.run(["git", *args], cwd=repo, text=True, capture_output=True, check=False)
 
 
+def _pathspecs(repo: Path, paths: Sequence[str]) -> list[str]:
+    """Match an existing path such as a Next.js ``[id]`` route literally, not as a glob."""
+    def literal(path: str) -> bool:
+        if not any(char in path for char in "*?[") or path.startswith(":"):
+            return False
+        return (repo / path).exists() or run_git(
+            repo, ["ls-files", "--error-unmatch", "--", f":(literal){path}"]).returncode == 0
+    return [f":(literal){path}" if literal(path) else path for path in paths]
+
+
 def current_repo() -> Path:
     result = subprocess.run(
         ["git", "rev-parse", "--show-toplevel"],
@@ -98,7 +108,7 @@ def _normalize_paths(repo: Path, paths: Sequence[str]) -> list[str]:
 
 def _selected_paths_dirty(repo: Path, paths: Sequence[str]) -> bool:
     """Return True if any of the selected paths has staged or unstaged changes."""
-    result = run_git(repo, ["status", "--porcelain", "--", *paths])
+    result = run_git(repo, ["status", "--porcelain", "--", *_pathspecs(repo, paths)])
     if result.returncode != 0:
         raise CommitError(result.stderr.strip() or "cannot inspect selected working tree status")
     return bool(result.stdout.strip())
@@ -108,11 +118,12 @@ def _selected_changed_files(repo: Path, paths: Sequence[str]) -> list[str]:
     """Expand selected directories before passing the canonical gate its scope."""
     files: set[str] = set()
     head = run_git(repo, ["rev-parse", "--verify", "HEAD"])
-    tracked = (["diff", "--name-only", "-z", "HEAD", "--", *paths] if head.returncode == 0
-               else ["ls-files", "--cached", "-z", "--", *paths])
+    specs = _pathspecs(repo, paths)
+    tracked = (["diff", "--name-only", "-z", "HEAD", "--", *specs] if head.returncode == 0
+               else ["ls-files", "--cached", "-z", "--", *specs])
     for args in (
         tracked,
-        ["ls-files", "--others", "--exclude-standard", "-z", "--", *paths],
+        ["ls-files", "--others", "--exclude-standard", "-z", "--", *specs],
     ):
         result = run_git(repo, args)
         if result.returncode != 0:
@@ -243,7 +254,7 @@ def _addable_paths(repo: Path, paths: Sequence[str]) -> list[str]:
             continue
         # A `git rm` deletion is already staged and has no pathspec left to add.
         if (not (repo / path).exists()
-                and run_git(repo, ["ls-files", "--error-unmatch", "--", path]).returncode != 0):
+                and run_git(repo, ["ls-files", "--error-unmatch", "--", *_pathspecs(repo, [path])]).returncode != 0):
             continue
         addable.append(path)
     return addable
@@ -251,7 +262,7 @@ def _addable_paths(repo: Path, paths: Sequence[str]) -> list[str]:
 
 def _commit_selected_index(repo: Path, message: str, paths: Sequence[str]) -> subprocess.CompletedProcess[str]:
     """Commit staged selections without rescanning ignored worktree replacements."""
-    patch = subprocess.run(["git", "diff", "--cached", "--binary", "--full-index", "--", *paths],
+    patch = subprocess.run(["git", "diff", "--cached", "--binary", "--full-index", "--", *_pathspecs(repo, paths)],
                            cwd=repo, capture_output=True, check=False)
     if patch.returncode != 0:
         raise CommitError(patch.stderr.decode(errors="replace").strip() or "cannot read selected staged changes")
@@ -276,7 +287,7 @@ def _commit_selected_index(repo: Path, message: str, paths: Sequence[str]) -> su
         if committed.returncode == 0:
             # Path-scoped reset updates only these index entries, including hook
             # changes. It never moves HEAD or touches the ignored local cache.
-            reconciled = run_git(repo, ["reset", "--quiet", "HEAD", "--", *paths])
+            reconciled = run_git(repo, ["reset", "--quiet", "HEAD", "--", *_pathspecs(repo, paths)])
             if reconciled.returncode != 0:
                 raise CommitError(reconciled.stderr.strip() or "commit created; selected index reconciliation failed")
         return committed
@@ -355,7 +366,7 @@ def commit_git_revision(
     if selected_paths:
         addable = _addable_paths(repo, selected_files)
         if addable:
-            add = run_git(repo, ["add", "--", *addable])
+            add = run_git(repo, ["add", "--", *_pathspecs(repo, addable)])
             if add.returncode != 0:
                 raise CommitError(add.stderr.strip() or "git add failed")
     else:
@@ -367,7 +378,7 @@ def commit_git_revision(
     base = run_git(repo, ["rev-parse", "--verify", "HEAD"])
     base_sha = base.stdout.strip() if base.returncode == 0 else "4b825dc642cb6eb9a060e54bf8d69288fbee4904"
     validated_patch = subprocess.run(
-        ["git", "diff", "--cached", "--binary", "--full-index", base_sha, "--", *changed_scope],
+        ["git", "diff", "--cached", "--binary", "--full-index", base_sha, "--", *_pathspecs(repo, changed_scope)],
         cwd=repo,
         capture_output=True,
         check=False,
@@ -379,7 +390,7 @@ def commit_git_revision(
         )
     commit_args = ["commit", "-m", message]
     if selected_paths:
-        commit_args.extend(["--only", "--", *selected_files])
+        commit_args.extend(["--only", "--", *_pathspecs(repo, selected_files)])
     committed = (_commit_selected_index(repo, message, selected_files)
                  if selected_paths and len(addable) != len(selected_files)
                  else run_git(repo, commit_args))
@@ -387,7 +398,7 @@ def commit_git_revision(
         raise CommitError(committed.stderr.strip() or committed.stdout.strip() or "git commit failed")
     sha = run_git(repo, ["rev-parse", "HEAD"]).stdout.strip()
     committed_patch = subprocess.run(
-        ["git", "diff", "--binary", "--full-index", base_sha, sha, "--", *changed_scope],
+        ["git", "diff", "--binary", "--full-index", base_sha, sha, "--", *_pathspecs(repo, changed_scope)],
         cwd=repo,
         capture_output=True,
         check=False,

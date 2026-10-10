@@ -11,6 +11,79 @@ from typing import Any, Literal
 
 import psycopg
 
+_AMENDMENT_KINDS = {"waived", "replaced"}
+
+
+def completion_amendments(declared: Any) -> list[dict[str, Any]]:
+    """Owner-recorded waivers and replacements; each carries a reason and actor."""
+    raw = declared.get("waivers") if isinstance(declared, dict) else None
+    return [item for item in raw or [] if isinstance(item, dict) and item.get("kind") in _AMENDMENT_KINDS
+            and isinstance(item.get("check"), str) and str(item.get("reason") or "").strip()]
+
+
+def waived_checks(declared: Any) -> set[str]:
+    return {item["check"] for item in completion_amendments(declared) if item["kind"] == "waived"}
+
+
+def active_live_checks(declared: Any) -> list[str]:
+    """Declared live checks still owed evidence; a waived check is satisfied by its waiver."""
+    checks = declared.get("live_checks") if isinstance(declared, dict) else None
+    waived = waived_checks(declared)
+    return [check for check in checks or [] if check not in waived]
+
+
+def amend_completion_requirement(task_id: str, check: str, *, reason: str, actor: str,
+                                 replacement: str | None = None) -> dict[str, Any]:
+    """Waive or replace one live check or done_when entry, keeping the approved plan."""
+    from datetime import UTC, datetime
+
+    from app.storage.events import log_task_event
+    from app.storage.task_spirit import get_task_spirit, update_task_spirit
+    from app.storage.tasks import get_task
+
+    check, reason = check.strip(), reason.strip()
+    if not reason:
+        raise ValueError("Record the owner decision with --reason")
+    task = get_task(task_id)
+    if not task:
+        raise ValueError(f"Task not found: {task_id}")
+    if task.get("status") in {"completed", "cancelled"}:
+        raise ValueError(f"Task {task_id} is {task.get('status')}; its requirements are historical")
+    spirit = get_task_spirit(str(task["id"]))
+    if spirit is None:
+        raise ValueError(f"Task {task_id} has no plan to amend")
+    context = dict(spirit.get("context") or {})
+    declared = dict(context.get("completion_requirements") or {})
+    live = list(declared.get("live_checks") or [])
+    done_when = list(spirit.get("done_when") or [])
+    field = "live_checks" if check in live else "done_when" if check in done_when else None
+    if field is None:
+        raise ValueError(f"No live check or done_when entry matches exactly: {check}")
+    if check in waived_checks(declared):
+        raise ValueError(f"Already waived: {check}")
+    record: dict[str, Any] = {"check": check, "field": field, "kind": "replaced" if replacement is not None else "waived",
+                              "reason": reason, "actor": actor, "at": datetime.now(UTC).isoformat()}
+    target = live if field == "live_checks" else done_when
+    if replacement is not None:
+        replacement = replacement.strip()
+        if not replacement or replacement in target:
+            raise ValueError("A replacement must be a new nonempty entry")
+        record["replacement"] = replacement
+        target[target.index(check)] = replacement
+    declared["live_checks"] = live
+    declared["waivers"] = [*completion_amendments(declared), record]
+    context["completion_requirements"] = declared
+    update_task_spirit(str(task["id"]), context=context, **({"done_when": done_when} if field == "done_when" else {}))
+    action = f"replaced with '{replacement}'" if replacement is not None else "waived"
+    log_task_event(str(task["id"]), f"Completion requirement '{check}' {action} by {actor}: {reason}",
+                   source="st-update", event_type="completion_requirement_amended", attributes=record)
+    return record
+
+
+def format_amendment(item: dict[str, Any]) -> str:
+    action = f"replaced by '{item['replacement']}'" if item.get("kind") == "replaced" else "waived"
+    return f"'{item['check']}' {action} ({item.get('actor') or 'unknown'}, {item.get('at') or '?'}): {item['reason']}"
+
 
 @dataclass(frozen=True)
 class CompletionRequirements:
@@ -37,6 +110,7 @@ class CompletionRequirements:
             if (not isinstance(values, list | tuple) or any(not isinstance(value, str) or not value.strip() for value in values)
                     or len(set(values)) != len(values)):
                 raise ValueError(f"Required {label} must be unique nonempty IDs")
+        live_checks = [check for check in live_checks if check not in waived_checks(declared)]
         # An implementation still requires evidence when deployment is waived.
         # False retains the historical administrative-task declaration; it is
         # never permission to complete unverified code changes.
@@ -124,7 +198,7 @@ def assess_completion(task: dict[str, Any], *, connection: psycopg.Connection | 
     deployment = verification.get("deployment") or {}
     live_validation = verification.get("live_validation") or {}
     family = "legacy"
-    if task.get("project_id") and (requirements.get("deployment") or requirements.get("live_checks")):
+    if task.get("project_id") and (requirements.get("deployment") or active_live_checks(requirements)):
         from .native_deployment import deployment_evidence_family
 
         family = deployment_evidence_family(str(task["project_id"]))
@@ -166,7 +240,7 @@ def assess_completion(task: dict[str, Any], *, connection: psycopg.Connection | 
         if not valid:
             gates.append({"gate": "deployment", "pass": False,
                           "detail": "Required deployment has not succeeded for the accepted source."})
-    required = requirements.get("live_checks") or []
+    required = active_live_checks(requirements)
     if required:
         live = live_validation
         passed = {

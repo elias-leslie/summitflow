@@ -17,7 +17,7 @@ import typer
 from ..client import STClient
 from ..lib.checkpoint import get_snapshot_info
 from ..lib.usage import usage
-from ..output import output_error, output_success
+from ..output import output_error, output_success, output_warning
 from .done_subtask import complete_subtask
 from .done_task import _refuse_failed_task, complete_task
 from .done_validators import is_subtask_id
@@ -63,8 +63,13 @@ def _handle_subtask_completion(
 ) -> None:
     """Handle subtask completion (idempotent; records citations if provided)."""
     from ..context import require_task_id
+    from .claim import expired_parent_claim_hint, renew_parent_claim
 
     resolved_task_id = require_task_id(task_id)
+    parent = client.get_task(resolved_task_id)
+    if parent.get("status") == "pending":
+        output_warning(expired_parent_claim_hint(resolved_task_id, "pending"))
+    renew_parent_claim(client, {**parent, "id": parent.get("id") or resolved_task_id})
     result = complete_subtask(
         client, id, resolved_task_id, message,
         citations=citations, acknowledge_none=acknowledge_none,
@@ -113,14 +118,33 @@ def _release_task_leases(project_id: str | None, task_id: str) -> None:
         output_success(f"Released {released} lease(s) held for {task_id}.")
 
 
+def _report_requirement_amendments(task: dict[str, Any]) -> None:
+    """Say which owner-waived or replaced requirements this closeout relies on."""
+    from app.services.task_acceptance import (
+        completion_amendments,
+        format_amendment,
+        hydrate_completion_task,
+    )
+
+    try:
+        hydrated = hydrate_completion_task({**task, "id": task.get("id")})
+    except Exception:
+        return
+    context = hydrated.get("context") or {}
+    for item in completion_amendments(hydrated.get("completion_requirements") or context.get("completion_requirements")):
+        prefix = "Satisfied by waiver" if item["kind"] == "waived" else "Requirement replaced"
+        output_success(f"{prefix}: {format_amendment(item)}")
+
+
 def _handle_task_completion(
     client: STClient,
     id: str,
     message: str | None,
     *, paths: tuple[str, ...] = (), evidence: Path | None = None, record_only: bool = False,
+    paths_range: str | None = None,
 ) -> None:
     """Handle task completion (idempotent; docs/admin auto-routed)."""
-    if record_only and paths:
+    if record_only and (paths or paths_range):
         output_error("--record-only cannot select implementation paths")
         raise typer.Exit(1)
     task = client.get_task(id)
@@ -137,6 +161,21 @@ def _handle_task_completion(
     _refuse_if_autocode_owned(task, id)
     project_id = str(task.get("project_id") or "") or None
     preflight(id, project_id, op="done")
+    _report_requirement_amendments(task)
+    if paths_range:
+        from app.storage.projects import get_project_root_path
+
+        from .done_task_scope import paths_from_range
+
+        range_root = get_project_root_path(project_id) if project_id else None
+        try:
+            if not range_root:
+                raise ValueError("--paths-from-range requires a registered project checkout")
+            paths = tuple(sorted({*paths, *paths_from_range(range_root, paths_range)}))
+        except ValueError as exc:
+            output_error(str(exc))
+            raise typer.Exit(1) from None
+        output_success(f"Selected {len(paths)} task path(s) from {paths_range}.")
     acceptance_receipt = None
     if evidence:
         from app.storage.projects import get_project_root_path
@@ -229,6 +268,10 @@ def done_command(
         bool,
         typer.Option("--record-only", help="Complete administrative or read-only work without a code checkpoint; declared task readiness still applies."),
     ] = False,
+    paths_range: Annotated[
+        str | None,
+        typer.Option("--paths-from-range", help="Select every file a commit range added or modified (e.g. <claim-base>..HEAD) as task paths; review the range first, since it includes other commits in it."),
+    ] = None,
     evidence: Annotated[
         Path | None,
         typer.Option("--evidence", help="JSON with acceptance_receipt (uses established task paths), native_deployment_receipt, deployment_receipt and/or source-bound live_validation checks."),
@@ -244,8 +287,8 @@ def done_command(
     Already-completed task/subtask is a no-op (exit 0).
     """
     if is_subtask_id(id):
-        if paths or evidence or record_only:
-            output_error("--path / --paths and --evidence only apply to task completion.")
+        if paths or paths_range or evidence or record_only:
+            output_error("--path / --paths, --paths-from-range and --evidence only apply to task completion.")
             raise typer.Exit(1)
         client = STClient()
         _handle_subtask_completion(
@@ -260,4 +303,5 @@ def done_command(
             )
             raise typer.Exit(1)
         client = STClient(require_project=False)
-        _handle_task_completion(client, id, message, paths=tuple(paths or ()), evidence=evidence, record_only=record_only)
+        _handle_task_completion(client, id, message, paths=tuple(paths or ()), evidence=evidence, record_only=record_only,
+                                paths_range=paths_range)

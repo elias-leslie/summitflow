@@ -189,6 +189,36 @@ def update_task_command(
     output_task(task)
 
 
+def amend_requirement_command(task_id: str, *, waive: str | None, replace: str | None, reason: str | None) -> None:
+    """Waive or replace one completion requirement with an audited owner decision."""
+    from app.services.task_acceptance import amend_completion_requirement, format_amendment
+    from app.storage.tasks import canonicalize_task_id
+
+    from ..lib.task_claims import current_worker_id
+
+    task_id = canonicalize_task_id(require_task_id(task_id))
+    if (waive is None) == (replace is None):
+        output_error("Pass exactly one of --waive-check or --replace-check")
+        raise typer.Exit(1)
+    replacement = None
+    check = waive or ""
+    if replace is not None:
+        check, separator, replacement = replace.partition("=")
+        if not separator:
+            output_error("--replace-check takes '<old>=<new>'")
+            raise typer.Exit(1)
+    if not (reason or "").strip():
+        output_error("A waiver or replacement needs --reason recording the owner decision")
+        raise typer.Exit(1)
+    try:
+        record = amend_completion_requirement(task_id, check, reason=str(reason), actor=current_worker_id(),
+                                              replacement=replacement)
+    except ValueError as exc:
+        output_error(str(exc))
+        raise typer.Exit(1) from None
+    output_success(f"Task {task_id}: {format_amendment(record)}")
+
+
 def _apply_plan_swap(task_id: str, plan: Path) -> None:
     """Replace the task's spirit plan and reset plan_status to draft."""
     try:

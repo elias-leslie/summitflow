@@ -15,7 +15,7 @@ def git_dirty_paths(repo_root: str, *, paths: tuple[str, ...] = ()) -> list[str]
     """Read literal paths, including both sides of renames, without quote guessing."""
     result = subprocess.run(
         ["git", "--no-optional-locks", "-C", repo_root, "status", "--porcelain=v1", "-z", "--untracked-files=all",
-         *(["--", *paths] if paths else [])],
+         *(["--", *(f":(literal){path}" for path in paths)] if paths else [])],
         text=True, capture_output=True, check=False,
     )
     if result.returncode:
@@ -31,6 +31,35 @@ def git_dirty_paths(repo_root: str, *, paths: tuple[str, ...] = ()) -> list[str]
             if original:
                 paths.add(original)
     return sorted(paths)
+
+
+def _is_literal_path(root: Any, value: str) -> bool:
+    """An existing file such as a Next.js ``[id]`` route is literal, never a glob."""
+    from pathlib import Path
+
+    candidate = Path(value).expanduser()
+    if candidate.exists() if candidate.is_absolute() else (root / candidate).exists():
+        return True
+    tracked = subprocess.run(["git", "-C", str(root), "ls-files", "--error-unmatch", "--", f":(literal){value}"],
+                             capture_output=True, check=False)
+    return tracked.returncode == 0
+
+
+def paths_from_range(repo_root: str, spec: str) -> tuple[str, ...]:
+    """Files a commit range added or modified, as literal task paths (deletions excluded)."""
+    if ".." not in spec or spec.startswith("-") or any(char.isspace() for char in spec):
+        raise ValueError(f"Select a commit range as <base>..<head>; got: {spec}")
+    result = subprocess.run(
+        ["git", "--no-optional-locks", "-C", repo_root, "diff", "--name-only", "-z", "--no-renames",
+         "--diff-filter=d", spec, "--"],
+        text=True, capture_output=True, check=False,
+    )
+    if result.returncode:
+        raise ValueError(result.stderr.strip() or f"Cannot read commit range {spec}")
+    paths = tuple(sorted(path for path in result.stdout.split("\0") if path))
+    if not paths:
+        raise ValueError(f"Commit range {spec} adds or modifies no files")
+    return paths
 
 
 def task_scope_paths(task: dict[str, Any]) -> set[str]:
@@ -68,7 +97,8 @@ def closeout_paths(repo_root: str, task_id: str, task: dict[str, Any], *,
     for value in scope:
         # Git pathspec magic and globs can silently expand a declaration beyond
         # its owner. A caller can select an ordinary directory explicitly.
-        if value.startswith(":") or any(char in value for char in "*?["):
+        if value.startswith(":") or (any(char in value for char in "*?[")
+                                     and not _is_literal_path(root, value)):
             raise ValueError(f"Select literal task paths with --paths; unsupported scope: {value}")
         path = Path(value).expanduser()
         lexical = path if path.is_absolute() else root / path

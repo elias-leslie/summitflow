@@ -53,6 +53,22 @@ def _is_same_caller(claimed_by: object) -> bool:
     return bool(me) and (claimed_by == me)
 
 
+def expired_parent_claim_hint(task_id: str, status: object) -> str:
+    """One actionable line when a parent claim is gone (claims lapse after 30 idle minutes)."""
+    return (f"Parent task {task_id} is not claimed (status={status}); its claim may have expired "
+            f"after 30 minutes without st activity on it. Re-claim: st claim {task_id}")
+
+
+def renew_parent_claim(client: STClient, task: dict[str, Any]) -> None:
+    """Keep the caller's own parent claim live while it works through subtasks."""
+    if task.get("status") != "running" or not _is_same_caller(task.get("claimed_by")):
+        return
+    try:
+        client.claim_task(str(task.get("id")), renew_only=True)
+    except APIError as exc:
+        output_warning(f"Could not renew parent claim {task.get('id')}: {exc.detail}")
+
+
 def _enforce_plan_status_gate(task: dict[str, Any]) -> None:
     """Binary plan-status gate.
 
@@ -197,13 +213,11 @@ def _claim_subtask(
     status = task.get("status", "")
 
     if status != "running":
-        output_error(
-            f"Parent task {task_id} not claimed (status={status}).\n"
-            f"Resolution: st claim {task_id}"
-        )
+        output_error(expired_parent_claim_hint(task_id, status))
         raise typer.Exit(1)
 
     require_claim_safe_tree()
+    renew_parent_claim(client, {**task, "id": task.get("id") or task_id})
 
     return {
         "task_id": task_id,

@@ -240,6 +240,23 @@ def _format_continuity_or_objective_lines(task: dict[str, Any]) -> list[str]:
     return []
 
 
+def _format_requirement_lines(task: dict[str, Any]) -> list[str]:
+    from app.services.task_acceptance import (
+        active_live_checks,
+        completion_amendments,
+        format_amendment,
+    )
+
+    raw_context = task.get("context")
+    context: dict[str, Any] = raw_context if isinstance(raw_context, dict) else {}
+    declared = task.get("completion_requirements") or context.get("completion_requirements") or {}
+    lines = []
+    if live := active_live_checks(declared):
+        lines.append(f"LIVE_CHECKS[{len(live)}]:{' | '.join(live)}")
+    lines.extend(f"REQUIREMENT_AMENDED:{format_amendment(item)}" for item in completion_amendments(declared))
+    return lines
+
+
 def _format_body_lines(task: dict[str, Any], *, final_status: bool) -> list[str]:
     lines = _format_continuity_or_objective_lines(task)
     if spirit_anti := task.get("spirit_anti"):
@@ -248,6 +265,7 @@ def _format_body_lines(task: dict[str, Any], *, final_status: bool) -> list[str]
         lines.append(f"CONSTRAINTS[{len(constraints)}]:{' | '.join(constraints)}")
     if done_when := task.get("done_when") or []:
         lines.append(f"DONE_WHEN[{len(done_when)}]:{' | '.join(done_when)}")
+    lines.extend(_format_requirement_lines(task))
     readiness = task.get("execution_readiness")
     if not final_status and readiness and readiness.missing_fields:
         lines.append(f"READINESS:missing:{','.join(readiness.missing_fields)}")
