@@ -26,6 +26,39 @@ def _scope(value: str) -> dict[str, str]:
     return result
 
 
+_UUID = re.compile(r"[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}", re.IGNORECASE)
+
+
+def _agent_hub_sessions() -> list[dict[str, Any]]:
+    """Active Agent Hub sessions (the `st sessions list` lookup); empty when Agent Hub is unreachable."""
+    try:
+        return STClient(require_project=False).list_sessions(status="active", limit=100)
+    except (APIError, OSError, ValueError):
+        return []
+
+
+def _resolve_agent(target: str) -> str:
+    """An agent id, a known session prefix, or a label naming exactly one live agent; else exit 2."""
+    from ..lib import coord, coord_route
+
+    if coord_route.AGENT_ID.fullmatch(target) or coord.known_target(target):
+        return target
+    found, unreachable = coord_route.resolve_label(target, _agent_hub_sessions())
+    if len(found) == 1:
+        agent_id = next(iter(found))
+        typer.echo(f"→ {agent_id}")
+        return agent_id
+    candidates = [f"{aid} ({how})" for aid, how in sorted(found.items())] + unreachable
+    if found:
+        typer.echo(f"ERROR {target!r} names {len(found)} live agents; send to one id: " + "; ".join(candidates), err=True)
+    else:
+        live = ", ".join(coord.live_agents()) or "none"
+        detail = f" Candidates: {'; '.join(candidates)}." if candidates else ""
+        typer.echo(f"ERROR {target!r} names no live agent.{detail} Live agents: {live}. "
+                   "For a fleet root use --delivery fleet-stream.", err=True)
+    raise typer.Exit(2)
+
+
 def _client() -> FleetClient:
     return FleetClient(STClient(require_project=False))
 
@@ -73,7 +106,8 @@ def start(
     cmd="st -P PROJECT sessions send ROOT_OR_UUID 'instruction' --source-key REVISION [--delivery native-thread]",
     when="deliver an authorized bounded instruction through the fleet stream or native Codex thread queue",
     precautions=(
-        "Default fleet-stream is passive retention consumed through wait; native-thread uses exact project/UUID provenance and local owner transport.",
+        "Agent ids and labels default to the handshake ledger (a label must name exactly one live agent, else exit 2 with candidates); root-*/UUID default to passive fleet-stream retention consumed through wait; native-thread uses exact project/UUID provenance and local owner transport.",
+        "Native-thread to a live Codex TUI records a ledger request instead of queueing; an idle-armed tmux watcher wakes it (delivery=woken), otherwise it stays queued for its next turn hook (delivery=queued).",
         "Native-thread requires exact UUID + stable revision and <=2000 sanitized UTF-8 bytes. Queued/durable does not mean working or observed consumption and is not generation-fenced; offline input can execute on same-thread resume.",
         "Reuse the source key to reconcile pending/uncertain attempts; never blindly replay with a new key. No secrets or transcripts.",
         "Use sessions verify UUID --source-key REVISION for content-free correlated queue/consumption/turn status; missing queue entries alone prove nothing.",
@@ -86,10 +120,12 @@ def send(
     instruction: Annotated[str, typer.Argument(help="Short non-secret instruction for the fleet root or exact native thread; no credentials/private target data")],
     scope: Annotated[str, typer.Option(help="Must exactly match the root scope JSON")] = "{}",
     source_key: Annotated[str | None, typer.Option(help="Stable instruction revision key; reuse on retry")] = None,
-    delivery: Annotated[Literal["fleet-stream", "native-thread", "handshake"] | None, typer.Option(help="Native mode addresses an exact bound Codex UUID, including offline resume; handshake records an agent request that needs ack and confirm (default for cc:/codex:/pi:/agy:/tmux: agent ids, else fleet-stream)")] = None,
+    delivery: Annotated[Literal["fleet-stream", "native-thread", "handshake"] | None, typer.Option(help="Native mode addresses an exact bound Codex UUID, including offline resume; handshake records an agent request that needs ack and confirm (default except for root-* fleet handles and UUIDs; a label such as an Agent Hub session name resolves to one live agent id)")] = None,
 ) -> None:
-    """Default delivery is passive fleet retention.
+    """Agent ids and labels go to the handshake ledger; root-* handles and UUIDs to the fleet stream.
 
+    A label (Agent Hub session name/persona/tmux session, identity short id, or
+    lease holder slug) must name exactly one live agent; it prints ``→ <id>``.
     Native-thread requires an exact bound UUID, stable --source-key revision,
     and <=2000 sanitized UTF-8 bytes. Queued/durable does not mean working or
     observed consumption and is not generation-fenced; offline input may run
@@ -97,11 +133,13 @@ def send(
     """
     if delivery is None:
         # Coordination agent ids are never fleet roots; route them to the ledger.
-        delivery = "handshake" if re.fullmatch(r"(cc|codex|pi|agy|tmux):[\w-]+", root) else "fleet-stream"
+        # Fleet handles and UUIDs keep the fleet stream; anything else is a label.
+        fleet = root.startswith("root-") or _UUID.fullmatch(root)
+        delivery = "fleet-stream" if fleet else "handshake"
     if delivery == "handshake":
         from .sessions_handshake import send_request
 
-        send_request(root, instruction)
+        send_request(_resolve_agent(root), instruction)
         return
     if delivery == "native-thread":
         from .sessions_native_delivery import send_native_instruction

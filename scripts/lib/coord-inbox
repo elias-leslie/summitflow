@@ -1,0 +1,12 @@
+#!/usr/bin/env bash
+# Coordination inbox hook (Claude Code, Codex); body: coord_inbox.py beside this file.
+#   coord-inbox turn  [codex]   UserPromptSubmit / PostToolUse -> additionalContext
+#   coord-inbox stop  [codex]   Stop -> decision=block when a requester is waiting; Codex arms its idle watcher
+#   coord-inbox watch           Claude asyncRewake background watcher (exit 2 wakes)
+# Not a safety gate: fails open and is silent when nothing is waiting. Disable: ST_COORD_INBOX=0.
+[ "${ST_COORD_INBOX:-1}" = "0" ] && exit 0
+here="$(cd -- "$(dirname -- "$(readlink -f -- "${BASH_SOURCE[0]}")")" && pwd)"
+sf="$(cd -- "$here/../.." && pwd)"
+py="$sf/backend/.venv/bin/python"
+[ -x "$py" ] || exit 0
+exec env PYTHONPATH="$sf/backend" "$py" -I "$here/coord_inbox.py" "$sf/backend" "$@"

@@ -673,3 +673,90 @@ def test_uuid7_sessions_started_hours_apart_keep_distinct_identities(repos, monk
     blocked = coord.edit_conflict(target)
     assert blocked is not None and "leased by codex:8af197" in blocked
     assert not coord._addresses("01a126", "codex:04ba944f", "01a1265b-7c0d-7b53-81f1-3f6104ba944f")
+
+
+# ------------------------------------------------------------ inbox hook (scripts/lib/coord-inbox)
+
+INBOX = REPO_ROOT / "scripts" / "lib" / "coord-inbox"
+
+
+def _inbox(payload: dict, tmp: Path, *args: str) -> subprocess.CompletedProcess[str]:
+    clean = {k: v for k, v in os.environ.items() if k not in {
+        "CLAUDE_CODE_SESSION_ID", "CODEX_THREAD_ID", "CLAUDE_SESSION_ID", "TMUX", "TMUX_PANE", "ST_SESSION_ID",
+        "CODEX_SESSION_ID", "PI_SESSION_ID", "ST_COORD_INBOX"}}
+    clean.update({"ST_LEASES_DIR": str(tmp / "hook-leases"), "XDG_RUNTIME_DIR": str(tmp / "run"), "ST_COORD_ANCHOR": ""})
+    clean["PATH"] = f"{clean.get('PATH', '')}:/usr/bin:/bin"
+    return subprocess.run(["bash", str(INBOX), *args], input=json.dumps(payload), capture_output=True,
+                          text=True, env=clean, check=False, timeout=30)
+
+
+def test_inbox_hook_is_silent_when_empty_then_surfaces_a_request_once(repos, tmp_path, monkeypatch):
+    target = {"session_id": "c9ffbd05-c536-446f-82f7-30690775f33e", "hook_event_name": "UserPromptSubmit"}
+    empty = _inbox(target, tmp_path, "turn")
+    assert (empty.returncode, empty.stdout, empty.stderr) == (0, "", "")
+    monkeypatch.setattr(leases, "LEASES_DIR", tmp_path / "hook-leases")
+    as_claude(monkeypatch, "sender-0001")
+    row = coord.send("cc:c9ffbd", "please release backend/a.py")
+    first = _inbox(target, tmp_path, "turn")
+    context = json.loads(first.stdout)["hookSpecificOutput"]["additionalContext"]
+    assert first.returncode == 0 and f"REQUEST {row['id']}" in context and "please release" in context
+    assert _inbox(target, tmp_path, "turn").stdout == ""  # surfaced once, reminded later
+    stop = _inbox({**target, "hook_event_name": "Stop"}, tmp_path, "stop")
+    assert (stop.returncode, stop.stdout) == (0, "")  # already surfaced: no block until the reminder is due
+
+
+def test_inbox_hook_fails_open_without_the_backend(tmp_path):
+    broken = tmp_path / "sf" / "scripts" / "lib"
+    broken.mkdir(parents=True)
+    (broken / "coord-inbox").write_text(INBOX.read_text())
+    result = subprocess.run(["bash", str(broken / "coord-inbox"), "turn"], input="{}", capture_output=True,
+                            text=True, check=False, timeout=10)
+    assert (result.returncode, result.stdout, result.stderr) == (0, "", "")
+
+
+@pytest.mark.parametrize("display,row,ready", [
+    ("0 0 1 2 5", "\u203a Ask Codex to do anything", True),     # empty composer; placeholder after the cursor
+    ("0 0 1 0 5", "", True),
+    ("0 0 1 11 5", "\u203a half-typed", False),                 # owner text before the cursor
+    ("0 1 1 2 5", "\u203a ", False),                            # copy mode
+    ("0 0 0 2 5", "\u203a ", False),                            # cursor hidden: cannot confirm idle
+    ("1 0 1 2 5", "\u203a ", False),                            # dead pane
+    (None, "", False),                                     # tmux unreachable
+])
+def test_wake_types_only_into_an_idle_pane_with_an_empty_composer(monkeypatch, display, row, ready):
+    from cli.lib import coord_wake
+
+    sent: list[tuple[str, ...]] = []
+
+    def fake_tmux(sock: str, *args: str) -> str | None:
+        if args[0] == "display-message":
+            return display
+        if args[0] == "capture-pane":
+            return row + "\n"
+        sent.append(args)
+        return ""
+
+    monkeypatch.setattr(coord_wake, "_tmux", fake_tmux)
+    monkeypatch.setattr(coord_wake.time, "sleep", lambda s: None)
+    assert coord_wake.pane_ready("/sock", "%9") is ready
+    assert coord_wake.type_line("REQUEST ab12 from cc:x: hi", "/sock", "%9") is ready
+    assert sent == ([("send-keys", "-t", "%9", "-l", "REQUEST ab12 from cc:x: hi"), ("send-keys", "-t", "%9", "Enter")]
+                    if ready else [])
+
+
+def test_route_resolves_labels_only_to_live_identities(repos, monkeypatch):
+    from cli.lib import coord_route
+
+    live = f"{os.getpid()}:{leases._process_start(os.getpid())}"
+    doc = coord_lineage.load_doc()
+    doc["identities"] = {
+        "cc:c9ffbd": {"anchor": live, "session": "c9ffbd05-c536-446f-82f7-30690775f33e"},
+        "cc:dead00": {"anchor": f"{os.getpid()}:1", "session": "dead0000-0000-4000-8000-000000000000"},
+    }
+    coord_lineage.save_doc(doc)
+    assert coord_route.live_agent_for_session("c9ffbd05-c536-446f-82f7-30690775f33e") == "cc:c9ffbd"
+    assert coord_route.live_agent_for_session("dead0000-0000-4000-8000-000000000000") is None
+    assert list(coord_route.resolve_label("C9FFBD")[0]) == ["cc:c9ffbd"]
+    assert coord_route.resolve_label("dead00") == ({}, [])
+    found, unreachable = coord_route.resolve_label("Old", [{"id": "dead0000-0000-4000-8000-000000000000", "name": "old"}])
+    assert found == {} and unreachable and "dead0000" in unreachable[0]

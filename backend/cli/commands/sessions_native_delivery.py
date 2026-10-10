@@ -10,6 +10,7 @@ from app.services.fleet_sessions import sanitized_instruction
 from app.storage.fleet_events import append_fleet_event, read_fleet_page
 from app.storage.projects import get_project_root_path
 
+from ..lib import coord, coord_route, coord_wake
 from ..lib.native_session_delivery import (
     NativeQueueError,
     exact_uuid,
@@ -28,6 +29,9 @@ def send_native_instruction(thread: str, instruction: str, *, project: str, sour
     prompt = sanitized_instruction(instruction)
     if not source_key or len(source_key) > 256:
         raise ValueError("Native delivery requires a stable source key of 1-256 characters")
+    live = _deliver_live(thread, prompt, project=project, source_key=source_key)
+    if live is not None:
+        return live
     # A separate trace in the same events table bounds reconciliation to this
     # exact source revision; no provider replay or second queue is introduced.
     address = f"{project}:{thread}:{source_key}"
@@ -53,6 +57,33 @@ def send_native_instruction(thread: str, instruction: str, *, project: str, sour
         result = {"delivery": "uncertain" if exc.uncertain else "failed", "reason": str(exc), "observed": False}
     append_fleet_event(project, trace, source_key="result", event_type="native.delivery.result", attributes=result)
     return {**base, **result, "replayed": False}
+
+
+WAKE_CONFIRM_SECONDS = 8.0  # the armed watcher polls the ledger every 2s
+
+
+def _deliver_live(thread: str, prompt: str, *, project: str, source_key: str) -> dict[str, Any] | None:
+    """A thread open in a live Codex TUI never sees the offline queue: record it on the ledger instead.
+
+    The target's own idle watcher (armed between turns in its tmux pane) is the
+    only thing that types; it wakes the pane and its hook reads the ledger. When
+    no watcher is armed or it does not confirm, the request stays queued on the
+    ledger for the target's next turn hook. None means: not live, use the queue.
+    """
+    agent_id = coord_route.live_agent_for_session(thread)
+    if agent_id is None or len(prompt) > coord.MAX_TEXT:
+        return None
+    row = coord.send(agent_id, prompt, project=project)
+    base = {"project_id": project, "thread_id": thread, "source_key": source_key, "capability": "native-thread",
+            "transport": "coordination-ledger", "agent_id": agent_id, "request_id": row["id"],
+            "replayed": bool(row.get("duplicate"))}
+    if coord_wake.codex_watch_pid(agent_id) is None:
+        return {**base, "delivery": "queued", "observed": False,
+                "reason": "live thread not confirmed idle (no armed idle watcher); its next turn hook surfaces it"}
+    if coord_wake.wait_surfaced(agent_id, f"{row['id']}:req", WAKE_CONFIRM_SECONDS):
+        return {**base, "delivery": "woken", "observed": True}
+    return {**base, "delivery": "queued", "observed": False,
+            "reason": "idle watcher did not confirm an empty composer; left queued for its next turn hook"}
 
 
 def verify_native_instruction(thread: str, *, project: str, source_key: str,
