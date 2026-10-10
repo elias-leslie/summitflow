@@ -31,7 +31,7 @@ def native_inspection_receipt(info: Any) -> dict[str, object]:
         "thread_id": info.session_id,
         "transcript_runtime_session_id": info.native_session_id,
         "parent_thread_id": info.parent_session_id,
-        "agent_path": info.agent_path or "/root",
+        "agent_path": info.agent_path or (None if info.parent_session_id else "/root"),
         "agent_nickname": info.agent_nickname,
         "cwd": str(info.cwd),
         "requested_model": evidence.get("requested_model"),

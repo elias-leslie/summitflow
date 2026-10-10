@@ -175,7 +175,7 @@ def _require_native_binding(session: dict[str, object], info: _NativeTranscript)
         external = cast(dict[str, object], external)
         if external.get("runtime_session_id") != info.session_id:
             _bind_error("Session thread identity conflicts with current native Codex provenance.")
-        if external.get("agent_path") != (info.agent_path or "/root"):
+        if external.get("agent_path") != (info.agent_path or (None if info.parent_session_id else "/root")):
             _bind_error("Session agent path conflicts with current native Codex provenance.")
 
 

@@ -129,7 +129,9 @@ def _native_identity(payload: dict[str, object]) -> dict[str, object]:
     source = payload.get("source")
     if isinstance(source, dict) and "subagent" in source and not parent:
         error = "invalid native subagent provenance"
-    if parent == session_id or (parent and (not agent_path or agent_path == "/root")):
+    # A child may lack agent_path (guardian reviews, older thread_spawn headers);
+    # it is still a child, never the root.
+    if parent == session_id or (parent and agent_path == "/root"):
         error = "contradictory native child provenance"
     if not parent and agent_path not in {None, "/root"}:
         error = "native child agent path has no parent provenance"
@@ -144,6 +146,14 @@ def _native_identity(payload: dict[str, object]) -> dict[str, object]:
         "identity_error": error,
         "history_start_ordinal": payload.get("subagent_history_start_ordinal"),
     }
+
+
+def external_agent_path(info: object) -> str | None:
+    """Agent path to assert: roots default to ``/root``; a pathless child asserts none."""
+    agent_path = getattr(info, "agent_path", None)
+    if agent_path:
+        return agent_path
+    return None if getattr(info, "parent_session_id", None) else "/root"
 
 
 def _extract_transcript_fields(

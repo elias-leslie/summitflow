@@ -282,3 +282,64 @@ def test_caller_native_ancestry_rejects_intermediary_identity_override(tmp_path,
             codex_sync_transcripts._caller_native_identity(proc)
     else:
         assert codex_sync_transcripts._caller_native_identity(proc) == {"CODEX_THREAD_ID": "child", "CODEX_SESSION_ID": "root"}
+
+
+@pytest.mark.parametrize(
+    "payload",
+    [
+        {  # Codex guardian review child: top-level parent, no agent path.
+            "id": "guardian-child",
+            "session_id": "parent-session",
+            "parent_thread_id": "parent-session",
+            "source": {"subagent": {"other": "guardian"}},
+            "thread_source": "guardian_review",
+        },
+        {  # Older thread_spawn header with a null agent path.
+            "id": "spawned-child",
+            "session_id": "spawned-child",
+            "source": {"subagent": {"thread_spawn": {
+                "parent_thread_id": "parent-session", "agent_path": None, "agent_nickname": "Meitner",
+            }}},
+        },
+    ],
+)
+def test_pathless_child_is_a_valid_child_not_a_root(tmp_path: Path, payload: dict[str, object]) -> None:
+    transcript = tmp_path / "child.jsonl"
+    _write_jsonl(transcript, [{"type": "session_meta", "payload": {"cwd": "/srv/workspaces/projects/a-loom", **payload}}])
+
+    info = codex_sync_transcripts.read_transcript_info(transcript)
+
+    assert info is not None
+    assert info.identity_error is None
+    assert info.parent_session_id == "parent-session"
+    assert info.agent_path is None
+    assert codex_sync_transcripts.external_agent_path(info) is None
+
+
+@pytest.mark.parametrize(
+    ("payload", "error"),
+    [
+        ({"id": "self-child", "parent_thread_id": "self-child", "source": {"subagent": {"other": "guardian"}}},
+         "contradictory native child provenance"),
+        ({"id": "root-child", "parent_thread_id": "parent-session", "agent_path": "/root"},
+         "contradictory native child provenance"),
+    ],
+)
+def test_child_provenance_contradictions_are_still_rejected(
+    tmp_path: Path, payload: dict[str, object], error: str,
+) -> None:
+    transcript = tmp_path / "child.jsonl"
+    _write_jsonl(transcript, [{"type": "session_meta", "payload": {"cwd": "/tmp", **payload}}])
+
+    info = codex_sync_transcripts.read_transcript_info(transcript)
+
+    assert info is not None
+    assert info.identity_error == error
+
+
+def test_external_agent_path_defaults_only_roots_to_root() -> None:
+    from types import SimpleNamespace
+
+    assert codex_sync_transcripts.external_agent_path(SimpleNamespace(agent_path=None, parent_session_id=None)) == "/root"
+    assert codex_sync_transcripts.external_agent_path(SimpleNamespace(agent_path="/root/x", parent_session_id="p")) == "/root/x"
+    assert codex_sync_transcripts.external_agent_path(SimpleNamespace(agent_path=None, parent_session_id="p")) is None
