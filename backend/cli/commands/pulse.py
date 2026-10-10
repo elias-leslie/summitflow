@@ -62,6 +62,13 @@ def preflight_reasons_for_payload(payload: dict[str, Any], *, allow_task_id: str
 def _print_compact(payloads: list[dict[str, Any]], *, details: bool = False) -> None:
     for payload in payloads:
         print_compact_payload(payload, details=details)
+    try:
+        from ..lib.coord import notices
+
+        for line in notices():
+            print(line)
+    except Exception:  # coordination notices never break the pulse
+        return
 
 
 def _payload_blocked(payload: dict[str, Any]) -> bool:

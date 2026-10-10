@@ -1,0 +1,14 @@
+#!/usr/bin/env bash
+# PreToolUse edit hook for Claude Code and Codex: auto-lease each edited file to
+# the editing session and block (exit 2, one line) only on a live collision.
+# Fails open on infrastructure errors. Bypass: ALLOW_LEASE_OVERLAP=1.
+[ "${ALLOW_LEASE_OVERLAP:-0}" = "1" ] && exit 0
+st_bin="$(dirname -- "$(readlink -f -- "$0")")/../st"
+[ -x "$st_bin" ] || exit 0
+out=$("$st_bin" lease --hook 2>&1)
+rc=$?
+if [ "$rc" = 2 ] && [[ $out == BLOCKED* ]]; then
+    printf '%s\n' "$out" >&2
+    exit 2
+fi
+exit 0

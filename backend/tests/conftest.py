@@ -247,6 +247,22 @@ def local_gate_tools(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
 
 
 @pytest.fixture(autouse=True)
+def isolated_coordination_store(tmp_path_factory) -> Generator[None]:
+    """Keep tests off the host lease/handshake store and the caller's native session id.
+
+    Uses a private MonkeyPatch so the shared ``monkeypatch`` fixture keeps its
+    teardown order relative to the config-cache reset below.
+    """
+    from cli.lib import leases
+
+    with pytest.MonkeyPatch.context() as patch:
+        patch.setattr(leases, "LEASES_DIR", tmp_path_factory.mktemp("leases"))
+        for name in ("CLAUDE_CODE_SESSION_ID", "CODEX_THREAD_ID", "CODEX_SESSION_ID", "ST_COORD_SENSITIVE"):
+            patch.delenv(name, raising=False)
+        yield
+
+
+@pytest.fixture(autouse=True)
 def reset_cli_output_state() -> Generator[None]:
     """Reset CLI output module state before each test.
 

@@ -27,7 +27,7 @@ from datetime import UTC, datetime, timedelta
 from fnmatch import fnmatch
 from pathlib import Path
 
-LEASES_DIR = Path.home() / ".summitflow" / "leases"
+LEASES_DIR = Path(os.environ.get("ST_LEASES_DIR") or Path.home() / ".summitflow" / "leases")
 DEFAULT_IDLE_TTL = timedelta(minutes=30)
 
 
@@ -43,8 +43,17 @@ class Lease:
     acquired_at: str
     last_heartbeat: str
     taken_over_by: str | None = None
+    # "file" (edit scope), "hold" (repo-level declared purpose) or "op"
+    # (acceptance/deployment; pid-fenced, blocks every editor while alive).
+    kind: str = "file"
+    purpose: str | None = None
+    pid: int | None = None
+    pid_start: str | None = None
+    sensitive: bool = False
 
     def is_stale(self, now: datetime | None = None, ttl: timedelta = DEFAULT_IDLE_TTL) -> bool:
+        if self.kind == "op":
+            return not _process_alive(self.pid, self.pid_start)
         now = now or datetime.now(UTC)
         try:
             hb = datetime.fromisoformat(self.last_heartbeat)
@@ -56,7 +65,20 @@ class Lease:
         return any(fnmatch(path, g) or fnmatch(path, g.rstrip("/") + "/**") for g in self.globs)
 
 
-def identify_agent() -> tuple[str, str, str, str]:
+def _process_start(pid: int) -> str | None:
+    """Kernel start tick for pid, so a reused pid never revives a dead op lease."""
+    try:
+        stat = Path(f"/proc/{pid}/stat").read_text()
+    except OSError:
+        return None
+    return stat.rsplit(")", 1)[-1].split()[19]
+
+
+def _process_alive(pid: int | None, start: str | None) -> bool:
+    return bool(pid) and _process_start(int(pid or 0)) == start
+
+
+def identify_agent(*, native: bool = True) -> tuple[str, str, str, str]:
     """Return (agent_id, slug, session_id, provider) from env vars.
 
     Priority: explicit ST session → Claude Code → Codex CLI → Agent Hub → Pi
@@ -73,10 +95,12 @@ def identify_agent() -> tuple[str, str, str, str]:
     st_sid = session("ST_SESSION_ID")
     if st_sid:
         return f"st:{st_sid[:6]}", "st", st_sid, "st"
-    claude_sid = session("CLAUDE_SESSION_ID")
+    # native=False keeps the pre-coordination resolution for task-claim owners
+    # already recorded under it; leases key on the harness's real session id.
+    claude_sid = session("CLAUDE_SESSION_ID") or (native and session("CLAUDE_CODE_SESSION_ID"))
     if claude_sid:
         return f"cc:{claude_sid[:6]}", "claude-code", claude_sid, "claude_code"
-    codex_sid = session("CODEX_SESSION_ID")
+    codex_sid = session("CODEX_SESSION_ID") or (native and session("CODEX_THREAD_ID"))
     if codex_sid:
         return f"codex:{codex_sid[:6]}", "codex", codex_sid, "codex_cli"
     ah_slug = os.environ.get("AGENT_HUB_AGENT_SLUG")
@@ -92,6 +116,15 @@ def identify_agent() -> tuple[str, str, str, str]:
         return f"tmux:{pane.lstrip('%')}", "tmux", pane, "unknown"
     pid = str(os.getpid())
     return f"pid:{pid}", "pid", pid, "unknown"
+
+
+def self_ids() -> set[str]:
+    """Current lease identity plus the legacy tmux-pane alias it replaced."""
+    ids = {identify_agent()[0]}
+    pane = os.environ.get("TMUX_PANE")
+    if pane:
+        ids.add(f"tmux:{pane.lstrip('%')}")
+    return ids
 
 
 def _store_path(project_id: str) -> Path:
@@ -114,14 +147,19 @@ def _lock(project_id: str):
             fcntl.flock(f.fileno(), fcntl.LOCK_UN)
 
 
-def _load(project_id: str) -> list[Lease]:
+def _read(project_id: str) -> dict:
     path = _store_path(project_id)
     if not path.exists():
-        return []
+        return {}
     try:
         data = json.loads(path.read_text())
     except (json.JSONDecodeError, OSError):
-        return []
+        return {}
+    return data if isinstance(data, dict) else {}
+
+
+def _load(project_id: str) -> list[Lease]:
+    data = _read(project_id)
     leases: list[Lease] = []
     for item in data.get("leases", []):
         try:
@@ -131,10 +169,18 @@ def _load(project_id: str) -> list[Lease]:
     return leases
 
 
-def _save(project_id: str, leases: list[Lease]) -> None:
+def _save(project_id: str, leases: list[Lease], touches: dict | None = None) -> None:
+    """Write leases, keeping the touch history unless a new one is given (caller holds the lock)."""
     path = _store_path(project_id)
     path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(json.dumps({"leases": [asdict(lease) for lease in leases]}, indent=2))
+    if touches is None:
+        touches = _read(project_id).get("touches", {})
+    doc: dict = {"leases": [asdict(lease) for lease in leases]}
+    if touches:
+        doc["touches"] = touches
+    tmp = path.with_suffix(".tmp")
+    tmp.write_text(json.dumps(doc, indent=2))
+    tmp.replace(path)
 
 
 def _purge_stale(leases: list[Lease]) -> list[Lease]:
@@ -168,7 +214,7 @@ def acquire(
     with _lock(project_id):
         leases = _purge_stale(_load(project_id))
         for lease in leases:
-            if lease.agent_id == agent_id and set(lease.globs) == set(globs):
+            if lease.kind == "file" and lease.agent_id == agent_id and set(lease.globs) == set(globs):
                 lease.last_heartbeat = now
                 if task_id and not lease.task_id:
                     lease.task_id = task_id
@@ -190,12 +236,12 @@ def acquire(
         return lease
 
 
-def list_active(project_id: str) -> list[Lease]:
-    """Return live leases (stale ones purged on read)."""
+def list_active(project_id: str, kinds: tuple[str, ...] = ("file",)) -> list[Lease]:
+    """Return live leases of the given kinds (stale ones purged on read)."""
     with _lock(project_id):
         leases = _purge_stale(_load(project_id))
         _save(project_id, leases)
-        return leases
+        return [lease for lease in leases if lease.kind in kinds]
 
 
 def check(
@@ -208,13 +254,13 @@ def check(
     its heartbeat as a side effect.
     """
     path = _project_path(path, project_root)
-    agent_id, _, _, _ = identify_agent()
+    mine = self_ids()
     now = datetime.now(UTC).isoformat()
     with _lock(project_id):
         leases = _purge_stale(_load(project_id))
-        matching = [lease for lease in leases if lease.matches(path)]
+        matching = [lease for lease in leases if lease.kind == "file" and lease.matches(path)]
         for lease in matching:
-            if lease.agent_id != agent_id:
+            if lease.agent_id not in mine:
                 _save(project_id, leases)
                 return False, lease
         if matching:
@@ -285,7 +331,7 @@ def take(project_id: str, path: str, project_root: str | None = None) -> Lease:
         leases = _purge_stale(_load(project_id))
         kept: list[Lease] = []
         for lease in leases:
-            if lease.matches(path) and lease.agent_id != agent_id:
+            if lease.kind != "op" and lease.matches(path) and lease.agent_id != agent_id:
                 continue
             kept.append(lease)
         _save(project_id, kept)
@@ -337,3 +383,132 @@ def format_pulse_line(lease: Lease) -> str:
     globs_str = ", ".join(lease.globs)
     task_str = lease.task_id or "--"
     return f"{lease.agent_id} · lease:'{globs_str}' · task:{task_str} · idle:{idle_string(lease)}"
+
+
+TOUCH_TTL = timedelta(hours=24)
+
+
+def _session_sensitive() -> bool:
+    """A session marks itself sensitive explicitly or by its project's identity."""
+    if os.environ.get("ST_COORD_SENSITIVE") == "1":
+        return True
+    cwd = Path.cwd().resolve()
+    for root in (cwd, *cwd.parents):
+        identity = root / "project.identity.json"
+        if identity.is_file():
+            try:
+                data = json.loads(identity.read_text())
+            except (OSError, json.JSONDecodeError):
+                return False
+            coordination = data.get("coordination") if isinstance(data, dict) else None
+            return bool(isinstance(coordination, dict) and coordination.get("sensitive"))
+    return False
+
+
+def claim(project_id: str, path: str, project_root: str | None = None) -> tuple[bool, Lease | None]:
+    """Atomically check a single file and lease it to the current agent.
+
+    Returns (ok, conflicting_lease). On success every own lease in the project
+    is heartbeated and a 24 h touch record keeps dirty-file attribution after
+    the lease itself expires or is released.
+    """
+    path = _project_path(path, project_root)
+    agent_id, slug, sid, provider = identify_agent()
+    mine = self_ids()
+    now_dt = datetime.now(UTC)
+    now = now_dt.isoformat()
+    with _lock(project_id):
+        leases = _purge_stale(_load(project_id))
+        for lease in leases:
+            if lease.kind == "file" and lease.matches(path) and lease.agent_id not in mine:
+                _save(project_id, leases)
+                return False, lease
+        own = None
+        for lease in leases:
+            if lease.agent_id in mine and lease.kind != "op":
+                lease.last_heartbeat = now
+                if lease.kind == "file" and lease.matches(path):
+                    own = lease
+        if own is None:
+            own = Lease(
+                lease_id=uuid.uuid4().hex[:8], agent_id=agent_id, agent_slug=slug,
+                session_id=sid, provider=provider, globs=[path], task_id=None,
+                acquired_at=now, last_heartbeat=now, sensitive=_session_sensitive(),
+            )
+            leases.append(own)
+        touches = {
+            key: value for key, value in _read(project_id).get("touches", {}).items()
+            if _touch_fresh(value, now_dt)
+        }
+        touches[path] = {"agent_id": agent_id, "session_id": sid, "at": now, "sensitive": own.sensitive}
+        _save(project_id, leases, touches)
+        return True, own
+
+
+def _touch_fresh(value: object, now: datetime) -> bool:
+    if not isinstance(value, dict):
+        return False
+    stamp: object = value.get("at")  # type: ignore[union-attr]
+    try:
+        return now - datetime.fromisoformat(str(stamp)) <= TOUCH_TTL
+    except ValueError:
+        return False
+
+
+def touches(project_id: str) -> dict[str, dict]:
+    """Recent path -> {agent_id, session_id, at} edit records (attribution only)."""
+    now = datetime.now(UTC)
+    with _lock(project_id):
+        raw = _read(project_id).get("touches", {})
+    return {k: v for k, v in raw.items() if _touch_fresh(v, now)} if isinstance(raw, dict) else {}
+
+
+def release_paths(project_id: str, paths: list[str], project_root: str | None = None) -> int:
+    """Release the current agent's single-file leases on exactly these paths (after commit)."""
+    targets = {_project_path(p, project_root) for p in paths}
+    mine = self_ids()
+    with _lock(project_id):
+        leases = _purge_stale(_load(project_id))
+        kept = [
+            lease for lease in leases
+            if not (lease.kind == "file" and lease.agent_id in mine and set(lease.globs) <= targets)
+        ]
+        _save(project_id, kept)
+        return len(leases) - len(kept)
+
+
+def acquire_mark(project_id: str, root: str, kind: str, purpose: str) -> Lease:
+    """Acquire a repo-level hold (idle TTL) or op lease (fenced to this process)."""
+    agent_id, slug, sid, provider = identify_agent()
+    now = datetime.now(UTC).isoformat()
+    pid = os.getpid() if kind == "op" else None
+    lease = Lease(
+        lease_id=uuid.uuid4().hex[:8], agent_id=agent_id, agent_slug=slug, session_id=sid,
+        provider=provider, globs=[_project_path(root, None).rstrip("/") + "/**"], task_id=None,
+        acquired_at=now, last_heartbeat=now, kind=kind, purpose=purpose[:40],
+        pid=pid, pid_start=_process_start(pid) if pid else None, sensitive=_session_sensitive(),
+    )
+    with _lock(project_id):
+        leases = [
+            item for item in _purge_stale(_load(project_id))
+            if not (kind == "hold" and item.kind == "hold" and item.agent_id == agent_id)
+        ]
+        leases.append(lease)
+        _save(project_id, leases)
+    return lease
+
+
+def release_mark(project_id: str, lease_id: str) -> None:
+    with _lock(project_id):
+        _save(project_id, [lease for lease in _load(project_id) if lease.lease_id != lease_id])
+
+
+def repo_marks(project_id: str) -> list[Lease]:
+    """Live hold and op leases for a project."""
+    return list_active(project_id, kinds=("hold", "op"))
+
+
+def all_projects() -> list[str]:
+    if not LEASES_DIR.is_dir():
+        return []
+    return sorted(p.stem for p in LEASES_DIR.glob("*.json") if not p.stem.startswith("_"))

@@ -119,11 +119,13 @@ def publish_now(
     now: Annotated[bool, typer.Option("--now", help="Explicit owner-triggered publication of the supplied source")] = False,
     authorize_workflow: Annotated[list[str] | None, typer.Option("--authorize-workflow", help="Explicit authority for a listed workflow: exact path for selected source, BASE_SHA:path for a different base workflow; repeat as needed")] = None,
     json_output: Annotated[bool, typer.Option("--json", help="Show the complete retained structured observation")] = False,
+    with_ack: Annotated[str | None, typer.Option("--with-ack", help="Request id the repo's holder acked yes")] = None,
 ) -> None:
     """Publish an exact accepted source in isolation and retain its real CI evidence."""
     if not now:
         typer.echo("Immediate publication requires --now and explicit owner authorization; overnight publication follows st vcs publication --mode.")
         raise typer.Exit(2)
+    _coord_guard(get_projects_base_dir() / source, "publish", with_ack)
     from app.tasks.backup_manual_publish import publish_project_now
     from app.tasks.nightly_publication import publication_mode
 
@@ -434,6 +436,33 @@ def doctor(
         raise typer.Exit(2)
 
 
+def _coord_guard(repo: Path, operation: str, with_ack: str | None) -> None:
+    from ..lib import coord
+
+    if not repo.is_dir():
+        return
+    try:
+        coord.guard(repo, operation, with_ack=with_ack)
+    except coord.CoordBlocked as exc:
+        typer.echo(str(exc), err=True)
+        raise typer.Exit(2) from None
+
+
+def _unheld_repos(repos: list[Path], with_ack: str | None) -> list[Path]:
+    """Skip repos another live agent holds or is active in; one line each."""
+    from ..lib import coord
+
+    kept: list[Path] = []
+    for repo in repos:
+        try:
+            coord.guard(repo, "reconcile", with_ack=with_ack)
+        except coord.CoordBlocked as exc:
+            typer.echo(f"skipped: {exc}", err=True)
+            continue
+        kept.append(repo)
+    return kept
+
+
 def _sync_repos(repos: list[Path]) -> list[dict[str, Any]]:
     return [pull_repository(repo).model_dump(exclude_none=True) for repo in repos]
 
@@ -468,12 +497,13 @@ def reconcile(
         bool,
         typer.Option("--fail-on-issues/--no-fail", help="Exit 2 when VCS debt remains after safe fixes."),
     ] = True,
+    with_ack: Annotated[str | None, typer.Option("--with-ack", help="Request id a repo holder acked yes")] = None,
 ) -> None:
     """Run safe VCS reconciliation: sync, register workspace repos, prune safe residue."""
     initial_repos = _target_repos(all_projects)
     registered = _register_unmanaged(initial_repos) if all_projects else []
     repos = _target_repos(all_projects)
-    sync = _sync_repos(repos)
+    sync = _sync_repos(_unheld_repos(repos, with_ack))
     project_id = None if all_projects or not repos else repos[0].name
     stale_pruned = _cleanup_stale_checkpoint_metadata(project_id, dry_run=False)
     residue_pruned = cleanup_safe_git_residue(_iter_target_repos(all_projects), dry_run=False)

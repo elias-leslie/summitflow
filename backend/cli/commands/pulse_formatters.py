@@ -373,26 +373,32 @@ def print_compact_payload(
                   f"|at={last.get('observed_at') or publication.get('observed_at') or '-'}")
     print(_format_preflight(project_id, summary, cleanup, payload))
     _print_review_lines(project_id, summary, cleanup, payload)
-    _print_leases(project_id)
+    _print_leases(project_id, cleanup.get("path"))
     if details:
         _print_detail_rows(payload)
 
 
-def _print_leases(project_id: Any) -> None:
-    """Print active file leases for the project. Silent on empty or any error."""
+def _print_leases(project_id: Any, root: Any = None) -> None:
+    """Print live leases, repo holds/ops and foreign dirty-file owners. Silent when none."""
+    from pathlib import Path
+
     try:
-        from ..lib.leases import format_pulse_line, list_active
+        from ..lib import coord
+        from ..lib.leases import list_active
     except ImportError:
         return
+    repo = Path(str(root)) if root else None
     try:
-        leases = list_active(str(project_id))
+        live = list_active(str(project_id), kinds=("op", "hold", "file"))
+        if live:
+            print(f"LEASES:{project_id}|count={len(live)}")
+            for lease in live:
+                print("LEASE " + coord.holder_line(str(project_id), lease, repo))
+        owner = coord.dirty_owner_line(str(project_id), repo) if repo and repo.is_dir() else None
     except Exception:
         return
-    if not leases:
-        return
-    print(f"LEASES:{project_id}|count={len(leases)}")
-    for lease in leases:
-        print("LEASE " + format_pulse_line(lease))
+    if owner:
+        print(owner)
 
 
 def _print_summary_line(project_id: Any, summary: dict[str, Any], cleanup: dict[str, Any]) -> None:

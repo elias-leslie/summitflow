@@ -13,13 +13,16 @@ from typing import Annotated
 import typer
 
 from ..config import get_config_optional
+from ..lib import coord
 from ..lib.leases import (
     acquire,
+    acquire_mark,
     check,
     format_pulse_line,
     heartbeat,
     list_active,
     release,
+    repo_marks,
     take,
     wait,
 )
@@ -41,10 +44,10 @@ def _resolve_project() -> tuple[str, str | None]:
 @app.command(name="lease")
 @usage(
     surface="st.lease",
-    cmd="st lease '<glob>...' | --check <path> | --list | --release | --take <path> | --wait <path>",
-    when="declare sweep scope before refactor; check before edit; release on completion",
+    cmd="st lease '<glob>...' | --hold '<purpose>' | --check <path> | --list [--all] | --release | --take <path>",
+    when="declare sweep scope before refactor; --hold a repo for integration; check before edit; release on completion",
     precautions=(
-        "declare scope explicitly before broad edits — hook only blocks, doesn't acquire",
+        "the edit hook auto-leases each edited file; own st commit releases committed paths",
         "relative globs are normalized against project root at acquire time",
         "stale leases auto-release after 30min idle",
         "--check exits 2 when another agent holds the path",
@@ -88,9 +91,33 @@ def lease_command(
         str | None,
         typer.Option("--task", "-t", help="Associate lease with a task id"),
     ] = None,
+    hold: Annotated[
+        str | None,
+        typer.Option("--hold", help="Hold the whole repo with a coarse purpose (e.g. integration); others' commit/publish/rebuild need your ack"),
+    ] = None,
+    all_projects: Annotated[
+        bool,
+        typer.Option("--all", help="With --list: every project on this host"),
+    ] = False,
+    hook: Annotated[
+        bool,
+        typer.Option("--hook", help="PreToolUse hook mode: read hook JSON on stdin, auto-lease edited files"),
+    ] = False,
 ) -> None:
     """File-level lease for parallel-agent coordination."""
+    if hook:
+        _run_hook()
+        return
+    if list_flag and all_projects:
+        for line in coord.system_lines():
+            print(line)
+        return
     pid, project_root = _resolve_project()
+
+    if hold:
+        lease = acquire_mark(pid, project_root or ".", "hold", hold)
+        output_success(f"Holding {pid} ({lease.purpose}) as {lease.agent_id}; release: st lease --release-all")
+        return
 
     if list_flag:
         leases = list_active(pid)
@@ -99,6 +126,8 @@ def lease_command(
             return
         for lease in leases:
             print(format_pulse_line(lease))
+        for mark in repo_marks(pid):
+            print(coord.holder_line(pid, mark))
         return
 
     if check_path:
@@ -142,3 +171,19 @@ def lease_command(
         raise typer.Exit(2)
     lease = acquire(pid, list(globs), task_id=task_id, project_root=project_root)
     output_success(f"Acquired lease {lease.lease_id} on: {', '.join(lease.globs)}")
+
+
+def _run_hook() -> None:
+    """Exit 2 with one line when the edit collides; otherwise silent exit 0."""
+    import json
+
+    try:
+        payload = json.loads(sys.stdin.read() or "{}")
+    except ValueError:
+        return
+    if not isinstance(payload, dict):
+        return
+    message = coord.run_hook(payload)
+    if message:
+        print(message, file=sys.stderr)
+        raise typer.Exit(2)

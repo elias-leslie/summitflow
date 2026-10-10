@@ -255,9 +255,20 @@ def rebuild(
         bool,
         typer.Option("--migrate-monitor-store", help="Explicitly convert the stopped monitor database to 512-byte pages after the reader lock release is live"),
     ] = False,
+    with_ack: Annotated[
+        str | None,
+        typer.Option("--with-ack", help="Request id the repo's holder acked yes"),
+    ] = None,
 ) -> None:
     """Build, migrate, restart, and health-check a project."""
     services = _load(project)
+    from ..lib import coord
+
+    try:
+        coord.guard(services.root, "rebuild", with_ack=with_ack)
+    except coord.CoordBlocked as exc:
+        output_error(str(exc))
+        raise typer.Exit(2) from None
     if migrate_monitor_store and (project != "summitflow" or scope == RebuildScope.frontend):
         output_error("--migrate-monitor-store requires a SummitFlow backend or full rebuild.")
         raise typer.Exit(1)

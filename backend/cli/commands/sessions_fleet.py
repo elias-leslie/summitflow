@@ -85,7 +85,7 @@ def send(
     instruction: Annotated[str, typer.Argument(help="Short non-secret instruction for the fleet root or exact native thread; no credentials/private target data")],
     scope: Annotated[str, typer.Option(help="Must exactly match the root scope JSON")] = "{}",
     source_key: Annotated[str | None, typer.Option(help="Stable instruction revision key; reuse on retry")] = None,
-    delivery: Annotated[Literal["fleet-stream", "native-thread"], typer.Option(help="Native mode addresses an exact bound Codex UUID, including offline resume")] = "fleet-stream",
+    delivery: Annotated[Literal["fleet-stream", "native-thread", "handshake"], typer.Option(help="Native mode addresses an exact bound Codex UUID, including offline resume; handshake records an agent request that needs ack and confirm")] = "fleet-stream",
 ) -> None:
     """Default delivery is passive fleet retention.
 
@@ -94,6 +94,11 @@ def send(
     observed consumption and is not generation-fenced; offline input may run
     when that same thread resumes.
     """
+    if delivery == "handshake":
+        from .sessions_handshake import send_request
+
+        send_request(root, instruction)
+        return
     if delivery == "native-thread":
         from .sessions_native_delivery import send_native_instruction
 
@@ -135,6 +140,9 @@ def register(app: typer.Typer) -> None:
     app.command("activate")(activate)
     app.command("position")(position)
     app.command("emit")(emit)
+    from .sessions_handshake import register as _register_handshake
+
+    _register_handshake(app)
 
 
 @usage(

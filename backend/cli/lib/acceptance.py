@@ -1212,7 +1212,15 @@ def persist_validated_receipt(
     return _descriptor(value, artifact, reused=False)
 
 
-def accept_revision(
+def accept_revision(repo: Path, **kwargs: Any) -> dict[str, Any]:
+    """Run acceptance under an op lease so other agents' edits wait instead of invalidating it."""
+    from .coord import op_lease
+
+    with op_lease(repo, "acceptance"):
+        return _accept_revision(repo, **kwargs)
+
+
+def _accept_revision(
     repo: Path,
     *,
     sha: str,

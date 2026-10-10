@@ -7,10 +7,11 @@ import subprocess
 import tempfile
 import time
 from collections.abc import Sequence
+from contextlib import suppress
 from pathlib import Path
 from typing import Any
 
-from . import leases
+from . import coord, leases
 from .acceptance import AcceptanceError, repo_lock, workspace_fingerprint
 from .task_claims import TaskClaimRenewalError, renew_owned_claim
 
@@ -132,6 +133,15 @@ def _require_foreign_leases_clear(repo: Path, changed_paths: Sequence[str]) -> N
             )
 
 
+def _release_committed_leases(repo: Path, committed: Sequence[str]) -> None:
+    """Committed work is no longer in flight: drop the committer's file leases on it."""
+    resolved = coord.project_for_path(repo)
+    if resolved is None or not committed:
+        return
+    with suppress(OSError):
+        leases.release_paths(resolved[0], [str(resolved[1] / path) for path in committed])
+
+
 def _addable_paths(repo: Path, paths: Sequence[str]) -> list[str]:
     """Drop paths that git refuses to `add` (gitignored or already-staged deletions).
 
@@ -207,6 +217,7 @@ def commit_git_revision(
     push: bool = False,
     skip_checks: bool = False,
     paths: Sequence[str] = (),
+    with_ack: str | None = None,
 ) -> dict[str, Any]:
     if push:
         raise CommitError(COMMIT_PUBLICATION_GUIDANCE)
@@ -226,6 +237,10 @@ def commit_git_revision(
     selected_files = _selected_changed_files(repo, selected_paths) if selected_paths and has_changes else []
     changed_scope = (selected_files if selected_paths else _selected_changed_files(repo, ["."])) if has_changes else []
     _require_foreign_leases_clear(repo, changed_scope)
+    try:
+        coord.guard(repo, "commit", with_ack=with_ack)
+    except coord.CoordBlocked as exc:
+        raise CommitError(str(exc)) from None
     scope = changed_scope
     if not skip_checks and (has_changes or scope):
         before_checks = workspace_fingerprint(repo)
@@ -287,6 +302,7 @@ def commit_git_revision(
             "commit created but its tree does not match the candidate that passed checkpoint checks"
         )
     result.update({"status": "SUCCESS", "sha": sha, "message": message})
+    _release_committed_leases(repo, changed_scope)
     if selected_paths:
         result["selected_paths"] = selected_paths
     if task_id:
@@ -357,6 +373,7 @@ def commit_repo(
     push: bool = False,
     skip_checks: bool = False,
     paths: Sequence[str] = (),
+    with_ack: str | None = None,
 ) -> dict[str, Any]:
     if push:
         raise CommitError(COMMIT_PUBLICATION_GUIDANCE)
@@ -374,6 +391,7 @@ def commit_repo(
                 push=False,
                 skip_checks=skip_checks,
                 paths=paths,
+                **({"with_ack": with_ack} if with_ack else {}),
             )
     except AcceptanceError as exc:
         raise CommitError(str(exc)) from exc

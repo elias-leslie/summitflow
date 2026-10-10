@@ -27,7 +27,7 @@ def current_caller_identity() -> dict[str, str]:
     """
     from .leases import identify_agent
 
-    _, slug, session_id, provider = identify_agent()
+    _, slug, session_id, provider = identify_agent(native=False)
     if provider != "unknown":
         return {"member_id": f"{provider}:{slug}:{session_id}",
                 "provider": provider, "session_id": session_id}

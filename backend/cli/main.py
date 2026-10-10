@@ -317,6 +317,10 @@ def commit_command(
             ),
         ),
     ] = None,
+    with_ack: Annotated[
+        str | None,
+        typer.Option("--with-ack", help="Request id the repo's holder acked yes (st sessions send ... --delivery handshake)."),
+    ] = None,
 ) -> None:
     """Run checks and create a local checkpoint; publish accepted source separately."""
     try:
@@ -332,6 +336,7 @@ def commit_command(
             push=push,
             skip_checks=skip_checks,
             paths=tuple(paths or ()),
+            **({"with_ack": with_ack} if with_ack else {}),
         )
     except CommitError as exc:
         typer.echo(f"{COMMIT_ERROR_PREFIX}{exc}", err=True)
