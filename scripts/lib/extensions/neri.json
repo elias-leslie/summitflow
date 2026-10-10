@@ -25,7 +25,7 @@
     "owner-request": "Usage: neri owner-request [OPTIONS] {investigation_id}\n\nArguments:\n  investigation_id  [required]\n\nOptions:\n  --file <path>  [required]\n  --id <uuid>\n  --help         Show this message and exit.",
     "owner-resolve": "Usage: neri owner-resolve [OPTIONS] {investigation_id}\n\nArguments:\n  investigation_id  [required]\n\nOptions:\n  --file <path>  [required]\n  --id <uuid>\n  --help         Show this message and exit.",
     "context": "Usage: neri context [OPTIONS] {investigation_id}\n\nArguments:\n  investigation_id  [required]\n\nOptions:\n  --latest <int range>  [1<=x<=100]\n  --after <int range>   [x>=0]\n  --limit <int range>   [1<=x<=100]\n  --full / --no-full    [default: no-full]\n  --help                Show this message and exit.",
-    "capabilities": "Usage: neri capabilities [OPTIONS]\n\nOptions:\n  --full / --no-full  [default: no-full]\n  --section <str>\n  --help              Show this message and exit.",
+    "capabilities": "Usage: neri capabilities [OPTIONS] [SECTION]\n\nArguments:\n  SECTION  Top-level or dotted key; prints that part of the compact document\n\nOptions:\n  --full / --no-full  [default: no-full]\n  --section <str>\n  --help              Show this message and exit.",
     "reports": "Usage: neri reports [OPTIONS]\n\nOptions:\n  --limit <int range>          [default: 20; 1<=x<=100]\n  --cursor <str>\n  --view <investigations>\n  --target, --target-id <str>\n  --full / --no-full           [default: no-full]\n  --help                       Show this message and exit.",
     "evidence": "Usage: neri evidence [OPTIONS] COMMAND [ARGS]...\n\n  Import evidence and inspect retained artifacts\n\nOptions:\n  --help  Show this message and exit.\n\nCommands:\n  list\n  show\n  import\n  artifact\n  download",
     "evidence list": "Usage: neri evidence list [OPTIONS] {investigation_id}\n\nArguments:\n  investigation_id  [required]\n\nOptions:\n  --after <int range>             [default: 0; x>=0]\n  --limit <int range>             [default: 40; 1<=x<=100]\n  --full / --no-full              [default: no-full]\n  --provenance / --no-provenance  [default: no-provenance]\n  --help                          Show this message and exit.",
@@ -245,10 +245,11 @@
     {
       "surface": "st.neri.capabilities",
       "tier": "reference",
-      "cmd": "st neri capabilities [--section KEY | --full]",
+      "cmd": "st neri capabilities [SECTION | --section KEY | --full]",
       "when": "discover Neri API payload contracts",
       "precautions": [
-        "read-only; compact output omits schemas; --section reports.save returns one entry with its schema; --full returns every schema (large)"
+        "read-only; compact output omits schemas; --section reports.save returns one entry with its schema; --full returns every schema (large)",
+        "default is an index of the compact document: every key, method and semantics/authority text is kept; entries omit route and query, an entry left with only its method is that method string, and example payloads are omitted; st neri capabilities <section> (a top-level or dotted key) prints that section of the compact document exactly, with routes, query parameters and examples; --section KEY adds its schemas; --full prints every schema"
       ],
       "task_types": [
         "neri"
@@ -639,7 +640,7 @@
       "when": "read a target manifest or its compact workspace context",
       "precautions": [
         "read-only; read --workspace context before exact attempts",
-        "--workspace: zero counts are omitted, and execution_target_ids when it is just [target_id]; versions omit execution_target_id and environment equal to the target's; scope entries that match share one entry listing their manifest_ids; current_work rows follow group list; reviewed findings omit target_id, finding impact (group show has it) and a finding title equal to the row title; notes keep identity, state, context and a body clipped to 160 characters, and omit updated_at equal to created_at (target notes show/history have the rest); program bindings keep binding identity, program name, pinned report revision and both statuses (target programs show <target> <binding-id> has the program id, environment, run, finding, rationale, policy and verified facts); severities keep id, authority, scheme, native label/code, display_band and score; report severity show <run> <report-revision> <id> has the exact assessment; --full prints the exact view"
+        "--workspace: zero counts are omitted, and execution_target_ids when it is just [target_id]; versions omit execution_target_id and environment equal to the target's, and artifact_identity equal to the preceding version's; scope entries that match share one entry listing their manifest_ids; current_work rows follow group list; reviewed findings omit target_id, class_label and finding impact (group show <target> <group-id> has them), tested_context.environment equal to the target's environment, finding_count when it equals the number of listed findings, and a finding title equal to the row title; notes keep identity, state, context and a body clipped to 160 characters, and omit updated_at equal to created_at (target notes show/history have the rest); program bindings keep binding identity, program name (omitted when equal to the preceding binding's), pinned report revision and both statuses (target programs show <target> <binding-id> has the program id, environment, run, finding, rationale, policy and verified facts); severities keep id, authority, scheme, native label/code, display_band and score; report severity show <run> <report-revision> <id> has the exact assessment; --full prints the exact view"
       ],
       "task_types": [
         "neri"
@@ -651,7 +652,7 @@
       "cmd": "st neri target lab-authority <target-id>",
       "when": "read a target's standing lab authority: current grant record, effective grant and history",
       "precautions": [
-        "read-only; effective is null when the grant is revoked or the active manifest no longer qualifies"
+        "read-only; when effective is null, not_in_effect.reason says why (no_grant, revoked, no_active_manifest, manifest_not_qualifying, or manifest_changed: the grant was recorded for an earlier manifest and the owner must re-grant it)"
       ],
       "task_types": [
         "neri"
