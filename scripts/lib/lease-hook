@@ -37,26 +37,32 @@ if [ "$mode" = bash-pre ] || [ "$mode" = bash-post ]; then
     written=$(comm -13 <(tail -n +2 "$dir/$key") <(snapshot "$cwd") | cut -d' ' -f2-)
     rm -f "$dir/$key"
     [ -n "$written" ] || exit 0
-    input=$(jq -c --arg since "$since" --arg w "$written" \
-        '. + {st_since: $since, st_written: ($w | split("\n") | map(select(length > 0)))}' <<<"$input") || exit 0
+    export ST_HOOK_SINCE="$since" ST_HOOK_WRITTEN="$written"
 fi
 sf="$(cd -- "$(dirname -- "$(readlink -f -- "${BASH_SOURCE[0]}")")/../.." && pwd)"
 py="$sf/backend/.venv/bin/python"
 [ -x "$py" ] || { echo "lease-hook: summitflow venv unavailable; allowing" >&2; exit 0; }
 out=$(timeout 2 env PYTHONPATH="$sf/backend" "$py" -I -c '
-import json, sys
+import json, os, sys
 sys.path.insert(0, sys.argv[1])
 from cli.lib.coord import dispatch_hook
-result = dispatch_hook(json.loads(sys.stdin.read() or "{}"))
+payload = json.loads(sys.stdin.read() or "{}")
+if "ST_HOOK_WRITTEN" in os.environ:
+    payload["st_since"] = os.environ.get("ST_HOOK_SINCE", "")
+    payload["st_written"] = [line for line in os.environ["ST_HOOK_WRITTEN"].split("\n") if line]
+result = dispatch_hook(payload)
 if result:
-    print(result[1])
-    sys.exit({"block": 3, "warn": 4, "context": 5}[result[0]])
+    kind, text = result
+    if kind == "context":
+        text = json.dumps({"hookSpecificOutput": {"hookEventName": "SessionStart", "additionalContext": text}})
+    print(text)
+    sys.exit({"block": 3, "warn": 4, "context": 5}[kind])
 ' "$sf/backend" <<<"$input" 2>&1)
 rc=$?
 case "$rc:$out" in
     3:BLOCKED*) printf '%s\n' "$out" >&2; exit 2 ;;
     4:OVERLAP*) printf '%s\n' "$out" >&2; exit 2 ;;
-    5:continuing*) jq -cn --arg c "$out" '{hookSpecificOutput: {hookEventName: "SessionStart", additionalContext: $c}}'; exit 0 ;;
+    5:\{*) printf '%s\n' "$out"; exit 0 ;;
     0:) exit 0 ;;
 esac
 echo "lease-hook: internal error rc=$rc; allowing" >&2

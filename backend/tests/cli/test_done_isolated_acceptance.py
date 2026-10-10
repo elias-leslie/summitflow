@@ -74,7 +74,10 @@ def sandbox_probe(tmp_path: Path):
         yield run
 
 
-def test_isolated_sandbox_has_private_writable_home_and_state(sandbox_probe):
+def test_isolated_sandbox_has_private_writable_home_and_state(sandbox_probe, monkeypatch):
+    # The suite-wide fixture points leases outside the sandbox; this proves
+    # the sandbox's own private-HOME default.
+    monkeypatch.delenv("ST_LEASES_DIR", raising=False)
     backend = Path(__file__).resolve().parents[2]
     host_home = Path.home()
     host_lock = host_home / '.summitflow/leases/isolated-writable-home-fixture.lock'
