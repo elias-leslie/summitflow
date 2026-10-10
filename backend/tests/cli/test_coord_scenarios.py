@@ -198,6 +198,20 @@ def test_foreign_hold_refuses_acceptance_but_not_the_holder(repos, monkeypatch):
         proc.wait()
 
 
+def test_active_holder_keeps_its_hold_live(repos, monkeypatch):
+    repo = repos["hostrepo"]
+    as_claude(monkeypatch, "holder-busy-01")
+    leases.acquire_mark("hostrepo", str(repo), "hold", "integration")
+    with leases._lock("hostrepo"):
+        rows = leases._load("hostrepo")
+        for row in rows:
+            row.last_heartbeat = (datetime.now(UTC) - timedelta(minutes=29)).isoformat()
+        leases._save("hostrepo", rows)
+    coord.guard(repo, "commit")  # the holder keeps working
+    hold = next(m for m in leases.repo_marks("hostrepo") if m.kind == "hold")
+    assert datetime.now(UTC) - datetime.fromisoformat(hold.last_heartbeat) < timedelta(minutes=1)
+
+
 def test_idle_hold_expires_and_take_overrides_file_lease(repos, monkeypatch):
     repo = repos["hostrepo"]
     as_claude(monkeypatch, "holder-crash-01")

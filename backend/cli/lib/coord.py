@@ -142,6 +142,7 @@ def guard(repo: Path, operation: str, *, paths: Sequence[str] = (), with_ack: st
         return
     project_id, root = resolved
     coord_lineage.observe()
+    _keep_alive(project_id)
     mine, anchor = leases.self_ids(), leases.my_anchor()
     # Acceptance only yields to an integration hold; concurrent runs are fine.
     kinds = {"commit": ("op", "hold"), "acceptance": ("hold",)}.get(operation, ("op", "hold", "file"))
@@ -168,6 +169,12 @@ def guard(repo: Path, operation: str, *, paths: Sequence[str] = (), with_ack: st
         raise CoordBlocked(f"{holder_line(project_id, lease, root)}; {operation} refused; {hint}")
 
 
+def _keep_alive(project_id: str) -> None:
+    """Working in a repo (edits, guarded operations) keeps this agent's holds live."""
+    with suppress(OSError):
+        leases.heartbeat(project_id)
+
+
 def _own_pid() -> int:
     import os
 
@@ -187,6 +194,7 @@ def edit_conflict(path: str) -> str | None:
         return f"{holder_line(project_id, marks[0], root)}; edits now invalidate it; work elsewhere, retry later"
     ok, holder = leases.claim(project_id, real, project_root=str(root))
     if ok or holder is None:
+        _keep_alive(project_id)
         return None
     return (
         f"{holder_line(project_id, holder, root)}; ask: st sessions send {holder.agent_id} "
