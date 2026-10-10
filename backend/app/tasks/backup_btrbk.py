@@ -260,6 +260,9 @@ def _database_manifests(rows: list[dict[str, str]], now: datetime) -> dict[str, 
         host = {"localhost": "127.0.0.1", "::1": "127.0.0.1"}.get(config["host"], config["host"])
         endpoints[canonical_id] = (host, config["port"], config["name"])
         candidates: list[dict[str, Any]] = []
+        # Qualified points that only miss the cadence window. They never satisfy
+        # the obligation; they let the receipt say stale rather than absent.
+        stale: list[tuple[str, timedelta]] = []
         for source in registered:
             offset = 0
             while True:
@@ -275,7 +278,8 @@ def _database_manifests(rows: list[dict[str, str]], now: datetime) -> dict[str, 
                     try:
                         verified_at = datetime.fromisoformat(str(timestamp))
                         captured = datetime.fromisoformat(str(captured_at))
-                        if verified_at.tzinfo is None or captured.tzinfo is None or not captured <= verified_at <= now or now - captured > _FREQUENCY_DELTAS[str(source["frequency"])]:
+                        window = _FREQUENCY_DELTAS[str(source["frequency"])]
+                        if verified_at.tzinfo is None or captured.tzinfo is None or not captured <= verified_at <= now:
                             continue
                     except (ValueError, KeyError):
                         continue
@@ -286,6 +290,9 @@ def _database_manifests(rows: list[dict[str, str]], now: datetime) -> dict[str, 
                     if verification.get("format") == "restic-v1" and not all(verification.get(key) for key in ("repository_id", "snapshot_id", "remote_repository_id", "remote_snapshot_id")):
                         continue
                     if not item.get("location"):
+                        continue
+                    if now - captured > window:
+                        stale.append((captured.astimezone(UTC).isoformat(), window))
                         continue
                     candidates.append({"project_id": canonical_id, "registered_project_id": project_id, "source_project_id": source["project_id"], "backup_project_id": item["project_id"], "source_id": source["id"], "backup_id": item["id"],
                                        "captured_at": captured.astimezone(UTC).isoformat(), "verified_at": verified_at.isoformat(),
@@ -300,6 +307,10 @@ def _database_manifests(rows: list[dict[str, str]], now: datetime) -> dict[str, 
                     break
         if candidates:
             manifests.append(max(candidates, key=lambda item: item["captured_at"]))
+        elif stale:
+            latest, window = max(stale)
+            missing.append({"project_id": canonical_id, "reason": "verified-database-point-stale", "source_ids": [source["id"] for source in registered],
+                            "latest_verified_captured_at": latest, "freshness_window_seconds": int(window.total_seconds())})
         else:
             missing.append({"project_id": canonical_id, "reason": "fresh-independent-verified-database-point-unavailable", "source_ids": [source["id"] for source in registered]})
     unresolved = []
@@ -313,6 +324,11 @@ def _database_manifests(rows: list[dict[str, str]], now: datetime) -> dict[str, 
         else:
             manifests.append({**shared, "project_id": project_id, "registered_project_id": project_id, "database_point_project_id": shared["project_id"], "association_method": "verified-same-endpoint-full-database"})
     missing = unresolved
+    # An empty registry is a broken catalogue view (for example a test
+    # database), never evidence that no project needs database recovery.
+    registry_empty = not projects
+    if registry_empty:
+        missing.append({"project_id": None, "reason": "project-registry-empty", "source_ids": []})
     return {"as_of": now.isoformat(), "status": "qualified" if not missing else "partial", "manifests": manifests, "missing": missing, "excluded": excluded,
             "consistency": "Separate portable database points; online host filesystems are not application-consistent"}
 

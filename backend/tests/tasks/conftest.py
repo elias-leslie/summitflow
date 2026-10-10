@@ -21,3 +21,19 @@ _SCRATCH_TEST_MODULES = {
 def backup_task_scratch(request: pytest.FixtureRequest) -> None:
     if request.path.name in _SCRATCH_TEST_MODULES:
         request.getfixturevalue("backup_job_scratch")
+
+
+@pytest.fixture(autouse=True)
+def isolated_native_host_state(monkeypatch: pytest.MonkeyPatch, tmp_path_factory: pytest.TempPathFactory) -> None:
+    """Keep tests away from the live btrbk receipts and real host commands.
+
+    The settings file can enable native host backup on this workstation, so a
+    scheduler test that reaches the host path would otherwise resume the live
+    receipt against the test catalogue. Tests opt back in explicitly.
+    """
+    from app.tasks import backup_btrbk
+
+    root = tmp_path_factory.mktemp("native-host-state")
+    root.chmod(0o700)
+    monkeypatch.setenv("BACKUP_BTRBK_ENABLED", "false")
+    monkeypatch.setattr(backup_btrbk, "_state_root", lambda: root)

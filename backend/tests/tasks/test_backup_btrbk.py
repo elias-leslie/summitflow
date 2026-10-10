@@ -334,6 +334,13 @@ def test_declared_nested_database_requires_fresh_matching_independent_manifest(m
     if fault:
         assert result["missing"][0]["project_id"] == "canonical-project"
         assert not result["manifests"]
+        if fault == "stale":
+            # An out-of-window point never qualifies; the receipt names it.
+            assert result["missing"][0]["reason"] == "verified-database-point-stale"
+            assert result["missing"][0]["latest_verified_captured_at"] == (NOW - timedelta(hours=5)).astimezone(UTC).isoformat()
+            assert result["missing"][0]["freshness_window_seconds"] == 4 * 3600
+        else:
+            assert result["missing"][0]["reason"] == "fresh-independent-verified-database-point-unavailable"
     else:
         assert result["manifests"][0]["backup_id"] == "db-recovery"
         assert result["manifests"][0]["restore_verified"] is False
@@ -522,3 +529,19 @@ def test_capacity_rejects_dependent_target_or_metadata_parent(monkeypatch: pytes
     monkeypatch.setattr(host, "_filesystem", filesystem)
     with pytest.raises(RuntimeError, match="independent"):
         host._capacity(rows, None)
+
+
+def test_empty_project_registry_never_qualifies_database_recovery(monkeypatch: pytest.MonkeyPatch) -> None:
+    # A catalogue with no projects (for example a test database) once wrote a
+    # vacuous "qualified" association with zero manifests over a live receipt.
+    monkeypatch.setattr(host, "testing_project_ids", lambda: set())
+    monkeypatch.setattr(host, "list_projects", lambda: [])
+    monkeypatch.setattr(host.backup_store, "list_sources", lambda: [])
+    result = host._database_manifests([{"source_url": "/"}], NOW)
+    assert result["status"] == "partial"
+    assert result["missing"] == [{"project_id": None, "reason": "project-registry-empty", "source_ids": []}]
+
+
+def test_tests_never_reach_live_native_host_state() -> None:
+    assert host._enabled() is False
+    assert not host._state_root().is_relative_to(Path.home() / ".local/state/summitflow")
