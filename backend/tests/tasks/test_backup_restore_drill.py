@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import gzip
 import io
 import json
 import os
@@ -114,6 +115,11 @@ exit 99
     assert (drill_root / "redis/dump.rdb").read_bytes() == payload
     assert stat.S_IMODE((drill_root / "redis").stat().st_mode) == 0o700
     assert "--save" in redis_start
+    # With --pull never the drill must use the image the live stack keeps
+    # present; an unused image is removed by host image pruning.
+    compose = Path(__file__).resolve().parents[3] / "docker" / "compose" / "docker-compose.yml"
+    stack_redis_image = next(line.split("image:", 1)[1].strip() for line in compose.read_text().splitlines() if "image: redis:" in line)
+    assert f" {stack_redis_image} " in f" {redis_start} "
     if mode in {"start-failed", "ping-failed", "ping-wrong"}:
         assert not any("dbsize" in command for command in commands)
     if mode == "start-failed":
@@ -328,3 +334,67 @@ def test_smb_download_uses_owned_scratch_and_cleans_success_or_timeout(
         # original location was empty rather than an explicit // reference.
         drill._cleanup_temp(downloaded, "")
     assert not jobs[0].exists()
+
+
+@pytest.mark.parametrize("init_completes", [True, False])
+def test_postgres_drill_waits_for_init_restart_before_loading(tmp_path: Path, init_completes: bool) -> None:
+    from app.tasks import backup_restore_drill
+
+    archive = tmp_path / "infrastructure.tar.gz"
+    dump = io.BytesIO(gzip.compress(b"SELECT 1;\n"))
+    with tarfile.open(archive, "w:gz") as tar:
+        member = tarfile.TarInfo("infrastructure/pgdumpall.sql.gz")
+        member.size = len(dump.getvalue())
+        tar.addfile(member, io.BytesIO(dump.getvalue()))
+    fake_bin = tmp_path / "bin"
+    fake_bin.mkdir()
+    state = tmp_path / "logs-calls"
+    # pg_isready always succeeds (the temporary init server answers it); the
+    # init-complete marker only appears on the third log read, if at all.
+    (fake_bin / "docker").write_text(f"""#!/bin/bash
+printf '%s\\n' "$*" >> "$FAKE_DOCKER_LOG"
+case "$1" in
+    rm|run) exit 0 ;;
+    logs)
+        n=$(( $(cat {state} 2>/dev/null || echo 0) + 1 )); echo $n > {state}
+        [ "$FAKE_INIT" = 1 ] && [ $n -ge 3 ] && echo "PostgreSQL init process complete; ready for start up."
+        exit 0 ;;
+    exec)
+        case "$*" in
+            *pg_isready*) exit 0 ;;
+            *-tAc*) printf '3\\n'; exit 0 ;;
+            *psql*) cat >/dev/null; exit 0 ;;
+        esac ;;
+esac
+exit 99
+""")
+    (fake_bin / "docker").chmod(0o755)
+    (fake_bin / "sleep").write_text("#!/bin/sh\nexit 0\n")
+    (fake_bin / "sleep").chmod(0o755)
+    log = tmp_path / "docker.log"
+    drill_root = tmp_path / "drill"
+    drill_root.mkdir(mode=0o700)
+    env = {
+        **os.environ, "PATH": f"{fake_bin}:{os.environ['PATH']}", "FAKE_DOCKER_LOG": str(log),
+        "FAKE_INIT": "1" if init_completes else "0",
+        "ST_RESTORE_DRILL_ROOT": str(drill_root), "ST_RESTORE_DRILL_ID": "infra-drill-fixture",
+    }
+    env.pop("BASH_ENV", None)
+    env.pop("ENV", None)
+
+    result = subprocess.run(
+        ["bash", str(backup_restore_drill.DRILL_SCRIPT), str(archive)],
+        env=env, capture_output=True, text=True, timeout=30, check=False,
+    )
+
+    component = next(item for item in json.loads(result.stdout)["components"] if item["key"] == "postgres_dump")
+    commands = log.read_text().splitlines()
+    loads = [index for index, command in enumerate(commands) if command.startswith("exec -i ")]
+    if init_completes:
+        assert component["ok"] is True
+        assert len(loads) == 1
+        assert sum(command.startswith("logs ") for command in commands[: loads[0]]) == 3
+    else:
+        assert component["ok"] is False
+        assert component["error"].startswith("Disposable PostgreSQL did not become ready")
+        assert loads == []

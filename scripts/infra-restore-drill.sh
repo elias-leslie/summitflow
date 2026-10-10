@@ -71,10 +71,16 @@ if [ -n "$PG_DUMP" ]; then
         --mount "type=bind,source=$DRILL_DIR/postgres,target=/var/lib/postgresql/data" \
         --tmpfs /var/run/postgresql:rw,mode=1777 --tmpfs /tmp:rw,mode=1777 \
         -e POSTGRES_PASSWORD=drill_test \
-        pgvector/pgvector:pg16 -c listen_addresses='' >/dev/null 2>&1
+        pgvector/pgvector:pg16 -c listen_addresses='' >/dev/null 2>"$DRILL_DIR/pg-start.err" || true
 
-    for _ in $(seq 1 30); do
-        if docker exec "$DRILL_PG_CONTAINER" pg_isready -U postgres >/dev/null 2>&1; then
+    # A fresh data directory first runs a temporary init server that answers
+    # pg_isready and is then restarted. Wait for the entrypoint's completion
+    # marker so the restore never races that restart.
+    pg_ready=false
+    for _ in $(seq 1 120); do
+        if docker logs "$DRILL_PG_CONTAINER" 2>&1 | grep -q "PostgreSQL init process complete" \
+            && docker exec "$DRILL_PG_CONTAINER" pg_isready -U postgres >/dev/null 2>&1; then
+            pg_ready=true
             break
         fi
         sleep 1
@@ -83,7 +89,10 @@ if [ -n "$PG_DUMP" ]; then
     # The disposable postgres image already creates the bootstrap postgres role.
     # pg_dumpall includes that role, so drop only the bootstrap role statements
     # and keep ON_ERROR_STOP for real restore failures.
-    if gunzip -c "$PG_DUMP" \
+    if [ "$pg_ready" != true ]; then
+        start_error=$(tail -n 1 "$DRILL_DIR/pg-start.err" 2>/dev/null || true)
+        add_result "postgres_dump" "false" "Disposable PostgreSQL did not become ready${start_error:+: $start_error}"
+    elif gunzip -c "$PG_DUMP" \
         | sed -e '/^CREATE ROLE postgres;$/d' -e '/^ALTER ROLE postgres /d' \
         | docker exec -i "$DRILL_PG_CONTAINER" psql -v ON_ERROR_STOP=1 -U postgres -d postgres >/dev/null 2>&1; then
         db_count=$(docker exec "$DRILL_PG_CONTAINER" psql -U postgres -d postgres -tAc \
@@ -95,7 +104,7 @@ if [ -n "$PG_DUMP" ]; then
             add_result "postgres_dump" "false" "Dump loaded but no user databases found"
         fi
     else
-        add_result "postgres_dump" "false" "Failed to load pg_dumpall into disposable container"
+        add_result "postgres_dump" "false" "Failed to load pg_dumpall into disposable container (pipeline status ${PIPESTATUS[*]})"
     fi
 else
     add_result "postgres_dump" "false" "pgdumpall.sql.gz not found in archive"
@@ -110,7 +119,7 @@ if [ -n "$REDIS_RDB" ]; then
         if ! docker run -d --name "$DRILL_REDIS_CONTAINER" --pull never --network none \
             --user "$(id -u):$(id -g)" --entrypoint redis-server \
             --mount "type=bind,source=$DRILL_DIR/redis,target=/data" \
-            redis:7-alpine --dir /data --appendonly no --save "" >/dev/null 2>&1; then
+            redis:7-bookworm --dir /data --appendonly no --save "" >/dev/null 2>&1; then
             add_result "redis_state" "false" "Failed to start disposable Redis container"
         else
             redis_ready=false
