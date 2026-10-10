@@ -364,6 +364,8 @@ def _hook(payload: dict, tmp: Path, *args: str, **env: str) -> subprocess.Comple
         "CODEX_SESSION_ID", "ALLOW_LEASE_OVERLAP", "ST_COORD_SENSITIVE", "PI_SESSION_ID"}}
     # Exercise this checkout's coord code, not the deployed release.
     clean.update({"ST_LEASES_DIR": str(tmp / "hook-leases"), "ST_DEV_CHECKOUT": "1", "ST_COORD_ANCHOR": "", **env})
+    # Harnesses run hooks with the user's PATH; the native gate's allowlist lacks coreutils.
+    clean["PATH"] = f"{clean.get('PATH', '')}:/usr/bin:/bin"
     return subprocess.run(["bash", str(HOOK), *args], input=json.dumps(payload), capture_output=True,
                           text=True, env=clean, check=False, timeout=30)
 

@@ -229,6 +229,7 @@ def _sandbox_command(repo: Path, source: Path, metadata: Path, common: Path,
     # admitting lane there so a relocated lane (tests) still reenters.
     lane = Path(f"/tmp/st-heavy-{os.getuid()}")
     lane_source = heavy_work_module._LOCK_DIRECTORY
+    lane_source.mkdir(mode=0o700, parents=True, exist_ok=True)
     scratch = temporary / "t"
     scratch.mkdir(mode=0o700)
     # Nested runs replace /tmp, so give their private state distinct paths as
