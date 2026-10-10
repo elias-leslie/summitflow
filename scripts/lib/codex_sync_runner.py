@@ -921,6 +921,7 @@ def _record_skipped(
     detail: str,
     log_fn: LogFn,
 ) -> None:
+    repeated = _same_outcome(state, info, "skipped", detail)
     update_state_entry(
         state,
         info.path,
@@ -930,7 +931,23 @@ def _record_skipped(
         "skipped",
         detail,
     )
-    log_fn(f"[WARN] {detail} transcript={info.path}")
+    if not repeated:
+        log_fn(f"[WARN] {detail} transcript={info.path}")
+
+
+def _same_outcome(state: dict[str, object], info: TranscriptInfoLike, status: str, detail: str) -> bool:
+    """True when an unchanged transcript repeats its recorded outcome.
+
+    The timer retries every 15 seconds; warning again for each unchanged
+    failure filled the journal and syslog (2026-10-10, ~1.8 GB/day).
+    """
+    entry = get_state_entry(info.path, state) or {}
+    return (
+        entry.get("status") == status
+        and entry.get("detail") == detail
+        and entry.get("mtime") == info.mtime
+        and entry.get("size") == info.size
+    )
 
 
 def _record_sync_error(
@@ -943,18 +960,21 @@ def _record_sync_error(
     project_binding_fingerprint: str | None = None,
     rejected_identity: str | None = None,
 ) -> None:
+    outcome = "permanent_error" if status in PERMANENT_HTTP_STATUSES else "error"
+    repeated = _same_outcome(state, info, outcome, detail)
     update_state_entry(
         state,
         info.path,
         info.session_id,
         info.mtime,
         info.size,
-        "permanent_error" if status in PERMANENT_HTTP_STATUSES else "error",
+        outcome,
         detail,
         project_binding_fingerprint=project_binding_fingerprint,
         rejected_identity=rejected_identity,
     )
-    log_fn(f"[WARN] Failed sync for {info.path}: {detail}")
+    if not repeated:
+        log_fn(f"[WARN] Failed sync for {info.path}: {detail}")
 
 
 def _rejection_identity(info: TranscriptInfoLike, client_id: str) -> str:

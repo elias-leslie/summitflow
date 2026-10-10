@@ -99,7 +99,8 @@ def test_unsafe_state_directory_and_symlink_backup_are_rejected(tmp_path):
 def test_unit_uses_protected_install_and_explicit_owner():
     unit = Path(__file__).resolve().parents[3] / "scripts/systemd" / deploy.UNIT
     text = unit.read_text()
-    assert "User=root" in text
+    # Root by default; an explicit User= drops CAP_SETUID (see unit comment).
+    assert "\nUser=" not in text
     assert "--owner-uid __MONITOR_OWNER_UID__" in text
     assert "--owner-gid __MONITOR_OWNER_GID__" in text
     assert "WantedBy=multi-user.target" in text

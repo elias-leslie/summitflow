@@ -330,6 +330,7 @@ fn command_timeout(mut command: Command, timeout: Duration) -> io::Result<String
 fn services(
     names: &[String],
     owner_uid: u32,
+    owner_gid: u32,
     procs: &[Proc],
     procs_at: Option<i64>,
     procs_mono_at: Option<i64>,
@@ -338,7 +339,17 @@ fn services(
     let mut cmd = Command::new("systemctl");
     cmd.arg("--user");
     if unsafe { libc::geteuid() } == 0 && owner_uid != 0 {
-        cmd.arg(format!("--machine={owner_uid}@.host"));
+        // Query the owner's manager as the owner. `--machine=UID@.host` opens a
+        // PAM login session through systemd-stdio-bridge on every call, which
+        // wrote ~6 auth/syslog lines every 5 s (2026-10-10). Needs CAP_SETUID,
+        // which systemd withholds when the unit sets User= with seccomp+NNP.
+        use std::os::unix::process::CommandExt;
+        cmd.uid(owner_uid).gid(owner_gid);
+        cmd.env("XDG_RUNTIME_DIR", format!("/run/user/{owner_uid}"));
+        cmd.env(
+            "DBUS_SESSION_BUS_ADDRESS",
+            format!("unix:path=/run/user/{owner_uid}/bus"),
+        );
     }
     cmd.args([
         "show",
@@ -1085,6 +1096,7 @@ fn run(cfg: Config) -> Result<(), Box<dyn std::error::Error>> {
                 services(
                     &names,
                     cfg.owner_uid,
+                    cfg.owner_gid,
                     &latest_procs,
                     if scan { Some(at) } else { leader_scan_at },
                     if scan { Some(mono) } else { leader_scan_mono },

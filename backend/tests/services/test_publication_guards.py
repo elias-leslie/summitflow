@@ -57,6 +57,38 @@ def test_publication_denied(command: str) -> None:
     assert evaluate_publication_command(command).blocked
 
 
+_PUSH = "git " + "push origin main"
+
+
+@pytest.mark.parametrize("command", [
+    # Wrapper and shell-grammar bypass forms must stay refused.
+    "env -i PATH=/usr/bin " + _PUSH, "command " + _PUSH, "nohup " + _PUSH,
+    "echo main | xargs git push origin", "printf main | xargs -I{} git push origin {}",
+    "sh -c '" + _PUSH + "'", "bash -lc \"cd /repo && " + _PUSH + "\"",
+    "ls\n" + _PUSH, "sleep 1 & " + _PUSH, "(" + _PUSH + ")", "{ " + _PUSH + "; }",
+    "echo $(" + _PUSH + ")", "echo `" + _PUSH + "`",
+    "bash <<'EOF'\n" + _PUSH + "\nEOF", "cat <<'EOF' | sh\n" + _PUSH + "\nEOF",
+    "cat > out.txt <<EOF\n$(" + _PUSH + ")\nEOF",
+    "git config core.hooksPath /dev/null", "git config --global core.hooksPath /tmp/none",
+    "sudo -u owner git config --local core.hooksPath x", "timeout 5 git -c core.hooksPath=/x commit",
+    "python3 - <<'EOF'\nrun('git -c core.hooksPath=/dev/null commit')\nEOF",
+])
+def test_publication_bypass_forms_denied(command: str) -> None:
+    assert evaluate_publication_command(command).blocked
+
+
+@pytest.mark.parametrize("command", [
+    # Regression: heredoc test data mentioning hooksPath was refused.
+    "mkdir -p t && cat > t/data.txt <<'EOF'\nfoo; core.hooksPath=/dev/null\nEOF",
+    "cat <<'EOF' > t/fixture.sh\ngit config core.hooksPath /dev/null; " + _PUSH + "\nEOF",
+    "tee t/data.txt <<'EOF' >/dev/null\nx | git config core.hooksPath /dev/null\nEOF",
+    "cat >> t/notes.md <<-EOF\n\tdon't set core.hooksPath = anything\n\tEOF\necho done",
+    "printf '%s\\n' 'core.hooksPath=/dev/null' > t/data.txt",
+])
+def test_publication_ignores_heredoc_and_quoted_data(command: str) -> None:
+    assert not evaluate_publication_command(command).blocked
+
+
 def test_shared_runtime_intercepts_github_publication(tmp_path: Path) -> None:
     from app.services.command_guard import evaluate_shell_command, get_bash_intercept_words
     assert "gh" in get_bash_intercept_words()

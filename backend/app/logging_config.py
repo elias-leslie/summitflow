@@ -45,6 +45,8 @@ _JSON_RENAME_FIELDS: dict[str, str] = {
 # Default syslog priority for unknown levels (INFO = 6)
 _SYSLOG_DEFAULT_PRIORITY = 6
 
+_CHATTY_CLIENT_LOGGERS = ("httpx", "httpcore")
+
 # Structlog timestamp format
 _TIMESTAMP_FMT = "iso"
 
@@ -187,6 +189,10 @@ def _configure_root_logger(
     root_logger.handlers = []  # Clear existing handlers
     for handler in handlers:
         root_logger.addHandler(handler)
+    # httpx logs every request at INFO; service health polling made it the
+    # backend's largest journal source. Keep its warnings, and DEBUG still shows all.
+    for name in _CHATTY_CLIENT_LOGGERS:
+        logging.getLogger(name).setLevel(logging.NOTSET if log_level <= logging.DEBUG else logging.WARNING)
 
 
 def _configure_structlog() -> None:

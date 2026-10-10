@@ -1097,3 +1097,16 @@ def test_manual_collector_uses_private_host_policy_and_forwards_verified_path(tm
         result = codex_sync_runner.sync_transcript(info, state, "http://fixture/api", "client", "/sync", close_session=False, ingest_required=ingest_required, heartbeat_required=False, log_fn=lambda _: None, verbose=False)
         assert result[0]
     assert calls == [("http://fixture/api", {"project_id": "a-loom", "session_id": "owned-thread", "register_only": True, "transcript_path": info.path})] * 2
+
+
+def test_unchanged_failure_warns_once_until_transcript_or_detail_changes(tmp_path: Path) -> None:
+    state: dict[str, object] = {}
+    info = _info(tmp_path, "child", parent_session_id="parent")
+    logs: list[str] = []
+    for _ in range(3):
+        codex_sync_runner._record_sync_error(state, info, "contradictory native child provenance", None, logs.append)
+    assert len(logs) == 1
+    codex_sync_runner._record_sync_error(state, replace(info, size=300), "contradictory native child provenance", None, logs.append)
+    codex_sync_runner._record_sync_error(state, replace(info, size=300), "other failure", None, logs.append)
+    assert len(logs) == 3
+    assert codex_sync_runner.get_state_entry(info.path, state)["detail"] == "other failure"

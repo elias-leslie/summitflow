@@ -1,7 +1,27 @@
 #!/usr/bin/env bash
+# SessionStart publication status. Runs the accepted release's script and
+# Python (like lease-hook), so a half-saved checkout edit cannot break every
+# session start. ST_DEV_CHECKOUT=1 runs the checkout. Host configuration still
+# resolves to the registered checkout through SUMMITFLOW_ROOT.
 set -uo pipefail
 script_path="$(readlink -f "${BASH_SOURCE[0]}")"
 root="$(cd "$(dirname "$script_path")/../.." && pwd)"
-if ! BASH_ENV='' PYTHONPATH="$root/backend" "$root/backend/.venv/bin/python" -m cli.lib.publication_hooks; then
-  printf '%s\n' '{"hookSpecificOutput":{"hookEventName":"SessionStart","additionalContext":"Publication startup status unavailable; inspect st vcs publication."}}'
+unavailable() {
+  printf '{"hookSpecificOutput":{"hookEventName":"SessionStart","additionalContext":"Publication startup status unavailable (%s); inspect st vcs publication."}}\n' "$1"
+  exit 0
+}
+release="${SUMMITFLOW_SERVICE_STATE_ROOT:-$HOME/.summitflow/services}/projects/summitflow/current/source"
+if [[ ${ST_DEV_CHECKOUT-} != 1 && ${SF_PUBLICATION_STARTUP_RELEASE-} != 1 ]]; then
+  release_hook="$(readlink -f "$release/scripts/lib/publication-startup-hook" 2>/dev/null)" || unavailable "no accepted summitflow release"
+  [[ -f $release_hook ]] || unavailable "no accepted summitflow release"
+  [[ $release_hook == "$script_path" ]] || {
+    export SUMMITFLOW_ROOT="${SUMMITFLOW_ROOT:-$root}" SF_PUBLICATION_STARTUP_RELEASE=1
+    exec bash "$release_hook" "$@"
+  }
+fi
+code_root="$root"
+[[ ${SF_PUBLICATION_STARTUP_RELEASE-} == 1 ]] || export SUMMITFLOW_ROOT="${SUMMITFLOW_ROOT:-$root}"
+[[ -x $code_root/backend/.venv/bin/python ]] || unavailable "backend runtime missing"
+if ! BASH_ENV='' PYTHONPATH="$code_root/backend" "$code_root/backend/.venv/bin/python" -m cli.lib.publication_hooks; then
+  unavailable "status command failed"
 fi
