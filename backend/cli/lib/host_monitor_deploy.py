@@ -109,6 +109,7 @@ def install(source: Path, uid: int, gid: int, transaction: str) -> None:
     _directory(INSTALL / "releases")
     _directory(RECEIPTS, 0o700)
     receipt = RECEIPTS / f"{transaction}.json"
+    _clear_settled_markers()
     if receipt.exists() or any(RECEIPTS.glob("*.pending")):
         raise RuntimeError("monitor deployment already exists or requires recovery")
     release = INSTALL / "releases" / transaction
@@ -172,12 +173,34 @@ def install(source: Path, uid: int, gid: int, transaction: str) -> None:
         raise
 
 
+_SETTLED = frozenset({"complete", "rolled_back"})
+
+
+def _clear_settled_markers() -> None:
+    """Drop .pending markers whose receipt already reached a terminal status.
+
+    A marker is only stale once its transaction settled; markers without a
+    receipt or with a pending/activated receipt still require recovery.
+    """
+    for marker in RECEIPTS.glob("*.pending"):
+        receipt = marker.with_suffix(".json")
+        try:
+            status = json.loads(receipt.read_text()).get("status")
+        except (OSError, ValueError):
+            continue
+        if status in _SETTLED:
+            marker.unlink(missing_ok=True)
+
+
 def rollback(transaction: str) -> None:
+    """Idempotently restore the pre-transaction collector and clear its marker."""
     receipt = RECEIPTS / f"{transaction}.json"
+    marker = RECEIPTS / f"{transaction}.pending"
     if not receipt.exists():
         return
     record = json.loads(receipt.read_text())
     if record["status"] == "rolled_back":
+        marker.unlink(missing_ok=True)
         return
     _system("stop", UNIT, check=False)
     if _system("is-active", UNIT, check=False).returncode == 0:
@@ -205,7 +228,7 @@ def rollback(transaction: str) -> None:
     record["status"] = "rolled_back"
     record["rolled_back_at"] = time.time()
     _receipt(receipt, record)
-    (RECEIPTS / f"{transaction}.pending").unlink(missing_ok=True)
+    marker.unlink(missing_ok=True)
 
 
 def main() -> None:

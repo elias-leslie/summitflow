@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import contextlib
 import json
+import os
 import time
 from contextlib import nullcontext, suppress
 from enum import StrEnum
@@ -141,6 +142,38 @@ def _rollback_monitor_and_reader(
     service_release.mark_phase(release, "host_monitor_rollback", status="succeeded",
                                reader="previous_restarted" if backend_restart_attempted else "previous_running")
     return True
+
+
+def _rollback_monitor_after_unexpected_failure(
+    candidate: service_ops.ProjectServices,
+    development: service_ops.ProjectServices,
+    release: service_release.PreparedRelease,
+    backend_restart_attempted: bool,
+) -> None:
+    """Best-effort collector rollback when the rebuild fails outside its handled errors.
+
+    The privileged rollback runs under /usr/bin/python3 -I, so it still works when
+    the backend environment that raised the failure is damaged.
+    """
+    print("[service] unexpected rebuild failure after collector activation; rolling back collector")
+    try:
+        if _rollback_monitor_and_reader(candidate, development, release, backend_restart_attempted):
+            return
+        print("[service] collector retained for recovery; see messages above")
+        return
+    except Exception as exc:
+        print(f"[service] reader restore failed ({type(exc).__name__}: {exc}); rolling back collector directly")
+    try:
+        rolled_back = service_ops.host_monitor_deployment(candidate, release.build_id, "rollback") == 0
+    except Exception as exc:
+        print(f"[service] collector rollback raised {type(exc).__name__}: {exc}")
+        rolled_back = False
+    if not rolled_back:
+        print(
+            "[service] collector rollback FAILED; recover with: sudo /usr/bin/python3 -I "
+            f"{candidate.root / 'backend/cli/lib/host_monitor_deploy.py'} rollback --source {candidate.root} "
+            f"--uid {os.getuid()} --gid {os.getgid()} --transaction {release.build_id}"
+        )
 
 
 @app.command()
@@ -470,6 +503,17 @@ def rebuild(
                 service_release.fail_release(release, "deployment")
         output_error(str(exc))
         raise typer.Exit(1) from None
+    except BaseException as exc:
+        # Any other failure (e.g. a dependency vanishing mid-deploy) must not
+        # strand an activated collector and its .pending receipt marker.
+        if monitor_activated and release is not None:
+            _rollback_monitor_after_unexpected_failure(
+                services, development_services, release, backend_restart_attempted
+            )
+        if release is not None and not isinstance(exc, typer.Exit):
+            with suppress(Exception):
+                service_release.fail_release(release, "deployment")
+        raise
     raise typer.Exit(0)
 
 

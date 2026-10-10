@@ -756,3 +756,51 @@ def test_stop_unit_refuses_managed_service_with_project_prefix(monkeypatch, proj
     managed = replace(project, optional_workers=("example-worker.service",))
     code, state = service_ops.stop_transient_unit(managed, "example-worker.service")
     assert (code, state) == (2, "refused:managed_service;use_st_service_stop")
+
+
+@pytest.mark.parametrize("failure", [FileNotFoundError(2, "CA bundle vanished"), KeyboardInterrupt()])
+def test_unexpected_failure_after_collector_activation_rolls_back_collector(
+    lifecycle, monkeypatch, failure
+):
+    """Regression: a raw OSError in health checks stranded the activated collector."""
+    deployments: list[str] = []
+    monkeypatch.setattr(service_ops, "has_host_monitor", lambda _project: True)
+    monkeypatch.setattr(service_ops, "preflight_host_monitor", lambda _project: 0)
+    monkeypatch.setattr(service_ops, "build_host_monitor", lambda _project: 0)
+    monkeypatch.setattr(service_ops, "sync_host_monitor_policy", lambda _project: 0)
+    monkeypatch.setattr(service_ops, "verify_host_monitor", lambda _project: 0)
+    monkeypatch.setattr(service_ops, "host_monitor_deployment",
+                        lambda _project, _build, action: deployments.append(action) or 0)
+    monkeypatch.setattr(service, "_restore_previous_units", lambda *_args: True)
+    lifecycle["verify_health"].side_effect = failure
+
+    result = CliRunner().invoke(service.app, ["rebuild", "example"])
+
+    assert result.exit_code != 0
+    assert deployments == ["install", "rollback"]
+    fail_release = service_release.fail_release
+    assert isinstance(fail_release, Mock)
+    assert fail_release.call_args.args[1] == "deployment"
+
+
+def test_collector_rollback_falls_back_when_reader_restore_raises(lifecycle, monkeypatch):
+    deployments: list[str] = []
+    monkeypatch.setattr(service_ops, "has_host_monitor", lambda _project: True)
+    monkeypatch.setattr(service_ops, "preflight_host_monitor", lambda _project: 0)
+    monkeypatch.setattr(service_ops, "build_host_monitor", lambda _project: 0)
+    monkeypatch.setattr(service_ops, "sync_host_monitor_policy", lambda _project: 0)
+    monkeypatch.setattr(service_ops, "verify_host_monitor", lambda _project: 0)
+    monkeypatch.setattr(service_ops, "host_monitor_deployment",
+                        lambda _project, _build, action: deployments.append(action) or 0)
+
+    def broken_restore(*_args):
+        raise ImportError("backend environment damaged")
+
+    monkeypatch.setattr(service, "_restore_previous_units", broken_restore)
+    lifecycle["verify_health"].side_effect = OSError("damaged runtime")
+
+    result = CliRunner().invoke(service.app, ["rebuild", "example"])
+
+    assert result.exit_code != 0
+    assert deployments == ["install", "rollback"]
+    assert "rolling back collector directly" in result.output

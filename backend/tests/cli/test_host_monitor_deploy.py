@@ -189,3 +189,32 @@ def test_rollback_restores_reader_before_retiring_system_collector(monkeypatch, 
         assert calls == ["restore units", "restart backend", "rollback collector"]
     else:
         assert calls == ["restore units", "restart backend", "restore candidate units", "restart backend"]
+
+
+def _receipts(tmp_path, monkeypatch):
+    receipts = tmp_path / "receipts"
+    receipts.mkdir()
+    monkeypatch.setattr(deploy, "RECEIPTS", receipts)
+    return receipts
+
+
+def test_rollback_is_idempotent_and_clears_marker(tmp_path, monkeypatch):
+    receipts = _receipts(tmp_path, monkeypatch)
+    calls = []
+    monkeypatch.setattr(deploy, "_system", lambda *args, **kwargs: calls.append(args) or SimpleNamespace(returncode=1))
+    (receipts / "done.json").write_text(json.dumps({"status": "rolled_back"}))
+    (receipts / "done.pending").touch()
+    deploy.rollback("done")
+    deploy.rollback("done")
+    assert not (receipts / "done.pending").exists()
+    assert calls == []
+
+
+def test_install_clears_only_settled_stale_markers(tmp_path, monkeypatch):
+    receipts = _receipts(tmp_path, monkeypatch)
+    for name, status in (("finished", "complete"), ("reverted", "rolled_back"), ("live", "activated")):
+        (receipts / f"{name}.json").write_text(json.dumps({"status": status}))
+        (receipts / f"{name}.pending").touch()
+    (receipts / "orphan.pending").touch()
+    deploy._clear_settled_markers()
+    assert sorted(path.name for path in receipts.glob("*.pending")) == ["live.pending", "orphan.pending"]
