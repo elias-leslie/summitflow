@@ -101,6 +101,8 @@ def test_unit_uses_protected_install_and_explicit_owner():
     text = unit.read_text()
     # Root by default; an explicit User= drops CAP_SETUID (see unit comment).
     assert "\nUser=" not in text
+    # No User= means systemd sets no HOME, and the collector exits without one.
+    assert "\nEnvironment=HOME=/root\n" in text
     assert "--owner-uid __MONITOR_OWNER_UID__" in text
     assert "--owner-gid __MONITOR_OWNER_GID__" in text
     assert "WantedBy=multi-user.target" in text

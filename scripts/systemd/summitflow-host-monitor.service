@@ -9,6 +9,8 @@ Type=simple
 # the owner's user manager as the owner instead of opening a PAM session.
 WorkingDirectory=__MONITOR_RELEASE__
 Environment="PATH=/usr/sbin:/usr/bin:/sbin:/bin"
+# Without User=, systemd sets no HOME; the collector requires one.
+Environment=HOME=/root
 ExecStart=__MONITOR_RELEASE__/summitflow-host-monitor --state-dir /var/lib/summitflow/monitor --project-identity __MONITOR_RELEASE__/project.identity.json --policy-snapshot __MONITOR_RELEASE__/policy.json --owner-uid __MONITOR_OWNER_UID__ --owner-gid __MONITOR_OWNER_GID__ --observe-helper __MONITOR_RELEASE__/monitor-observe.pyz
 Restart=on-failure
 RestartSec=5
