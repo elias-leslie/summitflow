@@ -16,7 +16,7 @@ from pathlib import Path
 
 import pytest
 
-from cli.lib import coord, leases
+from cli.lib import coord, coord_lineage, leases
 from cli.lib.commit_workflow import CommitError, commit_git_revision
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
@@ -31,6 +31,9 @@ def _git(repo: Path, *args: str) -> None:
 def repos(tmp_path, monkeypatch):
     monkeypatch.delenv("TMUX_PANE", raising=False)
     monkeypatch.delenv("CLAUDE_SESSION_ID", raising=False)
+    monkeypatch.setenv("ST_COORD_ANCHOR", "")  # no harness lineage unless a scenario sets one
+    for name in ("PI_SESSION_ID", "ANTIGRAVITY_CONVERSATION_ID", "ST_COORD_HARNESS"):
+        monkeypatch.delenv(name, raising=False)
     out = {}
     for name in ("hostrepo", "genrepo"):
         repo = tmp_path / name
@@ -355,12 +358,13 @@ def test_no_overlap_awareness_output_is_empty(repos, monkeypatch):
 
 # ------------------------------------------------------------ real hook, separate processes
 
-def _hook(payload: dict, tmp: Path, **env: str) -> subprocess.CompletedProcess[str]:
+def _hook(payload: dict, tmp: Path, *args: str, **env: str) -> subprocess.CompletedProcess[str]:
     clean = {k: v for k, v in os.environ.items() if k not in {
         "CLAUDE_CODE_SESSION_ID", "CODEX_THREAD_ID", "CLAUDE_SESSION_ID", "TMUX_PANE", "ST_SESSION_ID",
-        "CODEX_SESSION_ID", "ALLOW_LEASE_OVERLAP", "ST_COORD_SENSITIVE"}}
-    clean.update(ST_LEASES_DIR=str(tmp / "hook-leases"), **env)
-    return subprocess.run(["bash", str(HOOK)], input=json.dumps(payload), capture_output=True,
+        "CODEX_SESSION_ID", "ALLOW_LEASE_OVERLAP", "ST_COORD_SENSITIVE", "PI_SESSION_ID"}}
+    # Exercise this checkout's coord code, not the deployed release.
+    clean.update({"ST_LEASES_DIR": str(tmp / "hook-leases"), "ST_DEV_CHECKOUT": "1", "ST_COORD_ANCHOR": "", **env})
+    return subprocess.run(["bash", str(HOOK), *args], input=json.dumps(payload), capture_output=True,
                           text=True, env=clean, check=False, timeout=30)
 
 
@@ -379,3 +383,244 @@ def test_real_hook_claude_edit_then_codex_apply_patch(repos, tmp_path):
     assert len(lines) == 1 and lines[0].startswith("BLOCKED: hostrepo: backend/a.py leased by cc:111111")
     assert _hook(claude, tmp_path).returncode == 0  # same session keeps editing
     assert _hook(codex, tmp_path, ALLOW_LEASE_OVERLAP="1").returncode == 0
+
+
+
+# ------------------------------------------------------------ context resets (lineage)
+
+HARNESSES = [
+    pytest.param(("claude_code", "CLAUDE_CODE_SESSION_ID", "cc"), id="claude"),
+    pytest.param(("codex", "CODEX_THREAD_ID", "codex"), id="codex"),
+    pytest.param(("pi", "PI_SESSION_ID", "pi"), id="pi"),
+]
+_SESSION_VARS = ("CLAUDE_CODE_SESSION_ID", "CODEX_THREAD_ID", "PI_SESSION_ID", "CLAUDE_SESSION_ID", "CODEX_SESSION_ID")
+
+
+@pytest.fixture
+def harness_procs():
+    """Live stand-ins for harness processes; the anchor is '<pid>:<start tick>'."""
+    procs: list[subprocess.Popen] = []
+
+    def spawn() -> tuple[str, subprocess.Popen]:
+        proc = _sleeper()
+        procs.append(proc)
+        return f"{proc.pid}:{leases._process_start(proc.pid)}", proc
+
+    yield spawn
+    for proc in procs:
+        proc.kill()
+        proc.wait()
+
+
+def become(monkeypatch, harness: tuple[str, str, str], sid: str, anchor: str) -> str:
+    provider, var, prefix = harness
+    for name in _SESSION_VARS:
+        monkeypatch.delenv(name, raising=False)
+    monkeypatch.setenv(var, sid)
+    monkeypatch.setenv("ST_COORD_ANCHOR", anchor)
+    monkeypatch.setenv("ST_COORD_HARNESS", provider)
+    return f"{prefix}:{sid[:6]}"
+
+
+def _peer(monkeypatch, anchor: str) -> str:
+    return become(monkeypatch, ("claude_code", "CLAUDE_CODE_SESSION_ID", "cc"), "peer00-session", anchor)
+
+
+@pytest.mark.parametrize("harness", HARNESSES)
+def test_reset_with_held_lease_inherits_without_self_block(repos, monkeypatch, harness_procs, harness):
+    repo = repos["hostrepo"]
+    anchor, _ = harness_procs()
+    peer_anchor, _ = harness_procs()
+    old = become(monkeypatch, harness, "old111-context", anchor)
+    coord_lineage.observe()
+    leases.acquire_mark("hostrepo", str(repo), "hold", "integration")
+    assert coord.edit_conflict(str(repo / "backend" / "a.py")) is None
+    (repo / "backend" / "a.py").write_text("a = 4\n")
+
+    new = become(monkeypatch, harness, "new222-context", anchor)  # /clear, /new: same process
+    lines = coord_lineage.observe(reset=True, emit=True)
+    assert lines == [f"continuing {old}: holds hostrepo; leased files hostrepo(1)"]
+    assert _tokens(lines[0]) < 40
+    assert coord.edit_conflict(str(repo / "backend" / "a.py")) is None  # no self-block
+    coord.guard(repo, "publish")  # inherited hold counts as own
+    assert commit_git_revision(repo, message="after reset", skip_checks=True, paths=["backend/a.py"])["status"] == "SUCCESS"
+    assert coord.notices() == []  # notice was emitted once, nothing else open
+
+    _peer(monkeypatch, peer_anchor)
+    with pytest.raises(coord.CoordBlocked, match=f"hold integration by {old}"):
+        coord.guard(repo, "publish")
+    assert new != old
+
+
+@pytest.mark.parametrize("harness", HARNESSES)
+def test_reset_with_pending_ack_tells_successor_and_peer_once(repos, monkeypatch, harness_procs, harness):
+    repo = repos["hostrepo"]
+    anchor, _ = harness_procs()
+    peer_anchor, _ = harness_procs()
+    peer = _peer(monkeypatch, peer_anchor)
+    coord_lineage.observe()
+    leases.acquire_mark("hostrepo", str(repo), "hold", "integration")
+    old = become(monkeypatch, harness, "old333-context", anchor)
+    coord_lineage.observe()
+    request = coord.send(peer, "publish hostrepo now?", project="hostrepo")
+
+    become(monkeypatch, harness, "new444-context", anchor)
+    assert coord_lineage.observe(reset=True, emit=True) == [
+        f"continuing {old}: awaiting ack from {peer} on {request['id']}"]
+
+    _peer(monkeypatch, peer_anchor)
+    notes = coord.notices()
+    assert f"{old} context reset (now {harness[2]}:new444); resend full ask if pending" in notes
+    assert all("context reset" not in line for line in coord.notices())  # once
+    coord.ack(request["id"], "yes")
+
+    become(monkeypatch, harness, "new444-context", anchor)
+    assert coord.notices() == [f"ACK {request['id']} yes from {peer}; close: st sessions confirm {request['id']}"]
+    coord.guard(repo, "publish", with_ack=request["id"])
+    coord.confirm(request["id"])
+
+
+@pytest.mark.parametrize("harness", HARNESSES)
+def test_peer_message_to_old_identity_reaches_successor(repos, monkeypatch, harness_procs, harness):
+    repo = repos["hostrepo"]
+    anchor, _ = harness_procs()
+    peer_anchor, _ = harness_procs()
+    old = become(monkeypatch, harness, "old555-context", anchor)
+    coord_lineage.observe()
+    leases.acquire_mark("hostrepo", str(repo), "hold", "release")
+    become(monkeypatch, harness, "new666-context", anchor)
+    coord_lineage.observe(reset=True, emit=True)
+
+    _peer(monkeypatch, peer_anchor)
+    with pytest.raises(coord.CoordBlocked, match=f"by {old}"):
+        coord.guard(repo, "rebuild")
+    request = coord.send(old, "rebuild hostrepo?", project="hostrepo")  # peer only knows the old id
+
+    become(monkeypatch, harness, "new666-context", anchor)
+    assert any(request["id"] in line for line in coord.notices())
+    assert [row["id"] for row in coord.inbox()] == [request["id"]]
+    coord.ack(request["id"], "yes")
+
+    _peer(monkeypatch, peer_anchor)
+    coord.guard(repo, "rebuild", with_ack=request["id"])  # ack by successor authorizes against old's hold
+
+
+@pytest.mark.parametrize("harness", HARNESSES)
+def test_stale_predecessor_is_not_inherited_and_expires_normally(repos, monkeypatch, harness_procs, harness):
+    repo = repos["hostrepo"]
+    target = str(repo / "backend" / "a.py")
+    anchor, proc = harness_procs()
+    old = become(monkeypatch, harness, "old777-context", anchor)
+    coord_lineage.observe()
+    assert coord.edit_conflict(target) is None
+    proc.kill()
+    proc.wait()  # harness exited: lineage is unclaimable
+
+    new_anchor, _ = harness_procs()
+    become(monkeypatch, harness, "new888-context", new_anchor)
+    assert coord_lineage.observe(reset=True, emit=True) == []
+    blocked = coord.edit_conflict(target)
+    assert blocked is not None and f"leased by {old}" in blocked  # still protects its dirty file
+    reused = f"{os.getpid()}:0"  # live pid, wrong start tick: a reused pid never revives a family
+    assert not coord_lineage.anchor_alive(reused) and coord_lineage.family_ids(reused) == set()
+    with leases._lock("hostrepo"):
+        rows = leases._load("hostrepo")
+        for row in rows:
+            row.last_heartbeat = (datetime.now(UTC) - timedelta(minutes=31)).isoformat()
+        leases._save("hostrepo", rows)
+    assert coord.edit_conflict(target) is None
+    assert old not in coord_lineage.load_doc().get("identities", {})
+
+
+@pytest.mark.parametrize("harness", HARNESSES)
+def test_reset_without_hook_is_detected_lazily(repos, monkeypatch, harness_procs, harness):
+    """No SessionStart hook ran: the next st call from the same process notices the new id."""
+    repo = repos["hostrepo"]
+    anchor, _ = harness_procs()
+    old = become(monkeypatch, harness, "oldaaa-context", anchor)
+    coord_lineage.observe()
+    assert coord.edit_conflict(str(repo / "gen.json")) is None
+    become(monkeypatch, harness, "newbbb-context", anchor)
+    assert coord.edit_conflict(str(repo / "gen.json")) is None  # family self, even before any hook
+    lines = coord.notices()
+    if harness[0] == "codex":
+        # A new codex thread id on one process may be a subagent thread; only SessionStart reports resets.
+        assert lines == []
+    else:
+        assert lines == [f"continuing {old}: leased files hostrepo(1)"]
+        assert coord.notices() == []
+
+
+def test_codex_subagent_thread_is_self_without_peer_notice(repos, monkeypatch, harness_procs):
+    codex = ("codex", "CODEX_THREAD_ID", "codex")
+    anchor, _ = harness_procs()
+    peer_anchor, _ = harness_procs()
+    peer = _peer(monkeypatch, peer_anchor)
+    coord_lineage.observe()
+    become(monkeypatch, codex, "parent-thread", anchor)
+    coord_lineage.observe()
+    coord.send(peer, "pause backend/** writes?")
+    assert coord.edit_conflict(str(repos["hostrepo"] / "gen.json")) is None
+    become(monkeypatch, codex, "child0-thread", anchor)
+    assert coord.edit_conflict(str(repos["hostrepo"] / "gen.json")) is None
+    assert coord_lineage.observe(subagent=True, emit=True) == []
+    _peer(monkeypatch, peer_anchor)
+    assert all("context reset" not in line for line in coord.notices())
+
+
+def test_inherited_session_variable_of_another_harness_is_ignored(repos, monkeypatch, harness_procs):
+    """Codex launched from a Claude shell inherits CLAUDE_CODE_SESSION_ID; it is still codex."""
+    anchor, _ = harness_procs()
+    become(monkeypatch, ("codex", "CODEX_THREAD_ID", "codex"), "codexx-thread", anchor)
+    monkeypatch.setenv("CLAUDE_CODE_SESSION_ID", "claude-parent")
+    assert leases.identify_agent()[0] == "codex:codexx"
+    monkeypatch.delenv("CODEX_THREAD_ID")  # a codex shell without its own id falls back to the inherited one
+    assert leases.identify_agent()[0] == "cc:claude"
+    coord_lineage.observe()  # ...which never joins the codex process's family
+    assert coord_lineage.family_ids(anchor) == set()
+
+
+def test_real_hook_session_start_and_shell_write_overlap(repos, tmp_path, harness_procs):
+    repo = repos["hostrepo"]
+    anchor, _ = harness_procs()
+    env = {"ST_COORD_ANCHOR": anchor, "ST_COORD_HARNESS": "claude_code"}
+    edit = {"hook_event_name": "PreToolUse", "session_id": "aaaa11-old", "tool_name": "Edit", "cwd": str(repo),
+            "tool_input": {"file_path": str(repo / "backend" / "a.py")}}
+    assert _hook(edit, tmp_path, **env).returncode == 0
+    start = {"hook_event_name": "SessionStart", "source": "clear", "session_id": "bbbb22-new", "cwd": str(repo)}
+    started = _hook(start, tmp_path, "session", **env)
+    assert started.returncode == 0 and started.stderr == ""
+    context = json.loads(started.stdout)["hookSpecificOutput"]["additionalContext"]
+    assert context == "continuing cc:aaaa11: leased files hostrepo(1)"
+    assert _hook(start, tmp_path, "session", **env).stdout == ""  # silent once known
+    edit["session_id"] = "bbbb22-new"
+    assert _hook(edit, tmp_path, **env).returncode == 0  # successor keeps editing
+
+    # Another agent's shell command rewrites the leased file: one warning line after the fact.
+    other_anchor, _ = harness_procs()
+    shell = {"hook_event_name": "PreToolUse", "session_id": "cccc33-other", "tool_name": "Bash",
+             "tool_use_id": "toolu_1", "cwd": str(repo), "tool_input": {"command": "sed -i s/1/2/ backend/a.py"}}
+    other = {"ST_COORD_ANCHOR": other_anchor, "ST_COORD_HARNESS": "claude_code"}
+    assert _hook(shell, tmp_path, "bash-pre", **other).returncode == 0
+    (repo / "backend" / "a.py").write_text("a = 7\n")
+    (repo / "backend" / "new.py").write_text("n = 1\n")
+    post = _hook({**shell, "hook_event_name": "PostToolUse"}, tmp_path, "bash-post", **other)
+    assert post.returncode == 2
+    lines = post.stderr.strip().splitlines()
+    assert len(lines) == 1 and lines[0].startswith("OVERLAP: this shell command wrote hostrepo: backend/a.py leased by cc:aaaa11")
+    # A read-only command is silent and costs no Python start.
+    assert _hook(shell, tmp_path, "bash-pre", **other).returncode == 0
+    quiet = _hook({**shell, "hook_event_name": "PostToolUse"}, tmp_path, "bash-post", **other)
+    assert quiet.returncode == 0 and quiet.stderr == ""
+
+
+def test_uuid7_sessions_started_hours_apart_keep_distinct_identities(repos, monkeypatch):
+    """Codex and Pi ids are UUIDv7: the first 6 chars are a timestamp shared by every session for ~4.6 h."""
+    target = str(repos["hostrepo"] / "backend" / "a.py")
+    as_codex(monkeypatch, "01a12620-c916-7aa1-afa8-f774ce8af197")
+    assert leases.identify_agent()[0] == "codex:8af197"
+    assert coord.edit_conflict(target) is None
+    as_codex(monkeypatch, "01a1265b-7c0d-7b53-81f1-3f6104ba944f")
+    blocked = coord.edit_conflict(target)
+    assert blocked is not None and "leased by codex:8af197" in blocked
+    assert not coord._addresses("01a126", "codex:04ba944f", "01a1265b-7c0d-7b53-81f1-3f6104ba944f")

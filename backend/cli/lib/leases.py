@@ -50,6 +50,9 @@ class Lease:
     pid: int | None = None
     pid_start: str | None = None
     sensitive: bool = False
+    # Harness process anchor "<pid>:<start tick>": identities on one live anchor
+    # are one agent across context resets (coord_lineage).
+    anchor: str | None = None
 
     def is_stale(self, now: datetime | None = None, ttl: timedelta = DEFAULT_IDLE_TTL) -> bool:
         if self.kind == "op":
@@ -78,6 +81,14 @@ def _process_alive(pid: int | None, start: str | None) -> bool:
     return bool(pid) and _process_start(int(pid or 0)) == start
 
 
+_UUID7 = re.compile(r"[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[0-9a-f]{4}-[0-9a-f]{12}", re.IGNORECASE)
+
+
+def short_id(sid: str) -> str:
+    """Six distinguishing chars: a UUIDv7 (Codex, Pi) starts with a timestamp shared for hours, so use its random tail."""
+    return sid[-6:] if _UUID7.fullmatch(sid) else sid[:6]
+
+
 def identify_agent(*, native: bool = True) -> tuple[str, str, str, str]:
     """Return (agent_id, slug, session_id, provider) from env vars.
 
@@ -92,25 +103,44 @@ def identify_agent(*, native: bool = True) -> tuple[str, str, str, str]:
         value = os.environ.get(key, "")
         return value if re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._:-]{0,127}", value) else None
 
+    short = short_id if native else (lambda sid: sid[:6])
     st_sid = session("ST_SESSION_ID")
     if st_sid:
-        return f"st:{st_sid[:6]}", "st", st_sid, "st"
+        return f"st:{short(st_sid)}", "st", st_sid, "st"
+    # A harness started from another harness's shell inherits that one's session
+    # variable; the enclosing harness process decides which variable is ours.
+    if native:
+        from .coord_lineage import harness
+
+        provider = harness()[1]
+        own = {
+            "claude_code": ("CLAUDE_CODE_SESSION_ID", "cc", "claude-code", "claude_code"),
+            "codex": ("CODEX_THREAD_ID", "codex", "codex", "codex_cli"),
+            "pi": ("PI_SESSION_ID", "pi", "pi", "pi"),
+            "antigravity": ("ANTIGRAVITY_CONVERSATION_ID", "agy", "antigravity", "antigravity"),
+        }.get(provider or "")
+        sid = session(own[0]) if own else None
+        if own and sid:
+            return f"{own[1]}:{short(sid)}", own[2], sid, own[3]
     # native=False keeps the pre-coordination resolution for task-claim owners
     # already recorded under it; leases key on the harness's real session id.
     claude_sid = session("CLAUDE_SESSION_ID") or (native and session("CLAUDE_CODE_SESSION_ID"))
     if claude_sid:
-        return f"cc:{claude_sid[:6]}", "claude-code", claude_sid, "claude_code"
+        return f"cc:{short(claude_sid)}", "claude-code", claude_sid, "claude_code"
     codex_sid = session("CODEX_SESSION_ID") or (native and session("CODEX_THREAD_ID"))
     if codex_sid:
-        return f"codex:{codex_sid[:6]}", "codex", codex_sid, "codex_cli"
+        return f"codex:{short(codex_sid)}", "codex", codex_sid, "codex_cli"
     ah_slug = os.environ.get("AGENT_HUB_AGENT_SLUG")
     ah_sid = session("AGENT_HUB_SESSION_ID")
     if ah_slug and re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._-]{0,127}", ah_slug) and ah_sid:
         provider = "agent_hub_persona" if ah_slug == "jenny" else "agent_hub_specialist"
-        return f"{ah_slug}:{ah_sid[:6]}", ah_slug, ah_sid, provider
+        return f"{ah_slug}:{short(ah_sid)}", ah_slug, ah_sid, provider
     pi_sid = session("PI_SESSION_ID")
     if pi_sid:
-        return f"pi:{pi_sid[:6]}", "pi", pi_sid, "pi"
+        return f"pi:{short(pi_sid)}", "pi", pi_sid, "pi"
+    agy_sid = session("ANTIGRAVITY_CONVERSATION_ID")
+    if agy_sid:
+        return f"agy:{short(agy_sid)}", "antigravity", agy_sid, "antigravity"
     pane = os.environ.get("TMUX_PANE")
     if pane:
         return f"tmux:{pane.lstrip('%')}", "tmux", pane, "unknown"
@@ -119,12 +149,25 @@ def identify_agent(*, native: bool = True) -> tuple[str, str, str, str]:
 
 
 def self_ids() -> set[str]:
-    """Current lease identity plus the legacy tmux-pane alias it replaced."""
-    ids = {identify_agent()[0]}
+    """Current identity, its predecessors on the same live harness process, and the legacy tmux alias."""
+    from .coord_lineage import family_ids
+
+    ids = {identify_agent()[0]} | family_ids()
     pane = os.environ.get("TMUX_PANE")
     if pane:
         ids.add(f"tmux:{pane.lstrip('%')}")
     return ids
+
+
+def my_anchor() -> str | None:
+    from .coord_lineage import current_anchor
+
+    return current_anchor(identify_agent()[0])
+
+
+def is_mine(lease: Lease, mine: set[str], anchor: str | None) -> bool:
+    """Own lease: one of my identities, or recorded on my live harness process."""
+    return lease.agent_id in mine or bool(anchor and lease.anchor == anchor)
 
 
 def _store_path(project_id: str) -> Path:
@@ -230,6 +273,7 @@ def acquire(
             task_id=task_id,
             acquired_at=now,
             last_heartbeat=now,
+            anchor=my_anchor(),
         )
         leases.append(lease)
         _save(project_id, leases)
@@ -239,8 +283,10 @@ def acquire(
 def list_active(project_id: str, kinds: tuple[str, ...] = ("file",)) -> list[Lease]:
     """Return live leases of the given kinds (stale ones purged on read)."""
     with _lock(project_id):
-        leases = _purge_stale(_load(project_id))
-        _save(project_id, leases)
+        loaded = _load(project_id)
+        leases = _purge_stale(loaded)
+        if len(leases) != len(loaded):
+            _save(project_id, leases)
         return [lease for lease in leases if lease.kind in kinds]
 
 
@@ -254,13 +300,13 @@ def check(
     its heartbeat as a side effect.
     """
     path = _project_path(path, project_root)
-    mine = self_ids()
+    mine, anchor = self_ids(), my_anchor()
     now = datetime.now(UTC).isoformat()
     with _lock(project_id):
         leases = _purge_stale(_load(project_id))
         matching = [lease for lease in leases if lease.kind == "file" and lease.matches(path)]
         for lease in matching:
-            if lease.agent_id not in mine:
+            if not is_mine(lease, mine, anchor):
                 _save(project_id, leases)
                 return False, lease
         if matching:
@@ -273,13 +319,13 @@ def check(
 
 def heartbeat(project_id: str) -> int:
     """Touch all leases held by current agent. Returns count touched."""
-    agent_id, _, _, _ = identify_agent()
+    mine, anchor = self_ids(), my_anchor()
     now = datetime.now(UTC).isoformat()
     with _lock(project_id):
         leases = _purge_stale(_load(project_id))
         touched = 0
         for lease in leases:
-            if lease.agent_id == agent_id:
+            if is_mine(lease, mine, anchor):
                 lease.last_heartbeat = now
                 touched += 1
         _save(project_id, leases)
@@ -290,16 +336,16 @@ def release(project_id: str, glob: str | None = None, project_root: str | None =
     """Release current agent's leases. Glob None → release all. Returns count released."""
     if glob is not None:
         glob = _project_path(glob, project_root)
-    agent_id, _, _, _ = identify_agent()
+    mine, anchor = self_ids(), my_anchor()
     with _lock(project_id):
         leases = _purge_stale(_load(project_id))
         before = len(leases)
         if glob is None:
-            leases = [lease for lease in leases if lease.agent_id != agent_id]
+            leases = [lease for lease in leases if not (lease.kind != "op" and is_mine(lease, mine, anchor))]
         else:
             leases = [
                 lease for lease in leases
-                if not (lease.agent_id == agent_id and glob in lease.globs)
+                if not (is_mine(lease, mine, anchor) and glob in lease.globs)
             ]
         _save(project_id, leases)
         return before - len(leases)
@@ -327,11 +373,12 @@ def take(project_id: str, path: str, project_root: str | None = None) -> Lease:
     """Forcibly claim a path. Drops other agents' matching leases, logs takeover, then acquires."""
     path = _project_path(path, project_root)
     agent_id, _, _, _ = identify_agent()
+    mine, anchor = self_ids(), my_anchor()
     with _lock(project_id):
         leases = _purge_stale(_load(project_id))
         kept: list[Lease] = []
         for lease in leases:
-            if lease.kind != "op" and lease.matches(path) and lease.agent_id != agent_id:
+            if lease.kind != "op" and lease.matches(path) and not is_mine(lease, mine, anchor):
                 continue
             kept.append(lease)
         _save(project_id, kept)
@@ -414,18 +461,18 @@ def claim(project_id: str, path: str, project_root: str | None = None) -> tuple[
     """
     path = _project_path(path, project_root)
     agent_id, slug, sid, provider = identify_agent()
-    mine = self_ids()
+    mine, anchor = self_ids(), my_anchor()
     now_dt = datetime.now(UTC)
     now = now_dt.isoformat()
     with _lock(project_id):
         leases = _purge_stale(_load(project_id))
         for lease in leases:
-            if lease.kind == "file" and lease.matches(path) and lease.agent_id not in mine:
+            if lease.kind == "file" and lease.matches(path) and not is_mine(lease, mine, anchor):
                 _save(project_id, leases)
                 return False, lease
         own = None
         for lease in leases:
-            if lease.agent_id in mine and lease.kind != "op":
+            if lease.kind != "op" and is_mine(lease, mine, anchor):
                 lease.last_heartbeat = now
                 if lease.kind == "file" and lease.matches(path):
                     own = lease
@@ -433,14 +480,14 @@ def claim(project_id: str, path: str, project_root: str | None = None) -> tuple[
             own = Lease(
                 lease_id=uuid.uuid4().hex[:8], agent_id=agent_id, agent_slug=slug,
                 session_id=sid, provider=provider, globs=[path], task_id=None,
-                acquired_at=now, last_heartbeat=now, sensitive=_session_sensitive(),
+                acquired_at=now, last_heartbeat=now, sensitive=_session_sensitive(), anchor=anchor,
             )
             leases.append(own)
         touches = {
             key: value for key, value in _read(project_id).get("touches", {}).items()
             if _touch_fresh(value, now_dt)
         }
-        touches[path] = {"agent_id": agent_id, "session_id": sid, "at": now, "sensitive": own.sensitive}
+        touches[path] = {"agent_id": agent_id, "session_id": sid, "at": now, "sensitive": own.sensitive, "anchor": anchor}
         _save(project_id, leases, touches)
         return True, own
 
@@ -466,12 +513,12 @@ def touches(project_id: str) -> dict[str, dict]:
 def release_paths(project_id: str, paths: list[str], project_root: str | None = None) -> int:
     """Release the current agent's single-file leases on exactly these paths (after commit)."""
     targets = {_project_path(p, project_root) for p in paths}
-    mine = self_ids()
+    mine, anchor = self_ids(), my_anchor()
     with _lock(project_id):
         leases = _purge_stale(_load(project_id))
         kept = [
             lease for lease in leases
-            if not (lease.kind == "file" and lease.agent_id in mine and set(lease.globs) <= targets)
+            if not (lease.kind == "file" and is_mine(lease, mine, anchor) and set(lease.globs) <= targets)
         ]
         _save(project_id, kept)
         return len(leases) - len(kept)
@@ -487,11 +534,13 @@ def acquire_mark(project_id: str, root: str, kind: str, purpose: str) -> Lease:
         provider=provider, globs=[_project_path(root, None).rstrip("/") + "/**"], task_id=None,
         acquired_at=now, last_heartbeat=now, kind=kind, purpose=purpose[:40],
         pid=pid, pid_start=_process_start(pid) if pid else None, sensitive=_session_sensitive(),
+        anchor=my_anchor(),
     )
+    mine = self_ids()
     with _lock(project_id):
         leases = [
             item for item in _purge_stale(_load(project_id))
-            if not (kind == "hold" and item.kind == "hold" and item.agent_id == agent_id)
+            if not (kind == "hold" and item.kind == "hold" and is_mine(item, mine, lease.anchor))
         ]
         leases.append(lease)
         _save(project_id, leases)

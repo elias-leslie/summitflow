@@ -22,7 +22,7 @@ from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any
 
-from . import leases
+from . import coord_lineage, leases
 
 ACTIVE_WINDOW = timedelta(minutes=10)
 UNACKED_AFTER = timedelta(minutes=10)
@@ -140,14 +140,15 @@ def guard(repo: Path, operation: str, *, paths: Sequence[str] = (), with_ack: st
     if resolved is None:
         return
     project_id, root = resolved
-    mine = leases.self_ids()
+    coord_lineage.observe()
+    mine, anchor = leases.self_ids(), leases.my_anchor()
     kinds = ("op", "hold") if operation == "commit" else ("op", "hold", "file")
     now = datetime.now(UTC)
     for lease in leases.list_active(project_id, kinds=kinds):
         if lease.kind == "op":
             if lease.pid == _own_pid():
                 continue
-        elif lease.agent_id in mine:
+        elif leases.is_mine(lease, mine, anchor):
             continue
         elif lease.kind == "file":
             try:
@@ -215,20 +216,40 @@ def hook_paths(payload: dict[str, Any]) -> list[str]:
     return [str(p if Path(p).is_absolute() else cwd / p) for p in (s.strip() for s in found) if p]
 
 
+_IDENTITY_ENV = ("CLAUDE_SESSION_ID", "CLAUDE_CODE_SESSION_ID", "CODEX_SESSION_ID", "CODEX_THREAD_ID",
+                 "PI_SESSION_ID", "ANTIGRAVITY_CONVERSATION_ID")
+
+
 def adopt_hook_identity(payload: dict[str, Any]) -> None:
-    """Key the hook on the harness session id so it matches the agent's shell identity."""
+    """Key the hook on the event's session id: after a reset it is newer than any inherited env."""
     import os
 
-    sid = str(payload.get("session_id") or "")
-    if not sid or any(os.environ.get(k) for k in ("ST_SESSION_ID", "CLAUDE_SESSION_ID", "CLAUDE_CODE_SESSION_ID", "CODEX_SESSION_ID", "CODEX_THREAD_ID")):
+    sid = str(payload.get("session_id") or payload.get("conversationId") or "")
+    if not sid or os.environ.get("ST_SESSION_ID"):
         return
-    codex = payload.get("tool_name") == "apply_patch" or "/.codex/" in str(payload.get("transcript_path") or "")
-    os.environ["CODEX_THREAD_ID" if codex else "CLAUDE_CODE_SESSION_ID"] = sid
+    provider = coord_lineage.harness()[1]
+    if provider is None:
+        codex = payload.get("tool_name") == "apply_patch" or "/.codex/" in str(payload.get("transcript_path") or "")
+        provider = "codex" if codex else "claude_code"
+    for key in _IDENTITY_ENV:
+        os.environ.pop(key, None)
+    os.environ[coord_lineage.session_env_for(provider) or "CLAUDE_CODE_SESSION_ID"] = sid
+
+
+def session_start(payload: dict[str, Any]) -> str | None:
+    """SessionStart/session_start hook: register the identity; one line if a reset left work open."""
+    adopt_hook_identity(payload)
+    source = str(payload.get("source") or payload.get("reason") or "")
+    subagent = bool(payload.get("agent_id")) or source in ("resume", "compact")
+    lines = coord_lineage.observe(reset=True, subagent=subagent, emit=True)
+    return "\n".join(lines) or None
 
 
 def run_hook(payload: dict[str, Any]) -> str | None:
     """Return one blocking message, or None to allow (fail-open on infra errors)."""
     adopt_hook_identity(payload)
+    with suppress(Exception):  # lineage is best effort; never wedge an editor
+        coord_lineage.observe()
     lines: list[str] = []
     for path in hook_paths(payload):
         try:
@@ -269,11 +290,10 @@ def _load_ledger() -> list[dict[str, Any]]:
 
 
 def _save_ledger(rows: list[dict[str, Any]]) -> None:
-    path = _ledger_path()
-    path.parent.mkdir(parents=True, exist_ok=True)
-    tmp = path.with_suffix(".tmp")
-    tmp.write_text(json.dumps({"messages": rows}, indent=1))
-    tmp.replace(path)
+    """Replace the messages, keeping the lineage registry and peer notes (caller holds the lock)."""
+    doc = coord_lineage.load_doc()
+    doc["messages"] = rows
+    coord_lineage.save_doc(doc)
 
 
 def _clean_text(text: str) -> str:
@@ -286,7 +306,19 @@ def _clean_text(text: str) -> str:
 
 
 def _addresses(to: str, agent_id: str, session_id: str) -> bool:
-    return bool(to) and (to == agent_id or (len(to) >= 6 and session_id.startswith(to)))
+    """Addressed to me: my id, a prefix of my session id, or any identity of my live harness process."""
+    if not to:
+        return False
+    # Session prefixes need 13+ chars: UUIDv7 ids share their first 12 (a millisecond timestamp).
+    if to == agent_id or (len(to) >= 13 and session_id.startswith(to)):
+        return True
+    family = coord_lineage.family_ids()
+    if to in family:
+        return True
+    if len(to) < 13 or not family:
+        return False
+    identities = coord_lineage.load_doc().get("identities") or {}
+    return any(str((identities.get(i) or {}).get("session") or "").startswith(to) for i in family)
 
 
 def send(to: str, text: str, *, project: str | None = None) -> dict[str, Any]:
@@ -364,7 +396,7 @@ def ack_authorizes(message_id: str, holder: leases.Lease, project_id: str) -> bo
     for row in rows:
         if row["id"] != message_id or row["from"] not in mine or row.get("intent") != "yes":
             continue
-        if row.get("acked_by") != holder.agent_id or row.get("project") not in (None, project_id):
+        if not coord_lineage.same_agent(row.get("acked_by"), holder.agent_id, holder.anchor) or row.get("project") not in (None, project_id):
             return False
         try:
             return datetime.now(UTC) - datetime.fromisoformat(row["acked_at"]) <= ACK_VALID_FOR
@@ -388,11 +420,12 @@ def inbox() -> list[dict[str, Any]]:
 
 
 def notices() -> list[str]:
-    """One line per actionable item; unacked requests surface once."""
+    """One line per actionable item; unacked requests, resets and peer notes surface once."""
     agent_id, _, session_id, _ = leases.identify_agent()
+    out: list[str] = coord_lineage.observe(emit=True)
+    out.extend(coord_lineage.pop_notes(lambda to: _addresses(str(to or ""), agent_id, session_id)))
     mine = leases.self_ids()
     now = datetime.now(UTC)
-    out: list[str] = []
     with leases._lock("_coord"):
         rows = _load_ledger()
         changed = False
@@ -443,13 +476,60 @@ def dirty_owner_line(project_id: str, root: Path) -> str | None:
         return None
     entries = [item[3:] for item in result.stdout.split("\0") if len(item) > 3]
     record = leases.touches(project_id)
-    mine = leases.self_ids()
+    mine, anchor = leases.self_ids(), leases.my_anchor()
     foreign: list[str] = []
     for rel in entries:
         touch = record.get(str((root / rel).resolve())) or record.get(str(root / rel))
-        if touch and touch.get("agent_id") not in mine:
+        if touch and touch.get("agent_id") not in mine and not (anchor and touch.get("anchor") == anchor):
             shown = _coarse(str(root / rel), root) if touch.get("sensitive") else rel
             foreign.append(f"{shown}<-{touch['agent_id']}({_age(touch['at'])})")
     if not foreign:
         return None
     return f"DIRTY-OWNER:{project_id}|" + ",".join(sorted(set(foreign))[:3])
+
+
+def shell_write_warning(paths: Sequence[str], since: datetime) -> str | None:
+    """One line when a shell command just wrote a path another agent leased before it started.
+
+    Warn only: the write already happened, and a lease refreshed during the
+    command means its holder edited concurrently, not that this shell did.
+    """
+    by_repo: dict[str, tuple[Path, list[str]]] = {}
+    for path in paths:
+        resolved = project_for_path(path)
+        if resolved is not None:
+            by_repo.setdefault(resolved[0], (resolved[1], []))[1].append(str(Path(path).resolve()))
+    mine, anchor = leases.self_ids(), leases.my_anchor()
+    for project_id, (root, written) in by_repo.items():
+        for lease in leases.list_active(project_id, kinds=("file",)):
+            if leases.is_mine(lease, mine, anchor):
+                continue
+            try:
+                if datetime.fromisoformat(lease.last_heartbeat) >= since:
+                    continue
+            except ValueError:
+                continue
+            if any(lease.matches(p) for p in written):
+                return (
+                    f"OVERLAP: this shell command wrote {holder_line(project_id, lease, root)}; "
+                    f'tell them: st sessions send {lease.agent_id} "<what changed>" --delivery handshake'
+                )
+    return None
+
+
+def dispatch_hook(payload: dict[str, Any]) -> tuple[str, str] | None:
+    """Route one harness hook event: ("block", line) | ("context", line) | ("warn", line) | None."""
+    event = str(payload.get("hook_event_name") or payload.get("event") or "")
+    if event in ("SessionStart", "session_start"):
+        line = session_start(payload)
+        return ("context", line) if line else None
+    if event in ("PostToolUse", "tool_result") and isinstance(payload.get("st_written"), list):
+        adopt_hook_identity(payload)
+        try:
+            since = datetime.fromisoformat(str(payload.get("st_since")))
+        except ValueError:
+            return None
+        line = shell_write_warning([str(p) for p in payload["st_written"]], since)
+        return ("warn", line) if line else None
+    message = run_hook(payload)
+    return ("block", message) if message else None

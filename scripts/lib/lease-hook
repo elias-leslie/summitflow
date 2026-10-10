@@ -1,24 +1,61 @@
 #!/usr/bin/env bash
-# Coordination edit hook (Claude Code + Codex PreToolUse). Not a safety gate:
-# any internal error or timeout fails open (exit 0, one stderr diagnostic).
-# Blocks (exit 2, one line) only on a live collision. Bypass: ALLOW_LEASE_OVERLAP=1.
+# Coordination hook for every harness (Claude Code, Codex, Pi extension). Not a
+# safety gate: any internal error or timeout fails open (exit 0, one stderr line).
+#   lease-hook            PreToolUse edit: auto-lease; exit 2 + one line on a live collision
+#   lease-hook session    SessionStart: register identity; one stdout line if a reset left work open
+#   lease-hook bash-pre   PreToolUse shell: snapshot the cwd repo's dirty files (pure shell)
+#   lease-hook bash-post  PostToolUse shell: one warning line if the command wrote a foreign-leased file
+# Silent when nothing overlaps. Bypass: ALLOW_LEASE_OVERLAP=1.
 [ "${ALLOW_LEASE_OVERLAP:-0}" = "1" ] && exit 0
+mode="${1:-edit}"
+input=$(cat)
+export LC_ALL=C
+
+snapshot() {  # "<mtime_ns> <abs path>" per dirty file of the cwd repo
+    local top
+    top=$(git -C "$1" rev-parse --show-toplevel 2>/dev/null) || return 0
+    git -C "$top" status --porcelain=v1 -z --untracked-files=all 2>/dev/null \
+        | tr '\0' '\n' | sed -n 's/^.. //p' | grep -v '^$' \
+        | while IFS= read -r rel; do printf '%s\n' "$top/$rel"; done \
+        | xargs -r -d '\n' stat -c '%.9Y %n' 2>/dev/null | sort
+}
+if [ "$mode" = bash-pre ] || [ "$mode" = bash-post ]; then
+    key=$(jq -r '[.session_id // "", .tool_use_id // .toolCallId // ""] | join("-")' <<<"$input" 2>/dev/null | tr -c 'A-Za-z0-9_.-' '_')
+    cwd=$(jq -r '.cwd // empty' <<<"$input" 2>/dev/null)
+    [ -n "$cwd" ] && [ -n "$key" ] || exit 0
+    dir="${XDG_RUNTIME_DIR:-/tmp}/st-lease-bash"
+    mkdir -p "$dir" 2>/dev/null || exit 0
+    if [ "$mode" = bash-pre ]; then
+        { date -u +%Y-%m-%dT%H:%M:%S.%6N+00:00; snapshot "$cwd"; } >"$dir/$key" 2>/dev/null
+        find "$dir" -maxdepth 1 -type f -mmin +120 -delete 2>/dev/null
+        exit 0
+    fi
+    [ -f "$dir/$key" ] || exit 0
+    since=$(head -1 "$dir/$key")
+    written=$(comm -13 <(tail -n +2 "$dir/$key") <(snapshot "$cwd") | cut -d' ' -f2-)
+    rm -f "$dir/$key"
+    [ -n "$written" ] || exit 0
+    input=$(jq -c --arg since "$since" --arg w "$written" \
+        '. + {st_since: $since, st_written: ($w | split("\n") | map(select(length > 0)))}' <<<"$input") || exit 0
+fi
 sf="$(cd -- "$(dirname -- "$(readlink -f -- "${BASH_SOURCE[0]}")")/../.." && pwd)"
 py="$sf/backend/.venv/bin/python"
 [ -x "$py" ] || { echo "lease-hook: summitflow venv unavailable; allowing" >&2; exit 0; }
-out=$(timeout 1 env PYTHONPATH="$sf/backend" "$py" -I -c '
+out=$(timeout 2 env PYTHONPATH="$sf/backend" "$py" -I -c '
 import json, sys
 sys.path.insert(0, sys.argv[1])
-from cli.lib.coord import run_hook
-msg = run_hook(json.loads(sys.stdin.read() or "{}"))
-if msg:
-    print(msg)
-    sys.exit(3)
-' "$sf/backend" 2>&1)
+from cli.lib.coord import dispatch_hook
+result = dispatch_hook(json.loads(sys.stdin.read() or "{}"))
+if result:
+    print(result[1])
+    sys.exit({"block": 3, "warn": 4, "context": 5}[result[0]])
+' "$sf/backend" <<<"$input" 2>&1)
 rc=$?
-if [ "$rc" = 3 ] && [[ $out == BLOCKED* ]]; then
-    printf '%s\n' "$out" >&2
-    exit 2
-fi
-[ "$rc" = 0 ] || echo "lease-hook: internal error rc=$rc; allowing" >&2
+case "$rc:$out" in
+    3:BLOCKED*) printf '%s\n' "$out" >&2; exit 2 ;;
+    4:OVERLAP*) printf '%s\n' "$out" >&2; exit 2 ;;
+    5:continuing*) jq -cn --arg c "$out" '{hookSpecificOutput: {hookEventName: "SessionStart", additionalContext: $c}}'; exit 0 ;;
+    0:) exit 0 ;;
+esac
+echo "lease-hook: internal error rc=$rc; allowing" >&2
 exit 0
