@@ -10,7 +10,7 @@ from __future__ import annotations
 
 from typing import Any, cast
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Response
 from pydantic import BaseModel
 
 from ..storage import notifications as notification_store
@@ -68,6 +68,7 @@ class CreateNotificationRequest(BaseModel):
     severity: NotificationSeverity = "info"
     task_id: str | None = None
     metadata: dict[str, Any] | None = None
+    dedupe_key: str | None = None
 
 
 # ============================================================================
@@ -167,11 +168,15 @@ async def get_notification(project_id: str, notification_id: str) -> Notificatio
     return _notification_to_response(notification)
 
 
-@router.post("/projects/{project_id}/notifications", response_model=NotificationResponse)
+@router.post(
+    "/projects/{project_id}/notifications",
+    response_model=NotificationResponse,
+    responses={204: {"description": "Deduplicated; no notification created"}},
+)
 async def create_notification(
     project_id: str, request: CreateNotificationRequest
-) -> NotificationResponse:
-    """Create a new notification."""
+) -> NotificationResponse | Response:
+    """Create a new notification; 204 when an identical recent one suppresses it."""
     notification = notification_store.create_notification(
         project_id=project_id,
         notification_type=request.type,
@@ -180,7 +185,10 @@ async def create_notification(
         severity=request.severity,
         task_id=request.task_id,
         metadata=request.metadata,
+        dedupe_key=request.dedupe_key,
     )
+    if not notification:
+        return Response(status_code=204)
     return _notification_to_response(notification)
 
 
