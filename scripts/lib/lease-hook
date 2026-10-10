@@ -21,9 +21,17 @@ snapshot() {  # "<mtime_ns> <abs path>" per dirty file of the cwd repo
         | while IFS= read -r rel; do printf '%s\n' "$top/$rel"; done \
         | xargs -r -d '\n' stat -c '%.9Y %n' 2>/dev/null | sort
 }
+sf="$(cd -- "$(dirname -- "$(readlink -f -- "${BASH_SOURCE[0]}")")/../.." && pwd)"
+py="$sf/backend/.venv/bin/python"
+[ -x "$py" ] || { echo "lease-hook: summitflow venv unavailable; allowing" >&2; exit 0; }
 if [ "$mode" = bash-pre ] || [ "$mode" = bash-post ]; then
-    key=$(jq -r '[.session_id // "", .tool_use_id // .toolCallId // ""] | join("-")' <<<"$input" 2>/dev/null | tr -c 'A-Za-z0-9_.-' '_')
-    cwd=$(jq -r '.cwd // empty' <<<"$input" 2>/dev/null)
+    # Python, not jq: the native gate's PATH allowlist has no jq.
+    { IFS= read -r key; IFS= read -r cwd; } < <("$py" -I -c '
+import json, sys
+d = json.loads(sys.stdin.read() or "{}")
+print("%s-%s" % (d.get("session_id") or "", d.get("tool_use_id") or d.get("toolCallId") or ""))
+print(d.get("cwd") or "")' <<<"$input" 2>/dev/null)
+    key=$(printf '%s' "$key" | tr -c 'A-Za-z0-9_.-' '_')
     [ -n "$cwd" ] && [ -n "$key" ] || exit 0
     dir="${XDG_RUNTIME_DIR:-/tmp}/st-lease-bash"
     mkdir -p "$dir" 2>/dev/null || exit 0
@@ -39,9 +47,6 @@ if [ "$mode" = bash-pre ] || [ "$mode" = bash-post ]; then
     [ -n "$written" ] || exit 0
     export ST_HOOK_SINCE="$since" ST_HOOK_WRITTEN="$written"
 fi
-sf="$(cd -- "$(dirname -- "$(readlink -f -- "${BASH_SOURCE[0]}")")/../.." && pwd)"
-py="$sf/backend/.venv/bin/python"
-[ -x "$py" ] || { echo "lease-hook: summitflow venv unavailable; allowing" >&2; exit 0; }
 out=$(timeout 2 env PYTHONPATH="$sf/backend" "$py" -I -c '
 import json, os, sys
 sys.path.insert(0, sys.argv[1])
