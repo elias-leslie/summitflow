@@ -80,26 +80,24 @@ class TestIsDuplicate:
         assert params[-2:] == ("backup:fixture:restore:failed", "backup:fixture:restore:failed")
 
 
-@patch("app.storage.notifications._schedule_delivery")
 @patch("app.storage.notifications._insert_notification", return_value={"id": "notification"})
 @patch("app.storage.notifications._is_duplicate", return_value=False)
-def test_optional_dedupe_key_is_saved_without_changing_caller_metadata(duplicate, insert, delivery):
+def test_optional_dedupe_key_is_saved_without_changing_caller_metadata(duplicate, insert):
     metadata = {"backend_id": "fixture"}
-    create_notification("summitflow", "system", "Restore failed", "Review backup readiness.", metadata=metadata, dedupe_key="backup:restore")
+    result = create_notification("summitflow", "system", "Restore failed", "Review backup readiness.", metadata=metadata, dedupe_key="backup:restore")
     assert metadata == {"backend_id": "fixture"}
     duplicate.assert_called_once_with("summitflow", "system", "info", None, dedupe_key="backup:restore")
     assert insert.call_args.args[-1] == {"backend_id": "fixture", "dedupe_key": "backup:restore"}
-    delivery.assert_called_once_with({"id": "notification"})
+    assert result == {"id": "notification"}
 
 
 class TestCreateTaskFailureNotification:
     """Tests for Johnny-branded task failure notifications."""
 
-    @patch("app.storage.notifications._schedule_delivery")
     @patch("app.storage.notifications._is_duplicate", return_value=False)
     @patch("app.storage.notifications.get_connection")
     def test_johnny_voice_in_message(
-        self, mock_conn: MagicMock, mock_dedup: MagicMock, mock_delivery: MagicMock
+        self, mock_conn: MagicMock, mock_dedup: MagicMock
     ) -> None:
         """Failure notification uses first-person Johnny voice."""
         cur = MagicMock()
@@ -132,11 +130,10 @@ class TestCreateTaskFailureNotification:
         assert "I was working on" in message
         assert "Tap to chat" in message
 
-    @patch("app.storage.notifications._schedule_delivery")
     @patch("app.storage.notifications._is_duplicate", return_value=False)
     @patch("app.storage.notifications.get_connection")
     def test_session_ids_in_metadata(
-        self, mock_conn: MagicMock, mock_dedup: MagicMock, mock_delivery: MagicMock
+        self, mock_conn: MagicMock, mock_dedup: MagicMock
     ) -> None:
         """Session IDs are included in notification metadata."""
         cur = MagicMock()
@@ -170,11 +167,10 @@ class TestCreateTaskFailureNotification:
         assert metadata["agent_hub_session_ids"] == ["sess-1", "sess-2"]
 
 
-    @patch("app.storage.notifications._schedule_delivery")
     @patch("app.storage.notifications._is_duplicate", return_value=False)
     @patch("app.storage.notifications.get_connection")
     def test_blocker_context_in_metadata(
-        self, mock_conn: MagicMock, mock_dedup: MagicMock, mock_delivery: MagicMock
+        self, mock_conn: MagicMock, mock_dedup: MagicMock
     ) -> None:
         """Blocker context fields are included in notification metadata."""
         cur = MagicMock()
@@ -216,11 +212,10 @@ class TestCreateTaskFailureNotification:
         assert metadata["blocker_summary"] == "TypeError in module X"
         assert metadata["recommendation"] == "Check type annotations"
 
-    @patch("app.storage.notifications._schedule_delivery")
     @patch("app.storage.notifications._is_duplicate", return_value=False)
     @patch("app.storage.notifications.get_connection")
     def test_blocker_context_omitted_when_none(
-        self, mock_conn: MagicMock, mock_dedup: MagicMock, mock_delivery: MagicMock
+        self, mock_conn: MagicMock, mock_dedup: MagicMock
     ) -> None:
         """Blocker context fields are omitted from metadata when None."""
         cur = MagicMock()
@@ -257,11 +252,10 @@ class TestCreateTaskFailureNotification:
 class TestCreateTaskCompletionNotification:
     """Tests for Johnny-branded task completion notifications."""
 
-    @patch("app.storage.notifications._schedule_delivery")
     @patch("app.storage.notifications._is_duplicate", return_value=False)
     @patch("app.storage.notifications.get_connection")
     def test_completion_uses_info_severity(
-        self, mock_conn: MagicMock, mock_dedup: MagicMock, mock_delivery: MagicMock
+        self, mock_conn: MagicMock, mock_dedup: MagicMock
     ) -> None:
         """Completion notifications use 'info' severity (no push for routine completions)."""
         cur = MagicMock()
@@ -287,11 +281,10 @@ class TestCreateTaskCompletionNotification:
         severity = params[7]
         assert severity == "info"
 
-    @patch("app.storage.notifications._schedule_delivery")
     @patch("app.storage.notifications._is_duplicate", return_value=False)
     @patch("app.storage.notifications.get_connection")
     def test_completion_johnny_voice(
-        self, mock_conn: MagicMock, mock_dedup: MagicMock, mock_delivery: MagicMock
+        self, mock_conn: MagicMock, mock_dedup: MagicMock
     ) -> None:
         """Completion notification uses Johnny's voice."""
         cur = MagicMock()
@@ -322,11 +315,10 @@ class TestCreateTaskCompletionNotification:
         assert "Finished" in message
         assert "Auto-merged." in message
 
-    @patch("app.storage.notifications._schedule_delivery")
     @patch("app.storage.notifications._is_duplicate", return_value=True)
     @patch("app.storage.notifications.get_connection")
     def test_dedup_returns_empty_dict(
-        self, mock_conn: MagicMock, mock_dedup: MagicMock, mock_delivery: MagicMock
+        self, mock_conn: MagicMock, mock_dedup: MagicMock
     ) -> None:
         """Deduplicated notifications return empty dict without DB insert."""
         result = create_task_completion_notification(

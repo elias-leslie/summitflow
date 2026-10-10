@@ -18,8 +18,8 @@ native systemd timers for:
 
 Current state is written atomically to
 `/var/lib/summitflow-host-guardian/status.json`. State transitions are appended
-to `events.jsonl` so the Telegram delivery layer can catch up after a database
-or network outage.
+to `events.jsonl` as a durable record that survives a database or network
+outage.
 
 ## SummitFlow-owned layer
 

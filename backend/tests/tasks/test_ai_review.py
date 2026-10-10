@@ -290,7 +290,6 @@ class TestSupervisorReviewNotification:
         assert kwargs["metadata"] == {
             "task_id": "task-123",
             "escalation_reason": "Need supervisor input",
-            "force_telegram": True,
         }
 
 

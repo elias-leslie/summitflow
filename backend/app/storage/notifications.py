@@ -6,9 +6,7 @@ Factory functions (task_failed, task_completed) live in notifications_write.py.
 
 from __future__ import annotations
 
-import asyncio
 import json
-import threading
 from typing import Any
 
 from ..logging_config import get_logger
@@ -36,7 +34,6 @@ from .notifications_write import (
 
 logger = get_logger(__name__)
 
-_background_tasks: set[asyncio.Task[None]] = set()
 _SEVERITY_RANK: dict[str, int] = {"info": 0, "warning": 1, "error": 2, "critical": 3}
 _SYSTEM_COOLDOWN_MINUTES = 30  # system notifications dedup at 30min (vs 15 for task notifications)
 
@@ -93,52 +90,6 @@ def _is_duplicate(
     return current_rank <= _SEVERITY_RANK.get(row[0], 0)
 
 
-def _run_delivery(notification: dict[str, Any]) -> None:
-    """Run async delivery to completion on a private event loop (thread target)."""
-    from app.services.notifications.delivery import deliver
-
-    try:
-        asyncio.run(deliver(notification))
-    except Exception:
-        logger.exception("Telegram delivery failed for notification %s", notification.get("id"))
-
-
-def _schedule_delivery(notification: dict[str, Any]) -> None:
-    """Fire-and-forget Telegram delivery; bridges sync storage into async delivery.
-
-    With a running event loop the delivery is scheduled as a task. Sync callers
-    without a loop (CLI, worker threads, scripts) get a short-lived thread so the
-    caller is never blocked and delivery still happens. The thread is not a
-    daemon, so a short-lived process waits for the bounded HTTP call to finish.
-    """
-    from app.services._agent_hub_config import AGENT_HUB_URL
-    from app.services.notifications.delivery import should_deliver
-
-    if not AGENT_HUB_URL or not should_deliver(notification):
-        return
-    try:
-        loop = asyncio.get_running_loop()
-    except RuntimeError:
-        threading.Thread(
-            target=_run_delivery,
-            args=(notification,),
-            name=f"notification-delivery-{notification.get('id', '')}",
-        ).start()
-        return
-
-    async def _deliver() -> None:
-        try:
-            from app.services.notifications.delivery import deliver
-
-            await deliver(notification)
-        except Exception:
-            logger.exception("Telegram delivery failed for notification %s", notification.get("id"))
-
-    task = loop.create_task(_deliver())
-    _background_tasks.add(task)
-    task.add_done_callback(_background_tasks.discard)
-
-
 def _insert_notification(
     notification_id: str, project_id: str, notification_type: NotificationType,
     title: str, message: str, severity: NotificationSeverity,
@@ -183,9 +134,7 @@ def create_notification(
     meta = {**(metadata or {})}
     if dedupe_key is not None:
         meta["dedupe_key"] = dedupe_key
-    notification = _insert_notification(
+    return _insert_notification(
         generate_prefixed_id("notif"), project_id, notification_type,
         title, message, severity, task_id, user_email, meta,
     )
-    _schedule_delivery(notification)
-    return notification
