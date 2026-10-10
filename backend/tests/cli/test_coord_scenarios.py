@@ -782,3 +782,19 @@ def test_long_native_instruction_rides_the_ledger_and_wakes_with_a_pointer(repos
     line = coord_wake.pane_line(f"st coordination:\nREQUEST {row['id']} from cc:x: {row['text']}", 1)
     assert len(line) <= coord_wake.TYPE_MAX and "st sessions inbox" in line and row["text"] not in line
     assert coord_wake.pane_line("head\nREQUEST ab12 from cc:x: hi", 1) == "head ; REQUEST ab12 from cc:x: hi"
+
+
+def test_sender_withdraws_unacked_request_to_unmatchable_label(repos, monkeypatch):
+    as_claude(monkeypatch, "asker-wd-0001")
+    request = coord.send("neri-bc", "anything?")
+    with pytest.raises(ValueError, match="--withdraw"):
+        coord.confirm(request["id"])
+    as_codex(monkeypatch, "other-wd-0001")
+    with pytest.raises(ValueError, match="not sent by"):
+        coord.confirm(request["id"], withdraw=True)
+    as_claude(monkeypatch, "asker-wd-0001")
+    closed = coord.confirm(request["id"], withdraw=True)
+    assert closed["state"] == "closed" and closed["withdrawn"] and closed["intent"] is None
+    assert all(row["id"] != request["id"] for row in coord.inbox())
+    with pytest.raises(ValueError, match="only an unacked request"):
+        coord.confirm(request["id"], withdraw=True)

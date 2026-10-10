@@ -397,16 +397,21 @@ def ack(message_id: str, intent: str, note: str | None = None) -> dict[str, Any]
         return dict(row)
 
 
-def confirm(message_id: str) -> dict[str, Any]:
-    """Requester closes the exchange."""
+def confirm(message_id: str, *, withdraw: bool = False) -> dict[str, Any]:
+    """Requester closes the exchange; ``withdraw`` closes one nobody acked (it authorizes nothing)."""
     agent_id = leases.identify_agent()[0]
     with leases._lock("_coord"):
         rows = _load_ledger()
         row = _find(rows, message_id)
         if row["from"] not in leases.self_ids():
             raise ValueError(f"request {message_id} was not sent by {agent_id}")
-        if row["state"] != "acked":
-            raise ValueError(f"request {message_id} has no ack to confirm (state={row['state']})")
+        if withdraw:
+            if row["state"] != "open":
+                raise ValueError(f"request {message_id} is {row['state']}; only an unacked request can be withdrawn")
+            row["withdrawn"] = True
+        elif row["state"] != "acked":
+            raise ValueError(f"request {message_id} has no ack to confirm (state={row['state']}); "
+                             f"to drop it: st sessions confirm {message_id} --withdraw")
         row.update(state="closed", closed_at=datetime.now(UTC).isoformat(), ack_seen=True)
         _save_ledger(rows)
         return dict(row)

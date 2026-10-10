@@ -51,14 +51,17 @@ def ack(
     typer.echo(f"acked {row['id']} {intent}")
 
 
-def confirm(message_id: Annotated[str, typer.Argument(help="Request id you sent")]) -> None:
-    """Close an acked request you sent (third step of the handshake)."""
+def confirm(
+    message_id: Annotated[str, typer.Argument(help="Request id you sent")],
+    withdraw: Annotated[bool, typer.Option("--withdraw", help="Close an unacked request you sent")] = False,
+) -> None:
+    """Close an acked request you sent (third step of the handshake), or withdraw an unacked one."""
     try:
-        coord.confirm(message_id)
+        coord.confirm(message_id, withdraw=withdraw)
     except ValueError as exc:
         _fail(exc)
         return
-    typer.echo(f"closed {message_id}")
+    typer.echo(f"{'withdrew' if withdraw else 'closed'} {message_id}")
 
 
 def inbox() -> None:
