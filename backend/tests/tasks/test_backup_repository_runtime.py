@@ -1213,3 +1213,29 @@ def test_sqlite_capture_never_reuses_unchanged_database(repository_env, tmp_path
         runtime.run_repository_backup(project_dir=str(source), source_id="source", env=repository_env, local_only=True)
         runtime.run_repository_backup(project_dir=str(source), source_id="source", env=repository_env, local_only=True)
     assert capture.call_count == save.call_count == 2
+
+
+@pytest.mark.parametrize("check_verified,critical,expected", [
+    (True, {"status": "failed", "error": "Infrastructure database/Redis/config restore drill failed"}, ["restore-drill-failed"]),
+    (True, {"status": "pending", "reason": "critical-offsite-coverage-missing"}, ["restore-drill-unverified"]),
+    (False, {"status": "skipped", "reason": "weekly-cadence"}, ["integrity-check-failed"]),
+    (False, {"status": "failed"}, ["integrity-check-failed", "restore-drill-failed"]),
+])
+def test_retention_skip_reason_names_the_blocking_gate(repository_env, monkeypatch, check_verified, critical, expected):
+    env = {**repository_env, "RESTIC_OFFSITE_PRUNE_QUALIFIED": "true"}
+    Path(env["RESTIC_LOCAL_REPOSITORY"]).mkdir()
+    adapter = MagicMock()
+    adapter.check.return_value = {"verified": check_verified, "state": {}, "checked_at": datetime.now(UTC).isoformat()}
+    monkeypatch.setattr(runtime, "ResticAdapter", lambda _: adapter)
+    monkeypatch.setattr(runtime.backup_store, "list_sources", lambda: [])
+    monkeypatch.setattr(runtime, "_weekly_critical_restore", lambda *_args, **_kwargs: dict(critical))
+    monkeypatch.setattr(runtime, "create_notification", MagicMock(return_value={"id": "notification"}))
+
+    result = runtime.maintain_repository(env, dry_run=False)
+
+    assert result["status"] == "failed"
+    for label in ("local", "remote"):
+        for step in ("retention", "prune"):
+            assert result[label][step] == {"status": "skipped", "reason": expected[0], "blocked_by": expected}
+    adapter.retention.assert_not_called()
+    adapter.prune.assert_not_called()

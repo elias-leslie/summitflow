@@ -828,23 +828,31 @@ def maintain_repository(env: dict[str, str], *, dry_run: bool = True, force_crit
                 previous["monthly_result"] = {key: value for key, value in check.items() if key != "state"}
                 _notify_repository_result(state, env, f"{label}-integrity", check)
                 _save_json(directory / "state.json", state)
-        pair_healthy = all((maintenance["remote" if remote else "local"].get("monthly_result") or {}).get("verified") is True for remote in repositories)
+        # Record every gate that blocks retention so the skip reason names
+        # the real cause; the gate itself is the conjunction of all of them.
+        blocked_by: list[str] = []
+        if not all((maintenance["remote" if remote else "local"].get("monthly_result") or {}).get("verified") is True for remote in repositories):
+            blocked_by.append("integrity-check-failed")
         critical_status = results.get("critical_restore", {}).get("status")
-        if critical_status == "failed" or (not preview and config.remote_repository and critical_status not in {"verified", "skipped"}):
-            pair_healthy = False
+        if critical_status == "failed":
+            blocked_by.append("restore-drill-failed")
+        elif not preview and config.remote_repository and critical_status not in {"verified", "skipped"}:
+            blocked_by.append("restore-drill-unverified")
+        pair_healthy = not blocked_by
         if pair_healthy and not preview and (offsite.get("maintenance") or {}).get("status") == "pending" and offsite["maintenance"].get("operation") == "prune":
             resumed = adapter.prune(remote=True, state=offsite, persist=persist, available_bytes=adapter.quota_free_bytes(), dry_run=False)
             offsite = state.get("offsite", {})
             results["resumed_prune"] = resumed
             if resumed.get("status") == "failed" or (offsite.get("maintenance") or {}).get("status") == "pending":
                 pair_healthy = False
+                blocked_by.append("resumed-prune-incomplete")
             elif resumed.get("status") == "completed":
                 maintenance["remote"]["pruned_at"] = resumed["completed_at"]
         for remote in repositories:
             label = "remote" if remote else "local"
             previous = maintenance[label]
             if not pair_healthy:
-                results[label] = {"monthly": previous.get("monthly_result"), "retention": {"status": "skipped", "reason": "integrity-check-failed"}, "prune": {"status": "skipped", "reason": "integrity-check-failed"}}
+                results[label] = {"monthly": previous.get("monthly_result"), "retention": {"status": "skipped", "reason": blocked_by[0], "blocked_by": blocked_by}, "prune": {"status": "skipped", "reason": blocked_by[0], "blocked_by": blocked_by}}
                 continue
             mapping = offsite.get("remote_snapshots", {}) if remote else {}
             def remap(value: str, mapping: dict[str, str] = mapping) -> str:
