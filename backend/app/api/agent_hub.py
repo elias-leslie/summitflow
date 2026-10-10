@@ -226,6 +226,7 @@ async def list_agent_hub_sessions(
     status: str | None = Query(default=None),
     agent_slug: str | None = Query(default=None),
     parent_session_id: str | None = Query(default=None),
+    q: str | None = Query(default=None),
     page: int = Query(default=1, ge=1),
     page_size: int = Query(default=20, ge=1, le=100),
 ) -> object:
@@ -242,6 +243,8 @@ async def list_agent_hub_sessions(
         params["agent_slug"] = agent_slug
     if parent_session_id:
         params["parent_session_id"] = parent_session_id
+    if q:
+        params["q"] = q
     return await _get_json(f"{AGENT_HUB_URL}/api/sessions", params=params)
 
 

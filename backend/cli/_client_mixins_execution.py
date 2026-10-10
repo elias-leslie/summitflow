@@ -55,6 +55,7 @@ class ExecutionOperationsMixin:
         agent_slug: str | None = None,
         parent_session_id: str | None = None,
         project_id: str | None = None,
+        q: str | None = None,
     ) -> list[dict[str, Any]]:
         return exec_ops.list_sessions(
             self._client,
@@ -66,6 +67,7 @@ class ExecutionOperationsMixin:
             agent_slug=agent_slug,
             parent_session_id=parent_session_id,
             project_id=project_id,
+            q=q,
         )
 
     def get_session(self, session_id: str) -> dict[str, Any]:

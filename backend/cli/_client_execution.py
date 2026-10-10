@@ -45,6 +45,7 @@ def list_sessions(
     agent_slug: str | None = None,
     parent_session_id: str | None = None,
     project_id: str | None = None,
+    q: str | None = None,
 ) -> list[dict[str, Any]]:
     """List agent sessions for the project."""
     params: dict[str, Any] = {
@@ -59,6 +60,8 @@ def list_sessions(
         params["parent_session_id"] = parent_session_id
     if project_id:
         params["project_id"] = project_id
+    if q:
+        params["q"] = q
 
     response = client.get(url_fn("/sessions"), params=params)
     data = handle_response(response)

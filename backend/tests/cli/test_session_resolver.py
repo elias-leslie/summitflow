@@ -50,6 +50,9 @@ class TestResolveSessionId:
         client = _StubClient([{"id": _FULL_UUID}])
         assert resolve_session_id(_FULL_UUID[:8], client) == _FULL_UUID
         assert client.calls and client.calls[0]["page"] == 1
+        # The prefix goes to Agent Hub's search, so sessions older than the
+        # newest few hundred still resolve.
+        assert client.calls[0]["q"] == _FULL_UUID[:8]
 
     def test_ambiguous_prefix_exits_with_clear_error(self, capsys: pytest.CaptureFixture[str]) -> None:
         client = _StubClient(
@@ -74,7 +77,7 @@ class TestResolveSessionId:
 
         assert exc.value.exit_code == 1
         err = capsys.readouterr().err
-        assert "No recent session found" in err and "deadbeef" in err
+        assert "No session found" in err and "deadbeef" in err
 
     def test_prefix_lookup_is_bounded_and_project_scoped(self, capsys: pytest.CaptureFixture[str]) -> None:
         client = _StubClient(
@@ -86,7 +89,7 @@ class TestResolveSessionId:
 
         assert [call["page"] for call in client.calls] == [1, 2]
         assert all(call["project_id"] == "summitflow" for call in client.calls)
-        assert "Use the full UUID for older sessions" in capsys.readouterr().err
+        assert "pass the full UUID" in capsys.readouterr().err
 
     def test_checkout_default_project_falls_back_to_global_lookup(self) -> None:
         # `st sessions show <id>` from one checkout must find another project's

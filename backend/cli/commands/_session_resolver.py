@@ -10,8 +10,9 @@ a different value than the one they just saw on screen and any of
 This helper accepts either form and returns the full ID:
 
 * A value that parses as a session UUID is returned unchanged.
-* Anything else is treated as a prefix and matched against
-``list_sessions`` in the current project/recent session window. Exactly one
+* Anything else is treated as a prefix: Agent Hub's ``q`` search narrows
+  ``list_sessions`` to id-prefix candidates server side, so old sessions
+  resolve too, and ids are re-checked here before matching. Exactly one
   match is resolved; multiple or zero matches both exit with a clear error so
   the operator gets actionable feedback instead of a downstream 404.
 """
@@ -31,8 +32,8 @@ _UUID_RE = re.compile(
     re.IGNORECASE,
 )
 
-# Agent Hub caps session page_size at 100. Prefix lookup stays deliberately
-# bounded so a convenience lookup cannot hang on all historical sessions.
+# Agent Hub caps session page_size at 100. ``q`` also matches summaries and
+# other text, so the page walk stays bounded for a prefix that is common text.
 _PAGE_SIZE = 100
 _MAX_PAGES = 5
 
@@ -85,8 +86,8 @@ def resolve_session_id(
 
     scope = f" for project '{lookup_project_id}'" if lookup_project_id else ""
     output_error(
-        f"No recent session found with ID starting with '{session_id}'{scope}. "
-        "Use the full UUID for older sessions."
+        f"No session found with ID starting with '{session_id}'{scope}. "
+        "Check the id or pass the full UUID."
     )
     raise typer.Exit(1)
 
@@ -99,6 +100,7 @@ def _prefix_matches(session_id: str, client: Any, project_id: str | None, max_pa
                 limit=_PAGE_SIZE,
                 page=page,
                 project_id=project_id,
+                q=session_id,
             )
         except APIError as exc:
             output_error(f"Could not resolve session ID '{session_id}': {exc}")

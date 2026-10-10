@@ -110,3 +110,18 @@ def test_close_session_uses_sdk(mocker: MockerFixture) -> None:
     assert response.status_code == 200
     assert response.json() == {"id": "sess-1", "status": "completed"}
     sdk.close_session.assert_awaited_once_with("sess-1")
+
+
+def test_list_sessions_forwards_search_to_agent_hub(mocker: MockerFixture) -> None:
+    # `st sessions show <short-id>` resolves through this search; dropping q
+    # limited the lookup to the newest few hundred sessions.
+    mock_get_json = AsyncMock(return_value={"sessions": []})
+    mocker.patch("app.api.agent_hub._get_json", mock_get_json)
+
+    response = client.get("/api/agent-hub/sessions?q=c9ffbd05&page_size=100")
+
+    assert response.status_code == 200
+    mock_get_json.assert_awaited_once_with(
+        f"{AGENT_HUB_URL}/api/sessions",
+        params={"page": 1, "page_size": 100, "q": "c9ffbd05"},
+    )
