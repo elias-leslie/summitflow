@@ -10,6 +10,8 @@
 mode="${1:-edit}"
 input=$(cat)
 export LC_ALL=C
+# Diagnostics: ST_COORD_HOOK_TRACE=<file> appends each mode and payload.
+[ -n "${ST_COORD_HOOK_TRACE:-}" ] && printf '%s %s\n' "$mode" "$input" >>"$ST_COORD_HOOK_TRACE" 2>/dev/null
 
 snapshot() {  # "<mtime_ns> <abs path>" per dirty file of the cwd repo
     local top
