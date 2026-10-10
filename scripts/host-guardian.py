@@ -168,7 +168,12 @@ def check_native_target_disk(state: CheckState) -> None:
 
 def check_device_stats(state: CheckState) -> None:
     all_stats: dict[str, dict[str, int]] = {}
+    native = state.details.get("native_target_disk")
     for path in DEVICE_STATS_PATHS:
+        if path == str(NATIVE_TARGET_PATH) and not (isinstance(native, dict) and native.get("available")):
+            # The portable native target is optional; its absence is already
+            # reported by the disk check and is not a device error.
+            continue
         proc = run(["btrfs", "device", "stats", path], timeout=30)
         stats: dict[str, int] = {}
         for line in proc.stdout.splitlines():

@@ -189,12 +189,35 @@ def test_device_stats_cover_every_btrfs_filesystem(monkeypatch) -> None:
 
     monkeypatch.setattr(module, "run", fake_run)
     state = module.CheckState()
+    state.details["native_target_disk"] = {"available": True}
     module.check_device_stats(state)
 
     assert calls == ["/", "/srv/workspaces", "/mnt/summitflow-native"]
     assert state.details["btrfs_device_stats"] == {"write_io_errs": 0, "corruption_errs": 3}
     assert state.issues[-1]["code"] == "btrfs_device_errors"
     assert "/mnt/summitflow-native" in state.issues[-1]["message"]
+
+
+@pytest.mark.parametrize("native", [None, {"available": False}])
+def test_device_stats_skip_detached_native_target(monkeypatch, native) -> None:
+    module = _load_module()
+    calls = []
+
+    def fake_run(args, **kwargs):
+        calls.append(args[-1])
+        if args[-1] == "/mnt/summitflow-native":
+            return SimpleNamespace(returncode=1, stdout="", stderr="ERROR: not a btrfs filesystem")
+        return SimpleNamespace(returncode=0, stdout="[/dev/x].corruption_errs  0\n", stderr="")
+
+    monkeypatch.setattr(module, "run", fake_run)
+    state = module.CheckState()
+    if native is not None:
+        state.details["native_target_disk"] = native
+    module.check_device_stats(state)
+
+    assert calls == ["/", "/srv/workspaces"]
+    assert not any(issue["code"] == "btrfs_device_errors" for issue in state.issues)
+    assert set(state.details["btrfs_device_stats_by_path"]) == {"/", "/srv/workspaces"}
 
 
 def test_native_target_disk_uses_shared_thresholds(monkeypatch) -> None:
