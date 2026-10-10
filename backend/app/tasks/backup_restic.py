@@ -37,6 +37,9 @@ from .backup_activity import BackupCancelled, check_backup_cancelled, run_bulk_p
 
 RESTIC_VERSION = "0.19.1"
 RCLONE_VERSION = "1.75.1"
+# Read-only prune planning with a fresh cache takes minutes; a bound keeps one
+# slow remote from holding the pair lock (and every capture) overnight.
+PRUNE_PLAN_TIMEOUT_SECONDS = 2 * 60 * 60
 DEFAULT_LOCAL_REPOSITORY = "/media/kasadis/Backups/davion-gem/restic"
 _ID = re.compile(r"^[0-9a-f]{64}$")
 _OBJECT = re.compile(r"^(?:data/[0-9a-f]{2}|index|snapshots|keys)/([0-9a-f]{64})$")
@@ -250,7 +253,7 @@ class ResticAdapter:
             raise ResticError(f"{command[0]} {phase} failed (exit {result.returncode}); inspect private operator diagnostics")
         return result
 
-    def _command(self, *args: str, remote: bool = False, permanent_delete: bool = False, restore_cache: Path | None = None) -> list[str]:
+    def _command(self, *args: str, remote: bool = False, permanent_delete: bool = False, operation_cache: Path | None = None) -> list[str]:
         repository = self.config.remote_repository if remote else str(self.config.local_repository)
         password = self.config.remote_password_file if remote else self.config.local_password_file
         if not repository or not password:
@@ -259,10 +262,10 @@ class ResticAdapter:
         # Check creates and removes its own fresh cache. Disabling that cache
         # repeatedly downloads tree packs within the same check; --with-cache
         # would instead reuse old data and is deliberately never supplied.
-        if restore_cache is not None:
-            if not args or args[0] != "restore":
-                raise ResticError("An operation cache is only supported for restore")
-            command.extend(["--cache-dir", str(restore_cache)])
+        if operation_cache is not None:
+            if not args or args[0] not in {"restore", "prune"}:
+                raise ResticError("An operation cache is only supported for restore and prune")
+            command.extend(["--cache-dir", str(operation_cache)])
         elif not args or args[0] != "check":
             command.append("--no-cache")
         if permanent_delete and repository.startswith("rclone:"):
@@ -635,7 +638,7 @@ class ResticAdapter:
             # This cache starts empty, belongs only to this restore job, and
             # cannot reuse an existing cache or an earlier restore's metadata.
             with disposable_scratch("restic-restore-cache-") as cache:
-                self._run(self._command(*args, remote=remote, restore_cache=cache), phase="restore")
+                self._run(self._command(*args, remote=remote, operation_cache=cache), phase="restore")
             root = destination / payload_path.relative_to("/")
             if not root.is_dir() or root.is_symlink():
                 raise ResticError("Restic did not materialize the expected payload root")
@@ -897,17 +900,27 @@ class ResticAdapter:
                 before_bytes = self.physical_bytes(remote=remote)
                 self._run(self._command("check", remote=remote), phase="verification")
                 args = ["prune", "--max-unused", "5%", "--max-repack-size", str(free - minimum_headroom_bytes)]
-                self._run(self._command(*args, "--dry-run", remote=remote, permanent_delete=remote), phase="maintenance")
-                if not dry_run:
-                    if remote:
-                        assert persist is not None
-                        journal = self._maintenance_state(journal, operation="prune", persist=persist)
-                    self._run(self._command(*args, remote=remote, permanent_delete=remote), phase="maintenance")
-                    if remote:
-                        assert persist is not None
-                        journal["maintenance"]["phase"] = "command_completed"
-                        persist(copy.deepcopy(journal))
-                        self._reconcile_maintenance(journal, persist)
+                # Without a cache, prune planning re-downloads tree packs for
+                # every snapshot walk; over Drive that held the pair lock for
+                # many hours and starved captures. This cache starts empty and
+                # belongs only to this prune. Read-only planning is bounded; an
+                # interrupted dry-run changes nothing in the repository.
+                with disposable_scratch("restic-prune-cache-") as cache:
+                    try:
+                        self._run(self._command(*args, "--dry-run", remote=remote, permanent_delete=remote, operation_cache=cache),
+                                  phase="maintenance", timeout=PRUNE_PLAN_TIMEOUT_SECONDS)
+                    except subprocess.TimeoutExpired as exc:
+                        raise ResticError(f"restic prune planning exceeded {PRUNE_PLAN_TIMEOUT_SECONDS}s; repository unchanged") from exc
+                    if not dry_run:
+                        if remote:
+                            assert persist is not None
+                            journal = self._maintenance_state(journal, operation="prune", persist=persist)
+                        self._run(self._command(*args, remote=remote, permanent_delete=remote, operation_cache=cache), phase="maintenance")
+                if not dry_run and remote:
+                    assert persist is not None
+                    journal["maintenance"]["phase"] = "command_completed"
+                    persist(copy.deepcopy(journal))
+                    self._reconcile_maintenance(journal, persist)
                 after_bytes = self.physical_bytes(remote=remote)
                 observed_free = self._quota_free_bytes() if remote else shutil.disk_usage(self.config.local_repository).free
                 return {"status": "preview" if dry_run else "completed", "dry_run": dry_run, "max_unused": "5%", "max_repack_bytes": free - minimum_headroom_bytes, "completed_at": _now().isoformat() if not dry_run else None, "physical_bytes_before": before_bytes, "physical_bytes_after": after_bytes, "reclaimed_bytes": max(0, before_bytes - after_bytes) if not dry_run else 0, "free_bytes": observed_free, "physical_bytes_confirmed": True, "state": journal}

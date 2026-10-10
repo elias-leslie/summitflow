@@ -286,7 +286,7 @@ def test_checks_use_fresh_temporary_cache_without_reusing_prior_data(setup, remo
     assert all("--no-cache" in command for command in process.commands if command[0] == "restic" and "check" not in command)
     assert "--no-cache" in adapter._command("restore", SNAPSHOT, remote=remote)
     with pytest.raises(engine.ResticError, match="only supported for restore"):
-        adapter._command("check", restore_cache=adapter.config.key_directory)
+        adapter._command("check", operation_cache=adapter.config.key_directory)
 
 
 def test_save_changed_and_unchanged_snapshots_use_stable_parent_and_truthful_metrics(setup):
@@ -638,6 +638,48 @@ def test_weekly_prune_is_independent_qualified_headroom_bounded_and_preview_firs
     failed = adapter.prune(remote=True, available_bytes=1024**4)
     assert failed["status"] == "failed" and failed["backup_verification_unchanged"] is True
     assert not any("purge" in command or "cleanup" in command for command in process.commands)
+
+
+def test_prune_uses_one_fresh_operation_cache_and_bounds_planning(setup):
+    config, process, _ = setup
+    seen: list[tuple[list[str], dict[str, Any]]] = []
+
+    def observe(command: list[str], **kwargs: Any) -> subprocess.CompletedProcess[str]:
+        if "prune" in command:
+            cache = Path(command[command.index("--cache-dir") + 1])
+            assert cache.is_dir() and not cache.is_symlink() and not any(cache.iterdir())
+            assert "--no-cache" not in command
+            seen.append((command, kwargs))
+        return process(command, **kwargs)
+
+    adapter = engine.ResticAdapter(replace(config, offsite_prune_qualified=True), runner=observe)
+    _, persist = _persisted()
+    assert adapter.prune(remote=True, available_bytes=1024**4, dry_run=False, state={"status": "verified"}, persist=persist)["status"] == "completed"
+    (plan, plan_kwargs), (apply, apply_kwargs) = seen
+    assert "--dry-run" in plan and plan_kwargs["timeout"] == engine.PRUNE_PLAN_TIMEOUT_SECONDS
+    assert "timeout" not in apply_kwargs  # Mutation is never interrupted by the bound.
+    assert plan[plan.index("--cache-dir") + 1] == apply[apply.index("--cache-dir") + 1]
+    assert not Path(plan[plan.index("--cache-dir") + 1]).exists()
+
+
+def test_prune_planning_timeout_fails_without_mutation(setup):
+    config, process, _ = setup
+    applied: list[list[str]] = []
+
+    def slow(command: list[str], **kwargs: Any) -> subprocess.CompletedProcess[str]:
+        if "prune" in command:
+            if "--dry-run" in command:
+                raise subprocess.TimeoutExpired(command, kwargs["timeout"])
+            applied.append(command)
+        return process(command, **kwargs)
+
+    adapter = engine.ResticAdapter(replace(config, offsite_prune_qualified=True), runner=slow)
+    _, persist = _persisted()
+    result = adapter.prune(remote=True, available_bytes=1024**4, dry_run=False, state={"status": "verified"}, persist=persist)
+    assert result["status"] == "failed" and "planning exceeded" in result["error"]
+    assert result["backup_verification_unchanged"] is True
+    assert applied == []
+    assert (result["state"].get("maintenance") or {}).get("status") != "pending"
 
 
 def test_offsite_prune_defaults_to_disabled(setup):
