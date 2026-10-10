@@ -38,6 +38,7 @@ from .workspace_paths import (
 )
 
 _AUTO_SOURCE_PREFIX = "auto-"
+_REJECTED_CAPTURE = "Capture not accepted:"  # quick_snapshots prefix for a refused point
 
 
 def delete_subvolume(path: Path) -> None:
@@ -273,7 +274,8 @@ def _delete_entries(*, project_id: str, scope: SnapshotScope, entries: list[Quic
             if not shared and Path(entry.snapshot_path).exists():
                 raise OSError("Physical snapshot remains after deletion")
         except Exception as exc:
-            entry.deletion_error = str(exc)
+            rejected = (entry.deletion_error or "").startswith(_REJECTED_CAPTURE)
+            entry.deletion_error = f"{_REJECTED_CAPTURE} retry cleanup failed: {exc}" if rejected else str(exc)
             logging.getLogger(__name__).warning("snapshot deletion deferred %s: %s", entry.id, exc)
             continue
         deleted.append(entry)
@@ -317,27 +319,49 @@ def sweep_periodic(*, policy: AutosnapshotPolicy = DEFAULT_POLICY) -> list[Quick
     return created
 
 
+def _held(entry: QuickSnapshot, now: datetime) -> bool:
+    """Unclassified state, recovery copies and unexpired pins hold any entry."""
+    if entry.unfinished is None:
+        return True
+    if entry.recovery_active or any(not copy.get("deleted_at") for copy in recovery_catalogue(entry)):
+        return True
+    if entry.pin_reason:
+        expiry = datetime.fromisoformat(entry.pin_until) if entry.pin_until else None
+        if expiry is not None and expiry.tzinfo is None:
+            expiry = expiry.replace(tzinfo=UTC)
+        if expiry is None or expiry > now:
+            return True
+    return False
+
+
 def _protected_ids(entries: list[QuickSnapshot], now: datetime) -> set[str]:
-    protected = set()
+    protected = {entry.id for entry in entries if _held(entry, now)}
     unfinished = [e for e in entries if e.unfinished]
     if unfinished:
         protected.add(_latest_entry(unfinished).id)
-    for entry in entries:
-        if entry.unfinished is None:
-            protected.add(entry.id)
-        if entry.recovery_active or any(not copy.get("deleted_at") for copy in recovery_catalogue(entry)):
-            protected.add(entry.id)
-        if entry.pin_reason:
-            expiry = datetime.fromisoformat(entry.pin_until) if entry.pin_until else None
-            if expiry is not None and expiry.tzinfo is None:
-                expiry = expiry.replace(tzinfo=UTC)
-            if expiry is None or expiry > now:
-                protected.add(entry.id)
     return protected
+
+
+
+def _discardable(entry: QuickSnapshot) -> bool:
+    """A rejected capture or a point whose physical tree is gone is not a recovery point.
+
+    Neither may hold an hourly bucket or the newest-point guarantee; both
+    leave the manifest on the next prune. A missing tree only counts when its
+    store directory is present, so an unmounted store never drops entries.
+    """
+    if (entry.deletion_error or "").startswith(_REJECTED_CAPTURE):
+        return True
+    path = Path(entry.snapshot_path)
+    return path.parent.is_dir() and not path.exists()
 
 
 def _retention_candidates(entries: list[QuickSnapshot], policy: AutosnapshotPolicy) -> list[QuickSnapshot]:
     now = datetime.now(UTC)
+    discard = [e for e in entries if _discardable(e)]
+    discard_ids = {e.id for e in discard}
+    entries = [e for e in entries if e.id not in discard_ids]
+    held = {e.id for e in discard if _held(e, now)}
     protected = _protected_ids(entries, now)
     autos = sorted([e for e in entries if e.source.startswith(_AUTO_SOURCE_PREFIX)], key=lambda e: e.created_at, reverse=True)
     # Keep the newest point even when a clean project has been idle for over a week.
@@ -359,6 +383,7 @@ def _retention_candidates(entries: list[QuickSnapshot], policy: AutosnapshotPoli
             prune.append(entry)
     manuals = sorted([e for e in entries if not e.source.startswith(_AUTO_SOURCE_PREFIX)], key=lambda e: e.created_at, reverse=True)
     prune.extend(e for e in manuals[policy.manual_keep_per_scope:] if e.id not in protected)
+    prune.extend(e for e in discard if e.id not in held)
     return prune
 
 

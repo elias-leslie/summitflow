@@ -326,6 +326,18 @@ async def maintain_storage_repository(backend_id: str, request: Request, dry_run
         raise HTTPException(status_code=409, detail=str(exc)) from exc
 
 
+@router.post("/backup-storage/{backend_id}/maintenance/cancel")
+async def cancel_storage_maintenance(backend_id: str, request: Request, force: bool = False) -> dict[str, object]:
+    """Stop running repository maintenance; a mutating phase requires ``force``."""
+    require_owner(request)
+    from ...tasks.backup_repository_runtime import cancel_repository_maintenance
+
+    try:
+        return await asyncio.to_thread(cancel_repository_maintenance, _restic_backend_env(backend_id), force=force)
+    except (ResticError, OSError, ValueError) as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+
+
 @router.post("/backup-storage/{backend_id}/test")
 async def test_storage_backend(backend_id: str) -> dict[str, object]:
     """Test storage backend connectivity."""

@@ -7,6 +7,15 @@ from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any, cast
 
+import pytest
+
+
+@pytest.fixture(autouse=True)
+def _isolate_scratch(mocker) -> Any:
+    """Host retention must never touch the live /srv/scratch or its stamp in tests."""
+    return mocker.patch("app.tasks.host_retention.weekly_scratch_retention",
+                        return_value={"status": "skipped", "reason": "weekly-cadence"})
+
 
 def test_host_retention_policy_defaults_keep_docker_cache_minimal() -> None:
     from app.tasks.host_retention import HostRetentionPolicy

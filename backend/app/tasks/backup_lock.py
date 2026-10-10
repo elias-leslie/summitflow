@@ -2,15 +2,23 @@
 
 from __future__ import annotations
 
+import json
 from collections.abc import Callable, Iterator
 from contextlib import contextmanager
+from datetime import UTC, datetime
 from threading import Event, Thread
+from typing import cast
 from uuid import uuid4
 
 from ..logging_config import get_logger
 from ..services.redis_pool import get_redis
 
 BACKUP_LOCK_PREFIX = "summitflow:backup_lock:"
+# Phase and cancel records belong to one lease owner token; outside the lock
+# prefix so lease scans never count them as active work.
+BACKUP_PHASE_PREFIX = "summitflow:backup_phase:"
+BACKUP_CANCEL_PREFIX = "summitflow:backup_cancel:"
+BACKUP_PHASE_TTL = 7 * 24 * 3600
 BACKUP_LOCK_TTL = 900  # 15 minutes (matches time_limit)
 BACKUP_LOCK_RENEW_INTERVAL = BACKUP_LOCK_TTL // 3
 BACKUP_LOCK_JOIN_TIMEOUT = 6
@@ -91,6 +99,62 @@ def release_backup_lock(source_id: str, owner_token: str) -> bool:
     return bool(result)
 
 
+def _owned_record(prefix: str, source_id: str) -> dict[str, object] | None:
+    """Return a phase/cancel record only while its writer still owns the lease."""
+    redis = get_redis()
+    raw = redis.get(prefix + source_id)
+    if raw is None:
+        return None
+    try:
+        record = json.loads(cast("str | bytes", raw))
+    except (TypeError, ValueError):
+        return None
+    owner = record.get("owner") if isinstance(record, dict) else None
+    return record if isinstance(owner, str) and owns_backup_lease(source_id, owner) else None
+
+
+def publish_backup_phase(source_id: str, owner_token: str, *, operation: str, read_only: bool, **detail: object) -> None:
+    """Record the running native operation so restart and cancel can judge safety."""
+    record = {"owner": owner_token, "operation": operation, "read_only": read_only, "since": datetime.now(UTC).isoformat(), **detail}
+    get_redis().set(BACKUP_PHASE_PREFIX + source_id, json.dumps(record), ex=BACKUP_PHASE_TTL)
+
+
+def backup_phase(source_id: str) -> dict[str, object] | None:
+    return _owned_record(BACKUP_PHASE_PREFIX, source_id)
+
+
+def request_backup_cancel(source_id: str, *, force: bool) -> dict[str, object] | None:
+    """Ask the current lease owner to stop; returns the phase it was asked during."""
+    phase = backup_phase(source_id)
+    if phase is None:
+        return None
+    get_redis().set(BACKUP_CANCEL_PREFIX + source_id, json.dumps({"owner": phase["owner"], "force": force}), ex=BACKUP_PHASE_TTL)
+    return phase
+
+
+def backup_cancel_request(source_id: str) -> dict[str, object] | None:
+    return _owned_record(BACKUP_CANCEL_PREFIX, source_id)
+
+
+def clear_backup_phase(source_id: str) -> None:
+    get_redis().delete(BACKUP_PHASE_PREFIX + source_id, BACKUP_CANCEL_PREFIX + source_id)
+
+
+def worker_restart_reserved() -> bool:
+    return bool(get_redis().exists(_lock_key(_RESTART_GUARD_SOURCE)))
+
+
+def _restart_blocker(source_id: str) -> str | None:
+    """None when a restart may stop this lease's work with the repository unchanged."""
+    phase = backup_phase(source_id)
+    if phase is None:
+        return source_id
+    if phase.get("read_only"):
+        return None
+    cancel = phase.get("cancel_command")
+    return f"{phase.get('label') or source_id} ({phase.get('operation')}, mutating since {phase.get('since')}; wait, or {cancel} --force)" if cancel else f"{source_id} ({phase.get('operation')})"
+
+
 @contextmanager
 def backup_worker_restart_guard() -> Iterator[Callable[[], None]]:
     """Refuse busy workers and atomically exclude new native backup admission.
@@ -111,10 +175,14 @@ def backup_worker_restart_guard() -> Iterator[Callable[[], None]]:
         try:
             # Upgraded workers cannot enter while the barrier is held. Recheck
             # for pre-upgrade workers during the first activation as well.
+            # A read-only maintenance phase (check, dry-run) is stopped by the
+            # restart with its repository unchanged; mutation cannot start
+            # while this reservation exists.
             active = sorted(
-                decoded.removeprefix(BACKUP_LOCK_PREFIX)
+                blocker
                 for item in get_redis().scan_iter(match=f"{BACKUP_LOCK_PREFIX}*")
                 if (decoded := item.decode() if isinstance(item, bytes) else str(item)) != key
+                and (blocker := _restart_blocker(decoded.removeprefix(BACKUP_LOCK_PREFIX))) is not None
             )
             owned = owns_backup_lease(_RESTART_GUARD_SOURCE, token)
         except Exception as exc:

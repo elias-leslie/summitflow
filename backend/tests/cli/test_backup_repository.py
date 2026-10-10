@@ -388,3 +388,30 @@ def test_schedule_help_lists_four_hourly_and_unknown_frequency_fails_before_api(
     assert result.exit_code == 2
     assert "four_hourly" in result.output
     get_api.assert_not_called()
+
+
+def test_status_defaults_to_every_restic_backend(monkeypatch):
+    from cli.commands import backup_storage
+    from cli.main import app
+
+    responses = {
+        "backup-storage": [{"id": "pilot", "config": {"engine": "restic"}}, {"id": "native", "config": {}}],
+        "backup-storage/pilot/repository": {"ready": True, "maintenance_running": {"operation": "restic prune --dry-run", "read_only": True}},
+    }
+    monkeypatch.setattr(backup_storage, "_api_get", lambda path: responses[path])
+    result = runner.invoke(app, ["backup", "storage", "status"])
+    assert result.exit_code == 0
+    [summary] = json.loads(result.output)
+    assert summary["backend_id"] == "pilot" and summary["maintenance_running"]["read_only"] is True
+
+
+@pytest.mark.parametrize(("force", "status", "exit_code"), [(False, "refused", 1), (True, "requested", 0)])
+def test_cancel_posts_force_and_reports_refusal(monkeypatch, force, status, exit_code):
+    from cli.commands import backup_storage
+    from cli.main import app
+
+    calls = []
+    monkeypatch.setattr(backup_storage, "_api_post", lambda path, *_, **__: calls.append(path) or {"status": status})
+    result = runner.invoke(app, ["backup", "storage", "cancel", "pilot", *(["--force"] if force else [])])
+    assert result.exit_code == exit_code
+    assert calls == [f"backup-storage/pilot/maintenance/cancel?force={str(force).lower()}"]

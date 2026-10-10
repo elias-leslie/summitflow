@@ -66,7 +66,7 @@ app = typer.Typer(
         "Clean up git/checkpoint residue plus managed workspace leftovers.\n"
         "Read-only: status, checkpoints, inspect-orphans.\n"
         "Cleanup: checkpoints --auto, checkpoints --force, snapshots, cleanrooms.\n"
-        "Report-only: scratch (old /srv/scratch entries; never deletes).\n"
+        "Scratch: reports old /srv/scratch entries; --apply deletes them (weekly in host maintenance).\n"
         "Path cleanup removes literal paths only. Globs are rejected and directories require --recursive."
     )
 )
@@ -348,14 +348,16 @@ def cleanup_scratch(
         str | None,
         typer.Option("--older-than", help="Minimum idle age (e.g. 72h, 7d). Default: host retention policy."),
     ] = None,
+    apply: Annotated[bool, typer.Option("--apply", help="Delete the candidates now instead of reporting them.")] = False,
 ) -> None:
-    """Report /srv/scratch entries old enough to review. Report-only: nothing is deleted.
+    """Report /srv/scratch entries idle past the retention age; --apply deletes them.
 
-    Protected: cache/models/.dev-tools and st-* namespaces, symlink targets from
-    ~ and project trees (depth 4, same filesystem), and paths open by any visible
-    process. Age is the newest file mtime/ctime/atime or directory mtime/ctime in the entry.
+    Host maintenance applies this weekly. Protected: cache/models/.dev-tools and
+    st-* namespaces, symlink targets from ~ and project trees (depth 4, same
+    filesystem), and paths open by any visible process. Age is the newest file
+    mtime/ctime/atime or directory mtime/ctime in the entry.
     """
-    from app.tasks._retention_scratch import collect_scratch_review
+    from app.tasks._retention_scratch import apply_scratch_retention, collect_scratch_review
     from app.utils.host_retention_policy import HostRetentionPolicy
 
     try:
@@ -364,11 +366,26 @@ def cleanup_scratch(
     except ValueError as exc:
         typer.echo(f"Error: {exc}", err=True)
         raise typer.Exit(2) from exc
+    compact = bool(ctx.obj) and getattr(ctx.obj, "is_compact", True)
+    if apply:
+        applied = apply_scratch_retention(max_age_hours=int(hours))
+        if not compact:
+            output_json(applied)
+            return
+        for path in applied["deleted_paths"]:
+            typer.echo(f"  deleted {path}")
+        for skip in applied["kept"]:
+            typer.echo(f"  kept    {skip['path']}: {skip['reason']}")
+        output_success(f"{len(applied['deleted_paths'])} deleted, {cleanroom_prune.format_bytes(applied['bytes_reclaimed'])} reclaimed; "
+                       f"{applied['protected']} protected")
+        if applied["status"] == "partial":
+            raise typer.Exit(1)
+        return
     review = collect_scratch_review(max_age_hours=int(hours))
-    if not ctx.obj or not getattr(ctx.obj, "is_compact", True):
+    if not compact:
         output_json(review)
         return
-    typer.echo(f"REPORT ONLY - nothing deleted. Root: {review['root']} (idle >= {review['max_age_hours']}h)")
+    typer.echo(f"REPORT ONLY - nothing deleted (host maintenance applies weekly; --apply now). Root: {review['root']} (idle >= {review['max_age_hours']}h)")
     for item in review["candidates"]:
         typer.echo(f"  review {item['path']} ({cleanroom_prune.format_bytes(item['size_bytes'])}, idle {item['age_hours']}h)")
     for skip in review["protected"]:

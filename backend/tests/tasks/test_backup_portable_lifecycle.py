@@ -33,6 +33,12 @@ class _LifecycleLeaseRedis:
     def get(self, key):
         return self.values.get(key)
 
+    def exists(self, key):
+        return int(key in self.values)
+
+    def delete(self, *keys):
+        return sum(1 for key in keys if self.values.pop(key, None) is not None)
+
     def scan_iter(self, *, match):
         return [key for key in self.values if key.startswith(match.removesuffix("*"))]
 
@@ -255,19 +261,21 @@ def test_daytime_zero_due_retries_34_persisted_points_once_per_backend(tmp_path,
         adapter = Mock()
         lease_source = "__repository_maintenance__:" + runtime._repository_pair(config)
         lease_key = backup_lock.BACKUP_LOCK_PREFIX + lease_source
+        phase_key = backup_lock.BACKUP_PHASE_PREFIX + lease_source
         def identity():
-            assert set(backup_lease_redis.values) == {lease_key}
+            assert set(backup_lease_redis.values) == {lease_key, phase_key}
             owner = backup_lease_redis.values[lease_key]
             assert backup_lock.acquire_backup_lock(lease_source) is None
             assert backup_lease_redis.values[lease_key] == owner
-            with pytest.raises(backup_lock.BackupLockLeaseError, match="Backups active"), backup_lock.backup_worker_restart_guard():
-                pytest.fail("persisted offsite copy must refuse a managed restart")
             return {"id": str(i + 1) * 64}
         adapter.repository_identity.side_effect = identity
         adapter.physical_bytes.return_value = 170
         adapter.quota_free_bytes.return_value = None if outcome == "pressure" else 1000000
         def sync(snapshot_id, *, state, persist):
-            assert set(backup_lease_redis.values) == {lease_key}
+            assert set(backup_lease_redis.values) == {lease_key, phase_key}
+            adapter.control.begin(["restic", "--repo", "/r", "copy"], phase="offsite")
+            with pytest.raises(backup_lock.BackupLockLeaseError, match="Backups active"), backup_lock.backup_worker_restart_guard():
+                pytest.fail("persisted offsite copy must refuse a managed restart")
             expected = [row["verification_json"]["snapshot_id"] for row in rows[str(i)]]
             assert state["pending_snapshot_ids"] == expected
             assert snapshot_id == expected[-1]

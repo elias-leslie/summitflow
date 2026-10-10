@@ -71,6 +71,7 @@ def _repository_summary(backend_id: str, payload: Mapping[str, Any]) -> dict[str
         # Free/reclaimed figures belong to this dated maintenance run, not a
         # fresh quota measurement initiated by a routine status command.
         "maintenance": {"last_run_at": maintenance.get("last_run_at"), **_maintenance_summary(_mapping(maintenance.get("result")))},
+        "maintenance_running": payload.get("maintenance_running"),
         "details_command": f"st backup storage status {backend_id} --details",
     }
 
@@ -371,16 +372,52 @@ def initialize_repository(
         handle_api_error(e)
 
 
+def _restic_backend_ids() -> list[str]:
+    return [str(item["id"]) for item in _api_get("backup-storage")
+            if isinstance(item.get("config"), dict) and item["config"].get("engine") == "restic"]
+
+
 @app.command("status")
 def repository_status(
     ctx: typer.Context,
-    backend_id: Annotated[str, typer.Argument(help="Restic backend ID")],
+    backend_id: Annotated[str | None, typer.Argument(help="Restic backend ID (default: every Restic backend)")] = None,
     details: Annotated[bool, typer.Option("--details", help="Show the full response, including object journals")] = False,
 ) -> None:
-    """Read repository readiness and durable verification status."""
+    """Read repository readiness and durable verification status without taking repository locks."""
     try:
-        result = _api_get(f"backup-storage/{backend_id}/repository")
-        output_json(result if details else _repository_summary(backend_id, _mapping(result)))
+        backend_ids = [backend_id] if backend_id else _restic_backend_ids()
+        if not backend_ids:
+            typer.echo("No Restic backends configured.")
+            return
+        results = []
+        for current in backend_ids:
+            try:
+                result = _api_get(f"backup-storage/{current}/repository")
+            except APIError as exc:
+                if backend_id:
+                    raise
+                result = {"error": f"HTTP {exc.status_code}"}
+            results.append(result if details else _repository_summary(current, _mapping(result)))
+        output_json(results[0] if backend_id else results)
+    except APIError as e:
+        handle_api_error(e)
+    except httpx.TimeoutException:
+        typer.echo("Error: backup status did not answer within 30s; the API may be restarting", err=True)
+        raise typer.Exit(1) from None
+
+
+@app.command("cancel")
+def cancel_maintenance(
+    ctx: typer.Context,
+    backend_id: Annotated[str, typer.Argument(help="Restic backend ID")],
+    force: Annotated[bool, typer.Option("--force", help="Also stop a running real prune/forget/copy (may leave work for the next prune)")] = False,
+) -> None:
+    """Stop running repository maintenance. A check or dry-run stops safely; a real prune needs --force."""
+    try:
+        result = _api_post(f"backup-storage/{backend_id}/maintenance/cancel?force={str(force).lower()}")
+        output_json(result)
+        if result.get("status") == "refused":
+            raise typer.Exit(1)
     except APIError as e:
         handle_api_error(e)
 

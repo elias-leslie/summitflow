@@ -40,6 +40,7 @@ RCLONE_VERSION = "1.75.1"
 # Read-only prune planning with a fresh cache takes minutes; a bound keeps one
 # slow remote from holding the pair lock (and every capture) overnight.
 PRUNE_PLAN_TIMEOUT_SECONDS = 2 * 60 * 60
+VERSION_TIMEOUT_SECONDS = 30  # Status must answer even when a binary hangs.
 DEFAULT_LOCAL_REPOSITORY = "/media/kasadis/Backups/davion-gem/restic"
 _ID = re.compile(r"^[0-9a-f]{64}$")
 _OBJECT = re.compile(r"^(?:data/[0-9a-f]{2}|index|snapshots|keys)/([0-9a-f]{64})$")
@@ -49,6 +50,38 @@ Persist = Callable[[dict[str, Any]], None]
 
 class ResticError(RuntimeError):
     """An operation failed; messages deliberately exclude subprocess output."""
+
+
+_READ_ONLY_RESTIC = frozenset({"cat", "check", "diff", "find", "ls", "restore", "snapshots", "stats", "version"})
+_READ_ONLY_RCLONE = frozenset({"about", "cat", "lsjson", "size", "version"})
+
+
+def command_operation(command: Sequence[str]) -> tuple[str, bool]:
+    """Name a native command and whether it leaves the repository unchanged.
+
+    ``restore`` writes only to a caller destination. Unknown subcommands are
+    treated as mutating so maintenance cancellation never guesses safety.
+    """
+    if not command:
+        return "unknown", False
+    if command[0] == "rclone":
+        operation = command[1] if len(command) > 1 else "unknown"
+        return f"rclone {operation}", operation in _READ_ONLY_RCLONE
+    if command[0] != "restic":
+        return command[0], False
+    operation = next((token for token in command[1:] if token in _READ_ONLY_RESTIC or token in {"backup", "copy", "forget", "init", "prune", "repair", "tag", "unlock"}), "unknown")
+    dry_run = "--dry-run" in command
+    return f"restic {operation}" + (" --dry-run" if dry_run else ""), operation in _READ_ONLY_RESTIC or (dry_run and operation in {"forget", "prune"})
+
+
+class OperationControl:
+    """Caller hook for observable, cancellable native commands (maintenance)."""
+
+    def begin(self, command: Sequence[str], *, phase: str) -> None:
+        """Called before each command; may raise ``ResticError`` to refuse it."""
+
+    def check(self) -> None:
+        """Polled while a command runs; raising stops the command's process group."""
 
 
 def _now() -> datetime:
@@ -220,6 +253,7 @@ class ResticAdapter:
     def __init__(self, config: ResticConfig, *, runner: Runner | None = None) -> None:
         self.config = config
         self._runner = runner or run_bulk_process
+        self.control: OperationControl | None = None
 
     def _env(self) -> dict[str, str]:
         # Inline remote tokens, client credentials, roots, and backend options
@@ -234,6 +268,9 @@ class ResticAdapter:
     def _invoke(self, command: list[str], *, phase: str, **kwargs: Any) -> subprocess.CompletedProcess[Any]:
         """Keep native check caches and child scratch off the system volume."""
         check_backup_cancelled()
+        control = self.control
+        if control is not None:
+            control.begin(command, phase=phase)
         with disposable_scratch("restic-process-") as scratch:
             existing_check = kwargs.pop("capacity_check", None)
 
@@ -241,6 +278,8 @@ class ResticAdapter:
                 ensure_scratch_capacity(scratch, 0)
                 if existing_check is not None:
                     existing_check()
+                if control is not None:
+                    control.check()
 
             return self._runner(command, env=scratch_subprocess_env(self._env(), path=scratch),
                                 phase=phase, object_name="Restic repository", capacity_check=capacity_check, **kwargs)
@@ -299,14 +338,16 @@ class ResticAdapter:
         """Read-only credential and pinned-binary checks, without secret contents."""
         try:
             self.config.validate(remote=not local_only)
-            restic = self._run(["restic", "version"], phase="configuration")
+            restic = self._run(["restic", "version"], phase="configuration", timeout=VERSION_TIMEOUT_SECONDS)
             if not re.search(rf"\brestic {re.escape(RESTIC_VERSION)}\b", restic.stdout):
                 raise ResticError(f"Restic {RESTIC_VERSION} is required")
             if not local_only and str(self.config.remote_repository).startswith("rclone:"):
-                rclone = self._run(["rclone", "version"], phase="configuration")
+                rclone = self._run(["rclone", "version"], phase="configuration", timeout=VERSION_TIMEOUT_SECONDS)
                 if not re.search(rf"\brclone v{re.escape(RCLONE_VERSION)}\b", rclone.stdout):
                     raise ResticError(f"rclone {RCLONE_VERSION} is required")
             return {"ready": True, "engine": "restic", "local_only": local_only}
+        except subprocess.TimeoutExpired:
+            return {"ready": False, "engine": "restic", "error": "Restic/rclone version probe timed out"}
         except (ResticError, OSError) as exc:
             return {"ready": False, "engine": "restic", "error": str(exc)}
 

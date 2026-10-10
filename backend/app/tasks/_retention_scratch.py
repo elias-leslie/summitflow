@@ -1,18 +1,24 @@
-"""Report-only age review of disposable ``/srv/scratch`` entries.
+"""Age review and weekly cleanup of disposable ``/srv/scratch`` entries.
 
-Scratch is excluded from backups, so nothing here deletes. Each direct child of
-an allowlisted root is reviewed as one unit and is reported only when it is old,
-not a symlink target, not open by a visible process and not a protected root.
+Each direct child of the scratch root is reviewed as one unit and is a
+candidate only when it is old, not a symlink target, not open by a visible
+process and not a protected root. ``collect_scratch_review`` never deletes;
+``apply_scratch_retention`` re-verifies each candidate and removes it, and the
+host-retention maintenance step runs it at most weekly. Scratch is excluded
+from backups and holds only replaceable data.
 """
 
 from __future__ import annotations
 
+import json
 import os
+import shutil
 import stat
+import tempfile
 from collections.abc import Iterable, Sequence
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
-from typing import TypedDict
+from typing import Any, TypedDict
 
 SCRATCH_ROOT = Path("/srv/scratch")
 # Long-lived caches/models and namespaces whose owners already run retention
@@ -21,6 +27,8 @@ PROTECTED_NAMES = frozenset({"cache", "models", ".dev-tools"})
 PROTECTED_PREFIXES = ("st-",)
 DEFAULT_SYMLINK_DEPTH = 4
 DEFAULT_MAX_ENTRIES = 200_000
+APPLY_INTERVAL_HOURS = 7 * 24
+DEFAULT_STAMP = Path.home() / ".local/state/summitflow/scratch-retention.json"
 
 
 class ScratchCandidate(TypedDict):
@@ -240,3 +248,103 @@ def collect_scratch_review(
             size_bytes=size, entries=entries, action="review_only",
         ))
     return review
+
+
+class ScratchApply(TypedDict):
+    status: str
+    root: str
+    max_age_hours: int
+    deleted_paths: list[str]
+    bytes_reclaimed: int
+    kept: list[ScratchSkip]
+    protected: int
+    process_visibility: str
+
+
+def apply_scratch_retention(
+    *,
+    max_age_hours: int,
+    now: datetime | None = None,
+    scratch_root: Path = SCRATCH_ROOT,
+    symlink_roots: Sequence[Path] | None = None,
+    proc_root: Path = Path("/proc"),
+    max_entries: int = DEFAULT_MAX_ENTRIES,
+) -> ScratchApply:
+    """Delete review candidates after re-checking each one immediately before removal.
+
+    Only direct, non-symlink children owned by this user on the scratch device
+    are removed. Age includes file atime, so anything read within the window
+    keeps its entry even when its process is not visible.
+    """
+    effective_now = now or datetime.now(UTC)
+    review = collect_scratch_review(
+        max_age_hours=max_age_hours, now=effective_now, scratch_root=scratch_root,
+        symlink_roots=symlink_roots, proc_root=proc_root, max_entries=max_entries,
+    )
+    result = ScratchApply(
+        status="skipped" if review["status"] == "skipped" else "success", root=str(scratch_root),
+        max_age_hours=max_age_hours, deleted_paths=[], bytes_reclaimed=0, kept=[],
+        protected=len(review["protected"]), process_visibility=review["process_visibility"],
+    )
+    if not review["candidates"]:
+        return result
+    device = scratch_root.lstat().st_dev
+    cutoff = effective_now.timestamp() - max_age_hours * 3600
+    held, _ = open_scratch_paths(scratch_root, proc_root)
+    for candidate in review["candidates"]:
+        path = Path(candidate["path"])
+        try:
+            info = path.lstat()
+            if path.parent != scratch_root or stat.S_ISLNK(info.st_mode) or info.st_dev != device or info.st_uid != os.getuid():
+                result["kept"].append(ScratchSkip(path=str(path), reason="not a user-owned scratch entry"))
+                continue
+            if any(_within(target, path) for target in held):
+                result["kept"].append(ScratchSkip(path=str(path), reason="in use"))
+                continue
+            stats = _tree_stats(path, max_entries=max_entries)
+            if stats is None or stats[0] > cutoff:
+                result["kept"].append(ScratchSkip(path=str(path), reason="changed since review"))
+                continue
+            if stat.S_ISDIR(info.st_mode):
+                shutil.rmtree(path)
+            else:
+                path.unlink()
+        except OSError as exc:
+            result["kept"].append(ScratchSkip(path=str(path), reason=f"delete failed: {exc.strerror or exc}"))
+            result["status"] = "partial"
+            continue
+        result["deleted_paths"].append(str(path))
+        result["bytes_reclaimed"] += stats[1]
+    return result
+
+
+def _read_stamp(stamp: Path) -> datetime | None:
+    try:
+        value = datetime.fromisoformat(json.loads(stamp.read_text())["last_applied_at"])
+    except (OSError, ValueError, KeyError, TypeError):
+        return None
+    return value if value.tzinfo else value.replace(tzinfo=UTC)
+
+
+def _write_stamp(stamp: Path, at: datetime, result: ScratchApply) -> None:
+    stamp.parent.mkdir(parents=True, exist_ok=True)
+    descriptor, temporary = tempfile.mkstemp(prefix=".scratch-retention-", dir=stamp.parent)
+    with os.fdopen(descriptor, "w") as stream:
+        json.dump({"last_applied_at": at.isoformat(), "status": result["status"],
+                   "deleted": len(result["deleted_paths"]), "bytes_reclaimed": result["bytes_reclaimed"]}, stream)
+    os.replace(temporary, stamp)
+
+
+def weekly_scratch_retention(
+    *, max_age_hours: int, now: datetime | None = None, stamp: Path = DEFAULT_STAMP, **kwargs: Any,
+) -> dict[str, Any]:
+    """Run ``apply_scratch_retention`` when the last apply is a week old (daily caller)."""
+    effective_now = now or datetime.now(UTC)
+    last = _read_stamp(stamp)
+    # A few hours of slack keeps a daily caller from drifting to an eight-day cadence.
+    if last is not None and effective_now - last < timedelta(hours=APPLY_INTERVAL_HOURS - 6):
+        return {"status": "skipped", "reason": "weekly-cadence", "last_applied_at": last.isoformat()}
+    result = apply_scratch_retention(max_age_hours=max_age_hours, now=effective_now, **kwargs)
+    if result["status"] != "skipped":
+        _write_stamp(stamp, effective_now, result)
+    return {**result}

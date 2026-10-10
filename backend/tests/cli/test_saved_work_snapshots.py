@@ -395,6 +395,22 @@ def test_time_retention_hourly_and_protected_points(workspace):
     assert {p.id for p in auto._retention_candidates(entries, auto.DEFAULT_POLICY)} == {"hour-second", "old"}
 
 
+def test_rejected_and_missing_points_leave_without_holding_buckets(workspace):
+    hour = (datetime.now(UTC) - timedelta(days=2)).replace(minute=30, second=0, microsecond=0)
+    newest = point_at(workspace, "newest", timedelta(minutes=1))
+    missing = point_at(workspace, "missing", timedelta(minutes=0))
+    missing.created_at = hour.isoformat()
+    missing.snapshot_path = str(Path(missing.snapshot_path).with_name("gone"))
+    kept = point_at(workspace, "kept", timedelta(minutes=0))
+    kept.created_at = (hour - timedelta(minutes=1)).isoformat()
+    rejected = point_at(workspace, "rejected", timedelta(hours=1), unfinished=True,
+                        deletion_error="Capture not accepted: Skipped: saved source unchanged after capture; cleanup failed: denied")
+    pinned_gone = point_at(workspace, "pinned-gone", timedelta(days=3), pin_reason="review")
+    pinned_gone.snapshot_path = missing.snapshot_path
+    candidates = {p.id for p in auto._retention_candidates([newest, missing, kept, rejected, pinned_gone], auto.DEFAULT_POLICY)}
+    assert candidates == {"missing", "rejected"}
+
+
 def test_deletion_failure_retains_manifest_error_and_retry(workspace, monkeypatch):
     newest = point_at(workspace, "newest", timedelta(minutes=1))
     old = point_at(workspace, "old", timedelta(days=10))

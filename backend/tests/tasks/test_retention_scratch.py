@@ -145,3 +145,46 @@ def test_unverifiable_large_trees_are_kept(layout):
 def test_missing_root_is_skipped(tmp_path):
     result = scratch.collect_scratch_review(max_age_hours=1, scratch_root=tmp_path / "absent", symlink_roots=[])
     assert result["status"] == "skipped" and result["candidates"] == []
+
+
+def apply(layout: dict[str, Path], *, days: float = 10, **kwargs: object) -> scratch.ScratchApply:
+    now = datetime.now(UTC) + timedelta(days=days)
+    return scratch.apply_scratch_retention(
+        max_age_hours=7 * 24, now=now, scratch_root=layout["root"],
+        symlink_roots=[layout["home"]], proc_root=layout["proc"], **kwargs,  # type: ignore[arg-type]
+    )
+
+
+def test_apply_deletes_only_old_unprotected_entries(layout):
+    old = layout["root"] / "old-download"
+    (old / "nested").mkdir(parents=True)
+    (old / "nested" / "blob.bin").write_bytes(b"x" * 10)
+    (layout["root"] / "old.log").write_text("log")
+    (layout["root"] / "cache").mkdir()
+    linked = layout["root"] / "linked"
+    linked.mkdir()
+    (layout["home"] / "link").symlink_to(linked)
+    result = apply(layout)
+    assert result["status"] == "success"
+    assert {Path(path).name for path in result["deleted_paths"]} == {"old-download", "old.log"}
+    assert not old.exists() and (layout["root"] / "cache").exists() and linked.exists()
+
+
+def test_apply_keeps_recent_entries(layout):
+    (layout["root"] / "fresh").mkdir()
+    assert apply(layout, days=1)["deleted_paths"] == []
+    assert (layout["root"] / "fresh").exists()
+
+
+def test_weekly_runner_respects_cadence_stamp(layout, tmp_path):
+    stamp = tmp_path / "state" / "scratch.json"
+    (layout["root"] / "old").mkdir()
+    now = datetime.now(UTC) + timedelta(days=10)
+    kwargs = {"scratch_root": layout["root"], "symlink_roots": [layout["home"]], "proc_root": layout["proc"]}
+    first = scratch.weekly_scratch_retention(max_age_hours=7 * 24, now=now, stamp=stamp, **kwargs)
+    assert first["status"] == "success" and stamp.is_file()
+    (layout["root"] / "old2").mkdir()
+    again = scratch.weekly_scratch_retention(max_age_hours=7 * 24, now=now + timedelta(days=1), stamp=stamp, **kwargs)
+    assert again == {"status": "skipped", "reason": "weekly-cadence", "last_applied_at": now.isoformat()}
+    later = scratch.weekly_scratch_retention(max_age_hours=7 * 24, now=now + timedelta(days=7), stamp=stamp, **kwargs)
+    assert [Path(path).name for path in later["deleted_paths"]] == ["old2"]

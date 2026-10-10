@@ -18,8 +18,8 @@ import stat
 import tarfile
 import tempfile
 import time
-from collections.abc import Callable, Iterator, Mapping
-from contextlib import ExitStack, contextmanager
+from collections.abc import Callable, Iterator, Mapping, Sequence
+from contextlib import ExitStack, contextmanager, suppress
 from contextvars import ContextVar
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
@@ -40,7 +40,17 @@ from ..utils.transient_scratch import (
 )
 from ._retention_policy import HostRetentionPolicy
 from .backup_activity import BackupCancelled, check_backup_cancelled, record_local_archive
-from .backup_lock import BackupLockLeaseError, acquire_backup_lock, maintain_backup_lock
+from .backup_lock import (
+    BackupLockLeaseError,
+    acquire_backup_lock,
+    backup_cancel_request,
+    backup_phase,
+    clear_backup_phase,
+    maintain_backup_lock,
+    publish_backup_phase,
+    request_backup_cancel,
+    worker_restart_reserved,
+)
 from .backup_native_archive import (
     _gzip_payload_file,
     _recoverable_file_filter,
@@ -48,7 +58,13 @@ from .backup_native_archive import (
 )
 from .backup_native_infra import prepare_infrastructure_payload
 from .backup_native_recovery import GIT_BUNDLE_NAME, RECOVERY_DIR_NAME, _is_sqlite_database
-from .backup_restic import ResticAdapter, ResticConfig, ResticError
+from .backup_restic import (
+    OperationControl,
+    ResticAdapter,
+    ResticConfig,
+    ResticError,
+    command_operation,
+)
 from .backup_utils import (
     REPOSITORY_CRITICAL_RESTORE_DAYS,
     build_storage_env,
@@ -64,21 +80,94 @@ def _repository_pair(config: ResticConfig) -> str:
     return hashlib.sha256((str(config.local_repository.resolve()) + "\n" + (config.remote_repository or "")).encode()).hexdigest()
 
 
+def _maintenance_source(config: ResticConfig) -> str:
+    return "__repository_maintenance__:" + _repository_pair(config)
+
+
+class _MaintenanceControl(OperationControl):
+    """Publish each native command's safety and honour owner cancellation.
+
+    Cancellation stops a read-only command (check, dry-run, listing) at once
+    and refuses every later command. A running mutation stops only on a
+    forced request. A mutation never starts while a worker restart is
+    reserved, so a restart that skipped a read-only phase cannot cut one off.
+    """
+
+    def __init__(self, source_id: str, token: str, config: ResticConfig, backend_id: str | None) -> None:
+        self.source_id, self.token, self.config, self.read_only = source_id, token, config, True
+        self.detail = {"label": f"repository maintenance for {backend_id or 'restic pair'}",
+                       "cancel_command": f"st backup storage cancel {backend_id}" if backend_id else None}
+
+    def publish(self, operation: str, *, read_only: bool, target: str = "") -> None:
+        self.read_only = read_only
+        try:
+            publish_backup_phase(self.source_id, self.token, operation=operation, read_only=read_only, target=target, **self.detail)
+        except Exception as exc:
+            raise ResticError("Cannot record repository maintenance phase; restore Redis access before retrying") from exc
+
+    def begin(self, command: Sequence[str], *, phase: str) -> None:
+        operation, read_only = command_operation(command)
+        remote = bool(self.config.remote_repository) and any(self.config.remote_repository.removeprefix("rclone:") in token for token in command)
+        self.publish(operation, read_only=read_only, target="remote" if remote else "local")
+        try:
+            cancelled, restarting = backup_cancel_request(self.source_id), not read_only and worker_restart_reserved()
+        except Exception as exc:
+            raise ResticError("Cannot verify repository maintenance control; restore Redis access before retrying") from exc
+        if cancelled:
+            raise ResticError(f"Repository maintenance cancelled by owner before {operation}")
+        if restarting:
+            raise ResticError(f"Managed worker restart reserved; {operation} deferred with the repository unchanged")
+
+    def check(self) -> None:
+        try:
+            request = backup_cancel_request(self.source_id)
+        except Exception:
+            return  # A Redis blip must never kill a running native command.
+        if request and (self.read_only or request.get("force") is True):
+            raise ResticError("Repository maintenance cancelled by owner" + ("" if self.read_only else " (forced during mutation; verify before the next prune)"))
+
+
 @contextmanager
-def _repository_maintenance_admission(config: ResticConfig) -> Iterator[None]:
+def _repository_maintenance_admission(config: ResticConfig, adapter: ResticAdapter | None = None, *, backend_id: str | None = None) -> Iterator[None]:
     """Share capture admission with managed worker restart protection."""
-    source_id = "__repository_maintenance__:" + _repository_pair(config)
+    source_id = _maintenance_source(config)
     try:
         token = acquire_backup_lock(source_id)
     except Exception as exc:
         raise ResticError("Cannot verify repository maintenance admission; restore Redis access before retrying") from exc
     if token is None:
         raise ResticError("Repository maintenance admission blocked by active maintenance or a managed worker restart")
+    control = _MaintenanceControl(source_id, token, config, backend_id)
     try:
         with maintain_backup_lock(source_id, token):
-            yield
+            control.publish("waiting for repository lock", read_only=True)
+            if adapter is not None:
+                adapter.control = control
+            try:
+                yield
+            finally:
+                if adapter is not None:
+                    adapter.control = None
+                with suppress(Exception):
+                    clear_backup_phase(source_id)
     except BackupLockLeaseError as exc:
         raise ResticError("Repository maintenance admission ownership was lost; inspect active backups before retrying") from exc
+
+
+def cancel_repository_maintenance(env: dict[str, str], *, force: bool = False) -> dict[str, Any]:
+    """Stop a running read-only maintenance phase; a mutation needs ``force``."""
+    config = ResticConfig.from_env(env)
+    source_id = _maintenance_source(config)
+    phase = backup_phase(source_id)
+    if phase is None:
+        return {"status": "idle", "message": "No repository maintenance is running for this backend"}
+    operation = {key: phase.get(key) for key in ("operation", "target", "read_only", "since")}
+    if not phase.get("read_only") and not force:
+        return {"status": "refused", **operation,
+                "message": f"{phase.get('operation')} is changing the {phase.get('target') or ''} repository; stopping it can leave work for the next prune. Wait, or repeat with --force."}
+    request_backup_cancel(source_id, force=force)
+    return {"status": "requested", **operation,
+            "message": "Cancellation requested; the running command stops within seconds and later maintenance steps are skipped"}
 
 
 @contextmanager
@@ -488,7 +577,7 @@ def sync_repository_batch(batch: Mapping[str, dict[str, str]]) -> dict[str, Any]
         try:
             config = ResticConfig.from_env(env)
             adapter = ResticAdapter(config)
-            with _repository_maintenance_admission(config), _checkpoint(config) as (directory, state):
+            with _repository_maintenance_admission(config, adapter, backend_id=env.get("BACKUP_STORAGE_BACKEND_ID")), _checkpoint(config) as (directory, state):
                 journal = state.setdefault("offsite", {})
                 pending = journal.setdefault("pending_snapshot_ids", [])
                 local_id = adapter.repository_identity()["id"]
@@ -629,17 +718,28 @@ def repository_status(env: dict[str, str]) -> dict[str, Any]:
     readiness = adapter.readiness(local_only=not bool(config.remote_repository))
     if not readiness["ready"]:
         return readiness
-    with _checkpoint(config) as (_, state):
-        return {
-            **readiness, "sources": {key: {field: value.get(field) for field in ("snapshot_id", "completed_at", "last_good_snapshot_id")} for key, value in state["sources"].items()},
-            "offsite": {key: state.get("offsite", {}).get(key) for key in ("status", "verified_at", "pending_snapshot_ids", "pending_objects", "mismatches", "new_object_bytes")},
-            "maintenance": state.get("maintenance", {}),
-            "prune_qualified": config.offsite_prune_qualified,
-            "cutover_qualified": False,
-            "cutover_status": "requires-owner-approved-recovery-coverage-and-measured-qualification",
-            "local_repository_physical_bytes": sum(path.stat().st_size for path in config.local_repository.rglob("*") if path.is_file() and not path.is_symlink()),
-            "new_object_bytes_are_network_traffic": False,
-        }
+    # Never wait behind capture/maintenance: the journal is replaced atomically,
+    # so an unlocked read is one consistent version.
+    config.validate()
+    _approved_key_directory(config)
+    state = _load_json(config.key_directory / "restic-state" / _repository_pair(config) / "state.json")
+    state.setdefault("sources", {})
+    try:
+        running = backup_phase(_maintenance_source(config))
+    except Exception:
+        running = {"operation": "unknown (Redis unavailable)"}
+    return {
+        **readiness,
+        "maintenance_running": {key: running.get(key) for key in ("operation", "target", "read_only", "since", "cancel_command")} if running else None,
+        "sources": {key: {field: value.get(field) for field in ("snapshot_id", "completed_at", "last_good_snapshot_id")} for key, value in state["sources"].items()},
+        "offsite": {key: state.get("offsite", {}).get(key) for key in ("status", "verified_at", "pending_snapshot_ids", "pending_objects", "mismatches", "new_object_bytes")},
+        "maintenance": state.get("maintenance", {}),
+        "prune_qualified": config.offsite_prune_qualified,
+        "cutover_qualified": False,
+        "cutover_status": "requires-owner-approved-recovery-coverage-and-measured-qualification",
+        "local_repository_physical_bytes": sum(path.stat().st_size for path in config.local_repository.rglob("*") if path.is_file() and not path.is_symlink()),
+        "new_object_bytes_are_network_traffic": False,
+    }
 
 
 def _critical_restore_reason(result: Mapping[str, Any]) -> str | None:
@@ -785,7 +885,7 @@ def maintain_repository(env: dict[str, str], *, dry_run: bool = True, force_crit
     """
     config = ResticConfig.from_env(env)
     adapter = ResticAdapter(config)
-    with _repository_maintenance_admission(config), _checkpoint(config) as (directory, state):
+    with _repository_maintenance_admission(config, adapter, backend_id=env.get("BACKUP_STORAGE_BACKEND_ID")), _checkpoint(config) as (directory, state):
         maintenance = state.setdefault("maintenance", {})
         now = datetime.now(UTC)
         preview = dry_run or not config.offsite_prune_qualified
@@ -800,6 +900,8 @@ def maintain_repository(env: dict[str, str], *, dry_run: bool = True, force_crit
             pins.extend(value["baseline_snapshot_id"] for value in state["sources"].values())
         results: dict[str, Any] = {"dry_run": preview}
         if config.remote_repository:
+            if isinstance(adapter.control, _MaintenanceControl):
+                adapter.control.publish("critical restore drill", read_only=True, target="remote")
             results["critical_restore"] = _weekly_critical_restore(
                 env, maintenance, force=force_critical_restore,
                 persist=lambda: _save_json(directory / "state.json", state),
@@ -874,9 +976,17 @@ def maintain_repository(env: dict[str, str], *, dry_run: bool = True, force_crit
         results["status"] = "failed" if not pair_healthy or repository_maintenance_failed(results) else "completed"
         results["summary"] = {"result": results["status"], "reclaimed_bytes": sum(int(results.get(label, {}).get("prune", {}).get("reclaimed_bytes") or 0) for label in ("local", "remote")), "free_bytes": {label: results.get(label, {}).get("prune", {}).get("free_bytes") for label in ("local", "remote")}, "blockers": [label for label in ("local", "remote") if results.get(label, {}).get("prune", {}).get("reason")], "evidence": str(directory / "state.json")}
         maintenance["last_run_at"] = now.isoformat()
-        maintenance["result"] = results
+        # Operation results echo the whole offsite journal; storing that copy
+        # inside the same state file would grow it on every run.
+        maintenance["result"] = _without_journals(results)
         _save_json(directory / "state.json", state)
         return results
+
+
+def _without_journals(value: Any) -> Any:
+    if isinstance(value, Mapping):
+        return {key: _without_journals(child) for key, child in value.items() if key != "state"}
+    return value
 
 
 def _critical_restore_implementation_fingerprint() -> str:

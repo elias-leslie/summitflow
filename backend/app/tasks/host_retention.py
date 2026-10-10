@@ -25,6 +25,7 @@ from ._retention_fs import (
     playwright_required_children,
 )
 from ._retention_policy import HostRetentionPolicy
+from ._retention_scratch import weekly_scratch_retention
 
 logger = get_logger(__name__)
 
@@ -187,6 +188,13 @@ def cleanup_host_artifacts(
         + hermes_checkpoints_result["bytes_reclaimed"]
     )
 
+    try:
+        scratch_result: dict[str, Any] = weekly_scratch_retention(
+            max_age_hours=effective_policy.scratch_review_max_age_hours, now=effective_now,
+        )
+    except Exception as exc:  # one step must not abort host retention
+        logger.warning("scratch_retention_failed", error=str(exc))
+        scratch_result = {"status": "error", "error": str(exc)}
     docker = _run_docker_cleanup(policy=effective_policy, pressure_mode=pressure_mode, now=effective_now)
     veeam_snapshots = cleanup_stale_veeam_snapshots(policy=effective_policy, now=effective_now)
 
@@ -200,11 +208,11 @@ def cleanup_host_artifacts(
 
     errors = [
         entry["error"]
-        for entry in (docker["builder_cache"], docker["images"], docker["anonymous_volumes"])
+        for entry in (docker["builder_cache"], docker["images"], docker["anonymous_volumes"], scratch_result)
         if isinstance(entry, dict) and entry.get("status") == "error" and entry.get("error")
     ]
     status = "partial" if errors else "success"
-    items_deleted = tool_cache_deleted + len(docker["anonymous_volumes"].get("deleted", []))
+    items_deleted = tool_cache_deleted + len(docker["anonymous_volumes"].get("deleted", [])) + len(scratch_result.get("deleted_paths") or [])
 
     summary: dict[str, object] = {
         "status": status,
@@ -221,6 +229,7 @@ def cleanup_host_artifacts(
             "playwright": playwright_result,
         },
         "temp_backups": tmp_backups_result,
+        "scratch": scratch_result,
         "hermes_checkpoints": hermes_checkpoints_result,
         "docker_builder_cache": docker["builder_cache"],
         "docker_images": docker["images"],
