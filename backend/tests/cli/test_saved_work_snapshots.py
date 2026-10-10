@@ -913,3 +913,14 @@ def test_privileged_pruning_revalidates_physical_leaf(tmp_path, monkeypatch, ref
     deletes = [command for command in calls if command[1:3] == ["subvolume", "delete"]]
     assert len(deletes) == (0 if refusal else 1)
     assert target.exists()
+
+
+def test_active_scopes_skip_symlinked_project_aliases(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    projects = tmp_path / "projects"
+    (projects / "a-term" / ".git").mkdir(parents=True)
+    (projects / "a_term").symlink_to("a-term")
+    monkeypatch.setattr(auto, "workspaces_root_available", lambda: True)
+    monkeypatch.setattr(auto, "get_workspaces_root", lambda: tmp_path)
+    monkeypatch.setattr(auto, "all_entries", lambda: [])
+
+    assert [name for name, _scope in auto.enumerate_active_scopes()] == ["a-term"]

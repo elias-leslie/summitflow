@@ -212,6 +212,9 @@ def enumerate_active_scopes() -> list[tuple[str, SnapshotScope]]:
     projects_root = root / "projects"
     if projects_root.is_dir():
         for project_dir in sorted(projects_root.iterdir()):
+            # Symlinked aliases (renamed projects) would duplicate their target's snapshots.
+            if project_dir.is_symlink():
+                continue
             if project_dir.is_dir() and (project_dir / ".git").exists() and str(project_dir.resolve()) not in recovery_roots:
                 scopes.append((
                     project_dir.name,
