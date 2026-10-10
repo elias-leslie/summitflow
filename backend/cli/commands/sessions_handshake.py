@@ -25,6 +25,10 @@ def send_request(to: str, text: str) -> None:
         return
     state = "existing" if row.get("duplicate") else "sent"
     typer.echo(f"{state} {row['id']} -> {to}; await ack in st pulse / st sessions inbox")
+    if not coord.known_target(to):
+        live = ", ".join(coord.live_agents()) or "none"
+        typer.echo(f"WARNING {to} is not a registered agent id (cc:/codex:/pi:/agy: id or 13+ char session prefix); "
+                   f"it cannot see or ack this. Live agents: {live}", err=True)
 
 
 @usage(

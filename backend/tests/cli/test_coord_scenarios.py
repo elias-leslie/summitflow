@@ -315,6 +315,18 @@ def test_duplicate_and_replayed_messages(repos, monkeypatch):
         coord.send("cc:x", "x" * 200)
 
 
+def test_send_flags_targets_the_ledger_can_never_match(repos, monkeypatch):
+    """A label such as a session title is stored verbatim and never addressed; send must say so."""
+    as_claude(monkeypatch, "label-sender-01")
+    doc = coord_lineage.load_doc()
+    doc["identities"] = {"cc:c9ffbd": {"anchor": f"{os.getpid()}:1", "session": "c9ffbd05-c536-446f-82f7-30690775f33e"}}
+    coord_lineage.save_doc(doc)
+    assert coord.known_target("cc:c9ffbd")
+    assert coord.known_target("c9ffbd05-c536-4")
+    assert not coord.known_target("c9ffbd05")  # UUIDv7-safe prefixes need 13+ chars
+    assert not coord.known_target("neri-bc")
+
+
 def test_no_ack_does_not_authorize_and_ack_is_project_bound(repos, monkeypatch):
     host, gen = repos["hostrepo"], repos["genrepo"]
     as_codex(monkeypatch, "holder-two-01")

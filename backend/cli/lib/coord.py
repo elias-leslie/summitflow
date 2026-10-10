@@ -331,6 +331,25 @@ def _addresses(to: str, agent_id: str, session_id: str) -> bool:
     return any(str((identities.get(i) or {}).get("session") or "").startswith(to) for i in family)
 
 
+def known_target(to: str) -> bool:
+    """True when ``to`` names a registered identity: its exact id or a 13+ char session prefix.
+
+    The ledger matches recipients only by these forms, so a title, pane or
+    label (e.g. ``neri-bc``) can never be acked and would sit unseen.
+    """
+    identities = coord_lineage.load_doc().get("identities") or {}
+    if to in identities:
+        return True
+    return len(to) >= 13 and any(str((row or {}).get("session") or "").startswith(to) for row in identities.values())
+
+
+def live_agents() -> list[str]:
+    """Registered identities whose harness process is still alive."""
+    identities = coord_lineage.load_doc().get("identities") or {}
+    return sorted(aid for aid, row in identities.items()
+                  if isinstance(row, dict) and coord_lineage.anchor_alive(row.get("anchor")))
+
+
 def send(to: str, text: str, *, project: str | None = None) -> dict[str, Any]:
     """Record a request; an identical open request returns the existing row."""
     body = _clean_text(text)
