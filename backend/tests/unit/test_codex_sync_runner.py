@@ -1110,3 +1110,39 @@ def test_unchanged_failure_warns_once_until_transcript_or_detail_changes(tmp_pat
     codex_sync_runner._record_sync_error(state, replace(info, size=300), "other failure", None, logs.append)
     assert len(logs) == 3
     assert codex_sync_runner.get_state_entry(info.path, state)["detail"] == "other failure"
+
+
+def test_success_after_failure_drops_stale_failure_detail(tmp_path: Path, monkeypatch) -> None:
+    info = _info(tmp_path, "healed-child")
+    state: dict[str, object] = {
+        "transcripts": {
+            str(info.path): {
+                "session_id": info.session_id,
+                "mtime": info.mtime,
+                "size": info.size,
+                "status": "failed",
+                "detail": "contradictory native child provenance",
+            }
+        }
+    }
+    monkeypatch.setattr(codex_sync_runner, "build_project_context", lambda _cwd: _project())
+    monkeypatch.setattr(codex_sync_runner, "upsert_session", lambda *_a, **_k: (True, "", 200))
+    monkeypatch.setattr(codex_sync_runner, "finalize_and_close", lambda *_a, **_k: (True, "", 200))
+
+    ok, _, _ = codex_sync_runner.sync_transcript(
+        info,
+        state,
+        "http://agent-hub.test/api",
+        "summitflow",
+        "/scripts/codex-session-sync.py",
+        close_session=True,
+        ingest_required=False,
+        heartbeat_required=False,
+        log_fn=lambda _message: None,
+        verbose=False,
+    )
+
+    assert ok
+    entry = cast(dict[str, dict[str, object]], state["transcripts"])[str(info.path)]
+    assert entry["status"] == "terminal"
+    assert entry["detail"] == "unchanged"

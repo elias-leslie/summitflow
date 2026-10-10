@@ -187,7 +187,9 @@ def sync_transcript(
         else None
     )
     next_checkpoint = checkpoint
-    detail = str(entry.get("detail") or "unchanged")
+    # Carry the last success detail forward; a prior failure's text must not survive a success.
+    prior_ok = entry.get("status") in {"active", "synced", "terminal"}
+    detail = str(entry.get("detail") or "unchanged") if prior_ok else "unchanged"
     try:
         from codex_managed_delivery import configured_path, recover_configured_outbox
 
