@@ -1,14 +1,24 @@
 #!/usr/bin/env bash
-# PreToolUse edit hook for Claude Code and Codex: auto-lease each edited file to
-# the editing session and block (exit 2, one line) only on a live collision.
-# Fails open on infrastructure errors. Bypass: ALLOW_LEASE_OVERLAP=1.
+# Coordination edit hook (Claude Code + Codex PreToolUse). Not a safety gate:
+# any internal error or timeout fails open (exit 0, one stderr diagnostic).
+# Blocks (exit 2, one line) only on a live collision. Bypass: ALLOW_LEASE_OVERLAP=1.
 [ "${ALLOW_LEASE_OVERLAP:-0}" = "1" ] && exit 0
-st_bin="$(dirname -- "$(readlink -f -- "$0")")/../st"
-[ -x "$st_bin" ] || exit 0
-out=$("$st_bin" lease --hook 2>&1)
+sf="$(cd -- "$(dirname -- "$(readlink -f -- "${BASH_SOURCE[0]}")")/../.." && pwd)"
+py="$sf/backend/.venv/bin/python"
+[ -x "$py" ] || { echo "lease-hook: summitflow venv unavailable; allowing" >&2; exit 0; }
+out=$(timeout 1 env PYTHONPATH="$sf/backend" "$py" -I -c '
+import json, sys
+sys.path.insert(0, sys.argv[1])
+from cli.lib.coord import run_hook
+msg = run_hook(json.loads(sys.stdin.read() or "{}"))
+if msg:
+    print(msg)
+    sys.exit(3)
+' "$sf/backend" 2>&1)
 rc=$?
-if [ "$rc" = 2 ] && [[ $out == BLOCKED* ]]; then
+if [ "$rc" = 3 ] && [[ $out == BLOCKED* ]]; then
     printf '%s\n' "$out" >&2
     exit 2
 fi
+[ "$rc" = 0 ] || echo "lease-hook: internal error rc=$rc; allowing" >&2
 exit 0

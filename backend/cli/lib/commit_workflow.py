@@ -117,15 +117,12 @@ def _require_foreign_leases_clear(repo: Path, changed_paths: Sequence[str]) -> N
     """Keep a Git checkpoint from absorbing another agent's leased work."""
     if not changed_paths:
         return
-    from .execution_context import resolve_checkout_project_id
-
-    project_id = resolve_checkout_project_id(repo)
-    if not project_id:
+    resolved = coord.project_for_path(repo)
+    if resolved is None:
         return
+    project_id, root = resolved
     for path in changed_paths:
-        ok, holder = leases.check(
-            project_id, path, project_root=str(repo.resolve())
-        )
+        ok, holder = leases.check(project_id, path, project_root=str(root))
         if not ok and holder is not None:
             raise CommitError(
                 f"cannot commit {path}: leased by another agent {holder.agent_id} "

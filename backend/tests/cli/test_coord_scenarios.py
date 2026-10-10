@@ -104,6 +104,18 @@ def test_concurrent_edit_same_file_blocks_then_commit_releases(repos, monkeypatc
     assert coord.edit_conflict(target) is None
 
 
+def test_commit_of_foreign_leased_path_is_refused_in_unregistered_repo(repos, monkeypatch):
+    """Fixture repos are not registered projects; the per-path commit check must still apply."""
+    repo = repos["hostrepo"]
+    as_claude(monkeypatch, "claude-aaaaaaaa")
+    assert coord.edit_conflict(str(repo / "backend" / "a.py")) is None
+    (repo / "backend" / "a.py").write_text("a = 3\n")
+
+    as_codex(monkeypatch, "codex-bbbbbbbb")
+    with pytest.raises(CommitError, match="leased by another agent"):
+        commit_git_revision(repo, message="steal", skip_checks=True, paths=["backend/a.py"], with_ack=None)
+
+
 def test_subagents_share_parent_identity_separate_sessions_do_not(repos, monkeypatch):
     target = str(repos["hostrepo"] / "backend" / "a.py")
     as_claude(monkeypatch, "parent-11111111")
