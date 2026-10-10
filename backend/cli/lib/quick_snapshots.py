@@ -136,13 +136,39 @@ def _is_non_subvolume_error(error: SnapshotError) -> bool:
     return "Invalid argument" in message or "Not a Btrfs subvolume" in message
 
 
+def _is_readonly_denial(error: SnapshotError) -> bool:
+    # btrfs-progs always warns "cannot read default subvolume id: Operation not
+    # permitted" unprivileged; only the destroy error identifies a denial.
+    message = str(error)
+    return any(f"Could not destroy subvolume/snapshot: {reason}" in message
+               for reason in ("Read-only file system", "Operation not permitted"))
+
+
+def _delete_rejected_point(path: Path) -> None:
+    """Remove a just-created read-only point that capture did not accept."""
+    try:
+        _delete_subvolume(path)
+    except SnapshotError as exc:
+        if not _is_readonly_denial(exc):
+            raise
+        from .snapshots._pruning import delete_managed_readonly
+
+        delete_managed_readonly(path)
+
+
 def _try_delete_subvolume(path: Path) -> bool:
     try:
         _delete_subvolume(path)
     except SnapshotError as exc:
         if _is_non_subvolume_error(exc):
             return False
-        raise
+        if not _is_readonly_denial(exc):
+            raise
+        # user_subvol_rm_allowed cannot remove read-only points; reuse the
+        # pruning root helper, which revalidates the leaf before deleting.
+        from .snapshots._pruning import delete_readonly_residue
+
+        delete_readonly_residue(path)
     return True
 
 
@@ -206,13 +232,17 @@ def capture_snapshot(
         require_complete_project(boundary, repo_root, nested)
         previous = latest_physical_point(boundary) if source.startswith("auto-") else None
         reuse = previous is not None and recent(previous)
+        captured_digest: str | None = None
         if previous is not None and reuse:
             _require_readonly_point(Path(previous.snapshot_path))
             if not previous.source_digest:
                 raise SnapshotError("Deferred: latest shared boundary capture is incomplete; physical captures are bounded to one per 15 minutes")
             require_complete_project(boundary, repo_root, previous.nested_subvolumes)
             captured = Path(previous.snapshot_path) / repo_root.relative_to(boundary)
-            if not captured.is_dir() or source_digest(repo_root) != source_digest(captured) or _head_oid(repo_root) != _head_oid(captured):
+            # Live trees use the identity cache; captured trees are hashed once
+            # with page cache released so a many-project sweep stays bounded.
+            captured_digest = source_digest(captured, drop_cache=True) if captured.is_dir() else None
+            if captured_digest is None or source_digest(repo_root, use_cache=True) != captured_digest or _head_oid(repo_root) != _head_oid(captured):
                 raise SnapshotError("Deferred: shared boundary captured within 15 minutes does not contain these latest saved edits; one physical point per boundary/15 minutes, next sweep will retry")
             snapshot_id = previous.id
             snapshot_path = Path(previous.snapshot_path)
@@ -262,7 +292,7 @@ def capture_snapshot(
                     git_dir=git_dir, project_id=project_id, scope=scope, snapshot_id=snapshot_id),
                 created_at=captured_at, source=source, capture_root=str(boundary),
                 project_relative_path=repo_root.relative_to(boundary).as_posix(),
-                source_digest=source_digest(captured),
+                source_digest=captured_digest or source_digest(captured, drop_cache=True),
                 unfinished=bool(_git(captured, ["status", "--short", "--untracked-files=all"]).stdout.strip()),
                 nested_subvolumes=nested, shared_capture=reuse,
             )
@@ -279,7 +309,7 @@ def capture_snapshot(
             if reuse:
                 raise
             try:
-                _delete_subvolume(snapshot_path)
+                _delete_rejected_point(snapshot_path)
             except Exception as deletion_error:
                 # A failed physical cleanup must remain catalogued and retryable.
                 if snapshot is None:

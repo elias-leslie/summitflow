@@ -45,7 +45,13 @@ def beneath(path: str, roots: list[str]) -> bool:
     return any(path == root or path.startswith(root + "/") for root in roots)
 
 
-def file_digest(path: Path) -> str:
+def file_digest(path: Path, *, drop_cache: bool = False) -> str:
+    """Hash one file; ``drop_cache`` releases its page cache once it is hashed.
+
+    Whole-tree digests of captured points read every file once. Without
+    releasing those pages, each tree stays charged to the caller's cgroup and
+    a sweep over many projects accumulates gigabytes of cold cache.
+    """
     if path.is_symlink():
         return "symlink:" + hashlib.sha256(os.readlink(path).encode()).hexdigest()
     if not path.exists():
@@ -56,10 +62,13 @@ def file_digest(path: Path) -> str:
     with path.open("rb") as handle:
         for block in iter(lambda: handle.read(1024 * 1024), b""):
             digest.update(block)
+        if drop_cache:
+            with contextlib.suppress(OSError):
+                os.posix_fadvise(handle.fileno(), 0, 0, os.POSIX_FADV_DONTNEED)
     return f"{path.stat().st_mode & 0o777:o}:" + digest.hexdigest()
 
 
-def source_digest(root: Path, *, use_cache: bool = False) -> str:
+def source_digest(root: Path, *, use_cache: bool = False, drop_cache: bool = False) -> str:
     tracked = set(_git(root, ["ls-files", "-z"]).stdout.split("\0")) - {""}
     git_dir = _absolute_git_dir(root)
     cache = SourceDigestCache(root, git_dir) if use_cache else None
@@ -92,10 +101,10 @@ def source_digest(root: Path, *, use_cache: bool = False) -> str:
             continue
         if item not in tracked and (beneath(item, rules["disposable_outputs"]) or any(p in _DISPOSABLE for p in Path(item).parts)):
             continue
-        value = cache.digest(f"tree:{item}", root / item) if cache else file_digest(root / item)
+        value = cache.digest(f"tree:{item}", root / item) if cache else file_digest(root / item, drop_cache=drop_cache)
         digest.update(item.encode() + b"\0" + value.encode() + b"\0")
     for name in ("index", "HEAD"):
-        value = cache.digest(f"git:{name}", git_dir / name) if cache else file_digest(git_dir / name)
+        value = cache.digest(f"git:{name}", git_dir / name) if cache else file_digest(git_dir / name, drop_cache=drop_cache)
         digest.update(name.encode() + b"\0" + value.encode())
     if cache:
         cache.save()

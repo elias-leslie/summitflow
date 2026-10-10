@@ -71,6 +71,24 @@ def delete_managed_readonly(path: Path, *, recovery_project: str | None = None) 
         valid = len(parts) == 4 and parts[0] != "recoveries" and parts[1] in {"projects", "worktrees"}
     if not valid or not all(safe(part) for part in parts):
         raise SnapshotError(f"Pruning target is not an exact managed snapshot leaf: {path}")
+    _privileged_delete(path)
+
+
+def delete_readonly_residue(path: Path) -> None:
+    """Delete one read-only legacy residue subvolume beneath the managed store.
+
+    Residue roots predate the exact point layout, so only containment is
+    checked here; the root helper still refuses writable, nested, mounted,
+    swapped or foreign-owned targets.
+    """
+    base = get_workspaces_root().absolute() / ".snapshots"
+    target = path.absolute()
+    if target == base or base not in target.parents:
+        raise SnapshotError(f"Residue target is outside the managed snapshot store: {path}")
+    _privileged_delete(target)
+
+
+def _privileged_delete(path: Path) -> None:
     # lstat the entire path before deciding that an absent target is already clean.
     for ancestor in reversed((path, *path.parents)):
         if ancestor.is_symlink():

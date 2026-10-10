@@ -502,6 +502,31 @@ def test_failed_duplicate_capture_cleanup_retains_physical_manifest(workspace, m
     assert "permission denied" in failed.deletion_error
 
 
+def test_rejected_readonly_capture_uses_privileged_point_cleanup(workspace, monkeypatch):
+    """Regression: unaccepted read-only captures stayed behind with EROFS cleanup errors."""
+    point = capture(workspace)
+    point.created_at = (datetime.now(UTC) - timedelta(minutes=16)).isoformat()
+    snap.save_manifest("fixture", snap.resolve_scope(workspace.project, "fixture"), [point])
+    denial = ("Btrfs command failed\nWARNING: cannot read default subvolume id: Operation not permitted\n"
+              "ERROR: Could not destroy subvolume/snapshot: Read-only file system")
+    monkeypatch.setattr(snap, "_delete_subvolume", lambda _: (_ for _ in ()).throw(SnapshotError(denial)))
+    privileged = []
+    def delete_managed(path):
+        privileged.append(path)
+        shutil.rmtree(path)
+    monkeypatch.setattr(pruning, "delete_managed_readonly", delete_managed)
+    with pytest.raises(SnapshotError, match="unchanged after capture"):
+        capture(workspace)
+    assert len(privileged) == 1 and not privileged[0].exists()
+    points = snap.load_manifest("fixture", snap.resolve_scope(workspace.project, "fixture"))
+    assert [p.id for p in points] == [point.id]
+
+
+def test_only_destroy_errors_count_as_readonly_denial():
+    assert not snap._is_readonly_denial(SnapshotError("WARNING: cannot read default subvolume id: Operation not permitted\nERROR: No such file"))
+    assert snap._is_readonly_denial(SnapshotError("ERROR: Could not destroy subvolume/snapshot: Operation not permitted"))
+
+
 @pytest.mark.parametrize("change", ["foreign", "expired", "completed", "unregistered"])
 def test_active_claim_owner_proof_fails_closed(workspace, monkeypatch, change):
     task = {"status": "running", "claimed_by": "canonical-owner", "lock_expires_at": datetime.now(UTC) + timedelta(minutes=30)}
@@ -556,6 +581,41 @@ def test_projects_share_one_physical_point_and_prune_keeps_other_view(workspace)
     assert [p.id for p in auto.prune_scope(project_id="fixture", scope=scope, policy=auto.AutosnapshotPolicy(manual_keep_per_scope=0))] == [first.id]
     assert Path(second.snapshot_path).exists()
     assert snap.list_snapshots(project_id="other", cwd=other)
+
+
+def test_shared_capture_hashes_each_tree_once_without_retaining_page_cache(workspace, monkeypatch):
+    """Regression: sweeps re-read live and captured trees uncached and kept their cache (3G cgroup peak)."""
+    other = workspace.root / "projects/other"
+    init_repo(other)
+    capture(workspace)
+    calls = []
+    original = snap.source_digest
+    def spy(root, **kwargs):
+        calls.append((Path(root), kwargs))
+        return original(root, **kwargs)
+    monkeypatch.setattr(snap, "source_digest", spy)
+    advised = []
+    original_fadvise = os.posix_fadvise
+    def fadvise(fd, offset, length, advice):
+        advised.append(advice)
+        return original_fadvise(fd, offset, length, advice)
+    monkeypatch.setattr(saved.os, "posix_fadvise", fadvise)
+    second = snap.capture_snapshot("point", project_id="other", cwd=other, source="auto-periodic")
+    assert second.shared_capture
+    captured_calls = [kwargs for root, kwargs in calls if root != other]
+    live_calls = [kwargs for root, kwargs in calls if root == other]
+    assert captured_calls == [{"drop_cache": True}]
+    assert live_calls == [{"use_cache": True}]
+    assert advised and set(advised) == {os.POSIX_FADV_DONTNEED}
+
+
+def test_file_digest_release_matches_retained_digest(tmp_path, monkeypatch):
+    path = tmp_path / "file.txt"
+    path.write_text("content")
+    advised = []
+    monkeypatch.setattr(saved.os, "posix_fadvise", lambda fd, offset, length, advice: advised.append(advice))
+    assert saved.file_digest(path, drop_cache=True) == saved.file_digest(path)
+    assert advised == [os.POSIX_FADV_DONTNEED]
 
 
 def test_same_boundary_new_edits_are_deferred_instead_of_multiplied(workspace):

@@ -46,6 +46,55 @@ def test_delete_snapshot_residue_removes_nested_btrfs_subvolumes_first(
     assert calls.index(sibling) < calls.index(root)
 
 
+def test_delete_snapshot_residue_uses_privileged_helper_for_readonly_points(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Regression: unprivileged deletion of read-only residue failed with EROFS."""
+    from cli.lib.snapshots import _pruning
+
+    monkeypatch.setenv("ST_WORKSPACES_ROOT", str(tmp_path))
+    root = tmp_path / ".snapshots" / "legacy-root"
+    point = root / "projects" / "old" / "point"
+    point.mkdir(parents=True)
+
+    def fake_delete_subvolume(path: Path) -> None:
+        if path == point:
+            raise SnapshotError("Btrfs command failed\nERROR: Could not destroy subvolume/snapshot: Read-only file system")
+        raise SnapshotError("Btrfs command failed: Not a Btrfs subvolume")
+
+    privileged: list[list[str]] = []
+
+    def fake_run(command: list[str], **kwargs: object) -> None:
+        privileged.append(command)
+        shutil.rmtree(Path(command[6]))
+
+    monkeypatch.setattr(quick_snapshots, "_delete_subvolume", fake_delete_subvolume)
+    monkeypatch.setattr(_pruning.subprocess, "run", fake_run)
+
+    quick_snapshots.delete_snapshot_residue(
+        SnapshotResidue(project_id=None, residue_name="legacy-root", path=root, residue_type="legacy-snapshot-root")
+    )
+
+    assert not root.exists()
+    assert len(privileged) == 1
+    assert privileged[0][:5] == ["sudo", "-n", "/usr/bin/python3", "-I", "-c"]
+    assert privileged[0][6:8] == [str(point), str(point.parent)]
+
+
+def test_readonly_residue_helper_refuses_paths_outside_store(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    from cli.lib.snapshots import _pruning
+
+    monkeypatch.setenv("ST_WORKSPACES_ROOT", str(tmp_path))
+    outside = tmp_path / "projects" / "live"
+    outside.mkdir(parents=True)
+    monkeypatch.setattr(_pruning.subprocess, "run", lambda *a, **k: pytest.fail("must not escalate"))
+    for target in (outside, tmp_path / ".snapshots"):
+        with pytest.raises(SnapshotError, match="outside the managed snapshot store"):
+            _pruning.delete_readonly_residue(target)
+    assert outside.exists()
+
+
 def test_snapshot_deletions_exit_nonzero_on_errors(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
