@@ -4,10 +4,11 @@ from __future__ import annotations
 
 import os
 import subprocess
+import sys
 import tempfile
 import time
-from collections.abc import Sequence
-from contextlib import suppress
+from collections.abc import Iterator, Sequence
+from contextlib import ExitStack, contextmanager, suppress
 from pathlib import Path
 from typing import Any
 
@@ -19,6 +20,13 @@ from .task_claims import TaskClaimRenewalError, renew_owned_claim
 class CommitError(RuntimeError):
     """Raised when commit workflow cannot run."""
 
+
+# Concurrent sessions share one repository mutation lock; a commit waits briefly
+# for another session's commit/acceptance instead of failing immediately.
+REPO_LOCK_WAIT_SECONDS = 60.0
+REPO_LOCK_POLL_SECONDS = 2.0
+# Checks rerun once when only files outside a --paths selection changed.
+CHECK_ATTEMPTS = 2
 
 COMMIT_PUBLICATION_GUIDANCE = (
     "st commit creates local checkpoints; publish an accepted source explicitly with "
@@ -111,6 +119,86 @@ def _selected_changed_files(repo: Path, paths: Sequence[str]) -> list[str]:
             raise CommitError(result.stderr.strip() or "cannot resolve selected check paths")
         files.update(item for item in result.stdout.split("\0") if item)
     return sorted(files) or list(paths)
+
+
+def _checkout_snapshot(repo: Path) -> dict[str, str]:
+    """Per-path state of dirty files (status, index blob, worktree blob) plus HEAD."""
+    status = run_git(repo, ["status", "--porcelain=v1", "-z", "--untracked-files=all"])
+    if status.returncode != 0:
+        raise CommitError(status.stderr.strip() or "cannot inspect working tree status")
+    codes: dict[str, str] = {}
+    items = iter(status.stdout.split("\0"))
+    for item in items:
+        if len(item) < 4:
+            continue
+        codes[item[3:]] = item[:2]
+        if item[0] in "RC":
+            next(items, None)  # rename/copy source path
+    snapshot = {"\0HEAD": run_git(repo, ["rev-parse", "-q", "--verify", "HEAD"]).stdout.strip()}
+    if not codes:
+        return snapshot
+    staged = run_git(repo, ["--literal-pathspecs", "ls-files", "--stage", "-z", "--", *codes]).stdout.split("\0")
+    index = {entry.split("\t", 1)[1]: entry.split()[1] for entry in staged if "\t" in entry}
+    present = [path for path in codes if (repo / path).is_file()]
+    hashed = subprocess.run(["git", "hash-object", "--no-filters", "--stdin-paths"], cwd=repo,
+                            input="\n".join(present), text=True, capture_output=True, check=False)
+    blobs = dict(zip(present, hashed.stdout.split(), strict=False)) if hashed.returncode == 0 else {}
+    for path, code in codes.items():
+        snapshot[path] = f"{code}:{index.get(path, '-')}:{blobs.get(path, '-')}"
+    return snapshot
+
+
+def _snapshot_changes(repo: Path, before: dict[str, str]) -> set[str]:
+    """Paths whose state differs from ``before``, including files a new HEAD brought in."""
+    after = _checkout_snapshot(repo)
+    changed = {path for path in before.keys() | after.keys() if before.get(path) != after.get(path)}
+    changed.discard("\0HEAD")
+    old_head, new_head = before["\0HEAD"], after["\0HEAD"]
+    if old_head != new_head:
+        if not old_head:
+            return changed | {"<new HEAD>"}
+        moved = run_git(repo, ["diff", "--name-only", "-z", old_head, new_head])
+        changed.update(item for item in moved.stdout.split("\0") if item)
+        if moved.returncode != 0:
+            changed.add("<moved HEAD>")
+    return changed
+
+
+def _changed_detail(changed: set[str], scope: Sequence[str], *, retried: bool) -> str:
+    """One-line reason naming what changed while checks ran."""
+    if not changed:
+        return "checkout inputs changed while checkpoint checks were running; retry the commit"
+    inside = sorted(changed & set(scope))
+    named = inside or sorted(changed)
+    listed = ", ".join(named[:5]) + (f" (+{len(named) - 5} more)" if len(named) > 5 else "")
+    if inside:
+        return f"selected files changed while checks ran: {listed}; finish editing, then retry the commit"
+    if retried:
+        return f"files outside the selection kept changing across a rerun: {listed}; retry the commit"
+    return f"checkout changed while checks ran: {listed}; retry the commit"
+
+
+@contextmanager
+def _commit_repo_lock(repo: Path) -> Iterator[None]:
+    """Take the repository mutation lock, waiting briefly while another operation holds it."""
+    deadline = time.monotonic() + REPO_LOCK_WAIT_SECONDS
+    noticed = False
+    while True:
+        stack = ExitStack()
+        try:
+            stack.enter_context(repo_lock(repo, purpose="commit"))
+        except AcceptanceError as exc:
+            if not str(exc).startswith("repo_mutation_in_progress") or time.monotonic() >= deadline:
+                raise
+            if not noticed:
+                print(f"st commit: another repository operation is running; waiting up to "
+                      f"{REPO_LOCK_WAIT_SECONDS:.0f}s for it to finish", file=sys.stderr)
+                noticed = True
+            time.sleep(REPO_LOCK_POLL_SECONDS)
+            continue
+        with stack:
+            yield
+        return
 
 
 def _require_foreign_leases_clear(repo: Path, changed_paths: Sequence[str]) -> None:
@@ -240,18 +328,28 @@ def commit_git_revision(
         raise CommitError(str(exc)) from None
     scope = changed_scope
     if not skip_checks and (has_changes or scope):
-        before_checks = workspace_fingerprint(repo)
         check_started = time.monotonic()
-        ok, detail = run_checks(repo, paths=scope, full=False)
-        result["check_duration_ms"] = round((time.monotonic() - check_started) * 1000, 3)
-        result["check_count"] = 1
-        if workspace_fingerprint(repo) != before_checks:
+        for attempt in range(1, CHECK_ATTEMPTS + 1):
+            before_checks = workspace_fingerprint(repo)
+            before_files = _checkout_snapshot(repo) if selected_paths else None
+            ok, detail = run_checks(repo, paths=scope, full=False)
+            result["check_count"] = attempt
+            if workspace_fingerprint(repo) == before_checks:
+                break
+            changed = _snapshot_changes(repo, before_files) if before_files is not None else set()
+            outside_only = bool(changed) and not changed & set(scope)
+            if outside_only and attempt < CHECK_ATTEMPTS:
+                # Another session edited files outside this selection; the
+                # selection itself is intact, so one fresh run is enough.
+                continue
+            result["check_duration_ms"] = round((time.monotonic() - check_started) * 1000, 3)
             return {
                 **result,
                 "status": "BLOCKED",
                 "reason": "source_changed_during_checks",
-                "detail": "checkout inputs changed while checkpoint checks were running; retry the commit",
+                "detail": _changed_detail(changed, scope, retried=attempt > 1),
             }
+        result["check_duration_ms"] = round((time.monotonic() - check_started) * 1000, 3)
         if not ok:
             return {**result, "status": "BLOCKED", "reason": "quality_gates_failed", "detail": detail}
     if selected_paths:
@@ -380,7 +478,7 @@ def commit_repo(
         except TaskClaimRenewalError as exc:
             raise CommitError(str(exc)) from exc
     try:
-        with repo_lock(repo, purpose="commit"):
+        with _commit_repo_lock(repo):
             result = commit_git_revision(
                 repo,
                 message=message,

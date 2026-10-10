@@ -247,6 +247,13 @@ def local_gate_tools(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
 
 
 @pytest.fixture(autouse=True)
+def _launcher_roots_unset(monkeypatch) -> None:
+    """scripts/st exports the main checkout; tests must resolve their own tree."""
+    for name in ("SUMMITFLOW_ROOT", "SUMMITFLOW_HOST_CONFIG_ROOT", "ST_DEV_CHECKOUT"):
+        monkeypatch.delenv(name, raising=False)
+
+
+@pytest.fixture(autouse=True)
 def isolated_coordination_store(tmp_path_factory) -> Generator[None]:
     """Keep tests off the host lease/handshake store and the caller's native session id.
 
@@ -256,9 +263,51 @@ def isolated_coordination_store(tmp_path_factory) -> Generator[None]:
     from cli.lib import leases
 
     with pytest.MonkeyPatch.context() as patch:
-        patch.setattr(leases, "LEASES_DIR", tmp_path_factory.mktemp("leases"))
-        for name in ("CLAUDE_CODE_SESSION_ID", "CODEX_THREAD_ID", "CODEX_SESSION_ID", "ST_COORD_SENSITIVE"):
+        directory = tmp_path_factory.mktemp("leases")
+        patch.setattr(leases, "LEASES_DIR", directory)
+        # Git hooks and `st` children read the store from the environment.
+        patch.setenv("ST_LEASES_DIR", str(directory))
+        for name in ("CLAUDE_CODE_SESSION_ID", "CODEX_THREAD_ID", "CODEX_SESSION_ID", "PI_SESSION_ID",
+                     "ANTIGRAVITY_CONVERSATION_ID", "ST_COORD_SENSITIVE"):
             patch.delenv(name, raising=False)
+        # An empty anchor disables lineage's process-tree walk under a real harness.
+        patch.setenv("ST_COORD_ANCHOR", "")
+        yield
+
+
+@pytest.fixture(scope="session")
+def _private_host_state(tmp_path_factory: pytest.TempPathFactory) -> Path:
+    root = tmp_path_factory.mktemp("host-state")
+    root.chmod(0o700)
+    return root
+
+
+@pytest.fixture(autouse=True)
+def isolated_host_state(_private_host_state: Path) -> Generator[None]:
+    """Keep tests off the host heavy-work lane and per-user ST state.
+
+    The heavy lane is shared with live agents: a test that queued behind a
+    real suite or rebuild outlived its pytest timeout. Tests needing a
+    specific lane still monkeypatch ``_LOCK_DIRECTORY`` themselves.
+
+    Fixture repositories also get a private global Git config: the operator's
+    one installs global hooks (secret guard, publication pre-push) that made a
+    local bare-remote push outlive its timeout and ran host guards on fixtures.
+    """
+    from app.utils import heavy_work
+    from cli.lib import confirm_token
+
+    lane = _private_host_state / "heavy"
+    gitconfig = _private_host_state / "gitconfig"
+    if not gitconfig.exists():
+        gitconfig.write_text("[user]\n\tname = Test\n\temail = test@example.invalid\n"
+                             "[init]\n\tdefaultBranch = main\n")
+    with pytest.MonkeyPatch.context() as patch:
+        patch.setenv("GIT_CONFIG_GLOBAL", str(gitconfig))
+        patch.setenv("GIT_CONFIG_NOSYSTEM", "1")
+        patch.setattr(heavy_work, "_LOCK_DIRECTORY", lane)
+        patch.setattr(confirm_token, "_TOKENS_DIR", _private_host_state / "confirm-tokens")
+        patch.setenv("SUMMITFLOW_SERVICE_STATE_ROOT", str(_private_host_state / "services"))
         yield
 
 

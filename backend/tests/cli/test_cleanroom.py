@@ -156,11 +156,15 @@ def test_cleanroom_child_can_reenter_shared_admission(
     project_root.mkdir()
     _init_git_repo(project_root)
     backend = Path(__file__).resolve().parents[2]
+    from app.utils import heavy_work as guard
+
+    # The child must reenter the (test-private) lane its parent admitted on.
     code = (
         "import signal,sys; signal.alarm(5); "
         f"sys.path.insert(0,{str(backend)!r}); "
-        "from app.utils.heavy_work import heavy_work\n"
-        "with heavy_work('nested cleanroom fixture'): print('nested-admitted')\n"
+        "from pathlib import Path; from app.utils import heavy_work as guard; "
+        f"guard._LOCK_DIRECTORY = Path({str(guard._LOCK_DIRECTORY)!r})\n"
+        "with guard.heavy_work('nested cleanroom fixture'): print('nested-admitted')\n"
     )
     assert cleanroom.run_cleanroom(project_root, [sys.executable, "-c", code]) == 0
     assert capfd.readouterr().out.strip() == "nested-admitted"

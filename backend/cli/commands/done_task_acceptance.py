@@ -13,6 +13,7 @@ from collections.abc import Sequence
 from pathlib import Path
 from typing import Any
 
+from app.utils import heavy_work as heavy_work_module
 from app.utils.heavy_work import heavy_work
 from app.utils.transient_scratch import (
     ScratchError,
@@ -224,7 +225,10 @@ def _sandbox_command(repo: Path, source: Path, metadata: Path, common: Path,
     binary = shutil.which("bwrap")
     if not binary:
         raise acceptance.AcceptanceError("Isolated acceptance is unavailable: bwrap is not installed; prepare the managed isolation capability")
+    # Nested st calls inside the sandbox open the default lane path; bind the
+    # admitting lane there so a relocated lane (tests) still reenters.
     lane = Path(f"/tmp/st-heavy-{os.getuid()}")
+    lane_source = heavy_work_module._LOCK_DIRECTORY
     scratch = temporary / "t"
     scratch.mkdir(mode=0o700)
     # Nested runs replace /tmp, so give their private state distinct paths as
@@ -296,7 +300,7 @@ def _sandbox_command(repo: Path, source: Path, metadata: Path, common: Path,
         command.extend(["--ro-bind", str(shared), str(home / ".env.local")])
     if common != repo / ".git":
         command.extend(["--bind", str(metadata), str(common)])
-    command.extend(["--bind", str(lane), str(lane)])
+    command.extend(["--bind", str(lane_source), str(lane)])
     for original, canonical in bindings:
         command.extend(["--ro-bind", str(original), str(canonical)])
     # Editable imports naming the original project now resolve to the accepted

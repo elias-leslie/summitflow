@@ -88,6 +88,26 @@ class TestResolveSessionId:
         assert all(call["project_id"] == "summitflow" for call in client.calls)
         assert "Use the full UUID for older sessions" in capsys.readouterr().err
 
+    def test_checkout_default_project_falls_back_to_global_lookup(self) -> None:
+        # `st sessions show <id>` from one checkout must find another project's
+        # session without -P: the cwd project is a default, not a filter.
+        class _ScopedClient(_StubClient):
+            project_id = "summitflow"
+
+            def list_sessions(self, **kwargs: Any) -> list[dict[str, Any]]:
+                self.calls.append(kwargs)
+                return [] if kwargs.get("project_id") else [{"id": _FULL_UUID, "project_id": "agent-hub"}]
+
+        client = _ScopedClient([])
+        assert resolve_session_id(_FULL_UUID[:8], client) == _FULL_UUID
+        assert [call["project_id"] for call in client.calls] == ["summitflow", None]
+
+    def test_explicit_project_stays_strict(self) -> None:
+        client = _StubClient([])
+        with pytest.raises(typer.Exit):
+            resolve_session_id(_FULL_UUID[:8], client, project_id="summitflow")
+        assert {call["project_id"] for call in client.calls} == {"summitflow"}
+
     def test_empty_session_id_returns_unchanged(self) -> None:
         client = _StubClient([])
         assert resolve_session_id("", client) == ""

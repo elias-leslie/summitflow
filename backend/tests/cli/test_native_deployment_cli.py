@@ -1,6 +1,7 @@
 """Native commands exercise real client URLs and JSON through an isolated transport."""
 from __future__ import annotations
 
+import functools
 import json
 from pathlib import Path
 from types import SimpleNamespace
@@ -41,9 +42,10 @@ def native_http(monkeypatch: pytest.MonkeyPatch) -> tuple[list[httpx.Request], l
     # Keep STClient and BaseHTTPClient intact. Only replace network transport
     # and configuration discovery; the ambient project intentionally differs.
     monkeypatch.setattr(httpx, "Client", isolated_client)
-    monkeypatch.setattr("cli.config.get_config", lambda: SimpleNamespace(
+    # Cached like the real one: the SDK's set_project_override calls cache_clear().
+    monkeypatch.setattr("cli.config.get_config", functools.cache(lambda: SimpleNamespace(
         api_base=API_BASE, project_id="ambient-project",
-    ))
+    )))
     return requests, clients, reply
 
 

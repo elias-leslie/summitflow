@@ -621,3 +621,128 @@ def test_commit_follows_identical_tree_publication_merge(tmp_path: Path, monkeyp
     assert result["status"] == "SUCCESS" and result["followed_published_merge"] is True
     assert git("rev-parse", "HEAD^") == merge
     assert (repo / "unrelated.py").read_text() == "unfinished work"
+
+
+def _selected_repo(tmp_path: Path) -> Path:
+    def git(*args: str) -> None:
+        subprocess.run(["git", *args], cwd=tmp_path, text=True, capture_output=True, check=True)
+
+    git("init", "-q", "--initial-branch=main")
+    git("config", "user.name", "Test")
+    git("config", "user.email", "test@example.invalid")
+    (tmp_path / "mine.py").write_text("before\n")
+    (tmp_path / "other.py").write_text("before\n")
+    git("add", ".")
+    git("commit", "-qm", "initial")
+    (tmp_path / "mine.py").write_text("after\n")
+    return tmp_path
+
+
+def test_selected_commit_reruns_checks_once_when_only_unselected_files_change(tmp_path: Path, monkeypatch) -> None:
+    repo = _selected_repo(tmp_path)
+    edits = iter(["another session's edit\n"])
+
+    def checks(*_args, **_kwargs):
+        if (text := next(edits, None)) is not None:
+            (repo / "other.py").write_text(text)
+        return True, "ok"
+
+    monkeypatch.setattr(commit_workflow, "run_checks", checks)
+    result = commit_workflow.commit_git_revision(repo, message="mine", paths=("mine.py",))
+
+    assert result["status"] == "SUCCESS"
+    assert result["check_count"] == 2
+
+
+def test_selected_commit_blocks_without_rerun_when_selected_file_changes(tmp_path: Path, monkeypatch) -> None:
+    repo = _selected_repo(tmp_path)
+    calls = []
+
+    def checks(*_args, **_kwargs):
+        calls.append(1)
+        (repo / "mine.py").write_text(f"edited {len(calls)}\n")
+        return True, "ok"
+
+    monkeypatch.setattr(commit_workflow, "run_checks", checks)
+    result = commit_workflow.commit_git_revision(repo, message="mine", paths=("mine.py",))
+
+    assert result["status"] == "BLOCKED"
+    assert result["reason"] == "source_changed_during_checks"
+    assert "selected files changed while checks ran: mine.py" in result["detail"]
+    assert len(calls) == 1
+
+
+def test_selected_commit_blocks_when_unselected_files_keep_changing(tmp_path: Path, monkeypatch) -> None:
+    repo = _selected_repo(tmp_path)
+    calls = []
+
+    def checks(*_args, **_kwargs):
+        calls.append(1)
+        (repo / "other.py").write_text(f"edit {len(calls)}\n")
+        return True, "ok"
+
+    monkeypatch.setattr(commit_workflow, "run_checks", checks)
+    result = commit_workflow.commit_git_revision(repo, message="mine", paths=("mine.py",))
+
+    assert result["status"] == "BLOCKED"
+    assert result["detail"].startswith("files outside the selection kept changing across a rerun: other.py")
+    assert len(calls) == 2
+
+
+def test_selected_commit_reruns_when_another_session_commits_its_own_file(tmp_path: Path, monkeypatch) -> None:
+    repo = _selected_repo(tmp_path)
+    (repo / "other.py").write_text("theirs\n")
+    edits = iter([True])
+
+    def checks(*_args, **_kwargs):
+        if next(edits, False):
+            subprocess.run(["git", "commit", "-qm", "theirs", "--", "other.py"], cwd=repo, check=True)
+        return True, "ok"
+
+    monkeypatch.setattr(commit_workflow, "run_checks", checks)
+    result = commit_workflow.commit_git_revision(repo, message="mine", paths=("mine.py",))
+
+    assert result["status"] == "SUCCESS"
+    assert result["check_count"] == 2
+
+
+def _hold_repo_lock(repo: Path):
+    import fcntl
+
+    lock = repo / ".git/st/repo-mutation.lock"
+    lock.parent.mkdir(parents=True, exist_ok=True)
+    handle = lock.open("a+")
+    fcntl.flock(handle.fileno(), fcntl.LOCK_EX)
+    return handle
+
+
+def test_commit_waits_briefly_for_repo_mutation_lock(tmp_path: Path, monkeypatch, capsys) -> None:
+    import threading
+
+    repo = _selected_repo(tmp_path)
+    handle = _hold_repo_lock(repo)
+    monkeypatch.setattr(commit_workflow, "REPO_LOCK_POLL_SECONDS", 0.05)
+    monkeypatch.setattr(commit_workflow, "run_checks", lambda *_a, **_k: (True, "ok"))
+    monkeypatch.setattr(commit_workflow, "_refresh_symbols_after_publish", lambda _repo, result: result)
+    timer = threading.Timer(0.3, handle.close)
+    timer.start()
+    try:
+        result = commit_repo(repo, message="mine", paths=("mine.py",))
+    finally:
+        timer.cancel()
+        handle.close()
+
+    assert result["status"] == "SUCCESS"
+    assert capsys.readouterr().err.count("another repository operation is running") == 1
+
+
+def test_commit_gives_up_after_bounded_lock_wait(tmp_path: Path, monkeypatch) -> None:
+    repo = _selected_repo(tmp_path)
+    handle = _hold_repo_lock(repo)
+    monkeypatch.setattr(commit_workflow, "REPO_LOCK_WAIT_SECONDS", 0.2)
+    monkeypatch.setattr(commit_workflow, "REPO_LOCK_POLL_SECONDS", 0.05)
+    try:
+        with pytest.raises(CommitError, match="repo_mutation_in_progress"):
+            commit_repo(repo, message="mine", paths=("mine.py",))
+    finally:
+        handle.close()

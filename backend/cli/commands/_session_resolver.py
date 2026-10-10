@@ -64,28 +64,13 @@ def resolve_session_id(
 
         client = STClient(require_project=False)
 
-    matched: list[str] = []
     lookup_project_id = project_id or _client_project_id(client)
-    for page in range(1, max(max_pages, 1) + 1):
-        try:
-            batch = client.list_sessions(
-                limit=_PAGE_SIZE,
-                page=page,
-                project_id=lookup_project_id,
-            )
-        except APIError as exc:
-            output_error(f"Could not resolve session ID '{session_id}': {exc}")
-            raise typer.Exit(1) from exc
-        if not isinstance(batch, list):
-            break
-        for session in batch:
-            if not isinstance(session, dict):
-                continue
-            sid = session.get("id")
-            if isinstance(sid, str) and sid.startswith(session_id):
-                matched.append(sid)
-        if len(batch) < _PAGE_SIZE:
-            break
+    matched = _prefix_matches(session_id, client, lookup_project_id, max_pages)
+    if not matched and lookup_project_id and not project_id:
+        # The checkout's project is only a default: a session id is global, so
+        # an unscoped lookup finds another project's session without -P.
+        matched = _prefix_matches(session_id, client, None, max_pages)
+        lookup_project_id = None
 
     if len(matched) == 1:
         return matched[0]
@@ -104,3 +89,28 @@ def resolve_session_id(
         "Use the full UUID for older sessions."
     )
     raise typer.Exit(1)
+
+
+def _prefix_matches(session_id: str, client: Any, project_id: str | None, max_pages: int) -> list[str]:
+    matched: list[str] = []
+    for page in range(1, max(max_pages, 1) + 1):
+        try:
+            batch = client.list_sessions(
+                limit=_PAGE_SIZE,
+                page=page,
+                project_id=project_id,
+            )
+        except APIError as exc:
+            output_error(f"Could not resolve session ID '{session_id}': {exc}")
+            raise typer.Exit(1) from exc
+        if not isinstance(batch, list):
+            break
+        for session in batch:
+            if not isinstance(session, dict):
+                continue
+            sid = session.get("id")
+            if isinstance(sid, str) and sid.startswith(session_id):
+                matched.append(sid)
+        if len(batch) < _PAGE_SIZE:
+            break
+    return matched

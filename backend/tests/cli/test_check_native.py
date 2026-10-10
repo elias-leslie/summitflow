@@ -12,6 +12,7 @@ from unittest.mock import Mock
 import pytest
 from typer.testing import CliRunner
 
+from app.utils import heavy_work as heavy_work_guard
 from cli.commands.check_native import NativeCheckError, _counts, native_plan, run_native
 from cli.lib import acceptance
 from cli.main import app
@@ -24,7 +25,9 @@ def _plan(root: Path) -> dict[str, Any]:
 
 
 @pytest.fixture
-def native_repo(tmp_path: Path) -> Path:
+def native_repo(tmp_path: Path, tmp_path_factory: pytest.TempPathFactory, monkeypatch: pytest.MonkeyPatch) -> Path:
+    # Private heavy-work lane: the host lane is shared with live agents' checks.
+    monkeypatch.setattr(heavy_work_guard, "_LOCK_DIRECTORY", tmp_path_factory.mktemp("heavy-lane"))
     (tmp_path / ".tools").mkdir()
     (tmp_path / ".tools/python").symlink_to(sys.executable)
     (tmp_path / ".tools/suite.py").write_text(
