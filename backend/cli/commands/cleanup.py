@@ -66,6 +66,7 @@ app = typer.Typer(
         "Clean up git/checkpoint residue plus managed workspace leftovers.\n"
         "Read-only: status, checkpoints, inspect-orphans.\n"
         "Cleanup: checkpoints --auto, checkpoints --force, snapshots, cleanrooms.\n"
+        "Report-only: scratch (old /srv/scratch entries; never deletes).\n"
         "Path cleanup removes literal paths only. Globs are rejected and directories require --recursive."
     )
 )
@@ -338,3 +339,43 @@ def cleanup_cleanrooms(
         output_error(f"{summary}; {errors} error(s)")
         raise typer.Exit(1)
     output_success(summary)
+
+
+@app.command("scratch")
+def cleanup_scratch(
+    ctx: typer.Context,
+    older_than: Annotated[
+        str | None,
+        typer.Option("--older-than", help="Minimum idle age (e.g. 72h, 7d). Default: host retention policy."),
+    ] = None,
+) -> None:
+    """Report /srv/scratch entries old enough to review. Report-only: nothing is deleted.
+
+    Protected: cache/models/.dev-tools and st-* namespaces, symlink targets from
+    ~ and project trees (depth 4, same filesystem), and paths open by any visible
+    process. Age is the newest file mtime/ctime/atime or directory mtime/ctime in the entry.
+    """
+    from app.tasks._retention_scratch import collect_scratch_review
+    from app.utils.host_retention_policy import HostRetentionPolicy
+
+    try:
+        hours = (cleanroom_prune.parse_age(older_than) / 3600 if older_than
+                 else HostRetentionPolicy.from_env().scratch_review_max_age_hours)
+    except ValueError as exc:
+        typer.echo(f"Error: {exc}", err=True)
+        raise typer.Exit(2) from exc
+    review = collect_scratch_review(max_age_hours=int(hours))
+    if not ctx.obj or not getattr(ctx.obj, "is_compact", True):
+        output_json(review)
+        return
+    typer.echo(f"REPORT ONLY - nothing deleted. Root: {review['root']} (idle >= {review['max_age_hours']}h)")
+    for item in review["candidates"]:
+        typer.echo(f"  review {item['path']} ({cleanroom_prune.format_bytes(item['size_bytes'])}, idle {item['age_hours']}h)")
+    for skip in review["protected"]:
+        typer.echo(f"  keep   {skip['path']}: {skip['reason']}")
+    total = sum(item["size_bytes"] for item in review["candidates"])
+    visibility = "" if review["process_visibility"] == "complete" else "; process visibility partial"
+    output_success(
+        f"{len(review['candidates'])} review candidate(s), {cleanroom_prune.format_bytes(total)}; "
+        f"{len(review['protected'])} protected, {review['recent']} recent{visibility}"
+    )
