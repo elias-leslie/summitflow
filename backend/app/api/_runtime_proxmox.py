@@ -77,8 +77,16 @@ def _ssl_context(verify_ssl: bool) -> ssl.SSLContext | None:
     without it, verify_ssl picks system CAs or no verification (legacy self-signed setups)."""
     ca_bundle = os.environ.get("PROXMOX_CA_BUNDLE", "").strip()
     if ca_bundle and os.path.isfile(ca_bundle):
-        return ssl.create_default_context(cafile=ca_bundle)
+        return pinned_ca_context(ca_bundle)
     return None if verify_ssl else ssl._create_unverified_context()
+
+
+def pinned_ca_context(ca_bundle: str) -> ssl.SSLContext:
+    """Chain + hostname verification against one CA. The PVE cluster CA predates RFC 5280 key-usage marking,
+    so Python 3.13's VERIFY_X509_STRICT default is relaxed for this pinned CA only."""
+    context = ssl.create_default_context(cafile=ca_bundle)
+    context.verify_flags &= ~ssl.VERIFY_X509_STRICT
+    return context
 
 
 def _split_proxmox_tags(raw: str | None) -> list[str]:

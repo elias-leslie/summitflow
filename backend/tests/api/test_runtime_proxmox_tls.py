@@ -23,6 +23,8 @@ def test_runtime_context_pins_ca_even_when_verify_flag_is_off(monkeypatch, ca_fi
     monkeypatch.setenv("PROXMOX_CA_BUNDLE", ca_file)
     ctx = runtime._ssl_context(False)
     assert ctx is not None and ctx.verify_mode == ssl.CERT_REQUIRED and ctx.check_hostname
+    assert not ctx.verify_flags & ssl.VERIFY_X509_STRICT
+    assert isinstance(proxmox._verify_arg(ca_file), ssl.SSLContext) and proxmox._verify_arg(False) is False
 
 
 def test_runtime_context_legacy_behavior_without_ca(monkeypatch):

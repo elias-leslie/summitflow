@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import os
+import ssl
 import time
 from contextlib import suppress
 from dataclasses import dataclass
@@ -90,6 +91,14 @@ def load_proxmox_config() -> ProxmoxConfig:
     )
 
 
+def _verify_arg(verify: bool | str) -> bool | ssl.SSLContext:
+    if isinstance(verify, str):
+        from app.api._runtime_proxmox import pinned_ca_context
+
+        return pinned_ca_context(verify)
+    return verify
+
+
 class ProxmoxClient:
     def __init__(self, config: ProxmoxConfig | None = None) -> None:
         self.config = config or load_proxmox_config()
@@ -107,7 +116,7 @@ class ProxmoxClient:
                 headers=self._headers,
                 data=data,
                 timeout=30.0,
-                verify=self.config.verify,
+                verify=_verify_arg(self.config.verify),
             )
         except httpx.HTTPError as exc:
             raise ProxmoxError(f"Proxmox request failed: {exc}") from exc
