@@ -1,7 +1,9 @@
-"""Synchronous PreToolUse publication hook (Claude/Codex shared JSON protocol).
+"""Synchronous PreToolUse hook (Claude/Codex shared JSON protocol).
 
-Stdlib-only by contract: scripts/lib/command-guard runs this with the OS
-interpreter so agent shells keep their guard when backend/.venv is broken.
+Denies direct publication (fail closed) and a small irreversible command set
+(fail open: see _irreversible_decision). Stdlib-only by contract:
+scripts/lib/command-guard runs this with the OS interpreter so agent shells
+keep their guard when backend/.venv is broken.
 """
 
 from __future__ import annotations
@@ -12,7 +14,7 @@ import sys
 from typing import Any
 
 from ._command_guard_helpers import CommandGuardDecision
-from ._publication_guard import evaluate_publication_command
+from ._publication_guard import evaluate_irreversible_command, evaluate_publication_command
 
 _CONNECTOR_MUTATIONS = (
     "merge_pull_request", "create_release", "update_release", "delete_release",
@@ -41,7 +43,18 @@ def evaluate_payload(payload: Any) -> CommandGuardDecision:
         return CommandGuardDecision(False, None, None, None, "")
     if not isinstance(command, str) or not command.strip():
         raise ValueError("Invalid command")
-    return evaluate_publication_command(command, payload.get("cwd"))
+    decision = evaluate_publication_command(command, payload.get("cwd"))
+    if decision.blocked:
+        return decision
+    return _irreversible_decision(command, payload.get("cwd"))
+
+
+def _irreversible_decision(command: str, cwd: Any) -> CommandGuardDecision:
+    """Fail open: a defect here must never block every agent shell on the host."""
+    try:
+        return evaluate_irreversible_command(command, cwd if isinstance(cwd, str) and cwd else None)
+    except Exception:
+        return CommandGuardDecision(False, None, None, None, "")
 
 
 def emit(decision: CommandGuardDecision) -> None:

@@ -1,4 +1,8 @@
 #!/usr/bin/env bash
+# Opt-in BASH_ENV interceptor for the advisory command_guard redirects. No
+# harness installs it; the live guard is the PreToolUse hook
+# (publication-pretool-hook), which denies only publication and the
+# irreversible set in backend/app/services/_command_guard_helpers.py.
 
 if [[ "${SF_COMMAND_GUARD_DISABLE:-0}" == "1" ]]; then
   return 0

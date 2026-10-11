@@ -101,6 +101,14 @@ def test_hook_keeps_full_policy_with_empty_venv(sandbox: Path, tmp_path: Path) -
     assert not (tmp_path / "state/summitflow/command-guard-degraded.log").exists()
 
 
+def test_hook_denies_irreversible_with_empty_venv(sandbox: Path, tmp_path: Path) -> None:
+    payload = json.dumps({"tool_name": "Bash", "tool_input": {"command": "git reset --hard"},
+                          "cwd": "/srv/workspaces/projects/summitflow"})
+    assert _denied(_hook(sandbox, payload, tmp_path))
+    scratch = json.dumps({"tool_name": "Bash", "tool_input": {"command": "git reset --hard"}, "cwd": "/tmp/clone"})
+    assert _hook(sandbox, scratch, tmp_path) == {}
+
+
 def test_unimportable_guard_uses_conservative_fallback(sandbox: Path, tmp_path: Path) -> None:
     (sandbox / "backend/app/services/_publication_guard.py").write_text("raise SyntaxError('mid-edit')\n")
     for command in DENIED:

@@ -1,4 +1,10 @@
-"""Shared shell command guard for managed agent runtimes."""
+"""Shared shell command guard (redirects, git safety, ownership) for ``st`` and tests.
+
+Not installed as a live shell interceptor. The live PreToolUse hook
+(scripts/lib/publication-pretool-hook -> publication_hook) enforces only
+publication and the irreversible set from _command_guard_helpers
+(irreversible_segment_decision); the redirects here are advice, not denies.
+"""
 
 from __future__ import annotations
 
@@ -24,11 +30,11 @@ from ._command_guard_helpers import (
 from ._command_guard_helpers import (
     CommandGuardDecision,
     explicit_repo_target,
-    force_pushes_shared_main,
     git_checkout_decision,
-    git_has_flag,
     git_restore_decision,
     git_revert_decision,
+    irreversible_git_decision,
+    irreversible_rm_decision,
     is_inside_git_repo,
     is_managed_repo_root,
     normalize_repo_paths,
@@ -421,28 +427,12 @@ def _git_decision(segment: Sequence[str], cwd: Path) -> CommandGuardDecision | N
     root = _repo_root(git_cwd)
     check_fn = _make_path_conflict_fn(root)
 
-    if subcommand == "reset" and git_has_flag(args, "--hard"):
-        return CommandGuardDecision(
-            blocked=True, code="git_reset_hard",
-            message="BLOCKED:git reset --hard:Destroys uncommitted work without recovery. Commit or stash first.",
-            source="git", command=segment_text,
-        )
-    if subcommand == "clean" and (
-        any(set(token) >= {"f", "d"} for token in args if token.startswith("-"))
-        or ("-f" in args and "-d" in args)
-        or ("-d" in args and "-f" in args)
-    ):
-        return CommandGuardDecision(
-            blocked=True, code="git_clean_fd",
-            message="BLOCKED:git clean -fd:Permanently deletes untracked files. Preview with 'git clean -n' first.",
-            source="git", command=segment_text,
-        )
-    if subcommand == "push" and force_pushes_shared_main(args):
-        return CommandGuardDecision(
-            blocked=True, code="git_force_push_main",
-            message="BLOCKED:git push --force main:Force push to main/master destroys shared history.",
-            source="git", command=segment_text,
-        )
+    # Same irreversible policy as the live PreToolUse hook; whole-tree
+    # checkout/restore keep their managed-repo and ownership checks below.
+    if subcommand in {"reset", "clean", "push", "stash"}:
+        decision = irreversible_git_decision(subcommand, args, segment_text, shared_checkout=True)
+        if decision:
+            return decision
     if subcommand == "commit":
         return CommandGuardDecision(
             blocked=True, code="git_commit_redirect",
@@ -489,6 +479,9 @@ def evaluate_shell_command(command: str, cwd: str | Path | None = None) -> Comma
     working_dir = Path(cwd or ".").expanduser().resolve()
     for segment in split_shell_segments(command):
         decision = _dangerous_decision(segment)
+        if decision:
+            return decision
+        decision = irreversible_rm_decision(unwrap_segment(segment), str(working_dir))
         if decision:
             return decision
         decision = _registry_redirect_decision(segment, working_dir)

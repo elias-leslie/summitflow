@@ -1,7 +1,8 @@
-"""Publication-only policy used by synchronous native tool hooks."""
+"""Policies for the synchronous native PreToolUse hook: publication and irreversible commands."""
 
 from __future__ import annotations
 
+import os
 import re
 import shlex
 from pathlib import Path
@@ -9,6 +10,7 @@ from pathlib import Path
 from ._command_guard_helpers import (
     SHELL_EXECUTABLES,
     CommandGuardDecision,
+    irreversible_segment_decision,
     normalize_segment,
     shell_exec_args,
     split_shell_segments,
@@ -88,6 +90,44 @@ def evaluate_publication_command(command: str, cwd: str | Path | None = None) ->
     return CommandGuardDecision(False, None, None, None, "")
 
 
+def evaluate_irreversible_command(command: str, cwd: str | None = None) -> CommandGuardDecision:
+    """Deny the small irreversible set (whole-tree git discards, stash, force push to
+    main, recursive delete of protected roots) using the shared argv policy.
+
+    Only real command positions are judged: heredoc data and quoted arguments
+    (a commit message saying "git reset --hard") are never parsed as commands.
+    ``cd`` segments move the working directory for later segments.
+    """
+    working = os.path.normpath(os.path.expanduser(cwd)) if cwd else os.getcwd()
+    command, shell_bodies, _data_bodies = _split_heredocs(command)
+    for nested in [*shell_bodies, *_substitutions(command)]:
+        decision = evaluate_irreversible_command(nested, working)
+        if decision.blocked:
+            return decision
+    for segment in _segments(command):
+        args = _unwrap(segment)
+        if not args:
+            continue
+        executable = Path(args[0]).name.lower()
+        if executable == "cd":
+            target = next((arg for arg in args[1:] if not arg.startswith("-")), "~")
+            if "$" not in target and "`" not in target:
+                working = os.path.normpath(os.path.join(working, os.path.expanduser(target)))
+            continue
+        if executable in SHELL_EXECUTABLES:
+            nested = shell_exec_args(args[1:])
+            if nested:
+                decision = evaluate_irreversible_command(nested, working)
+                if decision.blocked:
+                    return decision
+            continue
+        decision = irreversible_segment_decision(args, working)
+        if decision:
+            # Do not reflect the command: tool input can include embedded credentials.
+            return CommandGuardDecision(True, decision.code, decision.message, decision.source, "")
+    return CommandGuardDecision(False, None, None, None, "")
+
+
 _READ_ONLY = frozenset({"rg", "grep", "cat", "less", "head", "tail", "echo", "printf"})
 _DATA_SINKS = frozenset({"cat", "tee"})
 _HEREDOC = re.compile(r"(?<![<\w])<<(-?)[ \t]*(?:'([^'\n]+)'|\"([^\"\n]+)\"|\\?([A-Za-z_][\w.-]*))")
@@ -160,9 +200,22 @@ def _heredoc_consumer(line: str, match: re.Match[str]) -> str:
         writes_file = ">" in segment if executable == "cat" else any(
             not arg.startswith("-") for arg in args[1:]
         )
-        if writes_file and not downstream:
+        inert = writes_file or (executable == "cat" and _inert_output(line[: match.start()]))
+        if inert and not downstream:
             return "data"
     return "other"
+
+
+def _inert_output(prefix: str) -> bool:
+    """True when ``cat <<EOF`` output is printed or captured as an argument
+    (e.g. ``git commit -m "$(cat <<EOF``), not run by a shell or ``eval``."""
+    cut = max(prefix.rfind("$("), prefix.rfind("`"))
+    if cut < 0:
+        return True
+    outer = re.split(r";|&&|\|\||\||\$\(|`|\(", prefix[:cut])[-1]
+    words = {Path(word).name.lower() for word in outer.replace('"', " ").replace("'", " ").split()}
+    # An empty outer command means the substitution itself is the command.
+    return bool(words) and not words & (SHELL_EXECUTABLES | {"eval", "source", "."})
 
 
 def _substitutions(command: str) -> list[str]:
