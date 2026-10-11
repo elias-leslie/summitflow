@@ -75,7 +75,10 @@ A neutral versioned st_sdk package owns shared project/HTTP/output/details and
 credential primitives moved from ST; compatibility aliases preserve core callers.
 It must never import app or cli: owners share the app namespace and must be able
 to import their own app first. The SDK is distributed as summitflow-st-sdk 0.1.x,
-with typer/httpx/PyYAML dependencies, and installed in each owner runtime.
+with typer/httpx/PyYAML dependencies, and installed in each owner runtime. Each
+module change takes a new version recorded in packages/st-sdk/releases.txt, so
+vendored owner wheels with one version carry the same code. agent-hub-st pins
+an exact SDK version, so a bump releases a matching agent-hub-st wheel first.
 runtime.initialize_context validates ST_EXTENSION_CONTEXT and initializes project,
 endpoint and output state BEFORE command callbacks. Runtime and SDK versions are
 explicit installation prerequisites; the dispatcher never imports owner code.

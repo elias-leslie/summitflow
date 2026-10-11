@@ -1,0 +1,5 @@
+# One line per summitflow-st-sdk version: <version> <sha256 of st_sdk/**/*.py>.
+# Owners vendor wheels by version, so any module change bumps pyproject.toml and
+# appends a line here; never edit a recorded line. Vendored 0.1.0 wheels built
+# before this record may hold older code: compare against this digest.
+0.1.0 e814c81d42ae1da3ca21f54328064de2f4aa1c693ffebb5f948582aec60c90a6

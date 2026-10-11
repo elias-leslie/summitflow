@@ -2,10 +2,12 @@
 
 from __future__ import annotations
 
+import hashlib
 import json
 import os
 import subprocess
 import sys
+import tomllib
 from pathlib import Path
 
 import httpx
@@ -316,3 +318,23 @@ def test_cli_compatibility_modules_preserve_public_identities() -> None:
     assert output_context.OutputContext is context.OutputContext
     assert cli_usage.UsageSpec is sdk_usage.UsageSpec
     assert cli_usage.usage is sdk_usage.usage
+
+
+def test_sdk_content_change_requires_a_new_version() -> None:
+    """Vendored owner wheels are keyed by version, so module bytes may not change under one."""
+    root = Path(__file__).parents[3] / "packages" / "st-sdk"
+    digest = hashlib.sha256()
+    for path in sorted((root / "st_sdk").rglob("*.py")):
+        digest.update(path.relative_to(root).as_posix().encode() + b"\0" + path.read_bytes() + b"\0")
+    version = tomllib.loads((root / "pyproject.toml").read_text(encoding="utf-8"))["project"]["version"]
+    rows = [
+        line.split()
+        for line in (root / "releases.txt").read_text(encoding="utf-8").splitlines()
+        if line.strip() and not line.startswith("#")
+    ]
+    versions = [row[0] for row in rows]
+    assert len(versions) == len(set(versions)), "releases.txt repeats a version"
+    assert rows[-1] == [version, digest.hexdigest()], (
+        "st_sdk modules changed: bump packages/st-sdk/pyproject.toml version and append "
+        f"'<new-version> {digest.hexdigest()}' to packages/st-sdk/releases.txt"
+    )
