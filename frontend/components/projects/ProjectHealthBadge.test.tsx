@@ -10,6 +10,7 @@ function renderBadge(
   endpoint = '/health',
   client = new QueryClient({ defaultOptions: { queries: { retry: false } } }),
   baseUrl = 'https://summitflow.test',
+  healthStatus = 'healthy',
 ) {
   return render(
     <QueryClientProvider client={client}>
@@ -19,7 +20,7 @@ function renderBadge(
           name: 'SummitFlow',
           base_url: baseUrl,
           health_endpoint: endpoint,
-          health_status: 'healthy',
+          health_status: healthStatus,
         }}
       />
     </QueryClientProvider>,
@@ -101,6 +102,15 @@ describe('ProjectHealthBadge', () => {
     expect(screen.getByRole('tooltip')).toHaveTextContent(
       'No health endpoint configured.',
     )
+    expect(fetchHealth).not.toHaveBeenCalled()
+  })
+
+  it('labels a backend-unconfigured project as unconfigured, not healthy', () => {
+    renderBadge('/health', undefined, 'https://summitflow.test', 'unconfigured')
+    expect(screen.getByRole('button')).toHaveAccessibleName(
+      'SummitFlow health: unconfigured',
+    )
+    fireEvent.focus(screen.getByRole('button'))
     expect(fetchHealth).not.toHaveBeenCalled()
   })
 

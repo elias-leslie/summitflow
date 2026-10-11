@@ -28,9 +28,9 @@ export function ProjectHealthBadge({
   const closeTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
   const focused = useRef(false)
   const id = useId()
-  const configured = Boolean(
-    project.base_url?.trim() && project.health_endpoint?.trim(),
-  )
+  const configured =
+    project.health_status !== 'unconfigured' &&
+    Boolean(project.base_url?.trim() && project.health_endpoint?.trim())
   const {
     data: health,
     isFetching,

@@ -36,7 +36,8 @@ function MetricStat({ label, value }: { label: string; value: string }) {
 }
 
 interface ServiceCardProps {
-  container: RuntimeServiceStatus
+  // controllable=false marks system-manager units (host monitor) the dashboard cannot start/stop.
+  container: RuntimeServiceStatus & { controllable?: boolean }
   metric?: RuntimeServiceMetrics
   metricSeries?: RuntimeMetricSeries
   metricsLoading?: boolean
@@ -51,6 +52,7 @@ export function ServiceCard({
   const [showLogs, setShowLogs] = useState(false)
   const tone = resolveHealthTone(container.state, container.health)
   const isRunning = container.state === 'running'
+  const controllable = container.controllable !== false
 
   const restartMut = useServiceAction(container.service, 'restart')
   const stopMut = useServiceAction(container.service, 'stop')
@@ -137,7 +139,11 @@ export function ServiceCard({
 
         {/* Actions */}
         <div className="flex gap-1.5">
-          {isRunning ? (
+          {!controllable ? (
+            <span className="self-center text-2xs text-slate-500">
+              System unit · control with st service
+            </span>
+          ) : isRunning ? (
             <>
               <button
                 onClick={() => restartMut.mutate()}

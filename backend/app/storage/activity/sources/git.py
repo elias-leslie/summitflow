@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import threading
+import time
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime
 from pathlib import Path
@@ -9,10 +11,21 @@ from typing import Any, cast
 
 from ....utils._git_core import _resolve_project_id, get_managed_repos
 from ....utils._git_diff import get_recent_commits
-from ...projects import get_project_root_path
+from ...projects import get_project_root_path, testing_project_ids
 from ..types import ActivityEvent, GitMetadata
 
 GIT_ACTIVITY_WORKERS = 4
+GIT_ACTIVITY_CACHE_TTL_SECONDS = 60.0
+_ALL_PROJECTS_KEY = "*"
+
+# key -> (monotonic fetched_at, limit fetched, events); shared across requests
+_git_events_cache: dict[str, tuple[float, int, list[ActivityEvent]]] = {}
+_git_events_cache_lock = threading.Lock()
+
+
+def clear_git_events_cache() -> None:
+    with _git_events_cache_lock:
+        _git_events_cache.clear()
 
 
 def _to_git_event(commit: Any, project_id: str) -> ActivityEvent:
@@ -65,10 +78,11 @@ def _collect_repo_git_events(
 
 def _get_managed_repo_git_events(limit: int) -> list[ActivityEvent]:
     """Collect and merge recent git activity across all managed repos."""
+    testing = testing_project_ids()
     repos = [
         (repo_path, project_id)
         for repo_path in get_managed_repos()
-        if (project_id := _resolve_project_id(repo_path))
+        if (project_id := _resolve_project_id(repo_path)) and project_id not in testing
     ]
     events: list[ActivityEvent] = []
     if repos:
@@ -88,15 +102,18 @@ def get_recent_git_events(
     project_id: str | None = None,
     limit: int = 20,
 ) -> list[ActivityEvent]:
-    """Get recent git commit events from repository history.
+    """Get recent git commit events, reusing a scan younger than the cache TTL.
 
-    Args:
-        project_id: Filter by project (None for all)
-        limit: Max events to return
-
-    Returns:
-        List of activity events for git commits
+    Scanning every managed repo costs seconds, so results are cached per
+    project (or for all projects) and served while fresh and deep enough.
     """
-    if project_id:
-        return _get_project_git_events(project_id, limit)
-    return _get_managed_repo_git_events(limit)
+    key = project_id or _ALL_PROJECTS_KEY
+    now = time.monotonic()
+    with _git_events_cache_lock:
+        cached = _git_events_cache.get(key)
+    if cached and now - cached[0] < GIT_ACTIVITY_CACHE_TTL_SECONDS and cached[1] >= limit:
+        return list(cached[2][:limit])
+    events = _get_project_git_events(project_id, limit) if project_id else _get_managed_repo_git_events(limit)
+    with _git_events_cache_lock:
+        _git_events_cache[key] = (time.monotonic(), limit, events)
+    return list(events)

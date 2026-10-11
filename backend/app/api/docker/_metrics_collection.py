@@ -5,9 +5,11 @@ from __future__ import annotations
 import asyncio
 import os
 import re
+import time
 from typing import Any
 
 # Late-bound access to helpers — ensures mocks at helpers.* take effect at runtime.
+from . import _process_execution as _pe
 from . import helpers as _h
 from ._process_execution import _run_command  # never mocked at helpers.*
 from .constants import runtime_service_definitions
@@ -20,7 +22,60 @@ __all__ = [
     "_runtime_metrics",
     "_signal_port_listeners",
     "_systemd_service_metric",
+    "_unit_cgroup_counters",
 ]
+
+_FIRST_SAMPLE_DELAY_SECONDS = 0.5
+# unit -> (monotonic_ns, CPUUsageNSec) from the previous reading, shared by the
+# sampler and live GETs so CPU% is the cgroup's usage over the elapsed interval.
+_cpu_samples: dict[str, tuple[int, int]] = {}
+
+
+def _monotonic_ns() -> int:
+    return time.monotonic_ns()
+
+
+def _systemd_int(value: str | None) -> int | None:
+    """Parse systemd numeric properties; '[not set]' and UINT64_MAX mean unavailable."""
+    if not value or not value.isdigit():
+        return None
+    number = int(value)
+    return None if number >= 2**64 - 1 else number
+
+
+def _total_memory_bytes() -> int | None:
+    try:
+        return os.sysconf("SC_PAGE_SIZE") * os.sysconf("SC_PHYS_PAGES")
+    except (ValueError, OSError):
+        return None
+
+
+async def _unit_cgroup_counters(unit: str) -> tuple[str, int | None, int | None]:
+    """Return (ActiveState, CPUUsageNSec, MemoryCurrent) for the unit's cgroup."""
+    run = _pe._run_systemctl_system if _pe._is_system_unit(unit) else _h._run_systemctl_user
+    stdout, _stderr, rc = await run(
+        "show", unit, "-p", "ActiveState", "-p", "CPUUsageNSec", "-p", "MemoryCurrent",
+    )
+    if rc != 0:
+        return "unknown", None, None
+    data = _h._parse_systemctl_show(stdout)
+    return (
+        data.get("ActiveState", "unknown"),
+        _systemd_int(data.get("CPUUsageNSec")),
+        _systemd_int(data.get("MemoryCurrent")),
+    )
+
+
+def _cpu_percent_since_last(unit: str, now_ns: int, cpu_ns: int) -> float | None:
+    previous = _cpu_samples.get(unit)
+    _cpu_samples[unit] = (now_ns, cpu_ns)
+    if previous is None:
+        return None
+    elapsed_ns = now_ns - previous[0]
+    used_ns = cpu_ns - previous[1]
+    if elapsed_ns <= 0 or used_ns < 0:  # restarted unit resets its counter
+        return None
+    return used_ns / elapsed_ns * 100
 
 
 async def _ps_metrics(pid: int) -> RuntimeServiceMetrics | None:
@@ -65,25 +120,38 @@ async def _signal_port_listeners(port: str, *, signal: int) -> None:
 
 
 async def _systemd_service_metric(svc: dict[str, Any]) -> RuntimeServiceMetrics | None:
-    unit_state = await _h._systemd_unit_state(svc["unit"])
-    main_pid_raw = unit_state.get("MainPID", "0")
-    try:
-        main_pid = int(main_pid_raw)
-    except ValueError:
+    """CPU/memory for the whole unit cgroup (all processes), not the main PID."""
+    unit = svc["unit"]
+    active_state, cpu_ns, memory_bytes = await _unit_cgroup_counters(unit)
+    if active_state != "active" or (cpu_ns is None and memory_bytes is None):
+        _cpu_samples.pop(unit, None)
         return None
-    if main_pid <= 0:
-        return None
-    metric = await _ps_metrics(main_pid)
-    if metric is None:
-        return None
+
+    cpu_percent: float | None = None
+    if cpu_ns is not None:
+        cpu_percent = _cpu_percent_since_last(unit, _monotonic_ns(), cpu_ns)
+        if cpu_percent is None:
+            # First sight of this unit: take a short second reading for a real rate.
+            await asyncio.sleep(_FIRST_SAMPLE_DELAY_SECONDS)
+            _state, cpu_ns_again, memory_again = await _unit_cgroup_counters(unit)
+            if cpu_ns_again is not None:
+                cpu_percent = _cpu_percent_since_last(unit, _monotonic_ns(), cpu_ns_again)
+            memory_bytes = memory_again if memory_again is not None else memory_bytes
+
+    total_memory = _total_memory_bytes()
+    mem_percent = (
+        f"{memory_bytes / total_memory * 100:.2f}%"
+        if memory_bytes is not None and total_memory
+        else "n/a"
+    )
     return RuntimeServiceMetrics(
-        name=svc["unit"],
+        name=unit,
         service=svc["service"],
-        cpu_percent=metric.cpu_percent,
-        mem_usage=metric.mem_usage,
-        mem_percent=metric.mem_percent,
-        net_io=metric.net_io,
-        block_io=metric.block_io,
+        cpu_percent=f"{cpu_percent:.2f}%" if cpu_percent is not None else "n/a",
+        mem_usage=_h._format_bytes(memory_bytes) if memory_bytes is not None else "n/a",
+        mem_percent=mem_percent,
+        net_io="n/a",
+        block_io="n/a",
     )
 
 

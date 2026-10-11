@@ -4,11 +4,17 @@ import { useQuery } from '@tanstack/react-query'
 import { clsx } from 'clsx'
 import { useState } from 'react'
 import { type MaintenanceRun, runtimeApi } from '@/lib/api/runtime'
+import { formatDuration, formatTimeAgo } from '@/lib/format'
 import { POLL_NOTIFICATIONS } from '@/lib/polling'
 
-function taskCount(run: MaintenanceRun | undefined): number {
-  const value = run?.summary?.tasks_created
-  return typeof value === 'number' ? value : (run?.rows_cleaned ?? 0)
+type Severity = 'ok' | 'warn' | 'fail'
+
+const SEVERITY_RANK: Record<Severity, number> = { ok: 0, warn: 1, fail: 2 }
+
+function severity(status: string): Severity {
+  if (status === 'failed' || status === 'blocked') return 'fail'
+  if (status === 'completed' || status === 'success') return 'ok'
+  return 'warn'
 }
 
 function workflowLabel(name: string): string {
@@ -18,21 +24,43 @@ function workflowLabel(name: string): string {
     .join(' ')
 }
 
-function routineSummary(run: MaintenanceRun | undefined): string {
-  if (!run) return 'Routine upkeep never run'
-  const count = taskCount(run)
-  const label = `${count} ${count === 1 ? 'task' : 'tasks'}`
-  return `Routine upkeep ${run.status} · ${label}`
+function rowsCleanedLabel(run: MaintenanceRun): string {
+  const count = run.rows_cleaned ?? 0
+  return `${count} ${count === 1 ? 'row' : 'rows'} cleaned`
 }
 
-function tone(status: string | undefined): string {
-  if (status === 'failed' || status === 'blocked') {
-    return 'border-rose-500/20 bg-rose-500/5 text-rose-100'
+function overallSummary(runs: MaintenanceRun[]): string {
+  if (runs.length === 0) return 'No runs recorded'
+  const counts = new Map<string, number>()
+  for (const run of runs) {
+    if (severity(run.status) !== 'ok') {
+      counts.set(run.status, (counts.get(run.status) ?? 0) + 1)
+    }
   }
-  if (status === 'completed' || status === 'success') {
+  const newest = runs.reduce((a, b) => (a.started_at > b.started_at ? a : b))
+  const health =
+    counts.size === 0
+      ? 'All workflows succeeded'
+      : [...counts.entries()]
+          .map(([status, count]) => `${count} ${status}`)
+          .join(', ')
+  return `${health} · last run ${formatTimeAgo(newest.started_at)}`
+}
+
+function worstSeverity(runs: MaintenanceRun[]): Severity | null {
+  if (runs.length === 0) return null
+  return runs
+    .map((run) => severity(run.status))
+    .reduce((a, b) => (SEVERITY_RANK[b] > SEVERITY_RANK[a] ? b : a))
+}
+
+function tone(status: string): string {
+  const level = severity(status)
+  if (level === 'fail') return 'border-rose-500/20 bg-rose-500/5 text-rose-100'
+  if (level === 'ok') {
     return 'border-emerald-500/20 bg-emerald-500/5 text-emerald-100'
   }
-  return 'border-slate-600/40 bg-slate-800/30 text-slate-300'
+  return 'border-amber-500/20 bg-amber-500/5 text-amber-100'
 }
 
 export function MaintenanceStatusCard() {
@@ -58,8 +86,8 @@ export function MaintenanceStatusCard() {
     )
   }
 
-  const routine = data.latest.routine_upkeep
   const latestRuns = Object.values(data.latest)
+  const worst = worstSeverity(latestRuns)
 
   return (
     <div className="rounded-lg border border-slate-700/60 bg-slate-900/50">
@@ -71,16 +99,18 @@ export function MaintenanceStatusCard() {
         <div
           className={clsx(
             'h-2 w-2 rounded-full',
-            routine?.status === 'failed'
+            worst === 'fail'
               ? 'bg-rose-500'
-              : routine
-                ? 'bg-emerald-500'
-                : 'bg-slate-600',
+              : worst === 'warn'
+                ? 'bg-amber-400'
+                : worst === 'ok'
+                  ? 'bg-emerald-500'
+                  : 'bg-slate-600',
           )}
         />
         <span className="text-sm font-medium text-slate-100">Maintenance</span>
         <span className="flex-1 text-xs text-slate-500">
-          {routineSummary(routine)}
+          {overallSummary(latestRuns)}
         </span>
         <svg
           width="12"
@@ -125,8 +155,13 @@ export function MaintenanceStatusCard() {
                     {run.status}
                   </span>
                 </div>
-                <div className="mt-2 text-xs text-slate-300">
-                  {taskCount(run)} tasks
+                <div className="mt-2 space-y-0.5 text-xs text-slate-300">
+                  <div title={new Date(run.started_at).toLocaleString()}>
+                    Started {formatTimeAgo(run.started_at)}
+                    {run.duration_ms != null &&
+                      ` · took ${formatDuration(run.duration_ms)}`}
+                  </div>
+                  <div>{rowsCleanedLabel(run)}</div>
                 </div>
                 {run.error_message && (
                   <div className="mt-2 text-xs text-rose-200">

@@ -3,11 +3,33 @@ from __future__ import annotations
 from datetime import UTC, datetime
 from pathlib import Path
 from types import SimpleNamespace
+from typing import Any
 
+import pytest
 from pytest_mock import MockerFixture
 
+from app.storage.activity.sources import git as git_source
+from app.storage.activity.sources.backups import get_recent_backup_events
 from app.storage.activity.sources.git import get_recent_git_events
 from app.storage.activity.sources.tasks import get_recent_task_events
+
+
+@pytest.fixture(autouse=True)
+def _fresh_git_cache(mocker: MockerFixture):
+    git_source.clear_git_events_cache()
+    mocker.patch("app.storage.activity.sources.git.testing_project_ids", return_value=set())
+    yield
+    git_source.clear_git_events_cache()
+
+
+def _mock_cursor(mocker: MockerFixture, module: str, rows: list[tuple]) -> Any:
+    cursor = mocker.MagicMock()
+    cursor.fetchall.return_value = rows
+    cursor_manager = mocker.MagicMock()
+    cursor_manager.__enter__.return_value = cursor
+    cursor_manager.__exit__.return_value = False
+    mocker.patch(f"app.storage.activity.sources.{module}.get_cursor", return_value=cursor_manager)
+    return cursor
 
 
 def _dt(hour: int, minute: int = 0) -> datetime:
@@ -134,3 +156,67 @@ def test_get_recent_git_events_merges_managed_repo_history(
             },
         }
     ]
+
+
+def _commit(sha: str, repo: str, date: str) -> SimpleNamespace:
+    return SimpleNamespace(
+        sha=sha, short_sha=sha[:7], message=f"{repo} change", author_name="Kas", repo_name=repo,
+        date=date, files_changed=1, insertions=1, deletions=0,
+    )
+
+
+def test_git_events_are_cached_between_requests(mocker: MockerFixture) -> None:
+    repo = Path("/srv/workspaces/projects/summitflow")
+    mocker.patch("app.storage.activity.sources.git.get_managed_repos", return_value=[repo])
+    mocker.patch("app.storage.activity.sources.git._resolve_project_id", return_value="summitflow")
+    commits = mocker.patch(
+        "app.storage.activity.sources.git.get_recent_commits",
+        return_value=[_commit("aaa1111", "summitflow", "2026-04-04T11:00:00+00:00")],
+    )
+
+    first = get_recent_git_events(limit=5)
+    second = get_recent_git_events(limit=3)
+    assert first == second
+    assert commits.call_count == 1
+
+    get_recent_git_events(limit=10)  # deeper than the cached scan: rescan
+    assert commits.call_count == 2
+
+
+def test_git_events_skip_testing_projects(mocker: MockerFixture) -> None:
+    repos = [Path("/srv/workspaces/projects/summitflow"), Path("/srv/workspaces/projects/test1")]
+    mocker.patch("app.storage.activity.sources.git.get_managed_repos", return_value=repos)
+    mocker.patch("app.storage.activity.sources.git._resolve_project_id", side_effect=["summitflow", "test1"])
+    mocker.patch("app.storage.activity.sources.git.testing_project_ids", return_value={"test1"})
+    commits = mocker.patch(
+        "app.storage.activity.sources.git.get_recent_commits",
+        return_value=[_commit("aaa1111", "summitflow", "2026-04-04T11:00:00+00:00")],
+    )
+
+    events = get_recent_git_events(limit=5)
+
+    assert {event["project_id"] for event in events} == {"summitflow"}
+    assert commits.call_count == 1
+
+
+def test_backup_events_include_pending_upload_and_exclude_testing(mocker: MockerFixture) -> None:
+    cursor = _mock_cursor(
+        mocker, "backups",
+        [("bk-1", "summitflow", "project", "completed_pending_upload", 2 * 1024 * 1024, _dt(12), _dt(11))],
+    )
+
+    events = get_recent_backup_events(limit=5)
+
+    sql = str(cursor.execute.call_args.args[0])
+    assert "completed_pending_upload" in sql
+    assert "category = 'testing'" in sql
+    assert events[0]["message"] == "Project backup completed (upload pending) (2.0 MB)"
+    assert events[0]["metadata"]["status"] == "completed_pending_upload"
+
+
+def test_global_task_events_exclude_testing_projects(mocker: MockerFixture) -> None:
+    cursor = _mock_cursor(mocker, "tasks", [])
+
+    get_recent_task_events(limit=5)
+
+    assert "category = 'testing'" in str(cursor.execute.call_args.args[0])

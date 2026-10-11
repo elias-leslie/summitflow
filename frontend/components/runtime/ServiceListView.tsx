@@ -29,13 +29,19 @@ import { useServiceAction } from './useServiceAction'
 function ActionCell({
   service,
   isRunning,
+  controllable,
 }: {
   service: string
   isRunning: boolean
+  controllable: boolean
 }) {
   const restartMut = useServiceAction(service, 'restart')
   const stopMut = useServiceAction(service, 'stop')
   const startMut = useServiceAction(service, 'start')
+
+  if (!controllable) {
+    return <span className="text-2xs text-slate-500">System unit</span>
+  }
 
   return (
     <div className="flex gap-1">
@@ -167,7 +173,14 @@ export function ServiceListView({
                   </TableCell>
                   <TableCell>
                     <div className="flex items-center gap-1">
-                      <ActionCell service={s.service} isRunning={isRunning} />
+                      <ActionCell
+                        service={s.service}
+                        isRunning={isRunning}
+                        controllable={
+                          (s as { controllable?: boolean }).controllable !==
+                          false
+                        }
+                      />
                       <AutostartToggle
                         service={s.service}
                         autoStart={s.auto_start}

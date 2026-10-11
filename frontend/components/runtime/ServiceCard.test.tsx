@@ -59,4 +59,30 @@ describe('ServiceCard', () => {
     expect(screen.getByText('Mem%')).toBeInTheDocument()
     expect(screen.getByText('5.8%')).toBeInTheDocument()
   })
+
+  it('hides start/stop for system-manager units', () => {
+    render(
+      <ServiceCard
+        container={{
+          name: 'summitflow-host-monitor.service',
+          service: 'summitflow-host-monitor',
+          display_name: 'summitflow-host-monitor',
+          manager: 'systemd',
+          category: 'worker',
+          state: 'running',
+          health: 'running',
+          status: 'systemd running (system unit)',
+          ports: [],
+          auto_start: null,
+          controllable: false,
+        }}
+      />,
+    )
+
+    expect(screen.queryByRole('button', { name: 'Stop' })).toBeNull()
+    expect(screen.queryByRole('button', { name: 'Restart' })).toBeNull()
+    expect(
+      screen.getByText('System unit · control with st service'),
+    ).toBeInTheDocument()
+  })
 })

@@ -1234,7 +1234,7 @@ def test_sync_project_identity_endpoint_reconciles_legacy_project_ids(client, mo
 
 
 def test_create_native_project_without_runtime_url(client, monkeypatch) -> None:
-    """POST /api/projects with native=True should succeed without a base_url and report healthy."""
+    """POST /api/projects with native=True should succeed without a base_url and report unconfigured."""
     project_id = f"native-{uuid4().hex[:8]}"
     root_path = f"{Path.home()}/.local/share/summitflow/workspaces/projects/{project_id}"
     monkeypatch.setattr("app.api.projects.explorer.run_scan_job", lambda *args, **kwargs: None)
@@ -1257,9 +1257,35 @@ def test_create_native_project_without_runtime_url(client, monkeypatch) -> None:
 
         health_resp = client.get(f"/api/projects/{project_id}")
         assert health_resp.status_code == 200
-        assert health_resp.json()["health_status"] == "healthy"
+        assert health_resp.json()["health_status"] == "unconfigured"
     finally:
         with get_connection() as conn, conn.cursor() as cur:
             cur.execute("DELETE FROM backup_sources WHERE id = %s", (project_id,))
             cur.execute("DELETE FROM projects WHERE id = %s", (project_id,))
             conn.commit()
+
+
+@pytest.mark.asyncio
+async def test_project_health_probes_are_cached_and_unconfigured_skips_probe(monkeypatch) -> None:
+    from app.api.projects import listing
+
+    listing.clear_project_health_cache()
+    calls: list[str] = []
+
+    async def fake_probe(_client, project_id, base_url, endpoint):
+        calls.append(project_id)
+        return project_id, "healthy"
+
+    monkeypatch.setattr(listing, "probe_project_health", fake_probe)
+    targets = [("live", "http://127.0.0.1:1", "/health"), ("native", "", "/health")]
+    try:
+        first = await listing.resolve_project_health_statuses(targets)
+        second = await listing.resolve_project_health_statuses(targets)
+        assert first == second == {"live": "healthy", "native": "unconfigured"}
+        assert calls == ["live"]
+
+        monkeypatch.setattr(listing, "PROJECT_HEALTH_CACHE_TTL_SECONDS", 0.0)
+        await listing.resolve_project_health_statuses(targets)
+        assert calls == ["live", "live"]
+    finally:
+        listing.clear_project_health_cache()

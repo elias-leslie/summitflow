@@ -20,6 +20,14 @@ vi.mock('@/lib/api', () => ({
   markNotificationRead: apiMocks.markNotificationRead,
 }))
 
+const scopeMocks = vi.hoisted(() => ({
+  dismissAllGlobalNotifications: vi.fn(),
+  fetchGlobalNotificationCount: vi.fn(),
+  fetchGlobalNotifications: vi.fn(),
+}))
+
+vi.mock('./notificationScope', () => scopeMocks)
+
 vi.mock('sonner', () => ({
   toast: sonnerMocks,
 }))
@@ -100,5 +108,39 @@ describe('NotificationBell', () => {
       screen.getByRole('button', { name: 'Try again' }),
     ).toBeInTheDocument()
     expect(sonnerMocks.error).not.toHaveBeenCalled()
+  })
+
+  it('uses the global count and list when no project is selected', async () => {
+    scopeMocks.fetchGlobalNotificationCount.mockResolvedValue(7)
+    scopeMocks.fetchGlobalNotifications.mockResolvedValue({
+      items: [],
+      total: 0,
+      pending_count: 7,
+    })
+
+    render(<NotificationBell projectId={null} />)
+
+    expect(await screen.findByText('7')).toBeInTheDocument()
+    expect(apiMocks.fetchNotificationCount).not.toHaveBeenCalled()
+    fireEvent.click(screen.getByTitle('Notifications'))
+    await waitFor(() => {
+      expect(scopeMocks.fetchGlobalNotifications).toHaveBeenCalledWith({
+        limit: 10,
+      })
+    })
+  })
+
+  it('shows an unavailable marker instead of a count when the count fetch fails', async () => {
+    apiMocks.fetchNotificationCount.mockRejectedValue(new Error('down'))
+
+    render(<NotificationBell projectId="agent-hub" />)
+
+    expect(
+      await screen.findByTestId('notification-count-error'),
+    ).toBeInTheDocument()
+    expect(
+      screen.getByRole('button', { name: 'Notifications (count unavailable)' }),
+    ).toBeInTheDocument()
+    expect(screen.queryByText('0')).not.toBeInTheDocument()
   })
 })

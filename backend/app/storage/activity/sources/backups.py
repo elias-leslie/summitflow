@@ -8,12 +8,15 @@ from ..._sql import static_sql
 from ...connection import get_cursor
 from ..types import ActivityEvent, BackupMetadata
 
+_STATUS_LABELS = {"completed_pending_upload": "completed (upload pending)"}
+
 
 def _row_to_event(row: tuple[Any, ...]) -> ActivityEvent:
     """Convert a backup database row to an ActivityEvent."""
     backup_id, proj_id, backup_type, status, size_bytes, completed_at, created_at = row
     event_time = completed_at or created_at
     size_mb = f" ({size_bytes / 1024 / 1024:.1f} MB)" if size_bytes else ""
+    status_label = _STATUS_LABELS.get(status, status)
 
     metadata: BackupMetadata = {
         "backup_id": backup_id,
@@ -24,7 +27,7 @@ def _row_to_event(row: tuple[Any, ...]) -> ActivityEvent:
 
     return {
         "type": "backup",
-        "message": f"{backup_type.title()} backup {status}{size_mb}",
+        "message": f"{backup_type.title()} backup {status_label}{size_mb}",
         "timestamp": event_time.isoformat() if event_time else None,
         "project_id": proj_id,
         "metadata": cast(dict[str, Any], metadata),
@@ -66,7 +69,10 @@ def get_recent_backup_events(
     Returns:
         List of activity events for backups
     """
-    where_clause = "WHERE status IN ('completed', 'failed')"
+    where_clause = (
+        "WHERE status IN ('completed', 'completed_pending_upload', 'failed')"
+        " AND NOT EXISTS (SELECT 1 FROM projects p WHERE p.id = backups.project_id AND p.category = 'testing')"
+    )
     params: list[str | int] = []
 
     if project_id:

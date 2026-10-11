@@ -20,10 +20,16 @@ import {
   type Notification,
 } from '@/lib/api'
 import { POLL_NOTIFICATIONS } from '@/lib/polling'
+import {
+  dismissAllGlobalNotifications,
+  fetchGlobalNotificationCount,
+  fetchGlobalNotifications,
+} from './notificationScope'
 import { PushNotificationToggle } from './PushNotificationToggle'
 
 interface NotificationBellProps {
-  projectId: string
+  /** Project scope; null shows notifications across all projects. */
+  projectId: string | null
   className?: string
 }
 
@@ -47,6 +53,7 @@ export function NotificationBell({
 }: NotificationBellProps) {
   const [isOpen, setIsOpen] = useState(false)
   const [pendingCount, setPendingCount] = useState(0)
+  const [countError, setCountError] = useState(false)
   const [notifications, setNotifications] = useState<Notification[]>([])
   const [loading, setLoading] = useState(false)
   const [loadError, setLoadError] = useState<string | null>(null)
@@ -55,10 +62,15 @@ export function NotificationBell({
   useEffect(() => {
     const fetchCount = async () => {
       try {
-        const count = await fetchNotificationCount(projectId)
+        const count = projectId
+          ? await fetchNotificationCount(projectId)
+          : await fetchGlobalNotificationCount()
         setPendingCount(count)
+        setCountError(false)
       } catch {
-        // Silently fail - notifications are optional
+        // Never show a stale or zero count as if it were real.
+        setPendingCount(0)
+        setCountError(true)
       }
     }
 
@@ -72,9 +84,12 @@ export function NotificationBell({
     setLoading(true)
     setLoadError(null)
     try {
-      const data = await fetchNotifications(projectId, { limit: 10 })
+      const data = projectId
+        ? await fetchNotifications(projectId, { limit: 10 })
+        : await fetchGlobalNotifications({ limit: 10 })
       setNotifications(data.items)
       setPendingCount(data.pending_count)
+      setCountError(false)
     } catch {
       setLoadError('Failed to load notifications')
     } finally {
@@ -92,7 +107,7 @@ export function NotificationBell({
   const handleNotificationClick = async (notification: Notification) => {
     if (notification.status === 'pending') {
       try {
-        await markNotificationRead(projectId, notification.id)
+        await markNotificationRead(notification.project_id, notification.id)
         setNotifications((prev) =>
           prev.map((n) =>
             n.id === notification.id ? { ...n, status: 'read' as const } : n,
@@ -105,11 +120,14 @@ export function NotificationBell({
     }
   }
 
-  const handleDismiss = async (e: React.MouseEvent, notificationId: string) => {
+  const handleDismiss = async (
+    e: React.MouseEvent,
+    notification: Notification,
+  ) => {
     e.stopPropagation()
     try {
-      await dismissNotification(projectId, notificationId)
-      setNotifications((prev) => prev.filter((n) => n.id !== notificationId))
+      await dismissNotification(notification.project_id, notification.id)
+      setNotifications((prev) => prev.filter((n) => n.id !== notification.id))
       setPendingCount((prev) => Math.max(0, prev - 1))
     } catch {
       toast.error('Failed to dismiss notification')
@@ -123,13 +141,22 @@ export function NotificationBell({
         type="button"
         onClick={handleToggle}
         className="btn-ghost p-2 rounded-lg relative"
-        aria-label="Notifications"
+        aria-label={
+          countError ? 'Notifications (count unavailable)' : 'Notifications'
+        }
         aria-expanded={isOpen}
         aria-haspopup="dialog"
         title="Notifications"
       >
         <Bell className="w-4 h-4" />
-        {pendingCount > 0 && (
+        {countError ? (
+          <span
+            data-testid="notification-count-error"
+            title="Notification count unavailable"
+            className="absolute -top-0.5 -right-0.5 h-[10px] w-[10px] rounded-full border border-amber-400 bg-slate-900"
+          />
+        ) : null}
+        {!countError && pendingCount > 0 && (
           <span className="absolute -top-0.5 -right-0.5 min-w-[18px] h-[18px] px-1 flex items-center justify-center text-2xs font-medium bg-rose-500 text-slate-50 rounded-full">
             {pendingCount > 99 ? '99+' : pendingCount}
           </span>
@@ -163,7 +190,11 @@ export function NotificationBell({
                       type="button"
                       onClick={async () => {
                         try {
-                          await dismissAllNotifications(projectId)
+                          if (projectId) {
+                            await dismissAllNotifications(projectId)
+                          } else {
+                            await dismissAllGlobalNotifications()
+                          }
                           setNotifications([])
                           setPendingCount(0)
                           toast.success('All notifications dismissed')
@@ -263,7 +294,7 @@ export function NotificationBell({
                         </div>
                         <button
                           type="button"
-                          onClick={(e) => handleDismiss(e, notification.id)}
+                          onClick={(e) => handleDismiss(e, notification)}
                           className="p-1 hover:bg-slate-700 rounded opacity-0 group-hover:opacity-100 transition-opacity"
                           title="Dismiss"
                         >

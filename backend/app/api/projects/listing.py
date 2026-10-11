@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import time
 from collections.abc import Iterable
 from datetime import UTC, datetime
 from typing import cast
@@ -40,6 +41,11 @@ SQL_LIST_PROJECTS = """
 """
 
 
+PROJECT_HEALTH_CACHE_TTL_SECONDS = 60.0
+UNCONFIGURED_HEALTH_STATUS = "unconfigured"
+_health_cache: dict[tuple[str, str, str], tuple[float, str]] = {}
+
+
 async def probe_project_health(
     client: httpx.AsyncClient,
     project_id: str,
@@ -48,7 +54,7 @@ async def probe_project_health(
 ) -> tuple[str, str]:
     """Return a lightweight health label for project listings."""
     if not base_url:
-        return project_id, "healthy"
+        return project_id, UNCONFIGURED_HEALTH_STATUS
     try:
         response = await client.get(f"{base_url}{health_endpoint}")
     except httpx.HTTPError:
@@ -56,21 +62,40 @@ async def probe_project_health(
     return project_id, "healthy" if response.status_code == 200 else "warning"
 
 
+def clear_project_health_cache() -> None:
+    _health_cache.clear()
+
+
 async def resolve_project_health_statuses(
     projects: Iterable[tuple[str, str, str]],
 ) -> dict[str, str]:
-    """Fetch live health labels for project list/detail responses."""
-    targets = list(projects)
-    if not targets:
-        return {}
+    """Fetch live health labels, reusing probes younger than the cache TTL."""
+    now = time.monotonic()
+    statuses: dict[str, str] = {}
+    to_probe: list[tuple[str, str, str]] = []
+    for project_id, base_url, endpoint in projects:
+        if not base_url:
+            statuses[project_id] = UNCONFIGURED_HEALTH_STATUS
+            continue
+        cached = _health_cache.get((project_id, base_url, endpoint))
+        if cached and now - cached[0] < PROJECT_HEALTH_CACHE_TTL_SECONDS:
+            statuses[project_id] = cached[1]
+        else:
+            to_probe.append((project_id, base_url, endpoint))
+    if not to_probe:
+        return statuses
     async with httpx.AsyncClient(timeout=PROJECT_HEALTH_TIMEOUT) as client:
         results = await asyncio.gather(
             *(
                 probe_project_health(client, project_id, url, endpoint)
-                for project_id, url, endpoint in targets
+                for project_id, url, endpoint in to_probe
             )
         )
-    return dict(results)
+    probed_at = time.monotonic()
+    for (project_id, url, endpoint), (_, status) in zip(to_probe, results, strict=True):
+        _health_cache[(project_id, url, endpoint)] = (probed_at, status)
+        statuses[project_id] = status
+    return statuses
 
 
 def list_project_rows(*, include_inactive: bool = False) -> list[ProjectListRow]:

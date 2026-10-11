@@ -10,13 +10,14 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 
-from ...logging_config import get_logger
+from ...services.runtime_metrics_sampler import clamp_window_minutes
 from ...storage import runtime_metrics as runtime_metric_store
 from ...utils import safe_subprocess
 from .._runtime_proxmox import ProxmoxStatus
 from .._runtime_proxmox import control_proxmox_guest as _control_proxmox_guest
 from .._runtime_proxmox import get_proxmox_status as _get_proxmox_status
 from .._runtime_proxmox import set_proxmox_guest_autostart as _set_proxmox_guest_autostart
+from ._process_execution import _is_system_unit, _run_command
 from .constants import BACKUP_DIR
 from .helpers import (
     _find_container_name,
@@ -49,7 +50,6 @@ from .models import (
 
 router = APIRouter()
 router.include_router(live_sessions_router, prefix="/live-sessions", tags=["live-sessions"])
-logger = get_logger(__name__)
 
 
 @router.get("/status", response_model=list[RuntimeServiceStatus])
@@ -149,19 +149,8 @@ def _handle_non_docker_mode_update(
 @router.get("/metrics", response_model=list[RuntimeServiceMetrics])
 async def get_metrics() -> list[RuntimeServiceMetrics]:
     """Get CPU/memory metrics for managed runtime services."""
-    statuses, metrics = await asyncio.gather(
-        _runtime_service_statuses(),
-        _runtime_metrics(),
-    )
-    try:
-        await asyncio.to_thread(
-            runtime_metric_store.record_runtime_metric_samples,
-            statuses,
-            metrics,
-        )
-    except Exception as exc:
-        logger.warning("Failed to persist runtime metric sample: %s", exc)
-    return metrics
+    # Read-only: the background sampler owns persistence (runtime_metrics_sampler).
+    return await _runtime_metrics()
 
 
 @router.get("/metrics/history", response_model=list[RuntimeMetricSeries])
@@ -178,7 +167,7 @@ async def get_metrics_history(
         service=service,
         manager=manager,
         category=category,
-        since_minutes=since_minutes,
+        since_minutes=clamp_window_minutes(since_minutes),
         bucket_seconds=bucket_seconds,
         limit=limit,
     )
@@ -194,7 +183,7 @@ async def get_metrics_summary(
     """Get compact persisted runtime metric aggregates."""
     rows = runtime_metric_store.summarize_runtime_metric_samples(
         service=service,
-        since_minutes=since_minutes,
+        since_minutes=clamp_window_minutes(since_minutes),
         limit=limit,
     )
     return [RuntimeMetricSummary.model_validate(row) for row in rows]
@@ -222,12 +211,13 @@ async def get_logs(
 async def _stream_logs(svc: dict, tail: int):
     """SSE generator for tailing service logs."""
     if svc["manager"] == "systemd":
+        system_unit = _is_system_unit(svc["unit"])
         proc = safe_subprocess.spawn_pipe(
             [
-                "journalctl", "--user", "-u", svc["unit"],
+                "journalctl", *(() if system_unit else ("--user",)), "-u", svc["unit"],
                 "-n", str(tail), "-f", "--output=short-iso",
             ],
-            env=_systemctl_user_env(),
+            env=None if system_unit else _systemctl_user_env(),
             stderr_to_stdout=True,
         )
     else:
@@ -256,10 +246,11 @@ async def _stream_logs(svc: dict, tail: int):
 async def _fetch_logs(svc: dict, service: str, tail: int) -> dict[str, str]:
     """Fetch a fixed number of log lines from a service."""
     if svc["manager"] == "systemd":
-        stdout, stderr, rc = await _run_journalctl_user(
-            "-u", svc["unit"], "-n", str(tail),
-            "--output=short-iso", "--no-pager",
-        )
+        journal_args = ("-u", svc["unit"], "-n", str(tail), "--output=short-iso", "--no-pager")
+        if _is_system_unit(svc["unit"]):
+            stdout, stderr, rc = await _run_command("journalctl", *journal_args)
+        else:
+            stdout, stderr, rc = await _run_journalctl_user(*journal_args)
         if rc != 0:
             raise HTTPException(status_code=404, detail=f"Service not found: {service}")
         return {"logs": stdout + stderr}

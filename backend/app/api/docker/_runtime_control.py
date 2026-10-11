@@ -11,6 +11,7 @@ from fastapi import HTTPException
 
 # Late-bound access to helpers — ensures mocks at helpers.* take effect at runtime.
 from . import helpers as _h
+from ._process_execution import _is_system_unit
 from .constants import _COMMAND_TIMEOUT_SECONDS, _INFRA_SERVICES, runtime_service_definitions
 from .models import ActionResult, RuntimeModeStatus
 
@@ -228,9 +229,21 @@ def _systemd_stop_service_defs(svc: dict[str, Any]) -> list[dict[str, Any]]:
             candidate["manager"] == "systemd"
             and candidate["service"] != service
             and candidate["service"].startswith(sibling_prefix)
+            and not _is_system_unit(candidate.get("unit"))
         )
     ]
     return [*siblings, svc]
+
+
+def _system_unit_refusal(service: str) -> ActionResult:
+    """System-manager units need root; never act on a same-named, disabled user unit."""
+    return ActionResult(
+        success=False,
+        message=(
+            f"{service} runs as a system unit; control it with `st service` "
+            "(sudo systemctl), not the dashboard"
+        ),
+    )
 
 
 async def _set_service_autostart(service: str, enabled: bool) -> ActionResult:
@@ -246,6 +259,9 @@ async def _set_service_autostart(service: str, enabled: bool) -> ActionResult:
             success=False,
             message=f"{service} is Docker infra; auto-start is governed by the compose stack",
         )
+
+    if _is_system_unit(svc["unit"]):
+        return _system_unit_refusal(service)
 
     verb = "enable" if enabled else "disable"
     _stdout, stderr, rc = await _h._run_systemctl_user(
@@ -264,6 +280,9 @@ async def _systemd_service_action(svc: dict[str, Any], action: Literal["start", 
     """Execute a start/stop/restart action on a systemd service."""
     service = svc["service"]
     unit = svc["unit"]
+
+    if _is_system_unit(unit):
+        return _system_unit_refusal(service)
 
     if action == "restart":
         await _h._run_systemctl_user("stop", unit, timeout=_COMMAND_TIMEOUT_SECONDS)

@@ -44,6 +44,11 @@ def _retention_days() -> int:
         return DEFAULT_RETENTION_DAYS
 
 
+def clamp_window_minutes(since_minutes: int) -> int:
+    """Clamp a history query window to what retention can actually hold."""
+    return max(1, min(since_minutes, _retention_days() * 24 * 60))
+
+
 async def sample_runtime_metrics_once() -> int:
     """Collect current runtime service metrics and persist one bounded sample."""
     global _last_cleanup_monotonic

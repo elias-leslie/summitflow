@@ -5,7 +5,7 @@ import { Menu } from 'lucide-react'
 import { useParams, usePathname } from 'next/navigation'
 import { useMemo, useRef, useState } from 'react'
 import { NotificationBell } from '@/components/notifications'
-import { DEFAULT_PROJECT_ID, getProjectIdOrDefault } from '@/lib/project-config'
+import { getProjectIdOrDefault } from '@/lib/project-config'
 
 import { MobileNavigationSheet } from './MobileNavigationSheet'
 import { AnimatedLogo } from './topbar/AnimatedLogo'
@@ -24,12 +24,14 @@ export function TopBar() {
   const { compact, measureRef, slotRef } =
     useAdaptiveNavigation(isSearchExpanded)
 
-  const notificationProjectId = useMemo(() => {
-    if (pathname?.startsWith('/projects/')) {
-      return getProjectIdOrDefault(params.id)
-    }
-    return DEFAULT_PROJECT_ID
-  }, [params.id, pathname])
+  // Project pages scope the bell to that project; everywhere else it is global.
+  const notificationProjectId = useMemo(
+    () =>
+      pathname?.startsWith('/projects/')
+        ? getProjectIdOrDefault(params.id)
+        : null,
+    [params.id, pathname],
+  )
 
   const setMobileNavigation = (open: boolean) => {
     setMobileNavigationOpen(open)

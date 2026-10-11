@@ -97,3 +97,30 @@ def test_terminal_checkpoint_remains_eligible_for_metadata_cleanup(monkeypatch) 
 
     assert checkpoint.get_active_checkpoints("agent-hub") == []
     assert checkpoint.get_stale_checkpoints("agent-hub") == [meta]
+
+
+def test_pending_unclaimed_checkpoint_is_not_active(monkeypatch) -> None:
+    from cli.lib import checkpoint
+
+    meta = SnapshotMeta("task-pending", "agent-hub", "main", "2026-05-22T00:00:00+00:00", "tester")
+    monkeypatch.setattr(checkpoint, "_iter_checkpoint_meta", lambda _project: [meta])
+    monkeypatch.setattr(checkpoint, "_task_status", lambda _task: "pending")
+    monkeypatch.setattr(checkpoint, "_task_claimed_by", lambda _task: None)
+
+    assert checkpoint.get_active_checkpoints("agent-hub") == []
+    assert checkpoint.has_active_task("agent-hub") is None
+    assert checkpoint.get_stale_checkpoints("agent-hub") == []
+
+
+def test_pending_claimed_or_running_checkpoint_is_active(monkeypatch) -> None:
+    from cli.lib import checkpoint
+
+    meta = SnapshotMeta("task-claimed", "agent-hub", "main", "2026-05-22T00:00:00+00:00", "tester")
+    monkeypatch.setattr(checkpoint, "_iter_checkpoint_meta", lambda _project: [meta])
+    monkeypatch.setattr(checkpoint, "_task_status", lambda _task: "pending")
+    monkeypatch.setattr(checkpoint, "_task_claimed_by", lambda _task: "claude:abc")
+    assert checkpoint.get_active_checkpoints("agent-hub") == [meta]
+
+    monkeypatch.setattr(checkpoint, "_task_status", lambda _task: "running")
+    monkeypatch.setattr(checkpoint, "_task_claimed_by", lambda _task: None)
+    assert checkpoint.get_active_checkpoints("agent-hub") == [meta]

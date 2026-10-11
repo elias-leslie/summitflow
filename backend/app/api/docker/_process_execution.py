@@ -16,9 +16,11 @@ from .constants import (
 
 __all__ = [
     "_communicate_with_timeout",
+    "_is_system_unit",
     "_run_command",
     "_run_docker",
     "_run_journalctl_user",
+    "_run_systemctl_system",
     "_run_systemctl_user",
     "_systemctl_user_env",
 ]
@@ -101,6 +103,22 @@ async def _run_systemctl_user(
         env=_systemctl_user_env(),
         timeout=timeout,
     )
+
+
+def _is_system_unit(unit: str | None) -> bool:
+    """Same rule as ``st service`` (cli/lib/service_ops._manager): the host
+    monitor runs under the system manager; every other unit is a user unit."""
+    from cli.lib.host_monitor_deploy import UNIT as HOST_MONITOR_UNIT
+
+    return unit == HOST_MONITOR_UNIT
+
+
+async def _run_systemctl_system(
+    *args: str,
+    timeout: float = _SYSTEMCTL_TIMEOUT_SECONDS,
+) -> tuple[str, str, int]:
+    """Read system-manager state (no mutation privileges needed for ``show``)."""
+    return await _run_command("systemctl", *args, timeout=timeout)
 
 
 async def _run_journalctl_user(*args: str) -> tuple[str, str, int]:

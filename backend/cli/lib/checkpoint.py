@@ -138,8 +138,17 @@ def get_snapshot_info(task_id: str) -> dict[str, str | int | None] | None:
 
 
 def _checkpoint_is_active(checkpoint: SnapshotMeta) -> bool:
-    """Return True when checkpoint metadata still represents an open claim."""
-    return _task_status(checkpoint.task_id) not in (_TERMINAL_TASK_STATUSES | {"paused"})
+    """Return True only while the task is running or still claimed.
+
+    Pending, paused and terminal tasks keep their metadata (resumable or
+    cleanup-eligible) but are not shown as active claims.
+    """
+    status = _task_status(checkpoint.task_id)
+    if status is None:
+        return True  # task lookup unavailable: fail open so claim guards stay safe
+    if status in _TERMINAL_TASK_STATUSES or status == "paused":
+        return False
+    return status == "running" or bool(_task_claimed_by(checkpoint.task_id))
 
 
 _MISSING_TASK_STATUS = "__missing__"
@@ -165,6 +174,16 @@ def _task_status(task_id: str) -> str | None:
     if not task:
         return _MISSING_TASK_STATUS
     return str(task.get("status") or "").strip().lower() or None
+
+
+def _task_claimed_by(task_id: str) -> str | None:
+    try:
+        from app.storage.tasks import get_task
+
+        task = get_task(task_id)
+    except Exception:
+        return None
+    return str((task or {}).get("claimed_by") or "").strip() or None
 
 
 def _current_head(project_root: str | None) -> str | None:

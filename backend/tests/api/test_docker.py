@@ -522,6 +522,129 @@ class TestDockerRuntime:
             ports=["8001"],
         )
 
+    def test_host_monitor_status_reads_system_unit_and_is_not_controllable(
+        self,
+        mocker: MockerFixture,
+    ) -> None:
+        from app.api.docker import _status_probing
+
+        user = mocker.patch(
+            "app.api.docker.helpers._run_systemctl_user",
+            new=mocker.AsyncMock(return_value=("ActiveState=inactive\nUnitFileState=disabled\n", "", 0)),
+        )
+        system = mocker.patch(
+            "app.api.docker._process_execution._run_systemctl_system",
+            new=mocker.AsyncMock(
+                return_value=("LoadState=loaded\nActiveState=active\nSubState=running\nUnitFileState=enabled\n", "", 0)
+            ),
+        )
+        mocker.patch("app.api.docker.helpers._probe_http", new=mocker.AsyncMock(return_value=(False, None)))
+        svc = {
+            "unit": "summitflow-host-monitor.service",
+            "service": "summitflow-host-monitor",
+            "display_name": "summitflow-host-monitor",
+            "category": "worker",
+            "ports": [],
+        }
+
+        result = asyncio.run(_status_probing._systemd_status(svc))
+
+        user.assert_not_awaited()
+        assert system.await_args.args[:2] == ("show", "summitflow-host-monitor.service")
+        assert result.state == "running"
+        assert result.controllable is False
+        assert result.auto_start is None
+
+    def test_host_monitor_actions_never_touch_the_user_unit(
+        self,
+        mocker: MockerFixture,
+    ) -> None:
+        from app.api.docker import _runtime_control
+
+        user = mocker.patch("app.api.docker.helpers._run_systemctl_user", new=mocker.AsyncMock())
+        svc = {"unit": "summitflow-host-monitor.service", "service": "summitflow-host-monitor"}
+        mocker.patch("app.api.docker.helpers._service_definition", return_value={**svc, "manager": "systemd"})
+
+        stop = asyncio.run(_runtime_control._systemd_service_action(svc, "stop"))
+        autostart = asyncio.run(_runtime_control._set_service_autostart("summitflow-host-monitor", False))
+
+        assert stop.success is False and "system unit" in stop.message
+        assert autostart.success is False
+        user.assert_not_awaited()
+
+    def test_get_metrics_does_not_persist_samples(
+        self,
+        mocker: MockerFixture,
+    ) -> None:
+        from app.api import docker as docker_api
+
+        mocker.patch(
+            "app.api.docker.routes._runtime_metrics",
+            new=mocker.AsyncMock(return_value=[
+                docker_api.RuntimeServiceMetrics(
+                    name="summitflow-backend.service", service="summitflow-api", cpu_percent="1.00%",
+                    mem_usage="1.0MiB", mem_percent="0.10%", net_io="n/a", block_io="n/a",
+                )
+            ]),
+        )
+        record = mocker.patch("app.api.docker.routes.runtime_metric_store.record_runtime_metric_samples")
+
+        response = client.get("/api/docker/metrics")
+
+        assert response.status_code == 200
+        assert response.json()[0]["cpu_percent"] == "1.00%"
+        record.assert_not_called()
+
+    def test_metrics_windows_clamp_to_retention(
+        self,
+        mocker: MockerFixture,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        monkeypatch.setenv("SUMMITFLOW_RUNTIME_METRICS_RETENTION_DAYS", "14")
+        list_series = mocker.patch(
+            "app.api.docker.routes.runtime_metric_store.list_runtime_metric_series", return_value=[],
+        )
+        summary = mocker.patch(
+            "app.api.docker.routes.runtime_metric_store.summarize_runtime_metric_samples", return_value=[],
+        )
+
+        assert client.get("/api/docker/metrics/history", params={"since_minutes": 43200}).status_code == 200
+        assert client.get("/api/docker/metrics/summary", params={"since_minutes": 43200}).status_code == 200
+
+        assert list_series.call_args.kwargs["since_minutes"] == 14 * 24 * 60
+        assert summary.call_args.kwargs["since_minutes"] == 14 * 24 * 60
+
+    def test_systemd_metric_uses_cgroup_cpu_delta_and_memory_current(
+        self,
+        mocker: MockerFixture,
+    ) -> None:
+        from app.api.docker import _metrics_collection
+
+        _metrics_collection._cpu_samples.clear()
+        readings = iter([
+            ("ActiveState=active\nCPUUsageNSec=1000000000\nMemoryCurrent=104857600\n", "", 0),
+            ("ActiveState=active\nCPUUsageNSec=1250000000\nMemoryCurrent=104857600\n", "", 0),
+        ])
+        mocker.patch(
+            "app.api.docker.helpers._run_systemctl_user",
+            new=mocker.AsyncMock(side_effect=lambda *args, **kwargs: next(readings)),
+        )
+        clock = iter([10_000_000_000, 10_500_000_000])
+        mocker.patch.object(_metrics_collection, "_monotonic_ns", side_effect=lambda: next(clock))
+        mocker.patch.object(_metrics_collection, "_FIRST_SAMPLE_DELAY_SECONDS", 0)
+        mocker.patch.object(_metrics_collection, "_total_memory_bytes", return_value=1024 * 1024 * 1024)
+
+        metric = asyncio.run(_metrics_collection._systemd_service_metric(
+            {"unit": "summitflow-backend.service", "service": "summitflow-api"}
+        ))
+
+        # 0.25s of CPU over 0.5s wall time = 50% of one core, whole cgroup
+        assert metric is not None
+        assert metric.cpu_percent == "50.00%"
+        assert metric.mem_usage == "100.0MiB"
+        assert metric.mem_percent == "9.77%"
+        _metrics_collection._cpu_samples.clear()
+
     def test_metrics_history_returns_persisted_series(
         self,
         mocker: MockerFixture,

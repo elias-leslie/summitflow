@@ -16,7 +16,9 @@ def _build_task_query_params(
     project_id: str | None,
 ) -> tuple[str, list[str | int]]:
     """Build WHERE clause and params for task query."""
-    where_clause = ""
+    where_clause = (
+        "WHERE NOT EXISTS (SELECT 1 FROM projects p WHERE p.id = tasks.project_id AND p.category = 'testing')"
+    )
     params: list[str | int] = []
 
     if project_id:

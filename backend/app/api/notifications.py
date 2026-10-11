@@ -1,23 +1,25 @@
 """Notifications API - REST endpoints for notification management.
 
 This module provides:
-- List notifications for a project
-- Get pending notification count
+- List notifications for a project or across all projects
+- Get pending notification count (per project or global)
 - Mark notifications as read/dismissed
 """
 
 from __future__ import annotations
 
-from typing import Any, cast
+from typing import Any
 
 from fastapi import APIRouter, HTTPException, Response
 from pydantic import BaseModel
 
 from ..storage import notifications as notification_store
+from ..storage._sql import static_sql
+from ..storage.connection import get_connection, get_cursor
 from ..storage.notifications_helpers import (
     NotificationSeverity,
-    NotificationStatus,
     NotificationType,
+    _row_to_dict,
 )
 
 router = APIRouter(tags=["Notifications"])
@@ -74,6 +76,78 @@ class CreateNotificationRequest(BaseModel):
 # ============================================================================
 # Helpers
 # ============================================================================
+
+_NOTIFICATION_COLUMNS = (
+    "id, project_id, task_id, user_email, type, title, message, severity, status,"
+    " metadata, created_at, read_at, dismissed_at"
+)
+
+
+def _scope_filter(
+    project_id: str | None,
+    status_filter: str | None,
+    include_dismissed: bool,
+) -> tuple[str, list[Any]]:
+    """Build a static WHERE clause shared by list and total queries."""
+    clauses: list[str] = []
+    params: list[Any] = []
+    if project_id is not None:
+        clauses.append("project_id = %s")
+        params.append(project_id)
+    if status_filter:
+        clauses.append("status = %s")
+        params.append(status_filter)
+    elif not include_dismissed:
+        clauses.append("status != 'dismissed'")
+    return (f"WHERE {' AND '.join(clauses)}" if clauses else ""), params
+
+
+def _query_notifications(
+    project_id: str | None,
+    status_filter: str | None,
+    include_dismissed: bool,
+    limit: int,
+    offset: int,
+) -> tuple[list[dict[str, Any]], int, int]:
+    """Return (page, total matching, pending count) for one project or all projects."""
+    where, params = _scope_filter(project_id, status_filter, include_dismissed)
+    pending_where, pending_params = _scope_filter(project_id, "pending", False)
+    with get_cursor() as cur:
+        cur.execute(
+            static_sql(
+                f"SELECT {_NOTIFICATION_COLUMNS} FROM notifications {where}"
+                " ORDER BY created_at DESC LIMIT %s OFFSET %s"
+            ),
+            [*params, limit, offset],
+        )
+        rows = cur.fetchall()
+        cur.execute(static_sql(f"SELECT COUNT(*) FROM notifications {where}"), params)
+        total_row = cur.fetchone()
+        cur.execute(static_sql(f"SELECT COUNT(*) FROM notifications {pending_where}"), pending_params)
+        pending_row = cur.fetchone()
+    return (
+        [_row_to_dict(row) for row in rows],
+        int(total_row[0]) if total_row else 0,
+        int(pending_row[0]) if pending_row else 0,
+    )
+
+
+def _global_pending_count() -> int:
+    with get_cursor() as cur:
+        cur.execute("SELECT COUNT(*) FROM notifications WHERE status = 'pending'")
+        row = cur.fetchone()
+    return int(row[0]) if row else 0
+
+
+def _dismiss_all_global() -> int:
+    with get_connection() as conn, conn.cursor() as cur:
+        cur.execute(
+            "UPDATE notifications SET status = 'dismissed', dismissed_at = NOW() WHERE status != 'dismissed'"
+        )
+        count = cur.rowcount
+        conn.commit()
+    return count
+
 
 
 def _get_notification_or_404(
@@ -135,21 +209,44 @@ async def list_notifications(
         offset: Result offset
         include_dismissed: Include dismissed notifications (default False)
     """
-    notifications = notification_store.list_notifications(
-        project_id=project_id,
-        status_filter=cast(NotificationStatus, status) if status else None,
-        limit=limit,
-        offset=offset,
-        include_dismissed=include_dismissed,
+    notifications, total, pending_count = _query_notifications(
+        project_id, status, include_dismissed, limit, offset,
     )
-
-    pending_count = notification_store.get_pending_count(project_id)
-
     return NotificationListResponse(
         items=[_notification_to_response(n) for n in notifications],
-        total=len(notifications),
+        total=total,
         pending_count=pending_count,
     )
+
+
+@router.get("/notifications", response_model=NotificationListResponse)
+async def list_all_notifications(
+    status: str | None = None,
+    limit: int = 50,
+    offset: int = 0,
+    include_dismissed: bool = False,
+) -> NotificationListResponse:
+    """List notifications across all projects (top-bar bell outside project pages)."""
+    notifications, total, pending_count = _query_notifications(
+        None, status, include_dismissed, limit, offset,
+    )
+    return NotificationListResponse(
+        items=[_notification_to_response(n) for n in notifications],
+        total=total,
+        pending_count=pending_count,
+    )
+
+
+@router.get("/notifications/count", response_model=NotificationCountResponse)
+async def get_all_notification_count() -> NotificationCountResponse:
+    """Get the pending notification count across all projects."""
+    return NotificationCountResponse(pending=_global_pending_count())
+
+
+@router.post("/notifications/dismiss-all", response_model=dict[str, Any])
+async def dismiss_all_notifications_global() -> dict[str, Any]:
+    """Dismiss every non-dismissed notification across all projects."""
+    return {"dismissed": _dismiss_all_global()}
 
 
 @router.get("/projects/{project_id}/notifications/count", response_model=NotificationCountResponse)

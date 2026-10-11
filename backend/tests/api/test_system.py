@@ -108,7 +108,7 @@ def test_get_maintenance_status_returns_latest_and_recent_runs(client, mocker) -
         "error_message": None,
         "created_at": now,
     }
-    mocker.patch(
+    get_latest = mocker.patch(
         "app.api.system.maintenance_store.get_latest_maintenance_runs",
         return_value={
             "daily_maintenance": latest_run,
@@ -118,7 +118,7 @@ def test_get_maintenance_status_returns_latest_and_recent_runs(client, mocker) -
     )
     mocker.patch(
         "app.api.system.maintenance_store.list_maintenance_runs",
-        return_value=[latest_run, recent_run],
+        return_value=[latest_run, upkeep_run, recent_run],
     )
 
     response = client.get("/api/system/maintenance?limit=2")
@@ -126,7 +126,10 @@ def test_get_maintenance_status_returns_latest_and_recent_runs(client, mocker) -
     assert response.status_code == 200
     payload = response.json()
     assert payload["latest"]["daily_maintenance"]["rows_cleaned"] == 42
-    assert payload["latest"]["routine_upkeep"]["summary"]["tasks_created"] == 1
+    # Retired workflows (routine_upkeep, tool_governance, ...) never reach the card.
+    assert "routine_upkeep" not in payload["latest"]
+    assert "routine_upkeep" not in get_latest.call_args.args[0]
+    assert "tool_governance" not in get_latest.call_args.args[0]
     assert payload["latest"]["runtime_hygiene"]["summary"]["created_task_ids"] == ["task-runtime"]
     assert payload["latest"]["daily_maintenance"]["summary"]["events_deleted"]["total_deleted"] == 8
     assert [run["workflow_name"] for run in payload["recent"]] == [

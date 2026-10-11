@@ -17,9 +17,11 @@ vi.mock('next/navigation', () => ({
 }))
 
 vi.mock('@/components/notifications', () => ({
-  NotificationBell: (props: { projectId: string }) => {
+  NotificationBell: (props: { projectId: string | null }) => {
     notificationBellMock(props)
-    return <div data-testid="notification-bell">{props.projectId}</div>
+    return (
+      <div data-testid="notification-bell">{props.projectId ?? 'global'}</div>
+    )
   },
 }))
 
@@ -102,14 +104,12 @@ describe('TopBar', () => {
     )
   })
 
-  it('falls back to the default project outside project routes', () => {
+  it('uses the global notification scope outside project routes', () => {
     render(<TopBar />)
 
-    expect(screen.getByTestId('notification-bell')).toHaveTextContent(
-      'summitflow',
-    )
+    expect(screen.getByTestId('notification-bell')).toHaveTextContent('global')
     expect(notificationBellMock).toHaveBeenCalledWith(
-      expect.objectContaining({ projectId: 'summitflow' }),
+      expect.objectContaining({ projectId: null }),
     )
   })
 

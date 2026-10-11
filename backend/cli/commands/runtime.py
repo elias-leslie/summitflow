@@ -9,7 +9,7 @@ from typing import Annotated, Any
 
 import typer
 
-from app.services.runtime_metrics_sampler import sample_runtime_metrics_once
+from app.services.runtime_metrics_sampler import clamp_window_minutes, sample_runtime_metrics_once
 from app.storage.runtime_metrics import (
     list_runtime_metric_series,
     summarize_runtime_metric_samples,
@@ -87,7 +87,10 @@ def metrics(
     ] = False,
 ) -> None:
     """Query persisted CPU/memory history."""
-    minutes = _since_minutes(since)
+    requested = _since_minutes(since)
+    minutes = clamp_window_minutes(requested)
+    if minutes < requested:
+        since = f"{minutes // (24 * 60)}d(retention)"
     if samples:
         series = list_runtime_metric_series(
             service=service,

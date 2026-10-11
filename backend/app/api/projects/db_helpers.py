@@ -78,39 +78,46 @@ def get_project_from_db(project_id: str) -> ProjectResponse:
     )
 
 
+# Dashboard tiles count work that is live now: paused and terminal tasks are excluded.
+_INACTIVE_TASK_STATUSES = ["completed", "failed", "cancelled", "abandoned", "closed", "paused"]
+FEATURE_TILE_TYPES = ("feature",)
+TASK_TILE_TYPES = ("task", "refactor")
+BUG_TILE_TYPES = ("bug", "regression")
+
+
 def _fetch_active_type_counts(
     cur: psycopg.Cursor[Any],
     project_ids: list[str],
-    task_type: str,
+    task_types: tuple[str, ...],
 ) -> dict[str, int]:
-    """Fetch active task counts for a specific task type per project."""
+    """Fetch active (not paused, not terminal) task counts for the given types per project."""
     cur.execute(
         """
         SELECT project_id, COUNT(*) as count
         FROM tasks
         WHERE project_id = ANY(%s)
-          AND task_type = %s
-          AND status NOT IN ('completed', 'failed', 'cancelled', 'abandoned')
+          AND task_type = ANY(%s)
+          AND status <> ALL(%s)
         GROUP BY project_id
         """,
-        (project_ids, task_type),
+        (project_ids, list(task_types), _INACTIVE_TASK_STATUSES),
     )
     return {row[0]: row[1] for row in cur.fetchall()}
 
 
 def _fetch_feature_counts(cur: psycopg.Cursor[Any], project_ids: list[str]) -> dict[str, int]:
     """Fetch active feature counts per project."""
-    return _fetch_active_type_counts(cur, project_ids, "feature")
+    return _fetch_active_type_counts(cur, project_ids, FEATURE_TILE_TYPES)
 
 
 def _fetch_task_counts(cur: psycopg.Cursor[Any], project_ids: list[str]) -> dict[str, int]:
-    """Fetch active regular task counts per project."""
-    return _fetch_active_type_counts(cur, project_ids, "task")
+    """Fetch active task and refactor counts per project."""
+    return _fetch_active_type_counts(cur, project_ids, TASK_TILE_TYPES)
 
 
 def _fetch_bug_counts(cur: psycopg.Cursor[Any], project_ids: list[str]) -> dict[str, int]:
-    """Fetch active bug counts per project."""
-    return _fetch_active_type_counts(cur, project_ids, "bug")
+    """Fetch active bug and regression counts per project."""
+    return _fetch_active_type_counts(cur, project_ids, BUG_TILE_TYPES)
 
 
 def _fetch_blocked_counts(cur: psycopg.Cursor[Any], project_ids: list[str]) -> dict[str, int]:

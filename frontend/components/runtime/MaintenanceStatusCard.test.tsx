@@ -1,5 +1,5 @@
 import { fireEvent, render, screen } from '@testing-library/react'
-import { describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { MaintenanceStatusCard } from './MaintenanceStatusCard'
 
 const queryMocks = vi.hoisted(() => ({
@@ -10,95 +10,127 @@ vi.mock('@tanstack/react-query', () => ({
   useQuery: queryMocks.useQuery,
 }))
 
+function run(
+  workflow_name: string,
+  status: string,
+  started_at: string,
+  extra: Record<string, unknown> = {},
+) {
+  return {
+    id: 1,
+    workflow_name,
+    status,
+    started_at,
+    finished_at: null,
+    duration_ms: 60_000,
+    rows_cleaned: 0,
+    summary: {},
+    error_message: null,
+    created_at: started_at,
+    ...extra,
+  }
+}
+
+function mockLatest(latest: Record<string, ReturnType<typeof run>>) {
+  queryMocks.useQuery.mockReturnValue({
+    data: { latest, recent: [] },
+    error: undefined,
+    isLoading: false,
+  })
+}
+
 describe('MaintenanceStatusCard', () => {
-  it('renders routine upkeep summary in collapsed state', () => {
-    queryMocks.useQuery.mockReturnValue({
-      data: {
-        latest: {
-          routine_upkeep: {
-            id: 10,
-            workflow_name: 'routine_upkeep',
-            status: 'completed',
-            started_at: '2026-04-10T16:00:00Z',
-            finished_at: '2026-04-10T16:01:00Z',
-            duration_ms: 60_000,
-            rows_cleaned: 2,
-            summary: { tasks_created: 2, dispatch: { dispatched: 2 } },
-            error_message: null,
-            created_at: '2026-04-10T16:00:00Z',
-          },
-        },
-        recent: [],
-      },
-      error: undefined,
-      isLoading: false,
-    })
-
-    render(<MaintenanceStatusCard />)
-
-    expect(screen.getByText('Maintenance')).toBeInTheDocument()
-    expect(
-      screen.getByText('Routine upkeep completed · 2 tasks'),
-    ).toBeInTheDocument()
+  beforeEach(() => {
+    vi.useFakeTimers()
+    vi.setSystemTime(new Date('2026-10-10T12:00:00Z'))
+  })
+  afterEach(() => {
+    vi.useRealTimers()
   })
 
-  it('shows latest workflow details when expanded', () => {
-    queryMocks.useQuery.mockReturnValue({
-      data: {
-        latest: {
-          routine_upkeep: {
-            id: 10,
-            workflow_name: 'routine_upkeep',
-            status: 'failed',
-            started_at: '2026-04-10T16:00:00Z',
-            finished_at: '2026-04-10T16:01:00Z',
-            duration_ms: 60_000,
-            rows_cleaned: 0,
-            summary: { source_errors: { feedback: 'Agent Hub unavailable' } },
-            error_message: 'Agent Hub unavailable',
-            created_at: '2026-04-10T16:00:00Z',
-          },
-          daily_maintenance: {
-            id: 11,
-            workflow_name: 'daily_maintenance',
-            status: 'success',
-            started_at: '2026-04-10T04:00:00Z',
-            finished_at: '2026-04-10T04:01:00Z',
-            duration_ms: 60_000,
-            rows_cleaned: 9,
-            summary: {},
-            error_message: null,
-            created_at: '2026-04-10T04:00:00Z',
-          },
-        },
-        recent: [],
-      },
-      error: undefined,
-      isLoading: false,
+  it('summarizes every workflow with the newest run age when all succeed', () => {
+    mockLatest({
+      daily_maintenance: run(
+        'daily_maintenance',
+        'success',
+        '2026-10-10T04:00:00Z',
+      ),
+      scheduled_backups: run(
+        'scheduled_backups',
+        'completed',
+        '2026-10-10T11:30:00Z',
+      ),
+    })
+
+    const { container } = render(<MaintenanceStatusCard />)
+
+    expect(
+      screen.getByText('All workflows succeeded · last run 30m ago'),
+    ).toBeInTheDocument()
+    expect(container.querySelector('.bg-emerald-500')).not.toBeNull()
+  })
+
+  it('colors the dot by the worst current status, not one workflow', () => {
+    mockLatest({
+      daily_maintenance: run(
+        'daily_maintenance',
+        'success',
+        '2026-10-10T04:00:00Z',
+      ),
+      scheduled_backups: run(
+        'scheduled_backups',
+        'partial',
+        '2026-10-10T11:00:00Z',
+      ),
+      runtime_hygiene: run(
+        'runtime_hygiene',
+        'failed',
+        '2026-10-10T10:00:00Z',
+        { error_message: 'docker unavailable' },
+      ),
+    })
+
+    const { container } = render(<MaintenanceStatusCard />)
+
+    expect(
+      screen.getByText('1 partial, 1 failed · last run 1h ago'),
+    ).toBeInTheDocument()
+    expect(container.querySelector('.bg-rose-500')).not.toBeNull()
+  })
+
+  it('shows start age and rows cleaned per workflow when expanded', () => {
+    mockLatest({
+      daily_maintenance: run(
+        'daily_maintenance',
+        'success',
+        '2026-10-10T04:00:00Z',
+        { rows_cleaned: 138 },
+      ),
+      runtime_hygiene: run(
+        'runtime_hygiene',
+        'failed',
+        '2026-10-10T10:00:00Z',
+        { error_message: 'docker unavailable' },
+      ),
     })
 
     render(<MaintenanceStatusCard />)
     fireEvent.click(screen.getByText('Maintenance'))
 
-    expect(screen.getByText('Routine Upkeep')).toBeInTheDocument()
     expect(screen.getByText('Daily Maintenance')).toBeInTheDocument()
-    expect(screen.getByText('Agent Hub unavailable')).toBeInTheDocument()
+    expect(screen.getByText('138 rows cleaned')).toBeInTheDocument()
+    expect(screen.getByText('Started 8h ago · took 1.0m')).toBeInTheDocument()
+    expect(screen.getByText('docker unavailable')).toBeInTheDocument()
+    expect(screen.queryByText(/tasks/)).toBeNull()
   })
 
   it('keeps expanded empty history explicit', () => {
-    queryMocks.useQuery.mockReturnValue({
-      data: {
-        latest: {},
-        recent: [],
-      },
-      error: undefined,
-      isLoading: false,
-    })
+    mockLatest({})
 
     render(<MaintenanceStatusCard />)
     fireEvent.click(screen.getByText('Maintenance'))
 
-    expect(screen.getByText('Routine upkeep never run')).toBeInTheDocument()
+    expect(screen.getByText('No runs recorded')).toBeInTheDocument()
     expect(
       screen.getByText('No maintenance runs recorded yet.'),
     ).toBeInTheDocument()

@@ -363,7 +363,7 @@ def summarize_runtime_metric_samples(
                     MAX(display_name) AS display_name,
                     MAX(manager) AS manager,
                     MAX(category) AS category,
-                    COUNT(*) AS sample_count,
+                    COUNT(cpu_percent) AS sample_count,
                     AVG(cpu_percent) AS cpu_avg,
                     MAX(cpu_percent) AS cpu_max,
                     AVG(memory_percent) AS mem_pct_avg,

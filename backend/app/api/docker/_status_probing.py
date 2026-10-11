@@ -8,6 +8,7 @@ from urllib import error as urllib_error
 from urllib import request as urllib_request
 
 # Late-bound access to helpers — ensures mocks at helpers.* take effect at runtime.
+from . import _process_execution as _pe
 from . import helpers as _h
 from .constants import _HTTP_PROBE_TIMEOUT_SECONDS, runtime_service_definitions
 from .models import RuntimeServiceStatus
@@ -41,7 +42,9 @@ def _auto_start_from_unit_file_state(unit_file_state: str) -> bool | None:
 
 
 async def _systemd_unit_state(unit: str) -> dict[str, str]:
-    stdout, stderr, rc = await _h._run_systemctl_user(
+    # The host monitor is a system unit; a same-named user unit may exist but is disabled.
+    run = _pe._run_systemctl_system if _pe._is_system_unit(unit) else _h._run_systemctl_user
+    stdout, stderr, rc = await run(
         "show", unit,
         "-p", "Id", "-p", "LoadState", "-p", "ActiveState",
         "-p", "SubState", "-p", "MainPID", "-p", "ExecMainStatus",
@@ -149,6 +152,7 @@ async def _systemd_status(svc: dict[str, Any]) -> RuntimeServiceStatus:
         active_state, sub_state, load_state, probe_ok, probe_status, svc["category"],
     )
 
+    system_unit = _pe._is_system_unit(svc["unit"])
     return RuntimeServiceStatus(
         name=svc["unit"],
         service=svc["service"],
@@ -157,9 +161,10 @@ async def _systemd_status(svc: dict[str, Any]) -> RuntimeServiceStatus:
         category=svc["category"],
         state=state,
         health=health,
-        status=status,
+        status=f"{status} (system unit)" if system_unit else status,
         ports=list(svc["ports"]),
-        auto_start=_auto_start_from_unit_file_state(unit_state.get("UnitFileState", "")),
+        auto_start=None if system_unit else _auto_start_from_unit_file_state(unit_state.get("UnitFileState", "")),
+        controllable=not system_unit,
     )
 
 
