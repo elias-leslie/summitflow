@@ -91,7 +91,6 @@ def test_storage_package_preserves_public_reexports() -> None:
         agent_configs,
         events,
         explorer,
-        explorer_sub_elements,
         explorer_symbols,
     )
     from app.storage.connection import get_connection
@@ -105,7 +104,6 @@ def test_storage_package_preserves_public_reexports() -> None:
     assert storage.agent_configs is agent_configs
     assert storage.events is events
     assert storage.explorer is explorer
-    assert storage.explorer_sub_elements is explorer_sub_elements
     assert storage.explorer_symbols is explorer_symbols
     assert storage.get_connection is get_connection
     assert storage.create_event is create_event
@@ -116,7 +114,7 @@ def test_storage_package_preserves_public_reexports() -> None:
 
 @pytest.mark.parametrize(
     "module_name",
-    ["explorer_analysis", "explorer_entries", "explorer_sub_elements", "explorer_symbols"],
+    ["explorer_analysis", "explorer_entries", "explorer_symbols"],
 )
 def test_storage_package_preserves_direct_explorer_module_imports(module_name: str) -> None:
     code = """

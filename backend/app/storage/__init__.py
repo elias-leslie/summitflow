@@ -9,7 +9,6 @@ _EXPLORER_MODULE_EXPORTS = {
     "explorer",
     "explorer_analysis",
     "explorer_entries",
-    "explorer_sub_elements",
     "explorer_symbols",
 }
 _MODULE_EXPORTS = {
@@ -29,7 +28,6 @@ __all__ = [
     "create_event",
     "events",
     "explorer",
-    "explorer_sub_elements",
     "explorer_symbols",
     "get_connection",
     "get_events_by_trace",
