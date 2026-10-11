@@ -14,7 +14,6 @@ SUMMITFLOW_ROOT_RENDERED_UNITS = [
     "summitflow-frontend.service",
     "summitflow-hatchet-worker.service",
     "codex-session-sync.service",
-    "tmux-agent-session-sync.service",
     "agent-browser-idle-reaper.service",
 ]
 def _kill_mode_for(service_name: str) -> str | None:

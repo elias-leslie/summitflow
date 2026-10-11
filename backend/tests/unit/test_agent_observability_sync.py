@@ -18,7 +18,7 @@ def _load_module():
 def test_codex_observability_sync_closes_inactive_sessions_by_default() -> None:
     module = _load_module()
 
-    commands = module._commands(include_tmux=False, include_codex=True, verbose=False)
+    commands = module._commands(include_codex=True, verbose=False)
 
     assert len(commands) == 1
     assert "--close-inactive" in commands[0]
@@ -28,6 +28,6 @@ def test_codex_observability_sync_can_disable_inactive_close(monkeypatch) -> Non
     module = _load_module()
     monkeypatch.setenv("AGENT_OBSERVABILITY_CODEX_CLOSE_INACTIVE", "0")
 
-    commands = module._commands(include_tmux=False, include_codex=True, verbose=False)
+    commands = module._commands(include_codex=True, verbose=False)
 
     assert "--close-inactive" not in commands[0]

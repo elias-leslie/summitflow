@@ -22,13 +22,10 @@ def _python_bin() -> str:
     return override or sys.executable
 
 
-def _commands(*, include_tmux: bool, include_codex: bool, verbose: bool) -> list[list[str]]:
+def _commands(*, include_codex: bool, verbose: bool) -> list[list[str]]:
     repo_root = _repo_root()
     python_bin = _python_bin()
     commands: list[list[str]] = []
-
-    if include_tmux:
-        commands.append([python_bin, str(repo_root / "scripts" / "tmux-agent-session-sync.py")])
 
     if include_codex:
         recent_hours = os.environ.get("AGENT_OBSERVABILITY_CODEX_RECENT_HOURS", str(DEFAULT_CODEX_RECENT_HOURS))
@@ -66,7 +63,6 @@ def _run_command(args: list[str], *, timeout: float, best_effort: bool) -> int:
 def parse_args(argv: list[str]) -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--best-effort", action="store_true", help="Never fail the caller on sync errors")
-    parser.add_argument("--skip-tmux", action="store_true", help="Skip external tmux presence sync")
     parser.add_argument("--skip-codex", action="store_true", help="Skip Codex transcript sync")
     parser.add_argument("--timeout", type=float, default=DEFAULT_TIMEOUT_SECONDS, help="Per-command timeout in seconds")
     parser.add_argument("--verbose", action="store_true", help="Pass verbose mode through to subcommands when supported")
@@ -76,7 +72,6 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
 def main(argv: list[str]) -> int:
     args = parse_args(argv)
     commands = _commands(
-        include_tmux=not args.skip_tmux,
         include_codex=not args.skip_codex,
         verbose=args.verbose,
     )

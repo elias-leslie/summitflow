@@ -42,7 +42,7 @@ def _sync_timeout_seconds() -> float:
 
 
 def refresh_agent_observability() -> None:
-    """Refresh external tmux/Codex session state without blocking CLI output on failure."""
+    """Refresh external Codex session state without blocking CLI output on failure."""
     global _SYNC_DONE
     if _SYNC_DONE or not _sync_enabled():
         return
