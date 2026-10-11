@@ -70,6 +70,8 @@ through a real consumer-facing route, not model ingestion or subsequent use.
   The existing design-assets GET returned its normal envelope through the
   extracted storage engine. API/worker tests and identity assertions confirm
   one owner implementation and the unchanged durable artifact root.
+  (Asset Studio and `st design asset generate/import/export` were retired on
+  2026-10-10; `st design asset critique` and the UI mockup commands remain.)
 - Safe actual `st neri capabilities`, `st learn capabilities`, and `st models
   list --limit 1 --json` succeeded. No offensive/paid work was used for these
   checks. Learn's accepted-only manual-task promotion behavior is retained.

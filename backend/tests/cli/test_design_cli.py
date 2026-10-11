@@ -31,13 +31,13 @@ def test_design_wrapper_forwards_exact_owner_argv(monkeypatch: Any) -> None:
         lambda record, argv, **kwargs: observed.append((record, argv, kwargs)) or 0,
     )
     owner_argv = [
-        "asset",
-        "generate",
-        "Kiki attack sheet",
-        "Capuchin fighter combo sheet",
-        "--agent-hub-fallback",
+        "ui",
+        "create",
+        "signal-card",
+        "--html",
+        "<section>Signal</section>",
         "--tags",
-        "kiki,combat",
+        "signals,deterministic",
     ]
 
     result = runner.invoke(app, ["design", *owner_argv])
@@ -62,9 +62,19 @@ def test_design_nested_help_is_static_and_never_executes(monkeypatch: Any) -> No
 
     result = runner.invoke(
         app,
-        ["design", "asset", "generate", "Kiki attack sheet", "brief", "--help"],
+        ["design", "asset", "critique", "ranger-proof.png", "--help"],
     )
 
     assert result.exit_code == 0, result.output
-    assert "Usage: st design asset generate" in result.output
-    assert "--agent-hub-fallback" in result.output
+    assert "Usage: st design asset critique" in result.output
+    assert "--ensemble" in result.output
+
+
+def test_design_help_no_longer_offers_retired_asset_studio_commands() -> None:
+    """Asset generate/import/export were retired with SummitFlow's Asset Studio."""
+    result = runner.invoke(app, ["design", "asset", "--help"])
+
+    assert result.exit_code == 0, result.output
+    assert "critique" in result.output
+    for retired in ("generate", "import", "export"):
+        assert f"  {retired} " not in result.output
