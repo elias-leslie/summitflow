@@ -10,6 +10,7 @@ from fastapi.responses import FileResponse
 from pydantic import BaseModel
 
 from ..services import file_browser
+from ..utils.shared_paths import get_workspaces_root
 from .dependencies import ValidProject
 
 project_router = APIRouter()
@@ -39,7 +40,8 @@ class RenamePathRequest(BaseModel):
 
 
 def _get_global_files_root() -> Path:
-    return Path('/')
+    """Browsing is limited to the managed workspaces root, never the server root."""
+    return get_workspaces_root()
 
 
 def _require_project_root(project: dict[str, Any]) -> str:
@@ -53,11 +55,21 @@ def _project_scope(project: dict[str, Any], path: str) -> tuple[str | Path, str,
     """Resolve project file paths.
 
     Empty and relative paths stay project-relative for compatibility. Absolute
-    paths opt into server-root browsing and mutation.
+    paths opt into workspaces-root browsing and mutation; anything outside the
+    workspaces root is rejected by the file browser's root check.
     """
     if path.startswith('/'):
         return _get_global_files_root(), path, True
     return _require_project_root(project), path, False
+
+
+def _tree_path(root_path: str | Path, path: str) -> str:
+    """Map navigation above the browse root (e.g. '/' or a parent) onto the root itself."""
+    if not path.startswith('/'):
+        return path
+    root = Path(root_path).resolve()
+    target = Path(path).resolve()
+    return '' if target != root and target in root.parents else path
 
 
 def _handle_browser_error(exc: Exception) -> None:
@@ -213,7 +225,7 @@ def get_project_file_tree(
     path: str = Query('', description='Relative directory path (empty = root)'),
 ) -> dict[str, object]:
     root_path, target_path, absolute_paths = _project_scope(project, path)
-    return _list_directory(root_path, target_path, absolute_paths=absolute_paths)
+    return _list_directory(root_path, _tree_path(root_path, target_path), absolute_paths=absolute_paths)
 
 
 @project_router.get('/{project_id}/files/content')
@@ -309,7 +321,8 @@ def rename_project_path(
 def get_workspace_file_tree(
     path: str = Query('', description='Relative directory path (empty = root)'),
 ) -> dict[str, object]:
-    return _list_directory(_get_global_files_root(), path)
+    root = _get_global_files_root()
+    return _list_directory(root, _tree_path(root, path))
 
 
 @global_router.get('/files/content')

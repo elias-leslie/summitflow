@@ -3,7 +3,9 @@
 from __future__ import annotations
 
 import subprocess
-from collections.abc import Mapping
+from collections.abc import Mapping, Sequence
+from pathlib import Path
+from typing import Any
 
 import typer
 
@@ -73,25 +75,74 @@ def get_dirty_files(cwd: str | None = None) -> list[str]:
     """Return tracked uncommitted modified/added/deleted files in the working tree."""
     try:
         result = subprocess.run(
-            ["git", "status", "--porcelain", "--no-renames", "--untracked-files=no"],
+            ["git", "status", "--porcelain", "-z", "--no-renames", "--untracked-files=no"],
             cwd=cwd,
             capture_output=True,
             text=True,
         )
         if result.returncode != 0:
             return []
-        return [
-            line[3:] for line in result.stdout.splitlines()
-            if line and line[0:2].strip()
-        ]
+        return [entry[3:] for entry in result.stdout.split("\0") if entry and entry[0:2].strip()]
     except (subprocess.CalledProcessError, OSError):
         return []
 
 
-def discard_dirty_files(cwd: str | None = None) -> None:
-    """Discard tracked working-tree changes after abandon confirmation."""
+def _declared_prefixes(task: Mapping[str, Any]) -> set[str]:
+    from .done_task_scope import task_scope_paths
+
+    prefixes: set[str] = set()
+    for value in task_scope_paths(dict(task)):
+        normalized = value.strip().removeprefix("./").rstrip("/")
+        # A whole-checkout or pathspec-magic declaration cannot scope a destructive restore.
+        if normalized and normalized != "." and not normalized.startswith(":") and ".." not in normalized.split("/"):
+            prefixes.add(normalized)
+    return prefixes
+
+
+def split_owned_dirty_files(
+    task_id: str,
+    task: Mapping[str, Any],
+    dirty_files: Sequence[str],
+    *,
+    project_id: str | None,
+    repo_root: str | None,
+) -> tuple[list[str], list[str]]:
+    """Split dirty files into (owned by this task, everything else).
+
+    A path is owned when the task declares it (files_to_modify/files_to_create)
+    or a live lease tagged with this task covers it, and no other task's or
+    agent's live lease covers it. Everything else in the shared checkout stays.
+    """
+    if not dirty_files:
+        return [], []
+    from ..lib.leases import identify_agent, list_active
+
+    root = Path(repo_root or ".").resolve()
+    declared = _declared_prefixes(task)
+    leases = list_active(project_id) if project_id else []
+    agent_id = identify_agent()[0] if leases else ""
+    owned: list[str] = []
+    unowned: list[str] = []
+    for path in dirty_files:
+        absolute = str(root / path)
+        matching = [lease for lease in leases if lease.matches(absolute)]
+        foreign = any(
+            lease.task_id not in {None, task_id} or (lease.task_id is None and lease.agent_id != agent_id)
+            for lease in matching
+        )
+        claimed = any(path == prefix or path.startswith(prefix + "/") for prefix in declared) or any(
+            lease.task_id == task_id for lease in matching
+        )
+        (owned if claimed and not foreign else unowned).append(path)
+    return owned, unowned
+
+
+def discard_dirty_files(cwd: str | None, paths: Sequence[str]) -> None:
+    """Discard tracked changes for the task's owned paths only, after abandon confirmation."""
+    if not paths:
+        return
     result = subprocess.run(
-        ["git", "restore", "--staged", "--worktree", "."],
+        ["git", "restore", "--staged", "--worktree", "--", *(f":(literal){path}" for path in paths)],
         cwd=cwd,
         capture_output=True,
         text=True,
@@ -111,6 +162,7 @@ def _build_preview_lines(
     snapshot_info: Mapping[str, object] | None,
     unmerged: int,
     dirty_files: list[str],
+    kept_files: Sequence[str] = (),
 ) -> list[str]:
     """Build the preview lines showing what abandon will do."""
     lines: list[str] = []
@@ -133,11 +185,17 @@ def _build_preview_lines(
     if unmerged > 0:
         lines.append(f"  DISCARD {unmerged} commit(s) reachable only from legacy task refs")
     if dirty_files:
-        lines.append(f"  DISCARD {len(dirty_files)} tracked uncommitted file change(s):")
+        lines.append(f"  DISCARD {len(dirty_files)} tracked uncommitted change(s) owned by this task:")
         for path in dirty_files[:10]:
             lines.append(f"    {path}")
         if len(dirty_files) > 10:
             lines.append(f"    ... and {len(dirty_files) - 10} more")
+    if kept_files:
+        lines.append(f"  KEEP {len(kept_files)} tracked change(s) this task does not own (shared checkout):")
+        for path in list(kept_files)[:10]:
+            lines.append(f"    {path}")
+        if len(kept_files) > 10:
+            lines.append(f"    ... and {len(kept_files) - 10} more")
     lines.append("")
     lines.append("NOTE: Task metadata is append-only; abandon does not restore old DB state.")
     return lines
@@ -189,22 +247,26 @@ def abandon_task(
     has_snapshot = snapshot_info is not None
     raw_pid = snapshot_info.get("project_id") if snapshot_info else None
     project_id: str | None = str(raw_pid) if raw_pid is not None else None
+    task: dict[str, Any] = {}
+    try:
+        fetched = client.get_task(task_id)
+        task = fetched if isinstance(fetched, dict) else {}
+    except APIError:
+        task = {}
     if project_id is None:
-        try:
-            task = client.get_task(task_id)
-            raw_task_pid = task.get("project_id") if isinstance(task, dict) else None
-            project_id = str(raw_task_pid) if raw_task_pid else None
-        except APIError:
-            project_id = None
+        raw_task_pid = task.get("project_id")
+        project_id = str(raw_task_pid) if raw_task_pid else None
     repo_root = get_project_root_path(project_id) if project_id else None
     legacy_local_branches = _legacy_local_branches(task_id, project_id)
     unmerged = count_unmerged_commits(task_id, project_id=project_id)
     remote_branches = get_remote_task_branches(task_id, project_id=project_id)
-    dirty_files = get_dirty_files(repo_root)
+    owned_dirty, kept_dirty = split_owned_dirty_files(
+        task_id, task, get_dirty_files(repo_root), project_id=project_id, repo_root=repo_root,
+    )
 
     preview_lines = _build_preview_lines(
         task_id, legacy_local_branches, remote_branches, has_snapshot, snapshot_info,
-        unmerged, dirty_files,
+        unmerged, owned_dirty, kept_dirty,
     )
 
     confirm_gate(command_key, confirm, preview_lines, f"st abandon {task_id}")
@@ -222,8 +284,7 @@ def abandon_task(
         )
         remove_snapshot(task_id, project_id=project_id)
 
-    if dirty_files:
-        discard_dirty_files(repo_root)
+    discard_dirty_files(repo_root, owned_dirty)
 
     delete_task_branches(task_id, project_id=project_id)
 
@@ -235,4 +296,6 @@ def abandon_task(
         "branches_deleted": legacy_refs_deleted,
         "legacy_refs_deleted": legacy_refs_deleted,
         "snapshot_removed": has_snapshot,
+        "discarded_paths": owned_dirty,
+        "kept_paths": kept_dirty,
     }

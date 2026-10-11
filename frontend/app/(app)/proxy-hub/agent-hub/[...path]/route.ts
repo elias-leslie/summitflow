@@ -8,7 +8,8 @@
  *
  * Inlines the proxy logic previously provided by @agent-hub/proxy/next
  * (that package was deleted from agent-hub). Handles auth injection and
- * SSE streaming for proxied requests.
+ * SSE streaming for proxied requests. Upstream calls carry SummitFlow's own
+ * client identity, so only SummitFlow owners may use this proxy.
  */
 
 // ---------------------------------------------------------------------------
@@ -19,6 +20,7 @@ import { PORTS } from '@/lib/api-config'
 import {
   createProxyRouteExports,
   createProxyRouteHandler,
+  requireOwner,
 } from '@/lib/proxy-route'
 
 const ENV_PREFIX = 'SUMMITFLOW'
@@ -73,6 +75,7 @@ const proxyRequest = createProxyRouteHandler<ProxyConfig>({
   buildHeaders: buildForwardHeaders,
   bodyMode: 'text',
   queryMode: 'get-delete',
+  authorize: requireOwner,
 })
 
 export const { GET, POST, PUT, PATCH, DELETE } =

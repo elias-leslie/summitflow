@@ -254,6 +254,26 @@ def _launcher_roots_unset(monkeypatch) -> None:
 
 
 @pytest.fixture(autouse=True)
+def _test_client_is_loopback_caller(monkeypatch) -> None:
+    """Treat Starlette's TestClient peer (testclient -> testserver) as local development.
+
+    Production only trusts loopback callers when Cloudflare Access gives no identity;
+    the TestClient's synthetic hostnames stand in for that loopback caller.
+    """
+    from app import access_control
+
+    original = access_control._is_local_development_request
+
+    def _is_local(request) -> bool:
+        client_host = request.client.host if request.client else ""
+        if client_host == "testclient" and access_control._request_hostnames(request) == {"testserver"}:
+            return True
+        return original(request)
+
+    monkeypatch.setattr(access_control, "_is_local_development_request", _is_local)
+
+
+@pytest.fixture(autouse=True)
 def isolated_coordination_store(tmp_path_factory) -> Generator[None]:
     """Keep tests off the host lease/handshake store and the caller's native session id.
 

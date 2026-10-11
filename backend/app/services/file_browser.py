@@ -3,9 +3,13 @@
 from __future__ import annotations
 
 import shutil
+import subprocess
 from functools import lru_cache
 from pathlib import Path
 from typing import BinaryIO
+
+from ..utils import safe_subprocess
+from ..utils.shared_paths import get_workspaces_root
 
 MAX_FILE_SIZE = 1_048_576
 UPLOAD_CHUNK_SIZE = 1_048_576
@@ -282,6 +286,7 @@ def delete_path(root_path: str | Path, relative_path: str) -> dict[str, object]:
     if not target.exists():
         msg = f'Path not found: {relative_path}'
         raise FileNotFoundError(msg)
+    _guard_destructive_delete(target)
 
     is_directory = target.is_dir()
     if is_directory:
@@ -289,6 +294,42 @@ def delete_path(root_path: str | Path, relative_path: str) -> dict[str, object]:
     else:
         target.unlink()
     return {'path': relative_path, 'deleted': True, 'is_directory': is_directory}
+
+
+def _git_toplevel(directory: Path) -> Path | None:
+    try:
+        result = safe_subprocess.run(
+            ['git', '-C', str(directory), 'rev-parse', '--show-toplevel'],
+            capture_output=True, text=True, check=True,
+        )
+    except (subprocess.CalledProcessError, OSError):
+        return None
+    toplevel = result.stdout.strip()
+    return Path(toplevel).resolve() if toplevel else None
+
+
+def _guard_destructive_delete(target: Path) -> None:
+    """Refuse deletes outside managed workspaces or over another live session's paths."""
+    workspaces_root = get_workspaces_root().resolve()
+    if workspaces_root not in target.parents:
+        msg = f'Refusing to delete outside the managed workspaces root: {target}'
+        raise PermissionError(msg)
+    if target.is_dir() and (target / '.git').exists():
+        msg = f'Refusing to delete a git checkout root: {target}'
+        raise PermissionError(msg)
+
+    repo_root = _git_toplevel(target.parent)
+    if repo_root is None:
+        return
+    from . import destructive_path_guard
+
+    relative = target.relative_to(repo_root).as_posix()
+    try:
+        decision = destructive_path_guard.check_destructive_paths(repo_root, [relative])
+    except destructive_path_guard.DestructivePathGuardError as exc:
+        raise PermissionError(str(exc)) from exc
+    if decision.blocked:
+        raise PermissionError(destructive_path_guard.format_guard_report(decision))
 
 
 def rename_path(

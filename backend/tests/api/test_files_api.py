@@ -83,11 +83,13 @@ def test_project_file_upload_and_download(
     assert (root_path / 'docs' / 'note.txt').read_text() == 'new value'
 
 
-def test_project_files_support_crud_and_server_root_paths(
+def test_project_files_support_crud_and_workspace_root_paths(
     client: TestClient,
     file_api_project: tuple[str, Path],
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     project_id, root_path = file_api_project
+    monkeypatch.setenv('ST_WORKSPACES_ROOT', str(root_path.parent))
     (root_path / 'docs').mkdir()
     server_sibling = root_path.parent / 'server-sibling'
     server_sibling.mkdir()
@@ -177,3 +179,47 @@ def test_workspace_file_routes_use_global_root_helper(
     content_response = client.get('/api/files/content', params={'path': 'drop/global.txt'})
     assert content_response.status_code == 200
     assert content_response.json()['content'] == 'workspace upload'
+
+
+def test_server_root_is_not_a_files_root(
+    client: TestClient,
+    file_api_project: tuple[str, Path],
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    project_id, _root_path = file_api_project
+    workspaces = tmp_path / 'workspaces'
+    workspaces.mkdir()
+    (workspaces / 'inside.txt').write_text('inside')
+    outside = tmp_path / 'outside'
+    outside.mkdir()
+    (outside / 'keep.txt').write_text('keep')
+    monkeypatch.setenv('ST_WORKSPACES_ROOT', str(workspaces))
+
+    from app.api import files
+
+    assert files._get_global_files_root() == workspaces.resolve()
+
+    # Navigating to '/' lands on the workspaces root instead of the server root.
+    for response in (
+        client.get('/api/files/tree', params={'path': '/'}),
+        client.get(f'/api/projects/{project_id}/files/tree', params={'path': '/'}),
+    ):
+        assert response.status_code == 200
+        assert response.json()['absolute_path'] == str(workspaces.resolve())
+        assert {entry['name'] for entry in response.json()['entries']} == {'inside.txt'}
+
+    assert client.get('/api/files/content', params={'path': '/etc/hostname'}).status_code == 400
+    assert (
+        client.get(f'/api/projects/{project_id}/files/content', params={'path': '/etc/hostname'}).status_code
+        == 400
+    )
+    for response in (
+        client.delete('/api/files/path', params={'path': str(outside / 'keep.txt')}),
+        client.delete(f'/api/projects/{project_id}/files/path', params={'path': str(outside / 'keep.txt')}),
+        client.delete('/api/files/path', params={'path': '../outside/keep.txt'}),
+        # Project root lies outside the workspaces root here: the delete guard refuses it.
+        client.delete(f'/api/projects/{project_id}/files/path', params={'path': 'outside/keep.txt'}),
+    ):
+        assert response.status_code in {400, 403}
+    assert (outside / 'keep.txt').read_text() == 'keep'

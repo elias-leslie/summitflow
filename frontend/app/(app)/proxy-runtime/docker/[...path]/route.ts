@@ -5,13 +5,15 @@
  * rewrite: /api/docker/* -> /proxy-runtime/docker/* (see next.config.ts).
  * This allows the first-party runtime UI to call protected backend routes
  * without exposing INTERNAL_SERVICE_SECRET to the browser, and it preserves
- * SSE streaming for live logs.
+ * SSE streaming for live logs. The caller's Access identity is forwarded so
+ * the backend authorizes the real user, not the loopback proxy.
  */
 
-import { PORTS } from '@/lib/api-config'
 import {
+  backendApiUrl,
   createProxyRouteExports,
   createProxyRouteHandler,
+  setIdentityHeaders,
 } from '@/lib/proxy-route'
 
 interface RuntimeProxyConfig {
@@ -21,7 +23,7 @@ interface RuntimeProxyConfig {
 
 function resolveConfig(): RuntimeProxyConfig {
   return {
-    apiUrl: process.env.API_URL ?? `http://localhost:${PORTS.backend}`,
+    apiUrl: backendApiUrl(),
     internalSecret: process.env.INTERNAL_SERVICE_SECRET ?? '',
   }
 }
@@ -41,7 +43,7 @@ function buildForwardHeaders(
   config: RuntimeProxyConfig,
   bodyPresent: boolean,
 ): Headers {
-  const headers = new Headers()
+  const headers = setIdentityHeaders(request, new Headers())
   const accept = request.headers.get('accept')
   const contentType = request.headers.get('content-type')
   const liveSessionToken = request.headers.get('x-live-session-token')

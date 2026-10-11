@@ -96,6 +96,34 @@ describe('runtime docker proxy route', () => {
     })
   })
 
+  it('forwards the caller Access identity so the backend authorizes the real user', async () => {
+    fetchMock.mockResolvedValueOnce(
+      new Response(JSON.stringify({ detail: 'Read-only viewer access' }), {
+        status: 403,
+        headers: { 'Content-Type': 'application/json' },
+      }),
+    )
+
+    const response = await POST(
+      new Request('http://localhost/proxy-runtime/docker/stop/monkey-fight', {
+        method: 'POST',
+        headers: {
+          'Cf-Access-Jwt-Assertion': 'viewer-jwt',
+          Cookie: 'CF_Authorization=viewer-cookie',
+          'X-Forwarded-Host': 'dev.summitflow.dev',
+        },
+      }),
+      { params: Promise.resolve({ path: ['stop', 'monkey-fight'] }) },
+    )
+
+    const [, init] = fetchMock.mock.calls[0] ?? []
+    const headers = new Headers(init?.headers)
+    expect(headers.get('cf-access-jwt-assertion')).toBe('viewer-jwt')
+    expect(headers.get('cookie')).toBe('CF_Authorization=viewer-cookie')
+    expect(headers.get('x-forwarded-host')).toBe('dev.summitflow.dev')
+    expect(response.status).toBe(403)
+  })
+
   it('forwards request bodies without text re-encoding', async () => {
     fetchMock.mockResolvedValueOnce(
       new Response(JSON.stringify({ status: 'queued' }), {

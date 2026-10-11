@@ -63,38 +63,53 @@ def test_cloudflare_mode_allows_loopback_localhost_bypass(monkeypatch) -> None:
     assert principal == local_principal
 
 
-def test_cloudflare_mode_allows_local_caddy_domain_bypass_with_stale_cookie(
-    monkeypatch,
-) -> None:
-    """Local Caddy access remains owner even when the browser has an Access cookie."""
+def test_shared_domain_host_without_token_is_not_owner(monkeypatch) -> None:
+    """dev.summitflow.dev is not a local host: no Access identity means no principal."""
     _configure_cloudflare(monkeypatch)
-    local_principal = access_control.AccessPrincipal(
-        email="owner@example.com",
-        role="owner",
-        is_active=True,
-        is_local_bypass=True,
-    )
     monkeypatch.setattr(
         access_control,
         "_local_owner_principal",
-        lambda: local_principal,
+        lambda: (_ for _ in ()).throw(AssertionError("must not grant local owner")),
     )
-    monkeypatch.setattr(
-        access_control,
-        "_email_from_cloudflare_token",
-        lambda _token: (_ for _ in ()).throw(AssertionError("cookie should be ignored")),
-    )
+
+    for request in (
+        _request("dev.summitflow.dev", client_host="127.0.0.1"),
+        _request("localhost:8001", client_host="192.168.8.10", forwarded_host="dev.summitflow.dev"),
+    ):
+        assert access_control.resolve_principal(request) is None
+
+
+def test_shared_domain_host_uses_cookie_identity(monkeypatch) -> None:
+    """A proxied dev.summitflow.dev request resolves the Access cookie, not the bypass."""
+    _configure_cloudflare(monkeypatch)
+    viewer = access_control.AccessPrincipal(email="viewer@example.com", role="viewer", is_active=True)
+    monkeypatch.setattr(access_control, "_email_from_cloudflare_token", lambda _token: "viewer@example.com")
+    monkeypatch.setattr(access_control, "_principal_for_email", lambda _email: viewer)
 
     principal = access_control.resolve_principal(
         _request(
             "localhost:8001",
-            client_host="192.168.8.10",
             forwarded_host="dev.summitflow.dev",
-            cookie_token="stale-cookie",
+            cookie_token="viewer-cookie",
         )
     )
 
-    assert principal == local_principal
+    assert principal == viewer
+
+
+def test_missing_cloudflare_config_denies_non_loopback_callers(monkeypatch) -> None:
+    """Missing Access config fails closed for anything but loopback development."""
+    monkeypatch.setattr(access_control.settings, "cloudflare_access_team_domain", "")
+    monkeypatch.setattr(access_control.settings, "cloudflare_access_aud", "")
+    local_principal = access_control.AccessPrincipal(
+        email="owner@example.com", role="owner", is_active=True, is_local_bypass=True
+    )
+    monkeypatch.setattr(access_control, "_local_owner_principal", lambda: local_principal)
+
+    assert access_control.resolve_principal(_request("summitflow.dev", client_host="8.8.8.8")) is None
+    assert access_control.resolve_principal(_request("dev.summitflow.dev")) is None
+    assert access_control.resolve_principal(_request("localhost:8001", client_host="8.8.8.8")) is None
+    assert access_control.resolve_principal(_request("localhost:8001")) == local_principal
 
 
 def test_cloudflare_mode_uses_header_token_before_local_bypass(monkeypatch) -> None:

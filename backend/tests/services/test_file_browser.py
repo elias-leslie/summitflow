@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+import subprocess
 from io import BytesIO
+from pathlib import Path
 from typing import cast
 
 import pytest
@@ -104,7 +106,8 @@ def test_read_file_allows_dotfiles(tmp_path) -> None:
     assert result['is_binary'] is False
 
 
-def test_file_browser_crud_helpers(tmp_path) -> None:
+def test_file_browser_crud_helpers(tmp_path, monkeypatch) -> None:
+    monkeypatch.setenv('ST_WORKSPACES_ROOT', str(tmp_path))
     created_dir = file_browser.create_directory(tmp_path, '', 'notes')
     assert created_dir['path'] == 'notes'
     assert (tmp_path / 'notes').is_dir()
@@ -150,3 +153,69 @@ def test_list_directory_includes_absolute_entry_paths_when_project_relative(tmp_
 
     assert entries[0]['path'] == 'child'
     assert entries[0]['absolute_path'] == str(tmp_path / 'child')
+
+
+def test_delete_path_refuses_targets_outside_workspaces_root(tmp_path, monkeypatch) -> None:
+    workspaces = tmp_path / 'workspaces'
+    workspaces.mkdir()
+    outside = tmp_path / 'outside'
+    outside.mkdir()
+    (outside / 'keep.txt').write_text('keep')
+    monkeypatch.setenv('ST_WORKSPACES_ROOT', str(workspaces))
+
+    with pytest.raises(PermissionError, match='outside the managed workspaces root'):
+        file_browser.delete_path(tmp_path, 'outside')
+    with pytest.raises(PermissionError, match='outside the managed workspaces root'):
+        file_browser.delete_path('/', str(outside / 'keep.txt'))
+
+    assert (outside / 'keep.txt').read_text() == 'keep'
+
+
+def test_delete_path_refuses_git_checkout_root(tmp_path, monkeypatch) -> None:
+    monkeypatch.setenv('ST_WORKSPACES_ROOT', str(tmp_path))
+    checkout = tmp_path / 'repo'
+    (checkout / '.git').mkdir(parents=True)
+
+    with pytest.raises(PermissionError, match='git checkout root'):
+        file_browser.delete_path(tmp_path, 'repo')
+
+    assert checkout.is_dir()
+
+
+def test_delete_path_routes_through_destructive_path_guard(tmp_path, monkeypatch) -> None:
+    from app.services import destructive_path_guard
+
+    monkeypatch.setenv('ST_WORKSPACES_ROOT', str(tmp_path))
+    checkout = tmp_path / 'repo'
+    (checkout / 'src').mkdir(parents=True)
+    (checkout / 'src' / 'owned.py').write_text('x = 1\n')
+    subprocess.run(['git', 'init', '-q', str(checkout)], check=True)
+    calls: list[tuple[Path, list[str]]] = []
+
+    def _blocked(repo_root: Path, paths: list[str], **_kwargs):
+        calls.append((repo_root, list(paths)))
+        return destructive_path_guard.GuardDecision(
+            blocked=True,
+            project_id='repo',
+            repo_root=str(repo_root),
+            current_session_id=None,
+            destructive_paths=tuple(paths),
+            conflicts=(
+                destructive_path_guard.GuardConflict(
+                    session_id='session-other',
+                    task_id='task-other',
+                    branch='main',
+                    working_dir=str(repo_root),
+                    reason='scope_overlap',
+                    paths=('src',),
+                ),
+            ),
+        )
+
+    monkeypatch.setattr(destructive_path_guard, 'check_destructive_paths', _blocked)
+
+    with pytest.raises(PermissionError, match='another live session'):
+        file_browser.delete_path(checkout, 'src')
+
+    assert calls == [(checkout.resolve(), ['src'])]
+    assert (checkout / 'src' / 'owned.py').exists()

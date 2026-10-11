@@ -25,7 +25,6 @@ from .storage.access import (
 PUBLIC_API_PREFIXES = ("/api/health",)
 PUBLIC_PATHS = {"/health", "/api/auth/me"}
 VIEWER_API_PREFIX = "/api/viewer/"
-LOCAL_BYPASS_HOSTNAMES = {"dev.summitflow.dev"}
 
 
 @dataclass(frozen=True)
@@ -140,16 +139,18 @@ def resolve_principal(request: Request) -> AccessPrincipal | None:
         email = _email_from_cloudflare_token(header_token)
         return _principal_for_email(email)
 
+    if _is_local_development_request(request):
+        return _local_owner_principal()
+
     if _cloudflare_configured():
-        if _is_local_development_request(request):
-            return _local_owner_principal()
         cookie_token = _access_cookie_token(request)
         if cookie_token:
             email = _email_from_cloudflare_token(cookie_token)
             return _principal_for_email(email)
-        return None
 
-    return _local_owner_principal()
+    # Without a Cloudflare identity only loopback development callers are trusted;
+    # a missing Access configuration must never make remote callers owners.
+    return None
 
 
 def _access_header_token(request: Request) -> str | None:
@@ -172,10 +173,7 @@ def _is_local_development_request(request: Request) -> bool:
         return False
 
     hostnames = _request_hostnames(request)
-    return bool(hostnames) and all(
-        _is_loopback_hostname(hostname) or hostname in LOCAL_BYPASS_HOSTNAMES
-        for hostname in hostnames
-    )
+    return bool(hostnames) and all(_is_loopback_hostname(hostname) for hostname in hostnames)
 
 
 def _is_local_network_client(request: Request) -> bool:

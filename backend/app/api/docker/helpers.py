@@ -11,6 +11,7 @@ All symbols are re-exported below for backward compatibility.
 
 from __future__ import annotations
 
+import hmac
 import json
 import re
 from typing import Any, Literal
@@ -39,7 +40,7 @@ async def _require_auth(x_internal_secret: str = Header(default="")) -> None:
     """Require internal service secret for mutating runtime endpoints."""
     if not _INTERNAL_SECRET:
         return  # Auth not configured -- allow (dev mode)
-    if x_internal_secret != _INTERNAL_SECRET:
+    if not hmac.compare_digest(x_internal_secret.encode(), _INTERNAL_SECRET.encode()):
         raise HTTPException(status_code=403, detail="Forbidden")
 
 

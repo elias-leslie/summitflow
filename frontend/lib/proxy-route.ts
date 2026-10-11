@@ -1,3 +1,5 @@
+import { PORTS } from '@/lib/api-config'
+
 const SSE_HEADERS: Record<string, string> = {
   'Cache-Control': 'no-cache, no-transform',
   'X-Accel-Buffering': 'no',
@@ -8,6 +10,59 @@ export type ProxyRouteContext = { params: Promise<{ path: string[] }> }
 
 type BodyMode = 'arrayBuffer' | 'text'
 type QueryMode = 'all' | 'get-delete'
+
+/** Base URL of the SummitFlow backend as seen from the Next.js server. */
+export function backendApiUrl(): string {
+  return process.env.API_URL ?? `http://localhost:${PORTS.backend}`
+}
+
+/**
+ * Copy the caller's identity onto an upstream request.
+ *
+ * The backend trusts loopback callers without a Cloudflare identity, and this
+ * proxy reaches it over loopback. Forwarding the Access JWT, the cookie and the
+ * original host keeps the backend deciding on the real caller instead of the
+ * proxy.
+ */
+export function setIdentityHeaders(
+  request: Request,
+  headers: Headers,
+): Headers {
+  const jwt = request.headers.get('cf-access-jwt-assertion')
+  const cookie = request.headers.get('cookie')
+  const host =
+    request.headers.get('x-forwarded-host') ?? request.headers.get('host')
+  if (jwt) headers.set('Cf-Access-Jwt-Assertion', jwt)
+  if (cookie) headers.set('Cookie', cookie)
+  if (host) headers.set('X-Forwarded-Host', host)
+  return headers
+}
+
+/**
+ * Resolve the caller through the backend and reject anyone who is not an owner.
+ * Returns null when the caller is an owner, else the error response to send.
+ */
+export async function requireOwner(request: Request): Promise<Response | null> {
+  try {
+    const response = await fetch(`${backendApiUrl()}/api/auth/me`, {
+      headers: setIdentityHeaders(
+        request,
+        new Headers({ Accept: 'application/json' }),
+      ),
+      cache: 'no-store',
+    })
+    if (response.ok) {
+      const me = (await response.json()) as { is_owner?: unknown }
+      if (me.is_owner === true) return null
+    }
+  } catch {
+    return Response.json(
+      { detail: 'Could not verify SummitFlow identity' },
+      { status: 503 },
+    )
+  }
+  return Response.json({ detail: 'Owner access required' }, { status: 403 })
+}
 
 type ProxyRouteOptions<Config> = {
   resolveConfig: () => Config
@@ -24,6 +79,8 @@ type ProxyRouteOptions<Config> = {
   bodyMode?: BodyMode
   queryMode?: QueryMode
   onTransportError?: (error: unknown) => Response
+  /** Runs before proxying; a returned Response is sent instead of the upstream call. */
+  authorize?: (request: Request) => Promise<Response | null>
 }
 
 export function proxyResponse(response: Response): Response {
@@ -66,12 +123,17 @@ export function createProxyRouteHandler<Config>({
   bodyMode = 'arrayBuffer',
   queryMode = 'all',
   onTransportError,
+  authorize,
 }: ProxyRouteOptions<Config>) {
   return async function proxyRouteRequest(
     request: Request,
     { params }: ProxyRouteContext,
     method: string,
   ): Promise<Response> {
+    if (authorize) {
+      const denied = await authorize(request)
+      if (denied) return denied
+    }
     const { path } = await params
     const config = resolveConfig()
     const searchParams = shouldForwardQuery(method, queryMode)
