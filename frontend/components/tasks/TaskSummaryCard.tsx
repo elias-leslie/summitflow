@@ -1,6 +1,6 @@
 'use client'
 
-import { ArrowLeft, CheckCircle2, Loader2, Rocket, X } from 'lucide-react'
+import { ArrowLeft, CheckCircle2, Loader2, Plus, X } from 'lucide-react'
 import { AnimatePresence, motion } from 'motion/react'
 import { useState } from 'react'
 import { Badge } from '@/components/ui/badge'
@@ -61,7 +61,7 @@ export function TaskSummaryCard({
   onUpdateField,
   onAddLabel,
   onRemoveLabel,
-  onCreateAndStart,
+  onCreateTask,
   onBackToChat,
 }: TaskSummaryCardProps) {
   const [newLabel, setNewLabel] = useState('')
@@ -226,7 +226,7 @@ export function TaskSummaryCard({
         <div className="flex-1" />
         <Button
           variant="primary"
-          onClick={onCreateAndStart}
+          onClick={onCreateTask}
           disabled={isSubmitting || !taskData.title.trim()}
         >
           {isSubmitting ? (
@@ -236,7 +236,7 @@ export function TaskSummaryCard({
             </>
           ) : (
             <>
-              <Rocket className="w-4 h-4" />
+              <Plus className="w-4 h-4" />
               Create Task
             </>
           )}

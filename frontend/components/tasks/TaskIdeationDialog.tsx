@@ -32,7 +32,7 @@ export function TaskIdeationDialog({
     handleMessagesChange,
     handleClose,
     handleBackToChat,
-    handleCreateAndStart,
+    handleCreateTask,
     updateField,
     handleAddLabel,
     handleRemoveLabel,
@@ -70,7 +70,7 @@ export function TaskIdeationDialog({
                   onUpdateField={updateField}
                   onAddLabel={handleAddLabel}
                   onRemoveLabel={handleRemoveLabel}
-                  onCreateAndStart={handleCreateAndStart}
+                  onCreateTask={handleCreateTask}
                   onBackToChat={handleBackToChat}
                 />
               </motion.div>

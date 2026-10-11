@@ -33,8 +33,7 @@ export function AppAuthGate({ children }: { children: React.ReactNode }) {
           </h1>
           <p className="mt-2 text-sm text-slate-400">
             We couldn’t verify your access. The service may be temporarily
-            unavailable, or your connection may have been interrupted. Please
-            try again.
+            unavailable, or your connection may have been interrupted.
           </p>
           <Button
             className="mt-4"
@@ -53,10 +52,11 @@ export function AppAuthGate({ children }: { children: React.ReactNode }) {
       <div className="flex h-screen items-center justify-center bg-slate-950 p-6 text-center">
         <div className="max-w-md rounded-2xl border border-slate-800 bg-slate-900/80 p-8">
           <h1 className="display text-xl font-semibold text-slate-100">
-            SummitFlow access is not enabled
+            You don't have access to SummitFlow
           </h1>
           <p className="mt-2 text-sm text-slate-400">
-            Your authenticated email is not a SummitFlow owner.
+            SummitFlow is owner-only, and the email you signed in with isn't an
+            owner. Sign in with an owner account to continue.
           </p>
         </div>
       </div>

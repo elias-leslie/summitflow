@@ -87,7 +87,7 @@ export function useTaskIdeation(
     setError(null)
   }, [])
 
-  const handleCreateAndStart = useCallback(async () => {
+  const handleCreateTask = useCallback(async () => {
     if (!taskData) return
 
     setIsSubmitting(true)
@@ -161,7 +161,7 @@ export function useTaskIdeation(
     handleMessagesChange,
     handleClose,
     handleBackToChat,
-    handleCreateAndStart,
+    handleCreateTask,
     updateField,
     handleAddLabel,
     handleRemoveLabel,

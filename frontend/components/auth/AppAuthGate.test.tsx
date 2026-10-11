@@ -40,7 +40,7 @@ describe('AppAuthGate', () => {
       'Unable to check SummitFlow access',
     )
     expect(
-      screen.queryByText(/Your authenticated email is not a SummitFlow owner/),
+      screen.queryByText(/the email you signed in with isn't an owner/),
     ).not.toBeInTheDocument()
     expect(screen.queryByText('Protected content')).not.toBeInTheDocument()
     fireEvent.click(screen.getByRole('button', { name: 'Try again' }))
@@ -56,7 +56,7 @@ describe('AppAuthGate', () => {
     })
     renderGate()
     expect(
-      await screen.findByText('SummitFlow access is not enabled'),
+      await screen.findByText("You don't have access to SummitFlow"),
     ).toBeInTheDocument()
     expect(screen.queryByText('Protected content')).not.toBeInTheDocument()
     expect(
@@ -72,7 +72,7 @@ describe('AppAuthGate', () => {
     })
     renderGate()
     expect(
-      await screen.findByText('SummitFlow access is not enabled'),
+      await screen.findByText("You don't have access to SummitFlow"),
     ).toBeInTheDocument()
     expect(screen.queryByText('Protected content')).not.toBeInTheDocument()
   })

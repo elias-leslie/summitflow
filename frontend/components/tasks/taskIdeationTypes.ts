@@ -33,7 +33,7 @@ export interface TaskSummaryCardProps {
   ) => void
   onAddLabel: (label: string) => void
   onRemoveLabel: (label: string) => void
-  onCreateAndStart: () => void
+  onCreateTask: () => void
   onBackToChat: () => void
 }
 
