@@ -43,6 +43,7 @@ class FakeProcess:
         self.changed_identity: set[str] = set()
         self.fail_check = False
         self.check_failure: int | None = None
+        self.locks: dict[str, dict[str, Any]] = {}
         self.remote_unavailable = False
         self.added = 10
         self.init_missing: set[str] = set()
@@ -85,7 +86,14 @@ class FakeProcess:
             stdout = json.dumps({"total": 1000000, "free": 500000})
         elif command[0] == "restic":
             remote = command[command.index("--repo") + 1].startswith("rclone:")
-            if "cat" in command:
+            if "locks" in command:
+                stdout = "".join(f"{lock_id}\n" for lock_id in self.locks)
+            elif "lock" in command:
+                stdout = json.dumps(self.locks[command[command.index("lock") + 1]])
+            elif "unlock" in command:
+                self.locks.clear()
+                self.check_failure = None
+            elif "cat" in command:
                 repo = REMOTE if remote else LOCAL
                 if repo in self.init_missing or (remote and self.remote_unavailable):
                     code = 10 if repo in self.init_missing else 1
@@ -336,7 +344,7 @@ def test_native_lock_failure_is_reported_without_claiming_integrity_failure(setu
     assert failed["state"].get("next_bucket", 1) == 1
     assert "failed to lock repository" in failed["error"]
     assert "untrusted credential-like diagnostics" not in failed["error"]
-    assert not any("unlock" in command or "--no-lock" in command for command in process.commands)
+    assert not any("unlock" in command for command in process.commands)
 
 
 def test_copy_requires_durable_checkpoint_and_native_copy_only(setup):
@@ -971,3 +979,26 @@ def test_interrupted_maintenance_and_wrong_repository_journal_fail_closed(setup)
     assert not any("copy" in command for command in process.commands)
     with pytest.raises(engine.ResticError, match="different local"):
         adapter.sync(SNAPSHOT, state={"local_repository_id": "f" * 64}, persist=persist)
+
+
+def test_lock_left_by_dead_local_process_is_released_and_retried(setup, monkeypatch):
+    adapter, process, payload = _adapter(setup)
+    process.check_failure = 11
+    process.locks = {"a" * 64: {"hostname": engine.socket.gethostname(), "pid": 4242, "exclusive": True}}
+    monkeypatch.setattr(engine, "_process_alive", lambda pid: False)
+    adapter.save_payload("fixture", payload)
+    assert any("unlock" in command for command in process.commands)
+    assert not process.locks
+
+
+@pytest.mark.parametrize("holder", [{"hostname": "other-host", "pid": 4242}, {"hostname": None, "pid": 4242}, {"pid": "x"}])
+def test_foreign_or_unknown_lock_is_never_released(setup, monkeypatch, holder):
+    adapter, process, payload = _adapter(setup)
+    process.check_failure = 11
+    process.locks = {"b" * 64: {**holder, "exclusive": True}}
+    if holder.get("hostname") is None and "hostname" in holder:
+        holder["hostname"] = engine.socket.gethostname()
+    monkeypatch.setattr(engine, "_process_alive", lambda pid: holder.get("hostname") is not None and holder.get("hostname") != "other-host")
+    with pytest.raises(engine.ResticError, match=r"failed to lock repository \(exit 11\)"):
+        adapter.save_payload("fixture", payload)
+    assert not any("unlock" in command for command in process.commands)

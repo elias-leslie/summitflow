@@ -2,8 +2,11 @@
 
 from __future__ import annotations
 
+import os
+import shutil
 from collections.abc import Callable
 from datetime import UTC, datetime, timedelta
+from pathlib import Path
 from typing import Any
 from zoneinfo import ZoneInfo
 
@@ -11,9 +14,10 @@ from ..config import get_settings
 from ..logging_config import get_logger
 from ..storage import backups as backup_store
 from ..storage import maintenance_runs as maintenance_store
+from ..utils.transient_scratch import SCRATCH_ROOT
 from .backup_executor import create_backup
 from .backup_local_cleanup import cleanup_local_backup_archives
-from .backup_lock import has_active_backup_lease
+from .backup_lock import backup_lease_holder_dead, has_active_backup_lease
 from .backup_utils import _FREQUENCY_DELTAS, calculate_next_run
 
 logger = get_logger(__name__)
@@ -21,6 +25,10 @@ SUCCESS_STATUSES = {"completed", "completed_pending_upload"}
 # An owner-powered-off source is retried each tick without counting as a failure.
 NON_FAILURE_STATUSES = SUCCESS_STATUSES | {"offline"}
 STALE_RUNNING_AGE_MINUTES = 30
+# A row whose lease holder is provably dead needs no 30-minute wait.
+DEAD_HOLDER_AGE_MINUTES = 1
+# Transient backup scratch untouched this long and open by no process is residue.
+SCRATCH_RESIDUE_HOURS = 24
 
 
 def _scheduled_backup_window_open(now: datetime) -> bool:
@@ -94,9 +102,89 @@ def _fail_stale_running_records() -> int:
     failed = backup_store.fail_stale_running_backups(
         max_age_minutes=STALE_RUNNING_AGE_MINUTES, is_source_active=has_active_backup_lease,
     )
+    failed += backup_store.fail_stale_running_backups(
+        max_age_minutes=DEAD_HOLDER_AGE_MINUTES,
+        is_source_active=lambda source_id: not backup_lease_holder_dead(source_id),
+        error_message="Backup worker stopped mid-run (restart or kill); its lease holder is no longer running",
+    )
     if failed:
         logger.warning("failed_stale_running_backups", count=failed)
     return failed
+
+
+def _open_paths() -> set[Path]:
+    paths: set[Path] = set()
+    for proc in Path("/proc").iterdir():
+        if not proc.name.isdigit():
+            continue
+        try:
+            links = [proc / "cwd", *(proc / "fd").iterdir()]
+        except OSError:
+            links = [proc / "cwd"]
+        for link in links:
+            try:
+                paths.add(Path(os.readlink(link)))
+            except OSError:
+                continue
+    return paths
+
+
+def _reap_backup_scratch(now: datetime | None = None) -> dict[str, int]:
+    """Remove transient backup/restore scratch left by killed attempts.
+
+    Every job directory belongs to one attempt; one untouched for a day and
+    open by no process can never be resumed (restic caches are rebuilt).
+    """
+    cutoff = (now or datetime.now(UTC)).timestamp() - SCRATCH_RESIDUE_HOURS * 3600
+    removed = reclaimed = 0
+    parents = [SCRATCH_ROOT / f"{namespace}-{os.getuid()}" for namespace in ("st-backups", "st-restores")]
+    candidates = [entry for parent in parents if parent.is_dir() and not parent.is_symlink() for entry in parent.iterdir()]
+    if not candidates:
+        return {"removed": 0, "bytes": 0}
+    in_use = _open_paths()
+    for entry in candidates:
+        if entry.is_symlink() or not entry.is_dir():
+            continue
+        try:
+            newest = max([entry.lstat().st_mtime, *(path.lstat().st_mtime for path in entry.rglob("*"))])
+            size = sum(path.lstat().st_size for path in entry.rglob("*") if path.is_file() and not path.is_symlink())
+        except OSError:
+            continue
+        if newest > cutoff or any(path == entry or path.is_relative_to(entry) for path in in_use):
+            continue
+        shutil.rmtree(entry, ignore_errors=True)
+        if not entry.exists():
+            removed += 1
+            reclaimed += size
+    if removed:
+        logger.info("reaped_backup_scratch", count=removed, bytes=reclaimed)
+    return {"removed": removed, "bytes": reclaimed}
+
+
+def _housekeeping() -> dict[str, Any]:
+    """Self-healing steps that must run every tick, inside or outside the window."""
+    result: dict[str, Any] = {}
+    try:
+        result["stale_failed"] = _fail_stale_running_records()
+    except Exception as exc:
+        logger.exception("stale_running_reap_failed")
+        result["stale_failed"], result["stale_error"] = 0, str(exc)
+    try:
+        result["scratch"] = _reap_backup_scratch()
+    except Exception as exc:
+        logger.exception("backup_scratch_reap_failed")
+        result["scratch"] = {"error": str(exc)}
+    return result
+
+
+def _evaluate_alerts(summary: dict[str, Any]) -> None:
+    try:
+        from .backup_alerts import evaluate_backup_alerts
+
+        summary["alerts"] = evaluate_backup_alerts(summary)
+    except Exception as exc:
+        logger.exception("backup_alert_evaluation_failed")
+        summary["alerts"] = {"error": str(exc)}
 
 
 def _process_due_source(
@@ -207,6 +295,7 @@ def run_scheduled_backups(*, on_progress: Callable[[], None] | None = None) -> d
     window_open = _scheduled_backup_window_open(started_at)
     logger.info("run_scheduled_backups_started")
     host_backup = _scheduled_host_backup(started_at)
+    housekeeping = _housekeeping()
 
     try:
         from .backup_repository_runtime import repository_capture_batch, sync_repository_batch
@@ -220,16 +309,17 @@ def run_scheduled_backups(*, on_progress: Callable[[], None] | None = None) -> d
                 # Persisted offsite backlog is independent of capture eligibility.
                 # The batch helper retains repository serialization and capacity admission.
                 copies = sync_repository_batch({})
-                skipped_result: dict[str, Any] = {"status": "partial" if host_backup.get("status") in {"blocked", "failed", "error", "partial", "cancelled"} else "skipped", "reason": "outside-backup-window", "count": 0, "results": [], "host_backup": host_backup}
+                skipped_result: dict[str, Any] = {"status": "partial" if host_backup.get("status") in {"blocked", "failed", "error", "partial", "cancelled"} else "skipped", "reason": "outside-backup-window", "count": 0, "results": [], "host_backup": host_backup, "housekeeping": housekeeping}
                 if copies:
-                    skipped_result["repository_copy"] = {key: {field: value.get(field) for field in ("status", "error")} for key, value in copies.items()}
+                    skipped_result["repository_copy"] = {key: {field: value.get(field) for field in ("status", "error", "reason")} for key, value in copies.items()}
                     if any(value.get("status") in {"pending", "blocked", "failed", "error"} for value in copies.values()):
                         skipped_result["status"] = "partial"
                     elif any(value.get("status") == "verified" for value in copies.values()) and skipped_result["status"] == "skipped":
                         skipped_result["status"] = "success"
+                _evaluate_alerts(skipped_result)
                 return skipped_result
             logger.info("scheduled_backups_catching_up", count=len(due_sources))
-        stale_failed = _fail_stale_running_records()
+        stale_failed = int(housekeeping.get("stale_failed") or 0)
         stale_cleaned = _cleanup_stale_records() if window_open else 0
         expired_count = _cleanup_expired_records() if window_open else 0
         local_cleanup = _cleanup_local_archives() if window_open else {}
@@ -264,13 +354,14 @@ def run_scheduled_backups(*, on_progress: Callable[[], None] | None = None) -> d
             "results": results,
             "catch_up": not window_open,
             "host_backup": host_backup,
+            "housekeeping": housekeeping,
         }
         if host_backup.get("status") in {"blocked", "failed", "error", "partial", "cancelled"}:
             result["status"] = "partial"
         if not due_sources:
             result["message"] = "No scheduled backups due"
         if copies:
-            result["repository_copy"] = {key: {field: value.get(field) for field in ("status", "error")} for key, value in copies.items()}
+            result["repository_copy"] = {key: {field: value.get(field) for field in ("status", "error", "reason")} for key, value in copies.items()}
             if any(value.get("status") in {"pending", "blocked", "failed", "error"} for value in copies.values()):
                 result["status"] = "partial"
 
@@ -305,6 +396,8 @@ def run_scheduled_backups(*, on_progress: Callable[[], None] | None = None) -> d
             rows_cleaned=result["rows_cleaned"],
             summary=result,
         )
+        # Alerts read the run just recorded and the repository journals.
+        _evaluate_alerts(result)
 
         logger.info(
             "run_scheduled_backups_completed",

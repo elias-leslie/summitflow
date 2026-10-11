@@ -48,6 +48,16 @@ Runner = Callable[..., subprocess.CompletedProcess[Any]]
 Persist = Callable[[dict[str, Any]], None]
 
 
+def _process_alive(pid: int) -> bool:
+    try:
+        os.kill(pid, 0)
+    except ProcessLookupError:
+        return False
+    except PermissionError:
+        return True
+    return True
+
+
 class ResticError(RuntimeError):
     """An operation failed; messages deliberately exclude subprocess output."""
 
@@ -286,11 +296,40 @@ class ResticAdapter:
 
     def _run(self, command: list[str], *, phase: str, **kwargs: Any) -> subprocess.CompletedProcess[Any]:
         result = self._invoke(command, phase=phase, **kwargs)
+        if command[0] == "restic" and result.returncode == 11 and "stdout_sink" not in kwargs and self._release_dead_local_locks(command):
+            result = self._invoke(command, phase=phase, **kwargs)
         if result.returncode != 0:
             if command[0] == "restic" and result.returncode == 11:
                 raise ResticError(f"restic {phase} failed to lock repository (exit 11); inspect active backups and stale native locks")
             raise ResticError(f"{command[0]} {phase} failed (exit {result.returncode}); inspect private operator diagnostics")
         return result
+
+    def _release_dead_local_locks(self, command: list[str]) -> bool:
+        """Release locks only when every holder is a dead process on this host.
+
+        A killed restic leaves its lock behind and blocks every later run. A
+        lock from another host, or from a live process, is never touched.
+        """
+        if "--json" not in command:
+            return False
+        prefix = [*command[:command.index("--json") + 1], "--no-cache"]
+        listed = self._invoke([*prefix, "list", "locks", "--no-lock"], phase="lock-inspection", text=True)
+        lock_ids = [line.strip() for line in (listed.stdout or "").splitlines() if line.strip()] if listed.returncode == 0 else []
+        if not lock_ids:
+            return False
+        hostname = socket.gethostname()
+        for lock_id in lock_ids:
+            if not re.fullmatch(r"[0-9a-f]{64}", lock_id):
+                return False
+            shown = self._invoke([*prefix, "cat", "lock", lock_id, "--no-lock"], phase="lock-inspection", text=True)
+            try:
+                lock = json.loads(shown.stdout) if shown.returncode == 0 else {}
+            except (TypeError, ValueError):
+                return False
+            pid = lock.get("pid")
+            if lock.get("hostname") != hostname or type(pid) is not int or pid <= 0 or _process_alive(pid):
+                return False
+        return self._invoke([*prefix, "unlock"], phase="stale-lock-release", text=True).returncode == 0
 
     def _command(self, *args: str, remote: bool = False, permanent_delete: bool = False, operation_cache: Path | None = None) -> list[str]:
         repository = self.config.remote_repository if remote else str(self.config.local_repository)
@@ -649,7 +688,7 @@ class ResticAdapter:
             except (ResticError, OSError, ValueError, TypeError) as exc:
                 journal.update(status="failed" if journal["mismatches"] else "pending", error=str(exc))
                 save()
-                return {"status": journal["status"], "snapshot_id": snapshot_id, "verification": {"verified": False, "offsite": {"status": journal["status"], "error": str(exc)}}, "state": journal}
+                return {"status": journal["status"], "error": str(exc), "snapshot_id": snapshot_id, "verification": {"verified": False, "offsite": {"status": journal["status"], "error": str(exc)}}, "state": journal}
 
     def restore(self, snapshot_id: str, destination: Path, *, remote: bool = False, include: Sequence[str] = ()) -> dict[str, Any]:
         """Restore only into an existing private empty isolated directory."""
