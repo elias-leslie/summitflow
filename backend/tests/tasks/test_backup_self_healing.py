@@ -227,6 +227,7 @@ def alert_store(monkeypatch):
     monkeypatch.setattr(alerts.backup_store, "latest_backup_alerts", store.latest)
     monkeypatch.setattr(alerts, "_source_conditions", lambda now: {})
     monkeypatch.setattr(alerts, "_capacity_conditions", lambda summary: {})
+    monkeypatch.setattr(alerts, "_proxmox_conditions", lambda now: {})
     return store
 
 
@@ -281,6 +282,24 @@ def test_pending_copy_without_recorded_error_never_reports_null(monkeypatch, ale
     assert "insufficient-copy-headroom" in alert_store.notifications[0]["message"]
 
 
+def test_copy_error_persists_across_runs_and_clears_on_verified_copy(monkeypatch, alert_store, tmp_path):
+    from app.tasks import backup_repository_runtime as runtime
+
+    state: dict[str, Any] = {"offsite": {}}
+    runtime._record_copy_outcome(tmp_path, state, {"status": "pending", "error": "rclone: drive quota exceeded"})
+    assert state["offsite"]["last_copy_error"]["error"] == "rclone: drive quota exceeded"
+
+    # A later run evaluates without this run's copy result and still names the error.
+    journal = _journal(10)
+    journal["offsite"]["last_copy_error"] = state["offsite"]["last_copy_error"]
+    _use_journal(monkeypatch, journal)
+    alerts.evaluate_backup_alerts({}, now=NOW)
+    assert "rclone: drive quota exceeded" in alert_store.notifications[0]["message"]
+
+    runtime._record_copy_outcome(tmp_path, state, {"status": "verified"})
+    assert "last_copy_error" not in state["offsite"]
+
+
 def test_prune_alerts_after_more_than_two_failed_runs_and_when_overdue(monkeypatch, alert_store):
     _use_journal(monkeypatch, _journal(None, prune_failures=2))
     assert alerts.evaluate_backup_alerts({}, now=NOW)["active"] == []
@@ -300,13 +319,17 @@ def test_stale_sources_alert_names_each_source_and_its_error(monkeypatch, alert_
         {"id": "fresh", "frequency": "four_hourly", "created_at": "2026-01-01T00:00:00+00:00"},
         {"id": "stale", "frequency": "four_hourly", "created_at": "2026-01-01T00:00:00+00:00"},
         {"id": "new", "frequency": "daily", "created_at": (NOW - timedelta(hours=2)).isoformat()},
+        {"id": "parked", "frequency": "four_hourly", "created_at": "2026-01-01T00:00:00+00:00"},
     ]
     health = [
         {"source_id": "fresh", "enabled": True, "last_success_at": NOW - timedelta(hours=3)},
         {"source_id": "stale", "enabled": True, "last_success_at": NOW - timedelta(hours=9)},
         {"source_id": "new", "enabled": True, "last_success_at": None},
         {"source_id": "off", "enabled": False, "last_success_at": None},
+        {"source_id": "parked", "enabled": True, "last_success_at": NOW - timedelta(days=3)},
     ]
+    # The owner powered the parked guest off; its scheduler run marked it offline.
+    monkeypatch.setattr(alerts, "source_offline_since", lambda source_id: NOW.isoformat() if source_id == "parked" else None)
     monkeypatch.setattr(alerts.backup_store, "list_sources", lambda: sources)
     monkeypatch.setattr(alerts.backup_store, "get_backup_health_summary", lambda: health)
     monkeypatch.setattr(alerts.backup_store, "list_backups", lambda **_: ([{"status": "failed", "error_message": "Capture blocked: insufficient host-policy headroom"}], 1))
@@ -314,6 +337,7 @@ def test_stale_sources_alert_names_each_source_and_its_error(monkeypatch, alert_
     assert result["raised"] == ["sources-stale"]
     message = alert_store.notifications[0]["message"]
     assert "stale (last success 9h ago; Capture blocked" in message and "fresh" not in message and "new" not in message
+    assert "parked" not in message
 
 
 def test_capacity_alert_on_refused_capture_or_low_free_space(monkeypatch, alert_store, tmp_path):

@@ -220,7 +220,10 @@ def _process_due_source(
 
     status = str(result.get("status", "unknown"))
     if status == "offline":
+        from .backup_alerts import mark_source_offline
+
         logger.info("scheduled_backup_source_offline", source_id=source_id)
+        mark_source_offline(source_id)
         return {"source_id": source_id, "status": status, "reason": result.get("reason")}
     if status not in ("completed", "completed_pending_upload"):
         logger.warning(

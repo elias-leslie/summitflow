@@ -112,7 +112,9 @@ def _validate_nested_coverage(rows: list[dict[str, str]]) -> None:
                 continue
             # Work recovery points are nested, disposable snapshot boundaries;
             # all other nested contents need an explicit host coverage section.
-            if nested.is_relative_to(get_workspaces_root() / ".snapshots"):
+            # The default workspaces root is a symlink to the Btrfs mount; compare
+            # resolved paths or every work snapshot looks like uncovered data.
+            if nested.resolve().is_relative_to(get_workspaces_root().resolve() / ".snapshots"):
                 continue
             raise RuntimeError(f"Nested subvolume needs explicit host coverage: {nested}")
 

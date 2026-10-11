@@ -249,7 +249,12 @@ def test_offline_source_is_retried_next_tick_without_counting_as_failure(monkeyp
     advanced: list[str] = []
     monkeypatch.setattr(scheduler, "create_backup", lambda **_: {"status": "offline", "reason": "powered off"})
     monkeypatch.setattr(scheduler.backup_store, "update_source_last_run", lambda source_id, _: advanced.append(source_id))
+    from app.tasks import backup_alerts
+
+    marked: list[str] = []
+    monkeypatch.setattr(backup_alerts, "mark_source_offline", marked.append)
     result = scheduler._process_due_source({"id": "ominull-production-state", "project_id": "ominull", "frequency": "daily"})
     assert result == {"source_id": "ominull-production-state", "status": "offline", "reason": "powered off"}
     assert advanced == []
+    assert marked == ["ominull-production-state"]  # Not reported stale while the owner keeps it off.
     assert "offline" in scheduler.NON_FAILURE_STATUSES

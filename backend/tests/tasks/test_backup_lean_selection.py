@@ -21,6 +21,15 @@ from app.tasks.backup_native_archive import _load_excludes, _should_exclude
     ("browser-automation", ".dev-tools/uv-cache/package.whl"),
     ("browser-automation", ".dev-tools/tiktoken-cache/encoding"),
     ("agent-hub", ".dev-tools/session-123-details.txt"),
+    ("summitflow", ".dev-tools/pytest-04a26aa72baf4801a6408aaabb5ecbc2-details.xml"),
+    # Owner policy: all agent and check scratch under .dev-tools is regenerable.
+    ("agent-hub", ".dev-tools/hatchet-src/local-change.py"),
+    ("summitflow", ".dev-tools/backup-recovery-proof.json"),
+    ("browser-automation", ".dev-tools/agent-fetch-final-20261005/session.webm"),
+    ("browser-automation", ".dev-tools/unique-draft.md"),
+    ("a-loom", "target/release/aloom"),
+    ("a-loom", ".dev-tools/screenshot.png"),
+    ("portfolio-ai", "frontend/coverage/lcov.info"),
 ])
 def test_audited_generated_output_is_omitted(tmp_path: Path, source: str, path: str) -> None:
     assert _should_exclude(path, _load_excludes(tmp_path, source))
@@ -42,9 +51,10 @@ def test_audited_generated_output_is_omitted(tmp_path: Path, source: str, path: 
     ("a-loom", "samples/aftertimes/workspace/versions/original.json"),
     ("learn-o-tron", "data/voice/pinned-model.onnx"),
     ("codex-config", "generated_images/original.png"),
-    ("agent-hub", ".dev-tools/hatchet-src/local-change.py"),
-    ("summitflow", ".dev-tools/backup-recovery-proof.json"),
-    ("browser-automation", ".dev-tools/unique-draft.md"),
+    ("a-loom", ".dev-tools/aloom-state/workspaces.json"),
+    ("a-loom", ".dev-tools/evidence/multiproject-acceptance/report.json"),
+    ("a-loom", ".dev-tools"),
+    ("the-aftertimes", ".dev-tools/aftertimes-memory-01.md"),
     ("unreviewed-project", "builds/web/original-source.js"),
     ("unreviewed-project", "data/backups/unique.bin"),
 ])
@@ -55,6 +65,16 @@ def test_originals_and_uncertain_work_remain(tmp_path: Path, source: str, path: 
 def test_project_override_can_preserve_an_audited_output(tmp_path: Path) -> None:
     (tmp_path / ".backupignore").write_text("!./data/backups\n")
     assert not _should_exclude("data/backups/unique.bin", _load_excludes(tmp_path, "portfolio-ai"))
+
+
+def test_reinclude_under_an_excluded_tool_directory_keeps_narrower_exclusions(tmp_path: Path) -> None:
+    (tmp_path / ".backupignore").write_text("!.dev-tools/keep\n*.log\n")
+    patterns = _load_excludes(tmp_path, "any-project")
+    assert not _should_exclude(".dev-tools", patterns)  # traversed to reach the kept path
+    assert not _should_exclude(".dev-tools/keep/record.json", patterns)
+    assert _should_exclude(".dev-tools/keep/run.log", patterns)
+    assert _should_exclude(".dev-tools/other/record.json", patterns)
+    assert _should_exclude(".dev-tools/top-level.json", patterns)
 
 
 def test_audited_profiles_do_not_change_an_explicit_file_source(tmp_path: Path) -> None:

@@ -20,6 +20,7 @@ from .backup_native_offsite import replicate_completed_archive
 from .backup_native_recovery import RECOVERY_DIR_NAME, RECOVERY_MANIFEST_NAME, restore_mapped_links
 from .backup_native_restore import restore_isolated_archive
 from .backup_ominull import OminullGuestOffline
+from .backup_proxmox import ProxmoxGuestOffline
 from .backup_utils import (
     as_mapping,
     build_storage_env,
@@ -251,7 +252,9 @@ def create_backup(
             **infra_options,
         )
 
-    backup_dir = get_source_path(resolved_source_id) if source_id else None
+    from .backup_proxmox import source_target_path
+
+    backup_dir = (source_target_path(resolved_source_id) or get_source_path(resolved_source_id)) if source_id else None
     if not backup_dir:
         backup_dir = get_project_root(project_id)
     if not backup_dir:
@@ -321,15 +324,20 @@ def _run_backup(
                     project_id=project_id, source_id=resolved_source_id,
                     project_dir=project_dir, backup_id=backup_id,
                 )
-                parsed_output = run_project_backup(
-                    project_dir=project_dir,
-                    source_id=resolved_source_id,
-                    env=run_env,
-                    keep_local=keep_local,
-                    local_only=local_only,
-                    retention_days=retention_days,
-                    on_progress=on_progress,
-                )
+                from .backup_proxmox import is_proxmox_path, run_proxmox_backup
+
+                if is_proxmox_path(project_dir):
+                    parsed_output = run_proxmox_backup(source_id=resolved_source_id, project_dir=project_dir, env=run_env, local_only=local_only)
+                else:
+                    parsed_output = run_project_backup(
+                        project_dir=project_dir,
+                        source_id=resolved_source_id,
+                        env=run_env,
+                        keep_local=keep_local,
+                        local_only=local_only,
+                        retention_days=retention_days,
+                        on_progress=on_progress,
+                    )
                 if preparation is not None:
                     verification = dict(as_mapping(parsed_output.get("verification")) or {})
                     verification["remote_preparation"] = preparation
@@ -340,7 +348,7 @@ def _run_backup(
                         expected_activity_run_id=on_progress.run_id,
                     )
             require_verified_backup_output(parsed_output)
-    except OminullGuestOffline as exc:
+    except (OminullGuestOffline, ProxmoxGuestOffline) as exc:
         # Nothing was captured; drop the placeholder row instead of recording a failure.
         if backup_id is not None:
             backup_store.delete_backup_record(backup_id)

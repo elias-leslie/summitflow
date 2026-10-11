@@ -48,6 +48,11 @@ def restore_backup(
         dry_run=dry_run,
     )
 
+    from .backup_proxmox import restore_instructions, source_target_path
+
+    if source_id and source_target_path(source_id):
+        backup = (backup_store.get_backup(backup_id) if backup_id else None) or {}
+        return {"status": "failed", "error": f"Proxmox guests restore on the Proxmox host into a new guest ID: {restore_instructions(backup)}"}
     restore_dir = get_source_path(source_id) if source_id else None
     if not restore_dir:
         restore_dir = get_project_root(project_id)

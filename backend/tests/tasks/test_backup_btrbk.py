@@ -545,3 +545,20 @@ def test_empty_project_registry_never_qualifies_database_recovery(monkeypatch: p
 def test_tests_never_reach_live_native_host_state() -> None:
     assert host._enabled() is False
     assert not host._state_root().is_relative_to(Path.home() / ".local/state/summitflow")
+
+
+def test_nested_coverage_resolves_a_symlinked_workspaces_root(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    # The default root (~/.local/share/summitflow/workspaces) links to the Btrfs mount;
+    # work snapshots under the real mount are still managed workpoints.
+    mount = tmp_path / "srv-workspaces"
+    (mount / ".snapshots" / "WIP").mkdir(parents=True)
+    link = tmp_path / "home-workspaces"
+    link.symlink_to(mount)
+    rows = [{"source_url": str(mount), "snapshot_path": "/host-snapshots"}]
+    monkeypatch.setattr(host, "get_workspaces_root", lambda: link)
+    monkeypatch.setattr(host, "_filesystem", lambda _: {"fsroot": "/@workspaces"})
+    monkeypatch.setattr(host, "_checked", lambda _: "ID 300 gen 1 top level 5 path @workspaces/.snapshots/WIP/projects/WIP/point\n")
+    host._validate_nested_coverage(rows)
+    monkeypatch.setattr(host, "_checked", lambda _: "ID 301 gen 1 top level 5 path @workspaces/projects/data\n")
+    with pytest.raises(RuntimeError, match="explicit host coverage"):
+        host._validate_nested_coverage(rows)

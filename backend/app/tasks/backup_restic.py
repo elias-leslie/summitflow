@@ -487,6 +487,48 @@ class ResticAdapter:
                 },
             }
 
+    def save_stream(self, source_id: str, command: Sequence[str], filename: str, *, capture: Mapping[str, Any], defer_check: bool = False) -> dict[str, Any]:
+        """Back up one command's stdout as a single file; nothing is staged on disk.
+
+        Restic records no snapshot when the command exits non-zero, so a
+        failed dump never becomes a recovery point.
+        """
+        self.config.validate()
+        if not command or not re.fullmatch(r"[A-Za-z0-9._-]{1,128}", filename):
+            raise ResticError("Stream capture requires a command and a plain file name")
+        with repository_lock(self.config):
+            repository = self._repository()
+            args = ["backup", "--tag", self._tag(source_id), "--host", self.config.hostname or socket.gethostname(),
+                    "--stdin-from-command", "--stdin-filename", filename]
+            result = self._run(self._command(*args, "--", *command), phase="capture")
+            try:
+                messages = [json.loads(line) for line in result.stdout.splitlines() if line.strip()]
+                summary = next(item for item in reversed(messages) if item.get("message_type") == "summary")
+                snapshot_id = _id(str(summary["snapshot_id"]))
+            except (ValueError, KeyError, StopIteration) as exc:
+                raise ResticError("Restic did not return a completed snapshot summary") from exc
+            logical = int(summary.get("total_bytes_processed", 0))
+            if logical <= 0:
+                raise ResticError("Stream capture produced no data")
+            if not defer_check:
+                self._run(self._command("check"), phase="verification")
+            stored = int(summary.get("data_added_packed", summary.get("data_added", 0)))
+            payload_path = f"/{filename}"
+            return {
+                "status": "completed", "format": "restic-v1", "source_id": source_id,
+                "archive_name": snapshot_id, "repository_id": repository["id"], "snapshot_id": snapshot_id,
+                "location": f"restic-v1:{repository['id']}:{snapshot_id}",
+                "payload_path": payload_path, "total_bytes": logical, "logical_bytes": logical, "total_files": 1,
+                "data_added_bytes": int(summary.get("data_added", 0)), "stored_bytes": stored, "parent_snapshot_id": None,
+                "verification": {
+                    "verified": True, "format": "restic-v1", "method": "restic-stream-and-consistent-capture" if defer_check else "restic-stream-and-structural-check",
+                    "repository_id": repository["id"], "snapshot_id": snapshot_id, "payload_path": payload_path,
+                    "structural_check_at": None if defer_check else _now().isoformat(), "structural_check_pending": defer_check,
+                    "payload_read_verified": False, "capture": {**dict(capture), "stream_bytes": logical},
+                    "offsite": {"status": "pending"},
+                },
+            }
+
     def _inventory(self) -> dict[str, dict[str, Any]]:
         remote = self.config.remote_repository or ""
         if remote.startswith("rclone:"):

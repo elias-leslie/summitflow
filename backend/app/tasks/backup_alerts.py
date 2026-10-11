@@ -29,6 +29,33 @@ PRUNE_FAILURE_ALERT_RUNS = 2  # Alert once prune has failed more than this many 
 PRUNE_OVERDUE_DAYS = 14  # Twice the weekly prune cadence.
 SOURCE_STALE_FACTOR = 2  # Alert when a source has no success in 2x its frequency.
 _CAPACITY_ERROR = "insufficient host-policy headroom"
+OFFLINE_MARKER_SECONDS = 3 * 3600  # Offline sources are retried every tick, refreshing this.
+
+
+def _offline_key(source_id: str) -> str:
+    return f"backup:source-offline:{source_id}"
+
+
+def mark_source_offline(source_id: str) -> None:
+    """Remember that the owner powered the source's guest off, so it is not reported stale."""
+    from ..services.redis_pool import get_redis
+
+    try:
+        get_redis().set(_offline_key(source_id), datetime.now(UTC).isoformat(), ex=OFFLINE_MARKER_SECONDS)
+    except Exception:
+        logger.warning("backup_offline_marker_failed", source_id=source_id)
+
+
+def source_offline_since(source_id: str) -> str | None:
+    from ..services.redis_pool import get_redis
+
+    try:
+        value = get_redis().get(_offline_key(source_id))
+    except Exception:
+        return None
+    if isinstance(value, bytes):
+        return value.decode()
+    return value if isinstance(value, str) else None
 
 
 def _parse(value: Any) -> datetime | None:
@@ -81,7 +108,8 @@ def _repository_conditions(now: datetime, copies: Mapping[str, Any]) -> dict[str
             waiting_since = min(known) if known and len(known) == len(pending) else (_parse(offsite.get("verified_at")) or min(known, default=None))
             if waiting_since and now - waiting_since > timedelta(hours=PENDING_COPY_ALERT_HOURS):
                 run_error = next((value.get("error") or value.get("reason") for value in copies.values() if isinstance(value, Mapping) and (value.get("error") or value.get("reason"))), None)
-                error = offsite.get("error") or run_error or "no copy error was recorded; the copy has not completed"
+                last = offsite.get("last_copy_error") or {}
+                error = run_error or last.get("error") or offsite.get("error") or "no copy error was recorded; the copy has not completed"
                 hours = (now - waiting_since).total_seconds() / 3600
                 conditions[f"offsite-copy:{backend_id}"] = {
                     "title": "Offsite backup copy is behind",
@@ -126,6 +154,8 @@ def _source_conditions(now: datetime) -> dict[str, dict[str, str]]:
             continue
         if last_success is None and created and now - created <= window:
             continue
+        if source_offline_since(str(row["source_id"])):
+            continue  # The owner powered the guest off; it resumes when the guest runs.
         rows, _ = backup_store.list_backups(source_id=str(row["source_id"]), limit=1)
         latest = rows[0] if rows else {}
         error = latest.get("error_message") or (f"latest attempt {latest.get('status')}" if latest else "no attempt recorded")
@@ -181,6 +211,21 @@ def _capacity_conditions(summary: Mapping[str, Any]) -> dict[str, dict[str, str]
     }}
 
 
+def _proxmox_conditions(now: datetime) -> dict[str, dict[str, str]]:
+    from .backup_proxmox import write_freshness_receipt
+
+    receipt = write_freshness_receipt(now)
+    behind = [item for item in receipt["targets"] if not item["fresh"]]
+    if not behind:
+        return {}
+    detail = "; ".join(f"{item['target']} ({item['status']}{', ' + str(item['age_hours']) + 'h old' if item.get('age_hours') is not None else ''})" for item in behind)
+    return {"proxmox-freshness": {
+        "title": "Proxmox backups are not current",
+        "message": f"Each covered guest and the cluster config needs an offsite-verified backup newer than {receipt['max_age_hours']}h: {detail}",
+        "reason": "proxmox:" + ",".join(sorted(f"{item['target']}={item['status']}" for item in behind)),
+    }}
+
+
 def _fingerprint(key: str, reason: str) -> str:
     return hashlib.sha256(json.dumps([key, reason]).encode()).hexdigest()[:16]
 
@@ -193,6 +238,7 @@ def evaluate_backup_alerts(summary: Mapping[str, Any], *, now: datetime | None =
         ("repository", lambda: _repository_conditions(current, summary.get("repository_copy") or {})),
         ("sources", lambda: _source_conditions(current)),
         ("capacity", lambda: _capacity_conditions(summary)),
+        ("proxmox", lambda: _proxmox_conditions(current)),
     ):
         try:
             conditions.update(collect())

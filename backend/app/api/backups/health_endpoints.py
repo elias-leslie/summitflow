@@ -2,8 +2,10 @@
 
 from __future__ import annotations
 
+import asyncio
 from collections.abc import Mapping
 from datetime import UTC
+from typing import Any
 
 from fastapi import APIRouter
 
@@ -236,6 +238,14 @@ async def drain_pending(dry_run: bool = False) -> dict:
     from ...tasks.backup_drain import drain_pending_backups
 
     return drain_pending_backups(dry_run=dry_run)
+
+
+@router.get("/backups/proxmox/freshness")
+async def proxmox_freshness() -> dict[str, Any]:
+    """Whether every covered Proxmox guest and the cluster config has a current offsite-verified backup."""
+    from ...tasks.backup_proxmox import freshness_receipt
+
+    return await asyncio.to_thread(freshness_receipt)
 
 
 @router.get("/backups/infra/coverage", response_model=CoverageResponse)

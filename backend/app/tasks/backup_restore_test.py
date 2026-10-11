@@ -61,6 +61,20 @@ def run_restore_test_for_source(source_id: str) -> dict[str, Any]:
     if source_type == "infrastructure":
         return _validate_infra_archive(source_id, latest)
 
+    from .backup_proxmox import is_proxmox_path, verify_stream_backup
+
+    if is_proxmox_path(source.get("path")):
+        # A guest dump restores onto the Proxmox host, so read back the stored stream instead.
+        try:
+            evidence = verify_stream_backup(latest)
+        except BackupCancelled:
+            raise
+        except Exception as e:
+            backup_store.update_source_restore_test(source_id, ok=False, error=str(e))
+            return {"ok": False, "source_id": source_id, "backup_id": backup_id, "error": str(e)}
+        backup_store.update_source_restore_test(source_id, ok=True, error=None)
+        return {"ok": True, "source_id": source_id, "backup_id": backup_id, "error": None, "evidence": evidence}
+
     project_id = str(source.get("project_id") or source_id)
 
     try:

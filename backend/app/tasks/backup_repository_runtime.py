@@ -213,11 +213,14 @@ def _payload_has_database(payload: Mapping[str, Any]) -> bool:
     return any(_is_sqlite_database(path) for path in Path(payload["snapshot_dir"]).rglob("*") if path.is_file() and not path.is_symlink())
 
 
-def _capacity_admission(config: ResticConfig, state: Mapping[str, Any], source_id: str, *, staging_directory: Path, staged_bytes: int = 0, payload_bytes: int | None = None) -> dict[str, Any]:
-    """Reserve existing host-policy headroom plus measured capture/growth peaks."""
+def _capacity_admission(config: ResticConfig, state: Mapping[str, Any], source_id: str, *, staging_directory: Path, staged_bytes: int = 0, payload_bytes: int | None = None, streamed: bool = False) -> dict[str, Any]:
+    """Reserve existing host-policy headroom plus measured capture/growth peaks.
+
+    A streamed capture stages nothing, so only repository growth is reserved.
+    """
     previous = state.get("sources", {}).get(source_id, {})
     history = previous.get("capacity", {})
-    staging_peak = max(staged_bytes, int(history.get("staging_peak_bytes") or 0), int(previous.get("result", {}).get("logical_bytes") or 0))
+    staging_peak = 0 if streamed else max(staged_bytes, int(history.get("staging_peak_bytes") or 0), int(previous.get("result", {}).get("logical_bytes") or 0))
     growth_peak = max(int(history.get("growth_peak_bytes") or 0), int(previous.get("result", {}).get("stored_bytes") or 0))
     policy = HostRetentionPolicy.from_env()
     filesystems: dict[int, dict[str, Any]] = {}
@@ -460,50 +463,11 @@ def run_repository_backup(
             )
             result["verification"]["capture"]["db_dump_name"] = payload.get("db_dump_name", "pgdumpall.sql" if infrastructure else "database.sql")
             result["verification"]["storage_backend_id"] = env.get("BACKUP_STORAGE_BACKEND_ID")
-            # Durable local completion precedes Drive and SQL. A failed remote
-            # operation must not lose a usable local point.
-            source_checkpoint = {
-                "snapshot_id": result["snapshot_id"], "repository_id": result["repository_id"],
-                "baseline_snapshot_id": previous.get("baseline_snapshot_id", result["snapshot_id"]),
-                "last_good_snapshot_id": previous.get("last_good_snapshot_id", result["snapshot_id"]),
-                "recovery": payload.get("recovery", {}), "result": result,
-                "payload_fingerprint": fingerprint,
-                "capacity": {"staging_peak_bytes": admission["staging_peak_bytes"], "growth_peak_bytes": max(admission["growth_peak_bytes"], int(result.get("stored_bytes") or 0))},
-                "completed_at": datetime.now(UTC).isoformat(),
-            }
-            state["sources"][source_id] = source_checkpoint
-            if not local_only:
-                journal = state.setdefault("offsite", {})
-                pending = journal.setdefault("pending_snapshot_ids", [])
-                if result["snapshot_id"] not in pending:
-                    pending.append(result["snapshot_id"])
-                if result.get("stored_bytes") is not None:
-                    journal.setdefault("pending_stored_bytes", {})[result["snapshot_id"]] = int(result["stored_bytes"])
-            _save_json(directory / "state.json", state)
-            record_local_archive(result)
-            if local_only:
-                result["verification"]["offsite"] = {"status": "not_requested"}
-            elif batch is not None:
-                result["verification"]["offsite"] = {"status": "pending", "reason": "repository-batch-copy"}
-                result.update(status="completed_pending_upload", pending_path=result["location"])
-            else:
-                synced: dict[str, Any]
-                try:
-                    synced = _sync(adapter, directory, state, result["snapshot_id"], env)
-                except (ResticError, OSError) as exc:
-                    synced = {"status": "pending", "verification": {"offsite": {"status": "pending", "error": str(exc)}}}
-                result["verification"]["offsite"] = synced["verification"]["offsite"]
-                if synced["status"] == "verified":
-                    result["verification"].update(
-                        remote_repository_id=synced["remote_repository_id"],
-                        remote_snapshot_id=synced["remote_snapshot_id"],
-                    )
-                    source_checkpoint["last_good_snapshot_id"] = result["snapshot_id"]
-                else:
-                    result.update(status="completed_pending_upload", pending_path=result["location"])
-            source_checkpoint["result"] = result
-            _save_json(directory / "state.json", state)
-            return result
+            return _complete_capture(
+                adapter, directory, state, source_id, env, result, local_only=local_only, batch=batch,
+                recovery=payload.get("recovery", {}), fingerprint=fingerprint,
+                capacity={"staging_peak_bytes": admission["staging_peak_bytes"], "growth_peak_bytes": max(admission["growth_peak_bytes"], int(result.get("stored_bytes") or 0))},
+            )
         finally:
             shutil.rmtree(staging)
 
@@ -524,6 +488,102 @@ def _sync(adapter: ResticAdapter, directory: Path, state: dict[str, Any], snapsh
         _reconcile_offsite(state, result, env)
         _save_json(directory / "state.json", state)
     return result
+
+
+def run_repository_stream(
+    *, source_id: str, env: dict[str, str], command: Sequence[str], filename: str,
+    capture: Mapping[str, Any], estimated_bytes: int, local_only: bool = False,
+) -> dict[str, Any]:
+    """Capture one command's stdout straight into the repository, with no staging copy."""
+    config = ResticConfig.from_env(env)
+    adapter = ResticAdapter(config)
+    with _checkpoint(config) as (directory, state):
+        scratch = mounted_scratch_parent("st-backup-captures", label="Capture")
+        assert scratch is not None
+        admission = _capacity_admission(config, state, source_id, staging_directory=scratch, payload_bytes=max(0, estimated_bytes), streamed=True)
+        if not admission["admitted"]:
+            raise ResticError("Capture blocked: insufficient host-policy headroom")
+        batch = _capture_batch.get()
+        if batch is not None:
+            batch[_repository_pair(config)] = env
+        result = adapter.save_stream(source_id, command, filename, capture=capture, defer_check=batch is not None)
+        result["verification"].update(
+            data_added_bytes=result.get("data_added_bytes"), stored_bytes=result.get("stored_bytes"),
+            logical_bytes=result.get("logical_bytes"), total_files=1, has_db=False,
+            verified_at=result["verification"].get("structural_check_at"),
+        )
+        result["verification"]["storage_backend_id"] = env.get("BACKUP_STORAGE_BACKEND_ID")
+        return _complete_capture(
+            adapter, directory, state, source_id, env, result, local_only=local_only, batch=batch, recovery={}, fingerprint=None,
+            capacity={"staging_peak_bytes": 0, "growth_peak_bytes": max(admission["growth_peak_bytes"], int(result.get("stored_bytes") or 0))},
+        )
+
+
+def _complete_capture(
+    adapter: ResticAdapter, directory: Path, state: dict[str, Any], source_id: str, env: Mapping[str, str],
+    result: dict[str, Any], *, local_only: bool, batch: dict[str, Any] | None, recovery: Mapping[str, Any],
+    fingerprint: str | None, capacity: Mapping[str, Any],
+) -> dict[str, Any]:
+    """Record a new local snapshot, queue it for offsite, and copy it unless batched."""
+    previous = state["sources"].get(source_id, {})
+    # Durable local completion precedes Drive and SQL. A failed remote
+    # operation must not lose a usable local point.
+    source_checkpoint = {
+        "snapshot_id": result["snapshot_id"], "repository_id": result["repository_id"],
+        "baseline_snapshot_id": previous.get("baseline_snapshot_id", result["snapshot_id"]),
+        "last_good_snapshot_id": previous.get("last_good_snapshot_id", result["snapshot_id"]),
+        "recovery": recovery, "result": result,
+        "payload_fingerprint": fingerprint,
+        "capacity": capacity,
+        "completed_at": datetime.now(UTC).isoformat(),
+    }
+    state["sources"][source_id] = source_checkpoint
+    if not local_only:
+        journal = state.setdefault("offsite", {})
+        pending = journal.setdefault("pending_snapshot_ids", [])
+        if result["snapshot_id"] not in pending:
+            pending.append(result["snapshot_id"])
+        if result.get("stored_bytes") is not None:
+            journal.setdefault("pending_stored_bytes", {})[result["snapshot_id"]] = int(result["stored_bytes"])
+    _save_json(directory / "state.json", state)
+    record_local_archive(result)
+    if local_only:
+        result["verification"]["offsite"] = {"status": "not_requested"}
+    elif batch is not None:
+        result["verification"]["offsite"] = {"status": "pending", "reason": "repository-batch-copy"}
+        result.update(status="completed_pending_upload", pending_path=result["location"])
+    else:
+        synced: dict[str, Any]
+        try:
+            synced = _sync(adapter, directory, state, result["snapshot_id"], env)
+        except (ResticError, OSError) as exc:
+            synced = {"status": "pending", "verification": {"offsite": {"status": "pending", "error": str(exc)}}}
+        result["verification"]["offsite"] = synced["verification"]["offsite"]
+        if synced["status"] == "verified":
+            result["verification"].update(
+                remote_repository_id=synced["remote_repository_id"],
+                remote_snapshot_id=synced["remote_snapshot_id"],
+            )
+            source_checkpoint["last_good_snapshot_id"] = result["snapshot_id"]
+        else:
+            result.update(status="completed_pending_upload", pending_path=result["location"])
+    source_checkpoint["result"] = result
+    _save_json(directory / "state.json", state)
+    return result
+
+
+def _record_copy_outcome(directory: Path, state: dict[str, Any], result: Mapping[str, Any]) -> None:
+    """Keep the last offsite copy error durable so alerts can name it in later runs."""
+    journal = state.setdefault("offsite", {})
+    if result.get("status") == "verified":
+        journal.pop("last_copy_error", None)
+    else:
+        verification = (result.get("verification") or {}).get("offsite") or {}
+        error = result.get("error") or result.get("reason") or verification.get("error") or verification.get("reason")
+        if not error:
+            return
+        journal["last_copy_error"] = {"error": str(error)[:1000], "at": datetime.now(UTC).isoformat()}
+    _save_json(directory / "state.json", state)
 
 
 def _repository_rows(env: Mapping[str, str]) -> list[dict[str, Any]]:
@@ -612,7 +672,14 @@ def sync_repository_batch(batch: Mapping[str, dict[str, str]]) -> dict[str, Any]
                             backup_store.merge_backup_verification_json(str(row["id"]), {"structural_check_pending": False, "structural_check_at": check["checked_at"]})
                     _save_json(directory / "state.json", state)
                 if pending and config.remote_repository:
-                    results[identity] = _sync(adapter, directory, state, pending[-1], env)
+                    try:
+                        results[identity] = _sync(adapter, directory, state, pending[-1], env)
+                    except BackupCancelled:
+                        raise
+                    except Exception as exc:
+                        _record_copy_outcome(directory, state, {"status": "pending", "error": str(exc)})
+                        raise
+                    _record_copy_outcome(directory, state, results[identity])
                 else:
                     results[identity] = {"status": "skipped", "reason": "no-pending-offsite-snapshots"}
         except BackupCancelled:
