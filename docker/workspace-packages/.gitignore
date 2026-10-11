@@ -1,9 +1,10 @@
 *
 !.gitignore
-# Versioned release inputs required by backend/uv.lock in a fresh checkout.
+# Sibling-owned release inputs required by backend/uv.lock in a fresh checkout,
+# CI, Docker, and git-archived managed releases. SummitFlow's own st-sdk resolves
+# from packages/st-sdk source and is never vendored here.
 # Patterns match any released version so lockfile bumps stay tracked.
 !agent_hub_client-*-py3-none-any.whl
-!summitflow_st_sdk-*-py3-none-any.whl
 !agent_hub_st-*-py3-none-any.whl
 !browser_automation-*-py3-none-any.whl
 !code_intelligence-*-py3-none-any.whl

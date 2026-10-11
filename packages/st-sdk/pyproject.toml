@@ -16,6 +16,10 @@ build-backend = "hatchling.build"
 [tool.hatch.build.targets.wheel]
 packages = ["st_sdk"]
 
+[tool.uv]
+# Consumers install this from source; rebuild when module code changes, not only metadata.
+cache-keys = [{ file = "pyproject.toml" }, { file = "st_sdk/**/*.py" }]
+
 [tool.ruff]
 line-length = 100
 target-version = "py313"

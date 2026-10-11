@@ -111,7 +111,11 @@ def test_backend_docker_preserves_lock_paths_and_exact_checked_in_wheel_hashes()
     assert "/app/backend/.venv /app/backend/.venv" in dockerfile
     locked = tomllib.loads((root / "backend/uv.lock").read_text())
     wheels = [package for package in locked["package"] if package["source"].get("path", "").endswith(".whl")]
-    assert len(wheels) >= 6
+    assert len(wheels) >= 5
+    st_sdk = next(package for package in locked["package"] if package["name"] == "summitflow-st-sdk")
+    assert st_sdk["source"] == {"directory": "../packages/st-sdk"}
+    assert "COPY packages/st-sdk/ /app/packages/st-sdk/" in dockerfile
+    assert "summitflow_st_sdk" not in (root / "docker/workspace-packages/.gitignore").read_text()
     for package in wheels:
         wheel = root / "backend" / package["source"]["path"]
         assert package["wheels"] == [{"filename": wheel.name, "hash": "sha256:" + hashlib.sha256(wheel.read_bytes()).hexdigest()}]

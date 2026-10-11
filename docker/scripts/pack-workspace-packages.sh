@@ -2,6 +2,7 @@
 # Pack workspace packages for Docker builds.
 #
 # JavaScript: @agent-hub/{chat-ui,passport-client} → .tgz tarballs
+# (@summitflow/notes-ui is a pnpm workspace package built from source.)
 # Python: explicit --python-owner refresh only; Docker uses locked release wheels.
 #
 # Docker builds are isolated, so workspace:* and local path deps won't resolve.
@@ -49,9 +50,14 @@ if [ "$#" -gt 1 ]; then
     exit 0
   fi
   if [ "$selected_owner" = "summitflow" ]; then
+    # SummitFlow resolves st-sdk from packages/st-sdk source; this wheel is only
+    # for sibling owners that vendor it, so it never lands in SummitFlow's tree.
+    if [ "$OUT_DIR" = "$SUMMITFLOW_ROOT/docker/workspace-packages" ]; then
+      echo "summitflow-st-sdk is consumed from packages/st-sdk; choose an owner vendor directory" >&2
+      exit 2
+    fi
     echo "Building summitflow-st-sdk wheel..."
     (cd "$SUMMITFLOW_ROOT/packages/st-sdk" && SOURCE_DATE_EPOCH=1577836800 uv build --wheel --out-dir "$OUT_DIR" 2>&1)
-    refresh_lock summitflow-st-sdk
     exit 0
   fi
   if [ "$selected_owner" = "agent-hub" ]; then
@@ -141,8 +147,6 @@ if [ -n "$PACKAGES_DIR" ]; then
 else
   echo "SKIP: agent-hub packages root not found"
 fi
-
-pack_js_package "@summitflow/notes-ui" "$SUMMITFLOW_ROOT/packages/notes-ui"
 
 echo "Using checked-in Python wheels bound by backend/uv.lock; owner refresh requires --python-owner."
 

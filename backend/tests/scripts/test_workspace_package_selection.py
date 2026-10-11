@@ -73,4 +73,13 @@ def test_default_pack_never_builds_or_overwrites_python_wheels(tmp_path: Path) -
                                  "TEST_PACK_LOG": str(log)})
     assert result.returncode == 0, result.stderr
     assert locked.read_bytes() == b"locked release wheel"
-    assert sum(line.startswith("pack --pack-destination") for line in log.read_text().splitlines()) == 3
+    assert sum(line.startswith("pack --pack-destination") for line in log.read_text().splitlines()) == 2
+
+
+def test_st_sdk_wheel_is_never_written_into_summitflow_workspace_packages() -> None:
+    out = SCRIPT.parents[1] / "workspace-packages"
+    result = subprocess.run(["bash", str(SCRIPT), str(out), "--python-owner", "summitflow"], capture_output=True, text=True, check=False,
+                            env={**os.environ, "PATH": f"/nonexistent-uv-guard:{os.environ['PATH']}"})
+    assert result.returncode == 2
+    assert "packages/st-sdk" in result.stderr
+    assert not list(out.glob("summitflow_st_sdk-*.whl"))

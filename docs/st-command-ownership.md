@@ -142,7 +142,9 @@ For a Python tool-owner change, refresh just its release wheel with
 The default packaging command still builds the complete workspace bundle. Refresh
 the backend lockfile for the changed wheel and sync its locked environment before
 local checks; activate service changes with `st service rebuild summitflow --detach`.
-Use `--python-owner summitflow` to refresh only the public ST SDK wheel.
+SummitFlow itself installs the public ST SDK from `packages/st-sdk` source; use
+`docker/scripts/pack-workspace-packages.sh <owner-vendor-dir> --python-owner summitflow`
+only to build its wheel for sibling owners.
 Use `--python-owner agent-hub` to refresh only Agent Hub's ST CLI wheel.
 
 Extension help remains passive: owners generate Typer help and usage with the

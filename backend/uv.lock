@@ -1960,7 +1960,7 @@ requires-dist = [
     { name = "ruff", marker = "extra == 'dev'", specifier = ">=0.15.0" },
     { name = "sqlalchemy", specifier = ">=2.0.0" },
     { name = "structlog", specifier = ">=24.0.0" },
-    { name = "summitflow-st-sdk", path = "../docker/workspace-packages/summitflow_st_sdk-0.1.0-py3-none-any.whl" },
+    { name = "summitflow-st-sdk", directory = "../packages/st-sdk" },
     { name = "tenacity", specifier = ">=8.2.0" },
     { name = "typer", specifier = ">=0.15.0" },
     { name = "types-jsonschema", marker = "extra == 'dev'", specifier = ">=4.26.0" },
@@ -1971,14 +1971,11 @@ provides-extras = ["dev"]
 [[package]]
 name = "summitflow-st-sdk"
 version = "0.1.0"
-source = { path = "../docker/workspace-packages/summitflow_st_sdk-0.1.0-py3-none-any.whl" }
+source = { directory = "../packages/st-sdk" }
 dependencies = [
     { name = "httpx" },
     { name = "pyyaml" },
     { name = "typer" },
-]
-wheels = [
-    { filename = "summitflow_st_sdk-0.1.0-py3-none-any.whl", hash = "sha256:8c626f8e4d3629f8ddae5811af38e73520717b7391ae6639d673228b37a645b3" },
 ]
 
 [package.metadata]

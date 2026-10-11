@@ -13,6 +13,7 @@ WORKDIR /app/backend
 # Copy dependency files first (cache-friendly layer)
 COPY backend/pyproject.toml backend/uv.lock ./
 COPY docker/workspace-packages/ /app/docker/workspace-packages/
+COPY packages/st-sdk/ /app/packages/st-sdk/
 
 # Validate exact local release archives before syncing; never accept a rebuilt
 # same-name wheel or an artifact download as a substitute for the locked hash.
