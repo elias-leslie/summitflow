@@ -12,7 +12,7 @@ def test_registered_search_metadata_delivers_optional_routing() -> None:
     assert metadata["namespace"] == "search"
     spec = next(item for item in metadata["usage"] if item["surface"] == "st.search")
     assert spec["tier"] == "reference"
-    assert "optional precision" in spec["when"]
+    assert "optional ranked discovery" in spec["when"]
     assert "regex" in " ".join(spec["precautions"])
     assert "exhaustive references" in " ".join(spec["precautions"])
     assert "case-insensitive literal phrase" in metadata["help"][""]
