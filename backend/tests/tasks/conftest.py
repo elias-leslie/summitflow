@@ -13,7 +13,7 @@ _SCRATCH_TEST_MODULES = {
     "test_backup_activity.py", "test_backup_native_restore_safety.py", "test_backup_capture_activity.py",
     "test_backup_restic_fixtures.py",
     "test_backup_codex_essentials.py", "test_backup_git_index_states.py", "test_backup_portable_lifecycle.py",
-    "test_backup_jsonl_capture.py",
+    "test_backup_jsonl_capture.py", "test_backup_self_healing.py",
 }
 
 
