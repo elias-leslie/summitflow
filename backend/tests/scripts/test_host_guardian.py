@@ -274,3 +274,33 @@ def test_nightshift_units_are_reported_not_remediated(monkeypatch, down, healthy
     assert all("is-active" in call for call in calls)
     user_calls = [call for call in calls if "--user" in call]
     assert {call[-1] for call in user_calls} == set(guardian.NIGHTSHIFT_USER_UNITS)
+
+
+def test_nightshift_executor_drift_and_manifest_change_alert(monkeypatch, tmp_path) -> None:
+    guardian = _load_module()
+    target = tmp_path / "executor.py"
+    target.write_text("print('ok')\n")
+    manifest = tmp_path / "executor.sha256"
+    manifest.write_text(subprocess.run(["sha256sum", str(target)], capture_output=True, text=True, check=True).stdout)
+    monkeypatch.setattr(guardian, "NIGHTSHIFT_EXECUTOR_MANIFEST", manifest)
+    monkeypatch.setattr(guardian, "NIGHTSHIFT_MANIFEST_DIGEST_PATH", tmp_path / "state" / "digest")
+    monkeypatch.setattr(guardian, "STATE_DIR", tmp_path / "state")
+    real_lstat = Path.lstat
+    monkeypatch.setattr(
+        Path, "lstat", lambda self: SimpleNamespace(st_mode=real_lstat(self).st_mode & ~0o022, st_uid=0)
+    )
+
+    def codes() -> set[str]:
+        state = guardian.CheckState()
+        guardian.check_nightshift_executor(state)
+        return {issue["code"] for issue in state.issues}
+
+    assert codes() == set()
+    assert codes() == set()
+    target.write_text("print('tampered')\n")
+    assert codes() == {"nightshift_executor_drift"}
+    manifest.write_text(subprocess.run(["sha256sum", str(target)], capture_output=True, text=True, check=True).stdout)
+    assert codes() == {"nightshift_executor_manifest_changed"}
+    assert codes() == set()
+    manifest.unlink()
+    assert codes() == set()

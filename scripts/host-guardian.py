@@ -9,6 +9,7 @@ Hatchet, SummitFlow, and the workspace checkout are not runtime dependencies.
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import os
 import pwd
@@ -49,6 +50,9 @@ CORE_CONTAINERS = (
 NIGHTSHIFT_SYSTEM_UNITS = ("nightshift-check.timer", "nightshift-collect-usage.timer")
 NIGHTSHIFT_USER_UNITS = ("nightshift-web.service", "nightshift-notify-critical.timer", "nightshift-digest.timer")
 NIGHTSHIFT_HEALTH_URL = "http://127.0.0.1:3020/healthz"
+# Only Nightshift's installers regenerate this manifest of its root executor release.
+NIGHTSHIFT_EXECUTOR_MANIFEST = Path("/etc/nightshift/executor.sha256")
+NIGHTSHIFT_MANIFEST_DIGEST_PATH = STATE_DIR / "nightshift-executor-manifest.sha256"
 
 
 @dataclass
@@ -253,6 +257,36 @@ def check_nightshift(state: CheckState) -> None:
         state.issue("warning", "nightshift_units_inactive", f"Nightshift units inactive: {', '.join(inactive)}")
     if "nightshift-web.service" not in inactive and not http_ok(NIGHTSHIFT_HEALTH_URL):
         state.issue("warning", "nightshift_web_unhealthy", f"Nightshift web health check failed: {NIGHTSHIFT_HEALTH_URL}")
+
+
+def check_nightshift_executor(state: CheckState) -> None:
+    manifest = NIGHTSHIFT_EXECUTOR_MANIFEST
+    try:
+        info = manifest.lstat()
+        content = manifest.read_bytes()
+    except FileNotFoundError:
+        state.details["nightshift_executor_manifest"] = "absent"
+        return
+    except OSError as exc:
+        state.issue("critical", "nightshift_executor_manifest_unreadable", f"{manifest}: {exc}")
+        return
+    if not stat.S_ISREG(info.st_mode) or info.st_uid != 0 or info.st_mode & 0o022:
+        state.issue("critical", "nightshift_executor_manifest_unsafe", f"{manifest} must be a root-owned file without group/world write")
+    proc = run(["sha256sum", "--quiet", "-c", str(manifest)], timeout=60)
+    if proc.returncode != 0:
+        drift = (proc.stdout or proc.stderr).strip()[-500:]
+        state.issue("critical", "nightshift_executor_drift", f"Nightshift executor files differ from {manifest}: {drift}")
+    digest = hashlib.sha256(content).hexdigest()
+    state.details["nightshift_executor_manifest"] = digest
+    try:
+        previous = NIGHTSHIFT_MANIFEST_DIGEST_PATH.read_text(encoding="utf-8").strip()
+    except OSError:
+        previous = ""
+    if previous and previous != digest:
+        state.issue("warning", "nightshift_executor_manifest_changed", f"{manifest} changed since the last guardian run")
+    if previous != digest:
+        STATE_DIR.mkdir(parents=True, exist_ok=True)
+        NIGHTSHIFT_MANIFEST_DIGEST_PATH.write_text(digest + "\n", encoding="utf-8")
 
 
 def compose_command(*args: str) -> list[str]:
@@ -628,6 +662,7 @@ def main() -> int:
     check_smart(state)
     check_backup(state)
     check_nightshift(state)
+    check_nightshift_executor(state)
     payload = build_payload(state, mode=args.mode)
     persist(payload)
     print(json.dumps(payload, sort_keys=True))
