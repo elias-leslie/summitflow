@@ -232,6 +232,14 @@ async def restore_test_all() -> dict:
     return run_restore_tests()
 
 
+@router.post("/backups/restore-test/offsite")
+async def restore_test_offsite(source_id: str | None = None, force: bool = False) -> dict:
+    """Run the monthly offsite restore test, or one named source now."""
+    from ...tasks.backup_offsite_restore_test import run_monthly_offsite_restore_test
+
+    return await asyncio.to_thread(run_monthly_offsite_restore_test, source_id=source_id, force=force)
+
+
 @router.post("/backups/drain-pending")
 async def drain_pending(dry_run: bool = False) -> dict:
     """Drain pending backup uploads to SMB."""

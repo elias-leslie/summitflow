@@ -626,6 +626,28 @@ def sync_offsite(
         handle_api_error(e)
 
 
+@app.command("restore-test")
+def restore_test(
+    ctx: typer.Context,
+    source: Annotated[str | None, typer.Option("--source", help="Restore this source now instead of the monthly rotation")] = None,
+    force: Annotated[bool, typer.Option("--force", help="Run the rotation even inside the monthly cadence")] = False,
+) -> None:
+    """Restore from the offsite repository into scratch, compare a checksum sample, and load any database dump."""
+    import httpx
+
+    params: dict[str, str] = {"force": str(force).lower()}
+    if source:
+        params["source_id"] = source
+    response = httpx.post(f"{STClient().base_url}/backups/restore-test/offsite", params=params, timeout=httpx.Timeout(30.0, read=None))
+    if response.status_code >= 400:
+        handle_api_error(APIError(response.status_code, response.text))
+        return
+    result = response.json()
+    output_json(result)
+    if result.get("status") == "failed":
+        raise typer.Exit(1)
+
+
 @app.command("cleanup-local")
 @usage(
     surface="st.backup.cleanup-local",

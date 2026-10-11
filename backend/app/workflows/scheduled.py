@@ -338,7 +338,7 @@ async def pending_drain_wf(input: EmptyInput, ctx: Context) -> dict[str, Any]:
 @hatchet.task(
     name="summitflow-restore-tests",
     input_validator=EmptyInput,
-    execution_timeout="1800s",
+    execution_timeout="7200s",
     retries=1,
     on_crons=["0 6 * * 0"],
     concurrency=ConcurrencyExpression(
@@ -353,7 +353,13 @@ async def restore_tests_wf(input: EmptyInput, ctx: Context) -> dict[str, Any]:
     if not _system_schedule_enabled("restore_tests"):
         return _disabled_schedule_result("restore_tests")
 
-    return await asyncio.to_thread(run_restore_tests)
+    from ..tasks.backup_offsite_restore_test import run_monthly_offsite_restore_test
+
+    result = await asyncio.to_thread(run_restore_tests)
+    # The weekly tick also owns the monthly offsite restore; it skips itself
+    # inside the cadence and retries next week after a failure.
+    result["offsite_restore"] = await asyncio.to_thread(run_monthly_offsite_restore_test)
+    return result
 
 
 @hatchet.task(

@@ -31,6 +31,7 @@ from ..utils.shared_paths import get_workspaces_root
 from ._retention_policy import HostRetentionPolicy
 from .backup_activity import BackupCancelled, run_bulk_process
 from .backup_native_archive import PROJECT_DATABASE_PAYLOAD_NAME, _load_db_config
+from .backup_offsite_restore_test import restore_verified
 from .backup_utils import _FREQUENCY_DELTAS
 
 REQUIRED_SOURCES = {"/", "/home", "/srv/workspaces", "/var/lib/docker", "/srv/models", "/var/log"}
@@ -307,7 +308,7 @@ def _database_manifests(rows: list[dict[str, str]], now: datetime, reference: da
                         continue
                     candidates.append({"project_id": canonical_id, "registered_project_id": project_id, "source_project_id": source["project_id"], "backup_project_id": item["project_id"], "source_id": source["id"], "backup_id": item["id"],
                                        "captured_at": captured.astimezone(UTC).isoformat(), "verified_at": verified_at.isoformat(),
-                                       "has_db": True, "verified": True, "restore_verified": False,
+                                       "has_db": True, "verified": True, "restore_verified": restore_verified(source, now=now),
                                        "location": item["location"], "storage_backend_id": item.get("storage_backend_id"),
                                        "checksum": item.get("checksum") or verification.get("checksum"),
                                        "offsite": {key: offsite[key] for key in ("status", "location", "provider_id", "remote_path", "provider_checksum", "verification_method") if key in offsite},
