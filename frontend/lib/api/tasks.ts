@@ -5,8 +5,8 @@
  * Implementation has been split into focused modules for better maintainability:
  *
  * - tasks-types.ts: Type definitions
- * - tasks-crud.ts: Core CRUD operations and execution
- * - tasks-enrichment.ts: Enrichment workflow (subtasks, steps, criteria)
+ * - tasks-crud.ts: Core CRUD operations
+ * - tasks-subtasks.ts: Subtasks and steps
  * - tasks-observability.ts: Agent Hub integration and observability
  */
 
@@ -27,13 +27,6 @@ export type {
   CodingAgent,
   CodingAgentsResponse,
   DeleteTaskResponse,
-  DiscussionMessage,
-  DiscussionResponse,
-  // Enrichment types
-  EnrichmentStatus,
-  // Execution types
-  ExecuteTaskOptions,
-  ExecuteTaskResponse,
   NarrationTag,
   NarrationTagType,
   NarrationTimelineResponse,
@@ -63,9 +56,6 @@ export {
   // Delete operations
   deleteTask,
   deleteTasks,
-  // Execution control
-  executeTask,
-  executeTasks,
   // Read operations
   fetchTask,
   fetchTasks,
@@ -74,18 +64,10 @@ export {
 } from './tasks-crud'
 
 // ============================================================================
-// Enrichment & Refinement
+// Subtasks
 // ============================================================================
 
-export {
-  acceptTask,
-  // Enrichment workflow
-  discussTask,
-  // Subtasks
-  getSubtasks,
-  getSubtasksWithSteps,
-  updateSubtask,
-} from './tasks-enrichment'
+export { getSubtasksWithSteps, updateSubtask } from './tasks-subtasks'
 
 // ============================================================================
 // Agent Hub Integration

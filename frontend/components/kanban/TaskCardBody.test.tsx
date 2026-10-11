@@ -41,30 +41,6 @@ describe('TaskCardBody', () => {
     expect(screen.getByText('(2/5)')).toBeInTheDocument()
   })
 
-  it('shows running step when running with currentStep', () => {
-    render(
-      <TaskCardBody
-        task={makeTask({ status: 'running' })}
-        currentStep="Running tests..."
-        canExpand={false}
-      />,
-    )
-
-    expect(screen.getByText('Running tests...')).toBeInTheDocument()
-  })
-
-  it('does not show step indicator when not running', () => {
-    render(
-      <TaskCardBody
-        task={makeTask({ status: 'pending' })}
-        currentStep="Some step"
-        canExpand={false}
-      />,
-    )
-
-    expect(screen.queryByText('Some step')).not.toBeInTheDocument()
-  })
-
   it('does not label a direct zero-evidence completion as verified', () => {
     render(
       <TaskCardBody

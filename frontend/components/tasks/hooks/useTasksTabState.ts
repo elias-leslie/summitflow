@@ -4,14 +4,10 @@ import type { Task } from '@/lib/api'
 import { buildUrlWithUpdatedSearchParams } from '@/lib/search-params'
 
 interface UseTasksTabStateProps {
-  refetch: () => void
   handleTaskUpdated: (task: Task) => void
 }
 
-export function useTasksTabState({
-  refetch,
-  handleTaskUpdated,
-}: UseTasksTabStateProps) {
+export function useTasksTabState({ handleTaskUpdated }: UseTasksTabStateProps) {
   const router = useRouter()
   const pathname = usePathname()
   const searchParams = useSearchParams()
@@ -23,8 +19,6 @@ export function useTasksTabState({
   const [modalOpen, setModalOpen] = useState(!!urlTaskId)
   const [selectedTask, setSelectedTask] = useState<Task | null>(null)
   const [showCreate, setShowCreate] = useState(urlModal === 'create-task')
-  const [enrichingTask, setEnrichingTask] = useState<Task | null>(null)
-  const [reviewingTask, setReviewingTask] = useState<Task | null>(null)
 
   // Helper to update URL params
   const updateUrlParams = useCallback(
@@ -55,27 +49,6 @@ export function useTasksTabState({
   useEffect(() => {
     setShowCreate(urlModal === 'create-task')
   }, [urlModal])
-
-  // Task lifecycle handlers
-  const handleEnrichmentComplete = useCallback(
-    (task: Task) => {
-      setEnrichingTask(null)
-      if (task.enrichment_status === 'review') {
-        setReviewingTask(task)
-      }
-      refetch()
-    },
-    [refetch],
-  )
-
-  const handleTaskAccepted = useCallback(
-    (acceptedTask: Task) => {
-      setReviewingTask(null)
-      handleTaskUpdated(acceptedTask)
-      refetch()
-    },
-    [refetch, handleTaskUpdated],
-  )
 
   const handleTaskClick = useCallback(
     (task: Task) => {
@@ -124,17 +97,11 @@ export function useTasksTabState({
     modalOpen,
     selectedTask,
     showCreate,
-    enrichingTask,
-    reviewingTask,
     // Handlers
-    handleEnrichmentComplete,
-    handleTaskAccepted,
     handleTaskClick,
     handleModalOpenChange,
     handleShowCreateChange,
     handleNewTask,
     handleTaskUpdate,
-    setEnrichingTask,
-    setReviewingTask,
   }
 }

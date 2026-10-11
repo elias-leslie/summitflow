@@ -11,7 +11,6 @@ import type { Task, TaskStatus } from '@/lib/api'
 import { formatTimeAgo } from '@/lib/format'
 import { priorityConfig, statusIconConfig, typeIcons } from '@/lib/task-config'
 import { cn } from '@/lib/utils'
-import { ExecutionTimeline } from './ExecutionTimeline'
 
 interface TaskRowProps {
   task: Task
@@ -19,7 +18,6 @@ interface TaskRowProps {
   onToggle: () => void
   onStatusChange: (status: TaskStatus) => void
   isUpdating: boolean
-  projectId: string
 }
 
 export function TaskRow({
@@ -28,7 +26,6 @@ export function TaskRow({
   onToggle,
   onStatusChange,
   isUpdating,
-  projectId,
 }: TaskRowProps) {
   const priority = priorityConfig[task.priority] || priorityConfig[2]
   const status = statusIconConfig[task.status] || statusIconConfig.pending
@@ -205,20 +202,6 @@ export function TaskRow({
                   </Button>
                 )}
               </div>
-
-              {/* Execution Timeline for running tasks */}
-              {task.status === 'running' && (
-                <div
-                  className="pt-3 border-t border-slate-700"
-                  onClick={(e) => e.stopPropagation()}
-                >
-                  <ExecutionTimeline
-                    taskId={task.id}
-                    projectId={projectId}
-                    className="max-h-[400px]"
-                  />
-                </div>
-              )}
             </div>
           </td>
         </tr>

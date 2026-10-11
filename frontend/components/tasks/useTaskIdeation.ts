@@ -103,18 +103,13 @@ export function useTaskIdeation(
           task_type: taskData.task_type,
           labels: taskData.labels,
           complexity: taskData.complexity,
-          auto_dispatch: true,
         },
         'Failed to create task',
       )
 
       invalidateTasks()
 
-      toast.success(`Task created: ${result.task_id}`, {
-        description: result.dispatched
-          ? `Dispatched to ${result.dispatch_stage ?? 'pipeline'}`
-          : 'Task created successfully',
-      })
+      toast.success(`Task created: ${result.task_id}`)
 
       setTaskData(null)
       setError(null)

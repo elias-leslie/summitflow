@@ -3,8 +3,8 @@
  *
  * This barrel file re-exports all task-related types from focused sub-modules:
  * - tasks-types-core.ts:       Core task types (Task, TaskStatus, etc.)
- * - tasks-types-enrichment.ts: Enrichment workflow types (Subtask, Step, etc.)
- * - tasks-types-execution.ts:  Execution & batch types
+ * - tasks-types-subtasks.ts:   Subtask and step types
+ * - tasks-types-execution.ts:  Delete response types
  * - tasks-types-agenthub.ts:   Agent Hub observability types
  */
 
@@ -15,7 +15,6 @@
 export type {
   BlockerInfo,
   CapabilityContext,
-  EnrichmentStatus,
   Task,
   TaskAcceptanceCriterion,
   TaskDependency,
@@ -26,27 +25,21 @@ export type {
 } from './tasks-types-core'
 
 // ============================================================================
-// Enrichment Types
+// Subtask Types
 // ============================================================================
 
 export type {
-  DiscussionMessage,
-  DiscussionResponse,
   Step,
   StepSummary,
   Subtask,
   SubtasksResponse,
-} from './tasks-types-enrichment'
+} from './tasks-types-subtasks'
 
 // ============================================================================
-// Execution Types
+// Delete Types
 // ============================================================================
 
-export type {
-  DeleteTaskResponse,
-  ExecuteTaskOptions,
-  ExecuteTaskResponse,
-} from './tasks-types-execution'
+export type { DeleteTaskResponse } from './tasks-types-execution'
 
 // ============================================================================
 // Agent Hub Types

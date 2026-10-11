@@ -1,8 +1,6 @@
 'use client'
 
 import { useEffect, useState } from 'react'
-import { toast } from 'sonner'
-import { getErrorMessage } from '@/lib/utils'
 import { useTaskHandlers } from './hooks/useTaskHandlers'
 import { useTaskSelection } from './hooks/useTaskSelection'
 import { useTaskSort } from './hooks/useTaskSort'
@@ -45,7 +43,6 @@ export function TasksTab({ projectId, initialFilters }: TasksTabProps) {
     setBulkDeleteConfirm,
     deleteMutation,
     bulkDeleteMutation,
-    bulkExecuteMutation,
     handleTaskUpdated,
   } = useTaskHandlers(projectId)
 
@@ -54,17 +51,11 @@ export function TasksTab({ projectId, initialFilters }: TasksTabProps) {
     modalOpen,
     selectedTask,
     showCreate,
-    enrichingTask,
-    reviewingTask,
-    handleEnrichmentComplete,
-    handleTaskAccepted,
     handleTaskClick,
     handleModalOpenChange,
     handleShowCreateChange,
     handleTaskUpdate,
-    setEnrichingTask,
-    setReviewingTask,
-  } = useTasksTabState({ refetch, handleTaskUpdated })
+  } = useTasksTabState({ handleTaskUpdated })
 
   // Persist filters when they change
   useEffect(() => {
@@ -92,19 +83,6 @@ export function TasksTab({ projectId, initialFilters }: TasksTabProps) {
     }
   }
 
-  const handleBulkExecute = () => {
-    if (selectedTaskIds.size > 0) {
-      bulkExecuteMutation.mutate(Array.from(selectedTaskIds), {
-        onSuccess: ({ queued }) => {
-          if (queued.length > 0) {
-            clearSelection()
-            refetch()
-          }
-        },
-      })
-    }
-  }
-
   return (
     <div className="space-y-4">
       <TasksTabHeader
@@ -113,9 +91,7 @@ export function TasksTab({ projectId, initialFilters }: TasksTabProps) {
         onFiltersChange={setFilters}
         selectedCount={selectedTaskIds.size}
         isFetching={isFetching}
-        isQueueing={bulkExecuteMutation.isPending}
         onRefresh={refetch}
-        onBulkExecute={handleBulkExecute}
         onBulkDelete={() => setBulkDeleteConfirm(true)}
       />
 
@@ -143,19 +119,6 @@ export function TasksTab({ projectId, initialFilters }: TasksTabProps) {
         onTaskUpdate={handleTaskUpdate}
         showCreate={showCreate}
         onShowCreateChange={handleShowCreateChange}
-        enrichingTask={enrichingTask}
-        onEnrichmentComplete={handleEnrichmentComplete}
-        onEnrichmentError={(err) => {
-          toast.error(getErrorMessage(err, 'Failed to enrich task'))
-          setEnrichingTask(null)
-        }}
-        onEnrichmentDismiss={() => setEnrichingTask(null)}
-        reviewingTask={reviewingTask}
-        onReviewOpenChange={(open) => {
-          if (!open) setReviewingTask(null)
-        }}
-        onTaskAccepted={handleTaskAccepted}
-        onTaskDiscard={() => setReviewingTask(null)}
         deleteConfirmTask={deleteConfirmTask}
         onDeleteConfirm={handleDeleteConfirm}
         onDeleteCancel={() => setDeleteConfirmTask(null)}

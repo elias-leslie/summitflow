@@ -11,7 +11,6 @@ import {
 } from 'next/navigation'
 import { useCallback, useEffect, useState } from 'react'
 import { toast } from 'sonner'
-import { EscalationPanel } from '@/components/execution/EscalationPanel'
 import { ExplorerTab } from '@/components/explorer/ExplorerTab'
 import type { ExplorerType } from '@/components/explorer/types'
 import { TaskKanbanBoard } from '@/components/kanban/TaskKanbanBoard'
@@ -32,7 +31,6 @@ import {
   type TaskStatus,
   updateTaskStatus,
 } from '@/lib/api'
-import { executeTask } from '@/lib/api/tasks'
 import { STALE_GIT } from '@/lib/polling'
 import {
   type ProjectTab,
@@ -73,7 +71,7 @@ export function ProjectDetailClient() {
   const pathname = usePathname()
   const router = useRouter()
   const projectId = params.id as string
-  const { invalidateTasks, syncUpdatedTask } = useTaskMutationSync(projectId)
+  const { syncUpdatedTask } = useTaskMutationSync(projectId)
 
   // Get task filter params from URL
   const urlTaskStatus = searchParams.get('status')
@@ -135,8 +133,6 @@ export function ProjectDetailClient() {
   const [selectedTask, setSelectedTask] = useState<Task | null>(null)
   const [modalOpen, setModalOpen] = useState(!!urlTaskId)
   const [createTaskDialogOpen, setCreateTaskDialogOpen] = useState(false)
-  const [escalationOpen, setEscalationOpen] = useState(false)
-  const [escalationTask, _setEscalationTask] = useState<Task | null>(null)
 
   // Handle URL task param changes
   useEffect(() => {
@@ -195,18 +191,6 @@ export function ProjectDetailClient() {
     setSelectedTask(task)
     setModalOpen(true)
     updateUrlParams({ task: task.id })
-  }
-
-  const handleApproveAndResume = async (_message?: string) => {
-    if (!escalationTask) return
-    try {
-      await executeTask(projectId, escalationTask.id)
-      invalidateTasks()
-      setEscalationOpen(false)
-      toast.success('Task resumed')
-    } catch (err) {
-      toast.error(getErrorMessage(err, 'Failed to resume task'))
-    }
   }
 
   const handleTaskUpdate = (task: Task) => {
@@ -340,14 +324,6 @@ export function ProjectDetailClient() {
                     onTaskUpdate={handleTaskUpdate}
                     initialTask={selectedTask}
                   />
-                  {escalationTask && (
-                    <EscalationPanel
-                      task={escalationTask}
-                      isOpen={escalationOpen}
-                      onClose={() => setEscalationOpen(false)}
-                      onApproveAndResume={handleApproveAndResume}
-                    />
-                  )}
                 </div>
               </TaskQueryState>
             ) : (

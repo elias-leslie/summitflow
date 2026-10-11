@@ -237,7 +237,7 @@ export function TaskSummaryCard({
           ) : (
             <>
               <Rocket className="w-4 h-4" />
-              Create & Start
+              Create Task
             </>
           )}
         </Button>

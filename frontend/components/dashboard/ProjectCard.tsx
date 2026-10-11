@@ -17,11 +17,7 @@ import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { useState } from 'react'
 import { ProjectHealthBadge } from '@/components/projects/ProjectHealthBadge'
-import {
-  fetchProjectHealth,
-  fetchQualityGateHealth,
-  type ProjectWithStats,
-} from '@/lib/api'
+import { fetchProjectHealth, type ProjectWithStats } from '@/lib/api'
 import { getActiveCheckpoint } from '@/lib/api/checkpoints'
 import { POLL_STANDARD, STALE_GIT, STALE_STANDARD } from '@/lib/polling'
 
@@ -48,16 +44,6 @@ export function ProjectCard({ project }: ProjectCardProps) {
     enabled:
       hovered &&
       Boolean(project.base_url?.trim() && project.health_endpoint?.trim()),
-    staleTime: STALE_STANDARD,
-    refetchInterval: hovered ? POLL_STANDARD * 2 : false,
-  })
-
-  const { data: qualityGate, isLoading: qualityLoading } = useQuery({
-    queryKey: ['quality-gate-health', project.id],
-    queryFn: () => fetchQualityGateHealth(project.id),
-    enabled: hovered,
-    initialData: project.quality_gate,
-    initialDataUpdatedAt: 0,
     staleTime: STALE_STANDARD,
     refetchInterval: hovered ? POLL_STANDARD * 2 : false,
   })
@@ -242,7 +228,7 @@ export function ProjectCard({ project }: ProjectCardProps) {
                 <span className="text-slate-500">{checkpoint.age}</span>
               </div>
             )}
-            {(health || project.health_status || qualityGate) && (
+            {(health || project.health_status) && (
               <div className="mt-1 flex min-w-0 flex-wrap items-center gap-x-3 gap-y-1 break-words text-xs">
                 <span
                   className={clsx(
@@ -261,21 +247,6 @@ export function ProjectCard({ project }: ProjectCardProps) {
                         : health.error || 'unhealthy'
                       : project.health_status || 'pending'}
                 </span>
-                <span
-                  className={clsx(
-                    'min-w-0 max-w-full text-slate-500',
-                    qualityGate &&
-                      !qualityGate.overall_pass &&
-                      'text-amber-300',
-                  )}
-                >
-                  Quality:{' '}
-                  {qualityGate
-                    ? qualityGate.overall_pass
-                      ? 'passing'
-                      : `${qualityGate.total_unfixed} open`
-                    : 'pending'}
-                </span>
                 {!project.root_path && (
                   <span className="text-amber-300">
                     Config: root path missing
@@ -287,36 +258,6 @@ export function ProjectCard({ project }: ProjectCardProps) {
         </div>
 
         <div className="flex shrink-0 items-center gap-2">
-          {qualityLoading ? (
-            <div className="w-3 h-3 border border-slate-600 border-t-purple-500 rounded-full animate-spin" />
-          ) : qualityGate ? (
-            <div
-              className={clsx(
-                'w-3 h-3 rounded-full status-dot-pulse',
-                qualityGate.overall_pass
-                  ? 'bg-purple-500 text-purple-500'
-                  : 'bg-amber-500 text-amber-500',
-              )}
-              title={
-                qualityGate.overall_pass
-                  ? 'Quality gate passing'
-                  : `Quality gate: ${qualityGate.total_unfixed} unfixed issues`
-              }
-              aria-label={
-                qualityGate.overall_pass
-                  ? 'Quality gate passing'
-                  : `Quality gate has ${qualityGate.total_unfixed} unfixed issues`
-              }
-              data-testid="quality-gate-indicator"
-            />
-          ) : (
-            <div
-              className="w-3 h-3 rounded-full bg-slate-700"
-              aria-label="Quality gate status unavailable"
-              data-testid="quality-gate-indicator"
-            />
-          )}
-
           <ProjectHealthBadge project={project} dot />
         </div>
       </div>

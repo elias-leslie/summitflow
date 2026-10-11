@@ -2,10 +2,8 @@
 
 import { ConfirmDeleteDialog } from '@/components/shared/ConfirmDeleteDialog'
 import type { Task } from '@/lib/api'
-import { EnrichmentModal } from './EnrichmentModal'
 import { TaskIdeationDialog } from './TaskIdeationDialog'
 import { TaskModal } from './TaskModal'
-import { TaskReviewModal } from './TaskReviewModal'
 
 interface TasksTabModalsProps {
   projectId: string
@@ -18,16 +16,6 @@ interface TasksTabModalsProps {
   // Create dialog
   showCreate: boolean
   onShowCreateChange: (show: boolean) => void
-  // Enrichment modal
-  enrichingTask: Task | null
-  onEnrichmentComplete: (task: Task) => void
-  onEnrichmentError: (error: unknown) => void
-  onEnrichmentDismiss: () => void
-  // Review modal
-  reviewingTask: Task | null
-  onReviewOpenChange: (open: boolean) => void
-  onTaskAccepted: (task: Task) => void
-  onTaskDiscard: () => void
   // Delete confirmation
   deleteConfirmTask: Task | null
   onDeleteConfirm: () => void
@@ -52,14 +40,6 @@ export function TasksTabModals({
   onTaskUpdate,
   showCreate,
   onShowCreateChange,
-  enrichingTask,
-  onEnrichmentComplete,
-  onEnrichmentError,
-  onEnrichmentDismiss,
-  reviewingTask,
-  onReviewOpenChange,
-  onTaskAccepted,
-  onTaskDiscard,
   deleteConfirmTask,
   onDeleteConfirm,
   onDeleteCancel,
@@ -90,29 +70,6 @@ export function TasksTabModals({
         onOpenChange={onShowCreateChange}
         projectId={projectId}
       />
-
-      {/* Enrichment Progress Modal */}
-      {enrichingTask && (
-        <EnrichmentModal
-          projectId={projectId}
-          task={enrichingTask}
-          onComplete={onEnrichmentComplete}
-          onError={onEnrichmentError}
-          onDismiss={onEnrichmentDismiss}
-        />
-      )}
-
-      {/* Task Review Modal */}
-      {reviewingTask && (
-        <TaskReviewModal
-          open={!!reviewingTask}
-          onOpenChange={onReviewOpenChange}
-          projectId={projectId}
-          task={reviewingTask}
-          onAccept={onTaskAccepted}
-          onDiscard={onTaskDiscard}
-        />
-      )}
 
       {/* Single Delete Confirmation Dialog */}
       {deleteConfirmTask && (

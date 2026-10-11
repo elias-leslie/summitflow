@@ -7,7 +7,6 @@ import { ProjectCard } from './ProjectCard'
 const pushMock = vi.fn()
 const apiMocks = vi.hoisted(() => ({
   fetchProjectHealth: vi.fn(),
-  fetchQualityGateHealth: vi.fn(),
 }))
 const checkpointMocks = vi.hoisted(() => ({
   getActiveCheckpoint: vi.fn(),
@@ -25,7 +24,6 @@ vi.mock('next/image', () => ({
 
 vi.mock('@/lib/api', () => ({
   fetchProjectHealth: apiMocks.fetchProjectHealth,
-  fetchQualityGateHealth: apiMocks.fetchQualityGateHealth,
 }))
 
 vi.mock('@/lib/api/checkpoints', () => ({
@@ -60,12 +58,6 @@ describe('ProjectCard', () => {
     sidebar_rank: 0,
     created_at: '2026-03-10T12:00:00Z',
     health_status: 'healthy',
-    quality_gate: {
-      project_id: 'summitflow',
-      overall_pass: false,
-      total_unfixed: 3,
-      checks: {},
-    },
     stats: {
       features: 3,
       tasks: 7,
@@ -81,12 +73,6 @@ describe('ProjectCard', () => {
       healthy: true,
       response_time_ms: 42,
       checked_at: '2026-03-12T09:00:00Z',
-    })
-    apiMocks.fetchQualityGateHealth.mockResolvedValue({
-      project_id: 'summitflow',
-      overall_pass: false,
-      total_unfixed: 3,
-      checks: {},
     })
     checkpointMocks.getActiveCheckpoint.mockResolvedValue(null)
   })
@@ -124,22 +110,20 @@ describe('ProjectCard', () => {
     )
   })
 
-  it('surfaces live service and quality summaries after hover loads checks', async () => {
+  it('surfaces the live service summary after hover loads checks', async () => {
     renderCard(project)
 
     fireEvent.mouseEnter(screen.getByRole('article'))
 
     expect(await screen.findByText('Service: 42ms')).toBeInTheDocument()
-    expect(screen.getByText('Quality: 3 open')).toBeInTheDocument()
+    expect(screen.queryByText(/Quality:/)).not.toBeInTheDocument()
   })
 
   it('uses aggregated card status without a per-project mount waterfall', () => {
     renderCard(project)
 
     expect(screen.getByText('Service: healthy')).toBeInTheDocument()
-    expect(screen.getByText('Quality: 3 open')).toBeInTheDocument()
     expect(apiMocks.fetchProjectHealth).not.toHaveBeenCalled()
-    expect(apiMocks.fetchQualityGateHealth).not.toHaveBeenCalled()
     expect(checkpointMocks.getActiveCheckpoint).not.toHaveBeenCalled()
   })
 

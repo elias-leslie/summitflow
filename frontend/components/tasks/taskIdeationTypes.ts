@@ -15,8 +15,6 @@ export interface IdeationTaskResponse {
   task_id: string
   project_id: string
   status: string
-  dispatched: boolean
-  dispatch_stage: string | null
 }
 
 export interface TaskIdeationDialogProps {

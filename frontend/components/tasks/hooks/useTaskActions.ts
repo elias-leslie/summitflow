@@ -1,6 +1,6 @@
 'use client'
 
-import { useCallback, useState } from 'react'
+import { useCallback } from 'react'
 import { toast } from 'sonner'
 import {
   type Subtask,
@@ -22,11 +22,9 @@ interface UseTaskActionsOptions {
 }
 
 interface UseTaskActionsReturn {
-  isTogglingAutonomous: boolean
   handleStatusChange: (status: TaskStatus) => Promise<void>
   handleSubtaskToggle: (subtaskId: string, passes: boolean) => Promise<void>
   handleObjectiveEdit: (objective: string) => Promise<void>
-  handleToggleAutonomous: () => Promise<void>
   handleAgentOverrideChange: (agentSlug: string | null) => Promise<void>
 }
 
@@ -38,7 +36,6 @@ export function useTaskActions({
   setSubtasks,
 }: UseTaskActionsOptions): UseTaskActionsReturn {
   const { syncUpdatedTask } = useTaskMutationSync(projectId)
-  const [isTogglingAutonomous, setIsTogglingAutonomous] = useState(false)
 
   const handleStatusChange = useCallback(
     async (newStatus: TaskStatus) => {
@@ -82,28 +79,6 @@ export function useTaskActions({
     // objective field removed from Task type — no-op
   }, [])
 
-  const handleToggleAutonomous = useCallback(async () => {
-    if (!task) return
-    setIsTogglingAutonomous(true)
-    try {
-      const updated = await updateTask(projectId, task.id, {
-        autonomous: !task.autonomous,
-      })
-      setTask(updated)
-      onTaskUpdate?.(updated)
-      syncUpdatedTask(updated)
-      toast.success(
-        updated.autonomous
-          ? 'Autonomous execution enabled'
-          : 'Autonomous execution disabled',
-      )
-    } catch (err) {
-      toast.error(getErrorMessage(err, 'Failed to update autonomous mode'))
-    } finally {
-      setIsTogglingAutonomous(false)
-    }
-  }, [task, onTaskUpdate, projectId, setTask, syncUpdatedTask])
-
   const handleAgentOverrideChange = useCallback(
     async (agentSlug: string | null) => {
       if (!task) return
@@ -125,11 +100,9 @@ export function useTaskActions({
   )
 
   return {
-    isTogglingAutonomous,
     handleStatusChange,
     handleSubtaskToggle,
     handleObjectiveEdit,
-    handleToggleAutonomous,
     handleAgentOverrideChange,
   }
 }

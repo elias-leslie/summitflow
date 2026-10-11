@@ -12,13 +12,7 @@ interface TaskModalHeaderProps {
   editTitle: string
   onEditTitleChange: (title: string) => void
   // Action props — integrated into header
-  isExecuting: boolean
-  isStopping: boolean
-  isTogglingAutonomous: boolean
-  onStartExecution: () => void
-  onStopExecution: () => void
   onStatusChange: (status: TaskStatus) => Promise<void>
-  onToggleAutonomous: () => void
   onAgentOverrideChange: (agentId: string | null) => void
   onEditStart: () => void
   onEditCancel: () => void
@@ -31,13 +25,7 @@ export function TaskModalHeader({
   isEditing,
   editTitle,
   onEditTitleChange,
-  isExecuting,
-  isStopping,
-  isTogglingAutonomous,
-  onStartExecution,
-  onStopExecution,
   onStatusChange,
-  onToggleAutonomous,
   onAgentOverrideChange,
   onEditStart,
   onEditCancel,
@@ -68,14 +56,8 @@ export function TaskModalHeader({
       {/* Row 3: action bar — contextual to status */}
       <TaskModalActions
         task={task}
-        isExecuting={isExecuting}
-        isStopping={isStopping}
-        isTogglingAutonomous={isTogglingAutonomous}
         isEditing={isEditing}
-        onStartExecution={onStartExecution}
-        onStopExecution={onStopExecution}
         onStatusChange={onStatusChange}
-        onToggleAutonomous={onToggleAutonomous}
         onAgentOverrideChange={onAgentOverrideChange}
         onEditStart={onEditStart}
         onEditCancel={onEditCancel}

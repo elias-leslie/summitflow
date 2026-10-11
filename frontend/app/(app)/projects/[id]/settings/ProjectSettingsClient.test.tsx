@@ -10,7 +10,6 @@ const navigationMocks = vi.hoisted(() => ({
 const apiMocks = vi.hoisted(() => ({
   fetchProject: vi.fn(),
   fetchProjectHealth: vi.fn(),
-  fetchQualityGateHealth: vi.fn(),
   updateProject: vi.fn(),
 }))
 
@@ -21,7 +20,6 @@ vi.mock('next/navigation', () => ({
 vi.mock('@/lib/api', () => ({
   fetchProject: apiMocks.fetchProject,
   fetchProjectHealth: apiMocks.fetchProjectHealth,
-  fetchQualityGateHealth: apiMocks.fetchQualityGateHealth,
   updateProject: apiMocks.updateProject,
   PROJECT_CATEGORY_LABELS: {
     production: 'Production',
@@ -67,12 +65,6 @@ describe('ProjectSettingsClient', () => {
       response_time_ms: 123,
       checked_at: '2026-03-12T10:00:00Z',
     })
-    apiMocks.fetchQualityGateHealth.mockResolvedValue({
-      project_id: 'summitflow',
-      overall_pass: false,
-      total_unfixed: 3,
-      checks: {},
-    })
     apiMocks.updateProject.mockResolvedValue({
       id: 'summitflow',
       name: 'SummitFlow Ops',
@@ -110,7 +102,7 @@ describe('ProjectSettingsClient', () => {
     expect(await screen.findByText('Settings')).toBeInTheDocument()
     expect(screen.getByDisplayValue('summitflow')).toBeInTheDocument()
     expect(await screen.findByText('123ms')).toBeInTheDocument()
-    expect(await screen.findByText('3 open')).toBeInTheDocument()
+    expect(screen.queryByText('Quality Gate')).not.toBeInTheDocument()
 
     // Agent Hub owns this project's automation controls.
     fireEvent.click(screen.getByRole('button', { name: /Automation/i }))

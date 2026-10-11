@@ -6,7 +6,6 @@ import { formatTimeAgo } from '@/lib/format'
 import { priorityConfig, statusIconConfig, typeConfig } from '@/lib/task-config'
 import { cn } from '@/lib/utils'
 import { CriteriaProgress } from './CriteriaProgress'
-import { EnrichmentStatusBadge } from './EnrichmentStatusBadge'
 import { SubtaskProgress } from './SubtaskProgress'
 
 interface TaskListRowProps {
@@ -149,8 +148,6 @@ export function TaskListRow({
           {subtasks.length > 0 && (
             <SubtaskProgress subtasks={subtasks} maxVisible={5} />
           )}
-          {/* Enrichment Status Badge for non-accepted tasks */}
-          <EnrichmentStatusBadge status={task.enrichment_status} />
         </div>
       </td>
 

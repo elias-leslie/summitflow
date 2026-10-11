@@ -1,5 +1,5 @@
 import clsx from 'clsx'
-import { Bot, Link2, Loader2, Palette, ShieldCheck } from 'lucide-react'
+import { Bot, Link2, Palette, ShieldCheck } from 'lucide-react'
 import type { Task } from '@/lib/api'
 import { getTaskStatusCardConfig } from '@/lib/task-config'
 import { hasVerifiedEvidence } from '@/lib/task-verification'
@@ -7,21 +7,15 @@ import { StepProgressIndicator } from './StepProgressIndicator'
 
 interface TaskCardBodyProps {
   task: Task
-  currentStep?: string
   canExpand: boolean
 }
 
-export function TaskCardBody({
-  task,
-  currentStep,
-  canExpand,
-}: TaskCardBodyProps) {
+export function TaskCardBody({ task, canExpand }: TaskCardBodyProps) {
   const _statusConfig = getTaskStatusCardConfig(task.status)
   const capability = task.capability
   const hasCriteria = capability && capability.criteria_total > 0
   const allPassed =
     hasCriteria && capability.criteria_passed === capability.criteria_total
-  const isRunning = task.status === 'running'
   const sessionCount = task.agent_hub_session_ids?.length ?? 0
   const hasDesignWork = task.labels?.some((label) =>
     ['design', 'ui-design', 'mockup'].includes(label.toLowerCase()),
@@ -33,13 +27,6 @@ export function TaskCardBody({
       <h4 className="text-sm font-medium text-slate-100 leading-tight mb-2 line-clamp-2">
         {task.title}
       </h4>
-
-      {isRunning && currentStep && (
-        <div className="flex items-center gap-2 mb-2 py-1.5 px-2 -mx-1 rounded bg-blue-500/10 border border-blue-500/20">
-          <Loader2 className="h-3 w-3 animate-spin text-blue-400 shrink-0" />
-          <span className="text-xs text-blue-300 truncate">{currentStep}</span>
-        </div>
-      )}
 
       {canExpand && <StepProgressIndicator status={task.status} />}
 

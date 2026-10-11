@@ -16,7 +16,6 @@ import { useState } from 'react'
 import { AgentObservabilityTimeline } from '@/components/tasks/AgentObservabilityTimeline'
 import { CheckpointStatus } from '@/components/tasks/CheckpointStatus'
 import { CriteriaProgress } from '@/components/tasks/CriteriaProgress'
-import { ExecutionTimeline } from '@/components/tasks/ExecutionTimeline'
 import { LinkedCapabilitySection } from '@/components/tasks/LinkedCapabilitySection'
 import { NarrationTimeline } from '@/components/tasks/NarrationTimeline'
 import { SubtasksSection } from '@/components/tasks/SubtasksSection'
@@ -39,7 +38,6 @@ interface TaskModalContentProps {
   subtasksError: string | null
   isEditing: boolean
   editDescription: string
-  executionError: string | null
   onEditDescriptionChange: (value: string) => void
   onSubtaskToggle: (subtaskId: string, passes: boolean) => Promise<void>
 }
@@ -397,59 +395,15 @@ function ExecutionPanel({
   task: Task
   projectId: string
 }) {
-  const isRunning = task.status === 'running'
-  const [depth, setDepth] = useState<'events' | 'agent'>('events')
-
   return (
-    <div className="space-y-3">
-      {/* Depth toggle */}
-      <div className="flex items-center gap-1 p-0.5 rounded-md bg-slate-800/50 border border-slate-700/40 w-fit">
-        <button
-          type="button"
-          onClick={() => setDepth('events')}
-          className={clsx(
-            'px-3 py-1 text-xs rounded transition-all duration-150',
-            depth === 'events'
-              ? 'bg-slate-700 text-slate-100 shadow-sm'
-              : 'text-slate-500 hover:text-slate-300',
-          )}
-        >
-          Event Stream
-        </button>
-        <button
-          type="button"
-          onClick={() => setDepth('agent')}
-          className={clsx(
-            'px-3 py-1 text-xs rounded transition-all duration-150',
-            depth === 'agent'
-              ? 'bg-slate-700 text-slate-100 shadow-sm'
-              : 'text-slate-500 hover:text-slate-300',
-          )}
-        >
-          Agent Detail
-        </button>
-      </div>
-
-      {depth === 'events' ? (
-        <ExecutionTimeline
-          taskId={task.id}
-          projectId={projectId}
-          autoConnect={isRunning}
-          showChatInput={true}
-          chatEnabled={isRunning}
-          className="border border-slate-700/50 rounded-lg overflow-hidden"
-        />
-      ) : (
-        <AgentObservabilityTimeline
-          taskId={task.id}
-          projectId={projectId}
-          isLive={isRunning}
-          pollInterval={3000}
-          maxHeight="600px"
-          className="border border-slate-700/50 rounded-lg overflow-hidden"
-        />
-      )}
-    </div>
+    <AgentObservabilityTimeline
+      taskId={task.id}
+      projectId={projectId}
+      isLive={task.status === 'running'}
+      pollInterval={3000}
+      maxHeight="600px"
+      className="border border-slate-700/50 rounded-lg overflow-hidden"
+    />
   )
 }
 
@@ -470,7 +424,7 @@ function GitPanel({ task, projectId }: { task: Task; projectId: string }) {
 // ---------------------------------------------------------------------------
 
 export function TaskModalContent(props: TaskModalContentProps) {
-  const { task, projectId, executionError } = props
+  const { task, projectId } = props
   const [activeTab, setActiveTab] = useState<TaskModalTab>(() =>
     getDefaultTab(task),
   )
@@ -482,12 +436,6 @@ export function TaskModalContent(props: TaskModalContentProps) {
 
   return (
     <div className="flex-1 overflow-hidden flex flex-col">
-      {executionError && (
-        <div className="mx-6 mt-3 p-3 bg-red-950/30 border border-red-800/30 rounded-lg">
-          <p className="text-sm text-red-400">{executionError}</p>
-        </div>
-      )}
-
       <TabBar
         tabs={visibleTabs}
         activeTab={resolvedTab}

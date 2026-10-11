@@ -14,7 +14,6 @@ import {
   Zap,
 } from 'lucide-react'
 import { AnimatePresence, motion } from 'motion/react'
-import type { useExecutionWebSocket } from '@/hooks/useExecutionWebSocket'
 import type { Task } from '@/lib/api'
 import {
   columnColorClasses,
@@ -38,11 +37,7 @@ interface KanbanRowProps {
   isDragging: boolean
   onToggle: () => void
   onTaskClick?: (task: Task) => void
-  onExecuteNow?: (taskId: string) => void
   onDelete?: (taskId: string) => void
-  executingTaskId?: string | null
-  runningTaskId?: string | null
-  executionHook?: ReturnType<typeof useExecutionWebSocket>
 }
 
 export function KanbanRow({
@@ -52,11 +47,7 @@ export function KanbanRow({
   isDragging,
   onToggle,
   onTaskClick,
-  onExecuteNow,
   onDelete,
-  executingTaskId,
-  runningTaskId,
-  executionHook,
 }: KanbanRowProps) {
   const colors = columnColorClasses[column.color] || columnColorClasses.slate
   const IconComponent = column.icon ? COLUMN_ICONS[column.icon] : null
@@ -110,7 +101,7 @@ export function KanbanRow({
 
         {showDropHint && (
           <span className="ml-auto text-xs text-slate-400 animate-pulse">
-            {column.id === 'active' ? 'Drop to queue' : 'Drop to add here'}
+            Drop to add here
           </span>
         )}
       </button>
@@ -132,35 +123,14 @@ export function KanbanRow({
               <div className="p-3">
                 {tasks.length > 0 ? (
                   <div className="grid gap-3 grid-cols-[repeat(auto-fill,minmax(min(300px,100%),1fr))]">
-                    {tasks.map((task) => {
-                      const isRunningTask = task.id === runningTaskId
-                      return (
-                        <TaskCard
-                          key={task.id}
-                          task={task}
-                          onClick={() => onTaskClick?.(task)}
-                          onExecuteNow={
-                            column.id === 'ideas' ? onExecuteNow : undefined
-                          }
-                          onDelete={onDelete}
-                          isExecuting={executingTaskId === task.id}
-                          execution={
-                            isRunningTask ? executionHook?.execution : undefined
-                          }
-                          wsConnected={
-                            isRunningTask ? executionHook?.connected : false
-                          }
-                          onStopExecution={
-                            isRunningTask ? executionHook?.sendStop : undefined
-                          }
-                          onSendMessage={
-                            isRunningTask
-                              ? executionHook?.sendMessage
-                              : undefined
-                          }
-                        />
-                      )
-                    })}
+                    {tasks.map((task) => (
+                      <TaskCard
+                        key={task.id}
+                        task={task}
+                        onClick={() => onTaskClick?.(task)}
+                        onDelete={onDelete}
+                      />
+                    ))}
                   </div>
                 ) : (
                   <div className="flex items-center justify-center h-16 gap-2 text-xs text-slate-600">

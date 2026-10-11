@@ -4,10 +4,7 @@ import { useSortable } from '@dnd-kit/sortable'
 import { CSS } from '@dnd-kit/utilities'
 import clsx from 'clsx'
 import { GripVertical } from 'lucide-react'
-import { AnimatePresence } from 'motion/react'
-import { useState } from 'react'
 import type { Task } from '@/lib/api'
-import { ExecutionPanel, type ExecutionState } from './ExecutionPanel'
 import { TaskCardActions } from './TaskCardActions'
 import { TaskCardBody } from './TaskCardBody'
 import { TaskCardHeader } from './TaskCardHeader'
@@ -19,27 +16,10 @@ export { DragOverlayTaskCard } from './DragOverlayTaskCard'
 interface TaskCardProps {
   task: Task
   onClick?: () => void
-  onExecuteNow?: (taskId: string) => void
-  isExecuting?: boolean
   onDelete?: (taskId: string) => void
-  execution?: ExecutionState
-  wsConnected?: boolean
-  onStopExecution?: () => void
-  onSendMessage?: (message: string) => void
 }
 
-export function TaskCard({
-  task,
-  onClick,
-  onExecuteNow,
-  isExecuting,
-  onDelete,
-  execution,
-  wsConnected = false,
-  onStopExecution,
-  onSendMessage,
-}: TaskCardProps) {
-  const [expanded, setExpanded] = useState(false)
+export function TaskCard({ task, onClick, onDelete }: TaskCardProps) {
   const {
     attributes,
     listeners,
@@ -56,14 +36,7 @@ export function TaskCard({
   }
 
   const isIdea = isCrowdsourcedIdea(task)
-  const canExpand = task.status === 'running'
   const isRunning = task.status === 'running'
-  const currentStep = execution?.currentStep
-
-  const handleExpandToggle = (e: React.MouseEvent) => {
-    e.stopPropagation()
-    setExpanded(!expanded)
-  }
 
   return (
     <div
@@ -95,41 +68,11 @@ export function TaskCard({
         />
       )}
 
-      <TaskCardActions
-        isIdea={isIdea}
-        canExpand={canExpand}
-        expanded={expanded}
-        isExecuting={isExecuting}
-        taskId={task.id}
-        onDelete={onDelete}
-        onExecuteNow={onExecuteNow}
-        onExpandToggle={handleExpandToggle}
-      />
+      <TaskCardActions isIdea={isIdea} taskId={task.id} onDelete={onDelete} />
 
       <div className="pointer-events-none relative z-0 pl-4">
         <TaskCardHeader task={task} />
-        <TaskCardBody
-          task={task}
-          currentStep={currentStep}
-          canExpand={canExpand}
-        />
-
-        <AnimatePresence>
-          {expanded &&
-            canExpand &&
-            execution &&
-            onStopExecution &&
-            onSendMessage && (
-              <div className="pointer-events-auto relative z-20">
-                <ExecutionPanel
-                  execution={execution}
-                  connected={wsConnected}
-                  onStop={onStopExecution}
-                  onSendMessage={onSendMessage}
-                />
-              </div>
-            )}
-        </AnimatePresence>
+        <TaskCardBody task={task} canExpand={isRunning} />
       </div>
     </div>
   )

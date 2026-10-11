@@ -49,18 +49,11 @@ export function TaskModal({
     editTitle,
     editDescription,
     setEditDescription,
-    isExecuting,
-    isStopping,
-    executionError,
-    isTogglingAutonomous,
     handleEditStart,
     handleEditCancel,
     handleEditSave,
     handleStatusChange,
     handleSubtaskToggle,
-    handleStartExecution,
-    handleStopExecution,
-    handleToggleAutonomous,
     handleAgentOverrideChange,
     setEditTitle,
   } = useTaskModal({
@@ -140,13 +133,7 @@ export function TaskModal({
               isEditing={isEditing}
               editTitle={editTitle}
               onEditTitleChange={setEditTitle}
-              isExecuting={isExecuting}
-              isStopping={isStopping}
-              isTogglingAutonomous={isTogglingAutonomous}
-              onStartExecution={handleStartExecution}
-              onStopExecution={handleStopExecution}
               onStatusChange={handleStatusChange}
-              onToggleAutonomous={handleToggleAutonomous}
               onAgentOverrideChange={handleAgentOverrideChange}
               onEditStart={handleEditStart}
               onEditCancel={handleEditCancel}
@@ -163,7 +150,6 @@ export function TaskModal({
               subtasksError={subtasksError}
               isEditing={isEditing}
               editDescription={editDescription}
-              executionError={executionError}
               onEditDescriptionChange={setEditDescription}
               onSubtaskToggle={handleSubtaskToggle}
             />

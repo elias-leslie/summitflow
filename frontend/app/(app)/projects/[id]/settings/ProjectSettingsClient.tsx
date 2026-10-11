@@ -17,7 +17,7 @@ import {
 import Link from 'next/link'
 import { useParams } from 'next/navigation'
 import { useCallback, useEffect, useState } from 'react'
-import { AutonomousSettingsPanel } from '@/components/settings/AutonomousSettings'
+import { AutomationsPanel } from '@/components/settings/AutomationsPanel'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import {
@@ -30,7 +30,6 @@ import {
 import {
   fetchProject,
   fetchProjectHealth,
-  fetchQualityGateHealth,
   PROJECT_CATEGORY_LABELS,
   type Project,
   type ProjectCategory,
@@ -81,12 +80,6 @@ export function ProjectSettingsClient() {
   } = useQuery({
     queryKey: ['project-health', projectId],
     queryFn: () => fetchProjectHealth(projectId),
-    enabled: Boolean(project),
-  })
-
-  const { data: qualityGate } = useQuery({
-    queryKey: ['quality-gate-health', projectId],
-    queryFn: () => fetchQualityGateHealth(projectId),
     enabled: Boolean(project),
   })
 
@@ -288,7 +281,7 @@ export function ProjectSettingsClient() {
       </header>
 
       {/* Status Strip */}
-      <div className="mb-6 grid grid-cols-3 gap-3">
+      <div className="mb-6 grid grid-cols-2 gap-3">
         <StatusCell
           label="Project ID"
           value={project.id}
@@ -315,31 +308,6 @@ export function ProjectSettingsClient() {
           actionLabel="Refresh"
           onAction={() => refetchHealth()}
           pending={healthRefreshing}
-        />
-        <StatusCell
-          label="Quality Gate"
-          value={
-            qualityGate
-              ? qualityGate.overall_pass
-                ? 'Passing'
-                : `${qualityGate.total_unfixed} open`
-              : 'Unavailable'
-          }
-          helper={
-            qualityGate
-              ? qualityGate.overall_pass
-                ? 'No unfixed issues'
-                : 'Needs attention'
-              : 'Not loaded'
-          }
-          icon={AlertCircle}
-          tone={
-            qualityGate
-              ? qualityGate.overall_pass
-                ? 'emerald'
-                : 'amber'
-              : 'default'
-          }
         />
       </div>
 
@@ -584,7 +552,7 @@ export function ProjectSettingsClient() {
 
       {activeTab === 'automation' && (
         <div className="animate-in">
-          <AutonomousSettingsPanel projectId={projectId} />
+          <AutomationsPanel projectId={projectId} />
         </div>
       )}
     </main>

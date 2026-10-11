@@ -1,20 +1,10 @@
 /**
- * Tasks API - Execution Type Definitions
+ * Tasks API - Delete Type Definitions
  */
 
 // ============================================================================
-// Execution Types
+// Delete Types
 // ============================================================================
-
-export interface ExecuteTaskOptions {
-  model?: string
-}
-
-export interface ExecuteTaskResponse {
-  execution_id: string
-  task_id: string
-  status: string
-}
 
 export interface DeleteTaskResponse {
   status: string

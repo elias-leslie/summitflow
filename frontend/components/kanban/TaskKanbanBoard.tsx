@@ -17,9 +17,8 @@ import { useMutation } from '@tanstack/react-query'
 import { useMemo, useState } from 'react'
 import { toast } from 'sonner'
 import { ConfirmDeleteDialog } from '@/components/shared/ConfirmDeleteDialog'
-import { useExecutionWebSocket } from '@/hooks/useExecutionWebSocket'
 import type { Task, TaskStatus } from '@/lib/api'
-import { deleteTask, executeTask } from '@/lib/api/tasks'
+import { deleteTask } from '@/lib/api/tasks'
 import { useTaskMutationSync } from '@/lib/task-mutation-sync'
 import { getErrorMessage } from '@/lib/utils'
 import {
@@ -68,22 +67,9 @@ export function TaskKanbanBoard({
   onStatusChange,
   onTaskClick,
 }: TaskKanbanBoardProps) {
-  const { invalidateTasks, syncDeletedTask } = useTaskMutationSync(projectId)
+  const { syncDeletedTask } = useTaskMutationSync(projectId)
   const [activeId, setActiveId] = useState<string | null>(null)
-  const [executingTaskId, setExecutingTaskId] = useState<string | null>(null)
   const [deleteConfirmTask, setDeleteConfirmTask] = useState<Task | null>(null)
-
-  // Find the first running task to connect WebSocket
-  const runningTask = useMemo(
-    () => tasks.find((t) => t.status === 'running'),
-    [tasks],
-  )
-
-  // WebSocket connection for the running task
-  const executionHook = useExecutionWebSocket({
-    taskId: runningTask?.id || '',
-    enabled: !!runningTask,
-  })
 
   // Group tasks by column
   const tasksByColumn = useMemo(() => {
@@ -141,19 +127,6 @@ export function TaskKanbanBoard({
   // Event Handlers
   // ============================================================================
 
-  const handleExecuteNow = async (taskId: string) => {
-    setExecutingTaskId(taskId)
-    try {
-      await executeTask(projectId, taskId)
-      invalidateTasks()
-      toast.success('Task queued for execution')
-    } catch (error) {
-      toast.error(getErrorMessage(error, 'Failed to queue task'))
-    } finally {
-      setExecutingTaskId(null)
-    }
-  }
-
   const deleteMutation = useMutation({
     mutationFn: (taskId: string) => deleteTask(projectId, taskId),
     onSuccess: (_, taskId) => {
@@ -209,11 +182,6 @@ export function TaskKanbanBoard({
     }
 
     if (fromColumn && toColumn && fromColumn !== toColumn) {
-      if (toColumn === 'active') {
-        void handleExecuteNow(activeTaskId)
-        setActiveId(null)
-        return
-      }
       // Convert column to task status
       const newStatus = columnToStatus[toColumn]
       onStatusChange?.(activeTaskId, newStatus)
@@ -266,11 +234,7 @@ export function TaskKanbanBoard({
               isDragging={!!activeId}
               onToggle={() => toggleRow(column.id)}
               onTaskClick={onTaskClick}
-              onExecuteNow={handleExecuteNow}
               onDelete={handleDeleteClick}
-              executingTaskId={executingTaskId}
-              runningTaskId={runningTask?.id}
-              executionHook={executionHook}
             />
           ))}
         </div>
