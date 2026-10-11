@@ -164,6 +164,18 @@ SYSTEM_DENIED = {
     "irreversible_vgremove": ["ssh proxmox-gem vgremove pve"],
     "irreversible_zfs_destroy": ["ssh proxmox-gem 'zfs destroy -r rpool/data'"],
     "irreversible_pvesm_free": ["ssh proxmox-gem pvesm free local-lvm:vm-101-disk-0"],
+    "irreversible_pvesh_delete": [
+        "pvesh delete /nodes/davion-gem/qemu/101", "ssh root@192.168.86.39 'pvesh delete /storage/local-lvm'",
+    ],
+    "irreversible_btrbk_clean": ["sudo btrbk clean", "btrbk -c /etc/btrbk/btrbk.conf clean"],
+    "irreversible_btrbk_prune": ["btrbk prune home"],
+    "irreversible_dmsetup_remove": ["sudo dmsetup remove luks-root", "dmsetup remove /dev/mapper/pve-root"],
+    "irreversible_dmsetup_remove_all": ["dmsetup remove_all"],
+    "irreversible_rclone_sync": [
+        "rclone sync /srv/backups summitflow-drive:archive",
+        "rclone --config /x/rclone.conf sync --transfers 4 /data gdrive:backup",
+    ],
+    "irreversible_rclone_move": ["rclone move ./out summitflow-drive:x"],
     "rm_protected_root": ["ssh proxmox-gem rm -rf /var/lib/vz", "ssh proxmox-gem 'sudo rm -rf /etc/pve/qemu-server'"],
 }
 SYSTEM_ALLOWED = [
@@ -179,6 +191,10 @@ SYSTEM_ALLOWED = [
     "cryptsetup luksDump /dev/sda2", "cryptsetup luksFormat /srv/scratch/test.img",
     "lvremove --test pve/x", "zfs destroy -n rpool/x", "ssh host uptime", "ssh -t host",
     "st commit -m 'never run qm destroy or mkfs /dev/sda'", "echo 'restic forget'",
+    "pvesh get /nodes", "ssh proxmox-gem pvesh get /cluster/resources", "btrbk -n clean", "btrbk --dry-run prune",
+    "btrbk list snapshots", "btrbk run", "dmsetup ls", "dmsetup remove test-loop0", "dmsetup info luks-root",
+    "rclone sync /a /b", "rclone sync summitflow-drive:archive /srv/scratch/restore",
+    "rclone move summitflow-drive:x ./local", "rclone sync /data gdrive:backup --dry-run", "rclone copy /data gdrive:x",
 ]
 
 

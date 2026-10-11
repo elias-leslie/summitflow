@@ -578,6 +578,15 @@ _RESTIC_OPTIONS_WITH_VALUE = frozenset({
     "--stuck-request-timeout", "--http-user-agent",
 })
 _RCLONE_DESTRUCTIVE = frozenset({"delete", "purge", "deletefile", "cleanup", "rmdirs", "rmdir"})
+_RCLONE_MIRRORS = frozenset({"sync", "move"})
+_RCLONE_OPTIONS_WITH_VALUE = frozenset({
+    "--config", "--transfers", "--checkers", "--exclude", "--include", "--filter", "--exclude-from",
+    "--include-from", "--filter-from", "--files-from", "--backup-dir", "--suffix", "--log-file",
+    "--log-level", "--bwlimit", "--max-age", "--min-age", "--max-size", "--min-size", "--max-delete",
+    "--max-transfer", "--compare-dest", "--copy-dest", "--tpslimit", "--retries", "--low-level-retries",
+    "--timeout", "--contimeout", "--stats", "--order-by", "--drive-root-folder-id", "--user-agent",
+})
+_BTRBK_OPTIONS_WITH_VALUE = frozenset({"-c", "--config", "-l", "--loglevel", "--format", "--lockfile", "--override"})
 _RCLONE_REMOTE = re.compile(r"^[A-Za-z0-9_][\w. -]*:")
 _FIND_GLOBAL_OPTIONS = frozenset({"-H", "-L", "-P"})
 _FIND_SELECTIVE = frozenset({
@@ -703,14 +712,53 @@ def _restic_decision(tokens: Sequence[str]) -> CommandGuardDecision | None:
 
 def _rclone_decision(tokens: Sequence[str]) -> CommandGuardDecision | None:
     args = tokens[1:]
-    command = next((arg for arg in args if arg in _RCLONE_DESTRUCTIVE), None)
+    command = next((arg for arg in args if arg in _RCLONE_DESTRUCTIVE or arg in _RCLONE_MIRRORS), None)
     if command is None or git_has_flag(args, "--dry-run") or "-n" in args:
         return None
-    if any(not arg.startswith("-") and arg != command and _RCLONE_REMOTE.match(arg) for arg in args):
+    operands = _positionals(args[args.index(command) + 1:], _RCLONE_OPTIONS_WITH_VALUE)
+    if command in _RCLONE_MIRRORS:
+        if len(operands) >= 2 and _RCLONE_REMOTE.match(operands[1]):
+            return _system_blocked(
+                f"rclone {command}",
+                "Mirroring onto a remote deletes destination files that the source lacks (offsite backups such "
+                "as summitflow-drive live there); offsite uploads run only from the scheduled backup jobs. "
+                "Preview with --dry-run, or use 'rclone copy', which never deletes.",
+                tokens,
+            )
+        return None
+    if any(_RCLONE_REMOTE.match(arg) for arg in operands):
         return _system_blocked(
             f"rclone {command}",
             "Deletes files on a remote (offsite backups such as summitflow-drive live there); offsite "
             "expiry runs only from the scheduled backup jobs. Inspect with 'rclone ls'/'rclone lsd' or add --dry-run.",
+            tokens,
+        )
+    return None
+
+
+def _btrbk_decision(tokens: Sequence[str]) -> CommandGuardDecision | None:
+    words = _positionals(tokens[1:], _BTRBK_OPTIONS_WITH_VALUE)
+    dry_run = git_has_flag(tokens[1:], "--dry-run") or "n" in _short_flags(tokens[1:])
+    if words[:1] in (["clean"], ["prune"]) and not dry_run:
+        return _system_blocked(
+            f"btrbk {words[0]}",
+            "Deletes btrbk snapshots and backups outside the scheduled retention run; preview with "
+            "'btrbk -n' / '--dry-run' or inspect with 'btrbk list'.",
+            tokens,
+        )
+    return None
+
+
+def _dmsetup_decision(tokens: Sequence[str]) -> CommandGuardDecision | None:
+    words = _positionals(tokens[1:], frozenset({"-j", "--major", "-m", "--minor", "-u", "--uuid"}))
+    if not words or words[0] not in {"remove", "remove_all"}:
+        return None
+    targets = words[1:]
+    if words[0] == "remove_all" or not targets or any("loop" not in target.lower() for target in targets):
+        return _system_blocked(
+            f"dmsetup {words[0]}",
+            "Tearing down a device-mapper device (LUKS, LVM) under a mounted system can corrupt or strand "
+            "its data; only loop-backed scratch mappings may be removed. Inspect with 'dmsetup ls'.",
             tokens,
         )
     return None
@@ -762,6 +810,8 @@ def _proxmox_decision(name: str, tokens: Sequence[str]) -> CommandGuardDecision 
         return _system_blocked(f"{name} destroy", f"This {advice}", tokens)
     if name == "pvesm" and words[:1] == ["free"]:
         return _system_blocked("pvesm free", f"This {advice}", tokens)
+    if name == "pvesh" and words[:1] == ["delete"]:
+        return _system_blocked("pvesh delete", f"This API call {advice}", tokens)
     return None
 
 
@@ -781,6 +831,10 @@ def irreversible_system_decision(tokens: Sequence[str], cwd: str) -> CommandGuar
         return _restic_decision(tokens)
     if name == "rclone":
         return _rclone_decision(tokens)
+    if name == "btrbk":
+        return _btrbk_decision(tokens)
+    if name == "dmsetup":
+        return _dmsetup_decision(tokens)
     return _disk_decision(name, tokens) or _proxmox_decision(name, tokens)
 
 
