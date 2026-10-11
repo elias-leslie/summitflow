@@ -1350,3 +1350,40 @@ def test_prune_failures_are_counted_until_a_prune_completes(repository_env, monk
     outcome = {"status": "completed", "completed_at": datetime.now(UTC).isoformat()}
     runtime.maintain_repository(env, dry_run=False)
     assert runtime.repository_journal(env)["maintenance"]["remote"]["prune_failures"] == 0
+
+
+def test_retire_source_forgets_both_repositories_prunes_and_drops_its_state(repository_env, monkeypatch):
+    env = {**repository_env, "RESTIC_OFFSITE_PRUNE_QUALIFIED": "true"}
+    Path(env["RESTIC_LOCAL_REPOSITORY"]).mkdir()
+    retired, kept = "a" * 64, "b" * 64
+    config = ResticConfig.from_env(env)
+    with runtime._checkpoint(config) as (directory, state):
+        state["sources"] = {"guest": {"snapshot_id": retired, "last_good_snapshot_id": retired, "baseline_snapshot_id": retired}, "other": {"snapshot_id": kept}}
+        state["pinned_snapshot_ids"] = [retired, kept]
+        state["offsite"] = {"pending_snapshot_ids": [retired]}
+        runtime._save_json(directory / "state.json", state)
+    adapter = MagicMock()
+    adapter.forget_source.side_effect = lambda source_id, **kwargs: {"status": "completed", "delete": [retired], "state": kwargs["state"]}
+    adapter.prune.return_value = {"status": "completed", "completed_at": "2026-10-11T00:00:00+00:00"}
+    adapter.quota_free_bytes.return_value = 10 * 1024**3
+    monkeypatch.setattr(runtime, "ResticAdapter", lambda _: adapter)
+    deleted = []
+    monkeypatch.setattr(runtime.backup_store, "get_source", lambda _id: {"id": "guest", "enabled": False})
+    monkeypatch.setattr(runtime.backup_store, "list_backups", lambda **_kwargs: ([], 0))
+    monkeypatch.setattr(runtime.backup_store, "delete_source", lambda source_id: deleted.append(source_id) or True)
+
+    result = runtime.retire_repository_source(env, "guest", dry_run=False)
+
+    assert result["status"] == "completed" and result["source_deleted"] is True and deleted == ["guest"]
+    assert [call.kwargs["remote"] for call in adapter.forget_source.call_args_list] == [False, True]
+    assert all(call.kwargs["dry_run"] is False for call in adapter.prune.call_args_list) and adapter.prune.call_count == 2
+    with runtime._checkpoint(config) as (_directory, state):
+        assert set(state["sources"]) == {"other"}
+        assert state["pinned_snapshot_ids"] == [kept] and state["offsite"]["pending_snapshot_ids"] == []
+        assert state["maintenance"]["local"]["pruned_at"] and state["maintenance"]["remote"]["pruned_at"]
+
+
+def test_retire_source_refuses_an_enabled_source(repository_env, monkeypatch):
+    monkeypatch.setattr(runtime.backup_store, "get_source", lambda _id: {"id": "guest", "enabled": True})
+    with pytest.raises(ResticError, match="Disable the backup source"):
+        runtime.retire_repository_source(repository_env, "guest", dry_run=False)

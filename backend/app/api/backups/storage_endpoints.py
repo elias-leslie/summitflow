@@ -326,6 +326,18 @@ async def maintain_storage_repository(backend_id: str, request: Request, dry_run
         raise HTTPException(status_code=409, detail=str(exc)) from exc
 
 
+@router.post("/backup-storage/{backend_id}/retire-source/{source_id}")
+async def retire_storage_source(backend_id: str, source_id: str, request: Request, dry_run: bool = True) -> dict[str, object]:
+    """Forget one disabled source's repository snapshots and prune; preview by default."""
+    require_owner(request)
+    from ...tasks.backup_repository_runtime import retire_repository_source
+
+    try:
+        return await asyncio.to_thread(retire_repository_source, _restic_backend_env(backend_id), source_id, dry_run=dry_run)
+    except (ResticError, OSError, ValueError) as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+
+
 @router.post("/backup-storage/{backend_id}/maintenance/cancel")
 async def cancel_storage_maintenance(backend_id: str, request: Request, force: bool = False) -> dict[str, object]:
     """Stop running repository maintenance; a mutating phase requires ``force``."""

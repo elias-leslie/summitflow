@@ -949,29 +949,59 @@ class ResticAdapter:
             if remote and (journal.get("pending_objects") or journal.get("mismatches")):
                 pending_ids.update(item["id"] for item in snapshots)
             selection = select_retention(snapshots, retention_days, pinned=pinned, pending=sorted(pending_ids), last_good=last_good)
-            resume = remote and not dry_run and (journal.get("maintenance") or {}).get("status") == "pending"
-            if selection["delete"] or resume:
-                if remote and not dry_run:
-                    if persist is None:
-                        raise ResticError("Remote retention requires durable maintenance checkpoints")
-                    journal = self._maintenance_state(journal, operation="forget", persist=persist, snapshot_ids=selection["delete"])
-                    selection["delete"] = list(journal["maintenance"]["snapshot_ids"])
-                current = {snapshot["id"] for snapshot in snapshots}
-                targets = [snapshot_id for snapshot_id in selection["delete"] if snapshot_id in current]
-                args = ["forget", *targets]
-                if dry_run:
-                    args.append("--dry-run")
-                # Always preview the exact immutable IDs before destructive forget.
-                if targets and not dry_run:
-                    self._run(self._command(*args, "--dry-run", remote=remote, permanent_delete=remote), phase="retention")
-                if targets:
-                    self._run(self._command(*args, remote=remote, permanent_delete=remote and not dry_run), phase="retention")
-                if remote and not dry_run:
-                    assert persist is not None
-                    journal["maintenance"]["phase"] = "command_completed"
-                    persist(copy.deepcopy(journal))
-                    self._reconcile_maintenance(journal, persist)
+            journal, selection["delete"] = self._forget_locked(selection["delete"], snapshots, remote=remote, journal=journal, persist=persist, dry_run=dry_run)
             return {**selection, "dry_run": dry_run, "status": "preview" if dry_run else "completed", "state": journal}
+
+    def _forget_locked(self, delete: Sequence[str], snapshots: Sequence[Mapping[str, Any]], *, remote: bool, journal: dict[str, Any], persist: Persist | None, dry_run: bool) -> tuple[dict[str, Any], list[str]]:
+        """Forget exact snapshot IDs; remote removal runs inside a durable journal scope."""
+        delete = list(delete)
+        resume = remote and not dry_run and (journal.get("maintenance") or {}).get("status") == "pending"
+        if delete or resume:
+            if remote and not dry_run:
+                if persist is None:
+                    raise ResticError("Remote retention requires durable maintenance checkpoints")
+                journal = self._maintenance_state(journal, operation="forget", persist=persist, snapshot_ids=delete)
+                delete = list(journal["maintenance"]["snapshot_ids"])
+            current = {snapshot["id"] for snapshot in snapshots}
+            targets = [snapshot_id for snapshot_id in delete if snapshot_id in current]
+            args = ["forget", *targets]
+            if dry_run:
+                args.append("--dry-run")
+            # Always preview the exact immutable IDs before destructive forget.
+            if targets and not dry_run:
+                self._run(self._command(*args, "--dry-run", remote=remote, permanent_delete=remote), phase="retention")
+            if targets:
+                self._run(self._command(*args, remote=remote, permanent_delete=remote and not dry_run), phase="retention")
+            if remote and not dry_run:
+                assert persist is not None
+                journal["maintenance"]["phase"] = "command_completed"
+                persist(copy.deepcopy(journal))
+                self._reconcile_maintenance(journal, persist)
+        return journal, delete
+
+    def forget_source(self, source_id: str, *, remote: bool = False, state: Mapping[str, Any] | None = None, persist: Persist | None = None, dry_run: bool = True) -> dict[str, Any]:
+        """Forget every snapshot tagged for one retired source, and nothing else."""
+        self.config.validate(remote=remote)
+        tag = self._tag(source_id)
+        if remote and not dry_run and not self.config.offsite_prune_qualified:
+            raise ResticError("Offsite retention has not been explicitly qualified")
+        if not dry_run and state is None:
+            raise ResticError("Forgetting a source requires the repository verification journal")
+        with repository_lock(self.config):
+            journal = copy.deepcopy(dict(state or {}))
+            pending = (journal.get("maintenance") or {}).get("status") == "pending"
+            if remote and not dry_run and pending:
+                # Never adopt or resume another interrupted operation's scope here.
+                raise ResticError("Another interrupted maintenance operation must be resumed first")
+            snapshots = self._snapshots(remote=remote)
+            # Exact tag match on the full listing: a multi-tagged snapshot that
+            # also belongs to another source is never removed with this one.
+            owned = sorted(item["id"] for item in snapshots if [t for t in (item.get("tags") or []) if str(t).startswith("source:")] == [tag])
+            shared = sorted(item["id"] for item in snapshots if tag in (item.get("tags") or []) and item["id"] not in owned)
+            if shared:
+                raise ResticError("Snapshots shared with another source cannot be forgotten by source retirement")
+            journal, deleted = self._forget_locked(owned, snapshots, remote=remote, journal=journal, persist=persist, dry_run=dry_run)
+            return {"source_id": source_id, "remote": remote, "delete": deleted, "dry_run": dry_run, "status": "preview" if dry_run else "completed", "state": journal}
 
     def prune(self, *, remote: bool = False, state: Mapping[str, Any] | None = None, persist: Persist | None = None, last_prune_at: str | None = None, available_bytes: int | None = None, minimum_headroom_bytes: int = 1024**3, dry_run: bool = True) -> dict[str, Any]:
         """Weekly independent maintenance, with preview, headroom, and 5% allowance.

@@ -1083,6 +1083,59 @@ def maintain_repository(env: dict[str, str], *, dry_run: bool = True, force_crit
         return results
 
 
+def retire_repository_source(env: dict[str, str], source_id: str, *, dry_run: bool = True) -> dict[str, Any]:
+    """Remove one disabled source's snapshots from both repositories, then prune.
+
+    Ordinary retention keeps an unmanaged source's points forever, so an
+    owner-approved retirement is the only path that forgets them. Only exact
+    single-source snapshots are touched; prune keeps its locks, headroom and
+    pending-copy gates but not the weekly cadence, which exists to bound
+    routine cost, not an explicit retirement.
+    """
+    source = backup_store.get_source(source_id)
+    if source is not None and source.get("enabled"):
+        raise ResticError("Disable the backup source before retiring its repository snapshots")
+    config = ResticConfig.from_env(env)
+    adapter = ResticAdapter(config)
+    with _repository_maintenance_admission(config, adapter, backend_id=env.get("BACKUP_STORAGE_BACKEND_ID")), _checkpoint(config) as (directory, state):
+        def persist(journal: dict[str, Any]) -> None:
+            state["offsite"] = journal
+            _save_json(directory / "state.json", state)
+
+        results: dict[str, Any] = {"source_id": source_id, "dry_run": dry_run}
+        repositories = [False, True] if config.remote_repository else [False]
+        for remote in repositories:
+            label = "remote" if remote else "local"
+            forgotten = adapter.forget_source(source_id, remote=remote, state=state.get("offsite", {}), persist=persist, dry_run=dry_run)
+            results[label] = {"forget": {key: value for key, value in forgotten.items() if key != "state"}}
+        if dry_run:
+            results["status"] = "preview"
+            return results
+        # The forgotten points can no longer be parents, baselines or pending copies.
+        retired = state["sources"].pop(source_id, None) or {}
+        retired_ids = {retired.get(key) for key in ("snapshot_id", "last_good_snapshot_id", "baseline_snapshot_id")} - {None}
+        state["pinned_snapshot_ids"] = [value for value in state.get("pinned_snapshot_ids") or [] if value not in retired_ids]
+        offsite = state.setdefault("offsite", {})
+        if offsite.get("pending_snapshot_ids"):
+            offsite["pending_snapshot_ids"] = [value for value in offsite["pending_snapshot_ids"] if value not in retired_ids]
+        _save_json(directory / "state.json", state)
+        maintenance = state.setdefault("maintenance", {})
+        for remote in repositories:
+            label = "remote" if remote else "local"
+            free = adapter.quota_free_bytes() if remote else shutil.disk_usage(config.local_repository).free
+            prune = adapter.prune(remote=remote, state=state.get("offsite", {}), persist=persist, available_bytes=free, dry_run=False)
+            if prune.get("status") == "completed":
+                maintenance.setdefault(label, {})["pruned_at"] = prune["completed_at"]
+            results[label]["prune"] = {key: value for key, value in prune.items() if key != "state"}
+            _save_json(directory / "state.json", state)
+        rows, _ = backup_store.list_backups(source_id=source_id, limit=100)
+        results["remaining_backup_records"] = [str(row["id"]) for row in rows]
+        if source is not None and not rows:
+            results["source_deleted"] = backup_store.delete_source(source_id)
+        results["status"] = "failed" if any(results[label]["prune"].get("status") == "failed" for label in ("local", "remote") if label in results) else "completed"
+        return results
+
+
 def _without_journals(value: Any) -> Any:
     if isinstance(value, Mapping):
         return {key: _without_journals(child) for key, child in value.items() if key != "state"}

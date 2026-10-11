@@ -422,6 +422,23 @@ def cancel_maintenance(
         handle_api_error(e)
 
 
+@app.command("retire-source")
+def retire_source(
+    ctx: typer.Context,
+    backend_id: Annotated[str, typer.Argument(help="Restic backend ID")],
+    source_id: Annotated[str, typer.Argument(help="Disabled backup source to retire")],
+    preview: Annotated[bool, typer.Option("--preview/--apply", help="Preview by default; --apply forgets the source's snapshots in both repositories and prunes")] = True,
+) -> None:
+    """Forget a disabled source's snapshots in both repositories, prune, and remove the source once no backup records remain."""
+    try:
+        result = _api_post(f"backup-storage/{backend_id}/retire-source/{source_id}?dry_run={str(preview).lower()}", timeout=LONG_RUNNING_TIMEOUT)
+        output_json(result)
+        if result.get("status") == "failed":
+            raise typer.Exit(1)
+    except APIError as e:
+        handle_api_error(e)
+
+
 @app.command("maintenance")
 def repository_maintenance(
     ctx: typer.Context,

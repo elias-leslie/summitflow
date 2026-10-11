@@ -807,6 +807,41 @@ def _forget(process, command):
             process.objects.pop("snapshots/" + snapshot_id, None)
 
 
+def test_forget_source_removes_only_that_sources_remote_snapshots(setup):
+    adapter, process, journal = _retention_fixture(setup)
+    retired = Path(process.add_object(b"retired guest snapshot", "snapshots")).name
+    process.remote_snapshots.append({"id": retired, "tags": ["source:retired-guest"], "time": datetime.now(UTC).isoformat(), "paths": [str(process.payload)]})
+    journal["verified_objects"]["snapshots/" + retired] = {"id": "storage:snapshots/" + retired, "size": len(b"retired guest snapshot"), "mod_time": None}
+    journal["remote_snapshots"]["f" * 64] = retired
+    kept = {item["id"] for item in process.remote_snapshots} - {retired}
+
+    def forget_runner(command, **kwargs):
+        _forget(process, command)
+        return process(command, **kwargs)
+
+    adapter._runner = forget_runner
+    preview = adapter.forget_source("retired-guest", remote=True, state=journal)
+    assert preview["status"] == "preview" and preview["delete"] == [retired]
+    assert {item["id"] for item in process.remote_snapshots} == kept | {retired}
+    durable = []
+    result = adapter.forget_source("retired-guest", remote=True, state=journal, persist=durable.append, dry_run=False)
+    assert result["status"] == "completed" and result["delete"] == [retired]
+    assert {item["id"] for item in process.remote_snapshots} == kept
+    assert retired not in result["state"]["remote_snapshots"].values()
+    assert result["state"]["maintenance"]["status"] == "completed"
+
+
+def test_forget_source_refuses_shared_snapshots_and_pending_maintenance(setup):
+    adapter, process, journal = _retention_fixture(setup)
+    process.remote_snapshots[0]["tags"] = ["source:fixture", "source:retired-guest"]
+    with pytest.raises(engine.ResticError, match="shared with another source"):
+        adapter.forget_source("retired-guest", remote=True, state=journal)
+    process.remote_snapshots[0]["tags"] = ["source:fixture"]
+    journal["maintenance"] = {"status": "pending", "operation": "prune", "snapshot_ids": [], "baseline_objects": [], "version": 1}
+    with pytest.raises(engine.ResticError, match="must be resumed first"):
+        adapter.forget_source("retired-guest", remote=True, state=journal, persist=lambda _: None, dry_run=False)
+
+
 @pytest.mark.parametrize("crash_phase", ["command_completed", "completed"])
 def test_forget_resume_reconciles_saved_ids_after_empty_selection_and_persist_crash(setup, crash_phase):
     adapter, process, journal = _retention_fixture(setup)
