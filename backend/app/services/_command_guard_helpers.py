@@ -57,8 +57,6 @@ BASH_INTERCEPT_WORDS: tuple[str, ...] = (
 )
 DANGEROUS_PATTERNS: tuple[tuple[re.Pattern[str], str], ...] = (
     (re.compile(r"^rm\s+-[^\n]*r[^\n]*\s+(/\*?|\\\*)($|\s)"), "BLOCKED:rm -r /:Recursive root deletion is never allowed."),
-    (re.compile(r"^mkfs(\.\S+)?(\s|$)"), "BLOCKED:mkfs:Formatting filesystems is never allowed."),
-    (re.compile(r"^dd\b.*\bif=/dev/zero\b"), "BLOCKED:dd if=/dev/zero:Raw disk overwrite is never allowed."),
     (re.compile(r"^systemctl\s+(stop|disable)\b"), "BLOCKED:systemctl stop/disable:Do not stop or disable services directly."),
 )
 # Type alias for the path-conflict checker callback
@@ -364,6 +362,8 @@ _GIT_GLOBAL_OPTIONS_WITH_VALUE = frozenset({
 DISPOSABLE_ROOTS: tuple[str, ...] = ("/tmp", "/var/tmp", "/dev/shm", "/srv/scratch")
 # Mounted storage (backup drives, archives): never a recursive-delete target.
 _MOUNTED_STORAGE_ROOTS: tuple[str, ...] = ("/mnt", "/media")
+# Proxmox VM images and cluster config (reached over ssh): never a recursive-delete target.
+_PROXMOX_DATA_ROOTS: tuple[str, ...] = ("/var/lib/vz", "/etc/pve")
 _BROAD_PATHSPECS = frozenset({".", "./", ":/", ":/*", ":(top)", "*"})
 _STASH_READ_OR_APPLY = frozenset({"list", "show", "apply", "pop", "branch", "create", "store"})
 
@@ -502,7 +502,7 @@ def protected_deletion_root(target: str) -> bool:
         return True
     if target == "/srv/workspaces/projects":
         return True
-    return any(_under(target, root) for root in _MOUNTED_STORAGE_ROOTS)
+    return any(_under(target, root) for root in (*_MOUNTED_STORAGE_ROOTS, *_PROXMOX_DATA_ROOTS))
 
 
 def irreversible_rm_decision(tokens: Sequence[str], cwd: str) -> CommandGuardDecision | None:
@@ -539,9 +539,271 @@ def irreversible_rm_decision(tokens: Sequence[str], cwd: str) -> CommandGuardDec
     return None
 
 
+# --- Host-level irreversible commands: disks, snapshots, backups, Proxmox ----
+# Accident guard only: each rule fires on the destructive form and leaves
+# listing, dry-run, and image-file/loop-device work alone.
+
+_DISK_ADVICE = (
+    "destroys every byte on a real disk and agents never run it; practice on an image file or "
+    "loop device under /srv/scratch, or ask the owner to run it."
+)
+_HARMLESS_DEVICES = frozenset({
+    "/dev/null", "/dev/zero", "/dev/full", "/dev/random", "/dev/urandom",
+    "/dev/stdin", "/dev/stdout", "/dev/stderr", "/dev/tty",
+})
+_PARTED_WRITES = frozenset({
+    "mklabel", "mktable", "mkpart", "mkpartfs", "mkfs", "rm", "resize", "resizepart",
+    "rescue", "name", "set", "toggle", "disk_set", "disk_toggle", "type", "move", "cp",
+})
+_SGDISK_READ_ONLY = frozenset({
+    "-p", "--print", "-i", "--info", "-v", "--verify", "-O", "--print-mbr", "-b", "--backup",
+    "-L", "--list-types", "-P", "--pretend", "-V", "--version", "-?", "--help", "-a", "--set-alignment",
+})
+_PARTITIONER_READ_ONLY: dict[str, frozenset[str]] = {
+    "fdisk": frozenset({"-l", "--list", "-x", "--list-details"}),
+    "sfdisk": frozenset({
+        "-l", "--list", "-d", "--dump", "-J", "--json", "-s", "--show-size", "-V", "--verify",
+        "-g", "--show-geometry", "-F", "--list-free", "-n", "--no-act",
+    }),
+    "gdisk": frozenset({"-l"}),
+    "cfdisk": frozenset(),
+}
+_CRYPTSETUP_DESTRUCTIVE = frozenset({"luksformat", "erase", "lukserase", "lukskillslot"})
+_FORMATTERS = frozenset({"mke2fs", "mkswap", "mkdosfs", "mkntfs", "mkexfatfs"})
+_SNAPSHOT_STORE = "/mnt/summitflow-native"
+_RESTIC_OPTIONS_WITH_VALUE = frozenset({
+    "-r", "--repo", "--repository-file", "-p", "--password-file", "--password-command",
+    "--cacert", "--cache-dir", "-o", "--option", "--limit-upload", "--limit-download",
+    "--tls-client-cert", "--pack-size", "--compression", "--key-hint", "--retry-lock",
+    "--stuck-request-timeout", "--http-user-agent",
+})
+_RCLONE_DESTRUCTIVE = frozenset({"delete", "purge", "deletefile", "cleanup", "rmdirs", "rmdir"})
+_RCLONE_REMOTE = re.compile(r"^[A-Za-z0-9_][\w. -]*:")
+_FIND_GLOBAL_OPTIONS = frozenset({"-H", "-L", "-P"})
+_FIND_SELECTIVE = frozenset({
+    "-name", "-iname", "-path", "-ipath", "-wholename", "-iwholename", "-regex", "-iregex",
+    "-lname", "-ilname", "-empty", "-samefile", "-inum",
+})
+_DELETING_EXECUTABLES = frozenset({"rm", "rmdir", "unlink", "shred"})
+_SSH_OPTIONS_WITH_VALUE = frozenset("BbcDEeFIiJLlmOoPpQRSWw")
+
+
+def _system_blocked(label: str, reason: str, tokens: Sequence[str]) -> CommandGuardDecision:
+    code = "irreversible_" + re.sub(r"[^a-z0-9]+", "_", label.lower()).strip("_")
+    return CommandGuardDecision(
+        blocked=True, code=code, message=f"BLOCKED:{label}:{reason}",
+        source="dangerous", command=normalize_segment(tokens),
+    )
+
+
+def _real_device(token: str) -> bool:
+    """True for a /dev block-device path (or an unresolved $VAR that may be one); loop devices are scratch."""
+    value = token.split("=", 1)[1] if token.startswith(("of=", "if=")) else token
+    if "$" in value or "`" in value:
+        return True
+    if not value.startswith("/dev/"):
+        return False
+    path = os.path.normpath(value)
+    return (
+        path not in _HARMLESS_DEVICES
+        and not path.startswith(("/dev/fd/", "/dev/shm/", "/dev/pts/", "/dev/loop"))
+    )
+
+
+def _device_operands(args: Sequence[str]) -> bool:
+    return any(not arg.startswith("-") and _real_device(arg) for arg in args)
+
+
+def _positionals(args: Sequence[str], value_options: frozenset[str] = frozenset()) -> list[str]:
+    result: list[str] = []
+    skip = False
+    for arg in args:
+        if skip:
+            skip = False
+        elif arg in value_options:
+            skip = True
+        elif not arg.startswith("-"):
+            result.append(arg)
+    return result
+
+
+def _disk_decision(name: str, tokens: Sequence[str]) -> CommandGuardDecision | None:
+    args = tokens[1:]
+    if name.startswith("mkfs") or name in _FORMATTERS or name == "blkdiscard":
+        if _device_operands(args):
+            return _system_blocked(name, f"Formatting or discarding a device {_DISK_ADVICE}", tokens)
+    elif name == "wipefs":
+        flags = _short_flags(args)
+        erasing = bool(flags & {"a", "o"}) or git_has_flag(args, "--all", "--offset")
+        dry_run = "n" in flags or git_has_flag(args, "--no-act")
+        if erasing and not dry_run and _device_operands(args):
+            return _system_blocked("wipefs", f"Erasing filesystem signatures {_DISK_ADVICE} List with plain 'wipefs <dev>'.", tokens)
+    elif name == "dd":
+        if any(arg.startswith("of=") and _real_device(arg) for arg in args):
+            return _system_blocked("dd of=/dev", f"Writing raw data to a device {_DISK_ADVICE} Write to a regular file instead.", tokens)
+    elif name == "parted":
+        if _device_operands(args) and any(arg.lower() in _PARTED_WRITES for arg in args):
+            return _system_blocked("parted", f"Changing a partition table {_DISK_ADVICE} Inspect with 'parted -l' or 'parted <dev> print'.", tokens)
+    elif name == "sgdisk":
+        options = [arg.split("=", 1)[0] for arg in args if arg.startswith("-")]
+        writes = [opt for opt in options if (opt if opt.startswith("--") else opt[:2]) not in _SGDISK_READ_ONLY]
+        if writes and "-P" not in options and "--pretend" not in options and _device_operands(args):
+            return _system_blocked("sgdisk", f"Changing a GPT {_DISK_ADVICE} Inspect with 'sgdisk -p <dev>'.", tokens)
+    elif name in _PARTITIONER_READ_ONLY:
+        read_only = _PARTITIONER_READ_ONLY[name]
+        if not any(arg.split("=", 1)[0] in read_only for arg in args) and _device_operands(args):
+            return _system_blocked(name, f"Repartitioning a disk {_DISK_ADVICE} Inspect with 'lsblk' or 'fdisk -l'.", tokens)
+    elif name == "cryptsetup" and any(arg.lower() in _CRYPTSETUP_DESTRUCTIVE for arg in args) and _device_operands(args):
+        return _system_blocked("cryptsetup", f"Formatting or erasing a LUKS header makes the data unrecoverable; it {_DISK_ADVICE}", tokens)
+    return None
+
+
+def _snapshot_target(raw: str, cwd: str) -> bool:
+    target = _deletion_target(raw, cwd)
+    text = (target or raw).lower()
+    parts = text.split("/")
+    return (
+        (target is not None and (_under(target, _SNAPSHOT_STORE) or protected_deletion_root(target)))
+        or ".btrbk" in parts or ".snapshots" in parts
+        or any("snap" in part or "btrbk" in part for part in parts)
+    )
+
+
+def _btrfs_decision(tokens: Sequence[str], cwd: str) -> CommandGuardDecision | None:
+    words = _positionals(tokens[1:], frozenset({"-i", "--subvolid", "--format"}))
+    if len(words) < 3:
+        return None
+    group, action, targets = words[0], words[1], words[2:]
+    if len(group) < 2 or not "subvolume".startswith(group) or not "delete".startswith(action):
+        return None
+    if any(_snapshot_target(target, cwd) for target in targets):
+        return _system_blocked(
+            "btrfs subvolume delete",
+            "Deleting btrbk/snapper snapshots or subvolumes on protected storage destroys backup history; "
+            "snapshot retention belongs to btrbk/snapper. Inspect with 'btrfs subvolume list'.",
+            tokens,
+        )
+    return None
+
+
+def _restic_decision(tokens: Sequence[str]) -> CommandGuardDecision | None:
+    words = _positionals(tokens[1:], _RESTIC_OPTIONS_WITH_VALUE)
+    if not words:
+        return None
+    dry_run = git_has_flag(tokens, "--dry-run") or "n" in _short_flags(tokens[1:])
+    if (words[0] in {"forget", "prune"} and not dry_run) or (words[0] == "key" and words[1:2] in (["remove"], ["rm"])):
+        return _system_blocked(
+            f"restic {words[0]}",
+            "Permanently deletes backup snapshots, data, or keys; retention runs only from the scheduled "
+            "SummitFlow backup jobs. Inspect with 'restic snapshots' or preview with '--dry-run'.",
+            tokens,
+        )
+    return None
+
+
+def _rclone_decision(tokens: Sequence[str]) -> CommandGuardDecision | None:
+    args = tokens[1:]
+    command = next((arg for arg in args if arg in _RCLONE_DESTRUCTIVE), None)
+    if command is None or git_has_flag(args, "--dry-run") or "-n" in args:
+        return None
+    if any(not arg.startswith("-") and arg != command and _RCLONE_REMOTE.match(arg) for arg in args):
+        return _system_blocked(
+            f"rclone {command}",
+            "Deletes files on a remote (offsite backups such as summitflow-drive live there); offsite "
+            "expiry runs only from the scheduled backup jobs. Inspect with 'rclone ls'/'rclone lsd' or add --dry-run.",
+            tokens,
+        )
+    return None
+
+
+def _find_decision(tokens: Sequence[str], cwd: str) -> CommandGuardDecision | None:
+    args = list(tokens[1:])
+    while args and (args[0] in _FIND_GLOBAL_OPTIONS or args[0].startswith("-O")):
+        args = args[1:]
+    if args[:1] == ["-D"]:
+        args = args[2:]
+    starts: list[str] = []
+    while args and not args[0].startswith("-") and args[0] not in {"(", "!", ","}:
+        starts.append(args.pop(0))
+    deleting = "-delete" in args or any(
+        arg in {"-exec", "-execdir", "-ok", "-okdir"} and index + 1 < len(args)
+        and Path(args[index + 1]).name in _DELETING_EXECUTABLES
+        for index, arg in enumerate(args)
+    )
+    if not deleting:
+        return None
+    selective = any(arg in _FIND_SELECTIVE for arg in args)
+    for start in starts or ["."]:
+        target = _deletion_target(start, cwd)
+        if target is None:
+            continue
+        mounted = any(_under(target, root) for root in (*_MOUNTED_STORAGE_ROOTS, *_PROXMOX_DATA_ROOTS))
+        if mounted or (protected_deletion_root(target) and not selective):
+            return _system_blocked(
+                f"find {target} -delete",
+                "Bulk delete across a protected root (home, /srv, workspace or project root, mounted storage) "
+                "is irreversible; narrow it with -name/-path to files you own, or delete specific subpaths.",
+                tokens,
+            )
+    return None
+
+
+def _proxmox_decision(name: str, tokens: Sequence[str]) -> CommandGuardDecision | None:
+    words = _positionals(tokens[1:])
+    advice = (
+        "destroys Proxmox/LVM/ZFS storage or guests with no undo; VM and storage lifecycle is owner-run. "
+        "Inspect with 'qm list', 'pct list', 'lvs', 'zfs list', or 'pvesm status'."
+    )
+    if name in {"qm", "pct"} and words[:1] == ["destroy"]:
+        return _system_blocked(f"{name} destroy", f"This {advice}", tokens)
+    if name in {"lvremove", "vgremove", "pvremove"} and not git_has_flag(tokens[1:], "-t", "--test"):
+        return _system_blocked(name, f"This {advice}", tokens)
+    if name in {"zfs", "zpool"} and words[:1] == ["destroy"] and "n" not in _short_flags(tokens[1:]):
+        return _system_blocked(f"{name} destroy", f"This {advice}", tokens)
+    if name == "pvesm" and words[:1] == ["free"]:
+        return _system_blocked("pvesm free", f"This {advice}", tokens)
+    return None
+
+
+def irreversible_system_decision(tokens: Sequence[str], cwd: str) -> CommandGuardDecision | None:
+    """Deny host-level irreversible commands: protected-root rm/find, disk and LUKS
+    destruction, snapshot and backup deletion, and Proxmox guest/storage destroys."""
+    if not tokens:
+        return None
+    name = Path(tokens[0]).name
+    if name == "rm":
+        return irreversible_rm_decision(tokens, cwd)
+    if name == "find":
+        return _find_decision(tokens, cwd)
+    if name == "btrfs":
+        return _btrfs_decision(tokens, cwd)
+    if name == "restic":
+        return _restic_decision(tokens)
+    if name == "rclone":
+        return _rclone_decision(tokens)
+    return _disk_decision(name, tokens) or _proxmox_decision(name, tokens)
+
+
+def ssh_remote_command(args: Sequence[str]) -> str | None:
+    """Return the remote command string of an unwrapped ``ssh`` argv, if any."""
+    index = 1
+    while index < len(args) and args[index].startswith("-"):
+        token = args[index]
+        index += 1
+        if token == "--":
+            break
+        for position, char in enumerate(token[1:], start=1):
+            if char in _SSH_OPTIONS_WITH_VALUE:
+                if position == len(token) - 1:
+                    index += 1  # value is the next argument
+                break
+    remote = list(args[index + 1:])  # args[index] is the destination
+    return " ".join(remote) if remote else None
+
+
 def irreversible_segment_decision(tokens: Sequence[str], cwd: str) -> CommandGuardDecision | None:
     """Evaluate one unwrapped argv against the irreversible set (hook policy)."""
-    decision = irreversible_rm_decision(tokens, cwd)
+    decision = irreversible_system_decision(tokens, cwd)
     if decision:
         return decision
     parsed = git_invocation(tokens, cwd)

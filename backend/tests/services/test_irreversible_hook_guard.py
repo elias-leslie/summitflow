@@ -116,3 +116,94 @@ def test_legacy_shell_guard_shares_protected_root_policy(tmp_path) -> None:
     decision = evaluate_shell_command("rm -rf /srv/workspaces/projects/summitflow", tmp_path)
     assert decision.blocked
     assert decision.code == "rm_protected_root"
+
+
+# Host-level accidents: disks, snapshots, backups, Proxmox (also through sudo/env/bash -c/ssh).
+SYSTEM_DENIED = {
+    "irreversible_mkfs_ext4": ["mkfs.ext4 /dev/sda1", "mkfs.ext4 $DEV"],
+    "irreversible_mkfs": ["sudo mkfs -t ext4 /dev/nvme0n1p3"],
+    "irreversible_wipefs": ["wipefs -a /dev/sdb", "bash -c 'wipefs --all /dev/sda'"],
+    "irreversible_blkdiscard": ["sudo blkdiscard /dev/nvme1n1"],
+    "irreversible_dd_of_dev": [
+        "dd if=/dev/zero of=/dev/sda bs=1M", "sudo dd if=img.iso of=/dev/disk/by-id/usb-X status=progress",
+    ],
+    "irreversible_parted": ["parted -s /dev/sda mklabel gpt"],
+    "irreversible_sgdisk": ["sgdisk --zap-all /dev/sdb", "sgdisk -n 1:0:0 /dev/sdb"],
+    "irreversible_fdisk": ["fdisk /dev/sda"],
+    "irreversible_sfdisk": ["sfdisk /dev/sda < layout"],
+    "irreversible_cryptsetup": ["cryptsetup luksFormat /dev/sdc", "sudo cryptsetup erase /dev/nvme0n1p2"],
+    "irreversible_btrfs_subvolume_delete": [
+        "btrfs subvolume delete /mnt/summitflow-native/home.20261001",
+        "sudo btrfs sub del /.snapshots/12/snapshot",
+        "btrfs subvolume delete /srv/.btrbk/srv.20261010",
+        "cd /srv/.btrbk && btrfs subvolume delete srv.2026",
+    ],
+    "irreversible_restic_forget": [
+        "restic -r /mnt/x forget --keep-last 1 --prune",
+        "sudo env RESTIC_PASSWORD_FILE=x restic -r rclone:summitflow-drive:r forget --keep-daily 1",
+    ],
+    "irreversible_restic_prune": ["restic prune"],
+    "irreversible_restic_key": ["restic key remove abc"],
+    "irreversible_rclone_delete": ["rclone delete summitflow-drive:backups"],
+    "irreversible_rclone_purge": ["rclone purge summitflow-drive:"],
+    "irreversible_rclone_deletefile": ["rclone --config /x/rclone.conf deletefile gdrive:a/b"],
+    "irreversible_rclone_cleanup": ["rclone cleanup summitflow-drive:"],
+    "irreversible_rclone_rmdirs": ["rclone rmdirs summitflow-drive:x"],
+    "irreversible_find_home_kasadis_delete": ["find ~ -delete"],
+    "irreversible_find_srv_workspaces_delete": ["find /srv/workspaces -type f -delete"],
+    "irreversible_find_mnt_summitflow_native_delete": ["find /mnt/summitflow-native -mtime +30 -delete"],
+    "irreversible_find_srv_workspaces_projects_summitflow_delete": [
+        "find /srv/workspaces/projects/summitflow -exec rm -rf {} +", "find . -type f -delete",
+    ],
+    "irreversible_qm_destroy": [
+        "ssh proxmox-gem qm destroy 101", "ssh proxmox-gem \"bash -c 'qm destroy 9'\"",
+        "ssh proxmox-gem <<'EOF'\nqm destroy 101\nEOF",
+    ],
+    "irreversible_pct_destroy": ["ssh root@192.168.86.39 'pct destroy 200 --purge'"],
+    "irreversible_lvremove": ["ssh -p 22 -i key davion-gem lvremove -y pve/vm-101-disk-0"],
+    "irreversible_vgremove": ["ssh proxmox-gem vgremove pve"],
+    "irreversible_zfs_destroy": ["ssh proxmox-gem 'zfs destroy -r rpool/data'"],
+    "irreversible_pvesm_free": ["ssh proxmox-gem pvesm free local-lvm:vm-101-disk-0"],
+    "rm_protected_root": ["ssh proxmox-gem rm -rf /var/lib/vz", "ssh proxmox-gem 'sudo rm -rf /etc/pve/qemu-server'"],
+}
+SYSTEM_ALLOWED = [
+    "restic snapshots", "restic -r /mnt/x check", "restic forget --dry-run --keep-last 3",
+    "rclone ls summitflow-drive:", "rclone lsd summitflow-drive:", "rclone delete summitflow-drive:x --dry-run",
+    "rclone delete /tmp/local", "dd if=/dev/zero of=./file bs=1M count=10",
+    "dd if=/dev/sda of=/srv/scratch/disk.img", "dd if=x of=/dev/null", "find . -name x",
+    "find . -name '*.pyc' -delete", "find /tmp/foo -delete", "btrfs subvolume list /",
+    "btrfs subvolume delete /srv/scratch/testvol", "btrfs subvolume snapshot / /x", "qm list", "pct list",
+    "ssh proxmox-gem qm list", "ssh proxmox-gem 'qm config 101'", "ssh proxmox-gem zfs list", "lvs",
+    "parted -l", "parted /dev/sda print", "sgdisk -p /dev/sda", "fdisk -l", "fdisk -l /dev/sda",
+    "wipefs /dev/sda", "mkfs.ext4 /srv/scratch/disk.img", "mkfs.ext4 /dev/loop5",
+    "cryptsetup luksDump /dev/sda2", "cryptsetup luksFormat /srv/scratch/test.img",
+    "lvremove --test pve/x", "zfs destroy -n rpool/x", "ssh host uptime", "ssh -t host",
+    "st commit -m 'never run qm destroy or mkfs /dev/sda'", "echo 'restic forget'",
+]
+
+
+@pytest.mark.parametrize(
+    ("code", "command"), [(code, command) for code, commands in SYSTEM_DENIED.items() for command in commands],
+)
+def test_host_level_irreversible_denied(code: str, command: str) -> None:
+    decision = evaluate_irreversible_command(command, SHARED)
+    assert decision.blocked
+    assert decision.code == code
+    assert decision.message and decision.message.startswith("BLOCKED:")
+
+
+@pytest.mark.parametrize("command", SYSTEM_ALLOWED)
+def test_host_level_inspection_allowed(command: str) -> None:
+    assert not evaluate_irreversible_command(command, SHARED).blocked
+
+
+def test_hook_denies_proxmox_destroy_over_ssh(monkeypatch, capsys) -> None:
+    payload = {"tool_name": "Bash", "tool_input": {"command": "ssh proxmox-gem qm destroy 101"}, "cwd": SHARED}
+    output = _run_hook(payload, monkeypatch, capsys)["hookSpecificOutput"]
+    assert output["permissionDecision"] == "deny"
+    assert "qm list" in output["permissionDecisionReason"]
+
+
+def test_legacy_shell_guard_shares_host_level_policy(tmp_path) -> None:
+    assert evaluate_shell_command("sudo mkfs.ext4 /dev/sdb1", tmp_path).blocked
+    assert not evaluate_shell_command("dd if=/dev/zero of=./file bs=1M count=1", tmp_path).blocked

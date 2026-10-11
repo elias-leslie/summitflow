@@ -14,6 +14,7 @@ from ._command_guard_helpers import (
     normalize_segment,
     shell_exec_args,
     split_shell_segments,
+    ssh_remote_command,
     unwrap_segment,
 )
 
@@ -92,7 +93,8 @@ def evaluate_publication_command(command: str, cwd: str | Path | None = None) ->
 
 def evaluate_irreversible_command(command: str, cwd: str | None = None) -> CommandGuardDecision:
     """Deny the small irreversible set (whole-tree git discards, stash, force push to
-    main, recursive delete of protected roots) using the shared argv policy.
+    main, recursive delete of protected roots, disk/snapshot/backup/Proxmox
+    destruction) using the shared argv policy, also inside ``ssh host <cmd>``.
 
     Only real command positions are judged: heredoc data and quoted arguments
     (a commit message saying "git reset --hard") are never parsed as commands.
@@ -121,6 +123,14 @@ def evaluate_irreversible_command(command: str, cwd: str | None = None) -> Comma
                 if decision.blocked:
                     return decision
             continue
+        if executable == "ssh":
+            # Remote commands get the same policy; the remote cwd is unknown, assume root's home.
+            remote = ssh_remote_command(args)
+            if remote:
+                decision = evaluate_irreversible_command(remote, _REMOTE_CWD)
+                if decision.blocked:
+                    return decision
+            continue
         decision = irreversible_segment_decision(args, working)
         if decision:
             # Do not reflect the command: tool input can include embedded credentials.
@@ -128,6 +138,7 @@ def evaluate_irreversible_command(command: str, cwd: str | None = None) -> Comma
     return CommandGuardDecision(False, None, None, None, "")
 
 
+_REMOTE_CWD = "/root"
 _READ_ONLY = frozenset({"rg", "grep", "cat", "less", "head", "tail", "echo", "printf"})
 _DATA_SINKS = frozenset({"cat", "tee"})
 _HEREDOC = re.compile(r"(?<![<\w])<<(-?)[ \t]*(?:'([^'\n]+)'|\"([^\"\n]+)\"|\\?([A-Za-z_][\w.-]*))")
@@ -195,6 +206,12 @@ def _heredoc_consumer(line: str, match: re.Match[str]) -> str:
             return "shell"
     if executable in SHELL_EXECUTABLES and shell_exec_args(args[1:]) is None:
         return "shell"
+    if executable == "ssh":
+        remote = ssh_remote_command(args)
+        remote_args = remote.split() if remote else []
+        # ``ssh host <<EOF`` and ``ssh host bash <<EOF`` run the body as remote commands.
+        if not remote_args or (Path(remote_args[0]).name.lower() in SHELL_EXECUTABLES and "-c" not in remote_args):
+            return "shell"
     if executable in _DATA_SINKS:
         segment = before + " " + pipeline.split("|")[0]
         writes_file = ">" in segment if executable == "cat" else any(

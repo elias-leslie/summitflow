@@ -34,7 +34,7 @@ from ._command_guard_helpers import (
     git_restore_decision,
     git_revert_decision,
     irreversible_git_decision,
-    irreversible_rm_decision,
+    irreversible_system_decision,
     is_inside_git_repo,
     is_managed_repo_root,
     normalize_repo_paths,
@@ -481,7 +481,7 @@ def evaluate_shell_command(command: str, cwd: str | Path | None = None) -> Comma
         decision = _dangerous_decision(segment)
         if decision:
             return decision
-        decision = irreversible_rm_decision(unwrap_segment(segment), str(working_dir))
+        decision = irreversible_system_decision(unwrap_segment(segment), str(working_dir))
         if decision:
             return decision
         decision = _registry_redirect_decision(segment, working_dir)

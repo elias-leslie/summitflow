@@ -36,6 +36,10 @@ _DENY_PATTERNS: tuple[tuple[re.Pattern[str], str], ...] = tuple(
         (r"\b(?:mkfs(?:\.\S+)?|wipefs|blkdiscard)\b", "filesystem destruction"),
         (r"\bdd\b[^\n]*\bof=/dev/", "raw device overwrite"),
         (r"\bbtrfs\s+(?:subvolume|sub)\s+(?:delete|del)\b", "snapshot deletion"),
+        (r"\brestic\b[^\n]*\b(?:forget|prune|key\s+(?:remove|rm))\b", "backup deletion"),
+        (r"\brclone\b[^\n]*\b(?:delete|deletefile|purge|cleanup|rmdirs)\b", "backup deletion"),
+        (r"\bcryptsetup\b[^\n]*\b(?:luksFormat|erase|luksErase)\b", "filesystem destruction"),
+        (r"\b(?:(?:qm|pct|zfs|zpool)\s+destroy|pvesm\s+free|lvremove|vgremove|pvremove)\b", "proxmox storage destruction"),
         (r"\bgit\b[\s\S]*\b(?:reset\s+--hard|clean\s+-\S*f)", "destructive git"),
         (r"\b(?:eval|base64\s+(?:-d|--decode))\b", "unanalysable command"),
     )
