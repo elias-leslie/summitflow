@@ -40,28 +40,28 @@ def _running_task(task_id: str = "task-1", project_id: str = "summitflow") -> di
 
 
 # ---------------------------------------------------------------------------
-# §2 create: bare title → auto-enrichment; --draft skips it
+# §2 create: bare title → plain pending task
 # ---------------------------------------------------------------------------
 
 
 class TestCreateSurface:
-    def test_bare_title_marks_for_auto_enrichment(self) -> None:
+    def test_bare_title_creates_plain_task(self) -> None:
         mock_client = MagicMock()
         mock_client.create_task.return_value = {"id": "task-mock"}
         with patch("cli.commands.tasks_create.STClient", return_value=mock_client):
             result = runner.invoke(tasks_app, ["create", "fix login redirect bug"])
         assert result.exit_code == 0
         payload = mock_client.create_task.call_args.args[0]
-        assert payload["auto_dispatch"] is True
+        assert "auto_dispatch" not in payload
         assert payload["title"] == "fix login redirect bug"
 
-    def test_draft_skips_auto_enrichment(self) -> None:
+    def test_task_data_carries_only_the_kernel(self) -> None:
         data = _build_task_data(
             title="Stash this", task_type="task", priority=2,
-            description=None, labels=None, parent=None,
-            execution_mode=None, manual_only=False, autonomous=False, draft=True,
+            description="details", labels="a,b", parent=None,
         )
-        assert "auto_dispatch" not in data
+        assert data == {"title": "Stash this", "task_type": "task", "priority": 2,
+                        "description": "details", "labels": ["a", "b"]}
 
     def test_plan_import_path_does_not_demand_p_flag(self) -> None:
         with (

@@ -32,7 +32,7 @@ _DEFAULT_CRITIQUE_AGENT = "specifier"
     surface="st.create",
     cmd='st create "title"',
     when="create a task; project from cwd",
-    precautions=("bare title auto-enriches; --draft for kernel-only intake; --plan/--type in --help",),
+    precautions=("bare title creates a pending task; --plan/--type in --help",),
     tier="mandate",
 )
 def create(
@@ -47,7 +47,7 @@ def create(
     ] = False,
     draft: Annotated[
         bool,
-        typer.Option("--draft", help="Create kernel only; skip auto-enrichment pipeline."),
+        typer.Option("--draft", hidden=True, help="Accepted for compatibility; every create is a plain pending task."),
     ] = False,
     description: Annotated[str | None, typer.Option("-d", "--description", help="Task details beyond the title.")] = None,
     priority: Annotated[int, typer.Option("-p", "--priority", min=0, max=4, help="0 is highest priority; default is 2.")] = 2,
@@ -63,19 +63,13 @@ def create(
     ] = None,
     task_id: Annotated[str | None, typer.Option("--task", help="With --plan, update this existing task instead of creating one.")] = None,
     blocked_by: Annotated[str | None, typer.Option("--blocked-by", help="Create a blocking dependency on this task ID.")] = None,
-    execution_mode: Annotated[str | None, typer.Option("--execution-mode", hidden=True)] = None,
-    manual_only: Annotated[bool, typer.Option("--manual-only", hidden=True)] = False,
-    autonomous: Annotated[
-        bool,
-        typer.Option("--autonomous", help="Shorthand for --execution-mode autonomous."),
-    ] = False,
 ) -> None:
+    del draft  # compatibility no-op
     from .tasks_create import create_task_command
 
     create_task_command(
         title, from_file, dry_run, description, priority, labels,
-        task_type, parent, plan, blocked_by, execution_mode, manual_only, autonomous,
-        draft=draft, task_id=task_id,
+        task_type, parent, plan, blocked_by, task_id=task_id,
     )
 
 
@@ -329,25 +323,6 @@ def verify_plan(
     from .tasks_verify import verify_plan_file
 
     verify_plan_file(file_path, STClient(require_project=False))
-
-
-@app.command()
-def autocode(
-    task_id: Annotated[str | None, typer.Argument()] = None,
-    next_task: Annotated[
-        bool,
-        typer.Option("--next", help="Queue the first execution-ready task from this project's ready queue."),
-    ] = False,
-    dry_run: Annotated[bool, typer.Option("--dry-run", help="Check readiness and show the selected task without dispatching.")] = False,
-    at: Annotated[
-        str | None,
-        typer.Option("--at", help="Scheduling is unavailable; omit --at to queue now."),
-    ] = None,
-) -> None:
-    """Queue an execution-ready task for immediate autonomous dispatch."""
-    from .tasks_autocode import autocode_task
-
-    autocode_task(task_id, dry_run, at, STClient(require_project=False), next_task=next_task)
 
 
 @app.command("critique")

@@ -287,121 +287,6 @@ class TestCreateFromFile:
             assert "Would create 1 task(s)" in result.output
 
 
-class TestAutocodeValidation:
-    """Tests for CLI autocode readiness gating."""
-
-    def test_autocode_rejects_task_missing_execution_details(self) -> None:
-        mock_client = MagicMock()
-        mock_client.project_id = "summitflow"
-        task = _make_mock_task(
-            "task-mock-1",
-            title="Draft feature task",
-            task_type="feature",
-        )
-        # Use a status that bypasses the early "already X" check so readiness is evaluated
-        task["status"] = "queue"
-        mock_client.get_task.return_value = task
-        mock_client.get_subtasks.return_value = {"subtasks": []}
-        mock_client.validate_ready.return_value = {
-            "ready": False,
-            "issues": ["Missing description", "Missing done_when success criteria"],
-            "suggestions": ["Add context.files_to_modify/files_to_create for clearer execution scope"],
-        }
-
-        with patch("cli.commands.tasks.STClient", return_value=mock_client):
-            result = runner.invoke(tasks_app, ["autocode", "task-mock-1"])
-
-        assert result.exit_code == 1
-        assert "not execution-ready" in result.output
-        assert "Missing description" in result.output
-
-    def test_autocode_next_selects_best_ranked_ready_task(self) -> None:
-        mock_client = MagicMock()
-        mock_client.project_id = "summitflow"
-        mock_client.list_ready.return_value = {
-            "tasks": [
-                {
-                    "id": "task-complex-feature",
-                    "priority": 1,
-                    "task_type": "feature",
-                    "complexity": "COMPLEX",
-                },
-                {
-                    "id": "task-simple-refactor",
-                    "priority": 2,
-                    "task_type": "refactor",
-                    "complexity": "SIMPLE",
-                },
-            ]
-        }
-        mock_client.get_task.return_value = _make_mock_task("task-simple-refactor")
-        mock_client.get_subtasks.return_value = {"subtasks": [{"subtask_id": "1.1", "passes": False}]}
-        mock_client.validate_ready.return_value = {"ready": True}
-
-        with patch("cli.commands.tasks.STClient", return_value=mock_client):
-            result = runner.invoke(tasks_app, ["autocode", "--next"])
-
-        assert result.exit_code == 0
-        mock_client.list_ready.assert_called_once_with(limit=25)
-        mock_client.execute_task.assert_called_once_with("task-simple-refactor")
-        assert '"task_id": "task-simple-refactor"' in result.output
-        assert '"selected_from_ready": true' in result.output
-
-    def test_autocode_next_reports_empty_ready_queue(self) -> None:
-        mock_client = MagicMock()
-        mock_client.project_id = "summitflow"
-        mock_client.list_ready.return_value = {"tasks": []}
-
-        with patch("cli.commands.tasks.STClient", return_value=mock_client):
-            result = runner.invoke(tasks_app, ["autocode", "--next"])
-
-        assert result.exit_code == 1
-        assert "No execution-ready tasks found for summitflow" in result.output
-        mock_client.get_task.assert_not_called()
-
-    def test_autocode_next_preserves_blocker_priority_from_ready_payload(self) -> None:
-        mock_client = MagicMock()
-        mock_client.project_id = "summitflow"
-        mock_client.list_ready.return_value = {
-            "tasks": [
-                {
-                    "id": "task-blocker",
-                    "priority": 1,
-                    "task_type": "bug",
-                    "complexity": "STANDARD",
-                    "blocking_count": 1,
-                },
-                {
-                    "id": "task-simple",
-                    "priority": 2,
-                    "task_type": "bug",
-                    "complexity": "SIMPLE",
-                    "blocking_count": 0,
-                },
-            ]
-        }
-        mock_client.get_task.return_value = _make_mock_task("task-blocker")
-        mock_client.get_subtasks.return_value = {"subtasks": [{"subtask_id": "1.1", "passes": False}]}
-        mock_client.validate_ready.return_value = {"ready": True}
-
-        with patch("cli.commands.tasks.STClient", return_value=mock_client):
-            result = runner.invoke(tasks_app, ["autocode", "--next"])
-
-        assert result.exit_code == 0
-        mock_client.execute_task.assert_called_once_with("task-blocker")
-        assert '"task_id": "task-blocker"' in result.output
-
-    def test_autocode_rejects_task_id_with_next(self) -> None:
-        mock_client = MagicMock()
-
-        with patch("cli.commands.tasks.STClient", return_value=mock_client):
-            result = runner.invoke(tasks_app, ["autocode", "task-ready-1", "--next"])
-
-        assert result.exit_code == 1
-        assert "Pass either a task id or --next" in result.output
-        mock_client.list_ready.assert_not_called()
-
-
 class TestTaskCliErgonomics:
     """Tests for task CLI friction fixes."""
 
@@ -411,7 +296,8 @@ class TestTaskCliErgonomics:
         assert result.exit_code == 0
         assert "--plan" in result.output
         assert "--from-file" in result.output
-        assert "--draft" in result.output
+        assert "--draft" not in result.output
+        assert "--autonomous" not in result.output
         assert "--type" in result.output
         assert "st verify plan.json" in result.output
         assert "/schemas/plan" in result.output
@@ -435,8 +321,8 @@ class TestTaskCliErgonomics:
         assert "backend/app/schemas/plan.schema.json" in result.output
         assert '"complexity":"SIMPLE"' in result.output
 
-    def test_create_bare_title_triggers_auto_enrichment(self) -> None:
-        """Bare title creates an execution-ready task with auto_dispatch=true."""
+    def test_create_bare_title_creates_plain_pending_task(self) -> None:
+        """Bare title sends only the kernel; nothing asks for dispatch."""
         mock_client = MagicMock()
         mock_client.create_task.return_value = _make_mock_task(
             "task-mock-bare",
@@ -448,10 +334,9 @@ class TestTaskCliErgonomics:
 
         assert result.exit_code == 0
         payload = mock_client.create_task.call_args.args[0]
-        assert payload["title"] == "Draft task"
-        assert payload["auto_dispatch"] is True
+        assert payload == {"title": "Draft task", "task_type": "task", "priority": 2}
 
-    def test_create_draft_skips_auto_enrichment(self) -> None:
+    def test_create_draft_is_accepted_as_noop(self) -> None:
         mock_client = MagicMock()
         mock_client.create_task.return_value = _make_mock_task("task-mock-draft")
 
@@ -460,9 +345,9 @@ class TestTaskCliErgonomics:
 
         assert result.exit_code == 0
         payload = mock_client.create_task.call_args.args[0]
-        assert "auto_dispatch" not in payload
+        assert payload == {"title": "Stash this", "task_type": "task", "priority": 2}
 
-    def test_create_idea_type_marks_autonomous_with_label(self) -> None:
+    def test_create_idea_type_adds_crowdsourced_label(self) -> None:
         mock_client = MagicMock()
         mock_client.create_task.return_value = _make_mock_task(
             "task-mock-idea",
@@ -480,7 +365,7 @@ class TestTaskCliErgonomics:
         payload = mock_client.create_task.call_args.args[0]
         assert payload["title"] == "Add dark mode"
         assert "crowdsourced" in payload["labels"]
-        assert payload["execution_mode"] == "autonomous"
+        assert "execution_mode" not in payload
 
     def test_create_bug_type_routes_to_bug_creator(self) -> None:
         mock_client = MagicMock()
@@ -503,7 +388,7 @@ class TestTaskCliErgonomics:
         assert payload["task_type"] == "bug"
         assert payload["description"] == "Fix auth"
         assert len(payload["done_when"]) == 3
-        assert payload["execution_mode"] == "autonomous"
+        assert "execution_mode" not in payload
         mock_client.create_subtask.assert_called_once()
 
     def test_legacy_capture_command_no_longer_registered(self) -> None:

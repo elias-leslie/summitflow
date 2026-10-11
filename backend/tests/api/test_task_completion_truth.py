@@ -35,8 +35,6 @@ async def test_direct_completion_stays_unverified(monkeypatch: pytest.MonkeyPatc
     monkeypatch.setattr(update_endpoints.task_store, "update_task", update_task)
     completion_gate = AsyncMock()
     monkeypatch.setattr(crud_handlers, "validate_completion_gates", completion_gate)
-    dispatch = AsyncMock()
-    monkeypatch.setattr(update_endpoints, "dispatch_autonomous_task", dispatch)
     monkeypatch.setattr(update_endpoints, "task_to_response", lambda task: task)
 
     result = await update_endpoints.update_task_status(
@@ -50,4 +48,3 @@ async def test_direct_completion_stays_unverified(monkeypatch: pytest.MonkeyPatc
     assert result_data["verification_result"] is None
     update_task.assert_not_called()
     completion_gate.assert_awaited_once_with(task_id)
-    dispatch.assert_awaited_once_with(task_id, "completed", project_id)

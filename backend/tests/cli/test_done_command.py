@@ -6,37 +6,9 @@ import pytest
 import typer
 from typer.testing import CliRunner
 
-from cli.commands.done import _handle_task_completion, _refuse_if_autocode_owned, app
+from cli.commands.done import _handle_task_completion, app
 
 runner = CliRunner()
-
-
-def test_refuse_when_task_is_claimed_by_autocode_dispatcher() -> None:
-    task: dict[str, object] = {
-        "id": "task-94c77a0a",
-        "claimed_by": "api-dispatch-agent-hub",
-        "lock_expires_at": "2026-05-11T16:34:11Z",
-    }
-    with (
-        patch("cli.commands.done.output_error") as mock_error,
-        pytest.raises(typer.Exit),
-    ):
-        _refuse_if_autocode_owned(task, "task-94c77a0a")
-    assert mock_error.called
-    msg = mock_error.call_args[0][0]
-    assert "api-dispatch-agent-hub" in msg
-    assert "dispatcher owns completion" in msg
-
-
-def test_allow_when_claim_is_empty() -> None:
-    _refuse_if_autocode_owned({"id": "task-x"}, "task-x")
-    _refuse_if_autocode_owned({"id": "task-x", "claimed_by": None}, "task-x")
-    _refuse_if_autocode_owned({"id": "task-x", "claimed_by": ""}, "task-x")
-
-
-def test_allow_when_task_is_claimed_by_non_dispatch_worker() -> None:
-    _refuse_if_autocode_owned({"id": "task-x", "claimed_by": "davion-sidarli"}, "task-x")
-    _refuse_if_autocode_owned({"id": "task-x", "claimed_by": "worker-1"}, "task-x")
 
 
 def test_already_completed_task_is_noop() -> None:

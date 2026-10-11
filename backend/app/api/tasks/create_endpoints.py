@@ -24,7 +24,7 @@ from ...schemas.tasks import (
 from ...services.task_plan_context import build_task_plan_context
 from ...storage import tasks as task_store
 from ...storage.tasks.core import ExternalTaskConflict, ExternalTaskUnavailable
-from ...storage.tasks.execution_mode import EXECUTION_MODE_AUTONOMOUS, normalize_execution_fields
+from ...storage.tasks.execution_mode import normalize_execution_fields
 from .helpers import refresh_task_tracking
 from .response import task_to_response
 
@@ -89,15 +89,11 @@ def _auto_classify_complexity(task: dict) -> None:
 
 @router.post("/projects/{project_id}/tasks", response_model=TaskResponse)
 async def create_task(project_id: str, task: TaskCreate, request: Request) -> TaskResponse:
-    """Create a new task. When auto_dispatch=True, queues and dispatches to Hatchet."""
+    """Create a new pending task."""
     execution_fields = normalize_execution_fields(
         task_type=task.task_type,
-        execution_mode=(
-            EXECUTION_MODE_AUTONOMOUS
-            if task.auto_dispatch
-            else task.execution_mode
-        ),
-        autonomous=task.autonomous or task.auto_dispatch,
+        execution_mode=task.execution_mode,
+        autonomous=task.autonomous,
     )
     extra = {}
     if task.external_origin is not None:
@@ -145,13 +141,6 @@ async def create_task(project_id: str, task: TaskCreate, request: Request) -> Ta
         await _save_spirit_fields(created["id"], task)
     _auto_classify_complexity(created)
     created = await refresh_task_tracking(created["id"], "task-create")
-
-    if task.auto_dispatch:
-        await _dispatch_created_task(created["id"], project_id)
-        updated = await asyncio.to_thread(task_store.get_task, created["id"])
-        if updated:
-            created = updated
-
     return task_to_response(created)
 
 
@@ -159,7 +148,7 @@ async def create_task(project_id: str, task: TaskCreate, request: Request) -> Ta
 async def create_task_from_ideation(
     project_id: str, body: IdeationTaskCreate
 ) -> IdeationTaskResponse:
-    """Create a task from ideation agent output. Normalizes complexity to DB enum."""
+    """Create a pending task from ideation chat output. Normalizes complexity to DB enum."""
     created = await asyncio.to_thread(
         task_store.create_task,
         project_id=project_id,
@@ -168,26 +157,12 @@ async def create_task_from_ideation(
         priority=body.priority,
         task_type=body.task_type,
         complexity=body.to_db_complexity(),
-        execution_mode=EXECUTION_MODE_AUTONOMOUS if body.auto_dispatch else None,
         labels=body.labels,
     )
 
     task_id = created["id"]
     await refresh_task_tracking(task_id, "ideation-create")
-    dispatched = False
-    dispatch_stage: str | None = None
-
-    if body.auto_dispatch:
-        dispatch_stage = await _dispatch_created_task(task_id, project_id)
-        dispatched = dispatch_stage is not None
-
-    return IdeationTaskResponse(
-        task_id=task_id,
-        project_id=project_id,
-        status="pending",
-        dispatched=dispatched,
-        dispatch_stage=dispatch_stage,
-    )
+    return IdeationTaskResponse(task_id=task_id, project_id=project_id, status="pending")
 
 
 @router.post("/projects/{project_id}/tasks/batch", response_model=BatchTaskResponse)
@@ -196,38 +171,3 @@ async def batch_create_tasks(project_id: str, body: BatchTaskRequest) -> BatchTa
     from .crud_handlers import handle_batch_create_tasks
 
     return await handle_batch_create_tasks(project_id, body)
-
-
-async def _queue_task(task_id: str) -> None:
-    """Update task status to 'pending', raising HTTPException on failure."""
-    from ...storage.tasks.status import update_task_status
-
-    try:
-        await asyncio.to_thread(update_task_status, task_id, "pending")
-    except ValueError as e:
-        logger.error("ideation_task_queue_failed", task_id=task_id, error=str(e))
-        raise HTTPException(
-            status_code=500,
-            detail=f"Task created (id={task_id}) but status update to pending failed: {e}",
-        ) from None
-
-
-async def _dispatch_created_task(task_id: str, project_id: str) -> str | None:
-    """Queue task and dispatch to Hatchet pipeline. Returns stage or None."""
-    from ...services.dispatch import dispatch_task
-
-    await _queue_task(task_id)
-
-    try:
-        result = await dispatch_task(task_id, project_id)
-        logger.info("ideation_task_dispatched", task_id=task_id, project_id=project_id, stage=result.get("stage"))
-        return str(result.get("stage"))
-    except ImportError:
-        logger.debug("Hatchet workflows not available for dispatch", task_id=task_id)
-        return None
-    except ValueError as e:
-        logger.error("ideation_task_dispatch_failed", task_id=task_id, error=str(e))
-        raise HTTPException(
-            status_code=500,
-            detail=f"Task created and queued (id={task_id}) but Hatchet dispatch failed: {e}",
-        ) from None

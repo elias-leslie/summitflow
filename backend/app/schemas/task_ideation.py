@@ -1,7 +1,7 @@
 """Ideation agent task creation schema.
 
 Accepts the structured output from the ideation agent's create_task tool
-and maps it to SummitFlow's task model with automatic Hatchet dispatch.
+and maps it to SummitFlow's task model as a pending task.
 """
 
 from __future__ import annotations
@@ -44,11 +44,6 @@ class IdeationTaskCreate(BaseModel):
     complexity: IdeationComplexity | None = Field(
         default=None, description="Task complexity: simple, standard, or complex"
     )
-    auto_dispatch: bool = Field(
-        default=False,
-        description="Automatically dispatch to Hatchet pipeline after creation",
-    )
-
     @field_validator("complexity", mode="before")
     @classmethod
     def normalize_complexity(cls, v: str | None) -> str | None:
@@ -70,7 +65,3 @@ class IdeationTaskResponse(BaseModel):
     task_id: str
     project_id: str
     status: str
-    dispatched: bool = Field(description="Whether the task was dispatched to Hatchet")
-    dispatch_stage: str | None = Field(
-        default=None, description="Pipeline stage dispatched to (triage/planning/execution)"
-    )

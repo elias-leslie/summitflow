@@ -142,7 +142,7 @@ def import_plan_file(
     task_data: dict[str, Any] = {
         "title": plan["title"], "description": plan.get("description"),
         "task_type": plan.get("task_type", "task"), "priority": plan.get("priority", 2),
-        "complexity": plan.get("complexity", "SIMPLE"), "autonomous": plan.get("autonomous", True),
+        "complexity": plan.get("complexity", "SIMPLE"),
     }
     if subtasks_data:
         task_data["subtasks"] = subtasks_data

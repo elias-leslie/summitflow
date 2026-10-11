@@ -4,7 +4,6 @@ Handles:
 - get_task_global: Get task by ID without project context (for CLI tools)
 - get_task: Get task by ID within project context
 - check_completion_readiness: Pre-validate completion gates without modifying state
-- review_task: Run AI reviewer on task diff
 """
 
 from __future__ import annotations
@@ -12,13 +11,11 @@ from __future__ import annotations
 import asyncio
 from typing import Any
 
-from agent_hub.models import MessageInput, ToolResultMessage
 from fastapi import APIRouter, HTTPException, Query
 from fastapi.responses import PlainTextResponse
 
 from ...schemas.tasks import TaskResponse
 from ...storage import tasks as task_store
-from ...tasks.autonomous._project_resolution import resolve_task_project_id
 from .formatting import toon_format_task
 from .helpers import (
     get_task_or_404,
@@ -90,44 +87,3 @@ async def get_task(
         return PlainTextResponse(content=toon_format_task(task_response))
 
     return task_response
-
-
-@router.post("/tasks/{task_id}/review")
-async def review_task(task_id: str) -> dict[str, Any]:
-    """Run AI reviewer on task diff. Returns verdict without side effects."""
-    from ...services.agent_hub_client import get_sync_client
-    from ...tasks.autonomous.review import _build_prompt
-    from ...tasks.autonomous.review_modules.diff import get_git_diff
-    from ...tasks.autonomous.review_modules.parsing import parse_review_response
-
-    task = get_task_or_404(task_id)
-    project_id = resolve_task_project_id(task)
-
-    git_diff = await asyncio.to_thread(get_git_diff, task_id, project_id)
-    if not git_diff or git_diff.strip() in ("(no changes)", ""):
-        return {"verdict": "REJECTED", "concerns": [], "summary": "No code changes detected"}
-    prompt = await asyncio.to_thread(
-        _build_prompt,
-        task,
-        str(task.get("complexity") or "STANDARD"),
-        git_diff,
-        task_id,
-    )
-
-    client = await asyncio.to_thread(get_sync_client)
-    messages: list[dict[str, str] | MessageInput | ToolResultMessage] = [
-        MessageInput(role="user", content=prompt)
-    ]
-    response = await asyncio.to_thread(
-        client.complete,
-        agent_slug="reviewer",
-        messages=messages,
-        project_id=project_id,
-        execute_tools=False,
-    )
-    result = parse_review_response(response.content)
-    return {
-        "verdict": result.get("verdict", "UNKNOWN"),
-        "concerns": result.get("concerns", []),
-        "summary": result.get("summary", ""),
-    }

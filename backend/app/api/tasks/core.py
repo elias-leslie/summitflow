@@ -4,7 +4,7 @@ This module is a router aggregator that imports endpoints from specialized modul
 - list_endpoints: List tasks with various filters (list_tasks, list_ready_tasks, list_blocked_tasks)
 - get_endpoints: Get task by ID (get_task_global, get_task, check_completion_readiness)
 - create_endpoints: Create tasks (create_task, batch_create_tasks, create_task_from_ideation)
-- update_endpoints: Update/delete/status (update_task, delete_task, update_task_status, execute_task)
+- update_endpoints: Update/delete/status (update_task, delete_task, update_task_status)
 
 All endpoints remain importable from this module for backward compatibility.
 """
@@ -20,7 +20,7 @@ from .get_endpoints import check_completion_readiness, get_task, get_task_global
 from .get_endpoints import router as get_router
 from .list_endpoints import list_blocked_tasks, list_ready_tasks, list_tasks
 from .list_endpoints import router as list_router
-from .update_endpoints import delete_task, execute_task, update_task, update_task_status
+from .update_endpoints import delete_task, update_task, update_task_status
 from .update_endpoints import router as update_router
 
 # Create the main router and include all sub-routers
@@ -38,7 +38,6 @@ __all__ = [
     "create_task",
     "create_task_from_ideation",
     "delete_task",
-    "execute_task",
     "get_task",
     "get_task_global",
     "list_blocked_tasks",

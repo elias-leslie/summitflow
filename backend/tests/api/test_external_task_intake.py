@@ -62,7 +62,7 @@ def test_changed_payload_conflicts_without_mutation(client, test_project_id, cle
     route = f"/api/projects/{test_project_id}/tasks"
     first = client.post(route, json=body).json()
     cleanup_task(first["id"])
-    for changes in ({"title": "Changed"}, {"references": ["Changed"]}, {"auto_dispatch": True}):
+    for changes in ({"title": "Changed"}, {"references": ["Changed"]}, {"priority": 0}):
         conflict = client.post(route, json={**body, **changes})
         assert conflict.status_code == 409
     unchanged = tasks.get_task(first["id"])

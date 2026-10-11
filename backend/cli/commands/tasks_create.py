@@ -1,8 +1,7 @@
 """Task creation command implementation.
 
 One verb: `st create <title>` (canonical). Modes:
-- bare title           → execution-ready task, auto-enrichment pipeline
-- --draft              → kernel only, no auto-enrichment (replaces `st capture`)
+- bare title           → pending task with the title and optional description
 - --type bug|idea|...  → typed kernel (replaces hidden `st bug` / `st idea`)
 - --plan plan.json     → skip enrichment, import a structured plan
 - --from-file file.json → batch
@@ -41,10 +40,6 @@ def _build_task_data(
     description: str | None,
     labels: str | None,
     parent: str | None,
-    execution_mode: str | None,
-    manual_only: bool,
-    autonomous: bool,
-    draft: bool,
 ) -> dict[str, Any]:
     data: dict[str, Any] = {"title": title, "task_type": task_type, "priority": priority}
     if description:
@@ -53,16 +48,6 @@ def _build_task_data(
         data["labels"] = labels.split(",")
     if parent:
         data["parent_task_id"] = parent
-    if manual_only:
-        data["execution_mode"] = "manual_only"
-    elif execution_mode:
-        data["execution_mode"] = execution_mode
-    if autonomous:
-        data["execution_mode"] = "autonomous"
-    # Default: kick the enrichment pipeline so bare titles produce structured plans.
-    # --draft leaves it off so the kernel stays as captured.
-    if not draft:
-        data["auto_dispatch"] = True
     return data
 
 
@@ -104,19 +89,12 @@ def _handle_single_task_create(
     task_type: str,
     parent: str | None,
     blocked_by: str | None,
-    execution_mode: str | None,
-    manual_only: bool,
-    autonomous: bool,
-    draft: bool,
 ) -> None:
     if dry_run:
         output_error("--dry-run only works with --from-file or --plan")
         raise typer.Exit(1)
 
     client = STClient()
-    if manual_only and autonomous:
-        output_error("--manual-only conflicts with --autonomous")
-        raise typer.Exit(1)
 
     if task_type == "bug":
         create_bug_task(title, description, priority, labels, None, client)
@@ -125,12 +103,8 @@ def _handle_single_task_create(
     resolved_labels = labels
     if task_type == "idea":
         resolved_labels = _merge_labels(labels, _IDEA_LABEL)
-        autonomous = True
 
-    data = _build_task_data(
-        title, task_type, priority, description, resolved_labels, parent,
-        execution_mode, manual_only, autonomous, draft,
-    )
+    data = _build_task_data(title, task_type, priority, description, resolved_labels, parent)
 
     try:
         task = client.create_task(data)
@@ -155,19 +129,14 @@ def create_task_command(
     parent: str | None,
     plan: Path | None,
     blocked_by: str | None,
-    execution_mode: str | None,
-    manual_only: bool,
-    autonomous: bool,
-    draft: bool = False,
     task_id: str | None = None,
 ) -> None:
-    """Create a task. Modes: bare title (auto-enrich), --plan, --from-file, --draft.
+    """Create a task. Modes: bare title (pending task), --plan, --from-file.
 
     Project context auto-detected from cwd; -P overrides.
 
     Examples:
-        st create "fix login redirect bug"          # auto-enriched task
-        st create "stash this idea" --draft         # kernel only
+        st create "fix login redirect bug"          # pending task
         st create "session expires" --type bug      # bug-shaped task
         st create --plan plan.json                  # structured import
         st create --from-file tasks.json            # batch
@@ -183,11 +152,11 @@ def create_task_command(
     if not title:
         output_error(
             "st create needs a title (or --plan / --from-file).\n"
-            "Resolution: st create \"<short description>\" [--draft] [--type bug|idea]"
+            "Resolution: st create \"<short description>\" [-d details] [--type bug|idea]"
         )
         raise typer.Exit(1)
 
     _handle_single_task_create(
         title, dry_run, description, priority, labels, task_type, parent,
-        blocked_by, execution_mode, manual_only, autonomous, draft,
+        blocked_by,
     )

@@ -18,7 +18,7 @@ PLAN_DISCOVERY_HINT = (
     f"(source: `{PLAN_SCHEMA_SOURCE}`, id: `{PLAN_SCHEMA_ID}`)."
 )
 
-CREATE_COMMAND_HELP = f"""Create a task. Bare title auto-enriches; --draft skips enrichment.
+CREATE_COMMAND_HELP = f"""Create a pending task. A bare title stores the title and any -d description.
 
 Use `--type bug|idea` for typed kernels and `--plan plan.json` for structured imports.
 

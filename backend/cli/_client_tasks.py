@@ -184,10 +184,3 @@ def validate_ready(
     response = client.post(url_fn(f"/tasks/{canonicalize_task_id(task_id)}/validate-ready"))
     return cast(dict[str, Any], handle_response(response))
 
-
-def execute_task(
-    client: httpx.Client, url_fn: Any, handle_response: Any, task_id: str
-) -> dict[str, Any]:
-    """Queue task for autonomous execution and immediate dispatch."""
-    response = client.post(url_fn(f"/tasks/{canonicalize_task_id(task_id)}/execute"))
-    return cast(dict[str, Any], handle_response(response))

@@ -48,11 +48,6 @@ def _output_task_completion(task_id: str, result: dict[str, Any], *, noop: bool 
     typer.echo("  Next action: none")
 
 
-def _is_autocode_dispatch_claim(claimed_by: object) -> bool:
-    """Return whether the claim belongs to the autocode dispatcher."""
-    return isinstance(claimed_by, str) and claimed_by.startswith("api-dispatch-")
-
-
 def _handle_subtask_completion(
     client: STClient,
     id: str,
@@ -78,27 +73,6 @@ def _handle_subtask_completion(
         output_success(f"Subtask {id} already complete (no-op).")
         return
     output_success(f"Subtask {id} completed. Metadata updated.")
-
-
-def _refuse_if_autocode_owned(task: dict[str, object], task_id: str) -> None:
-    """Refuse st done while an autocode dispatcher actively owns the claim.
-
-    The autocode orchestrator owns terminal-status transitions for tasks it runs.
-    When an autocode agent reflexively calls `st done` as its closing move, it
-    races the orchestrator's closeout gates and publish step.
-    """
-    claimed_by = task.get("claimed_by")
-    if not _is_autocode_dispatch_claim(claimed_by):
-        return
-    lock_expires_at = task.get("lock_expires_at")
-    expires = str(lock_expires_at) if lock_expires_at else ""
-    output_error(
-        f"Task {task_id} is claimed by '{claimed_by}'"
-        + (f" (lock expires {expires})." if expires else ".")
-        + "\n  The autocode dispatcher owns completion for this task."
-        + "\n  Return control and let the post-execution gates run."
-    )
-    raise typer.Exit(1)
 
 
 def _release_task_leases(project_id: str | None, task_id: str) -> None:
@@ -158,7 +132,6 @@ def _handle_task_completion(
         _output_task_completion(id, completion_evidence(
             (task.get("verification_result") or {}).get("acceptance") or {}, retained=True), noop=True)
         return
-    _refuse_if_autocode_owned(task, id)
     project_id = str(task.get("project_id") or "") or None
     preflight(id, project_id, op="done")
     _report_requirement_amendments(task)

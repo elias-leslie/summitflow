@@ -62,10 +62,6 @@ class TaskCreate(BaseModel):
         default=True,
         description="Whether to run AI review before task completion. Set False for mechanical tasks.",
     )
-    auto_dispatch: bool = Field(
-        default=False,
-        description="Automatically dispatch to Hatchet pipeline after creation",
-    )
 
     @field_validator("external_origin", "external_request_key")
     @classmethod
