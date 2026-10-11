@@ -15,6 +15,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from starlette.middleware import Middleware
 
 from .access_control import access_control_middleware
+from .access_log import AccessLogMiddleware, configure_access_log
 from .api import (
     activity,
     agent_hub,
@@ -54,6 +55,8 @@ _APP_VERSION = "0.1.0"
 # module, so check for the loaded pytest module instead.
 if "pytest" not in sys.modules and not os.getenv("PYTEST_CURRENT_TEST"):
     configure_logging()
+    # Request usage evidence for value audits; kept in its own 35-day file.
+    configure_access_log()
 
     # Configure uvicorn loggers to use syslog prefixes for journald
     import logging
@@ -121,6 +124,8 @@ app = FastAPI(
 )
 
 app.middleware("http")(access_control_middleware)
+# Added last so it wraps everything, including access-control rejections.
+app.add_middleware(cast(Any, AccessLogMiddleware))
 
 # Include routers
 app.include_router(auth.router, prefix="/api/auth", tags=["auth"])

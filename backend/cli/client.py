@@ -2,6 +2,9 @@
 
 from __future__ import annotations
 
+import re
+import sys
+
 from ._client_base import APIError, BaseHTTPClient
 from ._client_mixins import (
     DependencyOperationsMixin,
@@ -11,6 +14,14 @@ from ._client_mixins import (
     TestOperationsMixin,
 )
 from ._client_mixins_tasks import _TaskWorkflowMixin
+
+_COMMAND_TOKEN = re.compile(r"^[a-z][a-z0-9_-]{0,30}$")
+
+
+def request_source() -> str:
+    """Name the st subcommand for the backend's request usage log."""
+    command = sys.argv[1] if len(sys.argv) > 1 else ""
+    return f"st-cli/{command}" if _COMMAND_TOKEN.match(command) else "st-cli"
 
 
 class STClient(
@@ -43,6 +54,7 @@ class STClient(
             resolved_project_id = project_id or config.project_id
 
         super().__init__(resolved_base_url, resolved_project_id, timeout)
+        self._client.headers.setdefault("X-Request-Source", request_source())
 
 
 __all__ = ["APIError", "STClient"]
