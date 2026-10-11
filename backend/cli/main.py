@@ -13,7 +13,7 @@ from app.storage.connection import close_pool
 from app.storage.events import log_task_event
 
 from .config import set_project_override
-from .extensions import register_extensions
+from .extensions import ExtensionCommand, register_extensions
 from .lib.commit_workflow import CommitError, commit_repo, current_repo
 from .lib.usage import usage
 from .output import set_compact_output, set_human_output, set_progress_only
@@ -258,13 +258,9 @@ def _declares_project(command: Any) -> bool:
 
 
 def _passes_unknown_options(command: Any) -> bool:
-    # Click applies context_settings to the Context, not the Command, so the
-    # command's own attributes keep their class defaults (extensions set these).
-    settings = getattr(command, "context_settings", None) or {}
-    return any(
-        bool(getattr(command, key, False) or settings.get(key))
-        for key in ("ignore_unknown_options", "allow_extra_args")
-    )
+    # Extensions own their argv verbatim. Their passthrough lives in
+    # context_settings, which Click applies to the Context, not the Command.
+    return isinstance(command, ExtensionCommand) or bool(command.ignore_unknown_options or command.allow_extra_args)
 
 
 def _project_tokens(args: list[str], start: int) -> tuple[list[str], list[str]]:

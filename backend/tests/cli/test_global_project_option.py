@@ -34,6 +34,8 @@ def root() -> tuple[object, typer.Context]:
         ),
         (["aico", "create", "r1", "-P", "x"], ["aico", "create", "r1", "-P", "x"]),
         (["-c", "aico", "create", "--project=x"], ["-c", "aico", "create", "--project=x"]),
+        # Core commands without their own -P still hoist it.
+        (["check", "--quick", "-P", "x"], ["-P", "x", "check", "--quick"]),
         # Passthrough after `--` is never touched.
         (["check", "pytest", "--", "-P", "x"], ["check", "pytest", "--", "-P", "x"]),
     ],
