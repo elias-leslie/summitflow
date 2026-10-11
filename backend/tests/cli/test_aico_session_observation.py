@@ -45,6 +45,8 @@ def local_owner(monkeypatch: pytest.MonkeyPatch) -> SimpleNamespace:
     library.read_transcript_info.return_value = info
     query = MagicMock(return_value=deepcopy(RECEIPT))
     monkeypatch.setattr(observation, "_owner_socket", lambda: "/local/control.sock")
+    # Pre-cutover baseline: no Tether socket, so the legacy owner answers.
+    monkeypatch.setattr(observation.tether, "socket_present", lambda *_: False)
     monkeypatch.setattr(observation, "transcript_library", lambda: library)
     monkeypatch.setattr(observation, "_query_owner", query)
     return SimpleNamespace(session=session, info=info, library=library, query=query)
@@ -189,3 +191,30 @@ def test_single_monitor_json_projects_owner(local_owner, monkeypatch):
     result = CliRunner().invoke(app, ["sessions", "monitor", THREAD, "--json"])
     assert result.exit_code == 0, result.output
     assert json.loads(result.output)["aico_owner_observation"] == RECEIPT
+
+
+TETHER_DESCRIPTOR = {
+    "id": WIDGET, "ownershipId": LOGICAL, "generation": "a" * 64, "status": "running",
+    "tmux": {"serverId": "f" * 32, "socket": "/state/tmux/s/server.sock", "sessionId": "$17",
+             "paneId": "%21", "sessionName": f"aico-{WIDGET}"},
+}
+
+
+def test_tether_is_preferred_and_mapped_to_owner_receipt(local_owner, monkeypatch):
+    monkeypatch.setattr(observation.tether, "socket_present", lambda *_: True)
+    request = MagicMock(return_value=(200, deepcopy(TETHER_DESCRIPTOR)))
+    monkeypatch.setattr(observation.tether, "request", request)
+    result = observation.observe_aico_owners([local_owner.session])[0]
+    assert result["aico_owner_observation"] == RECEIPT
+    assert result["tmux_pane_id"] == "%21"
+    assert request.call_args.args == ("GET", f"/v1/sessions/{WIDGET}")
+    local_owner.query.assert_not_called()
+
+
+@pytest.mark.parametrize("outcome", [(404, {"error": "not_found"}), OSError(), (200, {"id": WIDGET})])
+def test_unanswered_tether_falls_back_to_legacy_owner(local_owner, monkeypatch, outcome):
+    monkeypatch.setattr(observation.tether, "socket_present", lambda *_: True)
+    request = MagicMock(side_effect=outcome) if isinstance(outcome, Exception) else MagicMock(return_value=outcome)
+    monkeypatch.setattr(observation.tether, "request", request)
+    assert observation.observe_aico_owners([local_owner.session])[0]["aico_owner_observation"] == RECEIPT
+    local_owner.query.assert_called_once_with("/local/control.sock", WIDGET)

@@ -81,3 +81,9 @@ def test_validate_since_rejects_invalid_input() -> None:
     """Invalid inputs should fall back to the default 30-minute window."""
     assert validate_since("garbage") == "30 minutes ago"
     assert validate_since("2x") == "30 minutes ago"
+
+
+def test_get_service_list_includes_tether_default_instance() -> None:
+    user_svcs, _ = get_service_list("tether")
+    assert USER_SERVICES["tether"] == "tether@default.service"
+    assert user_svcs == ["tether"]

@@ -1,21 +1,28 @@
-"""Compatibility alias: `st sessions title` forwards to the owner's `st aico root title`."""
+"""Compatibility alias: `st sessions title` forwards to the owner's `st aico root title`.
+
+Aico roots go through Tether's socket when Tether is running (it serves the same
+root contract); otherwise the Aico extension uses its legacy GUI socket.
+"""
 
 from __future__ import annotations
 
+import os
 from typing import Annotated, Literal
 
 import typer
+
+from app.services import tether
 
 from .. import extensions
 from ..lib.usage import usage
 from ..output import output_error
 
-RootSurface = Literal["aico", "a-term"]
+RootSurface = Literal["aico", "a-term", "tether"]
 
 
 @usage(
     surface="st.sessions.title",
-    cmd='st sessions title ROOT "Project · Focus" [--surface aico|a-term]',
+    cmd='st sessions title ROOT "Project · Focus" [--surface aico|tether|a-term]',
     when="compatibility alias of st aico root title for one exact retained owner root",
     precautions=("Supply a non-secret control-free single-line label of at most 160 UTF-8 bytes. Only the owner's existing session metadata retains it; output contains no label.",),
     tier="reference",
@@ -32,6 +39,11 @@ def title(
         output_error("Aico owner extension unavailable")
         raise typer.Exit(1)
     # `--` keeps a label that begins with '-' positional in the owner parser.
+    route = ["--surface", surface]
+    if surface == "tether" or (surface == "aico" and not os.environ.get("AICO_GUI_CONTROL_SOCKET")
+                               and tether.available()):
+        # Tether's roots keep owner "aico", so the Aico extension qualifies them unchanged.
+        route = ["--surface", "aico", "--root-socket", tether.socket_path()]
     raise typer.Exit(extensions.dispatch_extension(
-        record, ["root", "title", "--surface", surface, "--", root, label],
+        record, ["root", "title", *route, "--", root, label],
         context=extensions.extension_context()))

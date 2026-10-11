@@ -8,6 +8,13 @@ from typer.testing import CliRunner
 from cli.main import app
 
 
+@pytest.fixture(autouse=True)
+def _no_live_tether(monkeypatch):
+    """Pre-cutover baseline: Tether is not running, whatever runs on this host."""
+    monkeypatch.setattr("app.services.tether.available", lambda *_: False)
+    monkeypatch.delenv("AICO_GUI_CONTROL_SOCKET", raising=False)
+
+
 @pytest.mark.parametrize("arguments,surface", [
     (["root-fixture", "  Project · Focus 🐾  "], "aico"),
     (["root-fixture", "Focus · Next", "--surface", "a-term"], "a-term"),
@@ -48,3 +55,19 @@ def test_help_advertises_alias_surface_and_byte_bound():
     assert "160 UTF-8 bytes" in result.output
     assert "aico" in result.output and "a-term" in result.output
     assert "st aico root title" in result.output
+
+
+@pytest.mark.parametrize("surface,available,route", [
+    ("aico", True, ["--surface", "aico", "--root-socket", "/fixture/tether.sock"]),
+    ("tether", False, ["--surface", "aico", "--root-socket", "/fixture/tether.sock"]),
+    ("a-term", True, ["--surface", "a-term"]),
+])
+def test_alias_routes_aico_roots_through_running_tether(monkeypatch, surface, available, route):
+    observed = []
+    monkeypatch.setenv("TETHER_SOCKET", "/fixture/tether.sock")
+    monkeypatch.setattr("app.services.tether.available", lambda *_: available)
+    monkeypatch.setattr("cli.extensions.extension_context", lambda *_: {})
+    monkeypatch.setattr("cli.extensions.dispatch_extension", lambda record, argv, **_: observed.append(argv) or 0)
+    result = CliRunner().invoke(app, ["sessions", "title", "root-fixture", "Focus", "--surface", surface])
+    assert result.exit_code == 0, result.output
+    assert observed == [["root", "title", *route, "--", "root-fixture", "Focus"]]

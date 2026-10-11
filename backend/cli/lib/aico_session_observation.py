@@ -1,4 +1,9 @@
-"""Optional local Aico owner observations for session monitor; never persisted."""
+"""Optional local Aico owner observations for session monitor; never persisted.
+
+Tether (the session daemon that took over Aico's lifecycle) is asked first when
+its socket exists; otherwise, or when it cannot answer, Aico's legacy owner
+socket is used exactly as before.
+"""
 
 from __future__ import annotations
 
@@ -12,9 +17,13 @@ from pathlib import Path
 from typing import Any, cast
 from uuid import UUID
 
+from app.services import tether
+
 from ..commands.sessions_native_inspection import transcript_library
 
 OWNER_TIMEOUT_SECONDS = 0.25
+# Tether live-verifies the session before answering, so allow it a little longer.
+TETHER_TIMEOUT_SECONDS = 1.0
 MAX_OWNER_RESPONSE_BYTES = 4096
 
 
@@ -56,6 +65,29 @@ def _query_owner(path: str, widget: str) -> object:
         connection.close()
 
 
+def _query_tether(widget: str) -> object:
+    """Tether's session descriptor in the legacy owner receipt shape, or None."""
+    status, data = tether.request("GET", f"/v1/sessions/{widget}", timeout=TETHER_TIMEOUT_SECONDS,
+                                  max_bytes=MAX_OWNER_RESPONSE_BYTES)
+    if status != 200 or not isinstance(data, dict) or not isinstance(data.get("tmux"), dict):
+        return None
+    return {"owner": "aico", "widgetId": data.get("id"), "sessionId": data.get("ownershipId"),
+            "generation": data.get("generation"), "tmuxSessionId": data["tmux"].get("sessionId"),
+            "paneId": data["tmux"].get("paneId")}
+
+
+def _query_session(widget: str) -> object:
+    """Prefer Tether; fall back to the legacy owner socket when Tether cannot answer."""
+    if tether.socket_present():
+        try:
+            wire = _query_tether(widget)
+        except (OSError, ValueError, http.client.HTTPException):
+            wire = None
+        if wire is not None:
+            return wire
+    return _query_owner(_owner_socket(), widget)
+
+
 def _eligible_identity(session: dict[str, Any]) -> dict[str, Any] | None:
     thread = session.get("id")
     if not isinstance(thread, str):
@@ -79,7 +111,7 @@ def _eligible_identity(session: dict[str, Any]) -> dict[str, Any] | None:
     return external
 
 
-def _observation(session: dict[str, Any], external: dict[str, Any], infos: list[Any], path: str) -> dict[str, Any] | None:
+def _observation(session: dict[str, Any], external: dict[str, Any], infos: list[Any]) -> dict[str, Any] | None:
     matches = [info for info in infos if info.session_id == session["id"]]
     if len(matches) != 1:
         return None
@@ -92,7 +124,7 @@ def _observation(session: dict[str, Any], external: dict[str, Any], infos: list[
             or owner.aico_session_id != external.get("aico_session_id")
             or re.fullmatch(r"[0-9a-f]{8}", owner.aico_widget_id) is None):
         return None
-    wire = _query_owner(path, owner.aico_widget_id)
+    wire = _query_session(owner.aico_widget_id)
     if not isinstance(wire, dict):
         return None
     wire = cast(dict[str, Any], wire)
@@ -119,7 +151,8 @@ def observe_aico_owners(sessions: list[dict[str, Any]]) -> list[dict[str, Any]]:
                     if (identity := _eligible_identity(session)) is not None]
         if not eligible:
             return projected
-        path = _owner_socket()
+        if not tether.socket_present():
+            _owner_socket()  # no owner at all: skip transcript discovery
         library = transcript_library()
         snapshot = library.discover_open_transcripts()
         threads = {session["id"] for session, _ in eligible}
@@ -131,7 +164,7 @@ def observe_aico_owners(sessions: list[dict[str, Any]]) -> list[dict[str, Any]]:
         return projected
     for session, identity in eligible:
         try:
-            observation = _observation(session, identity, infos, path)
+            observation = _observation(session, identity, infos)
         except (OSError, ValueError, TypeError, http.client.HTTPException):
             observation = None
         if observation is not None:

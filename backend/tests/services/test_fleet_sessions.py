@@ -18,6 +18,14 @@ from app.storage import fleet_events as fleet
 from app.storage.connection import get_connection
 
 
+@pytest.fixture(autouse=True)
+def _no_live_tether(monkeypatch, tmp_path):
+    """Pre-cutover baseline: no Tether socket, whatever runs on this host."""
+    monkeypatch.setenv("TETHER_SOCKET", str(tmp_path / "absent-tether.sock"))
+    monkeypatch.delenv("AICO_GUI_CONTROL_SOCKET", raising=False)
+    monkeypatch.delenv("AICO_CONTROL_SOCKET", raising=False)
+
+
 def test_native_reservation_has_one_concurrent_winner_and_retains_receipts(ensure_test_project, monkeypatch):
     trace = "native-send:" + uuid.uuid4().hex
     monkeypatch.setattr(fleet, "get_redis", lambda: MagicMock())
@@ -451,3 +459,69 @@ def test_matching_provider_tombstone_confirms_close_without_end_retry(roots, mon
     monkeypatch.setattr(service, "_host_end", end)
     assert service.close_root(state["root"])["status"] == "closed"
     end.assert_not_called()
+
+
+def _socket_client(monkeypatch, result):
+    request = MagicMock()
+    request.post.return_value.json.return_value = result
+    manager = MagicMock()
+    manager.__enter__.return_value = request
+    transport = MagicMock()
+    monkeypatch.setattr(service.httpx, "HTTPTransport", transport)
+    monkeypatch.setattr(service.httpx, "Client", lambda **kwargs: manager)
+    return request, transport
+
+
+AICO_DESCRIPTOR = {"owner": "aico", "hostIdentity": "aabbccdd", "generation": "c" * 64,
+                   "logicalSessionId": "aico-root-1", "surfaceLocator": "aico://widget/aabbccdd"}
+
+
+def test_aico_surface_uses_legacy_sockets_without_tether(monkeypatch):
+    request, transport = _socket_client(monkeypatch, AICO_DESCRIPTOR)
+    service._host_start("root-fixture", "fixture", "/fixture", "codex", "Exact capsule", role="portfolio-root", lead_root=None, facet=None)
+    transport.assert_called_once_with(uds=f"/run/user/{service.os.getuid()}/aico/gui-control.sock")
+    request.post.return_value.json.return_value = {"status": "ended"}
+    assert service._host_end(AICO_DESCRIPTOR)
+    assert transport.call_args.kwargs == {"uds": f"/run/user/{service.os.getuid()}/aico/control.sock"}
+
+
+def test_aico_surface_prefers_running_tether(monkeypatch):
+    monkeypatch.setenv("TETHER_SOCKET", "/fixture/tether.sock")
+    monkeypatch.setattr(service.tether, "available", lambda *_: True)
+    request, transport = _socket_client(monkeypatch, AICO_DESCRIPTOR)
+    assert service._host_start("root-fixture", "fixture", "/fixture", "codex", "Exact capsule", role="portfolio-root", lead_root=None, facet=None)["owner"] == "aico"
+    transport.assert_called_once_with(uds="/fixture/tether.sock")
+    request.post.return_value.json.return_value = {"status": "ended"}
+    assert service._host_end(AICO_DESCRIPTOR)
+    request.post.assert_called_with("http://aico/v1/sessions/aabbccdd/end", json={"generation": "c" * 64})
+    assert transport.call_args.kwargs == {"uds": "/fixture/tether.sock"}
+
+
+def test_explicit_aico_socket_pin_wins_over_tether(monkeypatch):
+    monkeypatch.setenv("AICO_GUI_CONTROL_SOCKET", "/fixture/pinned.sock")
+    available = MagicMock(return_value=True)
+    monkeypatch.setattr(service.tether, "available", available)
+    _request, transport = _socket_client(monkeypatch, AICO_DESCRIPTOR)
+    service._host_start("root-fixture", "fixture", "/fixture", "codex", "Exact capsule", role="portfolio-root", lead_root=None, facet=None)
+    transport.assert_called_once_with(uds="/fixture/pinned.sock")
+    available.assert_not_called()
+
+
+def test_tether_surface_accepts_aico_owner_and_ends_through_tether(monkeypatch):
+    monkeypatch.setenv("TETHER_SOCKET", "/fixture/tether.sock")
+    request, transport = _socket_client(monkeypatch, AICO_DESCRIPTOR)
+    descriptor = service._host_start("root-fixture", "fixture", "/fixture", "codex", "Exact capsule", role="portfolio-root", lead_root=None, facet=None, surface="tether")
+    assert descriptor == {**AICO_DESCRIPTOR, "status": None}
+    assert request.post.call_args.args == ("http://aico/v1/roots",)
+    request.post.return_value.json.return_value = {"status": "ended"}
+    assert service._host_end(descriptor, root="root-fixture", surface="tether")
+    assert {call.kwargs["uds"] for call in transport.call_args_list} == {"/fixture/tether.sock"}
+    request.post.return_value.json.return_value = {**AICO_DESCRIPTOR, "owner": "a-term"}
+    with pytest.raises(ValueError):
+        service._host_start("root-fixture", "fixture", "/fixture", "codex", "Exact capsule", role="portfolio-root", lead_root=None, facet=None, surface="tether")
+
+
+def test_tether_surface_is_a_valid_start_surface(roots):
+    state = roots(scope={}, surface="tether")
+    assert state["surface"] == "tether"
+    assert state["capabilities"]["launch"] == "host-acknowledged"

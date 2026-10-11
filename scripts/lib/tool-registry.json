@@ -11,7 +11,19 @@
         "enabled": true,
         "effects": ["read-local", "process", "network"]
       },
-      "environment": ["XDG_RUNTIME_DIR", "AICO_GUI_CONTROL_SOCKET", "AICO_CONTROL_SOCKET", "A_TERM_ROOT_CONTROL_URL", "AICO_WIDGET_ID"]
+      "environment": ["XDG_RUNTIME_DIR", "AICO_GUI_CONTROL_SOCKET", "AICO_CONTROL_SOCKET", "A_TERM_ROOT_CONTROL_URL", "AICO_WIDGET_ID", "TETHER_SOCKET", "TETHER_INSTANCE"]
+    },
+    {
+      "id": "tether.cli",
+      "owner": "tether",
+      "namespace": "tether",
+      "manifest": "extensions/tether.json",
+      "executable": "bin/tether",
+      "grant": {
+        "enabled": true,
+        "effects": ["read-local", "write-local", "process"]
+      },
+      "environment": ["XDG_RUNTIME_DIR", "XDG_STATE_HOME", "TETHER_INSTANCE", "TETHER_SOCKET", "TETHER_NODE"]
     },
     {
       "id": "agent-hub.agents",

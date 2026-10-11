@@ -74,7 +74,7 @@ def _call(method: str, *args: Any, **kwargs: Any) -> dict[str, Any]:
 def start(
     instruction: Annotated[str, typer.Argument(help="Short sanitized starting instruction")],
     tool: Annotated[str, typer.Option(help="Aico host tool: codex or claude-code")] = "codex",
-    surface: Annotated[str, typer.Option(help="Owner surface: aico or a-term")] = "aico",
+    surface: Annotated[str, typer.Option(help="Owner surface: aico, tether or a-term. aico goes through Tether when it is running, else Aico's sockets")] = "aico",
     scope: Annotated[str, typer.Option(help="Exact scope/source references as JSON")] = "{}",
     role: Annotated[str, typer.Option(help="portfolio-root, neri-target-root, or neri-support-root")] = "portfolio-root",
     lead_root: Annotated[str | None, typer.Option(help="Opaque target lead root for a support allocation")] = None,

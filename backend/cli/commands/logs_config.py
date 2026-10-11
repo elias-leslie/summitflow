@@ -22,6 +22,7 @@ USER_SERVICES = {
     "ah-agent-worker": "agent-hub-hatchet-agent-worker.service",
     "ah-ops-worker": "agent-hub-hatchet-ops-worker.service",
     "a-term": "a-term-backend.service",
+    "tether": "tether@default.service",
     "vantage": "vantage-backend.service",
     "vantage-web": "vantage-frontend.service",
     "vantage-worker": "vantage-hatchet-worker.service",

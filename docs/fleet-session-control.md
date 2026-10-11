@@ -21,9 +21,12 @@ for a retained request ID conflicts; retry with the same complete capsule.
 Older retained capsules without this field expose the registered root as their
 execution root and keep their original create digest on a default retry.
 
-Use `--surface a-term` for the existing local A-Term owner HTTP route; unknown
-surfaces are unsupported. The same role/lead/facet capsule goes to either owner.
-The returned host descriptor is an Aico acknowledgment; it does not attest a
+Use `--surface a-term` for the existing local A-Term owner HTTP route, or
+`--surface tether` to address Tether (the per-user session daemon that owns Aico
+and A-Term sessions) directly; unknown surfaces are unsupported. The same
+role/lead/facet capsule goes to every owner. Tether keeps Aico's root contract
+and reports `owner: "aico"` on its root descriptors.
+The returned host descriptor is an owner acknowledgment; it does not attest a
 delivered model or a Codex queue delivery. An unavailable or uncertain launch is
 retained. Retry with `--request-id ROOT` and the same capsule; do not recreate a
 root after an uncertain response.
@@ -132,15 +135,28 @@ is at least once and advisory, not exactly once. Idempotency keys are guaranteed
 while their rows are retained; producers must reconcile an expired revision
 against the source before retrying after a retention gap.
 
-The API host socket defaults to `/run/user/<uid>/aico/gui-control.sock` and supports
-`AICO_GUI_CONTROL_SOCKET` for the existing host configuration. Native End uses
-`/run/user/<uid>/aico/control.sock` or `AICO_CONTROL_SOCKET`. No new dependency,
+The `aico` surface prefers Tether: when `GET /v1/health` on Tether's socket
+(`$XDG_RUNTIME_DIR/tether/default/control.sock`, or `TETHER_SOCKET` /
+`TETHER_INSTANCE`) answers `ok` with a serving lifecycle, root requests and native
+End go to that socket, which serves the same `/v1/roots*` and
+`/v1/sessions/ID/end` routes and bodies. Otherwise the host socket is
+`/run/user/<uid>/aico/gui-control.sock` and native End uses
+`/run/user/<uid>/aico/control.sock`, exactly as before Tether. An explicit
+`AICO_GUI_CONTROL_SOCKET` or `AICO_CONTROL_SOCKET` always wins. After the cutover
+Tether also serves those legacy sockets, so either path reaches the same owner.
+The `tether` surface always uses Tether's socket. Stored `aico`, `a-term` and
+`tether` surface values all stay readable; no retained capsule is rewritten.
+No new dependency,
 queue, scheduler, session store, or mandatory Agent Hub telemetry is introduced.
 The schema migration and SDK wheel must be installed through the existing release
 workflow before these commands are available in an accepted runtime.
 A-Term defaults to `http://127.0.0.1:8002` and supports the local
 `A_TERM_ROOT_CONTROL_URL` override. Existing password/proxy mode rejection is
 reported as unavailable; the adapter does not supply or invent credentials.
+The `a-term` surface keeps using A-Term's route after the cutover: A-Term's
+`/v1/roots` forwards to Tether and presents `owner: "a-term"`, so its auth and its
+view behavior (show opens an A-Term pane) are preserved. There is no alternate
+route around A-Term's authentication.
 # Direct exact-thread recovery
 
 Owner operations for one exact retained root live under `st aico root`:
@@ -167,8 +183,9 @@ mutation. A root without a generation cannot authorize End. For fleet roots
 prefer `st sessions close`, which records the outcome in the fleet ledger; a
 direct end leaves fleet state to reconcile on the next close.
 
-`st sessions title REQUEST_ID "Project · Focus" [--surface aico|a-term]` remains a
-compatibility alias that forwards to `st aico root title`; the owner extension
+`st sessions title REQUEST_ID "Project · Focus" [--surface aico|tether|a-term]` remains a
+compatibility alias that forwards to `st aico root title`. For `aico` (when Tether
+is running) and `tether` it passes `--root-socket` with Tether's socket. The owner extension
 performs all validation and reports the receipt. Labels require 1-160 UTF-8 bytes
 of control-free single-line Unicode after ECMAScript whitespace trimming. The
 owner's `contracts/view-mutation-vectors.json` pins label and bounds rules for

@@ -15,6 +15,7 @@ from urllib.request import Request, urlopen
 
 from ..config import SUMMITFLOW_BACKEND_PORT
 from ..logging_config import get_logger
+from . import tether
 from .redis_pool import get_redis
 
 logger = get_logger(__name__)
@@ -66,6 +67,24 @@ def check_health(project_id: str, url: str) -> dict[str, Any]:
         }
 
 
+def check_tether_health() -> dict[str, Any] | None:
+    """Tether's socket health; None (not checked) when Tether is not installed/running.
+
+    Tether has no TCP port. A missing socket is not a failure, so hosts without
+    Tether (or before its cutover) stay healthy; a socket that does not answer is.
+    """
+    if not tether.socket_present():
+        return None
+    data = tether.health(timeout=5)
+    ok = data is not None
+    return {
+        "project": "tether",
+        "url": f"unix:{tether.socket_path()}/v1/health",
+        "ok": ok,
+        "status": "healthy" if ok else "error: socket present but /v1/health did not answer ok",
+    }
+
+
 def _get_last_status() -> str | None:
     """Read last known smoke test status from Redis."""
     try:
@@ -92,6 +111,8 @@ def _set_last_status(status: str) -> None:
 def run_all_smoke_tests() -> dict[str, Any]:
     """Run all health checks. Returns summary with failures and transition info."""
     results = [check_health(pid, url) for pid, url in HEALTH_URLS.items()]
+    if (tether_result := check_tether_health()) is not None:
+        results.append(tether_result)
     failures = [r for r in results if not r["ok"]]
 
     current_status = "unhealthy" if failures else "healthy"

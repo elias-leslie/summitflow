@@ -86,6 +86,13 @@ UI (~23 pages), and ~33 Hatchet workflows. Output is compact JSON by default, wi
 - `st aico root status|show|title|position|end REQUEST_ID` controls one exact
   retained owner root, including direct `st aico create` roots;
   `st sessions title` is a compatibility alias of `st aico root title`.
+- `st tether sessions|roots|tools|projects|doctor|version` forwards to the CLI of
+  Tether, the per-user session daemon (`tether@default.service`) that owns the tmux
+  sessions of Aico and A-Term on a private socket
+  (`$XDG_RUNTIME_DIR/tether/default/control.sock`). It never starts the daemon.
+  Fleet roots, `st sessions title`, the session monitor and the tmux agent session
+  sync prefer Tether when it is running and otherwise use Aico's legacy sockets;
+  `st logs tail -s tether` and the smoke test (only when its socket exists) cover it.
 
 **Agents and AI (routed through Agent Hub)**
 

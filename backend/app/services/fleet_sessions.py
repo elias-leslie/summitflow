@@ -24,10 +24,14 @@ from ..storage.fleet_events import (
     read_fleet_page,
 )
 from ..utils.shared_paths import get_workspaces_root
+from . import tether
 from .pubsub import fleet_wake_subscription
 
 RootRole = Literal["portfolio-root", "neri-target-root", "neri-support-root"]
-RootSurface = Literal["aico", "a-term"]
+RootSurface = Literal["aico", "a-term", "tether"]
+# Root descriptors name their owner. Tether keeps Aico's owner name for its
+# roots; A-Term's /v1/roots (a Tether proxy after the cutover) presents "a-term".
+_SURFACE_OWNER = {"aico": "aico", "tether": "aico", "a-term": "a-term"}
 _KEY = re.compile(r"[A-Za-z0-9][A-Za-z0-9._:-]{0,127}")
 # Owners bound a resumed launch prompt to 2000 UTF-8 bytes of tab/newline-only text.
 _RESUME_PROMPT_BYTES = 2000
@@ -96,11 +100,26 @@ def root_state(root: str) -> dict[str, Any]:
     return state
 
 
+def _owner_socket(surface: str, *, owner_control: bool) -> str:
+    """Tether serves Aico's root and owner routes unchanged, so prefer it when running.
+
+    An explicit AICO_* socket pin wins for the aico surface; without Tether the
+    legacy Aico sockets are used exactly as before the cutover.
+    """
+    if surface == "tether":
+        return tether.socket_path()
+    name = "AICO_CONTROL_SOCKET" if owner_control else "AICO_GUI_CONTROL_SOCKET"
+    if pinned := os.environ.get(name):
+        return pinned
+    if tether.available():
+        return tether.socket_path()
+    filename = "control.sock" if owner_control else "gui-control.sock"
+    return f"/run/user/{os.getuid()}/aico/{filename}"
+
+
 def _host_request(surface: str, path: str, payload: dict[str, Any], *, owner_control: bool = False, method: str = "POST") -> dict[str, Any]:
-    if surface == "aico":
-        name = "AICO_CONTROL_SOCKET" if owner_control else "AICO_GUI_CONTROL_SOCKET"
-        filename = "control.sock" if owner_control else "gui-control.sock"
-        socket = os.environ.get(name, f"/run/user/{os.getuid()}/aico/{filename}")
+    if surface in {"aico", "tether"}:
+        socket = _owner_socket(surface, owner_control=owner_control)
         with httpx.Client(transport=httpx.HTTPTransport(uds=socket), timeout=30) as client:
             response = client.get(f"http://aico{path}") if method == "GET" else client.post(f"http://aico{path}", json=payload)
     elif surface == "a-term":
@@ -126,7 +145,7 @@ def _host_start(
     *, role: str, lead_root: str | None, facet: str | None, surface: RootSurface = "aico",
     resume_session: str | None = None,
 ) -> dict[str, Any]:
-    """Aico's private GUI protocol; acknowledgment is not model/queue evidence."""
+    """The owner's root protocol (Aico, Tether or A-Term); acknowledgment is not model/queue evidence."""
     body: dict[str, Any] = {
         "requestId": root, "tool": tool, "projectId": project_id,
         "projectRoot": project_root, "initialPrompt": prompt,
@@ -137,7 +156,7 @@ def _host_start(
         # launches keep the original body and digest.
         body["resumeSessionId"] = resume_session
     descriptor = _host_request(surface, "/v1/roots", body)
-    if (descriptor.get("owner") != surface
+    if (descriptor.get("owner") != _SURFACE_OWNER[surface]
             or not descriptor.get("logicalSessionId") or not descriptor.get("hostIdentity")
             or not descriptor.get("surfaceLocator")
             or (not descriptor.get("generation") and descriptor.get("status") not in {"pending", "uncertain", "ended"})):
@@ -157,7 +176,7 @@ def reconcile_root(root: str) -> dict[str, Any]:
         observed = _host_request(state["surface"], f"/v1/roots/{quote(root, safe='')}", {}, method="GET")
     except (httpx.HTTPError, ValueError, OSError):
         return state
-    if (observed.get("owner") != state["surface"] or observed.get("requestId") != root
+    if (observed.get("owner") != _SURFACE_OWNER.get(state["surface"]) or observed.get("requestId") != root
             or observed.get("role") != state["role"] or observed.get("leadRootReference") != state["lead_root"]
             or observed.get("facetCapsuleRef") != state["facet"] or not observed.get("hostIdentity")
             or not observed.get("logicalSessionId") or not observed.get("surfaceLocator")):
@@ -175,14 +194,16 @@ def reconcile_root(root: str) -> dict[str, Any]:
     return root_state(root)
 
 
-def _host_end(descriptor: dict[str, Any], *, root: str | None = None) -> bool:
+def _host_end(descriptor: dict[str, Any], *, root: str | None = None, surface: str | None = None) -> bool:
     """Use only Aico's exact owner identity and persisted generation fence."""
     widget = descriptor.get("hostIdentity")
     generation = descriptor.get("generation")
-    surface = descriptor.get("owner")
+    owner = descriptor.get("owner")
+    # A tether-surface root reports owner "aico"; keep its own socket.
+    surface = surface if surface == "tether" and owner == "aico" else owner
     if not isinstance(generation, str) or not generation:
         return False
-    if surface == "aico":
+    if surface in {"aico", "tether"}:
         if not isinstance(widget, str) or not re.fullmatch(r"[0-9a-f]{8}", widget) or not re.fullmatch(r"[0-9a-f]{64}", generation):
             return False
         result = _host_request(surface, f"/v1/sessions/{widget}/end", {"generation": generation}, owner_control=True)
@@ -229,7 +250,7 @@ def start_root(
     """
     if tool not in {"codex", "claude-code"}:
         raise ValueError("Host tool must be codex or claude-code")
-    if surface not in {"aico", "a-term"}:
+    if surface not in _SURFACE_OWNER:
         raise ValueError("Unsupported root surface")
     if role not in {"portfolio-root", "neri-target-root", "neri-support-root"}:
         raise ValueError("Unknown fleet root role")
@@ -318,7 +339,7 @@ def close_root(root: str) -> dict[str, Any]:
         return state
     try:
         tombstone = bool(state["host"]) and state["host"].get("status") == "ended"
-        ended = tombstone or (bool(state["host"]) and _host_end(state["host"], root=root))
+        ended = tombstone or (bool(state["host"]) and _host_end(state["host"], root=root, surface=state["surface"]))
     except (httpx.HTTPError, ValueError, OSError):
         ended = False
     if ended:

@@ -1,10 +1,20 @@
 #!/usr/bin/env python3
-"""Sync external tmux agent sessions from A-Term into Agent Hub."""
+"""Sync external tmux agent sessions from A-Term into Agent Hub.
+
+Agent sessions follow the `{mode}-{project}` naming convention. They are found
+on the host's default tmux server and, when Tether (the per-user session daemon
+that owns Aico and A-Term sessions on private tmux servers) is running, in
+Tether's session catalog. A tracked session is closed only when neither source
+lists it; if Tether's socket exists but does not answer, nothing is closed.
+"""
 
 from __future__ import annotations
 
+import http.client
 import json
 import os
+import socket
+import stat
 import subprocess
 from pathlib import Path
 from typing import Any
@@ -16,6 +26,12 @@ STATE_PATH = Path.home() / ".local" / "state" / "tmux-agent-session-sync" / "sta
 WORKSPACES_ROOT = Path(os.environ.get("ST_WORKSPACES_ROOT", Path.home() / ".local" / "share" / "summitflow" / "workspaces"))
 # Prefixes that identify agent tmux sessions (convention: {mode}-{project})
 AGENT_PREFIXES = ("claude-", "codex-")
+TETHER_TIMEOUT_SECONDS = 3
+TETHER_MAX_RESPONSE_BYTES = 4 * 1024 * 1024
+
+
+class TetherUnavailable(Exception):
+    """Tether's socket exists but the catalog could not be read."""
 
 
 def _load_client_id() -> str:
@@ -128,6 +144,83 @@ def _session_id(tmux_session_name: str) -> str:
     return f"tmux:{tmux_session_name}"
 
 
+def _parse_agent_name(name: str) -> tuple[str, str] | None:
+    """(mode, project_id) for a `{mode}-{project}` agent session name."""
+    if not any(name.startswith(p) for p in AGENT_PREFIXES):
+        return None
+    mode, _, project_id = name.partition("-")
+    return (mode, project_id) if project_id else None
+
+
+def _tether_socket() -> str:
+    if override := os.environ.get("TETHER_SOCKET"):
+        return override
+    runtime = os.environ.get("XDG_RUNTIME_DIR") or f"/run/user/{os.getuid()}"
+    return f"{runtime}/tether/{os.environ.get('TETHER_INSTANCE') or 'default'}/control.sock"
+
+
+class _TetherConnection(http.client.HTTPConnection):
+    def __init__(self, path: str) -> None:
+        super().__init__("tether", timeout=TETHER_TIMEOUT_SECONDS)
+        self._socket_path = path
+
+    def connect(self) -> None:
+        self.sock = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+        self.sock.settimeout(TETHER_TIMEOUT_SECONDS)
+        self.sock.connect(self._socket_path)
+
+
+def _tether_catalog() -> list[dict[str, Any]] | None:
+    """Tether's session descriptors; None when Tether is not installed/running.
+
+    Raises TetherUnavailable when the socket exists but the list cannot be read,
+    so the caller can avoid closing sessions it can no longer see.
+    """
+    path = _tether_socket()
+    try:
+        info = os.lstat(path)
+    except OSError:
+        return None
+    if not stat.S_ISSOCK(info.st_mode):
+        return None
+    connection = _TetherConnection(path)
+    try:
+        connection.request("GET", "/v1/sessions")
+        response = connection.getresponse()
+        body = response.read(TETHER_MAX_RESPONSE_BYTES + 1)
+        if response.status != 200 or len(body) > TETHER_MAX_RESPONSE_BYTES:
+            raise TetherUnavailable(f"status {response.status}")
+        items = json.loads(body).get("items")
+    except (OSError, ValueError, AttributeError, http.client.HTTPException) as exc:
+        raise TetherUnavailable(str(exc)) from exc
+    finally:
+        connection.close()
+    if not isinstance(items, list):
+        raise TetherUnavailable("malformed session list")
+    return [item for item in items if isinstance(item, dict)]
+
+
+def _discover_tether_agent_sessions(catalog: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Convention-named agent sessions from Tether's catalog (label or tmux name)."""
+    sessions = []
+    for item in catalog:
+        tmux = item.get("tmux") if isinstance(item.get("tmux"), dict) else {}
+        for name in (item.get("name"), tmux.get("sessionName")):
+            parsed = _parse_agent_name(name) if isinstance(name, str) else None
+            if parsed is None:
+                continue
+            root = item.get("projectRoot")
+            sessions.append({
+                "tmux_session_name": name,
+                "project_id": parsed[1],
+                "mode": parsed[0],
+                "working_dir": root if isinstance(root, str) and root else _resolve_project_root(parsed[1]),
+                "tmux_pane_id": tmux.get("paneId"),
+            })
+            break
+    return sessions
+
+
 def _discover_agent_tmux_sessions() -> list[dict[str, Any]]:
     """Discover agent tmux sessions directly from the host tmux server."""
     try:
@@ -143,13 +236,11 @@ def _discover_agent_tmux_sessions() -> list[dict[str, Any]]:
     sessions = []
     for name in result.stdout.strip().splitlines():
         name = name.strip()
-        if not any(name.startswith(p) for p in AGENT_PREFIXES):
-            continue
         # Convention: {mode}-{project} e.g. claude-summitflow, codex-agent-hub
-        parts = name.split("-", 1)
-        if len(parts) != 2 or not parts[1]:
+        parsed = _parse_agent_name(name)
+        if parsed is None:
             continue
-        mode, project_id = parts[0], parts[1]
+        mode, project_id = parsed
 
         # Get working directory from the active pane
         try:
@@ -180,6 +271,15 @@ def main() -> int:
         return 0
 
     external_sessions = _discover_agent_tmux_sessions()
+    try:
+        tether_catalog = _tether_catalog()
+        tether_unreadable = False
+    except TetherUnavailable:
+        tether_catalog, tether_unreadable = None, True
+    if tether_catalog is not None:
+        seen = {session["tmux_session_name"] for session in external_sessions}
+        external_sessions += [session for session in _discover_tether_agent_sessions(tether_catalog)
+                              if session["tmux_session_name"] not in seen]
     active_session_ids: list[str] = []
 
     for session in external_sessions:
@@ -247,6 +347,10 @@ def main() -> int:
 
     previous = set(_state().get("session_ids", []))
     current = set(active_session_ids)
+    if tether_unreadable:
+        # Tether is installed but did not answer: its sessions may still be live.
+        _save_state({"session_ids": sorted(previous | current)})
+        return 0
     for stale_session_id in sorted(previous - current):
         _api_request(
             f"{AGENT_HUB_API}/sessions/{stale_session_id}/close",
