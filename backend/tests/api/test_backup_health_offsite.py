@@ -172,6 +172,55 @@ async def test_health_only_projects_current_offsite_failure(monkeypatch, offsite
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("verified_point_hours", "expected_health", "expected_verified_at"),
+    [(5.0, "green", "2026-09-21T08:00:00+00:00"), (72.0, "yellow", "2026-09-21T08:00:00+00:00"),
+     (None, "yellow", None)],
+)
+async def test_pending_newest_point_is_covered_by_fresh_offsite_verified_point(
+    monkeypatch, verified_point_hours, expected_health, expected_verified_at,
+) -> None:
+    from app.api.backups import health_endpoints
+
+    verified_point_at = "2026-09-21T07:00:00+00:00" if verified_point_hours is not None else None
+    monkeypatch.setattr(health_endpoints.backup_store, "get_backup_health_summary", lambda: [{
+        "source_id": "summitflow", "source_name": "SummitFlow", "source_type": "project", "enabled": True,
+        "last_success_at": "2026-09-21T12:00:00+00:00", "last_backup_status": "completed_pending_upload",
+        "pending_upload_count": 1, "last_restore_test_ok": True,
+        "latest_verification_json": {"offsite": {"status": "pending"}},
+        "latest_offsite_verified": {"status": "verified", "verified_at": expected_verified_at} if verified_point_at else None,
+        "latest_offsite_verified_point_at": verified_point_at,
+    }])
+    monkeypatch.setattr(health_endpoints, "build_storage_env", lambda _: {})
+    ages = {verified_point_at: verified_point_hours}
+    monkeypatch.setattr(health_endpoints, "_hours_since", lambda value: ages.get(value, 1.0))
+
+    item = (await health_endpoints.backup_health()).sources[0]
+
+    assert item.health_status == expected_health
+    assert item.offsite_status == "pending"
+    assert item.last_offsite_verified_at == expected_verified_at
+
+
+@pytest.mark.asyncio
+async def test_failed_newest_offsite_stays_red_despite_older_verified_point(monkeypatch) -> None:
+    from app.api.backups import health_endpoints
+
+    monkeypatch.setattr(health_endpoints.backup_store, "get_backup_health_summary", lambda: [{
+        "source_id": "summitflow", "source_name": "SummitFlow", "source_type": "project", "enabled": True,
+        "last_success_at": "2026-09-21T12:00:00+00:00", "last_backup_status": "completed",
+        "last_restore_test_ok": True,
+        "latest_verification_json": {"offsite": {"status": "failed", "error": "quota"}},
+        "latest_offsite_verified": {"status": "verified"},
+        "latest_offsite_verified_point_at": "2026-09-21T07:00:00+00:00",
+    }])
+    monkeypatch.setattr(health_endpoints, "build_storage_env", lambda _: {})
+    monkeypatch.setattr(health_endpoints, "_hours_since", lambda _: 1.0)
+
+    assert (await health_endpoints.backup_health()).sources[0].health_status == "red"
+
+
+@pytest.mark.asyncio
 async def test_offsite_retry_marks_latest_backup_pending_and_queues_workflow(monkeypatch) -> None:
     from app.api.backups import source_endpoints
     from app.workflows import utility
@@ -274,3 +323,22 @@ async def test_storage_probe_reports_local_key_and_gio_readiness(
     assert "Google Drive reachable" in message
     if not encryption_ready:
         assert "recovery key is not verified" in message
+
+
+@pytest.mark.asyncio
+async def test_storage_summary_passes_repository_and_archive_bytes(monkeypatch) -> None:
+    from app.api.backups import global_endpoints
+
+    monkeypatch.setattr(global_endpoints.backup_store, "get_storage_summary", lambda **_: {
+        "total_count": 3, "total_bytes": 1500, "by_status": {"completed": 2, "completed_pending_upload": 1},
+        "pending_upload_count": 1, "measurement": "mixed-catalogue-logical-not-physical",
+        "archive_bytes": 1000, "repository_logical_bytes": 500, "repository_point_count": 1,
+        "repository_physical_bytes": None,
+    })
+
+    summary = await global_endpoints.get_storage_summary()
+
+    assert summary.archive_bytes == 1000
+    assert summary.repository_logical_bytes == 500
+    assert summary.repository_point_count == 1
+    assert summary.measurement == "mixed-catalogue-logical-not-physical"

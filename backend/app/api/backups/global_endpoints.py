@@ -40,8 +40,4 @@ async def get_storage_summary(
     Otherwise returns global summary across all sources.
     """
     summary = backup_store.get_storage_summary(project_id=project_id, source_id=source_id)
-    return StorageSummaryResponse(
-        total_count=summary["total_count"],
-        total_bytes=summary["total_bytes"],
-        by_status=summary["by_status"],
-    )
+    return StorageSummaryResponse(**summary)

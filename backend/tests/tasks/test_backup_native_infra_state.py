@@ -286,6 +286,30 @@ def test_top_level_config_count_cannot_prove_individual_required_components() ->
     }.issubset(result.missing)
 
 
+def test_restic_point_reads_coverage_from_nested_capture_evidence() -> None:
+    names = (
+        "env_local", "compose_env", "smb_credentials", "hatchet_config", "redis_state",
+        "host_ingress", "systemd_user", "agent_hub_state", "managed_service_state",
+    )
+    result = verify_archive_coverage(
+        {
+            "format": "restic-v1",
+            "has_db": True,
+            "capture": {
+                "has_db": True,
+                "tree": {"configs": {"count": 7}, "state": {"count": 10}, "pgdumpall.sql": {"count": 1}},
+                "coverage": {
+                    "schema_version": 1,
+                    "components": {name: {"status": "captured"} for name in names},
+                },
+            },
+        }
+    )
+
+    assert result.complete is True
+    assert (result.present_count, result.required_count) == (10, 10)
+
+
 def test_infrastructure_backup_records_encryption_duration(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,

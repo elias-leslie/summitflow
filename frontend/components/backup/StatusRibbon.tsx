@@ -83,6 +83,7 @@ export function StatusRibbon({
   const totalBackups = storageSummary?.total_count ?? 0
   const totalBytes = storageSummary?.total_bytes ?? 0
   const enabledSources = sources.filter((source) => source.enabled)
+  const disabledCount = sources.length - enabledSources.length
   const offsiteVerified = enabledSources.filter(
     (source) => source.offsite_status === 'verified',
   ).length
@@ -90,14 +91,19 @@ export function StatusRibbon({
   return (
     <div className="space-y-3">
       {/* Health bar */}
-      <BackupHealthBar sources={sources} />
+      <BackupHealthBar sources={enabledSources} />
 
       {/* Stat pills row */}
       <div className="flex flex-wrap items-center gap-2">
         <StatPill
-          value={sources.length}
+          value={enabledSources.length}
           label="sources"
           tone="bg-slate-500/8 text-slate-400 border-slate-500/20"
+        />
+        <StatPill
+          value={disabledCount}
+          label="disabled"
+          tone="bg-slate-500/8 text-slate-500 border-slate-500/20"
         />
         <StatPill
           value={greenCount}

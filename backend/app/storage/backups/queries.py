@@ -10,6 +10,7 @@ import psycopg
 
 from .._sql import static_sql
 from ..connection import get_connection, get_cursor
+from .crud import dismiss_backup_notifications
 from .models import BACKUP_COLUMNS, row_to_backup
 
 
@@ -96,6 +97,7 @@ def cleanup_stale_backup_records(max_age_days: int = 30) -> int:
             (max_age_days,),
         )
         deleted = cur.fetchall()
+        dismiss_backup_notifications(cur, [str(row[0]) for row in deleted])
         conn.commit()
 
     return len(deleted)
@@ -171,7 +173,9 @@ def cleanup_expired_backup_records(default_retention_days: int = 14, min_keep: i
                 if archive.exists() or archive.is_symlink():
                     continue  # Replacement bytes appeared; retain the evidence.
             cur.execute("DELETE FROM backups WHERE id = %s RETURNING id", (backup_id,))
-            deleted += int(cur.fetchone() is not None)
+            if cur.fetchone() is not None:
+                deleted += 1
+                dismiss_backup_notifications(cur, [str(backup_id)])
         conn.commit()
 
     return deleted
@@ -207,7 +211,7 @@ def get_storage_summary(
                 SELECT
                     COUNT(*) as total_count,
                     COALESCE(SUM(size_bytes), 0) as total_bytes,
-                    COUNT(*) FILTER (WHERE status IN ('completed', 'completed_pending_upload')) as completed_count,
+                    COUNT(*) FILTER (WHERE status = 'completed') as completed_count,
                     COUNT(*) FILTER (WHERE status = 'completed_pending_upload') as pending_upload_count,
                     COUNT(*) FILTER (WHERE status = 'pending') as pending_count,
                     COUNT(*) FILTER (WHERE status = 'running') as running_count,
@@ -366,6 +370,22 @@ def get_backup_health_summary() -> list[dict[str, Any]]:
                     LIMIT 1
                 ) AS latest_backup_id,
                 (
+                    SELECT b.verification_json -> 'offsite'
+                    FROM backups b
+                    WHERE b.source_id = bs.id
+                      AND b.status = 'completed'
+                      AND b.verification_json #>> '{offsite,status}' = 'verified'
+                    ORDER BY b.completed_at DESC
+                    LIMIT 1
+                ) AS latest_offsite_verified,
+                (
+                    SELECT MAX(b.completed_at)
+                    FROM backups b
+                    WHERE b.source_id = bs.id
+                      AND b.status = 'completed'
+                      AND b.verification_json #>> '{offsite,status}' = 'verified'
+                ) AS latest_offsite_verified_point_at,
+                (
                     SELECT b.verification_json -> 'activity'
                     FROM backups b
                     WHERE b.source_id = bs.id AND b.verification_json ? 'activity'
@@ -396,7 +416,9 @@ def get_backup_health_summary() -> list[dict[str, Any]]:
             "last_drill_backup_id": row[13],
             "latest_verification_json": row[14],
             "latest_backup_id": str(row[15]) if row[15] else None,
-            "backup_activity": row[16],
+            "latest_offsite_verified": row[16],
+            "latest_offsite_verified_point_at": row[17].isoformat() if row[17] else None,
+            "backup_activity": row[18],
         }
         for row in rows
     ]

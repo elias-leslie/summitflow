@@ -29,6 +29,10 @@ logger = get_logger(__name__)
 
 router = APIRouter()
 
+# How old the newest offsite-verified point may be while a newer point waits
+# for its copy before the source is shown as needing attention.
+OFFSITE_PENDING_GRACE_HOURS = 48
+
 
 @router.get("/backups/health", response_model=BackupHealthResponse)
 async def backup_health() -> BackupHealthResponse:
@@ -65,6 +69,19 @@ async def backup_health() -> BackupHealthResponse:
         storage_env = build_storage_env(str(row["source_id"]))
         offsite_configured = offsite_is_configured(storage_env)
         offsite_status = str(offsite.get("status") or ("pending" if offsite_configured and last_success else "unconfigured"))
+        # An older point already verified offsite still protects the source
+        # while the newest point waits for its scheduled copy.
+        verified_offsite = row.get("latest_offsite_verified")
+        verified_offsite = verified_offsite if isinstance(verified_offsite, Mapping) else {}
+        verified_point_age = _hours_since(row.get("latest_offsite_verified_point_at"))
+        upload_covered = (
+            offsite_status == "pending"
+            and verified_point_age is not None
+            and verified_point_age <= OFFSITE_PENDING_GRACE_HOURS
+        )
+        upload_waiting = (
+            last_status == "completed_pending_upload" or offsite_status == "pending"
+        ) and not upload_covered
         raw_activity = row.get("backup_activity")
         activity = dict(raw_activity) if isinstance(raw_activity, Mapping) else None
         if activity and activity.get("active") is True:
@@ -94,7 +111,8 @@ async def backup_health() -> BackupHealthResponse:
 
         # Infrastructure combines current archive checks with dated drill evidence.
         # - red: most recent backup failed OR (infra: drill failed)
-        # - yellow: pending upload, missing coverage, or stale/untested drill evidence
+        # - yellow: upload pending with no fresh offsite-verified point, missing
+        #   coverage, or stale/untested drill evidence
         # - green: current archive checks pass AND a recent recorded drill succeeded
         if not row["enabled"]:
             health_status = "disabled"
@@ -102,10 +120,7 @@ async def backup_health() -> BackupHealthResponse:
             source_type == "infrastructure" and last_drill_ok is False
         ):
             health_status = "red"
-        elif last_status == "completed_pending_upload" or offsite_status in {
-            "pending",
-            "unconfigured",
-        }:
+        elif upload_waiting or offsite_status == "unconfigured":
             health_status = "yellow"
         elif source_type == "infrastructure":
             # A new capture does not invalidate a demonstrated restore process.
@@ -154,7 +169,8 @@ async def backup_health() -> BackupHealthResponse:
                 last_drill_backup_id=last_drill_backup_id,
                 latest_backup_id=row.get("latest_backup_id"),
                 offsite_status=offsite_status,
-                last_offsite_verified_at=_mapping_str(offsite, "verified_at"),
+                last_offsite_verified_at=_mapping_str(offsite, "verified_at")
+                or _mapping_str(verified_offsite, "verified_at"),
                 offsite_location=_mapping_str(offsite, "location"),
                 offsite_checksum=_mapping_str(offsite, "checksum"),
                 offsite_error=_mapping_str(offsite, "error") if offsite_status == "failed" else None,

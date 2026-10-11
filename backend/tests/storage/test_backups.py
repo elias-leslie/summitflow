@@ -307,6 +307,22 @@ class TestStorageSummary:
         assert summary["total_bytes"] == 3000
         assert summary["by_status"]["completed"] == 2
 
+    def test_storage_summary_counts_pending_uploads_separately(self, cleanup_project: str) -> None:
+        done = backups.create_backup_record(cleanup_project)
+        pending = backups.create_backup_record(cleanup_project)
+        backups.update_backup_status(done["id"], "completed", size_bytes=1000)
+        backups.update_backup_status(
+            pending["id"], "completed_pending_upload", size_bytes=500,
+            verification_json={"format": "restic-v1"},
+        )
+
+        summary = backups.get_storage_summary(cleanup_project)
+
+        assert summary["by_status"] == {"completed": 1, "completed_pending_upload": 1}
+        assert summary["archive_bytes"] == 1000
+        assert summary["repository_logical_bytes"] == 500
+        assert summary["repository_point_count"] == 1
+
     def test_get_latest_backup(self, cleanup_project: str) -> None:
         """Get latest backup returns most recent completed."""
         b1 = backups.create_backup_record(cleanup_project, note="First")
@@ -542,6 +558,35 @@ class TestFailStaleRunningBackups:
         assert backups.cleanup_stale_backup_records() == 1
         assert backups.get_backup(running["id"]) is not None
         assert backups.get_backup(failed["id"]) is None
+
+    def test_retention_dismisses_failure_notifications_for_deleted_rows(self, conn: Any, cleanup_project: str) -> None:
+        from app.storage import notifications
+
+        old_failure = backups.create_backup_record(cleanup_project)
+        kept = backups.create_backup_record(cleanup_project)
+        backups.update_backup_status(old_failure["id"], "failed")
+        backups.update_backup_status(kept["id"], "failed")
+        created = [
+            notifications.create_notification(
+                cleanup_project, "system", f"Backup failed: {backup_id}", "fixture",
+                severity="error", metadata={"backup_id": backup_id, "source_id": cleanup_project},
+                dedupe_key=backup_id,
+            )["id"]
+            for backup_id in (old_failure["id"], kept["id"])
+        ]
+        try:
+            with conn.cursor() as cur:
+                cur.execute(
+                    "UPDATE backups SET created_at = NOW() - INTERVAL '40 days' WHERE id = %s",
+                    (old_failure["id"],),
+                )
+                conn.commit()
+            assert backups.cleanup_stale_backup_records() == 1
+            statuses = [(notifications.get_notification(item) or {}).get("status") for item in created]
+            assert statuses == ["dismissed", "pending"]
+        finally:
+            for item in created:
+                notifications.delete_notification(item)
 
     def test_fail_stale_running_backups_marks_old_rows_failed(
         self, conn: Any, cleanup_project: str

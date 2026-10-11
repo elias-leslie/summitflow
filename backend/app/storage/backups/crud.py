@@ -295,6 +295,22 @@ def delete_backup_record(backup_id: str) -> bool:
     with get_connection() as conn, conn.cursor() as cur:
         cur.execute("DELETE FROM backups WHERE id = %s RETURNING id", (backup_id,))
         row = cur.fetchone()
+        if row is not None:
+            dismiss_backup_notifications(cur, [backup_id])
         conn.commit()
 
     return row is not None
+
+
+def dismiss_backup_notifications(cur: Any, backup_ids: list[str]) -> None:
+    """Dismiss open notifications that point at deleted backup rows.
+
+    Runs on the caller's cursor so the row and its notifications go together.
+    """
+    if not backup_ids:
+        return
+    cur.execute(
+        "UPDATE notifications SET status = 'dismissed', dismissed_at = NOW()"
+        " WHERE status != 'dismissed' AND metadata->>'backup_id' = ANY(%s)",
+        (list(backup_ids),),
+    )

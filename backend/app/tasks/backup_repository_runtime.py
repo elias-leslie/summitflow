@@ -562,13 +562,12 @@ def _reconcile_offsite(state: dict[str, Any], result: Mapping[str, Any], env: Ma
 
 def sync_repository_batch(batch: Mapping[str, dict[str, str]]) -> dict[str, Any]:
     """One structural check/copy per pair; include persisted failed-copy backlog."""
-    from .backup_restic_pilot import pilot_reserves_backend
     from .backup_utils import storage_config_env
 
     pairs = dict(batch)
     for backend in backup_store.list_backends(enabled_only=True):
         config = backend.get("config") or {}
-        if config.get("engine") != "restic" or config.get("restic_automatic_maintenance") is False or pilot_reserves_backend(str(backend["id"])):
+        if config.get("engine") != "restic" or config.get("restic_automatic_maintenance") is False:
             continue
         env = storage_config_env({**config, "__backend_type": backend["backend_type"], "__backend_id": backend["id"]})
         pairs.setdefault(_repository_pair(ResticConfig.from_env(env)), env)
@@ -1175,7 +1174,6 @@ def repository_maintenance_failed(value: object) -> bool:
 
 def run_repository_maintenance() -> dict[str, Any]:
     """Use the existing scheduler, not a new daemon or per-project schedule."""
-    from .backup_restic_pilot import pilot_reserves_backend
     from .backup_utils import storage_config_env
 
     results: dict[str, Any] = {}
@@ -1185,8 +1183,6 @@ def run_repository_maintenance() -> dict[str, Any]:
             continue
         if config.get("restic_automatic_maintenance") is False:
             continue  # Retired pilot points remain readable without recurring scans.
-        if pilot_reserves_backend(str(backend["id"])):
-            continue  # Daily runner owns *all* pilot maintenance in its measured window.
         try:
             env = storage_config_env({**config, "__backend_type": backend["backend_type"], "__backend_id": backend["id"]})
             results[str(backend["id"])] = maintain_repository(env, dry_run=env.get("RESTIC_OFFSITE_PRUNE_QUALIFIED") != "true")

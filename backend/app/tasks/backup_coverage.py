@@ -240,6 +240,20 @@ def _tally_required(components: list[ComponentResult]) -> tuple[int, int, list[s
     return required_count, present_count, missing
 
 
+def _coverage_evidence(verification_json: dict[str, Any] | None) -> dict[str, Any] | None:
+    """Return the mapping that holds archive evidence.
+
+    Native archives record tree/coverage at the top level; Restic points nest
+    the same capture evidence under ``capture``. Top-level keys win.
+    """
+    if not verification_json:
+        return verification_json
+    capture = verification_json.get("capture")
+    if not isinstance(capture, dict):
+        return verification_json
+    return {**capture, **verification_json}
+
+
 def verify_archive_coverage(verification_json: dict[str, Any] | None) -> CoverageResult:
     """Check an archive's verification data against the coverage contract.
 
@@ -250,6 +264,7 @@ def verify_archive_coverage(verification_json: dict[str, Any] | None) -> Coverag
     Returns:
         CoverageResult with per-component pass/fail.
     """
+    verification_json = _coverage_evidence(verification_json)
     tree_keys, has_db = _parse_tree_context(verification_json)
     coverage = verification_json.get("coverage", {}) if verification_json else {}
     capture_components = coverage.get("components", {}) if isinstance(coverage, dict) else {}

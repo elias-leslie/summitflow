@@ -297,14 +297,6 @@ def run_scheduled_backups(*, on_progress: Callable[[], None] | None = None) -> d
             result["repository_maintenance"] = {"status": "error"}
             result["status"] = "partial"
 
-        from .backup_restic_pilot import run_daily_restic_pilot
-
-        pilot = run_daily_restic_pilot(on_progress=on_progress) if window_open else {"reason": "pilot-disabled"}
-        if pilot.get("reason") != "pilot-disabled":
-            result["restic_daily_pilot"] = pilot
-            if pilot.get("status") in {"failed", "incomplete"} or pilot.get("daily_status") in {"failed", "incomplete"}:
-                result["status"] = "partial"
-
         maintenance_store.record_maintenance_run(
             "scheduled_backups",
             result["status"],

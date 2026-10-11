@@ -97,11 +97,6 @@ class Settings(BaseSettings):
     cloudflare_access_aud: str = ""
     summitflow_owner_emails: str = ""
 
-    # Independent pilot cadence; native per-source schedules remain authoritative.
-    backup_restic_pilot_enabled: bool = False
-    backup_restic_pilot_backend_id: str = ""
-    backup_restic_pilot_daily_utc: str = "02:00"
-    backup_restic_pilot_interface: str = "enp8s0"
     backup_btrbk_enabled: bool = False
 
     # Optional local-time window for the existing scheduled backup workflow.

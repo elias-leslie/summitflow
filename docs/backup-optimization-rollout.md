@@ -166,84 +166,12 @@ check's metadata. This avoids repeated downloads of the same tree packs within
 one check without weakening repository verification or adding a durable cache.
 Other adapter commands and standalone recovery continue to use `--no-cache`.
 
-## Opt-in daily pilot and physical measurement
+## Retired daily pilot
 
-The existing hourly backup workflow can run a separate daily UTC Restic pilot.
-Seed traffic is excluded from observation. Before capture, the runner checks
-existing verified offsite Restic coverage for every enabled source/backend;
-missing coverage marks the whole attempt `seed=true` with `missing_seed_sources`.
-This includes the first all-source expansion and newly enabled sources. Only a
-later complete run after initial coverage can become a post-seed candidate. The
-canonical worker Settings accept these environment variables through the normal
-managed service configuration (this document does not enable them):
-
-```text
-BACKUP_RESTIC_PILOT_ENABLED=true
-BACKUP_RESTIC_PILOT_BACKEND_ID=<explicit enabled nondefault Restic backend ID>
-BACKUP_RESTIC_PILOT_DAILY_UTC=02:00
-BACKUP_RESTIC_PILOT_INTERFACE=enp8s0
-```
-
-The first existing hourly pass after the selected UTC time captures every
-enabled source with that explicit backend, irrespective of its native frequency.
-Native `last_run`/`next_run` and the production default stay intact. The pilot
-attempts each UTC date once; overlapping invocations skip, and an interrupted
-attempt is recorded as incomplete on restart. A same-day retry cannot turn that
-incomplete date into qualified coverage. Changing the enabled source set during
-a run, or an envelope crossing the UTC date, invalidates its daily coverage result
-while preserving measured bytes. Pilot maintenance follows the
-existing `restic_offsite_prune_qualified` policy: retention/prune remain previews
-until that flag is separately authorized after cold recovery. The pilot never
-sets or promotes the flag, so scheduling cannot enable destructive operations.
-
-The synchronous envelope starts before capture/copy and ends after all source
-outcomes and maintenance. A remaining pending offsite copy gets one synchronous
-retry through the existing source lease, and unresolved outcomes fail the day.
-A successful retry can complete the day when every source is eventually verified;
-failed attempts and their traffic remain in that day's evidence and byte total.
-Daily checks, rotating payload reads, weekly
-critical restores, retention/prune previews and their child process traffic are
-inside the envelope. The selected backend is excluded from ordinary hourly
-repository maintenance so those operations cannot escape the envelope through
-that scheduler path. Other backends retain their normal maintenance behavior.
-
-Raw `enp8s0` RX and TX counters are sampled before/after operations and every five
-seconds while the envelope is active. The journal retains raw first/latest and
-operation-boundary counters, sample count and accumulated continuity failures;
-periodic samples validate the previous interval without retaining unbounded
-sample history. Evidence records UTC and monotonic times,
-boot ID, physical device path, interface index/link/MAC and route-table identity.
-Route identity normalizes row order and excludes usage counters and IPv6
-link-local routes, which change during ordinary traffic and isolated container
-restore tests without changing the public egress path. Gateway, metric,
-public-route and interface changes still invalidate the interval.
-The interface must be physical and the sole IPv4 default route; an alternate
-IPv6 default route is rejected. Missing counters, observed resets, route/device
-changes or invalid intervals fail measurement, without substituting zero.
-Sampling cannot establish that no transient route change/reset occurred between
-samples. This is a **conservative HOST upper bound**, including unrelated and
-LAN traffic, not exact backup WAN attribution or repository-object accounting.
-
-The existing private `restic-state/pilot.json` journal stores the active/last
-daily attempt and bounded raw samples; `maintenance_runs` workflow `restic_daily_pilot`
-stores starts, source checkpoints and final/incomplete evidence. Journal and
-history failures cannot produce a successful result. No new daemon, telemetry
-service, schema or repository identity field is introduced.
-
-This scheduled envelope alone does not establish complete traffic attribution.
-Manual backups, `st backup all --backend`, offsite retries, repository checks and
-restores outside it must be suspended during observation or separately audited
-and measured. An unaudited/outside operation invalidates that day's qualification;
-the runner explicitly records `outside_operations_audited=false` and never
-automatically qualifies cutover. Review operation/task/backup history from the
-post-seed boundary, retain failed/incomplete intervals and their measured bytes,
-and require every enabled source's verified point in the normal incremental
-cycle. A complete audited post-seed cycle can support the owner-approved lean
-traffic gate, alongside independent recovery and maintenance evidence. Include
-failed-attempt traffic; do not select a lower-traffic subset or omit failures.
-Preview traffic does not establish the cost of destructive prune; qualification
-must measure the separately authorized policy in the same envelope before
-default cutover.
+The opt-in daily Restic pilot (`restic_daily_pilot`, `BACKUP_RESTIC_PILOT_*`)
+was removed on 2026-10-10. Its historical `maintenance_runs` rows remain as
+evidence only. Ordinary hourly repository maintenance covers every enabled
+Restic backend that allows automatic maintenance.
 
 `st backup all --backend <ID>` forwards the explicit backend to each enabled
 source's existing queued API. The default invocation is unchanged. Its `QUEUED`

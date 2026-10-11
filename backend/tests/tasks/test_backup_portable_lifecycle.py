@@ -214,7 +214,7 @@ def test_host_backup_failure_is_reported_without_stopping_portable_capture(monke
 
 @pytest.mark.parametrize("outcome", ["verified", "pending", "pressure"])
 def test_daytime_zero_due_retries_34_persisted_points_once_per_backend(tmp_path, monkeypatch, outcome, backup_lease_redis):
-    from app.tasks import backup_lock, backup_restic_pilot
+    from app.tasks import backup_lock
     from app.tasks.backup_utils import storage_config_env
 
     keys = tmp_path / "keys"
@@ -247,7 +247,6 @@ def test_daytime_zero_due_retries_34_persisted_points_once_per_backend(tmp_path,
     monkeypatch.setattr(scheduler, "_latest_finished_window_end", lambda now: now)
     monkeypatch.setattr(scheduler.backup_store, "list_due_sources", lambda: [])
     monkeypatch.setattr(runtime.backup_store, "list_backends", lambda **_: backends)
-    monkeypatch.setattr(backup_restic_pilot, "pilot_reserves_backend", lambda _: False)
     monkeypatch.setattr(runtime, "_repository_rows", lambda env: rows[env["BACKUP_STORAGE_BACKEND_ID"]])
     merged, statuses = Mock(), Mock()
     monkeypatch.setattr(runtime.backup_store, "merge_backup_verification_json", merged)
