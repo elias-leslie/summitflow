@@ -138,6 +138,17 @@ def restore_backup_isolated(
         if archive_file is not None:
             raise RuntimeError("Repository restore does not accept an archive-file override")
         verified_at = datetime.now(UTC).isoformat()
+        if str(((backup.get("verification_json") or {}).get("capture") or {}).get("kind", "")).startswith("proxmox-"):
+            from .backup_proxmox import restore_stream_isolated
+
+            try:
+                result = restore_stream_isolated(dict(backup), destination, remote=remote)
+            except Exception as exc:
+                backup_store.merge_backup_verification_json(backup_id, {"isolated_restore": {"ok": False, "verified_at": verified_at, "error": str(exc)}})
+                raise
+            evidence = {"ok": True, "verified_at": verified_at, "format": result["format"], "remote": remote, "size_bytes": result["size_bytes"]}
+            backup_store.merge_backup_verification_json(backup_id, {"isolated_restore": evidence})
+            return {**result, "recovery_complete": True, "evidence": evidence}
         try:
             with materialize_repository_archive(backup, remote=remote) as archive:
                 result = restore_isolated_archive(archive, destination)

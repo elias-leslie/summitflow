@@ -198,3 +198,36 @@ def test_coverage_matches_whole_path_segments_only():
     assert (px._covering_source("proxmox://proxmox-gem/qemu/120", sources) or {}).get("id") == "vm120"
     files = [{"id": "f", "path": "proxmox://proxmox-gem/host/files?path=/x", "enabled": True}]
     assert (px._covering_source("proxmox://proxmox-gem/host/files", files) or {}).get("id") == "f"
+
+
+class _StreamAdapter:
+    def __init__(self, payload: bytes) -> None:
+        self.payload = payload
+        self.calls: list[tuple[str, bool]] = []
+
+    def restore(self, snapshot: str, destination: Path, *, remote: bool = False) -> dict[str, Any]:
+        self.calls.append((snapshot, remote))
+        target = destination / "pve-cluster-config.sql"
+        target.write_bytes(self.payload)
+        return {"status": "completed", "payload_file": str(target)}
+
+
+@pytest.mark.parametrize(("payload", "error"), [(b"PRAGMA foreign_keys=OFF\n", None), (b"garbage!!!!!!!!!!!!!!!!!", "format header"), (b"PRAGMA", "bytes")])
+def test_stream_restore_returns_the_dump_file_and_proves_size_and_format(monkeypatch, tmp_path, payload, error):
+    from app.tasks import backup_repository_runtime as runtime
+    from app.tasks import backup_restic
+
+    adapter = _StreamAdapter(payload)
+    monkeypatch.setattr(runtime, "_backup_environment", lambda _backup: {})
+    monkeypatch.setattr(backup_restic.ResticConfig, "from_env", staticmethod(lambda _env: None))
+    monkeypatch.setattr(backup_restic, "ResticAdapter", lambda _config: adapter)
+    backup = {"verification_json": {"snapshot_id": "a" * 64, "remote_snapshot_id": "b" * 64, "payload_path": "/pve-cluster-config.sql",
+                                    "capture": {"kind": "proxmox-config", "host": "proxmox-gem", "stream_bytes": 24}}}
+    if error:
+        with pytest.raises(RuntimeError, match=error):
+            px.restore_stream_isolated(backup, tmp_path, remote=True)
+        return
+    result = px.restore_stream_isolated(backup, tmp_path, remote=True)
+    assert adapter.calls == [("b" * 64, True)]
+    assert Path(result["payload_file"]).read_bytes() == payload
+    assert result["size_bytes"] == 24 and "sqlite3" in result["next_step"]

@@ -1002,3 +1002,25 @@ def test_foreign_or_unknown_lock_is_never_released(setup, monkeypatch, holder):
     with pytest.raises(engine.ResticError, match=r"failed to lock repository \(exit 11\)"):
         adapter.save_payload("fixture", payload)
     assert not any("unlock" in command for command in process.commands)
+
+
+def test_restore_of_a_streamed_snapshot_returns_the_single_payload_file(setup, tmp_path, monkeypatch):
+    adapter, process, payload = _adapter(setup)
+    saved = adapter.save_payload("fixture", payload)
+    original = process.__class__.__call__
+
+    def stream_restore(self, command, *args, **kwargs):
+        if "restore" in command:
+            destination = Path(command[command.index("--target") + 1])
+            target = destination / self.payload.relative_to("/")
+            target.parent.mkdir(parents=True, exist_ok=True)
+            target.write_bytes(b"VMA\x00stream")
+            return subprocess.CompletedProcess(command, 0, "{}", "")
+        return original(self, command, *args, **kwargs)
+
+    monkeypatch.setattr(process.__class__, "__call__", stream_restore)
+    destination = tmp_path / "isolated"
+    destination.mkdir(mode=0o700)
+    result = adapter.restore(saved["snapshot_id"], destination)
+    assert Path(result["payload_file"]).read_bytes() == b"VMA\x00stream"
+    assert "payload_root" not in result

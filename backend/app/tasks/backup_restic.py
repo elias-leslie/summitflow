@@ -762,6 +762,9 @@ class ResticAdapter:
             with disposable_scratch("restic-restore-cache-") as cache:
                 self._run(self._command(*args, remote=remote, operation_cache=cache), phase="restore")
             root = destination / payload_path.relative_to("/")
+            if not include and root.is_file() and not root.is_symlink():
+                # Streamed captures (restic --stdin) store one file, not a staged tree.
+                return {"status": "completed", "snapshot_id": snapshot_id, "destination": str(destination), "payload_file": str(root), "verification": {"verified": True, "method": "restic-restore-verify", "partial": False}}
             if not root.is_dir() or root.is_symlink():
                 raise ResticError("Restic did not materialize the expected payload root")
             if any(not (root / path).exists() for path in include):

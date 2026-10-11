@@ -93,7 +93,10 @@ def restore_backup_isolated_command(
         output_error(str(exc))
         raise typer.Exit(1) from None
 
-    typer.echo("Database dumps are copied for inspection; no database was restored.")
+    if result.get("next_step"):
+        typer.echo(f"Restored stream {result.get('payload_file')}; next: {result['next_step']}")
+    else:
+        typer.echo("Database dumps are copied for inspection; no database was restored.")
     if result.get("recovery_complete") is False:
         typer.echo("Canonical links are pending: restore their target sources and supply --source-root mappings.")
     if ctx.obj.is_compact:

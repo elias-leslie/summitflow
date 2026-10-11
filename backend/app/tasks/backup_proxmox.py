@@ -329,6 +329,32 @@ def verify_stream_backup(backup: dict[str, Any]) -> dict[str, Any]:
     return {"ok": True, "snapshot_id": snapshot, "path": path, "size_bytes": expected, "header": capture.get("kind")}
 
 
+def restore_stream_isolated(backup: dict[str, Any], destination: Path, *, remote: bool = False) -> dict[str, Any]:
+    """Restore a Proxmox stream capture as its original dump file and prove size and format."""
+    from .backup_repository_runtime import _backup_environment
+    from .backup_restic import ResticAdapter, ResticConfig
+
+    verification = backup.get("verification_json") or {}
+    capture = verification.get("capture") or {}
+    check = _HEADERS.get(str(capture.get("kind")))
+    snapshot = str(verification.get("remote_snapshot_id") if remote else verification.get("snapshot_id") or "")
+    if not snapshot or check is None:
+        raise RuntimeError("Backup is not a recorded Proxmox stream capture")
+    adapter = ResticAdapter(ResticConfig.from_env(_backup_environment(backup)))
+    restored = adapter.restore(snapshot, destination, remote=remote)
+    payload = Path(str(restored.get("payload_file") or ""))
+    if not payload.is_file():
+        raise RuntimeError("Restore did not produce the captured stream file")
+    expected = int(capture.get("stream_bytes") or 0)
+    if payload.stat().st_size != expected:
+        raise RuntimeError(f"Restored stream has {payload.stat().st_size} bytes, captured {expected}")
+    with payload.open("rb") as stream:
+        if not check(stream.read(4096)):
+            raise RuntimeError("Restored stream does not start with the expected dump format header")
+    return {"status": "completed", "snapshot_id": snapshot, "payload_file": str(payload), "size_bytes": expected,
+            "format": capture.get("kind"), "next_step": restore_instructions(backup)}
+
+
 # The coverage contract: what is unique on each important guest, and the source that
 # protects it. Guest configuration for every VM and container lives in the cluster
 # database. VM 101 is excluded. VM 120 is a crash-consistent full guest until its
