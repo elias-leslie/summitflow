@@ -258,7 +258,13 @@ def _declares_project(command: Any) -> bool:
 
 
 def _passes_unknown_options(command: Any) -> bool:
-    return bool(command.ignore_unknown_options or command.allow_extra_args)
+    # Click applies context_settings to the Context, not the Command, so the
+    # command's own attributes keep their class defaults (extensions set these).
+    settings = getattr(command, "context_settings", None) or {}
+    return any(
+        bool(getattr(command, key, False) or settings.get(key))
+        for key in ("ignore_unknown_options", "allow_extra_args")
+    )
 
 
 def _project_tokens(args: list[str], start: int) -> tuple[list[str], list[str]]:
