@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import importlib.util
 import json
 import subprocess
@@ -281,7 +282,7 @@ def test_nightshift_executor_drift_and_manifest_change_alert(monkeypatch, tmp_pa
     target = tmp_path / "executor.py"
     target.write_text("print('ok')\n")
     manifest = tmp_path / "executor.sha256"
-    manifest.write_text(subprocess.run(["sha256sum", str(target)], capture_output=True, text=True, check=True).stdout)
+    manifest.write_text(f"{hashlib.sha256(target.read_bytes()).hexdigest()}  {target}\n")
     monkeypatch.setattr(guardian, "NIGHTSHIFT_EXECUTOR_MANIFEST", manifest)
     monkeypatch.setattr(guardian, "NIGHTSHIFT_MANIFEST_DIGEST_PATH", tmp_path / "state" / "digest")
     monkeypatch.setattr(guardian, "STATE_DIR", tmp_path / "state")
@@ -299,7 +300,7 @@ def test_nightshift_executor_drift_and_manifest_change_alert(monkeypatch, tmp_pa
     assert codes() == set()
     target.write_text("print('tampered')\n")
     assert codes() == {"nightshift_executor_drift"}
-    manifest.write_text(subprocess.run(["sha256sum", str(target)], capture_output=True, text=True, check=True).stdout)
+    manifest.write_text(f"{hashlib.sha256(target.read_bytes()).hexdigest()}  {target}\n")
     assert codes() == {"nightshift_executor_manifest_changed"}
     assert codes() == set()
     manifest.unlink()

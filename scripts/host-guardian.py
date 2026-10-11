@@ -259,6 +259,25 @@ def check_nightshift(state: CheckState) -> None:
         state.issue("warning", "nightshift_web_unhealthy", f"Nightshift web health check failed: {NIGHTSHIFT_HEALTH_URL}")
 
 
+def manifest_drift(text: str) -> list[str]:
+    """Return paths whose content differs from a sha256sum-format manifest (sha256sum -c semantics)."""
+    drift: list[str] = []
+    entries = 0
+    for line in text.splitlines():
+        if not line.strip():
+            continue
+        expected, _, name = line.partition(" ")
+        name = name[1:] if name[:1] in (" ", "*") else name
+        entries += 1
+        try:
+            actual = hashlib.sha256(Path(name).read_bytes()).hexdigest()
+        except OSError:
+            actual = ""
+        if len(expected) != 64 or not name or actual != expected.lower():
+            drift.append(name or line[:80])
+    return drift if entries else ["<empty manifest>"]
+
+
 def check_nightshift_executor(state: CheckState) -> None:
     manifest = NIGHTSHIFT_EXECUTOR_MANIFEST
     try:
@@ -272,10 +291,9 @@ def check_nightshift_executor(state: CheckState) -> None:
         return
     if not stat.S_ISREG(info.st_mode) or info.st_uid != 0 or info.st_mode & 0o022:
         state.issue("critical", "nightshift_executor_manifest_unsafe", f"{manifest} must be a root-owned file without group/world write")
-    proc = run(["sha256sum", "--quiet", "-c", str(manifest)], timeout=60)
-    if proc.returncode != 0:
-        drift = (proc.stdout or proc.stderr).strip()[-500:]
-        state.issue("critical", "nightshift_executor_drift", f"Nightshift executor files differ from {manifest}: {drift}")
+    drift = manifest_drift(content.decode("utf-8", errors="replace"))
+    if drift:
+        state.issue("critical", "nightshift_executor_drift", f"Nightshift executor files differ from {manifest}: {', '.join(drift)[:500]}")
     digest = hashlib.sha256(content).hexdigest()
     state.details["nightshift_executor_manifest"] = digest
     try:
