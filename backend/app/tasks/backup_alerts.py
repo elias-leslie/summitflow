@@ -218,7 +218,7 @@ def _proxmox_conditions(now: datetime) -> dict[str, dict[str, str]]:
     behind = [item for item in receipt["targets"] if not item["fresh"]]
     if not behind:
         return {}
-    detail = "; ".join(f"{item['target']} ({item['status']}{', ' + str(item['age_hours']) + 'h old' if item.get('age_hours') is not None else ''})" for item in behind)
+    detail = "; ".join(f"{item['target']} ({item['status']}{', ' + str(item['age_hours']) + 'h old' if item.get('age_hours') is not None else ''}{', ' + item['reason'] if item.get('reason') else ''})" for item in behind)
     return {"proxmox-freshness": {
         "title": "Proxmox backups are not current",
         "message": f"Each covered guest and the cluster config needs an offsite-verified backup newer than {receipt['max_age_hours']}h: {detail}",

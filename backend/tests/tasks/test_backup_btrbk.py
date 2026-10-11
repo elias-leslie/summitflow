@@ -369,25 +369,43 @@ def test_database_coverage_uses_capture_resolver_without_requiring_manifest_decl
     assert "private" not in json.dumps(result).lower()
 
 
-@pytest.mark.parametrize("category,enabled", [("testing", False), ("testing", None), ("testing", True), ("prod", False), (None, False)])
-def test_only_explicitly_disabled_testing_database_policies_are_excluded(monkeypatch: pytest.MonkeyPatch, category: str | None, enabled: bool | None) -> None:
+@pytest.mark.parametrize("category,enabled", [("testing", False), ("testing", None), ("testing", True), ("testing", "no-source"), ("prod", False), ("prod", None), ("prod", "no-source"), (None, False)])
+def test_only_explicitly_disabled_or_sourceless_testing_database_policies_are_excluded(monkeypatch: pytest.MonkeyPatch, category: str | None, enabled: bool | str | None) -> None:
     # Production list_projects() deliberately omits category; use its canonical
     # testing registry query rather than inventing a field in the fixture.
     monkeypatch.setattr(host, "list_projects", lambda: [{"id": "project", "root_path": "/srv/workspaces/project"}])
     monkeypatch.setattr(host, "testing_project_ids", lambda: {"project"} if category == "testing" else set())
     source = {"id": "source", "project_id": "project", "source_type": "project", "enabled": enabled}
-    monkeypatch.setattr(host.backup_store, "list_sources", lambda: [source])
+    monkeypatch.setattr(host.backup_store, "list_sources", lambda: [] if enabled == "no-source" else [source])
     monkeypatch.setattr(host, "get_project_identity", lambda *_: {})
     monkeypatch.setattr(host, "get_project_aliases", lambda *_: ("project",))
     monkeypatch.setattr(host, "_load_db_config", lambda *_: {"configured": "true", "host": "localhost", "port": "5432", "name": "project"})
     monkeypatch.setattr(host.backup_store, "list_backups", lambda **_: ([], 0))
     result = host._database_manifests([{"source_url": "/srv/workspaces"}], NOW)
-    excluded = category == "testing" and enabled is False
+    # Testing projects (test1, test3) with no source and owner-disabled sources
+    # (portfolio) carry no portable obligation; an unsourced production project does.
+    excluded = enabled is False or (category == "testing" and enabled == "no-source")
     assert result["status"] == ("qualified" if excluded else "partial")
     assert bool(result["excluded"]) is excluded
     assert bool(result["missing"]) is not excluded
     if excluded:
         assert result["excluded"][0]["portable_database_recovery_covered"] is False
+        assert result["excluded"][0]["reason"] == ("disabled-testing-portable-policy" if category == "testing" else "backup-source-disabled")
+
+
+def test_association_retry_judges_freshness_at_capture_time_not_retry_time(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(host, "testing_project_ids", lambda: set())
+    monkeypatch.setattr(host, "list_projects", lambda: [{"id": "project", "root_path": "/srv/workspaces/project"}])
+    monkeypatch.setattr(host.backup_store, "list_sources", lambda: [{"id": "project", "project_id": "project", "source_type": "project", "frequency": "four_hourly", "enabled": True}])
+    monkeypatch.setattr(host, "get_project_identity", lambda *_: {})
+    monkeypatch.setattr(host, "get_project_aliases", lambda *_: ("project",))
+    monkeypatch.setattr(host, "_load_db_config", lambda *_: {"configured": "true", "host": "localhost", "port": "5432", "name": "project"})
+    verification = {"verified": True, "has_db": True, "verified_at": (NOW + timedelta(hours=1)).isoformat(), "format": "restic-v1", "repository_id": "l", "snapshot_id": "s", "remote_repository_id": "r", "remote_snapshot_id": "rs", "offsite": {"status": "verified"}}
+    record = {"id": "point", "source_id": "project", "project_id": "project", "status": "completed", "verified": True, "location": "restic:s", "started_at": (NOW - timedelta(hours=1)).isoformat(), "verification_json": verification}
+    monkeypatch.setattr(host.backup_store, "list_backups", lambda **_: ([record], 1))
+    later = NOW + timedelta(hours=12)
+    assert host._database_manifests([{"source_url": "/srv/workspaces"}], later)["status"] == "partial"
+    assert host._database_manifests([{"source_url": "/srv/workspaces"}], later, NOW)["status"] == "qualified"
 
 
 @pytest.mark.parametrize("fault", [None, "host", "port", "name", "dump", "stale"])

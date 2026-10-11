@@ -37,7 +37,6 @@ from urllib.parse import parse_qs
 from ..storage import backups as backup_store
 
 PATH_SCHEME = "proxmox://"
-EXCLUDED_VMIDS = frozenset({101})  # Owner exclusion: disposable recovery staging VM.
 CONFIG_DATABASE = "/var/lib/pve-cluster/config.db"
 DUMP_DIRECTORY = "/var/lib/vz/dump"
 DUMP_LOG_KEEP_DAYS = 7
@@ -170,8 +169,6 @@ def plan_capture(source_id: str, path: str) -> dict[str, Any]:
             "command": [*ssh, "sqlite3", "-readonly", CONFIG_DATABASE, ".dump"],
             "capture": {"kind": "proxmox-config", "host": target.host, "database": CONFIG_DATABASE},
         }
-    if target.vmid in EXCLUDED_VMIDS:
-        raise RuntimeError(f"Proxmox guest {target.vmid} is excluded from backups")
     if target.files is not None:
         return _plan_files(source_id, target)
     state = guest_state(target)
@@ -357,17 +354,20 @@ def restore_stream_isolated(backup: dict[str, Any], destination: Path, *, remote
 
 # The coverage contract: what is unique on each important guest, and the source that
 # protects it. Guest configuration for every VM and container lives in the cluster
-# database. VM 101 is excluded. VM 120 is a crash-consistent full guest until its
-# owners' selective capture with consistent database dumps replaces it.
+# database. Neri guests such as VM 120 are disposable by owner
+# policy and get no disk backups; VM 120's .conf and cloud-init snippets stay
+# covered by pve-host-files.
 REQUIRED_TARGETS: dict[str, str] = {
     "proxmox-gem/config": "proxmox://proxmox-gem/config",
     "proxmox-gem/qemu/100 browser profiles": "proxmox://proxmox-gem/qemu/100/files",
-    "proxmox-gem/qemu/120 neri-lab": "proxmox://proxmox-gem/qemu/120",
     "proxmox-gem/lxc/140 /vault data": "source:blackbox-vault-archive",
     "proxmox-gem/lxc/140 /vault/identity": "proxmox://proxmox-gem/host/files",
     "proxmox-gem/lxc/150 ominull": "source:ominull-production-state",
 }
 FRESHNESS_HOURS = 36  # Daily captures plus a missed tick and a slow offsite copy.
+# A powered-off guest cannot change, so its last backup stays current while it is
+# offline, but only up to this cap: past it the owner must look at the guest.
+OFFLINE_FRESHNESS_DAYS = 30
 FRESHNESS_RECEIPT = Path.home() / ".local/state/summitflow/backup-freshness/proxmox.json"
 
 
@@ -381,6 +381,11 @@ def _covering_source(matcher: str, sources: list[dict[str, Any]]) -> dict[str, A
         if not matcher.startswith("source:") and (path == matcher or path.startswith((f"{matcher}/", f"{matcher}?"))):
             return source
     return None
+
+
+def _aware(value: Any) -> datetime:
+    when = value if isinstance(value, datetime) else datetime.fromisoformat(str(value).replace("Z", "+00:00"))
+    return when if when.tzinfo else when.replace(tzinfo=UTC)
 
 
 def freshness_receipt(now: datetime | None = None) -> dict[str, Any]:
@@ -401,17 +406,25 @@ def freshness_receipt(now: datetime | None = None) -> dict[str, Any]:
         if verified is None:
             targets.append({**entry, "status": "never-verified", "fresh": False})
             continue
-        created = verified.get("completed_at") or verified.get("created_at")
-        when = created if isinstance(created, datetime) else datetime.fromisoformat(str(created).replace("Z", "+00:00"))
-        when = when if when.tzinfo else when.replace(tzinfo=UTC)
+        verification = verified.get("verification_json") or {}
+        when = _aware(verified.get("completed_at") or verified.get("created_at"))
+        offsite_at = verification["offsite"].get("verified_at")
+        offsite_when = _aware(offsite_at) if offsite_at else when
         age = (current - when).total_seconds() / 3600
         offline = source_offline_since(str(source["id"]))
-        fresh = age <= FRESHNESS_HOURS or bool(offline)
-        targets.append({**entry, "status": "fresh" if age <= FRESHNESS_HOURS else ("offline-unchanged" if offline else "stale"), "fresh": fresh,
-                        "backup_id": verified["id"], "snapshot_id": (verified.get("verification_json") or {}).get("snapshot_id"),
-                        "verified_at": when.isoformat(), "age_hours": round(age, 1), "offsite": "verified",
+        status, reason = "fresh", None
+        if age > FRESHNESS_HOURS:
+            if offline and age <= OFFLINE_FRESHNESS_DAYS * 24:
+                status = "offline-unchanged"
+            elif offline:
+                status, reason = "stale", f"guest offline and its last backup is older than the {OFFLINE_FRESHNESS_DAYS}-day offline cap"
+            else:
+                status = "stale"
+        targets.append({**entry, "status": status, "fresh": status != "stale", **({"reason": reason} if reason else {}),
+                        "backup_id": verified["id"], "snapshot_id": verification.get("snapshot_id"),
+                        "captured_at": when.isoformat(), "verified_at": offsite_when.isoformat(), "age_hours": round(age, 1), "offsite": "verified",
                         "restore_test_ok": source.get("last_restore_test_ok")})
-    return {"schema_version": 1, "generated_at": current.isoformat(), "max_age_hours": FRESHNESS_HOURS,
+    return {"schema_version": 1, "generated_at": current.isoformat(), "max_age_hours": FRESHNESS_HOURS, "offline_max_age_days": OFFLINE_FRESHNESS_DAYS,
             "ok": all(item["fresh"] for item in targets), "targets": targets}
 
 

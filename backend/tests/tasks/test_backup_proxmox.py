@@ -37,6 +37,8 @@ def test_file_targets_parse_only_safe_selections():
     agent = px.parse_target("proxmox://proxmox-gem/qemu/100/files?via=agent&path=/home/u/profiles&exclude=Code+Cache")
     assert agent is not None and agent.files == px.FileSelection("agent", ("/home/u/profiles",), ("Code Cache",))
     assert agent.filename == "files-qemu-100.tar.gz"
+    chrome = px.parse_target("proxmox://proxmox-gem/qemu/100/files?via=agent&path=/p&exclude=Safe+Browsing&exclude=BrowserMetrics%2A&exclude=Dawn%2ACache&exclude=%2ACache")
+    assert chrome is not None and chrome.files is not None and chrome.files.excludes == ("Safe Browsing", "BrowserMetrics*", "Dawn*Cache", "*Cache")
     host = px.parse_target("proxmox://proxmox-gem/host/files?path=/vault/identity")
     assert host is not None and host.files == px.FileSelection("host", ("/vault/identity",)) and host.filename == "files-host.tar"
     for bad in (
@@ -86,10 +88,10 @@ def test_stopped_guest_is_offline_once_backed_up_but_captured_first(monkeypatch)
     assert "--mode" in plan["command"] and plan["command"][plan["command"].index("--mode") + 1] == "snapshot"
 
 
-def test_excluded_guest_and_full_thin_pool_are_refused(monkeypatch):
+def test_reused_guest_id_is_not_silently_excluded_and_full_thin_pool_is_refused(monkeypatch):
+    # VM 101 was destroyed; a future guest reusing its id is backed up like any other.
     _guest(monkeypatch, "running", prior=True, vmid=101)
-    with pytest.raises(RuntimeError, match="excluded"):
-        px.plan_capture("x", "proxmox://proxmox-gem/qemu/101")
+    assert px.plan_capture("x", "proxmox://proxmox-gem/qemu/101")["capture"]["vmid"] == 101
     _guest(monkeypatch, "running", prior=True, kind="lxc", vmid=140, thin=98.4)
     with pytest.raises(RuntimeError, match="insufficient host-policy headroom"):
         px.plan_capture("pve-ct-140", "proxmox://proxmox-gem/lxc/140")
@@ -148,8 +150,11 @@ def _sources_and_rows(monkeypatch, rows_by_source: dict[str, list[dict[str, Any]
     return [source["id"] for source in sources]
 
 
-def _verified(hours: float) -> dict[str, Any]:
-    return {"id": "bkp", "status": "completed", "completed_at": NOW - timedelta(hours=hours), "verification_json": {"snapshot_id": "c" * 64, "offsite": {"status": "verified"}}}
+def _verified(hours: float, offsite_hours: float | None = None) -> dict[str, Any]:
+    offsite: dict[str, Any] = {"status": "verified"}
+    if offsite_hours is not None:
+        offsite["verified_at"] = (NOW - timedelta(hours=offsite_hours)).isoformat()
+    return {"id": "bkp", "status": "completed", "completed_at": NOW - timedelta(hours=hours), "verification_json": {"snapshot_id": "c" * 64, "offsite": offsite}}
 
 
 def test_freshness_receipt_requires_every_target_offsite_verified_and_recent(monkeypatch, tmp_path):
@@ -160,13 +165,44 @@ def test_freshness_receipt_requires_every_target_offsite_verified_and_recent(mon
     assert px.write_freshness_receipt(NOW)["ok"] is True
     assert json.loads((tmp_path / "proxmox.json").read_text())["max_age_hours"] == px.FRESHNESS_HOURS
 
-    config, profiles, _vm120, _vault, _identity, ominull = ids
+    config, profiles, _vault, _identity, ominull = ids
     pending = [{"id": "p", "status": "completed_pending_upload", "completed_at": NOW, "verification_json": {"offsite": {"status": "pending"}}}]
     _sources_and_rows(monkeypatch, {**fresh, config: [_verified(40)], profiles: pending, ominull: [_verified(200)]}, offline=frozenset({ominull}))
     receipt = px.freshness_receipt(NOW)
     statuses = [item["status"] for item in receipt["targets"]]
     assert receipt["ok"] is False
-    assert statuses == ["stale", "never-verified", "fresh", "fresh", "fresh", "offline-unchanged"]
+    assert statuses == ["stale", "never-verified", "fresh", "fresh", "offline-unchanged"]
+
+
+def test_neri_guest_disk_is_not_a_required_target():
+    assert not any("/qemu/120" in matcher or "neri" in label for label, matcher in px.REQUIRED_TARGETS.items())
+
+
+def test_receipt_verified_at_is_the_offsite_verification_time(monkeypatch):
+    ids = _sources_and_rows(monkeypatch, {})
+    rows = {source_id: [_verified(5, offsite_hours=1)] for source_id in ids}
+    rows[ids[0]] = [_verified(5)]  # Older rows without an offsite time fall back to the capture time.
+    _sources_and_rows(monkeypatch, rows)
+    first, second = px.freshness_receipt(NOW)["targets"][:2]
+    assert second["verified_at"] == (NOW - timedelta(hours=1)).isoformat() and second["captured_at"] == (NOW - timedelta(hours=5)).isoformat()
+    assert first["verified_at"] == first["captured_at"] == (NOW - timedelta(hours=5)).isoformat()
+    assert second["age_hours"] == 5.0
+
+
+def test_offline_guest_stays_fresh_only_up_to_the_cap(monkeypatch, tmp_path):
+    monkeypatch.setattr(px, "FRESHNESS_RECEIPT", tmp_path / "proxmox.json")
+    ids = _sources_and_rows(monkeypatch, {})
+    guest = ids[1]
+    limit = px.OFFLINE_FRESHNESS_DAYS * 24
+    rows = {source_id: [_verified(2)] for source_id in ids}
+    _sources_and_rows(monkeypatch, {**rows, guest: [_verified(limit - 1)]}, offline=frozenset({guest}))
+    assert px.freshness_receipt(NOW)["targets"][1]["status"] == "offline-unchanged"
+    _sources_and_rows(monkeypatch, {**rows, guest: [_verified(limit + 1)]}, offline=frozenset({guest}))
+    receipt = px.freshness_receipt(NOW)
+    target = receipt["targets"][1]
+    assert receipt["ok"] is False and target["status"] == "stale" and target["fresh"] is False
+    assert "offline cap" in target["reason"]
+    assert "offline cap" in alerts._proxmox_conditions(NOW)["proxmox-freshness"]["message"]
 
 
 def test_missing_coverage_raises_a_proxmox_alert(monkeypatch, tmp_path):

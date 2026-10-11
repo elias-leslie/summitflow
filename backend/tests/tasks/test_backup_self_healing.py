@@ -3,13 +3,14 @@
 from __future__ import annotations
 
 import os
+import shutil
 import signal
 import socket
 import subprocess
 import sys
 import time
 from datetime import UTC, datetime, timedelta
-from typing import Any
+from typing import Any, cast
 from unittest.mock import MagicMock
 
 import pytest
@@ -352,3 +353,37 @@ def test_capacity_alert_on_refused_capture_or_low_free_space(monkeypatch, alert_
     monkeypatch.setenv("SF_HOST_RETENTION_PRESSURE_MIN_FREE_GB", "1000000")
     assert alerts.evaluate_backup_alerts({}, now=NOW)["raised"] == ["capacity"]
     assert "GB free" in alert_store.notifications[-1]["message"]
+
+
+# --- the 25 GB free-space floor at its default value ------------------------
+
+
+def test_free_space_floor_defaults_to_25_gb_for_admission_and_alerts(monkeypatch, alert_store, tmp_path):
+    from types import SimpleNamespace
+
+    from app.tasks import backup_repository_runtime as runtime
+    from app.utils.host_retention_policy import HostRetentionPolicy
+
+    monkeypatch.delenv("SF_HOST_RETENTION_PRESSURE_MIN_FREE_GB", raising=False)
+    floor = 25 * 1024**3
+    assert HostRetentionPolicy.from_env().pressure_min_free_gb == 25.0
+    usage = shutil.disk_usage(tmp_path)
+    free = {"bytes": floor}
+    monkeypatch.setattr(runtime.shutil, "disk_usage", lambda _path: usage._replace(total=10 * floor, used=floor, free=free["bytes"]))
+    monkeypatch.setattr(alerts.shutil, "disk_usage", lambda _path: usage._replace(total=10 * floor, used=floor, free=free["bytes"]))
+    config = cast("Any", SimpleNamespace(local_repository=tmp_path))
+    needed = 1024**2
+    state = {"sources": {"s": {"result": {"stored_bytes": needed}}}}
+    free["bytes"] = floor + needed
+    admission = runtime._capacity_admission(config, state, "s", staging_directory=tmp_path, streamed=True)
+    assert admission["admitted"] is True and admission["filesystems"][0]["reserve_bytes"] == floor
+    free["bytes"] = floor + needed - 1
+    assert runtime._capacity_admission(config, state, "s", staging_directory=tmp_path, streamed=True)["admitted"] is False
+
+    monkeypatch.setattr(alerts, "_capacity_conditions", REAL_CAPACITY_CONDITIONS)
+    monkeypatch.setattr(alerts, "_restic_backends", lambda: [])
+    monkeypatch.setattr(alerts, "SCRATCH_ROOT", tmp_path)
+    free["bytes"] = floor
+    assert alerts.evaluate_backup_alerts({}, now=NOW)["raised"] == []
+    free["bytes"] = floor - 1
+    assert alerts.evaluate_backup_alerts({}, now=NOW)["raised"] == ["capacity"]

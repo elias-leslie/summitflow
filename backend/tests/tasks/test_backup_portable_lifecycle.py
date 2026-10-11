@@ -191,6 +191,22 @@ def test_host_backup_runs_once_without_due_sources_outside_window(monkeypatch):
     assert result["host_backup"] == {"status": "completed", "result": "captured"}
 
 
+@pytest.mark.parametrize("copy_status", ["verified", "pending"])
+def test_database_association_is_rechecked_after_this_ticks_offsite_copy(monkeypatch, copy_status):
+    partial = {"status": "partial", "reason": "database-recovery-incomplete", "capture_complete": True}
+    host = Mock(side_effect=[partial, {"status": "completed", "capture_complete": True}])
+    monkeypatch.setattr(scheduler, "_scheduled_host_backup", host)
+    monkeypatch.setattr(scheduler, "_scheduled_backup_window_open", lambda _: False)
+    monkeypatch.setattr(scheduler, "_latest_finished_window_end", lambda now: now)
+    monkeypatch.setattr(scheduler.backup_store, "list_due_sources", lambda: [])
+    monkeypatch.setattr(runtime, "sync_repository_batch", lambda _: {"local": {"status": copy_status}})
+    result = scheduler.run_scheduled_backups()
+    if copy_status == "verified":
+        assert host.call_count == 2 and result["host_backup"]["status"] == "completed"
+    else:
+        assert host.call_count == 1 and result["host_backup"] == partial
+
+
 @pytest.mark.parametrize("status", ["blocked", "failed", "error", "partial", "cancelled"])
 @pytest.mark.parametrize("due", [False, True])
 def test_host_backup_failure_is_reported_without_stopping_portable_capture(monkeypatch, status, due):

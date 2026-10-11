@@ -220,12 +220,15 @@ def _target_copy(source: Path, destination: Path) -> None:
     _checked(["sudo", "-n", "sync", "-f", str(destination)])
 
 
-def _database_manifests(rows: list[dict[str, str]], now: datetime) -> dict[str, Any]:
+def _database_manifests(rows: list[dict[str, str]], now: datetime, reference: datetime | None = None) -> dict[str, Any]:
     """Associate configured project databases with fresh, qualified catalogue points.
 
     These are separate application recovery points, never an atomic claim about
     the online host filesystem. Credentials and raw database URLs are omitted.
+    Freshness is judged against ``reference`` (the host capture time; ``now`` by
+    default), so a later association retry never ages good points out.
     """
+    reference = min(reference or now, now)
     sources = backup_store.list_sources()
     testing = testing_project_ids()
     projects = {str(item["id"]): item for item in list_projects()}
@@ -256,8 +259,14 @@ def _database_manifests(rows: list[dict[str, str]], now: datetime) -> dict[str, 
             continue
         if config["configured"] != "true":
             continue
-        if project_id in testing and registered and all(source.get("enabled") is False for source in registered):
-            excluded.append({"project_id": canonical_id, "reason": "disabled-testing-portable-policy", "source_ids": [source["id"] for source in registered], "portable_database_recovery_covered": False, "protection": "Host filesystem points only; database state is crash-consistent, not a portable application recovery point"})
+        # Testing projects without an enabled source, and projects whose owner
+        # disabled every backup source, have no portable database obligation.
+        # They are recorded, never silently dropped. A non-testing project with
+        # no source at all stays an uncovered obligation.
+        all_disabled = all(source.get("enabled") is False for source in registered)
+        if all_disabled and (project_id in testing or canonical_id in testing or registered):
+            reason = "disabled-testing-portable-policy" if (project_id in testing or canonical_id in testing) else "backup-source-disabled"
+            excluded.append({"project_id": canonical_id, "reason": reason, "source_ids": [source["id"] for source in registered], "portable_database_recovery_covered": False, "protection": "Host filesystem points only; database state is crash-consistent, not a portable application recovery point"})
             continue
         host = {"localhost": "127.0.0.1", "::1": "127.0.0.1"}.get(config["host"], config["host"])
         endpoints[canonical_id] = (host, config["port"], config["name"])
@@ -293,7 +302,7 @@ def _database_manifests(rows: list[dict[str, str]], now: datetime) -> dict[str, 
                         continue
                     if not item.get("location"):
                         continue
-                    if now - captured > window:
+                    if reference - captured > window:
                         stale.append((captured.astimezone(UTC).isoformat(), window))
                         continue
                     candidates.append({"project_id": canonical_id, "registered_project_id": project_id, "source_project_id": source["project_id"], "backup_project_id": item["project_id"], "source_id": source["id"], "backup_id": item["id"],
@@ -319,7 +328,7 @@ def _database_manifests(rows: list[dict[str, str]], now: datetime) -> dict[str, 
     for obligation in missing:
         project_id = obligation["project_id"]
         shared = next((item for item in manifests if project_id in endpoints and project_id in cadences and endpoints.get(item["project_id"]) == endpoints[project_id]
-                       and now - datetime.fromisoformat(item["captured_at"]) <= cadences[project_id]
+                       and reference - datetime.fromisoformat(item["captured_at"]) <= cadences[project_id]
                        and item["repository"].get("format") == "restic-v1" and Path(item.get("db_dump_name") or "").name == PROJECT_DATABASE_PAYLOAD_NAME), None)
         if shared is None:
             unresolved.append(obligation)
@@ -528,7 +537,11 @@ def _check_received_points(points: list[dict[str, str]]) -> None:
 
 
 def _finish_capture(payload: dict[str, Any], operation: Path, rows: list[dict[str, str]], now: datetime) -> dict[str, Any]:
-    databases = _database_manifests(rows, now)
+    try:
+        reference: datetime | None = datetime.fromisoformat(str(payload.get("finished_at")))
+    except ValueError:
+        reference = None
+    databases = _database_manifests(rows, now, reference if reference and reference.tzinfo else None)
     _write_json(operation / "database-manifests.json", databases)
     final = dict(payload)
     reason = "database-recovery-incomplete" if databases["status"] != "qualified" else "metadata-cleanup-incomplete" if payload.get("metadata_cleanup", {}).get("blockers") else None

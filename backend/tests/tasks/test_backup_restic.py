@@ -991,17 +991,23 @@ def test_lock_left_by_dead_local_process_is_released_and_retried(setup, monkeypa
     assert not process.locks
 
 
-@pytest.mark.parametrize("holder", [{"hostname": "other-host", "pid": 4242}, {"hostname": None, "pid": 4242}, {"pid": "x"}])
-def test_foreign_or_unknown_lock_is_never_released(setup, monkeypatch, holder):
+@pytest.mark.parametrize("case", ["foreign-host", "live-local-pid", "unknown-pid"])
+def test_foreign_live_or_unknown_lock_is_never_released(setup, monkeypatch, case):
     adapter, process, payload = _adapter(setup)
     process.check_failure = 11
+    holder = {"foreign-host": {"hostname": "other-host", "pid": 4242},
+              "live-local-pid": {"hostname": engine.socket.gethostname(), "pid": 4242},
+              "unknown-pid": {"pid": "x"}}[case]
     process.locks = {"b" * 64: {**holder, "exclusive": True}}
-    if holder.get("hostname") is None and "hostname" in holder:
-        holder["hostname"] = engine.socket.gethostname()
-    monkeypatch.setattr(engine, "_process_alive", lambda pid: holder.get("hostname") is not None and holder.get("hostname") != "other-host")
+    probed: list[object] = []
+    # Every pid is alive here: only the live local holder reaches the probe, and it must keep its lock.
+    monkeypatch.setattr(engine, "_process_alive", lambda pid: probed.append(pid) or True)
     with pytest.raises(engine.ResticError, match=r"failed to lock repository \(exit 11\)"):
         adapter.save_payload("fixture", payload)
     assert not any("unlock" in command for command in process.commands)
+    assert process.locks
+    if case == "live-local-pid":
+        assert probed and set(probed) == {4242}
 
 
 def test_restore_of_a_streamed_snapshot_returns_the_single_payload_file(setup, tmp_path, monkeypatch):

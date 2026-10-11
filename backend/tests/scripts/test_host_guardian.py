@@ -117,7 +117,9 @@ def test_native_config_switches_guardian_without_veeam_restart(monkeypatch, tmp_
     now = datetime(2026, 10, 7, 20, tzinfo=UTC)
     monkeypatch.setattr(module, "now_utc", lambda: now)
     good = {"run_id": "20261007T190000Z-abcd1234", "status": "completed", "capture_complete": True, "artifacts_complete": True,
-            "finished_at": (now - timedelta(hours=1)).isoformat(), "points": [{"source": "/"}], "database_recovery": {"status": "qualified", "missing": []}}
+            "finished_at": (now - timedelta(hours=1)).isoformat(), "points": [{"source": "/"}], "database_recovery": {"status": "qualified", "missing": [],
+            # Recorded exclusions (sourceless testing, owner-disabled sources) never keep warnings alive.
+            "excluded": [{"project_id": "test1", "reason": "disabled-testing-portable-policy"}, {"project_id": "portfolio", "reason": "backup-source-disabled"}]}}
     latest = {**good, "database_recovery": dict(good["database_recovery"])}
     if fault == "partial":
         latest.update(status="partial", reason="database-recovery-incomplete")

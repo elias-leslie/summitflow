@@ -286,6 +286,20 @@ def _scheduled_host_backup(now: datetime) -> dict[str, Any]:
         return {"status": "failed", "error": str(exc)}
 
 
+def _reassociate_after_copy(host_backup: dict[str, Any], copies: dict[str, Any]) -> dict[str, Any]:
+    """Judge database recovery against this tick's offsite copy, not the previous one.
+
+    The host capture is associated before the copy step; when that left only the
+    database association incomplete and the copy verified new points, retry the
+    association (no new host capture: the retained points are reused).
+    """
+    if not (host_backup.get("capture_complete") and host_backup.get("reason") == "database-recovery-incomplete"):
+        return host_backup
+    if not any(value.get("status") == "verified" for value in (copies or {}).values()):
+        return host_backup
+    return _scheduled_host_backup(datetime.now(UTC))
+
+
 def run_scheduled_backups(*, on_progress: Callable[[], None] | None = None) -> dict[str, Any]:
     """Check and run due scheduled backups.
 
@@ -312,6 +326,7 @@ def run_scheduled_backups(*, on_progress: Callable[[], None] | None = None) -> d
                 # Persisted offsite backlog is independent of capture eligibility.
                 # The batch helper retains repository serialization and capacity admission.
                 copies = sync_repository_batch({})
+                host_backup = _reassociate_after_copy(host_backup, copies)
                 skipped_result: dict[str, Any] = {"status": "partial" if host_backup.get("status") in {"blocked", "failed", "error", "partial", "cancelled"} else "skipped", "reason": "outside-backup-window", "count": 0, "results": [], "host_backup": host_backup, "housekeeping": housekeeping}
                 if copies:
                     skipped_result["repository_copy"] = {key: {field: value.get(field) for field in ("status", "error", "reason")} for key, value in copies.items()}
@@ -338,6 +353,7 @@ def run_scheduled_backups(*, on_progress: Callable[[], None] | None = None) -> d
                     logger.exception("scheduled_backup_source_unhandled_error", source_id=source.get("id"))
                     results.append({"source_id": source.get("id"), "status": "error", "error": str(exc)})
         copies = sync_repository_batch(batch)
+        host_backup = _reassociate_after_copy(host_backup, copies)
 
         succeeded = sum(1 for result in results if result.get("status") in SUCCESS_STATUSES)
         offline = sum(1 for result in results if result.get("status") == "offline")
