@@ -21,10 +21,10 @@
       "surface": "st.search",
       "tier": "reference",
       "cmd": "st search \"query\"",
-      "when": "optional precision navigation for ranked discovery; search before adding code and extend a close match",
+      "when": "optional ranked discovery; search before adding code, extend a close match",
       "precautions": [
-        "use rg/rg --files for exact literals, regex, multiple needles, file enumeration and exhaustive references",
-        "query with 1-4 identifier or filename terms; flags and scope options are in st search --help"
+        "rg/rg --files for exact literals, regex, multiple needles, file enumeration, exhaustive references",
+        "1-4 identifier or filename terms"
       ]
     }
   ],

@@ -480,9 +480,9 @@ def _register_unmanaged(repos: list[Path]) -> list[dict[str, str]]:
     cmd="st vcs reconcile",
     when="explicit remote synchronization and VCS residue reconciliation",
     precautions=(
-        "this command pulls remotes and may delete already-integrated remote task refs; use only when that remote operation is intended",
+        "pulls remotes and may delete already-integrated remote task refs; use only when that is intended",
         "use st vcs doctor for local inspection; unpublished local commits are normal, not debt",
-        "preserve ownerless work; inspect before cleanup, and publish only when requested",
+        "preserve ownerless work; inspect before cleanup",
     ),
     task_types=("devops", "config"),
     tier="reference",

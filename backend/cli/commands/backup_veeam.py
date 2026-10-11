@@ -102,11 +102,11 @@ def status(ctx: typer.Context) -> None:
 @usage(
     surface="st.backup.veeam",
     cmd="st backup veeam start --wait",
-    when="kick off and monitor the host-level Veeam system-image backup before risky system/project changes",
+    when="run and monitor the host Veeam system-image backup before risky system/project changes",
     precautions=(
         "wait for completion before starting risky mitigations",
-        "use this st surface instead of raw veeamconfig/veeam commands",
-        "if another Veeam session is active, use st backup veeam wait",
+        "never raw veeamconfig/veeam commands",
+        "another Veeam session active: st backup veeam wait",
     ),
     examples=("st backup veeam status", "st backup veeam start --wait", "st backup veeam wait"),
     task_types=("devops", "security", "backup"),

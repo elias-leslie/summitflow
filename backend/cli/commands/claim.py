@@ -230,7 +230,7 @@ def _claim_subtask(
 @usage(
     surface="st.claim",
     cmd="st claim <task-id>",
-    when="before implementing or completing an assigned task (e.g. after st ready)",
+    when="before implementing or completing an assigned task",
     precautions=("subtask: dotted ID (1.2) + --task <parent>", "commits go directly to main; conflicts point at st pulse"),
     tier="mandate",
 )

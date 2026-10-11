@@ -31,7 +31,7 @@ app = typer.Typer(help="Abandon task or subtask work and roll back tracked chang
     precautions=(
         "commit before abandon — preview cannot recover uncommitted work",
         "two-pass confirm: first run shows blast radius + token; rerun with --confirm <token>",
-        "use st cancel instead if you want to keep the record without rollback",
+        "keep the record without rollback: st cancel",
     ),
     tier="mandate",
 )

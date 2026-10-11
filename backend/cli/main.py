@@ -346,9 +346,9 @@ app.command("exec-log")(_COMMANDS["exec_monitor"].exec_log_command)
     cmd='st commit -m "msg"',
     when="authorized work reaches a verified checkpoint",
     precautions=(
-        "review the diff for secrets, destructive changes, scope",
+        "review diff for destructive changes, scope",
         "--paths preserves unrelated work; include the checkpoint's generated changes",
-        "local only; publish separately: st vcs publish --source ID --sha FULL_OID --now",
+        "publication: st vcs publish --source ID --sha FULL_OID --now",
         "commit before destructive ops (abandon, rollback)",
     ),
     tier="mandate",

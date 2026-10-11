@@ -630,7 +630,7 @@ def sync_offsite(
 @usage(
     surface="st.backup.cleanup-local",
     cmd="st backup cleanup-local",
-    when="prune local backup archive files that are older than source retention and no longer referenced by backup DB records",
+    when="prune local backup archives older than source retention and unreferenced by backup DB records",
     precautions=(
         "run without --apply first to preview reclaimable files and bytes",
         "never delete individual Veeam .vbk/.vib files with this command",

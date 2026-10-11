@@ -44,7 +44,7 @@ app.add_typer(dependencies_app, name="dependencies")
     surface="st.tools.extensions",
     cmd="st tools extensions [--check]",
     when="inspect trusted extension registrations or diagnose owner installation",
-    precautions=("Default is passive metadata only; --check queries the ST project registry and checks executable files without running extensions. Prerequisites present does not prove runtime health.",),
+    precautions=("default: passive metadata; --check queries the ST project registry and executables without running extensions; prerequisites present does not prove runtime health",),
 )
 def extensions(
     check: Annotated[bool, typer.Option("--check", help="Check registered project and executable prerequisites without running owner code.")] = False,

@@ -96,10 +96,10 @@ def list_tasks(
 @usage(
     surface="st.ready",
     cmd="st ready --limit N",
-    when="find next claimable task in the current project (cwd auto-detected)",
+    when="next claimable task in the cwd project",
     precautions=(
-        "blockers render inline as {id} (status, type); no follow-up context call needed",
-        "use st ready-all for cross-project overview",
+        "blockers inline as {id} (status, type); no follow-up context call needed",
+        "cross-project: st ready-all",
     ),
     tier="mandate",
 )
@@ -142,7 +142,7 @@ def ready_all(
     surface="st.context",
     cmd="st context <task-id>",
     when="read task brief, plan, history",
-    precautions=("claim before implementation; read-only inspection needs no claim", "--subtask X.Y for a subtask"),
+    precautions=("claim before implementation; read-only inspection needs no claim", "--subtask X.Y"),
     tier="mandate",
 )
 def context(
@@ -179,8 +179,8 @@ def export(
     cmd='st cancel <task-id> -r "reason"',
     when="task is no longer valid (out of scope, superseded, won't-do); preserves history",
     precautions=(
-        "cancel preserves the task record; use st abandon to discard work-in-progress instead",
-        "always provide -r reason for audit trail",
+        "to discard work-in-progress instead: st abandon",
+        "always give -r reason (audit trail)",
     ),
     tier="reference",
 )
@@ -198,7 +198,7 @@ def cancel(
 @usage(
     surface="st.pause",
     cmd='st pause <task-id> -r "reason"',
-    when="stop work but plan to return; releases claim so others can pick up",
+    when="stop work, return later; releases claim for others",
     precautions=(
         "save task-owned work in a local checkpoint before pausing; pause requires clean task scope",
         "use st reopen to return; reopen accepts any non-pending state",
@@ -220,7 +220,7 @@ def pause(
     surface="st.reopen",
     cmd='st reopen <task-id> -r "reason"',
     when="return a paused/completed/cancelled task to the ready queue",
-    precautions=("must st claim again after reopen; reopen only moves to pending",),
+    precautions=("st claim again after reopen; moves only to pending",),
     tier="reference",
 )
 def reopen(
@@ -247,11 +247,10 @@ def delete(
 @usage(
     surface="st.update",
     cmd='st update <task-id> --title "..." --priority 1',
-    when="fix in-flight task fields (title, priority, labels, description, plan); not for lifecycle changes",
+    when="fix in-flight task fields (title, priority, labels, description, plan); status transitions: st cancel/pause/reopen/abandon",
     precautions=(
         "--plan swaps the spirit plan content and resets plan_status to draft",
         "--waive-check/--replace-check amend one live check or done_when entry; --reason (the owner decision) is required and audited",
-        "use st cancel/pause/reopen/abandon for status transitions, not st update",
     ),
     tier="reference",
 )

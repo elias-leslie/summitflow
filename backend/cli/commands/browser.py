@@ -899,8 +899,8 @@ _HELP = _USAGE
     when="UI render verification; screenshots; DOM snapshots",
     precautions=(
         "local checks use isolated headless sessions; interactive commands share the Chrome AI profile",
-        "use --proxmox or ST_BROWSER_TARGET=proxmox when VM isolation is better for the task",
-        "use st ui when the open desktop/PWA is the right evidence source",
+        "--proxmox or ST_BROWSER_TARGET=proxmox when VM isolation is better",
+        "st ui when the open desktop/PWA is the evidence source",
         "never start arbitrary chrome/CDP on project or server host; local-AI is the approved local profile flow",
         "only set ST_BROWSER_HOST / ST_BROWSER_VM_ID for explicit approved override",
     ),

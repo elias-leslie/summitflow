@@ -203,7 +203,7 @@ def _handle_task_completion(
     cmd='st done <task-id> -m "summary"',
     when="assigned-task closeout: acceptance, evidence, checkpoint cleanup",
     precautions=(
-        "needs an active owned claim; local checkpoints are normal; publication is separate and optional",
+        "needs an active owned claim",
         "with unrelated changes, repeat --paths <owned-path> per task path on the first call",
         "--evidence JSON for required deployment/live checks; never claim done while acceptance remains",
     ),

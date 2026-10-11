@@ -87,7 +87,7 @@ def test_compact_discovery_covers_ordinary_task_work_without_full_catalogue() ->
         assert specs[surface] == json.loads(exact.output)["tools"][0]
     assert not {"st.vcs.publish", "st.design", "st.ui.gif", "st.vm.status"} & specs.keys()
     assert "read-only inspection needs no claim" in specs["st.context"]["precautions"][0]
-    assert "publication is separate and optional" in specs["st.done"]["precautions"][0]
+    assert "needs an active owned claim" in specs["st.done"]["precautions"][0]
 
 
 @pytest.mark.parametrize("task", [None, "backend", "verification"])

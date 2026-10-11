@@ -216,7 +216,7 @@ def status(
     precautions=(
         "explicit project, not cwd; resolve blockers its preflight reports",
         "full scope for shared or uncertain changes; worker scope includes backend consumers",
-        "required (project.identity.json services.default_workers) and active optional workers restart automatically; --include-all-workers also starts inactive ones",
+        "required and active optional workers restart automatically; --include-all-workers also starts inactive optional workers",
     ),
     examples=(
         "st service rebuild summitflow",
