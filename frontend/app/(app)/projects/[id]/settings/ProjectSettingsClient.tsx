@@ -13,13 +13,11 @@ import {
   RefreshCcw,
   Save,
   Settings2,
-  Share2,
 } from 'lucide-react'
 import Link from 'next/link'
 import { useParams } from 'next/navigation'
 import { useCallback, useEffect, useState } from 'react'
 import { AutonomousSettingsPanel } from '@/components/settings/AutonomousSettings'
-import { SharingSettingsPanel } from '@/components/settings/SharingSettingsPanel'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import {
@@ -50,7 +48,7 @@ import { getErrorMessage } from '@/lib/utils'
 
 type FormErrors = ProjectFormErrors & { submit?: string }
 type ErrorField = keyof FormErrors
-type SettingsTab = 'general' | 'automation' | 'sharing'
+type SettingsTab = 'general' | 'automation'
 const CATEGORY_OPTIONS: ProjectCategory[] = ['production', 'testing', 'dev']
 
 export function ProjectSettingsClient() {
@@ -267,7 +265,6 @@ export function ProjectSettingsClient() {
   const tabs: { id: SettingsTab; label: string; icon: typeof Settings2 }[] = [
     { id: 'general', label: 'General', icon: Settings2 },
     { id: 'automation', label: 'Automation', icon: Bot },
-    { id: 'sharing', label: 'Sharing', icon: Share2 },
   ]
 
   return (
@@ -588,12 +585,6 @@ export function ProjectSettingsClient() {
       {activeTab === 'automation' && (
         <div className="animate-in">
           <AutonomousSettingsPanel projectId={projectId} />
-        </div>
-      )}
-
-      {activeTab === 'sharing' && (
-        <div className="animate-in">
-          <SharingSettingsPanel projectId={projectId} />
         </div>
       )}
     </main>

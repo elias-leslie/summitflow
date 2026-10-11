@@ -19,7 +19,6 @@ interface DesignHeaderProps {
   onCancelSelectMode: () => void
   onPrimaryAction: () => void
   extraActions?: ReactNode
-  readOnly?: boolean
 }
 
 export function DesignHeader({
@@ -35,7 +34,6 @@ export function DesignHeader({
   onCancelSelectMode,
   onPrimaryAction,
   extraActions,
-  readOnly = false,
 }: DesignHeaderProps): React.ReactElement {
   return (
     <div className="mb-6 flex items-start justify-between gap-4">
@@ -63,7 +61,7 @@ export function DesignHeader({
       <div className="flex flex-wrap items-center gap-3">
         {extraActions}
 
-        {!selectMode && !readOnly && (
+        {!selectMode && (
           <button
             type="button"
             onClick={onPrimaryAction}
@@ -74,7 +72,7 @@ export function DesignHeader({
           </button>
         )}
 
-        {hasItems && !readOnly && (
+        {hasItems && (
           <button
             type="button"
             onClick={() =>

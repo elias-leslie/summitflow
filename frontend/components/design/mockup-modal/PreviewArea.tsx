@@ -35,9 +35,6 @@ interface PreviewAreaProps {
     savedMockup?: Mockup
     summary: string
   }) => void
-  readOnly?: boolean
-  getImageUrl?: (projectId: string, mockupId: string) => string
-  getScreenshotUrl?: (projectId: string, mockupId: string) => string
 }
 
 export function PreviewArea({
@@ -53,35 +50,25 @@ export function PreviewArea({
   onDelete,
   onVersionCreated,
   onSendToJenny,
-  readOnly = false,
-  getImageUrl = getMockupImageUrl,
-  getScreenshotUrl: screenshotUrl = getScreenshotUrl,
 }: PreviewAreaProps) {
-  const imageUrl = getImageUrl(projectId, mockup.mockup_id)
+  const imageUrl = getMockupImageUrl(projectId, mockup.mockup_id)
 
   return (
     <div className="flex-1 p-4 flex flex-col min-h-0 min-w-0">
       <div className="flex-1 bg-slate-800 rounded-lg flex items-center justify-center relative min-h-0">
         {showComparison && canCompare ? (
           <ComparisonSlider
-            beforeImageUrl={screenshotUrl(projectId, mockup.mockup_id)}
+            beforeImageUrl={getScreenshotUrl(projectId, mockup.mockup_id)}
             afterImageUrl={imageUrl}
             beforeAlt="Original screenshot"
             afterAlt={mockup.name}
           />
-        ) : isHtmlMockupContent(mockup.content) && !readOnly ? (
+        ) : isHtmlMockupContent(mockup.content) ? (
           <MockupSurfaceEditor
             mockup={mockup}
             projectId={projectId}
             onSaved={onVersionCreated}
             onSendToJenny={onSendToJenny}
-          />
-        ) : isHtmlMockupContent(mockup.content) ? (
-          <iframe
-            title={mockup.name}
-            srcDoc={mockup.content ?? ''}
-            sandbox=""
-            className="h-full w-full rounded-lg border-0 bg-white"
           />
         ) : mockup.file_path ? (
           <Image
@@ -146,37 +133,31 @@ export function PreviewArea({
           <History className="w-4 h-4" />
           History
         </button>
-        {!readOnly && (
-          <>
-            <button
-              type="button"
-              onClick={onRerun}
-              className="btn-secondary flex items-center gap-2"
-            >
-              <RefreshCw className="w-4 h-4" />
-              Rerun
-            </button>
-            <button
-              type="button"
-              onClick={onCreateIteration}
-              className="btn-secondary flex items-center gap-2"
-            >
-              <Layers3 className="w-4 h-4" />
-              New Iteration
-            </button>
-          </>
-        )}
+        <button
+          type="button"
+          onClick={onRerun}
+          className="btn-secondary flex items-center gap-2"
+        >
+          <RefreshCw className="w-4 h-4" />
+          Rerun
+        </button>
+        <button
+          type="button"
+          onClick={onCreateIteration}
+          className="btn-secondary flex items-center gap-2"
+        >
+          <Layers3 className="w-4 h-4" />
+          New Iteration
+        </button>
         <div className="flex-1" />
-        {!readOnly && (
-          <button
-            type="button"
-            onClick={onDelete}
-            className="btn-secondary flex items-center gap-2 text-rose-400 hover:bg-rose-500/10 border-rose-500/30"
-          >
-            <Trash2 className="w-4 h-4" />
-            Delete
-          </button>
-        )}
+        <button
+          type="button"
+          onClick={onDelete}
+          className="btn-secondary flex items-center gap-2 text-rose-400 hover:bg-rose-500/10 border-rose-500/30"
+        >
+          <Trash2 className="w-4 h-4" />
+          Delete
+        </button>
       </div>
     </div>
   )

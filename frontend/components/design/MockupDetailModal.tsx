@@ -25,10 +25,6 @@ interface MockupDetailModalProps {
   onCreateIteration: (mockup: Mockup) => void
   onSelectMockup: (mockup: Mockup) => void
   navigation?: MockupModalNavigation
-  readOnly?: boolean
-  fetchHistory?: (projectId: string, mockupId: string) => Promise<Mockup[]>
-  getImageUrl?: (projectId: string, mockupId: string) => string
-  getScreenshotUrl?: (projectId: string, mockupId: string) => string
   isRating?: boolean
 }
 
@@ -43,10 +39,6 @@ export function MockupDetailModal({
   onCreateIteration,
   onSelectMockup,
   navigation,
-  readOnly = false,
-  fetchHistory,
-  getImageUrl,
-  getScreenshotUrl,
   isRating = false,
 }: MockupDetailModalProps) {
   const {
@@ -64,10 +56,7 @@ export function MockupDetailModal({
     setShowRerunDialog,
     setShowDetails,
     handleStatusChange,
-  } = useMockupModal(mockup, projectId, open, onOpenChange, onStatusChange, {
-    readOnly,
-    fetchHistory,
-  })
+  } = useMockupModal(mockup, projectId, open, onOpenChange, onStatusChange)
 
   useEffect(() => {
     if (!open) return
@@ -135,9 +124,6 @@ export function MockupDetailModal({
             onCreateIteration={() => onCreateIteration(mockup)}
             onRerun={() => setShowRerunDialog(true)}
             onDelete={() => setShowDeleteConfirm(true)}
-            readOnly={readOnly}
-            getImageUrl={getImageUrl}
-            getScreenshotUrl={getScreenshotUrl}
             onVersionCreated={(created) => {
               onStatusChange()
               setShowHistory(true)
@@ -157,7 +143,6 @@ export function MockupDetailModal({
               onRate={(rating) => onRate(mockup.mockup_id, rating)}
               onCommentsChanged={onCommentsChanged}
               onSelectHistoryMockup={onSelectMockup}
-              readOnly={readOnly}
             />
           )}
 
@@ -183,7 +168,7 @@ export function MockupDetailModal({
           </button>
         </div>
 
-        {!readOnly && showDeleteConfirm && (
+        {showDeleteConfirm && (
           <ConfirmDeleteDialog
             entityType="mockup"
             entityName={mockup.name}
@@ -195,7 +180,7 @@ export function MockupDetailModal({
           />
         )}
 
-        {!readOnly && showRerunDialog && (
+        {showRerunDialog && (
           <RerunMockupDialog
             mockup={mockup}
             projectId={projectId}

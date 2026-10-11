@@ -2,27 +2,17 @@
 
 import { useQuery } from '@tanstack/react-query'
 import { Loader2 } from 'lucide-react'
-import { usePathname, useRouter } from 'next/navigation'
-import { useEffect } from 'react'
 import { Button } from '@/components/ui/button'
 import { fetchAuthMe } from '@/lib/api/auth'
 
 export function AppAuthGate({ children }: { children: React.ReactNode }) {
-  const pathname = usePathname()
-  const router = useRouter()
   const { data, isLoading, isError, isFetching, refetch } = useQuery({
     queryKey: ['auth-me'],
     queryFn: fetchAuthMe,
     retry: false,
   })
 
-  useEffect(() => {
-    if (!data?.is_viewer) return
-    if (pathname?.startsWith('/viewer')) return
-    router.replace('/viewer')
-  }, [data?.is_viewer, pathname, router])
-
-  if (isLoading || data?.is_viewer) {
+  if (isLoading) {
     return (
       <div className="flex h-screen items-center justify-center bg-slate-950 text-slate-400">
         <Loader2 className="mr-2 h-5 w-5 animate-spin" />
@@ -66,8 +56,7 @@ export function AppAuthGate({ children }: { children: React.ReactNode }) {
             SummitFlow access is not enabled
           </h1>
           <p className="mt-2 text-sm text-slate-400">
-            Your authenticated email is not an owner. Ask an owner to add your
-            account or share a read-only project view.
+            Your authenticated email is not a SummitFlow owner.
           </p>
         </div>
       </div>

@@ -25,7 +25,6 @@ interface MockupCardProps {
   onClick: () => void
   selectMode?: boolean
   isSelected?: boolean
-  getImageUrl?: (projectId: string, mockupId: string) => string
   isRating?: boolean
   onRate: (rating: number) => void
 }
@@ -114,7 +113,6 @@ export function MockupCard({
   onClick,
   selectMode = false,
   isSelected = false,
-  getImageUrl,
   isRating = false,
   onRate,
 }: MockupCardProps) {
@@ -283,10 +281,7 @@ export function MockupCard({
           </div>
         ) : mockup.file_path ? (
           <Image
-            src={
-              getImageUrl?.(mockup.project_id, mockup.mockup_id) ??
-              `/api/projects/${mockup.project_id}/mockups/${mockup.mockup_id}/image`
-            }
+            src={`/api/projects/${mockup.project_id}/mockups/${mockup.mockup_id}/image`}
             alt={mockup.name}
             fill
             className="object-cover"

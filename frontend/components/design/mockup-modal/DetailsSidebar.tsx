@@ -8,12 +8,6 @@ import {
   type Mockup,
   updateMockupComment,
 } from '@/lib/api/mockups'
-import {
-  addViewerMockupComment,
-  deleteViewerMockupComment,
-  fetchViewerMockupComments,
-  updateViewerMockupComment,
-} from '@/lib/api/viewer'
 import { formatDate } from '@/lib/format'
 import { ArtifactComments } from '../ArtifactComments'
 import { StarRating } from '../StarRating'
@@ -30,7 +24,6 @@ interface DetailsSidebarProps {
   onRate: (rating: number) => void
   onCommentsChanged: () => void
   onSelectHistoryMockup: (mockup: Mockup) => void
-  readOnly?: boolean
 }
 
 export function DetailsSidebar({
@@ -44,7 +37,6 @@ export function DetailsSidebar({
   onRate,
   onCommentsChanged,
   onSelectHistoryMockup,
-  readOnly = false,
 }: DetailsSidebarProps) {
   const formattedDate = mockup.created_at
     ? formatDate(mockup.created_at)
@@ -101,39 +93,16 @@ export function DetailsSidebar({
         </div>
 
         <ArtifactComments
-          queryKey={[
-            'mockup-comments',
-            readOnly ? 'viewer' : 'owner',
-            projectId,
-            mockup.mockup_id,
-          ]}
-          fetchComments={() =>
-            (readOnly ? fetchViewerMockupComments : fetchMockupComments)(
-              projectId,
-              mockup.mockup_id,
-            )
-          }
+          queryKey={['mockup-comments', projectId, mockup.mockup_id]}
+          fetchComments={() => fetchMockupComments(projectId, mockup.mockup_id)}
           addComment={(body) =>
-            (readOnly ? addViewerMockupComment : addMockupComment)(
-              projectId,
-              mockup.mockup_id,
-              body,
-            )
+            addMockupComment(projectId, mockup.mockup_id, body)
           }
           updateComment={(commentId, body) =>
-            (readOnly ? updateViewerMockupComment : updateMockupComment)(
-              projectId,
-              mockup.mockup_id,
-              commentId,
-              body,
-            )
+            updateMockupComment(projectId, mockup.mockup_id, commentId, body)
           }
           deleteComment={(commentId) =>
-            (readOnly ? deleteViewerMockupComment : deleteMockupComment)(
-              projectId,
-              mockup.mockup_id,
-              commentId,
-            )
+            deleteMockupComment(projectId, mockup.mockup_id, commentId)
           }
           onChanged={onCommentsChanged}
         />
@@ -185,13 +154,11 @@ export function DetailsSidebar({
           </div>
         )}
 
-        {!readOnly && (
-          <StatusActions
-            mockup={mockup}
-            updating={updating}
-            onStatusChange={onStatusChange}
-          />
-        )}
+        <StatusActions
+          mockup={mockup}
+          updating={updating}
+          onStatusChange={onStatusChange}
+        />
 
         {showHistory && history && (
           <div>

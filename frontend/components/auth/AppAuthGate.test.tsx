@@ -1,14 +1,9 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
-import { fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { fireEvent, render, screen } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { type AuthMe, fetchAuthMe } from '@/lib/api/auth'
 import { AppAuthGate } from './AppAuthGate'
 
-const { replace } = vi.hoisted(() => ({ replace: vi.fn() }))
-vi.mock('next/navigation', () => ({
-  usePathname: () => '/',
-  useRouter: () => ({ replace }),
-}))
 vi.mock('@/lib/api/auth', () => ({ fetchAuthMe: vi.fn() }))
 
 const owner: AuthMe = {
@@ -16,9 +11,7 @@ const owner: AuthMe = {
   email: 'owner@example.test',
   role: 'owner',
   is_owner: true,
-  is_viewer: false,
   is_local_bypass: false,
-  grants: [],
 }
 
 function renderGate() {
@@ -47,7 +40,7 @@ describe('AppAuthGate', () => {
       'Unable to check SummitFlow access',
     )
     expect(
-      screen.queryByText(/Your authenticated email is not an owner/),
+      screen.queryByText(/Your authenticated email is not a SummitFlow owner/),
     ).not.toBeInTheDocument()
     expect(screen.queryByText('Protected content')).not.toBeInTheDocument()
     fireEvent.click(screen.getByRole('button', { name: 'Try again' }))
@@ -71,18 +64,16 @@ describe('AppAuthGate', () => {
     ).not.toBeInTheDocument()
   })
 
-  it('redirects viewers without showing an owner denial', async () => {
+  it('denies a legacy viewer identity like any other non-owner', async () => {
     vi.mocked(fetchAuthMe).mockResolvedValue({
       ...owner,
       role: 'viewer',
       is_owner: false,
-      is_viewer: true,
     })
     renderGate()
-    await waitFor(() => expect(replace).toHaveBeenCalledWith('/viewer'))
     expect(
-      screen.queryByText('SummitFlow access is not enabled'),
-    ).not.toBeInTheDocument()
+      await screen.findByText('SummitFlow access is not enabled'),
+    ).toBeInTheDocument()
     expect(screen.queryByText('Protected content')).not.toBeInTheDocument()
   })
 

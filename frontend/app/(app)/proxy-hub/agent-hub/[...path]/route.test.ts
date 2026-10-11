@@ -11,7 +11,6 @@ function meResponse(isOwner: boolean): Response {
     JSON.stringify({
       authenticated: true,
       is_owner: isOwner,
-      is_viewer: !isOwner,
     }),
     { status: 200, headers: { 'Content-Type': 'application/json' } },
   )

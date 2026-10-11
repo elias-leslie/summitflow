@@ -28,18 +28,9 @@ import {
   type Mockup,
   rateMockup,
 } from '@/lib/api/mockups'
-import {
-  fetchViewerMockupHistory,
-  fetchViewerMockupStats,
-  fetchViewerMockups,
-  getViewerMockupImageUrl,
-  getViewerScreenshotUrl,
-  rateViewerMockup,
-} from '@/lib/api/viewer'
 
 interface UiDesignWorkspaceProps {
   projectId: string
-  readOnly?: boolean
 }
 
 type TypeFilter =
@@ -55,7 +46,6 @@ type MockupSortFilter = 'created_desc' | 'rating_average' | 'rating_count'
 
 export function UiDesignWorkspace({
   projectId,
-  readOnly = false,
 }: UiDesignWorkspaceProps): React.ReactElement {
   const [viewMode, setViewMode] = useState<ViewMode>('grid')
   const [statusFilter, setStatusFilter] = useState<StatusFilter>('all')
@@ -87,7 +77,6 @@ export function UiDesignWorkspace({
   } = useQuery({
     queryKey: [
       'mockups',
-      readOnly ? 'viewer' : 'owner',
       projectId,
       statusFilter,
       typeFilter,
@@ -96,7 +85,7 @@ export function UiDesignWorkspace({
       page,
     ],
     queryFn: () =>
-      (readOnly ? fetchViewerMockups : fetchMockups)(projectId, {
+      fetchMockups(projectId, {
         limit: pageSize,
         offset: page * pageSize,
         status: statusFilter === 'all' ? undefined : statusFilter,
@@ -107,9 +96,8 @@ export function UiDesignWorkspace({
   })
 
   const { data: stats, refetch: refetchStats } = useQuery({
-    queryKey: ['mockup-stats', readOnly ? 'viewer' : 'owner', projectId],
-    queryFn: () =>
-      (readOnly ? fetchViewerMockupStats : fetchMockupStats)(projectId),
+    queryKey: ['mockup-stats', projectId],
+    queryFn: () => fetchMockupStats(projectId),
   })
 
   const deleteMutation = useMutation({
@@ -141,8 +129,7 @@ export function UiDesignWorkspace({
     }: {
       mockupId: string
       rating: number
-    }) =>
-      (readOnly ? rateViewerMockup : rateMockup)(projectId, mockupId, rating),
+    }) => rateMockup(projectId, mockupId, rating),
     onSuccess: applyUpdatedMockup,
   })
 
@@ -245,11 +232,7 @@ export function UiDesignWorkspace({
       <div className="flex min-w-0 flex-1 flex-col">
         <DesignHeader
           title="UI Design"
-          subtitle={
-            readOnly
-              ? 'Browse shared UI mockups, review details, and rate without owner-only controls.'
-              : 'Analyze live pages, capture hand-authored concepts, and move mockups through the normal review flow.'
-          }
+          subtitle="Analyze live pages, capture hand-authored concepts, and move mockups through the normal review flow."
           totalLabel={
             stats?.total !== undefined ? `${stats.total} mockups` : undefined
           }
@@ -264,7 +247,6 @@ export function UiDesignWorkspace({
             setSelectedMockups(new Set())
           }}
           onPrimaryAction={() => setGenerateDialogOpen(true)}
-          readOnly={readOnly}
           extraActions={
             !selectMode ? (
               <>
@@ -281,18 +263,16 @@ export function UiDesignWorkspace({
                   />
                   Refresh
                 </button>
-                {!readOnly && (
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setIterationParentMockup(null)
-                      setCreateDialogOpen(true)
-                    }}
-                    className="btn-secondary"
-                  >
-                    New Concept
-                  </button>
-                )}
+                <button
+                  type="button"
+                  onClick={() => {
+                    setIterationParentMockup(null)
+                    setCreateDialogOpen(true)
+                  }}
+                  className="btn-secondary"
+                >
+                  New Concept
+                </button>
               </>
             ) : null
           }
@@ -387,11 +367,7 @@ export function UiDesignWorkspace({
         {!isLoading && !error && mockups.length === 0 && (
           <EmptyState
             title="No UI mockups yet"
-            description={
-              readOnly
-                ? 'No shared UI mockups are available for this project yet.'
-                : 'Use Analyze Page for screenshot-based audits or New Concept for hand-authored HTML mockups and design notes.'
-            }
+            description="Use Analyze Page for screenshot-based audits or New Concept for hand-authored HTML mockups and design notes."
           />
         )}
         {!isLoading && !error && mockups.length > 0 && (
@@ -412,7 +388,6 @@ export function UiDesignWorkspace({
               setModalOpen(true)
             }}
             onPageChange={setPage}
-            getImageUrl={readOnly ? getViewerMockupImageUrl : undefined}
             isRating={ratingMutation.isPending}
             onRate={(mockupId, rating) =>
               ratingMutation.mutate({ mockupId, rating })
@@ -437,39 +412,31 @@ export function UiDesignWorkspace({
             }}
             onSelectMockup={setSelectedMockup}
             navigation={modalNavigation}
-            readOnly={readOnly}
-            fetchHistory={readOnly ? fetchViewerMockupHistory : undefined}
-            getImageUrl={readOnly ? getViewerMockupImageUrl : undefined}
-            getScreenshotUrl={readOnly ? getViewerScreenshotUrl : undefined}
             isRating={ratingMutation.isPending}
           />
         )}
 
-        {!readOnly && (
-          <GenerateMockupDialog
-            projectId={projectId}
-            open={generateDialogOpen}
-            onOpenChange={setGenerateDialogOpen}
-          />
-        )}
+        <GenerateMockupDialog
+          projectId={projectId}
+          open={generateDialogOpen}
+          onOpenChange={setGenerateDialogOpen}
+        />
 
-        {!readOnly && (
-          <CreateMockupDialog
-            projectId={projectId}
-            open={createDialogOpen}
-            onOpenChange={(open) => {
-              setCreateDialogOpen(open)
-              if (!open) {
-                setIterationParentMockup(null)
-              }
-            }}
-            parentMockup={iterationParentMockup}
-            onCreated={(mockup) => {
-              setSelectedMockup(mockup)
-              setModalOpen(true)
-            }}
-          />
-        )}
+        <CreateMockupDialog
+          projectId={projectId}
+          open={createDialogOpen}
+          onOpenChange={(open) => {
+            setCreateDialogOpen(open)
+            if (!open) {
+              setIterationParentMockup(null)
+            }
+          }}
+          parentMockup={iterationParentMockup}
+          onCreated={(mockup) => {
+            setSelectedMockup(mockup)
+            setModalOpen(true)
+          }}
+        />
 
         {showDeleteConfirm && (
           <ConfirmDeleteDialog
@@ -482,11 +449,9 @@ export function UiDesignWorkspace({
         )}
       </div>
 
-      {!readOnly && (
-        <div className="hidden w-80 flex-shrink-0 xl:block">
-          <DesignStandardsPanel projectId={projectId} />
-        </div>
-      )}
+      <div className="hidden w-80 flex-shrink-0 xl:block">
+        <DesignStandardsPanel projectId={projectId} />
+      </div>
     </div>
   )
 }
