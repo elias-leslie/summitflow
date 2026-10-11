@@ -19,6 +19,7 @@ from .backup_native_archive import archive_sha256
 from .backup_native_offsite import replicate_completed_archive
 from .backup_native_recovery import RECOVERY_DIR_NAME, RECOVERY_MANIFEST_NAME, restore_mapped_links
 from .backup_native_restore import restore_isolated_archive
+from .backup_ominull import OminullGuestOffline
 from .backup_utils import (
     as_mapping,
     build_storage_env,
@@ -339,6 +340,12 @@ def _run_backup(
                         expected_activity_run_id=on_progress.run_id,
                     )
             require_verified_backup_output(parsed_output)
+    except OminullGuestOffline as exc:
+        # Nothing was captured; drop the placeholder row instead of recording a failure.
+        if backup_id is not None:
+            backup_store.delete_backup_record(backup_id)
+        logger.info("create_backup_source_offline", source_id=resolved_source_id)
+        return {"status": "offline", "source_id": resolved_source_id, "project_id": project_id, "reason": str(exc)}
     except TimeoutError:
         if backup_id is None:
             return {

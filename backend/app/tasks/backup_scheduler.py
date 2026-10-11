@@ -18,6 +18,8 @@ from .backup_utils import _FREQUENCY_DELTAS, calculate_next_run
 
 logger = get_logger(__name__)
 SUCCESS_STATUSES = {"completed", "completed_pending_upload"}
+# An owner-powered-off source is retried each tick without counting as a failure.
+NON_FAILURE_STATUSES = SUCCESS_STATUSES | {"offline"}
 STALE_RUNNING_AGE_MINUTES = 30
 
 
@@ -129,6 +131,9 @@ def _process_due_source(
     )
 
     status = str(result.get("status", "unknown"))
+    if status == "offline":
+        logger.info("scheduled_backup_source_offline", source_id=source_id)
+        return {"source_id": source_id, "status": status, "reason": result.get("reason")}
     if status not in ("completed", "completed_pending_upload"):
         logger.warning(
             "scheduled_backup_source_failed",
@@ -242,12 +247,14 @@ def run_scheduled_backups(*, on_progress: Callable[[], None] | None = None) -> d
         copies = sync_repository_batch(batch)
 
         succeeded = sum(1 for result in results if result.get("status") in SUCCESS_STATUSES)
-        failed = len(results) - succeeded
+        offline = sum(1 for result in results if result.get("status") == "offline")
+        failed = sum(1 for result in results if result.get("status") not in NON_FAILURE_STATUSES)
         result: dict[str, Any] = {
             "status": "success" if failed == 0 else "partial",
             "count": len(results),
             "succeeded": succeeded,
             "failed": failed,
+            "offline": offline,
             "stale_failed": stale_failed,
             "stale_cleaned": stale_cleaned,
             "expired_cleaned": expired_count,

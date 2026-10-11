@@ -162,6 +162,21 @@ class TestCreateBackupTask:
         backup = backup_store.get_backup(str(result["backup_id"]))
         assert backup is not None and backup["status"] == "failed"
 
+    def test_powered_off_owner_guest_is_offline_not_a_failure(self, cleanup_project: str) -> None:
+        from app.tasks.backup_ominull import OminullGuestOffline
+
+        with (
+            patch("app.tasks.backup_ominull.prepare_ominull_backup", side_effect=OminullGuestOffline("powered off")),
+            patch("app.tasks.backup_executor.run_project_backup") as capture,
+            patch("app.tasks.backup_executor.create_notification") as notify,
+        ):
+            result = create_backup(project_id=cleanup_project)
+        capture.assert_not_called()
+        notify.assert_not_called()
+        assert result["status"] == "offline"
+        assert "backup_id" not in result
+        assert backup_store.list_backups(cleanup_project) == ([], 0)
+
     def test_create_backup_creates_record(self, cleanup_project: str) -> None:
         """Create backup creates a backup record."""
         # Mock native engine to avoid creating an actual archive

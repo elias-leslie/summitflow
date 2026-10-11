@@ -69,3 +69,12 @@ def test_staging_retirement_requires_qualified_matching_capture(
     if result:
         assert result["backup_id"] == published["backup_id"]
         assert result["sha256"] == published["sha256"]
+
+
+def test_only_the_exact_owner_skip_means_guest_offline() -> None:
+    skip = {"schema_version": 1, "status": "skipped", "reason": "guest_stopped", "project": "ominull",
+            "source_id": backup.SOURCE_ID, "backup_id": "bkp-fixture", "target_id": 150}
+    assert backup.is_guest_stopped_skip(skip, backup_id="bkp-fixture")
+    assert not backup.is_guest_stopped_skip(skip, backup_id="bkp-other")
+    for key, value in {"reason": "other", "status": "failed", "target_id": 151}.items():
+        assert not backup.is_guest_stopped_skip({**skip, key: value}, backup_id="bkp-fixture")

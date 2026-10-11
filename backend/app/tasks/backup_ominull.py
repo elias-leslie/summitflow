@@ -12,6 +12,10 @@ from ..storage import backups as backup_store
 from .backup_activity import run_bulk_process
 
 SOURCE_ID = "ominull-production-state"
+
+
+class OminullGuestOffline(RuntimeError):
+    """The owner powered the production guest off; there is nothing new to capture."""
 SOURCE_PATH = Path("/media/kasadis/Backups/ominull-production-state/current")
 
 
@@ -95,9 +99,19 @@ def prepare_ominull_backup(*, project_id: str, source_id: str, project_dir: str,
         raise RuntimeError("Ominull production refresh failed; retained owner evidence is required before retry")
     try:
         response = json.loads(result.stdout)
+        if is_guest_stopped_skip(response, backup_id=backup_id):
+            raise OminullGuestOffline("Ominull production guest is powered off; capture resumes when it runs")
         return validate_preparation(response, backup_id=backup_id)
     except (OSError, ValueError, KeyError, TypeError) as exc:
         raise RuntimeError("Ominull owner returned invalid production backup evidence") from exc
+
+
+def is_guest_stopped_skip(response: Any, *, backup_id: str) -> bool:
+    """Recognize the owner's exact skip for a guest the owner powered off."""
+    return isinstance(response, dict) and all(response.get(key) == value for key, value in {
+        "schema_version": 1, "status": "skipped", "reason": "guest_stopped", "project": "ominull",
+        "source_id": SOURCE_ID, "backup_id": backup_id, "target_id": 150,
+    }.items())
 
 
 def validate_preparation(response: Any, *, backup_id: str) -> dict[str, Any]:

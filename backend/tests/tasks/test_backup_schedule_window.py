@@ -237,3 +237,13 @@ def test_capture_never_publishes_even_with_retained_legacy_setting(monkeypatch, 
     assert result["status"] == capture_status
     assert "publication" not in result
     publish.assert_not_called()
+
+
+def test_offline_source_is_retried_next_tick_without_counting_as_failure(monkeypatch: pytest.MonkeyPatch) -> None:
+    advanced: list[str] = []
+    monkeypatch.setattr(scheduler, "create_backup", lambda **_: {"status": "offline", "reason": "powered off"})
+    monkeypatch.setattr(scheduler.backup_store, "update_source_last_run", lambda source_id, _: advanced.append(source_id))
+    result = scheduler._process_due_source({"id": "ominull-production-state", "project_id": "ominull", "frequency": "daily"})
+    assert result == {"source_id": "ominull-production-state", "status": "offline", "reason": "powered off"}
+    assert advanced == []
+    assert "offline" in scheduler.NON_FAILURE_STATUSES
