@@ -25,14 +25,6 @@ MONITORED_MAINTENANCE_WORKFLOWS = (
     "refresh_graphify_graphs",
     "runtime_hygiene",
 )
-_RETIRED_HEADROOM = 20
-# Retired workflows keep historical rows; the status card must not show them.
-RETIRED_MAINTENANCE_WORKFLOWS = frozenset({
-    "routine_upkeep",
-    "tool_governance",
-    "autonomous_work_pickup",
-    "restic_daily_pilot",
-})
 
 
 class DiskUsageResponse(BaseModel):
@@ -194,11 +186,9 @@ def get_maintenance_status(
         for workflow_name, run in maintenance_store.get_latest_maintenance_runs(
             MONITORED_MAINTENANCE_WORKFLOWS
         ).items()
-        if workflow_name not in RETIRED_MAINTENANCE_WORKFLOWS
     }
     recent = [
         MaintenanceRunResponse(**run)
-        for run in maintenance_store.list_maintenance_runs(limit=limit + _RETIRED_HEADROOM)
-        if run["workflow_name"] not in RETIRED_MAINTENANCE_WORKFLOWS
-    ][:limit]
+        for run in maintenance_store.list_maintenance_runs(limit=limit)
+    ]
     return MaintenanceStatusResponse(latest=latest, recent=recent)

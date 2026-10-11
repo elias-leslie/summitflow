@@ -4,6 +4,8 @@ from __future__ import annotations
 
 from datetime import UTC, datetime
 
+from app.api.system import MONITORED_MAINTENANCE_WORKFLOWS
+
 
 def test_get_system_resources_returns_all_monitored_disks(client, mocker) -> None:
     """System stats expose the root disk plus any extra monitored mounts."""
@@ -84,18 +86,6 @@ def test_get_maintenance_status_returns_latest_and_recent_runs(client, mocker) -
         "error_message": None,
         "created_at": now,
     }
-    upkeep_run = {
-        "id": 13,
-        "workflow_name": "routine_upkeep",
-        "status": "completed",
-        "started_at": now,
-        "finished_at": now,
-        "duration_ms": 750,
-        "rows_cleaned": 2,
-        "summary": {"tasks_created": 1, "dispatch": {"dispatched": 1}},
-        "error_message": None,
-        "created_at": now,
-    }
     runtime_hygiene_run = {
         "id": 14,
         "workflow_name": "runtime_hygiene",
@@ -112,13 +102,12 @@ def test_get_maintenance_status_returns_latest_and_recent_runs(client, mocker) -
         "app.api.system.maintenance_store.get_latest_maintenance_runs",
         return_value={
             "daily_maintenance": latest_run,
-            "routine_upkeep": upkeep_run,
             "runtime_hygiene": runtime_hygiene_run,
         },
     )
     mocker.patch(
         "app.api.system.maintenance_store.list_maintenance_runs",
-        return_value=[latest_run, upkeep_run, recent_run],
+        return_value=[latest_run, recent_run],
     )
 
     response = client.get("/api/system/maintenance?limit=2")
@@ -126,10 +115,7 @@ def test_get_maintenance_status_returns_latest_and_recent_runs(client, mocker) -
     assert response.status_code == 200
     payload = response.json()
     assert payload["latest"]["daily_maintenance"]["rows_cleaned"] == 42
-    # Retired workflows (routine_upkeep, tool_governance, ...) never reach the card.
-    assert "routine_upkeep" not in payload["latest"]
-    assert "routine_upkeep" not in get_latest.call_args.args[0]
-    assert "tool_governance" not in get_latest.call_args.args[0]
+    assert get_latest.call_args.args[0] == MONITORED_MAINTENANCE_WORKFLOWS
     assert payload["latest"]["runtime_hygiene"]["summary"]["created_task_ids"] == ["task-runtime"]
     assert payload["latest"]["daily_maintenance"]["summary"]["events_deleted"]["total_deleted"] == 8
     assert [run["workflow_name"] for run in payload["recent"]] == [
