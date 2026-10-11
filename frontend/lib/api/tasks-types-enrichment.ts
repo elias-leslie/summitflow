@@ -31,7 +31,9 @@ export interface Subtask {
   subtask_id: string
   phase: string
   description: string
-  steps: string[] // JSONB array (legacy)
+  steps: Array<
+    string | { step_number: number; description: string; passes?: boolean }
+  > // JSONB array
   steps_from_table?: Step[] // Normalized table steps (when include_steps=true)
   step_summary?: StepSummary // Step completion summary (when include_steps=true)
   passes: boolean

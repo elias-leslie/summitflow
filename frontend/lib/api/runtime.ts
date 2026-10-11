@@ -12,6 +12,8 @@ export interface RuntimeServiceStatus {
   ports: string[]
   // systemd boot auto-start: true=enabled, false=disabled, null=not togglable.
   auto_start: boolean | null
+  // false for system-manager units (host monitor) the dashboard cannot start/stop.
+  controllable?: boolean
 }
 
 export interface RuntimeServiceMetrics {

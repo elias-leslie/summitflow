@@ -12,8 +12,6 @@ interface Capability {
 
 interface LinkedCapabilitySectionProps {
   capability: Capability
-  /** Unused; kept until TaskModalContent stops passing it. */
-  projectId?: string
 }
 
 export function LinkedCapabilitySection({

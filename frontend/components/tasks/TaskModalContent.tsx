@@ -271,7 +271,6 @@ function VerificationResultSection({ result }: { result: VerificationResult }) {
 
 function OverviewPanel({
   task,
-  projectId,
   subtasks,
   isLoadingSubtasks,
   subtasksError,
@@ -336,12 +335,7 @@ function OverviewPanel({
       )}
 
       {/* Linked Capability */}
-      {capability && (
-        <LinkedCapabilitySection
-          capability={capability}
-          projectId={projectId}
-        />
-      )}
+      {capability && <LinkedCapabilitySection capability={capability} />}
 
       {/* Subtasks */}
       <section>
@@ -354,12 +348,7 @@ function OverviewPanel({
             <p className="text-sm text-rose-400">{subtasksError}</p>
           </div>
         ) : subtasks.length > 0 ? (
-          <SubtasksSection
-            projectId={projectId}
-            taskId={task.id}
-            subtasks={subtasks}
-            onTogglePass={onSubtaskToggle}
-          />
+          <SubtasksSection subtasks={subtasks} onTogglePass={onSubtaskToggle} />
         ) : (
           <div className="p-4 rounded-lg bg-slate-800/30 border border-slate-700/30 text-center">
             <p className="text-sm text-slate-600">No subtasks defined yet</p>

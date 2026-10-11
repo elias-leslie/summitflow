@@ -261,9 +261,11 @@ export function FileTree({
     setMenuTarget(null)
   }, [])
 
+  // The backend clamps browsing to its root; an empty relative path means we are there.
+  const atRoot = !data?.path || data.path === '.'
   const parentPath = useMemo(
-    () => getParentPath(data?.absolute_path ?? ''),
-    [data?.absolute_path],
+    () => (atRoot ? null : getParentPath(data?.absolute_path ?? '')),
+    [atRoot, data?.absolute_path],
   )
 
   const handleBrowse = useCallback(

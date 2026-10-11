@@ -17,8 +17,6 @@ import { StepsList } from './subtasks/StepsList'
 import { getStepInfo, groupByPhase } from './subtasks/utils'
 
 interface SubtasksSectionProps {
-  projectId: string
-  taskId: string
   subtasks: Subtask[]
   onTogglePass: (subtaskId: string, passes: boolean) => Promise<void>
   isLoading?: boolean

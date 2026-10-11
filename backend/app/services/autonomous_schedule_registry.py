@@ -84,7 +84,7 @@ SCHEDULE_DEFINITIONS: tuple[AutonomousScheduleDefinition, ...] = (
         config_key="refresh_precision_indexes_enabled",
         label="Precision index refresh",
         description="Rebuilds precision search indexes for symbol-first context retrieval.",
-        cron="10 */2 * * *",
+        cron="10 3 * * *",
         scope="system",
     ),
     AutonomousScheduleDefinition(

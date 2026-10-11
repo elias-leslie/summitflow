@@ -26,7 +26,8 @@ if TYPE_CHECKING:
 logger = get_logger(__name__)
 _SEARCH_LIMIT = 5
 # Scheduling health is diagnostic; age or a clean Git tree does not verify source.
-_PRECISION_INDEX_MAX_AGE = timedelta(minutes=150)
+# Full scans run every 6h; allow one missed sweep before calling the index stale.
+_PRECISION_INDEX_MAX_AGE = timedelta(minutes=390)
 
 PRECISION_CODE_SEARCH_GUIDANCE = (
     "Precision Code Search is optional navigation; prefer it when ranked discovery or current source excerpts help. "

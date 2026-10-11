@@ -37,7 +37,7 @@ function MetricStat({ label, value }: { label: string; value: string }) {
 
 interface ServiceCardProps {
   // controllable=false marks system-manager units (host monitor) the dashboard cannot start/stop.
-  container: RuntimeServiceStatus & { controllable?: boolean }
+  container: RuntimeServiceStatus
   metric?: RuntimeServiceMetrics
   metricSeries?: RuntimeMetricSeries
   metricsLoading?: boolean

@@ -10,7 +10,7 @@ from code_intelligence.precision import current_search
 from app.services.context_gatherer import precision_code_search as adapter
 
 
-@pytest.mark.parametrize(("minutes", "stale"), [(119, False), (151, True)])
+@pytest.mark.parametrize(("minutes", "stale"), [(119, False), (389, False), (391, True)])
 def test_scheduled_index_age_remains_diagnostic(monkeypatch, minutes: int, stale: bool) -> None:
     stamp = (datetime.now(UTC) - timedelta(minutes=minutes)).isoformat()
     monkeypatch.setattr(adapter.explorer_service, "get_stats", lambda *_a, **_k: {"total": 12, "last_scanned": stamp})

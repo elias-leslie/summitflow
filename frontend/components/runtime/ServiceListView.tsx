@@ -176,10 +176,7 @@ export function ServiceListView({
                       <ActionCell
                         service={s.service}
                         isRunning={isRunning}
-                        controllable={
-                          (s as { controllable?: boolean }).controllable !==
-                          false
-                        }
+                        controllable={s.controllable !== false}
                       />
                       <AutostartToggle
                         service={s.service}
