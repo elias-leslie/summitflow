@@ -25,6 +25,9 @@ WORKFLOW_NAME = "hatchet_retention_guard"
 DEFAULT_RETENTION_HOURS = 720.0
 DEFAULT_BATCH_SIZE = 50_000
 DEFAULT_BACKUP_TIMEOUT_SECONDS = 3600
+# Hatchet only schedules onto workers that heartbeated in the last 5 seconds;
+# an hour of silence means the process is gone but its row still says active.
+DEFAULT_STALE_WORKER_SECONDS = 3600
 
 _DURATION_RE = re.compile(r"(\d+(?:\.\d+)?)(ns|us|µs|ms|s|m|h)")
 _DURATION_UNIT_SECONDS = {
@@ -354,6 +357,61 @@ def _vacuum_tables(
     return results
 
 
+def _reap_stale_workers(
+    conninfo: str,
+    *,
+    stale_after_seconds: int,
+    dry_run: bool,
+) -> dict[str, Any]:
+    """Mark long-silent Hatchet workers inactive and drop their expired leases.
+
+    Uses Hatchet's own semantics: the dispatcher flips ``isActive`` false when a
+    worker disconnects, and the scheduler only leases workers with a heartbeat
+    in the last 5 seconds. Only already-expired WORKER leases are removed, so a
+    lease held by a running scheduler is never touched.
+    """
+    params = {"stale_after_seconds": stale_after_seconds}
+    stale_worker = """
+        COALESCE(w."lastHeartbeatAt", w."createdAt")
+            < NOW() - make_interval(secs => %(stale_after_seconds)s)
+    """
+    stale_lease = f"""
+        l."kind" = 'WORKER'
+        AND l."expiresAt" < NOW()
+        AND NOT EXISTS (
+            SELECT 1 FROM "Worker" w
+            WHERE w."id"::text = l."resourceId" AND NOT ({stale_worker})
+        )
+    """
+    with psycopg.connect(conninfo) as conn:
+        _set_maintenance_timeouts(conn)
+        with conn.cursor() as cur:
+            if dry_run:
+                cur.execute(
+                    f'SELECT count(*) FROM "Worker" w WHERE w."isActive" AND {stale_worker}',
+                    params,
+                )
+                workers = int(cur.fetchone()[0])  # type: ignore[index]
+                cur.execute(f'SELECT count(*) FROM "Lease" l WHERE {stale_lease}', params)
+                leases = int(cur.fetchone()[0])  # type: ignore[index]
+            else:
+                cur.execute(
+                    f'UPDATE "Worker" w SET "isActive" = false WHERE w."isActive" AND {stale_worker}',
+                    params,
+                )
+                workers = max(cur.rowcount, 0)
+                cur.execute(f'DELETE FROM "Lease" l WHERE {stale_lease}', params)
+                leases = max(cur.rowcount, 0)
+        conn.commit()
+    return {
+        "stale_after_seconds": stale_after_seconds,
+        "workers_deactivated": 0 if dry_run else workers,
+        "leases_deleted": 0 if dry_run else leases,
+        "stale_active_workers": workers,
+        "stale_worker_leases": leases,
+    }
+
+
 def run_hatchet_retention_guard(
     *,
     dry_run: bool = False,
@@ -363,8 +421,13 @@ def run_hatchet_retention_guard(
     backup_dir: Path | None = None,
     vacuum: bool = True,
     now: datetime | None = None,
+    stale_worker_seconds: int = DEFAULT_STALE_WORKER_SECONDS,
 ) -> dict[str, Any]:
-    """Prune Hatchet OLAP/lookup rows older than Hatchet tenant retention."""
+    """Prune Hatchet OLAP/lookup rows older than Hatchet tenant retention.
+
+    Also deactivates workers silent for ``stale_worker_seconds`` and removes
+    their expired leases.
+    """
     if batch_size <= 0:
         raise ValueError("batch_size must be positive")
 
@@ -376,6 +439,11 @@ def run_hatchet_retention_guard(
         existing_names, tenant_retention, resolved_retention_hours = _get_hatchet_context(
             conninfo,
             retention_hours,
+        )
+        stale_workers = _reap_stale_workers(
+            conninfo,
+            stale_after_seconds=stale_worker_seconds,
+            dry_run=dry_run,
         )
         cutoff_base = now or datetime.now(UTC)
         if cutoff_base.tzinfo is None:
@@ -396,6 +464,7 @@ def run_hatchet_retention_guard(
                 "backup": None,
                 "vacuum": {},
                 "tenant_retention": tenant_retention,
+                "stale_workers": stale_workers,
             }
             return result
 
@@ -430,6 +499,7 @@ def run_hatchet_retention_guard(
             "backup": backup_result,
             "vacuum": vacuum_results,
             "tenant_retention": tenant_retention,
+            "stale_workers": stale_workers,
         }
 
         if not dry_run:
