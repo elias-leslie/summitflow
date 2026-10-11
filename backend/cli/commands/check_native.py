@@ -116,6 +116,10 @@ def _environment_identity(root: Path, path: Path, *, commit: str | None = None) 
             # Bind them conservatively; native Python writes to a fresh prefix.
             subdirs[:] = sorted(name for name in subdirs if not (relative := workspace_source(current / name, resolved_directory))
                                 or relative in tree or any(item.startswith(relative + "/") for item in tree))
+            # Vitest rewrites its run-order cache on every test run; it is not a
+            # dependency input, and binding it makes acceptance drift mid-check.
+            if path.name == "node_modules" and current == path / ".vite":
+                subdirs[:] = [name for name in subdirs if name != "vitest"]
             for name in subdirs:
                 candidate = current / name
                 if candidate.is_symlink():

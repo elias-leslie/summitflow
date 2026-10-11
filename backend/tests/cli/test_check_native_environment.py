@@ -76,3 +76,22 @@ def test_selected_environment_preserves_symlink_confinement_and_consumed_inputs(
     assert changed != before
     external.write_text("changed external dependency\n")
     assert _environment_identity(alias, alias / "prepared", commit="selected") != changed
+
+
+def test_node_modules_identity_ignores_vitest_results_cache(tmp_path: Path) -> None:
+    modules = tmp_path / "node_modules"
+    (modules / "dependency").mkdir(parents=True)
+    (modules / "dependency/index.js").write_text("module.exports = 1\n")
+    results = modules / ".vite/vitest/hash/results.json"
+    results.parent.mkdir(parents=True)
+    results.write_text('{"first": true}')
+    optimized = modules / ".vite/deps/chunk.js"
+    optimized.parent.mkdir(parents=True)
+    optimized.write_text("export default 1\n")
+    before = _environment_identity(tmp_path, modules)
+
+    results.write_text('{"second": true}')
+    assert _environment_identity(tmp_path, modules) == before
+
+    optimized.write_text("export default 2\n")
+    assert _environment_identity(tmp_path, modules) != before
