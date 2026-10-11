@@ -1,60 +1,13 @@
-"""Task AI enrichment schemas."""
+"""Task cleanup-prompt, capability and blocker schemas."""
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Literal
+from typing import TYPE_CHECKING
 
 from pydantic import BaseModel, Field
 
-from ..constants import TaskType
-
 if TYPE_CHECKING:
-    from .task_base import TaskResponse
     from .task_criteria import AcceptanceCriterion
-
-
-class EnrichmentRequest(BaseModel):
-    """Request model for triggering AI task enrichment."""
-
-    raw_request: str = Field(min_length=10, description="Natural language task description")
-    priority: int | None = Field(default=None, ge=0, le=4, description="Optional priority override")
-    task_type: TaskType | None = Field(
-        default=None, description="Optional type override"
-    )
-
-
-class EnrichmentResponse(BaseModel):
-    """Response model after starting enrichment."""
-
-    task_id: str
-    enrichment_status: str
-    message: str
-
-
-class DiscussionMessage(BaseModel):
-    """A single message in a task discussion."""
-
-    role: Literal["user", "assistant"]
-    content: str
-    timestamp: str
-
-
-class DiscussionRequest(BaseModel):
-    """Request model for discussing a task with AI."""
-
-    message: str = Field(min_length=1, description="User message")
-
-
-class DiscussionResponse(BaseModel):
-    """Response model for task discussion."""
-
-    response: str = Field(description="Agent response text")
-    updated_task: TaskResponse | None = Field(
-        default=None, description="Updated task if changes were made"
-    )
-    history: list[DiscussionMessage] = Field(
-        default_factory=list, description="Full conversation history"
-    )
 
 
 class CleanupPromptRequest(BaseModel):

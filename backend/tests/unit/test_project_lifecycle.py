@@ -93,8 +93,6 @@ def test_routes_filter_before_health_and_allow_explicit_inventory(identities, mo
     assert list(health.call_args.args[0]) == [('current', 'http://localhost:1', '/health'), ('old', 'http://localhost:1', '/health')]
     from app.api.projects.models import ProjectStats
     monkeypatch.setattr(projects, 'fetch_project_stats', lambda ids: {name: ProjectStats() for name in ids})
-    monkeypatch.setattr(projects, '_get_quality_summaries', lambda ids: {
-        name: {'project_id': name, 'overall_pass': True, 'total_unfixed': 0, 'checks': {}} for name in ids})
     monkeypatch.setattr(projects, 'get_active_checkpoint_map', lambda: {})
     response = client.get('/projects/with-stats')
     assert response.status_code == 200

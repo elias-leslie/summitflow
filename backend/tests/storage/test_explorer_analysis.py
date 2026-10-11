@@ -129,15 +129,13 @@ def test_get_refactor_targets_includes_top_symbols(
             "end_line": 38,
         },
     ]
-    assert result["targets"][0]["should_create_task"]
-    assert result["targets"][0]["recommended_action"] == "create_task"
-    assert result["targets"][0]["promotion_reasons"]
+    assert "should_create_task" not in result["targets"][0]
 
 
 def test_get_refactor_targets_excludes_tool_cache_and_vendor_paths(
     refactor_project: str,
 ) -> None:
-    """Refactor task generation should only target project source files."""
+    """Refactor targets should only include project source files."""
     project_id = refactor_project
     source_path = "backend/app/services/useful_service.py"
     excluded_paths = [
@@ -158,5 +156,4 @@ def test_get_refactor_targets_excludes_tool_cache_and_vendor_paths(
     paths = {target["path"] for target in result["targets"]}
 
     assert paths == {source_path}
-    assert explorer_analysis.get_promotable_refactor_paths(project_id) == {source_path}
     assert result["summary"]["high_priority_count"] == 1

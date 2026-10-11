@@ -31,16 +31,6 @@ _POLICY = {
 }
 
 
-def test_work_pickup_batch_limit_uses_agent_hub_config_and_legacy_default() -> None:
-    assert automation_dispatch._work_pickup_batch_limit({"batch_limit": 3}) == 3
-    assert automation_dispatch._work_pickup_batch_limit({}) == 10
-
-
-def test_work_pickup_batch_limit_rejects_invalid_values() -> None:
-    with pytest.raises(ValueError):
-        automation_dispatch._work_pickup_batch_limit({"batch_limit": 0})
-
-
 def _request() -> AutomationDispatchRequest:
     return AutomationDispatchRequest(
         run_id="run-1",
@@ -184,9 +174,10 @@ async def test_outbox_reconciler_resumes_pending_receipts(mocker) -> None:
 
 
 @pytest.mark.asyncio
-async def test_owner_work_uses_central_work_pickup_batch_limit(mocker) -> None:
+@pytest.mark.parametrize("workflow_key", ["work_pickup", "task_generation"])
+async def test_retired_autonomous_workflows_are_skipped_without_domain_work(mocker, workflow_key) -> None:
     payload = {
-        "workflow_key": "work_pickup",
+        "workflow_key": workflow_key,
         "profile_id": "profile-1",
         "project_id": "agent-hub",
         "config": {"batch_limit": 3},
@@ -197,52 +188,7 @@ async def test_owner_work_uses_central_work_pickup_batch_limit(mocker) -> None:
         "owner_run_id": "owner-1",
         "status": "queued",
         "request_payload": payload,
-        "workflow_key": "work_pickup",
-        "profile_id": "profile-1",
-        "project_id": "agent-hub",
-    }
-    mocker.patch(
-        "app.services.automation_dispatch.automation_dispatches.get_automation_run",
-        return_value=receipt,
-    )
-    mocker.patch(
-        "app.services.automation_dispatch.automation_dispatches.claim_automation_run",
-        return_value=receipt,
-    )
-    mocker.patch(
-        "app.services.automation_dispatch.automation_dispatches.finish_automation_run",
-        return_value={**receipt, "status": "succeeded", "result": {"dispatched": 0}},
-    )
-    mocker.patch("app.services.automation_dispatch._report_completion", new_callable=AsyncMock)
-    mocker.patch("app.workflows.pipeline._make_dispatch_callback", return_value=object())
-    calls: list[tuple[str, tuple[object, ...], dict[str, object]]] = []
-
-    async def fake_to_thread(function, *args, **kwargs):
-        calls.append((function.__name__, args, kwargs))
-        return {"status": "completed", "dispatched": 0}
-
-    mocker.patch("app.services.automation_dispatch.asyncio.to_thread", side_effect=fake_to_thread)
-
-    await automation_dispatch.execute_automation_run("run-1", "owner-1", worker_run_id="hatchet-1")
-
-    assert calls[0][2]["limit"] == 3
-
-
-@pytest.mark.asyncio
-async def test_owner_work_respects_central_autonomous_enabled_gate(mocker) -> None:
-    payload = {
-        "workflow_key": "work_pickup",
-        "profile_id": "profile-1",
-        "project_id": "agent-hub",
-        "config": {"batch_limit": 3},
-        "policy_config": {**_POLICY, "autonomous_enabled": False},
-    }
-    receipt = {
-        "run_id": "run-1",
-        "owner_run_id": "owner-1",
-        "status": "queued",
-        "request_payload": payload,
-        "workflow_key": "work_pickup",
+        "workflow_key": workflow_key,
         "profile_id": "profile-1",
         "project_id": "agent-hub",
     }
@@ -260,6 +206,7 @@ async def test_owner_work_respects_central_autonomous_enabled_gate(mocker) -> No
     )
     mocker.patch("app.services.automation_dispatch._report_completion", new_callable=AsyncMock)
     domain = mocker.patch("app.services.automation_dispatch.asyncio.to_thread")
+    browser = mocker.patch("app.services.automation_dispatch.execute_browser_workflow", new_callable=AsyncMock)
 
     result = await automation_dispatch.execute_automation_run(
         "run-1", "owner-1", worker_run_id="hatchet-1"
@@ -267,8 +214,9 @@ async def test_owner_work_respects_central_autonomous_enabled_gate(mocker) -> No
 
     assert result["status"] == "skipped"
     assert finish.call_args.kwargs["status"] == "skipped"
-    assert finish.call_args.kwargs["result"]["reason"] == "autonomous_enabled_disabled"
+    assert finish.call_args.kwargs["result"]["reason"] == "workflow_retired"
     domain.assert_not_called()
+    browser.assert_not_awaited()
 
 
 @pytest.mark.asyncio

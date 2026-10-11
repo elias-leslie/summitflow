@@ -53,11 +53,6 @@ def _make_dry_run_detail(proj_id: str, proj_name: str) -> dict[str, Any]:
 def dispatch_post_scan_tasks(dispatch: Callable[[str, str, str], None], proj_id: str) -> None:
     """Trigger post-scan downstream tasks via the dispatch callback."""
     logger.info("triggering_post_scan_tasks", project_id=proj_id)
-    dispatch("generate_tasks", "", proj_id)
-    # DISABLED: Schema tasks created 210+ pending debt tasks with 172 duplicates,
-    # 0 ever completed. Violations remain visible on Explorer health dashboard. — 2026-02-20
-    # dispatch("schema_tasks", "", proj_id)
-    dispatch("architecture_tasks", "", proj_id)
     dispatch("check_resolved", "", proj_id)
 
 

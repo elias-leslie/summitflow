@@ -20,12 +20,9 @@ from .api import (
     agent_hub,
     agent_sessions,
     auth,
-    auto_fix,
-    autonomous,
     backups,
     browser_sessions,
     checkpoints,
-    console_errors,
     db_workbench,
     dependency_management,
     design_standards,
@@ -40,13 +37,10 @@ from .api import (
     notes,
     notifications,
     projects,
-    quality_gate,
-    refactor_sessions,
     schemas,
     snapshots,
     system,
     tasks,
-    ws_execution,
 )
 from .config import settings
 from .exception_handlers import setup_exception_handlers
@@ -145,23 +139,17 @@ app.include_router(db_workbench.router, prefix="/api/projects", tags=["db-workbe
 app.include_router(tasks.router, prefix="/api", tags=["tasks"])
 app.include_router(notifications.router, prefix="/api", tags=["notifications"])
 app.include_router(notes.router, prefix="/api", tags=["notes"])
-app.include_router(autonomous.router, prefix="/api/projects", tags=["autonomous"])
-app.include_router(refactor_sessions.router, prefix="/api/projects", tags=["refactoring"])
 app.include_router(schemas.router, prefix="/api", tags=["schemas"])
 app.include_router(git.router, prefix="/api", tags=["git"])
 app.include_router(backups.router, prefix="/api", tags=["backups"])
 app.include_router(snapshots.router, prefix="/api", tags=["snapshots"])
 app.include_router(design_standards.router, prefix="/api", tags=["design-standards"])
-app.include_router(quality_gate.router, prefix="/api", tags=["quality-gate"])
-app.include_router(auto_fix.router, prefix="/api", tags=["quality-gate"])
-app.include_router(console_errors.router, prefix="/api", tags=["quality-gate"])
 app.include_router(activity.router, prefix="/api", tags=["activity"])
 app.include_router(mockups.router, prefix="/api", tags=["mockups"])
 app.include_router(checkpoints.router, tags=["checkpoints"])
 app.include_router(agent_hub.router, prefix="/api", tags=["agent-hub"])
 app.include_router(events.router, prefix="/api", tags=["events"])
 app.include_router(system.router, tags=["system"])
-app.include_router(ws_execution.router, tags=["execution"])
 app.include_router(docker.router, prefix="/api/docker", tags=["runtime"])
 
 

@@ -1,43 +1,33 @@
 """Scheduled (cron) workflows for SummitFlow.
 
-17 cron workflows on Hatchet schedule; 14 enabled by default.
-Autonomous work pickup is explicit opt-in so missing project config cannot dispatch work.
+System maintenance crons, each gated by a flag in app.services.schedule_registry.
 Most use ConcurrencyExpression with CANCEL_IN_PROGRESS; explorer maintenance shares
 CANCEL_NEWEST concurrency so scan/index jobs do not overlap.
 
 Schedule philosophy (2026-03-16 tuning):
   - Health/smoke: */5 to */30 min — enough for alerting, not so frequent it drains CPU
   - Explorer/indexes: */2h — batch git ops on 6000+ files are the biggest CPU cost
-  - Cleanup/maintenance: hourly due checks for opt-in upkeep, daily retention
+  - Cleanup/maintenance: daily retention
   - Claims reset: */15 min — lightweight DB query, kept frequent for task flow
 """
 
 from __future__ import annotations
 
 import asyncio
-from datetime import UTC, datetime, timedelta
 from typing import Any
 
 from hatchet_sdk import ConcurrencyExpression, ConcurrencyLimitStrategy, Context
 
 from ..hatchet_app import hatchet
-from ..services.autonomous_schedule_registry import (
+from ..services.schedule_registry import (
     SUMMITFLOW_CONTROL_PROJECT_ID,
     is_schedule_enabled,
 )
 from .backup_progress import make_backup_progress_callback
 from .models import (
     EmptyInput,
-    ProjectInput,
-    SelfHealingInput,
     StaleCleanupInput,
 )
-
-WORK_PICKUP_WORKFLOW = "autonomous_work_pickup"
-
-
-def _project_schedule_enabled(project_id: str, schedule_id: str) -> bool:
-    return is_schedule_enabled(project_id, schedule_id)
 
 
 def _system_schedule_enabled(schedule_id: str) -> bool:
@@ -55,133 +45,6 @@ def _disabled_schedule_result(
     return result
 
 
-def _enabled_project_ids(schedule_id: str) -> list[str]:
-    from ..storage.projects import list_projects
-
-    return [
-        str(project["id"])
-        for project in list_projects()
-        if _project_schedule_enabled(str(project["id"]), schedule_id)
-    ]
-
-
-def _work_pickup_due(project_id: str) -> bool:
-    from ..storage import agent_configs
-    from ..storage import maintenance_runs as maintenance_store
-
-    config = agent_configs.get_agent_config(project_id)
-    frequency_minutes = int(config.get("autonomous_frequency_minutes", 30) or 30)
-    recent = maintenance_store.list_maintenance_runs(
-        limit=1,
-        workflow_name=WORK_PICKUP_WORKFLOW,
-        project_id=project_id,
-    )
-    if not recent:
-        return True
-    started_at = recent[0].get("started_at")
-    if not isinstance(started_at, datetime):
-        return True
-    if started_at.tzinfo is None:
-        started_at = started_at.replace(tzinfo=UTC)
-    return datetime.now(UTC) - started_at >= timedelta(minutes=frequency_minutes)
-
-
-def _record_work_pickup(project_id: str, started_at: datetime, result: dict[str, Any]) -> None:
-    from ..storage import maintenance_runs as maintenance_store
-
-    summary = {"project_id": project_id, **result}
-    status = "failed" if result.get("status") in {"disabled", "unhealthy"} else "completed"
-    error_message = str(result.get("reason") or "") if status == "failed" else ""
-    maintenance_store.record_maintenance_run(
-        WORK_PICKUP_WORKFLOW,
-        status,
-        started_at=started_at,
-        finished_at=datetime.now(UTC),
-        rows_cleaned=int(result.get("dispatched", 0) or 0),
-        summary=summary,
-        error_message=error_message or None,
-    )
-
-
-async def _run_work_pickup_for_project(project_id: str) -> dict[str, Any]:
-    from ..storage.automation_clock_fences import automation_clock_lock
-
-    with automation_clock_lock(project_id, "work_pickup"):
-        return await _run_work_pickup_with_clock_lock(project_id)
-
-
-async def _run_work_pickup_with_clock_lock(project_id: str) -> dict[str, Any]:
-    from ..services.agent_hub_automations import legacy_clock_owns
-    from ..storage.automation_clock_fences import is_agent_hub_clock_fenced
-    from ..tasks.autonomous.pickup import autonomous_work_pickup
-    from .pipeline import _make_dispatch_callback
-
-    if is_agent_hub_clock_fenced(project_id, "work_pickup"):
-        return {"schedule_id": "work_pickup", "status": "skipped", "reason": "agent_hub_clock_fence", "project_id": project_id}
-    if not legacy_clock_owns(project_id, "work_pickup"):
-        return {"schedule_id": "work_pickup", "status": "skipped", "reason": "agent_hub_clock_owner", "project_id": project_id}
-    if not _project_schedule_enabled(project_id, "work_pickup"):
-        return _disabled_schedule_result("work_pickup", project_id=project_id)
-    if not _work_pickup_due(project_id):
-        return {
-            "schedule_id": "work_pickup",
-            "status": "skipped",
-            "reason": "not_due",
-            "project_id": project_id,
-        }
-
-    started_at = datetime.now(UTC)
-    dispatch = _make_dispatch_callback()
-    result = await asyncio.to_thread(autonomous_work_pickup, project_id, dispatch=dispatch)
-    await asyncio.to_thread(_record_work_pickup, project_id, started_at, dict(result))
-    return dict(result)
-
-
-async def _run_task_generation_for_project(project_id: str) -> dict[str, Any]:
-    from ..storage.automation_clock_fences import automation_clock_lock
-
-    with automation_clock_lock(project_id, "task_generation"):
-        return await _run_task_generation_with_clock_lock(project_id)
-
-
-async def _run_task_generation_with_clock_lock(project_id: str) -> dict[str, Any]:
-    from ..services.agent_hub_automations import legacy_clock_owns
-    from ..storage.automation_clock_fences import is_agent_hub_clock_fenced
-    from ..tasks.autonomous.upkeep import run_routine_upkeep
-
-    if is_agent_hub_clock_fenced(project_id, "task_generation"):
-        return {"schedule_id": "task_generation", "status": "skipped", "reason": "agent_hub_clock_fence", "project_id": project_id}
-    if not legacy_clock_owns(project_id, "task_generation"):
-        return {"schedule_id": "task_generation", "status": "skipped", "reason": "agent_hub_clock_owner", "project_id": project_id}
-    if not _project_schedule_enabled(project_id, "task_generation"):
-        return _disabled_schedule_result("task_generation", project_id=project_id)
-
-    return await asyncio.to_thread(
-        run_routine_upkeep,
-        project_id,
-    )
-
-
-async def _run_project_schedule_for_enabled_projects(schedule_id: str) -> dict[str, Any]:
-    project_ids = _enabled_project_ids(schedule_id)
-    results: dict[str, dict[str, Any]] = {}
-    for project_id in project_ids:
-        if schedule_id == "work_pickup":
-            results[project_id] = await _run_work_pickup_for_project(project_id)
-        else:
-            results[project_id] = await _run_task_generation_for_project(project_id)
-    return {
-        "schedule_id": schedule_id,
-        "status": "completed",
-        "project_count": len(project_ids),
-        "dispatched": sum(
-            int((result.get("dispatch") or {}).get("dispatched", result.get("dispatched", 0)) or 0)
-            for result in results.values()
-        ),
-        "projects": results,
-    }
-
-
 def _explorer_schedule_concurrency() -> ConcurrencyExpression:
     """Shared concurrency guard for memory-heavy explorer maintenance workflows."""
 
@@ -190,25 +53,6 @@ def _explorer_schedule_concurrency() -> ConcurrencyExpression:
         max_runs=1,
         limit_strategy=ConcurrencyLimitStrategy.CANCEL_NEWEST,
     )
-
-
-@hatchet.task(
-    name="summitflow-work-pickup",
-    input_validator=ProjectInput,
-    execution_timeout="600s",
-    retries=3,
-    backoff_factor=2.0,
-    on_crons=["*/15 * * * *"],
-    concurrency=ConcurrencyExpression(
-        expression="'summitflow-work-pickup'",
-        max_runs=1,
-        limit_strategy=ConcurrencyLimitStrategy.CANCEL_IN_PROGRESS,
-    ),
-)
-async def work_pickup_wf(input: ProjectInput, ctx: Context) -> dict[str, Any]:
-    if input.project_id == SUMMITFLOW_CONTROL_PROJECT_ID:
-        return await _run_project_schedule_for_enabled_projects("work_pickup")
-    return await _run_work_pickup_for_project(input.project_id)
 
 
 @hatchet.task(
@@ -245,12 +89,12 @@ async def reset_claims_wf(input: EmptyInput, ctx: Context) -> dict[str, Any]:
 )
 async def scan_projects_wf(input: EmptyInput, ctx: Context) -> dict[str, Any]:
     from ..tasks.explorer_tasks import scan_all_projects
-    from .pipeline import _make_dispatch_callback
+    from .utility import make_post_scan_dispatch
 
     if not _system_schedule_enabled("scan_projects"):
         return _disabled_schedule_result("scan_projects")
 
-    dispatch = _make_dispatch_callback()
+    dispatch = make_post_scan_dispatch()
     return await asyncio.to_thread(
         scan_all_projects,
         dry_run=False,
@@ -399,48 +243,6 @@ async def hatchet_retention_wf(input: EmptyInput, ctx: Context) -> dict[str, Any
         return _disabled_schedule_result("hatchet_retention")
 
     return await asyncio.to_thread(run_hatchet_retention_guard)
-
-
-@hatchet.task(
-    name="summitflow-task-generation",
-    input_validator=ProjectInput,
-    execution_timeout="600s",
-    retries=3,
-    backoff_factor=2.0,
-    on_crons=["0 * * * *"],
-    concurrency=ConcurrencyExpression(
-        expression="'summitflow-task-generation'",
-        max_runs=1,
-        limit_strategy=ConcurrencyLimitStrategy.CANCEL_IN_PROGRESS,
-    ),
-)
-async def task_generation_wf(input: ProjectInput, ctx: Context) -> dict[str, Any]:
-    if input.project_id == SUMMITFLOW_CONTROL_PROJECT_ID:
-        return await _run_project_schedule_for_enabled_projects("task_generation")
-    return await _run_task_generation_for_project(input.project_id)
-
-
-@hatchet.task(
-    name="summitflow-self-healing",
-    input_validator=SelfHealingInput,
-    execution_timeout="900s",
-    retries=3,
-    backoff_factor=2.0,
-    on_crons=["*/30 * * * *"],
-    concurrency=ConcurrencyExpression(
-        expression="'summitflow-self-healing'",
-        max_runs=1,
-        limit_strategy=ConcurrencyLimitStrategy.CANCEL_IN_PROGRESS,
-    ),
-)
-async def self_healing_wf(input: SelfHealingInput, ctx: Context) -> dict[str, Any]:
-    from ..tasks.self_healing import orchestrate_self_healing
-
-    if not _system_schedule_enabled("self_healing"):
-        return _disabled_schedule_result("self_healing")
-
-    return await asyncio.to_thread(orchestrate_self_healing, input.max_errors, input.enabled)
-
 
 
 @hatchet.task(

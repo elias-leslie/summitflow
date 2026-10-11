@@ -8,7 +8,6 @@ from psycopg.types.json import Jsonb
 
 from ..constants import TASK_TYPE_VALUES
 from ..logging_config import get_logger
-from ..services.autonomous_policy import current_execution_policy
 from .connection import get_connection, get_cursor
 
 logger = get_logger(__name__)
@@ -140,7 +139,7 @@ def _get_stored_agent_config(project_id: str) -> AgentConfig:
 
 
 def get_agent_config(project_id: str) -> AgentConfig:
-    """Get effective config, overlaying a callback's policy snapshot if bound.
+    """Get the stored agent config for a project, merged over defaults.
 
     Args:
         project_id: Project ID
@@ -148,11 +147,7 @@ def get_agent_config(project_id: str) -> AgentConfig:
     Returns:
         AgentConfig dict, or default config if not set
     """
-    result = _get_stored_agent_config(project_id)
-    execution_policy = current_execution_policy()
-    if execution_policy is not None:
-        result.update(execution_policy)
-    return result
+    return _get_stored_agent_config(project_id)
 
 
 def update_agent_config(project_id: str, config: AgentConfig) -> AgentConfig:
@@ -201,48 +196,20 @@ from .agent_configs_agents import (  # noqa: E402
     get_enabled_agents,
     set_default_agent,
 )
-from .agent_configs_autonomous import (  # noqa: E402
-    get_allowed_task_types,
-    get_cooldown_minutes,
-    get_max_extensions,
-    get_max_self_fix_attempts,
-    get_max_supervisor_attempts,
-    get_max_tasks_per_day,
-    get_require_review,
-)
 from .agent_configs_components import (  # noqa: E402
     COMPONENT_SOURCES,
     get_component_source,
     set_component_source,
-)
-from .agent_configs_quality import (  # noqa: E402
-    build_dt_command,
-    build_st_check_command,
-    get_quality_gate_fix_enabled,
-    get_quality_gate_mode,
-    get_quality_gate_tools,
 )
 
 __all__ = [
     "COMPONENT_SOURCES",
     "DEFAULT_AGENT_CONFIG",
     "AgentConfig",
-    "build_dt_command",
-    "build_st_check_command",
     "enable_agent",
     "get_agent_config",
-    "get_allowed_task_types",
     "get_component_source",
-    "get_cooldown_minutes",
     "get_enabled_agents",
-    "get_max_extensions",
-    "get_max_self_fix_attempts",
-    "get_max_supervisor_attempts",
-    "get_max_tasks_per_day",
-    "get_quality_gate_fix_enabled",
-    "get_quality_gate_mode",
-    "get_quality_gate_tools",
-    "get_require_review",
     "set_component_source",
     "set_default_agent",
     "update_agent_config",

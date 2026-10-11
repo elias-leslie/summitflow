@@ -12,8 +12,6 @@ from typing import Any
 
 from psycopg import sql
 
-from app.services.refactor_promotion import assess_refactor_target
-
 from .connection import get_cursor
 from .explorer_analysis_helpers import (
     REFACTOR_SUMMARY_SQL,
@@ -165,33 +163,8 @@ def get_refactor_targets(
 
     for target in targets:
         target["top_symbols"] = summarize_symbols_for_file(project_id, target["path"])
-        target.update(assess_refactor_target(target).to_dict())
 
     return {"targets": targets, "summary": summary}
-
-
-def get_promotable_refactor_paths(
-    project_id: str,
-    *,
-    limit: int = 5000,
-    code_only: bool = True,
-    extensions: list[str] | None = None,
-) -> set[str]:
-    """Return paths that still qualify for generated refactor work."""
-    conditions, params = _build_refactor_filter_conditions(
-        project_id=project_id, extensions=extensions, code_only=code_only
-    )
-    with get_cursor() as cur:
-        cur.execute(
-            sql.SQL(REFACTOR_TARGETS_SQL).format(where_clause=build_where_clause(conditions)),
-            (*params, limit),
-        )
-        targets = [row_to_target(row) for row in cur.fetchall()]
-    return {
-        str(target["path"])
-        for target in targets
-        if assess_refactor_target(target).should_create_task
-    }
 
 
 def count_stale_metadata_entries(project_id: str, min_version: int = 2) -> int:

@@ -7,7 +7,7 @@ from collections.abc import Iterator
 from contextlib import contextmanager
 from uuid import NAMESPACE_URL, uuid5
 
-from .connection import get_connection, get_cursor
+from .connection import get_connection
 
 
 def _lock_id(project_id: str, workflow_key: str) -> int:
@@ -32,16 +32,6 @@ def automation_clock_lock(project_id: str, workflow_key: str) -> Iterator[None]:
         finally:
             cur.execute("SELECT pg_advisory_unlock(%s)", (key,))
             conn.commit()
-
-
-def is_agent_hub_clock_fenced(project_id: str, workflow_key: str) -> bool:
-    with get_cursor() as cur:
-        cur.execute(
-            "SELECT 1 FROM automation_clock_fences "
-            "WHERE project_id = %s AND workflow_key = %s",
-            (project_id, workflow_key),
-        )
-        return cur.fetchone() is not None
 
 
 def fence_clock_to_agent_hub(project_id: str, workflow_key: str) -> str:

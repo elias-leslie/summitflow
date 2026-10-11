@@ -8,7 +8,6 @@ import pytest
 from agent_hub.exceptions import AgentHubError
 from agent_hub.models import SessionListResponse
 
-from app.api import autonomous
 from app.services import _lane_inventory
 
 _SESSION = {
@@ -58,42 +57,3 @@ def test_lane_inventory_raises_other_agent_hub_errors() -> None:
         pytest.raises(AgentHubError),
     ):
         _lane_inventory.fetch_live_project_inventory("p")
-
-
-class _Async:
-    def __init__(self, result: dict | Exception) -> None:
-        self.result = result
-
-    async def __aenter__(self) -> _Async:
-        return self
-
-    async def __aexit__(self, *exc: object) -> None:
-        return None
-
-    async def get_execution_permission(self, project_id: str) -> dict:
-        if isinstance(self.result, Exception):
-            raise self.result
-        return self.result
-
-
-@pytest.mark.asyncio
-@pytest.mark.parametrize(
-    ("result", "reason"),
-    [
-        (AgentHubError("missing", status_code=404), "permission_missing"),
-        (AgentHubError("boom", status_code=503), "agent_hub_http_503"),
-        (AgentHubError("not an object"), "invalid_agent_hub_response"),
-        (ConnectionError("down"), "agent_hub_unreachable: down"),
-    ],
-)
-async def test_settings_permission_failures_keep_their_reasons(result: Exception, reason: str) -> None:
-    with patch.object(autonomous, "get_async_client", return_value=_Async(result)):
-        permission = await autonomous._fetch_agent_hub_execution_permission("p")
-    assert permission["allowed"] is False and permission["reason"] == reason
-
-
-@pytest.mark.asyncio
-async def test_settings_permission_passes_the_live_payload_through() -> None:
-    live = {"allowed": True, "auto_exec_enabled": True, "in_time_window": True, "permission_tier": "full", "reason": None}
-    with patch.object(autonomous, "get_async_client", return_value=_Async(live)):
-        assert await autonomous._fetch_agent_hub_execution_permission("p") == live

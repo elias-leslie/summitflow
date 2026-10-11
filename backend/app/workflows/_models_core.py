@@ -9,13 +9,6 @@ from pydantic import BaseModel, model_validator
 from ._model_constants import DEFAULT_PROJECT_ID
 
 
-class TaskInput(BaseModel):
-    task_id: str
-    project_id: str
-    manual_dispatch: bool = False
-    execution_policy: dict[str, Any] | None = None
-
-
 class ProjectInput(BaseModel):
     """Project input for workflows, including cron-triggered ones.
 

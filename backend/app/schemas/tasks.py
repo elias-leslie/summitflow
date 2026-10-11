@@ -49,17 +49,12 @@ from .task_dependencies import (
     DependencyResponse,
 )
 
-# AI enrichment
+# Cleanup prompt, capability and blocker context
 from .task_enrichment import (
     BlockerInfo,
     CapabilityContext,
     CleanupPromptRequest,
     CleanupPromptResponse,
-    DiscussionMessage,
-    DiscussionRequest,
-    DiscussionResponse,
-    EnrichmentRequest,
-    EnrichmentResponse,
 )
 
 # Ideation agent
@@ -83,7 +78,6 @@ TaskCreate.model_rebuild()
 TaskUpdate.model_rebuild()
 BatchTaskResponse.model_rebuild()
 CapabilityContext.model_rebuild()
-DiscussionResponse.model_rebuild()
 
 __all__ = [
     # Acceptance criteria
@@ -109,11 +103,6 @@ __all__ = [
     # Dependencies
     "DependencyCreate",
     "DependencyResponse",
-    "DiscussionMessage",
-    "DiscussionRequest",
-    "DiscussionResponse",
-    "EnrichmentRequest",
-    "EnrichmentResponse",
     # Ideation agent
     "IdeationTaskCreate",
     "IdeationTaskResponse",

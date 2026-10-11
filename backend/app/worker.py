@@ -13,15 +13,6 @@ from app.workflows.automation_dispatch import (
     automation_outbox_reconcile_wf,
     automation_owner_run_wf,
 )
-from app.workflows.pipeline import (
-    dispatch_wf,
-    escalation_wf,
-    execute_wf,
-    ideate_wf,
-    plan_wf,
-    review_wf,
-    triage_wf,
-)
 from app.workflows.scheduled import (
     dependency_reviews_wf,
     hatchet_retention_wf,
@@ -36,42 +27,24 @@ from app.workflows.scheduled import (
     runtime_hygiene_wf,
     scan_projects_wf,
     scheduled_backups_wf,
-    self_healing_wf,
     stale_cleanup_wf,
-    task_generation_wf,
-    work_pickup_wf,
 )
 from app.workflows.utility import (
-    arch_tasks_wf,
     backup_create_wf,
     backup_offsite_sync_wf,
     backup_restore_wf,
     check_resolved_wf,
-    checkpoint_cleanup_wf,
-    enrich_wf,
     page_health_wf,
-    pr_review_wf,
-    quality_auto_fix_wf,
-    refactor_regen_wf,
-    schema_tasks_wf,
 )
 
 
 def _registered_workflows() -> list[Any]:
     """Return every workflow explicitly served by this SummitFlow worker."""
     return [
-        # Pipeline and Agent Hub automation tasks
-        dispatch_wf,
-        ideate_wf,
-        triage_wf,
-        plan_wf,
-        execute_wf,
-        review_wf,
-        escalation_wf,
+        # Agent Hub automation tasks
         automation_owner_run_wf,
         automation_outbox_reconcile_wf,
         # Scheduled
-        work_pickup_wf,
         reset_claims_wf,
         scan_projects_wf,
         dependency_reviews_wf,
@@ -80,27 +53,18 @@ def _registered_workflows() -> list[Any]:
         scheduled_backups_wf,
         stale_cleanup_wf,
         hatchet_retention_wf,
-        task_generation_wf,
-        self_healing_wf,
         prod_smoke_test_wf,
         health_monitor_wf,
         pending_drain_wf,
         restore_tests_wf,
         runtime_hygiene_wf,
         nightly_publication_wf,
-        # Utility (12)
+        # Utility
         backup_create_wf,
         backup_offsite_sync_wf,
         backup_restore_wf,
-        enrich_wf,
-        pr_review_wf,
-        checkpoint_cleanup_wf,
-        refactor_regen_wf,
-        schema_tasks_wf,
-        arch_tasks_wf,
         check_resolved_wf,
         page_health_wf,
-        quality_auto_fix_wf,
     ]
 
 

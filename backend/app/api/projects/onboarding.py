@@ -11,8 +11,7 @@ from ...storage.projects import get_project_root_path
 from ...tasks.backup_utils import calculate_next_run
 from ...tasks.explorer_tasks import dispatch_post_scan_tasks
 from ...workflows._models_backup import BackupInput
-from ...workflows.pipeline import _make_dispatch_callback
-from ...workflows.utility import backup_create_wf
+from ...workflows.utility import backup_create_wf, make_post_scan_dispatch
 from .models import ProjectOnboardingRequest, ProjectOnboardingResponse
 
 logger = get_logger(__name__)
@@ -91,7 +90,7 @@ def run_project_onboarding(
         None,
         triggered_by=triggered_by,
     )
-    dispatch_post_scan_tasks(_make_dispatch_callback(), project_id)
+    dispatch_post_scan_tasks(make_post_scan_dispatch(), project_id)
     logger.info(
         "project_onboarding_complete",
         project_id=project_id,

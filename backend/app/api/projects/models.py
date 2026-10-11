@@ -7,7 +7,6 @@ from pydantic import BaseModel, Field, field_validator, model_validator
 
 from ...project_identity import ProjectLifecycle
 from ..checkpoint_models import CheckpointResponse
-from ..quality_gate_models import HealthSummaryResponse
 
 type ProjectCategory = Literal["production", "testing", "dev"]
 
@@ -157,7 +156,6 @@ class ProjectWithStats(BaseModel):
     created_at: datetime
     lifecycle: ProjectLifecycle = "active"
     health_status: str | None = None
-    quality_gate: HealthSummaryResponse | None = None
     active_checkpoint: CheckpointResponse | None = None
     stats: ProjectStats
 

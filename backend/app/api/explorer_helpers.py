@@ -118,11 +118,10 @@ async def dispatch_hatchet_workflow(
     workflow_name: str, project_id: str, message: str
 ) -> dict[str, Any]:
     """Dispatch a Hatchet workflow and return standardized response."""
-    from ..workflows.utility import page_health_wf, refactor_regen_wf
+    from ..workflows.utility import page_health_wf
 
     workflow_map = {
         "summitflow.run_page_health_checks": page_health_wf,
-        "summitflow.regenerate_refactor_tasks": refactor_regen_wf,
     }
 
     wf = workflow_map.get(workflow_name)

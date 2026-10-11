@@ -498,28 +498,3 @@ async def regenerate_all_indexes() -> dict[str, Any]:
     from ..services.explorer import write_all_index_files
 
     return helpers.format_all_indexes_response(write_all_index_files())
-
-
-@router.post("/{project_id}/explorer/regenerate-refactor-tasks")
-async def regenerate_refactor_tasks(
-    project_id: str,
-    background_tasks: BackgroundTasks,
-    sync: bool = Query(False, description="Run synchronously instead of via background workflow"),
-) -> dict[str, Any]:
-    """Synchronize refactor tasks with the latest scan results."""
-    validate_project_exists(project_id)
-    if sync:
-        from ..tasks.autonomous.task_generation import regenerate_refactor_tasks_sync
-
-        try:
-            result = await asyncio.to_thread(regenerate_refactor_tasks_sync, project_id)
-        except Exception as e:
-            logger.exception("Sync regeneration failed for %s", project_id)
-            result = {"error": str(e), "deleted_count": 0, "created_count": 0, "scanned_count": 0}
-        status = "completed" if "error" not in result else "error"
-        return {"status": status, "project_id": project_id, **result}
-    return await helpers.dispatch_hatchet_workflow(
-        "summitflow.regenerate_refactor_tasks",
-        project_id,
-        "Refactor task sync started. Existing findings will be rescored, resolved tasks closed, and only strong candidates promoted.",
-    )

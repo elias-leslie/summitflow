@@ -17,7 +17,6 @@ from uuid import NAMESPACE_URL, uuid5
 
 from app.api.automation_dispatch import AutomationDispatchRequest
 from app.services._agent_hub_config import get_async_client
-from app.services.autonomous_policy import use_execution_policy
 from app.storage import automation_dispatches
 
 logger = logging.getLogger(__name__)
@@ -228,14 +227,6 @@ def _owner_run_id(run_id: str) -> str:
     return str(uuid5(NAMESPACE_URL, f"summitflow-agent-hub-automation:{run_id}"))
 
 
-def _work_pickup_batch_limit(config: dict[str, Any]) -> int:
-    """Read the AH typed limit, preserving 10 for profiles without one."""
-    value = config.get("batch_limit", 10)
-    if type(value) is not int or value < 1:
-        raise ValueError("Agent Hub work-pickup batch_limit must be a positive integer")
-    return value
-
-
 async def enqueue_automation_run(run_id: str, owner_run_id: str) -> None:
     """Queue a receipt processor; DB claim logic dedupes repeated triggers."""
     from app.workflows.automation_dispatch import (
@@ -365,12 +356,12 @@ async def execute_automation_run(
         await _report_completion(finished)
         return {"run_id": run_id, "status": "failed"}
 
-    required_gate = "autonomous_enabled" if claimed["workflow_key"] == "work_pickup" else "routine_upkeep_enabled"
-    if claimed["workflow_key"] != "browser_workflow" and policy.get(required_gate) is not True:
+    if claimed["workflow_key"] != "browser_workflow":
+        # Work pickup and routine upkeep were retired with the autonomous pipeline.
         result = {
             "project_id": claimed["project_id"],
             "status": "disabled",
-            "reason": f"{required_gate}_disabled",
+            "reason": "workflow_retired",
         }
         finished = automation_dispatches.finish_automation_run(
             run_id,
@@ -382,40 +373,13 @@ async def execute_automation_run(
         return {"run_id": run_id, "status": "skipped", "result": result}
 
     try:
-        with use_execution_policy(policy):
-            if claimed["workflow_key"] == "browser_workflow":
-                result = await execute_browser_workflow(claimed)
-                current = automation_dispatches.get_automation_run(run_id)
-                if current and current["status"] == "running" and (current.get("control_action") or {}).get("action") == "cancel" and (claimed.get("control_action") or {}).get("action") != "cancel":
-                    # The owner invocation has released its session lease.
-                    # Reconcile any intent delivered before its checkpoint
-                    # existed, or racing a human/failed-read return.
-                    result = await execute_browser_workflow(current)
-            elif claimed["workflow_key"] == "work_pickup":
-                from app.tasks.autonomous.pickup import autonomous_work_pickup
-                from app.workflows.pipeline import _make_dispatch_callback
-
-                result = await asyncio.to_thread(
-                    autonomous_work_pickup,
-                    claimed["project_id"],
-                    dispatch=_make_dispatch_callback(execution_policy=policy),
-                    require_enabled=True,
-                    limit=_work_pickup_batch_limit(config),
-                    policy_config=policy,
-                    agent_hub_owned=True,
-                )
-            elif claimed["workflow_key"] == "task_generation":
-                from app.tasks.autonomous.upkeep import run_routine_upkeep
-
-                result = await asyncio.to_thread(
-                    run_routine_upkeep,
-                    claimed["project_id"],
-                    force=True,
-                    policy_config=policy,
-                    config=config,
-                )
-            else:
-                raise ValueError("Unsupported Agent Hub workflow key")
+        result = await execute_browser_workflow(claimed)
+        current = automation_dispatches.get_automation_run(run_id)
+        if current and current["status"] == "running" and (current.get("control_action") or {}).get("action") == "cancel" and (claimed.get("control_action") or {}).get("action") != "cancel":
+            # The owner invocation has released its session lease.
+            # Reconcile any intent delivered before its checkpoint
+            # existed, or racing a human/failed-read return.
+            result = await execute_browser_workflow(current)
         result_status = str(result.get("status") or "completed")
         if claimed["workflow_key"] == "browser_workflow" and result_status == "waiting_human":
             waiting = automation_dispatches.wait_automation_run(run_id, worker_run_id, result)

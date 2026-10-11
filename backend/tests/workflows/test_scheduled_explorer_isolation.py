@@ -31,9 +31,9 @@ def test_explorer_schedule_concurrency_uses_shared_cancel_newest() -> None:
 
 
 def test_hatchet_retention_schedule_is_registry_managed() -> None:
-    from app.services.autonomous_schedule_registry import get_autonomous_schedule_definition
+    from app.services.schedule_registry import get_schedule_definition
 
-    definition = get_autonomous_schedule_definition("hatchet_retention")
+    definition = get_schedule_definition("hatchet_retention")
 
     assert definition.config_key == "hatchet_retention_enabled"
     assert definition.cron == "45 4 * * 0"
@@ -73,7 +73,7 @@ async def test_scan_projects_wf_uses_isolated_process(monkeypatch) -> None:
     monkeypatch.setattr("app.workflows.scheduled._system_schedule_enabled", lambda _schedule_id: True)
     monkeypatch.setattr("app.workflows.scheduled.asyncio.to_thread", _run_inline)
     monkeypatch.setattr("app.tasks.explorer_tasks.scan_all_projects", scan_all_projects)
-    monkeypatch.setattr("app.workflows.pipeline._make_dispatch_callback", lambda: dispatch)
+    monkeypatch.setattr("app.workflows.utility.make_post_scan_dispatch", lambda: dispatch)
 
     call = scan_projects_wf._task.fn(EmptyInput(), None)
     assert isinstance(call, Awaitable)
@@ -128,10 +128,10 @@ async def test_refresh_graphify_graphs_wf_uses_shared_maintenance_lane(monkeypat
 
 
 def test_tool_governance_has_no_schedule_or_worker_route() -> None:
-    from app.services.autonomous_schedule_registry import list_autonomous_schedule_definitions
+    from app.services.schedule_registry import list_schedule_definitions
     from app.worker import _registered_workflows
 
-    assert "tool_governance" not in {item.schedule_id for item in list_autonomous_schedule_definitions()}
+    assert "tool_governance" not in {item.schedule_id for item in list_schedule_definitions()}
     assert "summitflow-tool-governance" not in {
         workflow._task.name for workflow in _registered_workflows()
     }

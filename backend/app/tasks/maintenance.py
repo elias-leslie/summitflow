@@ -14,9 +14,9 @@ from ..storage import notifications as notification_store
 from ..storage import quality_check_results as qcr_store
 from ..storage import scan_history
 from ..storage.tasks import purge_terminal_tasks
-from .autonomous.cleanup_operations import cleanup_stale_tasks
 from .backup_lock import has_active_backup_lease
 from .host_retention import cleanup_host_artifacts
+from .stale_generated_tasks import cleanup_stale_tasks
 
 logger = get_logger(__name__)
 

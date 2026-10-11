@@ -37,15 +37,6 @@ class ExecutionOperationsMixin:
     def _global_url(self, path: str) -> str:
         raise NotImplementedError
 
-    def get_autonomous_settings(self) -> dict[str, Any]:
-        return exec_ops.get_autonomous_settings(self._client, self._url, self._handle_response)
-
-    def list_autonomous_schedules(self) -> list[dict[str, Any]]:
-        return exec_ops.list_autonomous_schedules(self._client, self._url, self._handle_response)
-
-    def run_routine_upkeep(self) -> dict[str, Any]:
-        return exec_ops.run_routine_upkeep(self._client, self._url, self._handle_response)
-
     def list_sessions(
         self,
         *,
