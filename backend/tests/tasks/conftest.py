@@ -37,3 +37,14 @@ def isolated_native_host_state(monkeypatch: pytest.MonkeyPatch, tmp_path_factory
     root.chmod(0o700)
     monkeypatch.setenv("BACKUP_BTRBK_ENABLED", "false")
     monkeypatch.setattr(backup_btrbk, "_state_root", lambda: root)
+
+
+@pytest.fixture(autouse=True)
+def isolated_backup_housekeeping(request: pytest.FixtureRequest, monkeypatch: pytest.MonkeyPatch) -> None:
+    """Scheduler tests never reap the live scratch mount or write live alerts."""
+    if request.path.name == "test_backup_self_healing.py":
+        return
+    from app.tasks import backup_scheduler
+
+    monkeypatch.setattr(backup_scheduler, "_reap_backup_scratch", lambda: {"removed": 0, "bytes": 0})
+    monkeypatch.setattr(backup_scheduler, "_evaluate_alerts", lambda summary: None)

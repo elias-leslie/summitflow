@@ -152,7 +152,8 @@ async def test_health_projects_latest_offsite_evidence_and_disabled_state(monkey
 @pytest.mark.asyncio
 @pytest.mark.parametrize(
     ("offsite_status", "expected_error"),
-    [("verified", None), ("pending", None), ("failed", "previous transfer failed")],
+    # A pending copy shows its recorded error instead of a silent null.
+    [("verified", None), ("pending", "previous transfer failed"), ("failed", "previous transfer failed")],
 )
 async def test_health_only_projects_current_offsite_failure(monkeypatch, offsite_status, expected_error) -> None:
     from app.api.backups import health_endpoints

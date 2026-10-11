@@ -577,6 +577,7 @@ def sync_repository_batch(batch: Mapping[str, dict[str, str]]) -> dict[str, Any]
             config = ResticConfig.from_env(env)
             adapter = ResticAdapter(config)
             with _repository_maintenance_admission(config, adapter, backend_id=env.get("BACKUP_STORAGE_BACKEND_ID")), _checkpoint(config) as (directory, state):
+                _reap_capture_staging(config)
                 journal = state.setdefault("offsite", {})
                 pending = journal.setdefault("pending_snapshot_ids", [])
                 local_id = adapter.repository_identity()["id"]
@@ -812,6 +813,35 @@ def _notify_repository_result(state: dict[str, Any], env: Mapping[str, str], ope
     journal[operation] = {"active": failed, "fingerprint": fingerprint, "method": method}
 
 
+def repository_journal(env: Mapping[str, str]) -> dict[str, Any]:
+    """Read the atomically replaced journal without waiting for the pair lock."""
+    config = ResticConfig.from_env(env)
+    config.validate()
+    _approved_key_directory(config)
+    state = _load_json(config.key_directory / "restic-state" / _repository_pair(config) / "state.json")
+    state.setdefault("sources", {})
+    return state
+
+
+def _reap_capture_staging(config: ResticConfig) -> int:
+    """Remove plaintext payload trees left by killed captures of this pair.
+
+    Callers hold the pair journal lock, so no capture can be using them.
+    """
+    scratch = mounted_scratch_parent("st-backup-captures", label="Capture")
+    payloads = scratch / _repository_pair(config) / "payloads" if scratch is not None else None
+    if payloads is None or not payloads.is_dir() or payloads.is_symlink():
+        return 0
+    removed = 0
+    for staging in payloads.iterdir():
+        if staging.is_dir() and not staging.is_symlink():
+            shutil.rmtree(staging)
+            removed += 1
+    if removed:
+        logger.warning("reaped_interrupted_capture_staging", count=removed)
+    return removed
+
+
 def repository_recovery_status(env: dict[str, str]) -> dict[str, Any]:
     """Observe atomically replaced recovery evidence without locks or Restic."""
     def timestamp(value: Any) -> str | None:
@@ -969,6 +999,10 @@ def maintain_repository(env: dict[str, str], *, dry_run: bool = True, force_crit
             offsite = state.get("offsite", {})
             if prune.get("status") == "completed":
                 previous["pruned_at"] = prune["completed_at"]
+            if prune.get("status") == "failed":
+                previous["prune_failures"] = int(previous.get("prune_failures") or 0) + 1
+            elif prune.get("status") == "completed" or prune.get("reason") == "weekly-cadence":
+                previous["prune_failures"] = 0
             results[label] = {"monthly": previous.get("monthly_result"), "retention": selection, "prune": prune}
         if not preview and pair_healthy:
             results["catalogue_rows_deleted"] = _reconcile_catalogue(adapter, env)

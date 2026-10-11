@@ -146,9 +146,16 @@ def cleanup_expired_backup_records(default_retention_days: int = 14, min_keep: i
                     PARTITION BY COALESCE(source_id, project_id) ORDER BY created_at DESC, id DESC
                   ) AS rn
                   FROM backups WHERE status = 'completed'
-                    AND (verification_json ->> 'format') IS DISTINCT FROM 'restic-v1'
                     AND (verification_json #>> '{activity,active}') IS DISTINCT FROM 'true'
-                    AND COALESCE(verification_json #>> '{offsite,status}', '') NOT IN ('pending', 'failed')
+                    AND (
+                      ((verification_json ->> 'format') IS DISTINCT FROM 'restic-v1'
+                       AND COALESCE(verification_json #>> '{offsite,status}', '') NOT IN ('pending', 'failed'))
+                      -- Newer repository points verified offsite also satisfy the
+                      -- minimum, so retired archive formats age out instead of
+                      -- keeping their last copies forever.
+                      OR ((verification_json ->> 'format') = 'restic-v1'
+                          AND verification_json #>> '{offsite,status}' = 'verified')
+                    )
                 ) ranked WHERE rn <= %s
               )
             FOR UPDATE
@@ -524,3 +531,24 @@ def get_pending_native_offsite_backups() -> list[dict[str, Any]]:
         )
         rows = cur.fetchall()
     return [row_to_backup(row) for row in rows]
+
+
+def latest_backup_alerts() -> dict[str, dict[str, Any]]:
+    """Latest notification per persistent backup alert key; it is the alert state."""
+    with get_cursor() as cur:
+        cur.execute(
+            """
+            SELECT DISTINCT ON (metadata ->> 'backup_alert')
+                   metadata ->> 'backup_alert', id, metadata ->> 'backup_alert_event',
+                   metadata ->> 'backup_alert_fingerprint', status, title, message, created_at
+            FROM notifications
+            WHERE metadata ? 'backup_alert'
+            ORDER BY metadata ->> 'backup_alert', created_at DESC, id DESC
+            """
+        )
+        rows = cur.fetchall()
+    return {
+        str(row[0]): {"id": row[1], "event": row[2], "fingerprint": row[3], "status": row[4],
+                      "title": row[5], "message": row[6], "created_at": row[7].isoformat() if row[7] else None}
+        for row in rows
+    }

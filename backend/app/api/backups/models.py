@@ -230,12 +230,22 @@ class BackupRepositoryHealthItem(BaseModel):
     critical_restore: CriticalRestoreHealth
 
 
+class BackupAlertItem(BaseModel):
+    """A persistent backup failure that is still active."""
+
+    key: str
+    title: str
+    message: str
+    since: str | None = None
+
+
 class BackupHealthResponse(BaseModel):
     """Response model for backup health summary."""
 
     sources: list[BackupHealthItem]
     pending_upload_count: int = 0
     repositories: list[BackupRepositoryHealthItem] = Field(default_factory=list)
+    alerts: list[BackupAlertItem] = Field(default_factory=list)
 
 
 # ─── System Image / Veeam Models ────────────────────────────────

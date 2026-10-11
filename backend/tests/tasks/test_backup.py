@@ -507,7 +507,8 @@ class TestScheduledBackups:
             patch("app.tasks.backup_scheduler.backup_store.list_due_sources", return_value=[]),
             patch("app.tasks.backup_scheduler.run_scheduled_drills") as mock_drill,
         ):
-            mock_stale_fail.return_value = 3
+            # Lease-based reap, then the dead-lease-holder reap.
+            mock_stale_fail.side_effect = [3, 0]
             mock_cleanup.return_value = 4
             mock_stale_cleanup.return_value = 2
             mock_local_cleanup.return_value = {"deleted": 5, "bytes_deleted": 123}
@@ -524,7 +525,7 @@ class TestScheduledBackups:
         assert result["local_bytes_deleted"] == 123
         assert result["rows_cleaned"] == 9
         assert result["drill"] == {"status": "completed", "ok": True}
-        mock_stale_fail.assert_called_once()
+        assert mock_stale_fail.call_count == 2
         mock_cleanup.assert_called_once()
         mock_stale_cleanup.assert_called_once()
         mock_local_cleanup.assert_called_once_with(dry_run=False)

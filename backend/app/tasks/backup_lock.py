@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import json
+import os
+import socket
 from collections.abc import Callable, Iterator
 from contextlib import contextmanager
 from datetime import UTC, datetime
@@ -55,9 +57,46 @@ def _lock_key(source_id: str) -> str:
     return f"{BACKUP_LOCK_PREFIX}{source_id}"
 
 
+def _process_start(pid: int) -> str | None:
+    """Kernel start time distinguishes a live process from a reused PID."""
+    try:
+        with open(f"/proc/{pid}/stat") as stream:
+            return stream.read().rsplit(")", 1)[1].split()[19]
+    except (OSError, IndexError):
+        return None
+
+
+def _holder_identity() -> str:
+    pid = os.getpid()
+    return f"{pid}|{_process_start(pid)}|{socket.gethostname()}"
+
+
+def lease_holder_dead(value: object) -> bool:
+    """True only for a lease written by a process on this host that no longer runs.
+
+    A worker killed by a restart cannot release its lease; without this, every
+    retry waited for the TTL and its running row stayed for 30 minutes.
+    Leases from another host or in an unknown format are never judged dead.
+    """
+    if isinstance(value, bytes):
+        value = value.decode(errors="replace")
+    if not isinstance(value, str):
+        return False
+    parts = value.split("|")
+    if len(parts) != 4 or not parts[1].isdigit() or parts[3] != socket.gethostname():
+        return False
+    current = _process_start(int(parts[1]))
+    return current is None or (parts[2] != "None" and current != parts[2])
+
+
+def backup_lease_holder_dead(source_id: str) -> bool:
+    return lease_holder_dead(get_redis().get(_lock_key(source_id)))
+
+
 def has_active_backup_lease(source_id: str) -> bool:
     """Check worker ownership, not byte progress; errors must not imply orphaned."""
-    return bool(get_redis().exists(_lock_key(source_id)))
+    value = get_redis().get(_lock_key(source_id))
+    return value is not None and not lease_holder_dead(value)
 
 
 def owns_backup_lease(source_id: str, owner_token: str) -> bool:
@@ -67,12 +106,19 @@ def owns_backup_lease(source_id: str, owner_token: str) -> bool:
 
 
 def acquire_backup_lock(source_id: str) -> str | None:
-    """Acquire a per-source lock and return its unique owner token."""
-    owner_token = uuid4().hex
-    result = get_redis().eval(
-        _ACQUIRE_UNLESS_RESTARTING, 2,
-        _lock_key(source_id), _lock_key(_RESTART_GUARD_SOURCE), owner_token, BACKUP_LOCK_TTL,
-    )
+    """Acquire a per-source lock and return its unique owner token.
+
+    A lease left by a dead process on this host is taken over at once.
+    """
+    owner_token = f"{uuid4().hex}|{_holder_identity()}"
+    redis = get_redis()
+    key = _lock_key(source_id)
+    result = redis.eval(_ACQUIRE_UNLESS_RESTARTING, 2, key, _lock_key(_RESTART_GUARD_SOURCE), owner_token, BACKUP_LOCK_TTL)
+    if not result:
+        held = cast("str | bytes | None", redis.get(key))
+        if held is not None and lease_holder_dead(held) and redis.eval(_DELETE_IF_OWNER, 1, key, held):
+            logger.warning("backup_lease_taken_from_dead_holder", source_id=source_id)
+            result = redis.eval(_ACQUIRE_UNLESS_RESTARTING, 2, key, _lock_key(_RESTART_GUARD_SOURCE), owner_token, BACKUP_LOCK_TTL)
     return owner_token if result else None
 
 
@@ -182,6 +228,7 @@ def backup_worker_restart_guard() -> Iterator[Callable[[], None]]:
                 blocker
                 for item in get_redis().scan_iter(match=f"{BACKUP_LOCK_PREFIX}*")
                 if (decoded := item.decode() if isinstance(item, bytes) else str(item)) != key
+                and not lease_holder_dead(get_redis().get(decoded))
                 and (blocker := _restart_blocker(decoded.removeprefix(BACKUP_LOCK_PREFIX))) is not None
             )
             owned = owns_backup_lease(_RESTART_GUARD_SOURCE, token)

@@ -1312,3 +1312,41 @@ def test_retention_skip_reason_names_the_blocking_gate(repository_env, monkeypat
             assert result[label][step] == {"status": "skipped", "reason": expected[0], "blocked_by": expected}
     adapter.retention.assert_not_called()
     adapter.prune.assert_not_called()
+
+
+def test_batch_sync_reaps_payload_staging_left_by_killed_capture(repository_env):
+    config = ResticConfig.from_env(repository_env)
+    scratch = transient_scratch.mounted_scratch_parent("st-backup-captures", label="Capture")
+    assert scratch is not None
+    leftover = scratch / runtime._repository_pair(config) / "payloads" / ("a" * 64)
+    leftover.mkdir(parents=True)
+    (leftover / "database.sql").write_text("plaintext left by a killed capture")
+    assert runtime._reap_capture_staging(config) == 1
+    assert not leftover.exists()
+    assert runtime._reap_capture_staging(config) == 0
+
+
+def test_prune_failures_are_counted_until_a_prune_completes(repository_env, monkeypatch):
+    from app.tasks import backup_lock
+
+    redis = _MemoryBackupRedis()
+    monkeypatch.setattr(backup_lock, "get_redis", lambda: redis)
+    env = {**repository_env, "RESTIC_OFFSITE_PRUNE_QUALIFIED": "true"}
+    Path(env["RESTIC_LOCAL_REPOSITORY"]).mkdir()
+    outcome = {"status": "failed", "error": "restic maintenance failed (exit 130)"}
+    adapter = MagicMock()
+    adapter.check.side_effect = lambda **_: {"verified": True, "state": {}, "checked_at": datetime.now(UTC).isoformat()}
+    adapter.retention.return_value = {"status": "completed"}
+    adapter.prune.side_effect = lambda **_: dict(outcome)
+    adapter.quota_free_bytes.return_value = 1024**3
+    monkeypatch.setattr(runtime, "ResticAdapter", lambda _: adapter)
+    monkeypatch.setattr(runtime, "_weekly_critical_restore", lambda *_args, **_kwargs: {"status": "verified"})
+    monkeypatch.setattr(runtime, "_reconcile_catalogue", lambda *_: 0)
+    monkeypatch.setattr(runtime.backup_store, "list_sources", lambda: [])
+    for _ in range(3):
+        runtime.maintain_repository(env, dry_run=False)
+    maintenance = runtime.repository_journal(env)["maintenance"]
+    assert maintenance["local"]["prune_failures"] == maintenance["remote"]["prune_failures"] == 3
+    outcome = {"status": "completed", "completed_at": datetime.now(UTC).isoformat()}
+    runtime.maintain_repository(env, dry_run=False)
+    assert runtime.repository_journal(env)["maintenance"]["remote"]["prune_failures"] == 0

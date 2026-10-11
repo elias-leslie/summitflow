@@ -18,6 +18,7 @@ from ...tasks.backup_utils import (
     storage_config_env,
 )
 from .models import (
+    BackupAlertItem,
     BackupHealthItem,
     BackupHealthResponse,
     BackupRepositoryHealthItem,
@@ -173,7 +174,8 @@ async def backup_health() -> BackupHealthResponse:
                 or _mapping_str(verified_offsite, "verified_at"),
                 offsite_location=_mapping_str(offsite, "location"),
                 offsite_checksum=_mapping_str(offsite, "checksum"),
-                offsite_error=_mapping_str(offsite, "error") if offsite_status == "failed" else None,
+                # A pending copy with a recorded error must show it, not a silent null.
+                offsite_error=_mapping_str(offsite, "error") if offsite_status in {"failed", "pending"} else None,
                 last_isolated_restore_at=_mapping_str(isolated_restore, "verified_at"),
                 last_isolated_restore_ok=_mapping_bool(isolated_restore, "ok"),
                 backup_activity=activity,
@@ -184,7 +186,20 @@ async def backup_health() -> BackupHealthResponse:
         sources=items,
         pending_upload_count=total_pending_upload,
         repositories=_repository_recovery_health(),
+        alerts=_active_alerts(),
     )
+
+
+def _active_alerts() -> list[BackupAlertItem]:
+    try:
+        latest = backup_store.latest_backup_alerts()
+    except Exception:
+        logger.warning("backup_alert_state_unavailable")
+        return [BackupAlertItem(key="alert-state", title="Backup alert state unavailable", message="Could not read backup alert state")]
+    return [
+        BackupAlertItem(key=key, title=str(item.get("title") or key), message=str(item.get("message") or ""), since=item.get("created_at"))
+        for key, item in sorted(latest.items()) if item.get("event") == "failed"
+    ]
 
 
 def _repository_recovery_health() -> list[BackupRepositoryHealthItem]:

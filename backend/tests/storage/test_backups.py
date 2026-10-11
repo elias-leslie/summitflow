@@ -421,6 +421,24 @@ class TestCleanupExpiredRecords:
         assert backups.cleanup_expired_backup_records(min_keep=0) == 0
         assert all(backups.get_backup(backup_id) is not None for backup_id in records)
 
+    def test_verified_repository_points_let_retired_archives_expire(self, conn: Any, cleanup_project: str) -> None:
+        legacy = []
+        for _ in range(3):
+            rec = backups.create_backup_record(cleanup_project)
+            backups.update_backup_status(rec["id"], "completed")
+            legacy.append(rec["id"])
+        with conn.cursor() as cur:
+            cur.execute("UPDATE backups SET created_at = NOW() - INTERVAL '90 days' WHERE project_id = %s", (cleanup_project,))
+            conn.commit()
+        for _ in range(3):
+            rec = backups.create_backup_record(cleanup_project)
+            backups.update_backup_status(rec["id"], "completed", verification_json={
+                "format": "restic-v1", "snapshot_id": "fixture", "offsite": {"status": "verified"},
+            })
+
+        assert backups.cleanup_expired_backup_records(min_keep=3) == 3
+        assert all(backups.get_backup(backup_id) is None for backup_id in legacy)
+
     def test_cleanup_expired_deletes_old_records(self, conn: Any, cleanup_project: str) -> None:
         """Cleanup deletes completed records older than retention, keeping min per project."""
         # Create 5 completed backups, backdate 4 of them to 20 days ago

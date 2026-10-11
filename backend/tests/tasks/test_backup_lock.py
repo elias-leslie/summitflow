@@ -21,18 +21,18 @@ from app.tasks.backup_lock import (
 )
 
 
-@pytest.mark.parametrize("exists", [0, 1])
-def test_active_lease_lookup_uses_existing_owner_key(exists: int) -> None:
+@pytest.mark.parametrize("value", [None, "owner-token"])
+def test_active_lease_lookup_uses_existing_owner_key(value: str | None) -> None:
     redis_client = MagicMock()
-    redis_client.exists.return_value = exists
+    redis_client.get.return_value = value
     with patch("app.tasks.backup_lock.get_redis", return_value=redis_client):
-        assert has_active_backup_lease("source-1") is bool(exists)
-    redis_client.exists.assert_called_once_with(f"{BACKUP_LOCK_PREFIX}source-1")
+        assert has_active_backup_lease("source-1") is (value is not None)
+    redis_client.get.assert_called_once_with(f"{BACKUP_LOCK_PREFIX}source-1")
 
 
 def test_active_lease_lookup_does_not_treat_redis_failure_as_absent() -> None:
     redis_client = MagicMock()
-    redis_client.exists.side_effect = ConnectionError("Redis unavailable")
+    redis_client.get.side_effect = ConnectionError("Redis unavailable")
     with (
         patch("app.tasks.backup_lock.get_redis", return_value=redis_client),
         pytest.raises(ConnectionError),
@@ -51,11 +51,12 @@ def test_acquire_backup_lock_stores_unique_owner_token() -> None:
     ):
         token = acquire_backup_lock("source-1")
 
-    assert token == "owner-token"
+    # The token also names its holder process so a dead worker's lease is recognisable.
+    assert token is not None and token.startswith("owner-token|")
     script, count, key, barrier, token_arg, ttl = redis_client.eval.call_args.args
     assert "redis.call('exists', KEYS[2])" in script
     assert "redis.call('set', KEYS[1], ARGV[1], 'NX', 'EX', ARGV[2])" in script
-    assert (count, key, token_arg, ttl) == (2, f"{BACKUP_LOCK_PREFIX}source-1", "owner-token", BACKUP_LOCK_TTL)
+    assert (count, key, token_arg, ttl) == (2, f"{BACKUP_LOCK_PREFIX}source-1", token, BACKUP_LOCK_TTL)
     assert barrier.startswith(BACKUP_LOCK_PREFIX)
 
 

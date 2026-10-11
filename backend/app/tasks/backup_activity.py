@@ -22,6 +22,10 @@ logger = get_logger(__name__)
 ATTENTION_AFTER_SECONDS = 600
 CONTROL_POLL_SECONDS = 1
 CONTROL_DB_POLL_SECONDS = 5
+# A stopped attempt first gets SIGINT on its leader only: Restic then removes
+# its repository locks through a still-running rclone backend. The whole group
+# is killed after the grace period either way.
+STOP_GRACE_SECONDS = 20
 _current: ContextVar[BackupActivity | None] = ContextVar("backup_activity", default=None)
 
 
@@ -247,6 +251,22 @@ def bind_backup_activity(backup_id: str, progress: Callable[[], None] | None) ->
         yield
 
 
+def _stop_process_group(proc: subprocess.Popen[Any], grace: float | None = None) -> None:
+    """Interrupt the leader so it can release locks, then kill the group.
+
+    A SIGKILLed Restic leaves its repository lock behind, and every later run
+    then fails until someone unlocks it by hand.
+    """
+    if proc.poll() is None:
+        with suppress(ProcessLookupError):
+            proc.send_signal(signal.SIGINT)
+        with suppress(subprocess.TimeoutExpired):
+            proc.wait(timeout=STOP_GRACE_SECONDS if grace is None else grace)
+    with suppress(ProcessLookupError):
+        os.killpg(proc.pid, signal.SIGKILL)
+    proc.wait()
+
+
 def run_bulk_process(
     command: list[str], *, env: dict[str, str] | None = None, phase: str = "capture",
     object_name: str | None = None, attention_after: float = ATTENTION_AFTER_SECONDS,
@@ -327,9 +347,7 @@ def run_bulk_process(
         except BaseException:
             # This process group was created by this exact attempt. Never
             # discover/kill by executable name or touch another backup's work.
-            with suppress(ProcessLookupError):
-                os.killpg(proc.pid, signal.SIGKILL)
-            proc.wait()
+            _stop_process_group(proc)
             if sink_thread:
                 sink_thread.join()
             raise

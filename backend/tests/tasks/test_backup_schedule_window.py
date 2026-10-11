@@ -15,6 +15,8 @@ from app.tasks import backup_scheduler as scheduler
 @pytest.fixture(autouse=True)
 def isolated_host_backup(monkeypatch):
     monkeypatch.setattr(scheduler, "_scheduled_host_backup", lambda _: {"status": "skipped", "reason": "host-backup-disabled"})
+    monkeypatch.setattr(scheduler, "_reap_backup_scratch", lambda: {"removed": 0, "bytes": 0})
+    monkeypatch.setattr(scheduler, "_evaluate_alerts", lambda summary: None)
 
 
 @pytest.mark.parametrize(
@@ -58,7 +60,7 @@ def test_outside_window_skips_scheduled_work_without_changing_due_sources(
     def unexpected(*_args: Any, **_kwargs: Any) -> Any:
         pytest.fail("Scheduled work or bookkeeping ran outside the configured window")
 
-    for name in ("_fail_stale_running_records", "_cleanup_stale_records", "_cleanup_expired_records",
+    for name in ("_cleanup_stale_records", "_cleanup_expired_records",
                  "_cleanup_local_archives", "run_scheduled_drills", "create_backup"):
         monkeypatch.setattr(scheduler, name, unexpected)
     monkeypatch.setattr(scheduler.backup_store, "list_due_sources", lambda: [])
@@ -67,9 +69,13 @@ def test_outside_window_skips_scheduled_work_without_changing_due_sources(
     copied = []
     monkeypatch.setattr(runtime, "sync_repository_batch", lambda batch: copied.append(batch) or {})
 
+    # Self-healing housekeeping and alert evaluation still run every tick.
+    monkeypatch.setattr(scheduler, "_housekeeping", lambda: {"stale_failed": 0})
+    monkeypatch.setattr(scheduler, "_evaluate_alerts", lambda summary: None)
     assert scheduler.run_scheduled_backups() == {
         "status": "skipped", "reason": "outside-backup-window", "count": 0, "results": [],
         "host_backup": {"status": "skipped", "reason": "host-backup-disabled"},
+        "housekeeping": {"stale_failed": 0},
     }
     assert copied == [{}]
 
