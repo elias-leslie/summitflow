@@ -154,7 +154,7 @@ def test_failure_inspecting_original_patch_cannot_requeue(repair_refresh, monkey
     parent = repair_refresh["git"]("rev-parse", "HEAD^")
 
     def fail_original_diff(command, *args, **kwargs):
-        if command[1:3] == ["diff", "--numstat"] and command[-2] == parent:
+        if command[-4:-2] == ["diff", "--numstat"] and command[-2] == parent:
             return subprocess.CompletedProcess(command, 1, "", "fixture Git inspection failure")
         return original_run(command, *args, **kwargs)
 
@@ -171,7 +171,7 @@ def test_source_drift_during_original_patch_check_cannot_requeue(repair_refresh,
 
     def change_after_original_diff(command, *args, **kwargs):
         result = original_run(command, *args, **kwargs)
-        if command[1:3] == ["diff", "--numstat"] and command[-2] == parent:
+        if command[-4:-2] == ["diff", "--numstat"] and command[-2] == parent:
             (repair_refresh["repo"] / "app.py").write_text("print('changed during check')\n")
             if drift == "head":
                 original_run(["git", "commit", "-qam", "fixture source drift"],

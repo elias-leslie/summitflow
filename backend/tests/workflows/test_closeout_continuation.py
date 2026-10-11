@@ -16,7 +16,7 @@ async def test_claim_maintenance_never_dispatches_remote_closeout(monkeypatch, e
     dispatch = AsyncMock(side_effect=AssertionError("No remote continuation"))
     monkeypatch.setattr(checkpoint_cleanup_wf, "aio_run_no_wait", dispatch)
     reset = Mock(return_value={"status": "success"})
-    monkeypatch.setattr("app.tasks.autonomous.cleanup.reset_expired_task_claims", reset)
+    monkeypatch.setattr("app.tasks.task_claims.reset_expired_task_claims", reset)
     call = reset_claims_wf._task.fn(EmptyInput(), None)
     assert isinstance(call, Awaitable)
     await call

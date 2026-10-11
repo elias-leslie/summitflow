@@ -8,9 +8,9 @@ from typing import Any
 
 import typer
 
+from app.services.diff_gate import DiffGateResult, check_diff_gate
 from app.services.task_closeout import completion_evidence
 from app.storage.projects import get_project_root_path
-from app.tasks.autonomous.exec_modules.diff_gate import DiffGateResult, check_diff_gate
 from app.utils.git_base import normalize_base_branch
 
 from .._client_base import APIError

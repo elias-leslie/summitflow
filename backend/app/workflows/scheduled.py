@@ -227,7 +227,7 @@ async def work_pickup_wf(input: ProjectInput, ctx: Context) -> dict[str, Any]:
 async def reset_claims_wf(input: EmptyInput, ctx: Context) -> dict[str, Any]:
     from typing import cast
 
-    from ..tasks.autonomous.cleanup import reset_expired_task_claims
+    from ..tasks.task_claims import reset_expired_task_claims
 
     if not _system_schedule_enabled("reset_claims"):
         return _disabled_schedule_result("reset_claims")

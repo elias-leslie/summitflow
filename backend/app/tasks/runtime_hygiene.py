@@ -12,8 +12,8 @@ from psycopg import sql
 
 from app.logging_config import get_logger
 from app.services.explorer.types.database_config import get_db_url_for_project
+from app.services.journal_monitor import SystemdMonitor
 from app.services.resource_monitor import get_cpu_usage, get_disk_usages, get_memory_usage
-from app.services.self_healing.monitor import SystemdMonitor
 from app.storage import backups as backup_store
 from app.storage import maintenance_runs as maintenance_store
 from app.storage import tasks as task_store
@@ -24,10 +24,10 @@ from app.storage.task_spirit import (
     get_task_spirit,
     update_task_spirit,
 )
-from app.tasks.autonomous._subtask_builder import create_single_subtask_with_steps
 from app.tasks.backup_drain import drain_pending_backups
 from app.tasks.backup_executor import create_backup
 from app.tasks.host_retention import cleanup_host_artifacts
+from app.tasks.subtask_builder import create_single_subtask_with_steps
 
 from . import runtime_hygiene_backups as backups_impl
 from . import runtime_hygiene_db as db_impl

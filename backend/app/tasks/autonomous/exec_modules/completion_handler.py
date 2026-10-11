@@ -5,6 +5,7 @@ from __future__ import annotations
 from collections.abc import Callable
 from typing import Any
 
+from ....services.diff_gate import check_diff_gate
 from ....storage import tasks as task_store
 from ....storage.tasks.closeout import store_execution_verification
 from .ah_events import emit_task_transition
@@ -16,7 +17,6 @@ from .completion_status import (
     notify_failure,
     transition_to_complete,
 )
-from .diff_gate import check_diff_gate
 from .events import emit_error, emit_log
 from .external_work import (
     checkout_is_clean_for_external_work,
