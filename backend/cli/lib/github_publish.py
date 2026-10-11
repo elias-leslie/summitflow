@@ -137,7 +137,14 @@ class GitHub:
         rules = self.protection(f'rules/branches/{quote(base, safe="")}?per_page=100', private=private) or []
         if len(rules) >= 100:
             rules = self.pages(f'rules/branches/{quote(base, safe="")}')
-        classic = self.protection(f'branches/{quote(base, safe="")}/protection', private=private, absent_ok=True) or {}
+        try:
+            classic = self.protection(f'branches/{quote(base, safe="")}/protection', private=private, absent_ok=True) or {}
+        except GitHubError as exc:
+            # Classic protection cannot exist on a branch that does not exist;
+            # only a verified empty repository makes that 404 an absence.
+            if not self.missing_branch_in_empty_repository(exc):
+                raise
+            classic = {}
         required = [check for rule in rules if rule['type'] == 'required_status_checks'
                     for check in rule.get('parameters', {}).get('required_status_checks', [])]
         old_checks = classic.get('required_status_checks') or {}
@@ -292,9 +299,14 @@ class GitHub:
         except GitHubError as exc:
             # A missing default branch is normal only for a verified empty repo.
             # Generic 404/auth failures and missing branches in existing repos fail closed.
-            if exc.status_code == 404 and exc.response_message == 'Branch not found' and self.api('branches?per_page=1') == []:
+            if self.missing_branch_in_empty_repository(exc):
                 return None
             raise
+
+    def missing_branch_in_empty_repository(self, exc: GitHubError) -> bool:
+        """Only GitHub's structured branch 404 plus an empty branch list proves an empty repo."""
+        return (exc.status_code == 404 and exc.response_message == 'Branch not found'
+                and self.api('branches?per_page=1') == [])
 
     def pull_request(self, head: str, base: str, title: str, sha: str) -> dict[str, Any]:
         params = urlencode({'state': 'all', 'head': f'{self.name.split("/")[0]}:{head}', 'base': base})

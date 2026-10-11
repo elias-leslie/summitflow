@@ -362,6 +362,48 @@ def test_missing_base_is_initial_only_when_remote_has_no_branches(monkeypatch, b
     assert api.call_args.args == ('branches?per_page=1',)
 
 
+def _empty_repo_api(branches):
+    """Replay GitHub's responses for a repository whose default branch does not exist."""
+    def api(path, **kwargs):
+        if path == '':
+            return {'default_branch': 'main', 'private': False, 'allow_merge_commit': True}
+        if path == 'rules/branches/main?per_page=100':
+            return []
+        if path in {'branches/main/protection', 'branches/main'}:
+            raise GitHubError('GitHub request unavailable', unavailable=True, reason='remote_api_unavailable',
+                              status_code=404, response_message='Branch not found', request_path=path)
+        if path == 'branches?per_page=1':
+            return branches
+        raise AssertionError(path)
+    return api
+
+
+def test_empty_repository_plans_direct_initial_publication(monkeypatch):
+    client = GitHub(Path('/repo'), 'owner/repo')
+    monkeypatch.setattr(client, 'api', Mock(side_effect=_empty_repo_api([])))
+    plan = client.plan()
+    assert plan['base'] == 'main' and plan['requires_pr'] is False and plan['required'] == []
+    assert client.base_sha(plan['base']) is None
+
+
+def test_missing_default_branch_in_nonempty_repository_still_blocks_plan(monkeypatch):
+    client = GitHub(Path('/repo'), 'owner/repo')
+    monkeypatch.setattr(client, 'api', Mock(side_effect=_empty_repo_api([{'name': 'other'}])))
+    with pytest.raises(GitHubError) as exc:
+        client.plan()
+    assert exc.value.reason == 'remote_api_unavailable' and exc.value.status_code == 404
+
+
+def test_empty_repository_protection_lookup_keeps_other_404s_blocking(monkeypatch):
+    client = GitHub(Path('/repo'), 'owner/repo')
+    api = Mock(side_effect=[{'default_branch': 'main'}, [],
+                            GitHubError('Not Found', unavailable=True, status_code=404, response_message='Not Found')])
+    monkeypatch.setattr(client, 'api', api)
+    with pytest.raises(GitHubError, match='Not Found'):
+        client.plan()
+    assert api.call_count == 3
+
+
 def test_base_auth_error_is_not_an_empty_repository(monkeypatch):
     client = GitHub(Path('/repo'), 'owner/repo')
     api = Mock(side_effect=GitHubError('Not Found (HTTP 404)'))
