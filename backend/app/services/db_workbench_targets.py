@@ -15,7 +15,6 @@ _DEFAULT_DB_URLS = {
     "summitflow": "postgresql://summitflow_app@localhost:5432/summitflow",
     "agent-hub": "postgresql://agent_hub_app@localhost:5432/agent_hub",
     "portfolio-ai": "postgresql://portfolio_app@localhost:5432/portfolio_ai",
-    "a-term": "postgresql://summitflow_app@localhost:5432/summitflow",
     "hatchet": "postgresql://db_admin@localhost:5432/hatchet?sslmode=disable",
 }
 

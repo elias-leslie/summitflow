@@ -207,7 +207,6 @@ if [[ "$CHOICE" == "2" || "$CHOICE" == "3" ]]; then
 fi
 if [[ "$CHOICE" == "3" ]]; then
   echo 'PORTFOLIO_HEALTH_URL=http://portfolio-api:8000/health' >> .env
-  echo 'A_TERM_HEALTH_URL=http://a-term-api:8002/health' >> .env
 fi
 
 echo "Generated .env with random passwords and secrets"

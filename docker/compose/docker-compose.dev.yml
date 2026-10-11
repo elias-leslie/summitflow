@@ -70,17 +70,9 @@ services:
       PYTHONDONTWRITEBYTECODE: "1"
 
   # ─── A-Term ────────────────────────────────────────────────────
-  a-term-api:
-    profiles: [a-term, full]
-    build:
-      context: ../../../a-term
-      dockerfile: docker/backend.Dockerfile
-    volumes:
-      - ../../../a-term/a_term:/app/a_term:cached
-    command: ["uvicorn", "a_term.main:app", "--host", "0.0.0.0", "--port", "8002", "--reload", "--reload-dir", "/app/a_term"]
-    environment:
-      PYTHONDONTWRITEBYTECODE: "1"
-
+  # a-term-api runs only on the host (systemd): it needs Tether's Unix
+  # socket, tmux and the agent CLIs, none of which a container can reach.
+  # The base file's host-gateway alias routes a-term-web to it.
   a-term-web:
     build:
       context: ../../../a-term
@@ -90,11 +82,6 @@ services:
       - ../../../a-term/frontend/app:/app/app:cached
       - ../../../a-term/frontend/components:/app/components:cached
     command: ["pnpm", "dev", "--hostname", "0.0.0.0", "--port", "3002"]
-    # In dev mode a-term-api runs as a container (not on the host), so
-    # drop the host-gateway alias and route via Docker network instead.
-    extra_hosts: !reset []
-    environment:
-      API_URL: "http://a-term-api:8002"
 
   # ─── Portfolio AI ────────────────────────────────────────────────
   portfolio-api:

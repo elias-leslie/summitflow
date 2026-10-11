@@ -37,20 +37,20 @@ def test_project_db_url_reads_canonical_env_store(
 
 
 def test_shared_project_uses_host_database_url(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.delenv("A_TERM_DB_URL", raising=False)
+    monkeypatch.delenv("SHARED_APP_DB_URL", raising=False)
     monkeypatch.setenv("DATABASE_URL", "postgresql://summitflow_app:pw@localhost/summitflow")
     monkeypatch.setattr(
         db_workbench,
         "get_project_identity",
         lambda project_id: (
             {"database": {"shared_with": "summitflow"}}
-            if project_id == "a-term"
+            if project_id == "shared-app"
             else {}
         ),
     )
 
     assert (
-        db_workbench.project_db_url("a-term")
+        db_workbench.project_db_url("shared-app")
         == "postgresql://summitflow_app:pw@localhost/summitflow"
     )
 

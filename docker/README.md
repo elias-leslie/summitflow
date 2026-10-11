@@ -38,13 +38,13 @@ docker compose --profile full up -d           # Everything
 | `infra` | PostgreSQL, Redis, Hatchet |
 | `summitflow` | SummitFlow API + Web + Worker + infra |
 | `agent-hub` | Agent Hub API + Web + Worker + infra |
-| `a-term` | A-Term API + Web in isolated container mode + infra |
+| `a-term` | A-Term Web + infra (the A-Term API runs only on the host) |
 | `portfolio` | Portfolio AI API + Web + Worker + infra |
 | `monkey-fight` | Monkey Fight + infra |
 | `browser` | Agent Browser (Chrome for Testing) |
 | `full` | All of the above |
 
-`a-term` and `full` therefore include A-Term only as an isolated container-mode web stack. They are useful for smoke tests and demos, not as proof of host-integrated A-Term behavior.
+`a-term` and `full` therefore include only the A-Term web container. The A-Term API runs on the host under systemd because it needs Tether's socket, tmux and the agent CLIs, so these profiles are smoke tests for the web build, not proof of A-Term behavior.
 
 ## Service Ports
 
