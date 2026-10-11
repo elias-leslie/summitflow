@@ -381,7 +381,6 @@ if [[ "$CHOICE" == "2" || "$CHOICE" == "3" ]]; then
 fi
 
 if [[ "$CHOICE" == "3" ]]; then
-  echo "  A-Term:     http://localhost:3002"
   echo "  Portfolio AI: http://localhost:3000"
   echo "  Monkey Fight: http://localhost:4001"
 fi

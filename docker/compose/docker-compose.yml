@@ -5,7 +5,10 @@
 #   docker compose --profile agent-hub up -d      # Agent Hub + infra
 #   docker compose --profile full up -d           # Everything
 #
-# Profiles: infra, summitflow, agent-hub, a-term, portfolio, monkey-fight, browser, full
+# A-Term is not part of this stack: it runs on the host under systemd next to
+# Tether, whose Unix socket and tmux servers a container cannot reach.
+#
+# Profiles: infra, summitflow, agent-hub, portfolio, monkey-fight, browser, full
 
 name: summitflow-stack
 
@@ -13,7 +16,7 @@ services:
   # ─── Infrastructure ──────────────────────────────────────────────
   postgres:
     image: pgvector/pgvector:pg16
-    profiles: [infra, summitflow, agent-hub, a-term, portfolio, full]
+    profiles: [infra, summitflow, agent-hub, portfolio, full]
     volumes:
       - pgdata:/var/lib/postgresql/data
       - ./init-db.sh:/docker-entrypoint-initdb.d/init-db.sh:ro
@@ -150,7 +153,6 @@ services:
       # Partial profiles leave these unset; smoke tests skip unconfigured services.
       AGENT_HUB_HEALTH_URL: "${AGENT_HUB_HEALTH_URL:-}"
       PORTFOLIO_HEALTH_URL: "${PORTFOLIO_HEALTH_URL:-}"
-      A_TERM_HEALTH_URL: "${A_TERM_HEALTH_URL:-}"
       COMPOSE_DIR: "/compose"
       BACKUP_DIR: "/app/docker-backups"
       BACKUP_HOST_ROOT: "${HOST_HOME_PATH:?}"
@@ -212,7 +214,6 @@ services:
       SUMMITFLOW_HEALTH_URL: "http://summitflow-api:8001/health"
       AGENT_HUB_HEALTH_URL: "${AGENT_HUB_HEALTH_URL:-}"
       PORTFOLIO_HEALTH_URL: "${PORTFOLIO_HEALTH_URL:-}"
-      A_TERM_HEALTH_URL: "${A_TERM_HEALTH_URL:-}"
       BACKUP_HOST_ROOT: "${HOST_HOME_PATH:?}"
       HOST_HOME_PATH: "${HOST_HOME_PATH:?Set HOST_HOME_PATH in .env}"
       HOME: "${HOST_HOME_PATH:?}"
@@ -315,26 +316,6 @@ services:
         condition: service_healthy
     volumes:
       - ${HOST_HOME_PATH:?}:${HOST_HOME_PATH:?}
-    restart: unless-stopped
-
-  # ─── A-Term ────────────────────────────────────────────────────
-  # a-term-api runs on the host via systemd (needs native access to
-  # tmux, SSH, Docker, project venvs, Claude Code, Codex CLI).
-  # Only a-term-web runs in Docker (static Next.js frontend).
-
-  a-term-web:
-    image: ghcr.io/elias-leslie/a-term-web:${TAG:?Set TAG in .env}
-    profiles: [a-term, full]
-    ports:
-      - "127.0.0.1:3002:3002"
-    extra_hosts:
-      # a-term-api runs on the host — alias so baked Next.js rewrites resolve
-      - "a-term-api:host-gateway"
-    healthcheck:
-      test: ["CMD", "node", "-e", "fetch('http://localhost:3002/').then(r=>{if(!r.ok)throw r.status;process.exit(0)}).catch(()=>process.exit(1))"]
-      interval: 10s
-      timeout: 5s
-      retries: 5
     restart: unless-stopped
 
   # ─── Portfolio AI ────────────────────────────────────────────────

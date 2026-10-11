@@ -45,8 +45,6 @@ _BUILD_PROJECTS = [
     ("summitflow",  "docker/agent-browser.Dockerfile", GHCR_PREFIX + "agent-browser"),
     ("agent-hub",   "docker/backend.Dockerfile",       GHCR_PREFIX + "agent-hub-api"),
     ("agent-hub",   "docker/frontend.Dockerfile",      GHCR_PREFIX + "agent-hub-web"),
-    ("a-term",      "docker/backend.Dockerfile",       GHCR_PREFIX + "a-term-api"),
-    ("a-term",      "docker/frontend.Dockerfile",      GHCR_PREFIX + "a-term-web"),
     ("portfolio-ai","docker/backend.Dockerfile",       GHCR_PREFIX + "portfolio-api"),
     ("portfolio-ai","docker/frontend.Dockerfile",      GHCR_PREFIX + "portfolio-web"),
     ("monkey-fight","Dockerfile",                      GHCR_PREFIX + "monkey-fight"),

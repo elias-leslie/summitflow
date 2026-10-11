@@ -391,9 +391,6 @@ fi
 if [[ "$INSTALL_CHOICE" == "3" ]]; then
     check_service "Portfolio API"   "http://localhost:8000/health"
     check_service "Portfolio Web"   "http://localhost:3000"
-    # A-Term in the Docker stack is only a container-mode smoke check.
-    # Real A-Term runtime validation must still happen on the native host path.
-    check_service "A-Term Web"    "http://localhost:3002"
     check_service "Monkey Fight"    "http://localhost:4001"
 fi
 

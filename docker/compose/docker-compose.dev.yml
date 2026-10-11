@@ -69,20 +69,6 @@ services:
     environment:
       PYTHONDONTWRITEBYTECODE: "1"
 
-  # ─── A-Term ────────────────────────────────────────────────────
-  # a-term-api runs only on the host (systemd): it needs Tether's Unix
-  # socket, tmux and the agent CLIs, none of which a container can reach.
-  # The base file's host-gateway alias routes a-term-web to it.
-  a-term-web:
-    build:
-      context: ../../../a-term
-      dockerfile: docker/frontend.Dockerfile
-      target: dev
-    volumes:
-      - ../../../a-term/frontend/app:/app/app:cached
-      - ../../../a-term/frontend/components:/app/components:cached
-    command: ["pnpm", "dev", "--hostname", "0.0.0.0", "--port", "3002"]
-
   # ─── Portfolio AI ────────────────────────────────────────────────
   portfolio-api:
     build:

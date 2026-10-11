@@ -12,7 +12,7 @@ The installer will:
 3. Generate secure passwords
 4. Pull images and start the stack
 
-A-Term is a special case in this stack: the Docker profile is useful for isolated container-mode demos and packaging checks, but it is **not** equivalent to A-Term's real host-native runtime. A-Term's canonical install path remains native `systemd --user` on the host so it can use the host tmux server, host working tree, and host CLI auth/session state.
+A-Term is not part of this stack. It runs only on the host under `systemd --user`, next to Tether, because it needs Tether's Unix socket, the host tmux servers and the agent CLIs. Install it from the A-Term repository.
 
 ## Manual Setup
 
@@ -38,13 +38,10 @@ docker compose --profile full up -d           # Everything
 | `infra` | PostgreSQL, Redis, Hatchet |
 | `summitflow` | SummitFlow API + Web + Worker + infra |
 | `agent-hub` | Agent Hub API + Web + Worker + infra |
-| `a-term` | A-Term Web + infra (the A-Term API runs only on the host) |
 | `portfolio` | Portfolio AI API + Web + Worker + infra |
 | `monkey-fight` | Monkey Fight + infra |
 | `browser` | Agent Browser (Chrome for Testing) |
 | `full` | All of the above |
-
-`a-term` and `full` therefore include only the A-Term web container. The A-Term API runs on the host under systemd because it needs Tether's socket, tmux and the agent CLIs, so these profiles are smoke tests for the web build, not proof of A-Term behavior.
 
 ## Service Ports
 
@@ -54,8 +51,6 @@ docker compose --profile full up -d           # Everything
 | SummitFlow API | 8001 |
 | Agent Hub Web | 3003 |
 | Agent Hub API | 8003 |
-| A-Term Web | 3002 |
-| A-Term API | 8002 |
 | Portfolio AI Web | 3000 |
 | Portfolio AI API | 8000 |
 | Monkey Fight | 4001 |
@@ -117,15 +112,6 @@ st docker restore ~/docker-backups/docker-pgdump-20260314-120000.sql
 # Via docker compose directly
 cat backup.sql | docker compose exec -T postgres psql -U admin
 ```
-
-## A-Term Runtime Notes
-
-The A-Term service runs tmux inside its container for self-contained A-Term sessions. Treat that as isolated demo/parity mode, not as the supported real-use runtime.
-
-- Cannot attach to host-level tmux sessions (Claude Code, etc.)
-- Cannot reuse the host user's Claude/Codex auth state or user-session process context
-- Bind-mounting workspaces only makes files visible inside the container; it does not make the container runtime equivalent to the host user session
-- For real A-Term use, run A-Term natively under `systemd --user`
 
 ## Troubleshooting
 
