@@ -1194,6 +1194,32 @@ def run_detached_job(job_id: str) -> int:
     return code
 
 
+def _caller_identity_env() -> list[tuple[str, str]]:
+    """Env that makes the detached job resolve the queuing agent's coordination identity.
+
+    The job's repo guard must see the caller's own holds as its own and match
+    ``--with-ack`` against the requester; outside a harness it would be ``pid:N``.
+    """
+    from . import leases
+
+    _agent_id, slug, session_id, provider = leases.identify_agent()
+    if provider == "st":
+        return [("ST_SESSION_ID", session_id)]
+    if provider == "claude_code":
+        return [("CLAUDE_SESSION_ID", session_id)]
+    if provider == "codex_cli":
+        return [("CODEX_SESSION_ID", session_id)]
+    if provider in ("agent_hub_persona", "agent_hub_specialist"):
+        return [("AGENT_HUB_AGENT_SLUG", slug), ("AGENT_HUB_SESSION_ID", session_id)]
+    if provider == "pi":
+        return [("PI_SESSION_ID", session_id)]
+    if provider == "antigravity":
+        return [("ANTIGRAVITY_CONVERSATION_ID", session_id)]
+    if slug == "tmux":
+        return [("TMUX_PANE", session_id)]
+    return []
+
+
 def queue_detached(
     project: str,
     include_all_workers: bool,
@@ -1202,6 +1228,7 @@ def queue_detached(
     workers: tuple[str, ...] = (),
     accepted_source: Mapping[str, Any] | None = None,
     migrate_monitor_store: bool = False,
+    with_ack: str | None = None,
 ) -> int:
     unit = f"sf-rebuild-{project}"
     if systemctl("is-active", f"{unit}.service").stdout.strip() in {"active", "activating", "deactivating", "reloading"}:
@@ -1216,6 +1243,8 @@ def queue_detached(
         command.extend(["--scope", scope])
     for worker in workers:
         command.extend(["--worker", worker])
+    if with_ack:
+        command.extend(["--with-ack", with_ack])
     source_evidence = None
     if accepted_source is not None:
         source = service_release.AcceptedSource.from_descriptor(accepted_source)
@@ -1242,6 +1271,7 @@ def queue_detached(
             "--setenv", f"SUMMITFLOW_SERVICE_STATE_ROOT={service_release.service_state_root()}",
             # The documented repair for a broken release must not run it again.
             *(["--setenv", "ST_DEV_CHECKOUT=1"] if os.environ.get("ST_DEV_CHECKOUT") == "1" else []),
+            *(arg for name, value in _caller_identity_env() for arg in ("--setenv", f"{name}={value}")),
             "st", "service", "_run-job", job_id,
         ]
     )

@@ -294,6 +294,7 @@ def rebuild(
                     scope=scope.value,
                     workers=requested_workers,
                     accepted_source=accepted_source,
+                    with_ack=with_ack,
                     **({"migrate_monitor_store": True} if migrate_monitor_store else {}),
                 )
             )

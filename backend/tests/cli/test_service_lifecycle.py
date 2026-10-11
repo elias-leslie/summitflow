@@ -601,6 +601,7 @@ def test_detached_rebuild_preserves_scope_and_named_worker(lifecycle, monkeypatc
         scope="worker",
         workers=("stopped.service",),
         accepted_source=accepted,
+        with_ack=None,
     )
     lifecycle["ensure_infra"].assert_not_called()
 

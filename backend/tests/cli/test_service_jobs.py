@@ -250,3 +250,36 @@ def test_systemd_submission_failure_is_durable(jobs, monkeypatch):
     result = service_ops.detached_result(identifier)
     assert result["state"] == "failed"
     assert result["exit_code"] == 5
+
+
+def test_detached_job_forwards_ack_and_caller_identity(jobs, monkeypatch):
+    from cli.lib import leases
+
+    capture = Mock(return_value=subprocess.CompletedProcess([], 0, "", ""))
+    monkeypatch.setattr(service_ops, "capture", capture)
+    monkeypatch.setattr(
+        leases, "identify_agent", lambda **_: ("cc:abc123", "claude-code", "abc123-session", "claude_code")
+    )
+    assert service_ops.queue_detached("example", False, with_ack="req-1") == 0
+    record = json.loads(next(jobs.glob("*.json")).read_text())
+    assert record["command"] == ["st", "service", "rebuild", "--with-ack", "req-1", "example"]
+    submitted = capture.call_args.args[0]
+    assert "CLAUDE_SESSION_ID=abc123-session" in submitted
+    assert submitted[submitted.index("CLAUDE_SESSION_ID=abc123-session") - 1] == "--setenv"
+
+
+def test_detached_rebuild_cli_passes_with_ack(monkeypatch):
+    from cli.lib import coord
+
+    queue = Mock(return_value=0)
+    guard = Mock()
+    monkeypatch.setattr(coord, "guard", guard)
+    monkeypatch.setattr(service, "_load", lambda _project: Mock(root=Path("/x"), backend_dir=Path("/x/b"), frontend_dir=Path("/x/f"), project_id="example", workers=lambda **_: ()))
+    monkeypatch.setattr(service, "require_pulse_gate", lambda _project: None)
+    monkeypatch.setattr(service_ops, "preflight_host_monitor", lambda _services: 0)
+    monkeypatch.setattr(service_ops, "resolve_accepted_source", lambda *_args: None)
+    monkeypatch.setattr(service_ops, "queue_detached", queue)
+    result = CliRunner().invoke(service.app, ["rebuild", "example", "--detach", "--with-ack", "req-1"])
+    assert result.exit_code == 0, result.output
+    guard.assert_called_once_with(Path("/x"), "rebuild", with_ack="req-1")
+    assert queue.call_args.kwargs["with_ack"] == "req-1"
