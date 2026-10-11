@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 from collections.abc import AsyncIterator
 from typing import NoReturn
 
@@ -20,6 +21,10 @@ from ..services.db_workbench import (
 )
 
 router = APIRouter()
+
+# Writable Pgweb sessions can change any project database, so they need an
+# explicit host-level opt-in on top of the request flag.
+WRITE_OPT_IN_ENV = "SUMMITFLOW_DB_WORKBENCH_ALLOW_WRITE"
 
 _TIMEOUT = httpx.Timeout(300.0, connect=2.0)
 _HOP_BY_HOP_HEADERS = {
@@ -372,6 +377,10 @@ class DbWorkbenchStartRequest(BaseModel):
     readonly: bool = True
 
 
+def _writable_mode_allowed() -> bool:
+    return os.environ.get(WRITE_OPT_IN_ENV, "").strip() == "1"
+
+
 def _raise_workbench_error(exc: DbWorkbenchError) -> NoReturn:
     raise HTTPException(status_code=400, detail=str(exc)) from exc
 
@@ -443,8 +452,16 @@ async def start_db_workbench(
     project_id: str,
     payload: DbWorkbenchStartRequest | None = None,
 ) -> dict[str, object]:
+    readonly = payload.readonly if payload else True
+    if not readonly and not _writable_mode_allowed():
+        raise HTTPException(
+            status_code=403,
+            detail=(
+                "Writable database workbench is disabled. "
+                f"Set {WRITE_OPT_IN_ENV}=1 for the backend to allow it."
+            ),
+        )
     try:
-        readonly = payload.readonly if payload else True
         return status_payload(start_workbench(project_id, readonly=readonly))
     except DbWorkbenchError as exc:
         _raise_workbench_error(exc)
