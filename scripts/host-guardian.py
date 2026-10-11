@@ -19,6 +19,7 @@ import subprocess
 import sys
 import tempfile
 import time
+import urllib.request
 from dataclasses import dataclass, field
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
@@ -44,6 +45,10 @@ CORE_CONTAINERS = (
     "summitflow-stack-redis-1",
     "summitflow-stack-hatchet-1",
 )
+# Nightshift (host steward) owns these units; the guardian only reports them.
+NIGHTSHIFT_SYSTEM_UNITS = ("nightshift-check.timer", "nightshift-collect-usage.timer")
+NIGHTSHIFT_USER_UNITS = ("nightshift-web.service", "nightshift-notify-critical.timer", "nightshift-digest.timer")
+NIGHTSHIFT_HEALTH_URL = "http://127.0.0.1:3020/healthz"
 
 
 @dataclass
@@ -226,6 +231,28 @@ def check_allocation_headroom(state: CheckState) -> None:
 
 def systemctl_active(unit: str) -> bool:
     return run(["systemctl", "is-active", "--quiet", unit], timeout=20).returncode == 0
+
+
+def user_unit_active(unit: str) -> bool:
+    return run(["systemctl", "--user", "-M", f"{OPERATOR_USER}@", "is-active", "--quiet", unit], timeout=20).returncode == 0
+
+
+def http_ok(url: str) -> bool:
+    try:
+        with urllib.request.urlopen(url, timeout=10) as response:
+            return 200 <= response.status < 300
+    except (OSError, ValueError):
+        return False
+
+
+def check_nightshift(state: CheckState) -> None:
+    inactive = [unit for unit in NIGHTSHIFT_SYSTEM_UNITS if not systemctl_active(unit)]
+    inactive += [unit for unit in NIGHTSHIFT_USER_UNITS if not user_unit_active(unit)]
+    state.details["nightshift_inactive_units"] = inactive
+    if inactive:
+        state.issue("warning", "nightshift_units_inactive", f"Nightshift units inactive: {', '.join(inactive)}")
+    if "nightshift-web.service" not in inactive and not http_ok(NIGHTSHIFT_HEALTH_URL):
+        state.issue("warning", "nightshift_web_unhealthy", f"Nightshift web health check failed: {NIGHTSHIFT_HEALTH_URL}")
 
 
 def compose_command(*args: str) -> list[str]:
@@ -481,7 +508,7 @@ def maintenance(state: CheckState) -> None:
         run(["docker", "builder", "prune", "-af", "--keep-storage", "2gb"], timeout=600)
         state.actions.append("pruned aged Docker containers/images and capped build cache at 2 GiB")
 
-    run(["journalctl", "--vacuum-size=500M"], timeout=300)
+    run(["journalctl", "--vacuum-size=2G"], timeout=300)
     run(["apt-get", "clean"], timeout=300)
     state.actions.append("vacuumed journal/package caches")
 
@@ -600,6 +627,7 @@ def main() -> int:
     check_infrastructure(state, remediate=not args.no_remediate)
     check_smart(state)
     check_backup(state)
+    check_nightshift(state)
     payload = build_payload(state, mode=args.mode)
     persist(payload)
     print(json.dumps(payload, sort_keys=True))

@@ -41,9 +41,9 @@ fi
 sudo install -d -m 0755 /etc/systemd/journald.conf.d
 sudo tee /etc/systemd/journald.conf.d/20-storage-guardrails.conf >/dev/null <<'EOF'
 [Journal]
-SystemMaxUse=500M
+SystemMaxUse=2G
 SystemKeepFree=5G
-MaxRetentionSec=14day
+MaxRetentionSec=30day
 EOF
 
 # btrbk appends one transaction log per native capture run.

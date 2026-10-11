@@ -244,3 +244,33 @@ def test_core_containers_match_infra_profile() -> None:
     profiles = next(line for line in proxy if line.strip().startswith("profiles:"))
     assert "infra" not in profiles and "summitflow" in profiles
     assert "summitflow-stack-docker-socket-proxy-1" not in module.CORE_CONTAINERS
+
+
+@pytest.mark.parametrize(
+    ("down", "healthy", "expected"),
+    [
+        (set(), True, set()),
+        ({"nightshift-check.timer"}, True, {"nightshift_units_inactive"}),
+        ({"nightshift-web.service"}, False, {"nightshift_units_inactive"}),
+        (set(), False, {"nightshift_web_unhealthy"}),
+    ],
+)
+def test_nightshift_units_are_reported_not_remediated(monkeypatch, down, healthy, expected) -> None:
+    guardian = _load_module()
+    calls: list[list[str]] = []
+
+    def fake_run(args, **_kwargs):
+        calls.append(args)
+        return SimpleNamespace(returncode=3 if args[-1] in down else 0, stdout="", stderr="")
+
+    monkeypatch.setattr(guardian, "run", fake_run)
+    monkeypatch.setattr(guardian, "http_ok", lambda _url: healthy)
+    state = guardian.CheckState()
+
+    guardian.check_nightshift(state)
+
+    assert {issue["code"] for issue in state.issues} == expected
+    assert all(issue["severity"] == "warning" for issue in state.issues)
+    assert all("is-active" in call for call in calls)
+    user_calls = [call for call in calls if "--user" in call]
+    assert {call[-1] for call in user_calls} == set(guardian.NIGHTSHIFT_USER_UNITS)
