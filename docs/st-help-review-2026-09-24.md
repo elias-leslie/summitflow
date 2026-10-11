@@ -57,12 +57,12 @@ remains unsupported and is explicitly labeled. No desktop actions were performed
 
 ## Evidence and verification
 
-- [Native audit](st-help-evidence/native-audit.md) and
-  [extension audit](st-help-evidence/extension-audit.md) retain findings,
+- [Native audit](https://github.com/elias-leslie/summitflow/blob/cc1718490a3868783f9cdf2c53517ee5b2dcab77/docs/st-help-evidence/native-audit.md) and
+  [extension audit](https://github.com/elias-leslie/summitflow/blob/cc1718490a3868783f9cdf2c53517ee5b2dcab77/docs/st-help-evidence/extension-audit.md) retain findings,
   source references, owner revisions, raw help, and dispositions.
-- [Independent verification](st-help-evidence/verification/report.md),
-  [comparison](st-help-evidence/verification/comparison.json), and
-  [raw installed inventory](st-help-evidence/verification/after.json)
+- [Independent verification](https://github.com/elias-leslie/summitflow/blob/cc1718490a3868783f9cdf2c53517ee5b2dcab77/docs/st-help-evidence/verification/report.md),
+  [comparison](https://github.com/elias-leslie/summitflow/blob/cc1718490a3868783f9cdf2c53517ee5b2dcab77/docs/st-help-evidence/verification/comparison.json), and
+  [raw installed inventory](https://github.com/elias-leslie/summitflow/blob/cc1718490a3868783f9cdf2c53517ee5b2dcab77/docs/st-help-evidence/verification/after.json)
   establish route/signature compatibility and output costs.
 - Focused regressions cover registration metadata, static help safety, option
   values that equal command names, targeted DB help, and rejection of unsupported

@@ -135,11 +135,9 @@ curl -fsSL "$REPO_BASE/redis.conf" -o redis.conf
 curl -fsSL "$REPO_BASE/.env.example" -o .env.example
 curl -fsSL "${REPO_BASE%/compose}/scripts/generate-hatchet-token.sh" -o generate-hatchet-token.sh
 
-# Download schema SQL files
-for schema in summitflow-schema.sql agent-hub-schema.sql portfolio-ai-schema.sql; do
-  echo "  Downloading $schema..."
-  curl -fsSL "$REPO_BASE/$schema" -o "$schema" 2>/dev/null || echo "  Warning: $schema not found (may not be needed for your profile)"
-done
+# Download the SummitFlow schema dump that init-db.sh applies (mounted by
+# docker-compose.yml). Agent Hub and Portfolio AI build schemas via Alembic.
+curl -fsSL "$REPO_BASE/summitflow-schema.sql" -o summitflow-schema.sql
 
 chmod +x init-db.sh
 chmod +x generate-hatchet-token.sh

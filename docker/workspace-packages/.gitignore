@@ -1,12 +1,13 @@
 *
 !.gitignore
 # Versioned release inputs required by backend/uv.lock in a fresh checkout.
-!agent_hub_client-0.6.0-py3-none-any.whl
-!summitflow_st_sdk-0.1.0-py3-none-any.whl
-!agent_hub_st-0.1.0-py3-none-any.whl
-!browser_automation-0.1.0-py3-none-any.whl
-!code_intelligence-0.1.0-py3-none-any.whl
-!design_tools-0.1.0-py3-none-any.whl
+# Patterns match any released version so lockfile bumps stay tracked.
+!agent_hub_client-*-py3-none-any.whl
+!summitflow_st_sdk-*-py3-none-any.whl
+!agent_hub_st-*-py3-none-any.whl
+!browser_automation-*-py3-none-any.whl
+!code_intelligence-*-py3-none-any.whl
+!design_tools-*-py3-none-any.whl
 # Versioned frontend release inputs pinned by pnpm-lock.yaml.
-!agent-hub-chat-ui-0.1.1.tgz
-!agent-hub-passport-client-0.1.0.tgz
+!agent-hub-chat-ui-*.tgz
+!agent-hub-passport-client-*.tgz

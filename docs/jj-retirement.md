@@ -22,7 +22,7 @@ split/undo evidence that must survive retirement. No branch switch, advance,
 ref deletion, history rewrite, or remote publication is part of this change.
 
 Historical evidence remains historical: `docs/local-first-implementation.md`,
-`docs/st-help-evidence/`, Fydor's sourced handoff documents, backup manifests,
+[`docs/st-help-evidence/`](https://github.com/elias-leslie/summitflow/tree/cc1718490a3868783f9cdf2c53517ee5b2dcab77/docs/st-help-evidence) (removed from the tree; preserved in history), Fydor's sourced handoff documents, backup manifests,
 old publication reason codes and preserved Git refs. Recovery capture still
 protects legacy metadata in old/restored repositories, including its exact
 empty transient lock exception. File-safety checks protect those stores, and
