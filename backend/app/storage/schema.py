@@ -10,7 +10,6 @@ from ..logging_config import get_logger
 from .connection import get_connection
 from .tables import (
     apply_schema_migrations,
-    create_agent_tables,
     create_core_tables,
     create_design_tables,
     create_explorer_tables,
@@ -59,7 +58,6 @@ def _do_init_schema(conn: psycopg.Connection, cur: psycopg.Cursor) -> None:
     """Actual schema initialization (called with advisory lock held)."""
     # Create tables in order of dependencies
     create_core_tables(cur)
-    create_agent_tables(cur)
     create_notifications_tables(cur)
     create_notes_tables(cur)
     create_design_tables(cur)

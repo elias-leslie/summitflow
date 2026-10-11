@@ -1,4 +1,4 @@
-"""Core tables: projects, sitemap_entries, tasks, task_dependencies."""
+"""Core tables: projects, tasks, task_dependencies."""
 
 import psycopg
 
@@ -8,7 +8,6 @@ def create_core_tables(cur: psycopg.Cursor) -> None:
     _create_projects_table(cur)
     _create_project_retirement_decisions_table(cur)
     _create_access_tables(cur)
-    _create_sitemap_entries_table(cur)
     _create_tasks_table(cur)
     _create_task_external_requests_table(cur)
     _create_task_deletions_table(cur)
@@ -113,50 +112,11 @@ def _create_access_tables(cur: psycopg.Cursor) -> None:
     )
 
 
-def _create_sitemap_entries_table(cur: psycopg.Cursor) -> None:
-    """Create sitemap_entries table and indexes."""
-    cur.execute(
-        """
-        CREATE TABLE IF NOT EXISTS sitemap_entries (
-            id SERIAL PRIMARY KEY,
-            project_id TEXT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
-            port INTEGER NOT NULL,
-            path TEXT NOT NULL,
-            method VARCHAR(10) DEFAULT 'GET',
-            entry_type VARCHAR(20) NOT NULL,
-            source VARCHAR(50),
-            title TEXT,
-            parent_path TEXT,
-            health_status VARCHAR(20) DEFAULT 'unknown',
-            console_errors INTEGER DEFAULT 0,
-            console_warnings INTEGER DEFAULT 0,
-            http_status INTEGER,
-            response_time_ms INTEGER,
-            last_error_message TEXT,
-            last_checked_at TIMESTAMPTZ,
-            discovered_at TIMESTAMPTZ DEFAULT NOW(),
-            created_at TIMESTAMPTZ DEFAULT NOW(),
-            updated_at TIMESTAMPTZ DEFAULT NOW(),
-            UNIQUE(project_id, port, path, method)
-        )
-        """
-    )
-
-    # Create indexes
-    cur.execute("CREATE INDEX IF NOT EXISTS idx_sitemap_project ON sitemap_entries(project_id)")
-    cur.execute("CREATE INDEX IF NOT EXISTS idx_sitemap_port ON sitemap_entries(port)")
-    cur.execute("CREATE INDEX IF NOT EXISTS idx_sitemap_health ON sitemap_entries(health_status)")
-    cur.execute("CREATE INDEX IF NOT EXISTS idx_sitemap_entry_type ON sitemap_entries(entry_type)")
-    cur.execute(
-        "CREATE INDEX IF NOT EXISTS idx_sitemap_last_checked ON sitemap_entries(last_checked_at)"
-    )
-
-
 def _create_tasks_table(cur: psycopg.Cursor) -> None:
     """Create tasks table and indexes.
 
     Note: Migrations are authoritative. This is fallback only.
-    Some fields have been moved to other tables (task_spirit, task_labels) in migration 072.
+    Some fields have been moved to other tables (task_spirit) in migration 072.
     """
     cur.execute(
         """

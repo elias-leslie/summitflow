@@ -78,34 +78,6 @@ def parse_trigger_context(trigger_context_json: str | None) -> dict[str, Any] | 
         return None
 
 
-def enrich_page_entries_with_sub_elements(
-    entries: list[dict[str, Any]], type_filter: str | None
-) -> None:
-    """Add sub_elements to page entries in-place.
-
-    Args:
-        entries: List of explorer entries to potentially enrich
-        type_filter: Type filter from the query (if any)
-    """
-    if type_filter == "page" or not type_filter:
-        from ..storage import explorer_sub_elements
-
-        for entry in entries:
-            if entry.get("entry_type") == "page":
-                sub_els = explorer_sub_elements.get_elements_for_entry(entry["id"])
-                entry["sub_elements"] = [
-                    {
-                        "id": el["id"],
-                        "selector": el["selector"],
-                        "element_type": el["element_type"],
-                        "label": el.get("label"),
-                        "last_captured_at": el.get("last_captured_at"),
-                        "capture_count": el.get("capture_count", 0),
-                    }
-                    for el in sub_els
-                ]
-
-
 def format_list_entries_response(
     entries: list[dict[str, Any]],
     stats: dict[str, Any],

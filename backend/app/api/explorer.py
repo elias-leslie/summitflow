@@ -74,9 +74,6 @@ async def list_entries(
     filters = helpers.build_filters(type, health, path, association, sort, dir, limit, offset)
     entries = explorer.get_entries(project_id, filters)
 
-    # For page entries, include sub_elements if any exist
-    helpers.enrich_page_entries_with_sub_elements(entries, type)
-
     # Get stats filtered by type if type filter is applied
     stats = explorer.get_stats(project_id, entry_type=type)
 

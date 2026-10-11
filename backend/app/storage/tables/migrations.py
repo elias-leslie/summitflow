@@ -58,7 +58,6 @@ def _create_task_related_tables(cur: psycopg.Cursor) -> None:
     """
     _create_task_spirit_table(cur)
     _create_task_subtask_tables(cur)
-    _create_task_labels_table(cur)
     _create_task_table_indexes(cur)
 
 
@@ -117,20 +116,6 @@ def _create_task_subtask_tables(cur: psycopg.Cursor) -> None:
     )
 
 
-def _create_task_labels_table(cur: psycopg.Cursor) -> None:
-    cur.execute(
-        """
-        CREATE TABLE IF NOT EXISTS task_labels (
-            id SERIAL PRIMARY KEY,
-            task_id TEXT NOT NULL REFERENCES tasks(id) ON DELETE CASCADE,
-            label TEXT NOT NULL,
-            created_at TIMESTAMPTZ DEFAULT NOW(),
-            UNIQUE(task_id, label)
-        )
-        """
-    )
-
-
 def _create_task_table_indexes(cur: psycopg.Cursor) -> None:
     cur.execute(
         "CREATE INDEX IF NOT EXISTS idx_task_spirit_complexity"
@@ -143,10 +128,6 @@ def _create_task_table_indexes(cur: psycopg.Cursor) -> None:
     cur.execute(
         "CREATE INDEX IF NOT EXISTS idx_task_subtasks_task"
         " ON task_subtasks(task_id)"
-    )
-    cur.execute(
-        "CREATE INDEX IF NOT EXISTS idx_task_labels_task"
-        " ON task_labels(task_id)"
     )
 
 
@@ -384,7 +365,6 @@ def _task_column_additions() -> list[tuple[str, str]]:
         # Git conflict handling (migration 52bde0e4709d)
         ("conflict_info JSONB", "tasks"),
         ("merge_sha TEXT", "tasks"),
-        ("build_state JSONB DEFAULT '{}'::jsonb", "agent_sessions"),
     ]
 
 

@@ -429,14 +429,13 @@ def cleanup_task(db_schema_initialized: None) -> Generator[Callable[[str], None]
     if created_tasks:
         with get_connection() as conn, conn.cursor() as cur:
             for task_id in created_tasks:
-                # Delete in order: steps -> subtasks -> spirit -> labels -> deps -> task
+                # Delete in order: steps -> subtasks -> spirit -> deps -> task
                 cur.execute(
                     "DELETE FROM task_subtask_steps WHERE subtask_id IN (SELECT id FROM task_subtasks WHERE task_id = %s)",
                     (task_id,),
                 )
                 cur.execute("DELETE FROM task_subtasks WHERE task_id = %s", (task_id,))
                 cur.execute("DELETE FROM task_spirit WHERE task_id = %s", (task_id,))
-                cur.execute("DELETE FROM task_labels WHERE task_id = %s", (task_id,))
                 cur.execute(
                     "DELETE FROM task_dependencies WHERE task_id = %s OR depends_on_task_id = %s",
                     (task_id, task_id),
