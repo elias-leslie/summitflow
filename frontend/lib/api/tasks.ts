@@ -81,12 +81,9 @@ export {
   acceptTask,
   // Enrichment workflow
   discussTask,
-  // Steps
-  getSteps,
   // Subtasks
   getSubtasks,
   getSubtasksWithSteps,
-  updateStep,
   updateSubtask,
 } from './tasks-enrichment'
 

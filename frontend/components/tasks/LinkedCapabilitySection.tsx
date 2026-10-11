@@ -1,8 +1,7 @@
 'use client'
 
 import clsx from 'clsx'
-import { ExternalLink, Link2 } from 'lucide-react'
-import Link from 'next/link'
+import { Link2 } from 'lucide-react'
 
 interface Capability {
   capability_id: string
@@ -13,12 +12,12 @@ interface Capability {
 
 interface LinkedCapabilitySectionProps {
   capability: Capability
-  projectId: string
+  /** Unused; kept until TaskModalContent stops passing it. */
+  projectId?: string
 }
 
 export function LinkedCapabilitySection({
   capability,
-  projectId,
 }: LinkedCapabilitySectionProps) {
   const hasCriteria = capability.criteria_total > 0
   const allPassed =
@@ -29,19 +28,10 @@ export function LinkedCapabilitySection({
 
   return (
     <div>
-      <div className="flex items-center justify-between mb-3">
-        <h3 className="text-sm font-medium text-slate-400 flex items-center gap-2">
-          <Link2 className="h-4 w-4" />
-          Linked Capability
-        </h3>
-        <Link
-          href={`/projects/${projectId}/components`}
-          className="text-xs text-phosphor-400 hover:text-phosphor-300 flex items-center gap-1"
-        >
-          View Capabilities
-          <ExternalLink className="h-3 w-3" />
-        </Link>
-      </div>
+      <h3 className="mb-3 text-sm font-medium text-slate-400 flex items-center gap-2">
+        <Link2 className="h-4 w-4" />
+        Linked Capability
+      </h3>
 
       <div className="rounded-lg border border-slate-700 bg-slate-900/50 p-3">
         <div className="flex items-center justify-between mb-2">

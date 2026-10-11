@@ -27,8 +27,6 @@ interface SubtasksSectionProps {
 }
 
 export function SubtasksSection({
-  projectId,
-  taskId,
   subtasks,
   onTogglePass,
   isLoading = false,
@@ -251,8 +249,6 @@ export function SubtasksSection({
                                       className="overflow-hidden"
                                     >
                                       <StepsList
-                                        projectId={projectId}
-                                        taskId={taskId}
                                         subtask={subtask}
                                         activeStepNumber={
                                           activeSubtaskId === subtask.subtask_id

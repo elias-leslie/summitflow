@@ -13,31 +13,21 @@ import {
 } from 'lucide-react'
 import { AnimatePresence, motion } from 'motion/react'
 import { useCallback, useEffect, useState } from 'react'
-import type { Step } from '@/lib/api/tasks'
 import { FEEDBACK_TIMEOUT } from '@/lib/polling'
 import { type SpecRecord, SpecRenderer } from './SpecRenderer'
+import type { DisplayStep } from './utils'
 
 export interface StepItemProps {
-  step: Step
+  step: DisplayStep
   index: number
-  isOptimisticallyUpdated: boolean
-  onToggle: (stepNumber: number, passes: boolean) => void
-  isUpdating: boolean
   isActive?: boolean
 }
 
-export function StepItem({
-  step,
-  index,
-  isOptimisticallyUpdated,
-  onToggle,
-  isUpdating,
-  isActive = false,
-}: StepItemProps) {
+export function StepItem({ step, index, isActive = false }: StepItemProps) {
   // Auto-expand spec for active step
   const [isSpecExpanded, setIsSpecExpanded] = useState(isActive)
   const [copied, setCopied] = useState(false)
-  const passes = isOptimisticallyUpdated ? !step.passes : step.passes
+  const passes = step.passes
   const hasSpec = step.spec && Object.keys(step.spec).length > 0
 
   // Expand spec when step becomes active
@@ -72,27 +62,17 @@ export function StepItem({
         </motion.div>
       )}
       <div className="flex items-start gap-2.5">
-        <button
-          type="button"
-          onClick={() => onToggle(step.step_number, !passes)}
-          disabled={isUpdating}
-          className="mt-0.5 flex-shrink-0 focus:outline-none focus:ring-1 focus:ring-blue-500/50 rounded"
-          aria-label={passes ? 'Mark step incomplete' : 'Mark step complete'}
+        <span
+          className="mt-0.5 flex-shrink-0"
+          role="img"
+          aria-label={passes ? 'Step complete' : 'Step not complete'}
         >
-          {isUpdating ? (
-            <Loader2 className="w-3.5 h-3.5 animate-spin text-slate-500" />
-          ) : passes ? (
-            <motion.div
-              initial={{ scale: 0.8 }}
-              animate={{ scale: 1 }}
-              transition={{ type: 'spring', stiffness: 400, damping: 15 }}
-            >
-              <CheckSquare className="w-3.5 h-3.5 text-phosphor-400" />
-            </motion.div>
+          {passes ? (
+            <CheckSquare className="w-3.5 h-3.5 text-phosphor-400" />
           ) : (
-            <Square className="w-3.5 h-3.5 text-slate-600 group-hover:text-slate-400 transition-colors" />
+            <Square className="w-3.5 h-3.5 text-slate-600" />
           )}
-        </button>
+        </span>
         <div className="flex-1 min-w-0">
           <div className="flex items-start gap-2">
             <span className="text-slate-600 text-2xs font-mono flex-shrink-0 w-4 text-right">

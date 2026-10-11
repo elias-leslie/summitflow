@@ -4,7 +4,6 @@
 
 import type {
   DiscussionResponse,
-  Step,
   Subtask,
   SubtasksResponse,
   Task,
@@ -93,43 +92,6 @@ export async function updateSubtask(
     `/api/projects/${projectId}/tasks/${taskId}/subtasks/${subtaskId}`,
     { passes },
     'Failed to update subtask',
-  )
-}
-
-// ============================================================================
-// Steps
-// ============================================================================
-
-/**
- * Get steps for a subtask from the normalized table.
- */
-export async function getSteps(
-  projectId: string,
-  taskId: string,
-  subtaskId: string,
-): Promise<Step[]> {
-  return fetchWithErrorHandling(
-    `/api/projects/${projectId}/tasks/${taskId}/subtasks/${subtaskId}/steps`,
-    {
-      errorMessage: 'Failed to fetch steps',
-    },
-  )
-}
-
-/**
- * Update a step's passes status.
- */
-export async function updateStep(
-  projectId: string,
-  taskId: string,
-  subtaskId: string,
-  stepNumber: number,
-  passes: boolean,
-): Promise<Step> {
-  return patchJson(
-    `/api/projects/${projectId}/tasks/${taskId}/subtasks/${subtaskId}/steps/${stepNumber}`,
-    { passes },
-    'Failed to update step',
   )
 }
 
