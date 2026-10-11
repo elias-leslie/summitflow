@@ -4,9 +4,9 @@ from __future__ import annotations
 
 from typing import Any
 
-from fastapi import APIRouter
+from fastapi import APIRouter, HTTPException
 
-from ...services.project_pulse import build_project_pulse
+from ...services.project_pulse import AgentHubUnavailableError, build_project_pulse
 
 router = APIRouter()
 
@@ -23,5 +23,8 @@ def _compact_pulse(payload: dict[str, Any]) -> dict[str, Any]:
 @router.get("/{project_id}/pulse")
 async def get_project_pulse(project_id: str, compact: bool = False) -> dict[str, Any]:
     """Return the canonical live coordination pulse for a project."""
-    payload = await build_project_pulse(project_id)
+    try:
+        payload = await build_project_pulse(project_id)
+    except AgentHubUnavailableError as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
     return _compact_pulse(payload) if compact else payload

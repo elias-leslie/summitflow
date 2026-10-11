@@ -16,6 +16,7 @@ from typing import Any
 from ..logging_config import get_logger
 from ..services import explorer
 from ..storage.connection import get_cursor
+from ..storage.projects import testing_project_ids
 from .explorer_health import run_page_health_checks as _run_page_health_checks
 from .explorer_resolution import check_and_close_resolved_issues
 from .explorer_scan_runner import run_scan_job_isolated, scan_single_project
@@ -29,16 +30,18 @@ _ISOLATED_SCAN_SENTINEL = "RESULT_JSON:"
 
 
 def _fetch_projects(project_id: str | None) -> list[tuple]:
-    """Fetch projects from the database."""
+    """Fetch projects to scan; scheduled all-project scans skip testing registrations."""
     with get_cursor() as cur:
         if project_id:
             cur.execute(
                 "SELECT id, name, root_path FROM projects WHERE id = %s",
                 (project_id,),
             )
-        else:
-            cur.execute("SELECT id, name, root_path FROM projects ORDER BY created_at")
-        return cur.fetchall()
+            return cur.fetchall()
+        cur.execute("SELECT id, name, root_path FROM projects ORDER BY created_at")
+        rows = cur.fetchall()
+    excluded = testing_project_ids()
+    return [row for row in rows if row[0] not in excluded]
 
 
 def _make_dry_run_detail(proj_id: str, proj_name: str) -> dict[str, Any]:

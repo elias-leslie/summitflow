@@ -67,3 +67,16 @@ def test_get_project_pulse_compact_omits_large_session_rows(client) -> None:
         "summary": {"active_sessions": 100},
         "cleanup": {"needs_cleanup": False},
     }
+
+
+def test_get_project_pulse_returns_503_when_agent_hub_is_down(client) -> None:
+    from app.services.project_pulse import AgentHubUnavailableError
+
+    with patch(
+        "app.api.projects.pulse.build_project_pulse",
+        new=AsyncMock(side_effect=AgentHubUnavailableError("Agent Hub is unavailable: ConnectError")),
+    ):
+        response = client.get("/api/projects/agent-hub/pulse")
+
+    assert response.status_code == 503
+    assert "Agent Hub is unavailable" in response.json()["message"]

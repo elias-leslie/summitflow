@@ -33,15 +33,15 @@ def test_cost_query_measures_real_payloads_not_json_null(test_db_url: str) -> No
     fixtures = sql.SQL("""
         WITH payloads(session_id, tool_name, tool_output, content, tokens, duration_ms, created_at) AS (
           VALUES
-            ('sess-1', 'missing', 'null'::json, NULL::text, NULL::int, 1.0, now()),
-            ('sess-1', 'missing', NULL::json, NULL::text, NULL::int, 1.0, now()),
-            ('sess-1', 'mixed', 'null'::json, 'abcd', NULL::int, 1.0, now()),
-            ('sess-1', 'mixed', NULL::json, NULL::text, 7, 1.0, now()),
-            ('sess-1', 'empty', NULL::json, '', 0, 1.0, now()),
-            ('sess-2', 'literal', '\"null\"'::json, NULL::text, NULL::int, 1.0, now())
+            ('sess-1', 'missing', 'null'::jsonb, NULL::text, NULL::int, 1.0, now()),
+            ('sess-1', 'missing', NULL::jsonb, NULL::text, NULL::int, 1.0, now()),
+            ('sess-1', 'mixed', 'null'::jsonb, 'abcd', NULL::int, 1.0, now()),
+            ('sess-1', 'mixed', NULL::jsonb, NULL::text, 7, 1.0, now()),
+            ('sess-1', 'empty', NULL::jsonb, '', 0, 1.0, now()),
+            ('sess-2', 'literal', '\"null\"'::jsonb, NULL::text, NULL::int, 1.0, now())
         ), session_events AS (
             SELECT payloads.*, row_number() OVER ()::text AS id, 'tool_result'::text AS event_type,
-                   NULL::text AS call_id, NULL::json AS tool_input, NULL::text AS source_event_id,
+                   NULL::text AS call_id, NULL::jsonb AS tool_input, NULL::text AS source_event_id,
                    NULL::timestamptz AS source_timestamp
             FROM payloads
         )
@@ -273,7 +273,7 @@ def test_adoption_compact_summarizes_st_wrapper_use(capsys: pytest.CaptureFixtur
     )
 
     out = capsys.readouterr().out
-    assert "TOOLS_ADOPTION[24h]:shell=10 st=7 st_rate=70.0% raw_quality=0" in out
+    assert "TOOLS_ADOPTION[24h]:shell_commands=10 st=7 st_rate=70.0% raw_quality=0" in out
     assert "st check  4" in out
     assert "Native tool hints: web=3 browser=2 (permitted; outside ST rate)" in out
 
@@ -326,7 +326,7 @@ def test_adoption_command_uses_fetcher(monkeypatch: pytest.MonkeyPatch) -> None:
     result = runner.invoke(app, ["adoption", "--hours", "2", "--limit", "3"])
 
     assert result.exit_code == 0
-    assert "TOOLS_ADOPTION[2h]:shell=5 st=5 st_rate=100.0% raw_quality=0" in result.output
+    assert "TOOLS_ADOPTION[2h]:shell_commands=5 st=5 st_rate=100.0% raw_quality=0" in result.output
     assert "st search  3" in result.output
 
 
@@ -616,3 +616,94 @@ def test_cost_emit_feedback_does_not_treat_aggregate_output_as_waste(monkeypatch
 
     assert result.exit_code == 0
     assert not calls
+
+
+@pytest.mark.parametrize(
+    ("command", "surface"),
+    [
+        ("st check --quick", "check"),
+        ("cd x && st commit -m y", "commit"),
+        ("FOO=1 BAR=x st search foo", "search"),
+        ("timeout 600 st check", "check"),
+        ("timeout -k 5 30s st db query", "db"),
+        ("echo $(st pulse --gate)", "pulse"),
+        ("ls\nst done x", "done"),
+        ('["/bin/bash", "-lc", "st tools manifest --help"]', "tools"),
+        ('["/bin/bash", "-lc", "cd a\\nst search q"]', "search"),
+        ('["st", "claim", "x"]', "claim"),
+        ('tools.exec_command({cmd:"st lease --list"})', "lease"),
+        ("env A=1 st -P agent-hub db query", "db"),
+        ("rg 'st check' docs", None),
+        ("first-st thing", None),
+        ("git status", None),
+    ],
+)
+def test_st_command_patterns_cover_wrapped_shell_forms(test_db_url: str, command: str, surface: str | None) -> None:
+    """Adoption counts st behind env/timeout/subshell/array/Codex exec wrappers (PostgreSQL ARE)."""
+    import psycopg
+
+    from cli.commands.tools import _ST_COMMAND_RE, _ST_SURFACE_RE
+
+    with psycopg.connect(test_db_url) as connection:
+        matched, found = cast(tuple[bool, str | None], connection.execute(
+            "SELECT %s ~ %s, lower((regexp_match(%s, %s))[1])",
+            (command, _ST_COMMAND_RE, command, _ST_SURFACE_RE),
+        ).fetchone())
+    assert matched is (surface is not None)
+    assert found == surface
+
+
+@pytest.mark.parametrize(
+    ("pattern_name", "command", "expected"),
+    [
+        ("_RAW_QUALITY_RE", "pytest -q", True),
+        ("_RAW_QUALITY_RE", "cd a && ruff check .", True),
+        ("_RAW_QUALITY_RE", "pytest_helper.sh", False),
+        ("_RAW_DB_RE", "psql -c 'select 1'", True),
+        ("_RAW_SERVICE_RE", "systemctl restart x", True),
+        ("_ST_CHECK_RE", "timeout 900 st check --quick", True),
+        ("_ST_CHECK_RE", "st checkout", False),
+    ],
+)
+def test_audit_patterns_use_postgres_word_boundaries(test_db_url: str, pattern_name: str, command: str, expected: bool) -> None:
+    """PostgreSQL treats \\b as backspace; the audit patterns must still match real commands."""
+    import psycopg
+
+    from cli.commands import tools
+
+    with psycopg.connect(test_db_url) as connection:
+        row = connection.execute("SELECT %s ~* %s", (command, getattr(tools, pattern_name))).fetchone()
+    assert row is not None and row[0] is expected
+
+
+def test_compact_formatters_honor_requested_limit(capsys: pytest.CaptureFixture[str]) -> None:
+    """Rows returned for -l/--limit are all printed, not re-truncated client-side."""
+    from cli.commands.tools import _format_adoption_compact
+
+    _format_status_compact({
+        "summary": {"total_requests": 12},
+        "by_tool_name": [{"tool_name": f"tool-{index}", "count": 1} for index in range(12)],
+        "by_endpoint": [{"endpoint": f"/ep-{index}", "count": 1} for index in range(12)],
+    })
+    _format_adoption_compact({
+        "window_hours": 24,
+        "summary": {"shell_tool_events": 30, "st_commands": 30, "st_command_rate": 100.0},
+        "top_st_surfaces": [{"surface": f"st s{index}", "count": 1} for index in range(30)],
+    })
+    out = capsys.readouterr().out
+    assert "tool-11" in out
+    assert "/ep-11" in out
+    assert "st s29  1" in out
+    assert "shell_commands=30" in out
+
+
+def test_cost_compact_honors_requested_limit(capsys: pytest.CaptureFixture[str]) -> None:
+    _format_cost_compact({
+        "window_hours": 24,
+        "manifest_costs": [{"density": "core", "task": None, "tokens_approx": 1}],
+        "request_hotspots": [{"tool_name": f"req-{index}", "tool_type": "sdk", "requests": 1} for index in range(12)],
+        "tool_output_hotspots": [{"tool_name": f"out-{index}", "events": 1} for index in range(12)],
+    })
+    out = capsys.readouterr().out
+    assert "req-11|sdk" in out
+    assert "out-11 events=1" in out

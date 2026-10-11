@@ -222,10 +222,11 @@ def _format_ownerless_review(project_id: Any, summary: dict[str, Any], cleanup: 
 
 _RESOLUTION_HINTS: dict[str, str] = {
     "active_nonwriter_write_session": (
-        "st pulse --sessions to inspect, or wait for the writer to release"
+        "st pulse --details to inspect, or wait for the writer to release"
     ),
     "task_lane_conflict": (
-        "st pulse --gate, then coordinate with the holder or st abandon <conflicting-task-id>"
+        "st pulse --gate, then coordinate with the holder; the holder can release the "
+        "claim with st pause <conflicting-task-id> -r <handoff note>"
     ),
 }
 

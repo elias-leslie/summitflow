@@ -62,15 +62,15 @@ def _result_ctes() -> sql.SQL:
             WHERE result_rank = 1
         ), payloads AS (
             SELECT *, COALESCE(
-                CASE WHEN json_typeof(tool_output->'output') = 'string' THEN tool_output->>'output' END,
-                CASE WHEN json_typeof(tool_output->'content') = 'string' THEN tool_output->>'content' END,
-                CASE WHEN json_typeof(tool_output->'stdout') = 'string' OR json_typeof(tool_output->'stderr') = 'string'
+                CASE WHEN jsonb_typeof(tool_output->'output') = 'string' THEN tool_output->>'output' END,
+                CASE WHEN jsonb_typeof(tool_output->'content') = 'string' THEN tool_output->>'content' END,
+                CASE WHEN jsonb_typeof(tool_output->'stdout') = 'string' OR jsonb_typeof(tool_output->'stderr') = 'string'
                      THEN COALESCE(tool_output->>'stdout', '') || COALESCE(tool_output->>'stderr', '') END,
                 NULLIF((tool_output->'output')::jsonb, 'null'::jsonb)::text,
                 content,
-                CASE WHEN json_typeof(tool_output) = 'string' THEN tool_output #>> '{}' END,
-                CASE WHEN json_typeof(tool_output) = 'array' THEN tool_output::text END,
-                CASE WHEN json_typeof(tool_output) = 'object' AND
+                CASE WHEN jsonb_typeof(tool_output) = 'string' THEN tool_output #>> '{}' END,
+                CASE WHEN jsonb_typeof(tool_output) = 'array' THEN tool_output::text END,
+                CASE WHEN jsonb_typeof(tool_output) = 'object' AND
                     tool_output::jsonb - ARRAY['call_id', 'tool_use_id', 'truncated', 'output_truncated',
                         'exit_code', 'status', 'is_error', 'opaque_blocks', 'output', 'content', 'stdout', 'stderr'] <> '{}'::jsonb
                      THEN tool_output::text END
@@ -189,8 +189,23 @@ def _label(value: Any, limit: int) -> str:
     return label
 
 
+def advisory_query_error(exc: BaseException) -> str:
+    """Name a failed telemetry query so --advisory reports it instead of UNKNOWN.
+
+    Server-side SQL errors carry a SQLSTATE and a primary message (for example an
+    undefined function); connection failures can embed hosts or credentials, so
+    only their type is shown.
+    """
+    sqlstate = getattr(exc, "sqlstate", None)
+    diag = getattr(exc, "diag", None)
+    primary = getattr(diag, "message_primary", None) if sqlstate else None
+    return f"{type(exc).__name__} [{sqlstate}]: {primary}" if primary else type(exc).__name__
+
+
 def cost_advisory(data: dict[str, Any]) -> dict[str, Any]:
     """Advice never treats size alone, missing telemetry, or HTTP failure as waste."""
+    if data.get("query_error"):
+        return {"status": "error", "summary": {}, "findings": [], "error": str(data["query_error"])}
     diagnostics = data.get("result_diagnostics", {})
     summary = diagnostics.get("summary", {})
     measured = int(summary.get("measured_results") or 0)
@@ -218,6 +233,11 @@ def cost_advisory(data: dict[str, Any]) -> dict[str, Any]:
 def render_cost_advisory(data: dict[str, Any]) -> str:
     """One tiny healthy/unknown line; actionable exception capped at 1,500 UTF-8 bytes."""
     advisory = cost_advisory(data)
+    if advisory["status"] == "error":
+        return (
+            f"TOOLS_COST:ERROR telemetry query failed: {_label(advisory['error'], 300)}; "
+            "cost unknown; work may continue."
+        )
     summary = advisory["summary"]
     measured, results = summary.get("measured_results", 0), summary.get("results", 0)
     if advisory["status"] != "advisory":

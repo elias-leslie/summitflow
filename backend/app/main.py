@@ -1,6 +1,7 @@
 """SummitFlow FastAPI application."""
 
 import os
+import sys
 import time
 from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
@@ -56,8 +57,10 @@ from .schemas.health import ComponentHealth, DetailedHealthResponse, ReadinessRe
 
 _APP_VERSION = "0.1.0"
 
-# Configure structured logging (skip in test mode - tests configure their own logging)
-if not os.getenv("PYTEST_CURRENT_TEST"):
+# Configure structured logging (skip in test mode - tests configure their own logging).
+# PYTEST_CURRENT_TEST is only set once a test runs, after collection imports this
+# module, so check for the loaded pytest module instead.
+if "pytest" not in sys.modules and not os.getenv("PYTEST_CURRENT_TEST"):
     configure_logging()
 
     # Configure uvicorn loggers to use syslog prefixes for journald

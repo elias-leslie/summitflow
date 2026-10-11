@@ -5,7 +5,9 @@ from collections.abc import Awaitable, Callable
 from datetime import UTC, datetime
 from typing import Any
 
+import httpx
 from agent_hub import AsyncAgentHubClient
+from agent_hub.exceptions import ServerError
 
 from app.services._agent_hub_config import get_async_client, resolve_agent_hub_request_source
 from app.services._ownership_roles import is_read_only_owner
@@ -24,11 +26,20 @@ _SESSION_LIMIT = 25
 _RUNNING_STATUS = "running"
 
 
+class AgentHubUnavailableError(RuntimeError):
+    """Agent Hub could not be reached or failed, so live ownership is unknown."""
+
+
 async def _agent_hub_get(read: Callable[[AsyncAgentHubClient], Awaitable[dict[str, Any]]]) -> dict[str, Any]:
     """Run one Agent Hub read through the SDK and return its JSON object."""
     request_source = resolve_agent_hub_request_source("summitflow-project-pulse")
-    async with get_async_client(timeout=_TIMEOUT, request_source=request_source) as client:
-        return await read(client)
+    try:
+        async with get_async_client(timeout=_TIMEOUT, request_source=request_source) as client:
+            return await read(client)
+    except (httpx.HTTPError, ServerError) as exc:
+        raise AgentHubUnavailableError(
+            f"Agent Hub is unavailable, so live sessions and ownership cannot be read: {type(exc).__name__}: {exc}"
+        ) from exc
 
 
 def _ownership(project_id: str) -> Callable[[AsyncAgentHubClient], Awaitable[dict[str, Any]]]:

@@ -329,6 +329,19 @@ class TestResolutionHints:
         assert "Resolution" in msg
         assert "st pulse --gate" in msg
 
+    def test_resolution_hints_name_real_non_destructive_commands(self) -> None:
+        """Hints use existing flags and never route agents to st abandon on a shared checkout."""
+        from cli.commands.pulse import app as pulse_app
+        from cli.commands.pulse_formatters import _RESOLUTION_HINTS
+
+        pulse_help = CliRunner().invoke(pulse_app, ["--help"]).output
+        for hint in _RESOLUTION_HINTS.values():
+            assert "st abandon" not in hint
+            assert "--sessions" not in hint
+        assert "--details" in _RESOLUTION_HINTS["active_nonwriter_write_session"]
+        assert "--details" in pulse_help
+        assert "st pause" in _RESOLUTION_HINTS["task_lane_conflict"]
+
     def test_rejected_plan_blocks_with_resolution(self) -> None:
         """`st claim` on a plan_status=rejected task blocks with a hint."""
         from cli.commands.claim import _enforce_plan_status_gate

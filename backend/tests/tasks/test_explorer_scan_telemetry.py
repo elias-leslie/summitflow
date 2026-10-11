@@ -234,3 +234,23 @@ def test_run_scan_job_isolated_returns_error_payload_from_nonzero_child() -> Non
         result = _run_scan_job_isolated("project-1", "file")
 
     assert result == {"status": "error", "error": "child boom"}
+
+
+def test_fetch_projects_skips_testing_registrations_for_scheduled_scans() -> None:
+    from app.tasks.explorer_tasks import _fetch_projects
+
+    cursor = Mock()
+    cursor.fetchall.return_value = [
+        ("summitflow", "SummitFlow", "/srv/summitflow"),
+        ("fixture-project", "Fixture", "/tmp/fixture"),
+    ]
+    context = Mock()
+    context.__enter__ = Mock(return_value=cursor)
+    context.__exit__ = Mock(return_value=False)
+    with (
+        patch("app.tasks.explorer_tasks.get_cursor", return_value=context),
+        patch("app.tasks.explorer_tasks.testing_project_ids", return_value={"fixture-project"}),
+    ):
+        assert _fetch_projects(None) == [("summitflow", "SummitFlow", "/srv/summitflow")]
+        cursor.fetchall.return_value = [("fixture-project", "Fixture", "/tmp/fixture")]
+        assert _fetch_projects("fixture-project") == [("fixture-project", "Fixture", "/tmp/fixture")]

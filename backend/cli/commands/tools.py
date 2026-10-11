@@ -25,6 +25,7 @@ from ..tool_registry import list_operator_tools, tool_registry_path
 from ._api_paths import ACCESS_CONTROL_METRICS_PATH
 from ._http_errors import parse_error_detail, raise_connect_error, raise_timeout_error
 from .tools_cost import (
+    advisory_query_error,
     cost_advisory,
     render_cost_advisory,
     result_diagnostics_query,
@@ -64,19 +65,29 @@ JSON_FORMAT = "json"
 MARKDOWN_FORMAT = "markdown"
 YAML_FORMAT = "yaml"
 
-_ST_COMMAND_RE = r"(^|&&\s*|;\s*)st(\s|$)"
-_ST_SURFACE_RE = r"(^|&&\s*|;\s*)st\s+(?:(?:-P|--project)\s+\S+\s+)?([a-z][a-z0-9-]*)"
-_ST_CHECK_RE = r"(^|&&\s*|;\s*)st\s+(?:(?:-P|--project)\s+\S+\s+)?check\b"
-_RAW_QUALITY_RE = (
-    r"(^|&&\s*|;\s*)"
-    r"(pytest|python[0-9.]*\s+-m\s+pytest|ruff|mypy|ty|npx\s+biome|biome|"
-    r"npx\s+tsc|tsc|vitest|pnpm\s+(exec\s+)?vitest)\b"
+# PostgreSQL ARE patterns (\y is a word boundary; \b would be a backspace).
+# A command starts at the beginning, after a shell separator or newline (raw or
+# JSON-escaped), inside $(...)/(...)/backticks, or as the quoted script of
+# `bash -c`/`-lc`, an argv array element, or a Codex exec `cmd:"..."` call.
+# Env assignments, `env`, and `timeout [opts] N` prefixes are skipped.
+_CMD_START_RE = (
+    r"(?:^|[;&|(\n`]\s*|\\n\s*|(?:-l?c\s+|[\[,]\s*|cmd:\s*)[\"'])"
+    r"(?:(?:env|[A-Za-z_][A-Za-z0-9_]*=\S*|timeout(?:\s+-\S+(?:\s+[0-9.]+[smhd]?)?)*\s+[0-9.]+[smhd]?)\s+)*"
 )
-_RAW_DB_RE = r"(^|&&\s*|;\s*)(psql|pgcli)\b"
+_ST_PROJECT_OPT_RE = r"(?:(?:-P|--project)\s+\S+\s+)?"
+_ST_COMMAND_RE = _CMD_START_RE + r"st(?:[\s\"']|$)"
+_ST_SURFACE_RE = _CMD_START_RE + r"st[\s\"',]+" + _ST_PROJECT_OPT_RE + r"([a-z][a-z0-9-]*)"
+_ST_CHECK_RE = _CMD_START_RE + r"st\s+" + _ST_PROJECT_OPT_RE + r"check\y"
+_RAW_QUALITY_RE = (
+    _CMD_START_RE
+    + r"(?:pytest|python[0-9.]*\s+-m\s+pytest|ruff|mypy|ty|npx\s+biome|biome|"
+    r"npx\s+tsc|tsc|vitest|pnpm\s+(?:exec\s+)?vitest)\y"
+)
+_RAW_DB_RE = _CMD_START_RE + r"(?:psql|pgcli)\y"
 _RAW_SERVICE_RE = (
-    r"(^|&&\s*|;\s*)"
-    r"(systemctl|service|docker-compose|docker\s+(compose\s+)?"
-    r"(restart|reload|start|stop|build|up|down))\b"
+    _CMD_START_RE
+    + r"(?:systemctl|service|docker-compose|docker\s+(?:compose\s+)?"
+    r"(?:restart|reload|start|stop|build|up|down))\y"
 )
 _RAW_AUDIT_RULES = (
     {
@@ -169,7 +180,7 @@ def _format_status_compact(data: dict[str, Any], *, hours: int = 24) -> None:
 
     if by_tool_name:
         print("  Top tools (HTTP outcome):")
-        for tool in by_tool_name[:5]:
+        for tool in by_tool_name:
             name = str(tool.get("tool_name") or "?")[:40]
             count = tool.get("count", 0)
             rate = tool.get("success_rate", 100.0)
@@ -178,7 +189,7 @@ def _format_status_compact(data: dict[str, Any], *, hours: int = 24) -> None:
 
     if by_endpoint:
         print("  Top endpoints (HTTP outcome):")
-        for ep in by_endpoint[:5]:
+        for ep in by_endpoint:
             endpoint = ep.get("endpoint", "?")[:40]
             count = ep.get("count", 0)
             rate = ep.get("success_rate", 100.0)
@@ -192,35 +203,41 @@ def _fetch_adoption_metrics(hours: int, limit: int, session: str | None = None) 
 
     from .db import _db_url, _psql_project_lock
 
-    summary_sql = """
+    # Shell commands: Bash/exec_command calls (Codex exec nested commands are
+    # recorded as Bash rows), plus Codex exec wrapper scripts that have no
+    # correlated nested rows, so each command is counted once.
+    tool_cmds_cte = """
         WITH tool_cmds AS (
-            SELECT COALESCE(tool_input->>'cmd', tool_input->>'command') AS command
-            FROM session_events
-            WHERE created_at >= now() - (%s * interval '1 hour')
-              AND (%s::text IS NULL OR session_id = %s)
-              AND tool_name IN ('Bash', 'bash', 'exec_command')
-              AND COALESCE(tool_input->>'cmd', tool_input->>'command') IS NOT NULL
+            SELECT CASE WHEN e.tool_name = 'exec' THEN e.tool_input->>'raw'
+                        ELSE COALESCE(e.tool_input->>'cmd', e.tool_input->>'command') END AS command
+            FROM session_events e
+            WHERE e.created_at >= now() - (%s * interval '1 hour')
+              AND (%s::text IS NULL OR e.session_id = %s)
+              AND e.event_type = 'tool_use'
+              AND (
+                (e.tool_name IN ('Bash', 'bash', 'exec_command')
+                 AND COALESCE(e.tool_input->>'cmd', e.tool_input->>'command') IS NOT NULL)
+                OR (e.tool_name = 'exec' AND e.tool_input->>'raw' ~ 'exec_command'
+                    AND NOT EXISTS (
+                        SELECT 1 FROM session_events n
+                        WHERE n.session_id = e.session_id
+                          AND n.tool_input->>'wrapper_candidate_call_id' = e.tool_input->>'call_id'
+                    ))
+              )
         )
+    """
+    summary_sql = tool_cmds_cte + """
         SELECT
             count(*)::int AS shell_tool_events,
             count(*) FILTER (WHERE command ~ %s)::int AS st_commands,
             count(*) FILTER (WHERE command ~ %s)::int AS raw_quality_commands
         FROM tool_cmds;
     """
-    top_st_sql = """
-        WITH tool_cmds AS (
-            SELECT COALESCE(tool_input->>'cmd', tool_input->>'command') AS command
-            FROM session_events
-            WHERE created_at >= now() - (%s * interval '1 hour')
-              AND (%s::text IS NULL OR session_id = %s)
-              AND tool_name IN ('Bash', 'bash', 'exec_command')
-              AND COALESCE(tool_input->>'cmd', tool_input->>'command') IS NOT NULL
-              AND COALESCE(tool_input->>'cmd', tool_input->>'command') ~ %s
-        )
-        SELECT 'st ' || lower((regexp_match(command, %s))[2]) AS surface,
+    top_st_sql = tool_cmds_cte + """
+        SELECT 'st ' || lower((regexp_match(command, %s))[1]) AS surface,
                count(*)::int AS count
         FROM tool_cmds
-        WHERE regexp_match(command, %s) IS NOT NULL
+        WHERE command ~ %s
         GROUP BY surface
         ORDER BY count DESC, surface
         LIMIT %s;
@@ -248,7 +265,7 @@ def _fetch_adoption_metrics(hours: int, limit: int, session: str | None = None) 
             list[tuple[str, int]],
             conn.execute(
                 top_st_sql,
-                (hours, session, session, _ST_COMMAND_RE, _ST_SURFACE_RE, _ST_SURFACE_RE, limit),
+                (hours, session, session, _ST_SURFACE_RE, _ST_SURFACE_RE, limit),
             ).fetchall(),
         )
         top_st = [{"surface": surface, "count": count} for surface, count in top_st_rows]
@@ -280,7 +297,7 @@ def _format_adoption_compact(data: dict[str, Any]) -> None:
     st_rate = f"{float(measured_rate):.1f}%" if measured_rate is not None else "unknown"
     raw_quality = int(summary.get("raw_quality_commands") or 0)
     print(
-        f"TOOLS_ADOPTION[{hours}h]:shell={shell_events} "
+        f"TOOLS_ADOPTION[{hours}h]:shell_commands={shell_events} "
         f"st={st_commands} st_rate={st_rate} raw_quality={raw_quality}"
     )
     if shell_events == 0:
@@ -293,7 +310,7 @@ def _format_adoption_compact(data: dict[str, Any]) -> None:
     top_st = data.get("top_st_surfaces", [])
     if top_st:
         print("  Top st surfaces:")
-        for item in top_st[:10]:
+        for item in top_st:
             print(f"    {item.get('surface', '?')}  {item.get('count', 0)}")
 
 
@@ -860,7 +877,7 @@ def _format_cost_compact(data: dict[str, Any]) -> None:
     request_hotspots = data.get("request_hotspots", [])
     if request_hotspots:
         print("  HTTP request telemetry (task outcome unknown):")
-        for item in request_hotspots[:10]:
+        for item in request_hotspots:
             print(
                 f"    {item.get('tool_name', '?')}|{item.get('tool_type', '?')}"
                 f" reqs={item.get('requests', 0)}"
@@ -870,7 +887,7 @@ def _format_cost_compact(data: dict[str, Any]) -> None:
     output_hotspots = data.get("tool_output_hotspots", [])
     if output_hotspots:
         print("  Tool output hotspots:")
-        for item in output_hotspots[:10]:
+        for item in output_hotspots:
             estimate = item.get("output_tokens_approx")
             output = "out=unknown" if estimate is None else f"out~{estimate}t"
             print(
@@ -1081,8 +1098,8 @@ def cost(
 
         try:
             result = _fetch_cost_metrics(hours, limit, task, session)
-        except (psycopg.Error, OSError, ValueError, typer.Exit):
-            result = {}
+        except (psycopg.Error, OSError, ValueError, typer.Exit) as exc:
+            result = {"query_error": advisory_query_error(exc)}
         if ctx.obj.is_compact:
             print(render_cost_advisory(result))
         else:

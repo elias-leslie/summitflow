@@ -904,3 +904,17 @@ async def test_build_project_pulse_stale_session_does_not_prevent_stranded() -> 
     assert [task["id"] for task in payload["stranded_tasks"]] == ["task-dead-abc"]
     assert payload["summary"]["running_tasks"] == 0
     assert payload["summary"]["stranded_tasks"] == 1
+
+
+@pytest.mark.asyncio
+async def test_agent_hub_connect_error_raises_unavailable() -> None:
+    """A down Agent Hub is a typed unavailability, not an unhandled httpx error."""
+    import httpx
+
+    from app.services.project_pulse import AgentHubUnavailableError, _agent_hub_get
+
+    async def read(_client: object) -> dict[str, object]:
+        raise httpx.ConnectError("connection refused")
+
+    with pytest.raises(AgentHubUnavailableError, match="Agent Hub is unavailable"):
+        await _agent_hub_get(read)

@@ -154,3 +154,18 @@ async def test_hatchet_retention_wf_runs_retention_guard(monkeypatch) -> None:
 
     assert result == {"status": "success", "total_deleted": 4}
     run_hatchet_retention_guard.assert_called_once_with()
+
+
+def _crons(workflow: object) -> list[str]:
+    import warnings
+
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore", DeprecationWarning)
+        return list(workflow.config.on_crons)  # type: ignore[attr-defined]
+
+
+def test_explorer_file_scan_runs_daily_while_full_scan_and_graph_refresh_keep_cadence() -> None:
+    """Per-commit symbol refresh covers increments; the file sweep is a daily backstop."""
+    assert _crons(refresh_precision_indexes_wf) == ["10 3 * * *"]
+    assert _crons(scan_projects_wf) == ["0 */6 * * *"]
+    assert _crons(refresh_graphify_graphs_wf) == ["25 */2 * * *"]

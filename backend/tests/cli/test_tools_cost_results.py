@@ -21,10 +21,10 @@ def test_cost_attributes_unnamed_result_to_named_call(test_db_url: str) -> None:
                             source_timestamp, created_at, tool_input, source_event_id) AS (
             VALUES
               ('use', 'sess-1', 'tool_use', 'call-1', 'exec_command',
-               NULL::json, NULL::text, NULL::int, NULL::int,
-               now(), now(), '{"cmd":"read source"}'::json, 'use-1'),
+               NULL::jsonb, NULL::text, NULL::int, NULL::int,
+               now(), now(), '{"cmd":"read source"}'::jsonb, 'use-1'),
               ('result', 'sess-1', 'tool_result', 'call-1', NULL,
-               '{"call_id":"call-1","output":"abcd"}'::json, 'abcd', NULL, 1,
+               '{"call_id":"call-1","output":"abcd"}'::jsonb, 'abcd', NULL, 1,
                now(), now(), NULL, 'result-1')
         )
     """)
@@ -57,9 +57,9 @@ def _fixtures(events: list[dict[str, Any]], sessions: list[tuple[str, str | None
                             tool_input, source_event_id) AS (VALUES {events}),
         session_events AS (
             SELECT id::text, session_id::text, event_type::text, call_id::text, tool_name::text,
-                   tool_output::json, content::text, tokens::int, duration_ms::int,
+                   tool_output::jsonb, content::text, tokens::int, duration_ms::int,
                    source_timestamp::timestamptz, created_at::timestamptz,
-                   tool_input::json, source_event_id::text FROM fixture_events
+                   tool_input::jsonb, source_event_id::text FROM fixture_events
         ), sessions(id, agent_slug, external_id) AS (VALUES {sessions})
     """).format(events=sql.SQL(",").join(rows), sessions=sql.SQL(",").join(session_rows))
 
@@ -320,8 +320,24 @@ def test_cost_advisory_telemetry_failure_is_unknown_success(monkeypatch: pytest.
     monkeypatch.setattr("cli.commands.tools._fetch_cost_metrics", unavailable)
     result = CliRunner().invoke(app, ["cost", flag])
     assert result.exit_code == 0
-    assert "TOOLS_COST:UNKNOWN" in result.output
+    assert "TOOLS_COST:ERROR telemetry query failed: OperationalError" in result.output
     assert "sensitive" not in result.output
+
+
+def test_cost_advisory_surfaces_sql_errors_instead_of_unknown(test_db_url: str, monkeypatch: pytest.MonkeyPatch) -> None:
+    """A broken query (e.g. json_typeof on jsonb) must not masquerade as missing telemetry."""
+    with psycopg.connect(test_db_url) as connection, pytest.raises(psycopg.Error) as caught:
+        connection.execute("SELECT json_typeof('{}'::jsonb)")
+    error = caught.value
+
+    def broken(*_args: Any) -> None:
+        raise error
+    monkeypatch.setattr("cli.commands.tools._fetch_cost_metrics", broken)
+    result = CliRunner().invoke(app, ["cost", "--advisory"])
+    assert result.exit_code == 0
+    assert "TOOLS_COST:ERROR" in result.output
+    assert "json_typeof(jsonb) does not exist" in result.output
+    assert "UNKNOWN" not in result.output
 
 
 @pytest.mark.parametrize("arguments", [["--hours", "0"], ["--limit", "0"], ["--limit", "101"]])

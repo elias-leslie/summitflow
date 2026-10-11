@@ -10,8 +10,9 @@ import logging
 import logging.handlers
 import os
 import sys
+from datetime import UTC, datetime
 from pathlib import Path
-from typing import ClassVar
+from typing import Any, ClassVar
 
 import structlog
 from pythonjsonlogger import jsonlogger
@@ -121,6 +122,25 @@ class SyslogPrefixFormatter(logging.Formatter):
         return f"<{priority}>{message}"
 
 
+class _JsonFileFormatter(jsonlogger.JsonFormatter):
+    """JSON formatter that fills timestamp/level for plain stdlib records.
+
+    structlog events carry their own ``timestamp`` and ``level``; stdlib
+    records (httpx, uvicorn, logging.getLogger) do not, which left both null.
+    """
+
+    def add_fields(
+        self, log_data: dict[str, Any], record: logging.LogRecord, message_dict: dict[str, Any]
+    ) -> None:
+        super().add_fields(log_data, record, message_dict)
+        if log_data.get("timestamp") is None:
+            log_data["timestamp"] = (
+                datetime.fromtimestamp(record.created, tz=UTC).isoformat().replace("+00:00", "Z")
+            )
+        if log_data.get("level") is None:
+            log_data["level"] = record.levelname.lower()
+
+
 def _build_file_handler(
     log_dir: str, log_file: str, log_level: int
 ) -> logging.Handler:
@@ -140,7 +160,7 @@ def _build_file_handler(
     log_path = Path(log_dir)
     log_path.mkdir(exist_ok=True)
 
-    json_formatter = jsonlogger.JsonFormatter(
+    json_formatter = _JsonFileFormatter(
         _JSON_FORMAT,
         rename_fields=_JSON_RENAME_FIELDS,
     )

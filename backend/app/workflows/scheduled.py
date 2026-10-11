@@ -295,7 +295,7 @@ async def dependency_reviews_wf(input: EmptyInput, ctx: Context) -> dict[str, An
     execution_timeout="1200s",
     retries=3,
     backoff_factor=2.0,
-    on_crons=["10 */2 * * *"],
+    on_crons=["10 3 * * *"],
     concurrency=_explorer_schedule_concurrency(),
 )
 async def refresh_precision_indexes_wf(input: EmptyInput, ctx: Context) -> dict[str, Any]:
