@@ -60,22 +60,6 @@ class RuntimeMetricSeries(BaseModel):
     samples: list[RuntimeMetricSample]
 
 
-class RuntimeMetricSummary(BaseModel):
-    service: str
-    display_name: str | None
-    manager: str | None
-    category: str | None
-    sample_count: int
-    cpu_percent_avg: float | None
-    cpu_percent_max: float | None
-    memory_percent_avg: float | None
-    memory_percent_max: float | None
-    memory_used_bytes_avg: int | None
-    memory_used_bytes_max: int | None
-    last_sampled_at: datetime | None
-    state: str | None
-
-
 class HealthSummary(BaseModel):
     total: int
     healthy: int

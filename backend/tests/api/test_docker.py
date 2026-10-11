@@ -595,7 +595,7 @@ class TestDockerRuntime:
         assert response.json()[0]["cpu_percent"] == "1.00%"
         record.assert_not_called()
 
-    def test_metrics_windows_clamp_to_retention(
+    def test_metrics_history_window_clamps_to_one_day(
         self,
         mocker: MockerFixture,
         monkeypatch: pytest.MonkeyPatch,
@@ -604,15 +604,14 @@ class TestDockerRuntime:
         list_series = mocker.patch(
             "app.api.docker.routes.runtime_metric_store.list_runtime_metric_series", return_value=[],
         )
-        summary = mocker.patch(
-            "app.api.docker.routes.runtime_metric_store.summarize_runtime_metric_samples", return_value=[],
-        )
 
         assert client.get("/api/docker/metrics/history", params={"since_minutes": 43200}).status_code == 200
-        assert client.get("/api/docker/metrics/summary", params={"since_minutes": 43200}).status_code == 200
 
-        assert list_series.call_args.kwargs["since_minutes"] == 14 * 24 * 60
-        assert summary.call_args.kwargs["since_minutes"] == 14 * 24 * 60
+        assert list_series.call_args.kwargs["since_minutes"] == 24 * 60
+
+    def test_metrics_summary_endpoint_is_retired(self) -> None:
+        # The CLI reads summaries from storage directly; no HTTP caller remains.
+        assert client.get("/api/docker/metrics/summary").status_code == 404
 
     def test_systemd_metric_uses_cgroup_cpu_delta_and_memory_current(
         self,

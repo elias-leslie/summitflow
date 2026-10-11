@@ -51,22 +51,6 @@ export interface RuntimeMetricSeries {
   samples: RuntimeMetricSample[]
 }
 
-export interface RuntimeMetricSummary {
-  service: string
-  display_name: string | null
-  manager: string | null
-  category: string | null
-  sample_count: number
-  cpu_percent_avg: number | null
-  cpu_percent_max: number | null
-  memory_percent_avg: number | null
-  memory_percent_max: number | null
-  memory_used_bytes_avg: number | null
-  memory_used_bytes_max: number | null
-  last_sampled_at: string | null
-  state: string | null
-}
-
 export interface HealthSummary {
   total: number
   healthy: number
@@ -320,23 +304,6 @@ export const runtimeApi = {
       ),
       {
         errorMessage: 'Failed to fetch runtime metric history',
-      },
-    ),
-  getMetricSummary: (params?: {
-    service?: string
-    sinceMinutes?: number
-    limit?: number
-  }) =>
-    fetchWithErrorHandling<RuntimeMetricSummary[]>(
-      apiUrl(
-        `/api/docker/metrics/summary${queryString({
-          service: params?.service,
-          since_minutes: params?.sinceMinutes,
-          limit: params?.limit,
-        })}`,
-      ),
-      {
-        errorMessage: 'Failed to fetch runtime metric summary',
       },
     ),
   getHealth: () =>

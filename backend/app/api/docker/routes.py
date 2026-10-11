@@ -41,7 +41,6 @@ from .models import (
     ActionResult,
     HealthSummary,
     RuntimeMetricSeries,
-    RuntimeMetricSummary,
     RuntimeModeStatus,
     RuntimeModeUpdate,
     RuntimeServiceMetrics,
@@ -172,21 +171,6 @@ async def get_metrics_history(
         limit=limit,
     )
     return [RuntimeMetricSeries.model_validate(row) for row in rows]
-
-
-@router.get("/metrics/summary", response_model=list[RuntimeMetricSummary])
-async def get_metrics_summary(
-    service: str | None = Query(default=None),
-    since_minutes: int = Query(default=360, ge=1, le=43200),
-    limit: int = Query(default=40, ge=1, le=200),
-) -> list[RuntimeMetricSummary]:
-    """Get compact persisted runtime metric aggregates."""
-    rows = runtime_metric_store.summarize_runtime_metric_samples(
-        service=service,
-        since_minutes=clamp_window_minutes(since_minutes),
-        limit=limit,
-    )
-    return [RuntimeMetricSummary.model_validate(row) for row in rows]
 
 
 @router.get("/logs/{service}", response_model=None, dependencies=[Depends(_require_auth)])

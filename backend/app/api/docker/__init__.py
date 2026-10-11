@@ -81,7 +81,6 @@ from .models import (  # noqa: F401
     HealthSummary,
     RuntimeMetricSample,
     RuntimeMetricSeries,
-    RuntimeMetricSummary,
     RuntimeModeStatus,
     RuntimeModeUpdate,
     RuntimeServiceMetrics,

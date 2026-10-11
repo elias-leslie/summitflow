@@ -15,11 +15,12 @@ _task: asyncio.Task[None] | None = None
 _last_cleanup_monotonic = 0.0
 
 # Persisted metrics are diagnostic history, not a monitoring system of record. A
-# five-minute cadence and two-week window keep enough context for a solo operator
-# while avoiding the millions of mostly redundant rows produced by 30-second
-# sampling for 30 days.
+# five-minute cadence and one-day window cover "what spiked recently" for a solo
+# operator; the env override exists for a deliberate longer investigation.
 DEFAULT_INTERVAL_SECONDS = 300
-DEFAULT_RETENTION_DAYS = 14
+DEFAULT_RETENTION_DAYS = 1
+# History queries never span more than a day, whatever retention is set to.
+MAX_WINDOW_MINUTES = 24 * 60
 
 
 def _interval_seconds() -> int:
@@ -45,8 +46,8 @@ def _retention_days() -> int:
 
 
 def clamp_window_minutes(since_minutes: int) -> int:
-    """Clamp a history query window to what retention can actually hold."""
-    return max(1, min(since_minutes, _retention_days() * 24 * 60))
+    """Clamp a history query window to retention and the one-day query cap."""
+    return max(1, min(since_minutes, _retention_days() * 24 * 60, MAX_WINDOW_MINUTES))
 
 
 async def sample_runtime_metrics_once() -> int:
