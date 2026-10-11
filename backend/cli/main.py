@@ -48,7 +48,6 @@ FORWARD_CONTEXT_SETTINGS = {"allow_extra_args": True, "ignore_unknown_options": 
 OPTIONAL_COMMANDS = (
     "abandon",
     "agent",
-    "autonomous",
     "autosnapshot",
     "backup",
     "checkpoints",
@@ -65,11 +64,8 @@ OPTIONAL_COMMANDS = (
     "lease",
     "logs",
     "monitor",
-    "migrate_branches",
-    "package",
     "projects",
     "pulse",
-    "refactor",
     "runtime",
     "service",
     "session_events",
@@ -88,7 +84,6 @@ SUBCOMMAND_GROUPS = (
     ("dep", "deps"),
     ("test", "tests"),
     ("subtask", "subtask"),
-    ("autonomous", "autonomous"),
     ("claude", "claude"),
     ("sessions", "sessions"),
     ("projects", "projects"),
@@ -103,7 +98,6 @@ SUBCOMMAND_GROUPS = (
     ("agent", "agent"),
     ("tools", "tools"),
     ("cleanup", "cleanup"),
-    ("refactor", "refactor"),
     ("docker", "docker"),
     ("setup", "setup"),
     ("vm", "vm"),
@@ -168,10 +162,6 @@ def _register_root_task_commands() -> None:
 def _register_subcommand_groups() -> None:
     for command_name, module_name in SUBCOMMAND_GROUPS:
         app.add_typer(_COMMANDS[module_name].app, name=command_name)
-
-
-def _register_root_commands() -> None:
-    app.command("package", help=_COMMANDS["package"].app.info.help)(_COMMANDS["package"].package)
 
 
 def _register_forwarded_root_commands() -> None:
@@ -345,7 +335,6 @@ app.command(SESSION_EVENTS_COMMAND, help="Agent Hub session events (observabilit
 )
 app.command("pulse")(_COMMANDS["pulse"].pulse)
 app.command("lease")(_COMMANDS["lease"].lease_command)
-app.command("migrate-branches")(_COMMANDS["migrate_branches"].migrate_branches_command)
 app.command("exec-log")(_COMMANDS["exec_monitor"].exec_log_command)
 
 
@@ -416,7 +405,6 @@ def commit_command(
 
 
 _register_forwarded_root_commands()
-_register_root_commands()
 
 
 @app.command(PROGRESS_COMMAND, hidden=True)

@@ -15,11 +15,6 @@ tags: [skill:commit-conventions, git, commit]
 - Keep subject line under 72 characters
 - Body explains "why" not "what"
 
-## Autocode Commits
-- Prefix with `[auto]` for autonomous execution commits
-- Prefix with `[pristine]` for pre-execution quality fixes
-- Prefix with `[auto-fix]` for quality gate auto-fix commits
-
 ## Branch Naming
 - Task branches are created by the checkpoint system
 - Branch coordination and cleanup happen through the shared checkout flow

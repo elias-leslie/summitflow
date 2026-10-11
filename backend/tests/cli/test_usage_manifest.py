@@ -113,7 +113,7 @@ def test_specialized_guidance_is_not_selected_by_unrelated_task_or_history(tmp_p
     ("design", "st.design"), ("ui-design", "st.design"),
     ("agent-admin", "st.agents.get"), ("model-admin", "st.models"),
     ("tool-governance", "st.tools.cost"), ("vm-repair", "st.vm.status"),
-    ("recording", "st.ui.gif"), ("heartbeat", "st.autonomous.upkeep"),
+    ("recording", "st.ui.gif"),
 ])
 def test_explicit_specialized_work_gets_complete_canonical_guidance(task, surface) -> None:
     selected = runner.invoke(tools_app, ["manifest", "--task", task, "--density", "adaptive", "--format", "json"])
@@ -307,17 +307,6 @@ def test_manifest_command_orders_root_task_surfaces_deterministically() -> None:
     assert result.exit_code == 0, result.output
     surfaces = [tool["surface"] for tool in json.loads(result.output)["tools"]]
     assert surfaces.index("st.claim") < surfaces.index("st.done") < surfaces.index("st.abandon")
-
-
-def test_migrate_branches_manifest_matches_delete_only_behavior() -> None:
-    result = runner.invoke(tools_app, ["manifest", "--surface", "st.migrate-branches", "--format", "json"])
-
-    assert result.exit_code == 0, result.output
-    tool = json.loads(result.output)["tools"][0]
-    precautions = " ".join(tool["precautions"])
-    assert "does not fast-forward or cherry-pick" in precautions
-    assert "reflog" in precautions
-    assert "cherry-picks any unmerged commits" not in precautions
 
 
 def test_manifest_command_filter_excludes_task_specific_surfaces() -> None:

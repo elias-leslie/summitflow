@@ -9,8 +9,7 @@ gates and `st service rebuild summitflow --detach` for rebuilds.
 Task orchestration and evidence capture for AI-assisted software development.
 
 SummitFlow coordinates development work across projects: task intake, planning,
-subtasks, quality gates, code-health scans, autonomous execution hooks, browser
-checks, backups, and operator-visible evidence. It is designed for developers
+subtasks, quality gates, code-health scans, browser checks, backups, and operator-visible evidence. It is designed for developers
 running their own agent tooling, not as a hosted SaaS.
 
 ![SummitFlow — task orchestration and evidence capture for AI-assisted development](../docs/images/summitflow-demo.gif)
@@ -46,16 +45,15 @@ UI (~23 pages), and ~33 Hatchet workflows. Output is compact JSON by default, wi
   check + checkpoint + publish + closure), `st abandon` (rollback tracked changes).
 - Tasks/subtasks/steps/dependencies with tiers, complexity, claim leasing, and
   evidence stored as JSONB (`verification_result`, `review_result`, `ai_review`).
-- `st subtask`, `st dep`, `st note`, `st mandates`, `st critique` (second opinion),
-  `st autocode` (queue a task for autonomous execution).
+- `st subtask`, `st dep`, `st note`, `st mandates`, `st critique` (second opinion).
+  `st create` stores a plain pending task; agents claim and complete it explicitly.
 
 **Quality gates and code health**
 
 - `st check` wraps ruff, types, pytest, biome, tsc, vitest, sqlfluff, squawk, and
   GitHub **CodeQL** alert checks, plus an isolated `cleanroom` run — with
   `--quick` / `--changed-only` / `--frontend-only` profiles.
-- `st health` (quality-gate status), an LLM **auto-fix** agent with pattern memory,
-  `radon` complexity assessment, and a self-healing monitor.
+- `st health` (project and service health).
 - `st graph` (Graphify topology + Fallow JS/TS audits) and `st search` (precision
   code search over symbols/endpoints/tables).
 
@@ -88,8 +86,6 @@ UI (~23 pages), and ~33 Hatchet workflows. Output is compact JSON by default, wi
 - `st aico root status|show|title|position|end REQUEST_ID` controls one exact
   retained owner root, including direct `st aico create` roots;
   `st sessions title` is a compatibility alias of `st aico root title`.
-- Autonomous runs capture page screenshots, route/health status, and console-error
-  counts, and analyze screenshots with a vision model — attached to the task.
 
 **Agents and AI (routed through Agent Hub)**
 
@@ -102,12 +98,12 @@ UI (~23 pages), and ~33 Hatchet workflows. Output is compact JSON by default, wi
   tool catalog + cost/governance telemetry), `st lease` (file-level coordination
   across parallel agents).
 
-**Autonomous orchestration**
+**Scheduled jobs**
 
-- `st autonomous` and an end-to-end pipeline (ideation → triage → planning →
-  critique → execution → review → verification → escalation) on Hatchet, with
-  scheduled work-pickup, task generation, tool governance, self-healing, and
-  production smoke tests. `st refactor` regenerates refactor tasks from a scan.
+- Hatchet runs maintenance crons (stale-claim reset, explorer scans, precision and
+  Graphify index refresh, backups, retention, production smoke tests, runtime
+  hygiene) and the Agent Hub automation dispatch/outbox workflows. Task execution
+  is always claimed by an agent; SummitFlow does not pick up or generate work.
 
 **Backups, snapshots, and recovery**
 
@@ -352,7 +348,7 @@ Main services:
 - Backend/API: `http://localhost:8001`
 - PostgreSQL: task/project/state storage
 - Redis: cache/background coordination
-- Hatchet: workflow engine for scheduled and autonomous jobs
+- Hatchet: workflow engine for scheduled jobs and Agent Hub automation dispatch
 - Agent Hub: optional companion control plane for routed AI agents
 
 ## Testing, linting, type checks, and build

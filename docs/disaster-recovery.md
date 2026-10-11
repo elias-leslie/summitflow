@@ -239,7 +239,7 @@ uv run --frozen st backup restore \
 
 Inspect each Git recovery result and then place it at its intended stable path.
 The database contains old absolute project and backup-source paths; reconcile
-those paths after the database is restored and before backup or autonomous
+those paths after the database is restored and before backup or maintenance
 schedules are resumed.
 
 ## 3. Materialize and inspect the infrastructure archive
@@ -595,8 +595,7 @@ Before a SummitFlow worker starts, query `projects.root_path` and
 `backup_sources.path` in the restored `summitflow` database. Correct each stale
 old-host path to the corresponding recovered stable source. Confirm that the
 saved backup key already reports `ready` with the inventory key ID. Also review
-the recovered per-project `agent_configs` and leave autonomous pickup and
-scheduled actions disabled until final validation. Do not start a worker merely
+the recovered per-project `agent_configs` and leave scheduled actions disabled until final validation. Do not start a worker merely
 to use the UI to repair these prerequisites.
 
 For each restored managed project, preserve its WIP and first identify the
@@ -717,8 +716,7 @@ Require all of the following:
 - a new capture produces one encrypted `.tar.gz.age`, the same ciphertext is
   verified in Drive, and an isolated restore test passes.
 
-Only then re-enable backup schedules, autonomous execution, recurring jobs, and
-maintenance timers. Keep the downloaded ciphertext and saved key until the new
+Only then re-enable backup schedules, recurring jobs, and maintenance timers. Keep the downloaded ciphertext and saved key until the new
 host has more than one independently verified recovery point.
 
 After recovery evidence is retained, remove plaintext archives and extracted
