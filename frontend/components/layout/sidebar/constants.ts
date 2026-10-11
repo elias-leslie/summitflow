@@ -1,7 +1,9 @@
-import { Compass, FolderOpen, GitFork, ListTodo, Palette } from 'lucide-react'
+import { FolderOpen, ListTodo, Palette } from 'lucide-react'
 import type { NavItemConfig } from './types'
 
-// Project-specific navigation items (shown when project expanded)
+// Project-specific navigation items (shown when project expanded).
+// Explorer and Graph are frozen: their routes stay reachable by URL, but they
+// are no longer offered in the sidebar.
 export const projectNavItems: NavItemConfig[] = [
   {
     id: 'tasks',
@@ -13,26 +15,6 @@ export const projectNavItems: NavItemConfig[] = [
       'text-slate-400 hover:bg-phosphor-500/10 hover:text-phosphor-400',
     iconActiveClasses: 'text-phosphor-400',
     iconInactiveClasses: 'text-slate-500 group-hover:text-phosphor-400',
-  },
-  {
-    id: 'explorer',
-    label: 'Explorer',
-    href: '',
-    icon: Compass,
-    activeClasses: 'bg-teal-500/15 text-teal-400',
-    inactiveClasses: 'text-slate-400 hover:bg-teal-500/10 hover:text-teal-400',
-    iconActiveClasses: 'text-teal-400',
-    iconInactiveClasses: 'text-slate-500 group-hover:text-teal-400',
-  },
-  {
-    id: 'graph',
-    label: 'Graph',
-    href: '/graph',
-    icon: GitFork,
-    activeClasses: 'bg-cyan-500/15 text-cyan-400',
-    inactiveClasses: 'text-slate-400 hover:bg-cyan-500/10 hover:text-cyan-400',
-    iconActiveClasses: 'text-cyan-400',
-    iconInactiveClasses: 'text-slate-500 group-hover:text-cyan-400',
   },
   {
     id: 'files',

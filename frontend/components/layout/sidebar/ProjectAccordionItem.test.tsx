@@ -167,7 +167,17 @@ describe('ProjectAccordionItem', () => {
     renderItem({}, { isExpanded: true })
 
     expect(screen.getByRole('link', { name: 'Tasks' })).toBeInTheDocument()
-    expect(screen.getByRole('link', { name: 'Explorer' })).toBeInTheDocument()
     expect(screen.getByRole('link', { name: 'Settings' })).toBeInTheDocument()
+  })
+
+  it('leaves the frozen Explorer and Graph pages out of the sidebar', () => {
+    renderItem({}, { isExpanded: true })
+
+    expect(
+      screen.queryByRole('link', { name: 'Explorer' }),
+    ).not.toBeInTheDocument()
+    expect(
+      screen.queryByRole('link', { name: 'Graph' }),
+    ).not.toBeInTheDocument()
   })
 })
