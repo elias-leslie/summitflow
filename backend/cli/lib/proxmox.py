@@ -34,6 +34,8 @@ class ProxmoxConfig:
     token_id: str
     token_secret: str
     node: str
+    # PVE cluster CA path (PROXMOX_CA_BUNDLE) pins TLS; otherwise PROXMOX_VERIFY_SSL (default off: self-signed PVE)
+    verify: bool | str = False
 
 
 def _read_env_file(path: Path) -> dict[str, str]:
@@ -75,11 +77,16 @@ def load_proxmox_config() -> ProxmoxConfig:
     ]
     if missing:
         raise ProxmoxError(f"Missing Proxmox configuration: {', '.join(missing)}")
+    ca_bundle = value("PROXMOX_CA_BUNDLE")
+    verify: bool | str = ca_bundle if ca_bundle and Path(ca_bundle).is_file() else (
+        value("PROXMOX_VERIFY_SSL", "false").lower() in {"1", "true", "yes", "on"}
+    )
     return ProxmoxConfig(
         host=host.rstrip("/"),
         token_id=token_id,
         token_secret=secret,
         node=node,
+        verify=verify,
     )
 
 
@@ -100,7 +107,7 @@ class ProxmoxClient:
                 headers=self._headers,
                 data=data,
                 timeout=30.0,
-                verify=False,
+                verify=self.config.verify,
             )
         except httpx.HTTPError as exc:
             raise ProxmoxError(f"Proxmox request failed: {exc}") from exc

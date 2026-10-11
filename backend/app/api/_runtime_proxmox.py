@@ -72,6 +72,15 @@ def _proxmox_config() -> dict[str, Any]:
     }
 
 
+def _ssl_context(verify_ssl: bool) -> ssl.SSLContext | None:
+    """PROXMOX_CA_BUNDLE (the PVE cluster CA) pins and fully verifies TLS, whatever PROXMOX_VERIFY_SSL says;
+    without it, verify_ssl picks system CAs or no verification (legacy self-signed setups)."""
+    ca_bundle = os.environ.get("PROXMOX_CA_BUNDLE", "").strip()
+    if ca_bundle and os.path.isfile(ca_bundle):
+        return ssl.create_default_context(cafile=ca_bundle)
+    return None if verify_ssl else ssl._create_unverified_context()
+
+
 def _split_proxmox_tags(raw: str | None) -> list[str]:
     if not raw:
         return []
@@ -104,7 +113,7 @@ def _sync_proxmox_get_json(
         f"{api_url}/api2/json{path}",
         headers={"Authorization": f"PVEAPIToken={token_id}={token_secret}"},
     )
-    context = None if verify_ssl else ssl._create_unverified_context()
+    context = _ssl_context(verify_ssl)
     with urllib_request.urlopen(
         request,
         timeout=_PROXMOX_TIMEOUT_SECONDS,
@@ -255,7 +264,7 @@ def _sync_proxmox_post_json(
         headers={"Authorization": f"PVEAPIToken={token_id}={token_secret}"},
         method="POST",
     )
-    context = None if verify_ssl else ssl._create_unverified_context()
+    context = _ssl_context(verify_ssl)
     with urllib_request.urlopen(
         request,
         timeout=_PROXMOX_TIMEOUT_SECONDS,
@@ -281,7 +290,7 @@ def _sync_proxmox_put_json(
         headers={"Authorization": f"PVEAPIToken={token_id}={token_secret}"},
         method="PUT",
     )
-    context = None if verify_ssl else ssl._create_unverified_context()
+    context = _ssl_context(verify_ssl)
     with urllib_request.urlopen(
         request,
         timeout=_PROXMOX_TIMEOUT_SECONDS,

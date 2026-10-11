@@ -141,7 +141,9 @@ fi
 pve_api() {
     local method="$1" path="$2"
     shift 2
-    curl -sfk -X "$method" \
+    local tls=(-k)
+    [ -n "${PROXMOX_CA_BUNDLE:-}" ] && [ -f "${PROXMOX_CA_BUNDLE}" ] && tls=(--cacert "${PROXMOX_CA_BUNDLE}")
+    curl -sf "${tls[@]}" -X "$method" \
         -H "Authorization: PVEAPIToken=${PVE_TOKEN}=${PVE_SECRET}" \
         "${PVE_HOST}/api2/json${path}" "$@"
 }
