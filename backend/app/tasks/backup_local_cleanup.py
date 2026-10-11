@@ -69,18 +69,27 @@ def cleanup_local_backup_archives(
             }
             candidates.append(item)
             bytes_reclaimable += stat.st_size
-            if dry_run:
-                continue
+
+    refused = False
+    if not dry_run and candidates:
+        from .backup_safety import guard_deletion
+        from .backup_write_window import path_window
+
+        # A lost catalogue would make every archive an orphan; refuse that.
+        refused = not guard_deletion("native-archive-cleanup", ",".join(str(root) for root in cleanup_roots),
+                                     delete=len(candidates), total=scanned)
+        for item in [] if refused else candidates:
             try:
-                archive.unlink()
+                with path_window(item["path"]):
+                    Path(item["path"]).unlink()
                 deleted += 1
-                bytes_deleted += stat.st_size
+                bytes_deleted += int(item["size_bytes"])
             except OSError as exc:
                 failed += 1
-                failures.append({"path": str(archive), "error": str(exc)})
+                failures.append({"path": item["path"], "error": str(exc)})
 
     result = {
-        "status": "dry_run" if dry_run else ("partial" if failed else "success"),
+        "status": "dry_run" if dry_run else ("refused" if refused else "partial" if failed else "success"),
         "roots": [str(root) for root in cleanup_roots],
         "scanned": scanned,
         "kept_current": kept_current,

@@ -439,6 +439,27 @@ def retire_source(
         handle_api_error(e)
 
 
+@app.command("safety")
+def safety_status() -> None:
+    """Show the backup safety status: deletion breakers, PVE copy and weekly health."""
+    from app.tasks.backup_safety import read_status
+
+    output_json(read_status())
+
+
+@app.command("approve-deletion")
+def approve_deletion(
+    kind: Annotated[str, typer.Argument(help="Breaker kind from `st backup storage safety`, e.g. restic-retention or btrbk-target")],
+    reason: Annotated[str, typer.Option("--reason", help="Why this oversized deletion is expected")],
+    target: Annotated[str | None, typer.Option("--target", help="Limit the approval to one target")] = None,
+    hours: Annotated[int, typer.Option("--hours", min=1, max=72, help="Approval lifetime")] = 24,
+) -> None:
+    """Allow the next oversized retention run that the deletion circuit breaker refused."""
+    from app.tasks.backup_safety import approve_deletion as approve
+
+    output_json(approve(kind, target=target, reason=reason, hours=hours))
+
+
 @app.command("maintenance")
 def repository_maintenance(
     ctx: typer.Context,

@@ -1000,3 +1000,26 @@ def test_active_scopes_skip_symlinked_project_aliases(tmp_path: Path, monkeypatc
     monkeypatch.setattr(auto, "all_entries", lambda: [])
 
     assert [name for name, _scope in auto.enumerate_active_scopes()] == ["a-term"]
+
+
+@pytest.mark.parametrize("readonly", [False, True])
+def test_writable_subvolume_falls_back_to_rmdir_without_user_subvol_rm_allowed(tmp_path, monkeypatch, readonly):
+    """/srv/workspaces no longer allows owners to destroy subvolumes; empty writable ones may still be removed."""
+    target = tmp_path / "scope"
+    (target / "nested").mkdir(parents=True)
+    (target / "nested" / "file").write_text("x")
+    denial = "Btrfs command failed\nERROR: Could not destroy subvolume/snapshot: Operation not permitted"
+
+    def btrfs(args, **_):
+        if args[:2] == ["subvolume", "delete"]:
+            raise SnapshotError(denial)
+        return subprocess.CompletedProcess(args, 0, f"ro={'true' if readonly else 'false'}\n", "")
+
+    monkeypatch.setattr(snap, "_btrfs", btrfs)
+    if readonly:
+        with pytest.raises(SnapshotError, match="Operation not permitted"):
+            snap._delete_subvolume(target)
+        assert target.exists()
+    else:
+        snap._delete_subvolume(target)
+        assert not target.exists()

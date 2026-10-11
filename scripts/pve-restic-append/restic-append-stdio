@@ -1,0 +1,6 @@
+#!/bin/sh
+# Runs inside the restic-append CT. Speaks the restic REST protocol on stdio
+# and refuses every delete except lock files (--append-only).
+set -eu
+exec /usr/sbin/runuser -u restic -- /usr/local/bin/rclone serve restic --stdio --append-only \
+  --config /dev/null --log-level ERROR /srv/restic/repo

@@ -1,0 +1,11 @@
+#!/bin/sh
+# Forced command for the workstation's append-only restic key on davion-gem.
+# Installed as /usr/local/sbin/restic-append-serve and referenced from
+# /root/.ssh/authorized_keys with restrict,command="...". Client arguments are
+# ignored: the key can only reach the append-only server or read the status.
+set -eu
+CT="${RESTIC_APPEND_CT:-160}"
+case "${SSH_ORIGINAL_COMMAND:-}" in
+  status) exec /usr/sbin/pct exec "$CT" -- /bin/cat /var/lib/restic-append/status.json ;;
+  *) exec /usr/sbin/pct exec "$CT" -- /usr/local/sbin/restic-append-stdio ;;
+esac

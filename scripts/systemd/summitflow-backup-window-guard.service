@@ -1,0 +1,10 @@
+[Unit]
+Description=Return backup storage on the T7 to read-only when no backup job holds it
+After=media-kasadis-Backups.mount mnt-summitflow\x2dnative.mount
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/sbin/summitflow-backup-window guard
+
+[Install]
+WantedBy=media-kasadis-Backups.mount mnt-summitflow\x2dnative.mount

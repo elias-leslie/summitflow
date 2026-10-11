@@ -335,6 +335,15 @@ def isolated_host_state(_private_host_state: Path) -> Generator[None]:
 
 
 @pytest.fixture(autouse=True)
+def isolated_backup_safety(tmp_path_factory: pytest.TempPathFactory) -> Generator[None]:
+    """Keep tests off the live backup safety status file and the T7 write-window helper."""
+    with pytest.MonkeyPatch.context() as patch:
+        patch.setenv("SUMMITFLOW_BACKUP_SAFETY_STATUS", str(tmp_path_factory.mktemp("backup-safety") / "status.json"))
+        patch.setenv("SUMMITFLOW_BACKUP_WINDOW_HELPER", "")
+        yield
+
+
+@pytest.fixture(autouse=True)
 def reset_cli_output_state() -> Generator[None]:
     """Reset CLI output module state before each test.
 

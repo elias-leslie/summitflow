@@ -1,0 +1,150 @@
+#!/usr/bin/python3 -I
+"""Keep backup storage on the T7 read-only except while a backup job writes.
+
+Installed root-owned as /usr/local/sbin/summitflow-backup-window. Backup jobs
+call ``open NAME PID`` before writing and ``close NAME PID`` afterwards (via
+sudo -n). Each target becomes writable while at least one live holder exists
+and returns to read-only otherwise. ``guard`` (systemd timer, every few
+minutes, and on boot/mount) drops dead or expired holders and re-applies
+read-only, so a crashed job never leaves the drive writable for long.
+
+Only the per-mount read-only flag is toggled (``remount,bind``); the
+filesystem itself stays mounted read-write underneath, which works for both
+the NTFS (FUSE) partition and the Btrfs partition. A subdirectory target is
+first bind-mounted onto itself so only that tree is affected.
+"""
+
+from __future__ import annotations
+
+import fcntl
+import json
+import os
+import subprocess
+import sys
+import time
+from pathlib import Path
+
+TARGETS = {
+    # name: (path, overlay) - overlay=True bind-mounts a subdirectory onto itself.
+    "t7": (Path("/media/kasadis/Backups/davion-gem"), True),
+    "native": (Path("/mnt/summitflow-native"), False),
+}
+STATE = Path("/run/summitflow-backup-window")
+MAX_HOLD_SECONDS = 8 * 3600
+MOUNT = "/usr/bin/mount"
+
+
+def _mounts(path: Path) -> list[dict[str, str]]:
+    found = []
+    for line in Path("/proc/self/mountinfo").read_text().splitlines():
+        left, _, right = line.partition(" - ")
+        fields, tail = left.split(), right.split()
+        point = fields[4].replace("\\040", " ")
+        if point == str(path):
+            found.append({"options": fields[5], "fstype": tail[0], "root": fields[3]})
+    return found
+
+
+def _top(path: Path) -> dict[str, str] | None:
+    real = [entry for entry in _mounts(path) if entry["fstype"] != "autofs"]
+    return real[-1] if real else None
+
+
+def _ensure_mounted(name: str) -> bool:
+    path, overlay = TARGETS[name]
+    try:
+        os.listdir(path)  # Triggers the automount of the drive if needed.
+    except OSError:
+        return False
+    if overlay and _top(path) is None:
+        subprocess.run([MOUNT, "--bind", str(path), str(path)], check=True)
+    return _top(path) is not None
+
+
+def _set(name: str, writable: bool) -> str:
+    path, _ = TARGETS[name]
+    if not _ensure_mounted(name):
+        return "absent"
+    current = "rw" if "rw" in _top(path)["options"].split(",") else "ro"
+    wanted = "rw" if writable else "ro"
+    if current != wanted:
+        subprocess.run([MOUNT, "-o", f"remount,bind,{wanted}", str(path)], check=True)
+    return wanted
+
+
+def _start_time(pid: int) -> str | None:
+    try:
+        return Path(f"/proc/{pid}/stat").read_text().rsplit(")", 1)[1].split()[19]
+    except (OSError, IndexError):
+        return None
+
+
+def _holders(name: str) -> Path:
+    directory = STATE / name
+    directory.mkdir(mode=0o700, parents=True, exist_ok=True)
+    return directory
+
+
+def _live(name: str) -> list[str]:
+    alive = []
+    now = time.time()
+    for holder in _holders(name).iterdir():
+        try:
+            pid, started = holder.name.split("-", 1)
+            fresh = now - holder.stat().st_mtime < MAX_HOLD_SECONDS
+        except (ValueError, OSError):
+            fresh, pid, started = False, "0", ""
+        if fresh and _start_time(int(pid)) == started:
+            alive.append(holder.name)
+        else:
+            holder.unlink(missing_ok=True)
+    return alive
+
+
+def main(argv: list[str]) -> int:
+    if not argv:
+        print(__doc__)
+        return 2
+    command = argv[0]
+    STATE.mkdir(mode=0o700, exist_ok=True)
+    with (STATE / ".lock").open("a") as lock:
+        fcntl.flock(lock, fcntl.LOCK_EX)
+        if command in {"open", "close"} and len(argv) == 3 and argv[1] in TARGETS and argv[2].isdigit():
+            name, pid = argv[1], int(argv[2])
+            started = _start_time(pid)
+            if started is None:
+                print("holder process is not running", file=sys.stderr)
+                return 1
+            holder = _holders(name) / f"{pid}-{started}"
+            if command == "open":
+                holder.touch()
+            else:
+                holder.unlink(missing_ok=True)
+            print(_set(name, bool(_live(name))))
+            return 0
+        if command in {"guard", "status"} and len(argv) == 1:
+            report = {}
+            for name in TARGETS:
+                holders = _live(name)
+                try:
+                    mode = _set(name, bool(holders)) if command == "guard" else (
+                        ("rw" if "rw" in (_top(TARGETS[name][0]) or {"options": ""})["options"].split(",") else "ro")
+                        if _top(TARGETS[name][0]) else "absent")
+                except subprocess.CalledProcessError as exc:
+                    mode = f"error: {exc}"
+                report[name] = {"path": str(TARGETS[name][0]), "mode": mode, "holders": holders}
+            print(json.dumps(report, sort_keys=True))
+            return 0
+    if command == "run" and len(argv) >= 4 and argv[1] in TARGETS and argv[2] == "--":
+        name = argv[1]
+        main(["open", name, str(os.getpid())])
+        try:
+            return subprocess.run(argv[3:]).returncode
+        finally:
+            main(["close", name, str(os.getpid())])
+    print("usage: summitflow-backup-window open|close NAME PID | run NAME -- CMD... | guard | status", file=sys.stderr)
+    return 2
+
+
+if __name__ == "__main__":
+    sys.exit(main(sys.argv[1:]))

@@ -104,3 +104,42 @@ st backup veeam start --wait
 
 Do not manually delete Veeam chain files, named Docker volumes, PostgreSQL data,
 or Btrfs snapshots. Use the owning retention/recovery workflow.
+
+## Backup accident guards
+
+These guard against mistakes (an agent's stray command or a bad retention
+setting), not against a hostile root user.
+
+- **T7 read-only outside backup windows.** `/media/kasadis/Backups/davion-gem`
+  (restic repository, native archives) and `/mnt/summitflow-native` (btrbk
+  target) are read-only except while a backup job writes. Jobs open the window
+  through the root-owned `/usr/local/sbin/summitflow-backup-window`
+  (`open|close NAME PID`, `run NAME -- CMD`, `status`, `guard`);
+  `summitflow-backup-window-guard.timer` returns storage to read-only every five
+  minutes once no live holder remains, so a crashed job cannot leave it
+  writable. Only the per-mount flag changes; the filesystems stay mounted.
+- **Deletion circuit breaker.** Local and offsite restic retention, native
+  archive cleanup, native Drive retention and btrbk target expiry refuse any
+  run that removes more than normal retention (by default more than 25% of all
+  points or 50% of one source; btrbk: more than a third). The points are kept,
+  backups continue (btrbk runs with `--preserve-backups`), and a SummitFlow
+  notification is raised. Prune is skipped when snapshots disappeared outside
+  retention, keeping their data recoverable. After checking the cause, allow
+  one run with `st backup storage approve-deletion <kind> --reason "..."`.
+- **Drive deletes go to trash.** Offsite restic prune and native Drive expiry
+  use the Drive trash (30 days) instead of permanent deletion.
+- **Append-only PVE copy.** CT 160 on davion-gem holds a third copy of the
+  local restic repository; the workstation key can add snapshots but not
+  delete them, and retention runs only on PVE. It is the first thing to remove
+  when davion-gem needs space: see `scripts/pve-restic-append/README.txt`.
+- **Weekly health.** Snapshot-count and repository-size drops, the daily
+  rotating `restic check --read-data-subset` results, and a test restore from
+  the PVE copy.
+
+Status for watchers (Nightshift): `~/.local/state/summitflow/backup-safety/status.json`
+(`st backup storage safety`). Top-level `status` is `ok` or `alert`; `alerts`
+lists each active condition with `key`, `kind`, `message` and `since`.
+
+`/srv/workspaces` and `/srv/scratch` share one Btrfs filesystem and no longer
+mount with `user_subvol_rm_allowed` (effective from the next full mount, i.e.
+reboot); owners remove writable subvolumes by emptying them instead.

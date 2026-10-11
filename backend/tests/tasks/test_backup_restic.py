@@ -641,7 +641,7 @@ def test_weekly_prune_is_independent_qualified_headroom_bounded_and_preview_firs
     assert result["free_bytes"] == 500000
     commands = [command for command in process.commands if "prune" in command]
     assert len(commands) == 2 and "--dry-run" in commands[0] and "--dry-run" not in commands[1]
-    assert all("rclone.args=serve restic --stdio --drive-use-trash=false" in command for command in commands)
+    assert all("rclone.args=serve restic --stdio --drive-use-trash=true" in command for command in commands)
     process.fail_check = True
     failed = adapter.prune(remote=True, available_bytes=1024**4)
     assert failed["status"] == "failed" and failed["backup_verification_unchanged"] is True

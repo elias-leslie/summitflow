@@ -294,13 +294,19 @@ class NativeRcloneProvider:
         if not complete:
             return []
         retained = set(sorted(complete, key=lambda name: (complete[name], name), reverse=True)[:3])
+        expiring = [
+            archive_name for archive_name, (created, targets) in groups.items()
+            if not (created >= cutoff or archive_name in retained or archive_name in pending_archive_names
+                    or any(f"gdrive://{entry['ID']}" == preserve_uri for entry in targets))
+        ]
+        from .backup_safety import guard_deletion
+
+        if expiring and not guard_deletion("native-offsite-retention", folder, delete=len(expiring), total=len(groups),
+                                           total_fraction=0.5, total_min=3):
+            raise RuntimeError("Native Drive retention refused by the deletion circuit breaker")
         deleted: list[str] = []
-        for archive_name, (created, targets) in groups.items():
-            if (
-                created >= cutoff or archive_name in retained or archive_name in pending_archive_names
-                or any(f"gdrive://{entry['ID']}" == preserve_uri for entry in targets)
-            ):
-                continue
+        for archive_name in expiring:
+            targets = groups[archive_name][1]
             # Completion first, then parts, matching the native GIO contract.
             for entry in sorted(targets, key=lambda item: not item["Name"].endswith(".parts.json")):
                 self.remove(folder, entry, permanent=self.permanent_expiry)

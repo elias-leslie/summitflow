@@ -72,12 +72,16 @@ def test_outside_window_skips_scheduled_work_without_changing_due_sources(
     # Self-healing housekeeping and alert evaluation still run every tick.
     monkeypatch.setattr(scheduler, "_housekeeping", lambda: {"stale_failed": 0})
     monkeypatch.setattr(scheduler, "_evaluate_alerts", lambda summary: None)
+    # The append-only PVE copy runs every tick; weekly health only inside the window.
+    safety_windows: list[bool] = []
+    monkeypatch.setattr(scheduler, "_copy_and_health", lambda window_open: safety_windows.append(window_open) or {"pve_copy": {"status": "skipped"}})
     assert scheduler.run_scheduled_backups() == {
         "status": "skipped", "reason": "outside-backup-window", "count": 0, "results": [],
         "host_backup": {"status": "skipped", "reason": "host-backup-disabled"},
-        "housekeeping": {"stale_failed": 0},
+        "housekeeping": {"stale_failed": 0}, "pve_copy": {"pve_copy": {"status": "skipped"}},
     }
     assert copied == [{}]
+    assert safety_windows == [False]
 
 
 @pytest.mark.parametrize(

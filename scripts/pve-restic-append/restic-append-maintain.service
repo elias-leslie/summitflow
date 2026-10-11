@@ -1,0 +1,12 @@
+[Unit]
+Description=Retention, prune and data check for the append-only restic copy
+ConditionPathExists=/srv/restic/repo/config
+
+[Service]
+Type=oneshot
+User=restic
+Group=restic
+ExecStart=/usr/bin/python3 -I /usr/local/sbin/restic-append-maintain.py
+Nice=15
+IOSchedulingClass=idle
+TimeoutStartSec=12h

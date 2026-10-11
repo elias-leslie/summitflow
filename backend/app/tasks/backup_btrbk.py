@@ -33,6 +33,7 @@ from .backup_activity import BackupCancelled, run_bulk_process
 from .backup_native_archive import PROJECT_DATABASE_PAYLOAD_NAME, _load_db_config
 from .backup_offsite_restore_test import restore_verified
 from .backup_utils import _FREQUENCY_DELTAS
+from .backup_write_window import path_window
 
 REQUIRED_SOURCES = {"/", "/home", "/srv/workspaces", "/var/lib/docker", "/srv/models", "/var/log"}
 CONFIG_PATH = Path("/etc/btrbk/summitflow.conf")
@@ -567,21 +568,45 @@ def _resume_association(last: dict[str, Any], now: datetime) -> dict[str, Any]:
         payload = dict(last)
         operation = root / "operations" / last["run_id"]
         try:
-            expected_boot = Path(rows[0]["target_path"]).parent / "summitflow-host-recovery" / "captures" / last["run_id"] / "boot"
-            if Path(last["boot_path"]) != expected_boot:
-                raise RuntimeError("Retained host metadata path does not match its capture identity")
-            _qualify_target_directory(Path(last["boot_path"]).parent)
-            if _filesystem(last["target"]).get("uuid") != last.get("target_filesystem_uuid"):
-                raise RuntimeError("Native target filesystem identity changed")
-            _check_received_points(last["points"])
-            if any(_filesystem(row["source_url"]).get("uuid") == last["target_filesystem_uuid"] for row in rows):
-                raise RuntimeError("Native target is no longer independent of source filesystems")
-            payload["metadata_cleanup"] = _cleanup_superseded(Path(last["target"]), last["run_id"])
-            return _finish_capture(payload, operation, rows, now)
+            with path_window(rows[0]["target_path"]):
+                return _resume_retained(last, payload, operation, rows, now)
         except Exception as exc:
             payload.update(status="cancelled" if isinstance(exc, BackupCancelled) else "failed", error=str(exc))
             _write_receipt(payload)
             return payload
+
+
+def _resume_retained(last: dict[str, Any], payload: dict[str, Any], operation: Path, rows: list[dict[str, str]], now: datetime) -> dict[str, Any]:
+    expected_boot = Path(rows[0]["target_path"]).parent / "summitflow-host-recovery" / "captures" / last["run_id"] / "boot"
+    if Path(last["boot_path"]) != expected_boot:
+        raise RuntimeError("Retained host metadata path does not match its capture identity")
+    _qualify_target_directory(Path(last["boot_path"]).parent)
+    if _filesystem(last["target"]).get("uuid") != last.get("target_filesystem_uuid"):
+        raise RuntimeError("Native target filesystem identity changed")
+    _check_received_points(last["points"])
+    if any(_filesystem(row["source_url"]).get("uuid") == last["target_filesystem_uuid"] for row in rows):
+        raise RuntimeError("Native target is no longer independent of source filesystems")
+    payload["metadata_cleanup"] = _cleanup_superseded(Path(last["target"]), last["run_id"])
+    return _finish_capture(payload, operation, rows, now)
+
+
+def _target_deletions_refused(target: Path) -> bool:
+    """Preview btrbk expiry; refuse (preserve backups) when it exceeds daily retention."""
+    from .backup_safety import guard_deletion
+
+    plan = _run(["sudo", "-n", "btrbk", "-c", str(CONFIG_PATH), "--dry-run", "--format", "raw", "run"])
+    if plan.returncode:
+        return False  # The real run reports the failure.
+    deleting = [Path(row.get("target_url", "")).name for row in _rows(plan.stdout)
+                if row.get("type", "").startswith("delete") and Path(row.get("target_url", "")).parent == target]
+    existing = _checked(["sudo", "-n", "find", str(target), "-mindepth", "1", "-maxdepth", "1", "-type", "d", "-printf", "%f\\n"]).split()
+    groups: dict[str, tuple[int, int]] = {}
+    for name in existing:
+        removed, total = groups.get(name.split(".", 1)[0], (0, 0))
+        groups[name.split(".", 1)[0]] = (removed + (name in deleting), total + 1)
+    # Seven daily points per subvolume: normal expiry removes one or two.
+    return not guard_deletion("btrbk-target", str(target), delete=len(deleting), total=len(existing), groups=groups,
+                              total_fraction=0.34, total_min=6, group_fraction=0.34, group_min=2)
 
 
 def run_native_host_backup(*, dry_run: bool = False, now: datetime | None = None) -> dict[str, Any]:
@@ -618,13 +643,17 @@ def run_native_host_backup(*, dry_run: bool = False, now: datetime | None = None
         _write_receipt(payload)
         journal.write_text("Native host operation started; no completed capture published\n")
         journal.chmod(0o600)
+        window = path_window(target)
+        window.__enter__()
         try:
             package_digest = hashlib.sha256(PACKAGE_STATUS_PATH.read_bytes()).hexdigest()
             _qualify_target_directory(target.parent)
             _checked(["sudo", "-n", "mkdir", "-p", "-m", "700", str(boot)])
             _qualify_target_directory(boot)
             _checked(["sudo", "-n", "rsync", "-aHAX", "--numeric-ids", "/boot/", str(boot) + "/"], bulk=True)
-            proc = run_bulk_process(["sudo", "-n", "btrbk", "-c", str(CONFIG_PATH), "--format", "raw", "run"], phase="host_recovery")
+            preserve = _target_deletions_refused(target)
+            payload["target_deletions_refused"] = preserve
+            proc = run_bulk_process(["sudo", "-n", "btrbk", "-c", str(CONFIG_PATH), *(["--preserve-backups"] if preserve else []), "--format", "raw", "run"], phase="host_recovery")
             journal.write_text(proc.stdout + "\n" + proc.stderr)
             journal.chmod(0o600)
             if proc.returncode:
@@ -655,6 +684,8 @@ def run_native_host_backup(*, dry_run: bool = False, now: datetime | None = None
                 _publish_capture(payload, operation)
             except (OSError, ValueError, RuntimeError) as copy_exc:
                 payload["target_evidence_error"] = str(copy_exc)
+        finally:
+            window.__exit__(None, None, None)
         _write_receipt(payload)
         return payload
 

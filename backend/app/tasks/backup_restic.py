@@ -34,6 +34,7 @@ from ..utils.transient_scratch import (
     scratch_subprocess_env,
 )
 from .backup_activity import BackupCancelled, check_backup_cancelled, run_bulk_process
+from .backup_write_window import path_window
 
 RESTIC_VERSION = "0.19.1"
 RCLONE_VERSION = "1.75.1"
@@ -192,6 +193,14 @@ def repository_lock(config: ResticConfig) -> Iterator[None]:
     repositories = {str(config.local_repository.resolve())}
     if config.remote_repository:
         repositories.add(config.remote_repository.rstrip("/"))
+    # The local repository is read-only outside backup windows; even reads
+    # create restic lock files, so every locked operation opens the window.
+    with path_window(config.local_repository), _pair_flocks(directory, repositories):
+        yield
+
+
+@contextmanager
+def _pair_flocks(directory: Path, repositories: set[str]) -> Iterator[None]:
     descriptors: list[int] = []
     try:
         for repository in sorted(repositories):
@@ -349,7 +358,9 @@ class ResticAdapter:
         if permanent_delete and repository.startswith("rclone:"):
             if not self.config.offsite_prune_qualified:
                 raise ResticError("Offsite permanent prune has not been explicitly qualified")
-            command.extend(["-o", "rclone.args=serve restic --stdio --drive-use-trash=false"])
+            # Drive keeps removed objects in its trash for 30 days, so an
+            # accidental forget/prune stays recoverable (rclone's default).
+            command.extend(["-o", "rclone.args=serve restic --stdio --drive-use-trash=true"])
         return [*command, *args]
 
     def _json(self, *args: str, remote: bool = False, phase: str = "verification") -> Any:
@@ -949,8 +960,25 @@ class ResticAdapter:
             if remote and (journal.get("pending_objects") or journal.get("mismatches")):
                 pending_ids.update(item["id"] for item in snapshots)
             selection = select_retention(snapshots, retention_days, pinned=pinned, pending=sorted(pending_ids), last_good=last_good)
+            if not dry_run and selection["delete"] and not self._retention_allowed(snapshots, selection["delete"], remote=remote):
+                # Keep every point and keep backing up; the breaker has alerted.
+                return {**selection, "delete": [], "refused_delete": selection["delete"], "dry_run": dry_run,
+                        "status": "refused", "reason": "deletion-breaker", "state": journal}
             journal, selection["delete"] = self._forget_locked(selection["delete"], snapshots, remote=remote, journal=journal, persist=persist, dry_run=dry_run)
             return {**selection, "dry_run": dry_run, "status": "preview" if dry_run else "completed", "state": journal}
+
+    def _retention_allowed(self, snapshots: Sequence[Mapping[str, Any]], delete: Sequence[str], *, remote: bool) -> bool:
+        from .backup_safety import guard_deletion
+
+        removing = set(delete)
+        groups: dict[str, tuple[int, int]] = {}
+        for snapshot in snapshots:
+            for tag in snapshot.get("tags") or []:
+                if str(tag).startswith("source:"):
+                    removed, total = groups.get(str(tag)[7:], (0, 0))
+                    groups[str(tag)[7:]] = (removed + (snapshot["id"] in removing), total + 1)
+        target = "offsite" if remote else "local"
+        return guard_deletion("restic-retention", target, delete=len(removing), total=len(snapshots), groups=groups)
 
     def _forget_locked(self, delete: Sequence[str], snapshots: Sequence[Mapping[str, Any]], *, remote: bool, journal: dict[str, Any], persist: Persist | None, dry_run: bool) -> tuple[dict[str, Any], list[str]]:
         """Forget exact snapshot IDs; remote removal runs inside a durable journal scope."""

@@ -8,7 +8,8 @@ After=local-fs.target
 [Service]
 Type=oneshot
 # Shared lock with the other scrub units so scrubs never overlap.
-ExecStart=/usr/bin/flock /run/lock/summitflow-btrfs-scrub.lock /usr/bin/btrfs scrub start -Bd -c 3 /mnt/summitflow-native
+# The target is read-only outside backup windows; scrub repairs need it writable.
+ExecStart=/usr/bin/flock /run/lock/summitflow-btrfs-scrub.lock /usr/local/sbin/summitflow-backup-window run native -- /usr/bin/btrfs scrub start -Bd -c 3 /mnt/summitflow-native
 Nice=15
 IOSchedulingClass=idle
 TimeoutStartSec=8h

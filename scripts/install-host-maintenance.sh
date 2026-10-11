@@ -8,6 +8,8 @@ USER_SYSTEMD_DIR="$HOME/.config/systemd/user"
 sudo install -d -m 0755 /usr/local/libexec /var/lib/summitflow-host-guardian
 sudo install -m 0755 "$ROOT_DIR/scripts/host-guardian.py" /usr/local/libexec/summitflow-host-guardian
 sudo install -m 0755 "$ROOT_DIR/scripts/btrfs-space-guard.py" /usr/local/libexec/summitflow-btrfs-space-guard
+# Root-owned: backup jobs make T7 backup storage writable only through it.
+sudo install -o root -g root -m 0755 "$ROOT_DIR/scripts/summitflow-backup-window" /usr/local/sbin/summitflow-backup-window
 
 units=(
   summitflow-host-guardian.service summitflow-host-guardian.timer
@@ -18,6 +20,7 @@ units=(
   summitflow-btrfs-space-guard.service summitflow-btrfs-space-guard.timer
   summitflow-nvme-short-test.service summitflow-nvme-short-test.timer
   summitflow-nvme-long-test.service summitflow-nvme-long-test.timer
+  summitflow-backup-window-guard.service summitflow-backup-window-guard.timer
 )
 for unit in "${units[@]}"; do
   sudo install -m 0644 "$SYSTEMD_DIR/$unit" "/etc/systemd/system/$unit"
@@ -97,7 +100,9 @@ sudo systemctl enable --now \
   summitflow-btrfs-scrub-native.timer \
   summitflow-btrfs-space-guard.timer \
   summitflow-nvme-short-test.timer \
-  summitflow-nvme-long-test.timer
+  summitflow-nvme-long-test.timer \
+  summitflow-backup-window-guard.timer
+sudo systemctl enable summitflow-backup-window-guard.service
 systemctl --user enable summitflow-infra-reconcile.service
 sudo systemctl try-restart systemd-journald.service
 

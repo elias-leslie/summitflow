@@ -128,7 +128,22 @@ def _require_readonly_point(path: Path) -> None:
 def _delete_subvolume(path: Path) -> None:
     if not path.exists():
         return
-    _btrfs(["subvolume", "delete", str(path)])
+    try:
+        _btrfs(["subvolume", "delete", str(path)])
+    except SnapshotError as exc:
+        # /srv/workspaces is mounted without user_subvol_rm_allowed, so an owner
+        # cannot destroy a subvolume directly, but may rmdir a writable one once
+        # it is empty (Linux 4.18+). Read-only points keep their own handling.
+        if "Could not destroy subvolume/snapshot: Operation not permitted" not in str(exc) or _is_readonly_subvolume(path):
+            raise
+        shutil.rmtree(path)
+
+
+def _is_readonly_subvolume(path: Path) -> bool:
+    try:
+        return _btrfs(["property", "get", str(path), "ro"]).stdout.strip() == "ro=true"
+    except SnapshotError:
+        return True  # Unknown: let the caller's read-only handling decide.
 
 
 def _is_non_subvolume_error(error: SnapshotError) -> bool:

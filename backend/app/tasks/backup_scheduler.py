@@ -286,6 +286,17 @@ def _scheduled_host_backup(now: datetime) -> dict[str, Any]:
         return {"status": "failed", "error": str(exc)}
 
 
+def _copy_and_health(window_open: bool) -> dict[str, Any]:
+    """Append-only PVE copy and weekly health; never fails the scheduled run."""
+    try:
+        from .backup_pve_copy import run_scheduled_copy_and_health
+
+        return run_scheduled_copy_and_health(window_open=window_open)
+    except Exception as exc:
+        logger.exception("pve_copy_and_health_failed")
+        return {"status": "error", "error": str(exc)[:300]}
+
+
 def _reassociate_after_copy(host_backup: dict[str, Any], copies: dict[str, Any]) -> dict[str, Any]:
     """Judge database recovery against this tick's offsite copy, not the previous one.
 
@@ -327,7 +338,9 @@ def run_scheduled_backups(*, on_progress: Callable[[], None] | None = None) -> d
                 # The batch helper retains repository serialization and capacity admission.
                 copies = sync_repository_batch({})
                 host_backup = _reassociate_after_copy(host_backup, copies)
+                safety = _copy_and_health(window_open)
                 skipped_result: dict[str, Any] = {"status": "partial" if host_backup.get("status") in {"blocked", "failed", "error", "partial", "cancelled"} else "skipped", "reason": "outside-backup-window", "count": 0, "results": [], "host_backup": host_backup, "housekeeping": housekeeping}
+                skipped_result["pve_copy"] = safety
                 if copies:
                     skipped_result["repository_copy"] = {key: {field: value.get(field) for field in ("status", "error", "reason")} for key, value in copies.items()}
                     if any(value.get("status") in {"pending", "blocked", "failed", "error"} for value in copies.values()):
@@ -354,6 +367,7 @@ def run_scheduled_backups(*, on_progress: Callable[[], None] | None = None) -> d
                     results.append({"source_id": source.get("id"), "status": "error", "error": str(exc)})
         copies = sync_repository_batch(batch)
         host_backup = _reassociate_after_copy(host_backup, copies)
+        safety = _copy_and_health(window_open)
 
         succeeded = sum(1 for result in results if result.get("status") in SUCCESS_STATUSES)
         offline = sum(1 for result in results if result.get("status") == "offline")
@@ -374,6 +388,7 @@ def run_scheduled_backups(*, on_progress: Callable[[], None] | None = None) -> d
             "catch_up": not window_open,
             "host_backup": host_backup,
             "housekeeping": housekeeping,
+            "pve_copy": safety,
         }
         if host_backup.get("status") in {"blocked", "failed", "error", "partial", "cancelled"}:
             result["status"] = "partial"

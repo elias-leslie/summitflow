@@ -226,6 +226,26 @@ def _proxmox_conditions(now: datetime) -> dict[str, dict[str, str]]:
     }}
 
 
+def _safety_conditions() -> dict[str, dict[str, str]]:
+    """PVE copy freshness and weekly health from the backup safety status.
+
+    Deletion breakers notify on their own when they trip; they are not repeated here.
+    """
+    from .backup_safety import read_status
+
+    titles = {"pve_copy": "PVE backup copy needs attention", "health": "Weekly backup health check found a problem"}
+    conditions = {}
+    for name, section in sorted((read_status().get("sections") or {}).items()):
+        alerts = section.get("alerts") or []
+        if alerts:
+            conditions[f"safety:{name}"] = {
+                "title": titles.get(name, "Backup safety check found a problem"),
+                "message": "; ".join(str(alert.get("message")) for alert in alerts),
+                "reason": ",".join(sorted(str(alert.get("kind")) for alert in alerts)),
+            }
+    return conditions
+
+
 def _fingerprint(key: str, reason: str) -> str:
     return hashlib.sha256(json.dumps([key, reason]).encode()).hexdigest()[:16]
 
@@ -239,6 +259,7 @@ def evaluate_backup_alerts(summary: Mapping[str, Any], *, now: datetime | None =
         ("sources", lambda: _source_conditions(current)),
         ("capacity", lambda: _capacity_conditions(summary)),
         ("proxmox", lambda: _proxmox_conditions(current)),
+        ("safety", _safety_conditions),
     ):
         try:
             conditions.update(collect())

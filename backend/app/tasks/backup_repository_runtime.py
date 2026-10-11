@@ -1057,6 +1057,12 @@ def maintain_repository(env: dict[str, str], *, dry_run: bool = True, force_crit
                 return mapping.get(value, value)
             selection = adapter.retention(windows, remote=remote, pinned=[remap(value) for value in pins], pending=[remap(value) for value in pending], last_good={key: remap(value) for key, value in last_good.items()}, state=offsite, persist=persist, dry_run=preview)
             offsite = state.get("offsite", {})
+            if not preview and not _snapshot_count_explained(previous, selection, label):
+                # Snapshots vanished outside retention. Their data is still in
+                # the repository until a prune, so keep it recoverable.
+                results[label] = {"monthly": previous.get("monthly_result"), "retention": selection,
+                                  "prune": {"status": "skipped", "reason": "unexplained-snapshot-loss"}}
+                continue
             free = shutil.disk_usage(config.local_repository).free if not remote else None
             # Provider quota must be freshly supplied before actual Drive prune;
             # no guessed capacity or unbounded repack allowance.
@@ -1081,6 +1087,20 @@ def maintain_repository(env: dict[str, str], *, dry_run: bool = True, force_crit
         maintenance["result"] = _without_journals(results)
         _save_json(directory / "state.json", state)
         return results
+
+
+def _snapshot_count_explained(previous: dict[str, Any], selection: Mapping[str, Any], label: str) -> bool:
+    """Compare today's listing with the count left by the last applied retention."""
+    from .backup_safety import guard_deletion
+
+    present = len(selection.get("keep") or []) + len(selection.get("delete") or []) + len(selection.get("refused_delete") or [])
+    baseline = previous.get("snapshot_count")
+    if isinstance(baseline, int) and baseline > present and not guard_deletion(
+        "restic-unexplained-loss", label, delete=baseline - present, total=baseline, total_fraction=0.10,
+    ):
+        return False
+    previous["snapshot_count"] = len(selection.get("keep") or []) + len(selection.get("refused_delete") or [])
+    return True
 
 
 def retire_repository_source(env: dict[str, str], source_id: str, *, dry_run: bool = True) -> dict[str, Any]:
@@ -1122,6 +1142,10 @@ def retire_repository_source(env: dict[str, str], source_id: str, *, dry_run: bo
         maintenance = state.setdefault("maintenance", {})
         for remote in repositories:
             label = "remote" if remote else "local"
+            # An approved retirement is explained loss for the next prune guard.
+            counted = maintenance.setdefault(label, {}).get("snapshot_count")
+            if isinstance(counted, int):
+                maintenance[label]["snapshot_count"] = max(0, counted - len(results[label]["forget"].get("delete") or []))
             free = adapter.quota_free_bytes() if remote else shutil.disk_usage(config.local_repository).free
             prune = adapter.prune(remote=remote, state=state.get("offsite", {}), persist=persist, available_bytes=free, dry_run=False)
             if prune.get("status") == "completed":
