@@ -235,3 +235,12 @@ def test_native_target_disk_uses_shared_thresholds(monkeypatch) -> None:
     module.check_native_target_disk(state)
     assert state.issues[-1]["code"] == "native_target_disk_unavailable"
     assert state.status == "warning"
+
+
+def test_core_containers_match_infra_profile() -> None:
+    module = _load_module()
+    compose = (Path(__file__).resolve().parents[3] / "docker/compose/docker-compose.yml").read_text()
+    proxy = compose[compose.index("\n  docker-socket-proxy:\n"):].splitlines()
+    profiles = next(line for line in proxy if line.strip().startswith("profiles:"))
+    assert "infra" not in profiles and "summitflow" in profiles
+    assert "summitflow-stack-docker-socket-proxy-1" not in module.CORE_CONTAINERS

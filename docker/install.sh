@@ -229,7 +229,6 @@ echo "Starting infrastructure services..."
 docker compose up -d \
   postgres \
   redis \
-  docker-socket-proxy \
   hatchet-migrate \
   hatchet-setup-config \
   hatchet

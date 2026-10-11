@@ -42,7 +42,6 @@ SPACE_GUARD = "/usr/local/libexec/summitflow-btrfs-space-guard"
 CORE_CONTAINERS = (
     "summitflow-stack-postgres-1",
     "summitflow-stack-redis-1",
-    "summitflow-stack-docker-socket-proxy-1",
     "summitflow-stack-hatchet-1",
 )
 

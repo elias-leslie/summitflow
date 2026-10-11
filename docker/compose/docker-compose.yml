@@ -108,9 +108,10 @@ services:
       start_period: 30s
     restart: unless-stopped
 
+  # Only the containerized summitflow-api talks to Docker (DOCKER_HOST below).
   docker-socket-proxy:
     image: tecnativa/docker-socket-proxy:0.3
-    profiles: [infra, summitflow, full]
+    profiles: [summitflow, full]
     environment:
       CONTAINERS: 1
       IMAGES: 1
