@@ -14,7 +14,6 @@ _EXPLORER_MODULE_EXPORTS = {
 }
 _MODULE_EXPORTS = {
     "agent_configs",
-    "design_assets",
     "events",
 } | _EXPLORER_MODULE_EXPORTS
 _ATTRIBUTE_EXPORTS = {
@@ -28,7 +27,6 @@ _ATTRIBUTE_EXPORTS = {
 __all__ = [
     "agent_configs",
     "create_event",
-    "design_assets",
     "events",
     "explorer",
     "explorer_sub_elements",

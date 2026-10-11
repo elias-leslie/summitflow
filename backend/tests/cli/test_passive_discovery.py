@@ -89,7 +89,6 @@ def test_storage_package_preserves_public_reexports() -> None:
     import app.storage as storage
     from app.storage import (
         agent_configs,
-        design_assets,
         events,
         explorer,
         explorer_sub_elements,
@@ -104,7 +103,6 @@ def test_storage_package_preserves_public_reexports() -> None:
     )
 
     assert storage.agent_configs is agent_configs
-    assert storage.design_assets is design_assets
     assert storage.events is events
     assert storage.explorer is explorer
     assert storage.explorer_sub_elements is explorer_sub_elements

@@ -28,7 +28,6 @@ from .api import (
     console_errors,
     db_workbench,
     dependency_management,
-    design_assets,
     design_standards,
     docker,
     events,
@@ -47,7 +46,6 @@ from .api import (
     snapshots,
     system,
     tasks,
-    viewer,
     ws_execution,
 )
 from .config import settings
@@ -134,7 +132,6 @@ app.middleware("http")(access_control_middleware)
 app.include_router(auth.router, prefix="/api/auth", tags=["auth"])
 app.include_router(monitor.router)
 app.include_router(browser_sessions.router)
-app.include_router(viewer.router, prefix="/api/viewer", tags=["viewer"])
 # Register the static managed owner route before the generic project detail route.
 app.include_router(agent_sessions.router, prefix="/api/projects", tags=["agent-sessions"])
 app.include_router(projects.router, prefix="/api/projects", tags=["projects"])
@@ -155,7 +152,6 @@ app.include_router(git.router, prefix="/api", tags=["git"])
 app.include_router(backups.router, prefix="/api", tags=["backups"])
 app.include_router(snapshots.router, prefix="/api", tags=["snapshots"])
 app.include_router(design_standards.router, prefix="/api", tags=["design-standards"])
-app.include_router(design_assets.router, prefix="/api", tags=["design-assets"])
 app.include_router(quality_gate.router, prefix="/api", tags=["quality-gate"])
 app.include_router(auto_fix.router, prefix="/api", tags=["quality-gate"])
 app.include_router(console_errors.router, prefix="/api", tags=["quality-gate"])

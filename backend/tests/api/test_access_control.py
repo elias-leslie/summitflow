@@ -144,3 +144,39 @@ def test_cloudflare_mode_denies_public_domain_without_token(monkeypatch) -> None
     )
 
     assert principal is None
+
+
+def test_non_owner_identity_is_denied_and_viewer_routes_are_gone(monkeypatch) -> None:
+    """Only owners reach private APIs; the retired viewer surface no longer exists."""
+    from fastapi.testclient import TestClient
+
+    from app.main import app
+
+    principals = {
+        "legacy-viewer": access_control.AccessPrincipal("viewer@example.com", "viewer", True),
+        "unknown": access_control.AccessPrincipal("someone@example.com", "none", False),
+        "owner": access_control.AccessPrincipal("owner@example.com", "owner", True),
+    }
+    monkeypatch.setattr(
+        access_control,
+        "resolve_principal",
+        lambda request: principals[request.headers["x-test-identity"]],
+    )
+    client = TestClient(app)
+
+    for identity in ("legacy-viewer", "unknown"):
+        headers = {"x-test-identity": identity}
+        assert client.get("/api/projects", headers=headers).status_code == 403
+        assert client.get("/api/viewer/projects", headers=headers).status_code == 403
+
+    owner = {"x-test-identity": "owner"}
+    assert client.get("/api/viewer/projects", headers=owner).status_code == 404
+    assert client.get("/api/projects/summitflow/design-assets", headers=owner).status_code == 404
+    me = client.get("/api/auth/me", headers=owner).json()
+    assert me == {
+        "authenticated": True,
+        "email": "owner@example.com",
+        "role": "owner",
+        "is_owner": True,
+        "is_local_bypass": False,
+    }

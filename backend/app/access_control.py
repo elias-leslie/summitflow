@@ -17,14 +17,12 @@ from .config import settings
 from .storage.access import (
     bootstrap_owners,
     get_user,
-    list_user_grants,
     normalize_email,
     parse_owner_emails,
 )
 
 PUBLIC_API_PREFIXES = ("/api/health",)
 PUBLIC_PATHS = {"/health", "/api/auth/me"}
-VIEWER_API_PREFIX = "/api/viewer/"
 
 
 @dataclass(frozen=True)
@@ -39,10 +37,6 @@ class AccessPrincipal:
     @property
     def is_owner(self) -> bool:
         return self.role == "owner" and self.is_active
-
-    @property
-    def is_viewer(self) -> bool:
-        return self.role == "viewer" and self.is_active
 
 
 def configured_owner_emails() -> set[str]:
@@ -81,7 +75,7 @@ async def access_control_middleware(
     request: Request,
     call_next: Callable[[Request], Awaitable[Response]],
 ) -> Response:
-    """Attach identity and block viewer mutations/non-viewer APIs."""
+    """Attach identity and allow only active owners through private APIs."""
     try:
         principal = resolve_principal(request)
     except HTTPException as exc:
@@ -101,35 +95,11 @@ async def access_control_middleware(
     if principal.is_owner:
         return await call_next(request)
 
-    if principal.is_viewer and path.startswith(VIEWER_API_PREFIX) and (
-        request.method == "GET" or _is_viewer_feedback_mutation(request.method, path)
-    ):
-        return await call_next(request)
-
-    if principal.is_viewer:
-        return JSONResponse({"detail": "Read-only viewer access"}, status_code=403)
-
     return JSONResponse({"detail": "SummitFlow user is not authorized"}, status_code=403)
 
 
 def _is_public_path(path: str) -> bool:
     return path in PUBLIC_PATHS or any(path.startswith(prefix) for prefix in PUBLIC_API_PREFIXES)
-
-
-def _is_viewer_feedback_mutation(method: str, path: str) -> bool:
-    """Allow viewers to leave ratings/comments through scoped viewer routes."""
-    parts = path.split("/")
-    if len(parts) not in {8, 9}:
-        return False
-    if parts[:4] != ["", "api", "viewer", "projects"] or not parts[4]:
-        return False
-    if parts[5] not in {"mockups", "design-assets"}:
-        return False
-    if method == "POST" and len(parts) == 8:
-        return parts[7] in {"rating", "comments"}
-    if method in {"PUT", "DELETE"} and len(parts) == 9:
-        return parts[7] == "comments" and parts[8].isdigit()
-    return False
 
 
 def resolve_principal(request: Request) -> AccessPrincipal | None:
@@ -284,12 +254,3 @@ def _normalized_team_domain(value: str) -> str:
 def _jwk_client(team_domain: str) -> PyJWKClient:
     return PyJWKClient(f"https://{team_domain}/cdn-cgi/access/certs")
 
-
-def principal_grants(principal: AccessPrincipal) -> list[dict[str, str]]:
-    """Return grants visible in /api/auth/me responses."""
-    if not principal.is_viewer:
-        return []
-    return [
-        {"project_id": grant.project_id, "section": grant.section}
-        for grant in list_user_grants(principal.email)
-    ]
