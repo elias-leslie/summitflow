@@ -12,6 +12,7 @@ import shutil
 import subprocess
 import sys
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 
@@ -22,6 +23,9 @@ HOOK = REPO / "scripts/lib/publication-pretool-hook"
 ENTRY = REPO / "scripts/lib/publication_guard_entry.py"
 OS_PYTHON = Path("/usr/bin/python3")
 pytestmark = pytest.mark.skipif(not OS_PYTHON.exists(), reason="OS interpreter required")
+# Explicit child environments drop conftest's journal toggle; re-add it so the
+# degraded-path tests never write CRIT alerts to the host journal.
+QUIET = {"PATH": "/usr/bin:/bin", "SUMMITFLOW_JOURNAL_ALERTS": "0"}
 
 DENIED = [
     "git push origin main", "/usr/bin/git -C /repo push", "git send-pack origin main",
@@ -47,7 +51,7 @@ def _hook(root: Path, payload: str, tmp_path: Path) -> dict:
     result = subprocess.run(
         ["bash", str(root / "scripts/lib/publication-pretool-hook")], input=payload, text=True,
         capture_output=True, check=True, timeout=10,
-        env={"PATH": "/usr/bin:/bin", "HOME": str(tmp_path), "XDG_STATE_HOME": str(tmp_path / "state")},
+        env={**QUIET, "HOME": str(tmp_path), "XDG_STATE_HOME": str(tmp_path / "state")},
     )
     return json.loads(result.stdout)
 
@@ -150,7 +154,7 @@ def test_st_launcher_reports_missing_runtime(tmp_path: Path) -> None:
     shutil.copy2(REPO / "scripts/st", root / "scripts/st")
     (root / "backend/.venv/bin").mkdir(parents=True)
     result = subprocess.run(["bash", str(root / "scripts/st"), "autosnap", "sweep"], text=True,
-                            capture_output=True, timeout=10, env={"PATH": "/usr/bin:/bin", "HOME": str(tmp_path)})
+                            capture_output=True, timeout=10, env={**QUIET, "HOME": str(tmp_path)})
     assert result.returncode == 78
     assert "st runtime unavailable" in result.stderr
     assert "uv sync --locked" in result.stderr
@@ -169,9 +173,46 @@ def test_st_launcher_probes_autosnap_imports(tmp_path: Path) -> None:
 
     def run(*args: str) -> subprocess.CompletedProcess[str]:
         return subprocess.run(["bash", str(root / "scripts/st"), *args], text=True, capture_output=True,
-                              timeout=10, env={"PATH": "/usr/bin:/bin", "HOME": str(tmp_path)})
+                              timeout=10, env={**QUIET, "HOME": str(tmp_path)})
 
     autosnap = run("autosnap", "sweep")
     assert autosnap.returncode == 78
     assert "No module named 'no_such_st_module'" in autosnap.stderr
     assert run("status").returncode == 0
+
+
+def test_degraded_guard_alert_honours_journal_toggle(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    sent: list[str] = []
+    fake = SimpleNamespace(LOG_CRIT=2, openlog=lambda ident: None,
+                           syslog=lambda priority, message: sent.append(message))
+    monkeypatch.setitem(sys.modules, "syslog", fake)
+    monkeypatch.setenv("XDG_STATE_HOME", str(tmp_path))
+    entry = _load_entry()
+
+    entry._report_degraded("quiet")
+    assert sent == []
+    monkeypatch.delenv("SUMMITFLOW_JOURNAL_ALERTS")
+    entry._report_degraded("loud")
+    assert len(sent) == 1 and "loud" in sent[0]
+
+
+def test_st_launcher_alert_honours_journal_toggle(tmp_path: Path) -> None:
+    root = tmp_path / "checkout"
+    (root / "scripts").mkdir(parents=True)
+    shutil.copy2(REPO / "scripts/st", root / "scripts/st")
+    (root / "backend/.venv/bin").mkdir(parents=True)
+    fake_bin = tmp_path / "bin"
+    fake_bin.mkdir()
+    record = tmp_path / "logger.log"
+    (fake_bin / "logger").write_text(f'#!/bin/sh\necho "$@" >> {record}\n')
+    (fake_bin / "logger").chmod(0o755)
+
+    def run(env: dict[str, str]) -> None:
+        result = subprocess.run(["bash", str(root / "scripts/st"), "autosnap", "sweep"], text=True,
+                                capture_output=True, timeout=10, env={**env, "HOME": str(tmp_path)})
+        assert result.returncode == 78
+
+    run({**QUIET, "PATH": f"{fake_bin}:/usr/bin:/bin"})
+    assert not record.exists()
+    run({"PATH": f"{fake_bin}:/usr/bin:/bin"})
+    assert "-t summitflow-st" in record.read_text()

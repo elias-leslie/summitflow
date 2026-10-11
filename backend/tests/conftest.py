@@ -33,6 +33,9 @@ os.environ["NO_COLOR"] = "1"
 os.environ["TERM"] = "dumb"
 os.environ["COLUMNS"] = "160"
 os.environ["TERMINAL_WIDTH"] = "160"
+# Degraded-runtime tests drive the real alert paths; keep their CRIT alerts
+# out of the host journal (scripts/st, publication_guard_entry.py honour it).
+os.environ["SUMMITFLOW_JOURNAL_ALERTS"] = "0"
 
 _db_url = os.environ.get("DATABASE_URL", "")
 _test_db_url = os.environ.get("TEST_DATABASE_URL", "")

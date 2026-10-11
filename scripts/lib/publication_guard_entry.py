@@ -80,13 +80,15 @@ def fallback_decision(payload: object) -> str | None:
 def _report_degraded(cause: str) -> None:
     message = f"summitflow publication guard DEGRADED: full policy unavailable ({cause}); conservative fallback active. {_REPAIR}"
     print(message, file=sys.stderr)
-    try:
-        import syslog
+    # Test suites set SUMMITFLOW_JOURNAL_ALERTS=0; production leaves it unset.
+    if os.environ.get("SUMMITFLOW_JOURNAL_ALERTS") != "0":
+        try:
+            import syslog
 
-        syslog.openlog("summitflow-command-guard")
-        syslog.syslog(syslog.LOG_CRIT, message)
-    except Exception:  # diagnostics must never change the decision
-        pass
+            syslog.openlog("summitflow-command-guard")
+            syslog.syslog(syslog.LOG_CRIT, message)
+        except Exception:  # diagnostics must never change the decision
+            pass
     try:
         state = Path(os.environ.get("XDG_STATE_HOME") or Path.home() / ".local/state") / "summitflow"
         state.mkdir(parents=True, exist_ok=True)

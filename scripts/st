@@ -56,7 +56,8 @@ venv_st="$backend/.venv/bin/st"
 runtime_unavailable() {
     local message="st runtime unavailable: $1. Repair: cd $backend && uv sync --locked, or ST_DEV_CHECKOUT=1 st service rollback summitflow"
     printf '%s\n' "$message" >&2
-    logger -p user.crit -t summitflow-st -- "$message" 2>/dev/null || true
+    # Test suites set SUMMITFLOW_JOURNAL_ALERTS=0; production leaves it unset.
+    [[ ${SUMMITFLOW_JOURNAL_ALERTS-} == 0 ]] || logger -p user.crit -t summitflow-st -- "$message" 2>/dev/null || true
     exit 78
 }
 
