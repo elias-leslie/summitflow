@@ -92,6 +92,7 @@ def capture(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> dict[str, Any]:
     point = {"source": "/", "snapshot": "/snapshots/current", "target": str(target / "current"), "source_uuid": "source-uuid", "received_uuid": "source-uuid"}
     Path(point["target"]).mkdir()
     monkeypatch.setattr(host, "_verified_points", lambda *_: [point])
+    monkeypatch.setattr(host, "_target_deletions_refused", lambda _: False)
     bulk = Mock(return_value=subprocess.CompletedProcess([], 0, "format=raw type=snapshot status=success source_url=/ target_url=/snapshots/current\n", ""))
     monkeypatch.setattr(host, "run_bulk_process", bulk)
     monkeypatch.setattr(host.shutil, "disk_usage", lambda _: SimpleNamespace(total=1000, used=110, free=890))
@@ -580,3 +581,18 @@ def test_nested_coverage_resolves_a_symlinked_workspaces_root(monkeypatch: pytes
     monkeypatch.setattr(host, "_checked", lambda _: "ID 301 gen 1 top level 5 path @workspaces/projects/data\n")
     with pytest.raises(RuntimeError, match="explicit host coverage"):
         host._validate_nested_coverage(rows)
+
+
+def test_target_deletion_preview_failure_preserves_points(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    monkeypatch.setattr(host, "_target_deletions_exceed_retention", Mock(side_effect=OSError("sudo unavailable")))
+    assert host._target_deletions_refused(tmp_path) is True
+
+
+def test_target_deletion_preview_trips_on_mass_expiry(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    names = [f"root.2026100{day}" for day in range(1, 8)]
+    plan = "\n".join(f"format=raw type=delete status=success target_url={tmp_path / name}" for name in names[:5])
+    monkeypatch.setattr(host, "_run", lambda _: subprocess.CompletedProcess([], 0, plan, ""))
+    monkeypatch.setattr(host, "_checked", lambda *_args, **_kwargs: "\n".join(names))
+    assert host._target_deletions_refused(tmp_path) is True
+    monkeypatch.setattr(host, "_run", lambda _: subprocess.CompletedProcess([], 0, plan.splitlines()[0], ""))
+    assert host._target_deletions_refused(tmp_path) is False

@@ -23,6 +23,7 @@ from typing import Any
 from zoneinfo import ZoneInfo
 
 from ..config import get_settings
+from ..logging_config import get_logger
 from ..project_identity import get_project_aliases, get_project_identity
 from ..storage import backups as backup_store
 from ..storage.projects import list_projects, testing_project_ids
@@ -34,6 +35,8 @@ from .backup_native_archive import PROJECT_DATABASE_PAYLOAD_NAME, _load_db_confi
 from .backup_offsite_restore_test import restore_verified
 from .backup_utils import _FREQUENCY_DELTAS
 from .backup_write_window import path_window
+
+logger = get_logger(__name__)
 
 REQUIRED_SOURCES = {"/", "/home", "/srv/workspaces", "/var/lib/docker", "/srv/models", "/var/log"}
 CONFIG_PATH = Path("/etc/btrbk/summitflow.conf")
@@ -592,6 +595,15 @@ def _resume_retained(last: dict[str, Any], payload: dict[str, Any], operation: P
 
 def _target_deletions_refused(target: Path) -> bool:
     """Preview btrbk expiry; refuse (preserve backups) when it exceeds daily retention."""
+    try:
+        return _target_deletions_exceed_retention(target)
+    except Exception as exc:
+        # Unknown plan: keep every point this run; the real run still reports errors.
+        logger.warning("btrbk_deletion_preview_failed", target=str(target), error=str(exc))
+        return True
+
+
+def _target_deletions_exceed_retention(target: Path) -> bool:
     from .backup_safety import guard_deletion
 
     plan = _run(["sudo", "-n", "btrbk", "-c", str(CONFIG_PATH), "--dry-run", "--format", "raw", "run"])
