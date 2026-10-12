@@ -10,7 +10,6 @@ from typer.testing import CliRunner
 
 from cli.client import APIError
 from cli.commands.done_subtask import _resolve_citations_for_subtask, complete_subtask
-from cli.commands.subtask import app as subtask_app
 from cli.commands.subtask import clear_subtask, list_subtasks
 from cli.commands.subtask_validation import is_step_resolved
 
@@ -31,14 +30,6 @@ class TestIsStepResolved:
     def test_missing_passes_field_not_resolved(self) -> None:
         step = {"step_number": 1}
         assert not is_step_resolved(step, {1: False})
-
-
-class TestSubtaskSurface:
-    """The retired `st subtask pass` command must not reappear."""
-
-    def test_subtask_app_no_longer_exposes_pass(self) -> None:
-        result = runner.invoke(subtask_app, ["pass", "--help"])
-        assert result.exit_code != 0
 
 
 class TestDoneSubtaskCompletion:

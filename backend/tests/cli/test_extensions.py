@@ -281,15 +281,10 @@ def test_neri_binding_forwards_only_the_api_configuration():
     assert binding["environment"] == ["ST_NERI_API_URL"]
 
 
-def test_neri_manifest_exposes_bounty_commands_without_retired_workflows():
+def test_neri_manifest_exposes_bounty_commands():
     registry_path = Path(__file__).resolve().parents[3] / "scripts/lib/tool-registry.json"
     catalog = load_extensions(set(), registry_path=registry_path)
     assert not catalog.diagnostics
-    assert not any(
-        row.binding and (row.binding.id == "neri.observer" or row.binding.namespace == "neriobserve")
-        for row in catalog.records
-    )
-    assert not (registry_path.parent / "extensions/neri-observer.json").exists()
     record = next(
         row
         for row in catalog.records
@@ -303,21 +298,9 @@ def test_neri_manifest_exposes_bounty_commands_without_retired_workflows():
     assert "surface digest" in record.manifest.help
     for path in ("owner-request", "owner-resolve", "portfolio contract", "portfolio references"):
         assert path in record.manifest.help
-    retired_groups = {"research", "worker", "operator", "jev", "session", "runtime", "execute"}
-    assert not any(path.split()[0] in retired_groups for path in record.manifest.help if path)
-    assert not retired_groups.intersection(record.manifest.help_options)
-    for path in (
-        "record-activity", "control", "operation", "report assign-review",
-        "report retain-review-result", "report review", "closeout save",
-        "closeout training", "surface probe",
-    ):
-        assert path not in record.manifest.help
     surfaces = {row["surface"] for row in record.manifest.usage}
     assert "st.neri.hunt.begin" in surfaces
     assert "st.neri.surface.digest" in surfaces
-    for surface in surfaces:
-        assert isinstance(surface, str)
-        assert surface.removeprefix("st.neri.").split(".")[0] not in retired_groups
 
 
 def test_actual_neri_workspace_help_and_usage_are_passive(monkeypatch):

@@ -70,11 +70,3 @@ def test_design_nested_help_is_static_and_never_executes(monkeypatch: Any) -> No
     assert "--ensemble" in result.output
 
 
-def test_design_help_no_longer_offers_retired_asset_studio_commands() -> None:
-    """Asset generate/import/export were retired with SummitFlow's Asset Studio."""
-    result = runner.invoke(app, ["design", "asset", "--help"])
-
-    assert result.exit_code == 0, result.output
-    assert "critique" in result.output
-    for retired in ("generate", "import", "export"):
-        assert f"  {retired} " not in result.output

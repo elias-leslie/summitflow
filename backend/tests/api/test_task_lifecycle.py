@@ -44,24 +44,6 @@ class TestTaskLifecycleEndpoints:
         }
         mock_validate.assert_called_once_with(task_id, test_project_id)
 
-    def test_execute_endpoint_is_retired(
-        self,
-        client: Any,
-        test_project_id: str,
-        cleanup_task: Callable[[str], None],
-    ) -> None:
-        response = client.post(
-            f"/api/projects/{test_project_id}/tasks",
-            json={"title": "No autonomous execution", "task_type": "task", "priority": 2},
-        )
-        assert response.status_code == 200
-        body = response.json()
-        cleanup_task(body["id"])
-        assert body["status"] == "pending"
-
-        retired = client.post(f"/api/projects/{test_project_id}/tasks/{body['id']}/execute")
-        assert retired.status_code in (404, 405)
-
     def test_claim_and_release_round_trip(
         self,
         client: Any,

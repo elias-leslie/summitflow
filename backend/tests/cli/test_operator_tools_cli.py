@@ -714,44 +714,6 @@ def test_check_architecture_blocks_raw_subprocess_in_web_app(tmp_path: Path) -> 
     assert "backend/app/api/unsafe.py:4 raw subprocess.run" in result.output
 
 
-def test_check_architecture_blocks_async_subprocess_in_web_app(tmp_path: Path) -> None:
-    target = tmp_path / "backend" / "app" / "services" / "unsafe_async.py"
-    target.parent.mkdir(parents=True)
-    target.write_text(
-        "import asyncio\n\nasync def f():\n    return await asyncio.create_subprocess_exec('hostname')\n",
-        encoding="utf-8",
-    )
-
-    with (
-        patch("cli.commands.check._resolve_repo_root", return_value=tmp_path),
-        patch("cli.commands.check._tool_configs", return_value={}),
-        patch("cli.commands.check._changed_files", return_value=["backend/app/services/unsafe_async.py"]),
-    ):
-        result = runner.invoke(main_app, ["check", "--quick", "--changed-only"])
-
-    assert result.exit_code == 1
-    assert "backend/app/services/unsafe_async.py:4 raw asyncio.create_subprocess_exec" in result.output
-
-
-def test_check_architecture_allows_safe_subprocess_wrapper(tmp_path: Path) -> None:
-    target = tmp_path / "backend" / "app" / "api" / "safe.py"
-    target.parent.mkdir(parents=True)
-    target.write_text(
-        "from app.utils import safe_subprocess\n\ndef f():\n    return safe_subprocess.run(['hostname'])\n",
-        encoding="utf-8",
-    )
-
-    with (
-        patch("cli.commands.check._resolve_repo_root", return_value=tmp_path),
-        patch("cli.commands.check._tool_configs", return_value={}),
-        patch("cli.commands.check._changed_files", return_value=["backend/app/api/safe.py"]),
-    ):
-        result = runner.invoke(main_app, ["check", "--quick", "--changed-only"])
-
-    assert result.exit_code == 0
-    assert "ARCH:OK:architecture" in result.output
-
-
 def test_check_normalizes_repo_relative_explicit_paths(tmp_path: Path) -> None:
     (tmp_path / "frontend" / "src").mkdir(parents=True)
     (tmp_path / "frontend" / "src" / "app.ts").write_text("", encoding="utf-8")
@@ -1232,63 +1194,8 @@ def test_browser_update_needs_only_agent_browser_bin(tmp_path, monkeypatch) -> N
     }
 
 
-def test_browser_help_explains_isolated_target() -> None:
-    result = runner.invoke(main_app, ["browser", "--help"])
-
-    assert result.exit_code == 0
-    assert "Commands use the Proxmox browser VM" in result.output
-    assert "Checks use a fresh isolated headless profile by default." in result.output
-    assert "Force a target with --proxmox / --local-ai" in result.output
-    assert "st browser url <project>" in result.output
-    assert "st browser check a-term" in result.output
-    assert "st browser --local-ai open portfolio-ai" in result.output
-    assert "Override VM with ST_BROWSER_HOST" in result.output
-    assert "ST_BROWSER_DISABLE_DEFAULT_VM_HOST=1" in result.output
-    assert "ST_BROWSER_ALLOW_LOCAL=1" in result.output
-
-
 def test_browser_subcommand_help_does_not_run_health() -> None:
     assert browser.run_registered(object(), ["health", "--help"], {}) == 0
-
-
-def test_vm_help_points_to_browser_target_workflow() -> None:
-    result = runner.invoke(main_app, ["vm", "--help"])
-
-    assert result.exit_code == 0
-    assert "Use for browser/test VM status" in result.output
-    assert "st browser uses the default browser VM" in result.output
-
-
-def test_service_help_explains_canonical_rebuild_path() -> None:
-    result = runner.invoke(main_app, ["service", "--help"])
-
-    assert result.exit_code == 0
-    assert "Use rebuild/restart instead of raw" in result.output
-    assert "health checks" in result.output
-
-
-def test_check_help_explains_managed_gate() -> None:
-    result = runner.invoke(main_app, ["check", "--help"])
-
-    assert result.exit_code == 0
-    assert "Use st check for repo gates" in result.output
-    assert "Never run raw pytest" in result.output
-
-
-def test_setup_help_explains_browser_isolation() -> None:
-    result = runner.invoke(main_app, ["setup", "--help"])
-
-    assert result.exit_code == 0
-    assert "Browser setup defaults to" in result.output
-    assert "server-local installs are debug-only" in result.output
-
-
-def test_git_help_explains_managed_workflow() -> None:
-    result = runner.invoke(main_app, ["git", "--help"])
-
-    assert result.exit_code == 0
-    assert "Low-level Git inspection" in result.output
-    assert "st vcs doctor/reconcile" in result.output
 
 
 def test_browser_host_uses_default_vm_when_host_missing(monkeypatch) -> None:

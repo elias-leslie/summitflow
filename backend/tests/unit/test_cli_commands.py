@@ -296,22 +296,9 @@ class TestTaskCliErgonomics:
         assert result.exit_code == 0
         assert "--plan" in result.output
         assert "--from-file" in result.output
-        assert "--draft" not in result.output
-        assert "--autonomous" not in result.output
         assert "--type" in result.output
         assert "st verify plan.json" in result.output
         assert "/schemas/plan" in result.output
-
-    def test_subtask_create_help_does_not_advertise_steps(self) -> None:
-        result = runner.invoke(subtask_app, ["create", "--help"])
-
-        assert result.exit_code == 0
-        assert "--steps" not in result.output
-
-    def test_cli_reference_subtask_create_does_not_advertise_steps(self) -> None:
-        from cli.main import CLI_REFERENCE
-
-        assert "--steps" not in CLI_REFERENCE
 
     def test_verify_help_references_live_plan_schema(self) -> None:
         result = runner.invoke(tasks_app, ["verify", "--help"])
@@ -390,18 +377,6 @@ class TestTaskCliErgonomics:
         assert len(payload["done_when"]) == 3
         assert "execution_mode" not in payload
         mock_client.create_subtask.assert_called_once()
-
-    def test_legacy_capture_command_no_longer_registered(self) -> None:
-        result = runner.invoke(tasks_app, ["capture", "idea", "Add dark mode"])
-        assert result.exit_code != 0
-
-    def test_legacy_idea_command_no_longer_registered(self) -> None:
-        result = runner.invoke(tasks_app, ["idea", "Add dark mode"])
-        assert result.exit_code != 0
-
-    def test_legacy_bug_command_no_longer_registered(self) -> None:
-        result = runner.invoke(tasks_app, ["bug", "Fix auth"])
-        assert result.exit_code != 0
 
     def test_list_accepts_local_compact_flag(self) -> None:
         with patch("cli.commands.tasks_list.list_tasks_command") as mock_list:

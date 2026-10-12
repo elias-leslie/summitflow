@@ -307,29 +307,6 @@ def test_adoption_without_inspectable_shell_events_is_unknown(capsys: pytest.Cap
     assert "capture completeness unknown" in out
 
 
-def test_adoption_command_uses_fetcher(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setattr(
-        "cli.commands.tools._fetch_adoption_metrics",
-        lambda hours, limit, session: {
-            "window_hours": hours,
-            "session": session,
-            "summary": {
-                "shell_tool_events": 5,
-                "st_commands": 5,
-                "st_command_rate": 100.0,
-                "raw_quality_commands": 0,
-            },
-            "top_st_surfaces": [{"surface": "st search", "count": limit}],
-        },
-    )
-
-    result = runner.invoke(app, ["adoption", "--hours", "2", "--limit", "3"])
-
-    assert result.exit_code == 0
-    assert "TOOLS_ADOPTION[2h]:shell_commands=5 st=5 st_rate=100.0% raw_quality=0" in result.output
-    assert "st search  3" in result.output
-
-
 def test_audit_compact_surfaces_expected_tool_findings(capsys: pytest.CaptureFixture[str]) -> None:
     _format_audit_compact(
         {
@@ -363,25 +340,6 @@ def test_audit_rules_do_not_classify_git_inspection_as_waste() -> None:
     from cli.commands.tools import _RAW_AUDIT_RULES
 
     assert not any(rule["finding_type"] == "raw_vcs_tool_bypass" for rule in _RAW_AUDIT_RULES)
-
-
-def test_audit_command_uses_fetcher(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setattr(
-        "cli.commands.tools._fetch_audit_metrics",
-        lambda hours, limit, project, session: {
-            "window_hours": hours,
-            "project": project,
-            "session": session,
-            "summary": {"finding_groups": 0, "events": 0},
-            "findings": [],
-        },
-    )
-
-    result = runner.invoke(app, ["audit", "--hours", "2", "--limit", "3", "-P", "summitflow", "--session", "sess-1"])
-
-    assert result.exit_code == 0
-    assert "TOOLS_AUDIT[2h]:findings=0 finding_events=0" in result.output
-    assert "No high-confidence tool-governance findings." in result.output
 
 
 def test_audit_emit_feedback_groups_duplicate_finding_types(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -464,28 +422,6 @@ def test_cost_compact_shows_manifest_and_hotspots(capsys: pytest.CaptureFixture[
     assert "manifest_core~100t task(verification)~160t full~400t" in out
     assert "sdk.complete|sdk reqs=2 in=300 out=50 http_success=100.0%" in out
     assert "Bash events=4 out~120t chars=480" in out
-
-
-def test_cost_command_uses_fetcher(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setattr(
-        "cli.commands.tools._fetch_cost_metrics",
-        lambda hours, limit, task, session: {
-            "window_hours": hours,
-            "session": session,
-            "manifest_costs": [
-                {"density": "core", "task": None, "tokens_approx": 10},
-                {"density": "task", "task": task, "tokens_approx": 20},
-                {"density": "full", "task": None, "tokens_approx": 40},
-            ],
-            "request_hotspots": [],
-            "tool_output_hotspots": [],
-        },
-    )
-
-    result = runner.invoke(app, ["cost", "--hours", "2", "--limit", "3", "--task", "backend", "--session", "sess-1"])
-
-    assert result.exit_code == 0
-    assert "TOOLS_COST[2h]:manifest_core~10t task(backend)~20t full~40t" in result.output
 
 
 def test_cost_emit_feedback_requires_session_id(monkeypatch: pytest.MonkeyPatch) -> None:

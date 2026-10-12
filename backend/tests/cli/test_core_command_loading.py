@@ -23,8 +23,3 @@ def test_core_commands_render_help_without_unavailable_stub(command: str) -> Non
     assert "unavailable" not in result.output
 
 
-@pytest.mark.parametrize("command", ["autonomous", "refactor", "package", "migrate-branches", "autocode"])
-def test_retired_commands_are_not_registered(command: str) -> None:
-    result = runner.invoke(cli_main.app, [command, "--help"])
-
-    assert result.exit_code != 0

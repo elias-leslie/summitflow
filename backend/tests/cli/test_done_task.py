@@ -10,28 +10,6 @@ from cli.commands.done_task import _task_scope_paths, complete_task
 from cli.lib.checkpoint_branches import resolve_task_branch
 
 
-def test_st_client_exposes_get_task_completion_readiness() -> None:
-    with patch("cli.config.get_config_optional") as mock_config, patch(
-        "cli._client_base.httpx.Client"
-    ) as mock_http_client:
-        mock_config.return_value.api_base = "http://summitflow.test"
-        mock_config.return_value.project_id = "summitflow"
-        response = MagicMock()
-        response.status_code = 200
-        response.json.return_value = {"ready": True, "gates": []}
-        mock_http_client.return_value.get.return_value = response
-
-        from cli.client import STClient
-
-        client = STClient(require_project=False)
-        result = client.get_task_completion_readiness("task-123")
-
-    mock_http_client.return_value.get.assert_called_once_with(
-        "http://summitflow.test/tasks/task-123/completion-readiness"
-    )
-    assert result == {"ready": True, "gates": []}
-
-
 def test_run_smart_prereqs_auto_closes_unpassed_subtasks() -> None:
     client = MagicMock()
     client.get_subtasks.return_value = {

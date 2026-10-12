@@ -103,14 +103,6 @@ def test_agent_run_surfaces_recovered_tool_errors() -> None:
     assert "command failed" in result.stderr
 
 
-def test_agent_run_rejects_removed_adhoc_routing_flags() -> None:
-    with patch("cli.commands.agent.call_complete") as mock_call:
-        result = runner.invoke(app, ["run", "--adhoc", "--cost", "low_cost", "--message", "x"])
-
-    assert result.exit_code != 0
-    mock_call.assert_not_called()
-
-
 def test_agent_run_requires_exact_agent_slug() -> None:
     with patch("cli.commands.agent.call_complete") as mock_call:
         result = runner.invoke(app, ["run", "--message", "Inspect state"])

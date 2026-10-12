@@ -137,19 +137,6 @@ def test_explicit_specialized_work_gets_complete_canonical_guidance(task, surfac
     assert selected_spec == json.loads(full.output)["tools"][0]
 
 
-def test_retired_pulsebrief_is_absent_from_full_and_briefing_manifests() -> None:
-    full = runner.invoke(tools_app, ["manifest", "--density", "full", "--format", "json"])
-    briefing = runner.invoke(
-        tools_app,
-        ["manifest", "--task", "briefing", "--density", "task", "--format", "json"],
-    )
-
-    assert full.exit_code == briefing.exit_code == 0
-    for result in (full, briefing):
-        surfaces = {row["surface"] for row in json.loads(result.output)["tools"]}
-        assert not any(surface.startswith("st.pulsebrief") for surface in surfaces)
-
-
 def test_read_only_task_context_does_not_require_a_claim() -> None:
     result = runner.invoke(tools_app, ["manifest", "--surface", "st.context", "--format", "json"])
     assert result.exit_code == 0

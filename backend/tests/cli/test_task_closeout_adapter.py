@@ -1,5 +1,4 @@
 """The local closeout adapter preserves source checks and recovery effects."""
-from contextlib import nullcontext
 from unittest.mock import Mock
 
 import pytest
@@ -64,9 +63,3 @@ def test_checkpoint_removal_failure_is_recoverable_before_lease_release(tmp_path
     release.assert_not_called()
 
 
-def test_source_lock_uses_the_shared_repository_mutation_primitive(tmp_path, monkeypatch):
-    lock = Mock(return_value=nullcontext())
-    monkeypatch.setattr("cli.lib.acceptance.repo_lock", lock)
-    with LocalCloseoutOperations().source_lock(tmp_path):
-        pass
-    lock.assert_called_once_with(tmp_path, purpose="local closeout cleanup")

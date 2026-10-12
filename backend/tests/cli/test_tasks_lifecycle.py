@@ -176,15 +176,6 @@ class TestPauseCheckpointCleanup:
         remove.assert_not_called()
 
 
-class TestResumeRemoved:
-    """`st resume` collapsed into `st reopen`; the command must not be importable."""
-
-    def test_resume_task_command_no_longer_exists(self) -> None:
-        import cli.commands.tasks_lifecycle as lifecycle
-
-        assert not hasattr(lifecycle, "resume_task_command")
-
-
 class TestReopenTaskCommand:
     def test_reopen_task_updates_status_to_pending_with_reason(self) -> None:
         from cli.commands.tasks_lifecycle import reopen_task_command

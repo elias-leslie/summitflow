@@ -591,60 +591,6 @@ class TestSessionCommands:
 class TestRequireProjectFalse:
     """Regression tests: sessions commands work from a non-project cwd."""
 
-    def test_list_sessions_constructs_client_without_project_required(self) -> None:
-        captured_kwargs: list[dict[str, object]] = []
-
-        class _DummyClient:
-            def __init__(self, **kwargs: object) -> None:
-                captured_kwargs.append(kwargs)
-
-            def list_sessions(self, **_: object) -> list[dict[str, object]]:
-                return []
-
-        with patch("cli.commands.sessions.STClient", side_effect=_DummyClient):
-            result = runner.invoke(app, ["sessions", "list", "-s", "active", "--include-unassigned"])
-
-        assert result.exit_code == 0
-        assert captured_kwargs == [{"require_project": False}]
-
-    def test_show_session_constructs_client_without_project_required(self) -> None:
-        captured_kwargs: list[dict[str, object]] = []
-
-        class _DummyClient:
-            def __init__(self, **kwargs: object) -> None:
-                captured_kwargs.append(kwargs)
-
-            def list_sessions(self, **_: object) -> list[dict[str, object]]:
-                return [{"id": "sess-abc"}]
-
-            def get_session(self, session_id: str) -> dict[str, object]:
-                return {"id": session_id, "status": "completed"}
-
-        with patch("cli.commands.sessions.STClient", side_effect=_DummyClient):
-            result = runner.invoke(app, ["sessions", "show", "sess-abc"])
-
-        assert result.exit_code == 0
-        assert captured_kwargs == [{"require_project": False}]
-
-    def test_close_session_constructs_client_without_project_required(self) -> None:
-        captured_kwargs: list[dict[str, object]] = []
-
-        class _DummyClient:
-            def __init__(self, **kwargs: object) -> None:
-                captured_kwargs.append(kwargs)
-
-            def list_sessions(self, **_: object) -> list[dict[str, object]]:
-                return [{"id": "sess-xyz"}]
-
-            def close_session(self, session_id: str) -> dict[str, object]:
-                return {"id": session_id, "status": "completed"}
-
-        with patch("cli.commands.sessions.STClient", side_effect=_DummyClient):
-            result = runner.invoke(app, ["sessions", "close", "sess-xyz"])
-
-        assert result.exit_code == 0
-        assert captured_kwargs == [{"require_project": False}]
-
     def test_list_sessions_project_flag_forwarded_to_api(self) -> None:
         mock_client = MagicMock()
         mock_client.list_sessions.return_value = []

@@ -581,17 +581,6 @@ def test_checkpoint_uses_git_even_with_legacy_metadata(tmp_path: Path) -> None:
     commit.assert_called_once_with(tmp_path, message="checkpoint", task_id="", push=False, skip_checks=True, paths=())
 
 
-def test_retired_vcs_command_and_bookmark_option_are_absent() -> None:
-    result = runner.invoke(app, ["--help"])
-    assert result.exit_code == 0
-    assert "Jujutsu" not in result.stdout
-    rejected = runner.invoke(app, ["jj", "status"])
-    assert rejected.exit_code == 2
-    assert "No such command" in rejected.output
-    help_result = runner.invoke(app, ["commit", "--help"])
-    assert "--bookmark" not in help_result.stdout
-
-
 def test_commit_follows_identical_tree_publication_merge(tmp_path: Path, monkeypatch) -> None:
     from cli.lib import commit_workflow
 

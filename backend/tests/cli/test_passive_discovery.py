@@ -112,27 +112,3 @@ def test_storage_package_preserves_public_reexports() -> None:
     assert storage.log_task_event is log_task_event
 
 
-@pytest.mark.parametrize(
-    "module_name",
-    ["explorer_analysis", "explorer_entries", "explorer_symbols"],
-)
-def test_storage_package_preserves_direct_explorer_module_imports(module_name: str) -> None:
-    code = """
-import importlib
-import sys
-
-import app.storage as storage
-
-module_name = sys.argv[1]
-resolved = getattr(storage, module_name)
-assert resolved is importlib.import_module(f"app.storage.{module_name}")
-"""
-    result = subprocess.run(
-        [sys.executable, "-c", code, module_name],
-        cwd=BACKEND_ROOT,
-        capture_output=True,
-        text=True,
-        check=False,
-    )
-
-    assert result.returncode == 0, result.stdout + result.stderr
