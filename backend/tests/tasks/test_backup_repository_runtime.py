@@ -1204,6 +1204,7 @@ def test_real_independent_copy_deduplicates_and_recovers_wip(repository_env: dic
         assert "synthetic-fixture-local-password" not in json.dumps(state)
 
 
+@pytest.mark.slow
 @pytest.mark.skipif(shutil.which("restic") is None, reason="Pinned Restic binary not installed")
 def test_real_serial_batch_checks_copies_once_and_retries_all_pending(repository_env, tmp_path, monkeypatch):
     runtime.initialize_repository(repository_env)

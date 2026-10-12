@@ -234,6 +234,7 @@ def test_isolated_sandbox_pnpm_can_install_local_offline_workspace(sandbox_probe
     assert result.returncode == 0, result.stderr
 
 
+@pytest.mark.slow
 def test_isolated_retry_reuses_successful_stage_from_failed_attempt(native_source):
     import http.server
     import threading
@@ -470,6 +471,7 @@ def test_isolation_preserves_equivalent_modes_and_fits_real_unix_socket_paths(na
     assert host_only.read_text() == "outside isolated /tmp\n"
 
 
+@pytest.mark.slow
 def test_isolated_native_fallback_preserves_nested_aliases_and_host_tmp(native_source, monkeypatch):
     repo, _sha, _store = native_source
     backend = Path(__file__).resolve().parents[2]
@@ -555,6 +557,7 @@ assert host_marker.read_text() == 'private shadow'
         assert marker.read_text() == "host remains unchanged"
 
 
+@pytest.mark.slow
 def test_private_tmp_supports_nested_isolated_acceptance(native_source):
     repo, _sha, _store = native_source
     backend = Path(__file__).resolve().parents[2]
@@ -658,6 +661,7 @@ def test_workspace_dependency_discovery_rejects_unprepared_package_roots(tmp_pat
         _dependency_roots(tmp_path)
 
 
+@pytest.mark.slow
 def test_isolation_preserves_unsafe_protected_mode_and_fails_the_real_guard(native_source):
     repo, _sha, store = native_source
     config = repo / "protected.json"

@@ -10,6 +10,7 @@ import pytest
 from app.tasks.backup_restic import ResticAdapter, ResticConfig
 
 
+@pytest.mark.slow
 @pytest.mark.skipif(shutil.which("restic") is None, reason="Pinned Restic fixture binary is not installed")
 @pytest.mark.timeout(120)
 def test_native_independent_copy_incremental_backup_and_verified_partial_restore(tmp_path: Path, backup_job_scratch: Path):
