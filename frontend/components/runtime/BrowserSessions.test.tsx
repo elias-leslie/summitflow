@@ -159,10 +159,14 @@ describe('Runtime managed browser sessions', () => {
     expect(
       screen.getByRole('button', { name: /agent-two .*this workstation/ }),
     ).toBeInTheDocument()
-    fireEvent.click(
-      screen.getByRole('button', { name: /agent-idle .*Browser not running/ }),
-    )
-    expect(screen.getByText(/Browser not running\./)).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: /agent-idle/ }))
+    expect(
+      screen.getByText(/Automation can use this session/).textContent,
+    ).not.toMatch(/Browser/)
+    fireEvent.click(screen.getByRole('button', { name: /agent-one/ }))
+    expect(
+      screen.getByText(/Browser on the Proxmox VM\. Automation/),
+    ).toBeInTheDocument()
   })
 
   it('makes empty and failed inventories visible', async () => {

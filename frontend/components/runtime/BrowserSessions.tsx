@@ -22,10 +22,11 @@ import {
 
 const queryKey = ['runtime', 'browser-sessions']
 
-function browserLocationLabel(location: BrowserRuntimeLocation): string {
+// Null while no browser runs; the runtime state already says so.
+function browserLocationLabel(location: BrowserRuntimeLocation): string | null {
   if (location === 'proxmox') return 'Browser on the Proxmox VM'
   if (location === 'local') return 'Browser on this workstation'
-  return 'Browser not running'
+  return null
 }
 
 function modifiers(event: {
@@ -426,9 +427,11 @@ export function BrowserSessions() {
                   : 'Automation enabled'}{' '}
               · {session.runtime_state || 'Runtime unknown'}
             </span>
-            <span className="mt-1 block text-xs text-slate-400">
-              {browserLocationLabel(session.location)}
-            </span>
+            {session.location !== null && (
+              <span className="mt-1 block text-xs text-slate-400">
+                {browserLocationLabel(session.location)}
+              </span>
+            )}
             {session.last_used_ms !== null && (
               <span className="mt-1 block text-xs text-slate-500">
                 Last used {new Date(session.last_used_ms).toLocaleString()}
@@ -453,7 +456,8 @@ export function BrowserSessions() {
             <>
               <p className="text-sm text-slate-400">
                 Owner: <span className="break-all">{selected.actor}</span>.{' '}
-                {browserLocationLabel(selected.location)}.{' '}
+                {selected.location !== null &&
+                  `${browserLocationLabel(selected.location)}. `}
                 {selected.paused
                   ? 'Paused for human input.'
                   : 'Automation can use this session.'}
