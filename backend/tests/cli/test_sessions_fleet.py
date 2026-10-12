@@ -216,3 +216,44 @@ def test_native_thread_to_an_offline_thread_still_uses_the_queue(monkeypatch, tm
     monkeypatch.setattr(native, "queue_native_thread", lambda *a: queued.append(a) or {"queue_id": "q"})
     result = native.send_native_instruction("01a12620-c916-7aa1-afa8-f774ce8af197", "Resume work", project="p", source_key="r:1")
     assert result["delivery"] == "queued" and "transport" not in result and len(queued) == 1
+
+
+def _tether(monkeypatch, responses):
+    from app.services import tether
+
+    calls = []
+
+    def request(method, path, body=None, **_):
+        calls.append(path)
+        value = responses[path]
+        return value.pop(0) if isinstance(value, list) else value
+
+    monkeypatch.setattr(tether, "request", request)
+    monkeypatch.setattr(sessions_fleet, "_STATE_POLL_SECONDS", 0)
+    return calls
+
+
+def test_wait_until_resolves_a_root_and_returns_when_blocked(monkeypatch):
+    working = {"id": "0a1b2c3d", "state": "working", "stateSource": "claude-status", "stateAt": 1, "stateDetail": None}
+    blocked = {**working, "state": "blocked", "stateAt": 2, "stateDetail": "permission prompt"}
+    calls = _tether(monkeypatch, {
+        "/v1/roots/root-fixture": (200, {"hostIdentity": "0a1b2c3d"}),
+        "/v1/sessions/0a1b2c3d": [(200, working), (200, blocked)],
+    })
+    monkeypatch.setattr(sessions_fleet, "_client", lambda: pytest.fail("--until does not read the fleet stream"))
+    result = runner.invoke(app, ["sessions", "wait", "root-fixture", "--until", "idle,blocked", "--timeout", "5"])
+    assert result.exit_code == 0, result.output
+    assert '"blocked"' in result.output and "permission prompt" in result.output
+    assert calls == ["/v1/roots/root-fixture", "/v1/sessions/0a1b2c3d", "/v1/sessions/0a1b2c3d"]
+
+
+def test_wait_until_times_out_with_exit_1(monkeypatch):
+    _tether(monkeypatch, {"/v1/sessions/0a1b2c3d": (200, {"id": "0a1b2c3d", "state": "working"})})
+    result = runner.invoke(app, ["sessions", "wait", "0a1b2c3d", "--until", "blocked", "--timeout", "0"])
+    assert result.exit_code == 1
+    assert "is working" in result.output
+
+
+def test_wait_until_rejects_unknown_states():
+    result = runner.invoke(app, ["sessions", "wait", "0a1b2c3d", "--until", "stuck"])
+    assert result.exit_code == 2

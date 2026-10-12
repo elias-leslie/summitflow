@@ -159,19 +159,87 @@ def send(
 
 @usage(
     surface="st.sessions.wait",
-    cmd="st sessions wait ROOT --cursor SEQUENCE [--timeout SECONDS]",
-    when="consume the existing fleet root's durable advisory instruction and result stream",
-    precautions=("Carry the returned cursor; quiet timeout emits nothing. Fleet retrieval is not native TUI submission or observed receipt.",),
+    cmd="st sessions wait ROOT --cursor SEQUENCE [--timeout SECONDS] | st sessions wait ROOT_OR_SESSION --until idle,blocked [--timeout SECONDS]",
+    when="consume the existing fleet root's durable advisory instruction and result stream, or wait for another session's agent to reach a state",
+    precautions=(
+        "Carry the returned cursor; quiet timeout emits nothing. Fleet retrieval is not native TUI submission or observed receipt.",
+        "--until reads Tether's agent state (working, idle, blocked, unknown) for a root request ID or 8-hex session ID; prints the state JSON and exits 0, or exits 1 on timeout.",
+    ),
     tier="reference",
 )
 def wait(
     root: str,
     cursor: Annotated[int, typer.Option(min=0, help="Exclusive durable stream sequence cursor")] = 0,
     timeout: Annotated[float, typer.Option(min=0, max=300, help="Quiet wait seconds (default 300)")] = 300,
+    until: Annotated[str | None, typer.Option(help="Wait until the session's agent state is one of these (comma list of working, idle, blocked, unknown) instead of reading the fleet stream")] = None,
 ) -> None:
+    if until is not None:
+        _wait_for_state(root, _states(until), timeout)
+        return
     result = _call("wait", root, cursor=cursor, timeout=timeout)
     if result.get("events"):
         output_json(result)
+
+
+AGENT_STATES = ("working", "idle", "blocked", "unknown")
+_SESSION_ID = re.compile(r"[0-9a-f]{8}")
+_STATE_POLL_SECONDS = 1.0
+
+
+def _states(value: str) -> set[str]:
+    states = {part.strip() for part in value.split(",") if part.strip()}
+    unknown = states - set(AGENT_STATES)
+    if not states or unknown:
+        raise typer.BadParameter(f"--until takes a comma list of {', '.join(AGENT_STATES)}")
+    return states
+
+
+def _tether_get(path: str) -> dict[str, Any]:
+    from urllib.parse import quote
+
+    from app.services import tether
+
+    try:
+        status, body = tether.request("GET", quote(path))
+    except (OSError, ValueError) as exc:
+        typer.echo(f"ERROR Tether is not reachable at {tether.socket_path()}: {exc}", err=True)
+        raise typer.Exit(2) from exc
+    if status != 200 or not isinstance(body, dict):
+        code = body.get("error") if isinstance(body, dict) else None
+        typer.echo(f"ERROR Tether answered {status} for {path}" + (f" ({code})" if code else ""), err=True)
+        raise typer.Exit(2)
+    return body
+
+
+def _session_id(target: str) -> str:
+    """An 8-hex Tether session ID as given, else the session behind a root request ID."""
+    if _SESSION_ID.fullmatch(target):
+        return target
+    host = _tether_get(f"/v1/roots/{target}").get("hostIdentity")
+    if not isinstance(host, str) or not _SESSION_ID.fullmatch(host):
+        typer.echo(f"ERROR root {target!r} has no Tether session", err=True)
+        raise typer.Exit(2)
+    return host
+
+
+def _wait_for_state(target: str, states: set[str], timeout: float) -> None:
+    import time
+
+    session = _session_id(target)
+    deadline = time.monotonic() + timeout
+    while True:
+        descriptor = _tether_get(f"/v1/sessions/{session}")
+        state = descriptor.get("state")
+        if state is None:
+            typer.echo("ERROR this Tether does not report agent state; update Tether", err=True)
+            raise typer.Exit(2)
+        if state in states:
+            output_json({key: descriptor.get(key) for key in ("id", "state", "stateSource", "stateAt", "stateDetail")})
+            return
+        if time.monotonic() >= deadline:
+            typer.echo(f"Timed out after {timeout:g}s; {session} is {state}", err=True)
+            raise typer.Exit(1)
+        time.sleep(min(_STATE_POLL_SECONDS, max(0.0, deadline - time.monotonic())))
 
 
 def register(app: typer.Typer) -> None:
