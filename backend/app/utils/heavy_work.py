@@ -38,6 +38,13 @@ WORKERS = 2
 SPARE_MIN_AVAILABLE_BYTES = 12 * 1024**3
 SPARE_MAX_PRESSURE_AVG10 = 5.0
 _SPARE_LANE = "heavy2"
+# A fresh heavy owner waits before taking any slot while Nightshift closes
+# admission. Without a current Nightshift decision, apply Tether's agent
+# admission PSI thresholds (src/lifecycle/agent-admission.ts).
+NIGHTSHIFT_ADMISSION = Path(os.environ.get("XDG_RUNTIME_DIR", f"/run/user/{os.getuid()}")) / "nightshift/admission.json"
+PRESSURE_MAX_FULL_AVG60 = 2.0
+PRESSURE_MAX_FULL_AVG10 = 5.0
+_PSI_MEMORY = Path("/proc/pressure/memory")
 WORKER_ENVIRONMENT = (
     "GOMAXPROCS", "RAYON_NUM_THREADS", "UV_THREADPOOL_SIZE", "CARGO_BUILD_JOBS",
     "UV_CONCURRENT_BUILDS", "UV_CONCURRENT_INSTALLS", "UV_CONCURRENT_DOWNLOADS",
@@ -103,6 +110,42 @@ def _spare_capacity() -> bool:
     except (OSError, StopIteration, ValueError, IndexError):
         return False
     return available >= SPARE_MIN_AVAILABLE_BYTES and pressure < SPARE_MAX_PRESSURE_AVG10
+
+
+@dataclass(frozen=True)
+class Admission:
+    admit: bool
+    reason: str
+    # Host that should take eligible heavy work instead of queueing it here.
+    offload: str | None = None
+
+
+def _nightshift_admission(now: float) -> Admission | None:
+    try:
+        state = json.loads(NIGHTSHIFT_ADMISSION.read_text())
+        if state.get("v") != 1 or float(state["expires_at"]) <= now or not isinstance(state["admit"], bool):
+            return None
+        offload = state.get("offload")
+        return Admission(state["admit"], f"nightshift {_public_label(str(state.get('state', '')))}: "
+                         f"{_public_label(str(state.get('reason', '')))}",
+                         _public_label(offload) if isinstance(offload, str) and offload else None)
+    except (OSError, ValueError, TypeError, KeyError, AttributeError):
+        return None
+
+
+def admission_state(now: float | None = None) -> Admission:
+    """Whether new heavy work may start on this host now (advisory)."""
+    decided = _nightshift_admission(time.time() if now is None else now)
+    if decided is not None:
+        return decided
+    try:
+        full = next(line for line in _PSI_MEMORY.read_text().splitlines() if line.startswith("full "))
+        fields = dict(field.split("=", 1) for field in full.split()[1:])
+        avg10, avg60 = float(fields["avg10"]), float(fields["avg60"])
+    except (OSError, StopIteration, KeyError, ValueError):
+        return Admission(True, "psi unavailable")
+    reason = f"memory pressure full avg10={avg10:.1f} avg60={avg60:.1f}"
+    return Admission(avg60 < PRESSURE_MAX_FULL_AVG60 and avg10 < PRESSURE_MAX_FULL_AVG10, reason)
 
 
 def _inherited(descriptor: int, admission: int, environment: Mapping[str, str],
@@ -497,6 +540,15 @@ def _wait_owner(lane: str, admission: int, activity: int, label: str,
             os.pwrite(waiter, json.dumps(_identity(label, project)).encode("ascii"), 0)
         next_status = since
         while True:
+            admission_gate = admission_state() if work_class == "heavy" else None
+            if admission_gate is not None and not admission_gate.admit:
+                if time.monotonic() >= next_status:
+                    print(f"[st] Waiting for host admission: {_public_label(label)} class=heavy "
+                          f"wait_age={time.monotonic() - since:.1f}s reason={admission_gate.reason}",
+                          file=sys.stderr, flush=True)
+                    next_status = time.monotonic() + 5
+                time.sleep(1)
+                continue
             with _metadata():
                 if _waiters(work_class)[0] == name:
                     chosen = None

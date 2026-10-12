@@ -27,6 +27,7 @@ def lane(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
     monkeypatch.delenv("ST_HEAVY_LEASE", raising=False)
     # Strict single-heavy semantics unless a test opts into spare capacity.
     monkeypatch.setattr(guard, "_spare_capacity", lambda: False)
+    monkeypatch.setattr(guard, "admission_state", lambda: guard.Admission(True, "fixture"))
     return directory
 
 
@@ -37,6 +38,7 @@ def _bootstrap(lane: Path) -> str:
         "from app.utils import heavy_work as guard; "
         f"guard._LOCK_DIRECTORY = Path({str(lane)!r}); "
         "guard._spare_capacity = lambda: False; "
+        "guard.admission_state = lambda: guard.Admission(True, 'fixture'); "
     )
 
 
@@ -720,6 +722,7 @@ def test_two_canonical_checks_share_a_heavy_lane(tmp_path: Path, monkeypatch: py
         "spec = importlib.util.find_spec('app.utils.heavy_work'); "
         "guard = __import__('app.utils.heavy_work', fromlist=['_LOCK_DIRECTORY']) if spec else None; "
         f"setattr(guard, '_LOCK_DIRECTORY', Path({str(lane)!r})) if guard else None; "
+        "setattr(guard, 'admission_state', lambda: guard.Admission(True, 'fixture')) if guard else None; "
         "from cli.main import app; app()"
     )
     environment = {
@@ -785,3 +788,57 @@ def test_queued_work_remembers_which_holder_it_waited_behind(lane: Path) -> None
     assert seen == ["acceptance project=neri"]
     with guard.heavy_work("quick") as work:
         assert work.waited_behind is None
+
+
+def test_admission_prefers_current_nightshift_state_then_tether_psi(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    state = tmp_path / "admission.json"
+    psi = tmp_path / "memory"
+    monkeypatch.setattr(guard, "NIGHTSHIFT_ADMISSION", state)
+    monkeypatch.setattr(guard, "_PSI_MEMORY", psi)
+    psi.write_text("some avg10=9.00 avg60=9.00 avg300=1.00 total=1\n"
+                   "full avg10=0.50 avg60=1.90 avg300=0.00 total=1\n")
+    assert guard.admission_state(now=100).admit
+    psi.write_text("full avg10=0.00 avg60=2.00 avg300=0.00 total=1\n")
+    assert not guard.admission_state(now=100).admit
+    psi.write_text("full avg10=5.00 avg60=0.00 avg300=0.00 total=1\n")
+    assert not guard.admission_state(now=100).admit
+
+    state.write_text(json.dumps({"v": 1, "state": "amber", "admit": False, "reason": "swap",
+                                 "updated_at": 90, "expires_at": 120, "offload": "davion-gem"}))
+    psi.write_text("full avg10=0.00 avg60=0.00 avg300=0.00 total=1\n")
+    closed = guard.admission_state(now=100)
+    assert (closed.admit, closed.offload) == (False, "davion-gem")
+    assert "amber" in closed.reason
+    # Expired or malformed decisions fall back to the PSI guard.
+    assert guard.admission_state(now=121).admit
+    state.write_text("{not json")
+    assert guard.admission_state(now=100).admit
+    psi.unlink()
+    assert guard.admission_state(now=100).admit
+
+
+def test_closed_admission_holds_first_heavy_slot_but_not_light(
+    lane: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    gate = threading.Event()
+    monkeypatch.setattr(guard, "admission_state",
+                        lambda: guard.Admission(gate.is_set(), "memory pressure full avg10=9.0"))
+    original_sleep = time.sleep
+    monkeypatch.setattr(guard.time, "sleep", lambda _d: original_sleep(0.01))
+    admitted = threading.Event()
+
+    def heavy() -> None:
+        with guard.heavy_work("gated build"):
+            admitted.set()
+
+    worker = threading.Thread(target=heavy)
+    worker.start()
+    with guard.heavy_work("light probe", work_class="light"):
+        pass
+    assert not admitted.wait(0.3)
+    gate.set()
+    assert admitted.wait(5)
+    worker.join(5)
+    assert "Waiting for host admission: gated build" in capsys.readouterr().err

@@ -1220,6 +1220,10 @@ def _caller_identity_env() -> list[tuple[str, str]]:
     return []
 
 
+REBUILD_MEMORY_HIGH = "8G"
+REBUILD_MEMORY_MAX = "12G"
+
+
 def queue_detached(
     project: str,
     include_all_workers: bool,
@@ -1265,6 +1269,9 @@ def queue_detached(
         [
             "systemd-run", "--user", "--collect", "--unit", unit,
             "--description", f"Detached rebuild for {project} ({job_id})",
+            # Observed peaks are 0.6-5 GB. MemoryHigh reclaims a runaway build
+            # before it pushes agents into swap; MemoryMax is only a backstop.
+            "-p", f"MemoryHigh={REBUILD_MEMORY_HIGH}", "-p", f"MemoryMax={REBUILD_MEMORY_MAX}",
             "--setenv", f"PATH={os.environ.get('PATH', '')}",
             "--setenv", f"HOME={Path.home()}",
             "--setenv", f"SUMMITFLOW_ROOT={get_repo_root()}",

@@ -37,6 +37,17 @@ def test_queue_creates_durable_unique_result(jobs):
     assert record["command"] == ["st", "service", "rebuild", "example"]
 
 
+def test_detached_rebuild_unit_has_memory_high_and_max_backstop(jobs, monkeypatch):
+    calls = []
+    monkeypatch.setattr(service_ops, "capture",
+                        lambda argv: calls.append(argv) or subprocess.CompletedProcess([], 0, "", ""))
+    queued_job(jobs)
+    argv = calls[0]
+    properties = [argv[index + 1] for index, value in enumerate(argv) if value == "-p"]
+    assert properties == ["MemoryHigh=8G", "MemoryMax=12G"]
+    assert argv.index("-p") < argv.index("st")
+
+
 def test_detached_job_binds_accepted_source_and_verified_deployment(jobs, monkeypatch):
     source = {
         "acceptance_id": "acceptance-1",
