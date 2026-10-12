@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import json
 import re
+import shlex
 import subprocess
 import uuid
 from collections.abc import Iterator, Sequence
@@ -551,6 +552,67 @@ def shell_write_warning(paths: Sequence[str], since: datetime) -> str | None:
                     f'tell them: st sessions send {lease.agent_id} "<what changed>" --delivery handshake'
                 )
     return None
+
+
+GITHUB_PAT_DENIED = "Resource not accessible by personal access token"
+_SHELL_SEPARATORS = frozenset(";&|()\n$`")
+_COMMAND_PREFIXES = frozenset({"env", "command", "exec", "time", "timeout", "nice", "nohup", "sudo", "xargs"})
+_ASSIGNMENT = re.compile(r"[A-Za-z_][A-Za-z0-9_]*=")
+
+
+def _invokes_github(command: str) -> bool:
+    """True when a shell command runs ``gh`` or ``git push``, not when it merely quotes them."""
+    lexer = shlex.shlex(command, posix=True, punctuation_chars=";&|()\n")
+    lexer.whitespace, lexer.whitespace_split = " \t\r", True
+    try:
+        tokens = list(lexer)
+    except ValueError:
+        return False
+    at_start, git_args, skip_value = True, False, False
+    for token in tokens:
+        if token and set(token) <= _SHELL_SEPARATORS:
+            at_start, git_args = True, False
+            continue
+        if at_start:
+            name = token.rsplit("/", 1)[-1]
+            if _ASSIGNMENT.match(token) or name in _COMMAND_PREFIXES or token.startswith("-") or token.isdigit():
+                continue
+            if name == "gh":
+                return True
+            at_start, git_args, skip_value = False, name == "git", False
+            continue
+        if git_args:
+            if skip_value:
+                skip_value = False
+            elif token in ("-C", "-c"):
+                skip_value = True
+            elif not token.startswith("-"):
+                if token == "push":
+                    return True
+                git_args = False
+    return False
+
+
+def github_pat_denied_event(payload: dict[str, Any]) -> str | None:
+    """Hook event name when a shell tool that ran ``gh``/``git push`` failed with GitHub's fine-grained-PAT 403.
+
+    Only the tool's error channel counts: Claude ``tool_response.stderr`` (PostToolUse) or ``error``
+    (PostToolUseFailure); Codex reports one combined result string, so the command check carries it.
+    """
+    tool_input = payload.get("tool_input")
+    command = tool_input.get("command") if isinstance(tool_input, dict) else None
+    if isinstance(command, list):
+        argv = [str(part) for part in command]
+        commands = [shlex.join(argv), *argv[-1:]]  # ["bash", "-lc", "<script>"] carries the script last
+    else:
+        commands = [command] if isinstance(command, str) else []
+    if not any(_invokes_github(text) for text in commands):
+        return None
+    response = payload.get("tool_response")
+    channels = [payload.get("error"), response.get("stderr") if isinstance(response, dict) else response]
+    if not any(isinstance(text, str) and GITHUB_PAT_DENIED in text for text in channels):
+        return None
+    return str(payload.get("hook_event_name") or "PostToolUse")
 
 
 def dispatch_hook(payload: dict[str, Any]) -> tuple[str, str] | None:

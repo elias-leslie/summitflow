@@ -687,6 +687,47 @@ def test_real_hook_github_pat_403_hints_elevation_once(tmp_path, event, result):
     assert "nightshift elevate run github-admin -- gh" in context
 
 
+@pytest.mark.parametrize(("event", "command", "result"), [
+    ("PostToolUse", "cd repo && timeout 30 gh api user", {"tool_response": {"stdout": "", "stderr": GH_PAT_403}}),
+    ("PostToolUse", ["bash", "-lc", "git -C repo push origin main"], {"tool_response": f"Exit code: 1\n{GH_PAT_403}"}),
+    ("PostToolUseFailure", "x=$(gh run list) || true", {"error": f"Exit code 1\n{GH_PAT_403}"}),
+])
+def test_real_hook_github_pat_403_hints_for_wrapped_gh_and_git_push(tmp_path, event, command, result):
+    payload = {"hook_event_name": event, "session_id": "dddd44", "tool_name": "Bash", "tool_use_id": "toolu_9",
+               "cwd": str(tmp_path), "tool_input": {"command": command}, **result}
+    out = _hook(payload, tmp_path, "bash-post")
+    assert out.returncode == 0 and out.stderr == ""
+    assert json.loads(out.stdout)["hookSpecificOutput"]["hookEventName"] == event
+
+
+@pytest.mark.parametrize(("event", "command", "result"), [
+    # A commit message or task summary that only quotes the error, echoed back by the tool.
+    ("PostToolUse", f'st commit -m "Hint on gh 403: {coord.GITHUB_PAT_DENIED}"',
+     {"tool_response": {"stdout": f"[main abc] Hint on gh 403: {coord.GITHUB_PAT_DENIED}", "stderr": ""}}),
+    ("PostToolUseFailure", f'st done t1 -m "gh api failed with {coord.GITHUB_PAT_DENIED}"',
+     {"error": f"Exit code 1\nERROR gh api failed with {coord.GITHUB_PAT_DENIED}"}),
+    ("PostToolUse", f"git commit -m 'gh push: {coord.GITHUB_PAT_DENIED}'", {"tool_response": f"Exit code: 0\n{GH_PAT_403}"}),
+    ("PostToolUse", "git log -1 --format=%B", {"tool_response": {"stdout": "", "stderr": GH_PAT_403}}),
+    # gh ran, but the phrase is only in its regular output (an issue body), not the error channel.
+    ("PostToolUse", "gh issue view 7", {"tool_response": {"stdout": GH_PAT_403, "stderr": ""}}),
+])
+def test_real_hook_quoted_github_pat_403_stays_silent(tmp_path, event, command, result):
+    payload = {"hook_event_name": event, "session_id": "dddd44", "tool_name": "Bash", "tool_use_id": "toolu_9",
+               "cwd": str(tmp_path), "tool_input": {"command": command}, **result}
+    out = _hook(payload, tmp_path, "bash-post")
+    assert (out.returncode, out.stdout, out.stderr) == (0, "", "")
+
+
+@pytest.mark.parametrize(("command", "invokes"), [
+    ("gh api user", True), ("/usr/bin/gh pr list", True), ("FOO=1 env gh api x", True), ("a; gh x", True),
+    ("echo ok | gh x", True), ("git push", True), ("git -c a=b push origin", True),
+    ('git commit -m "push"', False), ('st commit -m "gh api"', False), ("echo gh", False),
+    ("ghost run", False), ('st commit -m "one\ngh api x"', False), ("unterminated 'gh", False),
+])
+def test_invokes_github_reads_command_words_not_quoted_text(command, invokes):
+    assert coord._invokes_github(command) is invokes
+
+
 def test_failed_shell_write_check_never_reaches_the_edit_lease_path(monkeypatch):
     seen: list[list[str]] = []
     monkeypatch.setattr(coord, "run_hook", lambda payload: pytest.fail("edit-lease path"))

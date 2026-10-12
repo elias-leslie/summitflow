@@ -5,18 +5,28 @@
 #   lease-hook session    SessionStart: register identity; one stdout line if a reset left work open
 #   lease-hook bash-pre   PreToolUse shell: snapshot the cwd repo's dirty files (pure shell)
 #   lease-hook bash-post  PostToolUse(Failure) shell: one warning line if the command wrote a foreign-leased
-#                         file; one additionalContext line when a result shows GitHub's fine-grained-PAT 403
+#                         file; one additionalContext line when a gh/git push error shows GitHub's fine-grained-PAT 403
 # Silent when nothing overlaps. Bypass: ALLOW_LEASE_OVERLAP=1 (lease checks only).
 mode="${1:-edit}"
 input=$(cat)
 export LC_ALL=C
+sf="$(cd -- "$(dirname -- "$(readlink -f -- "${BASH_SOURCE[0]}")")/../.." && pwd)"
+py="$sf/backend/.venv/bin/python"
 hint=""
-if [ "$mode" = bash-post ]; then  # pure shell substring test: no cost when absent
+if [ "$mode" = bash-post ] && [ -x "$py" ]; then
+    # Pure-shell substring prefilter: no cost when absent. Python then requires the command to run
+    # gh/git push and the phrase to sit in the tool's error output, not quoted text such as a commit message.
     case "$input" in *"Resource not accessible by personal access token"*)
-        hint="GitHub 403 (gh PAT lacks admin scope): get an owner-approved 30-min grant with nightshift elevate request github-admin --reason '<what, in owner words>' --wait, then nightshift elevate run github-admin -- gh ...; never print the credential."
-        event=PostToolUse
-        [[ "$input" =~ \"hook_event_name\"[[:space:]]*:[[:space:]]*\"PostToolUseFailure\" ]] && event=PostToolUseFailure
-        printf '{"hookSpecificOutput":{"hookEventName":"%s","additionalContext":"%s"}}\n' "$event" "$hint" ;;
+        if event=$(timeout 2 env PYTHONPATH="$sf/backend" "$py" -I -c '
+import json, sys
+sys.path.insert(0, sys.argv[1])
+from cli.lib.coord import github_pat_denied_event
+event = github_pat_denied_event(json.loads(sys.stdin.read() or "{}"))
+print(event or "")
+sys.exit(0 if event in ("PostToolUse", "PostToolUseFailure") else 1)' "$sf/backend" <<<"$input" 2>/dev/null); then
+            hint="GitHub 403 (gh PAT lacks admin scope): get an owner-approved 30-min grant with nightshift elevate request github-admin --reason '<what, in owner words>' --wait, then nightshift elevate run github-admin -- gh ...; never print the credential."
+            printf '{"hookSpecificOutput":{"hookEventName":"%s","additionalContext":"%s"}}\n' "$event" "$hint"
+        fi ;;
     esac
 fi
 [ "${ALLOW_LEASE_OVERLAP:-0}" = "1" ] && exit 0
@@ -31,8 +41,6 @@ snapshot() {  # "<mtime_ns> <abs path>" per dirty file of the cwd repo
         | while IFS= read -r rel; do printf '%s\n' "$top/$rel"; done \
         | xargs -r -d '\n' stat -c '%.9Y %n' 2>/dev/null | sort
 }
-sf="$(cd -- "$(dirname -- "$(readlink -f -- "${BASH_SOURCE[0]}")")/../.." && pwd)"
-py="$sf/backend/.venv/bin/python"
 [ -x "$py" ] || { echo "lease-hook: summitflow venv unavailable; allowing" >&2; exit 0; }
 if [ "$mode" = bash-pre ] || [ "$mode" = bash-post ]; then
     # Python, not jq: the native gate's PATH allowlist has no jq.
