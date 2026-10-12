@@ -26,7 +26,7 @@
       "surface": "st.elevate",
       "tier": "reference",
       "cmd": "st elevate request github-admin --reason '<what, in owner words>' --wait; st elevate run github-admin -- gh ...",
-      "when": "gh 403 'Resource not accessible by personal access token': repo settings/visibility/topics, deploy keys, Actions secrets/variables, user profile; same as nightshift elevate ...; also status, revoke github-admin",
+      "when": "gh 403 'Resource not accessible by personal access token' on repo settings, deploy keys, Actions secrets/variables, profile; = nightshift elevate; also status, revoke github-admin",
       "precautions": [
         "never print the credential",
         "reason in owner words; owner approves each 30-min grant by push",

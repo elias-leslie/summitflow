@@ -55,7 +55,7 @@ def test_deferred_memory_guidance_is_discoverable_and_complete_in_full_density()
         assert exact.exit_code == 0, exact.output
         assert specs[surface] == json.loads(exact.output)["tools"][0]
     assert "explicit scope" in " ".join(specs["st.memory.save"]["precautions"])
-    assert "tool how-to → ST surface or failure-hook hint, not memory" in " ".join(specs["st.memory.save"]["precautions"])
+    assert "tool how-to → ST surface/hook hint" in " ".join(specs["st.memory.save"]["precautions"])
 
 
 @pytest.mark.parametrize("query", ["github", "elevate"])
