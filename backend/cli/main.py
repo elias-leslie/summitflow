@@ -188,6 +188,30 @@ def _log_commit_event(task_id: str, result: dict[str, object]) -> None:
     log_task_event(task_id, f"{COMMIT_EVENT_PREFIX} {detail}")
 
 
+def _print_budget_line() -> None:
+    """One informational line after a commit; never fails the commit."""
+    try:
+        import subprocess
+
+        from cli.lib.quality_budget import (
+            budget_line,
+            environment_disabled,
+            load_baseline,
+            measure,
+            regressions,
+        )
+
+        if environment_disabled():
+            return
+        top = subprocess.run(["git", "rev-parse", "--show-toplevel"], capture_output=True, text=True, check=False)
+        if top.returncode == 0:
+            root = Path(top.stdout.strip())
+            current = measure(root)
+            print(budget_line(current, regressions(current, load_baseline(root))))
+    except Exception:
+        return
+
+
 def _emit_commit_output(ctx: typer.Context, result: dict[str, object]) -> None:
     if ctx.obj.is_compact:
         detail = result.get("sha") or result.get("reason") or ""
@@ -198,6 +222,8 @@ def _emit_commit_output(ctx: typer.Context, result: dict[str, object]) -> None:
                 detail=detail,
             )
         )
+        if result.get("status") == SUCCESS_STATUS:
+            _print_budget_line()
         if result.get("reason") == "quality_gates_failed":
             check_detail = result.get("detail")
             if isinstance(check_detail, str):

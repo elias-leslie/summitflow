@@ -301,6 +301,7 @@ Usage:
   st check --native [--stage ID] [--no-reuse] [--json]
   st check --acceptance [--sha REV] [--task TASK] [--scope PATH] [--no-reuse] [--json]
   st check --deep [--json]  # nightly: --check without reuse, then opted-in slow tests
+  st check budget [--json]  # test/source LOC, gate median, slow tests vs budget
   st check --changed-only
   st check --quick [--changed-only]
   st check --fix [--changed-only]  # apply Ruff and Biome fixes

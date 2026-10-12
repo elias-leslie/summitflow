@@ -115,7 +115,7 @@ def _handle_task_completion(
     id: str,
     message: str | None,
     *, paths: tuple[str, ...] = (), evidence: Path | None = None, record_only: bool = False,
-    paths_range: str | None = None,
+    paths_range: str | None = None, budget_note: str | None = None,
 ) -> None:
     """Handle task completion (idempotent; docs/admin auto-routed)."""
     if record_only and (paths or paths_range):
@@ -174,6 +174,7 @@ def _handle_task_completion(
             output_error(f"Completion evidence rejected: {exc}")
             raise typer.Exit(1) from None
     task_client = STClient(project_id=project_id) if project_id else client
+    budget = None if record_only else _assess_budget(project_id, budget_note)
     if record_only:
         if acceptance_receipt is not None or paths:
             output_error("--record-only cannot select implementation paths or acceptance evidence")
@@ -195,6 +196,37 @@ def _handle_task_completion(
         raise typer.Exit(1)
     _output_task_completion(id, result)
     _release_task_leases(project_id, id)
+    if budget is not None:
+        _record_budget(task_client, id, budget, budget_note)
+
+
+def _assess_budget(project_id: str | None, note: str | None) -> tuple[Path, str, Any] | None:
+    """Print the budget line; refuse when an over-budget project grows without --budget-note."""
+    from app.storage.projects import get_project_root_path
+    from cli.lib.quality_budget import assess, environment_disabled
+
+    root = get_project_root_path(project_id) if project_id and not environment_disabled() else None
+    if not project_id or not root:
+        return None
+    decision = assess(Path(root), project_id, note=note)
+    print(decision.line)
+    if not decision.allowed:
+        output_error(
+            f"{project_id} is over its test/gate budget and this change worsens it ({', '.join(decision.worsened)}). "
+            "Trim tests or move slow ones to the deep lane (pytest marker `slow`), "
+            "or rerun with --budget-note \"<why the growth is worth it>\"."
+        )
+        raise typer.Exit(1)
+    return Path(root), project_id, decision
+
+
+def _record_budget(client: STClient, task_id: str, budget: tuple[Path, str, Any], note: str | None) -> None:
+    from cli.lib.quality_budget import TRIM_TASK_LABEL, record
+
+    root, project_id, decision = budget
+    record(root, project_id, decision, note=note,
+           list_open=lambda: client.list_tasks(labels=[TRIM_TASK_LABEL]).get("tasks", []),
+           create=client.create_task, log=lambda entry: client.append_log(task_id, entry))
 
 
 @app.command(name="done")
@@ -249,6 +281,10 @@ def done_command(
         Path | None,
         typer.Option("--evidence", help="JSON with acceptance_receipt (uses established task paths), native_deployment_receipt, deployment_receipt and/or source-bound live_validation checks."),
     ] = None,
+    budget_note: Annotated[
+        str | None,
+        typer.Option("--budget-note", help="Why growth is accepted while the project is over its test/gate budget (st check budget); recorded in the task log."),
+    ] = None,
 ) -> None:
     """Complete a task or subtask.
 
@@ -277,4 +313,4 @@ def done_command(
             raise typer.Exit(1)
         client = STClient(require_project=False)
         _handle_task_completion(client, id, message, paths=tuple(paths or ()), evidence=evidence, record_only=record_only,
-                                paths_range=paths_range)
+                                paths_range=paths_range, budget_note=budget_note)

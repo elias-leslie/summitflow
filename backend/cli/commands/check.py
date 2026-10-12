@@ -468,6 +468,9 @@ def _handle_check_args(ctx: typer.Context, configs: dict[str, dict[str, object]]
         except NativeCheckError as exc:
             output_error(str(exc))
             return 2
+    if args and args[0] == "budget":
+        from cli.lib.quality_budget import report
+        return report(_resolve_repo_root(), json_output="--json" in args)
     if args and args[0] == "--deep":
         from cli.lib.deep_lane import DeepLaneError, run_deep
         try:
