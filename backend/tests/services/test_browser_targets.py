@@ -49,7 +49,7 @@ def test_browser_endpoint_uses_live_host_and_port() -> None:
     assert endpoint.source == "SUMMITFLOW_LIVE_BROWSER_HOST"
 
 
-def test_browser_endpoint_uses_lightpanda_default_port() -> None:
+def test_browser_endpoint_has_only_the_chrome_default_port() -> None:
     endpoint = resolve_browser_endpoint(env={"ST_BROWSER_HOST": "192.0.2.44"}, engine="lightpanda")
 
-    assert endpoint.port == 9223
+    assert endpoint.port == 9222

@@ -48,7 +48,8 @@ _ENDPOINT_FORMATS = {"http", "ws", "json"}
 _ENDPOINT_USAGE = "Usage: st browser endpoint [--http|--ws|--json|--format http|ws|json]"
 _URL_USAGE = "Usage: st browser url <project-or-url>"
 _STRUCTURED_OPERATIONS = {"capabilities", "help", "observe", "run", "extract", "session", "workflow", "selected-tabs"}
-_HOST_COMMANDS = {"check", "health", "update", "inventory", "reap-isolated", "url", "endpoint", "session", "workflow"}
+_HOST_COMMANDS = {"check", "health", "update", "inventory", "reap-isolated", "url", "endpoint", "session", "workflow", "watch"}
+_WATCH_USAGE = "Usage: st browser watch [SESSION] [--target PAGE_ID] [--print]"
 
 _st_bin = browser_support.st_bin
 _default_browser_vm_host = browser_support.default_browser_vm_host
@@ -119,7 +120,7 @@ def _cdp_ws(port: int, *, host: str | None = None) -> str | None:
 def _select_port(engine: str | None) -> int:
     host = _host_for_engine(engine)
     explicit = _explicit_browser_port(engine)
-    candidates = (explicit,) if explicit else ((9223, 9222) if engine == "lightpanda" else (9222, 9223))
+    candidates = (explicit,) if explicit else (_ENGINE_PORTS["chrome"],)
     for port in candidates:
         if port is not None and _engine_up(port, host=host):
             return port
@@ -196,6 +197,122 @@ def _select_default_target(target: str, explicit: bool, command: str | None, arg
     print("[st] Proxmox browser VM unreachable; using the local browser (pass --proxmox to require the VM)",
           file=sys.stderr, flush=True)
     return "local-ai"
+
+
+def _managed_vm_endpoint(name: str) -> dict[str, object] | None:
+    """CDP endpoint of managed session NAME's own Chrome on the VM, or None to run locally."""
+    try:
+        host = _resolve_endpoint().host
+    except BrowserTargetError:
+        host = ""
+    port = browser_support.vm_session_port(host, name, _browser_target_env()) if host else None
+    ws = _cdp_ws(port, host=host) if port else None
+    if not ws:
+        print(f"[st] Browser VM session pool unavailable; managed session {name} uses the local browser "
+              "(pass --local-ai to choose this explicitly)", file=sys.stderr, flush=True)
+        return None
+    return {"host": host, "port": port, "ws": ws, "source": "proxmox-session", "debug_local": False}
+
+
+def _closed_managed_session(request: dict[str, object]) -> str | None:
+    launch = cast(dict[str, object], request["launch"])
+    payload = cast(dict[str, object], request.get("payload") or {})
+    if request["operation"] == "session" and payload.get("action") == "close":
+        name = payload.get("name")
+        return name if isinstance(name, str) else None
+    managed = launch.get("managed_session")
+    if isinstance(managed, str) and request["operation"] == "agent" and request["command"] in {"close", "quit", "exit"}:
+        return managed
+    return None
+
+
+def _stop_vm_session(name: str) -> None:
+    """A closed managed session releases its VM Chrome; the VM profile is kept."""
+    try:
+        host = _resolve_endpoint().host
+    except BrowserTargetError:
+        return
+    browser_support.stop_vm_session(host, name, _browser_target_env())
+
+
+def _display_page_url(value: object) -> str:
+    from urllib.parse import urlsplit, urlunsplit
+
+    try:
+        parts = urlsplit(str(value))
+    except ValueError:
+        return ""
+    return urlunsplit((parts.scheme, parts.netloc.rsplit("@", 1)[-1], parts.path, "", ""))
+
+
+def _browser_watch(args: list[str]) -> int:
+    """Print (and on a terminal, open) Chrome's own DevTools live view of a VM page."""
+    try:
+        session, args = browser_support.split_session_options(args)
+    except ValueError as exc:
+        output_error(str(exc))
+        return 2
+    name = session[1] if session else None
+    target_id, print_only = None, False
+    index = 0
+    while index < len(args):
+        arg = args[index]
+        if arg == "--print":
+            print_only = True
+        elif arg == "--target" and index + 1 < len(args):
+            index += 1
+            target_id = args[index]
+        elif not arg.startswith("-") and name is None:
+            name = arg
+        else:
+            output_error(_WATCH_USAGE)
+            return 2
+        index += 1
+    try:
+        endpoint = _resolve_endpoint()
+    except BrowserTargetError as exc:
+        output_error(str(exc))
+        return 1
+    host, port = endpoint.host, endpoint.port
+    if name and name != _local_ai_session():
+        session_port = browser_support.vm_session_port(host, name, _browser_target_env(), start=False)
+        if session_port is None:
+            output_error(
+                f"Managed session {name} has no running browser on the VM. It may be dormant or running locally: "
+                f"check `st browser session status {name}`; Runtime > Browser sessions shows local sessions."
+            )
+            return 1
+        port = session_port
+    listed = _http_json(f"http://{host}:{port}/json/list")
+    # Chrome lists targets most recently active first.
+    targets = [cast(dict[str, object], item) for item in (listed if isinstance(listed, list) else []) if isinstance(item, dict)]
+    pages = [item for item in targets
+             if item.get("type") == "page" and not str(item.get("url", "")).startswith("devtools://")]
+    if not pages:
+        output_error(f"No open pages in the browser at {host}:{port}")
+        return 1
+    chosen = next((page for page in pages if page.get("id") == target_id), None) if target_id else pages[0]
+    if chosen is None:
+        output_error(f"Page {target_id} is not open in the browser at {host}:{port}")
+        return 1
+    url = f"http://{host}:{port}/devtools/inspector.html?ws={host}:{port}/devtools/page/{chosen['id']}"
+    print(url)
+    print(f"# watching: {chosen.get('title') or '-'} {_display_page_url(chosen.get('url'))}")
+    for page in pages:
+        if page is not chosen:
+            print(f"# other page: --target {page.get('id')} {_display_page_url(page.get('url'))}")
+    print("# The left pane is the live page: click it to type or sign in. Agents keep control meanwhile;")
+    print("# pause a managed session first (Runtime > Browser sessions) for a longer hand-off.")
+    if not print_only and sys.stdout.isatty():
+        import shutil
+        import subprocess
+
+        opener = shutil.which("xdg-open")
+        if opener:
+            subprocess.Popen([opener, url], stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL,
+                             stderr=subprocess.DEVNULL, start_new_session=True)
+            print("# opened in your default browser")
+    return 0
 
 
 def _with_local_ai_session(args: list[str]) -> list[str]:
@@ -556,7 +673,7 @@ def _resolve_payload_screenshots(payload: dict[str, object]) -> None:
         _resolve_payload_screenshots(cast(dict[str, object], observation))
 
 
-def _resolve_workflow_actions(payload: dict[str, object]) -> None:
+def _resolve_workflow_actions(payload: dict[str, object], *, guarded: bool = False) -> None:
     definition = payload.get("definition")
     if not isinstance(definition, dict):
         return
@@ -588,7 +705,7 @@ def _resolve_workflow_actions(payload: dict[str, object]) -> None:
             resolved = browser_support.validate_structured_action(action)
             if resolved[0] in _NAVIGATION_COMMANDS and len(resolved) > 1:
                 resolved[1] = re.sub(r"\{\{([^{}]+)\}\}", replace_parameter, resolved[1])
-            resolved = _with_navigation(resolved, resolved[0], guarded=False)
+            resolved = _with_navigation(resolved, resolved[0], guarded=guarded)
             resolved = _with_resolved_local_screenshot_path(resolved, resolved[0])
             resolved_actions.append(resolved)
         typed_step["actions"] = resolved_actions
@@ -604,6 +721,7 @@ def _resolve_workflow_actions(payload: dict[str, object]) -> None:
 def _build_structured_request(
     target: str, engine: str | None, browser_args: list[str], command: str,
     context: dict[str, Any], *, original_argv: list[str], selected_tab: str | None = None,
+    explicit_target: bool = False,
 ) -> tuple[dict[str, object], bool]:
     index = browser_policy.command_index(browser_args)
     assert index is not None
@@ -629,12 +747,18 @@ def _build_structured_request(
             raise ValueError("Managed session lifecycle is available only for the local target")
         scoped = []
         managed_session = None
+        managed_endpoint: dict[str, object] | None = None
         if browser_operation:
             if target == "selected-tab" and (session or operation not in {"observe", "run", "extract"}):
                 raise ValueError("Selected tabs support observe/run/extract and core actions; no session switching or workflows")
-            managed_session = browser_policy.managed_session_name(session) if target == "local-ai" else None
-            if operation == "workflow" and (target != "local-ai" or not managed_session):
-                raise ValueError("workflow requires an explicit local managed --session NAME; create it with `st browser session create NAME`")
+            managed_session = (browser_policy.managed_session_name(session)
+                               if target == "local-ai" or (target == "proxmox" and not explicit_target) else None)
+            if operation == "workflow" and not managed_session:
+                raise ValueError("workflow requires an explicit managed --session NAME; create it with `st browser session create NAME`")
+            if managed_session and target == "proxmox":
+                managed_endpoint = _managed_vm_endpoint(managed_session)
+                if managed_endpoint is None:
+                    target = "local-ai"
             scoped = ["--session", f"sel-{selected_tab}"] if target == "selected-tab" else (session if managed_session else _with_local_ai_session(session)) if target == "local-ai" else (
                 session or ["--session", os.environ.get("AGENT_BROWSER_SESSION", "").strip() or _default_browser_session()]
             )
@@ -654,7 +778,7 @@ def _build_structured_request(
                     resolved_actions.append(resolved)
                 payload["actions"] = resolved_actions
             if operation == "workflow":
-                _resolve_workflow_actions(payload)
+                _resolve_workflow_actions(payload, guarded=target == "proxmox")
             _resolve_payload_screenshots(payload)
     except ValueError as exc:
         output_error(str(exc))
@@ -671,6 +795,13 @@ def _build_structured_request(
             output_error(str(exc))
             raise typer.Exit(1) from None
         endpoint = None
+    elif managed_session and managed_endpoint is not None:
+        try:
+            launch = browser_policy.managed_session_launch(managed_session, agent_browser_bin=agent_bin)
+        except ValueError as exc:
+            output_error(str(exc))
+            raise typer.Exit(1) from None
+        endpoint = managed_endpoint
     else:
         launch = {"agent_browser_bin": agent_bin, "prefix": [], "window_mode": "remote" if browser_operation else "none", "default_launch": False, "minimize": False, "window_class": ""}
         if target == "selected-tab":
@@ -681,7 +812,7 @@ def _build_structured_request(
         "contract_version": 2, "operation": operation, "target": target, "command": operation,
         "args": scoped, "root": str(root), "endpoint": endpoint, "launch": launch,
         "check": None, "default_viewport": None,
-        "reaper": "bundled" if target == "proxmox" else None, "payload": payload,
+        "reaper": "bundled" if target == "proxmox" and not managed_session else None, "payload": payload,
     }, target == "local-ai" and browser_operation and not managed_session
 
 
@@ -709,6 +840,9 @@ def _build_request(argv: list[str], context: dict[str, Any]) -> tuple[dict[str, 
     command = _agent_command(browser_args)
     if command == "url":
         raise typer.Exit(_browser_url(browser_args[1:], target))
+    if command == "watch":
+        index = browser_policy.command_index(browser_args) or 0
+        raise typer.Exit(_browser_watch([*browser_args[:index], *browser_args[index + 1:]]))
     if command != "endpoint":
         target = _select_default_target(target, explicit_target, command, browser_args)
     if command == "endpoint":
@@ -720,7 +854,8 @@ def _build_request(argv: list[str], context: dict[str, Any]) -> tuple[dict[str, 
         output_error("Usage: st browser <agent-browser command> [args...]")
         raise typer.Exit(2)
     if command in _STRUCTURED_OPERATIONS | {"step"} or focused_help_requested(argv):
-        return _build_structured_request(target, engine, browser_args, command, context, original_argv=argv)
+        return _build_structured_request(target, engine, browser_args, command, context, original_argv=argv,
+                                         explicit_target=explicit_target)
     operation = command if command in {"check", "health", "update", "inventory", "reap-isolated"} else "agent"
     if operation == "reap-isolated":
         index = browser_policy.command_index(browser_args)
@@ -741,6 +876,17 @@ def _build_request(argv: list[str], context: dict[str, Any]) -> tuple[dict[str, 
     agent_bin = "agent-browser" if target == "proxmox" and operation == "health" else _agent_browser_bin()
     check = None
     managed_session = None
+    managed_endpoint: dict[str, object] | None = None
+    if target == "proxmox" and not explicit_target and operation == "agent":
+        try:
+            managed_session = browser_policy.managed_session_name(browser_args)
+        except ValueError as exc:
+            output_error(str(exc))
+            raise typer.Exit(2) from None
+        if managed_session:
+            managed_endpoint = _managed_vm_endpoint(managed_session)
+            if managed_endpoint is None:
+                target, managed_session = "local-ai", None
     if operation == "check":
         index = browser_policy.command_index(browser_args)
         assert index is not None
@@ -787,6 +933,17 @@ def _build_request(argv: list[str], context: dict[str, Any]) -> tuple[dict[str, 
                 output_error(str(exc))
                 raise typer.Exit(1) from None
         endpoint = None
+    elif managed_session and managed_endpoint is not None:
+        try:
+            selected, core_args = browser_support.split_session_options(browser_args)
+            browser_args = [*selected, *browser_support.validate_structured_action(core_args)]
+            launch = browser_policy.managed_session_launch(managed_session, agent_browser_bin=agent_bin)
+        except ValueError as exc:
+            output_error(str(exc))
+            raise typer.Exit(2) from None
+        browser_args = _with_navigation(browser_args, command, guarded=True)
+        browser_args = _with_resolved_local_screenshot_path(browser_args, command)
+        endpoint = managed_endpoint
     else:
         if operation == "agent":
             browser_args = _with_navigation(browser_args, command, guarded=True)
@@ -803,7 +960,7 @@ def _build_request(argv: list[str], context: dict[str, Any]) -> tuple[dict[str, 
         "contract_version": 1, "operation": operation, "target": target, "command": command,
         "args": browser_args, "root": str(root), "endpoint": endpoint, "launch": launch,
         "check": check, "default_viewport": default_viewport,
-        "reaper": "bundled" if target == "proxmox" else None,
+        "reaper": "bundled" if target == "proxmox" and not managed_session else None,
     }
     return request, target == "local-ai" and operation in {"agent", "check"} and not managed_session
 
@@ -852,6 +1009,8 @@ def run_registered(record: Any, argv: list[str], context: dict[str, Any]) -> int
     owner_args = ["--request", json.dumps(request, separators=(",", ":"))]
     if not needs_lock:
         code = dispatch_extension(record, owner_args, context=context)
+        if code == 0 and (closed := _closed_managed_session(request)):
+            _stop_vm_session(closed)
         if code == 75 and (managed_session or request["operation"] == "session"):
             payload = cast(dict[str, object], request.get("payload", {}))
             selected_name = managed_session or payload.get("name") or "selected"
@@ -874,8 +1033,12 @@ _USAGE = """Remote browser automation through st
 Default target:
   Commands use the Proxmox browser VM; if its CDP does not answer within 2s they
   fall back to local system Chrome profile AI and say so on stderr.
-  Managed sessions (session, workflow, --session NAME), inventory and loopback URLs
-  stay local. Force a target with --proxmox / --local-ai or ST_BROWSER_TARGET.
+  Managed sessions (--session NAME, workflows) each get their own VM Chrome and
+  persistent VM profile; their lock, owner and pause state stay on this workstation.
+  Session lifecycle, inventory and loopback URLs stay local.
+  Force a target with --proxmox / --local-ai or ST_BROWSER_TARGET; explicit
+  --proxmox --session NAME is a plain session in the shared VM Chrome.
+  st browser watch [SESSION] opens Chrome's live DevTools view of that VM page.
   Checks use a fresh isolated headless profile by default.
   st browser url <project> prints the VM-reachable (public) URL for loopback dev servers.
   Override VM with ST_BROWSER_HOST, ST_BROWSER_DEFAULT_HOST, or ST_BROWSER_VM_ID.
@@ -906,8 +1069,9 @@ Supported workflows:
   st browser screenshot [path] | snapshot | eval <js>
   st browser health | inventory --json | reap-isolated [--dry-run] | update
   st browser url <project>
+  st browser watch [SESSION] [--target PAGE_ID] [--print]
   st browser --proxmox endpoint [--http|--ws|--json]
-  st browser [--chrome|--lp|--engine NAME] <core-command> [args...]
+  st browser [--chrome|--engine NAME] <core-command> [args...]
 
 Observe defaults to compact delta output with page text. --interactive selects controls;
 --full includes the full observation. Run files contain actions as arrays of strings,
@@ -923,7 +1087,7 @@ Managed sessions:
   Pause hands the browser to a human; resume restores automation ownership.
   Maintenance previews by default; --apply closes only eligible idle sessions.
   Without --idle-ms, running sessions are never expired for idleness.
-  Workflows require an explicit local managed session. Definitions use step action
+  Workflows require an explicit managed session. Definitions use step action
   arrays; {{name}} scalar parameters are resolved before navigation policy checks.
   Recording retains acknowledged structured actions (run/step), not opaque core commands.
   Selected tabs require an explicit bridge grant handle and stay bound to its origin.

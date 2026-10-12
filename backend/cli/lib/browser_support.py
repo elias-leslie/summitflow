@@ -17,7 +17,8 @@ from typing import cast
 
 import httpx
 
-ENGINE_PORTS = {"chrome": 9222, "lightpanda": 9223}
+ENGINE_PORTS = {"chrome": 9222}
+LIGHTPANDA_REMOVED = "Lightpanda is no longer served by the browser VM; use `st web fetch --backend lightpanda`"
 DEFAULT_BROWSER_VM_ID = "100"
 SESSION_NAME_SAFE_CHARS = re.compile(r"[^a-zA-Z0-9_-]+")
 AGENT_BROWSER_OPTIONS_WITH_VALUE = {
@@ -313,6 +314,72 @@ def _lookup_browser_vm_host(values: dict[str, str], vmid: str) -> str:
     return select_browser_vm_ip(result.stdout, values)
 
 
+VM_SESSION_COMMAND = "~/.local/share/st-browser/bin/st-browser-session"
+
+
+def vm_session_key(name: str) -> str:
+    """Stable per-user key for a managed session's Chrome on the browser VM."""
+    return hashlib.sha256(f"{os.getuid()}:{name}".encode()).hexdigest()[:20]
+
+
+def _vm_session(host: str, *args: str, values: Mapping[str, str], timeout: float) -> list[dict[str, object]]:
+    target = values.get("ST_BROWSER_VM_SSH", "").strip() or host
+    try:
+        result = subprocess.run(
+            ["ssh", "-o", "BatchMode=yes", "-o", "ConnectTimeout=3", target, VM_SESSION_COMMAND, *args],
+            text=True, capture_output=True, encoding="utf-8", errors="replace", timeout=timeout, check=False,
+        )
+    except (OSError, subprocess.SubprocessError):
+        return []
+    if result.returncode != 0:
+        return []
+    rows = []
+    for line in result.stdout.splitlines():
+        try:
+            row = json.loads(line)
+        except json.JSONDecodeError:
+            continue
+        if isinstance(row, dict):
+            rows.append(row)
+    return rows
+
+
+def _session_port_cache(values: Mapping[str, str], key: str) -> Path:
+    return _vm_host_cache(values, "session").with_name(f"vm-session-{key}-port")
+
+
+def vm_session_port(host: str, name: str, values: Mapping[str, str], *, start: bool = True) -> int | None:
+    """CDP port of NAME's own Chrome on the VM; start=True launches it if needed."""
+    key = vm_session_key(name)
+    cache = _session_port_cache(values, key)
+    try:
+        cached = int(cache.read_text().strip())
+    except (OSError, ValueError):
+        cached = 0
+    if cached and cdp_reachable(host, port=cached, timeout=0.5):
+        return cached
+    if start:
+        rows = _vm_session(host, "ensure", key, values=values, timeout=30)
+        port = rows[0].get("port") if rows else None
+    else:
+        port = next((row.get("port") for row in _vm_session(host, "status", values=values, timeout=10)
+                     if row.get("key") == key and row.get("state") == "active"), None)
+    if type(port) is not int or not cdp_reachable(host, port=port, timeout=2.0):
+        return None
+    try:
+        cache.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
+        cache.write_text(f"{port}\n")
+    except OSError:
+        pass
+    return port
+
+
+def stop_vm_session(host: str, name: str, values: Mapping[str, str]) -> bool:
+    key = vm_session_key(name)
+    _session_port_cache(values, key).unlink(missing_ok=True)
+    return bool(_vm_session(host, "stop", key, values=values, timeout=15))
+
+
 def select_browser_vm_ip(output: str, values: dict[str, str]) -> str:
     addresses = [
         line.strip() for line in output.splitlines() if re.fullmatch(r"\d{1,3}(?:\.\d{1,3}){3}", line.strip())
@@ -471,8 +538,7 @@ def parse_engine_args(args: list[str], *, initial_engine: str | None) -> tuple[s
             engine = "chrome"
             index += 1
         elif arg == "--lp":
-            engine = "lightpanda"
-            index += 1
+            return engine, remaining, LIGHTPANDA_REMOVED
         elif arg == "--engine":
             if index + 1 >= len(args):
                 return engine, remaining, "--engine requires a value"
@@ -481,6 +547,8 @@ def parse_engine_args(args: list[str], *, initial_engine: str | None) -> tuple[s
         else:
             remaining.extend(args[index:])
             break
+    if engine == "lightpanda":
+        return engine, remaining, LIGHTPANDA_REMOVED
     return engine, remaining, None
 
 

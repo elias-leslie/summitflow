@@ -11,7 +11,6 @@ from ..utils import safe_subprocess
 
 _LOCAL_HOSTS = {"", "localhost", "127.0.0.1", "::1", "0.0.0.0"}
 _DEFAULT_BROWSER_PORT = 9222
-_DEFAULT_LIGHTPANDA_PORT = 9223
 
 
 class BrowserTargetError(ValueError):
@@ -72,8 +71,6 @@ def _configured_port(values: Mapping[str, str], *, live: bool, engine: str | Non
     raw = values.get("ST_BROWSER_PORT", "").strip()
     if raw:
         return _parse_port(raw, _DEFAULT_BROWSER_PORT)
-    if engine == "lightpanda":
-        return _DEFAULT_LIGHTPANDA_PORT
     return _DEFAULT_BROWSER_PORT
 
 

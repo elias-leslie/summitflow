@@ -72,18 +72,20 @@ def parse_target_args(args: list[str], env: Mapping[str, str] | None = None) -> 
     return target, remaining
 
 
-# Operations whose state lives on this workstation (managed sessions, local
-# runtime inventory) keep the local target unless --proxmox is explicit.
-LOCAL_DEFAULT_OPERATIONS = {"session", "workflow", "inventory", "reap-isolated"}
+# Operations whose state lives on this workstation (session lifecycle records,
+# local runtime inventory) keep the local target unless --proxmox is explicit.
+# Managed sessions and workflows run on the VM: each session gets its own VM
+# Chrome while its owner lock, actor and pause state stay on this workstation.
+LOCAL_DEFAULT_OPERATIONS = {"session", "inventory", "reap-isolated"}
 
 
 def default_target_needs_local(command: str | None, args: list[str], env: Mapping[str, str] | None = None) -> str | None:
     """Why a defaulted (not explicit) target must stay local, or None."""
     if command in LOCAL_DEFAULT_OPERATIONS:
         return f"{command} is local"
-    # An explicit alternate session names an owner-managed local session.
-    if managed_session_name(args, env) is not None:
-        return "managed --session is local"
+    # A named check keeps its isolated local runtime.
+    if command == "check" and managed_session_name(args, env) is not None:
+        return "named check session is local"
     if any(is_local_browser_url(arg) for arg in args):
         return "loopback URL is only reachable locally; use `st browser url <project>` for the VM"
     return None

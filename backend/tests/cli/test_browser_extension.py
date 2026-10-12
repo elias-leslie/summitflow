@@ -901,7 +901,7 @@ def test_default_target_prefers_reachable_proxmox_and_falls_back_locally(monkeyp
 @pytest.mark.parametrize("command,args", [
     ("session", ["session", "list"]),
     ("inventory", ["inventory"]),
-    ("open", ["--session", "owner-login", "open", "https://example.com"]),
+    ("check", ["check", "--session", "owner-login", "https://example.com"]),
     ("open", ["open", "http://localhost:3001/"]),
 ])
 def test_local_state_and_loopback_urls_keep_default_target_local(monkeypatch, command, args) -> None:
@@ -916,3 +916,104 @@ def test_vm_url_uses_public_project_url_for_loopback_frontend(monkeypatch, capsy
     assert capsys.readouterr().out.startswith("https://dev.example.test # summitflow public_url")
     assert browser._browser_url(["summitflow"], "local-ai") == 0
     assert capsys.readouterr().out.startswith("http://localhost:3001/")
+
+
+_SESSION_VM = {"host": "192.0.2.10", "port": 9301, "ws": "ws://192.0.2.10:9301/devtools/browser/s",
+               "source": "proxmox-session", "debug_local": False}
+
+
+@pytest.fixture
+def vm_default(monkeypatch, structured_dispatch):
+    monkeypatch.delenv("ST_BROWSER_TARGET")
+    monkeypatch.setattr(browser, "_proxmox_reachable", lambda: True)
+    monkeypatch.setattr(browser, "_managed_vm_endpoint", lambda name: dict(_SESSION_VM))
+    return structured_dispatch
+
+
+@pytest.mark.parametrize("argv,operation", [
+    (["--session", "research", "open", "https://example.com"], "agent"),
+    (["--session", "research", "observe"], "observe"),
+])
+def test_default_managed_session_runs_on_its_own_vm_chrome(tmp_path, vm_default, argv, operation) -> None:
+    assert browser.run_registered(_v2_record(), argv, _context(tmp_path)) == 7
+    request = vm_default[0]
+    assert (request["operation"], request["target"]) == (operation, "proxmox")
+    assert request["endpoint"] == _SESSION_VM
+    assert request["launch"]["managed_session"] == "research"
+    assert request["launch"]["prefix"][:2] == ["--executable-path", "/usr/bin/chrome"]
+    assert request["reaper"] is None
+    assert request["args"][:2] == ["--session", "research"]
+
+
+def test_default_managed_workflow_runs_on_the_vm_with_guarded_navigation(tmp_path, vm_default, workflow_files) -> None:
+    definition, parameters = workflow_files
+    argv = ["--session", "research", "workflow", "run", "--file", str(definition), "--parameters", str(parameters), "--run-id", "run-1"]
+    assert browser.run_registered(_v2_record(), argv, _context(tmp_path)) == 7
+    request = vm_default[0]
+    assert (request["target"], request["endpoint"], request["launch"]["managed_session"]) == ("proxmox", _SESSION_VM, "research")
+
+
+def test_unavailable_vm_session_pool_falls_back_to_the_local_managed_session(tmp_path, vm_default, monkeypatch) -> None:
+    monkeypatch.setattr(browser, "_managed_vm_endpoint", lambda name: None)
+    assert browser.run_registered(_v2_record(), ["--session", "research", "snapshot"], _context(tmp_path)) == 7
+    request = vm_default[0]
+    assert (request["target"], request["endpoint"], request["launch"]["managed_session"]) == ("local-ai", None, "research")
+
+
+def test_explicit_proxmox_session_stays_a_plain_shared_vm_session(tmp_path, vm_default, monkeypatch) -> None:
+    monkeypatch.setattr(browser, "_managed_vm_endpoint", lambda name: pytest.fail("explicit --proxmox is unmanaged"))
+    assert browser.run_registered(_v2_record(), ["--proxmox", "--session", "research", "snapshot"], _context(tmp_path)) == 7
+    request = vm_default[0]
+    assert request["target"] == "proxmox" and not request["launch"].get("managed_session")
+    assert request["endpoint"]["port"] == 9222
+
+
+@pytest.mark.parametrize("argv", [["--session", "research", "close"], ["--local-ai", "session", "close", "research"]])
+def test_closing_a_managed_session_releases_its_vm_chrome(tmp_path, vm_default, monkeypatch, argv) -> None:
+    stopped: list[str] = []
+    monkeypatch.setattr(browser, "_stop_vm_session", stopped.append)
+    monkeypatch.setattr("cli.extensions.dispatch_extension", lambda *_a, **_kw: 0)
+    assert browser.run_registered(_v2_record(), argv, _context(tmp_path)) == 0
+    assert stopped == ["research"]
+
+
+def test_lightpanda_engine_is_rejected_with_its_replacement(capsys) -> None:
+    with pytest.raises(typer.Exit):
+        browser._parse_engine_args(["--lp", "open", "https://example.com"])
+    assert "st web fetch --backend lightpanda" in capsys.readouterr().err
+
+
+def _watch_fixture(monkeypatch, pages_by_port: dict[int, list[dict[str, object]]]) -> None:
+    from app.services.browser_targets import BrowserEndpoint
+
+    monkeypatch.setattr(browser, "_resolve_endpoint", lambda engine=None: BrowserEndpoint("192.0.2.10", 9222, "fixture"))
+    monkeypatch.setattr(browser, "_http_json", lambda url: pages_by_port.get(int(url.split(":")[2].split("/")[0])))
+
+
+def test_watch_opens_devtools_live_view_of_the_most_recent_shared_page(monkeypatch, capsys) -> None:
+    _watch_fixture(monkeypatch, {9222: [
+        {"id": "AAA", "type": "page", "title": "Login", "url": "https://example.com/login?code=secret"},
+        {"id": "BBB", "type": "page", "title": "Other", "url": "https://other.test/"},
+        {"id": "WRK", "type": "service_worker", "url": "https://example.com/sw.js"},
+    ]})
+    assert browser._browser_watch(["--print"]) == 0
+    out = capsys.readouterr().out.splitlines()
+    assert out[0] == "http://192.0.2.10:9222/devtools/inspector.html?ws=192.0.2.10:9222/devtools/page/AAA"
+    assert out[1] == "# watching: Login https://example.com/login"
+    assert "--target BBB" in out[2]
+
+
+def test_watch_managed_session_uses_its_own_vm_chrome_without_starting_it(monkeypatch, capsys) -> None:
+    _watch_fixture(monkeypatch, {9301: [{"id": "SES", "type": "page", "title": "App", "url": "https://app.test/"}]})
+    calls: list[tuple[str, bool]] = []
+
+    def port(host, name, values, *, start=True):
+        calls.append((name, start))
+        return 9301 if name == "research" else None
+
+    monkeypatch.setattr(browser.browser_support, "vm_session_port", port)
+    assert browser._browser_watch(["research", "--print"]) == 0
+    assert capsys.readouterr().out.startswith("http://192.0.2.10:9301/devtools/inspector.html?ws=192.0.2.10:9301/devtools/page/SES")
+    assert browser._browser_watch(["--session", "dormant"]) == 1
+    assert "no running browser on the VM" in capsys.readouterr().err
+    assert calls == [("research", False), ("dormant", False)]

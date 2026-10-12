@@ -11,8 +11,15 @@ HOST_RESOLVER_RULES="${ST_BROWSER_HOST_RESOLVER_RULES:-}"
 # The PVE VM firewall applies the same allowlist in front of the guest.
 CDP_ALLOW="${ST_BROWSER_CDP_ALLOW:-192.168.86.128/32}"
 # Only browser pages send Origin; CDP clients (agent-browser, Playwright) do not.
-REMOTE_ALLOW_ORIGINS="${ST_BROWSER_REMOTE_ALLOW_ORIGINS:-}"
+# The one page origin allowed is this port's own bundled DevTools frontend, which
+# `st browser watch` opens on the workstation as the live view.
+if [[ -z "${ST_BROWSER_REMOTE_ALLOW_ORIGINS+set}" ]]; then
+  vm_ip="$(ip -4 route get 1.1.1.1 2>/dev/null | sed -n 's/.* src \([0-9.]*\).*/\1/p')"
+  ST_BROWSER_REMOTE_ALLOW_ORIGINS="${vm_ip:+http://$vm_ip:$CDP_PORT}"
+fi
+REMOTE_ALLOW_ORIGINS="$ST_BROWSER_REMOTE_ALLOW_ORIGINS"
 LOG_DIR="$BROWSER_ROOT/logs"
+LOG_NAME="${ST_BROWSER_LOG_NAME:-chrome}"
 
 if [[ -z "$CHROME_BIN" ]]; then
   CHROME_BIN="$(find "$BROWSER_ROOT/chrome" -type f -path '*/chrome-linux64/chrome' 2>/dev/null | sort | tail -1)"
@@ -63,7 +70,7 @@ trap cleanup EXIT INT TERM
   ${REMOTE_ALLOW_ORIGINS:+"--remote-allow-origins=$REMOTE_ALLOW_ORIGINS"} \
   "--host-resolver-rules=$HOST_RESOLVER_RULES" \
   about:blank \
-  >>"$LOG_DIR/chrome.log" 2>&1 &
+  >>"$LOG_DIR/$LOG_NAME.log" 2>&1 &
 chrome_pid=$!
 
 for _ in $(seq 1 80); do
@@ -82,7 +89,7 @@ if ! curl -fsS "http://127.0.0.1:$CHROME_DEBUG_PORT/json/version" >/dev/null 2>&
 fi
 
 socat "TCP4-LISTEN:$CDP_PORT,fork,reuseaddr,range=$CDP_ALLOW" "TCP:127.0.0.1:$CHROME_DEBUG_PORT" \
-  >>"$LOG_DIR/chrome-cdp-proxy.log" 2>&1 &
+  >>"$LOG_DIR/$LOG_NAME-cdp-proxy.log" 2>&1 &
 proxy_pid=$!
 
 wait -n "$chrome_pid" "$proxy_pid"
