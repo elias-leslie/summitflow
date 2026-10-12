@@ -71,9 +71,16 @@ def test_status_file_is_world_readable_for_nightshift():
     assert safety.status_path().stat().st_mode & 0o044 == 0o044
 
 
-def test_restic_retention_refuses_oversized_forget(tmp_path, notifications):
+def test_restic_retention_refuses_oversized_forget(tmp_path, notifications, monkeypatch):
     from app.tasks import backup_restic as engine
+    from app.utils import transient_scratch
     from tests.tasks.test_backup_restic import FakeProcess
+
+    scratch = tmp_path / "scratch"  # CI runners have no /srv/scratch.
+    scratch.mkdir(mode=0o700)
+    monkeypatch.setattr(transient_scratch, "SCRATCH_ROOT", scratch)
+    real_is_mount = Path.is_mount
+    monkeypatch.setattr(Path, "is_mount", lambda path: path == scratch or real_is_mount(path))
 
     keys = tmp_path / "keys"
     keys.mkdir(mode=0o700)
