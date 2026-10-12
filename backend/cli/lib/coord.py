@@ -559,7 +559,7 @@ def dispatch_hook(payload: dict[str, Any]) -> tuple[str, str] | None:
     if event in ("SessionStart", "session_start"):
         line = session_start(payload)
         return ("context", line) if line else None
-    if event in ("PostToolUse", "tool_result") and isinstance(payload.get("st_written"), list):
+    if event in ("PostToolUse", "PostToolUseFailure", "tool_result") and isinstance(payload.get("st_written"), list):
         adopt_hook_identity(payload)
         try:
             since = datetime.fromisoformat(str(payload.get("st_since")))

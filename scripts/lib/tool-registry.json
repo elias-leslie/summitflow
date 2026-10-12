@@ -578,6 +578,27 @@
       }
     },
     {
+      "id": "nightshift.elevate",
+      "owner": "nightshift",
+      "namespace": "elevate",
+      "manifest": "extensions/elevate.json",
+      "owner_manifest": "deploy/st/st-extension.json",
+      "executable": "deploy/st/elevate",
+      "environment": [
+        "NIGHTSHIFT_REQUESTER"
+      ],
+      "grant": {
+        "enabled": true,
+        "effects": [
+          "process",
+          "credentials",
+          "network",
+          "read-local",
+          "write-local"
+        ]
+      }
+    },
+    {
       "id": "ominull.production",
       "owner": "ominull",
       "namespace": "ominull",

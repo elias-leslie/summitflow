@@ -55,6 +55,20 @@ def test_deferred_memory_guidance_is_discoverable_and_complete_in_full_density()
         assert exact.exit_code == 0, exact.output
         assert specs[surface] == json.loads(exact.output)["tools"][0]
     assert "explicit scope" in " ".join(specs["st.memory.save"]["precautions"])
+    assert "tool how-to → ST surface or failure-hook hint, not memory" in " ".join(specs["st.memory.save"]["precautions"])
+
+
+@pytest.mark.parametrize("query", ["github", "elevate"])
+def test_github_admin_elevation_is_deferred_but_discoverable(query: str) -> None:
+    discovery = runner.invoke(tools_app, ["manifest", "--discover", query, "--format", "json"])
+    assert discovery.exit_code == 0, discovery.output
+    rows = {row["surface"]: row for row in json.loads(discovery.output)["tools"]}
+    assert "st elevate request github-admin --reason" in rows["st.elevate"]["cmd"]
+    assert "st elevate run github-admin -- gh" in rows["st.elevate"]["cmd"]
+    exact = runner.invoke(tools_app, ["manifest", "--surface", "st.elevate", "--format", "json"])
+    assert "never print the credential" in json.loads(exact.output)["tools"][0]["precautions"]
+    startup = runner.invoke(tools_app, ["manifest", "--profile", "agent_startup", "--format", "json"])
+    assert "st.elevate" not in {row["surface"] for row in json.loads(startup.output)["tools"]}
 
 
 def test_inject_renders_one_line_per_command_with_every_precaution() -> None:

@@ -663,6 +663,47 @@ def test_real_hook_session_start_and_shell_write_overlap(repos, tmp_path, harnes
     assert quiet.returncode == 0 and quiet.stderr == ""
 
 
+GH_PAT_403 = ('gh: Resource not accessible by personal access token (HTTP 403)\n'
+              '{"message":"Resource not accessible by personal access token","status":"403"}')
+
+
+@pytest.mark.parametrize(("event", "result"), [
+    ("PostToolUse", {"tool_response": {"stdout": "", "stderr": GH_PAT_403, "interrupted": False}}),  # Claude success shape
+    ("PostToolUse", {"tool_response": f"Exit code: 1\n{GH_PAT_403}"}),  # Codex shell result
+    ("PostToolUseFailure", {"error": f"Exit code 1\n{GH_PAT_403}"}),  # Claude non-zero exit
+])
+def test_real_hook_github_pat_403_hints_elevation_once(tmp_path, event, result):
+    payload = {"hook_event_name": event, "session_id": "dddd44", "tool_name": "Bash", "tool_use_id": "toolu_9",
+               "cwd": str(tmp_path), "tool_input": {"command": "gh api user -X PATCH -f bio=x"}, **result}
+    out = _hook(payload, tmp_path, "bash-post")
+    assert out.returncode == 0 and out.stderr == ""
+    lines = out.stdout.splitlines()
+    assert len(lines) == 1
+    spec = json.loads(lines[0])["hookSpecificOutput"]
+    assert spec["hookEventName"] == event
+    context = spec["additionalContext"]
+    assert "\n" not in context
+    assert "nightshift elevate request github-admin --reason" in context
+    assert "nightshift elevate run github-admin -- gh" in context
+
+
+def test_failed_shell_write_check_never_reaches_the_edit_lease_path(monkeypatch):
+    seen: list[list[str]] = []
+    monkeypatch.setattr(coord, "run_hook", lambda payload: pytest.fail("edit-lease path"))
+    monkeypatch.setattr(coord, "adopt_hook_identity", lambda payload: None)
+    monkeypatch.setattr(coord, "shell_write_warning", lambda paths, since: seen.append(paths))
+    payload = {"hook_event_name": "PostToolUseFailure", "st_since": datetime.now(UTC).isoformat(), "st_written": ["/x"]}
+    assert coord.dispatch_hook(payload) is None and seen == [["/x"]]
+
+
+def test_real_hook_without_github_403_stays_silent(tmp_path):
+    payload = {"hook_event_name": "PostToolUseFailure", "session_id": "dddd44", "tool_name": "Bash",
+               "tool_use_id": "toolu_9", "cwd": str(tmp_path), "tool_input": {"command": "gh api user"},
+               "error": "Exit code 1\ngh: Not Found (HTTP 404)"}
+    out = _hook(payload, tmp_path, "bash-post")
+    assert (out.returncode, out.stdout, out.stderr) == (0, "", "")
+
+
 def test_uuid7_sessions_started_hours_apart_keep_distinct_identities(repos, monkeypatch):
     """Codex and Pi ids are UUIDv7: the first 6 chars are a timestamp shared by every session for ~4.6 h."""
     target = str(repos["hostrepo"] / "backend" / "a.py")
