@@ -274,10 +274,18 @@ _FREQUENCY_DELTAS: dict[str, timedelta] = {
 }
 
 
+# The scheduler dispatches on an hourly tick. Sub-daily runs finish a few
+# minutes after their tick, so "finish + period" would always miss the matching
+# tick and stretch a four-hour cadence to five.
+_DISPATCH_TOLERANCE = timedelta(minutes=15)
+
+
 def calculate_next_run(frequency: str) -> datetime:
     """Calculate next run time based on frequency."""
     now = datetime.now(UTC)
     delta = _FREQUENCY_DELTAS.get(frequency, timedelta(days=1))
+    if delta < timedelta(days=1):
+        delta -= _DISPATCH_TOLERANCE
     return now + delta
 
 

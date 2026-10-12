@@ -68,7 +68,8 @@ def backup_lease_redis(monkeypatch):
 def test_four_hourly_frequency_and_daytime_serial_batch(monkeypatch):
     start = datetime.now(UTC)
     assert _FREQUENCY_DELTAS["four_hourly"].total_seconds() == 14400
-    assert 14400 <= (calculate_next_run("four_hourly") - start).total_seconds() < 14401
+    # Lands just before the matching hourly tick, so the cadence stays four hours.
+    assert 13500 <= (calculate_next_run("four_hourly") - start).total_seconds() < 13501
     sources = [{"id": str(i), "frequency": "four_hourly", "next_run_at": start.isoformat()} for i in range(34)]
     sources.append({"id": "night-only", "frequency": "daily", "next_run_at": start.isoformat()})
     monkeypatch.setattr(scheduler, "_scheduled_backup_window_open", lambda _: False)
@@ -96,7 +97,7 @@ def test_four_hourly_frequency_and_daytime_serial_batch(monkeypatch):
     assert result["count"] == 34
     assert order == [str(i) for i in range(34)] + ["copy"]
     assert len(advanced) == 34
-    assert all(14399 < (due - start).total_seconds() < 14401 for _, due in advanced)
+    assert all(13499 < (due - start).total_seconds() < 13501 for _, due in advanced)
 
 
 def test_four_hourly_api_and_storage_recalculate_persisted_due(monkeypatch):

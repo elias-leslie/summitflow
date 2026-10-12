@@ -299,7 +299,7 @@ def test_boot_metadata_cleanup_follows_native_point_lifetime_and_retains_failed_
     assert result["reclaimed_bytes"] == 0  # Unchanged usage proves no invented savings.
 
 
-@pytest.mark.parametrize("fault", [None, "has_db", "unverified", "row-unverified", "pending-check", "stale", "wrong-project", "wrong-source", "no-offsite", "missing-identity"])
+@pytest.mark.parametrize("fault", [None, "has_db", "unverified", "row-unverified", "pending-check", "stale", "batch-jitter", "wrong-project", "wrong-source", "no-offsite", "missing-identity"])
 def test_declared_nested_database_requires_fresh_matching_independent_manifest(monkeypatch: pytest.MonkeyPatch, fault: str | None) -> None:
     monkeypatch.setattr(host, "testing_project_ids", lambda: set())
     project = {"id": "canonical-project", "root_path": "/srv/workspaces/nested/project"}
@@ -316,6 +316,10 @@ def test_declared_nested_database_requires_fresh_matching_independent_manifest(m
         verification["structural_check_pending"] = True
     elif fault == "stale":
         record["started_at"] = (NOW - timedelta(hours=5)).isoformat()
+    elif fault == "batch-jitter":
+        # The previous scheduled batch, a few minutes past cadence, still qualifies.
+        record["started_at"] = (NOW - timedelta(hours=4, minutes=5)).isoformat()
+        fault = None
     elif fault == "wrong-project":
         record["project_id"] = "other-project"
     elif fault == "wrong-source":
@@ -339,7 +343,7 @@ def test_declared_nested_database_requires_fresh_matching_independent_manifest(m
             # An out-of-window point never qualifies; the receipt names it.
             assert result["missing"][0]["reason"] == "verified-database-point-stale"
             assert result["missing"][0]["latest_verified_captured_at"] == (NOW - timedelta(hours=5)).astimezone(UTC).isoformat()
-            assert result["missing"][0]["freshness_window_seconds"] == 4 * 3600
+            assert result["missing"][0]["freshness_window_seconds"] == 4 * 3600 + 30 * 60
         else:
             assert result["missing"][0]["reason"] == "fresh-independent-verified-database-point-unavailable"
     else:

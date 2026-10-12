@@ -48,6 +48,7 @@ ALLOCATION_TRIGGER_BYTES = 8 * 1024**3
 ALLOCATION_TARGET_BYTES = 12 * 1024**3
 _USAGE_FIELDS = (("Device size", "size"), ("Device unallocated", "unallocated"), ("Device missing", "missing"), ("Free (statfs, df)", "free"))
 _RUN_ID = re.compile(r"\d{8}T\d{6}Z-[0-9a-f]{8}\Z")
+_BATCH_JITTER = timedelta(minutes=30)
 
 
 def _state_root() -> Path:
@@ -298,7 +299,9 @@ def _database_manifests(rows: list[dict[str, str]], now: datetime, reference: da
                     try:
                         verified_at = datetime.fromisoformat(str(timestamp))
                         captured = datetime.fromisoformat(str(captured_at))
-                        window = _FREQUENCY_DELTAS[str(source["frequency"])]
+                        # A point taken by the previous scheduled batch can be a few minutes past
+                        # its cadence when the capture starts; that is on schedule, not stale.
+                        window = _FREQUENCY_DELTAS[str(source["frequency"])] + _BATCH_JITTER
                         if verified_at.tzinfo is None or captured.tzinfo is None or not captured <= verified_at <= now:
                             continue
                     except (ValueError, KeyError):
