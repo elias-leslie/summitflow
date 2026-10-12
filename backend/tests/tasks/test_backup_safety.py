@@ -228,3 +228,17 @@ def test_pve_serve_wrapper_only_serves_or_reports_status():
     assert "--append-only" in stdio and "runuser -u restic" in stdio
     assert 'status) exec /usr/sbin/pct exec "$CT" -- /bin/cat /var/lib/restic-append/status.json' in wrapper
     assert json.dumps("SSH_ORIGINAL_COMMAND")[1:-1] in wrapper
+
+
+def test_check_status_refreshes_every_tick_and_clears(monkeypatch: pytest.MonkeyPatch) -> None:
+    from app.tasks import backup_repository_runtime, backup_weekly_health
+
+    now = datetime.now(UTC)
+    journal = {"maintenance": {"local": {"monthly_result": {"status": "failed", "verified": False, "error": "lock"}},
+                               "remote": {"monthly_result": {"status": "verified", "checked_at": now.isoformat()}}}}
+    monkeypatch.setattr(backup_repository_runtime, "repository_journal", lambda _env: journal)
+    assert backup_weekly_health.refresh_check_status({}, now=now)["status"] == "alert"
+    assert safety.read_status()["status"] == "alert"
+    journal["maintenance"]["local"]["monthly_result"] = {"status": "verified", "checked_at": now.isoformat()}
+    assert backup_weekly_health.refresh_check_status({}, now=now)["status"] == "ok"
+    assert safety.read_status()["sections"]["restic_checks"]["alerts"] == []

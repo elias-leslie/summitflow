@@ -227,13 +227,14 @@ def _proxmox_conditions(now: datetime) -> dict[str, dict[str, str]]:
 
 
 def _safety_conditions() -> dict[str, dict[str, str]]:
-    """PVE copy freshness and weekly health from the backup safety status.
+    """PVE copy freshness, restic check status, and weekly health from the backup safety status.
 
     Deletion breakers notify on their own when they trip; they are not repeated here.
     """
     from .backup_safety import read_status
 
-    titles = {"pve_copy": "PVE backup copy needs attention", "health": "Weekly backup health check found a problem"}
+    titles = {"pve_copy": "PVE backup copy needs attention", "health": "Weekly backup health check found a problem",
+              "restic_checks": "Restic data check failed or is overdue"}
     conditions = {}
     for name, section in sorted((read_status().get("sections") or {}).items()):
         alerts = section.get("alerts") or []

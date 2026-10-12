@@ -1,8 +1,8 @@
-"""Weekly backup health: drop detection, check freshness, and a PVE-copy test restore.
+"""Backup health: check freshness every tick; weekly drop detection and a PVE-copy test restore.
 
-Writes the ``health`` section of the backup safety status. It reuses the
+``refresh_check_status`` writes the ``restic_checks`` section from the
 existing daily rotating ``restic check --read-data-subset`` results rather
-than reading data twice, compares snapshot count and repository size with
+than reading data twice. ``run_weekly_health`` writes the ``health`` section: it compares snapshot count and repository size with
 last week's, and restores one small recent snapshot from the append-only PVE
 copy into disposable scratch to prove the third copy is usable.
 """
@@ -76,14 +76,25 @@ def _pve_test_restore(config: ResticConfig) -> dict[str, Any]:
     return {"status": "failed", "reason": "no-restorable-snapshot"}
 
 
+def refresh_check_status(env: Mapping[str, str], *, now: datetime | None = None) -> dict[str, Any]:
+    """Every tick: alert while the latest daily restic data check failed or went stale."""
+    from .backup_repository_runtime import repository_journal
+
+    section: dict[str, Any] = {}
+    try:
+        section["checks"], section["alerts"] = check_alerts(repository_journal(dict(env)).get("maintenance") or {}, now or datetime.now(UTC))
+    except Exception as exc:
+        section["alerts"] = [{"kind": "journal-unreadable", "message": str(exc)[:300]}]
+    record_section("restic_checks", section)
+    return {"status": "alert" if section["alerts"] else "ok", "alerts": section["alerts"]}
+
+
 def run_weekly_health(env: Mapping[str, str], *, force: bool = False, now: datetime | None = None) -> dict[str, Any]:
     current = now or datetime.now(UTC)
     previous = (read_status().get("sections") or {}).get("health") or {}
     last = previous.get("last_run_at")
     if not force and last and current - datetime.fromisoformat(str(last)) < CADENCE:
         return {"status": "skipped", "reason": "weekly-cadence"}
-    from .backup_repository_runtime import repository_journal
-
     config = ResticConfig.from_env(dict(env))
     adapter = ResticAdapter(config)
     section: dict[str, Any] = {"last_run_at": current.isoformat(), "alerts": []}
@@ -94,11 +105,6 @@ def run_weekly_health(env: Mapping[str, str], *, force: bool = False, now: datet
         section["alerts"] += drops(previous, count, size)
     except Exception as exc:
         section["alerts"].append({"kind": "inventory-failed", "message": f"Could not list the local repository: {exc}"})
-    try:
-        section["checks"], alerts = check_alerts(repository_journal(dict(env)).get("maintenance") or {}, current)
-        section["alerts"] += alerts
-    except Exception as exc:
-        section["alerts"].append({"kind": "journal-unreadable", "message": str(exc)[:300]})
     try:
         section["pve_test_restore"] = _pve_test_restore(config)
     except Exception as exc:

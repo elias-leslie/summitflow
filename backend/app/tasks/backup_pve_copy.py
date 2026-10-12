@@ -123,9 +123,14 @@ def run_scheduled_copy_and_health(*, window_open: bool) -> dict[str, Any]:
     except Exception as exc:
         logger.exception("pve_copy_unhandled")
         result["pve_copy"] = {"status": "error", "error": str(exc)[:300]}
-    if window_open:
-        from .backup_weekly_health import run_weekly_health
+    from .backup_weekly_health import refresh_check_status, run_weekly_health
 
+    try:
+        result["restic_checks"] = refresh_check_status(env)
+    except Exception as exc:
+        logger.exception("restic_check_status_unhandled")
+        result["restic_checks"] = {"status": "error", "error": str(exc)[:300]}
+    if window_open:
         try:
             result["weekly_health"] = run_weekly_health(env)
         except Exception as exc:

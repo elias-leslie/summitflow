@@ -132,9 +132,12 @@ setting), not against a hostile root user.
   local restic repository; the workstation key can add snapshots but not
   delete them, and retention runs only on PVE. It is the first thing to remove
   when davion-gem needs space: see `scripts/pve-restic-append/README.txt`.
-- **Weekly health.** Snapshot-count and repository-size drops, the daily
-  rotating `restic check --read-data-subset` results, and a test restore from
-  the PVE copy.
+- **Health.** Every scheduler tick re-reads the daily rotating
+  `restic check --read-data-subset` results (failed or older than three days
+  raises an alert). Weekly: snapshot-count and repository-size drops and a test
+  restore from the PVE copy.
+- **T7 stays mounted.** The read-only overlay on `davion-gem` keeps the NTFS
+  partition busy, so its automount no longer idle-unmounts after ten minutes.
 
 Status for watchers (Nightshift): `~/.local/state/summitflow/backup-safety/status.json`
 (`st backup storage safety`). Top-level `status` is `ok` or `alert`; `alerts`
