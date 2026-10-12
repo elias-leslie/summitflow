@@ -111,22 +111,27 @@ def test_principal_scopes_are_derived_from_authenticated_identity(client, test_p
     assert len(ids) == 2
 
 
-def test_spirit_failure_rolls_back_task_and_identity(client, test_project_id, cleanup_task, monkeypatch):
+def test_spirit_failure_rolls_back_task_and_identity(test_project_id, cleanup_task, monkeypatch):
     from app.storage.tasks import core
-    body = payload()
-    route = f"/api/projects/{test_project_id}/tasks"
+    identity = {"principal_scope": test_project_id, "external_origin": "test-client",
+                "external_request_key": str(uuid4()), "external_payload_digest": "0" * 64}
+    spirit = {"done_when": ["One durable task exists"]}
     original = core.insert_task_spirit
 
     def fail(*_args, **_kwargs):
         raise RuntimeError("simulated transaction interruption")
 
+    def create():
+        return tasks.create_task(test_project_id, "External intake contract",
+                                 external_identity=identity, initial_spirit=spirit)
+
     monkeypatch.setattr(core, "insert_task_spirit", fail)
     with pytest.raises(RuntimeError, match="simulated transaction interruption"):
-        client.post(route, json=body)
+        create()
     monkeypatch.setattr(core, "insert_task_spirit", original)
-    response = client.post(route, json=body)
-    assert response.status_code == 200
-    cleanup_task(response.json()["id"])
-    spirit = get_task_spirit(response.json()["id"])
-    assert spirit is not None
-    assert spirit["done_when"] == body["done_when"]
+    task = create()
+    cleanup_task(task["id"])
+    assert "_external_reused" not in task
+    stored = get_task_spirit(task["id"])
+    assert stored is not None
+    assert stored["done_when"] == spirit["done_when"]
