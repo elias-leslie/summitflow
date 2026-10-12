@@ -36,9 +36,13 @@ def resolve_safe_path(root_path: str | Path, relative_path: str) -> Path:
     root = os.path.realpath(root_path)
     # normpath is a no-op after realpath; it is the normalization CodeQL recognizes.
     target = os.path.normpath(os.path.realpath(os.path.join(root, relative_path)))
-    if target == root:
-        return Path(root)
-    if not target.startswith(_root_prefix(root)):
+    if target != root and not target.startswith(_root_prefix(root)):
+        msg = f'Path escapes browse root: {relative_path}'
+        raise ValueError(msg)
+    # Always true after the check above (the root and everything under it share
+    # the root's parent prefix). It is kept as one unconditional startswith guard
+    # because CodeQL does not treat the equality branch as a sanitizer.
+    if not target.startswith(_root_prefix(os.path.dirname(root))):
         msg = f'Path escapes browse root: {relative_path}'
         raise ValueError(msg)
     return Path(target)
