@@ -7,7 +7,11 @@ export interface BrowserSession {
   paused: boolean
   runtime_state: string | null
   last_used_ms: number | null
+  location: BrowserRuntimeLocation
 }
+
+/** Where the session's browser runs; null while no browser is running. */
+export type BrowserRuntimeLocation = 'proxmox' | 'local' | null
 
 export type BrowserSessionAction = 'pause' | 'resume' | 'close'
 
@@ -31,7 +35,11 @@ export function parseBrowserSession(value: unknown): BrowserSession {
     (item.runtime_state !== null && typeof item.runtime_state !== 'string') ||
     (item.last_used_ms !== null &&
       (typeof item.last_used_ms !== 'number' ||
-        !Number.isFinite(item.last_used_ms)))
+        !Number.isFinite(item.last_used_ms))) ||
+    (item.location !== undefined &&
+      item.location !== null &&
+      item.location !== 'proxmox' &&
+      item.location !== 'local')
   )
     throw new Error('Invalid browser session response')
   return {
@@ -41,6 +49,7 @@ export function parseBrowserSession(value: unknown): BrowserSession {
     paused: item.paused,
     runtime_state: item.runtime_state,
     last_used_ms: item.last_used_ms,
+    location: item.location ?? null,
   }
 }
 

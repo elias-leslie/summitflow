@@ -29,12 +29,14 @@ const first: BrowserSession = {
   paused: false,
   runtime_state: 'running',
   last_used_ms: null,
+  location: 'proxmox',
 }
 const second: BrowserSession = {
   ...first,
   name: 'agent-two',
   actor: 'agent:second',
   paused: true,
+  location: 'local',
 }
 
 class Socket {
@@ -142,6 +144,25 @@ describe('Runtime managed browser sessions', () => {
       screen.queryByRole('button', { name: 'Resume automation' }),
     ).toBeNull()
     expect(browserSessionsApi.change).not.toHaveBeenCalled()
+  })
+
+  it('labels where each session browser runs', async () => {
+    vi.mocked(browserSessionsApi.list).mockResolvedValue([
+      first,
+      second,
+      { ...first, name: 'agent-idle', runtime_state: null, location: null },
+    ])
+    mount()
+    expect(
+      await screen.findByRole('button', { name: /agent-one .*Proxmox VM/ }),
+    ).toBeInTheDocument()
+    expect(
+      screen.getByRole('button', { name: /agent-two .*this workstation/ }),
+    ).toBeInTheDocument()
+    fireEvent.click(
+      screen.getByRole('button', { name: /agent-idle .*Browser not running/ }),
+    )
+    expect(screen.getByText(/Browser not running\./)).toBeInTheDocument()
   })
 
   it('makes empty and failed inventories visible', async () => {
@@ -277,6 +298,11 @@ describe('native browser controls', () => {
 describe('browser IO validation', () => {
   it('rejects malformed session and native frame payloads', () => {
     expect(() => parseBrowserSession({ ...first, paused: 'true' })).toThrow()
+    expect(() =>
+      parseBrowserSession({ ...first, location: '10.0.0.5' }),
+    ).toThrow()
+    const { location: _omitted, ...legacy } = first
+    expect(parseBrowserSession(legacy).location).toBeNull()
     expect(() =>
       parseBrowserStreamEvent(
         JSON.stringify({

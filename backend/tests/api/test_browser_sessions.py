@@ -64,7 +64,24 @@ def test_inventory_is_private_and_excludes_paths_and_stream_authority(monkeypatc
         response = connection.get("/api/browser-sessions")
     assert response.status_code == 200
     assert response.headers["cache-control"] == "no-store"
-    assert response.json()["sessions"] == [session()]
+    assert response.json()["sessions"] == [{**session(), "location": None}]
+
+
+@pytest.mark.parametrize(("runtime", "location"), [
+    ({"target": "proxmox", "host": "10.0.0.5", "port": 9300}, "proxmox"),
+    ({"target": "local-ai"}, "local"),
+    (None, None),
+    ({"target": "elsewhere"}, None),
+    ("proxmox", None),
+])
+def test_inventory_reports_browser_location_without_endpoint(monkeypatch, runtime, location) -> None:
+    async def command(args, actor=None):
+        return {"schema_version": 1, "sessions": [session(runtime=runtime)]}
+    monkeypatch.setattr(api, "_owner_command", command)
+    with client() as connection:
+        listed = connection.get("/api/browser-sessions").json()["sessions"][0]
+    assert listed["location"] == location
+    assert "runtime" not in listed and "10.0.0.5" not in json.dumps(listed)
 
 
 def test_control_rejects_cross_origin_stale_owner_and_unknown_commands(monkeypatch) -> None:

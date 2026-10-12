@@ -12,6 +12,7 @@ import {
 } from 'react'
 import { Button } from '@/components/ui/button'
 import {
+  type BrowserRuntimeLocation,
   type BrowserSession,
   type BrowserSessionAction,
   browserSessionsApi,
@@ -20,6 +21,12 @@ import {
 } from '@/lib/api/browser-sessions'
 
 const queryKey = ['runtime', 'browser-sessions']
+
+function browserLocationLabel(location: BrowserRuntimeLocation): string {
+  if (location === 'proxmox') return 'Browser on the Proxmox VM'
+  if (location === 'local') return 'Browser on this workstation'
+  return 'Browser not running'
+}
 
 function modifiers(event: {
   altKey: boolean
@@ -419,6 +426,9 @@ export function BrowserSessions() {
                   : 'Automation enabled'}{' '}
               · {session.runtime_state || 'Runtime unknown'}
             </span>
+            <span className="mt-1 block text-xs text-slate-400">
+              {browserLocationLabel(session.location)}
+            </span>
             {session.last_used_ms !== null && (
               <span className="mt-1 block text-xs text-slate-500">
                 Last used {new Date(session.last_used_ms).toLocaleString()}
@@ -443,6 +453,7 @@ export function BrowserSessions() {
             <>
               <p className="text-sm text-slate-400">
                 Owner: <span className="break-all">{selected.actor}</span>.{' '}
+                {browserLocationLabel(selected.location)}.{' '}
                 {selected.paused
                   ? 'Paused for human input.'
                   : 'Automation can use this session.'}

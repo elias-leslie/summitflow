@@ -89,9 +89,17 @@ def _public_session(value: dict[str, Any]) -> dict[str, Any]:
         raise HTTPException(503, "Browser session owner returned an invalid session")
     if not isinstance(value.get("paused"), bool):
         raise HTTPException(503, "Browser session owner returned an invalid pause state")
-    return {key: value.get(key) for key in (
+    public = {key: value.get(key) for key in (
         "name", "actor", "state", "paused", "runtime_state", "last_used_ms",
     )}
+    public["location"] = _location(value.get("runtime"))
+    return public
+
+
+def _location(runtime: Any) -> str | None:
+    """Where the session's browser runs, without exposing the VM endpoint."""
+    target = runtime.get("target") if isinstance(runtime, dict) else None
+    return {"proxmox": "proxmox", "local-ai": "local"}.get(target) if isinstance(target, str) else None
 
 
 async def _selected(name: str, actor: str) -> dict[str, Any]:
