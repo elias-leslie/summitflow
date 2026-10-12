@@ -16,6 +16,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import statistics
 import subprocess
 import tempfile
@@ -239,11 +240,33 @@ def _full_receipts(state: Path, limit: int) -> list[dict[str, Any]]:
     return list(selected.values())
 
 
+_QUEUE_MS = re.compile(r"queue_ms:([\d.]+)")
+
+
+def _queued_ms(receipt: Mapping[str, Any]) -> float:
+    """Time spent waiting for heavy-work admission behind other projects.
+
+    Legacy tools print ``queue_ms:`` in their result lines; native stages
+    record it per stage. Neither is the project's own cost.
+    """
+    total = 0.0
+    for check in receipt.get("checks") or []:
+        if not isinstance(check, Mapping):
+            continue
+        total += sum(float(value) for value in _QUEUE_MS.findall(str(check.get("detail") or "")))
+        evidence = check.get("evidence")
+        for stage in (evidence.get("stages") or []) if isinstance(evidence, Mapping) else []:
+            if isinstance(stage, Mapping) and isinstance(stage.get("queue_ms"), (int, float)):
+                total += float(stage["queue_ms"])
+    return total
+
+
 def gate_median(state: Path | None, limit: int) -> tuple[float | None, int]:
     receipts = _full_receipts(state, limit) if state else []
     if not receipts:
         return None, 0
-    return statistics.median(receipt["duration_ms"] / 1000 for receipt in receipts), len(receipts)
+    seconds = (max(0.0, receipt["duration_ms"] - _queued_ms(receipt)) / 1000 for receipt in receipts)
+    return statistics.median(seconds), len(receipts)
 
 
 def _junit_reports(root: Path, state: Path | None) -> list[Path]:

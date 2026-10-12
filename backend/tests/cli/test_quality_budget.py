@@ -66,6 +66,18 @@ def test_gate_median_uses_successful_full_receipts_only(tmp_path: Path) -> None:
     assert budget.gate_median(tmp_path / "missing", 5) == (None, 0)
 
 
+def test_gate_median_excludes_admission_queue_wait(tmp_path: Path) -> None:
+    directory = tmp_path / "acceptance"
+    directory.mkdir()
+    (directory / "busy.json").write_text(json.dumps({
+        "acceptance_id": "busy", "coverage": "full", "state": "success", "duration_ms": 106_000,
+        "plan": {"fingerprint": "p1"},
+        "checks": [{"detail": "TYPES:OK:0|queue_ms:21000.0|execution_ms:400\nTEST:OK:0|queue_ms:42000.0|execution_ms:17000",
+                    "evidence": {"stages": [{"id": "python", "queue_ms": 3000.0}]}}],
+    }))
+    assert budget.gate_median(tmp_path, 5) == (40, 1)
+
+
 def test_gate_median_ignores_runs_under_an_older_gate_plan(tmp_path: Path) -> None:
     for index, seconds in enumerate((300, 320, 310)):
         _receipt(tmp_path / "acceptance", f"old{index}", seconds, plan="before", mtime=1000 + index)
