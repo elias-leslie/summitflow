@@ -11,6 +11,7 @@ import resource
 import shlex
 import shutil
 import subprocess
+import sys
 import time
 from contextlib import redirect_stdout
 from pathlib import Path
@@ -22,6 +23,7 @@ import typer
 from app.utils.heavy_work import heavy_work
 
 from ..details import detail_path, display_path, summary_hint, write_details
+from ..lib import remote_runner
 from ..lib.acceptance import AcceptanceError
 from ..lib.architecture_check import run_architecture_check
 from ..lib.cleanroom import main as cleanroom_main
@@ -181,6 +183,25 @@ def _run_frontend_script(command: list[str], cwd: Path, env: dict[str, str]) -> 
             )
 
 
+def _run_on_ci_runner(
+    root: Path, command: list[str], cwd: Path, report: Path | None,
+) -> tuple[subprocess.CompletedProcess[str], str] | None:
+    """Full suite on the Proxmox runner while the workstation is busy; None runs it locally."""
+    offload = remote_runner.offload_reason(root)
+    if offload is None:
+        return None
+    runner, reason = offload
+    print(f"[st] {reason}; running on the CI runner", file=sys.stderr, flush=True)
+    started = time.monotonic()
+    try:
+        result = remote_runner.run(runner, root, command, cwd=cwd, env=tool_env(root, os.environ, "pytest"),
+                                   fetch=[report] if report is not None else [])
+    except (remote_runner.RunnerUnavailable, OSError, subprocess.CalledProcessError) as exc:
+        print(f"[st] CI runner unavailable ({exc}); running locally", file=sys.stderr, flush=True)
+        return None
+    return result, f"|runner:proxmox|execution_ms:{(time.monotonic() - started) * 1000:.3f}"
+
+
 def _run_tool(name: str, config: dict[str, object], extra_args: list[str]) -> int:
     root = _resolve_repo_root()
     cwd = _workdir(root, config)
@@ -225,27 +246,32 @@ def _run_tool(name: str, config: dict[str, object], extra_args: list[str]) -> in
             # Configured wrappers and all other tools retain the heavy default.
             direct = binary == name or (binary == "npx" and base_args[:1] == [name])
             work_class = "light" if (name in _LIGHT_TOOLS and direct) or _measured_light(root, name) else "heavy"
-            with heavy_work(f"check {name}", work_class=work_class, project=root.name) as work:
-                started = time.monotonic()
-                queue_ms = (started - queued) * 1000
-                result = work.run(
-                    command,
-                    cwd=cwd,
-                    env=tool_env(root, os.environ, name),
-                    capture_output=True,
-                    text=True,
-                    encoding="utf-8",
-                    errors="replace",
-                    check=False,
-                )
-                execution_ms = (time.monotonic() - started) * 1000
-                # Largest single child so far: conservative when earlier tools ran first.
-                _record_measurement(root, name, execution_ms,
-                                    resource.getrusage(resource.RUSAGE_CHILDREN).ru_maxrss, result.returncode)
-                timing = (f"|lane:{work.lane}|queue_ms:{queue_ms:.3f}"
-                          f"|execution_ms:{execution_ms:.3f}")
-                if work.waited_behind and queue_ms >= _QUEUE_NOTICE_MS:
-                    timing += f"|queued_behind:{work.waited_behind}"
+            remote = (_run_on_ci_runner(root, command, cwd, report)
+                      if name == "pytest" and work_class == "heavy" and not extra_args else None)
+            if remote is not None:
+                result, timing = remote
+            else:
+                with heavy_work(f"check {name}", work_class=work_class, project=root.name) as work:
+                    started = time.monotonic()
+                    queue_ms = (started - queued) * 1000
+                    result = work.run(
+                        command,
+                        cwd=cwd,
+                        env=tool_env(root, os.environ, name),
+                        capture_output=True,
+                        text=True,
+                        encoding="utf-8",
+                        errors="replace",
+                        check=False,
+                    )
+                    execution_ms = (time.monotonic() - started) * 1000
+                    # Largest single child so far: conservative when earlier tools ran first.
+                    _record_measurement(root, name, execution_ms,
+                                        resource.getrusage(resource.RUSAGE_CHILDREN).ru_maxrss, result.returncode)
+                    timing = (f"|lane:{work.lane}|queue_ms:{queue_ms:.3f}"
+                              f"|execution_ms:{execution_ms:.3f}")
+                    if work.waited_behind and queue_ms >= _QUEUE_NOTICE_MS:
+                        timing += f"|queued_behind:{work.waited_behind}"
     except OSError as exc:
         if name not in {"vitest", "frontend-test"} and isinstance(exc, FileNotFoundError):
             # A missing tool skips when it was never installable, or when the

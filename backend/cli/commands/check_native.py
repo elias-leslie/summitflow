@@ -20,15 +20,21 @@ from app.utils.heavy_work import heavy_work
 from app.utils.transient_scratch import ScratchError, managed_temp_parent
 
 _CONTENT_HASHES: dict[tuple[int, int, int, int, int], str] = {}
+_RACY_NS = 2_000_000_000
 
 
 def _content_hash(path: Path) -> str:
     info = path.stat()
     key = (info.st_dev, info.st_ino, info.st_size, info.st_mtime_ns, info.st_ctime_ns)
-    if key not in _CONTENT_HASHES:
-        with path.open("rb") as stream:
-            _CONTENT_HASHES[key] = hashlib.file_digest(stream, "sha256").hexdigest()
-    return _CONTENT_HASHES[key]
+    if key in _CONTENT_HASHES:
+        return _CONTENT_HASHES[key]
+    with path.open("rb") as stream:
+        digest = hashlib.file_digest(stream, "sha256").hexdigest()
+    # Timestamps are coarse: a same-size rewrite within one tick keeps the key,
+    # so only files settled for a while are cached (git's "racy" rule).
+    if time.time_ns() - max(info.st_mtime_ns, info.st_ctime_ns) > _RACY_NS:
+        _CONTENT_HASHES[key] = digest
+    return digest
 
 
 class NativeCheckError(ValueError):

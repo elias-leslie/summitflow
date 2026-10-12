@@ -303,6 +303,25 @@ def prune_hint(project_root: Path) -> str:
     return f"st cleanup cleanrooms --project {project_root.name} --older-than 24h"
 
 
+def _run_on_ci_runner(project_root: Path, command: list[str]) -> int | None:
+    """The runner's checkout is already a clean snapshot; None runs the cleanroom locally."""
+    from . import remote_runner
+
+    offload = remote_runner.offload_reason(project_root)
+    if offload is None:
+        return None
+    runner, reason = offload
+    print(f"[st] {reason}; running on the CI runner", file=sys.stderr, flush=True)
+    try:
+        result = remote_runner.run(runner, project_root, command, cwd=project_root, env=os.environ)
+    except (remote_runner.RunnerUnavailable, OSError, subprocess.CalledProcessError) as exc:
+        print(f"[st] CI runner unavailable ({exc}); running locally", file=sys.stderr, flush=True)
+        return None
+    sys.stdout.write(result.stdout)
+    sys.stderr.write(result.stderr)
+    return result.returncode
+
+
 def run_cleanroom(
     project_root: Path,
     command: list[str],
@@ -321,6 +340,11 @@ def run_cleanroom(
     for pattern in options.collect:
         _validate_collect_pattern(pattern)
     collect_to = options.collect_to or (default_artifact_dir(project_root) if options.collect else None)
+
+    if not keep_dir and collect_to is None and not options.extras and not env_overrides and not unset_keys:
+        remote = _run_on_ci_runner(project_root, command)
+        if remote is not None:
+            return remote
 
     # This isolated execution route is used for installs, lock resolution and
     # gates. Admit before copying/staging the checkout as well as spawning the
