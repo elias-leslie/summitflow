@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 from unittest.mock import MagicMock
 
 import httpx
@@ -218,6 +219,15 @@ def test_native_thread_to_an_offline_thread_still_uses_the_queue(monkeypatch, tm
     assert result["delivery"] == "queued" and "transport" not in result and len(queued) == 1
 
 
+def _sessions_app():
+    """The sessions commands alone (faster than cli.main.app)."""
+    import typer
+
+    sub = typer.Typer()
+    sessions_fleet.register(sub)
+    return sub
+
+
 def _tether(monkeypatch, responses):
     from app.services import tether
 
@@ -233,7 +243,7 @@ def _tether(monkeypatch, responses):
     return calls
 
 
-def test_wait_until_resolves_a_root_and_returns_when_blocked(monkeypatch):
+def test_wait_until_resolves_a_root_and_returns_the_reached_state(monkeypatch):
     working = {"id": "0a1b2c3d", "state": "working", "stateSource": "claude-status", "stateAt": 1, "stateDetail": None}
     blocked = {**working, "state": "blocked", "stateAt": 2, "stateDetail": "permission prompt"}
     calls = _tether(monkeypatch, {
@@ -241,19 +251,18 @@ def test_wait_until_resolves_a_root_and_returns_when_blocked(monkeypatch):
         "/v1/sessions/0a1b2c3d": [(200, working), (200, blocked)],
     })
     monkeypatch.setattr(sessions_fleet, "_client", lambda: pytest.fail("--until does not read the fleet stream"))
-    result = runner.invoke(app, ["sessions", "wait", "root-fixture", "--until", "idle,blocked", "--timeout", "5"])
+    result = runner.invoke(_sessions_app(), ["wait", "root-fixture", "--until", "idle,blocked", "--timeout", "5"])
     assert result.exit_code == 0, result.output
-    assert '"blocked"' in result.output and "permission prompt" in result.output
+    assert json.loads(result.stdout) == {key: blocked[key] for key in ("id", "state", "stateSource", "stateAt", "stateDetail")}
     assert calls == ["/v1/roots/root-fixture", "/v1/sessions/0a1b2c3d", "/v1/sessions/0a1b2c3d"]
 
 
-def test_wait_until_times_out_with_exit_1(monkeypatch):
+@pytest.mark.parametrize(("args", "code"), [
+    (["0a1b2c3d", "--until", "blocked", "--timeout", "0"], 1),  # timed out while working
+    (["0a1b2c3d", "--until", "stuck"], 2),  # not an agent state
+])
+def test_wait_until_fails_without_reaching_a_state(monkeypatch, args, code):
     _tether(monkeypatch, {"/v1/sessions/0a1b2c3d": (200, {"id": "0a1b2c3d", "state": "working"})})
-    result = runner.invoke(app, ["sessions", "wait", "0a1b2c3d", "--until", "blocked", "--timeout", "0"])
-    assert result.exit_code == 1
-    assert "is working" in result.output
-
-
-def test_wait_until_rejects_unknown_states():
-    result = runner.invoke(app, ["sessions", "wait", "0a1b2c3d", "--until", "stuck"])
-    assert result.exit_code == 2
+    result = runner.invoke(_sessions_app(), ["wait", *args])
+    assert result.exit_code == code
+    assert result.stdout == ""

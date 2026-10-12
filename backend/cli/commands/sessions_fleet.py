@@ -159,12 +159,9 @@ def send(
 
 @usage(
     surface="st.sessions.wait",
-    cmd="st sessions wait ROOT --cursor SEQUENCE [--timeout SECONDS] | st sessions wait ROOT_OR_SESSION --until idle,blocked [--timeout SECONDS]",
-    when="consume the existing fleet root's durable advisory instruction and result stream, or wait for another session's agent to reach a state",
-    precautions=(
-        "Carry the returned cursor; quiet timeout emits nothing. Fleet retrieval is not native TUI submission or observed receipt.",
-        "--until reads Tether's agent state (working, idle, blocked, unknown) for a root request ID or 8-hex session ID; prints the state JSON and exits 0, or exits 1 on timeout.",
-    ),
+    cmd="st sessions wait ROOT --cursor SEQ | --until idle,blocked [--timeout S]",
+    when="read a fleet root's stream, or wait for a session's agent state",
+    precautions=("Carry the cursor; quiet timeout prints nothing. --until exits 1 on timeout.",),
     tier="reference",
 )
 def wait(
