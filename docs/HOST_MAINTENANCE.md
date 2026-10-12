@@ -78,14 +78,17 @@ adds no separate retention policy, daemon, or scheduler.
 
 The legacy `~/.codex/session-integrations/codex-session-sync.log` is preserved
 in place and is no longer appended to. Keep it available for diagnostic recovery;
-this change does not rotate or delete existing history. This auxiliary unit is
-outside the project's declared managed service set, so a managed project rebuild
-alone does not update it. Owner-authorized adoption must render the service
-template's `__SUMMITFLOW_ROOT__` to the checkout root in the installed user unit
-and reload the user systemd manager. The next timer tick uses the new arguments
-without restarting the timer. The checkout-backed script uses journal-compatible
-streams immediately; until template adoption, the installed service still
-requests per-session output.
+this change does not rotate or delete existing history.
+
+`codex-session-sync.timer` scans every 2 minutes (`--scan`), and
+`codex-session-close-inactive.timer` runs `--scan --close-inactive` every
+5 minutes. Both services are optional workers, so `st service rebuild summitflow`
+renders their `__SUMMITFLOW_ROOT__`. Timers are installed from
+`scripts/systemd/*.timer` into `~/.config/systemd/user/`. Change their cadence in
+the template, not in a drop-in. An override that sets `OnUnitActiveSec=` to empty
+also clears `OnBootSec=`. A monotonic `OnUnitActiveSec=` has no base until the service runs in the current boot, so these timers also use `OnCalendar=`.
+`btrfs-autosnapshot.timer` uses `OnCalendar=*:0/30` with `Persistent=true`
+for the same reason.
 
 ```bash
 journalctl --user -u codex-session-sync.service --since '10 days ago'

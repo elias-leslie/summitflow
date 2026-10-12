@@ -24,7 +24,8 @@
       "summitflow-host-monitor.service"
     ],
     "optional_workers": [
-      "codex-session-sync.service"
+      "codex-session-sync.service",
+      "codex-session-close-inactive.service"
     ]
   },
   "hosts": {

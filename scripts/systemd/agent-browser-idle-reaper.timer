@@ -2,9 +2,12 @@
 Description=Periodic cleanup for idle agent-browser daemons
 
 [Timer]
+# OnBootSec arms the first run after boot. OnCalendar keeps the timer armed even
+# if it is restarted later: a monotonic OnUnitActiveSec has no base until the
+# service runs in the current boot, and an elapsed OnBootSec is not re-armed.
 OnBootSec=2min
-OnUnitActiveSec=2min
-Persistent=true
+OnCalendar=*:3/5
+AccuracySec=10s
 
 [Install]
 WantedBy=timers.target

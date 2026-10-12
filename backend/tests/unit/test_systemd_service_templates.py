@@ -14,6 +14,7 @@ SUMMITFLOW_ROOT_RENDERED_UNITS = [
     "summitflow-frontend.service",
     "summitflow-hatchet-worker.service",
     "codex-session-sync.service",
+    "codex-session-close-inactive.service",
     "agent-browser-idle-reaper.service",
 ]
 def _kill_mode_for(service_name: str) -> str | None:
@@ -53,3 +54,23 @@ def test_backend_and_worker_use_configurable_durable_data_placeholder() -> None:
             "SUMMITFLOW_HOST_CONFIG_ROOT=__SUMMITFLOW_HOST_CONFIG_ROOT__"
         ) in text
         assert "EnvironmentFile=-%h/.env.local" in text
+
+
+def test_user_timers_arm_after_reboot() -> None:
+    """OnUnitActiveSec has no base after boot, and an elapsed OnBootSec is not re-armed."""
+    for name in (
+        "codex-session-sync.timer",
+        "codex-session-close-inactive.timer",
+        "agent-browser-idle-reaper.timer",
+        "btrfs-autosnapshot.timer",
+    ):
+        text = (SYSTEMD_DIR / name).read_text()
+        assert not re.search(r"^On\w+=$", text, re.MULTILINE), name
+        assert re.search(r"^OnCalendar=\S", text, re.MULTILINE), name
+
+
+def test_btrfs_autosnapshot_uses_persistent_wall_clock_schedule() -> None:
+    text = (SYSTEMD_DIR / "btrfs-autosnapshot.timer").read_text()
+    assert "OnCalendar=*:0/30" in text
+    assert "Persistent=true" in text
+    assert not re.search(r"^OnUnitActiveSec=", text, re.MULTILINE)
