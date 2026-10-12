@@ -23,6 +23,10 @@ def _load_explorer_constants() -> tuple[frozenset[str], dict[str, str]]:
     return BINARY_EXTENSIONS, EXTENSION_TO_LANGUAGE
 
 
+def _root_prefix(root: str) -> str:
+    return root if root.endswith(os.sep) else root + os.sep
+
+
 def resolve_safe_path(root_path: str | Path, relative_path: str) -> Path:
     """Resolve a path inside root_path, following symlinks, and reject root escapes.
 
@@ -31,11 +35,22 @@ def resolve_safe_path(root_path: str | Path, relative_path: str) -> Path:
     """
     root = os.path.realpath(root_path)
     target = os.path.realpath(os.path.join(root, relative_path))
-    root_prefix = root if root.endswith(os.sep) else root + os.sep
-    if target != root and not target.startswith(root_prefix):
+    if target == root:
+        return Path(root)
+    if not target.startswith(_root_prefix(root)):
         msg = f'Path escapes browse root: {relative_path}'
         raise ValueError(msg)
     return Path(target)
+
+
+def _sibling_in_root(root_path: str | Path, target: Path, name: str) -> Path:
+    """Return target's sibling called name, confined to root_path without following it."""
+    root = os.path.realpath(root_path)
+    sibling = os.path.normpath(os.path.join(str(target.parent), name))
+    if not sibling.startswith(_root_prefix(root)):
+        msg = f'Path escapes browse root: {name}'
+        raise ValueError(msg)
+    return Path(sibling)
 
 
 def _display_path(path: Path, root: Path, absolute_paths: bool) -> str:
@@ -357,7 +372,7 @@ def rename_path(
         raise FileNotFoundError(msg)
 
     safe_name = _normalize_upload_name(name)
-    destination = target.with_name(safe_name)
+    destination = _sibling_in_root(root_path, target, safe_name)
     if destination.exists():
         msg = f'Path already exists: {safe_name}'
         raise FileExistsError(msg)
