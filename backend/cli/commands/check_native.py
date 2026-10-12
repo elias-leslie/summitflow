@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import fcntl
 import hashlib
 import json
 import os
@@ -13,6 +14,8 @@ import tempfile
 import time
 import tomllib
 import xml.etree.ElementTree as ET
+from collections.abc import Iterator
+from contextlib import ExitStack, contextmanager
 from pathlib import Path
 from typing import Any
 
@@ -524,6 +527,18 @@ def _counts(evidence: dict[str, Any], content: str) -> dict[str, int]:
             "failed": len(re.findall(evidence["failure_pattern"], content, re.MULTILINE)), "skipped": 0}
 
 
+@contextmanager
+def _evidence_lock(report: Path) -> Iterator[None]:
+    """Serialize runs writing one fixed evidence report (e.g. the nightly deep lane and an acceptance gate)."""
+    report.parent.mkdir(parents=True, exist_ok=True)
+    with (report.parent / f".{report.name}.lock").open("a+", encoding="utf-8") as handle:
+        fcntl.flock(handle.fileno(), fcntl.LOCK_EX)
+        try:
+            yield
+        finally:
+            fcntl.flock(handle.fileno(), fcntl.LOCK_UN)
+
+
 def run_native(root: Path, plan: dict[str, Any], *, stage_id: str | None = None, reuse: bool = True, full_gate: bool = True) -> dict[str, Any]:
     """Run fresh stages under admission without inheriting credentials or tool PATH."""
     # Exact named aliases allow prepared Go/Godot/OS tools without importing an
@@ -622,7 +637,7 @@ def _run_native(root: Path, plan: dict[str, Any], *, aliases: Path, scratch: Pat
             continue
         evidence = stage.get("evidence")
         report = _local(root, evidence["path"]) if evidence and evidence.get("source", "file") == "file" else None
-        previous = report.stat().st_mtime_ns if report is not None and report.is_file() else None
+        previous = report_bytes = None
         cwd = _local(root, stage["cwd"])
         executable = Path(stage["executable"]) if Path(stage["executable"]).is_absolute() else _local(root, stage["executable"])
         output = ""
@@ -632,8 +647,14 @@ def _run_native(root: Path, plan: dict[str, Any], *, aliases: Path, scratch: Pat
         elif not executable.is_file() or not os.access(executable, os.X_OK) or not cwd.is_dir():
             outcome["reason"] = "project_tool_or_cwd_unavailable; prepare explicitly"
         else:
+            # Held from before the run until the report is read; taken after
+            # admission so its holder never waits on anything else.
+            held = ExitStack()
             try:
                 with heavy_work(f"native check {stage['id']}") as work:
+                    if report is not None:
+                        held.enter_context(_evidence_lock(report))
+                        previous = report.stat().st_mtime_ns if report.is_file() else None
                     queue_seconds = getattr(work, "queue_seconds", 0.0)
                     if isinstance(queue_seconds, (int, float)):
                         outcome["queue_ms"] = round(queue_seconds * 1000, 3)
@@ -670,13 +691,15 @@ def _run_native(root: Path, plan: dict[str, Any], *, aliases: Path, scratch: Pat
                 outcome.update(state="fail", reason="stage_timeout", returncode=124)
             except (OSError, ValueError, ET.ParseError) as exc:
                 outcome.update(state="fail" if outcome["returncode"] else "unavailable", reason=str(exc))
+            finally:
+                held.close()
         outcome.update(duration_ms=round((time.monotonic() - started) * 1000, 3),
                        output_bytes=len(output.encode()), detail=output[-1200:],
                        output_sha256=hashlib.sha256(output.encode()).hexdigest(), reused=False)
         if output:
             outcome["artifacts"].append({"path": "output", "state": "present", "size": len(output.encode()), "sha256": outcome["output_sha256"]})
         if artifact_store is not None:
-            _retain_artifacts(root, artifact_store, outcome, stdout_output, output)
+            _retain_artifacts(root, artifact_store, outcome, stdout_output, output, report_bytes)
         if cache is not None and stage["coverage"] == "full" and (
                 outcome["state"] == "pass" or _deterministic_failure(outcome)):
             passed_stages.append((stage, outcome))
@@ -850,11 +873,14 @@ def _reuse_stage(cache: dict[str, Any] | None, stage: dict[str, Any]) -> dict[st
         return None
 
 
-def _retain_artifacts(root: Path, cache: dict[str, Any], outcome: dict[str, Any], stdout: str, output: str) -> None:
+def _retain_artifacts(root: Path, cache: dict[str, Any], outcome: dict[str, Any], stdout: str, output: str,
+                      report_bytes: bytes | None = None) -> None:
     try:
         for artifact in outcome["artifacts"]:
+            # The report read under its lock; a concurrent run may rewrite the file since.
             content = (stdout.encode() if artifact["path"] == "stdout" else output.encode()
-                       if artifact["path"] in {"combined", "output"} else _local(root, artifact["path"]).read_bytes())
+                       if artifact["path"] in {"combined", "output"} else report_bytes
+                       if report_bytes is not None else _local(root, artifact["path"]).read_bytes())
             if hashlib.sha256(content).hexdigest() != artifact["sha256"]:
                 continue
             directory = cache["directory"] / "artifacts"

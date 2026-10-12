@@ -154,6 +154,24 @@ def test_stale_evidence_does_not_certify_zero_exit(native_repo: Path) -> None:
     assert "stale" in result["stages"][0]["reason"]
 
 
+def test_concurrent_run_waits_for_the_fixed_evidence_report(native_repo: Path) -> None:
+    import fcntl
+    import threading
+
+    # Another gate (e.g. the nightly deep lane) is writing the same report.
+    (native_repo / ".dev-tools").mkdir()
+    with (native_repo / ".dev-tools/.result.json.lock").open("a+") as other:
+        fcntl.flock(other.fileno(), fcntl.LOCK_EX)
+        results: list[dict[str, Any]] = []
+        runner = threading.Thread(target=lambda: results.append(run_native(native_repo, _plan(native_repo))))
+        runner.start()
+        runner.join(1.0)
+        assert runner.is_alive() and not (native_repo / ".dev-tools/result.json").exists()
+        fcntl.flock(other.fileno(), fcntl.LOCK_UN)
+    runner.join(30)
+    assert results[0]["state"] == "pass"
+
+
 def test_reported_failure_overrides_zero_exit(native_repo: Path) -> None:
     (native_repo / ".tools/suite.py").write_text(
         "from pathlib import Path\nPath('.dev-tools').mkdir(exist_ok=True)\n"
