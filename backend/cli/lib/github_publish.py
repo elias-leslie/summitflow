@@ -14,6 +14,9 @@ import yaml
 
 from .workflow_filters import document_applies
 
+PAT_DENIED = 'Resource not accessible by personal access token'
+ACTIONS_APP_ID = 15368  # GitHub Actions' app id on github.com check runs
+
 
 class GitHubError(RuntimeError):
     """GitHub could not safely complete publication."""
@@ -177,7 +180,16 @@ class GitHub:
         unrelated = [run for run in workflows_for_sha if run.get('path') == 'dynamic/dependabot/dependabot-updates']
         unrelated_suites = {run['check_suite_id'] for run in unrelated}
         required_names = {check['context'] for check in required}
-        runs = self.pages(f'commits/{sha}/check-runs?filter=latest', 'check_runs')
+        try:
+            runs = self.pages(f'commits/{sha}/check-runs?filter=latest', 'check_runs')
+        except GitHubError as exc:
+            # Fine-grained PATs have no Checks permission. Actions jobs carry the
+            # same check names (Actions: read); other apps' required checks stay pending.
+            if exc.status_code != 403 or exc.response_message != PAT_DENIED:
+                raise
+            runs = [{**job, 'app': {'id': ACTIONS_APP_ID}, 'check_suite': {'id': workflow['check_suite_id']}}
+                    for workflow in workflows_for_sha
+                    for job in self.pages(f"actions/runs/{workflow['id']}/jobs", 'jobs')]
         for run in runs:
             if (run.get('check_suite') or {}).get('id') in unrelated_suites and run['name'] not in required_names:
                 continue

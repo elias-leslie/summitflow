@@ -511,3 +511,37 @@ def test_failed_pr_checks_never_move_the_base(monkeypatch):
     plan = {'required': [], 'merge_method': 'merge', 'base': 'main', 'fast_forward': True}
     assert client.finish_pr(7, 'a'*40, plan, fast_forward=moved)['state'] == 'failed'
     moved.assert_not_called()
+
+
+def test_fine_grained_pat_falls_back_to_actions_jobs(monkeypatch):
+    from cli.lib.github_publish import ACTIONS_APP_ID, PAT_DENIED
+    client = GitHub(Path("/repo"), "owner/repo")
+    sha = "a" * 40
+    workflows = [{"id": 9, "check_suite_id": 5, "workflow_id": 1, "event": "push", "head_branch": "main",
+                  "name": "CI", "status": "completed", "conclusion": "success", "path": ".github/workflows/ci.yml"}]
+
+    def pages(path, *_):
+        if path == f"commits/{sha}/check-runs?filter=latest":
+            raise GitHubError("GitHub request unavailable", unavailable=True, status_code=403,
+                              response_message=PAT_DENIED, reason="remote_authentication_unavailable")
+        return {f"actions/runs?head_sha={sha}": workflows,
+                "actions/runs/9/jobs": [{"name": "backend", "status": "completed", "conclusion": "failure"}],
+                f"commits/{sha}/statuses": []}[path]
+
+    monkeypatch.setattr(client, "pages", pages)
+    result = client.observe(sha, [{"context": "backend", "integration_id": ACTIONS_APP_ID}])
+    assert result["state"] == "failed"
+    assert {"name": "backend", "state": "failed", "app_id": ACTIONS_APP_ID, "url": None} in result["checks"]
+
+
+def test_other_check_run_errors_still_raise(monkeypatch):
+    client = GitHub(Path("/repo"), "owner/repo")
+
+    def pages(path, *_):
+        if "check-runs" in path:
+            raise GitHubError("x", unavailable=True, status_code=401, reason="remote_authentication_unavailable")
+        return []
+
+    monkeypatch.setattr(client, "pages", pages)
+    with pytest.raises(GitHubError):
+        client.observe("a" * 40, [])
