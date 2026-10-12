@@ -152,6 +152,8 @@ def test_busy_backup_is_judged_before_acceptance(lifecycle, project, monkeypatch
     monkeypatch.setattr(service, "backup_restart_blockers", lambda: blockers.pop(0) if len(blockers) > 1 else blockers[0])
     accepted = Mock(side_effect=service_ops.prepare_accepted_release)
     monkeypatch.setattr(service_ops, "prepare_accepted_release", accepted)
+    # The restart-time reservation needs Redis; this test covers the earlier judgement.
+    monkeypatch.setattr(service, "backup_worker_restart_guard", lambda: nullcontext(lambda: None))
     if mode == "detached_job":
         from app.tasks import backup_lock
 
