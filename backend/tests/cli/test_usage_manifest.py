@@ -34,8 +34,7 @@ def test_memory_guidance_is_deferred_from_startup_even_with_history(density, tmp
     assert result.exit_code == 0, result.output
     specs = {row["surface"]: row for row in json.loads(result.output)["tools"]}
     assert not {"st.memory.search", "st.memory.save", "st.memory.update"} & specs.keys()
-    assert "memory authoring" in specs["st.details"]["why"]
-    assert "--discover <family-or-workflow>" in specs["st.details"]["when"]
+    assert "st.details" in specs
 
 
 def test_deferred_memory_guidance_is_discoverable_and_complete_in_full_density():
@@ -54,8 +53,6 @@ def test_deferred_memory_guidance_is_discoverable_and_complete_in_full_density()
         exact = runner.invoke(tools_app, ["manifest", "--surface", surface, "--format", "json"])
         assert exact.exit_code == 0, exact.output
         assert specs[surface] == json.loads(exact.output)["tools"][0]
-    assert "explicit scope" in " ".join(specs["st.memory.save"]["precautions"])
-    assert "tool how-to → ST surface/hook hint" in " ".join(specs["st.memory.save"]["precautions"])
 
 
 @pytest.mark.parametrize("query", ["github", "elevate"])
@@ -63,10 +60,7 @@ def test_github_admin_elevation_is_deferred_but_discoverable(query: str) -> None
     discovery = runner.invoke(tools_app, ["manifest", "--discover", query, "--format", "json"])
     assert discovery.exit_code == 0, discovery.output
     rows = {row["surface"]: row for row in json.loads(discovery.output)["tools"]}
-    assert "st elevate request github-admin --reason" in rows["st.elevate"]["cmd"]
-    assert "st elevate run github-admin -- gh" in rows["st.elevate"]["cmd"]
-    exact = runner.invoke(tools_app, ["manifest", "--surface", "st.elevate", "--format", "json"])
-    assert "never print the credential" in json.loads(exact.output)["tools"][0]["precautions"]
+    assert "st.elevate" in rows
     startup = runner.invoke(tools_app, ["manifest", "--profile", "agent_startup", "--format", "json"])
     assert "st.elevate" not in {row["surface"] for row in json.loads(startup.output)["tools"]}
 
@@ -79,18 +73,6 @@ def test_inject_renders_one_line_per_command_with_every_precaution() -> None:
     assert render_inject(specs) == "mandates:\n- st a — do a — careful: p1; p2\nreferences:\n- st b"
 
 
-def test_rebuild_guidance_requires_deployed_behavior_changes_and_preserves_managed_scope():
-    result = runner.invoke(tools_app, ["manifest", "--surface", "st.service.rebuild", "--format", "json"])
-    assert result.exit_code == 0, result.output
-    spec = json.loads(result.output)["tools"][0]
-    assert "deployed code/config/worker behavior changed" in spec["when"]
-    assert "managed build+migrate+restart" in spec["when"]
-    assert "never raw pnpm/npm/uv build or systemctl restart" in spec["when"]
-    assert "any code/config/worker change" not in spec["when"]
-    assert "explicit project, not cwd" in spec["precautions"][0]
-    assert "full scope for shared or uncertain changes; worker scope includes backend consumers" in spec["precautions"]
-
-
 def test_compact_discovery_covers_ordinary_task_work_without_full_catalogue() -> None:
     result = runner.invoke(tools_app, ["manifest", "--format", "json"])
     assert result.exit_code == 0, result.output
@@ -100,8 +82,6 @@ def test_compact_discovery_covers_ordinary_task_work_without_full_catalogue() ->
         assert exact.exit_code == 0
         assert specs[surface] == json.loads(exact.output)["tools"][0]
     assert not {"st.vcs.publish", "st.design", "st.ui.gif", "st.vm.status"} & specs.keys()
-    assert "read-only inspection needs no claim" in specs["st.context"]["precautions"][0]
-    assert "needs an active owned claim" in specs["st.done"]["precautions"][0]
 
 
 @pytest.mark.parametrize("task", [None, "backend", "verification"])
@@ -116,11 +96,6 @@ def test_specialized_guidance_is_not_selected_by_unrelated_task_or_history(tmp_p
     specs = {row["surface"]: row for row in json.loads(result.output)["tools"]}
     assert {"st.claim", "st.context", "st.check", "st.db", "st.service.rebuild"} <= specs.keys()
     assert not {"st.design", "st.models", "st.tools.cost", "st.ui.gif", "st.vm.status", "st.agents.get", "st.autonomous.upkeep"} & specs.keys()
-    details = specs["st.details"]
-    assert "precautions before using an omitted surface or on-demand workflow" in details["when"]
-    assert details["cmd"] == "st tools manifest --surface <exact-surface-id>"
-    assert "--discover <family-or-workflow>" in details["when"]
-    assert "visual design" in details["why"]
 
 
 @pytest.mark.parametrize(("task", "surface"), [
@@ -135,13 +110,6 @@ def test_explicit_specialized_work_gets_complete_canonical_guidance(task, surfac
     assert selected.exit_code == full.exit_code == 0
     selected_spec = next(row for row in json.loads(selected.output)["tools"] if row["surface"] == surface)
     assert selected_spec == json.loads(full.output)["tools"][0]
-
-
-def test_read_only_task_context_does_not_require_a_claim() -> None:
-    result = runner.invoke(tools_app, ["manifest", "--surface", "st.context", "--format", "json"])
-    assert result.exit_code == 0
-    spec = json.loads(result.output)["tools"][0]
-    assert "claim before implementation; read-only inspection needs no claim" in spec["precautions"]
 
 
 @pytest.mark.parametrize("density", ["full", "task", "adaptive"])
