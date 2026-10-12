@@ -95,3 +95,61 @@ def test_node_modules_identity_ignores_vitest_results_cache(tmp_path: Path) -> N
 
     optimized.write_text("export default 2\n")
     assert _environment_identity(tmp_path, modules) != before
+
+
+def _virtualenv(root: Path) -> tuple[Path, dict[str, Path]]:
+    environment = root / ".venv"
+    site = environment / "lib/python3.13/site-packages"
+    (site / "dependency").mkdir(parents=True)
+    (environment / "pyvenv.cfg").write_text("home = /usr/bin\n")
+    (site / "dependency/__init__.py").write_text("VERSION = 1\n")
+    (site / "dependency/__pycache__").mkdir()
+    (site / "dependency/__pycache__/__init__.cpython-313.pyc").write_bytes(b"first compile")
+    record = site / "dependency-1.0.dist-info/RECORD"
+    record.parent.mkdir()
+    record.write_text("dependency/__init__.py,sha256=one,12\n")
+    return environment, {"cache": site / "dependency/__pycache__/__init__.cpython-313.pyc",
+                         "installed": site / "dependency/__init__.py", "manifest": record,
+                         "unclaimed": site / "hand_placed.py"}
+
+
+def _node_modules(root: Path) -> tuple[Path, dict[str, Path]]:
+    store = root / "node_modules/.pnpm"
+    package = store / "dependency@1.0.0/node_modules/dependency"
+    package.mkdir(parents=True)
+    (package / "index.js").write_text("module.exports = 1\n")
+    (store / "lock.yaml").write_text("dependency: 1.0.0\n")
+    modules = root / "frontend/node_modules"
+    modules.mkdir(parents=True)
+    (modules / "dependency").symlink_to(package, target_is_directory=True)
+    results = modules / ".vite/vitest/results.json"
+    results.parent.mkdir(parents=True)
+    results.write_text("{}")
+    return modules, {"cache": results, "installed": package / "index.js", "manifest": store / "lock.yaml",
+                     "unclaimed": modules / "dependency"}
+
+
+@pytest.mark.parametrize("build", [_virtualenv, _node_modules])
+def test_prepared_identity_binds_installed_manifests_not_caches(tmp_path: Path, build) -> None:
+    from cli.commands.check_native import _prepared_identity
+
+    environment, files = build(tmp_path)
+    before = _prepared_identity(tmp_path, environment)
+    assert before["state"] == "present"
+
+    files["cache"].write_bytes(b"rewritten by a test run")
+    files["installed"].write_text("same installed version, rewritten bytes\n")
+    assert _prepared_identity(tmp_path, environment) == before
+
+    files["manifest"].write_text(files["manifest"].read_text() + "changed install\n")
+    changed = _prepared_identity(tmp_path, environment)
+    assert changed != before
+
+    if files["unclaimed"].is_symlink():
+        relinked = tmp_path / "node_modules/.pnpm/dependency@2.0.0/node_modules/dependency"
+        relinked.mkdir(parents=True)
+        files["unclaimed"].unlink()
+        files["unclaimed"].symlink_to(relinked, target_is_directory=True)
+    else:
+        files["unclaimed"].write_text("hand placed module\n")
+    assert _prepared_identity(tmp_path, environment) != changed

@@ -736,16 +736,6 @@ def test_missing_later_preparation_prevents_earlier_heavy_execution(native_repo:
     assert not (native_repo / ".dev-tools/result.json").exists()
 
 
-def test_entrypoint_help_prose_does_not_invalidate_gate_but_behavior_does(tmp_path: Path) -> None:
-    path = tmp_path / "main.py"
-    path.write_text("CLI_REFERENCE='old operator guide'\ndef app():\n    return 'unchanged check dispatch'\n")
-    before = acceptance._entrypoint_identity(path, name="main")
-    path.write_text(path.read_text().replace("old operator guide", "fresh and longer operator guide"))
-    assert acceptance._entrypoint_identity(path, name="main") == before
-    path.write_text(path.read_text().replace("unchanged check dispatch", "changed check dispatch"))
-    assert acceptance._entrypoint_identity(path, name="main") != before
-
-
 def test_go_skip_policy_names_exact_not_applicable_cases() -> None:
     evidence = {"format": "go-test-json", "not_applicable_tests": {"fixture.TestSeed": "Opt-in fixture generator, exercised in the browser stage"}}
     content = '\n'.join(json.dumps(event) for event in [

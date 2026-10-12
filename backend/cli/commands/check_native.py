@@ -79,7 +79,8 @@ def python_runtime_root(executable: Path) -> Path | None:
         return runtime
 
 
-def _environment_identity(root: Path, path: Path, *, commit: str | None = None) -> dict[str, Any]:
+def _environment_identity(root: Path, path: Path, *, commit: str | None = None,
+                          prune: frozenset[str] = frozenset()) -> dict[str, Any]:
     if not path.is_dir():
         return identity(root, path)
     entries = []
@@ -121,8 +122,9 @@ def _environment_identity(root: Path, path: Path, *, commit: str | None = None) 
             resolved_directory = current.resolve() if tree else current
             # Prepared executable caches can be consumed by tool runtimes.
             # Bind them conservatively; native Python writes to a fresh prefix.
-            subdirs[:] = sorted(name for name in subdirs if not (relative := workspace_source(current / name, resolved_directory))
-                                or relative in tree or any(item.startswith(relative + "/") for item in tree))
+            subdirs[:] = sorted(name for name in subdirs if name not in prune and (
+                not (relative := workspace_source(current / name, resolved_directory))
+                or relative in tree or any(item.startswith(relative + "/") for item in tree)))
             # Vitest rewrites its run-order cache on every test run; it is not a
             # dependency input, and binding it makes acceptance drift mid-check.
             if path.name == "node_modules" and current == path / ".vite":
@@ -152,6 +154,134 @@ def _environment_identity(root: Path, path: Path, *, commit: str | None = None) 
                 "state": "present", "file_count": len(entries), "sha256": _digest(entries)}
     except OSError:
         return {"path": str(path), "state": "unavailable"}
+
+
+# Installer-written manifests that pin what a prepared runtime contains.
+_NODE_LOCK_MANIFESTS = (".pnpm/lock.yaml", ".package-lock.json", ".yarn-state.yml", ".yarn-integrity")
+_PYTHON_CACHE_NAMES = frozenset({"__pycache__"})
+
+
+def _python_environment_manifest(root: Path, path: Path) -> list[dict[str, Any]]:
+    """Bind a virtualenv by its installed distributions, not by its caches.
+
+    Each distribution's RECORD (or METADATA) pins its files' install-time
+    hashes. Top-level site-packages entries no distribution claims are still
+    bound by content, so hand-placed modules keep invalidating reuse.
+    """
+    entries: list[dict[str, Any]] = [{"manifest": "pyvenv.cfg", **identity(path, path / "pyvenv.cfg")}]
+    binaries = path / "bin"
+    if binaries.is_dir():
+        for candidate in sorted(binaries.iterdir()):
+            if candidate.is_symlink():
+                entries.append({"bin": candidate.name, "target": os.readlink(candidate)})
+            elif candidate.is_file():
+                entries.append({"bin": candidate.name, "sha256": _content_hash(candidate)})
+    seen: set[Path] = set()
+    for site in sorted(path.glob("lib*/python*/site-packages")):
+        # lib64 is conventionally a link to lib; bind each real directory once.
+        if not site.is_dir() or site.resolve() in seen:
+            continue
+        seen.add(site.resolve())
+        claimed: set[str] = set()
+        names = sorted(item.name for item in site.iterdir())
+        for name in names:
+            if not name.endswith((".dist-info", ".egg-info")):
+                continue
+            distribution = site / name
+            record = next((distribution / item for item in ("RECORD", "METADATA", "PKG-INFO") if (distribution / item).is_file()), None)
+            if record is None:
+                raise OSError("installed distribution lacks a manifest")
+            content = record.read_bytes()
+            entries.append({"distribution": f"{site.relative_to(path).as_posix()}/{name}", "manifest": record.name,
+                            "sha256": hashlib.sha256(content).hexdigest()})
+            claimed.add(name)
+            if record.name == "RECORD":
+                for line in content.decode("utf-8", "replace").splitlines():
+                    top = line.split(",", 1)[0].split("/", 1)[0]
+                    if top and top not in {".", ".."}:
+                        claimed.add(top)
+        for name in names:
+            if name in claimed or name in _PYTHON_CACHE_NAMES:
+                continue
+            entries.append({"unclaimed": f"{site.relative_to(path).as_posix()}/{name}",
+                            **_environment_identity(root, site / name, prune=_PYTHON_CACHE_NAMES)})
+    return entries
+
+
+def _node_modules_manifest(root: Path, path: Path, *, commit: str | None) -> list[dict[str, Any]]:
+    """Bind node_modules by package links/versions and the installer's lock.
+
+    Store links name exact package versions; the installed lockfile pins their
+    integrity. Workspace links into this repository are bound by content.
+    """
+    entries: list[dict[str, Any]] = []
+    stores: set[Path] = set()
+    resolved_root = root.resolve()
+
+    def package(candidate: Path, name: str) -> None:
+        if candidate.is_symlink():
+            target = candidate.resolve()
+            entries.append({"package": name, "target": os.readlink(candidate)})
+            if "node_modules" in target.parts:
+                store = Path(*target.parts[:target.parts.index("node_modules") + 1])
+                stores.add(store)
+            elif target.is_relative_to(resolved_root):
+                entries.append({"workspace": name, **_environment_identity(root, candidate, commit=commit,
+                                                                         prune=frozenset({"node_modules"}))})
+                nested = target / "node_modules"
+                if nested.is_dir():
+                    entries.append({"workspace_modules": name, "entries": _node_modules_manifest(root, nested, commit=commit)})
+            else:
+                entries.append({"external": name, **_environment_identity(root, candidate)})
+        elif candidate.is_dir():
+            manifest = candidate / "package.json"
+            entries.append({"package": name, **(identity(candidate, manifest) if manifest.is_file()
+                                                else _environment_identity(root, candidate))})
+        elif candidate.is_file():
+            entries.append({"file": name, "sha256": _content_hash(candidate)})
+
+    for candidate in sorted(path.iterdir()):
+        name = candidate.name
+        if name == ".bin":
+            for binary in sorted(candidate.iterdir()):
+                entries.append({"bin": binary.name, **({"target": os.readlink(binary)} if binary.is_symlink()
+                                                       else {"sha256": _content_hash(binary)})})
+        elif name.startswith("@") and candidate.is_dir() and not candidate.is_symlink():
+            for scoped in sorted(candidate.iterdir()):
+                package(scoped, f"{name}/{scoped.name}")
+        elif not name.startswith("."):
+            package(candidate, name)
+    stores.add(path)
+    for store in sorted(stores):
+        for manifest in _NODE_LOCK_MANIFESTS:
+            if (store / manifest).is_file():
+                label = store.relative_to(resolved_root).as_posix() if store.is_relative_to(resolved_root) else str(store)
+                entries.append({"lock": f"{label}/{manifest}", "sha256": _content_hash(store / manifest)})
+    return entries
+
+
+def _prepared_identity(root: Path, path: Path, *, commit: str | None = None) -> dict[str, Any]:
+    """Bind a prepared runtime by lockfile plus installed-manifest identity.
+
+    Virtualenvs and node_modules rewrite caches (pyc, Vite/Vitest results) on
+    every run; those bytes are not dependency inputs. Other prepared runtimes
+    keep their complete content walk.
+    """
+    if not path.is_dir():
+        return identity(root, path)
+    name = path.relative_to(root).as_posix() if path.is_relative_to(root) else str(path)
+    try:
+        if (path / "pyvenv.cfg").is_file():
+            entries, kind = _python_environment_manifest(root, path), "python_distributions"
+        elif path.name == "node_modules":
+            entries, kind = _node_modules_manifest(root, path, commit=commit), "node_packages"
+        else:
+            return _environment_identity(root, path, commit=commit)
+        if any(entry.get("state") == "unavailable" for entry in entries):
+            raise OSError("prepared environment entry unavailable")
+    except OSError:
+        return {"path": name, "state": "unavailable"}
+    return {"path": name, "state": "present", "identity": kind, "entry_count": len(entries), "sha256": _digest(entries)}
 
 
 def _expand_home_tools(tools: Any) -> Any:
@@ -328,7 +458,7 @@ def native_plan(root: Path, *, commit: str | None = None) -> dict[str, Any] | No
             "paths": paths, "environment": environment, "stages": normalized,
             "tools": {name: identity(root, Path(path)) for name, path in tools.items()},
             "legacy_tools": list(dict.fromkeys(legacy_tools)),
-            "prepared_environment": [_environment_identity(root, path, commit=commit) for path in sorted(runtime_paths)],
+            "prepared_environment": [_prepared_identity(root, path, commit=commit) for path in sorted(runtime_paths)],
             "preparation": "explicit_only_no_installation"}
 
 
@@ -457,17 +587,23 @@ def _run_native(root: Path, plan: dict[str, Any], *, aliases: Path, scratch: Pat
         before = _native_source(root)
     except (AcceptanceError, OSError):
         before = None  # Fresh observations outside Git never seed source reuse.
-    cache = _stage_cache(root, plan) if stage_id is None and full_gate else None
+    cache = _stage_cache(root, plan, before) if stage_id is None and full_gate else None
     artifact_store = cache or _artifact_storage(root)
+    passed_stages: list[tuple[dict[str, Any], dict[str, Any]]] = []
     for stage in stages:
         started = time.monotonic()
-        cached = _reuse_stage(root, cache, stage) if reuse else None
-        if cached is not None:
-            outcomes.append({**cached, "reused": True, "reuse_lookup_ms": round((time.monotonic() - started) * 1000, 3)})
-            continue
         outcome: dict[str, Any] = {"id": stage["id"], "coverage": stage["coverage"], "required": stage["required"],
                                    "command": stage["argv"], "cwd": stage["cwd"], "tool": stage["tool"], "artifacts": [],
                                    "state": "unavailable", "returncode": None, "reason": ""}
+        if not stage["applicable"]:
+            # Declared inapplicability needs no cache lookup or execution.
+            outcomes.append({**outcome, "state": "not-applicable", "reason": stage["reason"], "duration_ms": 0,
+                             "output_bytes": 0, "detail": "", "reused": False})
+            continue
+        cached = _reuse_stage(cache, stage) if reuse else None
+        if cached is not None:
+            outcomes.append({**cached, "reused": True, "reuse_lookup_ms": round((time.monotonic() - started) * 1000, 3)})
+            continue
         if (stage_id is None and full_gate and stage.get("covered_by")
                 and any(item["id"] == stage["covered_by"] and item["state"] == "pass" for item in outcomes)):
             outcomes.append({**outcome, "state": "not-applicable", "covered_by": stage["covered_by"],
@@ -481,15 +617,16 @@ def _run_native(root: Path, plan: dict[str, Any], *, aliases: Path, scratch: Pat
         executable = Path(stage["executable"]) if Path(stage["executable"]).is_absolute() else _local(root, stage["executable"])
         output = ""
         stdout_output = ""
-        if not stage["applicable"]:
-            outcome.update(state="not-applicable", reason=stage["reason"])
-        elif any(lock["state"] != "present" for lock in [*plan["locks"], *plan["prepared_environment"]]):
+        if any(lock["state"] != "present" for lock in [*plan["locks"], *plan["prepared_environment"]]):
             outcome["reason"] = "locked_environment_unavailable; prepare explicitly"
         elif not executable.is_file() or not os.access(executable, os.X_OK) or not cwd.is_dir():
             outcome["reason"] = "project_tool_or_cwd_unavailable; prepare explicitly"
         else:
             try:
                 with heavy_work(f"native check {stage['id']}") as work:
+                    queue_seconds = getattr(work, "queue_seconds", 0.0)
+                    if isinstance(queue_seconds, (int, float)):
+                        outcome["queue_ms"] = round(queue_seconds * 1000, 3)
                     result = work.run([str(executable), *stage["argv"][1:]], cwd=cwd, env=environment,
                                       capture_output=True, text=True, encoding="utf-8", errors="replace",
                                       timeout=stage.get("timeout_seconds", 600), check=False)
@@ -531,9 +668,10 @@ def _run_native(root: Path, plan: dict[str, Any], *, aliases: Path, scratch: Pat
         if artifact_store is not None:
             _retain_artifacts(root, artifact_store, outcome, stdout_output, output)
         if cache is not None and outcome["state"] == "pass" and stage["coverage"] == "full":
-            _save_stage(root, cache, stage, outcome)
+            passed_stages.append((stage, outcome))
         outcomes.append(outcome)
     full = full_gate and stage_id is None and all(stage["coverage"] == "full" for stage in stages if stage["required"])
+    changed = False
     if before is not None:
         try:
             changed = _native_source(root) != before
@@ -543,6 +681,8 @@ def _run_native(root: Path, plan: dict[str, Any], *, aliases: Path, scratch: Pat
             for outcome in outcomes:
                 if outcome["state"] == "pass":
                     outcome.update(state="fail", reason="source_inputs_changed_during_native_check")
+    if cache is not None and passed_stages and not changed:
+        _save_stages(root, cache, passed_stages)
     passed = all(outcome["state"] == "pass" for outcome in outcomes if outcome["required"])
     return {"schema_version": 1, "coverage": "full" if full else "focused",
             "state": "pass" if passed else "fail", "stages": outcomes}
@@ -569,12 +709,11 @@ def _native_source(root: Path) -> dict[str, Any]:
             "materialization": working_source_materialization_identity(root)}
 
 
-def _stage_cache(root: Path, plan: dict[str, Any]) -> dict[str, Any] | None:
+def _stage_cache(root: Path, plan: dict[str, Any], source: dict[str, Any] | None) -> dict[str, Any] | None:
     from cli.lib.acceptance import AcceptanceError, _git_common_dir
 
     try:
-        source = _native_source(root)
-        if not source["clean"]:
+        if source is None or not source["clean"]:
             return None
         directory = _git_common_dir(root) / "st" / "native-stages"
         directory.mkdir(parents=True, exist_ok=True)
@@ -599,27 +738,18 @@ def _artifact_storage(root: Path) -> dict[str, Any] | None:
 
 
 def _native_implementation() -> str:
-    from app.utils import heavy_work as admission
-    from app.utils import host_retention_policy, safe_subprocess, transient_scratch
-    from cli.lib import acceptance
+    from cli.lib.acceptance import GATE_VERSION
 
-    return _digest({name: hashlib.sha256(Path(path).read_bytes()).hexdigest() for name, path in (
-        ("native", __file__), ("source", acceptance.__file__),
-        ("admission", admission.__file__), ("subprocess", safe_subprocess.__file__),
-        ("scratch", transient_scratch.__file__),
-        ("retention", host_retention_policy.__file__),
-    )})
+    return _digest({"gate_version": GATE_VERSION})
 
 
-def _reuse_stage(root: Path, cache: dict[str, Any] | None, stage: dict[str, Any]) -> dict[str, Any] | None:
+def _reuse_stage(cache: dict[str, Any] | None, stage: dict[str, Any]) -> dict[str, Any] | None:
+    # The cache key was derived once from this run's source, plan and gate.
+    # Source drift during the run fails every passed or reused stage at the end.
     if cache is None or stage["coverage"] != "full":
         return None
     path = cache["directory"] / f"{cache['key']}-{stage['id']}.json"
     try:
-        from cli.lib.acceptance import AcceptanceError
-
-        if _native_source(root) != cache["source"] or _digest(native_plan(root)) != cache["plan"] or _native_implementation() != cache["implementation"]:
-            return None
         receipt = json.loads(path.read_text(encoding="utf-8"))
         digest = receipt.pop("digest")
         outcome = receipt["outcome"]
@@ -636,7 +766,7 @@ def _reuse_stage(root: Path, cache: dict[str, Any] | None, stage: dict[str, Any]
             if hashlib.sha256(retained.read_bytes()).hexdigest() != artifact["sha256"]:
                 return None
         return outcome
-    except (AcceptanceError, OSError, ValueError, TypeError, KeyError):
+    except (OSError, ValueError, TypeError, KeyError):
         return None
 
 
@@ -656,20 +786,21 @@ def _retain_artifacts(root: Path, cache: dict[str, Any], outcome: dict[str, Any]
         return
 
 
-def _save_stage(root: Path, cache: dict[str, Any], stage: dict[str, Any], outcome: dict[str, Any]) -> None:
+def _save_stages(root: Path, cache: dict[str, Any], passed: list[tuple[dict[str, Any], dict[str, Any]]]) -> None:
     from cli.lib.acceptance import AcceptanceError, _write_receipt
 
     try:
-        # Tool/config/lock/environment and complete tracked source identities
-        # must still match after execution; no partial/transitive-source claims.
-        if _native_source(root) != cache["source"] or _digest(native_plan(root)) != cache["plan"] or _native_implementation() != cache["implementation"]:
+        # Tool/config/lock/environment identities must still match after
+        # execution; the caller already rechecked the complete tracked source.
+        if _digest(native_plan(root)) != cache["plan"] or _native_implementation() != cache["implementation"]:
             return
-        for artifact in outcome["artifacts"]:
-            if not artifact.get("retained_path") or hashlib.sha256(Path(artifact["retained_path"]).read_bytes()).hexdigest() != artifact["sha256"]:
-                return
-        receipt = {"schema_version": 1, "key": cache["key"], "outcome": outcome}
-        receipt["digest"] = _digest(receipt)
-        _write_receipt(cache["directory"] / f"{cache['key']}-{stage['id']}.json", receipt)
+        for stage, outcome in passed:
+            if any(not artifact.get("retained_path") or hashlib.sha256(Path(artifact["retained_path"]).read_bytes()).hexdigest() != artifact["sha256"]
+                   for artifact in outcome["artifacts"]):
+                continue
+            receipt = {"schema_version": 1, "key": cache["key"], "outcome": outcome}
+            receipt["digest"] = _digest(receipt)
+            _write_receipt(cache["directory"] / f"{cache['key']}-{stage['id']}.json", receipt)
     except (AcceptanceError, NativeCheckError, OSError):
         return
 

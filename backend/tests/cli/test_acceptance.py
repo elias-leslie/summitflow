@@ -39,7 +39,12 @@ def test_acceptance_plan_survives_equivalent_release_relocation(tmp_path: Path, 
     monkeypatch.setattr(tool_registry, "tool_registry_path", lambda: release / "scripts/lib/tool-registry.json")
     monkeypatch.setattr(acceptance.shutil, "which", lambda name: str(release / ("st" if name == "st" else "scanner")))
     assert acceptance._acceptance_plan() == before
+    # Deploying different gate bytes keeps every project's proofs valid; only
+    # an explicit gate version bump invalidates them.
     (release / "backend/cli/commands/check.py").write_text("changed gate implementation")
+    (release / "backend/app/utils/heavy_work.py").write_text("changed shared gate support")
+    assert acceptance._acceptance_plan() == before
+    monkeypatch.setattr(acceptance, "GATE_VERSION", acceptance.GATE_VERSION + 1)
     assert acceptance._acceptance_plan()["fingerprint"] != before["fingerprint"]
 
 
@@ -49,21 +54,6 @@ def test_acceptance_plan_detects_changed_security_tool_bytes(tmp_path: Path, mon
     monkeypatch.setattr(acceptance.shutil, "which", lambda _name: str(scanner))
     before = acceptance._acceptance_plan()
     scanner.write_text("changed scanner")
-    assert acceptance._acceptance_plan()["fingerprint"] != before["fingerprint"]
-
-
-@pytest.mark.parametrize("name", ["heavy_work.py", "safe_subprocess.py"])
-def test_acceptance_plan_binds_shared_gate_support_bytes(tmp_path: Path, monkeypatch, name: str) -> None:
-    from cli import tool_registry
-
-    backend = tmp_path / "backend"
-    support = backend / "app" / "utils" / name
-    support.parent.mkdir(parents=True)
-    support.write_text("original shared gate support")
-    monkeypatch.setattr(acceptance, "__file__", str(backend / "cli" / "lib" / "acceptance.py"))
-    monkeypatch.setattr(tool_registry, "tool_registry_path", lambda: tmp_path / "scripts" / "lib" / "tool-registry.json")
-    before = acceptance._acceptance_plan()
-    support.write_text("changed shared gate support")
     assert acceptance._acceptance_plan()["fingerprint"] != before["fingerprint"]
 
 

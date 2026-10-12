@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import ast
 import fcntl
 import hashlib
 import json
@@ -32,6 +31,12 @@ class AcceptanceError(RuntimeError):
 AcceptanceRunner = Callable[[list[str], Path], subprocess.CompletedProcess[str]]
 
 _SCHEMA_VERSION = 3
+# The gate's semantic version. Receipts and native stage results bind this
+# instead of the running release's file bytes, so deploying SummitFlow no
+# longer invalidates every project's proofs or in-flight runs. Bump it when a
+# change alters what a passing gate proves (stages run, evidence accepted,
+# counting, isolation); the accepted commit/tree already binds this project.
+GATE_VERSION = 1
 _ACCEPTANCE_COMMANDS: tuple[tuple[str, ...], ...] = (("st", "check", "--check"),)
 _INPUT_NAMES = {
     ".st-check.toml",
@@ -580,51 +585,11 @@ def _file_identity(path: Path, *, name: str, content: bytes | None = None) -> di
         return {"name": name, "unavailable": True}
 
 
-def _entrypoint_identity(path: Path, *, name: str, content: bytes | None = None) -> dict[str, Any]:
-    # CLI_REFERENCE is consumed solely as Typer root help. Its prose never
-    # chooses or configures the forwarded check execution path.
-    try:
-        module = ast.parse(path.read_text(encoding="utf-8") if content is None else content.decode("utf-8"))
-        for statement in module.body:
-            if isinstance(statement, ast.Assign) and any(isinstance(target, ast.Name) and target.id == "CLI_REFERENCE" for target in statement.targets):
-                statement.value = ast.Constant(value="")
-        content = ast.dump(module, include_attributes=False).encode()
-        return {"name": name, "size": len(content), "sha256": hashlib.sha256(content).hexdigest(), "format": "python_ast_without_root_help"}
-    except (OSError, UnicodeError, SyntaxError):
-        return _file_identity(path, name=name, content=content)
-
-
 def _acceptance_plan(*, repo: Path | None = None, commit: str | None = None,
                      check_names: Sequence[str] = ("ruff", "types", "pytest", "biome", "tsc", "vitest", "security")) -> dict[str, Any]:
     # Bind content, not checkout location or extraction timestamps. The same
     # accepted source is installed in an immutable managed release directory.
     from cli.tool_registry import tool_registry_path
-    backend = Path(__file__).resolve().parents[2]
-    implementation = [path for path in sorted((backend / "cli" / "commands").glob("check*.py"))
-                      if path.name != "check_codeql.py" and not path.name.startswith("checkpoints")]
-    if repo is not None and commit is not None:
-        implementation = [repo / name for name in sorted(_source_tree_entries(repo, commit))
-                          if Path(name).parent == Path("backend/cli/commands") and Path(name).match("check*.py")
-                          and Path(name).name != "check_codeql.py" and not Path(name).name.startswith("checkpoints")]
-    implementation.extend([
-        Path(__file__), backend / "cli" / "lib" / "acceptance_coordinator.py",
-        backend / "cli" / "main.py", backend / "cli" / "tool_registry.py",
-        backend / "cli" / "commands" / "done_task_acceptance.py",
-        backend / "app" / "utils" / "heavy_work.py", backend / "app" / "utils" / "safe_subprocess.py",
-        backend / "app" / "utils" / "transient_scratch.py",
-        backend / "app" / "utils" / "host_retention_policy.py",
-    ])
-
-    def gate_identity(path: Path) -> dict[str, Any]:
-        name = str(path.relative_to(backend.parent))
-        content = None
-        if repo is not None and commit is not None:
-            result = _git(repo, ["show", f"{commit}:{name}"], text=False)
-            if result.returncode:
-                return {"name": name, "unavailable": True}
-            content = result.stdout
-        identify = _entrypoint_identity if path == backend / "cli" / "main.py" else _file_identity
-        return identify(path, name=name, content=content)
 
     # Operator descriptions, prompts and unrelated tool catalogue entries are
     # not read by the full gate. Bind the effective selected check declarations.
@@ -641,12 +606,12 @@ def _acceptance_plan(*, repo: Path | None = None, commit: str | None = None,
                   and item.get("name") in check_names}
         registry_identity = {"checks": checks}
     except (OSError, ValueError, AttributeError):
-        registry_identity = gate_identity(tool_registry_path())
+        registry_identity = _file_identity(tool_registry_path(), name="scripts/lib/tool-registry.json")
     plan: dict[str, Any] = {
         "commands": [list(command) for command in _ACCEPTANCE_COMMANDS],
         "toolchain": {"st": {"entrypoint": "cli.main:app"}},
         "remote_security": "not_run_local_acceptance_does_not_claim_codeql_equivalence",
-        "gate_implementation": [gate_identity(path) for path in implementation],
+        "gate_implementation": {"gate_version": GATE_VERSION},
         "check_configuration": registry_identity,
         "security_tools": {name: _file_identity(Path(path), name=name) if (path := shutil.which(name)) else {"unavailable": True}
                            for name in ("gitleaks", "semgrep", "osv-scanner")},
@@ -665,6 +630,7 @@ def _project_acceptance_plan(repo: Path, *, commit: str | None = None,
     from cli.commands.check_native import (
         NativeCheckError,
         _environment_identity,
+        _prepared_identity,
         native_plan,
         python_runtime_root,
     )
@@ -695,7 +661,7 @@ def _project_acceptance_plan(repo: Path, *, commit: str | None = None,
         for marker in (".venv", "venv", "node_modules"):
             if marker in parts:
                 runtime_paths.add(Path(*parts[:parts.index(marker) + 1]))
-    plan["prepared_legacy_environment"] = [_environment_identity(repo, path, commit=commit) for path in sorted(runtime_paths)]
+    plan["prepared_legacy_environment"] = [_prepared_identity(repo, path, commit=commit) for path in sorted(runtime_paths)]
     if {"security", "semgrep", "gitleaks"}.intersection(names):
         from cli.commands.check_security import _semgrep_config
 
@@ -712,7 +678,7 @@ def _project_acceptance_plan(repo: Path, *, commit: str | None = None,
                     runtime = python_runtime_root(Path(executable))
                     if runtime is not None:
                         runtime_paths.add(runtime)
-        plan["prepared_legacy_environment"] = [_environment_identity(repo, path, commit=commit) for path in sorted(runtime_paths)]
+        plan["prepared_legacy_environment"] = [_prepared_identity(repo, path, commit=commit) for path in sorted(runtime_paths)]
     if native is not None:
         # Preserve and bind applicable approved legacy tools alongside declared
         # native stages. Native suite commands execute once, rather than again
@@ -954,7 +920,7 @@ def _validate_retained_native_artifacts(repo: Path, evidence: Mapping[str, Any],
 def _run(command: list[str], cwd: Path, *, native_reuse: bool = True,
          scope: Sequence[str] = ()) -> subprocess.CompletedProcess[str]:
     if command and command[0] == "st":
-        # Invoke the exact implementation fingerprinted above. Safe-path mode
+        # Invoke this running gate, whose GATE_VERSION the plan binds. Safe-path mode
         # excludes the target project's cwd from module lookup; a different
         # PATH launcher or target-owned cli module cannot replace this gate.
         # Bind this CLI's import lookup only, not PYTHONPATH inherited by a
