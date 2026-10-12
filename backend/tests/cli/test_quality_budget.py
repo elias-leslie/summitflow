@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import os
 import subprocess
 from pathlib import Path
 
@@ -46,10 +47,14 @@ def test_counts_non_blank_lines_including_uncommitted_work(tmp_path: Path) -> No
     assert budget.line_counts(root, budget._state_dir(root)) == (1, 5)
 
 
-def _receipt(directory: Path, name: str, seconds: float, *, coverage: str = "full", state: str = "success") -> None:
+def _receipt(directory: Path, name: str, seconds: float, *, coverage: str = "full", state: str = "success",
+             plan: str = "p1", mtime: float | None = None) -> None:
     directory.mkdir(parents=True, exist_ok=True)
-    (directory / f"{name}.json").write_text(json.dumps(
-        {"acceptance_id": name, "coverage": coverage, "state": state, "duration_ms": seconds * 1000}))
+    path = directory / f"{name}.json"
+    path.write_text(json.dumps({"acceptance_id": name, "coverage": coverage, "state": state,
+                                "duration_ms": seconds * 1000, "plan": {"fingerprint": plan}}))
+    if mtime is not None:
+        os.utime(path, (mtime, mtime))
 
 
 def test_gate_median_uses_successful_full_receipts_only(tmp_path: Path) -> None:
@@ -59,6 +64,14 @@ def test_gate_median_uses_successful_full_receipts_only(tmp_path: Path) -> None:
     _receipt(tmp_path / "acceptance", "failed", 9000, state="failed")
     assert budget.gate_median(tmp_path, 5) == (200, 3)
     assert budget.gate_median(tmp_path / "missing", 5) == (None, 0)
+
+
+def test_gate_median_ignores_runs_under_an_older_gate_plan(tmp_path: Path) -> None:
+    for index, seconds in enumerate((300, 320, 310)):
+        _receipt(tmp_path / "acceptance", f"old{index}", seconds, plan="before", mtime=1000 + index)
+    _receipt(tmp_path / "acceptance", "new0", 90, plan="after", mtime=2000)
+    _receipt(tmp_path / "acceptance", "new1", 110, plan="after", mtime=2001)
+    assert budget.gate_median(tmp_path, 5) == (100, 2)
 
 
 def _measurement(*, test_loc: int, source_loc: int = 1000, gate: float | None = None, slow: int | None = None,

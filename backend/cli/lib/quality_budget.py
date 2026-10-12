@@ -221,10 +221,18 @@ def _full_receipts(state: Path, limit: int) -> list[dict[str, Any]]:
     except OSError:
         return []
     selected: dict[str, dict[str, Any]] = {}
+    # Timings under an older gate plan (stages, tools, workers) are not
+    # comparable, so only runs sharing the newest run's plan count.
+    current_plan: object = None
     for path in candidates[:limit * 6]:
         value = _read_json(path)
         if (isinstance(value, dict) and value.get("coverage") == "full" and value.get("state") == "success"
                 and isinstance(value.get("duration_ms"), (int, float))):
+            plan = (value.get("plan") or {}).get("fingerprint") if isinstance(value.get("plan"), dict) else None
+            if not selected:
+                current_plan = plan
+            elif plan != current_plan:
+                continue
             selected.setdefault(str(value.get("acceptance_id")), value)
         if len(selected) >= limit:
             break
