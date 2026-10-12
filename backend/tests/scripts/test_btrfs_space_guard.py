@@ -92,3 +92,13 @@ def test_custom_path_cannot_enter_maintenance(monkeypatch):
     with pytest.raises(SystemExit) as error:
         module.main()
     assert error.value.code == 2
+
+
+def test_check_only_measures_read_only_backup_storage_but_maintenance_refuses(monkeypatch):
+    # Backup storage stays read-only outside its write window; admission still has to measure it.
+    module = _load_module()
+    rows = [{"target": "/mnt/native", "fstype": "btrfs", "uuid": "plain-target", "options": "ro,relatime,compress=zstd:1"}]
+    monkeypatch.setattr(module, "command", lambda args: subprocess.CompletedProcess(args, 0, json.dumps({"filesystems": rows}), ""))
+    module.inspect_mount("/mnt/native/points", "plain-target", check_only=True)
+    with pytest.raises(RuntimeError, match="read-only"):
+        module.inspect_mount("/mnt/native", "plain-target", check_only=False)

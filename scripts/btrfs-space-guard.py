@@ -71,7 +71,8 @@ def inspect_mount(path, expected_uuid, check_only=False):
         raise RuntimeError("required filesystem is not mounted at " + path)
     if mounted.get("fstype") != "btrfs" or mounted.get("uuid") != expected_uuid:
         raise RuntimeError("unexpected filesystem at " + path)
-    if "rw" not in mounted.get("options", "").split(","):
+    # --check-only only measures; backup storage is read-only outside its write window (summitflow-backup-window).
+    if not check_only and "rw" not in mounted.get("options", "").split(","):
         raise RuntimeError("filesystem is read-only at " + path)
 
 
