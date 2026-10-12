@@ -70,6 +70,8 @@ ensure() {
 stop() {
   valid_key "$1"
   systemctl --user stop "$(unit "$1")" 2>/dev/null || true
+  # The Chrome wrapper exits nonzero when stopped; that is not a failure here.
+  systemctl --user reset-failed "$(unit "$1")" 2>/dev/null || true
   rm -f "$SESSION_DIR/$1.idle"
   printf '{"key":"%s","stopped":true}\n' "$1"
 }
