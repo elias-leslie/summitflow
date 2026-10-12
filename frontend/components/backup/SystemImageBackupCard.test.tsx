@@ -15,10 +15,9 @@ const pendingStatus = {
   mok_enrolled: false,
   mok_enrollment_pending: true,
   module_loaded: false,
-  module_signer: 'davion-sidarli Secure Boot Module Signature key',
+  module_signer: 'example-host Secure Boot Module Signature key',
   repository_name: 'SummitFlowSystemImage',
-  repository_path:
-    '/media/kasadis/Backups/davion-gem/system-images/davion-sidarli-linux',
+  repository_path: '/media/owner/Backups/system-images/example-host-linux',
   repository_accessible: true,
   job_name: 'SummitFlowSystemImage',
   job_configured: true,

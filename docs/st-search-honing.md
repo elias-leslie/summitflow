@@ -74,7 +74,7 @@ Key tests: `backend/tests/cli/test_search.py`, `backend/tests/services/context_g
 
 ## Reference repo: jcodemunch-mcp (basis review)
 
-Clone: `/home/kasadis/references/jcodemunch-mcp` — `git pull --ff-only` to update before comparing (last reviewed 2026-06-11 at `3dbab7f`, v1.108.54; previously at `cb57224`). Upstream: https://github.com/jgravelle/jcodemunch-mcp. This repo was the basis for Precision Code Search — our symbol-id format (`{file_path}::{qualified_name}#{kind}`) is theirs verbatim.
+Clone: `~/references/jcodemunch-mcp` — `git pull --ff-only` to update before comparing (last reviewed 2026-06-11 at `3dbab7f`, v1.108.54; previously at `cb57224`). Upstream: https://github.com/jgravelle/jcodemunch-mcp. This repo was the basis for Precision Code Search — our symbol-id format (`{file_path}::{qualified_name}#{kind}`) is theirs verbatim.
 
 ### Where we stand vs upstream (2026-06-11)
 

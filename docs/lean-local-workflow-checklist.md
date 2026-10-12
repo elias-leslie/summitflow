@@ -1,6 +1,6 @@
 # Lean local-first workflow implementation
 
-Task: `task-36705f79827e4110`. This checklist records implemented behavior and observed evidence. An unchecked item is still open; observations alone do not count as a repair.
+This checklist records implemented behavior and observed evidence. An unchecked item is still open; observations alone do not count as a repair.
 
 ## Curator retirement
 

@@ -5,6 +5,7 @@ from __future__ import annotations
 import hashlib
 import json
 import os
+import pwd
 import re
 import stat
 import subprocess
@@ -147,6 +148,21 @@ def _environment_identity(root: Path, path: Path, *, commit: str | None = None) 
         return {"path": str(path), "state": "unavailable"}
 
 
+def _expand_home_tools(tools: Any) -> Any:
+    """Expand a leading '~/' in native.tools to the invoking account's home.
+
+    The account database is used instead of $HOME so isolated stages that
+    override HOME still bind the same executables.
+    """
+    if not isinstance(tools, dict):
+        return tools
+    home = pwd.getpwuid(os.getuid()).pw_dir
+    return {
+        name: f"{home}/{path[2:]}" if isinstance(path, str) and path.startswith("~/") else path
+        for name, path in tools.items()
+    }
+
+
 def native_plan(root: Path, *, commit: str | None = None) -> dict[str, Any] | None:
     """Load declarations strictly; legacy projects remain on their existing gate."""
     config = root / ".st-check.toml"
@@ -172,7 +188,7 @@ def native_plan(root: Path, *, commit: str | None = None) -> dict[str, Any] | No
         raise NativeCheckError("native.schema_version must be 1")
     locks = native.get("locks")
     paths = native.get("paths", [])
-    tools = native.get("tools", {})
+    tools = _expand_home_tools(native.get("tools", {}))
     legacy_tools = native.get("legacy_tools", ["ruff", "types", "biome", "tsc", "security"])
     environment = native.get("environment", {})
     environment_inputs = native.get("environment_inputs", [])

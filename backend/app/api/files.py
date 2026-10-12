@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 from pathlib import Path
 from typing import Any
 
@@ -67,8 +68,10 @@ def _tree_path(root_path: str | Path, path: str) -> str:
     """Map navigation above the browse root (e.g. '/' or a parent) onto the root itself."""
     if not path.startswith('/'):
         return path
-    root = Path(root_path).resolve()
-    target = Path(path).resolve()
+    root = Path(os.path.realpath(root_path))
+    # Pure string normalization: this only compares against the root's parents
+    # and never touches the filesystem with the requested path.
+    target = Path(os.path.normpath(path))
     return '' if target != root and target in root.parents else path
 
 

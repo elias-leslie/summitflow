@@ -3,7 +3,9 @@
 from __future__ import annotations
 
 import asyncio
+import os
 import re
+import socket
 import subprocess
 from pathlib import Path
 
@@ -20,7 +22,10 @@ router = APIRouter()
 
 JOB_NAME = "SummitFlowSystemImage"
 REPOSITORY_NAME = "SummitFlowSystemImage"
-REPOSITORY_PATH = "/media/kasadis/Backups/davion-gem/system-images/davion-sidarli-linux"
+# Host-specific values come from the service environment (~/.env.local).
+REPOSITORY_PATH = os.environ.get("SUMMITFLOW_SYSTEM_IMAGE_REPOSITORY_PATH", "").strip()
+# The MOK certificate generated for the Veeam module names this host in its subject.
+MOK_SUBJECT = os.environ.get("SUMMITFLOW_SYSTEM_IMAGE_MOK_SUBJECT", "").strip() or socket.gethostname()
 MOK_CERT_PATH = "/var/lib/shim-signed/mok/MOK.der"
 ACTIVE_SESSION_STATES = {"Running", "Pending"}
 
@@ -91,7 +96,7 @@ def _mok_enrolled() -> bool:
 
 def _mok_enrollment_pending() -> bool:
     proc = _safe_sudo_command(["mokutil", "--list-new"])
-    return bool(proc and Path(MOK_CERT_PATH).exists() and "davion-sidarli" in proc.stdout)
+    return bool(proc and Path(MOK_CERT_PATH).exists() and MOK_SUBJECT in proc.stdout)
 
 
 def _module_loaded() -> bool:

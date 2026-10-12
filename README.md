@@ -16,6 +16,54 @@ CLI.
 - Provides managed browser checks, service rebuilds, database inspection, and
   recovery tools through `st`.
 
+### Guards on irreversible agent actions
+
+A PreToolUse hook shared by Claude Code and Codex
+([`publication_hook.py`](backend/app/services/publication_hook.py)) denies
+direct publication (`git push` and similar) so that releases go through the
+checked `st vcs publish` path, and denies a fixed set of irreversible commands:
+hard resets, `git clean`, recursive deletes of workspace and backup roots, and
+disk, snapshot, backup and Proxmox destruction. The hook uses only the Python
+standard library, so it keeps working when the backend environment is broken.
+[`destructive_path_guard.py`](backend/app/services/destructive_path_guard.py)
+refuses deletes of paths that another live agent session in the same checkout
+still owns. [`command_guard.py`](backend/app/services/command_guard.py) holds
+the shared command classification used by `st` and the tests.
+
+### Backup and disaster recovery
+
+- Encrypted offsite copies: project, configuration and workspace archives are
+  encrypted with `age` before upload to Google Drive, and Restic repositories
+  hold incremental backups locally and offsite.
+- Btrfs snapshots through btrbk for host-level recovery.
+- An append-only Restic copy on a Proxmox host, reached through an SSH key whose
+  forced command can add snapshots but never delete them.
+- A monthly offsite restore test, plus backup windows that keep backup targets
+  read-only outside scheduled jobs.
+- Runbooks: [hard-loss recovery](docs/disaster-recovery.md) and
+  [native host recovery](docs/native-host-recovery.md).
+
+### Host and fleet operations
+
+- [`host-monitor/`](host-monitor/README.md) is an unprivileged Rust collector
+  that samples CPU, memory, disk, network, process and service metrics into
+  SQLite. It is the only writer; `st monitor` and the API read it.
+- [Fleet session control](docs/fleet-session-control.md): `st sessions start`
+  launches and resumes agent sessions in a registered project checkout, with
+  retained request IDs so an uncertain launch is retried instead of duplicated.
+- [Admission control for heavy work](docs/transient-heavy-work.md): test
+  suites, builds, installs and scans queue for a small number of shared slots,
+  and a second slot opens only when memory headroom and pressure allow it.
+
+### Extensions
+
+Projects add their own `st` commands through versioned extensions instead of
+patching SummitFlow. An extension declares its identity, version, namespace
+and supported contract versions in a trusted registry, and runs as a separate
+executable. [`summitflow-st-sdk`](packages/st-sdk) is the shared Python
+library those executables use for project context, HTTP calls and output. See
+[ST extension architecture](docs/st-extension-architecture.md).
+
 ## Current scope
 
 The FastAPI backend, Next.js operator interface, CLI, and workflow workers are
@@ -30,8 +78,9 @@ For a new source installation, follow the [local Docker source-stack guide](docs
 It covers PostgreSQL, Redis, Hatchet, SummitFlow, and the adjacent Agent Hub
 checkout. Native development instructions are in the same guide.
 
-In an already configured managed workspace, open SummitFlow at
-<http://localhost:3001> or inspect available CLI commands:
+`st` is SummitFlow's own command-line tool and ships in this repository
+(`scripts/st`, backed by `backend/cli`). In an already configured workspace,
+open SummitFlow at <http://localhost:3001> or inspect available CLI commands:
 
 ```bash
 st --help

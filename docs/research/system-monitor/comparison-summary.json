@@ -172,9 +172,8 @@
     "rust_binary": "0a2968444dd2060ab48206bfbeb861221d460dc08eeefbcc00a17ac71becea41",
     "rust_manifest": "c1f1776d8ad71f91b363851f39f565f161718d93fb40283f060d71fa386d803f"
   },
-  "raw_local_artifact": "/home/kasadis/.local/share/summitflow/evidence/task-ea952b00a68b4940/collector-profile-corrected",
+  "raw_local_artifact": "~/.local/share/summitflow/evidence/collector-profile-corrected",
   "schema": 1,
-  "task_id": "task-ea952b00a68b4940",
   "toolchain": {
     "go": "go version go1.22.2 linux/amd64",
     "psutil": "7.2.2",

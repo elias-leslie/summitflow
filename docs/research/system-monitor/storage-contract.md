@@ -1,6 +1,6 @@
 # Local monitor store and query contract, version 1
 
-Task `task-ea952b00a68b4940`. The Rust collector is the sole writer. The Python standard-library reader is shared by `st monitor` and the owner-only FastAPI adapter. Neither reader imports the collector or PostgreSQL. The internal SQLite file stays on a local filesystem under an owner-only state directory; the public JSON envelope is versioned independently of SQLite tables.
+The Rust collector is the sole writer. The Python standard-library reader is shared by `st monitor` and the owner-only FastAPI adapter. Neither reader imports the collector or PostgreSQL. The internal SQLite file stays on a local filesystem under an owner-only state directory; the public JSON envelope is versioned independently of SQLite tables.
 
 ## State and identity
 

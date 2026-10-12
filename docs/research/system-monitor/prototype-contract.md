@@ -1,6 +1,6 @@
 # Host collector comparison contract
 
-Task: `task-ea952b00a68b4940`. This contract applies to the Python, Go, and Rust Linux prototypes. The prototypes are measurement fixtures, not production services.
+This contract applies to the Python, Go, and Rust Linux prototypes. The prototypes are measurement fixtures, not production services.
 
 ## Runner and ownership
 

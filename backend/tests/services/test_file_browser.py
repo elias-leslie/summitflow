@@ -75,6 +75,26 @@ def test_resolve_safe_path_blocks_escape(tmp_path) -> None:
         file_browser.resolve_safe_path(tmp_path, '../outside.txt')
 
 
+def test_resolve_safe_path_blocks_sibling_prefix_absolute_and_symlink_escapes(tmp_path) -> None:
+    root = tmp_path / 'root'
+    root.mkdir()
+    sibling = tmp_path / 'root-evil'
+    sibling.mkdir()
+    (root / 'link').symlink_to(sibling)
+
+    for candidate in ('../root-evil/x.txt', str(sibling / 'x.txt'), 'link/x.txt', '/etc/passwd'):
+        with pytest.raises(ValueError):
+            file_browser.resolve_safe_path(root, candidate)
+
+
+def test_resolve_safe_path_allows_root_nested_and_absolute_inside(tmp_path) -> None:
+    (tmp_path / 'sub').mkdir()
+
+    assert file_browser.resolve_safe_path(tmp_path, '') == tmp_path.resolve()
+    assert file_browser.resolve_safe_path(tmp_path, 'sub/../sub') == (tmp_path / 'sub').resolve()
+    assert file_browser.resolve_safe_path(tmp_path, str(tmp_path / 'sub')) == (tmp_path / 'sub').resolve()
+
+
 def test_list_directory_includes_hidden_and_previously_skipped_entries(tmp_path) -> None:
     (tmp_path / '.git').mkdir()
     (tmp_path / '.hidden').mkdir()

@@ -349,6 +349,28 @@ def test_explicit_managed_tool_alias_is_bound_without_ambient_path(native_repo: 
     assert run_native(native_repo, plan)["state"] == "pass"
 
 
+def test_managed_tool_path_may_start_from_account_home(native_repo: Path, tmp_path_factory, monkeypatch) -> None:
+    home = tmp_path_factory.mktemp("account-home")
+    (home / "bin").mkdir()
+    (home / "bin/python").symlink_to(sys.executable)
+    account = Mock(pw_dir=str(home))
+    monkeypatch.setattr("cli.commands.check_native.pwd.getpwuid", lambda _uid: account)
+    monkeypatch.setenv("HOME", "/nonexistent-home")
+    config = native_repo / ".st-check.toml"
+    config.write_text(config.read_text().replace('[[native.stages]]', '[native.tools]\npython="~/bin/python"\n[[native.stages]]'))
+    (native_repo / ".tools/python").unlink()
+    plan = _plan(native_repo)
+    assert plan["tools"]["python"]["path"] == str(home / "bin/python")
+    assert run_native(native_repo, plan)["state"] == "pass"
+
+
+def test_relative_managed_tool_path_fails_closed(native_repo: Path) -> None:
+    config = native_repo / ".st-check.toml"
+    config.write_text(config.read_text().replace('[[native.stages]]', '[native.tools]\npython="bin/python"\n[[native.stages]]'))
+    with pytest.raises(NativeCheckError, match="absolute paths"):
+        _plan(native_repo)
+
+
 def test_stdout_evidence_supports_go_without_shell_redirects(native_repo: Path) -> None:
     config = native_repo / ".st-check.toml"
     config.write_text(config.read_text().replace('format = "json"\npath = ".dev-tools/result.json"', 'format = "go-test-json"\nsource = "stdout"'))

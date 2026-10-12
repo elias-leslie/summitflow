@@ -1,8 +1,9 @@
 # ST extension and ownership migration
 
-Task: task-5c846bb5b1a94750. Owner-approved scope, revised 2026-09-20:
-execute the full ranked migration list. The initial jq proposal and web-only
-stopping point are superseded.
+This document describes how `st` (SummitFlow's command-line front end) moves
+domain behavior out of SummitFlow and into the projects that own it, using
+versioned extensions. Revised 2026-09-20 to cover the full ranked migration
+list below.
 
 ## Core responsibilities and verification scope
 

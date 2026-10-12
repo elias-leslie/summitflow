@@ -1,6 +1,6 @@
 # SummitFlow system monitor: evidence and implementation record
 
-Task `task-ea952b00a68b4940`. Checked on Ubuntu 24.04.5 with TMOG 1.0.0 installed. Raw local screenshots and process profiles are retained under `/home/kasadis/.local/share/summitflow/evidence/task-ea952b00a68b4940/` with owner-only permissions; they contain host details and are not committed. Statements below distinguish inspection, measurement, and planned behavior. The implemented and installed result, live measurements, gaps, and remaining security boundary are recorded in [verification.md](verification.md).
+Checked on Ubuntu 24.04.5 with TMOG 1.0.0 installed. Raw local screenshots and process profiles are retained under `~/.local/share/summitflow/evidence/` with owner-only permissions; they contain host details and are not committed. Statements below distinguish inspection, measurement, and planned behavior. The implemented and installed result, live measurements, gaps, and remaining security boundary are recorded in [verification.md](verification.md).
 
 ## Existing SummitFlow surface before this implementation (inspected)
 

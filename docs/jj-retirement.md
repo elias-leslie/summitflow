@@ -1,8 +1,5 @@
 # Git-only workflow retirement — 2026-10-04
 
-ST task: `task-79a1bc0861ac44f0`. Fydor preservation task:
-`task-9d7dbae0cda145f0`.
-
 Git already serves the live source-control needs. The active Jujutsu command,
 its four CLI libraries and command tests, command registration, tool catalogue
 entry, commit dispatch, pulse/status projection, sync/rebase path, alternative

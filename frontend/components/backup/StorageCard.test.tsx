@@ -21,7 +21,7 @@ function renderStorageCard() {
           created_at: null,
           updated_at: null,
           config: {
-            root_path: '/media/kasadis/Backups/davion-gem',
+            root_path: '/media/owner/Backups',
             path: 'project-backups',
           },
         },
@@ -46,7 +46,7 @@ describe('StorageCard', () => {
     expect(screen.getByText('Storage')).toBeInTheDocument()
     expect(
       screen.getByText(
-        /Local Backup Drive over LOCAL at \/media\/kasadis\/Backups\/davion-gem\/project-backups/,
+        /Local Backup Drive over LOCAL at \/media\/owner\/Backups\/project-backups/,
       ),
     ).toBeInTheDocument()
     expect(toggle).toHaveAttribute('aria-expanded', 'false')

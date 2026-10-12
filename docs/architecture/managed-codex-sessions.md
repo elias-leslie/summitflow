@@ -147,7 +147,7 @@ and native warnings before child ownership remain explicit capture limitations;
 passing case flags do not claim uninterrupted live capture.
 
 ```sh
-st check cleanroom --env CODEX_REAL=/home/kasadis/.local/bin/codex-real -- \
+st check cleanroom --env CODEX_REAL=~/.local/bin/codex-real -- \
   unshare -Urn /srv/workspaces/projects/summitflow/backend/.venv/bin/python \
   scripts/codex-managed-canary.py --project agent-hub \
   --output /tmp/architecture-d-canary.json \

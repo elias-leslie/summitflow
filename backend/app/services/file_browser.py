@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 import shutil
 import subprocess
 from functools import lru_cache
@@ -23,11 +24,18 @@ def _load_explorer_constants() -> tuple[frozenset[str], dict[str, str]]:
 
 
 def resolve_safe_path(root_path: str | Path, relative_path: str) -> Path:
-    """Resolve a relative path inside root_path and block only root escapes."""
-    root = Path(root_path).resolve()
-    target = (root / relative_path).resolve()
-    target.relative_to(root)
-    return target
+    """Resolve a path inside root_path, following symlinks, and reject root escapes.
+
+    The containment check runs on the fully resolved path, so '..' segments,
+    absolute paths and symlinks that point outside the root all raise ValueError.
+    """
+    root = os.path.realpath(root_path)
+    target = os.path.realpath(os.path.join(root, relative_path))
+    root_prefix = root if root.endswith(os.sep) else root + os.sep
+    if target != root and not target.startswith(root_prefix):
+        msg = f'Path escapes browse root: {relative_path}'
+        raise ValueError(msg)
+    return Path(target)
 
 
 def _display_path(path: Path, root: Path, absolute_paths: bool) -> str:

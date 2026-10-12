@@ -1,15 +1,13 @@
 # Local-first implementation record
 
-Task: `task-a6bee0c09e0e4a3c`. Owner: this orchestrator session.
-
-This is the implementation checklist and evidence record for the owner's approved
+This is the implementation checklist and evidence record for a
 workflow change, not a new reusable instruction store. GitHub publication is not
 requested. Existing security controls, histories, unrelated work, and necessary
 live validation must remain protected.
 
 ## Overnight publication, 2026-10-09
 
-Task `task-39bf8708bef14e8f` restores automatic publication without recoupling it
+This work restores automatic publication without recoupling it
 to backups or local completion. Each project has an owner-selected
 `publication_mode` (`st vcs publication --mode nightly|mirror|manual`; default
 manual). The `nightly_publication` schedule runs hourly from 01:00 to 06:00 New
@@ -36,7 +34,7 @@ non-fast-forward and required-check rules remain.
 
 ## Task completion and release readiness, 2026-10-04
 
-Task `task-513682a385f0498e` separates the evidence needed to finish an owned
+This work separates the evidence needed to finish an owned
 task from the evidence needed to release a project. Implementation tasks require
 successful immutable-source task acceptance. That covers the literal owned
 scope and any explicitly declared acceptance stages. A successful full receipt
@@ -69,7 +67,7 @@ under the retained request guard; later work does not need to be accepted again.
 
 ## Local development contract, 2026-10-03
 
-Current implementation task: `task-a11c59594e404791`. This dated section records
+This dated section records
 its rollout; the September evidence below remains historical evidence. Final
 acceptance, live rollout, retained-record transition and blind evaluation are
 still being verified. GitHub publication has not been requested.
@@ -163,7 +161,7 @@ source-bound acceptance and live verification evidence.
 
 ## Final result, 2026-09-23
 
-**Completed locally.** Task `task-a6bee0c09e0e4a3c` and all five subtasks are
+**Completed locally.** The task and all five subtasks are
 persisted as completed. Closeout imported matching acceptance, deployment and
 live evidence, removed its checkpoint, and repeated closeout was a successful
 no-op. No GitHub push, PR, Actions run or publication was performed. No approved
@@ -717,7 +715,7 @@ features. Unverified system/dependency boundaries are listed in the final result
 
 ## Evidence-backed bottlenecks and intended corrections
 
-The representative incident was Agent Hub task `task-976b1c3721244db2`, source
+The representative incident was an Agent Hub task, source
 commit `15977c208`. Its timeline does **not** establish 42 minutes of CI overhead.
 The commit was at 14:11:10 EDT; first PR at 14:11:56, service rebuild completed at
 14:13:19 (26-second job), and initial CI finished about 14:14:54. Human OAuth
@@ -812,7 +810,7 @@ but cannot silently replace existing configured key material.
 - Managed rebuild job `2e0b2c072ace4805ad193d4c507aa722` succeeded in 23.56 seconds.
   Frontend build took 16.90 seconds, migrations 0.86, restart 2.06, health 2.04.
   Build `b94042cce8e64e8a983ffef02aab6547` binds the accepted revision; deployment
-  receipt is `/home/kasadis/.summitflow/services/jobs/2e0b2c072ace4805ad193d4c507aa722.deployment.json`.
+  receipt is `~/.summitflow/services/jobs/2e0b2c072ace4805ad193d4c507aa722.deployment.json`.
   The backend, frontend and required Hatchet worker are active with WorkingDirectory
   inside that immutable release, not the subsequently edited checkout. Actual
   `/health` is healthy. The production build also exercised the patched esbuild
@@ -928,7 +926,7 @@ source-bound closeout evidence. The overall task remains open.
   directory has been deleted. This is an explicit pending retention/authority
   decision, not a silently completed cleanup feature.
 - Live same-owner renewal at 22:12:14 UTC preserved `claimed_at=21:42:03.323722`,
-  owner `davion-sidarli` and `running` state, extending expiry to 22:42:14.461698.
+  owner host and `running` state, extending expiry to 22:42:14.461698.
   This exercised the editable CLI against the prior API without changing another
   task. The renewal/security/receipt-preservation slice passed 140 focused tests
   in 15.14 seconds, targeted Ruff and Python types. API authorization failures

@@ -1,6 +1,6 @@
 # Ownership migration evidence
 
-Parent task: task-5c846bb5b1a94750. This records observed checkpoints from the
+This records observed checkpoints from the
 completed ownership migration.
 
 ## First integration checkpoint (2026-09-20)
@@ -124,7 +124,7 @@ GitHub Actions workflows, so remote CI is not claimed.
 ## Legacy Pulse retirement
 
 The owner authorized removal if the briefing feature was legacy. Investigation
-found its sole engine path `/home/kasadis/.hermes/scripts/pulse_db.py` absent,
+found its sole engine path `~/.hermes/scripts/pulse_db.py` absent,
 with no registered Pulse project, engine in repository history, workspace callers,
 Hermes source reference, system/user service, timer, cron entry or process.
 History showed only the wrapper's initial addition and later usage metadata;
