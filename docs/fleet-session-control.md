@@ -196,9 +196,11 @@ title, fleet event or duplicate session store, and output contains only
 identity/status metadata. Configured owner authentication applies. Owner source
 changes require their normal managed release before live use.
 
-`st aico create REQUEST_ID [PROMPT] --project PROJECT --project-root PATH
---resume-session SESSION_ID [--surface aico|a-term]` forwards directly to the existing
-owner create contract. It retains no prompt or fleet event and supplies no fleet
+`st aico create REQUEST_ID [PROMPT] --tool claude-code|codex --project PROJECT
+--project-root PATH --resume-session SESSION_ID [--surface aico|a-term]` forwards
+directly to the existing owner create contract. `--tool` has no default: callers
+pick the agent on purpose (claude-code for delegated work unless routing assigns
+Codex); each tool runs the model set in its own configuration. It retains no prompt or fleet event and supplies no fleet
 orchestration text. The public ID is TUI-agnostic; only the Codex resume adapter
 is currently implemented, requiring a canonical lowercase UUID.
 The default surface is Aico; A-Term uses its established loopback HTTP route and
