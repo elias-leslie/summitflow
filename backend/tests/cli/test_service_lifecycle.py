@@ -461,123 +461,44 @@ def test_configured_migrations_require_alembic(project):
     assert service_ops.run_migrations(project) == 1
 
 
-def test_migrations_use_host_project_database_env_from_accepted_source(
-    project, monkeypatch, tmp_path
-):
-    accepted_root = tmp_path / "release" / "source"
+@pytest.mark.parametrize("project_id, wanted, other, files", [
+    # Host .env.local beats host .env, the accepted source's .env and the shell.
+    ("portfolio-ai", "PORTFOLIO_DB_URL", "JOBINATOR_DB_URL", {
+        "source/.env": "PORTFOLIO_DB_URL=postgresql://source-stale\n",
+        "host/.env": "PORTFOLIO_DB_URL=postgresql://host-base\n",
+        "host/.env.local": "PORTFOLIO_DB_URL=postgresql://approved\n"}),
+    ("neri", "NERI_DB_URL", "PORTFOLIO_DB_URL", {"home/.env.local": "NERI_DB_URL=postgresql://approved\n"}),
+    ("learn-o-tron", "LEARN_DB_URL", "NERI_DB_URL", {"host/backend/.env": "LEARN_DB_URL=postgresql://approved\n"}),
+    ("jobinator-4000", "JOBINATOR_DB_URL", "NERI_DB_URL", {"home/.env.local": "JOBINATOR_DB_URL=postgresql://approved\n"}),
+])
+def test_migrations_get_only_the_approved_project_database_env(project, monkeypatch, tmp_path, project_id, wanted,
+                                                              other, files):
+    accepted_root = tmp_path / "source"
     backend_dir = accepted_root / "backend"
     (backend_dir / ".venv" / "bin").mkdir(parents=True)
     (backend_dir / "alembic.ini").touch()
     (backend_dir / ".venv" / "bin" / "alembic").touch()
-    (accepted_root / ".env").write_text("PORTFOLIO_DB_URL=postgresql://source-stale\n")
-    host_root = tmp_path / "host-checkout"
-    host_root.mkdir()
-    (host_root / ".env").write_text("PORTFOLIO_DB_URL=postgresql://host-base\n")
-    (host_root / ".env.local").write_text(
-        "PORTFOLIO_DB_URL=postgresql://host-local\n"
-        "JOBINATOR_DB_URL=postgresql://jobinator-host\n"
-        "INTERNAL_SERVICE_SECRET=host-secret-not-for-migrations\n"
-    )
-    deployed = replace(
-        project,
-        project_id="portfolio-ai",
-        root=accepted_root,
-        backend_dir=backend_dir,
-        frontend_dir=accepted_root / "frontend",
-        host_config_root=host_root,
-    )
-    monkeypatch.setenv("PORTFOLIO_DB_URL", "postgresql://stale-shell")
-    monkeypatch.setenv("DATABASE_URL", "postgresql://other-project")
-    monkeypatch.setenv("JOBINATOR_DB_URL", "postgresql://jobinator-stale-shell")
+    for name, content in files.items():
+        path = tmp_path / name
+        path.parent.mkdir(parents=True, exist_ok=True)
+        extra = f"{other}=postgresql://other-project\nINTERNAL_SERVICE_SECRET=not-for-migrations\n"
+        path.write_text(content + ("" if "stale" in content or "base" in content else extra))
+    (tmp_path / "home").mkdir(exist_ok=True)
+    monkeypatch.setattr(service_ops.Path, "home", lambda: tmp_path / "home")
+    if project_id == "portfolio-ai":
+        monkeypatch.setenv(wanted, "postgresql://stale-shell")
+        monkeypatch.setenv("DATABASE_URL", "postgresql://other-project")
     monkeypatch.delenv("INTERNAL_SERVICE_SECRET", raising=False)
     run = Mock(return_value=0)
     monkeypatch.setattr(service_ops, "run", run)
+    deployed = replace(project, project_id=project_id, root=accepted_root, backend_dir=backend_dir,
+                       frontend_dir=accepted_root / "frontend", host_config_root=tmp_path / "host")
 
     assert service_ops.run_migrations(deployed) == 0
     migration_env = run.call_args.kwargs["env"]
-    assert migration_env["PORTFOLIO_DB_URL"] == "postgresql://host-local"
-    assert "JOBINATOR_DB_URL" not in migration_env
-    assert "DATABASE_URL" not in migration_env
-    assert "INTERNAL_SERVICE_SECRET" not in migration_env
+    assert migration_env[wanted] == "postgresql://approved"
+    assert not {other, "DATABASE_URL", "INTERNAL_SERVICE_SECRET"} & migration_env.keys()
     assert run.call_args.kwargs["cwd"] == backend_dir
-
-
-def test_neri_migrations_use_approved_operator_db_env(project, monkeypatch, tmp_path):
-    backend_dir = tmp_path / "release" / "backend"
-    (backend_dir / ".venv" / "bin").mkdir(parents=True)
-    (backend_dir / "alembic.ini").touch()
-    (backend_dir / ".venv" / "bin" / "alembic").touch()
-    operator_home = tmp_path / "operator"
-    operator_home.mkdir()
-    (operator_home / ".env.local").write_text(
-        "NERI_DB_URL=postgresql://approved-neri\n"
-        "PORTFOLIO_DB_URL=postgresql://other-project\n"
-        "INTERNAL_SERVICE_SECRET=not-for-migrations\n"
-    )
-    monkeypatch.setattr(service_ops.Path, "home", lambda: operator_home)
-    run = Mock(return_value=0)
-    monkeypatch.setattr(service_ops, "run", run)
-    deployed = replace(project, project_id="neri", backend_dir=backend_dir)
-
-    assert service_ops.run_migrations(deployed) == 0
-    migration_env = run.call_args.kwargs["env"]
-    assert migration_env["NERI_DB_URL"] == "postgresql://approved-neri"
-    assert "PORTFOLIO_DB_URL" not in migration_env
-    assert "INTERNAL_SERVICE_SECRET" not in migration_env
-
-
-def test_learn_migrations_use_host_backend_database_env(project, monkeypatch, tmp_path):
-    accepted_root = tmp_path / "release" / "source"
-    backend_dir = accepted_root / "backend"
-    (backend_dir / ".venv" / "bin").mkdir(parents=True)
-    (backend_dir / "alembic.ini").touch()
-    (backend_dir / ".venv" / "bin" / "alembic").touch()
-    host_root = tmp_path / "host-checkout"
-    (host_root / "backend").mkdir(parents=True)
-    (host_root / "backend" / ".env").write_text(
-        "LEARN_DB_URL=postgresql://approved-learn\n"
-        "NERI_DB_URL=postgresql://other-project\n"
-        "INTERNAL_SERVICE_SECRET=not-for-migrations\n"
-    )
-    run = Mock(return_value=0)
-    monkeypatch.setattr(service_ops, "run", run)
-    deployed = replace(
-        project,
-        project_id="learn-o-tron",
-        root=accepted_root,
-        backend_dir=backend_dir,
-        host_config_root=host_root,
-    )
-
-    assert service_ops.run_migrations(deployed) == 0
-    migration_env = run.call_args.kwargs["env"]
-    assert migration_env["LEARN_DB_URL"] == "postgresql://approved-learn"
-    assert "NERI_DB_URL" not in migration_env
-    assert "INTERNAL_SERVICE_SECRET" not in migration_env
-
-
-def test_jobinator_migrations_use_approved_operator_db_env(project, monkeypatch, tmp_path):
-    backend_dir = tmp_path / "release" / "backend"
-    (backend_dir / ".venv" / "bin").mkdir(parents=True)
-    (backend_dir / "alembic.ini").touch()
-    (backend_dir / ".venv" / "bin" / "alembic").touch()
-    operator_home = tmp_path / "operator"
-    operator_home.mkdir()
-    (operator_home / ".env.local").write_text(
-        "JOBINATOR_DB_URL=postgresql://approved-jobinator\n"
-        "NERI_DB_URL=postgresql://other-project\n"
-        "INTERNAL_SERVICE_SECRET=not-for-migrations\n"
-    )
-    monkeypatch.setattr(service_ops.Path, "home", lambda: operator_home)
-    run = Mock(return_value=0)
-    monkeypatch.setattr(service_ops, "run", run)
-    deployed = replace(project, project_id="jobinator-4000", backend_dir=backend_dir)
-
-    assert service_ops.run_migrations(deployed) == 0
-    migration_env = run.call_args.kwargs["env"]
-    assert migration_env["JOBINATOR_DB_URL"] == "postgresql://approved-jobinator"
-    assert "NERI_DB_URL" not in migration_env
-    assert "INTERNAL_SERVICE_SECRET" not in migration_env
 
 
 def test_seed_export_failure_propagates(project, monkeypatch):

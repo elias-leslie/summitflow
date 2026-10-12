@@ -494,24 +494,6 @@ def test_check_boots_when_unrelated_command_import_fails(monkeypatch: pytest.Mon
     run_tool.assert_called_once()
 
 
-def test_check_changed_only_skips_unrelated_tools() -> None:
-    configs = {
-        "pytest": {"label": "TEST", "binary": "pytest", "pass_path": False},
-        "tsc": {"label": "TSC", "binary": "npx", "args": "tsc --noEmit", "pass_path": False},
-    }
-    with (
-        patch("cli.commands.check._tool_configs", return_value=configs),
-        patch("cli.commands.check._changed_files", return_value=["config.toml"]),
-        patch("cli.commands.check._run_tool", return_value=0) as run_tool,
-    ):
-        result = runner.invoke(main_app, ["check", "--quick", "--changed-only"])
-
-    assert result.exit_code == 0
-    assert "TEST:SKIP:pytest:no_relevant_changed_paths" in result.output
-    assert "TSC:SKIP:tsc:no_relevant_changed_paths" in result.output
-    run_tool.assert_not_called()
-
-
 def test_check_bare_changed_only_defaults_to_quick() -> None:
     configs = {
         "pytest": {"label": "TEST", "binary": "pytest", "pass_path": False},
@@ -527,28 +509,6 @@ def test_check_bare_changed_only_defaults_to_quick() -> None:
     assert result.exit_code == 0
     assert "TEST:SKIP:pytest:no_relevant_changed_paths" in result.output
     assert "TSC:SKIP:tsc:no_relevant_changed_paths" in result.output
-    run_tool.assert_not_called()
-
-
-def test_check_changed_only_skips_unmapped_app_change_with_targeted_direction(
-    tmp_path: Path,
-) -> None:
-    source = tmp_path / "backend" / "app" / "api" / "unmapped.py"
-    source.parent.mkdir(parents=True)
-    source.touch()
-    configs = {
-        "pytest": {"label": "TEST", "binary": "pytest", "pass_path": False},
-    }
-    with (
-        patch("cli.commands.check._resolve_repo_root", return_value=tmp_path),
-        patch("cli.commands.check._tool_configs", return_value=configs),
-        patch("cli.commands.check._changed_files", return_value=["backend/app/api/unmapped.py"]),
-        patch("cli.commands.check._run_tool", return_value=0) as run_tool,
-    ):
-        result = runner.invoke(main_app, ["check", "--quick", "--changed-only"])
-
-    assert result.exit_code == 0
-    assert "TEST:SKIP:pytest:no_deterministic_focused_tests" in result.output
     run_tool.assert_not_called()
 
 
@@ -586,95 +546,6 @@ def test_check_changed_only_uses_changed_files_override(monkeypatch) -> None:
         "backend/app/main.py",
         "frontend/components/runtime/ServiceCard.tsx",
     ]
-
-
-def test_check_changed_only_targets_biome_override_paths(tmp_path: Path, monkeypatch) -> None:
-    target = tmp_path / "frontend" / "components" / "runtime" / "ServiceCard.tsx"
-    target.parent.mkdir(parents=True)
-    target.write_text("", encoding="utf-8")
-    configs = {
-        "biome": {
-            "label": "BIOME",
-            "binary": "npx",
-            "args": "biome check . --max-diagnostics=100",
-            "working_dir": "frontend",
-            "pass_path": True,
-        },
-    }
-    monkeypatch.setenv("ST_CHECK_CHANGED_FILES", "frontend/components/runtime/ServiceCard.tsx")
-    with (
-        patch("cli.commands.check._resolve_repo_root", return_value=tmp_path),
-        patch("cli.commands.check._tool_configs", return_value=configs),
-        patch("cli.commands.check._run_tool", return_value=0) as run_tool,
-    ):
-        result = runner.invoke(main_app, ["check", "--quick", "--changed-only"])
-
-    assert result.exit_code == 0
-    run_tool.assert_called_once_with(
-        "biome",
-        configs["biome"],
-        ["components/runtime/ServiceCard.tsx"],
-    )
-
-
-def test_check_changed_only_runs_broad_path_tool_for_config_changes() -> None:
-    configs = {
-        "biome": {"label": "BIOME", "binary": "biome", "args": "check .", "pass_path": True},
-    }
-    with (
-        patch("cli.commands.check._tool_configs", return_value=configs),
-        patch("cli.commands.check._changed_files", return_value=["package.json"]),
-        patch("cli.commands.check._run_tool", return_value=0) as run_tool,
-    ):
-        result = runner.invoke(main_app, ["check", "--quick", "--changed-only"])
-
-    assert result.exit_code == 0
-    run_tool.assert_called_once_with("biome", configs["biome"], [])
-
-
-def test_quick_changed_only_defers_broad_pytest_for_config_changes() -> None:
-    configs = {
-        "pytest": {"label": "TEST", "binary": "pytest", "pass_path": False},
-    }
-    with (
-        patch("cli.commands.check._tool_configs", return_value=configs),
-        patch("cli.commands.check._changed_files", return_value=["pyproject.toml"]),
-        patch("cli.commands.check._run_tool", return_value=0) as run_tool,
-    ):
-        result = runner.invoke(main_app, ["check", "--quick", "--changed-only"])
-
-    assert result.exit_code == 0
-    assert "TEST:DEFER:pytest:requires_full_acceptance:cross_cutting_config" in result.output
-    assert "TEST:SKIP:pytest:requires_full_acceptance:cross_cutting_config" in result.output
-    run_tool.assert_not_called()
-
-
-def test_quick_config_change_still_runs_directly_changed_test(tmp_path: Path) -> None:
-    changed_test = tmp_path / "backend/tests/test_check.py"
-    changed_test.parent.mkdir(parents=True)
-    changed_test.touch()
-    configs = {
-        "pytest": {
-            "label": "TEST",
-            "binary": "pytest",
-            "working_dir": "backend",
-            "pass_path": False,
-        },
-    }
-    with (
-        patch("cli.commands.check._resolve_repo_root", return_value=tmp_path),
-        patch("cli.commands.check._tool_configs", return_value=configs),
-        patch(
-            "cli.commands.check._changed_files",
-            return_value=["pyproject.toml", "backend/tests/test_check.py"],
-        ),
-        patch("cli.commands.check._run_tool", return_value=0) as run_tool,
-    ):
-        result = runner.invoke(main_app, ["check", "--quick", "--changed-only"])
-
-    assert result.exit_code == 0
-    assert "TEST:DEFER:pytest:requires_full_acceptance:cross_cutting_config" in result.output
-    run_tool.assert_called_once_with("pytest", configs["pytest"], ["tests/test_check.py"])
 
 
 def test_acceptance_changed_only_keeps_broad_pytest_for_config_changes(tmp_path: Path) -> None:

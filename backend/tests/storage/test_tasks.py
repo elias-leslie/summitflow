@@ -200,22 +200,28 @@ class TestExecutionModeDefaults:
 class TestUpdateTaskStatus:
     """Tests for update_task_status function."""
 
-    def test_status_pending_to_running(self, test_task: dict[str, Any]) -> None:
-        """Test transition from pending to running sets started_at."""
-        result = task_store.update_task_status(test_task["id"], "running")
+    @pytest.mark.parametrize("path, target, completed", [
+        ([], "running", False),
+        (["running"], "completed", True),
+        (["running", "failed"], "running", False),  # retry
+        (["paused"], "pending", None),  # resume
+        (["running", "failed"], "cancelled", True),
+        (["running", "failed"], "completed", True),  # merged recovery
+        (["running", "completed"], "cancelled", True),
+        (["cancelled"], "pending", None),  # reopen
+    ])
+    def test_status_transition(self, test_task: dict[str, Any], path: list[str], target: str,
+                               completed: bool | None) -> None:
+        for status in path:
+            task_store.update_task_status(test_task["id"], status)
+        result = task_store.update_task_status(test_task["id"], target)
 
         assert result is not None
-        assert result["status"] == "running"
-        assert result["started_at"] is not None
-
-    def test_status_running_to_completed(self, test_task: dict[str, Any]) -> None:
-        """Test transition from running to completed sets completed_at."""
-        task_store.update_task_status(test_task["id"], "running")
-        result = task_store.update_task_status(test_task["id"], "completed")
-
-        assert result is not None
-        assert result["status"] == "completed"
-        assert result["completed_at"] is not None
+        assert result["status"] == target
+        if target == "running":
+            assert result["started_at"] is not None
+        if completed is not None:
+            assert (result["completed_at"] is not None) is completed
 
     def test_status_running_to_failed_with_error(self, test_task: dict[str, Any]) -> None:
         """Test transition to failed with error message."""
@@ -242,16 +248,6 @@ class TestUpdateTaskStatus:
         assert result is not None
         assert result["status"] == "completed"
         assert result["completed_at"] is not None
-
-    def test_status_failed_to_running_retries_task(self, test_task: dict[str, Any]) -> None:
-        """Test transition from failed to running (retry a failed task)."""
-        task_store.update_task_status(test_task["id"], "running")
-        task_store.update_task_status(test_task["id"], "failed")
-        result = task_store.update_task_status(test_task["id"], "running")
-
-        assert result is not None
-        assert result["status"] == "running"
-        assert result["completed_at"] is None
 
     def test_status_running_to_paused_releases_claim(self, test_task: dict[str, Any]) -> None:
         """Pausing should table active work and release the worker lock."""
@@ -448,57 +444,6 @@ class TestUpdateTaskStatus:
 
         assert task_store.count_running_tasks(project_id) == 1
         assert task_store.count_running_tasks(project_id, exclude_task_id=test_task["id"]) == 0
-
-    def test_status_paused_to_pending_resumes_task(self, test_task: dict[str, Any]) -> None:
-        """Paused tasks should become claimable again through pending."""
-        task_store.update_task_status(test_task["id"], "paused")
-
-        result = task_store.update_task_status(test_task["id"], "pending")
-
-        assert result is not None
-        assert result["status"] == "pending"
-
-    def test_status_failed_to_cancelled_allowed(self, test_task: dict[str, Any]) -> None:
-        """Failed tasks should be abandonable without lying about the final state."""
-        task_store.update_task_status(test_task["id"], "running")
-        task_store.update_task_status(test_task["id"], "failed")
-
-        result = task_store.update_task_status(test_task["id"], "cancelled")
-
-        assert result is not None
-        assert result["status"] == "cancelled"
-        assert result["completed_at"] is not None
-
-    def test_status_failed_to_completed_allowed(self, test_task: dict[str, Any]) -> None:
-        """Merged recovery should be able to finalize a previously failed task."""
-        task_store.update_task_status(test_task["id"], "running")
-        task_store.update_task_status(test_task["id"], "failed")
-
-        result = task_store.update_task_status(test_task["id"], "completed")
-
-        assert result is not None
-        assert result["status"] == "completed"
-        assert result["completed_at"] is not None
-
-    def test_status_completed_to_cancelled_allowed(self, test_task: dict[str, Any]) -> None:
-        """Discarding stale completed work should leave the task truthful."""
-        task_store.update_task_status(test_task["id"], "running")
-        task_store.update_task_status(test_task["id"], "completed")
-
-        result = task_store.update_task_status(test_task["id"], "cancelled")
-
-        assert result is not None
-        assert result["status"] == "cancelled"
-        assert result["completed_at"] is not None
-
-    def test_status_cancelled_to_pending_reopens_task(self, test_task: dict[str, Any]) -> None:
-        """Cancelled tasks should be reopenable."""
-        task_store.update_task_status(test_task["id"], "cancelled")
-
-        result = task_store.update_task_status(test_task["id"], "pending")
-
-        assert result is not None
-        assert result["status"] == "pending"
 
     def test_status_completed_to_pending_clears_completed_at(
         self, test_task: dict[str, Any]
