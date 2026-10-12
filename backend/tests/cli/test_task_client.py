@@ -89,7 +89,7 @@ def test_st_client_names_its_subcommand_as_request_source(monkeypatch) -> None:
     from cli import client as client_module
 
     monkeypatch.setattr(client_module.sys, "argv", ["st", "commit", "-m", "owner@example.com"])
-    st = client_module.STClient(base_url="http://127.0.0.1:1", project_id="summitflow")
+    st = client_module.STClient(base_url="http://127.0.0.1:1", project_id="summitflow", require_project=False)
     try:
         assert st._client.headers["X-Request-Source"] == "st-cli/commit"
     finally:
