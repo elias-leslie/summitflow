@@ -45,6 +45,11 @@ class HostRetentionPolicy:
     legacy_report_max_age_hours: int = 3 * 24
     veeam_snapshot_max_age_hours: int = 6
     scratch_review_max_age_hours: int = 7 * 24
+    # Per-project `st check` evidence (see app.tasks._retention_check_artifacts).
+    check_details_max_age_hours: int = 7 * 24
+    check_stages_max_age_hours: int = 14 * 24
+    check_observations_max_age_hours: int = 3 * 24
+    check_observations_keep: int = 20
 
     @classmethod
     def from_env(cls) -> HostRetentionPolicy:

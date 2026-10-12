@@ -136,7 +136,7 @@ def test_cleanup_host_artifacts_prunes_rebuildable_data_and_reports_review_candi
 
     mocker.patch("app.tasks.host_retention._run_command", side_effect=_run_command)
 
-    result = cast(dict[str, Any], cleanup_host_artifacts(home_dir=home_dir, tmp_dir=tmp_dir))
+    result = cast(dict[str, Any], cleanup_host_artifacts(home_dir=home_dir, tmp_dir=tmp_dir, project_roots=[]))
 
     assert result["status"] == "success"
     assert result["pressure_mode"] is False
@@ -266,7 +266,7 @@ def test_cleanup_host_artifacts_prunes_stale_tmp_backups_and_hermes_checkpoints(
         return_value=type("Proc", (), {"returncode": 1, "stdout": "", "stderr": "fixture unavailable"})(),
     )
 
-    result = cast(dict[str, Any], cleanup_host_artifacts(home_dir=home_dir, tmp_dir=tmp_dir))
+    result = cast(dict[str, Any], cleanup_host_artifacts(home_dir=home_dir, tmp_dir=tmp_dir, project_roots=[]))
 
     assert result["status"] == "success"
     assert result["temp_backups"]["deleted_paths"] == 2

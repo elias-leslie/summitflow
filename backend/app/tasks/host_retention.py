@@ -9,6 +9,7 @@ from pathlib import Path
 from typing import Any, TypedDict
 
 from ..logging_config import get_logger
+from ._retention_check_artifacts import prune_check_artifacts
 from ._retention_docker import (
     CacheResult,
     ImageResult,
@@ -136,12 +137,43 @@ def _run_docker_cleanup(
     )
 
 
+def _prune_project_check_artifacts(
+    roots: list[Path] | None, policy: HostRetentionPolicy, now: datetime,
+) -> dict[str, object]:
+    deleted = reclaimed = 0
+    try:
+        if roots is None:
+            from ..storage.projects import list_projects
+
+            roots = [Path(str(row["root_path"])) for row in list_projects() if row.get("root_path")]
+        for root in roots:
+            if not root.is_dir():
+                continue
+            try:
+                result = prune_check_artifacts(
+                    root, now=now, details_max_age_hours=policy.check_details_max_age_hours,
+                    stages_max_age_hours=policy.check_stages_max_age_hours,
+                    observations_max_age_hours=policy.check_observations_max_age_hours,
+                    observations_keep=policy.check_observations_keep,
+                )
+            except OSError as exc:
+                logger.warning("check_artifact_retention_failed", root=str(root), error=str(exc))
+                continue
+            deleted += result["deleted_paths"]
+            reclaimed += result["bytes_reclaimed"]
+    except Exception as exc:  # one step must not abort host retention
+        logger.warning("check_artifact_retention_failed", error=str(exc))
+        return {"status": "error", "error": str(exc), "deleted_paths": deleted, "bytes_reclaimed": reclaimed}
+    return {"status": "success", "deleted_paths": deleted, "bytes_reclaimed": reclaimed}
+
+
 def cleanup_host_artifacts(
     *,
     home_dir: Path | None = None,
     tmp_dir: Path | None = None,
     now: datetime | None = None,
     policy: HostRetentionPolicy | None = None,
+    project_roots: list[Path] | None = None,
 ) -> dict[str, object]:
     """Prune rebuildable host artifacts and report larger review candidates."""
     effective_policy = policy or HostRetentionPolicy.from_env()
@@ -195,6 +227,7 @@ def cleanup_host_artifacts(
     except Exception as exc:  # one step must not abort host retention
         logger.warning("scratch_retention_failed", error=str(exc))
         scratch_result = {"status": "error", "error": str(exc)}
+    check_artifacts = _prune_project_check_artifacts(project_roots, effective_policy, effective_now)
     docker = _run_docker_cleanup(policy=effective_policy, pressure_mode=pressure_mode, now=effective_now)
     veeam_snapshots = cleanup_stale_veeam_snapshots(policy=effective_policy, now=effective_now)
 
@@ -208,7 +241,7 @@ def cleanup_host_artifacts(
 
     errors = [
         entry["error"]
-        for entry in (docker["builder_cache"], docker["images"], docker["anonymous_volumes"], scratch_result)
+        for entry in (docker["builder_cache"], docker["images"], docker["anonymous_volumes"], scratch_result, check_artifacts)
         if isinstance(entry, dict) and entry.get("status") == "error" and entry.get("error")
     ]
     status = "partial" if errors else "success"
@@ -230,6 +263,7 @@ def cleanup_host_artifacts(
         },
         "temp_backups": tmp_backups_result,
         "scratch": scratch_result,
+        "check_artifacts": check_artifacts,
         "hermes_checkpoints": hermes_checkpoints_result,
         "docker_builder_cache": docker["builder_cache"],
         "docker_images": docker["images"],
