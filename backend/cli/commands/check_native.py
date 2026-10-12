@@ -424,6 +424,13 @@ def native_plan(root: Path, *, commit: str | None = None) -> dict[str, Any] | No
                         re.compile(pattern)
                     except re.error as exc:
                         raise NativeCheckError(f"{stage_id}: invalid {key}") from exc
+        for key in ("inputs", "exclude"):
+            patterns = stage.get(key, [])
+            if (not isinstance(patterns, list) or any(not isinstance(item, str) or not item or item.startswith("/")
+                                                       or ".." in Path(item).parts for item in patterns)):
+                raise NativeCheckError(f"{stage_id}: {key} must list project-relative path globs")
+        if stage.get("exclude") and not stage.get("inputs"):
+            raise NativeCheckError(f"{stage_id}: exclude narrows declared inputs; declare inputs first")
         ids.add(stage_id)
         normalized.append({**stage, "id": stage_id, "argv": argv, "cwd": cwd, "kind": kind,
                            "coverage": coverage, "required": required, "applicable": applicable,
@@ -589,6 +596,7 @@ def _run_native(root: Path, plan: dict[str, Any], *, aliases: Path, scratch: Pat
         before = None  # Fresh observations outside Git never seed source reuse.
     cache = _stage_cache(root, plan, before) if stage_id is None and full_gate else None
     artifact_store = cache or _artifact_storage(root)
+    # Stages whose fresh outcome (pass, or a deterministic failure) is cached.
     passed_stages: list[tuple[dict[str, Any], dict[str, Any]]] = []
     for stage in stages:
         started = time.monotonic()
@@ -601,6 +609,8 @@ def _run_native(root: Path, plan: dict[str, Any], *, aliases: Path, scratch: Pat
                              "output_bytes": 0, "detail": "", "reused": False})
             continue
         cached = _reuse_stage(cache, stage) if reuse else None
+        if cached is None and reuse:
+            cached = _prior_failure(cache, stage)
         if cached is not None:
             outcomes.append({**cached, "reused": True, "reuse_lookup_ms": round((time.monotonic() - started) * 1000, 3)})
             continue
@@ -667,7 +677,8 @@ def _run_native(root: Path, plan: dict[str, Any], *, aliases: Path, scratch: Pat
             outcome["artifacts"].append({"path": "output", "state": "present", "size": len(output.encode()), "sha256": outcome["output_sha256"]})
         if artifact_store is not None:
             _retain_artifacts(root, artifact_store, outcome, stdout_output, output)
-        if cache is not None and outcome["state"] == "pass" and stage["coverage"] == "full":
+        if cache is not None and stage["coverage"] == "full" and (
+                outcome["state"] == "pass" or _deterministic_failure(outcome)):
             passed_stages.append((stage, outcome))
         outcomes.append(outcome)
     full = full_gate and stage_id is None and all(stage["coverage"] == "full" for stage in stages if stage["required"])
@@ -709,8 +720,71 @@ def _native_source(root: Path) -> dict[str, Any]:
             "materialization": working_source_materialization_identity(root)}
 
 
+def _glob_pattern(pattern: str) -> re.Pattern[str]:
+    """Path glob: ``**`` spans directories, ``*`` and ``?`` stay within one."""
+    pattern = pattern.rstrip("/")
+    expression = ""
+    index = 0
+    while index < len(pattern):
+        if pattern.startswith("**/", index):
+            expression += "(?:.*/)?"
+            index += 3
+        elif pattern.startswith("**", index):
+            expression += ".*"
+            index += 2
+        elif pattern[index] == "*":
+            expression += "[^/]*"
+            index += 1
+        elif pattern[index] == "?":
+            expression += "[^/]"
+            index += 1
+        else:
+            expression += re.escape(pattern[index])
+            index += 1
+    # A literal directory also selects everything beneath it.
+    return re.compile(expression + "(?:/.*)?" if not pattern.endswith("*") else expression)
+
+
+def _selected(path: str, patterns: list[str]) -> bool:
+    return any(_glob_pattern(pattern).fullmatch(path) for pattern in patterns)
+
+
+def stage_inputs(stage: dict[str, Any], tree: dict[str, tuple[str, str]]) -> list[str]:
+    """Tracked paths a stage declares as its inputs; empty means the whole tree."""
+    inputs, exclude = stage.get("inputs") or [], stage.get("exclude") or []
+    return sorted(path for path in tree if _selected(path, inputs) and not _selected(path, exclude))
+
+
+def _stage_key(root: Path, cache: dict[str, Any], plan: dict[str, Any], stage: dict[str, Any]) -> str:
+    """Whole-tree stages bind the tree; declared stages bind only their inputs.
+
+    A declared key covers the stage declaration and tools, the Git OIDs, modes
+    and checkout bytes of its input paths, locks among its inputs, prepared
+    environments it runs in, local gate configuration and the gate version.
+    """
+    if not stage.get("inputs"):
+        return cache["key"]
+    from cli.lib.acceptance import _materialization_identity, _materialized_source_entries
+
+    tree = cache["tree"]
+    selected = stage_inputs(stage, tree)
+    executable = stage["executable"]
+    cwd = stage["cwd"].rstrip("/")
+    environments = [item for item in plan["prepared_environment"]
+                    if cwd in {".", ""} or item["path"] == cwd or item["path"].startswith(cwd + "/")
+                    or executable.startswith(item["path"].rstrip("/") + "/")]
+    return _digest({
+        "schema_version": 2, "stage": stage, "implementation": cache["implementation"],
+        "inputs": {path: tree[path] for path in selected},
+        "materialization": _materialization_identity(_materialized_source_entries(root, selected)),
+        "locks": [lock for lock in plan["locks"] if _selected(lock["path"], stage["inputs"])],
+        "prepared_environment": environments, "tools": plan["tools"], "paths": plan["paths"],
+        "environment": plan["environment"], "local_inputs": cache["source"]["local_inputs"],
+    })
+
+
 def _stage_cache(root: Path, plan: dict[str, Any], source: dict[str, Any] | None) -> dict[str, Any] | None:
-    from cli.lib.acceptance import AcceptanceError, _git_common_dir
+    from cli.lib.acceptance import AcceptanceError, _git_common_dir, _source_tree_entries
 
     try:
         if source is None or not source["clean"]:
@@ -718,8 +792,13 @@ def _stage_cache(root: Path, plan: dict[str, Any], source: dict[str, Any] | None
         directory = _git_common_dir(root) / "st" / "native-stages"
         directory.mkdir(parents=True, exist_ok=True)
         implementation = _native_implementation()
-        return {"directory": directory, "source": source, "plan": _digest(plan), "implementation": implementation,
-                "key": _digest({"source": source, "plan": plan, "implementation": implementation})}
+        # The tree, not the commit: a commit with an identical tree reuses.
+        whole_tree = {key: value for key, value in source.items() if key != "commit"}
+        cache = {"directory": directory, "source": source, "plan": _digest(plan), "implementation": implementation,
+                 "key": _digest({"source": whole_tree, "plan": plan, "implementation": implementation}),
+                 "tree": _source_tree_entries(root, "HEAD") if any(stage.get("inputs") for stage in plan["stages"]) else {}}
+        cache["stage_keys"] = {stage["id"]: _stage_key(root, cache, plan, stage) for stage in plan["stages"]}
+        return cache
     except (AcceptanceError, OSError):
         # A non-Git/dirty project can still run fresh checks; only exact clean
         # source proofs are reusable. Cache failure must never skip a check.
@@ -748,12 +827,13 @@ def _reuse_stage(cache: dict[str, Any] | None, stage: dict[str, Any]) -> dict[st
     # Source drift during the run fails every passed or reused stage at the end.
     if cache is None or stage["coverage"] != "full":
         return None
-    path = cache["directory"] / f"{cache['key']}-{stage['id']}.json"
+    key = cache["stage_keys"][stage["id"]]
+    path = cache["directory"] / f"{key}-{stage['id']}.json"
     try:
         receipt = json.loads(path.read_text(encoding="utf-8"))
         digest = receipt.pop("digest")
         outcome = receipt["outcome"]
-        if digest != _digest(receipt) or receipt["key"] != cache["key"] or receipt["schema_version"] != 1:
+        if digest != _digest(receipt) or receipt["key"] != key or receipt["schema_version"] != 1:
             return None
         if outcome["state"] != "pass" or outcome["coverage"] != "full" or outcome["returncode"] != 0 or outcome["command"] != stage["argv"] or any(outcome[key] != stage[key] for key in ("id", "cwd", "required", "tool")):
             return None
@@ -786,7 +866,39 @@ def _retain_artifacts(root: Path, cache: dict[str, Any], outcome: dict[str, Any]
         return
 
 
-def _save_stages(root: Path, cache: dict[str, Any], passed: list[tuple[dict[str, Any], dict[str, Any]]]) -> None:
+# A stage failing identically this many times on one key is reported from the
+# record instead of rerun; ``--no-reuse`` (or ST_NATIVE_NO_REUSE=1) retries.
+_FAILURE_REPEATS = 2
+
+
+def _deterministic_failure(outcome: dict[str, Any]) -> bool:
+    """A completed run whose own evidence failed; never timeouts or unavailability."""
+    return (outcome["state"] == "fail" and type(outcome.get("returncode")) is int
+            and outcome["returncode"] > 0 and outcome["returncode"] != 124 and outcome.get("reason") != "stage_timeout")
+
+
+def _failure_path(cache: dict[str, Any], stage: dict[str, Any]) -> Path:
+    return cache["directory"] / f"{cache['stage_keys'][stage['id']]}-{stage['id']}.failure.json"
+
+
+def _prior_failure(cache: dict[str, Any] | None, stage: dict[str, Any]) -> dict[str, Any] | None:
+    if cache is None or stage["coverage"] != "full":
+        return None
+    try:
+        record = json.loads(_failure_path(cache, stage).read_text(encoding="utf-8"))
+        digest = record.pop("digest")
+        outcome = record["outcome"]
+        if (digest != _digest(record) or record["schema_version"] != 1 or record["key"] != cache["stage_keys"][stage["id"]]
+                or record["repeats"] < _FAILURE_REPEATS or not _deterministic_failure(outcome)
+                or outcome["id"] != stage["id"] or outcome["command"] != stage["argv"]):
+            return None
+        return {**outcome, "reason": f"identical_inputs_failed_{record['repeats']}x:{outcome.get('reason') or 'failed'}; "
+                                     "rerun with --no-reuse to retry"}
+    except (OSError, ValueError, TypeError, KeyError):
+        return None
+
+
+def _save_stages(root: Path, cache: dict[str, Any], observed: list[tuple[dict[str, Any], dict[str, Any]]]) -> None:
     from cli.lib.acceptance import AcceptanceError, _write_receipt
 
     try:
@@ -794,13 +906,26 @@ def _save_stages(root: Path, cache: dict[str, Any], passed: list[tuple[dict[str,
         # execution; the caller already rechecked the complete tracked source.
         if _digest(native_plan(root)) != cache["plan"] or _native_implementation() != cache["implementation"]:
             return
-        for stage, outcome in passed:
+        for stage, outcome in observed:
+            key = cache["stage_keys"][stage["id"]]
+            failure = _failure_path(cache, stage)
+            if outcome["state"] != "pass":
+                try:
+                    previous = json.loads(failure.read_text(encoding="utf-8"))
+                    repeats = int(previous["repeats"]) + 1 if previous.get("key") == key else 1
+                except (OSError, ValueError, TypeError, KeyError):
+                    repeats = 1
+                record = {"schema_version": 1, "key": key, "repeats": repeats, "outcome": outcome}
+                record["digest"] = _digest(record)
+                _write_receipt(failure, record)
+                continue
+            failure.unlink(missing_ok=True)
             if any(not artifact.get("retained_path") or hashlib.sha256(Path(artifact["retained_path"]).read_bytes()).hexdigest() != artifact["sha256"]
                    for artifact in outcome["artifacts"]):
                 continue
-            receipt = {"schema_version": 1, "key": cache["key"], "outcome": outcome}
+            receipt = {"schema_version": 1, "key": key, "outcome": outcome}
             receipt["digest"] = _digest(receipt)
-            _write_receipt(cache["directory"] / f"{cache['key']}-{stage['id']}.json", receipt)
+            _write_receipt(cache["directory"] / f"{key}-{stage['id']}.json", receipt)
     except (AcceptanceError, NativeCheckError, OSError):
         return
 

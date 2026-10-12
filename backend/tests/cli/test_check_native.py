@@ -998,3 +998,62 @@ def test_native_allowlisted_aliases_survive_nested_private_tmp(native_repo: Path
     ))
     result = run_native(native_repo, _plan(native_repo), reuse=False)
     assert result["state"] == "pass", result["stages"][0]["detail"]
+
+
+def _declare_scoped_stage(repo: Path) -> None:
+    (repo / "front").mkdir()
+    (repo / "front/view.ts").write_text("export const view = 1\n")
+    (repo / "back.py").write_text("VALUE = 1\n")
+    config = repo / ".st-check.toml"
+    config.write_text(config.read_text() + '\n[[native.stages]]\nid="scoped"\nargv=["python", ".tools/suite.py"]\n'
+                      'coverage="full"\nkind="test"\ninputs=["front/**", "project.lock"]\n'
+                      '[native.stages.evidence]\nformat="json"\npath=".dev-tools/result.json"\n')
+
+
+@pytest.mark.parametrize(("changed", "scoped_reused"), [("back.py", True), ("front/view.ts", False)])
+def test_declared_stage_inputs_bound_reuse_to_those_paths(native_repo: Path, changed: str, scoped_reused: bool) -> None:
+    _declare_scoped_stage(native_repo)
+    _committed(native_repo)
+    first = run_native(native_repo, _plan(native_repo))
+    assert first["state"] == "pass"
+    (native_repo / changed).write_text((native_repo / changed).read_text() + "// changed\n")
+    _git(native_repo, "commit", "-qam", "change one side")
+    second = {stage["id"]: stage for stage in run_native(native_repo, _plan(native_repo))["stages"]}
+    assert second["native-suite"]["reused"] is False
+    assert second["scoped"]["reused"] is scoped_reused
+    assert second["scoped"]["state"] == "pass"
+
+
+def test_identical_tree_on_a_new_commit_reuses_whole_tree_stages(native_repo: Path) -> None:
+    _committed(native_repo)
+    run_native(native_repo, _plan(native_repo))
+    _git(native_repo, "commit", "-q", "--allow-empty", "-m", "same tree")
+    assert run_native(native_repo, _plan(native_repo))["stages"][0]["reused"] is True
+
+
+@pytest.mark.parametrize("declaration", ['exclude=["x"]', 'inputs=["/etc/**"]', 'inputs=["../outside/**"]'])
+def test_stage_input_declarations_stay_project_relative(native_repo: Path, declaration: str) -> None:
+    config = native_repo / ".st-check.toml"
+    config.write_text(config.read_text().replace('required = true\n', f'required = true\n{declaration}\n', 1))
+    with pytest.raises(NativeCheckError):
+        native_plan(native_repo)
+
+
+def test_repeated_identical_failure_is_reported_without_rerunning(native_repo: Path) -> None:
+    (native_repo / ".tools/suite.py").write_text(
+        "import json\nfrom pathlib import Path\nPath('.dev-tools').mkdir(exist_ok=True)\n"
+        "Path('.dev-tools/result.json').write_text(json.dumps({'passed': 1, 'failed': 1, 'skipped': 0}))\n"
+        "raise SystemExit(1)\n")
+    _committed(native_repo)
+    runs = [run_native(native_repo, _plan(native_repo))["stages"][0] for _ in range(3)]
+    assert [stage["state"] for stage in runs] == ["fail"] * 3
+    assert [stage["reused"] for stage in runs] == [False, False, True]
+    assert run_native(native_repo, _plan(native_repo), reuse=False)["stages"][0]["reused"] is False
+
+
+def test_timeouts_are_never_cached_as_failures(native_repo: Path) -> None:
+    from cli.commands.check_native import _deterministic_failure
+
+    assert not _deterministic_failure({"state": "fail", "returncode": 124, "reason": "stage_timeout"})
+    assert not _deterministic_failure({"state": "fail", "returncode": -9, "reason": ""})
+    assert _deterministic_failure({"state": "fail", "returncode": 1, "reason": "evidence_records_failures"})

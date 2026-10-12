@@ -6,10 +6,11 @@ import contextlib
 import json
 import os
 import time
+from collections.abc import Mapping
 from contextlib import nullcontext, suppress
 from enum import StrEnum
 from pathlib import Path
-from typing import Annotated
+from typing import Annotated, Any
 
 import typer
 
@@ -210,6 +211,15 @@ def status(
     raise typer.Exit(1 if errors else 0)
 
 
+def _acceptance_line(source: Mapping[str, Any] | None, *, supplied: bool) -> str:
+    """Say how acceptance was satisfied: a supplied receipt, a reused one, or a fresh run."""
+    source = source if isinstance(source, Mapping) else {}
+    how = "supplied" if supplied else "reused" if source.get("reused") else "fresh"
+    lookup = source.get("reuse_lookup_ms")
+    detail = f" lookup_ms={lookup:.0f}" if how == "reused" and isinstance(lookup, (int, float)) else ""
+    return f"[service] acceptance={how} id={str(source.get('acceptance_id') or '?')[:12]}{detail}"
+
+
 # Set by the detached job runner: a queued rebuild waits out backups instead
 # of being refused after its acceptance already ran.
 WAIT_FOR_BACKUPS_ENV = "ST_REBUILD_WAIT_FOR_BACKUPS"
@@ -327,6 +337,7 @@ def rebuild(
     if detach:
         try:
             accepted_source = service_ops.resolve_accepted_source(services, acceptance)
+            print(_acceptance_line(accepted_source, supplied=acceptance is not None))
             raise typer.Exit(
                 service_ops.queue_detached(
                     project,
@@ -372,6 +383,7 @@ def rebuild(
              else nullcontext(lambda: None)) as assert_backup_restart_owned,
         ):
             release, services = service_ops.prepare_accepted_release(services, acceptance)
+            print(_acceptance_line(vars(release.source), supplied=acceptance is not None))
             service_release.mark_phase(
                 release,
                 "deployment_scope",

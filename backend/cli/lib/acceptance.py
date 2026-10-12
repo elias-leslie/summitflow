@@ -1271,20 +1271,23 @@ def _accept_revision(
                     "working_tree_clean": before["clean"],
                     "reuse_lookup_ms": round((time.monotonic() - acceptance_started) * 1000, 3),
                 }
+        # The cache key binds execution basis and working modes, so a full
+        # isolated receipt for this HEAD never matches the actual lookup, on a
+        # clean or a dirty tree. Accept any receipt for this commit that passes
+        # the same validation an explicit --acceptance gets, on its own basis.
+        # Task proof is scope-bound, so a clean tree only borrows full proof.
+        borrow = reuse and (coverage == "full" or not before["clean"])
+        validated = _validated_receipt_for_commit(repo, before["commit"], coverage) if borrow else None
+        if validated is not None:
+            return {
+                **validated,
+                "task_id": task_id or validated.get("task_id", ""),
+                "scope": normalized_scope or validated.get("scope", []),
+                "reused": True,
+                "working_tree_clean": before["clean"],
+                "reuse_lookup_ms": round((time.monotonic() - acceptance_started) * 1000, 3),
+            }
         if not before["clean"]:
-            # The cache key binds execution basis and working modes, so an
-            # isolated receipt for this HEAD never matches a dirty actual lookup.
-            # Fall back to the same validation an explicit --acceptance gets.
-            validated = _validated_receipt_for_commit(repo, before["commit"], coverage) if reuse else None
-            if validated is not None:
-                return {
-                    **validated,
-                    "task_id": task_id or validated.get("task_id", ""),
-                    "scope": normalized_scope or validated.get("scope", []),
-                    "reused": True,
-                    "working_tree_clean": False,
-                    "reuse_lookup_ms": round((time.monotonic() - acceptance_started) * 1000, 3),
-                }
             raise AcceptanceError("full acceptance requires a clean checkout including nonignored untracked files; no reusable accepted-source receipt")
 
     started_at = datetime.now(UTC).isoformat()

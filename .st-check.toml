@@ -100,6 +100,10 @@ coverage = "full"
 cwd = "frontend"
 argv = ["node", "node_modules/vitest/vitest.mjs", "run", "--cache=false", "--reporter=junit", "--outputFile=../.dev-tools/native-frontend.xml"]
 timeout_seconds = 600
+# Vitest reads only the frontend, the notes-ui workspace source and the pnpm
+# workspace files; a backend-only change reuses its last pass. Python and
+# fresh-schema stay whole-tree: backend tests read frontend/, docs/, scripts/.
+inputs = ["frontend", "packages/notes-ui", "package.json", "pnpm-lock.yaml", "pnpm-workspace.yaml", ".npmrc"]
 [native.stages.evidence]
 format = "junit"
 path = ".dev-tools/native-frontend.xml"
