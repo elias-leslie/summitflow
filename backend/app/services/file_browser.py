@@ -34,7 +34,8 @@ def resolve_safe_path(root_path: str | Path, relative_path: str) -> Path:
     absolute paths and symlinks that point outside the root all raise ValueError.
     """
     root = os.path.realpath(root_path)
-    target = os.path.realpath(os.path.join(root, relative_path))
+    # normpath is a no-op after realpath; it is the normalization CodeQL recognizes.
+    target = os.path.normpath(os.path.realpath(os.path.join(root, relative_path)))
     if target == root:
         return Path(root)
     if not target.startswith(_root_prefix(root)):
