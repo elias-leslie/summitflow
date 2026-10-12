@@ -16,7 +16,9 @@ from __future__ import annotations
 import base64
 import json
 import os
+import re
 import sys
+import time
 from collections.abc import Callable, Generator
 from pathlib import Path
 
@@ -73,13 +75,25 @@ if _test_db_url:
     )
 
 
+def _worker_db_manager_url(url: str) -> str:
+    """Admin connection on the test server when configured, else the test role."""
+    from urllib.parse import urlsplit
+
+    target = urlsplit(url)
+    for key in ("DATABASE_ADMIN_URL", "POSTGRES_ADMIN_URL"):
+        admin = os.environ.get(key, "").strip()
+        if admin and (urlsplit(admin).hostname, urlsplit(admin).port) == (target.hostname, target.port):
+            return admin
+    return url
+
+
 def _xdist_worker_database(url: str, worker: str) -> str:
     """Give each pytest-xdist worker its own database beside the shared test one.
 
     Tests commit shared rows, so concurrent workers on one database deadlock and
-    observe each other's data. The role must be able to create databases (CI and
-    the native fixture own a superuser); otherwise a superuser provisions each
-    `<database>_gw<N>` once as a copy of the shared test database.
+    observe each other's data. The worker database is created through the
+    configured admin URL (owned by the test role) or by a role that can create
+    databases, and dropped again when the worker finishes.
     """
     from urllib.parse import urlsplit, urlunsplit
 
@@ -87,15 +101,28 @@ def _xdist_worker_database(url: str, worker: str) -> str:
     from psycopg import sql
 
     parts = urlsplit(url)
-    name = f"{parts.path.lstrip('/')}_{worker}"
-    with psycopg.connect(url, autocommit=True) as conn:
+    shared = parts.path.lstrip("/")
+    name = f"{shared}_{worker}"
+    manager_url = _worker_db_manager_url(url)
+    # An admin copies the bootstrapped shared database (schema and pgvector);
+    # a CREATEDB role starts empty and is bootstrapped below.
+    template = sql.SQL(" TEMPLATE {}").format(sql.Identifier(shared)) if manager_url != url else sql.SQL("")
+    with psycopg.connect(manager_url, autocommit=True) as conn:
         conn.execute("SELECT pg_advisory_lock(hashtext('summitflow-xdist-databases'))")
-        if conn.execute("SELECT 1 FROM pg_database WHERE datname = %s", (name,)).fetchone() is None:
+        for attempt in range(30):
+            if conn.execute("SELECT 1 FROM pg_database WHERE datname = %s", (name,)).fetchone() is not None:
+                break
             try:
-                conn.execute(sql.SQL("CREATE DATABASE {}").format(sql.Identifier(name)))
+                conn.execute(sql.SQL("CREATE DATABASE {} OWNER {}{}").format(
+                    sql.Identifier(name), sql.Identifier(parts.username or ""), template))
             except psycopg.errors.InsufficientPrivilege:
                 sys.exit(f"pytest-xdist worker database {name} is missing and this role cannot create it; "
-                         f"as a superuser run: createdb -O {parts.username} -T {parts.path.lstrip('/')} {name}")
+                         "set DATABASE_ADMIN_URL in ~/.env.local or grant the test role CREATEDB")
+            except psycopg.errors.ObjectInUse:
+                # Another session is using the template database; retry briefly.
+                if attempt == 29:
+                    raise
+                time.sleep(1)
     return urlunsplit(parts._replace(path=f"/{name}"))
 
 
@@ -114,7 +141,26 @@ def _bootstrap_worker_database(url: str) -> None:
     command.upgrade(alembic_config(), "head")
 
 
+def _drop_worker_database(shared_url: str, worker_url: str) -> None:
+    """Drop this worker's database after the run so none accumulate."""
+    from urllib.parse import urlsplit
+
+    import psycopg
+    from psycopg import sql
+
+    name = urlsplit(worker_url).path.lstrip("/")
+    if not re.fullmatch(r"[a-z0-9_]+_gw[0-9]+", name):
+        return
+    try:
+        with psycopg.connect(_worker_db_manager_url(shared_url), autocommit=True) as conn:
+            conn.execute(sql.SQL("DROP DATABASE IF EXISTS {} WITH (FORCE)").format(sql.Identifier(name)))
+    except psycopg.Error as exc:
+        print(f"[TEST] could not drop worker database {name}: {type(exc).__name__}", file=sys.stderr)
+
+
+_shared_test_db_url = ""
 if _xdist_worker := os.environ.get("PYTEST_XDIST_WORKER"):
+    _shared_test_db_url = os.environ["DATABASE_URL"]
     os.environ["DATABASE_URL"] = _xdist_worker_database(os.environ["DATABASE_URL"], _xdist_worker)
     os.environ["TEST_DATABASE_URL"] = os.environ["DATABASE_URL"]
     _bootstrap_worker_database(os.environ["DATABASE_URL"])
@@ -165,6 +211,12 @@ def pytest_addoption(parser: pytest.Parser) -> None:
         default=False,
         help="Run E2E tests that hit real databases and services (DANGEROUS)",
     )
+
+
+def pytest_sessionfinish(session: pytest.Session, exitstatus: int) -> None:
+    """Each xdist worker removes its own database; leftovers accumulated per worker."""
+    if _shared_test_db_url:
+        _drop_worker_database(_shared_test_db_url, os.environ["DATABASE_URL"])
 
 
 def pytest_configure(config: pytest.Config) -> None:
