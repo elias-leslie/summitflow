@@ -19,10 +19,10 @@ _STORED = {
     "task_id": None,
     "type": "system",
     "severity": "error",
-    "title": "Host maintenance warning",
+    "title": "Backup warning",
     "message": "disk",
     "status": "pending",
-    "metadata": {"dedupe_key": "host-guardian:warning"},
+    "metadata": {"dedupe_key": "backup-alert:test"},
     "created_at": datetime(2026, 10, 10, tzinfo=UTC),
     "read_at": None,
     "dismissed_at": None,
@@ -30,8 +30,8 @@ _STORED = {
 
 
 def _payload(**extra: Any) -> dict[str, Any]:
-    return {"type": "system", "title": "Host maintenance warning", "message": "disk",
-            "severity": "error", "metadata": {"source": "host-guardian"}, **extra}
+    return {"type": "system", "title": "Backup warning", "message": "disk",
+            "severity": "error", "metadata": {"source": "backup"}, **extra}
 
 
 def test_create_passes_dedupe_key_and_returns_notification(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -43,10 +43,10 @@ def test_create_passes_dedupe_key_and_returns_notification(monkeypatch: pytest.M
 
     monkeypatch.setattr(notifications_api.notification_store, "create_notification", fake_create)
     resp = client.post("/api/projects/agent-hub/notifications",
-                       json=_payload(dedupe_key="host-guardian:warning"))
+                       json=_payload(dedupe_key="backup-alert:test"))
     assert resp.status_code == 200
     assert resp.json()["id"] == "n-1"
-    assert seen["dedupe_key"] == "host-guardian:warning"
+    assert seen["dedupe_key"] == "backup-alert:test"
 
 
 def test_deduplicated_create_returns_204_not_500(monkeypatch: pytest.MonkeyPatch) -> None:

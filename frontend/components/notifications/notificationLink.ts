@@ -21,7 +21,7 @@ export function notificationHref(notification: Notification): string | null {
   ) {
     return '/backups'
   }
-  if (meta.source === 'host-guardian' || meta.health_transition) {
+  if (meta.health_transition) {
     return '/runtime'
   }
   return null

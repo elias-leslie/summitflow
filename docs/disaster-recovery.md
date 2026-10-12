@@ -625,9 +625,10 @@ systemctl --user enable <reviewed-unit-name>
 systemctl --user start <reviewed-unit-name>
 ```
 
-The checked-in `scripts/install-host-maintenance.sh` can recreate SummitFlow's
-system-level maintenance units, Docker log limits, and the infrastructure
-reconcile unit. Review its hard-coded paths and effects before running it with
+The checked-in `scripts/install-host-infra.sh` can recreate SummitFlow's
+backup write-window units, btrbk log rotation, Docker log limits, and the
+infrastructure reconcile unit. Host checks and maintenance are restored with
+Nightshift. Review its hard-coded paths and effects before running it with
 sudo; it is not archive restoration.
 
 ## 8. Restore ingress last

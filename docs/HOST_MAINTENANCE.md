@@ -1,25 +1,15 @@
 # Host maintenance and recovery boundary
 
-The host uses two deliberately separate maintenance layers.
+Host-level checks and maintenance belong to Nightshift (the host steward):
+disk and Btrfs health, allocation headroom, SMART and NVMe self-tests, Btrfs
+scrubs, core-container checks, Docker/cache/journal housekeeping, and journald
+retention. See the Nightshift project for their units, schedules, and alerts.
 
-## Native, independent layer
-
-These controls must continue to work when SummitFlow, PostgreSQL, Hatchet, or
-Agent Hub is unavailable. `scripts/install-host-maintenance.sh` installs a copy
-of the standard-library-only guardian into `/usr/local/libexec` and installs
-native systemd timers for:
-
-- 15-minute disk (root, workspaces, backup drive, native btrbk target), Btrfs device-error (all three Btrfs filesystems), SMART, Veeam, Docker, PostgreSQL, and core-container checks;
-- direct Docker Compose reconciliation of shared infrastructure, without `st` or API dependencies;
-- daily age-gated Docker/cache/log maintenance;
-- weekly/monthly NVMe self-tests;
-- monthly Btrfs checksum scrubs, staggered per filesystem and serialized by a shared lock;
-- bounded journald and Docker log growth.
-
-Current state is written atomically to
-`/var/lib/summitflow-host-guardian/status.json`. State transitions are appended
-to `events.jsonl` as a durable record that survives a database or network
-outage.
+`scripts/install-host-infra.sh` installs only SummitFlow-specific host pieces:
+the backup storage write window (`summitflow-backup-window` and its guard
+timer), btrbk log rotation, Docker container log limits, and the
+`summitflow-infra-reconcile` user unit that brings up shared Compose
+infrastructure without `st` or API dependencies.
 
 ## SummitFlow-owned layer
 
@@ -31,24 +21,16 @@ SummitFlow remains responsible for application-aware concerns:
 - PostgreSQL bloat analysis and targeted `VACUUM ANALYZE`;
 - application health, runtime hygiene, dashboards, and notification records.
 
-The native guardian may observe and restart foundational services, but it does
-not query SummitFlow's database or call its API. SummitFlow may consume the
-guardian's JSON status, but native maintenance never consumes SummitFlow.
+Nightshift may observe and restart foundational services, but it does not
+query SummitFlow's database or call its API.
 
 ## Schedule
 
 | Control | Schedule |
 |---|---|
-| Host guard and core reconcile | every 15 minutes |
-| Host retention maintenance | daily around 05:15 |
 | Veeam system image | daily at 02:00 |
 | SummitFlow daily maintenance | daily at 04:00 |
 | Managed restore tests | Sunday at 06:00 |
-| Btrfs scrub `/` | first Sunday around 08:00 |
-| Btrfs scrub `/srv/workspaces` | second Sunday around 08:00 |
-| Btrfs scrub native target `/mnt/summitflow-native` | third Sunday around 08:00 (skipped when the drive is absent) |
-| NVMe short self-test | Saturday around 03:00 |
-| NVMe extended self-test | first Saturday around 00:30 |
 
 ## Capacity and retention policy
 
@@ -72,9 +54,8 @@ and errors to stderr. `synced` counts successful session operations (including
 heartbeats); `warnings` counts warnings emitted during the scan. The periodic
 user service sends both streams to the journal without per-session verbose
 output. Direct CLI calls can add `--verbose` for per-session success details.
-The existing host journal policy (`20-storage-guardrails.conf`) limits journals
-to 500 MB, keeps 5 GB free, and retains entries for at most 14 days; Codex sync
-adds no separate retention policy, daemon, or scheduler.
+Journal retention is the host policy owned by Nightshift; Codex sync adds no
+separate retention policy, daemon, or scheduler.
 
 The legacy `~/.codex/session-integrations/codex-session-sync.log` is preserved
 in place and is no longer appended to. Keep it available for diagnostic recovery;
@@ -95,12 +76,7 @@ journalctl --user -u codex-session-sync.service --since '10 days ago'
 ```
 
 ```bash
-sudo systemctl start summitflow-host-guardian.service
-sudo systemctl start summitflow-host-maintenance.service
-sudo systemctl start summitflow-btrfs-scrub.service
-cat /var/lib/summitflow-host-guardian/status.json
 systemctl list-timers 'summitflow-*'
-journalctl -u summitflow-host-guardian.service -n 100
 st backup veeam status
 st backup veeam start --wait
 ```

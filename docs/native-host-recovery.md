@@ -55,12 +55,11 @@ layout and a receipt. Retirement of matching boot files follows the native point
 not an unrelated folder age. Failed deletion retains its receipt and error.
 Admission uses the existing host pressure policy and measured physical capacity;
 an unqualified target or insufficient headroom prevents capture. Admission also
-reads Btrfs device allocation through the existing space guard: ordinary free
-space can conceal exhausted metadata allocation. The guard checks every fifteen
-minutes and uses bounded data reclamation below 8 GiB unallocated, targeting
-12 GiB. It never deletes data or snapshots; deferred or failed reclamation is
-reported. The host guardian follows native receipts rather than retired Linux
-Veeam sessions.
+measures Btrfs device allocation read-only (`btrfs filesystem usage`) on every
+source and the target: ordinary free space can conceal exhausted metadata
+allocation, so a filesystem with under 8 GiB unallocated or a missing device
+blocks capture. Reclaiming allocation is Nightshift's host maintenance, not part
+of the backup job.
 
 Initial admission conservatively reserves a full source-filesystem footprint,
 matching boot allocation and the existing 25 GiB reserve for every run. This is

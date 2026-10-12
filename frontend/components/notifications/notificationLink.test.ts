@@ -33,7 +33,7 @@ describe('notificationHref', () => {
       { metadata: { operation: 'local-integrity', backend_id: 'stb-1' } },
       '/backups',
     ],
-    [{ metadata: { source: 'host-guardian' } }, '/runtime'],
+    [{ metadata: { health_transition: 'ok->degraded' } }, '/runtime'],
     [{ metadata: { dedupe_key: 'audit-telegram-test' } }, null],
   ])('%j -> %s', (patch, expected) => {
     expect(notificationHref({ ...base, ...patch } as Notification)).toBe(
