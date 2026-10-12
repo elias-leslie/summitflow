@@ -480,7 +480,7 @@ def test_capacity_keeps_full_filesystem_bound_even_with_small_previous_increment
     assert result["admitted"] is False
 
 
-@pytest.mark.parametrize("fault", [None, "source-exhausted", "target-exhausted", "unreadable", "invalid", "wrong-uuid"])
+@pytest.mark.parametrize("fault", [None, "source-exhausted", "target-exhausted", "unreadable", "invalid", "unparsable"])
 def test_capacity_requires_measured_allocation_headroom_on_each_unique_filesystem(monkeypatch: pytest.MonkeyPatch, fault: str | None) -> None:
     gib = 1024**3
     rows = [{"source_url": path, "target_path": "/independent/points"} for path in ("/source", "/source/nested", "/workspace")]
@@ -492,21 +492,26 @@ def test_capacity_requires_measured_allocation_headroom_on_each_unique_filesyste
     monkeypatch.setattr(Path, "stat", lambda *_args, **_kwargs: SimpleNamespace(st_ino=256))
     monkeypatch.setattr(host.shutil, "disk_usage", lambda path: SimpleNamespace(total=100 * gib, used=70 * gib, free=30 * gib) if path.startswith("/source") else SimpleNamespace(total=1000 * gib, used=100 * gib, free=900 * gib))
     calls = []
+    paths = {"/source": "source", "/workspace": "workspace", "/independent/points": "target"}
     def guard(args: list[str]) -> subprocess.CompletedProcess[str]:
-        assert args[:4] == ["sudo", "-n", host.SPACE_GUARD, "--check-only"]
-        path, uuid = args[5], args[7]
+        assert args[:-1] == ["sudo", "-n", "btrfs", "filesystem", "usage", "-b"]
+        path = args[-1]
+        uuid = paths[path]
         calls.append((path, uuid))
         if fault == "unreadable" and uuid == "source":
-            return subprocess.CompletedProcess(args, 1, json.dumps({"path": path, "error": "usage unavailable"}), "")
+            return subprocess.CompletedProcess(args, 1, "", "ERROR: cannot access")
+        if fault == "unparsable" and uuid == "source":
+            return subprocess.CompletedProcess(args, 0, "Overall:\n", "")
         usage = {"size": 1000 * gib, "free": 30 * gib, "missing": 0, "unallocated": 20 * gib, "metadata_size": 2 * gib, "metadata_used": gib}
-        exhausted = (fault == "source-exhausted" and uuid == "source") or (fault == "target-exhausted" and uuid == "target")
-        if exhausted:
+        if (fault == "source-exhausted" and uuid == "source") or (fault == "target-exhausted" and uuid == "target"):
             usage.update(unallocated=1024**2, metadata_used=int(usage["metadata_size"] * 0.9146))
         if fault == "invalid" and uuid == "source":
             usage["metadata_used"] = usage["metadata_size"] + 1
-        report = {"path": path, "uuid": "unexpected" if fault == "wrong-uuid" and uuid == "source" else uuid, "after": usage,
-                  "policy": {"trigger_bytes": 8 * gib, "target_bytes": 12 * gib}}
-        return subprocess.CompletedProcess(args, int(exhausted), json.dumps(report), "")
+        report = (f"Overall:\n    Device size:\t\t{usage['size']}\n    Device unallocated:\t\t{usage['unallocated']}\n"
+                  f"    Device missing:\t\t{usage['missing']}\n    Free (statfs, df):\t\t{usage['free']}\n\n"
+                  f"Data,single: Size:{usage['size'] // 2}, Used:1 (0.00%)\n"
+                  f"Metadata,DUP: Size:{usage['metadata_size']}, Used:{usage['metadata_used']} (50.00%)\n")
+        return subprocess.CompletedProcess(args, 0, report, "")
     monkeypatch.setattr(host, "_run", guard)
     result = host._capacity(rows, None)
     assert calls == [("/source", "source"), ("/workspace", "workspace"), ("/independent/points", "target")]

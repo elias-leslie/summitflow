@@ -42,7 +42,11 @@ REQUIRED_SOURCES = {"/", "/home", "/srv/workspaces", "/var/lib/docker", "/srv/mo
 CONFIG_PATH = Path("/etc/btrbk/summitflow.conf")
 PACKAGE_STATUS_PATH = Path("/var/lib/dpkg/status")
 ADAPTER = "summitflow-btrbk-v1"
-SPACE_GUARD = "/usr/local/libexec/summitflow-btrfs-space-guard"
+# Backup admission needs this much unallocated Btrfs space per filesystem;
+# host-level reclamation toward the target is Nightshift's job.
+ALLOCATION_TRIGGER_BYTES = 8 * 1024**3
+ALLOCATION_TARGET_BYTES = 12 * 1024**3
+_USAGE_FIELDS = (("Device size", "size"), ("Device unallocated", "unallocated"), ("Device missing", "missing"), ("Free (statfs, df)", "free"))
 _RUN_ID = re.compile(r"\d{8}T\d{6}Z-[0-9a-f]{8}\Z")
 
 
@@ -439,24 +443,29 @@ def _cleanup_superseded(target: Path, current_run: str) -> dict[str, Any]:
             "evidence": "Observed target usage before/after metadata cleanup; concurrent growth can mask reclamation"}
 
 
-def _allocation_headroom(path: str, uuid: str) -> dict[str, Any]:
-    """Read the existing guard's policy and physical allocation measurement."""
+def _allocation_headroom(path: str) -> dict[str, Any]:
+    """Measure physical Btrfs allocation read-only; works on read-only mounts."""
     try:
-        result = _run(["sudo", "-n", SPACE_GUARD, "--check-only", "--path", path, "--uuid", uuid])
-        report = json.loads(result.stdout)
-        if not isinstance(report, dict) or result.returncode not in {0, 1} or result.stderr.strip() or report.get("path") != path or report.get("uuid") != uuid or report.get("error") or report.get("deferred"):
-            raise ValueError("Unqualified Btrfs allocation report")
-        usage, policy = report["after"], report["policy"]
-        values = {name: usage[name] for name in ("size", "unallocated", "missing", "free", "metadata_size", "metadata_used")}
-        values.update({name: policy[name] for name in ("trigger_bytes", "target_bytes")})
-        if any(type(value) is not int or value < 0 for value in values.values()) or not 0 < values["metadata_size"] <= values["size"] or values["metadata_used"] > values["metadata_size"] or max(values["free"], values["unallocated"]) > values["size"] or not 0 < values["trigger_bytes"] <= values["target_bytes"]:
+        output = _checked(["sudo", "-n", "btrfs", "filesystem", "usage", "-b", path])
+        values: dict[str, int] = {}
+        for label, name in _USAGE_FIELDS:
+            match = re.search(r"^\s*" + re.escape(label) + r":\s*(\d+)\s*$", output, re.M)
+            if not match:
+                raise ValueError(f"Unexpected btrfs usage output for {label}")
+            values[name] = int(match.group(1))
+        metadata = re.findall(r"^Metadata,[^:]+: Size:(\d+), Used:(\d+)", output, re.M)
+        if not metadata:
+            raise ValueError("Missing Btrfs metadata usage")
+        values["metadata_size"] = sum(int(size) for size, _ in metadata)
+        values["metadata_used"] = sum(int(used) for _, used in metadata)
+        if not 0 < values["metadata_size"] <= values["size"] or values["metadata_used"] > values["metadata_size"] or max(values["free"], values["unallocated"]) > values["size"]:
             raise ValueError("Invalid Btrfs allocation measurement")
         # Metadata sizes are logical even with DUP. Do not add its unused
         # bytes to physical unallocated space or change allocation profiles.
-        return {"available": True, **values,
+        return {"available": True, **values, "trigger_bytes": ALLOCATION_TRIGGER_BYTES, "target_bytes": ALLOCATION_TARGET_BYTES,
                 "metadata_used_percent": values["metadata_used"] / values["metadata_size"] * 100,
-                "admitted": values["missing"] == 0 and values["unallocated"] >= values["trigger_bytes"]}
-    except (OSError, ValueError, RuntimeError, KeyError, TypeError) as exc:
+                "admitted": values["missing"] == 0 and values["unallocated"] >= ALLOCATION_TRIGGER_BYTES}
+    except (OSError, ValueError, RuntimeError) as exc:
         return {"available": False, "admitted": False, "error": str(exc)}
 
 
@@ -481,7 +490,7 @@ def _capacity(rows: list[dict[str, str]], last: dict[str, Any] | None) -> dict[s
         if fs["uuid"] not in source_usage:
             usage = shutil.disk_usage(source)
             source_usage[fs["uuid"]] = {"path": source, "filesystem_uuid": fs["uuid"], "used_bytes": usage.used, "free_bytes": usage.free, "under_pressure": usage.used / usage.total * 100 >= policy.pressure_disk_percent,
-                                       "allocation": _allocation_headroom(source, fs["uuid"])}
+                                       "allocation": _allocation_headroom(source)}
     # Initially budget the observed physical footprint of each distinct source
     # filesystem. Retain that conservative bound so a missing incremental parent
     # cannot silently turn a small admitted job into an oversized full capture.
@@ -497,7 +506,7 @@ def _capacity(rows: list[dict[str, str]], last: dict[str, Any] | None) -> dict[s
             boot_filesystems.add(boot_fs["uuid"])
     growth = max(sum(item["used_bytes"] for item in source_usage.values()) + boot_bound, int((last or {}).get("growth_peak_bytes", 0)))
     target_usage = shutil.disk_usage(target)
-    target_allocation = _allocation_headroom(target, target_fs["uuid"])
+    target_allocation = _allocation_headroom(target)
     allocations = [item["allocation"] for item in source_usage.values()] + [target_allocation]
     reason = None
     if any(not item["available"] for item in allocations):
