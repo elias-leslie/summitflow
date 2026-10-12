@@ -80,6 +80,59 @@ describe('NotificationBell', () => {
     })
   })
 
+  it('expands to the full message with a link to the task', async () => {
+    render(<NotificationBell projectId="agent-hub" />)
+
+    fireEvent.click(screen.getByTitle('Notifications'))
+
+    const row = await screen.findByRole('button', { expanded: false })
+    expect(screen.queryByRole('link', { name: 'Open' })).toBeNull()
+    fireEvent.click(row)
+
+    expect(row).toHaveAttribute('aria-expanded', 'true')
+    expect(screen.getByRole('link', { name: 'Open' })).toHaveAttribute(
+      'href',
+      '/projects/agent-hub?task=task-123',
+    )
+    fireEvent.click(row)
+    expect(row).toHaveAttribute('aria-expanded', 'false')
+  })
+
+  it('loads the next page when more notifications exist', async () => {
+    const item = (id: string) => ({
+      id,
+      project_id: 'summitflow',
+      task_id: null,
+      type: 'system',
+      title: `Title ${id}`,
+      message: 'Body',
+      severity: 'info',
+      status: 'read',
+      metadata: {},
+      created_at: null,
+      read_at: null,
+      dismissed_at: null,
+    })
+    scopeMocks.fetchGlobalNotificationCount.mockResolvedValue(0)
+    scopeMocks.fetchGlobalNotifications
+      .mockResolvedValueOnce({ items: [item('a')], total: 2, pending_count: 0 })
+      .mockResolvedValueOnce({ items: [item('b')], total: 2, pending_count: 0 })
+
+    render(<NotificationBell projectId={null} />)
+
+    fireEvent.click(screen.getByTitle('Notifications'))
+    fireEvent.click(
+      await screen.findByRole('button', { name: 'Show more (1)' }),
+    )
+
+    expect(await screen.findByText('Title b')).toBeInTheDocument()
+    expect(scopeMocks.fetchGlobalNotifications).toHaveBeenLastCalledWith({
+      limit: 10,
+      offset: 1,
+    })
+    expect(screen.queryByRole('button', { name: /Show more/ })).toBeNull()
+  })
+
   it('dismisses a notification without navigating', async () => {
     render(<NotificationBell projectId="agent-hub" />)
 

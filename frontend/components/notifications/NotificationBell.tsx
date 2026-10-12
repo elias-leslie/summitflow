@@ -9,6 +9,7 @@ import {
   Info,
   X,
 } from 'lucide-react'
+import Link from 'next/link'
 import { useCallback, useEffect, useState } from 'react'
 import { toast } from 'sonner'
 import {
@@ -20,6 +21,7 @@ import {
   type Notification,
 } from '@/lib/api'
 import { POLL_NOTIFICATIONS } from '@/lib/polling'
+import { notificationHref } from './notificationLink'
 import {
   dismissAllGlobalNotifications,
   fetchGlobalNotificationCount,
@@ -40,6 +42,8 @@ const severityIcons = {
   critical: AlertCircle,
 }
 
+const PAGE_SIZE = 10
+
 const severityColors = {
   info: 'text-blue-400',
   warning: 'text-amber-400',
@@ -55,6 +59,9 @@ export function NotificationBell({
   const [pendingCount, setPendingCount] = useState(0)
   const [countError, setCountError] = useState(false)
   const [notifications, setNotifications] = useState<Notification[]>([])
+  const [total, setTotal] = useState(0)
+  const [expandedId, setExpandedId] = useState<string | null>(null)
+  const [loadingMore, setLoadingMore] = useState(false)
   const [loading, setLoading] = useState(false)
   const [loadError, setLoadError] = useState<string | null>(null)
 
@@ -85,9 +92,10 @@ export function NotificationBell({
     setLoadError(null)
     try {
       const data = projectId
-        ? await fetchNotifications(projectId, { limit: 10 })
-        : await fetchGlobalNotifications({ limit: 10 })
+        ? await fetchNotifications(projectId, { limit: PAGE_SIZE })
+        : await fetchGlobalNotifications({ limit: PAGE_SIZE })
       setNotifications(data.items)
+      setTotal(data.total)
       setPendingCount(data.pending_count)
       setCountError(false)
     } catch {
@@ -97,6 +105,26 @@ export function NotificationBell({
     }
   }, [projectId])
 
+  const loadMore = async () => {
+    setLoadingMore(true)
+    try {
+      const page = { limit: PAGE_SIZE, offset: notifications.length }
+      const data = projectId
+        ? await fetchNotifications(projectId, page)
+        : await fetchGlobalNotifications(page)
+      setNotifications((prev) => {
+        const seen = new Set(prev.map((n) => n.id))
+        return [...prev, ...data.items.filter((n) => !seen.has(n.id))]
+      })
+      setTotal(data.total)
+      setPendingCount(data.pending_count)
+    } catch {
+      toast.error('Failed to load more notifications')
+    } finally {
+      setLoadingMore(false)
+    }
+  }
+
   const handleToggle = () => {
     if (!isOpen) {
       loadNotifications()
@@ -105,6 +133,9 @@ export function NotificationBell({
   }
 
   const handleNotificationClick = async (notification: Notification) => {
+    setExpandedId((current) =>
+      current === notification.id ? null : notification.id,
+    )
     if (notification.status === 'pending') {
       try {
         await markNotificationRead(notification.project_id, notification.id)
@@ -128,7 +159,10 @@ export function NotificationBell({
     try {
       await dismissNotification(notification.project_id, notification.id)
       setNotifications((prev) => prev.filter((n) => n.id !== notification.id))
-      setPendingCount((prev) => Math.max(0, prev - 1))
+      setTotal((prev) => Math.max(0, prev - 1))
+      if (notification.status === 'pending') {
+        setPendingCount((prev) => Math.max(0, prev - 1))
+      }
     } catch {
       toast.error('Failed to dismiss notification')
     }
@@ -196,6 +230,7 @@ export function NotificationBell({
                             await dismissAllGlobalNotifications()
                           }
                           setNotifications([])
+                          setTotal(0)
                           setPendingCount(0)
                           toast.success('All notifications dismissed')
                         } catch {
@@ -213,7 +248,7 @@ export function NotificationBell({
             </div>
 
             {/* Notification List */}
-            <div className="max-h-[400px] overflow-y-auto">
+            <div className="max-h-[min(400px,70vh)] overflow-y-auto">
               {loading ? (
                 <div className="p-4 text-center text-slate-500 text-sm">
                   Loading...
@@ -239,71 +274,106 @@ export function NotificationBell({
                   </p>
                 </div>
               ) : (
-                notifications.map((notification) => {
-                  const Icon = severityIcons[notification.severity]
-                  return (
-                    <div
-                      key={notification.id}
-                      role="button"
-                      tabIndex={0}
-                      onClick={() => handleNotificationClick(notification)}
-                      onKeyDown={(e) => {
-                        if (e.key === 'Enter' || e.key === ' ') {
-                          e.preventDefault()
-                          handleNotificationClick(notification)
-                        }
-                      }}
-                      className={clsx(
-                        'group px-4 py-3 border-b border-slate-800 hover:bg-slate-800/50 cursor-pointer transition-colors',
-                        notification.status === 'pending' && 'bg-slate-800/30',
-                      )}
-                    >
-                      <div className="flex items-start gap-3">
-                        <Icon
-                          className={clsx(
-                            'w-5 h-5 mt-0.5 flex-shrink-0',
-                            severityColors[notification.severity],
-                          )}
-                        />
-                        <div className="flex-1 min-w-0">
-                          <div className="flex items-center gap-2">
-                            <span
+                <>
+                  {notifications.map((notification) => {
+                    const Icon = severityIcons[notification.severity]
+                    const expanded = expandedId === notification.id
+                    const href = expanded
+                      ? notificationHref(notification)
+                      : null
+                    return (
+                      <div
+                        key={notification.id}
+                        className={clsx(
+                          'group relative border-b border-slate-800 hover:bg-slate-800/50 transition-colors',
+                          notification.status === 'pending' &&
+                            'bg-slate-800/30',
+                        )}
+                      >
+                        <button
+                          type="button"
+                          aria-expanded={expanded}
+                          onClick={() => handleNotificationClick(notification)}
+                          className="flex w-full items-start gap-3 py-3 pl-4 pr-10 text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-phosphor-500"
+                        >
+                          <Icon
+                            className={clsx(
+                              'w-5 h-5 mt-0.5 flex-shrink-0',
+                              severityColors[notification.severity],
+                            )}
+                          />
+                          <div className="flex-1 min-w-0">
+                            <div className="flex items-center gap-2">
+                              <span
+                                className={clsx(
+                                  'text-sm font-medium',
+                                  expanded ? 'break-words' : 'truncate',
+                                  notification.status === 'pending'
+                                    ? 'text-slate-200'
+                                    : 'text-slate-400',
+                                )}
+                              >
+                                {notification.title}
+                              </span>
+                              {notification.status === 'pending' && (
+                                <span className="w-2 h-2 bg-phosphor-500 rounded-full flex-shrink-0" />
+                              )}
+                            </div>
+                            <p
                               className={clsx(
-                                'text-sm font-medium truncate',
-                                notification.status === 'pending'
-                                  ? 'text-slate-200'
-                                  : 'text-slate-400',
+                                'text-xs mt-1',
+                                expanded
+                                  ? 'whitespace-pre-wrap break-words text-slate-300'
+                                  : 'line-clamp-2 text-slate-500',
                               )}
                             >
-                              {notification.title}
+                              {notification.message}
+                            </p>
+                            <span className="text-xs text-slate-600 mt-1 block">
+                              {notification.created_at
+                                ? new Date(
+                                    notification.created_at,
+                                  ).toLocaleString()
+                                : 'Just now'}
                             </span>
-                            {notification.status === 'pending' && (
-                              <span className="w-2 h-2 bg-phosphor-500 rounded-full flex-shrink-0" />
-                            )}
                           </div>
-                          <p className="text-xs text-slate-500 mt-1 line-clamp-2">
-                            {notification.message}
-                          </p>
-                          <span className="text-xs text-slate-600 mt-1 block">
-                            {notification.created_at
-                              ? new Date(
-                                  notification.created_at,
-                                ).toLocaleString()
-                              : 'Just now'}
-                          </span>
-                        </div>
+                        </button>
+                        {href && (
+                          <div className="pb-3 pl-12 pr-4">
+                            <Link
+                              href={href}
+                              onClick={() => setIsOpen(false)}
+                              className="text-xs text-phosphor-400 hover:text-phosphor-300"
+                            >
+                              Open
+                            </Link>
+                          </div>
+                        )}
                         <button
                           type="button"
                           onClick={(e) => handleDismiss(e, notification)}
-                          className="p-1 hover:bg-slate-700 rounded opacity-0 group-hover:opacity-100 transition-opacity"
+                          className="absolute right-3 top-3 p-1 hover:bg-slate-700 rounded opacity-0 group-hover:opacity-100 focus-visible:opacity-100 transition-opacity"
                           title="Dismiss"
+                          aria-label="Dismiss"
                         >
                           <X className="w-4 h-4 text-slate-500" />
                         </button>
                       </div>
-                    </div>
-                  )
-                })
+                    )
+                  })}
+                  {notifications.length < total && (
+                    <button
+                      type="button"
+                      onClick={() => void loadMore()}
+                      disabled={loadingMore}
+                      className="w-full py-3 text-xs text-slate-400 hover:text-slate-200 disabled:text-slate-600"
+                    >
+                      {loadingMore
+                        ? 'Loading...'
+                        : `Show more (${total - notifications.length})`}
+                    </button>
+                  )}
+                </>
               )}
             </div>
           </div>

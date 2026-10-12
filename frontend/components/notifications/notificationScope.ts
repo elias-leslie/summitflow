@@ -7,7 +7,7 @@ import type { NotificationListResponse } from '@/lib/api/notifications'
 import { buildQueryString, fetchWithErrorHandling } from '@/lib/api/utils'
 
 export async function fetchGlobalNotifications(
-  options: { limit?: number } = {},
+  options: { limit?: number; offset?: number } = {},
 ): Promise<NotificationListResponse> {
   return fetchWithErrorHandling(
     `/api/notifications${buildQueryString(options)}`,
