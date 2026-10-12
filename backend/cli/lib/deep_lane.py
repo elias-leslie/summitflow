@@ -14,7 +14,7 @@ from __future__ import annotations
 
 import configparser
 import os
-import shutil
+import re
 import subprocess
 import sys
 import time
@@ -31,8 +31,10 @@ class DeepLaneError(ValueError):
     """The project's deep-lane declaration is invalid."""
 
 
-def _st() -> str:
-    return shutil.which("st") or sys.argv[0]
+def _st() -> list[str]:
+    """This running gate, as acceptance invokes it, so nested checks use the same code."""
+    bootstrap = "import sys; sys.path.insert(0, sys.argv.pop(1)); from cli.main import app; app()"
+    return [sys.executable, "-P", "-c", bootstrap, str(Path(__file__).resolve().parents[2])]
 
 
 def _declared(root: Path) -> list[dict[str, Any]] | None:
@@ -104,7 +106,7 @@ def deep_stages(root: Path) -> list[dict[str, Any]]:
         return declared
     stages: list[dict[str, Any]] = []
     if any(_declares_slow_marker(base) for base in (root, root / "backend")):
-        stages.append({"id": "pytest-slow", "argv": [_st(), "check", "pytest", "--", "-m", "slow"],
+        stages.append({"id": "pytest-slow", "argv": [*_st(), "check", "pytest", "--", "-m", "slow"],
                        "cwd": ".", "timeout_seconds": STAGE_TIMEOUT_SECONDS, "admitted": True, "none_ok": True})
     if _has_slow_go_tests(root):
         stages.append({"id": "go-slow", "argv": ["go", "test", "-count=1", "-tags", "slow", "./..."],
@@ -135,7 +137,10 @@ def _run(root: Path, stage: dict[str, Any], env: dict[str, str]) -> dict[str, An
         reason = "no_tests_opted_in"
     elif returncode:
         state, reason = "fail", f"exit_{returncode}"
-    return {"id": stage["id"], "state": state, "reason": reason,
+    # Gate output ends in a large evidence line; lead with the failing results.
+    failures = [line[:300] for line in output.splitlines()
+                if re.match(r"^(NATIVE:fail:|DEEP:fail:|[A-Z_]+:FAIL:)", line)]
+    return {"id": stage["id"], "state": state, "reason": reason, "failures": failures[:20],
             "duration_ms": round((time.monotonic() - started) * 1000), "detail": output[-1500:]}
 
 
@@ -144,7 +149,7 @@ def run_deep(root: Path) -> dict[str, Any]:
     head = subprocess.run(["git", "rev-parse", "HEAD"], cwd=root, capture_output=True, text=True, check=False)
     stages = deep_stages(root)
     env = {**os.environ, "ST_NATIVE_NO_REUSE": "1"}
-    gate = {"id": "gate", "argv": [_st(), "check", "--check"], "cwd": ".",
+    gate = {"id": "gate", "argv": [*_st(), "check", "--check"], "cwd": ".",
             "timeout_seconds": GATE_TIMEOUT_SECONDS, "admitted": True}
     outcomes = [_run(root, stage, env) for stage in (gate, *stages)]
     return {"project": root.name, "sha": head.stdout.strip(),

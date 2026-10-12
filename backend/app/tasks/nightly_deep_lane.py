@@ -72,8 +72,9 @@ def _run_deep(root: Path) -> dict[str, Any]:
     for line in reversed(completed.stdout.splitlines()):
         if line.startswith("DEEP_EVIDENCE:"):
             result = json.loads(line.removeprefix("DEEP_EVIDENCE:"))
-            failed = [stage["id"] for stage in result.get("stages", []) if stage.get("state") != "pass"]
-            return {"state": result.get("state"), "reason": ",".join(failed) or "passed"}
+            failed = [stage for stage in result.get("stages", []) if stage.get("state") != "pass"]
+            return {"state": result.get("state"), "reason": ",".join(stage["id"] for stage in failed) or "passed",
+                    "failures": [line for stage in failed for line in stage.get("failures", [])][:5]}
     return {"state": "unavailable", "reason": f"no_deep_evidence_exit_{completed.returncode}"}
 
 
@@ -87,8 +88,8 @@ def _notify(rows: list[dict[str, Any]], today: date) -> None:
         create_notification(
             project_id="summitflow", notification_type="system", severity="warning",
             title=f"Nightly deep lane: {len(failed)} project(s) failed",
-            message="\n".join(f"{row['project_id']}: {row['reason']} source={row['sha'][:12]} "
-                              f"(rerun: st check --deep)" for row in failed),
+            message="\n".join(f"{row['project_id']}: {row['reason']} source={row['sha'][:12]} (rerun: st check --deep)"
+                              + "".join(f"\n  {line}" for line in row.get("failures", [])) for row in failed),
             metadata={"nightly_deep_lane": True},
             dedupe_key=f"nightly-deep-lane-{today.isoformat()}",
         )
@@ -125,7 +126,6 @@ def run_nightly_deep_lane(*, now: datetime | None = None, project_ids: list[str]
         rows.append(row)
         if path is not None and outcome["state"] in {"pass", "fail"}:
             path.parent.mkdir(parents=True, exist_ok=True)
-            path.write_text(json.dumps({"date": today.isoformat(), "sha": head, "state": outcome["state"],
-                                        "reason": outcome["reason"]}))
+            path.write_text(json.dumps({"date": today.isoformat(), "sha": head, **outcome}))
     _notify(rows, today)
     return {"status": "completed", "projects": rows}

@@ -477,6 +477,8 @@ def _handle_check_args(ctx: typer.Context, configs: dict[str, dict[str, object]]
             return 2
         for stage in result["stages"]:
             print(f"DEEP:{stage['state']}:{stage['id']}|reason:{stage['reason']}|duration_ms:{stage['duration_ms']}")
+            for line in stage["failures"]:
+                print(f"  {line}")
         if "--json" in args:
             print("DEEP_EVIDENCE:" + json.dumps(result, sort_keys=True, separators=(",", ":")))
         return 0 if result["state"] == "pass" else 1
