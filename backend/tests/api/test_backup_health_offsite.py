@@ -343,3 +343,18 @@ async def test_storage_summary_passes_repository_and_archive_bytes(monkeypatch) 
     assert summary.repository_logical_bytes == 500
     assert summary.repository_point_count == 1
     assert summary.measurement == "mixed-catalogue-logical-not-physical"
+
+
+@pytest.mark.asyncio
+async def test_restore_test_all_response_omits_exception_text(monkeypatch):
+    from app.api.backups import health_endpoints
+    from app.tasks import backup_restore_test
+
+    monkeypatch.setattr(backup_restore_test, "run_restore_tests", lambda: {
+        "status": "partial", "tested": 2, "passed": 1, "failed": 1,
+        "results": [{"ok": True, "source_id": "a", "backup_id": "b1", "error": None, "evidence": {"x": 1}},
+                    {"ok": False, "source_id": "c", "error": "Traceback /secret/path line 9"}],
+    })
+    summary = await health_endpoints.restore_test_all()
+    assert summary["failed"] == 1 and summary["results"][0] == {"ok": True, "source_id": "a", "backup_id": "b1", "error": None}
+    assert "secret" not in str(summary) and summary["results"][1]["error"].startswith("Restore test failed")

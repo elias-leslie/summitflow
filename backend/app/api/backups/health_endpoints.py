@@ -229,7 +229,14 @@ async def restore_test_all() -> dict:
     """Run dry-run restore tests for all enabled backup sources."""
     from ...tasks.backup_restore_test import run_restore_tests
 
-    return run_restore_tests()
+    summary = run_restore_tests()
+    # Exception text stays in logs and the source's restore_test_error; the response reports pass/fail only.
+    summary["results"] = [
+        {"ok": bool(r.get("ok")), "source_id": r.get("source_id"), "backup_id": r.get("backup_id"),
+         "error": None if r.get("ok") else "Restore test failed; see the source's last restore test error"}
+        for r in summary.get("results", [])
+    ]
+    return summary
 
 
 @router.post("/backups/restore-test/offsite")
