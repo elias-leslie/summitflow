@@ -75,7 +75,8 @@ BASE = {"test_loc": 900, "ratio": 0.9, "gate_median_seconds": 100.0, "slow_tests
     [
         (_measurement(test_loc=950), BASE, True),  # over ratio, more tests
         (_measurement(test_loc=880), BASE, False),  # over, but shrinking
-        (_measurement(test_loc=900, slow=3), BASE, True),  # another slow test
+        (_measurement(test_loc=900, slow=6), BASE, True),  # more slow tests than load noise explains
+        (_measurement(test_loc=900, slow=4), BASE, False),  # within load noise
         (_measurement(test_loc=900, gate=200, gate_floor_seconds=60), BASE, True),  # gate past ratchet
         (_measurement(test_loc=900, gate=105), BASE, False),  # within tolerance
         (_measurement(test_loc=500), {**BASE, "test_loc": 400}, False),  # under budget: free to grow

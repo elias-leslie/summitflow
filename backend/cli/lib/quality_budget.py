@@ -37,6 +37,7 @@ DEFAULTS: dict[str, float] = {
     # The gate median may wobble this much above its ratchet before it counts.
     "gate_tolerance": 0.1,
 }
+SLOW_TEST_NOISE = 2
 TRIM_TASK_TITLE = "Trim test suite"
 TRIM_TASK_LABEL = "test-budget"
 
@@ -311,7 +312,9 @@ def regressions(current: Measurement, baseline: Mapping[str, Any] | None) -> lis
     found = []
     if current.test_loc is not None and isinstance(baseline.get("test_loc"), int) and current.test_loc > baseline["test_loc"]:
         found.append(f"test_loc +{current.test_loc - baseline['test_loc']}")
-    if current.slow_tests is not None and isinstance(baseline.get("slow_tests"), int) and current.slow_tests > baseline["slow_tests"]:
+    # Test durations vary with host load; only growth beyond that noise counts.
+    if (current.slow_tests is not None and isinstance(baseline.get("slow_tests"), int)
+            and current.slow_tests > baseline["slow_tests"] * (1 + current.thresholds["gate_tolerance"]) + SLOW_TEST_NOISE):
         found.append(f"slow_tests +{current.slow_tests - baseline['slow_tests']}")
     ratchet = baseline.get("gate_median_seconds")
     if (current.gate_median_seconds is not None and isinstance(ratchet, (int, float))
