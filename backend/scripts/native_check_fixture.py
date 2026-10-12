@@ -146,10 +146,11 @@ def database_fixture(*, lifetime_seconds: int = LIFETIME_SECONDS):
 
 def main() -> int:
     mode = sys.argv[1] if len(sys.argv) == 2 else ""
-    if mode not in {"bootstrap", "python", "fleet"}:
-        raise SystemExit("Usage: native_check_fixture.py bootstrap|python|fleet")
+    if mode not in {"bootstrap", "python", "fleet", "deep"}:
+        raise SystemExit("Usage: native_check_fixture.py bootstrap|python|fleet|deep")
+    full_suite = mode in {"python", "deep"}
     lifetime_seconds = (BOOTSTRAP_TIMEOUT_SECONDS + DOCKER_TIMEOUT_SECONDS if mode == "bootstrap"
-                        else LIFETIME_SECONDS if mode == "python" else FLEET_LIFETIME_SECONDS)
+                        else LIFETIME_SECONDS if full_suite else FLEET_LIFETIME_SECONDS)
     with database_fixture(lifetime_seconds=lifetime_seconds) as environment:
         bootstrap = subprocess.run(
             [sys.executable, str(BACKEND / "scripts" / "verify_bootstrap_schema.py")],
@@ -165,22 +166,25 @@ def main() -> int:
         if mode == "bootstrap":
             print(json.dumps({"passed": 1, "failed": 0, "skipped": 0}))
             return 0
-        report = ROOT / ".dev-tools" / ("native-fleet.xml" if mode == "fleet" else "native-python.xml")
-        tests = ["tests"] if mode == "python" else [
+        report = ROOT / ".dev-tools" / f"native-{mode}.xml"
+        tests = ["tests"] if full_suite else [
             "tests/storage/test_fleet_events.py", "tests/services/test_fleet_sessions.py",
             "tests/cli/test_sessions_fleet.py", "tests/api/test_fleet_sessions.py",
             "tests/cli/test_sessions.py", "tests/cli/test_sessions_close.py",
             "tests/storage/test_maintenance_retention.py", "tests/test_events_api_filters.py",
         ]
         # Each xdist worker bootstraps its own database in this superuser fixture.
-        workers = ["-n", str(PYTHON_TEST_WORKERS), "--dist", "worksteal"] if mode == "python" else []
+        workers = ["-n", str(PYTHON_TEST_WORKERS), "--dist", "worksteal"] if full_suite else []
+        # The nightly deep lane runs what the gate's addopts exclude, except
+        # e2e, which targets the deployed service.
+        markers = ["-m", "slow and not e2e"] if mode == "deep" else []
         # Direct stages keep TMPDIR on deep mounted scratch. A short private
         # base keeps tests' tmp_path AF_UNIX sockets within the 108-byte limit
         # without moving bulk temporary files off that scratch.
         basetemp = tempfile.TemporaryDirectory(prefix="", ignore_cleanup_errors=True)
         try:
             result = subprocess.run(
-                [sys.executable, "-m", "pytest", *tests, *workers, "--junitxml=" + str(report),
+                [sys.executable, "-m", "pytest", *tests, *workers, *markers, "--junitxml=" + str(report),
                  "--basetemp=" + basetemp.name,
                  "--deselect=tests/cli/test_saved_work_snapshots.py::test_native_btrfs_shared_capture_readonly_recovery_and_isolated_restore",
                  "--deselect=tests/cli/test_saved_work_snapshots.py::test_native_nested_saved_source_is_refused_and_disposable_tracked_fixture_preserved",
@@ -188,7 +192,7 @@ def main() -> int:
                  "and not test_real_detached_result_survives_collection "
                  "and not (test_pre_push_chains_same_arguments_and_stdin and global)"],
                 cwd=BACKEND, env=environment,
-                timeout=PYTHON_TEST_TIMEOUT_SECONDS if mode == "python" else FLEET_LIFETIME_SECONDS - 240,
+                timeout=PYTHON_TEST_TIMEOUT_SECONDS if full_suite else FLEET_LIFETIME_SECONDS - 240,
                 capture_output=True, text=True, check=False,
             )
         finally:
@@ -197,7 +201,8 @@ def main() -> int:
         print(result.stderr.replace(password, "[fixture credential]"), file=sys.stderr, end="")
         if report.is_file():
             report.write_text(report.read_text().replace(password, "[fixture credential]"))
-        return result.returncode
+        # pytest exits 5 when nothing is marked slow: nothing opted in yet.
+        return 0 if mode == "deep" and result.returncode == 5 else result.returncode
 
 
 if __name__ == "__main__":

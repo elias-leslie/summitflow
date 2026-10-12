@@ -404,3 +404,25 @@ async def nightly_publication_wf(input: EmptyInput, ctx: Context) -> dict[str, A
     if not _system_schedule_enabled("nightly_publication"):
         return _disabled_schedule_result("nightly_publication")
     return await asyncio.to_thread(run_nightly_publication)
+
+
+@hatchet.task(
+    name="summitflow-nightly-deep-lane",
+    input_validator=EmptyInput,
+    # UTC 05-11 covers the 01:00-07:00 New York window across DST; offset from
+    # publication so the busy heavy lane defers whichever starts second.
+    on_crons=["35 5-11 * * *"],
+    execution_timeout="21600s",
+    retries=0,
+    concurrency=ConcurrencyExpression(
+        expression="'summitflow-nightly-deep-lane'",
+        max_runs=1,
+        limit_strategy=ConcurrencyLimitStrategy.CANCEL_NEWEST,
+    ),
+)
+async def nightly_deep_lane_wf(input: EmptyInput, ctx: Context) -> dict[str, Any]:
+    from ..tasks.nightly_deep_lane import run_nightly_deep_lane
+
+    if not _system_schedule_enabled("nightly_deep_lane"):
+        return _disabled_schedule_result("nightly_deep_lane")
+    return await asyncio.to_thread(run_nightly_deep_lane)

@@ -51,6 +51,7 @@ class AgentConfig(TypedDict, total=False):
     restore_tests_enabled: bool  # Enable scheduled restore verification
     runtime_hygiene_enabled: bool  # Enable scheduled runtime hygiene audit
     nightly_publication_enabled: bool  # Enable the overnight publication sweep (system kill switch)
+    nightly_deep_lane_enabled: bool  # Enable the nightly deep lane (system kill switch)
     publication_mode: str  # Per project: "nightly", "mirror" or "manual" (default)
     publication_hold: dict[str, Any] | None  # {"through": OID | None, "reason", "set_at"}; keeps later commits local
     autonomous_max_tasks_per_day: int | None  # Max tasks per day
@@ -100,6 +101,7 @@ DEFAULT_AGENT_CONFIG: AgentConfig = {
     "restore_tests_enabled": True,
     "runtime_hygiene_enabled": False,
     "nightly_publication_enabled": True,
+    "nightly_deep_lane_enabled": True,
     "publication_mode": "manual",
     "autonomous_max_tasks_per_day": None,
     "autonomous_cooldown_minutes": 0,

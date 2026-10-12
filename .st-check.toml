@@ -144,6 +144,13 @@ required = false
 applicable = false
 reason = "ST_SNAPSHOT_TEST_ROOT requires an owner-assigned isolated Btrfs subvolume and bounded restore/delete privilege; local hermetic acceptance exactly deselects test_native_btrfs_shared_capture_readonly_recovery_and_isolated_restore and test_native_nested_saved_source_is_refused_and_disposable_tracked_fixture_preserved. Separate physical qualification and invocation are documented in docs/native-host-recovery.md."
 
+# Nightly deep lane (st check --deep): pytest -m slow needs the same database
+# fixture as the gate; e2e stays out because it targets the deployed service.
+[[deep.stages]]
+id = "python-slow"
+argv = ["backend/.venv/bin/python", "backend/scripts/native_check_fixture.py", "deep"]
+timeout_seconds = 2220
+
 # Full-suite runs use one database per xdist worker (tests/conftest.py).
 [pytest]
 workers = 8

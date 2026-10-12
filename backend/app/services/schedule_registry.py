@@ -130,6 +130,14 @@ SCHEDULE_DEFINITIONS: tuple[ScheduleDefinition, ...] = (
         scope="system",
     ),
     ScheduleDefinition(
+        schedule_id="nightly_deep_lane",
+        config_key="nightly_deep_lane_enabled",
+        label="Nightly deep lane",
+        description="Runs st check --deep (full gate without reuse plus opted-in slow tests) once a day per project between 01:00 and 07:00 New York time.",
+        cron="35 5-11 * * *",
+        scope="system",
+    ),
+    ScheduleDefinition(
         schedule_id="runtime_hygiene",
         config_key="runtime_hygiene_enabled",
         label="Runtime hygiene audit",

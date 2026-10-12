@@ -300,6 +300,7 @@ Usage:
   st check --check
   st check --native [--stage ID] [--no-reuse] [--json]
   st check --acceptance [--sha REV] [--task TASK] [--scope PATH] [--no-reuse] [--json]
+  st check --deep [--json]  # nightly: --check without reuse, then opted-in slow tests
   st check --changed-only
   st check --quick [--changed-only]
   st check --fix [--changed-only]  # apply Ruff and Biome fixes
@@ -312,6 +313,8 @@ Usage:
         + "> [-- <tool args>]\n\n"
         "Acceptance reuses a successful same-source receipt by default; --no-reuse reruns checks.\n"
         "Use --json for the full receipt instead of the compact acceptance summary.\n"
+        "Deep lane opt-in: @pytest.mark.slow (Python; the gate excludes it), //go:build slow (Go),\n"
+        "or [[deep.stages]] id/argv/cwd/timeout_seconds in .st-check.toml. Never live credentials.\n"
     )
 
 

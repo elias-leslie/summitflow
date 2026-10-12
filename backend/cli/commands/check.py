@@ -468,6 +468,18 @@ def _handle_check_args(ctx: typer.Context, configs: dict[str, dict[str, object]]
         except NativeCheckError as exc:
             output_error(str(exc))
             return 2
+    if args and args[0] == "--deep":
+        from cli.lib.deep_lane import DeepLaneError, run_deep
+        try:
+            result = run_deep(_resolve_repo_root())
+        except DeepLaneError as exc:
+            output_error(str(exc))
+            return 2
+        for stage in result["stages"]:
+            print(f"DEEP:{stage['state']}:{stage['id']}|reason:{stage['reason']}|duration_ms:{stage['duration_ms']}")
+        if "--json" in args:
+            print("DEEP_EVIDENCE:" + json.dumps(result, sort_keys=True, separators=(",", ":")))
+        return 0 if result["state"] == "pass" else 1
     if args and args[0] == "--acceptance":
         if any(option in {"-h", "--help"} for option in args[1:]):
             print(
