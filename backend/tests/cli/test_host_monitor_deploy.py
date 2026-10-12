@@ -112,6 +112,8 @@ def test_unit_uses_protected_install_and_explicit_owner():
 
 @pytest.mark.parametrize("activation_fails", [False, True])
 def test_first_install_and_failed_activation_preserve_owner_store(tmp_path, monkeypatch, activation_fails):
+    # Acceptance's random --basetemp can contain "__"; substituted paths must not read as unresolved placeholders.
+    tmp_path = tmp_path / "base__tmp"
     source, home = tmp_path / "source", tmp_path / "owner"
     artifacts = source / "host-monitor/target/release"
     artifacts.mkdir(parents=True)

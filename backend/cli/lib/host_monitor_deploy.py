@@ -10,6 +10,7 @@ import fcntl
 import json
 import os
 import pwd
+import re
 import shutil
 import sqlite3
 import subprocess
@@ -124,10 +125,14 @@ def install(source: Path, uid: int, gid: int, transaction: str) -> None:
         if src.is_symlink() or not src.is_file():
             raise RuntimeError("accepted monitor artifact is absent or a symlink")
         _write(release / filename, src.read_bytes(), 0o755 if filename in {"summitflow-host-monitor", "monitor-observe.pyz"} else 0o644)
-    unit = (source / "scripts/systemd" / UNIT).read_text()
-    unit = unit.replace("__MONITOR_RELEASE__", str(release)).replace("__MONITOR_OWNER_UID__", str(uid)).replace("__MONITOR_OWNER_GID__", str(gid))
-    if "__" in unit:
+    template = (source / "scripts/systemd" / UNIT).read_text()
+    values = {"__MONITOR_RELEASE__": str(release), "__MONITOR_OWNER_UID__": str(uid), "__MONITOR_OWNER_GID__": str(gid)}
+    # Check the template's own placeholders: substituted paths (e.g. a tmp dir) may legitimately contain "__".
+    if set(re.findall(r"__[A-Z][A-Z0-9_]*__", template)) - values.keys():
         raise RuntimeError("unresolved collector service template")
+    unit = template
+    for placeholder, value in values.items():
+        unit = unit.replace(placeholder, value)
     old_unit = UNIT_PATH.read_text() if UNIT_PATH.exists() else None
     if old_unit is None and STATE.exists():
         raise RuntimeError("unmanaged system monitor state already exists; inspect it before adoption")
