@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import os
 import socket
+import time
 from collections.abc import Callable, Iterator
 from contextlib import contextmanager
 from datetime import UTC, datetime
@@ -201,6 +202,60 @@ def _restart_blocker(source_id: str) -> str | None:
     return f"{phase.get('label') or source_id} ({phase.get('operation')}, mutating since {phase.get('since')}; wait, or {cancel} --force)" if cancel else f"{source_id} ({phase.get('operation')})"
 
 
+def backup_restart_blockers() -> list[str]:
+    """Live mutating backups a worker restart would interrupt; reserves nothing."""
+    key = _lock_key(_RESTART_GUARD_SOURCE)
+    redis = get_redis()
+    return sorted(
+        blocker
+        for item in redis.scan_iter(match=f"{BACKUP_LOCK_PREFIX}*")
+        if (decoded := item.decode() if isinstance(item, bytes) else str(item)) != key
+        and not lease_holder_dead(redis.get(decoded))
+        and (blocker := _restart_blocker(decoded.removeprefix(BACKUP_LOCK_PREFIX))) is not None
+    )
+
+
+BACKUP_RESTART_WAIT_SECONDS = 2 * 60 * 60
+_BACKUP_RESTART_POLL_SECONDS = 30.0
+_BACKUP_RESTART_PROGRESS_SECONDS = 300.0
+
+
+def wait_for_backup_restart_window(
+    *,
+    timeout_seconds: float = BACKUP_RESTART_WAIT_SECONDS,
+    progress: Callable[[str], None] = print,
+    sleep: Callable[[float], None] = time.sleep,
+    clock: Callable[[], float] = time.monotonic,
+) -> None:
+    """Poll until no mutating backup remains; the guard itself still decides.
+
+    Waiting holds no reservation, so the backups being waited on keep running
+    and new ones stay admissible until the restart guard is acquired.
+    """
+    started = clock()
+    reported: tuple[list[str], float] | None = None
+    while True:
+        try:
+            blockers = backup_restart_blockers()
+        except Exception as exc:
+            raise BackupLockLeaseError("Cannot verify backup ownership; rebuild refused. Restore Redis access, then retry.") from exc
+        if not blockers:
+            if reported is not None:
+                progress(f"[service] backups finished after {clock() - started:.0f}s; continuing rebuild")
+            return
+        elapsed = clock() - started
+        if elapsed >= timeout_seconds:
+            raise BackupLockLeaseError(
+                f"Backups still active after {elapsed:.0f}s: " + ", ".join(blockers)
+                + ". Wait for completion or explicitly cancel in Backups, then retry the rebuild."
+            )
+        if reported is None or reported[0] != blockers or elapsed - reported[1] >= _BACKUP_RESTART_PROGRESS_SECONDS:
+            progress(f"[service] waiting for backups before restarting workers ({elapsed:.0f}s of "
+                     f"{timeout_seconds:.0f}s): " + ", ".join(blockers))
+            reported = (blockers, elapsed)
+        sleep(_BACKUP_RESTART_POLL_SECONDS)
+
+
 @contextmanager
 def backup_worker_restart_guard() -> Iterator[Callable[[], None]]:
     """Refuse busy workers and atomically exclude new native backup admission.
@@ -224,13 +279,7 @@ def backup_worker_restart_guard() -> Iterator[Callable[[], None]]:
             # A read-only maintenance phase (check, dry-run) is stopped by the
             # restart with its repository unchanged; mutation cannot start
             # while this reservation exists.
-            active = sorted(
-                blocker
-                for item in get_redis().scan_iter(match=f"{BACKUP_LOCK_PREFIX}*")
-                if (decoded := item.decode() if isinstance(item, bytes) else str(item)) != key
-                and not lease_holder_dead(get_redis().get(decoded))
-                and (blocker := _restart_blocker(decoded.removeprefix(BACKUP_LOCK_PREFIX))) is not None
-            )
+            active = backup_restart_blockers()
             owned = owns_backup_lease(_RESTART_GUARD_SOURCE, token)
         except Exception as exc:
             raise BackupLockLeaseError("Cannot verify backup restart ownership; rebuild refused.") from exc

@@ -54,6 +54,8 @@ def project(tmp_path: Path) -> service_ops.ProjectServices:
 @pytest.fixture
 def lifecycle(monkeypatch, project):
     monkeypatch.setattr(service, "_load", lambda _: project)
+    monkeypatch.setattr(service, "backup_restart_blockers", lambda: [])
+    monkeypatch.delenv(service.WAIT_FOR_BACKUPS_ENV, raising=False)
     calls = {}
     for name in ("ensure_infra", "sync_backend", "build_frontend", "run_migrations",
                  "sync_systemd_units", "restart_service", "verify_health", "sync_seeds"):
@@ -141,6 +143,43 @@ def test_summitflow_rebuild_refuses_busy_backup_before_mutation(lifecycle, proje
     assert "Backups active" in result.output
     lifecycle["ensure_infra"].assert_not_called()
     lifecycle["restart_service"].assert_not_called()
+
+
+@pytest.mark.parametrize("mode", ["foreground", "detached_job"])
+def test_busy_backup_is_judged_before_acceptance(lifecycle, project, monkeypatch, mode):
+    monkeypatch.setattr(service, "_load", lambda _: replace(project, project_id="summitflow"))
+    blockers = [["AfterTimes (restic, mutating)"], ["AfterTimes (restic, mutating)"], []]
+    monkeypatch.setattr(service, "backup_restart_blockers", lambda: blockers.pop(0) if len(blockers) > 1 else blockers[0])
+    accepted = Mock(side_effect=service_ops.prepare_accepted_release)
+    monkeypatch.setattr(service_ops, "prepare_accepted_release", accepted)
+    if mode == "detached_job":
+        from app.tasks import backup_lock
+
+        monkeypatch.setenv(service.WAIT_FOR_BACKUPS_ENV, "1")
+        monkeypatch.setattr(backup_lock, "backup_restart_blockers", service.backup_restart_blockers)
+        monkeypatch.setattr(backup_lock, "_BACKUP_RESTART_POLL_SECONDS", 0.0)
+    result = CliRunner().invoke(service.app, ["rebuild", "summitflow"])
+    if mode == "foreground":
+        assert result.exit_code == 1
+        accepted.assert_not_called()
+    else:
+        assert result.exit_code == 0, result.output
+        accepted.assert_called_once()
+        assert not blockers[0]
+
+
+def test_backup_wait_is_bounded():
+    from app.tasks import backup_lock
+    from app.tasks.backup_lock import BackupLockLeaseError
+
+    now = [0.0]
+    with pytest.MonkeyPatch.context() as patch:
+        patch.setattr(backup_lock, "backup_restart_blockers", lambda: ["AfterTimes"])
+        with pytest.raises(BackupLockLeaseError):
+            backup_lock.wait_for_backup_restart_window(
+                timeout_seconds=90, progress=lambda _line: None,
+                sleep=lambda seconds: now.__setitem__(0, now[0] + seconds), clock=lambda: now[0])
+    assert now[0] >= 90
 
 
 @pytest.mark.parametrize("scope", ["full", "frontend"])

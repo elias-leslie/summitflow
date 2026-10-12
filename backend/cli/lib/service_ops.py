@@ -1276,6 +1276,8 @@ def queue_detached(
             "--setenv", f"HOME={Path.home()}",
             "--setenv", f"SUMMITFLOW_ROOT={get_repo_root()}",
             "--setenv", f"SUMMITFLOW_SERVICE_STATE_ROOT={service_release.service_state_root()}",
+            # A queued job waits out active backups instead of being refused.
+            "--setenv", "ST_REBUILD_WAIT_FOR_BACKUPS=1",
             # The documented repair for a broken release must not run it again.
             *(["--setenv", "ST_DEV_CHECKOUT=1"] if os.environ.get("ST_DEV_CHECKOUT") == "1" else []),
             *(arg for name, value in _caller_identity_env() for arg in ("--setenv", f"{name}={value}")),

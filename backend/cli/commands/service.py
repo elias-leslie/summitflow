@@ -13,7 +13,12 @@ from typing import Annotated
 
 import typer
 
-from app.tasks.backup_lock import BackupLockLeaseError, backup_worker_restart_guard
+from app.tasks.backup_lock import (
+    BackupLockLeaseError,
+    backup_restart_blockers,
+    backup_worker_restart_guard,
+    wait_for_backup_restart_window,
+)
 
 from ..lib import service_ops, service_release
 from ..lib.confirm_token import confirm_gate
@@ -205,6 +210,39 @@ def status(
     raise typer.Exit(1 if errors else 0)
 
 
+# Set by the detached job runner: a queued rebuild waits out backups instead
+# of being refused after its acceptance already ran.
+WAIT_FOR_BACKUPS_ENV = "ST_REBUILD_WAIT_FOR_BACKUPS"
+
+
+def _backup_restart_preflight(*, detach: bool) -> None:
+    """Judge the backup restart guard before acceptance spends minutes.
+
+    Backups run in the SummitFlow worker this rebuild restarts. The guard
+    itself still reserves and rechecks before any restart.
+    """
+    if os.environ.get(WAIT_FOR_BACKUPS_ENV) == "1":
+        try:
+            wait_for_backup_restart_window()
+        except BackupLockLeaseError as exc:
+            output_error(str(exc))
+            raise typer.Exit(1) from None
+        return
+    try:
+        blockers = backup_restart_blockers()
+    except Exception:
+        output_error("Cannot verify backup ownership; rebuild refused. Restore Redis access, then retry.")
+        raise typer.Exit(1) from None
+    if not blockers:
+        return
+    if detach:
+        print("[service] backups active (" + ", ".join(blockers) + "); the detached job will wait for them, up to 2h")
+        return
+    output_error("Backups active: " + ", ".join(blockers)
+                 + ". Wait for completion or explicitly cancel in Backups, then retry the rebuild (or use --detach to queue it).")
+    raise typer.Exit(1)
+
+
 @app.command()
 @usage(
     surface="st.service.rebuild",
@@ -284,6 +322,8 @@ def rebuild(
         scope = RebuildScope.full
     if scope != RebuildScope.frontend and service_ops.preflight_host_monitor(services) != 0:
         raise typer.Exit(1)
+    if services.project_id == "summitflow" and scope != RebuildScope.frontend:
+        _backup_restart_preflight(detach=detach)
     if detach:
         try:
             accepted_source = service_ops.resolve_accepted_source(services, acceptance)
