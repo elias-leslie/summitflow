@@ -57,3 +57,17 @@ def test_cli_config_verify(monkeypatch, ca_file):
     monkeypatch.setenv("PROXMOX_CA_BUNDLE", "")
     monkeypatch.setenv("PROXMOX_VERIFY_SSL", "false")
     assert proxmox.load_proxmox_config().verify is False
+
+
+def test_cli_config_reads_host_env_local_when_shell_has_no_proxmox_env(tmp_path, monkeypatch) -> None:
+    for key in ("PROXMOX_API_URL", "PROXMOX_TOKEN_ID", "PROXMOX_TOKEN_SECRET", "PROXMOX_NODE",
+                "PROXMOX_CA_BUNDLE", "PROXMOX_VERIFY_SSL"):
+        monkeypatch.delenv(key, raising=False)
+    monkeypatch.setenv("HOME", str(tmp_path))
+    monkeypatch.setattr(proxmox, "get_repo_root", lambda: tmp_path / "repo")
+    (tmp_path / ".env.local").write_text(
+        "PROXMOX_API_URL=https://pve:8006\nPROXMOX_TOKEN_ID=u@pve!t\nPROXMOX_TOKEN_SECRET=s\n"
+        "PROXMOX_NODE=n\nUNRELATED=ignored\n"
+    )
+    config = proxmox.load_proxmox_config()
+    assert (config.host, config.node) == ("https://pve:8006", "n")

@@ -41,26 +41,52 @@ HEADLESS_CHROME_ARGS = (
 )
 
 
-def parse_target_args(args: list[str], env: Mapping[str, str] | None = None) -> tuple[str, list[str]]:
+def parse_target_choice(
+    args: list[str], env: Mapping[str, str] | None = None
+) -> tuple[str, list[str], bool]:
+    """Return (target, remaining args, explicit). Proxmox is the default target."""
     values = os.environ if env is None else env
-    target = values.get("ST_BROWSER_TARGET", "").strip().lower() or "local-ai"
+    configured = values.get("ST_BROWSER_TARGET", "").strip().lower()
+    target, explicit = configured or "proxmox", bool(configured)
     if values.get("ST_BROWSER_LOCAL_AI", "").strip() == "1":
-        target = "local-ai"
+        target, explicit = "local-ai", True
     if values.get("ST_BROWSER_FORCE_PROXMOX", "").strip() == "1":
-        target = "proxmox"
+        target, explicit = "proxmox", True
     remaining: list[str] = []
     for index, arg in enumerate(args):
         if arg == LOCAL_AI_FLAG or (index == 0 and arg == LOCAL_AI_COMMAND):
-            target = "local-ai"
+            target, explicit = "local-ai", True
         elif arg == PROXMOX_FLAG or (index == 0 and arg == PROXMOX_COMMAND):
-            target = "proxmox"
+            target, explicit = "proxmox", True
         else:
             remaining.append(arg)
     if target in {"vm", "browser-vm", "remote"}:
         target = "proxmox"
     if target not in {"local-ai", "proxmox"}:
-        target = "local-ai"
+        target = "proxmox"
+    return target, remaining, explicit
+
+
+def parse_target_args(args: list[str], env: Mapping[str, str] | None = None) -> tuple[str, list[str]]:
+    target, remaining, _explicit = parse_target_choice(args, env)
     return target, remaining
+
+
+# Operations whose state lives on this workstation (managed sessions, local
+# runtime inventory) keep the local target unless --proxmox is explicit.
+LOCAL_DEFAULT_OPERATIONS = {"session", "workflow", "inventory", "reap-isolated"}
+
+
+def default_target_needs_local(command: str | None, args: list[str], env: Mapping[str, str] | None = None) -> str | None:
+    """Why a defaulted (not explicit) target must stay local, or None."""
+    if command in LOCAL_DEFAULT_OPERATIONS:
+        return f"{command} is local"
+    # An explicit alternate session names an owner-managed local session.
+    if managed_session_name(args, env) is not None:
+        return "managed --session is local"
+    if any(is_local_browser_url(arg) for arg in args):
+        return "loopback URL is only reachable locally; use `st browser url <project>` for the VM"
+    return None
 
 
 def url_hostname(value: str) -> str | None:

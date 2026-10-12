@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import os
 import re
+import sys
 from pathlib import Path
 from typing import Any, cast
 from uuid import uuid4
@@ -13,6 +14,7 @@ import typer
 
 from app.services.browser_routes import (
     BrowserRouteError,
+    is_url_like,
     resolve_browser_location,
     resolve_browser_project_route,
 )
@@ -142,8 +144,58 @@ def _parse_engine_args(args: list[str]) -> tuple[str | None, list[str]]:
     return engine, remaining
 
 
+def _project_public_url(project_ref: str) -> str | None:
+    """Public (Caddy) URL the browser VM resolves to this workstation over the LAN."""
+    import httpx
+
+    from ._projects_helpers import get_api_base
+
+    try:
+        project_id = resolve_browser_project_route(project_ref).project_id
+        response = httpx.get(f"{get_api_base()}/projects/{project_id}", timeout=3.0)
+        response.raise_for_status()
+        value = response.json().get("public_url")
+    except (BrowserRouteError, httpx.HTTPError, ValueError, AttributeError):
+        return None
+    return value if isinstance(value, str) and value.startswith("https://") else None
+
+
+def _vm_project_location(value: str) -> str | None:
+    """A project shorthand whose frontend is loopback-only maps to its public URL."""
+    if is_url_like(value):
+        return None
+    try:
+        resolved = resolve_browser_location(value)
+    except BrowserRouteError:
+        return None
+    return _project_public_url(value) if browser_policy.is_local_browser_url(resolved) else None
+
+
 def _resolve_guarded_browser_location(value: str) -> str:
-    return browser_policy.resolve_guarded_location(value)
+    return _vm_project_location(value) or browser_policy.resolve_guarded_location(value)
+
+
+def _proxmox_reachable() -> bool:
+    try:
+        host = _resolve_endpoint().host
+    except BrowserTargetError:
+        return False
+    return browser_support.cdp_reachable(host, timeout=2.0)
+
+
+def _select_default_target(target: str, explicit: bool, command: str | None, args: list[str]) -> str:
+    if explicit or target != "proxmox":
+        return target
+    try:
+        if browser_policy.default_target_needs_local(command, args) is not None:
+            return "local-ai"
+    except ValueError:
+        return "local-ai"  # Malformed session options keep the local validation path.
+    if _proxmox_reachable():
+        return target
+    print("[st] Proxmox browser VM unreachable; using the local browser (pass --proxmox to require the VM)",
+          file=sys.stderr, flush=True)
+    return "local-ai"
 
 
 def _with_local_ai_session(args: list[str]) -> list[str]:
@@ -273,7 +325,7 @@ def _browser_endpoint(args: list[str], engine: str | None) -> int:
     return 0
 
 
-def _browser_url(args: list[str]) -> int:
+def _browser_url(args: list[str], target: str = "proxmox") -> int:
     if not args:
         output_error(_URL_USAGE)
         return 2
@@ -282,6 +334,11 @@ def _browser_url(args: list[str]) -> int:
     except BrowserRouteError as exc:
         output_error(str(exc))
         return 2
+    public = (_project_public_url(args[0])
+              if target == "proxmox" and browser_policy.is_local_browser_url(route.url) else None)
+    if public:
+        print(f"{public} # {route.project_id} public_url (VM-reachable)")
+        return 0
     print(f"{route.url} # {route.project_id} {route.source}")
     return 0
 
@@ -647,11 +704,13 @@ def _build_request(argv: list[str], context: dict[str, Any]) -> tuple[dict[str, 
             selected_args = ["step", *selected_args]
             command = "step"
         return _build_structured_request("selected-tab", None, selected_args, command, context, original_argv=selected_args, selected_tab=selected_tab)
-    target, args = _parse_browser_target_args(argv)
+    target, args, explicit_target = browser_policy.parse_target_choice(argv)
     engine, browser_args = _parse_engine_args(args)
     command = _agent_command(browser_args)
     if command == "url":
-        raise typer.Exit(_browser_url(browser_args[1:]))
+        raise typer.Exit(_browser_url(browser_args[1:], target))
+    if command != "endpoint":
+        target = _select_default_target(target, explicit_target, command, browser_args)
     if command == "endpoint":
         if target == "local-ai":
             output_error("st browser endpoint targets Proxmox/VM CDP; rerun with `st browser --proxmox endpoint`")
@@ -813,9 +872,12 @@ def run_registered(record: Any, argv: list[str], context: dict[str, Any]) -> int
 _USAGE = """Remote browser automation through st
 
 Default target:
-  Interactive commands use local system Chrome profile AI.
+  Commands use the Proxmox browser VM; if its CDP does not answer within 2s they
+  fall back to local system Chrome profile AI and say so on stderr.
+  Managed sessions (session, workflow, --session NAME), inventory and loopback URLs
+  stay local. Force a target with --proxmox / --local-ai or ST_BROWSER_TARGET.
   Checks use a fresh isolated headless profile by default.
-  Force Proxmox/VM with --proxmox or ST_BROWSER_TARGET=proxmox when VM isolation is better.
+  st browser url <project> prints the VM-reachable (public) URL for loopback dev servers.
   Override VM with ST_BROWSER_HOST, ST_BROWSER_DEFAULT_HOST, or ST_BROWSER_VM_ID.
   Set ST_BROWSER_DISABLE_DEFAULT_VM_HOST=1 to require explicit host config.
 

@@ -1235,9 +1235,9 @@ def test_browser_help_explains_isolated_target() -> None:
     result = runner.invoke(main_app, ["browser", "--help"])
 
     assert result.exit_code == 0
-    assert "Interactive commands use local system Chrome profile AI." in result.output
+    assert "Commands use the Proxmox browser VM" in result.output
     assert "Checks use a fresh isolated headless profile by default." in result.output
-    assert "Force Proxmox/VM with --proxmox" in result.output
+    assert "Force a target with --proxmox / --local-ai" in result.output
     assert "st browser url <project>" in result.output
     assert "st browser check a-term" in result.output
     assert "st browser --local-ai open portfolio-ai" in result.output
@@ -1497,6 +1497,7 @@ def test_local_ai_browser_fails_fast_when_command_lock_is_busy(
 ) -> None:
     _clear_local_ai_window_env(monkeypatch)
     monkeypatch.setenv("XDG_RUNTIME_DIR", str(tmp_path))
+    monkeypatch.setenv("ST_BROWSER_TARGET", "local-ai")
     @contextmanager
     def busy():
         yield False

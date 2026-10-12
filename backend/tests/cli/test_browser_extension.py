@@ -13,6 +13,12 @@ from app.services.browser_targets import BrowserTargetError
 from cli.commands import browser
 
 
+@pytest.fixture(autouse=True)
+def _local_policy_target(monkeypatch: pytest.MonkeyPatch) -> None:
+    """These cases cover local workstation policy; default routing has its own tests."""
+    monkeypatch.setenv("ST_BROWSER_TARGET", "local-ai")
+
+
 def _context(tmp_path: Path) -> dict[str, object]:
     return {
         "contract_version": 1,
@@ -878,3 +884,35 @@ def test_selected_tab_requires_owner_capability_before_dispatch(tmp_path, monkey
     monkeypatch.setattr("cli.extensions.dispatch_extension", _forbid_dispatch)
     assert browser.run_registered(_v2_record(("run",)), ["--selected-tab", "a" * 32, "snapshot"], _context(tmp_path)) == 2
     assert "does not support selected-tab" in capsys.readouterr().err
+
+
+def test_default_target_prefers_reachable_proxmox_and_falls_back_locally(monkeypatch) -> None:
+    monkeypatch.delenv("ST_BROWSER_TARGET")
+    target, remaining, explicit = browser.browser_policy.parse_target_choice(["open", "https://example.com"])
+    assert (target, remaining, explicit) == ("proxmox", ["open", "https://example.com"], False)
+    monkeypatch.setattr(browser, "_proxmox_reachable", lambda: True)
+    assert browser._select_default_target("proxmox", False, "open", ["open", "https://example.com"]) == "proxmox"
+    monkeypatch.setattr(browser, "_proxmox_reachable", lambda: False)
+    assert browser._select_default_target("proxmox", False, "open", ["open", "https://example.com"]) == "local-ai"
+    # Explicit --proxmox never silently falls back.
+    assert browser._select_default_target("proxmox", True, "open", ["open", "https://example.com"]) == "proxmox"
+
+
+@pytest.mark.parametrize("command,args", [
+    ("session", ["session", "list"]),
+    ("inventory", ["inventory"]),
+    ("open", ["--session", "owner-login", "open", "https://example.com"]),
+    ("open", ["open", "http://localhost:3001/"]),
+])
+def test_local_state_and_loopback_urls_keep_default_target_local(monkeypatch, command, args) -> None:
+    monkeypatch.delenv("ST_BROWSER_TARGET")
+    monkeypatch.setattr(browser, "_proxmox_reachable", lambda: pytest.fail("must not probe the VM"))
+    assert browser._select_default_target("proxmox", False, command, args) == "local-ai"
+
+
+def test_vm_url_uses_public_project_url_for_loopback_frontend(monkeypatch, capsys) -> None:
+    monkeypatch.setattr(browser, "_project_public_url", lambda _ref: "https://dev.example.test")
+    assert browser._browser_url(["summitflow"], "proxmox") == 0
+    assert capsys.readouterr().out.startswith("https://dev.example.test # summitflow public_url")
+    assert browser._browser_url(["summitflow"], "local-ai") == 0
+    assert capsys.readouterr().out.startswith("http://localhost:3001/")

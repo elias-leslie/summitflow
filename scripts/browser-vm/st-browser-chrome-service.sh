@@ -7,6 +7,11 @@ CDP_PORT="${ST_BROWSER_CDP_PORT:-9222}"
 CHROME_DEBUG_PORT="${ST_BROWSER_CHROME_DEBUG_PORT:-9212}"
 PROFILE_DIR="${ST_BROWSER_CHROME_PROFILE:-$BROWSER_ROOT/profiles/chrome}"
 HOST_RESOLVER_RULES="${ST_BROWSER_HOST_RESOLVER_RULES:-}"
+# CDP is full browser control: forward it only to the operator workstation.
+# The PVE VM firewall applies the same allowlist in front of the guest.
+CDP_ALLOW="${ST_BROWSER_CDP_ALLOW:-192.168.86.128/32}"
+# Only browser pages send Origin; CDP clients (agent-browser, Playwright) do not.
+REMOTE_ALLOW_ORIGINS="${ST_BROWSER_REMOTE_ALLOW_ORIGINS:-}"
 LOG_DIR="$BROWSER_ROOT/logs"
 
 if [[ -z "$CHROME_BIN" ]]; then
@@ -24,6 +29,14 @@ if ! command -v socat >/dev/null 2>&1; then
 fi
 
 mkdir -p "$PROFILE_DIR" "$LOG_DIR"
+
+# A profile copied or renamed from another host keeps that host's Singleton
+# locks, and Chrome then refuses the profile. Nothing else uses this profile,
+# because systemd runs one instance of this service.
+owner="$(readlink "$PROFILE_DIR/SingletonLock" 2>/dev/null || true)"
+if [[ -n "$owner" && "$owner" != "$(hostname)-"* ]]; then
+  rm -f "$PROFILE_DIR/SingletonLock" "$PROFILE_DIR/SingletonSocket" "$PROFILE_DIR/SingletonCookie"
+fi
 
 chrome_pid=""
 proxy_pid=""
@@ -47,7 +60,7 @@ trap cleanup EXIT INT TERM
   --no-default-browser-check \
   "--user-data-dir=$PROFILE_DIR" \
   "--remote-debugging-port=$CHROME_DEBUG_PORT" \
-  --remote-allow-origins="*" \
+  ${REMOTE_ALLOW_ORIGINS:+"--remote-allow-origins=$REMOTE_ALLOW_ORIGINS"} \
   "--host-resolver-rules=$HOST_RESOLVER_RULES" \
   about:blank \
   >>"$LOG_DIR/chrome.log" 2>&1 &
@@ -68,7 +81,7 @@ if ! curl -fsS "http://127.0.0.1:$CHROME_DEBUG_PORT/json/version" >/dev/null 2>&
   exit 1
 fi
 
-socat "TCP-LISTEN:$CDP_PORT,fork,reuseaddr,bind=0.0.0.0" "TCP:127.0.0.1:$CHROME_DEBUG_PORT" \
+socat "TCP4-LISTEN:$CDP_PORT,fork,reuseaddr,range=$CDP_ALLOW" "TCP:127.0.0.1:$CHROME_DEBUG_PORT" \
   >>"$LOG_DIR/chrome-cdp-proxy.log" 2>&1 &
 proxy_pid=$!
 

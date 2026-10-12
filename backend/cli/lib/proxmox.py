@@ -56,8 +56,10 @@ def _read_env_file(path: Path) -> dict[str, str]:
 
 
 def load_proxmox_config() -> ProxmoxConfig:
-    env_file = get_repo_root() / "docker" / "compose" / ".env"
-    file_values = _read_env_file(env_file)
+    # ~/.env.local is the host secret source the backend service already uses;
+    # agent shells do not export PROXMOX_* themselves.
+    file_values = _read_env_file(Path.home() / ".env.local")
+    file_values.update(_read_env_file(get_repo_root() / "docker" / "compose" / ".env"))
 
     def value(name: str, default: str = "") -> str:
         return os.environ.get(name, file_values.get(name, default)).strip()

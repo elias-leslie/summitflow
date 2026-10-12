@@ -262,8 +262,40 @@ def browser_target_env(
     return values
 
 
+def _vm_host_cache(values: Mapping[str, str], vmid: str) -> Path:
+    runtime = values.get("XDG_RUNTIME_DIR", "").strip() or f"/tmp/st-browser-{os.getuid()}"
+    return Path(runtime) / "st-browser" / f"vm-{re.sub(r'[^0-9A-Za-z_-]', '_', vmid)}-host"
+
+
+def cdp_reachable(host: str, *, port: int = ENGINE_PORTS["chrome"], timeout: float = 2.0) -> bool:
+    try:
+        return httpx.get(f"http://{host}:{port}/json/version", timeout=timeout).status_code < 400
+    except httpx.HTTPError:
+        return False
+
+
 def default_browser_vm_host(values: dict[str, str]) -> str:
     vmid = values.get("ST_BROWSER_VM_ID", "").strip() or DEFAULT_BROWSER_VM_ID
+    cache = _vm_host_cache(values, vmid)
+    # The guest-agent lookup costs ~2 s per command; reuse the last answer
+    # while its CDP endpoint still responds.
+    try:
+        cached = cache.read_text().strip()
+    except OSError:
+        cached = ""
+    if re.fullmatch(r"\d{1,3}(?:\.\d{1,3}){3}", cached) and cdp_reachable(cached, timeout=0.5):
+        return cached
+    host = _lookup_browser_vm_host(values, vmid)
+    if host:
+        try:
+            cache.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
+            cache.write_text(host + "\n")
+        except OSError:
+            pass
+    return host
+
+
+def _lookup_browser_vm_host(values: dict[str, str], vmid: str) -> str:
     try:
         result = subprocess.run(
             [st_bin(), "vm", "ip", vmid],
