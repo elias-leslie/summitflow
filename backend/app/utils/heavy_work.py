@@ -227,9 +227,10 @@ class HeavyWork:
     def environment(self, environment: Mapping[str, str] | None = None) -> dict[str, str]:
         result = dict(os.environ if environment is None else environment)
         for key in WORKER_ENVIRONMENT:
-            # Vitest's env overrides JS config; one never raises a valid owner
-            # maxWorkers=1. Other native tools retain explicit smaller values.
-            result[key] = _bounded(result.get(key), 1 if key.startswith("VITEST_") else WORKERS)
+            # Every tool, Vitest included, is capped at the lane's WORKERS and
+            # keeps an explicit smaller value. Vitest's env overrides its JS
+            # config, so a project needing serial tests sets VITEST_MAX_WORKERS=1.
+            result[key] = _bounded(result.get(key), WORKERS)
         # Next's native default is max(1, CIRCLE_NODE_TOTAL - 1). Explicit
         # next.config cpus overrides remain the owner's configuration.
         result["CIRCLE_NODE_TOTAL"] = _bounded(result.get("CIRCLE_NODE_TOTAL"), WORKERS + 1)

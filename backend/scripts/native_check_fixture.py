@@ -173,7 +173,7 @@ def main() -> int:
             "tests/storage/test_maintenance_retention.py", "tests/test_events_api_filters.py",
         ]
         # Each xdist worker bootstraps its own database in this superuser fixture.
-        workers = ["-n", str(PYTHON_TEST_WORKERS)] if mode == "python" else []
+        workers = ["-n", str(PYTHON_TEST_WORKERS), "--dist", "worksteal"] if mode == "python" else []
         # Direct stages keep TMPDIR on deep mounted scratch. A short private
         # base keeps tests' tmp_path AF_UNIX sockets within the 108-byte limit
         # without moving bulk temporary files off that scratch.

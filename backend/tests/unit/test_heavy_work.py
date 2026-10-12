@@ -515,7 +515,7 @@ def test_worker_settings_preserve_smaller_values_and_only_child_priority(lane: P
         environment = work.environment({"GOMAXPROCS": "1", "VITEST_MAX_WORKERS": "99",
                                         "UV_CONCURRENT_BUILDS": "1", "PATH": os.defpath})
         assert environment["GOMAXPROCS"] == environment["UV_CONCURRENT_BUILDS"] == "1"
-        assert environment["VITEST_MAX_WORKERS"] == "1"
+        assert environment["VITEST_MAX_WORKERS"] == "2"
         assert environment["CIRCLE_NODE_TOTAL"] == "3"
         result = work.run([sys.executable, "-c", code], env=environment, capture_output=True, text=True)
     priority, received, child_io = json.loads(result.stdout)
@@ -700,7 +700,7 @@ def test_two_canonical_checks_share_a_heavy_lane(tmp_path: Path, monkeypatch: py
     scanner.write_text(
         f"#!{sys.executable}\n"
         "import os, sys, time\n"
-        "assert os.environ['VITEST_MAX_WORKERS'] == '1'\n"
+        "assert os.environ['VITEST_MAX_WORKERS'] == '2'\n"
         "assert os.environ['GOMAXPROCS'] == '2'\n"
         "assert os.getpriority(os.PRIO_PROCESS, 0) >= 10\n"
         "from pathlib import Path\n"
