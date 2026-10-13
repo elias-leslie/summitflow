@@ -187,8 +187,7 @@ def _pytest_section(root: Path) -> dict:
     return section if isinstance(section, dict) else {}
 
 
-def tool_env(root: Path, environ: Mapping[str, str], name: str | None = None) -> dict[str, str]:
-    env = dict(environ)
+def tool_paths(root: Path, name: str | None = None) -> list[Path]:
     declared = read_tool_paths(root)
     candidates: list[Path] = []
     if name and name in declared:
@@ -198,7 +197,12 @@ def tool_env(root: Path, environ: Mapping[str, str], name: str | None = None) ->
     else:
         for default in _DEFAULT_TOOL_PATH_CANDIDATES.get(name or "", ()):
             candidates.append(root / default)
-    paths = [str(candidate) for candidate in candidates if candidate.exists()]
+    return [candidate for candidate in candidates if candidate.exists()]
+
+
+def tool_env(root: Path, environ: Mapping[str, str], name: str | None = None) -> dict[str, str]:
+    env = dict(environ)
+    paths = [str(candidate) for candidate in tool_paths(root, name)]
     if paths:
         env["PATH"] = ":".join([*paths, env.get("PATH", "")])
     # Vitest only defaults NODE_ENV to "test" when it is unset; an inherited

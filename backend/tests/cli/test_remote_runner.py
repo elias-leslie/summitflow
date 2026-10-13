@@ -51,7 +51,7 @@ def test_unreachable_runner_keeps_work_local(monkeypatch, key):
 def _patch_tool(monkeypatch, tmp_path):
     monkeypatch.setattr(check, "_resolve_repo_root", lambda: tmp_path)
     monkeypatch.setattr(check, "_workdir", lambda *_: tmp_path)
-    monkeypatch.setattr(check, "_resolve_command", lambda *_: ["pytest"])
+    monkeypatch.setattr(check, "_resolve_command", lambda *_, **__: ["pytest"])
     monkeypatch.setattr(check, "_measured_light", lambda *_: False)
 
 

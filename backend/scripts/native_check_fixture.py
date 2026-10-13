@@ -178,13 +178,15 @@ def main() -> int:
         # The nightly deep lane runs what the gate's addopts exclude, except
         # e2e, which targets the deployed service.
         markers = ["-m", "slow and not e2e"] if mode == "deep" else []
+        # Acceptance pins pytest-randomly's order so `st check --ci-repro --seed N` replays it.
+        seed = [f"--randomly-seed={os.environ['ST_CHECK_SEED']}"] if os.environ.get("ST_CHECK_SEED", "").isdigit() else []
         # Direct stages keep TMPDIR on deep mounted scratch. A short private
         # base keeps tests' tmp_path AF_UNIX sockets within the 108-byte limit
         # without moving bulk temporary files off that scratch.
         basetemp = tempfile.TemporaryDirectory(prefix="", ignore_cleanup_errors=True)
         try:
             result = subprocess.run(
-                [sys.executable, "-m", "pytest", *tests, *workers, *markers, "--junitxml=" + str(report),
+                [sys.executable, "-m", "pytest", *tests, *workers, *markers, *seed, "--junitxml=" + str(report),
                  "--basetemp=" + basetemp.name,
                  "--deselect=tests/cli/test_saved_work_snapshots.py::test_native_btrfs_shared_capture_readonly_recovery_and_isolated_restore",
                  "--deselect=tests/cli/test_saved_work_snapshots.py::test_native_nested_saved_source_is_refused_and_disposable_tracked_fixture_preserved",

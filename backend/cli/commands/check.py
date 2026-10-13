@@ -13,17 +13,18 @@ import shutil
 import subprocess
 import sys
 import time
-from contextlib import redirect_stdout
+from collections.abc import Iterator
+from contextlib import contextmanager, redirect_stdout
 from pathlib import Path
 from typing import cast
 from uuid import uuid4
 
 import typer
 
-from app.utils.heavy_work import heavy_work
+from app.utils.heavy_work import HeavyWork, heavy_work
 
 from ..details import detail_path, display_path, summary_hint, write_details
-from ..lib import remote_runner
+from ..lib import ci_parity, remote_runner
 from ..lib.acceptance import AcceptanceError
 from ..lib.architecture_check import run_architecture_check
 from ..lib.cleanroom import main as cleanroom_main
@@ -61,6 +62,7 @@ from .check_execution import (
     tool_env,
     tool_not_installed,
     tool_output,
+    tool_paths,
     tool_result_line,
 )
 from .check_native import (
@@ -93,7 +95,9 @@ app = typer.Typer(
 )
 
 
-def _resolve_command(binary: str, root: Path, cwd: Path, base_args: list[str]) -> list[str]:
+def _resolve_command(binary: str, root: Path, cwd: Path, base_args: list[str], *,
+                     search_path: str | None = None) -> list[str]:
+    """Project-local tools first, then PATH (or the acceptance gate's fixed lookup path)."""
     # npx foo -> search node_modules for foo, not for npx itself.
     if binary == "npx" and base_args:
         tool = base_args[0]
@@ -104,12 +108,12 @@ def _resolve_command(binary: str, root: Path, cwd: Path, base_args: list[str]) -
                 return [str(declared_candidate), *base_args[1:]]
             # Preserve the declared path as authoritative, including an empty
             # declaration. The caller reports the missing binary before npx.
-            return [shutil.which("npx") or "npx", "--no-install", *base_args]
+            return [shutil.which("npx", path=search_path) or "npx", "--no-install", *base_args]
         for search_root in (cwd, root / "frontend", root):
             npx_candidate = search_root / "node_modules" / ".bin" / tool
             if npx_candidate.exists():
                 return [str(npx_candidate), *base_args[1:]]
-        npx = shutil.which("npx")
+        npx = shutil.which("npx", path=search_path)
         return [npx or "npx", "--no-install", *base_args]
 
     for search_root in (cwd, root / "frontend", root):
@@ -120,7 +124,7 @@ def _resolve_command(binary: str, root: Path, cwd: Path, base_args: list[str]) -
             if candidate.exists():
                 return [str(candidate), *base_args]
 
-    resolved = shutil.which(binary)
+    resolved = shutil.which(binary, path=search_path)
     return [resolved or binary, *base_args]
 
 
@@ -183,6 +187,51 @@ def _run_frontend_script(command: list[str], cwd: Path, env: dict[str, str]) -> 
             )
 
 
+@contextmanager
+def _tool_environment(root: Path, cwd: Path, name: str, *, parity: bool
+                      ) -> Iterator[tuple[dict[str, str], ci_parity.CiJob | None, list[str]]]:
+    """The host env for routine checks; a scrubbed CI-like env for acceptance."""
+    if not parity:
+        yield tool_env(root, os.environ, name), None, []
+        return
+    job = ci_parity.pytest_job(root, cwd) if name == "pytest" else None
+    with ci_parity.scratch_directory() as scratch:
+        env = ci_parity.environment(root, tool_dirs=tool_paths(root, name), job=job, scratch=scratch)
+        if name in {"vitest", "frontend-test"}:
+            env["NODE_ENV"] = "test"
+        with ci_parity.services(job, env) as service_names:
+            yield env, job, service_names
+
+
+def _run_parity_pytest(work: HeavyWork, cwd: Path, command: list[str], extra_args: list[str],
+                       job: ci_parity.CiJob | None, env: dict[str, str], report: Path | None,
+                       service_names: list[str]) -> subprocess.CompletedProcess[str]:
+    """Run the CI job's own pytest invocation(s), with its migration steps first."""
+    seed = ci_parity.seed()
+    if job is None:
+        commands, setup = [ci_parity.seeded(command, seed)], []
+    else:
+        tests = [[*job.tests[0], *extra_args]] if extra_args else [list(argv) for argv in job.tests]
+        commands, setup = [ci_parity.seeded(argv, seed) for argv in tests], job.setup
+        if report is not None:
+            commands[-1].append(f"--junitxml={report}")
+    source = f"{job.workflow}:{job.name}" if job else "local-gate"
+    print(f"CI_PARITY:pytest|job:{source}|seed:{seed if seed is not None else 'none'}"
+          f"|services:{','.join(service_names) or 'none'}|repro:{ci_parity.repro_command(seed)}", flush=True)
+    stdout: list[str] = []
+    stderr: list[str] = []
+    returncode = 0
+    for argv in [*setup, *commands]:
+        step = work.run(argv, cwd=cwd, env=env, capture_output=True, text=True, encoding="utf-8",
+                        errors="replace", check=False)
+        stdout.append(step.stdout or "")
+        stderr.append(step.stderr or "")
+        returncode = returncode or step.returncode
+        if returncode and argv in setup:
+            break
+    return subprocess.CompletedProcess(commands[-1], returncode, "\n".join(stdout), "\n".join(stderr))
+
+
 def _run_on_ci_runner(
     root: Path, command: list[str], cwd: Path, report: Path | None,
 ) -> tuple[subprocess.CompletedProcess[str], str] | None:
@@ -208,10 +257,19 @@ def _run_tool(name: str, config: dict[str, object], extra_args: list[str]) -> in
     binary = str(config.get("binary") or name)
     base_args = shlex.split(str(config.get("args") or ""))
     base_args, extra_args = adjusted_tool_args(name, base_args, extra_args, root)
-    resolved_command = _resolve_command(binary, root, cwd, base_args)
+    # Acceptance resolves gate binaries on a fixed path so its receipt names
+    # the same tools whichever shell or worker validates it later.
+    resolved_command = _resolve_command(binary, root, cwd, base_args,
+                                        search_path=ci_parity.canonical_tool_path() if ci_parity.active() else None)
     command = [*resolved_command, *extra_args]
     label = str(config.get("label") or name.upper())
     print(f"{label}:{name}:start")
+    if (name == "tsc" and binary == "npx" and base_args[:1] == ["tsc"]
+            and resolved_command[1:2] == ["--no-install"] and tool_not_installed(name, root)):
+        # Without project node_modules, npx would run whatever cached package
+        # is named `tsc` (an unrelated one): no type check ran, so skip.
+        print(f"{label}:SKIP:{name}:{missing_tool_skip(name, root)}")
+        return 0
     if (
         name == "biome"
         and binary == "npx"
@@ -246,24 +304,29 @@ def _run_tool(name: str, config: dict[str, object], extra_args: list[str]) -> in
             # Configured wrappers and all other tools retain the heavy default.
             direct = binary == name or (binary == "npx" and base_args[:1] == [name])
             work_class = "light" if (name in _LIGHT_TOOLS and direct) or _measured_light(root, name) else "heavy"
+            parity = ci_parity.active() and ci_parity.has_ci(root)
             remote = (_run_on_ci_runner(root, command, cwd, report)
-                      if name == "pytest" and work_class == "heavy" and not extra_args else None)
+                      if name == "pytest" and work_class == "heavy" and not extra_args and not parity else None)
             if remote is not None:
                 result, timing = remote
             else:
-                with heavy_work(f"check {name}", work_class=work_class, project=root.name) as work:
+                with (heavy_work(f"check {name}", work_class=work_class, project=root.name) as work,
+                      _tool_environment(root, cwd, name, parity=parity) as (env, job, service_names)):
                     started = time.monotonic()
                     queue_ms = (started - queued) * 1000
-                    result = work.run(
-                        command,
-                        cwd=cwd,
-                        env=tool_env(root, os.environ, name),
-                        capture_output=True,
-                        text=True,
-                        encoding="utf-8",
-                        errors="replace",
-                        check=False,
-                    )
+                    if parity and name == "pytest":
+                        result = _run_parity_pytest(work, cwd, command, extra_args, job, env, report, service_names)
+                    else:
+                        result = work.run(
+                            command,
+                            cwd=cwd,
+                            env=env,
+                            capture_output=True,
+                            text=True,
+                            encoding="utf-8",
+                            errors="replace",
+                            check=False,
+                        )
                     execution_ms = (time.monotonic() - started) * 1000
                     # Largest single child so far: conservative when earlier tools ran first.
                     _record_measurement(root, name, execution_ms,
@@ -272,6 +335,11 @@ def _run_tool(name: str, config: dict[str, object], extra_args: list[str]) -> in
                               f"|execution_ms:{execution_ms:.3f}")
                     if work.waited_behind and queue_ms >= _QUEUE_NOTICE_MS:
                         timing += f"|queued_behind:{work.waited_behind}"
+    except ci_parity.CiParityError as exc:
+        output = f"CI parity unavailable: {exc}"
+        details = write_check_details(root, name, output)
+        print(tool_result_line(label, name, 127, display_path(root, details), summary_hint(output)))
+        return 127
     except OSError as exc:
         if name not in {"vitest", "frontend-test"} and isinstance(exc, FileNotFoundError):
             # A missing tool skips when it was never installable, or when the
@@ -468,6 +536,8 @@ def _handle_check_args(ctx: typer.Context, configs: dict[str, dict[str, object]]
         except NativeCheckError as exc:
             output_error(str(exc))
             return 2
+    if args and args[0] == "--ci-repro":
+        return _ci_repro(args[1:], configs)
     if args and args[0] == "budget":
         from cli.lib.quality_budget import report
         return report(_resolve_repo_root(), json_output="--json" in args)
@@ -560,6 +630,41 @@ def _handle_check_args(ctx: typer.Context, configs: dict[str, dict[str, object]]
             print(_acceptance_summary(receipt))
         return 0 if receipt.get("state") == "success" else 1
     return handle_check_args(ctx, configs, runtime=_runtime())
+
+
+def _ci_repro(args: list[str], configs: dict[str, dict[str, object]]) -> int:
+    """Replay acceptance's tests in the working tree with CI's env and a given order seed."""
+    if any(option in {"-h", "--help"} for option in args):
+        print("Usage: st check --ci-repro [--seed N] [PYTEST_ARGS...]  "
+              "(seed from the acceptance failure's `reproduce:` hint)")
+        return 0
+    seed: int | None = None
+    if args[:1] == ["--seed"]:
+        if len(args) < 2 or not args[1].isdigit():
+            output_error("--seed needs the integer seed printed by acceptance")
+            return 2
+        seed, args = int(args[1]), args[2:]
+    os.environ[ci_parity.PARITY_FLAG] = "1"
+    os.environ[ci_parity.SEED_VAR] = str(seed if seed is not None else ci_parity.new_seed())
+    root = _resolve_repo_root()
+    try:
+        plan = native_plan(root)
+    except NativeCheckError as exc:
+        output_error(str(exc))
+        return 2
+    if plan is not None:
+        if args:
+            output_error("native projects replay their declared test stages; pytest arguments are not accepted")
+            return 2
+        print(f"CI_PARITY:native|seed:{os.environ[ci_parity.SEED_VAR]}")
+        result = run_native(root, plan, reuse=False, full_gate=True)
+        for stage in result["stages"]:
+            print(f"NATIVE:{stage['state']}:{stage['id']}|coverage:{stage['coverage']}|reason:{stage['reason']}")
+        return 0 if result["state"] == "pass" else 1
+    if "pytest" not in configs:
+        output_error("no pytest check is configured")
+        return 2
+    return _run_tool("pytest", configs["pytest"], args)
 
 
 def _native_legacy_checks(root: Path, plan: dict[str, object], configs: dict[str, dict[str, object]], *, print_output: bool) -> dict[str, object]:

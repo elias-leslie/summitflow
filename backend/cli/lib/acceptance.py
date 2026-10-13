@@ -7,7 +7,6 @@ import hashlib
 import json
 import os
 import re
-import shutil
 import stat
 import subprocess
 import sys
@@ -22,6 +21,7 @@ from typing import Any
 from dotenv.parser import parse_stream
 
 from app.utils.env_files import project_env_files
+from cli.lib import ci_parity
 
 
 class AcceptanceError(RuntimeError):
@@ -37,6 +37,7 @@ _SCHEMA_VERSION = 3
 # change alters what a passing gate proves (stages run, evidence accepted,
 # counting, isolation); the accepted commit/tree already binds this project.
 GATE_VERSION = 1
+CI_PARITY_VERSION = 1
 _ACCEPTANCE_COMMANDS: tuple[tuple[str, ...], ...] = (("st", "check", "--check"),)
 _INPUT_NAMES = {
     ".st-check.toml",
@@ -613,8 +614,11 @@ def _acceptance_plan(*, repo: Path | None = None, commit: str | None = None,
         "remote_security": "not_run_local_acceptance_does_not_claim_codeql_equivalence",
         "gate_implementation": {"gate_version": GATE_VERSION},
         "check_configuration": registry_identity,
-        "security_tools": {name: _file_identity(Path(path), name=name) if (path := shutil.which(name)) else {"unavailable": True}
+        "security_tools": {name: _file_identity(Path(path), name=name) if (path := ci_parity.which(name)) else {"unavailable": True}
                            for name in ("gitleaks", "semgrep", "osv-scanner")},
+        # Tool children run in the project's CI environment (scrubbed env,
+        # workflow tools/services, seeded order); see cli.lib.ci_parity.
+        "ci_parity": {"version": CI_PARITY_VERSION},
     }
     plan["fingerprint"] = hashlib.sha256(
         json.dumps(plan, sort_keys=True, separators=(",", ":")).encode()
@@ -655,7 +659,8 @@ def _project_acceptance_plan(repo: Path, *, commit: str | None = None,
     for name, config in legacy.items():
         if config.get("internal_adapter"):
             continue
-        command = _resolve_command(str(config.get("binary") or name), repo, _workdir(repo, config), shlex.split(str(config.get("args") or "")))
+        command = _resolve_command(str(config.get("binary") or name), repo, _workdir(repo, config), shlex.split(str(config.get("args") or "")),
+                                   search_path=ci_parity.canonical_tool_path())
         plan["legacy_tools"][name] = _file_identity(Path(command[0]), name=name)
         parts = Path(command[0]).parts
         for marker in (".venv", "venv", "node_modules"):
@@ -673,7 +678,7 @@ def _project_acceptance_plan(repo: Path, *, commit: str | None = None,
         }
         for tool in plan.get("security_tools", {}).values():
             if not tool.get("unavailable"):
-                executable = shutil.which(tool["name"])
+                executable = ci_parity.which(tool["name"])
                 if executable:
                     runtime = python_runtime_root(Path(executable))
                     if runtime is not None:
@@ -918,7 +923,7 @@ def _validate_retained_native_artifacts(repo: Path, evidence: Mapping[str, Any],
 
 
 def _run(command: list[str], cwd: Path, *, native_reuse: bool = True,
-         scope: Sequence[str] = ()) -> subprocess.CompletedProcess[str]:
+         scope: Sequence[str] = (), seed: int | None = None) -> subprocess.CompletedProcess[str]:
     if command and command[0] == "st":
         # Invoke this running gate, whose GATE_VERSION the plan binds. Safe-path mode
         # excludes the target project's cwd from module lookup; a different
@@ -931,6 +936,9 @@ def _run(command: list[str], cwd: Path, *, native_reuse: bool = True,
             environment["ST_CHECK_CHANGED_FILES"] = "\n".join(scope)
         if not native_reuse:
             environment["ST_NATIVE_NO_REUSE"] = "1"
+        environment[ci_parity.PARITY_FLAG] = "1"
+        if seed is not None:
+            environment[ci_parity.SEED_VAR] = str(seed)
         return subprocess.run([sys.executable, "-P", "-c", bootstrap,
                                str(Path(__file__).resolve().parents[2]), *command[1:]],
                               cwd=cwd, env=environment, text=True, capture_output=True, check=False)
@@ -1241,8 +1249,10 @@ def _accept_revision(
 ) -> dict[str, Any]:
     """Accept actual clean HEAD inputs, or a verified isolated Git materialization."""
     repo = repo.resolve()
+    # An explicit seed replays an earlier acceptance's test order.
+    seed = ci_parity.seed() if ci_parity.seed() is not None else ci_parity.new_seed()
     run = runner or (lambda command, cwd: _run(command, cwd, native_reuse=reuse,
-                                               scope=normalized_scope if coverage == "task" else ()))
+                                               scope=normalized_scope if coverage == "task" else (), seed=seed))
     with repo_lock(repo, purpose="full acceptance", wait_seconds=REPO_LOCK_WAIT_SECONDS):
         acceptance_started = time.monotonic()
         before = source_identity(repo, sha=sha, execution_basis=execution_basis)
@@ -1369,6 +1379,7 @@ def _accept_revision(
             "output_bytes": sum(check["output_bytes"] for check in checks),
             "started_at": started_at,
             "completed_at": datetime.now(UTC).isoformat(),
+            "ci_parity": {"seed": seed, "repro": ci_parity.repro_command(seed)},
         }
         receipt["acceptance_id"] = _receipt_digest(receipt)
         cache_artifact = artifact
@@ -1389,5 +1400,5 @@ def _accept_revision(
             failure_line = next((line for line in lines if ":FAIL:" in line),
                                 next((line for line in lines if _blocking_skip(line)), None))
             summary = f"{reason}; {failure_line}" if failure_line else reason
-            raise AcceptanceError(f"{summary}; acceptance evidence: {artifact}")
+            raise AcceptanceError(f"{summary}; reproduce: {ci_parity.repro_command(seed)}; acceptance evidence: {artifact}")
         return _descriptor(receipt, artifact, reused=False)

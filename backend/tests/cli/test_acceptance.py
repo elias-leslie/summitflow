@@ -30,14 +30,14 @@ def test_acceptance_plan_survives_equivalent_release_relocation(tmp_path: Path, 
     launcher.write_text("checkout shell facade")
     monkeypatch.setattr(acceptance, "__file__", str(checkout / "backend/cli/lib/acceptance.py"))
     monkeypatch.setattr(tool_registry, "tool_registry_path", lambda: checkout / "scripts/lib/tool-registry.json")
-    monkeypatch.setattr(acceptance.shutil, "which", lambda name: str(launcher if name == "st" else scanner))
+    monkeypatch.setattr(acceptance.ci_parity.shutil, "which", lambda name, **_: str(launcher if name == "st" else scanner))
     before = acceptance._acceptance_plan()
     release = tmp_path / "release"
     shutil.copytree(checkout, release, copy_function=shutil.copyfile)
     (release / "st").write_text("release Python facade for the same cli.main:app")
     monkeypatch.setattr(acceptance, "__file__", str(release / "backend/cli/lib/acceptance.py"))
     monkeypatch.setattr(tool_registry, "tool_registry_path", lambda: release / "scripts/lib/tool-registry.json")
-    monkeypatch.setattr(acceptance.shutil, "which", lambda name: str(release / ("st" if name == "st" else "scanner")))
+    monkeypatch.setattr(acceptance.ci_parity.shutil, "which", lambda name, **_: str(release / ("st" if name == "st" else "scanner")))
     assert acceptance._acceptance_plan() == before
     # Deploying different gate bytes keeps every project's proofs valid; only
     # an explicit gate version bump invalidates them.
@@ -51,7 +51,7 @@ def test_acceptance_plan_survives_equivalent_release_relocation(tmp_path: Path, 
 def test_acceptance_plan_detects_changed_security_tool_bytes(tmp_path: Path, monkeypatch) -> None:
     scanner = tmp_path / "scanner"
     scanner.write_text("original scanner")
-    monkeypatch.setattr(acceptance.shutil, "which", lambda _name: str(scanner))
+    monkeypatch.setattr(acceptance.ci_parity.shutil, "which", lambda _name, **_: str(scanner))
     before = acceptance._acceptance_plan()
     scanner.write_text("changed scanner")
     assert acceptance._acceptance_plan()["fingerprint"] != before["fingerprint"]
@@ -605,7 +605,7 @@ def test_isolated_plan_uses_selected_native_declaration(repo: Path) -> None:
 def test_accept_revision_detects_shared_plan_mutation_during_checks(repo: Path, monkeypatch) -> None:
     scanner = repo.parent / "shared-scanner"
     scanner.write_text("original scanner")
-    monkeypatch.setattr(acceptance.shutil, "which", lambda _name: str(scanner))
+    monkeypatch.setattr(acceptance.ci_parity.shutil, "which", lambda _name, **_: str(scanner))
 
     def mutate(command: list[str], cwd: Path):
         scanner.write_text("changed scanner during acceptance")

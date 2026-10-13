@@ -293,14 +293,26 @@ def local_gate_tools(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     tool = tmp_path.parent / f"{tmp_path.name}-gate-tool"
     tool.write_text("#!/bin/sh\nexit 0\n")
     tool.chmod(0o755)
-    real_which = acceptance.shutil.which
+    real_which = acceptance.ci_parity.shutil.which
     monkeypatch.setattr(
-        acceptance.shutil, "which",
+        acceptance.ci_parity.shutil, "which",
         lambda name, *args, **kwargs: str(tool)
         if name in {"gitleaks", "semgrep", "osv-scanner"}
         else real_which(name, *args, **kwargs),
     )
-    monkeypatch.setattr(check, "_resolve_command", lambda binary, root, cwd, args: [str(tool), *args])
+    monkeypatch.setattr(check, "_resolve_command", lambda binary, root, cwd, args, **_: [str(tool), *args])
+
+
+_HARNESS_IDENTITY = ("ST_SESSION_ID", "AGENT_HUB_SESSION_ID", "AGENT_HUB_AGENT_SLUG", "CLAUDE_SESSION_ID",
+                     "CLAUDE_CODE_SESSION_ID", "CODEX_SESSION_ID", "CODEX_THREAD_ID", "PI_SESSION_ID", "AI_AGENT",
+                     "TMUX_PANE")
+
+
+@pytest.fixture(autouse=True)
+def _harness_identity_unset(monkeypatch) -> None:
+    """An agent's own session identity must not leak into tests (CI has none)."""
+    for name in [*_HARNESS_IDENTITY, *(key for key in os.environ if key.startswith("AICO_"))]:
+        monkeypatch.delenv(name, raising=False)
 
 
 @pytest.fixture(autouse=True)

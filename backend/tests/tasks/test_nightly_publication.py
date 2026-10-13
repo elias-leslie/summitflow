@@ -185,6 +185,37 @@ def test_failed_acceptance_records_repair_and_never_publishes(repo, monkeypatch)
     assert (nightly.read_nightly_state(repo) or {}).get("sha") == head
 
 
+def test_passing_acceptance_with_an_unreusable_receipt_is_a_gate_fault_not_a_source_finding(repo, monkeypatch):
+    # fydor 2026-10-13: checks passed, the worker could not reuse the receipt,
+    # and the row said outcome=acceptance_failed reason=acceptance_passed.
+    head = _git(repo, "rev-parse", "HEAD")
+    monkeypatch.setattr(nightly, "_run_acceptance",
+                        lambda *_: {"state": "pass", "reason": "acceptance_passed", "evidence": "r.json"})
+    monkeypatch.setattr(backup_publish, "_acceptance_for_head", lambda *_: {"state": "invalid"})
+    observed = Mock()
+    monkeypatch.setattr("app.services.publication_health.record_publication_observation", observed)
+    monkeypatch.setattr("app.tasks.backup_manual_publish.publish_project_now",
+                        Mock(side_effect=AssertionError("unreusable acceptance published")))
+    row = nightly.execute_candidate({"project_id": "fixture", "sha": head, "mode": "nightly",
+                                     "action": "accept_then_publish"}, repo)
+    assert (row["outcome"], row["reason"], row["detail"]) == ("failed", "acceptance_receipt_not_reusable", "invalid")
+    assert row["evidence"] == "r.json" and nightly.needs_attention(row)
+    observed.assert_not_called()
+    assert nightly.read_nightly_state(repo) is None  # the next hourly run retries
+
+
+@pytest.mark.parametrize(("output", "evidence"), [
+    ("ACCEPTANCE:state=success|source=abc|id=1|artifact=/r/.git/st/acceptance/1.json|reused=false\n",
+     "/r/.git/st/acceptance/1.json"),
+    ("ERROR checks failed; reproduce: st check --ci-repro --seed 7; acceptance evidence: /r/2.json\n", "/r/2.json"),
+])
+def test_acceptance_evidence_is_recorded_for_passes_and_failures(repo, monkeypatch, output, evidence):
+    completed = Mock(returncode=0 if "success" in output else 1, stdout=output, stderr="")
+    monkeypatch.setattr(nightly.subprocess, "run", lambda *_a, **_k: completed)
+    monkeypatch.setattr(nightly, "_checks_failed", lambda *_: True)
+    assert nightly._run_acceptance(repo, "abc")["evidence"] == evidence
+
+
 def test_attention_lines_print_the_exact_authorization_command():
     row = {"project_id": "p", "mode": "nightly", "sha": "a" * 40, "action": "skip", "reason": "owner_action_required",
            "unauthorized_workflows": [".github/workflows/ci.yml"]}

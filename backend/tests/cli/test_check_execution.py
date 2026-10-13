@@ -239,7 +239,7 @@ def test_vitest_lane_follows_its_last_measured_run(
         return subprocess.CompletedProcess(command, 0, "fixture complete", "")
 
     monkeypatch.setattr(guard.HeavyWork, "run", run)
-    monkeypatch.setattr(check, "_resolve_command", lambda binary, *_args: [binary])
+    monkeypatch.setattr(check, "_resolve_command", lambda binary, *_args, **_: [binary])
     check._run_tool("vitest", {"binary": "vitest"}, [])
     assert admitted == [expected]
     recorded = json.loads(store.read_text())["vitest"]

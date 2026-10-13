@@ -23,7 +23,7 @@ def test_silent_pytest_retains_report_without_running_again(tmp_path, monkeypatc
     runner = Mock(side_effect=run)
     monkeypatch.setattr(check, "_resolve_repo_root", lambda: tmp_path)
     monkeypatch.setattr(check, "_workdir", lambda *_: tmp_path)
-    monkeypatch.setattr(check, "_resolve_command", lambda *_: ["pytest"])
+    monkeypatch.setattr(check, "_resolve_command", lambda *_, **__: ["pytest"])
     monkeypatch.setattr(HeavyWork, "run", runner)
     assert check._run_tool("pytest", {"label": "TEST"}, []) == returncode
     output = capsys.readouterr().out
@@ -40,7 +40,7 @@ def test_explicit_pytest_report_is_not_overridden(tmp_path, monkeypatch, argumen
     runner = Mock(return_value=subprocess.CompletedProcess([], 1, "existing failure", ""))
     monkeypatch.setattr(check, "_resolve_repo_root", lambda: tmp_path)
     monkeypatch.setattr(check, "_workdir", lambda *_: tmp_path)
-    monkeypatch.setattr(check, "_resolve_command", lambda *_: ["pytest"])
+    monkeypatch.setattr(check, "_resolve_command", lambda *_, **__: ["pytest"])
     monkeypatch.setattr(HeavyWork, "run", runner)
     assert check._run_tool("pytest", {"label": "TEST"}, [argument]) == 1
     arguments = runner.call_args.args[0]

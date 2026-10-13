@@ -601,6 +601,9 @@ def _run_native(root: Path, plan: dict[str, Any], *, aliases: Path, scratch: Pat
                    "PATH": os.pathsep.join([str(aliases), *(str(_local(root, path)) for path in plan["paths"])])}
     # The sandbox's explicit scratch mapping is needed by Docker bind mounts.
     # Preserve that single execution input without admitting ambient secrets.
+    # Acceptance's test-order seed; a runtime input, so stage reuse ignores it.
+    if seed := os.environ.get("ST_CHECK_SEED"):
+        environment["ST_CHECK_SEED"] = seed
     if host_scratch := os.environ.get("ST_NATIVE_TMP_HOST_ROOT"):
         environment["ST_NATIVE_TMP_HOST_ROOT"] = host_scratch
         environment["TMPDIR"] = "/tmp"

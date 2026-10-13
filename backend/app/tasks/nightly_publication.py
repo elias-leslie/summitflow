@@ -262,7 +262,9 @@ def _run_acceptance(root: Path, sha: str) -> dict[str, Any]:
         return {"state": "failed", "reason": "acceptance_timeout"}
     except OSError:
         return {"state": "failed", "reason": "acceptance_unavailable"}
-    evidence = re.findall(r"acceptance evidence: (\S+\.(?:json|log))", completed.stdout + completed.stderr)
+    # A failure names its receipt as "acceptance evidence: X"; a pass as "artifact=X".
+    evidence = re.findall(r"(?:acceptance evidence: |\|artifact=)(\S+?\.(?:json|log))(?=\||\s|$)",
+                          completed.stdout + completed.stderr)
     if completed.returncode == 0:
         return {"state": "pass", "reason": "acceptance_passed", "evidence": evidence[-1] if evidence else None}
     # Only failed checks are a source finding. Inputs changing underneath the
@@ -301,7 +303,17 @@ def execute_candidate(candidate: dict[str, Any], root: Path) -> dict[str, Any]:
         if acceptance["state"] == "unavailable":
             return {**candidate, "outcome": "deferred", "reason": acceptance["reason"],
                     "evidence": acceptance.get("evidence"), "observed_at": observed}
-        if acceptance["state"] != "pass" or _acceptance_for_head(root, sha).get("state") != "reused":
+        if acceptance["state"] == "pass":
+            reuse = _acceptance_for_head(root, sha)
+            if reuse.get("state") != "reused":
+                # The checks passed; this process just cannot reuse the receipt
+                # they wrote. That is a SummitFlow gate fault, not a source
+                # finding: never record it as failed acceptance or hold the
+                # source, so the next hourly run retries.
+                return {**candidate, "outcome": "failed", "reason": "acceptance_receipt_not_reusable",
+                        "detail": reuse.get("state"), "evidence": acceptance.get("evidence"),
+                        "observed_at": observed}
+        else:
             outcome = {**candidate, "outcome": "acceptance_failed", "reason": acceptance["reason"],
                        "evidence": acceptance.get("evidence"), "observed_at": observed}
             _write_nightly_state(root, outcome)

@@ -300,6 +300,7 @@ Usage:
   st check --check
   st check --native [--stage ID] [--no-reuse] [--json]
   st check --acceptance [--sha REV] [--task TASK] [--scope PATH] [--no-reuse] [--json]
+  st check --ci-repro [--seed N] [PYTEST_ARGS...]  # replay acceptance tests with CI env and order
   st check --deep [--json]  # nightly: --check without reuse, then opted-in slow tests
   st check budget [--json]  # test/source LOC, gate median, slow tests vs budget
   st check --changed-only
@@ -313,6 +314,8 @@ Usage:
         + names
         + "> [-- <tool args>]\n\n"
         "Acceptance reuses a successful same-source receipt by default; --no-reuse reruns checks.\n"
+        "Acceptance runs tests like CI: workflow env only (.st-check.toml [acceptance] env/pass_env/host_tools),\n"
+        "fresh service DB, seeded order; a failure prints its st check --ci-repro --seed N.\n"
         "Use --json for the full receipt instead of the compact acceptance summary.\n"
         "Deep lane opt-in: @pytest.mark.slow (Python; the gate excludes it), //go:build slow (Go),\n"
         "or [[deep.stages]] id/argv/cwd/timeout_seconds in .st-check.toml. Never live credentials.\n"
