@@ -32,6 +32,7 @@ from .backup_activity import (
     record_local_archive,
     run_bulk_process,
 )
+from .backup_canaries import canary_paths
 from .backup_native_archive import (
     INFRASTRUCTURE_DATABASE_DUMP_NAME,
     INFRASTRUCTURE_DATABASE_PAYLOAD_NAME,
@@ -500,11 +501,30 @@ def _capture_managed_service_state(destination: Path) -> dict[str, Any]:
 
 # Small user credential and shell configuration stores that live outside every
 # source tree. Restic-encrypted like env.local; restore copies them back by hand.
+# Nightshift canaries (decoy ~/.aws/credentials, ~/.kube/config, ...) are never
+# opened; with no canary list at all the stores are skipped (optional component).
 HOME_CONFIG_PATHS = (".ssh", ".gnupg", ".aws", ".kube", ".cert", ".gitconfig", ".bashrc", ".profile", ".zshrc", ".npmrc")
 
 
 def _copy_home_config(destination: Path) -> int:
-    return sum(_copy_if_exists(Path.home() / name, destination / name) for name in HOME_CONFIG_PATHS)
+    canaries = canary_paths()
+    if canaries is None:
+        logger.warning("home_config_skipped_canary_list_unavailable")
+        return 0
+    excluded = tuple(canaries)
+    copied = 0
+    for name in HOME_CONFIG_PATHS:
+        source = Path.home() / name
+        if any(_path_is_within(source, canary) for canary in excluded):
+            continue
+        try:
+            source_mode = source.lstat().st_mode
+        except FileNotFoundError:
+            continue
+        if stat.S_ISDIR(source_mode) or stat.S_ISREG(source_mode):
+            _copy_regular_path(source, destination / name, excluded_roots=excluded)
+            copied += 1
+    return copied
 
 
 def _base_config_components(configs: Path) -> dict[str, dict[str, str]]:

@@ -434,6 +434,11 @@ def test_infrastructure_payload_captures_home_credentials_without_links_or_socke
         agent.bind("S.gpg-agent")
     finally:
         os.chdir(cwd)
+    (home / ".ssh" / "config").write_text("Host vault-backup\n")
+    (home / ".aws").mkdir()
+    (home / ".aws" / "credentials").write_text("[prod-archive]\n")
+    canaries = [home / ".ssh" / "config", home / ".aws"]
+    monkeypatch.setattr(infra, "canary_paths", lambda: canaries)
     monkeypatch.setattr(infra, "_dump_infra_database", lambda path: path.write_bytes(b"SELECT 1;\n"))
     monkeypatch.setattr(infra, "_collect_redis_dump", lambda _path: None)
     try:
@@ -445,8 +450,22 @@ def test_infrastructure_payload_captures_home_credentials_without_links_or_socke
     assert (captured / ".gitconfig").is_file()
     assert not (captured / ".ssh" / "linked").exists()
     assert not (captured / ".gnupg" / "S.gpg-agent").exists()
+    assert not (captured / ".ssh" / "config").exists()
     assert not (captured / ".aws").exists()
     assert payload["verification"]["coverage"]["components"]["home_config"] == {"status": "captured"}
+
+
+def test_infrastructure_payload_skips_home_credentials_without_canary_list(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    roots = _configure_recovery_roots(tmp_path, monkeypatch)
+    (roots["home"] / ".gitconfig").write_text("[user]\n")
+    monkeypatch.setattr(infra, "canary_paths", lambda: None)
+    monkeypatch.setattr(infra, "_dump_infra_database", lambda path: path.write_bytes(b"SELECT 1;\n"))
+    monkeypatch.setattr(infra, "_collect_redis_dump", lambda _path: None)
+    payload = infra.prepare_infrastructure_payload(tmp_path / "project", tmp_path / "stage")
+    assert not (payload["snapshot_dir"] / "configs" / "home").exists()
+    assert payload["verification"]["coverage"]["components"]["home_config"]["status"] != "captured"
 
 
 def test_infrastructure_payload_rejects_empty_database_dump(
