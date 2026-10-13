@@ -498,6 +498,15 @@ def _capture_managed_service_state(destination: Path) -> dict[str, Any]:
     return result
 
 
+# Small user credential and shell configuration stores that live outside every
+# source tree. Restic-encrypted like env.local; restore copies them back by hand.
+HOME_CONFIG_PATHS = (".ssh", ".gnupg", ".aws", ".kube", ".cert", ".gitconfig", ".bashrc", ".profile", ".zshrc", ".npmrc")
+
+
+def _copy_home_config(destination: Path) -> int:
+    return sum(_copy_if_exists(Path.home() / name, destination / name) for name in HOME_CONFIG_PATHS)
+
+
 def _base_config_components(configs: Path) -> dict[str, dict[str, str]]:
     """Record exact base configuration artifacts copied into private staging."""
 
@@ -532,6 +541,7 @@ def _base_config_components(configs: Path) -> dict[str, dict[str, str]]:
             "status": populated_directory_status(configs / "hatchet-config")
         },
         "redis_state": {"status": regular_file_status(configs / "redis-dump.rdb")},
+        "home_config": {"status": populated_directory_status(configs / "home")},
     }
 
 
@@ -619,6 +629,7 @@ def prepare_infrastructure_payload(
         configs / "hatchet-config",
     )
     _collect_redis_dump(configs / "redis-dump.rdb")
+    _copy_home_config(configs / "home")
     coverage = _capture_recovery_state(snapshot_dir, _base_config_components(configs))
     metadata = payload_tree_metadata(snapshot_dir)
     verification = {

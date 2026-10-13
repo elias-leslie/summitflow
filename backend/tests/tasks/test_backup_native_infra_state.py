@@ -413,6 +413,35 @@ def test_infrastructure_payload_contains_plain_sql_and_measured_tree(
     assert result["verification"]["has_db"] is True
 
 
+def test_infrastructure_payload_captures_home_credentials_without_links_or_sockets(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import socket
+
+    roots = _configure_recovery_roots(tmp_path, monkeypatch)
+    home = roots["home"]
+    (home / ".ssh").mkdir(mode=0o700)
+    (home / ".ssh" / "id_ed25519").write_text("fixture-key\n")
+    (home / ".ssh" / "linked").symlink_to(tmp_path)
+    (home / ".gitconfig").write_text("[user]\n")
+    (home / ".gnupg").mkdir(mode=0o700)
+    agent = socket.socket(socket.AF_UNIX)
+    agent.bind(str(home / ".gnupg" / "S.gpg-agent"))
+    monkeypatch.setattr(infra, "_dump_infra_database", lambda path: path.write_bytes(b"SELECT 1;\n"))
+    monkeypatch.setattr(infra, "_collect_redis_dump", lambda _path: None)
+    try:
+        payload = infra.prepare_infrastructure_payload(tmp_path / "project", tmp_path / "stage")
+    finally:
+        agent.close()
+    captured = payload["snapshot_dir"] / "configs" / "home"
+    assert (captured / ".ssh" / "id_ed25519").read_text() == "fixture-key\n"
+    assert (captured / ".gitconfig").is_file()
+    assert not (captured / ".ssh" / "linked").exists()
+    assert not (captured / ".gnupg" / "S.gpg-agent").exists()
+    assert not (captured / ".aws").exists()
+    assert payload["verification"]["coverage"]["components"]["home_config"] == {"status": "captured"}
+
+
 def test_infrastructure_payload_rejects_empty_database_dump(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
 ) -> None:

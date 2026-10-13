@@ -66,6 +66,13 @@ INFRA_COVERAGE: tuple[CoverageComponent, ...] = (
         archive_marker="configs/redis-dump.rdb",
     ),
     CoverageComponent(
+        key="home_config",
+        label="User credentials and shell config",
+        category="optional",
+        description="~/.ssh, ~/.gnupg, ~/.aws, ~/.kube, ~/.cert and shell/git dotfiles",
+        archive_marker="configs/home",
+    ),
+    CoverageComponent(
         key="host_ingress",
         label="Host ingress configuration",
         category="required",
