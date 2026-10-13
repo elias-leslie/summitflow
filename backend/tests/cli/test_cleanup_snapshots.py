@@ -67,7 +67,7 @@ def test_delete_snapshot_residue_uses_privileged_helper_for_readonly_points(
 
     def fake_run(command: list[str], **kwargs: object) -> None:
         privileged.append(command)
-        shutil.rmtree(Path(command[6]))
+        shutil.rmtree(Path(command[3]))
 
     monkeypatch.setattr(quick_snapshots, "_delete_subvolume", fake_delete_subvolume)
     monkeypatch.setattr(_pruning.subprocess, "run", fake_run)
@@ -78,8 +78,7 @@ def test_delete_snapshot_residue_uses_privileged_helper_for_readonly_points(
 
     assert not root.exists()
     assert len(privileged) == 1
-    assert privileged[0][:5] == ["sudo", "-n", "/usr/bin/python3", "-I", "-c"]
-    assert privileged[0][6:8] == [str(point), str(point.parent)]
+    assert privileged[0][:4] == ["sudo", "-n", _pruning.SNAPSHOT_DELETE_HELPER, str(point)]
 
 
 def test_readonly_residue_helper_refuses_paths_outside_store(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:

@@ -2,11 +2,12 @@
 from __future__ import annotations
 
 import fcntl
+import importlib.machinery
+import importlib.util
 import json
 import os
 import shutil
 import subprocess
-import sys
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from types import SimpleNamespace
@@ -918,7 +919,7 @@ def test_privileged_pruning_failure_retains_released_copy(workspace, monkeypatch
     assert "read-only deletion denied" in retained.recovery_copies[0]["deletion_error"]
     assert not retained.recovery_copies[0]["deleted_at"]
     assert recovery_path(recovered).exists() and Path(point.snapshot_path).exists()
-    assert calls[0][:5] == ["sudo", "-n", "/usr/bin/python3", "-I", "-c"]
+    assert calls[0][:3] == ["sudo", "-n", pruning.SNAPSHOT_DELETE_HELPER]
 
 
 def test_pruning_refuses_catalogued_live_source_before_deletion(workspace, monkeypatch):
@@ -931,9 +932,27 @@ def test_pruning_refuses_catalogued_live_source_before_deletion(workspace, monke
     assert Path(point.snapshot_path).exists()
 
 
+def _snapshot_delete_helper():
+    script = Path(__file__).resolve().parents[3] / "scripts" / "summitflow-snapshot-delete"
+    loader = importlib.machinery.SourceFileLoader("summitflow_snapshot_delete", str(script))
+    spec = importlib.util.spec_from_loader(loader.name, loader)
+    assert spec
+    module = importlib.util.module_from_spec(spec)
+    loader.exec_module(module)
+    return module
+
+
+@pytest.mark.parametrize("path", ["/etc/x", "/srv/workspaces/.snapshots/../x", "/srv/workspaces/.snapshots/a/b c"])
+def test_snapshot_delete_helper_refuses_paths_outside_plain_store(path, monkeypatch):
+    monkeypatch.setenv("SUDO_UID", str(os.getuid()))
+    with pytest.raises(AssertionError, match=r"store|plain"):
+        _snapshot_delete_helper().main([path, "1", "256"])
+
+
 @pytest.mark.parametrize("refusal", [None, "writable", "nested", "changed", "mounted", "owner", "different-mount"])
 def test_privileged_pruning_revalidates_physical_leaf(tmp_path, monkeypatch, refusal):
-    """Exercise the actual isolated root script with fake Btrfs metadata only."""
+    """Exercise the actual root helper script with fake Btrfs metadata only."""
+    helper = _snapshot_delete_helper()
     store = tmp_path / "store"
     target = store / "point"
     target.mkdir(parents=True)
@@ -976,14 +995,15 @@ def test_privileged_pruning_revalidates_physical_leaf(tmp_path, monkeypatch, ref
             output = ""
         return SimpleNamespace(stdout=output)
     monkeypatch.setattr(subprocess, "run", btrfs)
-    monkeypatch.setattr(sys, "argv", ["prune", str(target), str(store), str(os.getuid()), str(leaf_device), "256"])
+    monkeypatch.setattr(helper, "STORE", tmp_path)
+    monkeypatch.setenv("SUDO_UID", str(os.getuid()))
     previous = Path.cwd()
     try:
         if refusal:
             with pytest.raises(AssertionError):
-                exec(pruning._DELETE_READONLY, {})
+                helper.main([str(target), str(leaf_device), "256"])
         else:
-            exec(pruning._DELETE_READONLY, {})
+            helper.main([str(target), str(leaf_device), "256"])
     finally:
         os.chdir(previous)
     deletes = [command for command in calls if command[1:3] == ["subvolume", "delete"]]

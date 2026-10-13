@@ -1,0 +1,83 @@
+#!/usr/bin/python3 -I
+"""Delete one read-only Btrfs snapshot leaf beneath the managed workspace snapshot store.
+
+Installed root-owned as /usr/local/sbin/summitflow-snapshot-delete and run by
+SummitFlow (st autosnap prune, snapshot residue cleanup) through ``sudo -n``.
+It replaces inline ``python3 -I -c`` code passed through sudo, which no sudoers
+line could confine.
+
+  summitflow-snapshot-delete PATH DEVICE INODE
+
+PATH must lie beneath the fixed store with plain path components. Directory
+descriptors anchor the leaf, which must be owned by the calling user, match the
+identity (device, inode) the caller observed, be a read-only subvolume root on
+the same mount, contain no mount or nested subvolume, and keep its UUID until
+the delete.
+"""
+
+import os
+import pathlib
+import re
+import subprocess
+import sys
+
+STORE = pathlib.Path("/srv/workspaces/.snapshots")
+PART = re.compile(r"[A-Za-z0-9._-]+\Z")
+
+
+def delete(path: pathlib.Path, uid: int, device: int, inode: int) -> None:
+    store = path.parent
+    assert path.is_absolute() and STORE in path.parents, "Not beneath the managed snapshot store"
+    assert all(PART.fullmatch(part) and part not in {".", ".."} for part in path.relative_to(STORE).parts), "Not a plain managed path"
+    fd = os.open("/", os.O_RDONLY | os.O_DIRECTORY)
+    for part in store.parts[1:]:
+        new = os.open(part, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW, dir_fd=fd)
+        os.close(fd)
+        fd = new
+    assert os.readlink("/proc/self/fd/" + str(fd)) == str(store), "Store changed"
+    leaf = os.open(path.name, os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW, dir_fd=fd)
+    info = os.fstat(leaf)
+    assert (info.st_uid, info.st_dev, info.st_ino) == (uid, device, inode), "Target identity changed"
+    assert info.st_ino == 256, "Not a Btrfs subvolume root"
+
+    def mount_id(descriptor: int) -> str:
+        fields = pathlib.Path("/proc/self/fdinfo/" + str(descriptor)).read_text().splitlines()
+        return next(line.split()[1] for line in fields if line.startswith("mnt_id:"))
+
+    assert mount_id(fd) == mount_id(leaf), "Target is a filesystem mount"
+    for line in pathlib.Path("/proc/self/mountinfo").read_text().splitlines():
+        mount = re.sub(r"\\([0-7]{3})", lambda m: chr(int(m[1], 8)), line.split()[4])
+        assert mount != str(path) and not mount.startswith(str(path) + "/"), "Target contains a mount"
+    os.fchdir(fd)
+
+    def btrfs(*args: str) -> str:
+        return subprocess.run(["/usr/bin/btrfs", *args], check=True, capture_output=True,
+                              text=True, pass_fds=(leaf,)).stdout.strip()
+
+    opened = "/proc/self/fd/" + str(leaf)
+    assert btrfs("property", "get", opened, "ro") == "ro=true", "Target is writable"
+
+    def uuid(target: str) -> str:
+        match = re.search(r"^\s*UUID:\s*(\S+)\s*$", btrfs("subvolume", "show", target), re.M)
+        assert match and match[1] != "-", "Missing Btrfs subvolume identity"
+        return match[1]
+
+    identity = uuid(opened)
+    assert not btrfs("subvolume", "list", "-o", path.name), "Target contains nested subvolumes"
+    assert uuid(path.name) == identity, "Target subvolume changed"
+    current = os.stat(path.name, follow_symlinks=False)
+    assert (current.st_uid, current.st_dev, current.st_ino) == (uid, device, inode), "Target changed before deletion"
+    btrfs("subvolume", "delete", path.name)
+
+
+def main(argv: list[str]) -> None:
+    if len(argv) != 3 or not all(value.isdigit() for value in argv[1:]):
+        raise SystemExit("usage: summitflow-snapshot-delete PATH DEVICE INODE")
+    uid = int(os.environ.get("SUDO_UID", "-1"))
+    if uid <= 0:
+        raise SystemExit("run through sudo by the owning user")
+    delete(pathlib.Path(argv[0]), uid, int(argv[1]), int(argv[2]))
+
+
+if __name__ == "__main__":
+    main(sys.argv[1:])
