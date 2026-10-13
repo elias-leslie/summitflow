@@ -180,6 +180,38 @@ def _adapter(setup):
     return engine.ResticAdapter(config, runner=process), process, payload
 
 
+def _subcommand(command: list[str]) -> str:
+    rest = command[command.index("--json") + 1:]
+    return rest[2] if rest[0] == "--cache-dir" else rest[1] if rest[0] == "--no-cache" else rest[0]
+
+
+def _copy_cached(command: list[str]) -> bool:
+    return "rclone:fixture:repository" in command and "--cache-dir" in command and _subcommand(command) in engine.COPY_CACHE_COMMANDS
+
+
+def test_offsite_copy_and_listing_reuse_persistent_cache_but_restore_and_check_do_not(setup):
+    adapter, process, payload = _adapter(setup)
+    adapter.save_payload("fixture", payload)
+    result = adapter.sync(SNAPSHOT, state={}, persist=lambda state: None)
+    assert result["status"] == "verified"
+    cache = adapter._copy_cache()
+    assert cache is not None and cache.name.startswith(engine.COPY_CACHE_NAMESPACE) and cache.stat().st_mode & 0o077 == 0
+    remote = [command for command in process.commands if command[0] == "restic" and "rclone:fixture:repository" in command]
+    cached = [command for command in remote if _copy_cached(command)]
+    assert {_subcommand(command) for command in cached} == {"copy", "snapshots"}
+    assert all(command[command.index("--cache-dir") + 1] == str(cache) and "--no-cache" not in command for command in cached)
+    assert all("--cache-dir" not in command for command in remote if "check" in command)
+    assert "--no-cache" in adapter._command("restore", SNAPSHOT, remote=True)
+    assert "--no-cache" in adapter._command("copy", SNAPSHOT)  # local repository side stays uncached
+
+
+def test_offsite_copy_falls_back_to_no_cache_without_scratch(setup, monkeypatch):
+    adapter, _, _ = _adapter(setup)
+    monkeypatch.setattr(engine, "mounted_scratch_parent", lambda *a, **k: (_ for _ in ()).throw(engine.ScratchError("gone")))
+    command = adapter._command("copy", SNAPSHOT, remote=True)
+    assert "--no-cache" in command and "--cache-dir" not in command
+
+
 def _persisted():
     saves: list[dict[str, Any]] = []
     return saves, lambda state: saves.append(state)
@@ -291,7 +323,8 @@ def test_checks_use_fresh_temporary_cache_without_reusing_prior_data(setup, remo
     assert checks
     assert any("--read-data-subset=1/30" in command for command in checks)
     assert all("--no-cache" not in command and "--with-cache" not in command for command in checks)
-    assert all("--no-cache" in command for command in process.commands if command[0] == "restic" and "check" not in command)
+    uncached = [command for command in process.commands if command[0] == "restic" and "check" not in command and not _copy_cached(command)]
+    assert all("--no-cache" in command for command in uncached)
     assert "--no-cache" in adapter._command("restore", SNAPSHOT, remote=remote)
     with pytest.raises(engine.ResticError, match="only supported for restore"):
         adapter._command("check", operation_cache=adapter.config.key_directory)

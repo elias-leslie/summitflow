@@ -29,8 +29,10 @@ from pathlib import Path
 from typing import Any
 
 from ..utils.transient_scratch import (
+    ScratchError,
     disposable_scratch,
     ensure_scratch_capacity,
+    mounted_scratch_parent,
     scratch_subprocess_env,
 )
 from .backup_activity import BackupCancelled, check_backup_cancelled, run_bulk_process
@@ -122,6 +124,11 @@ def _private_file(path: Path, directory: Path) -> None:
     info = path.stat()
     if not stat.S_ISREG(info.st_mode) or info.st_mode & 0o077 or info.st_uid != os.getuid():
         raise ResticError("Credential references must be private files owned by the current user")
+
+
+COPY_CACHE_NAMESPACE = "st-restic-copy-cache"
+# Remote commands on the per-source sync path; restore, check and lock work stay uncached.
+COPY_CACHE_COMMANDS = frozenset({"copy", "snapshots"})
 
 
 @dataclass(frozen=True)
@@ -340,6 +347,21 @@ class ResticAdapter:
                 return False
         return self._invoke([*prefix, "unlock"], phase="stale-lock-release", text=True).returncode == 0
 
+    @staticmethod
+    def _copy_cache() -> Path | None:
+        """Persistent cache for the offsite side of copy and snapshot listing.
+
+        Without it every source's copy re-downloads the whole remote index and
+        every snapshot file over Drive (minutes per job). Cached files are the
+        repository's own content-addressed ciphertext and directory listings
+        still come from the remote, so this only skips re-downloads; checks keep
+        a fresh cache and new objects keep provider SHA-256 verification.
+        """
+        try:
+            return mounted_scratch_parent(COPY_CACHE_NAMESPACE, label="Offsite copy cache")
+        except (OSError, ValueError, ScratchError):
+            return None
+
     def _command(self, *args: str, remote: bool = False, permanent_delete: bool = False, operation_cache: Path | None = None) -> list[str]:
         repository = self.config.remote_repository if remote else str(self.config.local_repository)
         password = self.config.remote_password_file if remote else self.config.local_password_file
@@ -349,10 +371,13 @@ class ResticAdapter:
         # Check creates and removes its own fresh cache. Disabling that cache
         # repeatedly downloads tree packs within the same check; --with-cache
         # would instead reuse old data and is deliberately never supplied.
+        copy_cache = self._copy_cache() if remote and args and args[0] in COPY_CACHE_COMMANDS and operation_cache is None else None
         if operation_cache is not None:
             if not args or args[0] not in {"restore", "prune"}:
                 raise ResticError("An operation cache is only supported for restore and prune")
             command.extend(["--cache-dir", str(operation_cache)])
+        elif copy_cache is not None:
+            command.extend(["--cache-dir", str(copy_cache)])
         elif not args or args[0] != "check":
             command.append("--no-cache")
         if permanent_delete and repository.startswith("rclone:"):
