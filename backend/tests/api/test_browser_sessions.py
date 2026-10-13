@@ -3,9 +3,7 @@
 from __future__ import annotations
 
 import asyncio
-import importlib.util
 import json
-import os
 import subprocess
 from contextlib import contextmanager
 from typing import Any
@@ -24,11 +22,10 @@ def session(**changes: Any) -> dict[str, Any]:
             "runtime_state": "running", "last_used_ms": 10, **changes}
 
 
-def view(**changes: Any) -> dict[str, Any]:
-    return {"schema_version": 1, "status": "leased", **session(),
-            "stream": {"enabled": True, "port": 45678},
-            "binding": {"session": "agent-a", "target_id": "target-one", "document_id": "doc-one"},
-            "page": {"url": "http://fixture.test", "title": "Fixture"}, **changes}
+@pytest.fixture(autouse=True)
+def no_real_assist(monkeypatch):
+    # Lifecycle changes stop an assist server; tests never reach systemd.
+    monkeypatch.setattr(api, "_assist", lambda: FakeAssist())
 
 
 @contextmanager
@@ -134,230 +131,125 @@ async def test_owner_transport_is_canonical_and_errors_do_not_echo_page_data(mon
     assert "private" not in str(error.value.detail)
 
 
-@pytest.mark.parametrize("raw", [
-    '{"type":"command","command":"eval"}',
-    '{"type":"input_keyboard","eventType":"keyDown","url":"ws://remote"}',
-    '{"type":"input_mouse","eventType":"mousePressed","x":true,"y":0}',
-    '{"type":"input_mouse","eventType":"mousePressed","x":NaN,"y":0}',
-    '{"type":"ack","seq":true}',
-])
-def test_native_input_rejects_commands_unknown_fields_and_invalid_numbers(raw: str) -> None:
-    with pytest.raises(ValueError):
-        api._input_event(raw)
+class FakeAssist:
+    TOKEN_HEADER = "X-Assist-Token"
+    WS_PATH_HEADER = "X-Assist-Ws"
+
+    def __init__(self, state: dict[str, Any] | None = None):
+        self.state, self.calls = state, []
+
+    def running(self, name):
+        self.calls.append(("running", name))
+        return self.state
+
+    def ensure(self, name, actor, **kwargs):
+        self.calls.append(("ensure", name, actor, kwargs))
+        self.state = {"name": name, "port": 4555, "token": "tok"}
+        return {"started": True, "window": False}
+
+    def stop(self, name):
+        self.calls.append(("stop", name))
+
+    def render_page(self, config):
+        return f"<p>{json.dumps(config)}</p>"
 
 
-def test_display_locations_exclude_credentials_queries_and_fragments() -> None:
-    assert api._display_url("https://user:private@fixture.test/callback?code=private&token=private#private") == "https://fixture.test/callback"
-    assert api._display_url("javascript:private") == ""
+def assist_fixture(monkeypatch, state=None, current=None):
+    fake = FakeAssist(state)
+    monkeypatch.setattr(api, "_assist", lambda: fake)
+    monkeypatch.setattr(api, "_st_cli_path", lambda: "/bin/st")
+    async def command(args, actor=None):
+        fake.calls.append(("owner", args, actor))
+        return {"schema_version": 1, "sessions": [current or session()]}
+    monkeypatch.setattr(api, "_owner_command", command)
+    requests = []
+    def handler(request):
+        requests.append(request)
+        return api.httpx.Response(200, text="<p>assist page</p>")
+    real = api.httpx.AsyncClient
+    monkeypatch.setattr(api.httpx, "AsyncClient", lambda **kw: real(transport=api.httpx.MockTransport(handler), **kw))
+    return fake, requests
 
 
-class Lease:
+def test_assist_page_starts_on_demand_without_a_window_and_proxies_with_the_token(monkeypatch) -> None:
+    fake, requests = assist_fixture(monkeypatch)
+    monkeypatch.setattr(api.agent_sessions, "pause_reason", lambda _name: "login needed: example.com")
+    with client() as connection:
+        response = connection.get("/api/browser-assist/agent-a")
+    assert response.status_code == 200 and response.text == "<p>assist page</p>"
+    assert response.headers["cache-control"] == "no-store"
+    ensure = next(call for call in fake.calls if call[0] == "ensure")
+    assert ensure[1:3] == ("agent-a", "agent:one")
+    assert ensure[3]["window"] is False and ensure[3]["reason"] == "login needed: example.com"
+    assert str(requests[0].url) == "http://127.0.0.1:4555/"
+    assert requests[0].headers["x-assist-token"] == "tok"
+    assert requests[0].headers["x-assist-ws"] == "/ws/browser-assist/agent-a"
+
+
+def test_assist_page_says_nothing_waits_for_an_unpaused_session(monkeypatch) -> None:
+    fake, requests = assist_fixture(monkeypatch, current=session(paused=False))
+    with client() as connection:
+        response = connection.get("/api/browser-assist/agent-a")
+    assert response.status_code == 200 and '"waiting": false' in response.text
+    assert requests == [] and not any(call[0] == "ensure" for call in fake.calls)
+
+
+def test_assist_page_requires_owner(monkeypatch) -> None:
+    fake, _requests = assist_fixture(monkeypatch)
+    with client(role="viewer") as connection:
+        assert connection.get("/api/browser-assist/agent-a").status_code == 403
+    assert fake.calls == []
+
+
+@pytest.mark.parametrize(("action", "stops"), [("resume", True), ("close", True), ("pause", False)])
+def test_lifecycle_changes_end_an_open_assist_window_first(monkeypatch, action, stops) -> None:
+    fake, _requests = assist_fixture(monkeypatch)
+    with client() as connection:
+        response = connection.post(f"/api/browser-sessions/agent-a/{action}", json={"actor": "agent:one"},
+                                   headers={"Origin": "http://testserver"})
+    assert response.status_code == 200
+    names = [call[0] if call[0] != "owner" else call[1][0] for call in fake.calls]
+    assert names == (["list", "stop", action, "list"] if stops else ["list", action, "list"])
+
+
+class Upstream:
     def __init__(self):
-        self.ended = False
-    async def readline(self):
-        return (json.dumps(view()) + "\n").encode()
-    def poll(self):
-        return 0 if self.ended else None
-    def close_stdin(self):
-        self.ended = True
-    def close(self):
-        pass
-
-
-class Stream:
-    def __init__(self, target="target-one"):
-        self.target = target
-        self.closed = False
-        self.sent: list[dict[str, Any]] = []
+        self.sent: list[str] = []
     async def __aenter__(self):
         return self
     async def __aexit__(self, *_args):
-        await self.close()
-    async def close(self):
-        self.closed = True
+        return None
     async def send(self, raw):
-        self.sent.append(json.loads(raw))
+        self.sent.append(raw)
     async def __aiter__(self):
-        yield json.dumps({"type": "tabs", "tabs": [{"active": True, "tabId": "t1", "targetId": self.target}]})
-        yield json.dumps({"type": "frame", "seq": 1, "data": "fixture", "metadata": {"deviceWidth": 10, "deviceHeight": 10}})
-        await asyncio.Event().wait()
-
-
-def stream_fixture(monkeypatch, target="target-one"):
-    lease, stream = Lease(), Stream(target)
-    async def command(args, actor=None):
-        if args[0] == "resume":
-            assert lease.ended, "resume must wait for owner lease EOF/reap"
-        return {"schema_version": 1, "sessions": [session()]}
-    monkeypatch.setattr(api, "_owner_command", command)
-    monkeypatch.setattr(api, "resolve_principal", lambda _request: AccessPrincipal("operator@example.test", "owner", True))
-    def spawn(args, env):
-        assert args[-3:] == ["session", "lease", "agent-a"]
-        assert env["ST_BROWSER_OWNER"] == "agent:one"
-        return lease
-    def connect(url, **kwargs):
-        assert url == "ws://127.0.0.1:45678/?pacing=ack&maxFps=15"
-        assert kwargs["proxy"] is None
-        return stream
-    monkeypatch.setattr(api, "spawn_duplex", spawn)
-    monkeypatch.setattr(api, "connect", connect)
-    return lease, stream
-
-
-def another_worker():
-    spec = importlib.util.spec_from_file_location("app.api.browser_sessions_worker_b", api.__file__)
-    assert spec is not None and spec.loader is not None
-    module = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(module)
-    assert module._connections is not api._connections
-    return module
-
-
-def test_stream_relays_only_bound_target_and_releases_before_resume(monkeypatch) -> None:
-    lease, stream = stream_fixture(monkeypatch)
-    with client() as connection, connection.websocket_connect("/ws/browser-sessions/agent-a?actor=agent:one", headers={"Origin": "http://testserver"}) as ws:
-        assert ws.receive_json()["type"] == "bound"
-        assert ws.receive_json()["type"] == "frame"
-        ws.send_json({"type": "ack", "seq": 1})
-        response = connection.post("/api/browser-sessions/agent-a/resume", json={"actor": "agent:one"}, headers={"Origin": "http://testserver"})
-        assert response.status_code == 200
-    assert lease.ended
-    assert stream.sent[0] == {"type": "config", "pacing": "ack", "maxFps": 15}
-
-
-@pytest.mark.parametrize("action", ["resume", "close"])
-def test_owning_client_releases_before_lifecycle_http_on_another_worker(monkeypatch, action) -> None:
-    lease, stream = stream_fixture(monkeypatch)
-    original_close = lease.close_stdin
-    def close_stdin():
-        assert stream.closed, "upstream input channel must close before owner unlock"
-        original_close()
-    monkeypatch.setattr(lease, "close_stdin", close_stdin)
-    worker_b = another_worker()
-
-    async def command(args, actor=None):
-        if args == [action, "agent-a"] and not lease.ended:
-            raise api.HTTPException(409, "Browser session is busy")
-        return {"schema_version": 1, "sessions": [session()]}
-    monkeypatch.setattr(worker_b, "_owner_command", command)
-
-    with client() as worker_a_client, client(module=worker_b) as worker_b_client, worker_a_client.websocket_connect("/ws/browser-sessions/agent-a?actor=agent:one", headers={"Origin": "http://testserver"}) as ws:
-        assert ws.receive_json()["type"] == "bound"
-        assert ws.receive_json()["type"] == "frame"
-        headers, body = {"Origin": "http://testserver"}, {"actor": "agent:one"}
-        assert worker_b_client.post(f"/api/browser-sessions/agent-a/{action}", headers=headers, json=body).status_code == 409
-        ws.send_json({"type": "release"})
-        assert ws.receive_json() == {"type": "released"}
-        assert lease.ended, "release acknowledgement must follow owner EOF/reap"
-        assert worker_b_client.post(f"/api/browser-sessions/agent-a/{action}", headers=headers, json=body).status_code == 200
-    assert not any(item["type"] == "release" for item in stream.sent)
-
-
-def test_target_change_ends_view_instead_of_switching(monkeypatch) -> None:
-    lease, _stream = stream_fixture(monkeypatch, target="another-target")
-    with client() as connection, connection.websocket_connect("/ws/browser-sessions/agent-a?actor=agent:one", headers={"Origin": "http://testserver"}) as ws:
-        assert ws.receive_json()["type"] == "bound"
-        with pytest.raises(WebSocketDisconnect):
-            ws.receive_json()
-    assert lease.ended
+        yield json.dumps({"type": "hello"})
+        await asyncio.sleep(0.2)
 
 
 @pytest.mark.parametrize("origin", [None, "https://other.test"])
-def test_stream_authenticates_and_checks_actual_origin(monkeypatch, origin) -> None:
-    stream_fixture(monkeypatch)
-    headers = {"Sec-Fetch-Site": "same-origin"}
-    if origin:
-        headers["Origin"] = origin
-    with client() as connection, pytest.raises(WebSocketDisconnect), connection.websocket_connect("/ws/browser-sessions/agent-a?actor=agent:one", headers=headers):
-        pass
-
-
-def test_stream_rejects_viewer_before_owner_dispatch(monkeypatch) -> None:
-    stream_fixture(monkeypatch)
-    monkeypatch.setattr(api, "resolve_principal", lambda _request: AccessPrincipal("viewer@example.test", "viewer", True))
-    with client() as connection, pytest.raises(WebSocketDisconnect), connection.websocket_connect("/ws/browser-sessions/agent-a?actor=agent:one", headers={"Origin": "http://testserver"}):
-        pass
-
-
-def test_unpaused_session_cannot_acquire_human_lease(monkeypatch) -> None:
-    lease, _stream = stream_fixture(monkeypatch)
-    async def command(_args, actor=None):
-        return {"schema_version": 1, "sessions": [session(paused=False)]}
-    monkeypatch.setattr(api, "_owner_command", command)
-    with client() as connection, pytest.raises(WebSocketDisconnect), connection.websocket_connect("/ws/browser-sessions/agent-a?actor=agent:one", headers={"Origin": "http://testserver"}):
-        pass
-    assert not lease.ended  # no lease was started at all
-
-
-def test_stream_revocation_stops_live_inputs_and_releases_lease(monkeypatch) -> None:
-    lease, stream = stream_fixture(monkeypatch)
-    with client() as connection, connection.websocket_connect("/ws/browser-sessions/agent-a?actor=agent:one", headers={"Origin": "http://testserver"}) as ws:
-        assert ws.receive_json()["type"] == "bound"
-        assert ws.receive_json()["type"] == "frame"
-        monkeypatch.setattr(api, "resolve_principal", lambda _request: None)
-        ws.send_json({"type": "input_keyboard", "eventType": "keyDown", "key": "x", "code": "KeyX"})
-        with pytest.raises(WebSocketDisconnect):
-            ws.receive_json()
-    assert lease.ended
-    assert not any(item["type"] == "input_keyboard" for item in stream.sent)
-
-
-@pytest.mark.skipif(os.environ.get("ST_BROWSER_LIVE_FIXTURE") != "1", reason="explicit isolated fixture gate")
-@pytest.mark.asyncio
-async def test_live_owner_lease_proxy_preserves_same_target_and_blocks_resume(monkeypatch, tmp_path) -> None:
-    """Opt-in real public ST integration; only a root-approved synthetic fixture."""
-    name, actor = "runtime-proxy-fixture", "runtime:proxy-fixture"
-    monkeypatch.setenv("XDG_STATE_HOME", str(tmp_path))
-    monkeypatch.setenv("ST_BROWSER_OWNER", actor)
+def test_assist_socket_authenticates_and_checks_actual_origin(monkeypatch, origin) -> None:
+    assist_fixture(monkeypatch, state={"port": 4555, "token": "tok"})
     monkeypatch.setattr(api, "resolve_principal", lambda _request: AccessPrincipal("operator@example.test", "owner", True))
-    await api._owner_command(["create", name], actor)
+    monkeypatch.setattr(api, "connect", lambda *a, **kw: pytest.fail("no upstream before authorization"))
+    headers = {"Origin": origin} if origin else {}
+    with client() as connection, pytest.raises(WebSocketDisconnect), \
+            connection.websocket_connect("/ws/browser-assist/agent-a", headers=headers) as ws:
+        ws.receive_text()
 
-    async def core(*args: str):
-        result = await api.run_async([
-            str(api._st_cli_path()), "--no-compact", "browser", "--local-ai", "--session", name, *args,
-        ], env=dict(os.environ), capture_output=True, text=True, timeout=30)
-        assert result.returncode == 0, "public owner fixture command failed"
-        return result.stdout
 
-    try:
-        await core("open", "http://127.0.0.1:46597/task/intake?run=runtime-human-1")
-        position = json.loads(await core("step", "eval", "(() => {const r=document.querySelector('input[name=name]').getBoundingClientRect();return {x:r.left+r.width/2,y:r.top+r.height/2}})()"))["completed"][0]["result"]["result"]
-        await api._owner_command(["pause", name], actor)
-        with client() as connection, connection.websocket_connect(f"/ws/browser-sessions/{name}?actor={actor}", headers={"Origin": "http://testserver"}) as ws:
-            bound = ws.receive_json()
-            assert bound["type"] == "bound" and bound["binding"]["session"] == name
-            assert bound["page"]["url"] == "http://127.0.0.1:46597/task/intake"
-            frame = ws.receive_json()
-            assert frame["type"] == "frame" and frame["seq"] >= 0
-            ws.send_json({"type": "ack", "seq": frame["seq"]})
-            with pytest.raises(api.HTTPException) as error:
-                await api._owner_command(["resume", name], actor)
-            assert error.value.status_code == 409
-            for event_type in ("mousePressed", "mouseReleased"):
-                ws.send_json({"type": "input_mouse", "eventType": event_type, "x": position["x"], "y": position["y"], "button": "left", "clickCount": 1, "modifiers": 0})
-                while ws.receive_json()["type"] != "input_forwarded":
-                    pass
-            ws.send_json({"type": "input_keyboard", "eventType": "keyDown", "key": "r", "code": "KeyR", "text": "r", "windowsVirtualKeyCode": 82, "modifiers": 0})
-            while True:
-                event = ws.receive_json()
-                if event["type"] == "frame":
-                    ws.send_json({"type": "ack", "seq": event["seq"]})
-                if event["type"] == "input_forwarded":
-                    break
-            ws.send_json({"type": "input_keyboard", "eventType": "keyUp", "key": "r", "code": "KeyR", "windowsVirtualKeyCode": 82, "modifiers": 0})
-            while ws.receive_json()["type"] != "input_forwarded":
-                pass
-            ws.send_json({"type": "input_keyboard", "eventType": "char", "text": "u"})
-            while ws.receive_json()["type"] != "input_forwarded":
-                pass
-            ws.send_json({"type": "release"})
-            while ws.receive_json()["type"] != "released":
-                pass
-            with client(module=another_worker()) as other_worker:
-                response = other_worker.post(f"/api/browser-sessions/{name}/resume", json={"actor": actor}, headers={"Origin": "http://testserver"})
-                assert response.status_code == 200
-        value = json.loads(await core("step", "get", "value", "input[name=name]"))
-        assert value["status"] == "complete"
-        assert value["completed"][0]["result"]["value"] == "ru"
-    finally:
-        await api._owner_command(["close", name], actor)
+def test_assist_socket_relays_to_the_token_holding_server(monkeypatch) -> None:
+    assist_fixture(monkeypatch, state={"port": 4555, "token": "tok"})
+    monkeypatch.setattr(api, "resolve_principal", lambda _request: AccessPrincipal("operator@example.test", "owner", True))
+    upstream = Upstream()
+    def connect(url, **kwargs):
+        assert url == "ws://127.0.0.1:4555/ws"
+        assert kwargs["additional_headers"] == {"X-Assist-Token": "tok"} and kwargs["proxy"] is None
+        return upstream
+    monkeypatch.setattr(api, "connect", connect)
+    with client() as connection, \
+            connection.websocket_connect("/ws/browser-assist/agent-a", headers={"Origin": "http://testserver"}) as ws:
+        assert json.loads(ws.receive_text()) == {"type": "hello"}
+        ws.send_text('{"type":"done"}')
+        with pytest.raises(WebSocketDisconnect):
+            ws.receive_text()
+    assert upstream.sent == ['{"type":"done"}']

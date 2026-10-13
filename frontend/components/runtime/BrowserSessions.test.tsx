@@ -1,6 +1,5 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import {
-  act,
   cleanup,
   fireEvent,
   render,
@@ -11,9 +10,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import {
   type BrowserSession,
   browserSessionsApi,
-  browserStreamUrl,
   parseBrowserSession,
-  parseBrowserStreamEvent,
 } from '@/lib/api/browser-sessions'
 import { BrowserSessions } from './BrowserSessions'
 
@@ -40,24 +37,6 @@ const second: BrowserSession = {
   location: 'local',
 }
 
-class Socket {
-  static OPEN = 1
-  static CONNECTING = 0
-  static instances: Socket[] = []
-  readyState = 1
-  onmessage: ((event: MessageEvent<unknown>) => void) | null = null
-  onclose: (() => void) | null = null
-  onerror: (() => void) | null = null
-  send = vi.fn()
-  close = vi.fn(() => {
-    this.readyState = 3
-    this.onclose?.()
-  })
-  constructor(public url: string) {
-    Socket.instances.push(this)
-  }
-}
-
 function mount() {
   return render(
     <QueryClientProvider
@@ -75,7 +54,6 @@ afterEach(() => {
   vi.resetAllMocks()
   vi.restoreAllMocks()
   vi.unstubAllGlobals()
-  Socket.instances = []
 })
 
 describe('Runtime managed browser sessions', () => {
@@ -91,13 +69,11 @@ describe('Runtime managed browser sessions', () => {
         return changed
       },
     )
-    vi.stubGlobal('WebSocket', Socket)
     mount()
     const choice = await screen.findByRole('button', {
       name: /agent-one Owner/,
     })
     expect(screen.queryByRole('button', { name: 'Pause for human' })).toBeNull()
-    expect(Socket.instances).toHaveLength(0)
     fireEvent.click(choice)
     expect(
       screen.getByRole('button', { name: 'Open live view' }),
@@ -108,25 +84,39 @@ describe('Runtime managed browser sessions', () => {
         screen.getByRole('button', { name: 'Open live view' }),
       ).toBeEnabled(),
     )
-    expect(Socket.instances).toHaveLength(0)
   })
 
-  it('disconnects the retained target when changing selection and never reconnects automatically', async () => {
+  it('opens the paused session in its own assist window', async () => {
     vi.mocked(browserSessionsApi.list).mockResolvedValue([first, second])
-    vi.stubGlobal('WebSocket', Socket)
+    const open = vi.fn()
+    vi.stubGlobal('open', open)
     mount()
     fireEvent.click(
       await screen.findByRole('button', { name: /agent-two Owner/ }),
     )
     fireEvent.click(screen.getByRole('button', { name: 'Open live view' }))
-    await waitFor(() => expect(Socket.instances).toHaveLength(1))
-    const socket = Socket.instances[0]
-    expect(new URL(socket.url).host).toBe(window.location.host)
-    expect(new URL(socket.url).pathname).toBe('/ws/browser-sessions/agent-two')
-    expect(new URL(socket.url).searchParams.get('actor')).toBe(second.actor)
-    fireEvent.click(screen.getByRole('button', { name: /agent-one Owner/ }))
-    expect(socket.close).toHaveBeenCalled()
-    expect(Socket.instances).toHaveLength(1)
+    expect(open).toHaveBeenCalledWith(
+      '/browser-assist/agent-two',
+      'browser-assist-agent-two',
+      'popup,width=1280,height=900',
+    )
+    expect(browserSessionsApi.change).not.toHaveBeenCalled()
+  })
+
+  it('resumes and closes through the selected owner', async () => {
+    vi.mocked(browserSessionsApi.list).mockResolvedValue([second])
+    vi.mocked(browserSessionsApi.change).mockResolvedValue({
+      ...second,
+      paused: false,
+    })
+    mount()
+    fireEvent.click(
+      await screen.findByRole('button', { name: /agent-two Owner/ }),
+    )
+    fireEvent.click(screen.getByRole('button', { name: 'Resume automation' }))
+    await waitFor(() =>
+      expect(browserSessionsApi.change).toHaveBeenCalledWith(second, 'resume'),
+    )
   })
 
   it('stops displaying a stale selection after its owner changes', async () => {
@@ -186,51 +176,6 @@ describe('Runtime managed browser sessions', () => {
 })
 
 describe('native browser controls', () => {
-  it('waits for owner release acknowledgement before lifecycle HTTP', async () => {
-    vi.mocked(browserSessionsApi.list).mockResolvedValue([second])
-    vi.mocked(browserSessionsApi.change).mockResolvedValue({
-      ...second,
-      paused: false,
-    })
-    vi.stubGlobal('WebSocket', Socket)
-    mount()
-    fireEvent.click(
-      await screen.findByRole('button', { name: /agent-two Owner/ }),
-    )
-    fireEvent.click(screen.getByRole('button', { name: 'Open live view' }))
-    const socket = Socket.instances[0]
-    fireEvent.click(screen.getByRole('button', { name: 'Resume automation' }))
-    expect(socket.send).toHaveBeenLastCalledWith('{"type":"release"}')
-    expect(browserSessionsApi.change).not.toHaveBeenCalled()
-    expect(
-      screen.getByRole('button', { name: /agent-two Owner/ }),
-    ).toBeDisabled()
-    act(() =>
-      socket.onmessage?.(
-        new MessageEvent('message', { data: '{"type":"released"}' }),
-      ),
-    )
-    await waitFor(() =>
-      expect(browserSessionsApi.change).toHaveBeenCalledWith(second, 'resume'),
-    )
-    expect(socket.close).toHaveBeenCalled()
-  })
-
-  it('does not send lifecycle HTTP when release is unconfirmed', async () => {
-    vi.mocked(browserSessionsApi.list).mockResolvedValue([second])
-    vi.stubGlobal('WebSocket', Socket)
-    mount()
-    fireEvent.click(
-      await screen.findByRole('button', { name: /agent-two Owner/ }),
-    )
-    fireEvent.click(screen.getByRole('button', { name: 'Open live view' }))
-    fireEvent.click(screen.getByRole('button', { name: 'Close session' }))
-    act(() => Socket.instances[0].close())
-    expect(await screen.findByRole('alert')).toHaveTextContent(
-      'release was not confirmed',
-    )
-    expect(browserSessionsApi.change).not.toHaveBeenCalled()
-  })
   it('shows closed selections and denies further controls', async () => {
     vi.mocked(browserSessionsApi.list).mockResolvedValue([
       { ...second, state: 'closed', paused: false },
@@ -244,97 +189,10 @@ describe('native browser controls', () => {
     expect(screen.getByText(/This session is closed/)).toBeVisible()
     expect(screen.queryByRole('button', { name: 'Open live view' })).toBeNull()
   })
-
-  it('forwards native keys only after a frame and clears disconnected content', async () => {
-    vi.mocked(browserSessionsApi.list).mockResolvedValue([second])
-    vi.stubGlobal('WebSocket', Socket)
-    class FrameImage {
-      onload: (() => void) | null = null
-      onerror: (() => void) | null = null
-      set src(_value: string) {
-        this.onload?.()
-      }
-    }
-    vi.stubGlobal('Image', FrameImage)
-    const clearRect = vi.fn()
-    vi.spyOn(HTMLCanvasElement.prototype, 'getContext').mockReturnValue({
-      drawImage: vi.fn(),
-      clearRect,
-    } as unknown as CanvasRenderingContext2D)
-    mount()
-    fireEvent.click(
-      await screen.findByRole('button', { name: /agent-two Owner/ }),
-    )
-    fireEvent.click(screen.getByRole('button', { name: 'Open live view' }))
-    const canvas = screen.getByLabelText('Live page for agent-two')
-    const socket = Socket.instances[0]
-    fireEvent.keyDown(canvas, { key: 'r', code: 'KeyR' })
-    expect(socket.send).not.toHaveBeenCalled()
-    act(() =>
-      socket.onmessage?.(
-        new MessageEvent('message', {
-          data: JSON.stringify({
-            type: 'frame',
-            seq: 5,
-            data: 'AA==',
-            metadata: { deviceWidth: 100, deviceHeight: 50 },
-          }),
-        }),
-      ),
-    )
-    fireEvent.keyDown(canvas, { key: 'r', code: 'KeyR' })
-    expect(socket.send).toHaveBeenLastCalledWith(
-      JSON.stringify({
-        type: 'input_keyboard',
-        eventType: 'keyDown',
-        key: 'r',
-        code: 'KeyR',
-        windowsVirtualKeyCode: 82,
-        modifiers: 0,
-        text: 'r',
-      }),
-    )
-    act(() => socket.close())
-    expect(clearRect).toHaveBeenCalled()
-    expect(screen.getByText(/Live view ended/)).toBeVisible()
-    fireEvent.keyDown(canvas, { key: 'x', code: 'KeyX' })
-    expect(socket.send).toHaveBeenCalledTimes(2)
-  })
 })
 
 describe('owner hand-off', () => {
-  function liveFrame(socket: Socket) {
-    act(() =>
-      socket.onmessage?.(
-        new MessageEvent('message', {
-          data: JSON.stringify({
-            type: 'frame',
-            seq: 1,
-            data: 'AA==',
-            metadata: { deviceWidth: 100, deviceHeight: 50 },
-          }),
-        }),
-      ),
-    )
-  }
-  function stubLiveView() {
-    vi.stubGlobal('WebSocket', Socket)
-    vi.stubGlobal(
-      'Image',
-      class {
-        onload: (() => void) | null = null
-        set src(_value: string) {
-          this.onload?.()
-        }
-      },
-    )
-    vi.spyOn(HTMLCanvasElement.prototype, 'getContext').mockReturnValue({
-      drawImage: vi.fn(),
-      clearRect: vi.fn(),
-    } as unknown as CanvasRenderingContext2D)
-  }
-
-  it('opens the linked paused session with its reason, then types and pastes text', async () => {
+  it('selects the linked paused session and shows its reason', async () => {
     window.history.replaceState(
       null,
       '',
@@ -344,108 +202,24 @@ describe('owner hand-off', () => {
       first,
       { ...second, pause_reason: 'login needed: example.com' },
     ])
-    stubLiveView()
     mount()
     expect(
       await screen.findByText(
         'Agent is waiting for you: login needed: example.com',
       ),
     ).toBeVisible()
-    await waitFor(() => expect(Socket.instances).toHaveLength(1))
-    const socket = Socket.instances[0]
-    liveFrame(socket)
-    const field = screen.getByLabelText(
-      'Text to type into the focused page field',
-    )
-    fireEvent.change(field, { target: { value: 'a!' } })
-    fireEvent.click(
-      screen.getByRole('button', { name: 'Send and press Enter' }),
-    )
-    const sent = socket.send.mock.calls.map(([raw]) =>
-      JSON.parse(raw as string),
-    )
-    expect(sent.filter((event) => event.type === 'input_keyboard')).toEqual([
-      { type: 'input_keyboard', eventType: 'char', text: 'a' },
-      { type: 'input_keyboard', eventType: 'char', text: '!' },
-      {
-        type: 'input_keyboard',
-        eventType: 'keyDown',
-        text: '\r',
-        key: 'Enter',
-        code: 'Enter',
-        windowsVirtualKeyCode: 13,
-      },
-      {
-        type: 'input_keyboard',
-        eventType: 'keyUp',
-        key: 'Enter',
-        code: 'Enter',
-        windowsVirtualKeyCode: 13,
-      },
-    ])
-    expect(field).toHaveValue('')
-    // Ctrl+V keeps its default so the browser raises the paste event.
-    const canvas = screen.getByLabelText('Live page for agent-two')
-    expect(
-      fireEvent.keyDown(canvas, { key: 'v', code: 'KeyV', ctrlKey: true }),
-    ).toBe(true)
+    expect(screen.getByRole('button', { name: 'Open live view' })).toBeEnabled()
     window.history.replaceState(null, '', '/')
   })
 })
 
 describe('browser IO validation', () => {
-  it('rejects malformed session and native frame payloads', () => {
+  it('rejects malformed session payloads', () => {
     expect(() => parseBrowserSession({ ...first, paused: 'true' })).toThrow()
     expect(() =>
       parseBrowserSession({ ...first, location: '10.0.0.5' }),
     ).toThrow()
     const { location: _omitted, ...legacy } = first
     expect(parseBrowserSession(legacy).location).toBeNull()
-    expect(() =>
-      parseBrowserStreamEvent(
-        JSON.stringify({
-          type: 'frame',
-          data: '<svg/>',
-          seq: 1,
-          metadata: { deviceWidth: 10, deviceHeight: 10 },
-        }),
-      ),
-    ).toThrow()
-    expect(() =>
-      parseBrowserStreamEvent(
-        JSON.stringify({
-          type: 'bound',
-          binding: { target_id: null },
-          page: {},
-        }),
-      ),
-    ).toThrow()
-    expect(() =>
-      parseBrowserStreamEvent('{"type":"command","command":"eval"}'),
-    ).toThrow()
-  })
-
-  it('accepts current core frame metadata and keeps websocket URLs same-origin', () => {
-    expect(
-      parseBrowserStreamEvent(
-        JSON.stringify({
-          type: 'frame',
-          data: 'AA==',
-          seq: 4,
-          metadata: { deviceWidth: 100, deviceHeight: 50 },
-        }),
-      ),
-    ).toEqual({ type: 'frame', data: 'AA==', seq: 4, width: 100, height: 50 })
-    const url = new URL(browserStreamUrl(second))
-    expect(url.host).toBe(window.location.host)
-    expect(url.searchParams.get('actor')).toBe(second.actor)
-  })
-
-  it('displays locations without URL credentials or authorization queries', () => {
-    expect(
-      parseBrowserStreamEvent(
-        '{"type":"url","url":"https://user:private@fixture.test/callback?code=private&token=private#private"}',
-      ),
-    ).toEqual({ type: 'url', url: 'https://fixture.test/callback' })
   })
 })

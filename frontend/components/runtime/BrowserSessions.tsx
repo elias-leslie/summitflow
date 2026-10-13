@@ -1,24 +1,13 @@
 'use client'
 
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import {
-  forwardRef,
-  type KeyboardEvent,
-  type MouseEvent,
-  useEffect,
-  useImperativeHandle,
-  useRef,
-  useState,
-} from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { Button } from '@/components/ui/button'
-import { Input } from '@/components/ui/input'
 import {
   type BrowserRuntimeLocation,
   type BrowserSession,
   type BrowserSessionAction,
   browserSessionsApi,
-  browserStreamUrl,
-  parseBrowserStreamEvent,
 } from '@/lib/api/browser-sessions'
 
 const queryKey = ['runtime', 'browser-sessions']
@@ -30,322 +19,18 @@ function browserLocationLabel(location: BrowserRuntimeLocation): string | null {
   return null
 }
 
-function modifiers(event: {
-  altKey: boolean
-  ctrlKey: boolean
-  metaKey: boolean
-  shiftKey: boolean
-}): number {
-  return (
-    (event.altKey ? 1 : 0) |
-    (event.ctrlKey ? 2 : 0) |
-    (event.metaKey ? 4 : 0) |
-    (event.shiftKey ? 8 : 0)
+/** The browser-automation assist window: live page plus Done, in its own window. */
+export function assistWindowUrl(name: string): string {
+  return `/browser-assist/${encodeURIComponent(name)}`
+}
+
+function openAssistWindow(name: string) {
+  window.open(
+    assistWindowUrl(name),
+    `browser-assist-${name}`,
+    'popup,width=1280,height=900',
   )
 }
-
-const keyCodes: Record<string, number> = {
-  Enter: 13,
-  Tab: 9,
-  Backspace: 8,
-  Escape: 27,
-  ArrowLeft: 37,
-  ArrowUp: 38,
-  ArrowRight: 39,
-  ArrowDown: 40,
-  Delete: 46,
-  Home: 36,
-  End: 35,
-  PageUp: 33,
-  PageDown: 34,
-}
-
-interface LiveBrowserHandle {
-  release(): Promise<void>
-}
-
-const LiveBrowser = forwardRef<LiveBrowserHandle, { session: BrowserSession }>(
-  function LiveBrowser({ session }, ref) {
-    const canvas = useRef<HTMLCanvasElement>(null)
-    const socket = useRef<WebSocket | null>(null)
-    const releaseTransport = useRef<(() => Promise<void>) | null>(null)
-    useImperativeHandle(
-      ref,
-      () => ({
-        release: () =>
-          releaseTransport.current?.() ??
-          Promise.reject(
-            new Error(
-              'Live view is unavailable. Refresh the selected session.',
-            ),
-          ),
-      }),
-      [],
-    )
-    const [state, setState] = useState<
-      'connecting' | 'live' | 'disconnecting' | 'ended'
-    >('connecting')
-    const [page, setPage] = useState({ url: '', title: '', target: '' })
-    const [text, setText] = useState('')
-    useEffect(() => {
-      const ws = new WebSocket(browserStreamUrl(session))
-      socket.current = ws
-      let active = true
-      let confirmed = false
-      let pending: Promise<void> | null = null
-      let resolveRelease: (() => void) | undefined
-      let rejectRelease: ((error: Error) => void) | undefined
-      let timer: ReturnType<typeof setTimeout> | undefined
-      const releaseError = () =>
-        new Error(
-          'Live view release was not confirmed. Refresh the selected session before retrying.',
-        )
-      releaseTransport.current = () => {
-        if (confirmed) return Promise.resolve()
-        if (pending) return pending
-        setState('disconnecting')
-        pending = new Promise<void>((resolve, reject) => {
-          resolveRelease = resolve
-          rejectRelease = reject
-          timer = setTimeout(() => reject(releaseError()), 15000)
-        })
-        if (ws.readyState === WebSocket.OPEN)
-          ws.send(JSON.stringify({ type: 'release' }))
-        else if (ws.readyState !== WebSocket.CONNECTING)
-          rejectRelease?.(releaseError())
-        return pending
-      }
-      ws.onopen = () => {
-        if (pending) ws.send(JSON.stringify({ type: 'release' }))
-      }
-      ws.onmessage = (message: MessageEvent<unknown>) => {
-        if (!active || typeof message.data !== 'string') return
-        try {
-          const event = parseBrowserStreamEvent(message.data)
-          if (event.type === 'released') {
-            confirmed = true
-            clearTimeout(timer)
-            resolveRelease?.()
-            ws.close()
-          } else if (event.type === 'bound') {
-            setPage({
-              url: event.url,
-              title: event.title,
-              target: event.target,
-            })
-          } else if (event.type === 'url') {
-            setPage((current) => ({ ...current, url: event.url, title: '' }))
-          } else if (event.type === 'frame') {
-            const image = new Image()
-            image.onload = () => {
-              if (!active || ws.readyState !== WebSocket.OPEN) return
-              const element = canvas.current
-              if (!element) return
-              element.width = event.width
-              element.height = event.height
-              element
-                .getContext('2d')
-                ?.drawImage(image, 0, 0, event.width, event.height)
-              if (!pending) setState('live')
-              ws.send(JSON.stringify({ type: 'ack', seq: event.seq }))
-            }
-            image.onerror = () => ws.close()
-            image.src = `data:image/jpeg;base64,${event.data}`
-          }
-        } catch {
-          ws.close()
-        }
-      }
-      ws.onclose = () => {
-        clearTimeout(timer)
-        if (!confirmed) rejectRelease?.(releaseError())
-        if (active) {
-          setState('ended')
-          canvas.current
-            ?.getContext('2d')
-            ?.clearRect(0, 0, canvas.current.width, canvas.current.height)
-        }
-      }
-      ws.onerror = () => {
-        if (active) setState('ended')
-        ws.close()
-      }
-      return () => {
-        active = false
-        clearTimeout(timer)
-        releaseTransport.current = null
-        if (!confirmed) rejectRelease?.(releaseError())
-        socket.current = null
-        ws.close()
-        canvas.current
-          ?.getContext('2d')
-          ?.clearRect(0, 0, canvas.current.width, canvas.current.height)
-      }
-    }, [session.name, session.actor])
-
-    function send(event: Record<string, string | number>) {
-      if (state === 'live' && socket.current?.readyState === WebSocket.OPEN)
-        socket.current.send(JSON.stringify(event))
-    }
-    // Phones and password managers: type into the field focused in the page.
-    function typeText(enter: boolean) {
-      for (const char of text)
-        send({ type: 'input_keyboard', eventType: 'char', text: char })
-      if (enter) {
-        const key = { key: 'Enter', code: 'Enter', windowsVirtualKeyCode: 13 }
-        send({
-          type: 'input_keyboard',
-          eventType: 'keyDown',
-          text: '\r',
-          ...key,
-        })
-        send({ type: 'input_keyboard', eventType: 'keyUp', ...key })
-      }
-      setText('')
-    }
-    function mouse(event: MouseEvent<HTMLCanvasElement>, eventType: string) {
-      event.preventDefault()
-      if (eventType === 'mousePressed') event.currentTarget.focus()
-      const bounds = event.currentTarget.getBoundingClientRect()
-      send({
-        type: 'input_mouse',
-        eventType,
-        x: Math.round(
-          ((event.clientX - bounds.left) * event.currentTarget.width) /
-            bounds.width,
-        ),
-        y: Math.round(
-          ((event.clientY - bounds.top) * event.currentTarget.height) /
-            bounds.height,
-        ),
-        button:
-          eventType === 'mouseMoved' && !event.buttons
-            ? 'none'
-            : (['left', 'middle', 'right'][event.button] ?? 'none'),
-        clickCount: eventType === 'mousePressed' ? event.detail || 1 : 0,
-        modifiers: modifiers(event),
-      })
-    }
-    function keyboard(
-      event: KeyboardEvent<HTMLCanvasElement>,
-      eventType: string,
-    ) {
-      if (event.nativeEvent.isComposing) return
-      // Ctrl/Cmd+V must keep its default so the paste event below fires.
-      if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'v')
-        return
-      if (event.key === 'Escape' && event.shiftKey) {
-        event.preventDefault()
-        event.currentTarget.blur()
-        return
-      }
-      event.preventDefault()
-      send({
-        type: 'input_keyboard',
-        eventType,
-        key: event.key,
-        code: event.code,
-        windowsVirtualKeyCode:
-          keyCodes[event.key] ??
-          (event.key.length === 1 ? event.key.toUpperCase().charCodeAt(0) : 0),
-        modifiers: modifiers(event),
-        ...(eventType === 'keyDown' &&
-        !event.ctrlKey &&
-        !event.metaKey &&
-        (event.key.length === 1 || event.key === 'Enter')
-          ? { text: event.key === 'Enter' ? '\r' : event.key }
-          : {}),
-      })
-    }
-    return (
-      <div className="space-y-3 rounded-lg border border-slate-700 bg-slate-950 p-3">
-        <div className="break-all text-sm text-slate-300">
-          <p>{page.title || 'Selected browser target'}</p>
-          <p className="text-xs text-slate-500">
-            {page.url || 'Waiting for target binding'}
-          </p>
-        </div>
-        <p role="status" className="text-sm text-slate-400">
-          {state === 'connecting'
-            ? 'Connecting to the paused session…'
-            : state === 'disconnecting'
-              ? 'Releasing the selected session…'
-              : state === 'live'
-                ? 'Live view holds this session paused. Click the page to type or scroll. Shift+Escape leaves page focus.'
-                : 'Live view ended. Disconnect, refresh the session, then open it again.'}
-        </p>
-        <canvas
-          ref={canvas}
-          tabIndex={state === 'live' ? 0 : -1}
-          aria-label={`Live page for ${session.name}`}
-          className={`block h-auto max-h-[70vh] w-auto max-w-full border border-slate-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-400 ${state === 'ended' ? 'hidden' : ''}`}
-          onMouseMove={(event) => mouse(event, 'mouseMoved')}
-          onMouseDown={(event) => mouse(event, 'mousePressed')}
-          onMouseUp={(event) => mouse(event, 'mouseReleased')}
-          onContextMenu={(event) => event.preventDefault()}
-          onKeyDown={(event) => keyboard(event, 'keyDown')}
-          onKeyUp={(event) => keyboard(event, 'keyUp')}
-          onCompositionEnd={(event) => {
-            for (const text of event.data)
-              send({ type: 'input_keyboard', eventType: 'char', text })
-          }}
-          onPaste={(event) => {
-            event.preventDefault()
-            for (const text of event.clipboardData.getData('text/plain'))
-              send({ type: 'input_keyboard', eventType: 'char', text })
-          }}
-          onWheel={(event) => {
-            event.currentTarget.focus()
-            const bounds = event.currentTarget.getBoundingClientRect()
-            send({
-              type: 'input_mouse',
-              eventType: 'mouseWheel',
-              button: 'none',
-              x:
-                ((event.clientX - bounds.left) * event.currentTarget.width) /
-                bounds.width,
-              y:
-                ((event.clientY - bounds.top) * event.currentTarget.height) /
-                bounds.height,
-              deltaX: event.deltaX,
-              deltaY: event.deltaY,
-              modifiers: modifiers(event),
-            })
-          }}
-        />
-        <form
-          className={`flex flex-wrap items-center gap-2 ${state === 'ended' ? 'hidden' : ''}`}
-          onSubmit={(event) => {
-            event.preventDefault()
-            typeText(false)
-          }}
-        >
-          <Input
-            type="password"
-            autoComplete="off"
-            aria-label="Text to type into the focused page field"
-            placeholder="Tap a field in the page, then type or paste here"
-            value={text}
-            disabled={state !== 'live'}
-            onChange={(event) => setText(event.target.value)}
-            className="min-w-0 flex-1 basis-56"
-          />
-          <Button size="sm" type="submit" disabled={state !== 'live' || !text}>
-            Send
-          </Button>
-          <Button
-            size="sm"
-            type="button"
-            disabled={state !== 'live' || !text}
-            onClick={() => typeText(true)}
-          >
-            Send and press Enter
-          </Button>
-        </form>
-      </div>
-    )
-  },
-)
 
 export function BrowserSessions() {
   const client = useQueryClient()
@@ -359,10 +44,6 @@ export function BrowserSessions() {
     BrowserSession,
     'name' | 'actor'
   > | null>(null)
-  const [view, setView] = useState(false)
-  const liveBrowser = useRef<LiveBrowserHandle | null>(null)
-  const [releasing, setReleasing] = useState(false)
-  const [releaseError, setReleaseError] = useState<string | null>(null)
   const selected = inventory.data?.find(
     (session) =>
       session.name === selection?.name && session.actor === selection.actor,
@@ -377,8 +58,7 @@ export function BrowserSessions() {
       (session) => showClosed || !isClosed(session) || session === selected,
     )
     .sort((a, b) => Number(b.paused) - Number(a.paused))
-  // A hand-off link (?browser=NAME&actor=ID) selects the session and opens its
-  // live view once it is paused.
+  // A hand-off link (?browser=NAME&actor=ID) selects the session.
   const detail = useRef<HTMLDivElement>(null)
   const [linked, setLinked] = useState(false)
   useEffect(() => {
@@ -393,7 +73,6 @@ export function BrowserSessions() {
   useEffect(() => {
     if (!linked || !selected) return
     setLinked(false)
-    if (selected.paused) setView(true)
     detail.current?.scrollIntoView?.({ block: 'start' })
   }, [linked, selected])
   const unavailable =
@@ -413,30 +92,9 @@ export function BrowserSessions() {
       await client.invalidateQueries({ queryKey })
     },
   })
-  async function act(action?: BrowserSessionAction) {
-    if (!selected || change.isPending || releasing) return
-    setReleaseError(null)
-    setReleasing(true)
-    try {
-      if (view) {
-        if (!liveBrowser.current)
-          throw new Error(
-            'Live view is unavailable. Refresh the selected session.',
-          )
-        await liveBrowser.current.release()
-      }
-      setView(false)
-      if (action) change.mutate({ session: selected, action })
-    } catch (error) {
-      setReleaseError(
-        error instanceof Error
-          ? error.message
-          : 'Live view release was not confirmed.',
-      )
-      setView(false)
-    } finally {
-      setReleasing(false)
-    }
+  function act(action: BrowserSessionAction) {
+    if (!selected || change.isPending) return
+    change.mutate({ session: selected, action })
   }
   return (
     <section className="space-y-4" aria-label="Managed browser sessions">
@@ -481,11 +139,9 @@ export function BrowserSessions() {
             key={`${session.name}:${session.actor}`}
             type="button"
             aria-pressed={selected === session}
-            disabled={releasing || change.isPending}
+            disabled={change.isPending}
             onClick={() => {
-              setView(false)
               change.reset()
-              setReleaseError(null)
               setSelection({ name: session.name, actor: session.actor })
             }}
             className={`min-w-0 rounded-lg border p-3 text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-400 ${selected === session ? 'border-cyan-500 bg-cyan-500/5' : 'border-slate-700 bg-slate-900'}`}
@@ -568,65 +224,40 @@ export function BrowserSessions() {
               <div className="flex flex-wrap gap-2">
                 <Button
                   size="sm"
-                  disabled={change.isPending || releasing || selected.paused}
-                  onClick={() => {
-                    void act('pause')
-                  }}
+                  variant={selected.paused ? 'primary' : 'secondary'}
+                  disabled={!selected.paused}
+                  onClick={() => openAssistWindow(selected.name)}
+                >
+                  Open live view
+                </Button>
+                <Button
+                  size="sm"
+                  disabled={change.isPending || selected.paused}
+                  onClick={() => act('pause')}
                 >
                   Pause for human
                 </Button>
                 <Button
                   size="sm"
-                  disabled={change.isPending || releasing || !selected.paused}
-                  onClick={() => {
-                    void act('resume')
-                  }}
+                  disabled={change.isPending || !selected.paused}
+                  onClick={() => act('resume')}
                 >
                   Resume automation
                 </Button>
                 <Button
                   size="sm"
-                  disabled={
-                    change.isPending || releasing || !selected.paused || view
-                  }
-                  onClick={() => setView(true)}
-                >
-                  Open live view
-                </Button>
-                {view && (
-                  <Button
-                    size="sm"
-                    disabled={releasing || change.isPending}
-                    onClick={() => {
-                      void act()
-                    }}
-                  >
-                    Disconnect live view
-                  </Button>
-                )}
-                <Button
-                  size="sm"
                   variant="destructive"
-                  disabled={change.isPending || releasing}
-                  onClick={() => {
-                    void act('close')
-                  }}
+                  disabled={change.isPending}
+                  onClick={() => act('close')}
                 >
                   Close session
                 </Button>
               </div>
               <p className="text-xs text-slate-500">
-                Enter sign-in details directly in the live page. This view
-                forwards human input without saving frames or keystrokes. Resume
-                automation disconnects the view first.
+                The live view opens in its own window while the session is
+                paused. Press Done there to hand the browser back to the agent.
+                Frames and keystrokes are not saved.
               </p>
-              {view && selected.paused && !inventory.error && (
-                <LiveBrowser
-                  ref={liveBrowser}
-                  key={`${selected.name}:${selected.actor}`}
-                  session={selected}
-                />
-              )}
             </>
           )}
           {change.isPending && (
@@ -637,11 +268,6 @@ export function BrowserSessions() {
           {change.error && (
             <p role="alert" className="text-sm text-rose-300">
               {change.error.message}
-            </p>
-          )}
-          {releaseError && (
-            <p role="alert" className="text-sm text-rose-300">
-              {releaseError}
             </p>
           )}
         </div>

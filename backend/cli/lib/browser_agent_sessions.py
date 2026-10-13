@@ -36,7 +36,8 @@ PAUSE_CLOSE_MS = 2 * 3600_000
 DEAD_OWNER_GRACE_MS = 2 * 60_000
 RECLAIM_MIN_IDLE_MS = 60_000
 CLAIM_IDLE_MS = IDLE_CLOSE_MS
-RUNTIME_URL = "https://dev.summitflow.dev/runtime"
+# The owner's assist window, served by browser-automation and proxied here behind Cloudflare Access.
+ASSIST_URL = "https://dev.summitflow.dev/browser-assist"
 _ACTOR = re.compile(r"[A-Za-z0-9_.:@/-]+")
 _UUID = re.compile(r"[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}", re.IGNORECASE)
 
@@ -247,20 +248,48 @@ def clear_pause(name: str) -> None:
     _pause_path(name).unlink(missing_ok=True)
 
 
-def runtime_link(name: str, actor: str) -> str:
-    return f"{RUNTIME_URL}?browser={quote(name, safe='')}&actor={quote(actor, safe='')}"
+def assist_link(name: str) -> str:
+    return f"{ASSIST_URL}/{quote(name, safe='')}"
 
 
-def notify_owner(name: str, actor: str, reason: str) -> bool:
-    """One Nightshift Web Push with a deep link to the paused session's live view."""
-    message = f"{reason} (browser session {name}). Open the live view, finish, then Resume."
+def _assist() -> Any:
+    return importlib.import_module("browser_automation.assist")
+
+
+def notify_owner(name: str, reason: str) -> bool:
+    """One Nightshift Web Push linking to the session's assist window."""
+    message = f"{reason} (browser session {name}). Open it, finish, then press Done."
     try:
         result = subprocess.run(["nightshift", "push", "--title", "Browser needs you", "--severity", "warning",
-                                 "--open", runtime_link(name, actor), message[:300]],
+                                 "--open", assist_link(name), message[:300]],
                                 capture_output=True, text=True, timeout=30, check=False)
     except (OSError, subprocess.SubprocessError):
         return False
     return result.returncode == 0
+
+
+def hand_off(name: str, actor: str, reason: str, question: str = "") -> str:
+    """window (owner at the workstation), push, repeat (already handed off) or failed."""
+    try:
+        started = _assist().ensure(name, actor, reason=reason, question=question, st_bin=browser_support.st_bin())
+    except (ValueError, OSError):
+        started = {"started": False, "window": False, "error": True}
+    if not started["started"] and not started.get("error"):
+        return "repeat"
+    if started["window"]:
+        return "window"
+    return "push" if notify_owner(name, reason) else "failed"
+
+
+def wait_result(name: str, code: int) -> tuple[int, dict[str, Any]]:
+    """Exit code and JSON for a finished wait; a declined --ask question exits 4."""
+    outcome = {0: "resumed", 3: "closed", 124: "timeout"}[code]
+    answer = _assist().take_answer(name) if code == 0 else None
+    if answer == "approve":
+        outcome = "approved"
+    elif answer == "decline":
+        outcome, code = "declined", 4
+    return code, {"schema_version": 1, "name": name, "resumed": code in {0, 4}, "outcome": outcome}
 
 
 def wait_for_resume(name: str, actor: str, timeout_s: int, *, poll_s: float = 3.0,

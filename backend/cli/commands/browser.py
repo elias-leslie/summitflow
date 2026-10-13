@@ -1069,6 +1069,9 @@ def _agent_session_extras(argv: list[str], actor: str | None, profile: str | Non
         reason = _take_option(tail, "--reason")
         if reason is not None:
             extras["reason"], tail = reason
+        question = _take_option(tail, "--ask")
+        if question is not None:
+            extras["question"], tail = question
         wait = _take_option(tail, "--wait", optional_value=True)
         if wait is not None:
             extras["wait"], tail = int(wait[0] or 1800), wait[1]
@@ -1087,9 +1090,9 @@ def _agent_session_extras(argv: list[str], actor: str | None, profile: str | Non
         if not isinstance(name, str):
             output_error("Usage: st browser session wait [NAME] [--timeout SECONDS]")
             return 2, argv, {}
-        code = agent_sessions.wait_for_resume(name, os.environ.get("ST_BROWSER_OWNER", ""), extras["wait"])
-        print(json.dumps({"schema_version": 1, "name": name, "resumed": code == 0,
-                          "outcome": {0: "resumed", 3: "closed", 124: "timeout"}[code]}, separators=(",", ":")))
+        code, result = agent_sessions.wait_result(
+            name, agent_sessions.wait_for_resume(name, os.environ.get("ST_BROWSER_OWNER", ""), extras["wait"]))
+        print(json.dumps(result, separators=(",", ":")))
         return code, argv, {}
     return None, [*head, action, *tail], extras
 
@@ -1100,14 +1103,14 @@ def _after_session_action(code: int, extras: dict[str, Any], actor: str | None, 
         return code
     owner = os.environ.get("ST_BROWSER_OWNER", "")
     if action == "pause":
-        reason = extras.get("reason")
-        agent_sessions.record_pause(name, owner, reason)
-        if reason and not agent_sessions.notify_owner(name, owner, reason):
+        reason, question = str(extras.get("reason") or ""), str(extras.get("question") or "")
+        agent_sessions.record_pause(name, owner, reason or question)
+        # A repeated pause keeps the window or push already in flight; no duplicates.
+        if (reason or question) and agent_sessions.hand_off(name, owner, reason or question, question) == "failed":
             output_error("Owner notification failed; the session stays paused in Runtime > Browser sessions")
         if "wait" in extras:
-            code = agent_sessions.wait_for_resume(name, owner, extras["wait"])
-            print(json.dumps({"schema_version": 1, "name": name, "resumed": code == 0,
-                              "outcome": {0: "resumed", 3: "closed", 124: "timeout"}[code]}, separators=(",", ":")))
+            code, result = agent_sessions.wait_result(name, agent_sessions.wait_for_resume(name, owner, extras["wait"]))
+            print(json.dumps(result, separators=(",", ":")))
     elif action in {"resume", "close"}:
         agent_sessions.clear_pause(name)
         if action == "close" and profile and actor:
@@ -1267,8 +1270,10 @@ Agents (Claude Code, Codex, any TUI):
   (own Chrome and persistent profile, named <project>-<id>, shown in Runtime >
   Browser sessions). Never use Claude-in-Chrome or local Chrome unless the owner
   explicitly asks or the VM is down; "use the open Chrome" means st browser.
-  Login, 2FA or captcha: st browser session pause --reason "login needed: <site>" --wait
-  (pushes the owner a link to the live view; returns when they click Resume).
+  Login, 2FA, captcha or "look at this": st browser session pause --reason "login needed: <site>" --wait
+  (opens a live-view window on the owner's desktop when they are there, else pushes
+  them its link; returns when they press Done). Yes/no decision: add --ask "QUESTION";
+  the wait then reports outcome approved (exit 0) or declined (exit 4).
   Shared logged-in profile: --shared-profile NAME (one agent at a time; `shared` is
   the legacy VM Chrome). Release with st browser session release NAME.
   Close when done: st browser session close. Idle (20 min), ended-agent and
@@ -1299,7 +1304,7 @@ Supported workflows:
   st browser step <core-command> [args...]
   st browser extract --file fields.json
   st browser session create NAME | list [--all] | status NAME
-  st browser session pause [NAME] [--reason TEXT] [--wait [SECONDS]] | resume [NAME] | close [NAME]
+  st browser session pause [NAME] [--reason TEXT] [--ask QUESTION] [--wait [SECONDS]] | resume [NAME] | close [NAME]
   st browser session wait [NAME] [--timeout SECONDS] | release PROFILE | reap [--dry-run]
   st browser session view NAME | lease NAME  (paused live view; lease lasts until stdin EOF)
   st browser session maintenance [--idle-ms MS] [--apply]
@@ -1373,7 +1378,7 @@ _HELP = _USAGE
     when="UI render verification; screenshots; DOM snapshots",
     precautions=(
         "agents: plain st browser runs in your own VM session; never Claude-in-Chrome/local Chrome unless the owner asks or the VM is down",
-        "login/2FA: st browser session pause --reason 'login needed: <site>' --wait; close your session when done",
+        "login/2FA/owner look: st browser session pause --reason 'login needed: <site>' [--ask 'yes/no question'] --wait; close your session when done",
         "local checks use isolated headless sessions; interactive commands share the Chrome AI profile",
         "--proxmox or ST_BROWSER_TARGET=proxmox when VM isolation is better",
         "st ui when the open desktop/PWA is the evidence source",

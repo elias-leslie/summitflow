@@ -169,19 +169,69 @@ def test_wait_for_resume_outcomes() -> None:
     assert agent_sessions.wait_for_resume("s", "a", 0, poll_s=0, state=lambda *_: "paused") == 124
 
 
-def test_pause_reason_is_recorded_pushed_and_cleared_on_resume(tmp_path, monkeypatch, capsys) -> None:
+def test_pause_reason_is_recorded_handed_off_and_cleared_on_resume(tmp_path, monkeypatch, capsys) -> None:
     monkeypatch.setenv("CODEX_THREAD_ID", "thread-a")
-    pushed: list[tuple[str, str, str]] = []
-    monkeypatch.setattr(agent_sessions, "notify_owner", lambda *args: pushed.append(args) or True)
+    handed: list[tuple[str, ...]] = []
+    monkeypatch.setattr(agent_sessions, "hand_off", lambda *args: handed.append(args) or "window")
     monkeypatch.setattr(agent_sessions, "warm_session", lambda *_: True)
     monkeypatch.setattr(browser, "_run_registered", lambda _record, argv, _context: 0)
     name = agent_sessions.default_session_name("thread-a")
-    assert browser.run_registered(_record(), ["session", "pause", "--reason", "login needed: example.com"], _context(tmp_path)) == 0
+    pause = ["session", "pause", "--reason", "login needed: example.com", "--ask", "Submit it?"]
+    assert browser.run_registered(_record(), pause, _context(tmp_path)) == 0
     assert agent_sessions.pause_reason(name) == "login needed: example.com"
-    assert pushed == [(name, "thread-a", "login needed: example.com")]
-    assert agent_sessions.runtime_link(name, "thread-a").endswith(f"?browser={name}&actor=thread-a")
+    assert handed == [(name, "thread-a", "login needed: example.com", "Submit it?")]
+    assert agent_sessions.assist_link(name) == f"https://dev.summitflow.dev/browser-assist/{name}"
     assert browser.run_registered(_record(), ["session", "resume"], _context(tmp_path)) == 0
     assert agent_sessions.pause_reason(name) is None
+
+
+class _Assist:
+    def __init__(self, result):
+        self.result, self.calls, self.answer = result, [], None
+
+    def ensure(self, *args, **kwargs):
+        self.calls.append((args, kwargs))
+        return self.result
+
+    def take_answer(self, _name):
+        answer, self.answer = self.answer, None
+        return answer
+
+
+@pytest.mark.parametrize(("result", "outcome", "pushes"), [
+    ({"started": True, "window": True}, "window", 0),
+    ({"started": True, "window": False}, "push", 1),
+    # A repeated pause while the window or push is in flight notifies nobody.
+    ({"started": False, "window": False}, "repeat", 0),
+])
+def test_hand_off_prefers_the_desktop_window_and_never_duplicates(monkeypatch, result, outcome, pushes) -> None:
+    fake = _Assist(result)
+    pushed: list[tuple[str, str]] = []
+    monkeypatch.setattr(agent_sessions, "_assist", lambda: fake)
+    monkeypatch.setattr(agent_sessions, "notify_owner", lambda *args: pushed.append(args) or True)
+    assert agent_sessions.hand_off("s", "a", "login needed", "Submit?") == outcome
+    assert fake.calls[0][0] == ("s", "a") and fake.calls[0][1]["question"] == "Submit?"
+    assert len(pushed) == pushes
+
+
+def test_hand_off_still_pushes_when_the_window_server_cannot_start(monkeypatch) -> None:
+    class Broken(_Assist):
+        def ensure(self, *args, **kwargs):
+            raise ValueError("st is not on PATH")
+    monkeypatch.setattr(agent_sessions, "_assist", lambda: Broken(None))
+    monkeypatch.setattr(agent_sessions, "notify_owner", lambda *args: True)
+    assert agent_sessions.hand_off("s", "a", "login needed") == "push"
+
+
+def test_wait_reports_the_owner_answer(monkeypatch) -> None:
+    fake = _Assist(None)
+    monkeypatch.setattr(agent_sessions, "_assist", lambda: fake)
+    fake.answer = "decline"
+    assert agent_sessions.wait_result("s", 0) == (4, {"schema_version": 1, "name": "s", "resumed": True, "outcome": "declined"})
+    fake.answer = "approve"
+    assert agent_sessions.wait_result("s", 0)[1]["outcome"] == "approved"
+    assert agent_sessions.wait_result("s", 0) == (0, {"schema_version": 1, "name": "s", "resumed": True, "outcome": "resumed"})
+    assert agent_sessions.wait_result("s", 124)[1]["outcome"] == "timeout"
 
 
 def test_legacy_shared_profile_is_a_managed_session_on_the_shared_vm_chrome(tmp_path, monkeypatch, vm_dispatch) -> None:
