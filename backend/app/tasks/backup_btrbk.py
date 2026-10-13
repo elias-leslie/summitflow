@@ -49,6 +49,8 @@ ALLOCATION_TARGET_BYTES = 12 * 1024**3
 _USAGE_FIELDS = (("Device size", "size"), ("Device unallocated", "unallocated"), ("Device missing", "missing"), ("Free (statfs, df)", "free"))
 _RUN_ID = re.compile(r"\d{8}T\d{6}Z-[0-9a-f]{8}\Z")
 _BATCH_JITTER = timedelta(minutes=30)
+NATIVE_HELPER = "/usr/local/sbin/summitflow-native-capture"
+NATIVE_TARGET = Path("/mnt/summitflow-native/native")
 
 
 def _state_root() -> Path:
@@ -71,6 +73,17 @@ def _checked(args: list[str], *, bulk: bool = False) -> str:
     if result.returncode:
         raise RuntimeError(f"{args[0]} failed (exit {result.returncode}); inspect host recovery journal")
     return result.stdout
+
+
+def _native(*args: str, bulk: bool = False) -> str:
+    """Root file operations on the native store go through one fixed, path-confined helper."""
+    return _checked(["sudo", "-n", NATIVE_HELPER, *args], bulk=bulk)
+
+
+def _native_listing(target: Path, which: str) -> list[str]:
+    if target != NATIVE_TARGET:
+        raise RuntimeError("Native target differs from the root helper's fixed store")
+    return _native("list", which).splitlines()
 
 
 def _rows(output: str) -> list[dict[str, str]]:
@@ -221,13 +234,8 @@ def _qualify_target_directory(path: Path) -> None:
 def _target_copy(source: Path, destination: Path) -> None:
     """Install and verify bytes before publishing the independent artifact."""
     _qualify_target_directory(destination.parent)
-    temporary = destination.with_name(destination.name + ".preparing")
-    _checked(["sudo", "-n", "install", "-m", "600", "--", str(source), str(temporary)])
-    actual = _checked(["sudo", "-n", "sha256sum", "--", str(temporary)]).split()[0]
-    if actual != hashlib.sha256(source.read_bytes()).hexdigest():
-        raise RuntimeError("Independent host metadata checksum mismatch")
-    _checked(["sudo", "-n", "mv", "-T", "--", str(temporary), str(destination)])
-    _checked(["sudo", "-n", "sync", "-f", str(destination)])
+    # The helper re-hashes the installed bytes and renames them into place only on a match.
+    _native("publish", destination.parent.name, destination.name, str(source), hashlib.sha256(source.read_bytes()).hexdigest())
 
 
 def _database_manifests(rows: list[dict[str, str]], now: datetime, reference: datetime | None = None) -> dict[str, Any]:
@@ -397,8 +405,8 @@ def _cleanup_superseded(target: Path, current_run: str) -> dict[str, Any]:
     """Remove only successful adapter metadata whose referenced points are gone."""
     metadata = target.parent / "summitflow-host-recovery" / "captures"
     _qualify_target_directory(metadata)
-    live = set(_checked(["sudo", "-n", "find", str(target), "-mindepth", "1", "-maxdepth", "1", "-type", "d", "-print"]).splitlines())
-    captures = _checked(["sudo", "-n", "find", str(metadata), "-mindepth", "1", "-maxdepth", "1", "-type", "d", "-print"]).splitlines()
+    live = set(_native_listing(target, "target"))
+    captures = _native_listing(target, "captures")
     removed, blockers = [], []
     before = shutil.disk_usage(target)
     for value in captures:
@@ -411,7 +419,7 @@ def _cleanup_superseded(target: Path, current_run: str) -> dict[str, Any]:
             owner, mode, kind = _checked(["sudo", "-n", "stat", "-c", "%u:%a:%F", "--", str(receipt)]).strip().split(":", 2)
             if owner != "0" or int(mode, 8) & 0o077 or kind != "regular file":
                 raise RuntimeError("Unqualified native capture receipt")
-            saved = json.loads(_checked(["sudo", "-n", "cat", "--", str(receipt)]))
+            saved = json.loads(_native("read", directory.name))
             points = saved.get("points") or []
             if saved.get("adapter") != ADAPTER or saved.get("run_id") != directory.name or saved.get("status") != "completed" or saved.get("boot_path") != str(directory / "boot") or not points:
                 continue
@@ -419,11 +427,7 @@ def _cleanup_superseded(target: Path, current_run: str) -> dict[str, Any]:
                 continue
             # The receipt remains until boot and its auxiliary artifacts delete
             # successfully. Failed deletion always keeps the local catalogue.
-            _checked(["sudo", "-n", "rm", "-rf", "--", str(directory / "boot")])
-            for name in ("journal.log", "layout.json", "database-manifests.json", "capture.json.preparing"):
-                _checked(["sudo", "-n", "rm", "-f", "--", str(directory / name)])
-            _checked(["sudo", "-n", "rm", "--", str(receipt)])
-            _checked(["sudo", "-n", "rmdir", "--", str(directory)])
+            _native("remove", directory.name)
             last_good_path = _state_root() / "last-good.json"
             if last_good_path.is_file():
                 last_good = json.loads(last_good_path.read_text())
@@ -439,7 +443,7 @@ def _cleanup_superseded(target: Path, current_run: str) -> dict[str, Any]:
             removed.append(directory.name)
         except (OSError, ValueError, RuntimeError, KeyError) as exc:
             blockers.append({"run_id": directory.name, "error": str(exc)})
-    _checked(["sudo", "-n", "sync", "-f", str(target)])
+    _native("sync", "target")
     after = shutil.disk_usage(target)
     return {"result": "partial" if blockers else "completed", "removed": removed, "blockers": blockers,
             "reclaimed_bytes": max(0, before.used - after.used), "free_bytes": after.free,
@@ -623,7 +627,7 @@ def _target_deletions_exceed_retention(target: Path) -> bool:
         return False  # The real run reports the failure.
     deleting = [Path(row.get("target_url", "")).name for row in _rows(plan.stdout)
                 if row.get("type", "").startswith("delete") and Path(row.get("target_url", "")).parent == target]
-    existing = _checked(["sudo", "-n", "find", str(target), "-mindepth", "1", "-maxdepth", "1", "-type", "d", "-printf", "%f\\n"]).split()
+    existing = [Path(path).name for path in _native_listing(target, "target")]
     groups: dict[str, tuple[int, int]] = {}
     for name in existing:
         removed, total = groups.get(name.split(".", 1)[0], (0, 0))
@@ -672,9 +676,10 @@ def run_native_host_backup(*, dry_run: bool = False, now: datetime | None = None
         try:
             package_digest = hashlib.sha256(PACKAGE_STATUS_PATH.read_bytes()).hexdigest()
             _qualify_target_directory(target.parent)
-            _checked(["sudo", "-n", "mkdir", "-p", "-m", "700", str(boot)])
+            if target != NATIVE_TARGET:
+                raise RuntimeError("Native target differs from the root helper's fixed store")
+            _native("copy-boot", stamp, bulk=True)
             _qualify_target_directory(boot)
-            _checked(["sudo", "-n", "rsync", "-aHAX", "--numeric-ids", "/boot/", str(boot) + "/"], bulk=True)
             preserve = _target_deletions_refused(target)
             payload["target_deletions_refused"] = preserve
             proc = run_bulk_process(["sudo", "-n", "btrbk", "-c", str(CONFIG_PATH), *(["--preserve-backups"] if preserve else []), "--format", "raw", "run"], phase="host_recovery")

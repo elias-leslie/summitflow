@@ -1,0 +1,82 @@
+#!/usr/bin/python3 -I
+"""Write one steward receipt as root, confined to /var/lib/summitflow-steward/receipts.
+
+Installed root-owned as /usr/local/sbin/summitflow-steward-receipt and run
+through ``sudo -n``. It replaces ``tee``/``cp`` sudo rules whose wildcard
+destination allowed ``..`` (root-equivalent).
+
+  write NAME              store stdin as receipts/NAME
+  save-pg-auto-conf NAME  copy the live PostgreSQL postgresql.auto.conf to receipts/NAME
+
+NAME is a plain file name (letters, digits, '.', '_', '-'); an existing receipt
+is replaced atomically and nothing follows a symlink.
+"""
+
+from __future__ import annotations
+
+import os
+import re
+import stat
+import sys
+from pathlib import Path
+
+RECEIPTS = Path("/var/lib/summitflow-steward/receipts")
+PG_AUTO_CONF = Path("/var/lib/docker/volumes/summitflow-stack_pgdata/_data/postgresql.auto.conf")
+NAME = re.compile(r"[A-Za-z0-9][A-Za-z0-9._-]{0,127}\Z")
+MAX_BYTES = 16 * 1024 * 1024
+
+
+def fail(message: str) -> None:
+    sys.stderr.write(f"summitflow-steward-receipt: {message}\n")
+    raise SystemExit(2)
+
+
+def _store(name: str, data: bytes, mode: int = 0o644) -> None:
+    if not NAME.fullmatch(name) or ".." in name:
+        fail("receipt name must be a plain file name")
+    for item in (*reversed(RECEIPTS.parents), RECEIPTS):
+        info = os.lstat(item)
+        if not stat.S_ISDIR(info.st_mode) or info.st_uid != 0 or info.st_mode & 0o022:
+            fail(f"unqualified directory: {item}")
+    destination = RECEIPTS / name
+    if destination.is_symlink() or (destination.exists() and not destination.is_file()):
+        fail("receipt exists and is not a regular file")
+    temporary = RECEIPTS / f".{name}.writing"
+    temporary.unlink(missing_ok=True)
+    descriptor = os.open(temporary, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW, mode)
+    with os.fdopen(descriptor, "wb") as stream:
+        stream.write(data)
+        stream.flush()
+        os.fsync(stream.fileno())
+    os.replace(temporary, destination)
+
+
+def write(name: str) -> None:
+    data = sys.stdin.buffer.read(MAX_BYTES + 1)
+    if len(data) > MAX_BYTES:
+        fail("receipt is larger than 16 MiB")
+    _store(name, data)
+    sys.stdout.buffer.write(data)  # tee-compatible: callers may keep reading the content back
+
+
+def save_pg_auto_conf(name: str) -> None:
+    descriptor = os.open(PG_AUTO_CONF, os.O_RDONLY | os.O_NOFOLLOW)
+    with os.fdopen(descriptor, "rb") as stream:
+        if not stat.S_ISREG(os.fstat(stream.fileno()).st_mode):
+            fail("postgresql.auto.conf is not a regular file")
+        data = stream.read(MAX_BYTES)
+    _store(name, data, 0o600)
+
+
+def main(argv: list[str]) -> None:
+    if os.geteuid() != 0:
+        fail("must run as root")
+    commands = {"write": write, "save-pg-auto-conf": save_pg_auto_conf}
+    if len(argv) != 2 or argv[0] not in commands:
+        fail("usage: write NAME | save-pg-auto-conf NAME")
+    os.umask(0o022)
+    commands[argv[0]](argv[1])
+
+
+if __name__ == "__main__":
+    main(sys.argv[1:])

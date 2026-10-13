@@ -41,6 +41,8 @@ from .monitor_store_migration import (
     update_restart_receipt,
 )
 
+HOST_MONITOR_HELPER = Path("/usr/local/sbin/summitflow-host-monitor-deploy")
+
 
 class ServiceError(RuntimeError):
     """Raised for service lifecycle failures."""
@@ -753,14 +755,23 @@ def preflight_host_monitor(project: ProjectServices) -> int:
     result = run(["sudo", "-n", "/usr/bin/true"], quiet_success=True)
     if result:
         print("[service] root collector installation requires available noninteractive sudo; no services changed")
-    return result
+        return result
+    # Root runs only the installed, root-owned copy; it must match this release's installer.
+    try:
+        installed = HOST_MONITOR_HELPER.read_bytes()
+    except OSError:
+        installed = b""
+    if installed != (project.root / "backend/cli/lib/host_monitor_deploy.py").read_bytes():
+        print(f"[service] {HOST_MONITOR_HELPER} is missing or differs from this release; "
+              "install it with scripts/install-host-infra.sh; no services changed")
+        return 1
+    return 0
 
 
 def host_monitor_deployment(project: ProjectServices, transaction: str, action: str) -> int:
     if not has_host_monitor(project):
         return 0
-    script = project.root / "backend/cli/lib/host_monitor_deploy.py"
-    return run(["sudo", "-n", "/usr/bin/python3", "-I", str(script), action,
+    return run(["sudo", "-n", str(HOST_MONITOR_HELPER), action,
                 "--source", str(project.root), "--uid", str(os.getuid()),
                 "--gid", str(os.getgid()), "--transaction", transaction], quiet_success=True)
 

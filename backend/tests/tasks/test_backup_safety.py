@@ -119,7 +119,8 @@ def test_btrbk_expiry_beyond_daily_retention_preserves_backups(monkeypatch, noti
     rows = lambda deleting: "\n".join(f"format=\"transaction\" type='delete_target' status='dryrun_success' target_url='{target / name}'" for name in deleting)  # noqa: E731
     plan = {"stdout": rows(names[:1] + names[7:8])}
     monkeypatch.setattr(host, "_run", lambda args: subprocess.CompletedProcess(args, 0, plan["stdout"], ""))
-    monkeypatch.setattr(host, "_checked", lambda args: "\n".join(names) + "\n")
+    monkeypatch.setattr(host, "NATIVE_TARGET", target)
+    monkeypatch.setattr(host, "_checked", lambda args, **_: "\n".join(str(target / name) for name in names) + "\n")
     assert host._target_deletions_refused(target) is False
     plan["stdout"] = rows(names[:5] + names[7:12])
     assert host._target_deletions_refused(target) is True

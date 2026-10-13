@@ -79,6 +79,7 @@ def capture(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> dict[str, Any]:
     packages.write_text("unchanged package inventory")
     monkeypatch.setattr(host, "PACKAGE_STATUS_PATH", packages)
     monkeypatch.setattr(host, "_state_root", lambda: root)
+    monkeypatch.setattr(host, "NATIVE_TARGET", target)
     monkeypatch.setenv("BACKUP_BTRBK_ENABLED", "true")
     rows = [{"source_url": "/", "target_path": str(target), "snapshot_path": "/snapshots"}]
     capacity = {"admitted": True, "used_bytes": 100, "free_bytes": 900, "expected_growth_bytes": 100, "target_filesystem_uuid": "independent-uuid"}
@@ -103,6 +104,8 @@ def capture(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> dict[str, Any]:
         command = args[2:] if args[:2] == ["sudo", "-n"] else args
         name = command[0]
         destination = Path(command[-1])
+        if name == host.NATIVE_HELPER:
+            return native(command[1:])
         if name == "mkdir":
             destination.mkdir(parents=True, mode=0o700, exist_ok=True)
         elif name == "stat":
@@ -140,6 +143,32 @@ def capture(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> dict[str, Any]:
             return "ro=true" if "property" in command else "Received UUID: source-uuid\n"
         else:
             raise AssertionError(f"Unexpected fixture command: {args}")
+        return ""
+    captures = target.parent / "summitflow-host-recovery" / "captures"
+    def native(command: list[str]) -> str:
+        # Mirrors scripts/summitflow-native-capture against the fixture store.
+        action, *rest = command
+        if action == "publish":
+            run_id, name, source, digest = rest
+            if name.startswith(str(fail["artifact"])):
+                raise RuntimeError("fixture independent artifact copy failure")
+            assert hashlib.sha256(Path(source).read_bytes()).hexdigest() == digest
+            (captures / run_id).mkdir(parents=True, exist_ok=True)
+            shutil.copyfile(source, captures / run_id / name)
+        elif action == "copy-boot":
+            (captures / rest[0] / "boot").mkdir(parents=True, mode=0o700, exist_ok=True)
+            (captures / rest[0] / "boot" / "kernel").write_bytes(b"fixture boot bytes")
+        elif action == "read":
+            return (captures / rest[0] / "capture.json").read_text()
+        elif action == "remove":
+            if fail["delete"]:
+                raise RuntimeError("fixture deletion failure")
+            shutil.rmtree(captures / rest[0])
+        elif action == "list":
+            directory = target if rest[0] == "target" else captures
+            return "\n".join(str(path) for path in sorted(directory.iterdir()) if path.is_dir())
+        elif action != "sync":
+            raise AssertionError(f"Unexpected native helper command: {command}")
         return ""
     monkeypatch.setattr(host, "_checked", checked)
     return {"root": root, "target": target, "rows": rows, "bulk": bulk, "calls": calls, "fail": fail, "checked": checked}
@@ -216,7 +245,7 @@ def test_partial_database_association_finishes_without_another_host_capture(capt
     assert result["status"] == "completed"
     assert result["run_id"] == partial["run_id"]
     capture["bulk"].assert_called_once()
-    assert sum("rsync" in command for command in capture["calls"]) == 1
+    assert sum("copy-boot" in command for command in capture["calls"]) == 1
     assert len(list((capture["root"] / "receipts").glob("*.json"))) == 1
 
 
@@ -601,7 +630,8 @@ def test_target_deletion_preview_trips_on_mass_expiry(monkeypatch: pytest.Monkey
     names = [f"root.2026100{day}" for day in range(1, 8)]
     plan = "\n".join(f"format=raw type=delete status=success target_url={tmp_path / name}" for name in names[:5])
     monkeypatch.setattr(host, "_run", lambda _: subprocess.CompletedProcess([], 0, plan, ""))
-    monkeypatch.setattr(host, "_checked", lambda *_args, **_kwargs: "\n".join(names))
+    monkeypatch.setattr(host, "NATIVE_TARGET", tmp_path)
+    monkeypatch.setattr(host, "_checked", lambda *_args, **_kwargs: "\n".join(str(tmp_path / name) for name in names))
     assert host._target_deletions_refused(tmp_path) is True
     monkeypatch.setattr(host, "_run", lambda _: subprocess.CompletedProcess([], 0, plan.splitlines()[0], ""))
     assert host._target_deletions_refused(tmp_path) is False

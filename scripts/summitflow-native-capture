@@ -1,0 +1,173 @@
+#!/usr/bin/python3 -I
+"""Root-side file operations for the native host capture, confined to fixed paths.
+
+Installed root-owned as /usr/local/sbin/summitflow-native-capture and run by
+SummitFlow through ``sudo -n``. It replaces generic ``install``/``mv``/``cat``/
+``rm``/``rsync`` sudo rules whose path wildcards allowed ``..`` (root-equivalent).
+Every write lands in one capture directory, ``captures/RUN_ID`` under the
+native store, chosen by a validated run id and a fixed file name; nothing
+follows a symlink.
+
+  publish RUN_ID NAME SOURCE SHA256   copy SOURCE (the caller's operation file) to NAME, verified
+  copy-boot RUN_ID                    rsync /boot into captures/RUN_ID/boot
+  read RUN_ID                         print captures/RUN_ID/capture.json
+  remove RUN_ID                       delete one capture's metadata directory
+  list target|captures                print the child directories, one path per line
+  sync target|captures                flush the native filesystem
+"""
+
+from __future__ import annotations
+
+import hashlib
+import os
+import pwd
+import re
+import shutil
+import stat
+import subprocess
+import sys
+from pathlib import Path
+
+STORE = Path("/mnt/summitflow-native")
+TARGET = STORE / "native"
+CAPTURES = STORE / "summitflow-host-recovery" / "captures"
+OPERATIONS = Path(".local/state/summitflow/host-recovery/operations")  # under the calling user's home
+RUN_ID = re.compile(r"\d{8}T\d{6}Z-[0-9a-f]{8}\Z")
+NAMES = frozenset({"capture.json", "journal.log", "layout.json", "database-manifests.json"})
+AUXILIARY = ("journal.log", "layout.json", "database-manifests.json", "capture.json.preparing")
+LISTS = {"target": TARGET, "captures": CAPTURES}
+
+
+def fail(message: str) -> None:
+    sys.stderr.write(f"summitflow-native-capture: {message}\n")
+    raise SystemExit(2)
+
+
+def _root_directory(path: Path) -> None:
+    """Every component must be a real, root-owned directory nobody else can write."""
+    for item in (*reversed(path.parents), path):
+        info = os.lstat(item)
+        if not stat.S_ISDIR(info.st_mode) or info.st_uid != 0 or info.st_mode & 0o022:
+            fail(f"unqualified directory: {item}")
+
+
+def _capture(run_id: str, *, create: bool = False) -> Path:
+    if not RUN_ID.fullmatch(run_id):
+        fail("invalid run id")
+    _root_directory(CAPTURES)
+    directory = CAPTURES / run_id
+    if create:
+        directory.mkdir(mode=0o700, exist_ok=True)
+    _root_directory(directory)
+    return directory
+
+
+def _caller_source(value: str) -> int:
+    """Open the caller's own regular file inside its operations tree, never following a link."""
+    uid = int(os.environ.get("SUDO_UID", "-1"))
+    if uid <= 0:
+        fail("run through sudo by the owning user")
+    root = Path(pwd.getpwuid(uid).pw_dir) / OPERATIONS
+    path = Path(value)
+    if not path.is_absolute() or ".." in path.parts or path.parent.parent != root or not RUN_ID.fullmatch(path.parent.name):
+        fail("source must be an operation file of the calling user")
+    if os.path.realpath(path.parent) != str(path.parent):
+        fail("source directory must not traverse a symlink")
+    descriptor = os.open(path, os.O_RDONLY | os.O_NOFOLLOW)
+    info = os.fstat(descriptor)
+    if not stat.S_ISREG(info.st_mode) or info.st_uid != uid:
+        os.close(descriptor)
+        fail("source must be a regular file owned by the caller")
+    return descriptor
+
+
+def publish(run_id: str, name: str, source: str, expected: str) -> None:
+    if name not in NAMES or not re.fullmatch(r"[0-9a-f]{64}", expected):
+        fail("invalid artifact name or checksum")
+    directory = _capture(run_id, create=True)
+    destination = directory / name
+    temporary = directory / f"{name}.preparing"
+    descriptor = _caller_source(source)
+    with os.fdopen(descriptor, "rb") as stream:
+        data = stream.read()
+    if hashlib.sha256(data).hexdigest() != expected:
+        fail("source checksum mismatch")
+    if temporary.is_symlink() or temporary.exists():
+        temporary.unlink()
+    out = os.open(temporary, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW, 0o600)
+    with os.fdopen(out, "wb") as stream:
+        stream.write(data)
+        stream.flush()
+        os.fsync(stream.fileno())
+    with open(temporary, "rb") as stream:
+        if hashlib.sha256(stream.read()).hexdigest() != expected:
+            fail("installed checksum mismatch")
+    if destination.is_symlink() or (destination.exists() and not destination.is_file()):
+        fail("destination is not a regular file")
+    os.replace(temporary, destination)
+    parent = os.open(directory, os.O_RDONLY | os.O_DIRECTORY)
+    try:
+        os.fsync(parent)
+    finally:
+        os.close(parent)
+
+
+def copy_boot(run_id: str) -> None:
+    boot = _capture(run_id, create=True) / "boot"
+    boot.mkdir(mode=0o700, exist_ok=True)
+    _root_directory(boot)
+    subprocess.run(["/usr/bin/rsync", "-aHAX", "--numeric-ids", "/boot/", f"{boot}/"], check=True)
+
+
+def read(run_id: str) -> None:
+    descriptor = os.open(_capture(run_id) / "capture.json", os.O_RDONLY | os.O_NOFOLLOW)
+    with os.fdopen(descriptor, "rb") as stream:
+        if not stat.S_ISREG(os.fstat(stream.fileno()).st_mode):
+            fail("receipt is not a regular file")
+        sys.stdout.buffer.write(stream.read())
+
+
+def remove(run_id: str) -> None:
+    """Receipt last: a failed deletion always leaves the capture catalogued."""
+    directory = _capture(run_id)
+    boot = directory / "boot"
+    if boot.is_symlink():
+        fail("boot copy is a symlink")
+    if boot.exists():
+        shutil.rmtree(boot)
+    for name in AUXILIARY:
+        path = directory / name
+        if path.is_symlink() or path.exists():
+            path.unlink()
+    (directory / "capture.json").unlink(missing_ok=True)
+    directory.rmdir()
+
+
+def listing(which: str) -> None:
+    directory = LISTS.get(which) or fail("unknown listing")
+    _root_directory(directory)
+    for entry in sorted(os.scandir(directory), key=lambda item: item.name):
+        if entry.is_dir(follow_symlinks=False):
+            print(entry.path)
+
+
+def sync(which: str) -> None:
+    directory = LISTS.get(which) or fail("unknown filesystem")
+    subprocess.run(["/usr/bin/sync", "-f", str(directory)], check=True)
+
+
+COMMANDS = {"publish": (publish, 4), "copy-boot": (copy_boot, 1), "read": (read, 1), "remove": (remove, 1),
+            "list": (listing, 1), "sync": (sync, 1)}
+
+
+def main(argv: list[str]) -> None:
+    if os.geteuid() != 0:
+        fail("must run as root")
+    if not argv or argv[0] not in COMMANDS or len(argv) - 1 != COMMANDS[argv[0]][1]:
+        fail("usage: publish RUN NAME SOURCE SHA256 | copy-boot RUN | read RUN | remove RUN | list|sync target|captures")
+    os.umask(0o077)
+    COMMANDS[argv[0]][0](*argv[1:])
+
+
+if __name__ == "__main__":
+    main(sys.argv[1:])

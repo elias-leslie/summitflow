@@ -1,6 +1,8 @@
+#!/usr/bin/python3 -I
 """Fixed privileged installation of the accepted host collector release.
 
-Invoked by st through sudo -n, never by the web API. No sudo policy is installed.
+Installed root-owned as /usr/local/sbin/summitflow-host-monitor-deploy (scripts/install-host-infra.sh)
+and invoked by st through sudo -n, never by the web API, so no kasadis-writable code runs as root.
 The user collector is retained for a reversible first migration.
 """
 from __future__ import annotations
@@ -246,6 +248,10 @@ def main() -> None:
     args = parser.parse_args()
     if os.geteuid() != 0 or not args.transaction.isalnum() or len(args.transaction) > 64:
         raise SystemExit("root and a valid deployment transaction are required")
+    releases = Path(pwd.getpwuid(args.uid).pw_dir) / ".summitflow/services/projects/summitflow/releases"
+    source = Path(os.path.realpath(args.source))
+    if source != args.source or source.parent.parent != releases or not source.parent.name.isalnum() or source.name != "source":
+        raise SystemExit("the collector source must be an accepted SummitFlow service release")
     if args.action == "install":
         install(args.source, args.uid, args.gid, args.transaction)
     elif args.action == "rollback":

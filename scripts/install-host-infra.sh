@@ -10,6 +10,11 @@ USER_SYSTEMD_DIR="$HOME/.config/systemd/user"
 
 # Root-owned: backup jobs make T7 backup storage writable only through it.
 sudo install -o root -g root -m 0755 "$ROOT_DIR/scripts/summitflow-backup-window" /usr/local/sbin/summitflow-backup-window
+# Root-owned, path-confined helpers: the only root entry points for native capture
+# files, steward receipts and the host collector install (one exact sudoers line each).
+sudo install -o root -g root -m 0755 "$ROOT_DIR/scripts/summitflow-native-capture" /usr/local/sbin/summitflow-native-capture
+sudo install -o root -g root -m 0755 "$ROOT_DIR/scripts/summitflow-steward-receipt" /usr/local/sbin/summitflow-steward-receipt
+sudo install -o root -g root -m 0755 "$ROOT_DIR/backend/cli/lib/host_monitor_deploy.py" /usr/local/sbin/summitflow-host-monitor-deploy
 
 units=(
   summitflow-backup-window-guard.service summitflow-backup-window-guard.timer
