@@ -10,6 +10,7 @@ import shutil
 import sqlite3
 import stat
 import subprocess
+import time
 from contextlib import suppress
 from dataclasses import dataclass
 from pathlib import Path, PurePosixPath
@@ -244,9 +245,56 @@ def _is_sqlite_transient_file(
     return False
 
 
+_SQLITE_JOURNAL_MAGIC = bytes.fromhex("d9d505f920a163d7")
+_LOCKED_SQLITE_ATTEMPTS = 5
+
+
+def _sqlite_quiescent_state(source: Path) -> tuple[int, int, int] | None:
+    """Main-file identity when no rollback journal holds an unfinished write."""
+    journal = source.with_name(source.name + "-journal")
+    try:
+        with journal.open("rb") as header:
+            if header.read(8) == _SQLITE_JOURNAL_MAGIC:
+                return None
+    except FileNotFoundError:
+        pass
+    metadata = source.stat()
+    return metadata.st_ino, metadata.st_size, metadata.st_mtime_ns
+
+
 def _copy_sqlite_database(source: Path, destination: Path) -> None:
+    try:
+        _backup_sqlite(f"file:{source.resolve().as_posix()}?mode=ro", source, destination)
+    except sqlite3.OperationalError as exc:
+        if "locked" not in str(exc):
+            raise
+        _copy_locked_sqlite_database(source, destination)
+
+
+def _copy_locked_sqlite_database(source: Path, destination: Path) -> None:
+    """Copy a database its writer holds in exclusive locking mode (Chromium).
+
+    The committed file is read without locks and kept only when no write was
+    in progress or landed during the copy and the copy passes quick_check.
+    WAL content not yet checkpointed is left for the next capture.
+    """
+    uri = f"file:{source.resolve().as_posix()}?mode=ro&immutable=1"
+    for _attempt in range(_LOCKED_SQLITE_ATTEMPTS):
+        destination.unlink(missing_ok=True)
+        before = _sqlite_quiescent_state(source)
+        if before is not None:
+            _backup_sqlite(uri, source, destination)
+            if _sqlite_quiescent_state(source) == before:
+                with sqlite3.connect(destination) as copy:
+                    if copy.execute("PRAGMA quick_check").fetchone()[0] == "ok":
+                        return
+        time.sleep(0.5)
+    destination.unlink(missing_ok=True)
+    raise RuntimeError(f"Locked SQLite database kept changing during capture: {source.name}")
+
+
+def _backup_sqlite(source_uri: str, source: Path, destination: Path) -> None:
     check_backup_cancelled()
-    source_uri = f"file:{source.resolve().as_posix()}?mode=ro"
     with sqlite3.connect(source_uri, uri=True) as source_db, sqlite3.connect(destination) as destination_db:
         page_size = int(source_db.execute("PRAGMA page_size").fetchone()[0])
         page_count = int(source_db.execute("PRAGMA page_count").fetchone()[0])

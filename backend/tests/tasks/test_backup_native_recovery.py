@@ -811,3 +811,38 @@ def test_archive_encryption_fails_closed_without_validated_recipient(
             tmp_path / "backup.tar.gz.age",
             {},
         )
+
+
+def test_snapshot_copies_a_database_its_writer_holds_exclusively(tmp_path: Path) -> None:
+    # Chromium keeps profile databases (Cookies, Login Data) in exclusive locking mode.
+    from app.tasks import backup_native_recovery as recovery
+
+    project = tmp_path / "profile"
+    project.mkdir()
+    database = project / "Cookies"
+    writer = sqlite3.connect(database)
+    try:
+        writer.execute("PRAGMA locking_mode=EXCLUSIVE")
+        writer.execute("CREATE TABLE cookies(value TEXT)")
+        writer.execute("INSERT INTO cookies VALUES ('kept')")
+        writer.commit()
+        with pytest.raises(sqlite3.OperationalError, match="locked"):
+            sqlite3.connect(f"file:{database}?mode=ro", uri=True).execute("SELECT 1 FROM cookies").fetchall()
+        snapshot, _manifest = recovery.build_consistent_snapshot(project, tmp_path / "stage", (), lambda *_args: False)
+    finally:
+        writer.close()
+    with sqlite3.connect(snapshot / "Cookies") as captured:
+        assert captured.execute("SELECT value FROM cookies").fetchall() == [("kept",)]
+
+
+def test_locked_database_with_an_unfinished_write_is_not_captured(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    from app.tasks import backup_native_recovery as recovery
+
+    database = tmp_path / "History"
+    with sqlite3.connect(database) as connection:
+        connection.execute("CREATE TABLE visits(value TEXT)")
+    database.with_name("History-journal").write_bytes(bytes.fromhex("d9d505f920a163d7") + b"\0" * 24)
+    monkeypatch.setattr(recovery.time, "sleep", lambda _seconds: None)
+    with pytest.raises(RuntimeError, match="kept changing"):
+        recovery._copy_locked_sqlite_database(database, tmp_path / "copy")
+    assert not (tmp_path / "copy").exists()
