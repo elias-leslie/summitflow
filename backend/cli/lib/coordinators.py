@@ -1,8 +1,9 @@
 """Which coordinator a session belongs to, read from Tether's session catalog.
 
-Tether is the one record of names and coordinator lineage (descriptor fields
-``name``, ``coordinator``, ``coordinatorId``; docs/api-v1.md "Coordinators" in
-the tether repo). A Tether session id is the Aico widget id its harness sees as
+Tether is the one record of names and coordinator lineage, and words the
+title once (descriptor fields ``displayTitle``, ``coordinator``,
+``coordinatorId``; docs/api-v1.md "Coordinators" and "Display title and
+badge" in the tether repo). A Tether session id is the Aico widget id its harness sees as
 ``AICO_WIDGET_ID``; agent ids come from the coordination identity registry.
 Every lookup is best effort: without Tether, lines stay as they were.
 """
@@ -17,7 +18,6 @@ from typing import Any
 
 from . import coord_lineage, leases
 
-PERSONAL_WORKSPACE_ROOT = str(Path.home() / ".local/share/aico/personal-workspace")
 _TIMEOUT = 0.5
 
 
@@ -41,32 +41,10 @@ def sessions() -> dict[str, dict[str, Any]]:
     return {str(d["id"]): d for d in items or [] if isinstance(d, dict) and d.get("id")}
 
 
-@cache
-def _projects() -> tuple[dict[str, str], dict[str, str]]:
-    data = _get("/v1/projects")
-    rows = [p for p in (data.get("projects") if isinstance(data, dict) else None) or [] if isinstance(p, dict)]
-    by_id = {str(p["id"]): str(p["name"]) for p in rows if p.get("id") and p.get("name")}
-    by_root = {str(p["root"]): str(p["name"]) for p in rows if p.get("root") and p.get("name")}
-    return by_id, by_root
-
-
-def project_name(desc: dict[str, Any]) -> str | None:
-    root = desc.get("projectRoot")
-    if root == PERSONAL_WORKSPACE_ROOT:
-        return "Personal Workspace"
-    by_id, by_root = _projects()
-    return by_id.get(str(desc.get("projectId"))) or by_root.get(str(root)) or None
-
-
 def title(desc: dict[str, Any]) -> str:
-    """`Project — Task`; either part alone when the other is missing or equal; else Tether's label."""
-    project = project_name(desc)
-    task = str(desc.get("name") or "").strip() or None
-    if task and project and task.casefold() == project.casefold():
-        task = None
-    if project and task:
-        return f"{project} — {task}"
-    return project or task or str(desc.get("label") or desc.get("id") or "?")
+    """Tether's ``displayTitle`` (`Project — Task`), as Aico and A-Term show it."""
+    shown = str(desc.get("displayTitle") or "").strip()
+    return shown or str(desc.get("label") or desc.get("id") or "?")
 
 
 # ---------------------------------------------------------------- agents <-> widgets

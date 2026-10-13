@@ -8,23 +8,20 @@ import pytest
 
 from cli.lib import coord, coord_lineage, coordinators, leases
 
-COORD = {"id": "c0000001", "name": "Personal Workspace", "projectId": None,
-         "projectRoot": coordinators.PERSONAL_WORKSPACE_ROOT, "coordinator": True, "coordinatorId": None}
-LANE = {"id": "a0000001", "name": "st ownership output", "projectId": "summitflow",
-        "projectRoot": "/srv/workspaces/projects/summitflow", "coordinator": False, "coordinatorId": "c0000001"}
-ORPHAN = {"id": "a0000002", "name": "", "label": "Session 3", "projectId": None, "projectRoot": "/tmp/x",
-          "coordinator": False, "coordinatorId": "deadbeef"}
+COORD = {"id": "c0000001", "displayTitle": "Personal Workspace", "coordinator": True, "coordinatorId": None}
+LANE = {"id": "a0000001", "displayTitle": "SummitFlow — st ownership output", "coordinator": False,
+        "coordinatorId": "c0000001"}
+ORPHAN = {"id": "a0000002", "displayTitle": " ", "label": "Session 3", "coordinator": False,
+          "coordinatorId": "deadbeef"}
 
 
 @pytest.fixture
 def tether(monkeypatch, tmp_path):
     monkeypatch.setattr(leases, "LEASES_DIR", tmp_path)
     coordinators.sessions.cache_clear()
-    coordinators._projects.cache_clear()
     coordinators._harness_widgets.cache_clear()
     catalog = {d["id"]: d for d in (COORD, LANE, ORPHAN)}
     monkeypatch.setattr(coordinators, "sessions", lambda: catalog)
-    monkeypatch.setattr(coordinators, "_projects", lambda: ({"summitflow": "SummitFlow"}, {}))
     monkeypatch.setattr(coordinators, "_harness_widgets", lambda: {"c0000001": f"{os.getpid()}:1"})
     coord_lineage.save_doc({"identities": {
         "cc:000old": {"anchor": f"{os.getpid()}:1", "last": "2026-10-13T10:00:00+00:00"},
@@ -33,8 +30,8 @@ def tether(monkeypatch, tmp_path):
     return catalog
 
 
-def test_title_follows_project_dash_task():
-    assert coordinators.title(COORD) == "Personal Workspace"  # task equal to project collapses
+def test_title_is_tethers_display_title():
+    assert coordinators.title(COORD) == "Personal Workspace"  # Tether's wording, as it is
     assert coordinators.title(ORPHAN) == "Session 3"
 
 
