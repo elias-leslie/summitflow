@@ -485,6 +485,7 @@
         "XDG_RUNTIME_DIR",
         "XDG_STATE_HOME",
         "DBUS_SESSION_BUS_ADDRESS",
+        "SSH_AUTH_SOCK",
         "ST_BROWSER_OWNER",
         "ST_AGENT_ID",
         "CODEX_THREAD_ID",
