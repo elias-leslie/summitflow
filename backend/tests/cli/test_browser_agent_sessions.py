@@ -91,7 +91,7 @@ def test_agent_session_never_falls_back_to_local_chrome(tmp_path, monkeypatch, v
 def test_unmanaged_local_fallback_is_recorded(tmp_path, monkeypatch) -> None:
     monkeypatch.setattr(browser, "_proxmox_reachable", lambda: False)
     assert browser._select_default_target("proxmox", False, "open", ["open", "https://example.com"]) == "local-ai"
-    rows = (tmp_path / "state" / "st-browser" / "local-fallbacks.jsonl").read_text().splitlines()
+    rows = (agent_sessions.state_dir() / "local-fallbacks.jsonl").read_text().splitlines()
     assert json.loads(rows[0])["reason"] == "vm-unreachable"
 
 

@@ -32,9 +32,13 @@ def isolated_extension_processes(monkeypatch, tmp_path):
 
 
 @pytest.fixture(autouse=True)
-def no_ambient_browser_agent(monkeypatch):
-    """The agent running the suite must not turn browser cases into its own VM session."""
+def no_ambient_browser_agent(monkeypatch, tmp_path):
+    """The agent running the suite must not turn browser cases into its own VM session or
+    write browser hand-off state (fallback log, claims, pause reasons) into the real home."""
+    from cli.lib import browser_agent_sessions
     from cli.lib.browser_agent_sessions import IDENTITY_ENV, SHARED_PROFILE_ENV
 
     for key in (*IDENTITY_ENV, SHARED_PROFILE_ENV):
         monkeypatch.delenv(key, raising=False)
+    state = tmp_path / "st-browser-state"
+    monkeypatch.setattr(browser_agent_sessions, "state_dir", lambda: state.mkdir(parents=True, exist_ok=True) or state)
