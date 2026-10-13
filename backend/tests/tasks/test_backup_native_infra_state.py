@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import os
 import tarfile
 from pathlib import Path
 from typing import cast
@@ -426,7 +427,13 @@ def test_infrastructure_payload_captures_home_credentials_without_links_or_socke
     (home / ".gitconfig").write_text("[user]\n")
     (home / ".gnupg").mkdir(mode=0o700)
     agent = socket.socket(socket.AF_UNIX)
-    agent.bind(str(home / ".gnupg" / "S.gpg-agent"))
+    # Bind by relative name: CI tmp paths can exceed the 108-byte AF_UNIX limit.
+    cwd = Path.cwd()
+    os.chdir(home / ".gnupg")
+    try:
+        agent.bind("S.gpg-agent")
+    finally:
+        os.chdir(cwd)
     monkeypatch.setattr(infra, "_dump_infra_database", lambda path: path.write_bytes(b"SELECT 1;\n"))
     monkeypatch.setattr(infra, "_collect_redis_dump", lambda _path: None)
     try:
