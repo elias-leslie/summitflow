@@ -682,7 +682,7 @@ def _native_legacy_checks(root: Path, plan: dict[str, object], configs: dict[str
         skipped = re.search(r"^([^:]+):SKIP:([^:]+):(.+)$", line)
         if skipped:
             reason = skipped[3]
-            applicable_skip = any(value in reason for value in ("no_local_rules", "no_candidate_lockfiles", "no_candidate_files", "no_tsconfig", "no_relevant_paths"))
+            applicable_skip = any(value in reason for value in ("no_local_rules", "no_candidate_lockfiles", "no_candidate_files", "no_tsconfig", "no_relevant_paths", "no_package_manifest"))
             outcomes.append({"id": skipped[2], "state": "not-applicable" if applicable_skip else "unavailable", "reason": reason})
         elif ":OK:" in line or ":FAIL:" in line:
             outcomes.append({"id": line.split(":", 1)[0].lower(), "state": "fail" if ":FAIL:" in line else "pass", "result": line})

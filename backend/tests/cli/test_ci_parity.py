@@ -211,4 +211,8 @@ def test_tsc_without_project_typescript_skips_instead_of_running_a_cached_npx_pa
     monkeypatch.setattr(check, "heavy_work", Mock(side_effect=AssertionError("npx ran")))
     config: dict[str, object] = {"label": "TSC", "binary": "npx", "args": "tsc --noEmit", "working_dir": "frontend"}
     assert check._run_tool("tsc", config, []) == 0
-    assert "TSC:SKIP:tsc:" in capsys.readouterr().out
+    assert "TSC:SKIP:tsc:no_package_manifest" in capsys.readouterr().out
+    # A manifest that could install TypeScript makes missing node_modules a broken environment.
+    (tmp_path / "package.json").write_text('{"devDependencies": {"typescript": "5"}}')
+    assert check._run_tool("tsc", config, []) == 0
+    assert "TSC:SKIP:tsc:tool_not_installed" in capsys.readouterr().out

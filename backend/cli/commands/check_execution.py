@@ -80,6 +80,9 @@ def missing_tool_skip(name: str, root: Path) -> str:
     A tool missing for sources that do exist stays tool_not_installed, which full
     acceptance never treats as coverage.
     """
+    if name == "tsc" and not any((root / directory / "package.json").is_file() for directory in (".", "frontend")):
+        # No package manifest can install TypeScript; a tsconfig alone serves editors.
+        return "no_package_manifest"
     patterns = _TOOL_SOURCES.get(name)
     if patterns:
         listed = subprocess.run(["git", "-C", str(root), "ls-files", "--", *patterns],
