@@ -96,15 +96,14 @@ def test_unsafe_state_directory_and_symlink_backup_are_rejected(tmp_path):
         deploy._backup(source, tmp_path / "copy")
 
 
-def test_unit_uses_protected_install_and_explicit_owner():
-    unit = Path(__file__).resolve().parents[3] / "scripts/systemd" / deploy.UNIT
-    text = unit.read_text()
-    # Root by default; an explicit User= drops CAP_SETUID (see unit comment).
-    assert "\nUser=" not in text
-    # No User= means systemd sets no HOME, and the collector exits without one.
-    assert "\nEnvironment=HOME=/root\n" in text
-    assert "--owner-uid __MONITOR_OWNER_UID__" in text
-    assert "--owner-gid __MONITOR_OWNER_GID__" in text
+def test_unit_runs_the_collector_as_the_owner_without_capabilities():
+    # The collector is built from the owner's release, so it must never run as root.
+    text = deploy.UNIT_TEMPLATE.format(uid=1000, gid=1000, release="/usr/local/lib/summitflow-host-monitor/releases/x",
+                                       state=deploy.STATE)
+    assert "\nUser=1000\nGroup=1000\nSupplementaryGroups=adm\n" in text
+    assert "\nCapabilityBoundingSet=\n" in text and "\nNoNewPrivileges=yes\n" in text
+    assert "--owner-uid 1000 --owner-gid 1000" in text
+    assert "XDG_RUNTIME_DIR=/run/user/1000" in text
     assert "WantedBy=multi-user.target" in text
     assert "target/release" not in text
     assert os.path.isabs(str(deploy.STATE))
@@ -120,9 +119,6 @@ def test_first_install_and_failed_activation_preserve_owner_store(tmp_path, monk
     for name in ("summitflow-host-monitor", "monitor-observe.pyz", "policy.json"):
         (artifacts / name).write_text("accepted artifact")
     (source / "project.identity.json").write_text("{}")
-    units = source / "scripts/systemd"
-    units.mkdir(parents=True)
-    (units / deploy.UNIT).write_text("ExecStart=__MONITOR_RELEASE__/summitflow-host-monitor --owner-uid __MONITOR_OWNER_UID__ --owner-gid __MONITOR_OWNER_GID__\n")
     legacy = home / ".local/state/summitflow/monitor"
     legacy.mkdir(parents=True)
     (legacy / "maintenance.lock").touch()
@@ -135,7 +131,7 @@ def test_first_install_and_failed_activation_preserve_owner_store(tmp_path, monk
         monkeypatch.setattr(deploy, name, path)
     monkeypatch.setattr(deploy.pwd, "getpwuid", lambda uid: SimpleNamespace(pw_gid=1000, pw_dir=str(home)))
     monkeypatch.setattr(deploy, "_directory", lambda path, mode=0o755: path.mkdir(parents=True, exist_ok=True))
-    monkeypatch.setattr(deploy, "_state_permissions", lambda gid: None)
+    monkeypatch.setattr(deploy, "_state_permissions", lambda uid, gid: None)
     active = {"user": True, "system": False}
 
     def system(*args, **kwargs):

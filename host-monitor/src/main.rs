@@ -362,9 +362,7 @@ fn services(
         Err(e) => {
             errors.push(json!({"source":"systemctl --user show","code":if e.kind()==io::ErrorKind::TimedOut {"timeout"}else{"error"}}));
             let mut unavailable: serde_json::Map<String, Value> = names.iter().map(|name|(name.clone(),json!({"active_state":null,"sub_state":null,"metrics":null,"availability":if e.kind()==io::ErrorKind::TimedOut {"timeout"}else{"error"}}))).collect();
-            if unsafe { libc::geteuid() } == 0 {
-                add_system_monitor(&mut unavailable, errors);
-            }
+            add_system_monitor(&mut unavailable, errors);
             return Value::Object(unavailable);
         }
     };
@@ -404,9 +402,8 @@ fn services(
         out.entry(name.clone())
             .or_insert_with(|| json!({"active_state":null,"sub_state":null,"metrics":null}));
     }
-    if unsafe { libc::geteuid() } == 0 {
-        add_system_monitor(&mut out, errors);
-    }
+    // `systemctl --system show` needs no privilege: the owner-run collector reports its own unit too.
+    add_system_monitor(&mut out, errors);
     Value::Object(out)
 }
 

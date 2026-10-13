@@ -2,7 +2,9 @@
 """Fixed privileged installation of the accepted host collector release.
 
 Installed root-owned as /usr/local/sbin/summitflow-host-monitor-deploy (scripts/install-host-infra.sh)
-and invoked by st through sudo -n, never by the web API, so no kasadis-writable code runs as root.
+and invoked by st through sudo -n, never by the web API. The collector it installs runs as the
+owner account, never as root, and the unit text is fixed here rather than read from the release,
+so no release content can gain root through this installer.
 The user collector is retained for a reversible first migration.
 """
 from __future__ import annotations
@@ -12,7 +14,6 @@ import fcntl
 import json
 import os
 import pwd
-import re
 import shutil
 import sqlite3
 import subprocess
@@ -25,6 +26,38 @@ INSTALL = Path("/usr/local/lib/summitflow-host-monitor")
 STATE = Path("/var/lib/summitflow/monitor")
 UNIT_PATH = Path("/etc/systemd/system") / UNIT
 RECEIPTS = Path("/var/lib/summitflow/monitor-deployments")
+# The collector is built from the owner's release, so it runs as the owner: a system unit (it starts
+# at boot without a login) with no added capabilities. The adm group reads the system journal.
+UNIT_TEMPLATE = """[Unit]
+Description=SummitFlow system host monitor
+After=local-fs.target
+
+[Service]
+Type=simple
+User={uid}
+Group={gid}
+SupplementaryGroups=adm
+WorkingDirectory={release}
+Environment="PATH=/usr/sbin:/usr/bin:/sbin:/bin"
+Environment=XDG_RUNTIME_DIR=/run/user/{uid}
+Environment=DBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/{uid}/bus
+ExecStart={release}/summitflow-host-monitor --state-dir {state} --project-identity {release}/project.identity.json --policy-snapshot {release}/policy.json --owner-uid {uid} --owner-gid {gid} --observe-helper {release}/monitor-observe.pyz
+Restart=on-failure
+RestartSec=5
+UMask=0077
+NoNewPrivileges=yes
+CapabilityBoundingSet=
+ProtectSystem=strict
+ProtectHome=read-only
+ReadWritePaths={state}
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6 AF_NETLINK
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=summitflow-host-monitor
+
+[Install]
+WantedBy=multi-user.target
+"""
 
 
 def build_helper(source: Path) -> Path:
@@ -93,16 +126,17 @@ def _receipt(path: Path, record: dict) -> None:
     _write(path, json.dumps(record, sort_keys=True).encode(), 0o600)
 
 
-def _state_permissions(gid: int) -> None:
-    os.chown(STATE, 0, gid)
-    STATE.chmod(0o750)
+def _state_permissions(uid: int, gid: int) -> None:
+    """The owner-run collector owns its store (private modes); its reader runs as the same owner."""
+    os.chown(STATE, uid, gid)
+    STATE.chmod(0o700)
     for name in ("monitor.sqlite3", "monitor.sqlite3-wal", "monitor.sqlite3-shm", "maintenance.lock"):
         path = STATE / name
         if path.exists():
             if path.is_symlink():
                 raise RuntimeError("monitor state contains a symlink")
-            os.chown(path, 0, gid)
-            path.chmod(0o640)
+            os.chown(path, uid, gid)
+            path.chmod(0o600)
 
 
 def install(source: Path, uid: int, gid: int, transaction: str) -> None:
@@ -127,14 +161,7 @@ def install(source: Path, uid: int, gid: int, transaction: str) -> None:
         if src.is_symlink() or not src.is_file():
             raise RuntimeError("accepted monitor artifact is absent or a symlink")
         _write(release / filename, src.read_bytes(), 0o755 if filename in {"summitflow-host-monitor", "monitor-observe.pyz"} else 0o644)
-    template = (source / "scripts/systemd" / UNIT).read_text()
-    values = {"__MONITOR_RELEASE__": str(release), "__MONITOR_OWNER_UID__": str(uid), "__MONITOR_OWNER_GID__": str(gid)}
-    # Check the template's own placeholders: substituted paths (e.g. a tmp dir) may legitimately contain "__".
-    if set(re.findall(r"__[A-Z][A-Z0-9_]*__", template)) - values.keys():
-        raise RuntimeError("unresolved collector service template")
-    unit = template
-    for placeholder, value in values.items():
-        unit = unit.replace(placeholder, value)
+    unit = UNIT_TEMPLATE.format(uid=uid, gid=gid, release=release, state=STATE)
     old_unit = UNIT_PATH.read_text() if UNIT_PATH.exists() else None
     if old_unit is None and STATE.exists():
         raise RuntimeError("unmanaged system monitor state already exists; inspect it before adoption")
@@ -167,7 +194,7 @@ def install(source: Path, uid: int, gid: int, transaction: str) -> None:
                 _backup(legacy / "monitor.sqlite3", STATE / "monitor.sqlite3")
             finally:
                 os.close(fd)
-        _state_permissions(gid)
+        _state_permissions(uid, gid)
         _write(UNIT_PATH, unit.encode())
         _system("daemon-reload")
         _system("enable", "--now", UNIT)

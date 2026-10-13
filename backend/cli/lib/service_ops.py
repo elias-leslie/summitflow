@@ -488,7 +488,7 @@ def restart_service(service: str, *, port: int = 0) -> int:
         run(_service_command(service, "kill", "--kill-who=all", "-s", "SIGKILL"))
         _wait_service_inactive(service, timeout=3.0)
     if old_pid and _pid_alive(old_pid):
-        capture((["sudo", "-n", "/usr/bin/kill"] if service == host_monitor_deploy.UNIT else ["kill"]) + ["-9", str(old_pid)])
+        capture(["kill", "-9", str(old_pid)])  # Every managed service, the collector included, runs as the owner.
         time.sleep(0.25)
     if port and not _kill_port(port):
         print(f"[service] {service} FAIL: port {port} still in use")
