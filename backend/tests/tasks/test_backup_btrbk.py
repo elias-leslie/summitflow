@@ -281,16 +281,53 @@ def test_required_current_received_point_is_qualified(monkeypatch: pytest.Monkey
         assert host._verified_points(rows, transactions)[0]["received_uuid"] == "source"
 
 
+def _subvolume_listing(monkeypatch: pytest.MonkeyPatch, *rows: str, rc: int = 0, outcome: str = "applied",
+                       header: str = "ID\tgen\ttop level\tpath\t\n--\t---\t---------\t----\t\n", suffix: str = "") -> list[list[str]]:
+    """Nightshift's diag.read btrfs.subvolumes response; children of the mount print relative to it."""
+    calls: list[list[str]] = []
+    monkeypatch.setattr(host, "_filesystem", lambda _: {"options": "rw,compress=zstd:1,subvolid=346,subvol=/@workspaces"})
+    def run(args: list[str]) -> subprocess.CompletedProcess[str]:
+        calls.append(args)
+        out = header + "".join(f"{row}\t\n" for row in rows) + suffix
+        response = {"id": "0" * 32, "outcome": outcome, "result": {"rc": 0, "out": out, "err": ""}}
+        return subprocess.CompletedProcess(args, rc, json.dumps(response), "")
+    monkeypatch.setattr(host, "_run", run)
+    return calls
+
+
 def test_nested_coverage_exempts_only_canonical_managed_workpoints(monkeypatch: pytest.MonkeyPatch) -> None:
     rows = [{"source_url": "/workspaces", "snapshot_path": "/host-snapshots"}]
     monkeypatch.setattr(host, "get_workspaces_root", lambda: Path("/workspaces"))
-    monkeypatch.setattr(host, "_filesystem", lambda _: {"fsroot": "/@workspaces"})
-    monkeypatch.setattr(host, "_checked", lambda _: "ID 300 gen 1 top level 5 path @workspaces/.snapshots/project/point\n")
+    # Subvolumes elsewhere in the filesystem (other parents) are not below this source.
+    calls = _subvolume_listing(monkeypatch, "300\t1\t346\t\t.snapshots/project/point", "301\t1\t5\t\t@other/data",
+                               "302\t1\t300\t\t.snapshots/project/point/inner")
     host._validate_nested_coverage(rows)
+    assert calls == [["nightshift", "request", "diag.read", "probe=btrfs.subvolumes", "target=/workspaces",
+                      "--reason", "maintain", "--agent", "summitflow-host-backup", "--wait", "120"]]
     for nested in ("project/.snapshots/durable", "project/__snapshots/durable", "project/data"):
-        monkeypatch.setattr(host, "_checked", lambda _, nested=nested: f"ID 301 gen 1 top level 5 path @workspaces/{nested}\n")
+        _subvolume_listing(monkeypatch, f"301\t1\t346\t\t{nested}")
         with pytest.raises(RuntimeError, match="explicit host coverage"):
             host._validate_nested_coverage(rows)
+
+
+@pytest.mark.parametrize("fault", ["exit", "shadow", "truncated", "header", "row", "escape", "absolute"])
+def test_nested_coverage_fails_closed_on_an_unusable_listing(monkeypatch: pytest.MonkeyPatch, fault: str) -> None:
+    rows = [{"source_url": "/workspaces", "snapshot_path": "/host-snapshots"}]
+    monkeypatch.setattr(host, "get_workspaces_root", lambda: Path("/workspaces"))
+    child = {"escape": "../outside", "absolute": "/abs"}.get(fault, ".snapshots/project/point")
+    _subvolume_listing(monkeypatch, "garbage" if fault == "row" else f"300\t1\t346\t\t{child}",
+                       rc=1 if fault == "exit" else 0, outcome="shadow" if fault == "shadow" else "applied",
+                       suffix="\n[truncated]" if fault == "truncated" else "",
+                       **({"header": "ID gen path\n"} if fault == "header" else {}))
+    with pytest.raises(RuntimeError):
+        host._validate_nested_coverage(rows)
+
+
+def test_nested_coverage_requires_the_mounted_subvolume_identity(monkeypatch: pytest.MonkeyPatch) -> None:
+    _subvolume_listing(monkeypatch)
+    monkeypatch.setattr(host, "_filesystem", lambda _: {"options": "rw,subvol=/@workspaces"})
+    with pytest.raises(RuntimeError, match="Cannot identify"):
+        host._child_subvolumes(Path("/workspaces"))
 
 
 def test_root_qualification_rejects_writable_or_symlink_metadata(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -513,9 +550,20 @@ def test_capacity_keeps_full_filesystem_bound_even_with_small_previous_increment
     assert result["admitted"] is False
 
 
-@pytest.mark.parametrize("fault", [None, "source-exhausted", "target-exhausted", "unreadable", "invalid", "unparsable"])
-def test_capacity_requires_measured_allocation_headroom_on_each_unique_filesystem(monkeypatch: pytest.MonkeyPatch, fault: str | None) -> None:
+def _sysfs_devices(root: Path, uuid: str, *missing: int) -> None:
+    for devid, state in enumerate(missing, 1):
+        (root / uuid / "devinfo" / str(devid)).mkdir(parents=True)
+        (root / uuid / "devinfo" / str(devid) / "missing").write_text(f"{state}\n")
+
+
+@pytest.mark.parametrize("fault", [None, "source-exhausted", "target-exhausted", "unreadable", "invalid", "unparsable", "device-missing", "device-state-unknown"])
+def test_capacity_requires_measured_allocation_headroom_on_each_unique_filesystem(monkeypatch: pytest.MonkeyPatch, tmp_path: Path, fault: str | None) -> None:
     gib = 1024**3
+    for uuid in ("source", "workspace", "target"):
+        if not (fault == "device-state-unknown" and uuid == "source"):
+            _sysfs_devices(tmp_path, uuid, 0, int(fault == "device-missing" and uuid == "source"))
+    monkeypatch.setattr(host, "SYSFS_BTRFS", tmp_path)
+    monkeypatch.setattr(host, "_readable", lambda _: True)
     rows = [{"source_url": path, "target_path": "/independent/points"} for path in ("/source", "/source/nested", "/workspace")]
     monkeypatch.setenv("SF_HOST_RETENTION_PRESSURE_MIN_FREE_GB", "25")
     def filesystem(path: str) -> dict[str, str]:
@@ -527,7 +575,10 @@ def test_capacity_requires_measured_allocation_headroom_on_each_unique_filesyste
     calls = []
     paths = {"/source": "source", "/workspace": "workspace", "/independent/points": "target"}
     def guard(args: list[str]) -> subprocess.CompletedProcess[str]:
-        assert args[:-1] == ["sudo", "-n", "btrfs", "filesystem", "usage", "-b"]
+        if args[0] == "findmnt":
+            return subprocess.CompletedProcess(args, 0, "", "")
+        # Unprivileged: the overall figures need no root and no sudo rule.
+        assert args[:-1] == ["btrfs", "filesystem", "usage", "-b"]
         path = args[-1]
         uuid = paths[path]
         calls.append((path, uuid))
@@ -550,7 +601,8 @@ def test_capacity_requires_measured_allocation_headroom_on_each_unique_filesyste
     assert calls == [("/source", "source"), ("/workspace", "workspace"), ("/independent/points", "target")]
     assert result["expected_growth_bytes"] == 170 * gib
     assert result["admitted"] is (fault is None)
-    assert result["reason"] == (None if fault is None else "insufficient-btrfs-allocation-headroom" if "exhausted" in fault else "btrfs-allocation-headroom-unavailable")
+    assert result["reason"] == (None if fault is None else "insufficient-btrfs-allocation-headroom" if "exhausted" in fault
+                                else "btrfs-device-missing" if fault == "device-missing" else "btrfs-allocation-headroom-unavailable")
     assert result["reserve_bytes"] == 25 * gib
     if fault is None or "exhausted" in fault:
         allocation = result["target_allocation"] if fault == "target-exhausted" else result["source_filesystems"][0]["allocation"]
@@ -613,10 +665,9 @@ def test_nested_coverage_resolves_a_symlinked_workspaces_root(monkeypatch: pytes
     link.symlink_to(mount)
     rows = [{"source_url": str(mount), "snapshot_path": "/host-snapshots"}]
     monkeypatch.setattr(host, "get_workspaces_root", lambda: link)
-    monkeypatch.setattr(host, "_filesystem", lambda _: {"fsroot": "/@workspaces"})
-    monkeypatch.setattr(host, "_checked", lambda _: "ID 300 gen 1 top level 5 path @workspaces/.snapshots/WIP/projects/WIP/point\n")
+    _subvolume_listing(monkeypatch, "300\t1\t346\t\t.snapshots/WIP/projects/WIP/point")
     host._validate_nested_coverage(rows)
-    monkeypatch.setattr(host, "_checked", lambda _: "ID 301 gen 1 top level 5 path @workspaces/projects/data\n")
+    _subvolume_listing(monkeypatch, "301\t1\t346\t\tprojects/data")
     with pytest.raises(RuntimeError, match="explicit host coverage"):
         host._validate_nested_coverage(rows)
 
@@ -635,3 +686,23 @@ def test_target_deletion_preview_trips_on_mass_expiry(monkeypatch: pytest.Monkey
     assert host._target_deletions_refused(tmp_path) is True
     monkeypatch.setattr(host, "_run", lambda _: subprocess.CompletedProcess([], 0, plan.splitlines()[0], ""))
     assert host._target_deletions_refused(tmp_path) is False
+
+
+def test_allocation_headroom_measures_a_root_only_path_through_a_readable_mount(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    _sysfs_devices(tmp_path, "rootfs", 0)
+    monkeypatch.setattr(host, "SYSFS_BTRFS", tmp_path)
+    monkeypatch.setattr(host, "_filesystem", lambda _: {"uuid": "rootfs", "target": "/var/lib/docker"})
+    monkeypatch.setattr(host, "_readable", lambda path: path == "/")
+    measured = []
+    def checked(args: list[str]) -> str:
+        if args[0] == "findmnt":
+            return "other /mnt/other\nrootfs /var/lib/docker\nrootfs /\n"
+        measured.append(args)
+        return ("Overall:\n    Device size:\t\t1000\n    Device unallocated:\t\t900\n    Device missing:\t\t0\n"
+                "    Free (statfs, df):\t\t500\n\nMetadata,DUP: Size:100, Used:10 (10.00%)\n")
+    monkeypatch.setattr(host, "_checked", checked)
+    result = host._allocation_headroom("/var/lib/docker")
+    assert measured == [["btrfs", "filesystem", "usage", "-b", "/"]]
+    assert result["available"] is True and result["unallocated"] == 900
+    monkeypatch.setattr(host, "_readable", lambda _: False)
+    assert host._allocation_headroom("/var/lib/docker")["available"] is False

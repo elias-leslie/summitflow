@@ -51,6 +51,10 @@ _RUN_ID = re.compile(r"\d{8}T\d{6}Z-[0-9a-f]{8}\Z")
 _BATCH_JITTER = timedelta(minutes=30)
 NATIVE_HELPER = "/usr/local/sbin/summitflow-native-capture"
 NATIVE_TARGET = Path("/mnt/summitflow-native/native")
+SYSFS_BTRFS = Path("/sys/fs/btrfs")
+# Listing subvolumes needs root's tree search; Nightshift's read-only diag
+# route runs it, so admission never wraps a read in sudo.
+_SUBVOLUME_ROW = re.compile(r"(\d+)\t(\d+)\t(\d+)\t+(\S.*)")
 
 
 def _state_root() -> Path:
@@ -123,14 +127,8 @@ def _validate_nested_coverage(rows: list[dict[str, str]]) -> None:
     sources = {Path(row["source_url"]) for row in rows}
     snapshot_dirs = {Path(row["snapshot_path"]) for row in rows}
     for source in sources:
-        fsroot = str(_filesystem(str(source)).get("fsroot", "/")).strip("/")
-        prefix = fsroot + "/" if fsroot else ""
-        output = _checked(["sudo", "-n", "btrfs", "subvolume", "list", "-o", str(source)])
-        for line in output.splitlines():
-            _, marker, path = line.partition(" path ")
-            if not marker or not path.startswith(prefix):
-                continue
-            nested = source / path.removeprefix(prefix)
+        for path in _child_subvolumes(source):
+            nested = source / path
             if nested in sources or any(nested.is_relative_to(directory) for directory in snapshot_dirs):
                 continue
             # Work recovery points are nested, disposable snapshot boundaries;
@@ -140,6 +138,42 @@ def _validate_nested_coverage(rows: list[dict[str, str]]) -> None:
             if nested.resolve().is_relative_to(get_workspaces_root().resolve() / ".snapshots"):
                 continue
             raise RuntimeError(f"Nested subvolume needs explicit host coverage: {nested}")
+
+
+def _child_subvolumes(source: Path) -> list[str]:
+    """Direct child subvolumes of a mounted source, relative to it (`subvolume list -o`).
+
+    The table lists every subvolume of the filesystem; a child of the listed
+    mount's own subvolume is printed relative to that mount. Anything unreadable
+    fails closed: a partial listing would hide uncovered nested data.
+    """
+    match = re.search(r"(?:^|,)subvolid=(\d+)(?:,|$)", str(_filesystem(str(source)).get("options", "")))
+    if not match:
+        raise RuntimeError(f"Cannot identify the subvolume mounted at {source}")
+    result = _run(["nightshift", "request", "diag.read", "probe=btrfs.subvolumes", f"target={source}",
+                   "--reason", "maintain", "--agent", "summitflow-host-backup", "--wait", "120"])
+    try:
+        response = json.loads(result.stdout) if result.returncode == 0 else {}
+        listing = response.get("result") or {}
+        output = str(listing.get("out", ""))
+    except (ValueError, AttributeError):
+        response, listing, output = {}, {}, ""
+    lines = output.splitlines()
+    if (response.get("outcome") != "applied" or listing.get("rc") != 0 or output.endswith("[truncated]")
+            or len(lines) < 2 or lines[0].split() != ["ID", "gen", "top", "level", "path"] or not lines[1].startswith("--")):
+        raise RuntimeError(f"Subvolume listing for {source} is unavailable or incomplete; inspect Nightshift diag.read")
+    children = []
+    for line in lines[2:]:
+        row = _SUBVOLUME_ROW.fullmatch(line.rstrip("\t"))
+        if not row:
+            raise RuntimeError(f"Unexpected subvolume listing row for {source}")
+        path = row.group(4)
+        if row.group(3) != match.group(1):
+            continue
+        if path.startswith("/") or ".." in Path(path).parts:
+            raise RuntimeError(f"Unexpected subvolume path below {source}")
+        children.append(path)
+    return children
 
 
 def _verified_points(rows: list[dict[str, str]], transactions: list[dict[str, str]]) -> list[dict[str, str]]:
@@ -450,10 +484,32 @@ def _cleanup_superseded(target: Path, current_run: str) -> dict[str, Any]:
             "evidence": "Observed target usage before/after metadata cleanup; concurrent growth can mask reclamation"}
 
 
+def _readable(path: str) -> bool:
+    return os.access(path, os.R_OK | os.X_OK)
+
+
+def _missing_devices(uuid: str) -> int:
+    states = sorted((SYSFS_BTRFS / uuid / "devinfo").glob("*/missing"))
+    if not states:
+        raise ValueError("Btrfs device state is unavailable")
+    return sum(int(state.read_text().strip()) for state in states)
+
+
 def _allocation_headroom(path: str) -> dict[str, Any]:
-    """Measure physical Btrfs allocation read-only; works on read-only mounts."""
+    """Measure physical Btrfs allocation without root; works on read-only mounts.
+
+    Unprivileged `filesystem usage` reports the overall figures from the space
+    ioctls and only omits per-device chunk detail. It needs a readable directory
+    on the filesystem: fall back from a root-only path to any mount of it.
+    """
     try:
-        output = _checked(["sudo", "-n", "btrfs", "filesystem", "usage", "-b", path])
+        fs = _filesystem(path)
+        mounts = [line.split(" ", 1)[1] for line in _checked(["findmnt", "-rn", "-t", "btrfs", "-o", "UUID,TARGET"]).splitlines()
+                  if line.startswith(f"{fs['uuid']} ")] if fs.get("uuid") else []
+        measured = next((item for item in (path, fs.get("target"), *mounts) if item and _readable(str(item))), None)
+        if measured is None:
+            raise RuntimeError(f"No readable directory measures the filesystem at {path}")
+        output = _checked(["btrfs", "filesystem", "usage", "-b", str(measured)])
         values: dict[str, int] = {}
         for label, name in _USAGE_FIELDS:
             match = re.search(r"^\s*" + re.escape(label) + r":\s*(\d+)\s*$", output, re.M)
@@ -465,14 +521,15 @@ def _allocation_headroom(path: str) -> dict[str, Any]:
             raise ValueError("Missing Btrfs metadata usage")
         values["metadata_size"] = sum(int(size) for size, _ in metadata)
         values["metadata_used"] = sum(int(used) for _, used in metadata)
+        values["missing_devices"] = _missing_devices(str(fs["uuid"]))
         if not 0 < values["metadata_size"] <= values["size"] or values["metadata_used"] > values["metadata_size"] or max(values["free"], values["unallocated"]) > values["size"]:
             raise ValueError("Invalid Btrfs allocation measurement")
         # Metadata sizes are logical even with DUP. Do not add its unused
         # bytes to physical unallocated space or change allocation profiles.
         return {"available": True, **values, "trigger_bytes": ALLOCATION_TRIGGER_BYTES, "target_bytes": ALLOCATION_TARGET_BYTES,
                 "metadata_used_percent": values["metadata_used"] / values["metadata_size"] * 100,
-                "admitted": values["missing"] == 0 and values["unallocated"] >= ALLOCATION_TRIGGER_BYTES}
-    except (OSError, ValueError, RuntimeError) as exc:
+                "admitted": values["missing"] == 0 and not values["missing_devices"] and values["unallocated"] >= ALLOCATION_TRIGGER_BYTES}
+    except (OSError, ValueError, RuntimeError, KeyError) as exc:
         return {"available": False, "admitted": False, "error": str(exc)}
 
 
@@ -518,7 +575,7 @@ def _capacity(rows: list[dict[str, str]], last: dict[str, Any] | None) -> dict[s
     reason = None
     if any(not item["available"] for item in allocations):
         reason = "btrfs-allocation-headroom-unavailable"
-    elif any(item["missing"] for item in allocations):
+    elif any(item["missing"] or item.get("missing_devices") for item in allocations):
         reason = "btrfs-device-missing"
     elif any(not item["admitted"] for item in allocations):
         reason = "insufficient-btrfs-allocation-headroom"
