@@ -267,3 +267,13 @@ def test_stream_restore_returns_the_dump_file_and_proves_size_and_format(monkeyp
     assert adapter.calls == [("b" * 64, True)]
     assert Path(result["payload_file"]).read_bytes() == payload
     assert result["size_bytes"] == 24 and "sqlite3" in result["next_step"]
+
+
+def test_receipt_carries_the_monthly_restore_drill(monkeypatch):
+    ids = _sources_and_rows(monkeypatch, {})
+    _sources_and_rows(monkeypatch, {source_id: [_verified(2)] for source_id in ids})
+    sources = px.backup_store.list_sources()
+    sources[-1].update(last_drill_ok=True, last_drill_at=NOW - timedelta(days=2))
+    targets = px.freshness_receipt(NOW)["targets"]
+    assert targets[-1]["restore_drill_ok"] is True and targets[-1]["restore_drill_at"] == (NOW - timedelta(days=2)).isoformat()
+    assert targets[0]["restore_drill_ok"] is None and targets[0]["restore_drill_at"] is None

@@ -327,20 +327,30 @@ def run_monthly_offsite_restore_test(*, source_id: str | None = None, force: boo
     # Only a verified run satisfies the cadence; a failure retries next week.
     if not force and not source_id and previous.get("status") == "verified" and last and datetime.fromisoformat(last) > datetime.now(UTC) - timedelta(days=MONTHLY_CADENCE_DAYS):
         return {"status": "skipped", "reason": "monthly-cadence", "last_completed_at": last}
+    from .backup_pinned_restore_test import (
+        PINNED_SOURCES,
+        pinned_point,
+        pinned_selection,
+        restore_test_pinned,
+    )
+
     sources = backup_store.list_sources()
     if source_id:
         source = next((item for item in sources if item["id"] == source_id), None)
-        point = _offsite_point(source_id) if source else None
+        point = (pinned_point(source_id) if source_id in PINNED_SOURCES else _offsite_point(source_id)) if source else None
         if source is None or point is None:
             return {"status": "failed", "error": f"No offsite-verified repository point for {source_id}"}
         selected = [(source, point)]
     else:
-        selected = select_rotation(sources)
+        # The rotation plus the pinned critical sources it can never reach (guest streams, the hub's large archive).
+        rotation = select_rotation(sources)
+        chosen = {str(source["id"]) for source, _ in rotation}
+        selected = rotation + [item for item in pinned_selection(sources) if str(item[0]["id"]) not in chosen]
     results: dict[str, Any] = {}
     for source, point in selected:
         current = str(source["id"])
         try:
-            evidence = restore_test_point(source, point)
+            evidence = restore_test_pinned(source, point) if current in PINNED_SOURCES else restore_test_point(source, point)
         except BackupCancelled:
             raise
         except Exception as exc:

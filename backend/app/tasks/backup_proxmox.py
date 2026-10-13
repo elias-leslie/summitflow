@@ -391,6 +391,7 @@ def _aware(value: Any) -> datetime:
 def freshness_receipt(now: datetime | None = None) -> dict[str, Any]:
     """Whether every covered guest and the cluster config has an offsite-verified backup newer than the limit."""
     from .backup_alerts import source_offline_since
+    from .backup_offsite_restore_test import restore_verified
 
     current = now or datetime.now(UTC)
     sources = backup_store.list_sources()
@@ -423,7 +424,11 @@ def freshness_receipt(now: datetime | None = None) -> dict[str, Any]:
         targets.append({**entry, "status": status, "fresh": status != "stale", **({"reason": reason} if reason else {}),
                         "backup_id": verified["id"], "snapshot_id": verification.get("snapshot_id"),
                         "captured_at": when.isoformat(), "verified_at": offsite_when.isoformat(), "age_hours": round(age, 1), "offsite": "verified",
-                        "restore_test_ok": source.get("last_restore_test_ok")})
+                        "restore_test_ok": source.get("last_restore_test_ok"),
+                        # A real restore (monthly test), as opposed to the weekly readback above.
+                        "restore_drill_ok": source.get("last_drill_ok"),
+                        "restore_verified": restore_verified(source, now=current),  # passed within 35 days
+                        "restore_drill_at": _aware(source["last_drill_at"]).isoformat() if source.get("last_drill_at") else None})
     return {"schema_version": 1, "generated_at": current.isoformat(), "max_age_hours": FRESHNESS_HOURS, "offline_max_age_days": OFFLINE_FRESHNESS_DAYS,
             "ok": all(item["fresh"] for item in targets), "targets": targets}
 

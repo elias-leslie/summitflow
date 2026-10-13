@@ -338,7 +338,9 @@ async def pending_drain_wf(input: EmptyInput, ctx: Context) -> dict[str, Any]:
 @hatchet.task(
     name="summitflow-restore-tests",
     input_validator=EmptyInput,
-    execution_timeout="7200s",
+    # Weekly readbacks, the monthly rotation (database loads up to 30 min each) and the pinned hub-state drill
+    # (stream 45 min + two quick_checks up to 20 min each).
+    execution_timeout="10800s",
     retries=1,
     on_crons=["0 6 * * 0"],
     concurrency=ConcurrencyExpression(
