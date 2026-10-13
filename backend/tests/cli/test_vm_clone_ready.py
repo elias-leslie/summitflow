@@ -203,6 +203,17 @@ def test_low_level_copy_returns_task_and_failure_retains_it(monkeypatch):
     assert failure.value.upid == "UPID:retained"
 
 
+@pytest.mark.parametrize(("pool", "expected"), [("summitflow", {"pool": "summitflow"}), ("", {})])
+def test_clone_lands_in_the_configured_pool(monkeypatch, pool, expected):
+    # The PVE token may only allocate inside its pool; a clone outside it gets 403 on later calls.
+    client = ProxmoxClient(ProxmoxConfig("https://fixture", "id", "secret", "node", pool=pool))
+    sent: dict[str, str] = {}
+    monkeypatch.setattr(client, "request", lambda *args, data, **kwargs: sent.update(data) or "UPID:x")
+    monkeypatch.setattr(client, "wait_task", lambda *args, **kwargs: None)
+    client.clone("9000", "9910", "qualification")
+    assert sent == {"newid": "9910", "name": "qualification", "full": "1", **expected}
+
+
 @pytest.mark.parametrize("text", ["PRIVATE KEY material is not public", "ssh-ed25519 not-base64", "ssh-ed25519 AAAA", ""])
 def test_private_or_malformed_public_key_never_passes(text, tmp_path):
     path = tmp_path / "key.pub"

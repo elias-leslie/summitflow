@@ -37,6 +37,8 @@ class ProxmoxConfig:
     node: str
     # PVE cluster CA path (PROXMOX_CA_BUNDLE) pins TLS; otherwise PROXMOX_VERIFY_SSL (default off: self-signed PVE)
     verify: bool | str = False
+    # The token may only allocate VMs in this pool (PROXMOX_POOL; empty: no pool, PVE checks /vms/<newid>)
+    pool: str = "summitflow"
 
 
 def _read_env_file(path: Path) -> dict[str, str]:
@@ -90,6 +92,7 @@ def load_proxmox_config() -> ProxmoxConfig:
         token_secret=secret,
         node=node,
         verify=verify,
+        pool=value("PROXMOX_POOL", "summitflow"),
     )
 
 
@@ -186,7 +189,7 @@ class ProxmoxClient:
         upid = self.request(
             "POST",
             f"/nodes/{self.config.node}/qemu/{template}/clone",
-            data={"newid": newid, "name": name, "full": "1"},
+            data={"newid": newid, "name": name, "full": "1", **({"pool": self.config.pool} if self.config.pool else {})},
         )
         if not isinstance(upid, str) or not upid:
             raise ProxmoxError("Clone submission returned no task identity; inspect destination before retrying")
