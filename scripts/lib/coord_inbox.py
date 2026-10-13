@@ -190,6 +190,11 @@ def main() -> int:
     if payload.get("agent_id") and provider == "claude_code":
         return 0  # Claude subagent hooks share the parent session id; leave items for the parent
     coord.adopt_hook_identity(payload)
+    # Register every turn, not only on edits: an agent that only reads and messages must stay addressable.
+    try:
+        coord_lineage.observe()
+    except Exception:  # noqa: BLE001 - registration is best effort; the inbox still answers
+        pass
     event = str(payload.get("hook_event_name") or "")
     if mode == "watch":
         return watch(provider)

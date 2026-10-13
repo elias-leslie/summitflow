@@ -762,11 +762,12 @@ def test_uuid7_sessions_started_hours_apart_keep_distinct_identities(repos, monk
 INBOX = REPO_ROOT / "scripts" / "lib" / "coord-inbox"
 
 
-def _inbox(payload: dict, tmp: Path, *args: str) -> subprocess.CompletedProcess[str]:
+def _inbox(payload: dict, tmp: Path, *args: str, **env: str) -> subprocess.CompletedProcess[str]:
     clean = {k: v for k, v in os.environ.items() if k not in {
         "CLAUDE_CODE_SESSION_ID", "CODEX_THREAD_ID", "CLAUDE_SESSION_ID", "TMUX", "TMUX_PANE", "ST_SESSION_ID",
         "CODEX_SESSION_ID", "PI_SESSION_ID", "ST_COORD_INBOX"}}
     clean.update({"ST_LEASES_DIR": str(tmp / "hook-leases"), "XDG_RUNTIME_DIR": str(tmp / "run"), "ST_COORD_ANCHOR": ""})
+    clean.update(env)
     clean["PATH"] = f"{clean.get('PATH', '')}:/usr/bin:/bin"
     return subprocess.run(["bash", str(INBOX), *args], input=json.dumps(payload), capture_output=True,
                           text=True, env=clean, check=False, timeout=30)
@@ -785,6 +786,17 @@ def test_inbox_hook_is_silent_when_empty_then_surfaces_a_request_once(repos, tmp
     assert _inbox(target, tmp_path, "turn").stdout == ""  # surfaced once, reminded later
     stop = _inbox({**target, "hook_event_name": "Stop"}, tmp_path, "stop")
     assert (stop.returncode, stop.stdout) == (0, "")  # already surfaced: no block until the reminder is due
+
+
+def test_inbox_hook_registers_a_tether_root_under_its_harness_id(tmp_path):
+    """A root that never edits (only reads and messages) must still become addressable by its cc: id."""
+    anchor = f"{os.getpid()}:{leases._process_start(os.getpid())}"
+    payload = {"session_id": "f82c1e02-2d81-43fa-904a-14a13593f064", "hook_event_name": "UserPromptSubmit"}
+    result = _inbox(payload, tmp_path, "turn", ST_COORD_ANCHOR=anchor, ST_COORD_HARNESS="claude_code",
+                    ST_SESSION_ID="aico-root-4accb4c4-f49c-4a0b-a6be-cefd42a0d3ee")
+    assert (result.returncode, result.stderr) == (0, "")
+    doc = json.loads((tmp_path / "hook-leases" / "_coord.json").read_text())
+    assert doc["identities"]["cc:f82c1e"]["anchor"] == anchor
 
 
 def test_inbox_hook_fails_open_without_the_backend(tmp_path):
