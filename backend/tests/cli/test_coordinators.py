@@ -78,3 +78,11 @@ def test_tether_root_handle_yields_to_the_harness_identity(monkeypatch):
     monkeypatch.setenv("ST_SESSION_ID", "fleet-session-1")
     monkeypatch.setenv("CLAUDE_CODE_SESSION_ID", "fb716ef9-4afc-4e55-b2c9-9d651051278d")
     assert leases.identify_agent()[0] == "st:fleet-"  # explicit ST identities still win
+
+
+def test_coordinator_without_a_session_record_is_listed(tether):
+    (entry,) = coordinators.unrecorded_coordinators({"a0000001", None})
+    assert entry["widget_id"] == "c0000001" and entry["agent_id"] == "cc:96eb15"
+    assert coordinators.unrecorded_line(entry) == (
+        "SES - | active | - | cc:96eb15 | task=- state=no-session-record | Personal Workspace | coordinator")
+    assert coordinators.unrecorded_coordinators({"c0000001"}) == []

@@ -23,7 +23,10 @@ def _stub_observability_refresh(monkeypatch: pytest.MonkeyPatch) -> Iterator[Non
     from cli.config import set_project_override
 
     set_project_override(None)
+    from cli.lib import coordinators
+
     monkeypatch.setattr(sessions_cmd, "refresh_agent_observability", lambda: None)
+    monkeypatch.setattr(coordinators, "sessions", dict)  # no live Tether catalog in listings
     yield
     set_project_override(None)
 

@@ -284,8 +284,17 @@ def _render_session_list(
 
     from ..lib import coordinators
 
+    # A coordinator without an agent session record (Personal Workspace) still owns its lanes.
+    unrecorded = (
+        coordinators.unrecorded_coordinators({coordinators.widget_for_session(s) for s in sessions})
+        if not (agent_slug or parent_session_id or resolved_project_id)
+        and normalized_status in (None, "active")
+        else []
+    )
     if is_compact():
-        print(f"SESSIONS[{len(sessions)}]")
+        print(f"SESSIONS[{len(sessions) + len(unrecorded)}]")
+        for entry in unrecorded:
+            print(coordinators.unrecorded_line(entry))
         for session in sessions:
             print(compact_session_line(session) + coordinators.session_suffix(coordinators.widget_for_session(session)))
         return
@@ -293,7 +302,7 @@ def _render_session_list(
         with suppress(Exception):  # Tether lineage is best effort
             if summary := coordinators.session_summary(coordinators.widget_for_session(session)):
                 session["tether"] = summary
-    output_json(sessions)
+    output_json([*({"id": None, "status": "active", "tether": entry} for entry in unrecorded), *sessions])
 
 
 def _recent_session_events(

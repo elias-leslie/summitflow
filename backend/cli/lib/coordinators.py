@@ -176,6 +176,25 @@ def session_summary(widget: str | None) -> dict[str, Any] | None:
     }
 
 
+def unrecorded_coordinators(listed: set[str | None]) -> list[dict[str, Any]]:
+    """Live coordinators with no agent session record (Personal Workspace sessions are never ingested)."""
+    try:
+        return [
+            {"widget_id": wid, "agent_id": agent_for_widget(wid), "project_id": desc.get("projectId"),
+             "title": title(desc), "coordinator": True, "belongs_to": None}
+            for wid, desc in sessions().items()
+            if desc.get("coordinator") and wid not in listed
+        ]
+    except Exception:  # listing stays best effort without Tether
+        return []
+
+
+def unrecorded_line(entry: dict[str, Any]) -> str:
+    """Compact line for an ``unrecorded_coordinators`` entry, shaped like a session line."""
+    return (f"SES {entry['project_id'] or '-'} | active | - | {entry['agent_id'] or entry['widget_id']} | "
+            f"task=- state=no-session-record | {entry['title']} | coordinator")
+
+
 def session_suffix(widget: str | None) -> str:
     """` | <title> | coordinator` or ` | <title> | belongs to ...` for one compact session line."""
     try:
