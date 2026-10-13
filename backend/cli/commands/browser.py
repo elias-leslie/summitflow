@@ -1097,6 +1097,13 @@ def _agent_session_extras(argv: list[str], actor: str | None, profile: str | Non
     return None, [*head, action, *tail], extras
 
 
+_HAND_OFF_NOTES = {
+    "window": "Opened the assist window on the owner's desktop.",
+    "push": "The owner is away from the workstation; pushed them the assist window link.",
+    "repeat": "The owner already has this hand-off; nothing new was opened or pushed.",
+}
+
+
 def _after_session_action(code: int, extras: dict[str, Any], actor: str | None, profile: str | None) -> int:
     action, name = extras.get("action"), extras.get("name")
     if code != 0 or not isinstance(name, str):
@@ -1106,8 +1113,11 @@ def _after_session_action(code: int, extras: dict[str, Any], actor: str | None, 
         reason, question = str(extras.get("reason") or ""), str(extras.get("question") or "")
         agent_sessions.record_pause(name, owner, reason or question)
         # A repeated pause keeps the window or push already in flight; no duplicates.
-        if (reason or question) and agent_sessions.hand_off(name, owner, reason or question, question) == "failed":
+        route = agent_sessions.hand_off(name, owner, reason or question, question) if reason or question else None
+        if route == "failed":
             output_error("Owner notification failed; the session stays paused in Runtime > Browser sessions")
+        elif route is not None:
+            print(f"[st] {_HAND_OFF_NOTES[route]}", file=sys.stderr)
         if "wait" in extras:
             code, result = agent_sessions.wait_result(name, agent_sessions.wait_for_resume(name, owner, extras["wait"]))
             print(json.dumps(result, separators=(",", ":")))
