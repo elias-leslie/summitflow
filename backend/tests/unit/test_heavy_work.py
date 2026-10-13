@@ -5,6 +5,7 @@ from __future__ import annotations
 import fcntl
 import json
 import os
+import select
 import subprocess
 import sys
 import threading
@@ -748,10 +749,16 @@ def test_two_canonical_checks_share_a_heavy_lane(tmp_path: Path, monkeypatch: py
                                       stdout=subprocess.PIPE, stderr=subprocess.PIPE, pass_fds=pass_fds)
             # Both independent and genuinely inherited CLI sibling actors must
             # queue. Keep the marker/token intact for the inherited regression.
-            try:
-                second.communicate(timeout=3)
-            except subprocess.TimeoutExpired:
-                pass
+            # Queued means it reported waiting for the lane and stayed
+            # unadmitted across several of its 0.1s lane polls.
+            assert second.stderr is not None
+            waiting = b""
+            deadline = time.monotonic() + 10
+            while b"[st] Waiting for shared" not in waiting and second.poll() is None and time.monotonic() < deadline:
+                if select.select([second.stderr], [], [], 0.05)[0]:
+                    waiting += os.read(second.stderr.fileno(), 65536)
+            assert b"[st] Waiting for shared" in waiting, waiting
+            time.sleep(0.3)
             assert second.poll() is None, "second project overlapped the active heavy tool"
         finally:
             release.touch()

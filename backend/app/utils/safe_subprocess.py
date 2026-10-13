@@ -76,6 +76,10 @@ async def run_async(args: Sequence[StrPath], **kwargs: Any) -> subprocess.Comple
     return await asyncio.to_thread(run, args, **kwargs)
 
 
+# Per-signal wait for the owned subtree to exit and release captured pipes.
+_STOP_SIGNAL_GRACE_SECONDS = 2.0
+
+
 def _stop_cli_owned_process(process: subprocess.Popen[Any]) -> None:
     """Cancel only the CLI's captured owned subtree, including new sessions."""
     def identity(pid: int) -> tuple[int, int, str]:
@@ -129,7 +133,7 @@ def _stop_cli_owned_process(process: subprocess.Popen[Any]) -> None:
             # Stopped owners must resume to act on SIGTERM, e.g. reap children.
             signal_owned(signal.SIGCONT, owned)
         try:
-            process.communicate(timeout=2)
+            process.communicate(timeout=_STOP_SIGNAL_GRACE_SECONDS)
             if not any(alive(pid) for pid in owned - {process.pid}):
                 return
         except subprocess.TimeoutExpired:

@@ -3,6 +3,7 @@
 import pytest
 
 from tests.backup_scratch_fixture import backup_job_scratch  # noqa: F401
+from tests.restic_fast_kdf import fast_restic_kdf  # noqa: F401
 
 _SCRATCH_TEST_MODULES = {
     "test_backup.py", "test_backup_native_archive.py", "test_backup_native_archive_safety.py",

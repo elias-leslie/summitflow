@@ -879,7 +879,7 @@ def test_notification_failure_does_not_suppress_backup_failure(repository_env, m
 
 
 @pytest.fixture
-def repository_env(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> dict[str, str]:
+def repository_env(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, fast_restic_kdf: None) -> dict[str, str]:
     from app.tasks import backup_lock
 
     redis = _MemoryBackupRedis()

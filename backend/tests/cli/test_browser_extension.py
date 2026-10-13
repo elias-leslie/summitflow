@@ -987,6 +987,8 @@ def _watch_fixture(monkeypatch, pages_by_port: dict[int, list[dict[str, object]]
     from app.services.browser_targets import BrowserEndpoint
 
     monkeypatch.setattr(browser, "_resolve_endpoint", lambda engine=None: BrowserEndpoint("192.0.2.10", 9222, "fixture"))
+    # Never probe or look up the live browser VM (a CDP probe or `st vm ip`).
+    monkeypatch.setenv("ST_BROWSER_DISABLE_DEFAULT_VM_HOST", "1")
     monkeypatch.setattr(browser, "_http_json", lambda url: pages_by_port.get(int(url.split(":")[2].split("/")[0])))
 
 

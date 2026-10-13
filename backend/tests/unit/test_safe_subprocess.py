@@ -196,6 +196,10 @@ from pathlib import Path
 from app.utils import heavy_work as guard
 assert ctypes.CDLL(None, use_errno=True).prctl(36, 1, 0, 0, 0) == 0
 guard._LOCK_DIRECTORY = Path({str(tmp_path / 'lane')!r})
+# Both signal waits expire here (the detached holder keeps the pipe open);
+# a short grace exercises the same bounded path.
+from app.utils import safe_subprocess
+safe_subprocess._STOP_SIGNAL_GRACE_SECONDS = 0.2
 started = time.monotonic()
 try:
     with guard.heavy_work('detached fixture') as work:

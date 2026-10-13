@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import os
+import re
 import shutil
 import subprocess
 from pathlib import Path
@@ -171,9 +172,11 @@ def test_local_shell_rule_detects_execution_without_flagging_argv_or_guard(
 ) -> None:
     rules = Path(__file__).resolve().parents[3] / ".semgrep.yml"
     shutil.copyfile(rules, tmp_path / ".semgrep.yml")
-    source = tmp_path / "src" / "processes.py"
-    source.parent.mkdir()
-    source.write_text(
+    # One scan (Semgrep startup dominates): findings must name only the shell
+    # executions, never argv-form calls or the shell=False guard.
+    safe = tmp_path / "src" / "argv_processes.py"
+    safe.parent.mkdir()
+    safe.write_text(
         "import asyncio\n"
         "import subprocess\n"
         "subprocess.run(['git', 'status'], shell=False)\n"
@@ -181,11 +184,7 @@ def test_local_shell_rule_detects_execution_without_flagging_argv_or_guard(
         "asyncio.create_subprocess_exec('git', 'status')\n",
         encoding="utf-8",
     )
-    assert check_security.run_local_security_check(
-        "semgrep", tmp_path, ["src/processes.py"], True, []
-    ) == 0
-
-    source.write_text(
+    (tmp_path / "src" / "shell_processes.py").write_text(
         "import asyncio\n"
         "import subprocess\n"
         "subprocess.run(command, shell=True)\n"
@@ -194,16 +193,15 @@ def test_local_shell_rule_detects_execution_without_flagging_argv_or_guard(
         encoding="utf-8",
     )
     assert check_security.run_local_security_check(
-        "semgrep", tmp_path, ["src/processes.py"], True, []
+        "semgrep", tmp_path, ["src/argv_processes.py", "src/shell_processes.py"], True, []
     ) == 1
     output = capsys.readouterr().out
-    assert "SEMGREP:FAIL:1" in output
-    details = list((tmp_path / ".dev-tools").glob("security-semgrep-*-details.txt"))
-    assert details
-    assert any(
-        "summitflow-python-shell-execution" in path.read_text(encoding="utf-8")
-        for path in details
-    )
+    assert "SEMGREP:FAIL:1" in output and "3 findings" in output
+    details = "\n".join(path.read_text(encoding="utf-8")
+                        for path in (tmp_path / ".dev-tools").glob("security-semgrep-*-details.txt"))
+    assert details.count('"check_id":"summitflow-python-shell-execution"') == 3, details
+    assert re.search(r'"scanned":\[[^\]]*argv_processes\.py', details), details
+    assert not re.search(r'"path":"[^"]*argv_processes\.py"', details), details
 
 
 def test_osv_scans_only_candidate_lockfiles(
