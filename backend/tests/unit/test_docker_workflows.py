@@ -57,7 +57,7 @@ def test_docker_build_workflow_uploads_only_js_and_retains_checked_in_wheels() -
 
 def test_all_image_publish_jobs_require_exact_source_ci() -> None:
     workflow = _load_workflow("docker-build.yml")
-    for name in ("pack-workspace", "build", "agent-browser"):
+    for name in ("pack-workspace", "build"):
         needs = workflow["jobs"][name]["needs"]
         assert "source-ci" in ([needs] if isinstance(needs, str) else needs)
     gate = _steps(workflow, "source-ci")[0]
@@ -111,7 +111,7 @@ def test_backend_docker_preserves_lock_paths_and_exact_checked_in_wheel_hashes()
     assert "/app/backend/.venv /app/backend/.venv" in dockerfile
     locked = tomllib.loads((root / "backend/uv.lock").read_text())
     wheels = [package for package in locked["package"] if package["source"].get("path", "").endswith(".whl")]
-    assert len(wheels) >= 5
+    assert len(wheels) >= 4
     st_sdk = next(package for package in locked["package"] if package["name"] == "summitflow-st-sdk")
     assert st_sdk["source"] == {"directory": "../packages/st-sdk"}
     assert "COPY packages/st-sdk/ /app/packages/st-sdk/" in dockerfile

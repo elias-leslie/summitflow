@@ -273,16 +273,10 @@ def _help_path(
 def _callback(record: ExtensionRecord):
     def command(ctx: typer.Context) -> None:
         argv = list(ctx.meta["st_extension_argv"])
-        # Root and generic extension help remain passive. The browser adapter
-        # negotiates explicit focused core-command help with its owner.
+        # Root and generic extension help remain passive; owner_help bindings
+        # let the owner answer help for routes the manifest does not declare.
         options = argv[:argv.index("--")] if "--" in argv else argv
-        browser_focused_help = False
-        if (record.status == "unverified" and record.binding and record.binding.policy_adapter == "browser"
-                and ("--help" in options or "-h" in options)):
-            from .commands.browser import focused_help_requested
-
-            browser_focused_help = focused_help_requested(options)
-        if ("--help" in options or "-h" in options) and not browser_focused_help:
+        if "--help" in options or "-h" in options:
             metadata = record.manifest
             if metadata is None:
                 typer.echo(record.diagnostic)
@@ -292,11 +286,6 @@ def _callback(record: ExtensionRecord):
                 typer.echo(metadata.help[path])
                 return
         context = extension_context(ctx.find_root().obj) if record.status == "unverified" else None
-        if record.status == "unverified" and record.binding and record.binding.policy_adapter == "browser":
-            from .commands.browser import run_registered
-
-            assert context is not None
-            raise typer.Exit(run_registered(record, argv, context))
         raise typer.Exit(dispatch_extension(record, argv, context=context))
     if record.manifest is not None and record.status != "collision":
         cast(Any, command).__st_usage_specs__ = record.manifest.usage_specs()

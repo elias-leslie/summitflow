@@ -1,6 +1,0 @@
-[Unit]
-Description=Clean up idle agent-browser daemons
-
-[Service]
-Type=oneshot
-ExecStart=__SUMMITFLOW_ROOT__/scripts/agent-browser-idle-reaper.js

@@ -46,11 +46,9 @@ function buildForwardHeaders(
   const headers = setIdentityHeaders(request, new Headers())
   const accept = request.headers.get('accept')
   const contentType = request.headers.get('content-type')
-  const liveSessionToken = request.headers.get('x-live-session-token')
 
   if (accept) headers.set('Accept', accept)
   if (bodyPresent && contentType) headers.set('Content-Type', contentType)
-  if (liveSessionToken) headers.set('X-Live-Session-Token', liveSessionToken)
   if (config.internalSecret)
     headers.set('X-Internal-Secret', config.internalSecret)
   return headers

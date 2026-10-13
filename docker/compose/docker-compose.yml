@@ -412,27 +412,6 @@ services:
       retries: 5
     restart: unless-stopped
 
-  # ─── Agent Browser Image Target ─────────────────────────────────
-  # Debug/build only. Normal browser execution must run in an isolated VM or
-  # connector endpoint, not as part of the SummitFlow server stack.
-  agent-browser:
-    build:
-      context: ../..
-      dockerfile: docker/agent-browser.Dockerfile
-    image: ghcr.io/elias-leslie/agent-browser:${TAG:?Set TAG in .env}
-    profiles: [browser-vm-build]
-    shm_size: '2gb'
-    # Chrome runs with --no-sandbox; default seccomp profile is sufficient
-    environment:
-      AGENT_BROWSER_SESSION: default
-    healthcheck:
-      test: ["CMD-SHELL", "curl -sf http://localhost:9222/json/version >/dev/null"]
-      interval: 15s
-      timeout: 5s
-      retries: 3
-      start_period: 20s
-    restart: unless-stopped
-
 volumes:
   pgdata:
   redis-data:

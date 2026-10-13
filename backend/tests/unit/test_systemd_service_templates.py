@@ -15,7 +15,6 @@ SUMMITFLOW_ROOT_RENDERED_UNITS = [
     "summitflow-hatchet-worker.service",
     "codex-session-sync.service",
     "codex-session-close-inactive.service",
-    "agent-browser-idle-reaper.service",
 ]
 def _kill_mode_for(service_name: str) -> str | None:
     text = (SYSTEMD_DIR / service_name).read_text()
@@ -61,7 +60,6 @@ def test_user_timers_arm_after_reboot() -> None:
     for name in (
         "codex-session-sync.timer",
         "codex-session-close-inactive.timer",
-        "agent-browser-idle-reaper.timer",
         "btrfs-autosnapshot.timer",
     ):
         text = (SYSTEMD_DIR / name).read_text()

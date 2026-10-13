@@ -36,11 +36,6 @@ const nextConfig: NextConfig = {
         },
       ],
       afterFiles: [
-        // Browser assist window (browser-automation owned), proxied by the backend
-        {
-          source: '/browser-assist/:name',
-          destination: `${apiUrl}/api/browser-assist/:name`,
-        },
         // All other API calls proxy to SummitFlow backend
         {
           source: '/api/:path*',

@@ -40,7 +40,6 @@ docker compose --profile full up -d           # Everything
 | `agent-hub` | Agent Hub API + Web + Worker + infra |
 | `portfolio` | Portfolio AI API + Web + Worker + infra |
 | `monkey-fight` | Monkey Fight + infra |
-| `browser` | Agent Browser (Chrome for Testing) |
 | `full` | All of the above |
 
 ## Service Ports

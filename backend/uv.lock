@@ -223,28 +223,6 @@ wheels = [
 ]
 
 [[package]]
-name = "browser-automation"
-version = "0.1.0"
-source = { path = "../docker/workspace-packages/browser_automation-0.1.0-py3-none-any.whl" }
-dependencies = [
-    { name = "httpx" },
-    { name = "summitflow-st-sdk" },
-    { name = "typer" },
-    { name = "websockets" },
-]
-wheels = [
-    { filename = "browser_automation-0.1.0-py3-none-any.whl", hash = "sha256:769031dd5045dc9cca7064f06822a2c963c6869bf010a0c40e573c4a7e1fd53b" },
-]
-
-[package.metadata]
-requires-dist = [
-    { name = "httpx", specifier = ">=0.27,<1" },
-    { name = "summitflow-st-sdk", specifier = ">=0.1.1,<0.2" },
-    { name = "typer", specifier = ">=0.12,<1" },
-    { name = "websockets", specifier = ">=15,<16" },
-]
-
-[[package]]
 name = "certifi"
 version = "2026.2.25"
 source = { registry = "https://pypi.org/simple" }
@@ -1880,7 +1858,6 @@ dependencies = [
     { name = "agent-hub-client" },
     { name = "agent-hub-st" },
     { name = "alembic" },
-    { name = "browser-automation" },
     { name = "code-intelligence" },
     { name = "croniter" },
     { name = "defusedxml" },
@@ -1929,7 +1906,6 @@ requires-dist = [
     { name = "agent-hub-client", path = "../docker/workspace-packages/agent_hub_client-0.7.0-py3-none-any.whl" },
     { name = "agent-hub-st", path = "../docker/workspace-packages/agent_hub_st-0.2.2-py3-none-any.whl" },
     { name = "alembic", specifier = ">=1.13.0" },
-    { name = "browser-automation", path = "../docker/workspace-packages/browser_automation-0.1.0-py3-none-any.whl" },
     { name = "code-intelligence", path = "../docker/workspace-packages/code_intelligence-0.1.0-py3-none-any.whl" },
     { name = "croniter", specifier = ">=3.0.0" },
     { name = "defusedxml", specifier = ">=0.7.1" },

@@ -864,8 +864,10 @@
     {
       "id": "browser",
       "canonical": "st browser",
-      "replaces": [],
-      "summary": "Remote browser health, responsive checks, screenshots, snapshots, and DOM evaluation.",
+      "replaces": [
+        "setup-agent-browser.sh"
+      ],
+      "summary": "Browser Automation's browser sessions, checks, screenshots, snapshots and agent-browser setup.",
       "safety": "external",
       "commands": [
         "health",
@@ -873,7 +875,8 @@
         "open",
         "screenshot",
         "snapshot",
-        "eval"
+        "eval",
+        "setup"
       ],
       "examples": [
         "st browser health",
@@ -969,21 +972,18 @@
       "canonical": "st setup",
       "replaces": [
         "setup-services.sh",
-        "setup-agent-browser.sh",
         "setup-agent-tooling.sh",
         "setup-test-dbs.sh"
       ],
-      "summary": "Install, PATH, browser, agent tooling, and test database setup.",
+      "summary": "Install, PATH, agent tooling, and test database setup.",
       "safety": "mutating",
       "commands": [
         "services",
-        "browser",
         "agent-tooling",
         "test-dbs"
       ],
       "examples": [
-        "st setup services --dry-run",
-        "st setup browser --dry-run"
+        "st setup services --dry-run"
       ],
       "verify": [
         "st setup --help"
@@ -1276,8 +1276,13 @@
       "component_id": "sf.vm"
     },
     {
-      "pattern": "setup-(services|agent-browser|agent-tooling|test-dbs)\\.sh\\b",
+      "pattern": "setup-(services|agent-tooling|test-dbs)\\.sh\\b",
       "message": "Use 'st setup' instead of legacy setup scripts. Start with 'st setup --help'.",
+      "component_id": "sf.setup"
+    },
+    {
+      "pattern": "setup-agent-browser\\.sh\\b",
+      "message": "Use 'st browser setup' (Browser Automation) instead of legacy setup-agent-browser.sh.",
       "component_id": "sf.setup"
     },
     {

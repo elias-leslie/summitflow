@@ -20,7 +20,7 @@ OUT_DIR="${1:-/tmp/workspace-packages}"
 mkdir -p "$OUT_DIR"
 OUT_DIR="$(cd "$OUT_DIR" && pwd)"
 
-PYTHON_TOOL_OWNERS=(browser-automation code-intelligence design-tools)
+PYTHON_TOOL_OWNERS=(code-intelligence design-tools)
 
 # A package-only change must not run unrelated JavaScript prepack builds.
 # Python wheels are checked-in, lock-bound releases. Only an explicit owner

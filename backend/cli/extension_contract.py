@@ -45,7 +45,6 @@ class ExtensionBinding(StrictModel):
     arguments: list[str] = Field(default_factory=list)
     environment: list[str] = Field(default_factory=list)
     presentation: Literal["native", "web-details"] = "native"
-    policy_adapter: Literal["browser"] | None = None
     # Trusted grant: `--help` on a route the manifest does not declare is
     # dispatched to the owner executable. Root and declared routes stay passive.
     owner_help: bool = False

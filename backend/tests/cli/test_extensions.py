@@ -227,22 +227,6 @@ def test_owner_help_requires_dispatchable_grant(tmp_path, monkeypatch):
     assert "Fixture help" in result.output
 
 
-def test_denied_browser_binding_cannot_enter_core_policy(tmp_path, monkeypatch):
-    registry = registration(tmp_path, binding_changes={
-        "policy_adapter": "browser", "grant": {"enabled": False, "effects": []},
-    })
-    app = typer.Typer()
-    @app.callback()
-    def root():
-        pass
-    register_extensions(app, registry_path=registry)
-    def forbidden(*args, **kwargs):
-        pytest.fail("denied dispatch entered browser policy")
-    monkeypatch.setattr("cli.commands.browser.run_registered", forbidden)
-    monkeypatch.setattr("cli.extensions.extension_context", forbidden)
-    assert CliRunner().invoke(app, ["fixture", "open", "example"]).exit_code == 2
-
-
 def test_missing_and_non_executable_dependencies(tmp_path):
     registry = registration(tmp_path)
     record = load_extensions(set(), registry_path=registry).records[0]
@@ -526,73 +510,6 @@ def test_structured_operation_metadata_is_strict_and_independent_of_st_envelope_
 def test_st_envelope_versions_remain_strict_positive_metadata(tmp_path, versions):
     registry = registration(tmp_path, manifest_changes={"st_contract_versions": versions})
     assert load_extensions(set(), registry_path=registry).records[0].status == "malformed"
-
-
-@pytest.mark.parametrize("command", [["get", "text"], ["session"], ["workflow"], ["workflow", "record-stop"]])
-def test_registered_browser_focused_help_dispatches_v2_but_root_help_stays_passive(tmp_path, monkeypatch, command):
-    registry = registration(tmp_path, namespace="browser", manifest_changes={
-        "structured_operations": {"help": {"request_contract_version": 2, "response_schema_version": 1}},
-    }, binding_changes={"policy_adapter": "browser"})
-    requests = []
-    monkeypatch.setattr("cli.extensions.extension_context", lambda _output: context(tmp_path))
-    monkeypatch.setattr("cli.extensions.dispatch_extension", lambda record, argv, **kwargs: requests.append(json.loads(argv[1])) or 0)
-    monkeypatch.setattr("cli.commands.browser._agent_browser_bin", lambda: "/managed/agent-browser")
-    app = typer.Typer()
-
-    @app.callback()
-    def root():
-        pass
-
-    register_extensions(app, registry_path=registry)
-    runner = CliRunner()
-    assert "Fixture help" in runner.invoke(app, ["browser", "--help"]).output
-    assert "Fixture help" in runner.invoke(app, ["browser", "health", "--help"]).output
-    assert not requests
-    result = runner.invoke(app, ["browser", *command, "--help"])
-    assert result.exit_code == 0, result.output
-    assert requests[0]["operation"] == "help"
-    assert requests[0]["contract_version"] == 2
-    assert requests[0]["payload"] == {"command": command}
-    assert requests[0]["args"] == []
-
-
-@pytest.mark.parametrize("changes,binding_changes", [
-    ({}, {"grant": {"enabled": False, "effects": []}}),
-    ({"effects": ["network"]}, {}),
-    ({"st_contract_versions": [99]}, {}),
-    ({"unexpected": True}, {}),
-])
-@pytest.mark.parametrize("command", ["fill", "session", "workflow"])
-def test_unavailable_browser_focused_help_cannot_enter_policy(tmp_path, monkeypatch, changes, binding_changes, command):
-    registry = registration(tmp_path, namespace="browser", manifest_changes=changes,
-                            binding_changes={"policy_adapter": "browser", **binding_changes})
-    monkeypatch.setattr("cli.commands.browser.run_registered", lambda *a, **k: pytest.fail("unavailable browser help entered policy"))
-    monkeypatch.setattr("cli.extensions.extension_context", lambda *a, **k: pytest.fail("unavailable help resolved context"))
-    app = typer.Typer()
-
-    @app.callback()
-    def root():
-        pass
-
-    register_extensions(app, registry_path=registry)
-    result = CliRunner().invoke(app, ["browser", command, "--help"])
-    assert result.exit_code == (2 if "unexpected" in changes else 0)
-
-
-def test_registered_browser_missing_v2_help_declaration_fails_without_execution(tmp_path, monkeypatch):
-    registry = registration(tmp_path, namespace="browser", binding_changes={"policy_adapter": "browser"})
-    monkeypatch.setattr("cli.extensions.extension_context", lambda _output: context(tmp_path))
-    monkeypatch.setattr("cli.extensions.dispatch_extension", lambda *a, **k: pytest.fail("unsupported help dispatched"))
-    app = typer.Typer()
-
-    @app.callback()
-    def root():
-        pass
-
-    register_extensions(app, registry_path=registry)
-    result = CliRunner().invoke(app, ["browser", "fill", "--help"])
-    assert result.exit_code == 2
-    assert "does not support help request contract version 2" in result.output
 
 
 def test_browser_binding_forwards_only_approved_session_identity_and_state_environment(tmp_path, monkeypatch):

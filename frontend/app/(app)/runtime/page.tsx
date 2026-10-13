@@ -1,11 +1,10 @@
 'use client'
 
 import { useQuery } from '@tanstack/react-query'
-import { Boxes } from 'lucide-react'
+import { Boxes, ExternalLink } from 'lucide-react'
 import { motion } from 'motion/react'
-import { useEffect, useState } from 'react'
+import { useState } from 'react'
 import { SystemHealthWidget } from '@/components/dashboard/SystemHealthWidget'
-import { BrowserSessions } from '@/components/runtime/BrowserSessions'
 import { GpuStatusCard } from '@/components/runtime/GpuStatusCard'
 import { HealthBar } from '@/components/runtime/HealthBar'
 import { HostMonitor } from '@/components/runtime/HostMonitor'
@@ -19,14 +18,9 @@ import { runtimeApi } from '@/lib/api/runtime'
 import { POLL_MONITOR } from '@/lib/polling'
 
 export default function RuntimePage() {
-  const [tab, setTab] = useState<
-    'services' | 'monitor' | 'dependencies' | 'browsers'
-  >('services')
-  // A browser hand-off link (Nightshift push) opens the Browser sessions tab.
-  useEffect(() => {
-    if (new URLSearchParams(window.location.search).has('browser'))
-      setTab('browsers')
-  }, [])
+  const [tab, setTab] = useState<'services' | 'monitor' | 'dependencies'>(
+    'services',
+  )
   const {
     data: health,
     isLoading: healthLoading,
@@ -92,22 +86,27 @@ export default function RuntimePage() {
         className="flex flex-wrap gap-2 border-b border-slate-700/60"
         aria-label="Runtime sections"
       >
-        {(['services', 'monitor', 'dependencies', 'browsers'] as const).map(
-          (section) => (
-            <button
-              key={section}
-              className={`px-3 py-2 text-sm capitalize focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-400 ${tab === section ? 'border-b-2 border-cyan-400 text-cyan-300' : 'text-slate-400'}`}
-              onClick={() => setTab(section)}
-              aria-current={tab === section ? 'page' : undefined}
-            >
-              {section === 'browsers' ? 'Browser sessions' : section}
-            </button>
-          ),
-        )}
+        {(['services', 'monitor', 'dependencies'] as const).map((section) => (
+          <button
+            key={section}
+            className={`px-3 py-2 text-sm capitalize focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-400 ${tab === section ? 'border-b-2 border-cyan-400 text-cyan-300' : 'text-slate-400'}`}
+            onClick={() => setTab(section)}
+            aria-current={tab === section ? 'page' : undefined}
+          >
+            {section}
+          </button>
+        ))}
+        <a
+          href="https://browser.summitflow.dev"
+          target="_blank"
+          rel="noopener noreferrer"
+          className="inline-flex items-center gap-1.5 px-3 py-2 text-sm text-slate-400 hover:text-cyan-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-400"
+        >
+          Browser sessions
+          <ExternalLink className="h-3.5 w-3.5" aria-hidden="true" />
+        </a>
       </nav>
-      {tab === 'browsers' ? (
-        <BrowserSessions />
-      ) : tab === 'dependencies' ? (
+      {tab === 'dependencies' ? (
         <RuntimeDependencies />
       ) : tab === 'monitor' ? (
         <HostMonitor />

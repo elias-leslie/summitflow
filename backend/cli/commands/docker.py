@@ -42,7 +42,6 @@ GHCR_PREFIX = "ghcr.io/elias-leslie/"
 _BUILD_PROJECTS = [
     ("summitflow",  "docker/backend.Dockerfile",       GHCR_PREFIX + "summitflow-api"),
     ("summitflow",  "docker/frontend.Dockerfile",      GHCR_PREFIX + "summitflow-web"),
-    ("summitflow",  "docker/agent-browser.Dockerfile", GHCR_PREFIX + "agent-browser"),
     ("agent-hub",   "docker/backend.Dockerfile",       GHCR_PREFIX + "agent-hub-api"),
     ("agent-hub",   "docker/frontend.Dockerfile",      GHCR_PREFIX + "agent-hub-web"),
     ("portfolio-ai","docker/backend.Dockerfile",       GHCR_PREFIX + "portfolio-api"),
@@ -359,15 +358,10 @@ def restore(
 def env_create(
     name: Annotated[str, typer.Argument(help="Environment name")],
     profile: Annotated[str, typer.Option("--profile", "-p", help="Compose profile")] = "summitflow",
-    with_browser: Annotated[
-        bool, typer.Option("--with-browser", help="Include agent-browser container"),
-    ] = False,
 ) -> None:
     """Create an ephemeral test environment."""
     project_name = f"{ENV_PREFIX}{name}"
     args = _env_compose_cmd(project_name, "-f", str(COMPOSE_FILE), "--profile", profile)
-    if with_browser:
-        args.extend(["--profile", "browser"])
     args.extend(["up", "-d"])
     typer.echo(f"Creating test environment: {name} (profile: {profile})")
     _run(args, env=compose_env())
