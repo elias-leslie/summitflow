@@ -109,6 +109,23 @@ def test_unit_runs_the_collector_as_the_owner_without_capabilities():
     assert os.path.isabs(str(deploy.STATE))
 
 
+def test_state_handover_covers_every_entry_a_root_run_left(tmp_path, monkeypatch):
+    # A root collector leaves collector.lock (0640) behind; the owner-run collector must be able to open it.
+    state = tmp_path / "monitor"
+    state.mkdir()
+    for name in ("collector.lock", "maintenance.lock", "monitor.sqlite3"):
+        (state / name).touch(mode=0o640)
+    monkeypatch.setattr(deploy, "STATE", state)
+    chowned = []
+    monkeypatch.setattr(deploy.os, "chown", lambda path, uid, gid: chowned.append(Path(path).name))
+    deploy._state_permissions(1000, 1000)
+    assert sorted(chowned) == ["collector.lock", "maintenance.lock", "monitor", "monitor.sqlite3"]
+    assert all((state / name).stat().st_mode & 0o777 == 0o600 for name in chowned if name != "monitor")
+    (state / "link").symlink_to(state / "collector.lock")
+    with pytest.raises(RuntimeError, match="symlink"):
+        deploy._state_permissions(1000, 1000)
+
+
 @pytest.mark.parametrize("activation_fails", [False, True])
 def test_first_install_and_failed_activation_preserve_owner_store(tmp_path, monkeypatch, activation_fails):
     # Acceptance's random --basetemp can contain "__"; substituted paths must not read as unresolved placeholders.

@@ -130,13 +130,11 @@ def _state_permissions(uid: int, gid: int) -> None:
     """The owner-run collector owns its store (private modes); its reader runs as the same owner."""
     os.chown(STATE, uid, gid)
     STATE.chmod(0o700)
-    for name in ("monitor.sqlite3", "monitor.sqlite3-wal", "monitor.sqlite3-shm", "maintenance.lock"):
-        path = STATE / name
-        if path.exists():
-            if path.is_symlink():
-                raise RuntimeError("monitor state contains a symlink")
-            os.chown(path, uid, gid)
-            path.chmod(0o600)
+    for path in STATE.iterdir():  # every entry, incl. collector.lock and control.sock left by a root run
+        if path.is_symlink():
+            raise RuntimeError("monitor state contains a symlink")
+        os.chown(path, uid, gid)
+        path.chmod(0o700 if path.is_dir() else 0o600)
 
 
 def install(source: Path, uid: int, gid: int, transaction: str) -> None:
