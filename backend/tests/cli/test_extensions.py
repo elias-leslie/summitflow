@@ -187,6 +187,46 @@ def test_wrapper_preserves_separator_and_help_as_positional(tmp_path, monkeypatc
     assert observed == [args]
 
 
+@pytest.mark.parametrize(("command", "dispatched"), [
+    (["--help"], False),
+    (["inspect", "--help"], False),
+    (["--json", "inspect", "-h"], False),
+    (["--id", "value", "--help"], False),
+    (["session", "--help"], True),
+    (["inspect", "deep", "--help"], True),
+    (["--json", "workflow", "record-stop", "-h"], True),
+])
+def test_owner_help_dispatches_only_undeclared_routes(tmp_path, monkeypatch, command, dispatched):
+    registry = registration(tmp_path, binding_changes={"owner_help": True})
+    observed = []
+    monkeypatch.setattr("cli.extensions.extension_context", lambda _: context(tmp_path))
+    monkeypatch.setattr("cli.extensions.dispatch_extension", lambda record, argv, **kwargs: observed.append(argv) or 0)
+    app = typer.Typer()
+    @app.callback()
+    def root():
+        pass
+    register_extensions(app, registry_path=registry)
+    result = CliRunner().invoke(app, ["fixture", *command])
+    assert result.exit_code == 0, result.output
+    assert observed == ([command] if dispatched else [])
+    if not dispatched:
+        assert "Fixture help" in result.output or "Inspect --json" in result.output
+
+
+def test_owner_help_requires_dispatchable_grant(tmp_path, monkeypatch):
+    registry = registration(tmp_path, binding_changes={
+        "owner_help": True, "grant": {"enabled": False, "effects": []}})
+    monkeypatch.setattr("cli.extensions.dispatch_extension", lambda *a, **k: pytest.fail("denied help dispatched"))
+    app = typer.Typer()
+    @app.callback()
+    def root():
+        pass
+    register_extensions(app, registry_path=registry)
+    result = CliRunner().invoke(app, ["fixture", "session", "--help"])
+    assert result.exit_code == 0
+    assert "Fixture help" in result.output
+
+
 def test_denied_browser_binding_cannot_enter_core_policy(tmp_path, monkeypatch):
     registry = registration(tmp_path, binding_changes={
         "policy_adapter": "browser", "grant": {"enabled": False, "effects": []},

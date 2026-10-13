@@ -242,7 +242,7 @@ class ExtensionCommand(TyperCommand):
 
 def _help_path(
     arguments: list[str], help_pages: dict[str, str], help_options: dict[str, dict[str, int]],
-) -> str:
+) -> tuple[str, bool]:
     # Follow a contiguous route, skipping only options whose arity the owner
     # declares. Unknown arguments stop discovery instead of turning a later
     # operand into an unrelated command. This never imports or runs the owner.
@@ -264,7 +264,10 @@ def _help_path(
             break
         path = candidate
         index += 1
-    return path
+    # The route is declared when no operand remains before the help flag.
+    rest = arguments[index:]
+    end = next((i for i, value in enumerate(rest) if value in {"--", "--help", "-h"}), len(rest))
+    return path, not any(not value.startswith("-") for value in rest[:end])
 
 
 def _callback(record: ExtensionRecord):
@@ -284,9 +287,10 @@ def _callback(record: ExtensionRecord):
             if metadata is None:
                 typer.echo(record.diagnostic)
                 raise typer.Exit(2)
-            path = _help_path(options, metadata.help, metadata.help_options)
-            typer.echo(metadata.help[path])
-            return
+            path, declared = _help_path(options, metadata.help, metadata.help_options)
+            if declared or not (record.status == "unverified" and record.binding and record.binding.owner_help):
+                typer.echo(metadata.help[path])
+                return
         context = extension_context(ctx.find_root().obj) if record.status == "unverified" else None
         if record.status == "unverified" and record.binding and record.binding.policy_adapter == "browser":
             from .commands.browser import run_registered
