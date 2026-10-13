@@ -254,9 +254,10 @@ def environment(root: Path, *, tool_dirs: list[Path], job: CiJob | None, scratch
     """Scrubbed CI-like env: workflow env, declared passthrough, CI tools only."""
     source = os.environ if base is None else base
     settings = _settings(root)
+    admitted = admitted_tools(root, job)
     aliases = scratch / "bin"
     aliases.mkdir(parents=True, exist_ok=True)
-    for name in sorted(admitted_tools(root, job)):
+    for name in sorted(admitted):
         found = which(name)
         if found and not (aliases / name).exists():
             (aliases / name).symlink_to(found)
@@ -267,6 +268,10 @@ def environment(root: Path, *, tool_dirs: list[Path], job: CiJob | None, scratch
         "CI": "true", "GITHUB_ACTIONS": "true",  # runners leave TMPDIR unset
         "PATH": os.pathsep.join([*(str(path) for path in tool_dirs), str(aliases), *SYSTEM_PATH]),
     }
+    # This host's pnpm is a corepack shim; its prepared cache is the runner's tool cache.
+    corepack = Path(pwd.getpwuid(os.getuid()).pw_dir) / ".cache" / "node" / "corepack"
+    if admitted & {"pnpm", "corepack"} and corepack.is_dir():
+        env["COREPACK_HOME"] = str(corepack)
     env.update(job.env if job else {})
     env.update({key: str(value) for key, value in (settings.get("env") or {}).items() if isinstance(value, str)})
     for key in settings.get("pass_env", []):
@@ -348,7 +353,11 @@ def seeded(argv: list[str], value: int | None) -> list[str]:
 
 @contextlib.contextmanager
 def scratch_directory() -> Iterator[Path]:
-    with tempfile.TemporaryDirectory(prefix="st-ci-parity-") as directory:
+    # Not under /tmp: sandboxed tests (bwrap --tmpfs /tmp) must still see the
+    # CI tools on PATH, as they do in a runner's tool cache.
+    base = Path(pwd.getpwuid(os.getuid()).pw_dir) / ".cache" / "st-ci-parity"
+    base.mkdir(parents=True, exist_ok=True)
+    with tempfile.TemporaryDirectory(prefix="run-", dir=base) as directory:
         yield Path(directory)
 
 
