@@ -107,13 +107,16 @@ def _owner_session(action: str, name: str, actor: str) -> tuple[int, dict[str, A
     return result.returncode, value if isinstance(value, dict) else None
 
 
-def session_state(name: str, actor: str) -> str:
-    """missing | active | paused | closed | busy | foreign (owned by another actor)."""
+def session_state(name: str, actor: str, *, field: str = "state") -> str:
+    """missing | active | paused | closed | busy | foreign (owned by another actor).
+
+    field="runtime_state" reads running | dormant | unknown for an existing session instead.
+    """
     sessions = _sessions()
     previous = os.environ.get("ST_BROWSER_OWNER")
     os.environ["ST_BROWSER_OWNER"] = actor
     try:
-        return str(sessions.status(name, actor)["state"])
+        return str(sessions.status(name, actor)[field])
     except sessions.SessionBusy:
         return "busy"
     except sessions.SessionError as exc:
@@ -135,8 +138,12 @@ def ensure_session(name: str, actor: str) -> str | None:
     if state == "missing":
         code, _ = _owner_session("create", name, actor)
         if code == 0:
-            print(f"[st] Browser session {name} created for this agent on the browser VM "
-                  f"(own profile; close it with `st browser session close` when done).", file=sys.stderr)
+            if actor.startswith(profile_actor("")):
+                print(f"[st] Shared browser session {name} registered (one agent at a time; "
+                      f"`st browser session release {name}` when done).", file=sys.stderr)
+            else:
+                print(f"[st] Browser session {name} created for this agent on the browser VM "
+                      f"(own profile; close it with `st browser session close` when done).", file=sys.stderr)
             return None
         return f"BROWSER_SESSION_CREATE_FAILED session={name}: inspect `st browser session status {name}`"
     if state == "closed":
@@ -149,6 +156,20 @@ def ensure_session(name: str, actor: str) -> str | None:
     if state == "foreign":
         return f"BROWSER_SESSION_CONFLICT session={name} belongs to another agent; use your own session or --session NEW_NAME"
     return f"BROWSER_SESSION_INVALID session={name}: inspect `st browser session status {name}`"
+
+
+def warm_session(name: str, actor: str) -> bool:
+    """Start NAME's daemon (a read-only page query) so a paused session has a live view to attach to."""
+    if session_state(name, actor) != "active" or session_state(name, actor, field="runtime_state") == "running":
+        return True
+    env = {**os.environ, "ST_BROWSER_OWNER": actor}
+    env.pop(SHARED_PROFILE_ENV, None)
+    try:
+        result = subprocess.run([browser_support.st_bin(), "--no-compact", "browser", "--session", name, "get", "url"],
+                                env=env, capture_output=True, text=True, timeout=90, check=False)
+    except (OSError, subprocess.SubprocessError):
+        return False
+    return result.returncode == 0
 
 
 # Shared profiles: one holder at a time, held across commands until released,
@@ -359,7 +380,7 @@ def reclaim_one(exclude: str, *, now_ms: int | None = None,
     now = now_ms or _now_ms()
     candidates = sorted(
         (item for item in (inventory or _sessions().operator_inventory)()
-         if item.get("runtime_state") == "running" and not item.get("paused") and item.get("name") != exclude
+         if item.get("runtime_state") == "running" and not item.get("paused") and item.get("name") not in {exclude, LEGACY_SHARED}
          and (item.get("runtime") or {}).get("target") == "proxmox"
          and now - int(item.get("last_used_ms") or 0) >= RECLAIM_MIN_IDLE_MS),
         key=lambda item: int(item.get("last_used_ms") or 0))

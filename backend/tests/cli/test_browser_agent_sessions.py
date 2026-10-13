@@ -173,6 +173,7 @@ def test_pause_reason_is_recorded_pushed_and_cleared_on_resume(tmp_path, monkeyp
     monkeypatch.setenv("CODEX_THREAD_ID", "thread-a")
     pushed: list[tuple[str, str, str]] = []
     monkeypatch.setattr(agent_sessions, "notify_owner", lambda *args: pushed.append(args) or True)
+    monkeypatch.setattr(agent_sessions, "warm_session", lambda *_: True)
     monkeypatch.setattr(browser, "_run_registered", lambda _record, argv, _context: 0)
     name = agent_sessions.default_session_name("thread-a")
     assert browser.run_registered(_record(), ["session", "pause", "--reason", "login needed: example.com"], _context(tmp_path)) == 0
@@ -181,3 +182,47 @@ def test_pause_reason_is_recorded_pushed_and_cleared_on_resume(tmp_path, monkeyp
     assert agent_sessions.runtime_link(name, "thread-a").endswith(f"?browser={name}&actor=thread-a")
     assert browser.run_registered(_record(), ["session", "resume"], _context(tmp_path)) == 0
     assert agent_sessions.pause_reason(name) is None
+
+
+def test_legacy_shared_profile_is_a_managed_session_on_the_shared_vm_chrome(tmp_path, monkeypatch, vm_dispatch) -> None:
+    # Regression: `--shared-profile shared` bypassed session creation, so status/pause
+    # failed with "session directory ownership is unverifiable" on a missing record.
+    monkeypatch.setenv("CODEX_THREAD_ID", "thread-a")
+    monkeypatch.setattr(agent_sessions, "agent_alive", lambda _a: True)
+    ensured: list[tuple[str, str]] = []
+    monkeypatch.setattr(agent_sessions, "session_state", lambda name, actor, **_kw: "missing")
+    monkeypatch.setattr(agent_sessions, "ensure_session", lambda name, owner: ensured.append((name, owner)))
+
+    def run(*argv: str) -> int:
+        monkeypatch.delenv("ST_BROWSER_OWNER", raising=False)  # Each st invocation is a fresh process.
+        return browser.run_registered(_record(), ["--shared-profile", "shared", *argv], _context(tmp_path))
+
+    assert run("session", "status") == 0
+    assert ensured == [("shared", "profile:shared")]
+    assert vm_dispatch[-1]["payload"]["name"] == "shared"
+    assert run("open", "https://example.com") == 0
+    assert vm_dispatch[-1]["launch"]["managed_session"] == "shared"
+    monkeypatch.setenv("CODEX_THREAD_ID", "thread-b")
+    assert run("open", "https://example.com") == 75
+    assert run("session", "pause") == 75
+    assert len(vm_dispatch) == 2
+    # The holder can hand a closed (reaped) shared session to the owner: pause reopens it first.
+    monkeypatch.setenv("CODEX_THREAD_ID", "thread-a")
+    monkeypatch.setattr(agent_sessions, "session_state", lambda name, actor, **_kw: "closed")
+    monkeypatch.setattr(agent_sessions, "warm_session", lambda *_: True)
+    assert run("session", "pause") == 0
+    assert ensured[-1] == ("shared", "profile:shared") and vm_dispatch[-1]["payload"]["action"] == "pause"
+
+
+def test_legacy_shared_endpoint_is_the_long_lived_vm_chrome_never_started_or_stopped(monkeypatch) -> None:
+    monkeypatch.setattr(browser, "_resolve_endpoint", lambda engine=None: SimpleNamespace(host="192.0.2.10"))
+    monkeypatch.setattr(browser, "_cdp_ws", lambda port, host=None: f"ws://{host}:{port}/b")
+    calls: list[str] = []
+    monkeypatch.setattr(browser.browser_support, "vm_session_port", lambda *a, **k: calls.append("start"))
+    monkeypatch.setattr(browser.browser_support, "stop_vm_session", lambda *a, **k: calls.append("stop"))
+    assert browser._managed_vm_endpoint("shared")["port"] == 9222
+    browser._stop_vm_session("shared")
+    assert calls == []
+    vm = {"target": "proxmox"}
+    inventory = [_session(name="shared", last_used_ms=0, runtime=vm)]
+    assert agent_sessions.reclaim_one("me", now_ms=NOW, inventory=lambda: inventory, close=lambda *_: True) is None

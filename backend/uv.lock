@@ -233,7 +233,7 @@ dependencies = [
     { name = "websockets" },
 ]
 wheels = [
-    { filename = "browser_automation-0.1.0-py3-none-any.whl", hash = "sha256:893261f27cc7e5523f9c4f43b7e60c9aab80c382ea0542429d00eb8d94f76e67" },
+    { filename = "browser_automation-0.1.0-py3-none-any.whl", hash = "sha256:5c30e8d0c5f5ee66bbf97d1554d9968b8f712521aa0ee36793b044fac34d5672" },
 ]
 
 [package.metadata]

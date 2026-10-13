@@ -222,6 +222,15 @@ def _managed_vm_endpoint(name: str) -> dict[str, object]:
         host = _resolve_endpoint().host
     except BrowserTargetError:
         host = ""
+    if name == agent_sessions.LEGACY_SHARED:
+        # The long-lived logged-in VM Chrome (st-browser-chrome.service); never started or stopped here.
+        port = browser_support.ENGINE_PORTS["chrome"]
+        ws = _cdp_ws(port, host=host) if host else None
+        if not ws:
+            output_error(f"BROWSER_VM_SESSION_UNAVAILABLE session={name}: the shared VM Chrome (port {port}) is not "
+                         "answering. Check `st vm status 100` and st-browser-chrome.service on the VM.")
+            raise typer.Exit(69)
+        return {"host": host, "port": port, "ws": ws, "source": "proxmox-shared", "debug_local": False}
     port = (browser_support.vm_session_port(host, name, _browser_target_env(), reclaim=lambda: _reclaim_vm_session(name))
             if host else None)
     ws = _cdp_ws(port, host=host) if port else None
@@ -247,6 +256,8 @@ def _closed_managed_session(request: dict[str, object]) -> str | None:
 
 def _stop_vm_session(name: str) -> None:
     """A closed managed session releases its VM Chrome; the VM profile is kept."""
+    if name == agent_sessions.LEGACY_SHARED:
+        return  # Closing only disconnects from the shared VM Chrome; it keeps running.
     try:
         host = _resolve_endpoint().host
     except BrowserTargetError:
@@ -1127,8 +1138,6 @@ def _agent_default_session(argv: list[str], actor: str, profile: str | None) -> 
         if conflict := agent_sessions.claim_profile(profile, actor):
             output_error(conflict)
             return 75, argv
-        if profile == agent_sessions.LEGACY_SHARED:
-            return None, argv  # The legacy shared VM Chrome, now behind the claim.
         owner, name = agent_sessions.profile_actor(profile), profile
     else:
         owner, name = actor, agent_sessions.default_session_name(actor)
@@ -1158,9 +1167,18 @@ def run_registered(record: Any, argv: list[str], context: dict[str, Any]) -> int
     if profile and not actor:
         output_error("--shared-profile needs an agent identity (ST_BROWSER_OWNER or the agent's session id)")
         return 2
-    if profile and profile != agent_sessions.LEGACY_SHARED and (index := browser_policy.command_index(argv)) is not None \
-            and argv[index] == "session":
-        os.environ["ST_BROWSER_OWNER"] = agent_sessions.profile_actor(profile)
+    if profile and (index := browser_policy.command_index(argv)) is not None and argv[index] == "session":
+        owner = agent_sessions.profile_actor(profile)
+        os.environ["ST_BROWSER_OWNER"] = owner
+        action = argv[index + 1] if index + 1 < len(argv) else None
+        if action == "pause" and actor and (conflict := agent_sessions.claim_profile(profile, actor)):
+            output_error(conflict)  # Only the agent holding the shared profile may hand it to the owner.
+            return 75
+        state = agent_sessions.session_state(profile, owner) if action in _SESSION_NAME_ACTIONS else None
+        if (state == "missing" or (state == "closed" and action == "pause")) \
+                and (problem := agent_sessions.ensure_session(profile, owner)):
+            output_error(problem)  # A shared profile's session record is created on first use, never reported unverifiable.
+            return 75
     try:
         early, argv, extras = _agent_session_extras(argv, actor, profile)
     except ValueError as exc:
@@ -1168,6 +1186,9 @@ def run_registered(record: Any, argv: list[str], context: dict[str, Any]) -> int
         return 2
     if early is not None:
         return early
+    if extras.get("action") == "pause" and isinstance(extras.get("name"), str) \
+            and not agent_sessions.warm_session(extras["name"], os.environ.get("ST_BROWSER_OWNER", "")):
+        output_error(f"Browser session {extras['name']} did not start; the owner's live view may be unavailable")
     _AUTO_MANAGED["session"] = None
     try:
         if actor and not extras:
