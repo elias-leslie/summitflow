@@ -67,6 +67,8 @@ class ResticError(RuntimeError):
 
 _READ_ONLY_RESTIC = frozenset({"cat", "check", "diff", "find", "ls", "restore", "snapshots", "stats", "version"})
 _READ_ONLY_RCLONE = frozenset({"about", "cat", "lsjson", "size", "version"})
+# Remote structural check cadence inside offsite copy (see sync()).
+STRUCTURAL_CHECK_INTERVAL = timedelta(days=1)
 
 
 def command_operation(command: Sequence[str]) -> tuple[str, bool]:
@@ -718,7 +720,14 @@ class ResticAdapter:
                 save()
                 # Restic authenticates config and verifies structure. It does
                 # not read every pack here; provider hashes cover ciphertext.
-                self._run(self._command("check", remote=True), phase="verification")
+                # The remote check re-reads the whole index (~5 min over Drive),
+                # so it runs at most daily; the daily maintenance bucket check
+                # covers it too. Snapshot presence and new-object SHA-256 below
+                # still run on every copy.
+                last_check = journal.get("structural_check_at")
+                if not last_check or _timestamp(last_check) < _now() - STRUCTURAL_CHECK_INTERVAL:
+                    self._run(self._command("check", remote=True), phase="verification")
+                    journal["structural_check_at"] = _now().isoformat()
                 remote_snapshots = self._snapshots(remote=True)
                 for pending_id in list(journal["pending_snapshot_ids"]):
                     matches = [item for item in remote_snapshots if item["id"] == pending_id or item.get("original") == pending_id]
@@ -755,10 +764,10 @@ class ResticAdapter:
                 journal["pending_objects"] = sorted(pending)
                 if journal["mismatches"] or pending:
                     raise ResticError("Unresolved remote verification objects remain")
-                journal.update(status="verified", verified_at=_now().isoformat(), structural_check_at=_now().isoformat(), pending_snapshot_ids=[])
+                journal.update(status="verified", verified_at=_now().isoformat(), pending_snapshot_ids=[])
                 journal.pop("error", None)
                 save()
-                return {"status": "verified", "snapshot_id": snapshot_id, "remote_snapshot_id": journal["remote_snapshots"][snapshot_id], "remote_repository_id": remote["id"], "verification": {"verified": True, "offsite": {"status": "verified", "method": "restic-structure-and-immutable-sha256", "verified_at": journal["verified_at"], "object_count": len(after), "new_object_bytes": journal["new_object_bytes"]}}, "state": journal}
+                return {"status": "verified", "snapshot_id": snapshot_id, "remote_snapshot_id": journal["remote_snapshots"][snapshot_id], "remote_repository_id": remote["id"], "verification": {"verified": True, "offsite": {"status": "verified", "method": "restic-structure-and-immutable-sha256", "verified_at": journal["verified_at"], "structural_check_at": journal["structural_check_at"], "object_count": len(after), "new_object_bytes": journal["new_object_bytes"]}}, "state": journal}
             except BackupCancelled:
                 journal["status"] = "pending"
                 save()

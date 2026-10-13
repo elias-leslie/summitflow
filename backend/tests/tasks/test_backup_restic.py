@@ -205,6 +205,25 @@ def test_offsite_copy_and_listing_reuse_persistent_cache_but_restore_and_check_d
     assert "--no-cache" in adapter._command("copy", SNAPSHOT)  # local repository side stays uncached
 
 
+def test_offsite_copy_runs_remote_structural_check_at_most_daily(setup):
+    adapter, process, payload = _adapter(setup)
+    adapter.save_payload("fixture", payload)
+
+    def remote_checks() -> int:
+        return len([command for command in process.commands if "rclone:fixture:repository" in command and _subcommand(command) == "check"])
+
+    first = adapter.sync(SNAPSHOT, state={}, persist=lambda state: None)
+    assert first["status"] == "verified" and remote_checks() == 1
+    checked_at = first["state"]["structural_check_at"]
+    second = adapter.sync(SNAPSHOT, state=first["state"], persist=lambda state: None)
+    assert second["status"] == "verified" and remote_checks() == 1
+    assert second["verification"]["offsite"]["structural_check_at"] == checked_at
+    stale = {**second["state"], "structural_check_at": (engine._now() - engine.STRUCTURAL_CHECK_INTERVAL - engine.timedelta(minutes=1)).isoformat()}
+    third = adapter.sync(SNAPSHOT, state=stale, persist=lambda state: None)
+    assert third["status"] == "verified" and remote_checks() == 2
+    assert third["state"]["structural_check_at"] > stale["structural_check_at"]
+
+
 def test_offsite_copy_falls_back_to_no_cache_without_scratch(setup, monkeypatch):
     adapter, _, _ = _adapter(setup)
     monkeypatch.setattr(engine, "mounted_scratch_parent", lambda *a, **k: (_ for _ in ()).throw(engine.ScratchError("gone")))
