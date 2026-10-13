@@ -7,6 +7,7 @@ import math
 import subprocess
 import sys
 from collections.abc import Iterable
+from contextlib import suppress
 from importlib import import_module
 from pathlib import Path
 from typing import Annotated, NoReturn, Protocol, cast
@@ -281,11 +282,17 @@ def _render_session_list(
     if not include_unassigned:
         sessions = [s for s in sessions if s.get("agent_slug")]
 
+    from ..lib import coordinators
+
     if is_compact():
         print(f"SESSIONS[{len(sessions)}]")
         for session in sessions:
-            print(compact_session_line(session))
+            print(compact_session_line(session) + coordinators.session_suffix(coordinators.widget_for_session(session)))
         return
+    for session in sessions:
+        with suppress(Exception):  # Tether lineage is best effort
+            if summary := coordinators.session_summary(coordinators.widget_for_session(session)):
+                session["tether"] = summary
     output_json(sessions)
 
 

@@ -103,12 +103,14 @@ def holder_line(project_id: str, lease: leases.Lease, root: Path | None = None) 
     since = _age(lease.acquired_at)
     if lease.sensitive:
         return f"{project_id}: busy ({_coarse(lease.globs[0], root)}) since {since} · contact {lease.agent_id}"
+    from .coordinators import conflict_suffix
+
     if lease.kind in ("hold", "op"):
-        return f"{project_id}: {lease.kind} {lease.purpose or '-'} by {lease.agent_id} since {since}"
+        return f"{project_id}: {lease.kind} {lease.purpose or '-'} by {lease.agent_id} since {since}{conflict_suffix(lease)}"
     rel = lease.globs[0]
     if root is not None and rel.startswith(str(root) + "/"):
         rel = rel[len(str(root)) + 1:]
-    return f"{project_id}: {rel} leased by {lease.agent_id} (idle {leases.idle_string(lease)})"
+    return f"{project_id}: {rel} leased by {lease.agent_id} (idle {leases.idle_string(lease)}){conflict_suffix(lease)}"
 
 
 # ---------------------------------------------------------------- repo marks
@@ -238,7 +240,8 @@ def adopt_hook_identity(payload: dict[str, Any]) -> None:
     import os
 
     sid = str(payload.get("session_id") or payload.get("conversationId") or "")
-    if not sid or os.environ.get("ST_SESSION_ID"):
+    st_sid = os.environ.get("ST_SESSION_ID") or ""
+    if not sid or (st_sid and not st_sid.startswith(leases.ROOT_HANDLE_PREFIX)):
         return
     provider = coord_lineage.harness()[1]
     if provider is None:

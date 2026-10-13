@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from contextlib import suppress
 from itertools import combinations
 
 from app.services._ownership_roles import is_read_only_owner
@@ -112,6 +113,7 @@ def render_overlap_list(client: STClient, project_id: str | None) -> None:
         output_json({"overlaps": rows, "total": len(rows)})
         return
 
+    owners = _overlap_coordinators(client, rows)
     print(f"OVERLAPS[{len(rows)}]")
     for row in rows:
         parts = [
@@ -124,4 +126,27 @@ def render_overlap_list(client: STClient, project_id: str | None) -> None:
         paths = row.get("paths")
         if isinstance(paths, list) and paths:
             parts.append(f"paths={','.join(str(path) for path in paths[:3])}")
+        for side in ("left_id", "right_id"):
+            if line := owners.get(str(row.get(side) or "")):
+                parts.append(f"{str(row.get(side))[:8]} {line}; raise conflicts there")
         print("OVR " + " | ".join(parts))
+
+
+def _overlap_coordinators(client: STClient, rows: list[dict[str, object]]) -> dict[str, str]:
+    """`belongs to <coordinator>` per overlapping session id, from Tether lineage (best effort)."""
+    from ..lib import coordinators
+
+    ids = {str(row.get(side) or "") for row in rows for side in ("left_id", "right_id")}
+    found: dict[str, str] = {}
+    for project_id in {str(row.get("project_id") or "") for row in rows}:
+        try:
+            sessions = client.list_sessions(status="active", limit=100, page=1, project_id=project_id)
+        except APIError:
+            continue
+        for session in sessions:
+            session_id = str(session.get("id") or "")
+            if session_id in ids:
+                with suppress(Exception):
+                    if line := coordinators.belongs_to(coordinators.widget_for_session(session)):
+                        found[session_id] = line
+    return found

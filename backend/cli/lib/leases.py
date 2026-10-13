@@ -84,8 +84,13 @@ def _process_alive(pid: int | None, start: str | None) -> bool:
 _UUID7 = re.compile(r"[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[0-9a-f]{4}-[0-9a-f]{12}", re.IGNORECASE)
 
 
+# Tether sets ST_SESSION_ID=aico-root-<uuid> on every root it launches: a fleet handle, not an agent identity.
+ROOT_HANDLE_PREFIX = "aico-root-"
+
+
 def short_id(sid: str) -> str:
     """Six distinguishing chars: a UUIDv7 (Codex, Pi) starts with a timestamp shared for hours, so use its random tail."""
+    sid = sid.removeprefix(ROOT_HANDLE_PREFIX)
     return sid[-6:] if _UUID7.fullmatch(sid) else sid[:6]
 
 
@@ -105,7 +110,8 @@ def identify_agent(*, native: bool = True) -> tuple[str, str, str, str]:
 
     short = short_id if native else (lambda sid: sid[:6])
     st_sid = session("ST_SESSION_ID")
-    if st_sid:
+    # Every Tether root carries a root handle; its harness's own session id is the agent.
+    if st_sid and not (native and st_sid.startswith(ROOT_HANDLE_PREFIX)):
         return f"st:{short(st_sid)}", "st", st_sid, "st"
     # A harness started from another harness's shell inherits that one's session
     # variable; the enclosing harness process decides which variable is ours.
@@ -141,6 +147,8 @@ def identify_agent(*, native: bool = True) -> tuple[str, str, str, str]:
     agy_sid = session("ANTIGRAVITY_CONVERSATION_ID")
     if agy_sid:
         return f"agy:{short(agy_sid)}", "antigravity", agy_sid, "antigravity"
+    if st_sid:
+        return f"st:{short(st_sid)}", "st", st_sid, "st"
     pane = os.environ.get("TMUX_PANE")
     if pane:
         return f"tmux:{pane.lstrip('%')}", "tmux", pane, "unknown"
