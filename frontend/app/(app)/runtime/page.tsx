@@ -3,7 +3,7 @@
 import { useQuery } from '@tanstack/react-query'
 import { Boxes } from 'lucide-react'
 import { motion } from 'motion/react'
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { SystemHealthWidget } from '@/components/dashboard/SystemHealthWidget'
 import { BrowserSessions } from '@/components/runtime/BrowserSessions'
 import { GpuStatusCard } from '@/components/runtime/GpuStatusCard'
@@ -22,6 +22,11 @@ export default function RuntimePage() {
   const [tab, setTab] = useState<
     'services' | 'monitor' | 'dependencies' | 'browsers'
   >('services')
+  // A browser hand-off link (Nightshift push) opens the Browser sessions tab.
+  useEffect(() => {
+    if (new URLSearchParams(window.location.search).has('browser'))
+      setTab('browsers')
+  }, [])
   const {
     data: health,
     isLoading: healthLoading,

@@ -25,6 +25,7 @@ from app.services.browser_targets import (
 )
 
 from ..details import current_root, summary_hint
+from ..lib import browser_agent_sessions as agent_sessions
 from ..lib import browser_policy, browser_support
 from ..lib.usage import usage
 from ..output import output_error
@@ -194,23 +195,41 @@ def _select_default_target(target: str, explicit: bool, command: str | None, arg
         return "local-ai"  # Malformed session options keep the local validation path.
     if _proxmox_reachable():
         return target
+    try:
+        managed = bool(_AUTO_MANAGED["session"] or browser_policy.managed_session_name(args))
+    except ValueError:
+        managed = False
+    if managed:
+        output_error("BROWSER_VM_UNREACHABLE: managed browser sessions run on the Proxmox VM and it is not answering. "
+                     "Check `st vm status 100` and retry; use --local-ai only if the owner asks for the local browser.")
+        raise typer.Exit(69)
+    agent_sessions.record_local_fallback(command, "vm-unreachable")
     print("[st] Proxmox browser VM unreachable; using the local browser (pass --proxmox to require the VM)",
           file=sys.stderr, flush=True)
     return "local-ai"
 
 
-def _managed_vm_endpoint(name: str) -> dict[str, object] | None:
-    """CDP endpoint of managed session NAME's own Chrome on the VM, or None to run locally."""
+def _reclaim_vm_session(name: str) -> str | None:
+    closed = agent_sessions.reclaim_one(name)
+    if closed:
+        print(f"[st] Browser VM at its session limit; closed idle session {closed} (profile kept)", file=sys.stderr, flush=True)
+    return closed
+
+
+def _managed_vm_endpoint(name: str) -> dict[str, object]:
+    """CDP endpoint of managed session NAME's own Chrome on the VM; managed sessions never fall back locally."""
     try:
         host = _resolve_endpoint().host
     except BrowserTargetError:
         host = ""
-    port = browser_support.vm_session_port(host, name, _browser_target_env()) if host else None
+    port = (browser_support.vm_session_port(host, name, _browser_target_env(), reclaim=lambda: _reclaim_vm_session(name))
+            if host else None)
     ws = _cdp_ws(port, host=host) if port else None
     if not ws:
-        print(f"[st] Browser VM session pool unavailable; managed session {name} uses the local browser "
-              "(pass --local-ai to choose this explicitly)", file=sys.stderr, flush=True)
-        return None
+        output_error(f"BROWSER_VM_SESSION_UNAVAILABLE session={name}: its VM Chrome did not start (VM unreachable, or all "
+                     "sessions busy at the VM limit). Retry shortly; `st browser session list --all` shows what runs. "
+                     "Use --local-ai only if the owner asks for the local browser.")
+        raise typer.Exit(69)
     return {"host": host, "port": port, "ws": ws, "source": "proxmox-session", "debug_local": False}
 
 
@@ -752,13 +771,11 @@ def _build_structured_request(
             if target == "selected-tab" and (session or operation not in {"observe", "run", "extract"}):
                 raise ValueError("Selected tabs support observe/run/extract and core actions; no session switching or workflows")
             managed_session = (browser_policy.managed_session_name(session)
-                               if target == "local-ai" or (target == "proxmox" and not explicit_target) else None)
+                               if target == "local-ai" or (target == "proxmox" and _managed_routing(explicit_target)) else None)
             if operation == "workflow" and not managed_session:
                 raise ValueError("workflow requires an explicit managed --session NAME; create it with `st browser session create NAME`")
             if managed_session and target == "proxmox":
                 managed_endpoint = _managed_vm_endpoint(managed_session)
-                if managed_endpoint is None:
-                    target = "local-ai"
             scoped = ["--session", f"sel-{selected_tab}"] if target == "selected-tab" else (session if managed_session else _with_local_ai_session(session)) if target == "local-ai" else (
                 session or ["--session", os.environ.get("AGENT_BROWSER_SESSION", "").strip() or _default_browser_session()]
             )
@@ -877,7 +894,7 @@ def _build_request(argv: list[str], context: dict[str, Any]) -> tuple[dict[str, 
     check = None
     managed_session = None
     managed_endpoint: dict[str, object] | None = None
-    if target == "proxmox" and not explicit_target and operation == "agent":
+    if target == "proxmox" and _managed_routing(explicit_target) and operation == "agent":
         try:
             managed_session = browser_policy.managed_session_name(browser_args)
         except ValueError as exc:
@@ -885,8 +902,6 @@ def _build_request(argv: list[str], context: dict[str, Any]) -> tuple[dict[str, 
             raise typer.Exit(2) from None
         if managed_session:
             managed_endpoint = _managed_vm_endpoint(managed_session)
-            if managed_endpoint is None:
-                target, managed_session = "local-ai", None
     if operation == "check":
         index = browser_policy.command_index(browser_args)
         assert index is not None
@@ -965,11 +980,207 @@ def _build_request(argv: list[str], context: dict[str, Any]) -> tuple[dict[str, 
     return request, target == "local-ai" and operation in {"agent", "check"} and not managed_session
 
 
+# Set for one invocation when an agent's command runs in its own (or a claimed
+# shared) managed session; explicit --proxmox then still routes to that session.
+_AUTO_MANAGED: dict[str, str | None] = {"session": None}
+# Commands that never select a browser session for the agent.
+_NO_AGENT_SESSION = (_HOST_COMMANDS - {"workflow"}) | {"capabilities", "help", "selected-tabs"}
+_SESSION_NAME_ACTIONS = {"status", "pause", "resume", "close", "view", "lease", "wait"}
+
+
+def _managed_routing(explicit_target: bool) -> bool:
+    return not explicit_target or _AUTO_MANAGED["session"] is not None
+
+
+def _split_shared_profile(argv: list[str]) -> tuple[str | None, list[str]]:
+    profile = os.environ.get(agent_sessions.SHARED_PROFILE_ENV, "").strip() or None
+    remaining: list[str] = []
+    index = 0
+    while index < len(argv):
+        arg = argv[index]
+        if arg == "--shared-profile" or arg.startswith("--shared-profile="):
+            if "=" in arg:
+                profile = arg.split("=", 1)[1]
+            else:
+                index += 1
+                profile = argv[index] if index < len(argv) else ""
+            if not profile or re.fullmatch(r"[A-Za-z0-9_-]+", profile) is None:
+                raise ValueError("--shared-profile requires a name of letters, digits, underscores or hyphens")
+        else:
+            remaining.append(arg)
+        index += 1
+    return profile, remaining
+
+
+def _take_option(args: list[str], option: str, *, optional_value: bool = False) -> tuple[str, list[str]] | None:
+    """Remove OPTION [VALUE] from ARGS; None if absent, ("", args) for a bare optional flag."""
+    for index, arg in enumerate(args):
+        name, separator, value = arg.partition("=")
+        if name != option:
+            continue
+        rest = [*args[:index], *args[index + 1:]]
+        if separator:
+            return value, rest
+        if index + 1 < len(args) and not args[index + 1].startswith("-") and (
+                not optional_value or args[index + 1].isdecimal()):
+            return args[index + 1], [*args[:index], *args[index + 2:]]
+        if optional_value:
+            return "", rest
+        raise ValueError(f"{option} requires a value")
+    return None
+
+
+def _agent_session_extras(argv: list[str], actor: str | None, profile: str | None) -> tuple[int | None, list[str], dict[str, Any]]:
+    """SummitFlow-side session conveniences: default NAME, pause reasons, wait, reap, release."""
+    index = browser_policy.command_index(argv)
+    if index is None or argv[index] != "session" or index + 1 >= len(argv):
+        return None, argv, {}
+    head, action, tail = argv[:index + 1], argv[index + 1], argv[index + 2:]
+    if action == "reap":
+        dry_run = tail == ["--dry-run"]
+        if tail not in ([], ["--dry-run"]):
+            output_error("Usage: st browser session reap [--dry-run]")
+            return 2, argv, {}
+        result = agent_sessions.reap(dry_run=dry_run, vm_orphans=None if dry_run else _stop_vm_orphans)
+        print(json.dumps({"schema_version": 1, **result}, separators=(",", ":")))
+        return 0, argv, {}
+    if action == "release":
+        name = tail[0] if tail else profile
+        holder = actor or ""
+        if not name or len(tail) > 1:
+            output_error("Usage: st browser session release PROFILE")
+            return 2, argv, {}
+        released = agent_sessions.release_profile(name, holder)
+        print(json.dumps({"schema_version": 1, "profile": name, "released": released}, separators=(",", ":")))
+        return 0 if released else 1, argv, {}
+    extras: dict[str, Any] = {"action": action}
+    if action == "pause":
+        reason = _take_option(tail, "--reason")
+        if reason is not None:
+            extras["reason"], tail = reason
+        wait = _take_option(tail, "--wait", optional_value=True)
+        if wait is not None:
+            extras["wait"], tail = int(wait[0] or 1800), wait[1]
+    if action == "wait":
+        timeout = _take_option(tail, "--timeout")
+        extras["wait"], tail = (int(timeout[0]) if timeout else 1800), (timeout[1] if timeout else tail)
+    if action in _SESSION_NAME_ACTIONS and not tail:
+        owner = agent_sessions.profile_actor(profile) if profile else actor
+        if owner is None:
+            output_error(f"st browser session {action} needs NAME outside an agent session")
+            return 2, argv, {}
+        tail = [*tail, profile or agent_sessions.default_session_name(owner)]
+    extras["name"] = next((arg for arg in tail if not arg.startswith("-")), None)
+    if action == "wait":
+        name = extras["name"]
+        if not isinstance(name, str):
+            output_error("Usage: st browser session wait [NAME] [--timeout SECONDS]")
+            return 2, argv, {}
+        code = agent_sessions.wait_for_resume(name, os.environ.get("ST_BROWSER_OWNER", ""), extras["wait"])
+        print(json.dumps({"schema_version": 1, "name": name, "resumed": code == 0,
+                          "outcome": {0: "resumed", 3: "closed", 124: "timeout"}[code]}, separators=(",", ":")))
+        return code, argv, {}
+    return None, [*head, action, *tail], extras
+
+
+def _after_session_action(code: int, extras: dict[str, Any], actor: str | None, profile: str | None) -> int:
+    action, name = extras.get("action"), extras.get("name")
+    if code != 0 or not isinstance(name, str):
+        return code
+    owner = os.environ.get("ST_BROWSER_OWNER", "")
+    if action == "pause":
+        reason = extras.get("reason")
+        agent_sessions.record_pause(name, owner, reason)
+        if reason and not agent_sessions.notify_owner(name, owner, reason):
+            output_error("Owner notification failed; the session stays paused in Runtime > Browser sessions")
+        if "wait" in extras:
+            code = agent_sessions.wait_for_resume(name, owner, extras["wait"])
+            print(json.dumps({"schema_version": 1, "name": name, "resumed": code == 0,
+                              "outcome": {0: "resumed", 3: "closed", 124: "timeout"}[code]}, separators=(",", ":")))
+    elif action in {"resume", "close"}:
+        agent_sessions.clear_pause(name)
+        if action == "close" and profile and actor:
+            agent_sessions.release_profile(profile, actor)
+    return code
+
+
+def _stop_vm_orphans(keep: set[str]) -> list[str]:
+    if not _proxmox_reachable():
+        return []
+    return browser_support.stop_vm_orphans(_resolve_endpoint().host, keep, _browser_target_env())
+
+
+def _agent_default_session(argv: list[str], actor: str, profile: str | None) -> tuple[int | None, list[str]]:
+    """Put an agent's plain VM command into its own session (or its claimed shared profile)."""
+    try:
+        selected_tab, _ = browser_support.selected_tab_options(argv)
+        target, args, _explicit = browser_policy.parse_target_choice(argv)
+        _, browser_args = browser_support.parse_engine_args(args, initial_engine=None)[:2]
+        session, _ = browser_support.split_session_options(browser_args)
+    except ValueError:
+        return None, argv  # Existing validation reports malformed options.
+    command = _agent_command(browser_args)
+    if (selected_tab or session or target != "proxmox" or not command or command in _NO_AGENT_SESSION
+            or focused_help_requested(argv) or browser_policy.default_target_needs_local(command, browser_args)):
+        return None, argv
+    if profile:
+        if conflict := agent_sessions.claim_profile(profile, actor):
+            output_error(conflict)
+            return 75, argv
+        if profile == agent_sessions.LEGACY_SHARED:
+            return None, argv  # The legacy shared VM Chrome, now behind the claim.
+        owner, name = agent_sessions.profile_actor(profile), profile
+    else:
+        owner, name = actor, agent_sessions.default_session_name(actor)
+    os.environ["ST_BROWSER_OWNER"] = owner
+    if problem := agent_sessions.ensure_session(name, owner):
+        output_error(problem)
+        return 75, argv
+    _AUTO_MANAGED["session"] = name
+    stripped = [arg for index, arg in enumerate(argv)
+                if arg != browser_policy.PROXMOX_FLAG and not (index == 0 and arg == browser_policy.PROXMOX_COMMAND)]
+    return None, ["--session", name, *stripped]
+
+
 def run_registered(record: Any, argv: list[str], context: dict[str, Any]) -> int:
-    """Apply core policy, then execute one opaque owner request within the local lock."""
+    """Apply agent session defaults, then core policy, then one opaque owner request."""
     if not argv or argv[0] in {"--help", "-h"} or argv == ["help"]:
         print(_USAGE)
         return 0
+    try:
+        profile, argv = _split_shared_profile(argv)
+    except ValueError as exc:
+        output_error(str(exc))
+        return 2
+    actor = agent_sessions.agent_identity()
+    if actor and not os.environ.get("ST_BROWSER_OWNER", "").strip():
+        os.environ["ST_BROWSER_OWNER"] = actor  # The owner reads only ST_BROWSER_OWNER/ST_AGENT_ID/CODEX_THREAD_ID.
+    if profile and not actor:
+        output_error("--shared-profile needs an agent identity (ST_BROWSER_OWNER or the agent's session id)")
+        return 2
+    if profile and profile != agent_sessions.LEGACY_SHARED and (index := browser_policy.command_index(argv)) is not None \
+            and argv[index] == "session":
+        os.environ["ST_BROWSER_OWNER"] = agent_sessions.profile_actor(profile)
+    try:
+        early, argv, extras = _agent_session_extras(argv, actor, profile)
+    except ValueError as exc:
+        output_error(str(exc))
+        return 2
+    if early is not None:
+        return early
+    _AUTO_MANAGED["session"] = None
+    try:
+        if actor and not extras:
+            early, argv = _agent_default_session(argv, actor, profile)
+            if early is not None:
+                return early
+        code = _run_registered(record, argv, context)
+    finally:
+        _AUTO_MANAGED["session"] = None
+    return _after_session_action(code, extras, actor, profile) if extras else code
+
+
+def _run_registered(record: Any, argv: list[str], context: dict[str, Any]) -> int:
     try:
         selected_tab, parsed_argv = browser_support.selected_tab_options(argv)
     except ValueError as exc:
@@ -1030,11 +1241,26 @@ def run_registered(record: Any, argv: list[str], context: dict[str, Any]) -> int
 
 _USAGE = """Remote browser automation through st
 
+Agents (Claude Code, Codex, any TUI):
+  Plain `st browser <command>` runs in your own browser session on the Proxmox VM
+  (own Chrome and persistent profile, named <project>-<id>, shown in Runtime >
+  Browser sessions). Never use Claude-in-Chrome or local Chrome unless the owner
+  explicitly asks or the VM is down; "use the open Chrome" means st browser.
+  Login, 2FA or captcha: st browser session pause --reason "login needed: <site>" --wait
+  (pushes the owner a link to the live view; returns when they click Resume).
+  Shared logged-in profile: --shared-profile NAME (one agent at a time; `shared` is
+  the legacy VM Chrome). Release with st browser session release NAME.
+  Close when done: st browser session close. Idle (20 min), ended-agent and
+  long-paused (2 h) sessions are closed automatically; profiles are kept.
+  Parallel subagents: give each its own --session NAME.
+
 Default target:
-  Commands use the Proxmox browser VM; if its CDP does not answer within 2s they
-  fall back to local system Chrome profile AI and say so on stderr.
+  Commands use the Proxmox browser VM. Managed (and agent) sessions fail with
+  BROWSER_VM_UNREACHABLE when it is down; other commands fall back to local Chrome
+  profile AI after 2s, say so on stderr and record it for Nightshift.
   Managed sessions (--session NAME, workflows) each get their own VM Chrome and
-  persistent VM profile; their lock, owner and pause state stay on this workstation.
+  persistent VM profile (at most 6 run at once; the least recently used idle one is
+  closed to make room); lock, owner and pause state stay on this workstation.
   Session lifecycle, inventory and loopback URLs stay local.
   Force a target with --proxmox / --local-ai or ST_BROWSER_TARGET; explicit
   --proxmox --session NAME is a plain session in the shared VM Chrome.
@@ -1052,7 +1278,8 @@ Supported workflows:
   st browser step <core-command> [args...]
   st browser extract --file fields.json
   st browser session create NAME | list [--all] | status NAME
-  st browser session pause NAME | resume NAME | close NAME
+  st browser session pause [NAME] [--reason TEXT] [--wait [SECONDS]] | resume [NAME] | close [NAME]
+  st browser session wait [NAME] [--timeout SECONDS] | release PROFILE | reap [--dry-run]
   st browser session view NAME | lease NAME  (paused live view; lease lasts until stdin EOF)
   st browser session maintenance [--idle-ms MS] [--apply]
   st browser selected-tabs list | capabilities | revoke HANDLE
@@ -1124,6 +1351,8 @@ _HELP = _USAGE
     surface="st.browser", cmd="st browser check <url> <png>",
     when="UI render verification; screenshots; DOM snapshots",
     precautions=(
+        "agents: plain st browser runs in your own VM session; never Claude-in-Chrome/local Chrome unless the owner asks or the VM is down",
+        "login/2FA: st browser session pause --reason 'login needed: <site>' --wait; close your session when done",
         "local checks use isolated headless sessions; interactive commands share the Chrome AI profile",
         "--proxmox or ST_BROWSER_TARGET=proxmox when VM isolation is better",
         "st ui when the open desktop/PWA is the evidence source",

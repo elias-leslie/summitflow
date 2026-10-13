@@ -29,3 +29,12 @@ def isolated_extension_processes(monkeypatch, tmp_path):
         pytest.fail("CLI test attempted to launch an installed extension; mock dispatch or use an isolated fixture")
 
     monkeypatch.setattr(extensions, "_run_process", fixture_only)
+
+
+@pytest.fixture(autouse=True)
+def no_ambient_browser_agent(monkeypatch):
+    """The agent running the suite must not turn browser cases into its own VM session."""
+    from cli.lib.browser_agent_sessions import IDENTITY_ENV, SHARED_PROFILE_ENV
+
+    for key in (*IDENTITY_ENV, SHARED_PROFILE_ENV):
+        monkeypatch.delenv(key, raising=False)

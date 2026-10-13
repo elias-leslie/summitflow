@@ -64,7 +64,7 @@ def test_inventory_is_private_and_excludes_paths_and_stream_authority(monkeypatc
         response = connection.get("/api/browser-sessions")
     assert response.status_code == 200
     assert response.headers["cache-control"] == "no-store"
-    assert response.json()["sessions"] == [{**session(), "location": None}]
+    assert response.json()["sessions"] == [{**session(), "location": None, "pause_reason": None}]
 
 
 @pytest.mark.parametrize(("runtime", "location"), [

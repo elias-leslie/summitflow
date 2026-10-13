@@ -11,6 +11,7 @@ import {
   useState,
 } from 'react'
 import { Button } from '@/components/ui/button'
+import { Input } from '@/components/ui/input'
 import {
   type BrowserRuntimeLocation,
   type BrowserSession,
@@ -85,6 +86,7 @@ const LiveBrowser = forwardRef<LiveBrowserHandle, { session: BrowserSession }>(
       'connecting' | 'live' | 'disconnecting' | 'ended'
     >('connecting')
     const [page, setPage] = useState({ url: '', title: '', target: '' })
+    const [text, setText] = useState('')
     useEffect(() => {
       const ws = new WebSocket(browserStreamUrl(session))
       socket.current = ws
@@ -185,6 +187,22 @@ const LiveBrowser = forwardRef<LiveBrowserHandle, { session: BrowserSession }>(
       if (state === 'live' && socket.current?.readyState === WebSocket.OPEN)
         socket.current.send(JSON.stringify(event))
     }
+    // Phones and password managers: type into the field focused in the page.
+    function typeText(enter: boolean) {
+      for (const char of text)
+        send({ type: 'input_keyboard', eventType: 'char', text: char })
+      if (enter) {
+        const key = { key: 'Enter', code: 'Enter', windowsVirtualKeyCode: 13 }
+        send({
+          type: 'input_keyboard',
+          eventType: 'keyDown',
+          text: '\r',
+          ...key,
+        })
+        send({ type: 'input_keyboard', eventType: 'keyUp', ...key })
+      }
+      setText('')
+    }
     function mouse(event: MouseEvent<HTMLCanvasElement>, eventType: string) {
       event.preventDefault()
       if (eventType === 'mousePressed') event.currentTarget.focus()
@@ -213,6 +231,9 @@ const LiveBrowser = forwardRef<LiveBrowserHandle, { session: BrowserSession }>(
       eventType: string,
     ) {
       if (event.nativeEvent.isComposing) return
+      // Ctrl/Cmd+V must keep its default so the paste event below fires.
+      if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'v')
+        return
       if (event.key === 'Escape' && event.shiftKey) {
         event.preventDefault()
         event.currentTarget.blur()
@@ -292,6 +313,35 @@ const LiveBrowser = forwardRef<LiveBrowserHandle, { session: BrowserSession }>(
             })
           }}
         />
+        <form
+          className={`flex flex-wrap items-center gap-2 ${state === 'ended' ? 'hidden' : ''}`}
+          onSubmit={(event) => {
+            event.preventDefault()
+            typeText(false)
+          }}
+        >
+          <Input
+            type="password"
+            autoComplete="off"
+            aria-label="Text to type into the focused page field"
+            placeholder="Tap a field in the page, then type or paste here"
+            value={text}
+            disabled={state !== 'live'}
+            onChange={(event) => setText(event.target.value)}
+            className="min-w-0 flex-1 basis-56"
+          />
+          <Button size="sm" type="submit" disabled={state !== 'live' || !text}>
+            Send
+          </Button>
+          <Button
+            size="sm"
+            type="button"
+            disabled={state !== 'live' || !text}
+            onClick={() => typeText(true)}
+          >
+            Send and press Enter
+          </Button>
+        </form>
       </div>
     )
   },
@@ -317,6 +367,35 @@ export function BrowserSessions() {
     (session) =>
       session.name === selection?.name && session.actor === selection.actor,
   )
+  // Closed sessions keep their profiles but pile up; list them on request.
+  const [showClosed, setShowClosed] = useState(false)
+  const isClosed = (session: BrowserSession) =>
+    session.state === 'closed' || session.state === 'revoked'
+  const closedCount = inventory.data?.filter(isClosed).length ?? 0
+  const listed = (inventory.data ?? [])
+    .filter(
+      (session) => showClosed || !isClosed(session) || session === selected,
+    )
+    .sort((a, b) => Number(b.paused) - Number(a.paused))
+  // A hand-off link (?browser=NAME&actor=ID) selects the session and opens its
+  // live view once it is paused.
+  const detail = useRef<HTMLDivElement>(null)
+  const [linked, setLinked] = useState(false)
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search)
+    const name = params.get('browser')
+    const actor = params.get('actor')
+    if (name && actor) {
+      setSelection({ name, actor })
+      setLinked(true)
+    }
+  }, [])
+  useEffect(() => {
+    if (!linked || !selected) return
+    setLinked(false)
+    if (selected.paused) setView(true)
+    detail.current?.scrollIntoView?.({ block: 'start' })
+  }, [linked, selected])
   const unavailable =
     !selected || selected.state === 'closed' || selected.state === 'revoked'
   const change = useMutation({
@@ -391,14 +470,13 @@ export function BrowserSessions() {
           Browser sessions are unavailable. {inventory.error.message}
         </p>
       )}
-      {inventory.data?.length === 0 && (
+      {inventory.data && listed.length === 0 && (
         <p className="rounded-lg border border-slate-700 p-4 text-sm text-slate-400">
-          No managed browser sessions. Create a named session through ST to see
-          it here.
+          No open browser sessions. Agent browser commands create one per agent.
         </p>
       )}
       <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-3">
-        {inventory.data?.map((session) => (
+        {listed.map((session) => (
           <button
             key={`${session.name}:${session.actor}`}
             type="button"
@@ -427,6 +505,11 @@ export function BrowserSessions() {
                   : 'Automation enabled'}{' '}
               · {session.runtime_state || 'Runtime unknown'}
             </span>
+            {session.paused && session.pause_reason && (
+              <span className="mt-1 block break-words text-xs text-amber-300">
+                Waiting for you: {session.pause_reason}
+              </span>
+            )}
             {session.location !== null && (
               <span className="mt-1 block text-xs text-slate-400">
                 {browserLocationLabel(session.location)}
@@ -440,8 +523,23 @@ export function BrowserSessions() {
           </button>
         ))}
       </div>
+      {closedCount > 0 && (
+        <Button
+          size="sm"
+          variant="ghost"
+          aria-expanded={showClosed}
+          onClick={() => setShowClosed((current) => !current)}
+        >
+          {showClosed
+            ? 'Hide closed sessions'
+            : `Show closed sessions (${closedCount})`}
+        </Button>
+      )}
       {selection && (
-        <div className="space-y-3 rounded-lg border border-slate-700 bg-slate-900 p-4">
+        <div
+          ref={detail}
+          className="scroll-mt-4 space-y-3 rounded-lg border border-slate-700 bg-slate-900 p-4"
+        >
           <h3 className="break-all font-medium text-slate-200">
             {selection.name}
           </h3>
@@ -462,6 +560,11 @@ export function BrowserSessions() {
                   ? 'Paused for human input.'
                   : 'Automation can use this session.'}
               </p>
+              {selected.paused && selected.pause_reason && (
+                <p className="break-words text-sm text-amber-300">
+                  Agent is waiting for you: {selected.pause_reason}
+                </p>
+              )}
               <div className="flex flex-wrap gap-2">
                 <Button
                   size="sm"

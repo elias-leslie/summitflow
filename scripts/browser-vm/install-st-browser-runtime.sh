@@ -16,9 +16,10 @@ mkdir -p "$BROWSER_ROOT/bin" "$CONFIG_DIR" "$UNIT_DIR"
 
 sudo loginctl enable-linger "$USER" >/dev/null 2>&1 || true
 
-if ! command -v socat >/dev/null 2>&1; then
+# @puppeteer/browsers needs unzip to extract Chrome for Testing.
+if ! command -v socat >/dev/null 2>&1 || ! command -v unzip >/dev/null 2>&1; then
   sudo DEBIAN_FRONTEND=noninteractive apt-get update -qq
-  sudo DEBIAN_FRONTEND=noninteractive apt-get install -y -qq socat ca-certificates
+  sudo DEBIAN_FRONTEND=noninteractive apt-get install -y -qq socat unzip ca-certificates
 fi
 
 cd "$BROWSER_ROOT"
@@ -44,18 +45,31 @@ After=network-online.target
 
 [Service]
 Type=simple
+Slice=st-browser.slice
 EnvironmentFile=-$ENV_FILE
 ExecStart=$WRAPPER_DST
 Restart=always
 RestartSec=2
+KillMode=mixed
+TimeoutStopSec=20
 
 [Install]
 WantedBy=default.target
 EOF
 
+# All browser Chromes share one memory budget, so piled-up sessions cannot take
+# the whole VM (and with it the PVE host's spare memory).
+cat >"$UNIT_DIR/st-browser.slice" <<EOF
+[Unit]
+Description=ST Browser Chromes
+
+[Slice]
+MemoryMax=11G
+EOF
+
 # Managed sessions: one Chrome per session (st-browser-session ensure KEY), each
-# with its own profile and CDP port from 9300-9339. The session env file
-# overrides the shared chrome.env ports and profile.
+# with its own profile and CDP port from 9300-9339, at most ST_BROWSER_SESSION_MAX
+# (6) at once. The session env file overrides the shared chrome.env ports and profile.
 cat >"$UNIT_DIR/st-browser-session@.service" <<EOF
 [Unit]
 Description=ST Browser managed session %i
@@ -63,11 +77,15 @@ After=network-online.target
 
 [Service]
 Type=simple
+Slice=st-browser.slice
 EnvironmentFile=-$ENV_FILE
 EnvironmentFile=$CONFIG_DIR/sessions/%i.env
 ExecStart=$WRAPPER_DST
 Restart=on-failure
 RestartSec=2
+KillMode=mixed
+TimeoutStopSec=20
+MemoryMax=2G
 EOF
 
 cat >"$UNIT_DIR/st-browser-session-gc.service" <<EOF

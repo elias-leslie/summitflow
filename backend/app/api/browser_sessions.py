@@ -21,6 +21,8 @@ from starlette.websockets import WebSocketDisconnect
 from websockets.asyncio.client import connect
 from websockets.exceptions import WebSocketException
 
+from cli.lib import browser_agent_sessions as agent_sessions
+
 from ..access_control import AccessPrincipal, resolve_principal
 from ..utils.safe_subprocess import PipeProcess, run_async, spawn_duplex
 from .backups.key_endpoints import _require_same_origin
@@ -93,6 +95,8 @@ def _public_session(value: dict[str, Any]) -> dict[str, Any]:
         "name", "actor", "state", "paused", "runtime_state", "last_used_ms",
     )}
     public["location"] = _location(value.get("runtime"))
+    # The agent's reason for handing over ("login needed: <site>"), shown to the owner only.
+    public["pause_reason"] = agent_sessions.pause_reason(value["name"]) if value.get("paused") else None
     return public
 
 

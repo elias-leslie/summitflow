@@ -48,12 +48,40 @@ fi
 chrome_pid=""
 proxy_pid=""
 
+# CDP Browser.close writes cookies and logins to the profile; SIGTERM alone
+# loses whatever changed in the last ~30 s. Stdlib only: one websocket frame.
+close_chrome() {
+  python3 - "$CHROME_DEBUG_PORT" <<'PY' >/dev/null 2>&1 || true
+import base64, json, os, socket, sys, urllib.request
+port = int(sys.argv[1])
+url = json.load(urllib.request.urlopen(f"http://127.0.0.1:{port}/json/version", timeout=2))["webSocketDebuggerUrl"]
+path = url.split(f":{port}", 1)[1]
+conn = socket.create_connection(("127.0.0.1", port), timeout=5)
+key = base64.b64encode(os.urandom(16)).decode()
+conn.sendall(f"GET {path} HTTP/1.1\r\nHost: 127.0.0.1:{port}\r\nUpgrade: websocket\r\nConnection: Upgrade\r\n"
+             f"Sec-WebSocket-Key: {key}\r\nSec-WebSocket-Version: 13\r\n\r\n".encode())
+if b" 101 " not in conn.recv(4096).split(b"\r\n", 1)[0]:
+    sys.exit(1)
+payload, mask = json.dumps({"id": 1, "method": "Browser.close"}).encode(), os.urandom(4)
+conn.sendall(bytes([0x81, 0x80 | len(payload)]) + mask + bytes(b ^ mask[i % 4] for i, b in enumerate(payload)))
+conn.recv(4096)
+PY
+}
+
 cleanup() {
   if [[ -n "$proxy_pid" ]]; then
     kill "$proxy_pid" 2>/dev/null || true
   fi
   if [[ -n "$chrome_pid" ]]; then
-    kill "$chrome_pid" 2>/dev/null || true
+    kill -0 "$chrome_pid" 2>/dev/null && close_chrome
+    # The units use KillMode=mixed, so Chrome's helpers are not signalled while
+    # it finishes; fall back to SIGTERM if Browser.close did not end it.
+    for i in $(seq 1 60); do
+      kill -0 "$chrome_pid" 2>/dev/null || break
+      ((i == 20)) && kill "$chrome_pid" 2>/dev/null
+      sleep 0.25
+    done
+    chrome_pid=""
   fi
 }
 trap cleanup EXIT INT TERM

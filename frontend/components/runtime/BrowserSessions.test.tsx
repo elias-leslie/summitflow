@@ -30,6 +30,7 @@ const first: BrowserSession = {
   runtime_state: 'running',
   last_used_ms: null,
   location: 'proxmox',
+  pause_reason: null,
 }
 const second: BrowserSession = {
   ...first,
@@ -172,7 +173,7 @@ describe('Runtime managed browser sessions', () => {
   it('makes empty and failed inventories visible', async () => {
     vi.mocked(browserSessionsApi.list).mockResolvedValue([])
     const result = mount()
-    await screen.findByText(/No managed browser sessions/)
+    await screen.findByText(/No open browser sessions/)
     result.unmount()
     vi.mocked(browserSessionsApi.list).mockRejectedValue(
       new Error('Owner unavailable'),
@@ -235,9 +236,11 @@ describe('native browser controls', () => {
       { ...second, state: 'closed', paused: false },
     ])
     mount()
+    // Closed sessions are listed only on request.
     fireEvent.click(
-      await screen.findByRole('button', { name: /agent-two Owner/ }),
+      await screen.findByRole('button', { name: 'Show closed sessions (1)' }),
     )
+    fireEvent.click(screen.getByRole('button', { name: /agent-two Owner/ }))
     expect(screen.getByText(/This session is closed/)).toBeVisible()
     expect(screen.queryByRole('button', { name: 'Open live view' })).toBeNull()
   })
@@ -296,6 +299,97 @@ describe('native browser controls', () => {
     expect(screen.getByText(/Live view ended/)).toBeVisible()
     fireEvent.keyDown(canvas, { key: 'x', code: 'KeyX' })
     expect(socket.send).toHaveBeenCalledTimes(2)
+  })
+})
+
+describe('owner hand-off', () => {
+  function liveFrame(socket: Socket) {
+    act(() =>
+      socket.onmessage?.(
+        new MessageEvent('message', {
+          data: JSON.stringify({
+            type: 'frame',
+            seq: 1,
+            data: 'AA==',
+            metadata: { deviceWidth: 100, deviceHeight: 50 },
+          }),
+        }),
+      ),
+    )
+  }
+  function stubLiveView() {
+    vi.stubGlobal('WebSocket', Socket)
+    vi.stubGlobal(
+      'Image',
+      class {
+        onload: (() => void) | null = null
+        set src(_value: string) {
+          this.onload?.()
+        }
+      },
+    )
+    vi.spyOn(HTMLCanvasElement.prototype, 'getContext').mockReturnValue({
+      drawImage: vi.fn(),
+      clearRect: vi.fn(),
+    } as unknown as CanvasRenderingContext2D)
+  }
+
+  it('opens the linked paused session with its reason, then types and pastes text', async () => {
+    window.history.replaceState(
+      null,
+      '',
+      '/runtime?browser=agent-two&actor=agent%3Asecond',
+    )
+    vi.mocked(browserSessionsApi.list).mockResolvedValue([
+      first,
+      { ...second, pause_reason: 'login needed: example.com' },
+    ])
+    stubLiveView()
+    mount()
+    expect(
+      await screen.findByText(
+        'Agent is waiting for you: login needed: example.com',
+      ),
+    ).toBeVisible()
+    await waitFor(() => expect(Socket.instances).toHaveLength(1))
+    const socket = Socket.instances[0]
+    liveFrame(socket)
+    const field = screen.getByLabelText(
+      'Text to type into the focused page field',
+    )
+    fireEvent.change(field, { target: { value: 'a!' } })
+    fireEvent.click(
+      screen.getByRole('button', { name: 'Send and press Enter' }),
+    )
+    const sent = socket.send.mock.calls.map(([raw]) =>
+      JSON.parse(raw as string),
+    )
+    expect(sent.filter((event) => event.type === 'input_keyboard')).toEqual([
+      { type: 'input_keyboard', eventType: 'char', text: 'a' },
+      { type: 'input_keyboard', eventType: 'char', text: '!' },
+      {
+        type: 'input_keyboard',
+        eventType: 'keyDown',
+        text: '\r',
+        key: 'Enter',
+        code: 'Enter',
+        windowsVirtualKeyCode: 13,
+      },
+      {
+        type: 'input_keyboard',
+        eventType: 'keyUp',
+        key: 'Enter',
+        code: 'Enter',
+        windowsVirtualKeyCode: 13,
+      },
+    ])
+    expect(field).toHaveValue('')
+    // Ctrl+V keeps its default so the browser raises the paste event.
+    const canvas = screen.getByLabelText('Live page for agent-two')
+    expect(
+      fireEvent.keyDown(canvas, { key: 'v', code: 'KeyV', ctrlKey: true }),
+    ).toBe(true)
+    window.history.replaceState(null, '', '/')
   })
 })
 

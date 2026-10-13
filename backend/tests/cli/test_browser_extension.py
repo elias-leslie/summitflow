@@ -14,9 +14,12 @@ from cli.commands import browser
 
 
 @pytest.fixture(autouse=True)
-def _local_policy_target(monkeypatch: pytest.MonkeyPatch) -> None:
+def _local_policy_target(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
     """These cases cover local workstation policy; default routing has its own tests."""
     monkeypatch.setenv("ST_BROWSER_TARGET", "local-ai")
+    monkeypatch.setenv("XDG_STATE_HOME", str(tmp_path / "state"))
+    for key in browser.agent_sessions.IDENTITY_ENV:
+        monkeypatch.delenv(key, raising=False)
 
 
 def _context(tmp_path: Path) -> dict[str, object]:
@@ -918,6 +921,7 @@ def test_vm_url_uses_public_project_url_for_loopback_frontend(monkeypatch, capsy
     assert capsys.readouterr().out.startswith("http://localhost:3001/")
 
 
+_REAL_MANAGED_VM_ENDPOINT = browser._managed_vm_endpoint
 _SESSION_VM = {"host": "192.0.2.10", "port": 9301, "ws": "ws://192.0.2.10:9301/devtools/browser/s",
                "source": "proxmox-session", "debug_local": False}
 
@@ -953,11 +957,15 @@ def test_default_managed_workflow_runs_on_the_vm_with_guarded_navigation(tmp_pat
     assert (request["target"], request["endpoint"], request["launch"]["managed_session"]) == ("proxmox", _SESSION_VM, "research")
 
 
-def test_unavailable_vm_session_pool_falls_back_to_the_local_managed_session(tmp_path, vm_default, monkeypatch) -> None:
-    monkeypatch.setattr(browser, "_managed_vm_endpoint", lambda name: None)
-    assert browser.run_registered(_v2_record(), ["--session", "research", "snapshot"], _context(tmp_path)) == 7
-    request = vm_default[0]
-    assert (request["target"], request["endpoint"], request["launch"]["managed_session"]) == ("local-ai", None, "research")
+def test_unavailable_vm_session_pool_fails_loudly_instead_of_running_locally(tmp_path, vm_default, monkeypatch, capsys) -> None:
+    monkeypatch.setattr(browser, "_resolve_endpoint", lambda engine=None: SimpleNamespace(host="192.0.2.10"))
+    monkeypatch.setattr(browser.browser_support, "vm_session_port", lambda *a, **kw: None)
+    monkeypatch.setattr(browser, "_managed_vm_endpoint", _REAL_MANAGED_VM_ENDPOINT)
+    with pytest.raises(typer.Exit) as exc:
+        browser.run_registered(_v2_record(), ["--session", "research", "snapshot"], _context(tmp_path))
+    assert exc.value.exit_code == 69
+    assert not vm_default
+    assert "BROWSER_VM_SESSION_UNAVAILABLE session=research" in capsys.readouterr().err
 
 
 def test_explicit_proxmox_session_stays_a_plain_shared_vm_session(tmp_path, vm_default, monkeypatch) -> None:

@@ -331,7 +331,8 @@ def _vm_session(host: str, *args: str, values: Mapping[str, str], timeout: float
         )
     except (OSError, subprocess.SubprocessError):
         return []
-    if result.returncode != 0:
+    # Exit 3 carries a {"error":"capacity"} row; other failures carry nothing usable.
+    if result.returncode not in {0, 3}:
         return []
     rows = []
     for line in result.stdout.splitlines():
@@ -348,8 +349,12 @@ def _session_port_cache(values: Mapping[str, str], key: str) -> Path:
     return _vm_host_cache(values, "session").with_name(f"vm-session-{key}-port")
 
 
-def vm_session_port(host: str, name: str, values: Mapping[str, str], *, start: bool = True) -> int | None:
-    """CDP port of NAME's own Chrome on the VM; start=True launches it if needed."""
+def vm_session_port(host: str, name: str, values: Mapping[str, str], *, start: bool = True,
+                    reclaim: Callable[[], str | None] | None = None) -> int | None:
+    """CDP port of NAME's own Chrome on the VM; start=True launches it if needed.
+
+    At the VM's session cap, reclaim() closes one idle session and the start is retried once.
+    """
     key = vm_session_key(name)
     cache = _session_port_cache(values, key)
     try:
@@ -360,6 +365,8 @@ def vm_session_port(host: str, name: str, values: Mapping[str, str], *, start: b
         return cached
     if start:
         rows = _vm_session(host, "ensure", key, values=values, timeout=30)
+        if rows and rows[0].get("error") == "capacity" and reclaim is not None and reclaim():
+            rows = _vm_session(host, "ensure", key, values=values, timeout=30)
         port = rows[0].get("port") if rows else None
     else:
         port = next((row.get("port") for row in _vm_session(host, "status", values=values, timeout=10)
@@ -377,7 +384,18 @@ def vm_session_port(host: str, name: str, values: Mapping[str, str], *, start: b
 def stop_vm_session(host: str, name: str, values: Mapping[str, str]) -> bool:
     key = vm_session_key(name)
     _session_port_cache(values, key).unlink(missing_ok=True)
-    return bool(_vm_session(host, "stop", key, values=values, timeout=15))
+    return bool(_vm_session(host, "stop", key, values=values, timeout=30))
+
+
+def stop_vm_orphans(host: str, keep: set[str], values: Mapping[str, str]) -> list[str]:
+    """Stop running VM session Chromes whose workstation session no longer runs (profiles kept)."""
+    stopped = []
+    for row in _vm_session(host, "status", values=values, timeout=15):
+        key = row.get("key")
+        if (row.get("state") == "active" and isinstance(key, str) and key not in keep
+                and _vm_session(host, "stop", key, values=values, timeout=30)):
+            stopped.append(key)
+    return stopped
 
 
 def select_browser_vm_ip(output: str, values: dict[str, str]) -> str:

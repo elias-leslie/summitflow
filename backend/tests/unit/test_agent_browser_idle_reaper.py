@@ -54,3 +54,17 @@ def test_legacy_wrapper_runs_only_requested_command_without_cleanup(tmp_path):
     assert result.returncode == 0
     assert json.loads(result.stdout) == ["--session", "fixture", "snapshot"]
     assert not marker.exists()
+
+
+def test_timer_also_reaps_unused_managed_sessions(tmp_path):
+    recorded = tmp_path / "arguments.json"
+    stub = tmp_path / "st"
+    stub.write_text(
+        "#!/usr/bin/env python3\nimport json,sys\nfrom pathlib import Path\n"
+        + f"Path({str(recorded)!r}).write_text(json.dumps(sys.argv[1:]))\n"
+    )
+    stub.chmod(0o700)
+    script = f"const r=require({json.dumps(str(REAPER))});process.exitCode=r.runSessionReap({{st:{json.dumps(str(stub))},dryRun:true}});"
+    result = subprocess.run(["node", "-e", script], cwd=tmp_path, capture_output=True, text=True)
+    assert result.returncode == 0
+    assert json.loads(recorded.read_text()) == ["browser", "session", "reap", "--dry-run"]

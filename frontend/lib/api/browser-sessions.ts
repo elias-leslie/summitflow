@@ -8,6 +8,8 @@ export interface BrowserSession {
   runtime_state: string | null
   last_used_ms: number | null
   location: BrowserRuntimeLocation
+  /** Why the agent paused for the owner, e.g. "login needed: github.com". */
+  pause_reason: string | null
 }
 
 /** Where the session's browser runs; null while no browser is running. */
@@ -39,7 +41,10 @@ export function parseBrowserSession(value: unknown): BrowserSession {
     (item.location !== undefined &&
       item.location !== null &&
       item.location !== 'proxmox' &&
-      item.location !== 'local')
+      item.location !== 'local') ||
+    (item.pause_reason !== undefined &&
+      item.pause_reason !== null &&
+      typeof item.pause_reason !== 'string')
   )
     throw new Error('Invalid browser session response')
   return {
@@ -50,6 +55,7 @@ export function parseBrowserSession(value: unknown): BrowserSession {
     runtime_state: item.runtime_state,
     last_used_ms: item.last_used_ms,
     location: item.location ?? null,
+    pause_reason: item.pause_reason || null,
   }
 }
 

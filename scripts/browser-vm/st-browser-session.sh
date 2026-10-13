@@ -2,8 +2,10 @@
 # Per-session Chrome pool on the browser VM. The workstation calls this over SSH:
 #   st-browser-session ensure KEY   start (or reuse) KEY's Chrome; prints {"key","port"}
 #   st-browser-session stop KEY     stop KEY's Chrome; its profile and port are kept
-#   st-browser-session status       list instances as JSON lines
+#   st-browser-session status       list instances as JSON lines (memory in MB)
 #   st-browser-session gc           stop instances with no CDP client for ST_BROWSER_SESSION_IDLE_MIN
+# At most ST_BROWSER_SESSION_MAX instances run at once; ensure then exits 3 with
+# {"error":"capacity"} and the workstation reclaims its oldest idle session.
 # Each KEY runs st-browser-session@KEY.service with its own profile and its own CDP
 # port, forwarded only to the operator workstation like the shared 9222 service.
 set -euo pipefail
@@ -15,7 +17,8 @@ PORT_FIRST="${ST_BROWSER_SESSION_PORT_FIRST:-9300}"
 PORT_LAST="${ST_BROWSER_SESSION_PORT_LAST:-9339}"
 # Chrome binds its debug port to loopback; socat forwards PORT to PORT+offset.
 DEBUG_OFFSET=100
-IDLE_MIN="${ST_BROWSER_SESSION_IDLE_MIN:-30}"
+IDLE_MIN="${ST_BROWSER_SESSION_IDLE_MIN:-15}"
+MAX_ACTIVE="${ST_BROWSER_SESSION_MAX:-6}"
 
 die() { echo "st-browser-session: $*" >&2; exit 2; }
 
@@ -58,6 +61,14 @@ ensure() {
   port="$(port_of "$key")"
   [[ -n "$port" ]] || port="$(allocate "$key")"
   rm -f "$SESSION_DIR/$key.idle"
+  if ! systemctl --user is-active --quiet "$(unit "$key")"; then
+    local active
+    active="$(systemctl --user list-units --state=active --plain --no-legend 'st-browser-session@*.service' | wc -l)"
+    if ((active >= MAX_ACTIVE)); then
+      printf '{"key":"%s","error":"capacity","active":%s,"max":%s}\n' "$key" "$active" "$MAX_ACTIVE"
+      exit 3
+    fi
+  fi
   systemctl --user start "$(unit "$key")"
   for _ in $(seq 1 80); do
     ready "$port" && break
@@ -77,12 +88,14 @@ stop() {
 }
 
 status() {
-  local env key state
+  local env key state memory
   for env in "$SESSION_DIR"/*.env; do
     [[ -e "$env" ]] || continue
     key="$(basename "$env" .env)"
     state="$(systemctl --user is-active "$(unit "$key")" 2>/dev/null || true)"
-    printf '{"key":"%s","port":%s,"state":"%s"}\n' "$key" "$(port_of "$key")" "$state"
+    memory="$(systemctl --user show -p MemoryCurrent --value "$(unit "$key")" 2>/dev/null || true)"
+    [[ "$memory" =~ ^[0-9]+$ ]] && memory=$((memory / 1048576)) || memory=0
+    printf '{"key":"%s","port":%s,"state":"%s","memory_mb":%s}\n' "$key" "$(port_of "$key")" "$state" "$memory"
   done
 }
 
