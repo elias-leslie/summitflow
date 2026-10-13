@@ -96,6 +96,14 @@ def test_unsafe_state_directory_and_symlink_backup_are_rejected(tmp_path):
         deploy._backup(source, tmp_path / "copy")
 
 
+def test_redeploy_accepts_the_store_an_owner_run_collector_owns(tmp_path):
+    store = tmp_path / "monitor"
+    store.mkdir()
+    deploy._directory(store, 0o700, owner=os.getuid())
+    with pytest.raises(RuntimeError, match="not root owned"):
+        deploy._directory(store, 0o700, owner=os.getuid() + 1)
+
+
 def test_unit_runs_the_collector_as_the_owner_without_capabilities():
     # The collector is built from the owner's release, so it must never run as root.
     text = deploy.UNIT_TEMPLATE.format(uid=1000, gid=1000, release="/usr/local/lib/summitflow-host-monitor/releases/x",
@@ -147,7 +155,7 @@ def test_first_install_and_failed_activation_preserve_owner_store(tmp_path, monk
     for name, path in (("INSTALL", install), ("STATE", state), ("RECEIPTS", receipts), ("UNIT_PATH", unit)):
         monkeypatch.setattr(deploy, name, path)
     monkeypatch.setattr(deploy.pwd, "getpwuid", lambda uid: SimpleNamespace(pw_gid=1000, pw_dir=str(home)))
-    monkeypatch.setattr(deploy, "_directory", lambda path, mode=0o755: path.mkdir(parents=True, exist_ok=True))
+    monkeypatch.setattr(deploy, "_directory", lambda path, mode=0o755, owner=0: path.mkdir(parents=True, exist_ok=True))
     monkeypatch.setattr(deploy, "_state_permissions", lambda uid, gid: None)
     active = {"user": True, "system": False}
 

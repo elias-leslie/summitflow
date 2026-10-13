@@ -77,11 +77,11 @@ def build_helper(source: Path) -> Path:
     return target
 
 
-def _directory(path: Path, mode: int = 0o755) -> None:
+def _directory(path: Path, mode: int = 0o755, owner: int = 0) -> None:
     if path.resolve() != path:
         raise RuntimeError(f"refusing symlink directory: {path}")
     path.mkdir(parents=True, exist_ok=True, mode=mode)
-    if path.stat().st_uid != 0:
+    if path.stat().st_uid not in {0, owner}:
         raise RuntimeError(f"installation directory is not root owned: {path}")
     path.chmod(mode)
 
@@ -181,7 +181,7 @@ def install(source: Path, uid: int, gid: int, transaction: str) -> None:
                 raise RuntimeError("legacy collector remains active")
         if old_unit is not None:
             _system("stop", UNIT)
-        _directory(STATE, 0o750)
+        _directory(STATE, 0o700, owner=uid)  # an earlier owner-run deploy already handed it over
         if (STATE / "migration.interlock").exists() or (legacy / "migration.interlock").exists():
             raise RuntimeError("monitor store migration interlock requires recovery")
         if record["state_created"] and (legacy / "monitor.sqlite3").exists():
