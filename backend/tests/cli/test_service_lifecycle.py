@@ -767,3 +767,61 @@ def test_collector_rollback_falls_back_when_reader_restore_raises(lifecycle, mon
     assert result.exit_code != 0
     assert deployments == ["install", "rollback"]
     assert "rolling back collector directly" in result.output
+
+
+@pytest.fixture
+def activated(project):
+    return replace(project, backend_service="", backend_port=0, frontend_service="web.socket",
+                   frontend_port=3022, default_workers=("reaper.timer",), optional_workers=())
+
+
+def test_activation_units_sync_their_paired_service_templates(activated, monkeypatch, tmp_path):
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "config"))
+    templates = activated.root / "scripts" / "systemd"
+    templates.mkdir(parents=True)
+    for name in ("web.socket", "web.service", "reaper.timer", "reaper.service"):
+        (templates / name).write_text("ExecStart=__PROJECT_ROOT__/run\n")
+    monkeypatch.setattr(service_ops, "run", lambda *args, **kwargs: 0)
+    assert service_ops.sync_systemd_units(activated) == 0
+    units = tmp_path / "config" / "systemd" / "user"
+    assert sorted(path.name for path in units.iterdir()) == [
+        "reaper.service", "reaper.timer", "web.service", "web.socket"]
+    assert (units / "web.service").read_text() == f"ExecStart={activated.root}/run\n"
+
+
+def test_activation_unit_restart_stops_paired_service_and_never_kills_the_socket_port(monkeypatch):
+    commands = []
+    monkeypatch.setattr(service_ops, "service_exists", lambda _: True)
+    monkeypatch.setattr(service_ops, "run", lambda command, **_: commands.append(command[2:]) or 0)
+    monkeypatch.setattr(service_ops, "_wait_service_inactive", lambda _: True)
+    monkeypatch.setattr(service_ops, "service_state", lambda _: "active")
+    monkeypatch.setattr(service_ops, "_kill_port", lambda _: pytest.fail("socket listener must stay with systemd"))
+    assert service_ops.restart_service("web.socket", port=3022) == 0
+    assert commands == [["enable", "web.socket"], ["stop", "web.socket"],
+                        ["stop", "web.service"], ["start", "web.socket"]]
+
+
+def test_activation_unit_start_enables_and_stop_stops_both(activated, monkeypatch):
+    commands = []
+    monkeypatch.setattr(service_ops.service_release, "current_source_root", lambda _: None)
+    monkeypatch.setattr(service_ops, "sync_systemd_units", lambda _: 0)
+    monkeypatch.setattr(service_ops, "service_exists", lambda _: True)
+    monkeypatch.setattr(service_ops, "run", lambda command, **_: commands.append(command[-2:]) or 0)
+    assert service_ops.start_services(activated) == 0
+    assert commands == [["enable", "web.socket"], ["start", "web.socket"],
+                        ["enable", "reaper.timer"], ["start", "reaper.timer"]]
+    commands.clear()
+    assert service_ops.stop_services(activated) == 0
+    assert commands == [["stop", "reaper.timer"], ["stop", "reaper.service"],
+                        ["stop", "web.socket"], ["stop", "web.service"]]
+
+
+@pytest.mark.parametrize(("paired_state", "code"), [("inactive", 0), ("active", 0), ("failed", 1)])
+def test_activation_unit_status_reports_paired_service(activated, monkeypatch, paired_state, code):
+    monkeypatch.setattr(service, "_load", lambda _: activated)
+    monkeypatch.setattr(service_ops, "service_state",
+                        lambda name: paired_state if name.endswith(".service") else "active")
+    result = CliRunner().invoke(service.app, ["status", "example"])
+    assert result.exit_code == code, result.output
+    assert f"web.socket:active(web.service:{paired_state})" in result.output
+    assert f"reaper.timer:active(reaper.service:{paired_state})" in result.output

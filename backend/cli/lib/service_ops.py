@@ -84,6 +84,12 @@ class ProjectServices:
         return self.default_workers
 
 
+def activated_service(unit: str) -> str:
+    """The paired ``X.service`` a ``X.socket``/``X.timer`` activates, else ``""``."""
+    stem, dot, kind = unit.rpartition(".")
+    return f"{stem}.service" if dot and stem and kind in {"socket", "timer"} else ""
+
+
 def _as_str_list(value: Any) -> tuple[str, ...]:
     if not isinstance(value, list):
         return ()
@@ -338,7 +344,8 @@ def sync_systemd_units(project: ProjectServices) -> int:
     summitflow_root = str(project.root if project.project_id == "summitflow" else get_repo_root())
     durable_data_root = project.durable_data_root or project.root / "data"
     host_config_root = project.host_config_root or project.root
-    for service in project.all_services:
+    units = dict.fromkeys(name for unit in project.all_services for name in (unit, activated_service(unit)) if name)
+    for service in units:
         if service == host_monitor_deploy.UNIT:
             continue
         template = project.root / "scripts" / "systemd" / service
@@ -468,12 +475,30 @@ def _wait_service_active(service: str, *, timeout: float = 8.0, manager=None) ->
     return False
 
 
+def _restart_activation_unit(unit: str, paired: str) -> int:
+    """Re-arm a socket/timer; its service loads the new release on next activation.
+
+    systemd owns a socket's listener, so no port-listener cleanup runs here.
+    """
+    print(f"[service] restarting {unit} ({paired} on activation)")
+    errors = run(["systemctl", "--user", "enable", unit]) != 0
+    errors += run(["systemctl", "--user", "stop", unit]) != 0
+    if service_exists(paired):
+        errors += run(["systemctl", "--user", "stop", paired]) != 0 or not _wait_service_inactive(paired)
+    errors += run(["systemctl", "--user", "start", unit]) != 0
+    result = int(bool(errors)) or int(service_state(unit) != "active")
+    print(f"[service] {unit} {'OK' if result == 0 else 'FAIL'}")
+    return result
+
+
 def restart_service(service: str, *, port: int = 0) -> int:
     if not service:
         return 0
     if not service_exists(service):
         print(f"[service] {service} FAIL: configured service not found")
         return 1
+    if paired := activated_service(service):
+        return _restart_activation_unit(service, paired)
     current_invocation = os.environ.get("INVOCATION_ID", "")
     if current_invocation:
         unit_invocation = _manager(service)("show", service, "-p", "InvocationID", "--value").stdout.strip()
@@ -514,6 +539,8 @@ def start_services(project: ProjectServices) -> int:
         return 1
     for service in project.all_services:
         if service_exists(service):
+            if activated_service(service):
+                errors += run(["systemctl", "--user", "enable", service]) != 0
             errors += run(_service_command(service, "start")) != 0
     return errors
 
@@ -521,8 +548,9 @@ def start_services(project: ProjectServices) -> int:
 def stop_services(project: ProjectServices) -> int:
     errors = 0
     for service in reversed(project.all_services):
-        if service_exists(service):
-            errors += run(_service_command(service, "stop")) != 0
+        for unit in (service, activated_service(service)):
+            if unit and service_exists(unit):
+                errors += run(_service_command(unit, "stop")) != 0
     return errors
 
 
