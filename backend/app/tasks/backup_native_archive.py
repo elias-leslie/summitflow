@@ -20,6 +20,7 @@ from ..project_identity import get_project_identity
 from ..services import db_workbench_targets
 from ..utils.transient_scratch import ensure_scratch_capacity, scratch_subprocess_env
 from .backup_activity import BackupCancelled, backup_phase, check_backup_cancelled, run_bulk_process
+from .backup_canaries import canary_excludes
 from .backup_codex_policy import CODEX_CAPTURE_PROFILE, is_codex_recovery_input
 from .backup_native_recovery import (
     RECOVERY_DIR_NAME,
@@ -93,6 +94,16 @@ AUDITED_PROJECT_EXCLUDES: dict[str, tuple[str, ...]] = {
         "./builds/desktop",
         "./.godot/imported",
         "./.godot/shader_cache",
+    ),
+    # Owner's Chrome profile: logins, cookies, history, bookmarks and site
+    # storage stay; caches, downloaded models, store-installed extension code
+    # and process locks are rebuilt by Chrome.
+    "google-chrome": (
+        "*Cache", "Cache", "Code Cache", "GPUCache", "CacheStorage", "ScriptCache", "Dawn*Cache",
+        "Service Worker", "Shared Dictionary", "HistoryEmbeddings", "Extensions",
+        "./optimization_guide_model_store", "./OptGuideOnDeviceModel", "./OptGuideOnDeviceClassifierModel",
+        "./component_crx_cache", "./extensions_crx_cache", "./Crashpad", "Safe Browsing", "BrowserMetrics*",
+        "Singleton*",
     ),
 }
 
@@ -202,6 +213,7 @@ def _should_exclude(rel_path: str, patterns: tuple[str, ...]) -> bool:
 
 
 def _load_excludes(project_dir: Path, project_name: str | None = None) -> tuple[str, ...]:
+    canaries = canary_excludes(project_dir)
     patterns = list(DEFAULT_EXCLUDES)
     if project_dir.is_file():
         return tuple(patterns)
@@ -221,7 +233,7 @@ def _load_excludes(project_dir: Path, project_name: str | None = None) -> tuple[
                     patterns.append(f"!./{included}")
                 else:
                     patterns.append(line.rstrip("/"))
-    return tuple(patterns)
+    return (*patterns, *canaries)
 
 
 class _ScratchWriter(io.BufferedWriter):

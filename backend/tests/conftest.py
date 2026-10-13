@@ -410,6 +410,18 @@ def isolated_backup_safety(tmp_path_factory: pytest.TempPathFactory) -> Generato
 
 
 @pytest.fixture(autouse=True)
+def isolated_backup_canaries(tmp_path_factory: pytest.TempPathFactory) -> Generator[None]:
+    """Keep captures off the live Nightshift canary registry and its cached copy."""
+    from app.tasks import backup_canaries
+
+    cache = tmp_path_factory.mktemp("backup-canaries") / "canary-paths.json"
+    with pytest.MonkeyPatch.context() as patch:
+        patch.setattr(backup_canaries, "_registry", lambda: [])
+        patch.setattr(backup_canaries, "_cache_path", lambda: cache)
+        yield
+
+
+@pytest.fixture(autouse=True)
 def reset_cli_output_state() -> Generator[None]:
     """Reset CLI output module state before each test.
 

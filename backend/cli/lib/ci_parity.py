@@ -29,6 +29,8 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
+from app.utils.transient_scratch import managed_temp_parent
+
 PARITY_FLAG = "ST_CHECK_CI_PARITY"
 SEED_VAR = "ST_CHECK_SEED"
 # The runner image's base. /usr/local/bin is left out: on this host it holds
@@ -354,9 +356,9 @@ def seeded(argv: list[str], value: int | None) -> list[str]:
 @contextlib.contextmanager
 def scratch_directory() -> Iterator[Path]:
     # Not under /tmp: sandboxed tests (bwrap --tmpfs /tmp) must still see the
-    # CI tools on PATH, as they do in a runner's tool cache.
-    base = Path(pwd.getpwuid(os.getuid()).pw_dir) / ".cache" / "st-ci-parity"
-    base.mkdir(parents=True, exist_ok=True)
+    # CI tools on PATH, as they do in a runner's tool cache. Managed scratch is
+    # writable inside isolated acceptance too, where the home is read-only.
+    base = managed_temp_parent("st-ci-parity", label="CI parity")
     with tempfile.TemporaryDirectory(prefix="run-", dir=base) as directory:
         yield Path(directory)
 

@@ -216,3 +216,13 @@ def test_tsc_without_project_typescript_skips_instead_of_running_a_cached_npx_pa
     (tmp_path / "package.json").write_text('{"devDependencies": {"typescript": "5"}}')
     assert check._run_tool("tsc", config, []) == 0
     assert "TSC:SKIP:tsc:tool_not_installed" in capsys.readouterr().out
+
+
+def test_scratch_uses_managed_scratch_not_the_read_only_isolated_home(tmp_path: Path,
+                                                                      monkeypatch: pytest.MonkeyPatch) -> None:
+    # Isolated acceptance mounts / (and the account home) read-only.
+    monkeypatch.setattr(ci_parity.pwd, "getpwuid", lambda _uid: Mock(pw_dir="/nonexistent-read-only-home"))
+    monkeypatch.setattr(ci_parity, "managed_temp_parent", lambda namespace, **_: tmp_path)
+    with ci_parity.scratch_directory() as scratch:
+        assert scratch.parent == tmp_path and scratch.is_dir()
+    assert not scratch.exists()
