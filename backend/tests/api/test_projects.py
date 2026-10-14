@@ -28,6 +28,11 @@ def test_retirement_requires_owner_and_persists_decision(client) -> None:
             "INSERT INTO projects (id, name, base_url) VALUES (%s, %s, %s)",
             (project_id, "Retirement test", ""),
         )
+        cur.execute(
+            "INSERT INTO backup_sources (id, name, path, source_type, project_id, enabled) "
+            "VALUES (%s, %s, %s, 'project', %s, TRUE)",
+            (project_id, "Retirement test", f"/tmp/{project_id}", project_id),
+        )
         conn.commit()
     try:
         unauthenticated_app = FastAPI()
@@ -47,6 +52,12 @@ def test_retirement_requires_owner_and_persists_decision(client) -> None:
         )
         assert response.status_code == 200
         assert response.json()["lifecycle"] == "retired"
+        from app.tasks.nightly_publication import publication_mode
+
+        assert publication_mode(project_id) == "manual"
+        with get_connection() as conn, conn.cursor() as cur:
+            cur.execute("SELECT enabled FROM backup_sources WHERE id = %s", (project_id,))
+            assert cur.fetchone() == (False,)
         with get_connection() as conn, conn.cursor() as cur:
             cur.execute(
                 "SELECT owner_email, reason, approved_at FROM project_retirement_decisions WHERE project_id = %s",
@@ -65,6 +76,8 @@ def test_retirement_requires_owner_and_persists_decision(client) -> None:
         assert response.status_code == 200
         assert response.json()["lifecycle"] == "active"
         with get_connection() as conn, conn.cursor() as cur:
+            cur.execute("SELECT enabled FROM backup_sources WHERE id = %s", (project_id,))
+            assert cur.fetchone() == (True,)
             cur.execute(
                 "SELECT action, owner_email, reason, recorded_at FROM project_lifecycle_events "
                 "WHERE project_id = %s ORDER BY id",
@@ -76,6 +89,7 @@ def test_retirement_requires_owner_and_persists_decision(client) -> None:
         assert events[0][2] == "Owner approved retirement"
     finally:
         with get_connection() as conn, conn.cursor() as cur:
+            cur.execute("DELETE FROM backup_sources WHERE id = %s", (project_id,))
             cur.execute("DELETE FROM projects WHERE id = %s", (project_id,))
             cur.execute(
                 "SELECT action FROM project_lifecycle_events WHERE project_id = %s ORDER BY id",

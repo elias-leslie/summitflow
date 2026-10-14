@@ -450,3 +450,19 @@ def test_project_development_uses_shared_projection(mocker: MockerFixture) -> No
     assert response.status_code == 200
     assert response.json()["version"] == "development.v1"
     builder.assert_called_once_with("alpha", Path("/test/alpha"))
+
+
+def test_development_inventory_skips_retired_projects(mocker: MockerFixture) -> None:
+    from pathlib import Path
+
+    from app.api.models.git_models import RepoStatus
+
+    mocker.patch("app.api.git.get_managed_repos", return_value=[Path("/test/alpha"), Path("/test/old")])
+    mocker.patch("app.project_identity.retired_project_roots", return_value={Path("/test/old").resolve(): "old"})
+    mocker.patch("app.api.git.get_repo_status", return_value=RepoStatus(
+        path="/test/alpha", name="alpha", project_id="alpha", branch="main",
+        uncommitted=0, ahead=0, behind=0, state="clean",
+    ))
+    mocker.patch("app.services.development.build_development_projection", return_value={"version": "development.v1", "project_id": "alpha"})
+    response = client.get("/api/development/status")
+    assert response.json()["total"] == 1

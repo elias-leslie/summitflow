@@ -263,3 +263,11 @@ def test_hold_keeps_later_commits_local_and_caps_at_released_source(repo):
     assert (row["action"], row["reason"]) == ("skip", "held_source_needs_acceptance")
     stray = _git(repo, "commit-tree", "-m", "elsewhere", f"{released}^{{tree}}")
     assert nightly.select_candidate("fixture", repo, "nightly", {"through": stray})["reason"] == "hold_source_not_on_branch"
+
+
+def test_retired_projects_are_never_considered(monkeypatch, tmp_path):
+    monkeypatch.setattr("app.storage.projects.list_projects", lambda: [
+        {"id": "live", "root_path": str(tmp_path / "live")}, {"id": "old", "root_path": str(tmp_path / "old")}])
+    monkeypatch.setattr("app.project_identity.get_project_lifecycles",
+                        lambda ids, **_: {project_id: "retired" if project_id == "old" else "active" for project_id in ids})
+    assert nightly._projects(None) == [("live", tmp_path / "live")]

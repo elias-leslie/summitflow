@@ -21,6 +21,8 @@ from ._projects_helpers import (
     run_delete,
     run_list,
     run_onboard,
+    run_reactivate,
+    run_retire,
     run_root,
     run_sync_identity,
     run_update,
@@ -348,3 +350,32 @@ def delete_project(
         st projects delete persona-sandbox --confirm a1b2c3d4   # execute
     """
     run_delete(project_id, confirm=confirm)
+
+
+@app.command("retire")
+def retire_project(
+    project_id: Annotated[str, typer.Argument(help="Project ID to retire (archive)")],
+    reason: Annotated[str, typer.Option("--reason", help="Owner's reason, kept with the decision")],
+) -> None:
+    """Retire (archive) a project. Owner only; reversible with `reactivate`.
+
+    Hides it from routine project lists, services, the Development page and nightly
+    publication, turns off scheduled backups (existing archives are kept) and sets
+    publication to manual. The repository and its data stay on disk.
+
+    Examples:
+        st projects retire vantage --reason "Concept no longer in use"
+    """
+    run_retire(project_id, reason=reason)
+
+
+@app.command("reactivate")
+def reactivate_project(
+    project_id: Annotated[str, typer.Argument(help="Retired project ID")],
+) -> None:
+    """Reverse a retirement: routine discovery and the project backup schedule resume.
+
+    Examples:
+        st projects reactivate vantage
+    """
+    run_reactivate(project_id)

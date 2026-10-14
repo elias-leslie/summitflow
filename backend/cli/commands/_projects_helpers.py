@@ -367,3 +367,22 @@ def run_delete(project_id: str, *, confirm: str | None = None) -> None:
 
     projects_api("DELETE", f"/{project_id}")
     output_success(f"Deleted project '{project_id}'")
+
+
+def run_retire(project_id: str, *, reason: str) -> None:
+    """Implementation for `projects retire`: one owner decision applies the whole lifecycle."""
+    projects_api("POST", f"/{project_id}/retirement", json={"reason": reason})
+    output_success(
+        f"Retired '{project_id}': hidden from routine lists, Development and nightly publication; "
+        "scheduled backups off (archives kept); publication manual. Repository left in place. "
+        f"Undo: st projects reactivate {project_id}"
+    )
+
+
+def run_reactivate(project_id: str) -> None:
+    """Implementation for `projects reactivate`."""
+    projects_api("DELETE", f"/{project_id}/retirement")
+    output_success(
+        f"Reactivated '{project_id}': listed again with its project backup schedule on. "
+        f"Publication stays manual; change with st -P {project_id} vcs publication --mode nightly|mirror."
+    )

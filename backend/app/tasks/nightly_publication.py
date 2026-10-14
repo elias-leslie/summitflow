@@ -332,11 +332,16 @@ def execute_candidate(candidate: dict[str, Any], root: Path) -> dict[str, Any]:
 
 
 def _projects(project_ids: list[str] | None) -> list[tuple[str, Path]]:
+    from ..project_identity import get_project_lifecycles
     from ..storage.projects import list_projects
 
+    projects = list_projects()
+    lifecycles = get_project_lifecycles([str(project["id"]) for project in projects])
     rows = []
-    for project in list_projects():
+    for project in projects:
         project_id, root = str(project["id"]), project.get("root_path")
+        if lifecycles.get(project_id) == "retired":
+            continue
         if root and (project_ids is None or project_id in project_ids):
             rows.append((project_id, Path(str(root))))
     return sorted(rows)

@@ -75,7 +75,7 @@ async def get_git_status() -> GitStatusResponse:
             active_checkpoints_by_project[checkpoint.project_id].append(checkpoint)
 
     repos: list[RepoStatus] = []
-    for repo_path in get_managed_repos():
+    for repo_path in _active_repos():
         repo_status = get_repo_status(
             repo_path,
             active_checkpoints_by_project=active_checkpoints_by_project,
@@ -114,7 +114,7 @@ async def get_project_cleanup_status(project_id: str) -> dict[str, object]:
 @router.post("/git/sync", response_model=GitSyncResponse, tags=["git"])
 async def sync_repositories() -> GitSyncResponse:
     """Sync all managed repositories by pulling from remote."""
-    results = [sync_repository(repo_path) for repo_path in get_managed_repos()]
+    results = [sync_repository(repo_path) for repo_path in _active_repos()]
     counts = aggregate_sync_results(results)
     return GitSyncResponse(results=results, **counts)
 
@@ -124,7 +124,7 @@ async def fetch_repositories() -> GitSyncResponse:
     """Fetch remote refs for all managed repositories without merging."""
     from ..utils.git_helpers import fetch_repository
 
-    results = [fetch_repository(repo_path) for repo_path in get_managed_repos()]
+    results = [fetch_repository(repo_path) for repo_path in _active_repos()]
     counts = aggregate_sync_results(results)
     return GitSyncResponse(results=results, **counts)
 
@@ -155,7 +155,7 @@ async def get_branches(
 
     branches = [
         branch
-        for repo_path in get_managed_repos()
+        for repo_path in _active_repos()
         for branch in enrich_branch_cleanup_details(repo_path, get_all_branches(repo_path))
     ]
     branches.sort(key=lambda b: ((b.repo_name or "").lower(), not b.is_current, not b.has_checkpoint, b.name.lower()))
@@ -319,6 +319,14 @@ def get_project_development_status(project_id: str) -> dict[str, object]:
     return build_development_projection(project_id, get_project_root_with_fallback(project_id))
 
 
+def _active_repos() -> list[Path]:
+    """Managed repositories minus owner-retired projects; the command guard keeps the full list."""
+    from ..project_identity import retired_project_roots
+
+    retired = retired_project_roots()
+    return [root for root in get_managed_repos() if Path(root).resolve() not in retired]
+
+
 @router.get("/development/status", tags=["git"])
 def get_development_status() -> dict[str, object]:
     """Development evidence for the same managed repositories as the Git route."""
@@ -336,7 +344,7 @@ def get_development_status() -> dict[str, object]:
     # Each repository is independent local Git/receipt I/O; a small pool keeps
     # the inventory responsive without saturating the shared workstation.
     with ThreadPoolExecutor(max_workers=6, thread_name_prefix="development") as pool:
-        rows = list(pool.map(read, get_managed_repos()))
+        rows = list(pool.map(read, _active_repos()))
     repositories = [row for row in rows if "repo" in row]
     unavailable = [row for row in rows if "repo" not in row]
     return {"version": "development.v1", "repositories": repositories, "unavailable_repositories": unavailable, "total": len(rows)}

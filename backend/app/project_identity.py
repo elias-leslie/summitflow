@@ -267,6 +267,19 @@ def get_project_lifecycles(
     return {project_id: "retired" if project_id in retired else "active" for project_id in project_ids}
 
 
+def retired_project_roots() -> dict[Path, str]:
+    """Resolved roots of owner-retired projects, for inventories that list repositories."""
+    from app.storage.connection import get_cursor
+
+    with get_cursor() as cur:
+        cur.execute(
+            """SELECT p.id, p.root_path FROM projects p
+               JOIN project_retirement_decisions r ON r.project_id = p.id
+               WHERE p.root_path IS NOT NULL"""
+        )
+        return {Path(root).resolve(): project_id for project_id, root in cur.fetchall()}
+
+
 def validate_project_root(
     project_id: str, root_path: str | None, *, require_checkout_identity: bool = False
 ) -> None:
