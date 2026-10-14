@@ -44,8 +44,9 @@ def _git(root: Path, *args: str) -> str:
 
 # Full receipt validation re-hashes source and plan inputs (~0.3s per repo). A
 # dashboard poll may reuse a result for the same receipt, HEAD and working-tree
-# state briefly; st pulse and publication always validate afresh.
-_VALIDATION_TTL = 120.0
+# state for ten minutes (toolchain drift shows up on the next miss); st pulse
+# and publication always validate afresh.
+_VALIDATION_TTL = 600.0
 _validation_cache: dict[tuple[str, int, str, str], tuple[float, dict[str, Any] | None]] = {}
 _validation_lock = threading.Lock()
 

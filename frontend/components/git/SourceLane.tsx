@@ -47,7 +47,7 @@ export function SourceLane({
       cell: cells.accepted,
       note: [
         development.accepted.check_count
-          ? `${development.accepted.check_count} checks`
+          ? `${development.accepted.check_count} ${development.accepted.check_count === 1 ? 'check' : 'checks'}`
           : null,
         evidenceAge(development.accepted.observed_at),
       ]

@@ -144,15 +144,23 @@ function runningCell(dev: DevelopmentProjection): Cell {
   if (running.state === 'observed' || running.state === 'succeeded') {
     if (running.source_commit && running.source_commit === head)
       return { tone: 'ok', label: 'HEAD', detail: age, title: hint(running) }
+    const acceptedHead =
+      dev.accepted.state === 'accepted' && dev.accepted.source_commit === head
     return {
       tone: running.drift ? 'warn' : 'info',
       label: shortSha(running.source_commit),
-      detail: running.drift ? 'not accepted' : age,
+      detail: !running.drift
+        ? age
+        : acceptedHead
+          ? 'needs deploy'
+          : 'differs from accepted',
       title: hint(
         running,
-        running.drift
-          ? 'Running source differs from the accepted source'
-          : 'Running the accepted source; HEAD has moved on',
+        !running.drift
+          ? 'Running the accepted source; HEAD has moved on'
+          : acceptedHead
+            ? 'HEAD is accepted but not deployed'
+            : 'Running source differs from the accepted source',
       ),
     }
   }
@@ -193,8 +201,8 @@ function publishedCell(dev: DevelopmentProjection, repo: RepoStatus): Cell {
   if (nightly?.outcome && NIGHTLY_FAILED.has(nightly.outcome))
     return {
       tone: 'bad',
-      label: 'nightly failed',
-      detail: nightly.reason?.replaceAll('_', ' ') ?? undefined,
+      label: 'failed',
+      detail: 'nightly',
       title: `Nightly ${nightly.outcome}: ${nightly.reason ?? 'no reason recorded'}`,
     }
   if (repo.ahead > 0)

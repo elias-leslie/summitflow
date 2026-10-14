@@ -113,7 +113,7 @@ export function ProjectRow({
       />
       <div
         className={clsx(
-          'flex flex-wrap items-center gap-x-4 gap-y-1.5 py-2 pl-3 pr-2',
+          'flex flex-wrap items-center gap-x-4 gap-y-1.5 py-1.5 pl-3 pr-2',
           ROW_GRID,
         )}
       >
