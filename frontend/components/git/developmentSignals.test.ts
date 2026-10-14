@@ -70,4 +70,23 @@ describe('development signals', () => {
     })
     expect(signals.canPublish).toBe(false)
   })
+  it('leaves stale acceptance to nightly and ignores failures a later publication superseded', () => {
+    const signals = deriveSignals(synced, {
+      ...pending(0),
+      accepted: { ...clean.accepted, state: 'stale', drift: false },
+      publication: {
+        ...clean.publication,
+        state: 'published',
+        mode: 'nightly',
+        observed_at: '2026-10-14T05:00:00Z',
+        nightly: {
+          outcome: 'acceptance_failed',
+          observed_at: '2026-10-13T05:00:00Z',
+        },
+      },
+    })
+    expect(signals.cells.accepted.tone).toBe('info')
+    expect(signals.cells.published.label).toBe('synced')
+    expect(signals.attention).toBe(0)
+  })
 })

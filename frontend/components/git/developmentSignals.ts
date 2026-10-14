@@ -103,6 +103,10 @@ function sourceCell(dev: DevelopmentProjection): Cell {
   }
 }
 
+function autoPublished(dev: DevelopmentProjection) {
+  return ['nightly', 'mirror'].includes(dev.publication.mode ?? '')
+}
+
 function acceptedCell(dev: DevelopmentProjection): Cell {
   const accepted = dev.accepted
   const age = evidenceAge(accepted.observed_at)
@@ -121,7 +125,8 @@ function acceptedCell(dev: DevelopmentProjection): Cell {
       }
     case 'stale':
       return {
-        tone: 'warn',
+        // Nightly re-runs acceptance before publishing; mirror needs none.
+        tone: autoPublished(dev) ? 'info' : 'warn',
         label: accepted.drift ? shortSha(accepted.source_commit) : 'outdated',
         detail: accepted.drift ? 'older commit' : 'inputs changed',
         title: hint(accepted),
@@ -206,7 +211,13 @@ function publishedCell(dev: DevelopmentProjection, repo: RepoStatus): Cell {
     }
   if (publication.state === 'failed')
     return { tone: 'bad', label: 'failed', title: hint(publication) }
-  if (nightly?.outcome && NIGHTLY_FAILED.has(nightly.outcome))
+  const nightlyAt = evidenceDate(nightly?.observed_at ?? null)
+  const publishedAt = evidenceDate(publication.observed_at)
+  if (
+    nightly?.outcome &&
+    NIGHTLY_FAILED.has(nightly.outcome) &&
+    (!publishedAt || (nightlyAt !== null && nightlyAt > publishedAt))
+  )
     return {
       tone: 'bad',
       label: 'failed',
