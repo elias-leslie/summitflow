@@ -10,7 +10,12 @@ import {
   pullRepository,
   type RepoStatus,
 } from '@/lib/api/git'
-import { deriveSignals, type Signals, STAGES } from './developmentSignals'
+import {
+  deriveSignals,
+  type Signals,
+  STAGES,
+  unpublished,
+} from './developmentSignals'
 import { ActionFeedback, RowDetails } from './RowDetails'
 import { SignalCell, TONE_STRIP } from './SignalCell'
 
@@ -63,7 +68,7 @@ export function ProjectRow({
   const actions = useRepoActions(development.project_id, signals, development)
   const busy = actions.publish.isPending || actions.pull.isPending
   const quick: ReactNode[] = []
-  if (repo.behind > 0 && repo.ahead === 0)
+  if (repo.behind > 0 && unpublished(development, repo) === 0)
     quick.push(
       <QuickButton
         key="pull"
@@ -78,7 +83,7 @@ export function ProjectRow({
     )
   if (
     signals.canPublish &&
-    repo.ahead > 0 &&
+    unpublished(development, repo) > 0 &&
     development.publication.mode === 'manual'
   )
     quick.push(

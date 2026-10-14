@@ -262,6 +262,7 @@ def build_development_projection(project_id: str, project_root: Path) -> dict[st
             result["publication"] = _publication(project_root, common, project_id)
         except (OSError, ValueError):
             result["publication"] = evidence("error", reason="Publication receipt unreadable")
+        _count_from_publication(project_root, head, result["working_tree"], result["publication"])
     except (OSError, ValueError, RuntimeError):
         result.update(working_tree=evidence("error", reason="Local Git evidence unavailable"), accepted=evidence("unavailable", reason="Local Git evidence unavailable"), publication=evidence("unavailable", reason="Local Git evidence unavailable"))
     try:
@@ -298,6 +299,24 @@ def build_development_projection(project_id: str, project_root: Path) -> dict[st
     except Exception:
         result["recovery"] = {key: evidence("unavailable", reason="Backup store unavailable") for key in ("capture", "offsite", "snapshot", "restore")}
     return result
+
+
+def _count_from_publication(root: Path, head: str, working: dict[str, Any], publication: dict[str, Any]) -> None:
+    """Nightly publication pushes from an isolated clone, so the checkout's
+    remote-tracking ref can lag far behind what was verified as published.
+    Count unpublished commits from the newer of the two when the receipt's
+    source is an ancestor of HEAD."""
+    published = publication.get("source_commit")
+    if publication.get("state") != "published" or not publication.get("publication_complete") or not published:
+        return
+    try:
+        _git(root, "merge-base", "--is-ancestor", published, head)
+        since = int(_git(root, "rev-list", "--count", f"{published}..{head}"))
+    except ValueError:
+        return
+    if working.get("unpublished") is None or since < working["unpublished"]:
+        working["unpublished"] = since
+        working["remote_basis"] = "Last verified publication; local remote refs are older"
 
 
 def _has_upstream(root: Path) -> bool:

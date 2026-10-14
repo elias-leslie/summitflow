@@ -306,3 +306,18 @@ def test_owner_authenticated_but_malformed_matching_observation_stays_error(nati
     assert result["source_commit"] is None
     assert result["invalid_evidence"] == [str(path)]
     assert result["shared_store_integrity"]["matching_records"] == 1
+
+
+def test_unpublished_counts_from_a_newer_verified_publication(tmp_path, mocker):
+    publication = {"state": "published", "publication_complete": True, "source_commit": "p" * 40}
+    working = {"unpublished": 80}
+    git = mocker.patch.object(service, "_git", side_effect=lambda _root, *args: "3" if args[0] == "rev-list" else "")
+    service._count_from_publication(tmp_path, "h" * 40, working, publication)
+    assert working["unpublished"] == 3
+    assert "verified publication" in working["remote_basis"]
+    git.side_effect = ValueError("not an ancestor")
+    working = {"unpublished": 80}
+    service._count_from_publication(tmp_path, "h" * 40, working, publication)
+    assert working == {"unpublished": 80}
+    service._count_from_publication(tmp_path, "h" * 40, working, {**publication, "publication_complete": False})
+    assert working == {"unpublished": 80}

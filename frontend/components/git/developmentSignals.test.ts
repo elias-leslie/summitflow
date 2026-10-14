@@ -8,10 +8,14 @@ const clean = {
   running: { ...development.running, source_commit: sourceSha, drift: false },
 }
 const synced = { ...repo, uncommitted: 0, ahead: 0, state: 'clean' as const }
+const pending = (count: number) => ({
+  ...clean,
+  working_tree: { ...clean.working_tree, unpublished: count },
+})
 
 describe('development signals', () => {
   it('marks a repository whose stages all hold HEAD as needing nothing', () => {
-    const signals = deriveSignals(synced, clean)
+    const signals = deriveSignals(synced, pending(0))
     expect(signals.attention).toBe(0)
     expect(signals.cells.accepted.label).toBe('HEAD')
     expect(signals.cells.running.label).toBe('HEAD')
@@ -20,8 +24,8 @@ describe('development signals', () => {
   })
   it('treats nightly-pending commits as expected, not as a problem', () => {
     const signals = deriveSignals(
-      { ...synced, ahead: 3 },
-      { ...clean, publication: { ...clean.publication, mode: 'nightly' } },
+      { ...synced, ahead: 80 },
+      { ...pending(3), publication: { ...clean.publication, mode: 'nightly' } },
     )
     expect(signals.cells.published).toMatchObject({ tone: 'info', label: '↑3' })
     expect(signals.attention).toBe(0)

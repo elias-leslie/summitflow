@@ -215,6 +215,7 @@ export interface DevelopmentEvidence {
   check_count?: number
   uncommitted?: number
   unpublished?: number | null
+  remote_basis?: string
   snapshot_id?: string | null
   runtime_health?: string
   publication_complete?: boolean
