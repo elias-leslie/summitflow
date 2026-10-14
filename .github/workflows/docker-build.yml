@@ -51,7 +51,7 @@ jobs:
           repository: elias-leslie/agent-hub
           ref: e23acc82b89f01d974e93aac87f15fb399f2a812
           path: agent-hub-repo
-      - uses: pnpm/action-setup@fc06bc1257f339d1d5d8b3a19a8cae5388b55320 # v5
+      - uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413 # v6.1.0
       - uses: astral-sh/setup-uv@fac544c07dec837d0ccb6301d7b5580bf5edae39 # v8.2.0
       - name: Pack workspace packages
         env:
