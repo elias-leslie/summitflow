@@ -210,6 +210,9 @@ async def retire_project(project_id: str, decision: ProjectRetirementRequest, re
         )
         conn.commit()
     _set_publication_mode(project_id, "manual")
+    from ...storage.notifications_write import dismiss_all_for_project
+
+    dismiss_all_for_project(project_id)
     return get_project_from_db(project_id)
 
 

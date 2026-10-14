@@ -34,6 +34,10 @@ def test_retirement_requires_owner_and_persists_decision(client) -> None:
             (project_id, "Retirement test", f"/tmp/{project_id}", project_id),
         )
         conn.commit()
+    from app.storage.notifications import create_notification
+    from app.storage.notifications_query import get_notification
+
+    stale = create_notification(project_id, "system", "Backup failed", "stale", severity="error")
     try:
         unauthenticated_app = FastAPI()
         unauthenticated_app.include_router(router, prefix="/projects")
@@ -55,6 +59,7 @@ def test_retirement_requires_owner_and_persists_decision(client) -> None:
         from app.tasks.nightly_publication import publication_mode
 
         assert publication_mode(project_id) == "manual"
+        assert (get_notification(stale["id"]) or {}).get("status") == "dismissed"
         with get_connection() as conn, conn.cursor() as cur:
             cur.execute("SELECT enabled FROM backup_sources WHERE id = %s", (project_id,))
             assert cur.fetchone() == (False,)
