@@ -24,7 +24,7 @@ export function ProjectGitClient() {
     refetchInterval: POLL_SLOW,
   })
   return (
-    <div className="mx-auto max-w-[1800px] space-y-4 px-4 py-4 md:px-6">
+    <div className="mx-auto max-w-[1800px] space-y-3 px-4 py-4 md:px-6">
       <h1 className="display text-xl font-semibold text-slate-100">
         Project Development
       </h1>
@@ -58,6 +58,7 @@ export function ProjectGitClient() {
         <ProjectRow
           repo={query.data.repo}
           development={query.data.development}
+          defaultOpen
         />
       )}
     </div>

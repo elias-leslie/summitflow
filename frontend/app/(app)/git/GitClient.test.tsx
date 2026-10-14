@@ -1,12 +1,16 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
-import { render, screen } from '@testing-library/react'
+import { fireEvent, render, screen } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { development, repo } from '@/components/git/developmentFixtures'
 import { GitClient } from './GitClient'
 
-const api = vi.hoisted(() => ({ fetchDevelopmentStatus: vi.fn() }))
+const api = vi.hoisted(() => ({
+  fetchDevelopmentStatus: vi.fn(),
+  checkGitRemotes: vi.fn(),
+}))
 vi.mock('@/lib/api/git', () => api)
 vi.mock('@/components/git/ProjectRow', () => ({
+  ROW_GRID: '',
   ProjectRow: ({ repo }: { repo: { name: string } }) => (
     <div>{repo.name} development</div>
   ),
@@ -74,5 +78,44 @@ describe('Development route', () => {
     expect(
       screen.queryByText('No managed repositories found'),
     ).not.toBeInTheDocument()
+  })
+  it('sorts repositories needing a look first and filters by signal', async () => {
+    const clean = {
+      repo: {
+        ...repo,
+        name: 'aardvark',
+        path: '/repos/aardvark',
+        uncommitted: 0,
+        ahead: 0,
+      },
+      development: {
+        ...development,
+        working_tree: {
+          ...development.working_tree,
+          state: 'clean',
+          uncommitted: 0,
+        },
+        running: {
+          ...development.running,
+          source_commit: development.working_tree.source_commit,
+          drift: false,
+        },
+      },
+    }
+    api.fetchDevelopmentStatus.mockResolvedValue({
+      version: 'development.v1',
+      repositories: [clean, { repo, development }],
+      total: 2,
+    })
+    renderClient()
+    await screen.findByText('alpha development')
+    const names = screen
+      .getAllByText(/ development$/)
+      .map((node) => node.textContent)
+    expect(names).toEqual(['alpha development', 'aardvark development'])
+    expect(screen.getByText('Nothing pending')).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: /Uncommitted/ }))
+    expect(screen.queryByText('aardvark development')).not.toBeInTheDocument()
+    expect(screen.getByText('alpha development')).toBeInTheDocument()
   })
 })

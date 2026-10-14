@@ -1,7 +1,7 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import type { DevelopmentProjection } from '@/lib/api/git'
+import type { DevelopmentProjection, RepoStatus } from '@/lib/api/git'
 import { development, repo, sourceSha } from './developmentFixtures'
 import { ProjectRow } from './ProjectRow'
 
@@ -11,32 +11,42 @@ const api = vi.hoisted(() => ({
   checkProjectGitRemote: vi.fn(),
 }))
 vi.mock('@/lib/api/git', () => api)
+vi.mock('@/components/snapshots/SavedWorkEvidence', () => ({
+  SavedWorkEvidence: () => <span>saved edits</span>,
+}))
 vi.mock('./project-row/DashboardContent', () => ({
   DashboardContent: ({ projectId }: { projectId: string }) => (
     <div>{projectId} history</div>
   ),
 }))
-function renderRow(value: DevelopmentProjection = development) {
+function renderRow(
+  value: DevelopmentProjection = development,
+  status: RepoStatus = repo,
+) {
   const client = new QueryClient({
     defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
   })
   return render(
     <QueryClientProvider client={client}>
-      <ProjectRow repo={repo} development={value} />
+      <ProjectRow repo={status} development={value} />
     </QueryClientProvider>,
   )
 }
-function openActions() {
-  fireEvent.click(screen.getByText('Publication and remote actions'))
+function expand() {
+  fireEvent.click(screen.getByRole('button', { name: /alpha/ }))
 }
 beforeEach(() => vi.clearAllMocks())
-describe('Development repository', () => {
-  it('shows neutral local work separately from acceptance and runtime drift', () => {
+describe('Development repository row', () => {
+  it('summarizes each stage in one collapsed row without loading details', () => {
     renderRow()
-    expect(screen.getByText('2 uncommitted files')).toBeInTheDocument()
-    expect(screen.getByText(/1 unpublished commit against/)).toBeInTheDocument()
-    expect(screen.getByText('Source drift')).toBeInTheDocument()
-    expect(screen.queryByText('Dirty')).not.toBeInTheDocument()
+    expect(screen.getByText('2 files')).toBeInTheDocument()
+    expect(screen.getByText('↑1')).toBeInTheDocument()
+    expect(screen.getByText('bbbbbbb')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /alpha/ })).toHaveAttribute(
+      'aria-expanded',
+      'false',
+    )
+    expect(screen.queryByText('saved edits')).not.toBeInTheDocument()
     expect(api.publishProjectChanges).not.toHaveBeenCalled()
     expect(api.checkProjectGitRemote).not.toHaveBeenCalled()
   })
@@ -49,7 +59,7 @@ describe('Development repository', () => {
       requested_source_commit: sourceSha,
     })
     renderRow()
-    openActions()
+    expand()
     fireEvent.click(
       screen.getByRole('button', { name: 'Publish accepted source' }),
     )
@@ -61,16 +71,28 @@ describe('Development repository', () => {
     )
     expect(await screen.findByText('Publication complete')).toBeInTheDocument()
   })
-  it('disables publication for stale acceptance while preserving history', () => {
+  it('offers a quick publish only for manual publication of accepted source', () => {
+    renderRow({
+      ...development,
+      publication: { ...development.publication, mode: 'manual' },
+    })
+    expect(
+      screen.getByRole('button', { name: 'Publish alpha' }),
+    ).toBeInTheDocument()
+  })
+  it('disables publication for stale acceptance and loads history on demand', () => {
     renderRow({
       ...development,
       accepted: { ...development.accepted, state: 'stale', drift: true },
     })
-    openActions()
+    expand()
     expect(
       screen.getByRole('button', { name: 'Publish accepted source' }),
     ).toBeDisabled()
-    fireEvent.click(screen.getByText('Branches, checkpoints and history'))
+    expect(screen.queryByText('project-alpha history')).not.toBeInTheDocument()
+    fireEvent.click(
+      screen.getByRole('button', { name: 'Commits, branches and checkpoints' }),
+    )
     expect(screen.getByText('project-alpha history')).toBeVisible()
   })
   it('reports pull and publication failures', async () => {
@@ -88,7 +110,7 @@ describe('Development repository', () => {
       new Error('Publication unavailable'),
     )
     renderRow()
-    openActions()
+    expand()
     fireEvent.click(screen.getByRole('button', { name: 'Pull remote changes' }))
     expect(
       await screen.findByText(/alpha: skipped: uncommitted changes/),
@@ -116,9 +138,11 @@ describe('Development repository', () => {
         ],
       },
     })
+    expect(screen.getByText('unknown')).toBeInTheDocument()
+    expand()
     expect(screen.getByText('Task store unavailable')).toBeInTheDocument()
     expect(
-      screen.queryByText('No blocked or failed tasks recorded'),
+      screen.queryByText('No blocked or failed tasks'),
     ).not.toBeInTheDocument()
     expect(
       screen.getByRole('link', { name: 'Repair deployment' }),

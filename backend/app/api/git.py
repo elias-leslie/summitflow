@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from collections import defaultdict
+from pathlib import Path
 
 from fastapi import APIRouter, HTTPException, Query
 
@@ -321,15 +322,21 @@ def get_project_development_status(project_id: str) -> dict[str, object]:
 @router.get("/development/status", tags=["git"])
 def get_development_status() -> dict[str, object]:
     """Development evidence for the same managed repositories as the Git route."""
+    from concurrent.futures import ThreadPoolExecutor
+
     from ..services.development import build_development_projection
 
-    repositories = []
-    unavailable = []
-    for root in get_managed_repos():
+    def read(root: Path) -> dict[str, object]:
         repo = get_repo_status(root)
-        if repo:
-            project_id = repo.project_id or repo.name
-            repositories.append({"repo": repo.model_dump(), "development": build_development_projection(project_id, root)})
-        else:
-            unavailable.append({"path": str(root), "name": root.name, "reason": "Local repository status unavailable"})
-    return {"version": "development.v1", "repositories": repositories, "unavailable_repositories": unavailable, "total": len(repositories) + len(unavailable)}
+        if not repo:
+            return {"path": str(root), "name": root.name, "reason": "Local repository status unavailable"}
+        project_id = repo.project_id or repo.name
+        return {"repo": repo.model_dump(), "development": build_development_projection(project_id, root)}
+
+    # Each repository is independent local Git/receipt I/O; a small pool keeps
+    # the inventory responsive without saturating the shared workstation.
+    with ThreadPoolExecutor(max_workers=6, thread_name_prefix="development") as pool:
+        rows = list(pool.map(read, get_managed_repos()))
+    repositories = [row for row in rows if "repo" in row]
+    unavailable = [row for row in rows if "repo" not in row]
+    return {"version": "development.v1", "repositories": repositories, "unavailable_repositories": unavailable, "total": len(rows)}

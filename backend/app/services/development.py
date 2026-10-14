@@ -8,6 +8,8 @@ from __future__ import annotations
 import json
 import os
 import re
+import threading
+import time
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
@@ -40,7 +42,33 @@ def _git(root: Path, *args: str) -> str:
     return result.stdout.strip()
 
 
-def _accepted(root: Path, common: Path, head: str) -> dict[str, Any]:
+# Full receipt validation re-hashes source and plan inputs (~0.3s per repo). A
+# dashboard poll may reuse a result for the same receipt, HEAD and working-tree
+# state briefly; st pulse and publication always validate afresh.
+_VALIDATION_TTL = 120.0
+_validation_cache: dict[tuple[str, int, str, str], tuple[float, dict[str, Any] | None]] = {}
+_validation_lock = threading.Lock()
+
+
+def _validated(root: Path, path: Path, head: str, worktree: str) -> dict[str, Any] | None:
+    key = (str(path), path.stat().st_mtime_ns, head, worktree)
+    now = time.monotonic()
+    with _validation_lock:
+        cached = _validation_cache.get(key)
+    if cached and now - cached[0] < _VALIDATION_TTL:
+        return cached[1]
+    try:
+        accepted: dict[str, Any] | None = validate_acceptance_receipt(root, path)
+    except (AcceptanceError, OSError, ValueError):
+        accepted = None
+    with _validation_lock:
+        for stale in [k for k, (at, _) in _validation_cache.items() if now - at >= _VALIDATION_TTL]:
+            del _validation_cache[stale]
+        _validation_cache[key] = (now, accepted)
+    return accepted
+
+
+def _accepted(root: Path, common: Path, head: str, worktree: str = "") -> dict[str, Any]:
     candidates = []
     unreadable = False
     for path in (common / "st" / "acceptance").glob("*.json"):
@@ -58,9 +86,8 @@ def _accepted(root: Path, common: Path, head: str) -> dict[str, Any]:
         return evidence("error" if unreadable else "unavailable", reason="Acceptance receipt unreadable" if unreadable else "No full acceptance recorded")
     _, path, value = selected
     source = value.get("source", {}).get("commit")
-    try:
-        accepted = validate_acceptance_receipt(root, path)
-    except (AcceptanceError, OSError, ValueError):
+    accepted = _validated(root, path, head, worktree)
+    if accepted is None:
         return evidence("stale", source_commit=source, observed_at=value.get("completed_at"),
                         artifact=str(path), reason="Retained acceptance does not validate against current source, local inputs or check plan", full_coverage=False, drift=source != head)
     return evidence("accepted" if source == head else "stale", source_commit=source,
@@ -227,7 +254,7 @@ def build_development_projection(project_id: str, project_root: Path) -> dict[st
                                            unpublished=int(ahead) if ahead is not None else None,
                                            remote_basis="Local remote refs; refresh explicitly")
         try:
-            result["accepted"] = _accepted(project_root, common, head)
+            result["accepted"] = _accepted(project_root, common, head, status)
         except Exception:
             result["accepted"] = evidence("error", reason="Acceptance evidence unavailable")
         try:

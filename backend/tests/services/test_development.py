@@ -58,6 +58,19 @@ def test_acceptance_validates_current_inputs_and_marks_drift(tmp_path, mocker):
     assert result["full_coverage"] is False
 
 
+def test_acceptance_validation_is_reused_only_for_identical_source_state(tmp_path, mocker):
+    directory = tmp_path / "st" / "acceptance"
+    directory.mkdir(parents=True)
+    (directory / "receipt.json").write_text('{"state":"success","source":{"commit":"head"},"completed_at":"2026-10-03"}')
+    validator = mocker.patch.object(service, "validate_acceptance_receipt", return_value={"completed_at": "2026-10-03"})
+    assert service._accepted(tmp_path, tmp_path, "head", "")["state"] == "accepted"
+    assert service._accepted(tmp_path, tmp_path, "head", "")["state"] == "accepted"
+    assert validator.call_count == 1
+    validator.side_effect = service.AcceptanceError("local inputs changed")
+    assert service._accepted(tmp_path, tmp_path, "head", " M file")["state"] == "stale"
+    assert validator.call_count == 2
+
+
 def test_missing_stores_do_not_become_zero_or_success(tmp_path, mocker):
     _stores(mocker, tmp_path)
     mocker.patch.object(service, "_git", side_effect=ValueError("Git unavailable"))

@@ -6,7 +6,14 @@ import { fetchSnapshots } from '@/lib/api/snapshots'
 import { formatTimeAgo } from '@/lib/format'
 import { STALE_GIT } from '@/lib/polling'
 
-export function SavedWorkEvidence({ projectId }: { projectId: string }) {
+export function SavedWorkEvidence({
+  projectId,
+  compact = false,
+}: {
+  projectId: string
+  /** One inline fact for dense rows; the full block explains the scope. */
+  compact?: boolean
+}) {
   const { data, isLoading, error } = useQuery({
     queryKey: ['saved-work-evidence', projectId],
     queryFn: () => fetchSnapshots(projectId),
@@ -17,6 +24,23 @@ export function SavedWorkEvidence({ projectId }: { projectId: string }) {
       !latest || snapshot.created_at > latest ? snapshot.created_at : latest,
     null,
   )
+
+  if (compact)
+    return (
+      <Link
+        href="/backups"
+        title="Btrfs saved-work captures of the workspace; offsite backups are separate"
+        className="whitespace-nowrap hover:text-phosphor-300 focus-visible:outline focus-visible:outline-2 focus-visible:outline-phosphor-400"
+      >
+        <span className="text-slate-500">Saved edits </span>
+        <span className={error && !data ? 'text-rose-300' : 'text-slate-200'}>
+          {isLoading ? '…' : data ? data.length : 'unavailable'}
+        </span>
+        {newest && (
+          <span className="text-slate-500"> {formatTimeAgo(newest)}</span>
+        )}
+      </Link>
+    )
 
   return (
     <div className="min-w-0 space-y-1">

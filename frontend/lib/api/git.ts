@@ -218,6 +218,14 @@ export interface DevelopmentEvidence {
   snapshot_id?: string | null
   runtime_health?: string
   publication_complete?: boolean
+  mode?: string
+  nightly?: {
+    outcome?: string | null
+    reason?: string | null
+    observed_at?: string | null
+  } | null
+  backup_count?: number
+  optional_cloud?: string | null
 }
 
 export interface DevelopmentProjection {
