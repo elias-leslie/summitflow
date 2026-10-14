@@ -9,7 +9,7 @@ from urllib.parse import quote, urlsplit, urlunsplit
 
 import psycopg
 
-from ..project_identity import get_project_identity
+from ..project_identity import get_project_identity, get_project_lifecycles
 
 _DEFAULT_DB_URLS = {
     "summitflow": "postgresql://summitflow_app@localhost:5432/summitflow",
@@ -219,8 +219,11 @@ def workbench_targets() -> list[DbWorkbenchTarget]:
         )
         seen_ids.add(target_id)
 
-    for project_id in sorted(project_ids_from_env(env_file)):
-        if project_id in seen_ids:
+    env_projects = sorted(project_ids_from_env(env_file))
+    # A retired project's leftover env URL names a database the owner archived.
+    lifecycles = get_project_lifecycles(env_projects, allow_unavailable=True)
+    for project_id in env_projects:
+        if project_id in seen_ids or lifecycles.get(project_id) == "retired":
             continue
         db_url = project_db_url(project_id)
         if not db_url:

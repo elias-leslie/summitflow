@@ -170,3 +170,21 @@ def test_spawn_pgweb_falls_back_when_setsid_is_unavailable(
 
     assert pid == 1234
     assert setsid_values == [True, False]
+
+
+def test_workbench_targets_skip_retired_projects_env_urls(monkeypatch: pytest.MonkeyPatch) -> None:
+    targets = db_workbench.db_workbench_targets
+    urls = {"alpha": "postgresql://u@h/alpha", "gone": "postgresql://u@h/gone"}
+    monkeypatch.setattr(targets, "env_values", lambda: {})
+    monkeypatch.setattr(targets, "global_db_url", lambda *_args: None)
+    monkeypatch.setattr(targets, "server_database_names", list)
+    monkeypatch.setattr(targets, "project_ids_from_env", lambda _env: set(urls))
+    monkeypatch.setattr(targets, "project_db_url", urls.get)
+    monkeypatch.setattr(targets, "shared_db_project_id", lambda _project_id: None)
+    monkeypatch.setattr(
+        targets,
+        "get_project_lifecycles",
+        lambda ids, **_kwargs: {i: "retired" if i == "gone" else "active" for i in ids},
+    )
+
+    assert [target.id for target in targets.workbench_targets()] == ["__global__", "alpha"]

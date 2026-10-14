@@ -1018,8 +1018,26 @@ def test_active_scopes_skip_symlinked_project_aliases(tmp_path: Path, monkeypatc
     monkeypatch.setattr(auto, "workspaces_root_available", lambda: True)
     monkeypatch.setattr(auto, "get_workspaces_root", lambda: tmp_path)
     monkeypatch.setattr(auto, "all_entries", lambda: [])
+    monkeypatch.setattr(auto, "retired_project_ids", lambda _ids: set())
 
     assert [name for name, _scope in auto.enumerate_active_scopes()] == ["a-term"]
+
+
+def test_retired_projects_stop_capturing_but_keep_archived_snapshots(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    projects = tmp_path / "projects"
+    for name in ("live", "gone"):
+        (projects / name / ".git").mkdir(parents=True)
+    monkeypatch.setattr(Path, "home", lambda: tmp_path / "home")
+    monkeypatch.setattr(auto, "workspaces_root_available", lambda: True)
+    monkeypatch.setattr(auto, "get_workspaces_root", lambda: tmp_path)
+    monkeypatch.setattr(auto, "all_entries", lambda: [])
+    monkeypatch.setattr(auto, "retired_project_ids", lambda ids: {"gone"} & set(ids))
+    gone = auto.SnapshotScope("project", "gone", projects / "gone")
+    monkeypatch.setattr(auto, "iter_archived_manifest_scopes", lambda _root: iter([(tmp_path, "gone", gone)]))
+
+    assert [name for name, _scope in auto.enumerate_active_scopes()] == ["live"]
+    states = {name: state for name, _scope, state in auto.enumerate_snapshot_scopes(include_archived=True)}
+    assert states == {"live": "active", "gone": "archived"}
 
 
 @pytest.mark.parametrize("readonly", [False, True])

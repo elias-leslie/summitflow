@@ -222,7 +222,21 @@ def enumerate_active_scopes() -> list[tuple[str, SnapshotScope]]:
                     SnapshotScope("project", project_dir.name, project_dir.resolve()),
                 ))
 
-    return scopes
+    # Retired projects stop capturing; their manifests list them as archived scopes.
+    retired = retired_project_ids([project_id for project_id, _ in scopes])
+    return [(project_id, scope) for project_id, scope in scopes if project_id not in retired]
+
+
+def retired_project_ids(project_ids: list[str]) -> set[str]:
+    """Owner-retired ids among ``project_ids``; capture continues if decisions are unreadable."""
+    try:
+        from app.project_identity import get_project_lifecycles
+
+        lifecycles = get_project_lifecycles(project_ids, allow_unavailable=True)
+    except Exception:
+        logging.getLogger(__name__).warning("retirement decisions unavailable; capturing every project")
+        return set()
+    return {project_id for project_id, state in lifecycles.items() if state == "retired"}
 
 
 def enumerate_snapshot_scopes(
