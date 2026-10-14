@@ -26,6 +26,11 @@ def _live_identities() -> dict[str, dict[str, Any]]:
             if isinstance(row, dict) and coord_lineage.anchor_alive(row.get("anchor"))}
 
 
+def live_sessions() -> set[str]:
+    """Native session ids of live coordination identities."""
+    return {str(row["session"]) for row in _live_identities().values() if row.get("session")}
+
+
 def live_agent_for_session(session_id: str) -> str | None:
     """The live agent id registered for an exact native session id, if any."""
     return next((aid for aid, row in _live_identities().items() if row.get("session") == session_id), None)

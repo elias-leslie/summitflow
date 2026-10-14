@@ -30,11 +30,49 @@ _UUID = re.compile(r"[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12
 
 
 def _agent_hub_sessions() -> list[dict[str, Any]]:
-    """Active Agent Hub sessions (the `st sessions list` lookup); empty when Agent Hub is unreachable."""
+    """Agent Hub sessions a label may name; empty when Agent Hub is unreachable.
+
+    Active sessions, plus completed ones whose harness is still live: Agent Hub
+    marks an idle Claude Code session completed between turns.
+    """
+    from ..lib import coord_route
+
     try:
-        return STClient(require_project=False).list_sessions(status="active", limit=100)
+        client = STClient(require_project=False)
+        rows = client.list_sessions(status="active", limit=100)
+        live = coord_route.live_sessions()
+        rows += [row for row in client.list_sessions(status="completed", limit=100)
+                 if isinstance(row, dict) and str(row.get("id") or "") in live]
+        return rows
     except (APIError, OSError, ValueError):
         return []
+
+
+def _tether_aliases(target: str) -> list[str]:
+    """tmux session names of Aico/Tether windows the target names exactly (case-insensitive).
+
+    A window answers to its widget id, its st aico create request id, or its
+    title; the tmux session name then resolves through Agent Hub to one live agent.
+    """
+    from http.client import HTTPException
+
+    from app.services import tether
+
+    try:
+        status, body = tether.request("GET", "/v1/sessions")
+    except (OSError, ValueError, HTTPException):
+        return []
+    items = body.get("items") if status == 200 and isinstance(body, dict) else None
+    want = target.strip().casefold()
+    out: list[str] = []
+    for item in items if isinstance(items, list) else []:
+        if not isinstance(item, dict) or not isinstance(item.get("tmux"), dict):
+            continue
+        names = {str(item.get(k) or "").casefold() for k in ("id", "ownershipId", "rootRequestId", "name", "label", "displayTitle")}
+        tmux_name = item["tmux"].get("sessionName")
+        if want and want in names and isinstance(tmux_name, str) and tmux_name:
+            out.append(tmux_name)
+    return out
 
 
 def _resolve_agent(target: str) -> str:
@@ -43,7 +81,12 @@ def _resolve_agent(target: str) -> str:
 
     if coord_route.AGENT_ID.fullmatch(target) or coord.known_target(target):
         return target
-    found, unreachable = coord_route.resolve_label(target, _agent_hub_sessions())
+    sessions = _agent_hub_sessions()
+    found, unreachable = coord_route.resolve_label(target, sessions)
+    if not found:
+        for alias in _tether_aliases(target):
+            for aid, how in coord_route.resolve_label(alias, sessions)[0].items():
+                found.setdefault(aid, f"aico window {alias}, {how}")
     if len(found) == 1:
         agent_id = next(iter(found))
         typer.echo(f"→ {agent_id}")
@@ -54,8 +97,9 @@ def _resolve_agent(target: str) -> str:
     else:
         live = ", ".join(coord.live_agents()) or "none"
         detail = f" Candidates: {'; '.join(candidates)}." if candidates else ""
-        typer.echo(f"ERROR {target!r} names no live agent.{detail} Live agents: {live}. "
-                   "For a fleet root use --delivery fleet-stream.", err=True)
+        typer.echo(f"ERROR {target!r} names no live agent.{detail} Live agents: {live}. Address an agent id, "
+                   "an Aico window's widget id, st aico create request id or title; fleet-started root-* "
+                   "handles go to the fleet stream.", err=True)
     raise typer.Exit(2)
 
 
@@ -103,9 +147,10 @@ def start(
 
 @usage(
     surface="st.sessions.send",
-    cmd="st -P PROJECT sessions send ROOT_OR_UUID 'instruction' --source-key REVISION [--delivery native-thread]",
-    when="deliver an authorized bounded instruction through the fleet stream or native Codex thread queue",
+    cmd="st sessions send AGENT_OR_WINDOW 'one line' --source-key REVISION | st -P PROJECT sessions send ROOT_OR_UUID 'instruction' --source-key REVISION [--delivery native-thread]",
+    when="message another agent session (handshake: it acks, you confirm), or deliver a bounded instruction to a fleet root or native Codex thread",
     precautions=(
+        "Agent-to-agent: one line <=160 chars pointing at a brief file; target is an agent id, Aico widget id, st aico create request id or window title. Reusing --source-key never records a second request; st sessions inbox shows open/seen, acked. This is the one channel: never also type the same instruction into the window.",
         "Agent ids and labels default to the handshake ledger (a label must name exactly one live agent, else exit 2 with candidates); root-*/UUID default to passive fleet-stream retention consumed through wait; native-thread uses exact project/UUID provenance and local owner transport.",
         "Native-thread to a live Codex TUI records a ledger request instead of queueing; an idle-armed tmux watcher wakes it (delivery=woken), otherwise it stays queued for its next turn hook (delivery=queued).",
         "Native-thread requires exact UUID + stable revision and <=2000 sanitized UTF-8 bytes. Queued/durable does not mean working or observed consumption and is not generation-fenced; offline input can execute on same-thread resume.",
@@ -124,6 +169,11 @@ def send(
 ) -> None:
     """Agent ids and labels go to the handshake ledger; root-* handles and UUIDs to the fleet stream.
 
+    Handshake: one line (<=160 chars, point at a brief file); the recipient acks
+    with st sessions ack, you close with st sessions confirm. Reusing
+    --source-key returns the existing request instead of sending again; st
+    sessions inbox shows open/seen, open/unseen or acked.
+
     A label (Agent Hub session name/persona/tmux session, identity short id, or
     lease holder slug) must name exactly one live agent; it prints ``→ <id>``.
     Native-thread requires an exact bound UUID, stable --source-key revision,
@@ -139,7 +189,7 @@ def send(
     if delivery == "handshake":
         from .sessions_handshake import send_request
 
-        send_request(_resolve_agent(root), instruction)
+        send_request(_resolve_agent(root), instruction, source_key)
         return
     if delivery == "native-thread":
         from .sessions_native_delivery import send_native_instruction

@@ -8,7 +8,7 @@ import typer
 from st_sdk.usage import usage
 
 from ..config import get_config_optional
-from ..lib import coord
+from ..lib import coord, leases
 
 
 def _fail(exc: ValueError) -> None:
@@ -16,15 +16,20 @@ def _fail(exc: ValueError) -> None:
     raise typer.Exit(2)
 
 
-def send_request(to: str, text: str) -> None:
+def send_request(to: str, text: str, source_key: str | None = None) -> None:
     cfg = get_config_optional()
     try:
-        row = coord.send(to, text, project=getattr(cfg, "project_id", None) or None)
+        row = coord.send(to, text, project=getattr(cfg, "project_id", None) or None, source_key=source_key)
     except ValueError as exc:
         _fail(exc)
         return
-    state = "existing" if row.get("duplicate") else "sent"
-    typer.echo(f"{state} {row['id']} -> {to}; await ack in st pulse / st sessions inbox")
+    if row.get("duplicate"):
+        why = "same source key" if source_key and row.get("source_key") == source_key else "same open text"
+        typer.echo(f"existing {row['id']} -> {to} ({why}; state {row['state']}); not sent again. "
+                   "Track it with st sessions inbox")
+        return
+    typer.echo(f"sent {row['id']} -> {to}; the recipient's hook shows it on its next turn or wakes it when idle. "
+               "Track seen/ack with st sessions inbox")
     if not coord.known_target(to):
         live = ", ".join(coord.live_agents()) or "none"
         typer.echo(f"WARNING {to} is not a registered agent id (cc:/codex:/pi:/agy: id or 13+ char session prefix); "
@@ -51,6 +56,12 @@ def ack(
     typer.echo(f"acked {row['id']} {intent}")
 
 
+@usage(
+    surface="st.sessions.confirm",
+    cmd="st sessions confirm ID [--withdraw]",
+    when="close a request you sent once its ack arrived, or withdraw one nobody acked",
+    tier="reference",
+)
 def confirm(
     message_id: Annotated[str, typer.Argument(help="Request id you sent")],
     withdraw: Annotated[bool, typer.Option("--withdraw", help="Close an unacked request you sent")] = False,
@@ -64,13 +75,28 @@ def confirm(
     typer.echo(f"{'withdrew' if withdraw else 'closed'} {message_id}")
 
 
+@usage(
+    surface="st.sessions.inbox",
+    cmd="st sessions inbox",
+    when="see requests waiting for your ack, and the state of requests you sent",
+    precautions=("Your sent requests read open/seen (recipient was shown it), open/unseen, or acked; "
+                 "close acked ones with st sessions confirm ID",),
+    tier="reference",
+)
 def inbox() -> None:
-    """List open coordination requests to and from you; silent when empty."""
+    """List open coordination requests to and from you; silent when empty.
+
+    A request you sent reads open/seen once the recipient was shown it,
+    open/unseen before that, then acked; close it with st sessions confirm ID.
+    """
     for row in coord.inbox():
         detail = row["intent"] or "-"
         if row.get("eta_min"):
             detail += f" {row['eta_min']}m"
-        typer.echo(f"{row['id']} {row['state']} {row['from']}->{row['to']} {detail} | {row['text']}")
+        state = row["state"]
+        if state == "open" and row["from"] in leases.self_ids():
+            state += "/seen" if coord.surfaced(row) else "/unseen"
+        typer.echo(f"{row['id']} {state} {row['from']}->{row['to']} {detail} | {row['text']}")
     for line in coord.notices():
         typer.echo(line)
 

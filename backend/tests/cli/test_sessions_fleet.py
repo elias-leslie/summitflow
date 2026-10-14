@@ -43,10 +43,12 @@ def test_send_to_an_agent_id_defaults_to_the_handshake_ledger(monkeypatch, agent
 
     sent = []
     monkeypatch.setattr(sessions_fleet, "_client", lambda: pytest.fail("agent ids are not fleet roots"))
-    monkeypatch.setattr(sessions_handshake, "send_request", lambda root, text: sent.append((root, text)))
+    monkeypatch.setattr(sessions_handshake, "send_request", lambda root, text, key=None: sent.append((root, text, key)))
     result = runner.invoke(app, ["sessions", "send", agent, "Self-contained ask"])
     assert result.exit_code == 0, result.output
-    assert sent == [(agent, "Self-contained ask")]
+    keyed = runner.invoke(app, ["sessions", "send", agent, "Self-contained ask", "--source-key", "brief:1"])
+    assert keyed.exit_code == 0, keyed.output
+    assert sent == [(agent, "Self-contained ask", None), (agent, "Self-contained ask", "brief:1")]
 
 
 @pytest.mark.parametrize("command", ["show", "close"])
@@ -129,8 +131,63 @@ def _capture_handshake(monkeypatch) -> list[tuple[str, str]]:
 
     sent: list[tuple[str, str]] = []
     monkeypatch.setattr(sessions_fleet, "_client", lambda: pytest.fail("labels are not fleet roots"))
-    monkeypatch.setattr(sessions_handshake, "send_request", lambda root, text: sent.append((root, text)))
+    monkeypatch.setattr(sessions_handshake, "send_request", lambda root, text, source_key=None: sent.append((root, text)))
     return sent
+
+
+@pytest.fixture(autouse=True)
+def _no_live_tether(monkeypatch):
+    """Label resolution never reads the developer's live Aico windows."""
+    monkeypatch.setattr(sessions_fleet, "_tether_aliases", lambda target: [])
+
+
+def test_send_reaches_an_aico_window_by_widget_request_id_or_title(monkeypatch):
+    _live_identities(cc_36f92b="36f92b61-5153-43d5-bc11-0f8ec5fdbf0c")
+    sent = _capture_handshake(monkeypatch)
+    # An idle Claude Code child is "completed" in Agent Hub and carries only its tmux session name.
+    monkeypatch.setattr(sessions_fleet, "_agent_hub_sessions", lambda: [
+        {"id": "36f92b61-5153-43d5-bc11-0f8ec5fdbf0c", "status": "completed", "tmux_session_name": "aico-9ef2ce53"},
+    ])
+    windows = {"9ef2ce53", "ns-coordtest-1", "coordination test"}
+    monkeypatch.setattr(sessions_fleet, "_tether_aliases",
+                        lambda target: ["aico-9ef2ce53"] if target.casefold() in windows else [])
+    for target in ("9ef2ce53", "ns-coordtest-1", "Coordination test"):
+        result = runner.invoke(app, ["sessions", "send", target, "Read the brief"])
+        assert result.exit_code == 0, result.output
+        assert "→ cc:36f92b" in result.output
+    assert sent == [("cc:36f92b", "Read the brief")] * 3
+    miss = runner.invoke(app, ["sessions", "send", "other-window", "x"])
+    assert miss.exit_code == 2 and "widget id" in miss.output
+
+
+def test_tether_aliases_match_exact_window_names_only(monkeypatch):
+    from app.services import tether
+
+    item = {"id": "9ef2ce53", "ownershipId": "aico-widget-9ef2ce53", "rootRequestId": "ns-coordtest-1",
+            "name": "Coordination test", "label": "Coordination test", "tmux": {"sessionName": "aico-9ef2ce53"}}
+    monkeypatch.undo()  # drop the autouse stub so the real parser runs
+    monkeypatch.setattr(tether, "request", lambda method, path: (200, {"items": [item, {"id": "x", "tmux": None}]}))
+    assert sessions_fleet._tether_aliases("COORDINATION TEST") == ["aico-9ef2ce53"]
+    assert sessions_fleet._tether_aliases("ns-coordtest-1") == ["aico-9ef2ce53"]
+    assert sessions_fleet._tether_aliases("Coordination") == []
+    assert sessions_fleet._tether_aliases("") == []
+
+    def down(method, path):
+        raise OSError("no socket")
+
+    monkeypatch.setattr(tether, "request", down)
+    assert sessions_fleet._tether_aliases("9ef2ce53") == []
+
+
+def test_agent_hub_lookup_keeps_completed_sessions_only_while_their_harness_lives(monkeypatch):
+    from cli.lib import coord_route
+
+    client = MagicMock()
+    client.list_sessions.side_effect = lambda status, limit: (
+        [{"id": "active-1"}] if status == "active" else [{"id": "idle-live"}, {"id": "gone"}])
+    monkeypatch.setattr(sessions_fleet, "STClient", lambda require_project=False: client)
+    monkeypatch.setattr(coord_route, "live_sessions", lambda: {"idle-live"})
+    assert [row["id"] for row in sessions_fleet._agent_hub_sessions()] == ["active-1", "idle-live"]
 
 
 def test_send_resolves_a_label_to_the_one_live_agent_it_names(monkeypatch):

@@ -293,6 +293,28 @@ def test_unacked_request_surfaces_once_and_late_ack_still_lands(repos, monkeypat
     assert coord.notices() == [f"ACK {request['id']} eta 20m from codex:silent; close: st sessions confirm {request['id']}"]
 
 
+def test_source_key_reuse_never_records_a_second_request(repos, monkeypatch, tmp_path):
+    from cli.lib import coord_wake
+
+    monkeypatch.setattr(coord_wake, "STATE", tmp_path / "seen")
+    as_claude(monkeypatch, "key-sender-01")
+    first = coord.send("codex:abcdef", "read brief A", source_key="brief:1")
+    reworded = coord.send("codex:abcdef", "please read brief A now", source_key="brief:1")
+    assert reworded["id"] == first["id"] and reworded.get("duplicate")
+    as_codex(monkeypatch, "abcdef-thread")
+    coord.ack(first["id"], "yes")
+    as_claude(monkeypatch, "key-sender-01")
+    coord.confirm(first["id"])
+    after_close = coord.send("codex:abcdef", "read brief A", source_key="brief:1")
+    assert after_close["id"] == first["id"] and after_close["state"] == "closed"
+    fresh = coord.send("codex:abcdef", "read brief A", source_key="brief:2")
+    assert fresh["id"] != first["id"] and not fresh.get("duplicate")
+    assert not coord.surfaced(fresh)
+    coord_wake.seen_path("codex:abcdef").parent.mkdir(parents=True)
+    coord_wake.seen_path("codex:abcdef").write_text(json.dumps({f"{fresh['id']}:req": 1.0}))
+    assert coord.surfaced(fresh)
+
+
 def test_duplicate_and_replayed_messages(repos, monkeypatch):
     as_claude(monkeypatch, "dup-sender-01")
     first = coord.send("codex:abcdef", "is gen.json yours?")

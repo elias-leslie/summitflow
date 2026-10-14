@@ -356,19 +356,26 @@ def live_agents() -> list[str]:
                   if isinstance(row, dict) and coord_lineage.anchor_alive(row.get("anchor")))
 
 
-def send(to: str, text: str, *, project: str | None = None, limit: int = MAX_TEXT) -> dict[str, Any]:
-    """Record a request; an identical open request returns the existing row."""
+def send(to: str, text: str, *, project: str | None = None, limit: int = MAX_TEXT,
+         source_key: str | None = None) -> dict[str, Any]:
+    """Record a request; an identical open request, or any request with the same source key, returns the existing row.
+
+    The source key is the sender's stable revision for one instruction: a retry
+    or fallback with that key never records a second request, whatever its state.
+    """
     body = _clean_text(text, limit)
     agent_id, _, session_id, _ = leases.identify_agent()
     now = datetime.now(UTC).isoformat()
     with leases._lock("_coord"):
         rows = _load_ledger()
         for row in rows:
-            if row["from"] == agent_id and row["to"] == to and row["text"] == body and row["state"] == "open":
+            if row["from"] != agent_id or row["to"] != to:
+                continue
+            if (source_key and row.get("source_key") == source_key) or (row["text"] == body and row["state"] == "open"):
                 return {**row, "duplicate": True}
         row = {
             "id": uuid.uuid4().hex[:6], "from": agent_id, "from_session": session_id, "to": to,
-            "project": project, "text": body, "created": now, "state": "open",
+            "project": project, "source_key": source_key, "text": body, "created": now, "state": "open",
             "intent": None, "eta_min": None, "note": None, "acked_at": None,
             "closed_at": None, "surfaced_at": None, "ack_seen": False,
         }
@@ -443,6 +450,13 @@ def ack_authorizes(message_id: str, holder: leases.Lease, project_id: str) -> bo
         except (TypeError, ValueError):
             return False
     return False
+
+
+def surfaced(row: dict[str, Any]) -> bool:
+    """True once the recipient's own hook or watcher has shown it this request (content-free seen state)."""
+    from . import coord_wake
+
+    return f"{row['id']}:req" in coord_wake.load_seen(str(row["to"]))
 
 
 def inbox() -> list[dict[str, Any]]:
