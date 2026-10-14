@@ -400,6 +400,7 @@ def publish_source_before_backup(source: dict[str, Any], *, retained: dict[str, 
             delivered = {**delivered, "status": "PENDING", "reason": deferred_reason}
         result.update(delivered)
         if delivered.get("publication_complete"):
+            _advance_tracking_ref(project, tracking_ref, str(delivered.get("merge_sha") or head))
             try:
                 result["codeql"] = _codeql_after_publication(project, source, identity, delivered, head)
             except Exception:
@@ -439,6 +440,28 @@ def publish_source_before_backup(source: dict[str, Any], *, retained: dict[str, 
         if not can_publish():
             return outcome("pending", deferred_reason or "publication_busy")
         return outcome("failed", "publication_inspection_unavailable")
+
+
+def _advance_tracking_ref(project: Path, tracking_ref: str, published: str) -> None:
+    """Record a verified publication in the checkout's remote-tracking ref.
+
+    Publication pushes from an isolated clone, so without this the checkout's
+    ``git status`` and ahead/behind keep counting published commits as unpushed
+    until someone fetches. Metadata only (no worktree, index, branch or config
+    change): fast-forward only, compare-and-swap against the ref read here, and
+    only for a commit already present locally. Best effort; never affects the
+    publication outcome.
+    """
+    try:
+        current = _git(project, "rev-parse", "--verify", "--quiet", f"{tracking_ref}^{{commit}}")
+        old = current.stdout.strip() if current.returncode == 0 else ""
+        if old == published or _git(project, "cat-file", "-e", f"{published}^{{commit}}").returncode:
+            return
+        if old and _git(project, "merge-base", "--is-ancestor", old, published).returncode:
+            return
+        _git(project, "update-ref", "-m", "st: verified publication", tracking_ref, published, old or "0" * len(published))
+    except (_InspectionFailed, OSError, subprocess.SubprocessError):
+        return
 
 
 def _codeql_after_publication(project: Path, source: dict[str, Any], identity: tuple[str, int | None, str],

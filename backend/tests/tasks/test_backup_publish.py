@@ -138,6 +138,12 @@ def delivery(state="success", *, pushed=True):
 
 
 
+def _local_refs(project: Path, listing: str | None = None) -> list[str]:
+    """Every ref except remote-tracking ones, which record verified publication."""
+    rows = (listing if listing is not None else _git(project, "show-ref")).splitlines()
+    return [row for row in rows if " refs/remotes/" not in row]
+
+
 def test_publication_preserves_all_active_checkout_state(source, monkeypatch):
     project = Path(source["path"])
     head = _git(project, "rev-parse", "HEAD")
@@ -156,7 +162,8 @@ def test_publication_preserves_all_active_checkout_state(source, monkeypatch):
     assert result["backup_can_continue"]
     assert isolated.call_args.args[1] == head
     assert (project / ".git/index").read_bytes() == index
-    assert _git(project, "show-ref") == refs
+    assert _local_refs(project) == _local_refs(project, refs)
+    assert _git(project, "rev-parse", "refs/remotes/origin/main") == head  # published, recorded
     assert _git(project, "show", ":note") == "staged"
     assert (project / "note").read_text() == "unstaged"
     assert (project / "unfinished").read_text() == "untracked"
@@ -243,7 +250,8 @@ def test_manual_daytime_publication_pins_source_and_preserves_later_checkout(sou
     assert publisher.call_args.args[1:3] == (accepted, "main")
     assert publisher.call_args.kwargs["activity_allowed"]() is True
     assert (project / ".git/index").read_bytes() == index
-    assert _git(project, "show-ref") == refs and _git(project, "rev-parse", "HEAD") == later_head
+    assert _local_refs(project) == _local_refs(project, refs) and _git(project, "rev-parse", "HEAD") == later_head
+    assert _git(project, "rev-parse", "refs/remotes/origin/main") == accepted
     assert _git(project, "branch", "--show-current") == "later-work"
     assert _git(project, "show", ":note") == "staged"
     assert (project / "note").read_text() == "unstaged"
@@ -814,3 +822,26 @@ def test_mirror_mode_retains_a_valid_acceptance_receipt(source, monkeypatch):
 def test_unknown_publication_mode_is_rejected(source):
     with pytest.raises(ValueError):
         publish.publish_source_before_backup(source, manual_source_commit="a" * 40, publication_mode="auto")
+
+
+def test_verified_publication_fast_forwards_only_the_tracking_ref(tmp_path: Path) -> None:
+    def git(*args: str) -> str:
+        return subprocess.run(["git", "-C", str(tmp_path), *args], check=True, capture_output=True, text=True).stdout.strip()
+
+    git("init", "-b", "main")
+    git("config", "user.name", "Fixture")
+    git("config", "user.email", "fixture@example.invalid")
+    git("commit", "--allow-empty", "-m", "base")
+    base = git("rev-parse", "HEAD")
+    git("update-ref", "refs/remotes/origin/main", base)
+    git("commit", "--allow-empty", "-m", "published")
+    published = git("rev-parse", "HEAD")
+    branch_config = git("config", "--list")
+
+    publish._advance_tracking_ref(tmp_path, "refs/remotes/origin/main", published)
+    assert git("rev-parse", "refs/remotes/origin/main") == published
+    assert git("config", "--list") == branch_config and git("rev-parse", "HEAD") == published
+
+    publish._advance_tracking_ref(tmp_path, "refs/remotes/origin/main", base)  # never rewinds
+    publish._advance_tracking_ref(tmp_path, "refs/remotes/origin/main", "f" * 40)  # unknown object
+    assert git("rev-parse", "refs/remotes/origin/main") == published
