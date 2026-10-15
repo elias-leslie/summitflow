@@ -196,7 +196,14 @@ def managed_clone(
         destination = client.config_get(newid)
         if destination.get("template") or destination.get("name") != name:
             raise ProxmoxError("Destination identity differs from the requested non-template guest")
-        access = {"ciuser": profile.user, "sshkeys": quote(profile.public_keys, safe=""), "ipconfig0": profile.ipconfig0, "agent": "enabled=1", "ciupgrade": "0", "delete": "cipassword", "net0": lab_net0(destination.get("net0"))}
+        try:
+            # Network-only request carries no key material, so its error (e.g. a
+            # missing SDN.Use grant on labnet) is safe to show.
+            isolate_clone_network(client, newid)
+        except ProxmoxError as exc:
+            raise ManagedCloneError(newid, phase, f"Could not attach the clone to the {LAB_BRIDGE} lab network: {exc}", upid) from exc
+        destination = client.config_get(newid)
+        access = {"ciuser": profile.user, "sshkeys": quote(profile.public_keys, safe=""), "ipconfig0": profile.ipconfig0, "agent": "enabled=1", "ciupgrade": "0", "delete": "cipassword"}
         if destination.get("digest"):
             access["digest"] = destination["digest"]
         client.config_update(newid, access)

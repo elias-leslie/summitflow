@@ -93,17 +93,18 @@ def test_normal_clone_configures_public_access_before_boot_and_proves_ready(monk
     result = invoke(monkeypatch, client)
     assert result.exit_code == 0, result.output
     assert client.calls[0] == "copy"
-    assert client.calls[1][0] == "configure"
-    access = client.calls[1][1]
+    assert client.calls[1] == ("configure", {"net0": "virtio=02:00:00:00:00:01,bridge=labnet,firewall=1"})
+    assert client.calls[2][0] == "configure"
+    access = client.calls[2][1]
     assert access["ciuser"] == "operator"
     assert unquote(access["sshkeys"]) == public_key()
     assert access["ipconfig0"] == "ip=dhcp"
     assert access["delete"] == "cipassword"
-    assert access["net0"] == "virtio=02:00:00:00:00:01,bridge=labnet,firewall=1"
-    assert client.calls[2] == "start"
-    assert client.calls[3][0] == "exec"
-    assert "hostname -s" in client.calls[3][1][2]
-    assert "cloud-init status --wait" in client.calls[3][1][2]
+    assert "net0" not in access
+    assert client.calls[3] == "start"
+    assert client.calls[4][0] == "exec"
+    assert "hostname -s" in client.calls[4][1][2]
+    assert "cloud-init status --wait" in client.calls[4][1][2]
     assert "Guest ready: VM 9910 IPv4=10.0.4.91" in result.output
     assert result.output.index("Copy complete") < result.output.index("Guest ready")
     assert public_key() not in result.output
@@ -163,14 +164,17 @@ def test_wrong_destination_identity_is_retained_without_boot(monkeypatch):
 
 def test_configure_failure_does_not_boot_or_echo_key(monkeypatch):
     client = ReadyClient()
-    def fail(*args):
-        raise ProxmoxError("reflected " + public_key())
+    original = client.config_update
+    def fail(vmid, data):
+        if "sshkeys" in data:
+            raise ProxmoxError("reflected " + public_key())
+        original(vmid, data)
     monkeypatch.setattr(client, "config_update", fail)
     result = invoke(monkeypatch, client)
     assert result.exit_code != 0
     assert "phase=configure" in result.output
     assert public_key() not in result.output
-    assert client.calls == ["copy"]
+    assert "start" not in client.calls
 
 
 def test_wrong_guest_identity_is_not_ready(monkeypatch):
@@ -299,8 +303,7 @@ def test_start_failure_retains_configured_vm(monkeypatch):
     result = invoke(monkeypatch, client)
     assert result.exit_code != 0
     assert "phase=start task=UPID:copy-completed" in result.output
-    assert client.calls[1][0] == "configure"
-    assert len(client.calls) == 2
+    assert [call[0] for call in client.calls[1:]] == ["configure", "configure"]
 
 
 @pytest.mark.parametrize("net0,expected", [
@@ -316,3 +319,15 @@ def test_clones_always_attach_to_labnet_never_vmbr0(net0, expected):
 def test_clone_without_nic_model_is_refused(net0):
     with pytest.raises(ProxmoxError):
         vm_clone.lab_net0(net0)
+
+
+def test_labnet_permission_failure_is_explained_and_never_boots(monkeypatch):
+    client = ReadyClient()
+    def deny(vmid, data):
+        raise ProxmoxError("Proxmox API error 403: Permission check failed (/sdn/zones/lab/labnet, SDN.Use)")
+    monkeypatch.setattr(client, "config_update", deny)
+    result = invoke(monkeypatch, client)
+    assert result.exit_code != 0
+    assert "phase=configure" in result.output
+    assert "labnet lab network" in result.output and "SDN.Use" in result.output
+    assert client.calls == ["copy"]
