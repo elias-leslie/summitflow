@@ -110,4 +110,49 @@ describe('agent hub proxy route', () => {
     expect(url).toMatch(/\/api\/sessions\?limit=5$/)
     await expect(response.json()).resolves.toEqual({ sessions: [] })
   })
+
+  it('refuses a cross-site agent write before asking who the caller is', async () => {
+    const response = await POST(
+      new Request('http://localhost:3001/proxy-hub/agent-hub/agents', {
+        method: 'POST',
+        headers: {
+          ...identityHeaders,
+          host: 'localhost:3001',
+          origin: 'https://evil.example',
+          'content-type': 'text/plain',
+        },
+        body: '{"name":"x"}',
+      }),
+      { params: Promise.resolve({ path: ['agents'] }) },
+    )
+
+    expect(response.status).toBe(403)
+    expect(fetchMock).not.toHaveBeenCalled()
+  })
+
+  it('does not forward the browser Origin to Agent Hub', async () => {
+    fetchMock
+      .mockResolvedValueOnce(meResponse(true))
+      .mockResolvedValueOnce(new Response('{}', { status: 200 }))
+
+    const response = await POST(
+      new Request('http://localhost:3001/proxy-hub/agent-hub/agents', {
+        method: 'POST',
+        headers: {
+          ...identityHeaders,
+          host: 'localhost:3001',
+          origin: 'http://localhost:3001',
+          'sec-fetch-site': 'same-origin',
+        },
+        body: '{"name":"x"}',
+      }),
+      { params: Promise.resolve({ path: ['agents'] }) },
+    )
+
+    expect(response.status).toBe(200)
+    const [, init] = fetchMock.mock.calls[1] ?? []
+    const headers = new Headers(init?.headers)
+    expect(headers.get('origin')).toBeNull()
+    expect(headers.get('sec-fetch-site')).toBeNull()
+  })
 })

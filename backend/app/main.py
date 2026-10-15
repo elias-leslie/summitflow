@@ -45,6 +45,7 @@ from .api import (
 from .config import settings
 from .exception_handlers import setup_exception_handlers
 from .logging_config import SyslogPrefixFormatter, configure_logging, get_logger
+from .request_origin import request_origin_middleware
 from .schemas.health import ComponentHealth, DetailedHealthResponse, ReadinessResponse
 
 _APP_VERSION = "0.1.0"
@@ -123,6 +124,8 @@ app = FastAPI(
 )
 
 app.middleware("http")(access_control_middleware)
+# Outside access control: other sites' browser writes are refused before identity is resolved.
+app.middleware("http")(request_origin_middleware)
 # Added last so it wraps everything, including access-control rejections.
 app.add_middleware(cast(Any, AccessLogMiddleware))
 

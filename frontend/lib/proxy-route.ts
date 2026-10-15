@@ -64,6 +64,60 @@ export async function requireOwner(request: Request): Promise<Response | null> {
   return Response.json({ detail: 'Owner access required' }, { status: 403 })
 }
 
+const UNSAFE_METHODS = new Set(['POST', 'PUT', 'PATCH', 'DELETE'])
+const OTHER_SITE_FETCH = new Set(['cross-site', 'same-site'])
+
+function originAuthority(origin: string): string | null {
+  try {
+    const url = new URL(origin)
+    return url.protocol === 'http:' || url.protocol === 'https:'
+      ? `${url.protocol}//${url.host}`
+      : null
+  } catch {
+    return null
+  }
+}
+
+function hostAuthority(host: string | null, protocol: string): string | null {
+  const first = host?.split(',')[0]?.trim()
+  return first ? originAuthority(`${protocol}//${first}`) : null
+}
+
+/**
+ * Refuse a browser write that another site's page sent.
+ *
+ * The proxies act for the caller with server-side credentials (the internal
+ * secret, SummitFlow's Agent Hub client id), and loopback callers count as the
+ * owner, so a page the owner happens to open could otherwise POST here.
+ * POST/PUT/PATCH/DELETE carrying Origin or Sec-Fetch-Site must come from this
+ * origin; callers that send neither (st, agents, curl) pass.
+ */
+export function crossSiteRefusal(
+  request: Request,
+  method: string,
+): Response | null {
+  if (!UNSAFE_METHODS.has(method)) return null
+  const site = request.headers.get('sec-fetch-site')?.trim().toLowerCase()
+  const origin = request.headers.get('origin')
+  if (site && OTHER_SITE_FETCH.has(site)) return sameOriginRequired()
+  if (site === 'same-origin' || (!site && origin === null)) return null
+  const authority = origin === null ? null : originAuthority(origin)
+  if (!authority) return sameOriginRequired()
+  const protocol = new URL(authority).protocol
+  const ours = [
+    request.headers.get('host'),
+    request.headers.get('x-forwarded-host'),
+  ].map((host) => hostAuthority(host, protocol))
+  return ours.includes(authority) ? null : sameOriginRequired()
+}
+
+function sameOriginRequired(): Response {
+  return Response.json(
+    { detail: 'Same-origin request required' },
+    { status: 403 },
+  )
+}
+
 type ProxyRouteOptions<Config> = {
   resolveConfig: () => Config
   buildUpstreamUrl: (
@@ -130,6 +184,8 @@ export function createProxyRouteHandler<Config>({
     { params }: ProxyRouteContext,
     method: string,
   ): Promise<Response> {
+    const crossSite = crossSiteRefusal(request, method)
+    if (crossSite) return crossSite
     if (authorize) {
       const denied = await authorize(request)
       if (denied) return denied

@@ -1,11 +1,16 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { GET, POST } from './route'
+import { DELETE, GET, POST } from './route'
 
 const fetchMock = vi.fn()
 const originalApiUrl = process.env.API_URL
 const originalInternalSecret = process.env.INTERNAL_SERVICE_SECRET
 
 vi.stubGlobal('fetch', fetchMock)
+
+const identity = {
+  'Cf-Access-Jwt-Assertion': 'owner-jwt',
+  Cookie: 'CF_Authorization=owner-cookie',
+}
 
 describe('runtime docker proxy route', () => {
   beforeEach(() => {
@@ -125,6 +130,80 @@ describe('runtime docker proxy route', () => {
     expect(headers.get('cookie')).toBe('CF_Authorization=non-owner-cookie')
     expect(headers.get('x-forwarded-host')).toBe('dev.summitflow.dev')
     expect(response.status).toBe(403)
+  })
+
+  it.each<Record<string, string>>([
+    { origin: 'https://evil.example', 'content-type': 'text/plain' },
+    { origin: 'null' },
+    { 'sec-fetch-site': 'cross-site' },
+    { 'sec-fetch-site': 'same-site', origin: 'https://agent.summitflow.dev' },
+    { origin: 'http://localhost:3001', 'sec-fetch-site': 'cross-site' },
+  ])(
+    'refuses a cross-site restart before the secret is added (%o)',
+    async (headers) => {
+      for (const extra of [{}, identity]) {
+        const response = await POST(
+          new Request('http://localhost:3001/proxy-runtime/docker/restart/x', {
+            method: 'POST',
+            headers: { host: 'localhost:3001', ...extra, ...headers },
+            body: 'x',
+          }),
+          { params: Promise.resolve({ path: ['restart', 'x'] }) },
+        )
+        expect(response.status).toBe(403)
+      }
+      expect(fetchMock).not.toHaveBeenCalled()
+    },
+  )
+
+  it('refuses a cross-site DELETE but lets cross-site reads through', async () => {
+    const denied = await DELETE(
+      new Request('http://localhost:3001/proxy-runtime/docker/x', {
+        method: 'DELETE',
+        headers: { host: 'localhost:3001', origin: 'https://evil.example' },
+      }),
+      { params: Promise.resolve({ path: ['x'] }) },
+    )
+    expect(denied.status).toBe(403)
+    expect(fetchMock).not.toHaveBeenCalled()
+
+    fetchMock.mockResolvedValueOnce(new Response('[]', { status: 200 }))
+    const read = await GET(
+      new Request('http://localhost:3001/proxy-runtime/docker/containers', {
+        headers: { host: 'localhost:3001', 'sec-fetch-site': 'cross-site' },
+      }),
+      { params: Promise.resolve({ path: ['containers'] }) },
+    )
+    expect(read.status).toBe(200)
+  })
+
+  it.each<Record<string, string>>([
+    { host: 'localhost:3001', origin: 'http://localhost:3001' },
+    {
+      host: 'localhost:3001',
+      origin: 'http://localhost:3001',
+      'sec-fetch-site': 'same-origin',
+    },
+    { host: 'dev.summitflow.dev', origin: 'https://dev.summitflow.dev' },
+    {
+      host: '127.0.0.1:3001',
+      'x-forwarded-host': 'dev.summitflow.dev',
+      origin: 'https://dev.summitflow.dev',
+    },
+    { host: 'localhost:3001' },
+  ])('lets same-origin and headerless writes through (%o)', async (headers) => {
+    fetchMock.mockResolvedValueOnce(
+      new Response(JSON.stringify({ success: true }), { status: 200 }),
+    )
+    const response = await POST(
+      new Request('http://localhost:3001/proxy-runtime/docker/restart/x', {
+        method: 'POST',
+        headers,
+      }),
+      { params: Promise.resolve({ path: ['restart', 'x'] }) },
+    )
+    expect(response.status).toBe(200)
+    expect(fetchMock).toHaveBeenCalledTimes(1)
   })
 
   it('forwards request bodies without text re-encoding', async () => {
