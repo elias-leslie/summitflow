@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import subprocess
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, cast
@@ -16,6 +17,7 @@ if TYPE_CHECKING:
     from app.tasks.backup_restic import ResticConfig
 
 NOW = datetime(2026, 10, 11, 15, 0, tzinfo=UTC)
+_RESOLVE_ALIAS = px._resolve_alias  # The real one; the autouse fixture replaces it.
 
 
 def test_paths_parse_only_known_target_shapes():
@@ -27,10 +29,41 @@ def test_paths_parse_only_known_target_shapes():
         assert px.parse_target(bad) is None
 
 
+@pytest.fixture(autouse=True)
+def backup_key(tmp_path, monkeypatch):
+    """SummitFlow's own PVE key; the owner's ssh alias only supplies the address."""
+    (tmp_path / px.PVE_BACKUP_KEY).write_text("")
+    monkeypatch.setattr(px, "backup_key_directory", lambda: tmp_path)
+    monkeypatch.setattr(px, "_resolve_alias", lambda host: ("192.0.2.39", "root", "22"))
+    return tmp_path / px.PVE_BACKUP_KEY
+
+
 def _guest(monkeypatch, status: str, *, prior: bool, thin: float | None = 50.0, kind: str = "qemu", vmid: int = 120):
     resources = [{"vmid": vmid, "type": kind, "status": status, "node": "davion-gem", "name": "g", "maxdisk": 35 * 1024**3, "template": 0}]
-    monkeypatch.setattr(px, "_ssh", lambda host, *args, **_: json.dumps(resources) if args[0] == "pvesh" else f" {thin}\n")
+    monkeypatch.setattr(px, "_ssh", lambda host, *args, **_: json.dumps(resources) if args == ("guests",) else f" {thin}\n")
     monkeypatch.setattr(px, "_has_completed_backup", lambda source_id: prior)
+
+
+def _verb(command: list[str]) -> list[str]:
+    """What follows the ssh destination: the whole request the Proxmox host receives."""
+    assert command[:3] == ["ssh", "-F", "/dev/null"]
+    return command[command.index("root@192.0.2.39") + 1:]
+
+
+def test_proxmox_host_is_reached_only_with_summitflows_own_key(backup_key):
+    command = px.pve_ssh("proxmox-gem")
+    assert command[command.index("-i") + 1] == str(backup_key)
+    assert {"IdentitiesOnly=yes", "IdentityAgent=none", "BatchMode=yes"} <= set(command)
+    assert command[-1] == "root@192.0.2.39" and "proxmox-gem" not in command  # the alias's IdentityFile (owner key) is never read
+    backup_key.unlink()
+    with pytest.raises(RuntimeError, match=r"install\.sh"):
+        px.pve_ssh("proxmox-gem")
+
+
+def test_alias_resolution_takes_only_the_address_user_and_port(monkeypatch):
+    output = "user root\nhostname 192.168.86.39\nport 22\nidentityfile ~/.ssh/id_ed25519_davion_gem\n"
+    monkeypatch.setattr(px.subprocess, "run", lambda argv, **_: subprocess.CompletedProcess(argv, 0, output, ""))
+    assert _RESOLVE_ALIAS.__wrapped__("proxmox-gem") == ("192.168.86.39", "root", "22")
 
 
 def test_file_targets_parse_only_safe_selections():
@@ -55,15 +88,18 @@ def test_file_targets_parse_only_safe_selections():
         assert px.parse_target(bad) is None, bad
 
 
-def test_file_commands_never_stage_on_the_host_and_clean_the_guest(monkeypatch):
+def test_file_captures_send_the_host_a_verb_never_a_command(monkeypatch):
     _guest(monkeypatch, "running", prior=True, vmid=100)
-    agent = px.plan_capture("vm100", "proxmox://proxmox-gem/qemu/100/files?via=agent&path=/home/u/p&exclude=Cache")
-    remote = agent["command"][-1]
-    assert remote.startswith("python3 -c ") and "rm -rf " in remote and "--exclude=Cache" in remote and "home/u/p" in remote
-    assert agent["capture"]["compressed"] is True
+    path = "proxmox://proxmox-gem/qemu/100/files?via=agent&path=/home/u/p&exclude=Cache"
+    agent = px.plan_capture("vm100", path)
+    assert _verb(agent["command"]) == ["capture", "vm100", px.path_digest(path)]
+    assert agent["capture"]["compressed"] is True and agent["capture"]["node"] == "davion-gem"
     _guest(monkeypatch, "running", prior=True, kind="lxc", vmid=140)
-    pct = px.plan_capture("ct140", "proxmox://proxmox-gem/lxc/140/files?via=pct&path=/srv/data")
-    assert pct["command"][-1].startswith("pct exec 140 -- sh -c ")
+    path = "proxmox://proxmox-gem/lxc/140/files?via=pct&path=/srv/data"
+    assert _verb(px.plan_capture("ct140", path)["command"]) == ["capture", "ct140", px.path_digest(path)]
+    host = "proxmox://proxmox-gem/host/files?path=/vault/identity"
+    assert _verb(px.plan_capture("files", host)["command"]) == ["capture", "files", px.path_digest(host)]
+    # A guest reached through its own ssh alias is not the Proxmox host's to read.
     ssh = px.plan_capture("ct140", "proxmox://proxmox-gem/lxc/140/files?via=neri-lab&path=/srv/data")
     assert ssh["command"][-2] == "neri-lab" and ssh["command"][-1].endswith('rc=$?; [ "$rc" -le 1 ]')
     _guest(monkeypatch, "stopped", prior=False, kind="lxc", vmid=140)
@@ -74,9 +110,8 @@ def test_file_commands_never_stage_on_the_host_and_clean_the_guest(monkeypatch):
 def test_running_guest_streams_uncompressed_in_snapshot_mode(monkeypatch):
     _guest(monkeypatch, "running", prior=True)
     plan = px.plan_capture("pve-vm-120", "proxmox://proxmox-gem/qemu/120")
-    command = plan["command"]
-    assert command[0] == "ssh" and "BatchMode=yes" in command and command[-11:] == ["proxmox-gem", "vzdump", "120", "--stdout", "1", "--mode", "snapshot", "--compress", "0", "--quiet", "1"]
-    assert "stop" not in command and plan["estimated_bytes"] == 35 * 1024**3
+    assert _verb(plan["command"]) == ["capture", "pve-vm-120", px.path_digest("proxmox://proxmox-gem/qemu/120")]
+    assert plan["capture"]["mode"] == "snapshot" and plan["estimated_bytes"] == 35 * 1024**3
 
 
 def test_stopped_guest_is_offline_once_backed_up_but_captured_first(monkeypatch):
@@ -85,7 +120,7 @@ def test_stopped_guest_is_offline_once_backed_up_but_captured_first(monkeypatch)
         px.plan_capture("pve-ct-140", "proxmox://proxmox-gem/lxc/140")
     _guest(monkeypatch, "stopped", prior=False, kind="lxc", vmid=140)
     plan = px.plan_capture("pve-ct-140", "proxmox://proxmox-gem/lxc/140")
-    assert "--mode" in plan["command"] and plan["command"][plan["command"].index("--mode") + 1] == "snapshot"
+    assert plan["capture"]["mode"] == "snapshot" and _verb(plan["command"])[0] == "capture"
 
 
 def test_reused_guest_id_is_not_silently_excluded_and_full_thin_pool_is_refused(monkeypatch):
@@ -97,9 +132,10 @@ def test_reused_guest_id_is_not_silently_excluded_and_full_thin_pool_is_refused(
         px.plan_capture("pve-ct-140", "proxmox://proxmox-gem/lxc/140")
 
 
-def test_cluster_config_is_a_read_only_sqlite_dump():
+def test_cluster_config_is_dumped_by_the_host_without_private_keys():
     plan = px.plan_capture("pve-cluster-config", "proxmox://proxmox-gem/config")
-    assert plan["command"][-4:] == ["sqlite3", "-readonly", "/var/lib/pve-cluster/config.db", ".dump"]
+    assert _verb(plan["command"]) == ["capture", "pve-cluster-config", px.path_digest("proxmox://proxmox-gem/config")]
+    assert plan["capture"]["excludes"] == ["priv/", "*.key"]
 
 
 def test_streamed_admission_reserves_no_scratch_staging(tmp_path, monkeypatch):

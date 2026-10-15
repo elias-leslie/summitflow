@@ -14,8 +14,12 @@ import pytest
 SCRIPT = Path(__file__).resolve().parents[3] / "scripts" / "test-install.sh"
 
 
+LABNET = {"net0": "virtio=02:00:00:00:00:01,bridge=labnet,firewall=1"}
+
+
 def _select_target(
-    tmp_path: Path, args: list[str], settings: dict[str, str], guest_ip: str | None = None
+    tmp_path: Path, args: list[str], settings: dict[str, str], guest_ip: str | None = None,
+    config: dict[str, str] | None = None, guests: list[int] | None = None,
 ) -> subprocess.CompletedProcess[str]:
     # Execute the real entry point through argument validation, before any API
     # helper or cleanup trap exists. The isolated layout cannot load credentials.
@@ -29,12 +33,21 @@ def _select_target(
     if guest_ip is not None:
         definitions, main = source.split("# ─── Main", 1)
         addresses = [{"ip-address-type": "ipv4", "ip-address": guest_ip}] if guest_ip else []
-        response = json.dumps({"data": {"result": [{"name": "eth0", "ip-addresses": addresses}]}})
-        # The actual existing-VM branch runs against a read-only guest-agent
-        # fixture. Execution ends before the first SSH connection or reset.
+        agent = json.dumps({"data": {"result": [{"name": "eth0", "ip-addresses": addresses}]}})
+        settings_json = json.dumps({"data": LABNET if config is None else config})
+        resources = json.dumps({"data": [{"vmid": vmid, "type": "qemu"} for vmid in guests or []]})
+        calls = tmp_path / "calls.log"
+        # The main branch runs against read-only fixtures (API, `st`, no sleeps).
+        # Execution ends before the first SSH connection or reset.
         prefix = (
             definitions
-            + f"\npve_api() {{ printf '%s\\n' {shlex.quote(response)}; }}\n# Main"
+            + "\nsleep() { :; }\n"
+            + f"pve_api() {{ printf '%s %s\\n' \"$1\" \"$2\" >> {shlex.quote(str(calls))}; case \"$2\" in\n"
+            + f"  */config) printf '%s\\n' {shlex.quote(settings_json)} ;;\n"
+            + f"  /cluster/resources*) printf '%s\\n' {shlex.quote(resources)} ;;\n"
+            + f"  */agent/*) printf '%s\\n' {shlex.quote(agent)} ;;\n"
+            + "esac; }\n"
+            + f"st() {{ printf 'st %s\\n' \"$*\" >> {shlex.quote(str(calls))}; }}\n# Main"
             + main.split("# Wait for SSH", 1)[0]
             + '\nprintf "HOST:%s\\n" "$VM_IP"\n'
         )
@@ -159,3 +172,36 @@ def test_pve_api_pins_the_ca_and_keeps_the_token_out_of_curl_argv(tmp_path: Path
     assert sent["argv"][sent["argv"].index("--cacert") + 1] == "/fixture/pve-ca.pem"
     assert sent["headers"] == ["Authorization: PVEAPIToken=u@pve!t=s3cret-token\n"]
     assert sent["argv"][-3:] == ["https://pve:8006/api2/json/nodes/n/qemu/202", "--data-urlencode", "purge=1"]
+
+
+@pytest.mark.parametrize(("config", "accepted"), [
+    (LABNET, True),
+    ({"net0": "virtio=02:00:00:00:00:01,bridge=vmbr0,firewall=1"}, False),
+    ({"net0": "virtio=02:00:00:00:00:01,bridge=labnet"}, False),  # no PVE firewall: lab_isolation does not apply
+    ({"net0": "virtio=02:00:00:00:00:01,bridge=labnet2,firewall=1"}, False),
+    ({**LABNET, "net1": "virtio=02:00:00:00:00:02,bridge=vmbr0"}, False),  # a second NIC on the LAN
+    ({}, False),
+])
+def test_existing_installer_target_must_be_on_labnet(tmp_path: Path, config: dict[str, str], accepted: bool) -> None:
+    result = _select_target(tmp_path, ["--existing", "--vm-id", "202"], {}, "10.20.0.50", config=config)
+    assert (result.returncode == 0) is accepted, result.stdout + result.stderr
+    if not accepted:
+        assert "labnet" in result.stderr and "HOST:" not in result.stdout
+
+
+def test_new_installer_vm_is_cloned_onto_labnet_through_st_vm(tmp_path: Path) -> None:
+    result = _select_target(tmp_path, ["--vm-id", "202"], {}, "10.20.0.51")
+    assert result.returncode == 0, result.stdout + result.stderr
+    calls = (tmp_path / "calls.log").read_text().splitlines()
+    clone = [call for call in calls if call.startswith("st ")]
+    assert len(clone) == 1 and clone[0].startswith("st vm clone --clone-only 9000 202 install-test-")
+    assert not any("/clone" in call for call in calls)  # never the raw API clone, which keeps the template's vmbr0
+    assert calls.index(clone[0]) < calls.index("POST /nodes/fixture/qemu/202/status/start")
+    assert "HOST:10.20.0.51" in result.stdout
+
+
+def test_new_installer_vm_never_reuses_an_existing_guest(tmp_path: Path) -> None:
+    result = _select_target(tmp_path, ["--vm-id", "202"], {}, "10.20.0.51", guests=[202])
+    assert result.returncode != 0 and "already exists" in result.stderr
+    calls = (tmp_path / "calls.log").read_text()
+    assert "st vm clone" not in calls and "DELETE" not in calls and "status/stop" not in calls

@@ -8,6 +8,9 @@
 #   test-install.sh --vm-id 101        # Use specific VM ID
 #   test-install.sh --existing --vm-id 101 # Reset an explicit disposable test VM
 # VM 100 is the persistent st-browser runtime, never an installer test target.
+# Test VMs run on the isolated labnet bridge (internet, and inbound from the workstation only), never on vmbr0:
+# clones go through `st vm clone --clone-only`, which attaches them to labnet with the PVE firewall before boot,
+# and an existing VM is refused unless it is already there.
 
 set -euo pipefail
 
@@ -159,19 +162,6 @@ discover_vm_ip() {
         | head -1
 }
 
-wait_for_task() {
-    local upid="$1" timeout="${2:-120}"
-    local start=$SECONDS
-    while (( SECONDS - start < timeout )); do
-        local status
-        status=$(pve_api GET "/nodes/${PVE_NODE}/tasks/${upid}/status" | jq -r '.data.status')
-        [[ "$status" == "stopped" ]] && return 0
-        sleep 2
-    done
-    echo "  TIMEOUT waiting for task $upid" >&2
-    return 1
-}
-
 wait_for_ssh() {
     local host="$1" timeout="${2:-180}"
     local start=$SECONDS
@@ -278,6 +268,11 @@ echo ""
 
 if [[ "$EXISTING" == true ]]; then
     echo "Using existing VM ${VM_ID}"
+    if ! pve_api GET "/nodes/${PVE_NODE}/qemu/${VM_ID}/config" | jq -e '[.data | to_entries[] | select(.key | test("^net[0-9]+$")) | .value]
+            | length > 0 and all(test("(^|,)bridge=labnet(,|$)") and test("(^|,)firewall=1(,|$)"))' >/dev/null; then
+        echo "VM ${VM_ID} is not on the isolated labnet bridge with the PVE firewall; refusing to use it." >&2
+        exit 1
+    fi
     VM_IP=$(discover_vm_ip)
     if [[ -z "$VM_IP" ]]; then
         echo "Could not discover the selected existing VM address; refusing reset." >&2
@@ -288,15 +283,17 @@ if [[ "$EXISTING" == true ]]; then
         exit 1
     fi
 else
-    # Clone from template
-    echo "Cloning template ${TEMPLATE_ID} → VM ${VM_ID} (${VM_NAME})..."
-    UPID=$(pve_api POST "/nodes/${PVE_NODE}/qemu/${TEMPLATE_ID}/clone" \
-        --data-urlencode "newid=${VM_ID}" \
-        --data-urlencode "name=${VM_NAME}" \
-        --data-urlencode "full=1" \
-        | jq -r '.data')
-    echo "  Clone task: ${UPID}"
-    wait_for_task "$UPID" 300
+    # Clone from template onto labnet (st vm clone: the token's pool, pinned TLS, net0 moved to labnet before boot)
+    echo "Cloning template ${TEMPLATE_ID} → VM ${VM_ID} (${VM_NAME}) on labnet..."
+    # Cleanup destroys VM_ID, so it must be a fresh guest this run creates.
+    existing=$(pve_api GET "/cluster/resources?type=vm" | jq -e --argjson id "$VM_ID" '[.data[] | select(.vmid == $id)] | length') \
+        || { echo "Could not list Proxmox guests; refusing to clone." >&2; exit 1; }
+    if [[ "$existing" != 0 ]]; then
+        echo "VM ${VM_ID} already exists; select a free --vm-id." >&2
+        exit 1
+    fi
+    trap cleanup EXIT
+    (cd "${PROJECT_DIR}" && st vm clone --clone-only "${TEMPLATE_ID}" "${VM_ID}" "${VM_NAME}")
 
     # Start VM
     echo "Starting VM ${VM_ID}..."

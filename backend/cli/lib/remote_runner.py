@@ -6,6 +6,10 @@ working tree (tracked + untracked, honoring .gitignore), checks it out on the
 runner, installs locked dependencies when lockfiles changed, runs the command
 under the runner's own environment (its own Postgres), and returns only the
 exit code and output. Any transport failure falls back to local execution.
+
+The runner is reached with its own key (``ST_CI_RUNNER_KEY``, default
+~/.ssh/id_ed25519_st_ci_runner, pinned to the workstation address in the runner
+user's authorized_keys), never the owner's Proxmox root key or the keyring agent.
 """
 
 from __future__ import annotations
@@ -24,7 +28,7 @@ from pathlib import Path
 from app.utils.heavy_work import admission_state, lane_activity
 
 DEFAULT_RUNNER = "kasadis@192.168.86.235"
-DEFAULT_KEY = Path.home() / ".ssh" / "id_ed25519_davion_gem"
+DEFAULT_KEY = Path.home() / ".ssh" / "id_ed25519_st_ci_runner"
 # Projects whose test environment the runner provisions (scripts/ci-runner).
 DEFAULT_PROJECTS = ("summitflow",)
 # Only the test-shaping variables cross over; secrets stay on the workstation.
@@ -44,7 +48,7 @@ class Runner:
 
     def ssh_args(self, *, timeout: int = 5) -> list[str]:
         control = Path(os.environ.get("XDG_RUNTIME_DIR") or tempfile.gettempdir()) / "st-ci-runner-%C"
-        return ["ssh", "-i", str(self.key), "-o", "BatchMode=yes", "-o", f"ConnectTimeout={timeout}",
+        return ["ssh", "-i", str(self.key), "-o", "IdentitiesOnly=yes", "-o", "BatchMode=yes", "-o", f"ConnectTimeout={timeout}",
                 "-o", "StrictHostKeyChecking=yes", "-o", "ControlMaster=auto",
                 "-o", f"ControlPath={control}", "-o", "ControlPersist=120"]
 

@@ -114,6 +114,14 @@ setting), not against a hostile root user.
   local restic repository; the workstation key can add snapshots but not
   delete them, and retention runs only on PVE. It is the first thing to remove
   when davion-gem needs space: see `scripts/pve-restic-append/README.txt`.
+- **Proxmox captures use their own key.** The `proxmox://` sources (cluster
+  config, guest files, host files) reach davion-gem only with
+  `pve-backup.ed25519` in the backup key directory, bound to the fixed
+  dispatcher `/usr/local/sbin/summitflow-pve-backup` (verbs `guests`,
+  `thinpool`, `capture SOURCE DIGEST`). What each source captures is the list
+  root installs on PVE, so adding or changing a `proxmox://` source needs
+  `sudo scripts/pve-backup/install.sh` before it runs. The config dump leaves
+  out `priv/` and every `*.key` file; PVE regenerates them on restore.
 - **Health.** Every scheduler tick re-reads the daily rotating
   `restic check --read-data-subset` results (failed or older than three days
   raises an alert). Weekly: snapshot-count and repository-size drops and a test

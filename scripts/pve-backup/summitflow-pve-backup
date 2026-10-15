@@ -1,0 +1,203 @@
+#!/usr/bin/python3 -I
+"""Forced command for SummitFlow's Proxmox backup key on davion-gem.
+
+Installed as /usr/local/sbin/summitflow-pve-backup by scripts/pve-backup/install.sh and
+bound to one key in /root/.ssh/authorized_keys with restrict,command="...". The key
+sends one fixed verb; no shell ever runs what it sends:
+
+  guests                  guest list (pvesh get /cluster/resources --type vm)
+  thinpool                data_percent of the guest thin pool
+  capture SOURCE DIGEST   stream one registered source to stdout
+
+What a source captures comes only from /etc/summitflow-pve-backup/sources.json, which
+root installs from SummitFlow's registered sources. DIGEST is the SHA-256 of the source
+path as SummitFlow has it now; a mismatch means the source changed on the workstation,
+and it is refused until root re-runs install.sh.
+
+The cluster config dump leaves out priv/ and every *.key file (authkey.key, pve-www.key,
+pve-root-ca.key, node ssl keys; PVE regenerates them on restore), and host file tars
+always leave out the same files under /etc/pve.
+"""
+
+import base64
+import json
+import os
+import re
+import secrets
+import shlex
+import sqlite3
+import subprocess
+import sys
+import time
+from pathlib import Path
+
+SOURCES = Path("/etc/summitflow-pve-backup/sources.json")
+CONFIG_DATABASE = "/var/lib/pve-cluster/config.db"
+DUMP_DIRECTORY = Path("/var/lib/vz/dump")
+DUMP_LOG_KEEP_DAYS = 7
+THIN_POOL = "pve/data"
+AGENT_PART_BYTES = 12_000_000  # Base64 text per guest-agent read; a multiple of 4, under the 16 MiB limit.
+GUEST_EXEC_TIMEOUT_SECONDS = 1800
+PVE_SECRETS = ("etc/pve/priv", "etc/pve/*.key")
+_SOURCE_ID = re.compile(r"[A-Za-z0-9._-]{1,128}")
+_DIGEST = re.compile(r"[0-9a-f]{64}")
+_PATH = re.compile(r"/(?:[A-Za-z0-9._@+-][A-Za-z0-9 ._@+-]*/?)+")
+_EXCLUDE = re.compile(r"[A-Za-z0-9 ._*@+/-]{1,128}")
+_PART = re.compile(r"part\.[0-9]{5}")
+_VIA = {"host": "host", "lxc": "pct", "qemu": "agent"}
+
+
+class Refused(Exception):
+    pass
+
+
+def load_source(source_id, digest):
+    """The installed definition of one source, checked again here (root wrote it, agents may have shaped it)."""
+    if not _SOURCE_ID.fullmatch(source_id) or not _DIGEST.fullmatch(digest):
+        raise Refused("capture needs a source id and the SHA-256 of its path")
+    entry = json.loads(SOURCES.read_text()).get(source_id)
+    if not isinstance(entry, dict):
+        raise Refused(f"{source_id} is not installed on this host; run scripts/pve-backup/install.sh")
+    if entry.get("digest") != digest:
+        raise Refused(f"{source_id} changed on the workstation; run scripts/pve-backup/install.sh")
+    kind, vmid, files = entry.get("kind"), entry.get("vmid"), entry.get("files")
+    if kind == "config":
+        if vmid is not None or files is not None:
+            raise Refused(f"{source_id}: malformed config entry")
+        return entry
+    if kind == "host" and (vmid is not None or files is None):
+        raise Refused(f"{source_id}: host entries name files only")
+    if kind in {"qemu", "lxc"} and not (isinstance(vmid, int) and not isinstance(vmid, bool) and 0 < vmid < 10**9):
+        raise Refused(f"{source_id}: malformed guest id")
+    if kind not in _VIA:
+        raise Refused(f"{source_id}: unknown kind")
+    if files is not None:
+        paths, excludes = files.get("paths"), files.get("excludes")
+        if files.get("via") != _VIA[kind] or not isinstance(paths, list) or not paths or not isinstance(excludes, list):
+            raise Refused(f"{source_id}: malformed file selection")
+        if any(not isinstance(path, str) or not _PATH.fullmatch(path) or ".." in path.split("/") for path in paths):
+            raise Refused(f"{source_id}: unsafe path")
+        if any(not isinstance(item, str) or not _EXCLUDE.fullmatch(item) for item in excludes):
+            raise Refused(f"{source_id}: unsafe exclude")
+    return entry
+
+
+def config_dump(out):
+    """SQL dump of the cluster database without any priv/ directory (top level and per node) or *.key file."""
+    source = sqlite3.connect(f"file:{CONFIG_DATABASE}?mode=ro", uri=True)
+    memory = sqlite3.connect(":memory:")
+    try:
+        source.backup(memory)
+    finally:
+        source.close()
+    memory.execute(
+        "WITH RECURSIVE hidden(inode) AS ("
+        " SELECT inode FROM tree WHERE name = 'priv'"
+        " UNION SELECT tree.inode FROM tree JOIN hidden ON tree.parent = hidden.inode AND tree.inode != hidden.inode)"
+        " DELETE FROM tree WHERE inode IN hidden OR name LIKE '%.key'"
+    )
+    for line in memory.iterdump():
+        out.write(line.encode() + b"\n")
+    out.flush()
+    return 0
+
+
+def tar_command(files, *, host=False):
+    """A tar stream of the selected paths; exit 1 (a file changed while read) is accepted by the caller."""
+    excludes = [*files["excludes"], *(PVE_SECRETS if host else ())]
+    return ["tar", "--create", "--file=-", "--one-file-system", "--ignore-failed-read", "--warning=no-file-changed",
+            "--warning=no-file-removed", *[f"--exclude={item}" for item in excludes], "-C", "/", "--",
+            *[path.strip("/") for path in files["paths"]]]
+
+
+def _tar_ok(code):
+    return 0 if code <= 1 else code
+
+
+def vzdump(kind, vmid, run=subprocess.run):
+    """The whole guest on stdout; snapshot mode never stops it. vzdump still writes a small log: keep a week."""
+    code = run(["vzdump", str(vmid), "--stdout", "1", "--mode", "snapshot", "--compress", "0", "--quiet", "1"]).returncode
+    cutoff = time.time() - DUMP_LOG_KEEP_DAYS * 86400
+    for log in DUMP_DIRECTORY.glob(f"vzdump-{kind}-{vmid}-*.log"):
+        try:
+            if log.is_file() and not log.is_symlink() and log.stat().st_mtime < cutoff:
+                log.unlink()
+        except OSError:
+            pass  # Diagnostics housekeeping never fails a completed capture.
+    return code
+
+
+def _node_of(vmid, run=subprocess.run):
+    listing = run(["pvesh", "get", "/cluster/resources", "--type", "vm", "--output-format", "json"],
+                  capture_output=True, text=True, check=True)
+    for item in json.loads(listing.stdout):
+        if item.get("vmid") == vmid and item.get("type") == "qemu":
+            return str(item["node"])
+    raise Refused(f"qemu {vmid} does not exist")
+
+
+def agent_files(vmid, files, out, run=subprocess.run):
+    """Tar inside the VM through its QEMU agent, read the base64 parts back in bounded chunks, always remove the guest copy."""
+    node = _node_of(vmid, run)
+    directory = f"/tmp/st-backup-{secrets.token_hex(8)}"
+    script = shlex.join(tar_command(files)) + '; rc=$?; [ "$rc" -le 1 ]'
+    build = (f"set -o pipefail; umask 077; rm -rf {directory}; mkdir {directory} || exit 9; "
+             f"{{ {script}; }} | gzip -n | base64 -w0 | split -b {AGENT_PART_BYTES} -d -a 5 - {directory}/part.")
+
+    def guest(command):
+        result = run(["qm", "guest", "exec", str(vmid), "--timeout", str(GUEST_EXEC_TIMEOUT_SECONDS), "--", "bash", "-c", command],
+                     capture_output=True, text=True)
+        if result.returncode:
+            raise Refused("guest agent exec failed: " + result.stderr.strip()[-300:])
+        return json.loads(result.stdout)
+
+    try:
+        built = guest(build)
+        if built.get("exitcode") != 0:
+            raise Refused("guest tar failed: " + str(built.get("err-data", ""))[-300:])
+        for part in sorted(guest("ls -1 " + directory).get("out-data", "").split()):
+            if not _PART.fullmatch(part):
+                raise Refused("unexpected file in the guest staging directory")
+            read = run(["pvesh", "get", f"/nodes/{node}/qemu/{vmid}/agent/file-read", "--file", f"{directory}/{part}",
+                        "--output-format", "json"], capture_output=True, text=True, check=True)
+            chunk = json.loads(read.stdout)
+            if chunk.get("truncated"):
+                raise Refused("guest agent read was truncated")
+            out.write(base64.b64decode(chunk["content"]))
+        out.flush()
+    finally:
+        guest("rm -rf " + directory)
+    return 0
+
+
+def capture(entry, out, run=subprocess.run):
+    kind, vmid, files = entry["kind"], entry.get("vmid"), entry.get("files")
+    if kind == "config":
+        return config_dump(out)
+    if files is None:
+        return vzdump(kind, vmid, run)
+    if kind == "host":
+        return _tar_ok(run(tar_command(files, host=True)).returncode)
+    if kind == "lxc":
+        return _tar_ok(run(["pct", "exec", str(vmid), "--", *tar_command(files)]).returncode)
+    return agent_files(vmid, files, out, run)
+
+
+def main(command=None, run=subprocess.run, out=None):
+    words = (os.environ.get("SSH_ORIGINAL_COMMAND", "") if command is None else command).split()
+    out = out or sys.stdout.buffer
+    try:
+        if words == ["guests"]:
+            return run(["pvesh", "get", "/cluster/resources", "--type", "vm", "--output-format", "json"]).returncode
+        if words == ["thinpool"]:
+            return run(["lvs", "--noheadings", "-o", "data_percent", THIN_POOL]).returncode
+        if len(words) == 3 and words[0] == "capture":
+            return capture(load_source(words[1], words[2]), out, run)
+        raise Refused("unknown request; this key runs only guests, thinpool or capture SOURCE DIGEST")
+    except (Refused, OSError, ValueError, sqlite3.Error, subprocess.CalledProcessError) as exc:
+        sys.stderr.write(f"summitflow-pve-backup: {exc}\n")
+        return 2
+
+
+if __name__ == "__main__":
+    sys.exit(main())

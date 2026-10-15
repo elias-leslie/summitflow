@@ -26,6 +26,13 @@ def test_configured_honours_off_and_requires_key(key, tmp_path):
     assert runner == remote_runner.Runner("ci@host", key, ("a", "b"))
 
 
+def test_runner_uses_its_own_key_and_never_the_owners():
+    assert remote_runner.DEFAULT_KEY.name == "id_ed25519_st_ci_runner"
+    args = remote_runner.Runner("ci@host", Path("/k/ci"), ("x",)).ssh_args()
+    assert args[args.index("-i") + 1] == "/k/ci" and "IdentitiesOnly=yes" in args  # agent keys are never offered
+    assert not any("davion_gem" in arg for arg in args)
+
+
 @pytest.mark.parametrize(("admit", "busy", "expected"), [
     (True, [], None),
     (False, [], "workstation admission closed (memory pressure)"),

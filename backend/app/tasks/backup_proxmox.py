@@ -17,33 +17,38 @@ local scratch, so a capture can never fill pve-root or the scratch volume (the
 agent path stages one bounded, compressed copy in the guest's /tmp and always
 removes it). Snapshot mode never stops a running guest. A stopped guest whose
 disks cannot have changed is reported offline once a backup of it exists.
+
+The Proxmox host is reached only with SummitFlow's own key, which root binds to a
+fixed dispatcher (scripts/pve-backup): this side sends a verb and a source id,
+never a command, and the far side builds the config dump (without priv/ and any
+*.key file), vzdump and file tars from the sources root installed there.
 """
 
 from __future__ import annotations
 
+import hashlib
 import json
 import os
 import re
-import secrets
 import shlex
 import subprocess
-from contextlib import suppress
 from dataclasses import dataclass
 from datetime import UTC, datetime
+from functools import cache
 from pathlib import Path
 from typing import Any
 from urllib.parse import parse_qs
 
+from ..services.backup_keys import backup_key_directory
 from ..storage import backups as backup_store
 
 PATH_SCHEME = "proxmox://"
 CONFIG_DATABASE = "/var/lib/pve-cluster/config.db"
-DUMP_DIRECTORY = "/var/lib/vz/dump"
-DUMP_LOG_KEEP_DAYS = 7
-THIN_POOL = "pve/data"
 THIN_POOL_FULL_PERCENT = 98.0  # Snapshot copy-on-write must not exhaust the guest thin pool.
 CONFIG_ESTIMATED_BYTES = 64 * 1024**2
 SSH_OPTIONS = ("-o", "BatchMode=yes", "-o", "ConnectTimeout=20", "-o", "ServerAliveInterval=30", "-o", "ServerAliveCountMax=6")
+PVE_BACKUP_KEY = "pve-backup.ed25519"  # In the backup key directory; root binds it to scripts/pve-backup/summitflow-pve-backup.
+PVE_VIAS = ("host", "pct", "agent")  # File reads the Proxmox host's dispatcher performs; any other via is an ssh alias to the guest.
 _TARGET = re.compile(
     r"proxmox://(?P<host>[A-Za-z0-9._-]{1,64})/"
     r"(?:(?P<kind>qemu|lxc)/(?P<vmid>[1-9][0-9]{0,8})(?P<files>/files)?|(?P<config>config)|(?P<pvehost>host)/files)"
@@ -52,8 +57,6 @@ _TARGET = re.compile(
 _GUEST_PATH = re.compile(r"/(?:[A-Za-z0-9._@+-][A-Za-z0-9 ._@+-]*/?)+")
 _EXCLUDE = re.compile(r"[A-Za-z0-9 ._*@+/-]{1,128}")
 _VIA = re.compile(r"agent|pct|host|[A-Za-z0-9._-]{1,64}")
-AGENT_PART_BYTES = 12_000_000  # Base64 text per guest-agent read; a multiple of 4, under the 16 MiB limit.
-GUEST_EXEC_TIMEOUT_SECONDS = 1800
 
 
 class ProxmoxGuestOffline(RuntimeError):
@@ -124,9 +127,34 @@ def source_target_path(source_id: str) -> str | None:
     return str(path) if is_proxmox_path(path) else None
 
 
+def path_digest(path: str) -> str:
+    """What the dispatcher checks: a source whose path changed here is refused until root re-installs it."""
+    return hashlib.sha256(path.encode()).hexdigest()
+
+
+@cache
+def _resolve_alias(host: str) -> tuple[str, str, str]:
+    """The address, user and port the owner's ssh config gives this alias; its IdentityFile is never used."""
+    result = subprocess.run(["ssh", "-G", host], capture_output=True, text=True, timeout=10, check=False)
+    values = dict(line.split(" ", 1) for line in result.stdout.splitlines() if " " in line)
+    if result.returncode or not values.get("hostname"):
+        raise RuntimeError(f"Cannot resolve the Proxmox host alias {host}")
+    return values["hostname"], values.get("user") or "root", values.get("port") or "22"
+
+
+def pve_ssh(host: str) -> list[str]:
+    """ssh to the Proxmox host with SummitFlow's own forced-command key, never the owner key or the keyring agent."""
+    key = backup_key_directory() / PVE_BACKUP_KEY
+    if not key.is_file():
+        raise RuntimeError(f"SummitFlow's Proxmox backup key {key} is missing; root installs it with scripts/pve-backup/install.sh")
+    address, user, port = _resolve_alias(host)
+    return ["ssh", "-F", "/dev/null", "-i", str(key), "-o", "IdentitiesOnly=yes", "-o", "IdentityAgent=none", *SSH_OPTIONS,
+            "-o", f"UserKnownHostsFile={Path.home() / '.ssh' / 'known_hosts'}", "-p", port, f"{user}@{address}"]
+
+
 def _ssh(host: str, *args: str, timeout: int = 120) -> str:
     try:
-        result = subprocess.run(["ssh", *SSH_OPTIONS, host, *args], capture_output=True, text=True, timeout=timeout, check=False)
+        result = subprocess.run([*pve_ssh(host), *args], capture_output=True, text=True, timeout=timeout, check=False)
     except subprocess.TimeoutExpired as exc:
         raise RuntimeError(f"Proxmox host {host} did not answer within {timeout}s") from exc
     if result.returncode:
@@ -136,7 +164,7 @@ def _ssh(host: str, *args: str, timeout: int = 120) -> str:
 
 
 def guest_state(target: ProxmoxTarget) -> dict[str, Any]:
-    resources = json.loads(_ssh(target.host, "pvesh", "get", "/cluster/resources", "--type", "vm", "--output-format", "json"))
+    resources = json.loads(_ssh(target.host, "guests"))
     for item in resources if isinstance(resources, list) else []:
         if item.get("vmid") == target.vmid and item.get("type") == target.kind:
             if item.get("template"):
@@ -147,7 +175,7 @@ def guest_state(target: ProxmoxTarget) -> dict[str, Any]:
 
 def thin_pool_percent(host: str) -> float | None:
     try:
-        return float(_ssh(host, "lvs", "--noheadings", "-o", "data_percent", THIN_POOL, timeout=60).strip())
+        return float(_ssh(host, "thinpool", timeout=60).strip())
     except (RuntimeError, ValueError):
         return None
 
@@ -162,15 +190,14 @@ def plan_capture(source_id: str, path: str) -> dict[str, Any]:
     target = parse_target(path)
     if target is None:
         raise RuntimeError(f"Invalid Proxmox source path for {source_id}")
-    ssh = ["ssh", *SSH_OPTIONS, target.host]
     if target.kind == "config":
         return {
             "target": target, "estimated_bytes": CONFIG_ESTIMATED_BYTES,
-            "command": [*ssh, "sqlite3", "-readonly", CONFIG_DATABASE, ".dump"],
-            "capture": {"kind": "proxmox-config", "host": target.host, "database": CONFIG_DATABASE},
+            "command": [*pve_ssh(target.host), "capture", source_id, path_digest(path)],
+            "capture": {"kind": "proxmox-config", "host": target.host, "database": CONFIG_DATABASE, "excludes": ["priv/", "*.key"]},
         }
     if target.files is not None:
-        return _plan_files(source_id, target)
+        return _plan_files(source_id, target, path)
     state = guest_state(target)
     if state["status"] != "running" and _has_completed_backup(source_id):
         raise ProxmoxGuestOffline(f"Proxmox {target.kind} {target.vmid} is {state['status']}; its last backup is current")
@@ -180,41 +207,14 @@ def plan_capture(source_id: str, path: str) -> dict[str, Any]:
             raise RuntimeError(f"Capture blocked: insufficient host-policy headroom on the Proxmox thin pool ({percent:.1f}% full)")
     return {
         "target": target, "estimated_bytes": state["maxdisk"],
-        # --stdout writes nothing to Proxmox storage; snapshot mode never stops the guest.
-        "command": [*ssh, "vzdump", str(target.vmid), "--stdout", "1", "--mode", "snapshot", "--compress", "0", "--quiet", "1"],
+        # The dispatcher runs vzdump --stdout (nothing written to Proxmox storage) in snapshot mode, which never stops the guest.
+        "command": [*pve_ssh(target.host), "capture", source_id, path_digest(path)],
         "capture": {"kind": f"proxmox-{target.kind}", "host": target.host, "vmid": target.vmid, "node": state["node"],
                     "name": state["name"], "guest_status": state["status"], "mode": "snapshot"},
     }
 
 
 FILES_ESTIMATED_BYTES = 1024**3  # First-run reserve; later runs use measured growth.
-
-# Runs on the Proxmox host: tar inside the guest through its QEMU agent, read the
-# base64 parts back in bounded chunks to stdout, and always remove the guest copy.
-_AGENT_READER = """
-import base64, json, subprocess, sys
-node, vmid, directory, script, timeout = sys.argv[1:6]
-def guest(command):
-    result = subprocess.run(["qm", "guest", "exec", vmid, "--timeout", timeout, "--", "bash", "-c", command], capture_output=True, text=True)
-    if result.returncode:
-        sys.exit("guest agent exec failed: " + result.stderr.strip()[-300:])
-    return json.loads(result.stdout)
-try:
-    built = guest(script)
-    if built.get("exitcode") != 0:
-        sys.exit("guest tar failed: " + str(built.get("err-data", ""))[-300:])
-    out = sys.stdout.buffer
-    for part in sorted(guest("ls -1 " + directory).get("out-data", "").split()):
-        read = subprocess.run(["pvesh", "get", "/nodes/%s/qemu/%s/agent/file-read" % (node, vmid), "--file", directory + "/" + part, "--output-format", "json"], capture_output=True, text=True, check=True)
-        chunk = json.loads(read.stdout)
-        if chunk.get("truncated"):
-            sys.exit("guest agent read was truncated")
-        out.write(base64.b64decode(chunk["content"]))
-    out.flush()
-finally:
-    guest("rm -rf " + directory)
-"""
-
 
 def _tar_script(selection: FileSelection) -> str:
     """A tar stream of the selected paths; exit 1 (a file changed while read) is accepted."""
@@ -224,30 +224,22 @@ def _tar_script(selection: FileSelection) -> str:
     return f"{shlex.join(command)}; rc=$?; [ \"$rc\" -le 1 ]"
 
 
-def _plan_files(source_id: str, target: ProxmoxTarget) -> dict[str, Any]:
+def _plan_files(source_id: str, target: ProxmoxTarget, path: str) -> dict[str, Any]:
     selection = target.files
     assert selection is not None
     capture: dict[str, Any] = {"kind": "proxmox-files", "host": target.host, "via": selection.via, "paths": list(selection.paths),
                                "excludes": list(selection.excludes), "compressed": selection.via == "agent"}
-    pve = ["ssh", *SSH_OPTIONS, target.host]
     if target.kind != "host":
         state = guest_state(target)
         if state["status"] != "running":
             # Files can only be read from a running guest; a stopped one cannot change.
             raise ProxmoxGuestOffline(f"Proxmox {target.kind} {target.vmid} is {state['status']}; file capture resumes when it runs")
         capture.update(vmid=target.vmid, node=state["node"], name=state["name"])
-    script = _tar_script(selection)
-    if selection.via == "host":
-        command = [*pve, script]
-    elif selection.via == "pct":
-        command = [*pve, f"pct exec {target.vmid} -- sh -c {shlex.quote(script)}"]
-    elif selection.via == "agent":
-        directory = f"/tmp/st-backup-{secrets.token_hex(8)}"
-        guest = (f"set -o pipefail; umask 077; rm -rf {directory}; mkdir {directory} || exit 9; "
-                 f"{{ {script}; }} | gzip -n | base64 -w0 | split -b {AGENT_PART_BYTES} -d -a 5 - {directory}/part.")
-        command = [*pve, shlex.join(["python3", "-c", _AGENT_READER, str(capture["node"]), str(target.vmid), directory, guest, str(GUEST_EXEC_TIMEOUT_SECONDS)])]
+    if selection.via in PVE_VIAS:
+        # The dispatcher tars on the host, through pct exec, or inside the VM through its QEMU agent.
+        command = [*pve_ssh(target.host), "capture", source_id, path_digest(path)]
     else:
-        command = ["ssh", *SSH_OPTIONS, selection.via, script]
+        command = ["ssh", *SSH_OPTIONS, selection.via, _tar_script(selection)]
     return {"target": target, "estimated_bytes": FILES_ESTIMATED_BYTES, "command": command, "capture": capture}
 
 
@@ -257,21 +249,31 @@ def run_proxmox_backup(*, source_id: str, project_dir: str, env: dict[str, str],
     plan = plan_capture(source_id, project_dir)
     from .backup_repository_runtime import run_repository_stream
 
-    result = run_repository_stream(
+    return run_repository_stream(
         source_id=source_id, env=env, command=plan["command"], filename=plan["target"].filename,
         capture=plan["capture"], estimated_bytes=plan["estimated_bytes"], local_only=local_only,
     )
-    _trim_dump_logs(plan["target"])
-    return result
 
 
-def _trim_dump_logs(target: ProxmoxTarget) -> None:
-    """vzdump --stdout still writes a small log per run; keep a week of them, never dumps."""
-    if target.kind in {"config", "host"} or target.files is not None:
-        return
-    with suppress(RuntimeError):  # Diagnostics housekeeping never fails a completed capture.
-        _ssh(target.host, "find", DUMP_DIRECTORY, "-maxdepth", "1", "-type", "f",
-             "-name", f"vzdump-{target.kind}-{target.vmid}-*.log", "-mtime", f"+{DUMP_LOG_KEEP_DAYS}", "-delete", timeout=60)
+def dispatcher_entry(path: str) -> dict[str, Any] | None:
+    """What the Proxmox dispatcher captures for one source path, or None when it is not the host's to read."""
+    target = parse_target(path)
+    if target is None or (target.files is not None and target.files.via not in PVE_VIAS):
+        return None
+    files = target.files and {"via": target.files.via, "paths": list(target.files.paths), "excludes": list(target.files.excludes)}
+    return {"digest": path_digest(path), "kind": target.kind, "vmid": target.vmid, "files": files}
+
+
+def dispatcher_sources(host: str) -> dict[str, dict[str, Any]]:
+    """The registered sources root installs on one Proxmox host (scripts/pve-backup/install.sh)."""
+    sources = {}
+    for source in backup_store.list_sources():
+        path = str(source.get("path") or "")
+        target = parse_target(path)
+        entry = dispatcher_entry(path) if source.get("enabled") and target and target.host == host else None
+        if entry:
+            sources[str(source["id"])] = entry
+    return sources
 
 
 _HEADERS = {
@@ -288,7 +290,9 @@ def restore_instructions(backup: dict[str, Any]) -> str:
     snapshot, path = verification.get("snapshot_id"), verification.get("payload_path")
     host = capture.get("host", "<proxmox-host>")
     if capture.get("kind") == "proxmox-config":
-        return f"restic dump {snapshot} {path} > config.sql, then rebuild a config.db with sqlite3 on {host} while pve-cluster is stopped"
+        return (f"restic dump {snapshot} {path} > config.sql, then rebuild a config.db with sqlite3 on {host} while pve-cluster is stopped; "
+                "the dump has no priv/ or *.key files: PVE regenerates its keys and certificates; re-create API tokens, TFA "
+                "and root's authorized_keys (priv/) from the console")
     if capture.get("kind") == "proxmox-files":
         unpack = "gunzip | tar -xf - -C <isolated-dir>" if capture.get("compressed") else "tar -xf - -C <isolated-dir>"
         return f"restic dump {snapshot} {path} | {unpack}, then copy the reviewed files back"
@@ -440,3 +444,11 @@ def write_freshness_receipt(now: datetime | None = None) -> dict[str, Any]:
     temporary.write_text(json.dumps(receipt, indent=1, default=str) + "\n")
     os.replace(temporary, FRESHNESS_RECEIPT)
     return receipt
+
+
+if __name__ == "__main__":
+    import sys
+
+    if sys.argv[1:2] != ["dispatcher-sources"] or len(sys.argv) != 3:
+        sys.exit("usage: python -m app.tasks.backup_proxmox dispatcher-sources <pve-host-alias>")
+    print(json.dumps(dispatcher_sources(sys.argv[2]), indent=1, sort_keys=True))
