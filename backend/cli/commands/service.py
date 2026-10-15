@@ -418,6 +418,9 @@ def rebuild(
                     reason="frontend_restart_scope",
                 )
             steps.append(("systemd_units", lambda: service_ops.sync_systemd_units(services)))
+            if backend and services.release_install:
+                steps.append(("release_install", lambda: service_ops.run_release_install(
+                    services, development_root=development_root, source_commit=release.source.source_commit)))
             if backend:
                 steps.append(("host_monitor_policy", lambda: service_ops.sync_host_monitor_policy(services)))
             for name, step in steps:

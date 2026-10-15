@@ -64,6 +64,7 @@ class ProjectServices:
     backend_extras: tuple[str, ...] = ()
     host_config_root: Path | None = None
     durable_data_root: Path | None = None
+    release_install: str = ""
 
     @property
     def all_services(self) -> tuple[str, ...]:
@@ -121,6 +122,9 @@ def load_project(project_id: str) -> ProjectServices:
     extras = runtime.get("backend_extras", [])
     if not isinstance(extras, list) or any(not isinstance(extra, str) or not extra.strip() for extra in extras):
         raise ServiceError("runtime.backend_extras must be a list of nonempty extra names")
+    release_install = runtime.get("release_install") or ""
+    if not isinstance(release_install, str) or Path(release_install).is_absolute() or ".." in Path(release_install).parts:
+        raise ServiceError("runtime.release_install must be a path inside the project")
     canonical_id = str(project.get("id") or project_id)
     root = Path(root_raw)
     backend_dir, frontend_dir = runtime_source_dirs(runtime, root)
@@ -139,6 +143,7 @@ def load_project(project_id: str) -> ProjectServices:
         backend_extras=tuple(dict.fromkeys(_as_str_list(extras))),
         host_config_root=root,
         durable_data_root=root / "data",
+        release_install=release_install,
     )
 
 
@@ -371,6 +376,25 @@ def sync_systemd_units(project: ProjectServices) -> int:
         return run(["systemctl", "--user", "enable", *boot])
     return 0
 
+
+
+def run_release_install(project: ProjectServices, *, development_root: Path, source_commit: str) -> int:
+    """Run the project's own unprivileged installer from the accepted release source.
+
+    For projects whose units run from a release they install themselves
+    (identity ``runtime.release_install``). The installer gets the development
+    checkout and the accepted commit so it can export that exact commit.
+    """
+    if not project.release_install:
+        return 0
+    root = project.root.resolve()
+    script = (root / project.release_install).resolve()
+    if not script.is_relative_to(root) or not script.is_file() or not os.access(script, os.X_OK):
+        print(f"[service] release installer missing or not executable: {project.release_install}")
+        return 1
+    print(f"[service] installing release with {project.release_install}")
+    env = {**os.environ, "ST_DEVELOPMENT_ROOT": str(development_root), "ST_SOURCE_COMMIT": source_commit}
+    return run([str(script)], cwd=root, env=env, _heavy=True)
 
 def _port_open(port: int) -> bool:
     with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:

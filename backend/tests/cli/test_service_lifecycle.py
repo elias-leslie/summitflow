@@ -843,3 +843,52 @@ def test_activation_unit_status_reports_paired_service(activated, monkeypatch, p
     assert result.exit_code == code, result.output
     assert f"web.socket:active(web.service:{paired_state})" in result.output
     assert f"reaper.timer:active(reaper.service:{paired_state})" in result.output
+
+
+def test_release_installer_runs_after_units_and_before_restart(lifecycle, monkeypatch, project):
+    order: list[str] = []
+    installing = replace(project, release_install="deploy/install.sh")
+    monkeypatch.setattr(service, "_load", lambda _: installing)
+    lifecycle["sync_systemd_units"].side_effect = lambda _p: order.append("units") or 0
+    lifecycle["restart_service"].side_effect = lambda *_a, **_k: order.append("restart") or 0
+    install = Mock(side_effect=lambda *_a, **_k: order.append("install") or 0)
+    monkeypatch.setattr(service_ops, "run_release_install", install)
+
+    result = CliRunner().invoke(service.app, ["rebuild", "example"])
+
+    assert result.exit_code == 0, result.output
+    assert order[:3] == ["units", "install", "restart"]
+    assert install.call_args.kwargs == {"development_root": project.root, "source_commit": "c" * 40}
+
+
+def test_failed_release_installer_stops_before_restart(lifecycle, monkeypatch, project):
+    monkeypatch.setattr(service, "_load", lambda _: replace(project, release_install="deploy/install.sh"))
+    monkeypatch.setattr(service_ops, "run_release_install", Mock(return_value=1))
+
+    result = CliRunner().invoke(service.app, ["rebuild", "example"])
+
+    assert result.exit_code != 0
+    assert "release install failed" in result.output
+    lifecycle["restart_service"].assert_not_called()
+
+
+def test_release_installer_gets_development_root_and_commit(project, tmp_path):
+    script = project.root / "deploy" / "install.sh"
+    script.parent.mkdir()
+    script.write_text('#!/bin/sh\necho "$ST_DEVELOPMENT_ROOT $ST_SOURCE_COMMIT $(pwd)" > "$0.out"\n')
+    installing = replace(project, release_install="deploy/install.sh")
+
+    script.chmod(0o644)
+    assert service_ops.run_release_install(installing, development_root=Path("/dev/repo"), source_commit="abc") == 1
+    script.chmod(0o755)
+    assert service_ops.run_release_install(installing, development_root=Path("/dev/repo"), source_commit="abc") == 0
+    assert (script.parent / "install.sh.out").read_text().split() == ["/dev/repo", "abc", str(project.root.resolve())]
+    assert service_ops.run_release_install(project, development_root=Path("/x"), source_commit="abc") == 0
+
+
+@pytest.mark.parametrize("value", ["../elsewhere.sh", "/usr/bin/true", 3])
+def test_release_installer_must_live_inside_the_project(monkeypatch, tmp_path, value):
+    monkeypatch.setattr(service_ops, "get_project_identity", lambda _: {"runtime": {"release_install": value}})
+    monkeypatch.setattr(service_ops, "get_project_identity_root", lambda _: str(tmp_path))
+    with pytest.raises(service_ops.ServiceError, match="release_install"):
+        service_ops.load_project("example")
