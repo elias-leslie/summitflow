@@ -37,6 +37,12 @@ if [[ -z "$PVE_HOST" || -z "$PVE_TOKEN" || -z "$PVE_SECRET" || -z "$PVE_NODE" ]]
     echo "Set PROXMOX_API_URL, PROXMOX_TOKEN_ID, PROXMOX_TOKEN_SECRET, and PROXMOX_NODE." >&2
     exit 1
 fi
+# TLS to PVE is always pinned to the cluster CA; there is no unverified fallback.
+PVE_CA="${PROXMOX_CA_BUNDLE:-}"
+if [[ -z "$PVE_CA" || ! -f "$PVE_CA" ]]; then
+    echo "Set PROXMOX_CA_BUNDLE to the PVE cluster CA file; PVE API calls are refused without it." >&2
+    exit 1
+fi
 
 SSH_OPTS=(
     -o BatchMode=yes
@@ -141,10 +147,9 @@ fi
 pve_api() {
     local method="$1" path="$2"
     shift 2
-    local tls=(-k)
-    [ -n "${PROXMOX_CA_BUNDLE:-}" ] && [ -f "${PROXMOX_CA_BUNDLE}" ] && tls=(--cacert "${PROXMOX_CA_BUNDLE}")
-    curl -sf "${tls[@]}" -X "$method" \
-        -H "Authorization: PVEAPIToken=${PVE_TOKEN}=${PVE_SECRET}" \
+    # The token header comes from a pipe (printf is a builtin), never curl's argv in /proc/*/cmdline.
+    curl -sf --cacert "$PVE_CA" -X "$method" \
+        -H @<(printf 'Authorization: PVEAPIToken=%s=%s\n' "$PVE_TOKEN" "$PVE_SECRET") \
         "${PVE_HOST}/api2/json${path}" "$@"
 }
 

@@ -34,7 +34,7 @@ def test_normal_retention_passes_and_oversized_plans_trip():
     assert reasons == ["would remove 20 of 30 points of neri (> 50%)"]
 
 
-def test_trip_is_recorded_alerted_once_and_kept_until_approved(notifications):
+def test_trip_is_recorded_alerted_once_and_kept_until_retention_is_normal(notifications):
     assert safety.guard_deletion("restic-retention", "local", delete=5, total=100) is True
     assert safety.read_status()["status"] == "ok"
     assert safety.guard_deletion("restic-retention", "local", delete=80, total=100) is False
@@ -44,17 +44,65 @@ def test_trip_is_recorded_alerted_once_and_kept_until_approved(notifications):
     assert status["alerts"][0]["kind"] == "deletion-breaker"
     assert "Refused restic-retention deletion on local" in status["alerts"][0]["message"]
     assert len(notifications) == 1 and notifications[0]["severity"] == "error"
-    safety.approve_deletion("restic-retention", reason="retention lowered on purpose")
-    assert safety.guard_deletion("restic-retention", "local", delete=80, total=100) is True
+    # The breaker message names the target, never a kind-wide approval.
+    assert "approve-deletion restic-retention --target local" in notifications[0]["message"]
+    # A normal run clears the breaker.
+    assert safety.guard_deletion("restic-retention", "local", delete=5, total=100) is True
     assert safety.read_status()["status"] == "ok"
-    # The approval is single-use.
+
+
+def test_approve_deletion_records_and_announces_but_never_lifts_the_breaker(notifications):
     assert safety.guard_deletion("restic-retention", "local", delete=80, total=100) is False
+    request = safety.approve_deletion("restic-retention", target="local", reason="retention lowered on purpose")
+    assert request["lifts_breaker"] is False and request["planned_delete"] == 80
+    assert notifications[-1]["title"] == "Backup deletion approval requested"
+    assert "local" in notifications[-1]["message"] and notifications[-1]["severity"] == "warning"
+    assert safety.read_status()["approval_requests"]["restic-retention:local"]["reason"] == "retention lowered on purpose"
+    # The oversized run stays blocked, on every later attempt.
+    assert safety.guard_deletion("restic-retention", "local", delete=80, total=100) is False
+    assert safety.guard_deletion("restic-retention", "local", delete=80, total=100) is False
+    assert safety.read_status()["status"] == "alert"
+    # Once retention is back to normal, the request is cleared with the breaker.
+    assert safety.guard_deletion("restic-retention", "local", delete=5, total=100) is True
+    assert safety.read_status()["approval_requests"] == {}
 
 
-def test_expired_approval_does_not_apply(notifications):
-    with safety._locked_status() as status:
-        status["approvals"]["btrbk-target"] = {"reason": "x", "expires_at": (datetime.now(UTC) - timedelta(hours=1)).isoformat()}
+def test_approve_deletion_needs_a_refused_run_on_that_target(notifications):
+    with pytest.raises(ValueError, match="No refused restic-retention deletion on local"):
+        safety.approve_deletion("restic-retention", target="local", reason="pre-approve")
+    assert safety.guard_deletion("restic-retention", "offsite", delete=80, total=100) is False
+    with pytest.raises(ValueError):
+        safety.approve_deletion("restic-retention", target="local", reason="wrong target")
+    assert safety.read_status()["approval_requests"] == {}
+
+
+@pytest.mark.parametrize("approval_key", ["btrbk-target", "btrbk-target:/t"])
+def test_hand_written_approvals_in_the_status_file_are_ignored(notifications, approval_key):
+    """Bypass attempt: an agent writes a kind-wide or target approval straight into the 0644 status file."""
+    path = safety.status_path()
+    path.parent.mkdir(parents=True, exist_ok=True)
+    forged = {"reason": "x", "approved_at": datetime.now(UTC).isoformat(), "expires_at": (datetime.now(UTC) + timedelta(hours=24)).isoformat()}
+    path.write_text(json.dumps({"approvals": {approval_key: forged},
+                                "approval_requests": {"btrbk-target:/t": {"reason": "x"}}}))
     assert safety.guard_deletion("btrbk-target", "/t", delete=30, total=36) is False
+    status = safety.read_status()
+    assert "approvals" not in status and status["breakers"]["btrbk-target:/t"]["tripped"] is True
+
+
+def test_cli_approve_deletion_requires_target_and_reports_refusal(notifications):
+    from typer.testing import CliRunner
+
+    from cli.main import app
+
+    runner = CliRunner()
+    missing_target = runner.invoke(app, ["backup", "storage", "approve-deletion", "restic-retention", "--reason", "x"])
+    assert missing_target.exit_code != 0 and "--target" in missing_target.output
+    no_breaker = runner.invoke(app, ["backup", "storage", "approve-deletion", "restic-retention", "--target", "local", "--reason", "x"])
+    assert no_breaker.exit_code == 1 and "No refused restic-retention deletion on local" in no_breaker.output
+    assert safety.guard_deletion("restic-retention", "local", delete=80, total=100) is False
+    recorded = runner.invoke(app, ["backup", "storage", "approve-deletion", "restic-retention", "--target", "local", "--reason", "x"])
+    assert recorded.exit_code == 0 and '"lifts_breaker": false' in recorded.output
+    assert safety.guard_deletion("restic-retention", "local", delete=80, total=100) is False
 
 
 def test_section_alerts_raise_top_level_status():

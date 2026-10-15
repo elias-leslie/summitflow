@@ -1083,6 +1083,7 @@ def test_proxmox_destroy_sends_purge_as_query_param() -> None:
     with (
         patch("cli.lib.proxmox.httpx.request", return_value=Response()) as request,
         patch("cli.lib.proxmox.ProxmoxClient.config_get", return_value={"template": 0}),
+        patch("cli.lib.proxmox._tls_context"),
         patch("cli.lib.proxmox.time.sleep"),
     ):
         ProxmoxClient(config).destroy("101")

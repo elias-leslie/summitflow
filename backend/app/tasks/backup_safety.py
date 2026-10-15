@@ -4,8 +4,12 @@ Every automatic removal of backup points (local and offsite restic retention,
 native archive expiry, btrbk target expiry) asks ``guard_deletion`` first. A
 plan that removes more than normal retention would (a large share of all
 points, or of one source) is refused, recorded, and alerted; the caller keeps
-the points and carries on backing up. An owner can approve one oversized run
-with ``st backup storage approve-deletion``.
+the points and carries on backing up. Nothing in this file lifts the breaker:
+the status file is writable by every process of the backup user, so an
+oversized run stays blocked until a Nightshift passkey approval bound to that
+kind, target and plan exists (not built yet). ``st backup storage
+approve-deletion`` only records and announces the owner's request for one
+refused run.
 
 ``STATUS_PATH`` is a stable JSON contract read by Nightshift and other
 watchers: top-level ``status`` is ``ok`` or ``alert`` and ``alerts`` lists
@@ -19,11 +23,14 @@ import fcntl
 import json
 import os
 from collections.abc import Iterator, Mapping
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, datetime
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from ..logging_config import get_logger
+
+if TYPE_CHECKING:
+    from ..storage.notifications_helpers import NotificationSeverity
 
 logger = get_logger(__name__)
 
@@ -32,7 +39,6 @@ TOTAL_TRIP_FRACTION = 0.25
 TOTAL_TRIP_MIN = 10
 GROUP_TRIP_FRACTION = 0.5
 GROUP_TRIP_MIN = 6
-APPROVAL_HOURS = 24
 
 
 def status_path() -> Path:
@@ -60,7 +66,8 @@ def _locked_status() -> Iterator[dict[str, Any]]:
         except (OSError, ValueError):
             status = {}
         status.setdefault("breakers", {})
-        status.setdefault("approvals", {})
+        status.pop("approvals", None)  # Former file-based approvals; never honoured.
+        status.setdefault("approval_requests", {})
         status.setdefault("sections", {})
         yield status
         status["version"] = STATUS_VERSION
@@ -116,16 +123,12 @@ def guard_deletion(kind: str, target: str, *, delete: int, total: int, groups: M
     try:
         with _locked_status() as status:
             previous = status["breakers"].get(key) or {}
-            approval = status["approvals"].get(kind) or status["approvals"].get(key) or {}
-            approved = bool(reasons) and _approval_valid(approval, now)
             entry: dict[str, Any] = {"kind": kind, "target": target, "checked_at": now.isoformat(), "planned_delete": delete,
-                     "total": total, "reasons": reasons, "tripped": bool(reasons) and not approved}
+                     "total": total, "reasons": reasons, "tripped": bool(reasons)}
             if entry["tripped"]:
                 entry["first_tripped_at"] = previous.get("first_tripped_at") or now.isoformat()
-            if approved:
-                entry["approved_by"] = approval.get("reason")
-                status["approvals"].pop(kind, None)
-                status["approvals"].pop(key, None)
+            else:
+                status["approval_requests"].pop(key, None)
             status["breakers"][key] = entry
     except OSError:
         logger.exception("backup_safety_status_write_failed", kind=kind, target=target)
@@ -139,20 +142,24 @@ def guard_deletion(kind: str, target: str, *, delete: int, total: int, groups: M
     return True
 
 
-def _approval_valid(approval: Mapping[str, Any], now: datetime) -> bool:
-    try:
-        return datetime.fromisoformat(str(approval["expires_at"])) > now
-    except (KeyError, ValueError, TypeError):
-        return False
-
-
-def approve_deletion(kind: str, *, target: str | None = None, reason: str, hours: int = APPROVAL_HOURS) -> dict[str, Any]:
-    """Allow the next oversized run of ``kind`` (optionally one target) within ``hours``."""
-    key = f"{kind}:{target}" if target else kind
-    approval = {"reason": reason, "approved_at": _now().isoformat(), "expires_at": (_now() + timedelta(hours=hours)).isoformat()}
+def approve_deletion(kind: str, *, target: str, reason: str) -> dict[str, Any]:
+    """Record and announce the owner's request to allow one refused run; the breaker stays on."""
+    key = f"{kind}:{target}"
     with _locked_status() as status:
-        status["approvals"][key] = approval
-    return {"approval": key, **approval}
+        breaker = status["breakers"].get(key) or {}
+        if not breaker.get("tripped"):
+            raise ValueError(f"No refused {kind} deletion on {target}; see st backup storage safety")
+        request = {"kind": kind, "target": target, "reason": reason, "requested_at": _now().isoformat(),
+                   "planned_delete": breaker.get("planned_delete"), "total": breaker.get("total"), "reasons": breaker.get("reasons") or []}
+        status["approval_requests"][key] = request
+    logger.warning("backup_deletion_approval_requested", kind=kind, target=target, reason=reason)
+    _send(title="Backup deletion approval requested",
+          message=(f"approve-deletion was run for the refused {kind} run on {target} ({breaker.get('planned_delete')} points). "
+                   f"Reason given: {reason}. Nothing changes: oversized deletions stay blocked until Nightshift can approve them "
+                   "with your passkey. If you did not run this, an agent did."),
+          severity="warning", metadata={"backup_breaker": kind, "target": target, "approval_request": request},
+          dedupe_key=f"backup-breaker-request:{key}:{request['requested_at']}")
+    return {"approval_request": key, "lifts_breaker": False, **request}
 
 
 def record_section(name: str, payload: Mapping[str, Any]) -> None:
@@ -165,15 +172,20 @@ def record_section(name: str, payload: Mapping[str, Any]) -> None:
 
 
 def _notify(kind: str, target: str, reasons: list[str]) -> None:
+    _send(title="Backup deletion refused",
+          message=(f"A {kind} run on {target} would remove more backup points than normal retention, so nothing was removed. "
+                   f"{'; '.join(reasons)}. Check the retention settings. Runs this large stay blocked until Nightshift can "
+                   f"approve them with your passkey; st backup storage approve-deletion {kind} --target {target} --reason \"...\" "
+                   "records your request."),
+          severity="error", metadata={"backup_breaker": kind, "target": target, "reasons": reasons},
+          dedupe_key=f"backup-breaker:{kind}:{target}:{_now().date().isoformat()}")
+
+
+def _send(*, title: str, message: str, severity: NotificationSeverity, metadata: dict[str, Any], dedupe_key: str) -> None:
     try:
         from ..storage.notifications import create_notification
 
-        create_notification(
-            project_id="summitflow", notification_type="system", title="Backup deletion refused",
-            message=(f"A {kind} run on {target} would remove more backup points than normal retention, so nothing was removed. "
-                     f"{'; '.join(reasons)}. Check retention settings; to allow this one run: st backup storage approve-deletion {kind}")[:2000],
-            severity="error", metadata={"backup_breaker": kind, "target": target, "reasons": reasons},
-            dedupe_key=f"backup-breaker:{kind}:{target}:{_now().date().isoformat()}",
-        )
+        create_notification(project_id="summitflow", notification_type="system", title=title, message=message[:2000],
+                            severity=severity, metadata=metadata, dedupe_key=dedupe_key)
     except Exception:
-        logger.warning("backup_breaker_notification_failed", kind=kind, target=target)
+        logger.warning("backup_breaker_notification_failed", title=title, target=metadata.get("target"))

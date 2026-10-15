@@ -19,7 +19,6 @@ from urllib import request as urllib_request
 from fastapi import HTTPException
 from pydantic import BaseModel
 
-from ..utils.env import bool_env as _bool_env
 from ..utils.env import float_env as _float_env
 
 _PROXMOX_TIMEOUT_SECONDS = _float_env("SUMMITFLOW_RUNTIME_PROXMOX_TIMEOUT", 5.0)
@@ -63,27 +62,33 @@ class ProxmoxStatus(BaseModel):
 # ─── Helpers ─────────────────────────────────────────────────────
 
 
+class ProxmoxTLSConfigError(RuntimeError):
+    """The PVE cluster CA is unset or missing, so no PVE API call is made."""
+
+
 def _proxmox_config() -> dict[str, Any]:
     return {
         "api_url": os.environ.get("PROXMOX_API_URL", "").strip().rstrip("/"),
         "token_id": os.environ.get("PROXMOX_TOKEN_ID", "").strip(),
         "token_secret": os.environ.get("PROXMOX_TOKEN_SECRET", "").strip(),
-        "verify_ssl": _bool_env("PROXMOX_VERIFY_SSL", default=True),
     }
 
 
-def _ssl_context(verify_ssl: bool) -> ssl.SSLContext | None:
-    """PROXMOX_CA_BUNDLE (the PVE cluster CA) pins and fully verifies TLS, whatever PROXMOX_VERIFY_SSL says;
-    without it, verify_ssl picks system CAs or no verification (legacy self-signed setups)."""
-    ca_bundle = os.environ.get("PROXMOX_CA_BUNDLE", "").strip()
-    if ca_bundle and os.path.isfile(ca_bundle):
-        return pinned_ca_context(ca_bundle)
-    return None if verify_ssl else ssl._create_unverified_context()
+def _ssl_context() -> ssl.SSLContext:
+    return pinned_ca_context(os.environ.get("PROXMOX_CA_BUNDLE", ""))
 
 
 def pinned_ca_context(ca_bundle: str) -> ssl.SSLContext:
-    """Chain + hostname verification against one CA. The PVE cluster CA predates RFC 5280 key-usage marking,
-    so Python 3.13's VERIFY_X509_STRICT default is relaxed for this pinned CA only."""
+    """The one TLS rule for every PVE API client: chain + hostname verification against the PVE cluster CA
+    (PROXMOX_CA_BUNDLE). An unset or missing CA raises, so the API token never goes over unverified TLS.
+    The PVE cluster CA predates RFC 5280 key-usage marking, so Python 3.13's VERIFY_X509_STRICT default
+    is relaxed for this pinned CA only."""
+    ca_bundle = ca_bundle.strip()
+    if not ca_bundle or not os.path.isfile(ca_bundle):
+        raise ProxmoxTLSConfigError(
+            f"PROXMOX_CA_BUNDLE must name the PVE cluster CA file ({ca_bundle or 'unset'}); "
+            "PVE API calls are refused without it"
+        )
     context = ssl.create_default_context(cafile=ca_bundle)
     context.verify_flags &= ~ssl.VERIFY_X509_STRICT
     return context
@@ -114,14 +119,12 @@ def _sync_proxmox_get_json(
     token_id: str,
     token_secret: str,
     path: str,
-    *,
-    verify_ssl: bool,
 ) -> Any:
     request = urllib_request.Request(
         f"{api_url}/api2/json{path}",
         headers={"Authorization": f"PVEAPIToken={token_id}={token_secret}"},
     )
-    context = _ssl_context(verify_ssl)
+    context = _ssl_context()
     with urllib_request.urlopen(
         request,
         timeout=_PROXMOX_TIMEOUT_SECONDS,
@@ -145,7 +148,6 @@ async def get_proxmox_status() -> ProxmoxStatus:
     api_url = config["api_url"]
     token_id = config["token_id"]
     token_secret = config["token_secret"]
-    verify_ssl = config["verify_ssl"]
     configured = bool(api_url and token_id and token_secret)
 
     if not configured:
@@ -166,7 +168,6 @@ async def get_proxmox_status() -> ProxmoxStatus:
                 token_id,
                 token_secret,
                 "/cluster/resources?type=node",
-                verify_ssl=verify_ssl,
             ),
             asyncio.to_thread(
                 _sync_proxmox_get_json,
@@ -174,7 +175,6 @@ async def get_proxmox_status() -> ProxmoxStatus:
                 token_id,
                 token_secret,
                 "/cluster/resources?type=vm",
-                verify_ssl=verify_ssl,
             ),
         )
     except Exception as exc:
@@ -236,7 +236,6 @@ async def get_proxmox_status() -> ProxmoxStatus:
                 token_id,
                 token_secret,
                 f"/nodes/{guest.node}/{guest.type}/{guest.vmid}/config",
-                verify_ssl=verify_ssl,
             )
             if isinstance(cfg, dict):
                 guest.onboot = bool(cfg.get("onboot"))
@@ -263,8 +262,6 @@ def _sync_proxmox_post_json(
     token_id: str,
     token_secret: str,
     path: str,
-    *,
-    verify_ssl: bool,
 ) -> Any:
     request = urllib_request.Request(
         f"{api_url}/api2/json{path}",
@@ -272,7 +269,7 @@ def _sync_proxmox_post_json(
         headers={"Authorization": f"PVEAPIToken={token_id}={token_secret}"},
         method="POST",
     )
-    context = _ssl_context(verify_ssl)
+    context = _ssl_context()
     with urllib_request.urlopen(
         request,
         timeout=_PROXMOX_TIMEOUT_SECONDS,
@@ -288,8 +285,6 @@ def _sync_proxmox_put_json(
     token_secret: str,
     path: str,
     data_dict: dict[str, Any],
-    *,
-    verify_ssl: bool,
 ) -> Any:
     encoded_data = urllib_parse.urlencode(data_dict).encode("utf-8")
     request = urllib_request.Request(
@@ -298,7 +293,7 @@ def _sync_proxmox_put_json(
         headers={"Authorization": f"PVEAPIToken={token_id}={token_secret}"},
         method="PUT",
     )
-    context = _ssl_context(verify_ssl)
+    context = _ssl_context()
     with urllib_request.urlopen(
         request,
         timeout=_PROXMOX_TIMEOUT_SECONDS,
@@ -319,7 +314,6 @@ async def control_proxmox_guest(
     api_url = config["api_url"]
     token_id = config["token_id"]
     token_secret = config["token_secret"]
-    verify_ssl = config["verify_ssl"]
     if not (api_url and token_id and token_secret):
         raise HTTPException(
             status_code=503,
@@ -334,7 +328,6 @@ async def control_proxmox_guest(
             token_id,
             token_secret,
             path,
-            verify_ssl=verify_ssl,
         )
         return {
             "status": "ok",
@@ -362,7 +355,6 @@ async def set_proxmox_guest_autostart(
     api_url = config["api_url"]
     token_id = config["token_id"]
     token_secret = config["token_secret"]
-    verify_ssl = config["verify_ssl"]
     if not (api_url and token_id and token_secret):
         raise HTTPException(
             status_code=503,
@@ -378,7 +370,6 @@ async def set_proxmox_guest_autostart(
             token_secret,
             path,
             {"onboot": 1 if enabled else 0},
-            verify_ssl=verify_ssl,
         )
         return {
             "status": "ok",

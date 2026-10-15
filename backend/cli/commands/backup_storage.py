@@ -450,14 +450,17 @@ def safety_status() -> None:
 @app.command("approve-deletion")
 def approve_deletion(
     kind: Annotated[str, typer.Argument(help="Breaker kind from `st backup storage safety`, e.g. restic-retention or btrbk-target")],
+    target: Annotated[str, typer.Option("--target", help="Target of the refused run, from `st backup storage safety`")],
     reason: Annotated[str, typer.Option("--reason", help="Why this oversized deletion is expected")],
-    target: Annotated[str | None, typer.Option("--target", help="Limit the approval to one target")] = None,
-    hours: Annotated[int, typer.Option("--hours", min=1, max=72, help="Approval lifetime")] = 24,
 ) -> None:
-    """Allow the next oversized retention run that the deletion circuit breaker refused."""
+    """Record a request to allow one refused oversized deletion; the breaker stays on until Nightshift passkey approval exists."""
     from app.tasks.backup_safety import approve_deletion as approve
 
-    output_json(approve(kind, target=target, reason=reason, hours=hours))
+    try:
+        output_json(approve(kind, target=target, reason=reason))
+    except ValueError as exc:
+        typer.echo(f"Error: {exc}", err=True)
+        raise typer.Exit(1) from exc
 
 
 @app.command("maintenance")

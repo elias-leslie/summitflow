@@ -103,8 +103,11 @@ setting), not against a hostile root user.
   points or 50% of one source; btrbk: more than a third). The points are kept,
   backups continue (btrbk runs with `--preserve-backups`), and a SummitFlow
   notification is raised. Prune is skipped when snapshots disappeared outside
-  retention, keeping their data recoverable. After checking the cause, allow
-  one run with `st backup storage approve-deletion <kind> --reason "..."`.
+  retention, keeping their data recoverable. Fix the retention settings so the
+  next run stays within normal retention. Oversized runs stay blocked until
+  Nightshift can approve them with the owner's passkey;
+  `st backup storage approve-deletion <kind> --target <target> --reason "..."`
+  only records and announces the request (agent shells are denied it).
 - **Drive deletes go to trash.** Offsite restic prune and native Drive expiry
   use the Drive trash (30 days) instead of permanent deletion.
 - **Append-only PVE copy.** CT 160 on davion-gem holds a third copy of the

@@ -177,6 +177,14 @@ SYSTEM_DENIED = {
     ],
     "irreversible_rclone_move": ["rclone move ./out summitflow-drive:x"],
     "rm_protected_root": ["ssh proxmox-gem rm -rf /var/lib/vz", "ssh proxmox-gem 'sudo rm -rf /etc/pve/qemu-server'"],
+    "irreversible_st_backup_storage_approve_deletion": [
+        "st backup storage approve-deletion restic-retention --target local --reason x",
+        "st -P summitflow backup storage approve-deletion btrbk-target --target /t --reason x",
+        "/home/kasadis/.local/bin/st --json backup storage approve-deletion restic-retention --target local --reason x",
+        "bash -lc 'st backup storage approve-deletion restic-retention --target local --reason x'",
+        "env FOO=1 st backup storage approve-deletion restic-retention --target local --reason x",
+        "echo $(st backup storage approve-deletion restic-retention --target local --reason x)",
+    ],
 }
 SYSTEM_ALLOWED = [
     "restic snapshots", "restic -r /mnt/x check", "restic forget --dry-run --keep-last 3",
@@ -195,6 +203,8 @@ SYSTEM_ALLOWED = [
     "btrbk list snapshots", "btrbk run", "dmsetup ls", "dmsetup remove test-loop0", "dmsetup info luks-root",
     "rclone sync /a /b", "rclone sync summitflow-drive:archive /srv/scratch/restore",
     "rclone move summitflow-drive:x ./local", "rclone sync /data gdrive:backup --dry-run", "rclone copy /data gdrive:x",
+    "st backup storage safety", "st backup storage list",
+    "st commit -m 'st backup storage approve-deletion is denied'",
 ]
 
 
@@ -218,6 +228,14 @@ def test_hook_denies_proxmox_destroy_over_ssh(monkeypatch, capsys) -> None:
     output = _run_hook(payload, monkeypatch, capsys)["hookSpecificOutput"]
     assert output["permissionDecision"] == "deny"
     assert "qm list" in output["permissionDecisionReason"]
+
+
+def test_hook_denies_agent_backup_deletion_approval(monkeypatch, capsys) -> None:
+    command = "st backup storage approve-deletion restic-retention --target local --reason retention-changed"
+    payload = {"tool_name": "Bash", "tool_input": {"command": command}, "cwd": SHARED}
+    output = _run_hook(payload, monkeypatch, capsys)["hookSpecificOutput"]
+    assert output["permissionDecision"] == "deny"
+    assert "owner's own terminal" in output["permissionDecisionReason"]
 
 
 def test_legacy_shell_guard_shares_host_level_policy(tmp_path) -> None:

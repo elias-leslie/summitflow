@@ -713,7 +713,6 @@ class TestDockerRuntime:
                 "api_url": "",
                 "token_id": "",
                 "token_secret": "",
-                "verify_ssl": False,
             },
         )
 
@@ -742,7 +741,6 @@ class TestDockerRuntime:
                 "api_url": "https://192.0.2.33:8006",
                 "token_id": "root@pam!automation",
                 "token_secret": "secret",
-                "verify_ssl": False,
             },
         )
         mocker.patch.object(
@@ -828,7 +826,6 @@ class TestDockerRuntime:
                 "api_url": "https://192.0.2.33:8006",
                 "token_id": "root@pam!automation",
                 "token_secret": "secret",
-                "verify_ssl": False,
             },
         )
         put_mock = mocker.patch.object(
@@ -857,7 +854,6 @@ class TestDockerRuntime:
             "secret",
             "/nodes/davion-gem/qemu/100/config",
             {"onboot": 1},
-            verify_ssl=False,
         )
 
     def test_proxmox_control_guest_success(
@@ -874,7 +870,6 @@ class TestDockerRuntime:
                 "api_url": "https://192.0.2.33:8006",
                 "token_id": "root@pam!automation",
                 "token_secret": "secret",
-                "verify_ssl": False,
             },
         )
         post_mock = mocker.patch.object(
@@ -899,7 +894,6 @@ class TestDockerRuntime:
             "root@pam!automation",
             "secret",
             "/nodes/davion-gem/qemu/100/status/start",
-            verify_ssl=False,
         )
 
     def test_proxmox_control_guest_invalid_action(

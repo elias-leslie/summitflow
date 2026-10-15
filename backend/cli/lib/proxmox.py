@@ -35,8 +35,8 @@ class ProxmoxConfig:
     token_id: str
     token_secret: str
     node: str
-    # PVE cluster CA path (PROXMOX_CA_BUNDLE) pins TLS; otherwise PROXMOX_VERIFY_SSL (default off: self-signed PVE)
-    verify: bool | str = False
+    # PVE cluster CA path (PROXMOX_CA_BUNDLE); TLS is always pinned to it and a missing CA refuses the call
+    ca_bundle: str = ""
     # The token may only allocate VMs in this pool (PROXMOX_POOL; empty: no pool, PVE checks /vms/<newid>)
     pool: str = "summitflow"
 
@@ -83,25 +83,25 @@ def load_proxmox_config() -> ProxmoxConfig:
     if missing:
         raise ProxmoxError(f"Missing Proxmox configuration: {', '.join(missing)}")
     ca_bundle = value("PROXMOX_CA_BUNDLE")
-    verify: bool | str = ca_bundle if ca_bundle and Path(ca_bundle).is_file() else (
-        value("PROXMOX_VERIFY_SSL", "false").lower() in {"1", "true", "yes", "on"}
-    )
+    if not ca_bundle or not Path(ca_bundle).is_file():
+        raise ProxmoxError(f"PROXMOX_CA_BUNDLE must name the PVE cluster CA file ({ca_bundle or 'unset'}); PVE API calls are refused without it")
     return ProxmoxConfig(
         host=host.rstrip("/"),
         token_id=token_id,
         token_secret=secret,
         node=node,
-        verify=verify,
+        ca_bundle=ca_bundle,
         pool=value("PROXMOX_POOL", "summitflow"),
     )
 
 
-def _verify_arg(verify: bool | str) -> bool | ssl.SSLContext:
-    if isinstance(verify, str):
-        from app.api._runtime_proxmox import pinned_ca_context
+def _tls_context(ca_bundle: str) -> ssl.SSLContext:
+    from app.api._runtime_proxmox import ProxmoxTLSConfigError, pinned_ca_context
 
-        return pinned_ca_context(verify)
-    return verify
+    try:
+        return pinned_ca_context(ca_bundle)
+    except ProxmoxTLSConfigError as exc:
+        raise ProxmoxError(str(exc)) from exc
 
 
 class ProxmoxClient:
@@ -114,6 +114,7 @@ class ProxmoxClient:
 
     def request(self, method: str, path: str, *, data: dict[str, Any] | None = None) -> Any:
         url = f"{self.config.host}/api2/json{path}"
+        verify = _tls_context(self.config.ca_bundle)
         try:
             response = httpx.request(
                 method,
@@ -121,7 +122,7 @@ class ProxmoxClient:
                 headers=self._headers,
                 data=data,
                 timeout=30.0,
-                verify=_verify_arg(self.config.verify),
+                verify=verify,
             )
         except httpx.HTTPError as exc:
             raise ProxmoxError(f"Proxmox request failed: {exc}") from exc
