@@ -46,10 +46,21 @@ def ensure_all_baselines_command() -> None:
         print(f"  {snap.id}|source:{snap.source}|scope:{snap.scope_type}:{snap.scope_name}")
 
 
+def _deferred(exc: SnapshotError, step: str) -> None:
+    """Another snapshot job holding the shared lock is a skip, not a failure."""
+    if not str(exc).startswith("Deferred:"):
+        raise exc
+    typer.echo(f"autosnap: {step} skipped: {exc}", err=True)
+
+
 @app.command("sweep")
 def sweep_command() -> None:
     """Run periodic snapshot sweep across all active Btrfs-backed scopes."""
-    created = sweep_periodic()
+    try:
+        created = sweep_periodic()
+    except SnapshotError as exc:
+        _deferred(exc, "sweep")
+        return
     print(f"SWEEP[{len(created)}]")
     for record in LAST_SWEEP_REPORT:
         print(f"  {record['project_id']}|{record['status']}|reason:{record['reason']}")
@@ -60,7 +71,11 @@ def sweep_command() -> None:
 @app.command("prune")
 def prune_command() -> None:
     """Run retention cleanup across all active Btrfs-backed scopes."""
-    results = prune_all()
+    try:
+        results = prune_all()
+    except SnapshotError as exc:
+        _deferred(exc, "prune")
+        return
     total = sum(len(v) for v in results.values())
     print(f"PRUNE[{total}]")
     for record in LAST_PRUNE_REPORT:
