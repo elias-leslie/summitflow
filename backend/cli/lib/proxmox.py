@@ -41,6 +41,10 @@ class ProxmoxConfig:
     pool: str = "summitflow"
 
 
+# PVE pool whose members the token may only start/stop/reset (role SummitFlowPower: VM.PowerMgmt)
+POWER_POOL = "summitflow-power"
+
+
 def _read_env_file(path: Path) -> dict[str, str]:
     if not path.exists():
         return {}
@@ -126,6 +130,11 @@ class ProxmoxClient:
             )
         except httpx.HTTPError as exc:
             raise ProxmoxError(f"Proxmox request failed: {exc}") from exc
+        if response.status_code == 403 and "Permission check failed" in response.text:
+            raise ProxmoxError(
+                f"Proxmox API error 403: {response.text.strip()} (the ST token's VM rights come from PVE pools: "
+                f"lifecycle in '{self.config.pool or 'summitflow'}', power only in '{POWER_POOL}'; other VMs are read-only)"
+            )
         if response.status_code >= 400:
             raise ProxmoxError(f"Proxmox API error {response.status_code}: {response.text}")
         payload = response.json()
@@ -201,16 +210,17 @@ class ProxmoxClient:
         return upid
 
     def start(self, vmid: str) -> None:
-        self.request("POST", f"/nodes/{self.config.node}/qemu/{vmid}/status/start")
+        # PVE accepts the request before checking state; the task says whether it ran ("already running" fails it).
+        self.wait_task(str(self.request("POST", f"/nodes/{self.config.node}/qemu/{vmid}/status/start")), timeout_seconds=120)
 
     def stop(self, vmid: str) -> None:
-        self.request("POST", f"/nodes/{self.config.node}/qemu/{vmid}/status/stop")
+        self.wait_task(str(self.request("POST", f"/nodes/{self.config.node}/qemu/{vmid}/status/stop")), timeout_seconds=120)
 
     def destroy(self, vmid: str) -> None:
         if vmid == "9000" or self.config_get(vmid).get("template"):
             raise ProxmoxError(f"Cannot destroy template VM {vmid}")
         with suppress(ProxmoxError):
-            self.stop(vmid)
+            self.request("POST", f"/nodes/{self.config.node}/qemu/{vmid}/status/stop")
         time.sleep(5)
         self.request("DELETE", f"/nodes/{self.config.node}/qemu/{vmid}?purge=1")
 

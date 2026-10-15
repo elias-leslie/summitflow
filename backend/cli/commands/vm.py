@@ -172,7 +172,7 @@ def clone(
 @app.command()
 def start(vmid: Annotated[str, typer.Argument(help="VM ID")]) -> None:
     """Start a VM."""
-    _run(lambda client: (client.start(vmid), print(f"VM {vmid} starting")))
+    _run(lambda client: (client.start(vmid), print(f"VM {vmid} started")))
 
 
 @app.command()
@@ -190,7 +190,7 @@ def stop(
             "This may interrupt running workloads.",
         ],
     )
-    _run(lambda client: (client.stop(vmid), print(f"VM {vmid} stopping")))
+    _run(lambda client: (client.stop(vmid), print(f"VM {vmid} stopped")))
 
 
 @app.command()
