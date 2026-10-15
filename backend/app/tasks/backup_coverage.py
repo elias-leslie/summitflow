@@ -76,7 +76,7 @@ INFRA_COVERAGE: tuple[CoverageComponent, ...] = (
         key="host_ingress",
         label="Host ingress configuration",
         category="required",
-        description="Cloudflared and Caddy configuration plus host-held credentials",
+        description="Cloudflared and Caddy configuration; host-held credentials as stat facts only",
         archive_marker="state/host-ingress/manifest.json",
     ),
     CoverageComponent(

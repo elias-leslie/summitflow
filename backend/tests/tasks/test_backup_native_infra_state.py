@@ -124,9 +124,24 @@ def test_infrastructure_archive_captures_required_recovery_state(
         service_manifest = json.load(service_manifest_file)
         systemd_manifest = json.load(systemd_manifest_file)
 
-    assert "infrastructure/state/host-ingress/cloudflared/tunnel.json" in names
+    assert "infrastructure/state/host-ingress/cloudflared/config.yml" in names
+    assert "infrastructure/state/host-ingress/caddy/Caddyfile" in names
+    assert "infrastructure/state/host-ingress/cloudflared/tunnel.json" not in names
     assert "infrastructure/state/host-ingress/cloudflared/unrelated.json" not in names
-    assert "infrastructure/state/host-ingress/caddy/env" in names
+    assert "infrastructure/state/host-ingress/caddy/env" not in names
+    with tarfile.open(archive_path, "r:gz") as archive:
+        for member in archive.getmembers():
+            if member.isfile():
+                content = cast(tarfile.ExFileObject, archive.extractfile(member)).read()
+                assert b'"credential":"private"' not in content
+                assert b"SECRET=private" not in content
+        ingress_file = archive.extractfile("infrastructure/state/host-ingress/manifest.json")
+        assert ingress_file is not None
+        ingress = json.load(ingress_file)
+    assert ingress["status"] == "captured"
+    assert set(ingress["secrets"]) == {"cloudflared_credentials", "caddy_env"}
+    assert ingress["secrets"]["cloudflared_credentials"]["path"] == str(credential_file)
+    assert ingress["secrets"]["caddy_env"]["size"] == len("SECRET=private\n")
     assert "infrastructure/state/systemd-user/files/agent-hub.service" in names
     assert "infrastructure/state/agent-hub/files/memory_failures.jsonl" in names
     assert "infrastructure/state/managed-services/projects/summitflow/receipts/build-1.json" in names
@@ -186,6 +201,131 @@ def test_infrastructure_archive_reads_compose_state_from_stable_host_root(
         assert hatchet_config.read() == b"host: true\n"
 
 
+def _write_ingress(roots: dict[str, Path], credential_file: Path) -> None:
+    (roots["cloudflared"] / "config.yml").write_text(
+        f"tunnel: recovery\ncredentials-file: {credential_file}\n"
+    )
+    (roots["caddy"] / "Caddyfile").write_text("example.invalid { respond ok }\n")
+
+
+def test_ingress_secrets_are_recorded_as_stat_facts_without_reading_them(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    roots = _configure_recovery_roots(tmp_path, monkeypatch)
+    credential_file = tmp_path / "host-secrets" / "tunnel.json"
+    credential_file.parent.mkdir()
+    credential_file.write_text("TOP-SECRET-TUNNEL\n")
+    caddy_env = roots["caddy"] / "env"
+    caddy_env.write_text("CLOUDFLARE_API_TOKEN=TOP-SECRET-TOKEN\n")
+    _write_ingress(roots, credential_file)
+    # After the ACL removal neither file is readable by the backup's uid.
+    credential_file.chmod(0o000)
+    caddy_env.chmod(0o000)
+    copied: list[Path] = []
+    original = infra._copy_regular_path
+
+    def record_copy(source: Path, destination: Path, **kwargs):
+        copied.append(source)
+        return original(source, destination, **kwargs)
+
+    monkeypatch.setattr(infra, "_copy_regular_path", record_copy)
+    capture = tmp_path / "capture"
+    try:
+        result = infra._capture_host_ingress(capture)
+    finally:
+        credential_file.chmod(0o600)
+        caddy_env.chmod(0o600)
+
+    assert result["status"] == "captured", result
+    assert result["missing"] == []
+    assert result["credential_file"] == "tunnel.json"
+    assert credential_file not in copied
+    assert caddy_env not in copied
+    facts = result["secrets"]["cloudflared_credentials"]
+    assert facts["path"] == str(credential_file)
+    assert facts["exists"] is True
+    assert facts["size"] == len("TOP-SECRET-TUNNEL\n")
+    assert facts["mode"] == "0000"
+    assert facts["owner"] and facts["group"] and facts["mtime"]
+    assert result["secrets"]["caddy_env"]["path"] == str(caddy_env)
+    staged = sorted(path.relative_to(capture).as_posix() for path in capture.rglob("*") if path.is_file())
+    assert staged == ["caddy/Caddyfile", "cloudflared/config.yml", "manifest.json"]
+    manifest = (capture / "manifest.json").read_text()
+    assert "TOP-SECRET" not in manifest
+    assert json.loads(manifest)["secrets"] == result["secrets"]
+
+
+def test_ingress_capture_purges_secret_copies_already_in_staging(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    roots = _configure_recovery_roots(tmp_path, monkeypatch)
+    credential_file = roots["cloudflared"] / "tunnel.json"
+    credential_file.write_text("TOP-SECRET-TUNNEL\n")
+    (roots["caddy"] / "env").write_text("TOP-SECRET-TOKEN\n")
+    _write_ingress(roots, credential_file)
+    capture = tmp_path / "capture"
+    (capture / "cloudflared" / "nested").mkdir(parents=True)
+    (capture / "cloudflared" / "tunnel.json").write_text("TOP-SECRET-TUNNEL\n")
+    (capture / "cloudflared" / "nested" / "old.json").write_text("TOP-SECRET-TUNNEL\n")
+    (capture / "caddy").mkdir()
+    (capture / "caddy" / "env").write_text("TOP-SECRET-TOKEN\n")
+
+    result = infra._capture_host_ingress(capture)
+
+    assert result["status"] == "captured"
+    for path in capture.rglob("*"):
+        if path.is_file():
+            assert "TOP-SECRET" not in path.read_text()
+    assert not (capture / "cloudflared" / "tunnel.json").exists()
+    assert not (capture / "caddy" / "env").exists()
+
+
+@pytest.mark.parametrize("target", ["credential", "caddy_env"])
+def test_ingress_secret_symlink_is_never_followed(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    target: str,
+) -> None:
+    roots = _configure_recovery_roots(tmp_path, monkeypatch)
+    decoy = tmp_path / "readable-decoy"
+    decoy.write_text("TOP-SECRET-DECOY\n")
+    credential_file = roots["cloudflared"] / "tunnel.json"
+    caddy_env = roots["caddy"] / "env"
+    credential_file.write_text("{}\n")
+    caddy_env.write_text("X=1\n")
+    link = credential_file if target == "credential" else caddy_env
+    link.unlink()
+    link.symlink_to(decoy)
+    _write_ingress(roots, credential_file)
+    capture = tmp_path / "capture"
+
+    result = infra._capture_host_ingress(capture)
+
+    assert result["status"] == "error"
+    label = "cloudflared_credentials" if target == "credential" else "caddy_env"
+    assert result["error"] == f"{label} is not a regular file"
+    assert label not in result["secrets"]
+    for path in capture.rglob("*"):
+        if path.is_file():
+            assert "TOP-SECRET" not in path.read_text()
+
+
+def test_missing_ingress_secrets_are_listed_as_missing(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    roots = _configure_recovery_roots(tmp_path, monkeypatch)
+    _write_ingress(roots, roots["cloudflared"] / "absent.json")
+
+    result = infra._capture_host_ingress(tmp_path / "capture")
+
+    assert result["status"] == "missing"
+    assert result["missing"] == ["cloudflared_credentials", "caddy_env"]
+    assert result["secrets"] == {}
+
+
 def test_unreadable_ingress_state_is_flagged_without_losing_other_capture(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
@@ -193,15 +333,12 @@ def test_unreadable_ingress_state_is_flagged_without_losing_other_capture(
     roots = _configure_recovery_roots(tmp_path, monkeypatch)
     credential_file = tmp_path / "credential.json"
     credential_file.write_text("TOP-SECRET-CONTENT\n")
-    (roots["cloudflared"] / "config.yml").write_text(
-        f"tunnel: recovery\ncredentials-file: {credential_file}\n"
-    )
-    (roots["caddy"] / "Caddyfile").write_text("private\n")
+    _write_ingress(roots, credential_file)
     (roots["caddy"] / "env").write_text("private\n")
     original = infra._copy_regular_path
 
     def deny_config(source: Path, destination: Path, **kwargs):
-        if source == credential_file:
+        if source.name == "Caddyfile":
             raise PermissionError("TOP-SECRET-CONTENT")
         return original(source, destination, **kwargs)
 

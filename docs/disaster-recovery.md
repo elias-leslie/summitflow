@@ -639,15 +639,20 @@ their services stopped. From the infrastructure staging tree:
 
 - install `state/host-ingress/caddy/Caddyfile` as
   `/etc/caddy/Caddyfile`;
-- install `state/host-ingress/caddy/env` as `/etc/caddy/env` with restrictive
-  permissions; and
-- install `state/host-ingress/cloudflared/config.yml` plus the exact credential
-  filename recorded by `state/host-ingress/manifest.json` under
-  `/etc/cloudflared/`, root-owned and unreadable by other users.
+- install `state/host-ingress/cloudflared/config.yml` as
+  `/etc/cloudflared/config.yml`; and
+- re-issue the two host secrets, which the archive does not carry.
+  `state/host-ingress/manifest.json` lists each under `secrets` with its path,
+  owner, mode, size and mtime at capture time. For the tunnel credential, run
+  `sudo cloudflared tunnel token --cred-file <path from the manifest> <tunnel>`
+  after `cloudflared tunnel login`
+  (or create a new tunnel and point `config.yml` at it). For `/etc/caddy/env`,
+  create a Cloudflare API token limited to Zone DNS edit on the served zone and
+  write it as `CLOUDFLARE_API_TOKEN=<token>`. Both files are root-owned,
+  mode 600, with no ACLs for other users.
 
-Reapply any service-account ACLs needed to read the host configuration. POSIX
-ACLs, xattrs, numeric ownership policy, and system-level unit enablement are not
-fully reconstructed by the archive.
+POSIX ACLs, xattrs, numeric ownership policy, and system-level unit enablement
+are not fully reconstructed by the archive.
 
 Validate configurations before starting either service:
 
@@ -656,9 +661,9 @@ sudo cloudflared --config /etc/cloudflared/config.yml tunnel ingress validate
 sudo caddy validate --config /etc/caddy/Caddyfile
 ```
 
-Start Caddy and cloudflared only after local API and UI checks pass. The encrypted
-archive carries the tunnel credential, but the remote Cloudflare tunnel, DNS,
-and Access policy must still exist in the provider control plane.
+Start Caddy and cloudflared only after local API and UI checks pass. The remote
+Cloudflare tunnel, DNS, and Access policy must still exist in the provider
+control plane.
 
 ## 9. Re-establish owner key and Drive access
 

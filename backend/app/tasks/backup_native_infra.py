@@ -2,15 +2,17 @@
 
 from __future__ import annotations
 
+import grp
 import json
 import os
+import pwd
 import shutil
 import stat
 import subprocess
 import tarfile
 import time
 from collections.abc import Callable
-from datetime import datetime
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
@@ -267,9 +269,50 @@ def _cloudflared_credential_path(config_path: Path) -> Path:
     return _absolute_path(referenced)
 
 
+def _host_secret_facts(path: Path) -> dict[str, Any]:
+    """Describe a host-held secret from its inode alone; the content is never opened."""
+    metadata = path.lstat()
+    try:
+        owner = pwd.getpwuid(metadata.st_uid).pw_name
+    except KeyError:
+        owner = str(metadata.st_uid)
+    try:
+        group = grp.getgrgid(metadata.st_gid).gr_name
+    except KeyError:
+        group = str(metadata.st_gid)
+    return {
+        "path": str(path),
+        "exists": True,
+        "size": metadata.st_size,
+        "mtime": datetime.fromtimestamp(metadata.st_mtime, UTC).isoformat(),
+        "owner": owner,
+        "group": group,
+        "mode": f"{stat.S_IMODE(metadata.st_mode):04o}",
+    }
+
+
+def _purge_staged_host_secrets(destination: Path) -> None:
+    """Drop secret copies an older capture format may have left in this staging tree."""
+    candidates = [destination / "caddy" / "env"]
+    cloudflared = destination / "cloudflared"
+    if cloudflared.is_dir() and not cloudflared.is_symlink():
+        candidates += [item for item in cloudflared.iterdir() if item.name != "config.yml"]
+    for item in candidates:
+        if item.is_dir() and not item.is_symlink():
+            shutil.rmtree(item)
+        else:
+            item.unlink(missing_ok=True)
+
+
 def _capture_host_ingress(destination: Path) -> dict[str, Any]:
-    """Capture configured host ingress state without exposing secret content."""
+    """Capture host ingress configuration; secrets are recorded as stat facts only.
+
+    The tunnel credential and Caddy's env file stay root-only on the host. A
+    restore re-issues them, so the backup only proves which files existed and
+    with what owner, mode, size and mtime.
+    """
     destination.mkdir(parents=True, exist_ok=True)
+    _purge_staged_host_secrets(destination)
     cloud_config = _absolute_path(
         Path(os.environ.get("CLOUDFLARED_CONFIG", "/etc/cloudflared/config.yml"))
     )
@@ -283,8 +326,19 @@ def _capture_host_ingress(destination: Path) -> dict[str, Any]:
         "status": "missing",
         "files": 0,
         "missing": [],
+        "secrets": {},
     }
     errors: list[str] = []
+
+    def record_secret(label: str, path: Path) -> None:
+        kind = _path_kind(path)
+        if kind == "file":
+            result["secrets"][label] = _host_secret_facts(path)
+        elif kind == "missing":
+            result["missing"].append(label)
+        else:
+            errors.append(f"{label} is not a regular file")
+
     try:
         cloud_kind = _path_kind(cloud_config)
         if cloud_kind == "file":
@@ -298,36 +352,19 @@ def _capture_host_ingress(destination: Path) -> dict[str, Any]:
             except ValueError:
                 errors.append("cloudflared credential reference is missing or unsupported")
             else:
-                credential_kind = _path_kind(credential_file)
-                if credential_kind == "file":
-                    copied = _copy_regular_path(
-                        credential_file,
-                        destination / "cloudflared" / credential_file.name,
-                    )
-                    result["files"] += copied["files"]
-                    if copied["files"] != 1:
-                        errors.append("cloudflared credential reference is excluded")
-                    else:
-                        result["credential_file"] = credential_file.name
-                elif credential_kind == "missing":
-                    result["missing"].append("cloudflared_credentials")
-                else:
-                    errors.append("cloudflared credential reference is unsupported")
+                result["credential_file"] = credential_file.name
+                record_secret("cloudflared_credentials", credential_file)
         elif cloud_kind != "missing":
             errors.append("cloudflared config is not a regular file")
         else:
             result["missing"].append("cloudflared_config")
 
-        for label, source, target_name in (
-            ("caddy_config", caddy_config, "Caddyfile"),
-            ("caddy_env", caddy_env, "env"),
-        ):
-            kind = _path_kind(source)
-            if kind == "file":
-                copied = _copy_regular_path(source, destination / "caddy" / target_name)
-                result["files"] += copied["files"]
-            else:
-                result["missing"].append(label)
+        if _path_kind(caddy_config) == "file":
+            copied = _copy_regular_path(caddy_config, destination / "caddy" / "Caddyfile")
+            result["files"] += copied["files"]
+        else:
+            result["missing"].append("caddy_config")
+        record_secret("caddy_env", caddy_env)
     except OSError:
         errors.append("required ingress state is unreadable")
 
