@@ -1,5 +1,19 @@
 # Host monitor delivery and verification
 
+## Owner-UID collector verification, 2026-10-15
+
+Since 2026-10-12 the system unit runs the collector as the owner UID (`User=1000`, supplementary group `adm`, empty capability set, `NoNewPrivileges`, `ProtectSystem=strict`, writes only to `/var/lib/summitflow/monitor`), not as root; the root-owned installed `host_monitor_deploy.py` performs the install. The deployment section below describes the earlier root run. The coverage cost is explicit and visible in every response. About 500 to 560 `/proc/*/io` reads of other users' processes are denied, while process stat reads have zero denials. `/proc/self/mountinfo` is reported as `permission_denied`, so mount coverage is `partial`. The per-user cgroup `io.stat` files are reported as `not_found`/`unavailable`. These gaps appear as `source_errors`, never as zeros.
+
+Live checks on release 7a5e77f1 (evidence in `.dev-tools/ea952b00-1.5-2026-10-15/`, local only):
+
+- Backend/DB outage: `st monitor status|series|events|processes|export` run inside a network namespace with no reachable backend or PostgreSQL (`unshare -rn`; curl to the backend fails) all succeed from SQLite with `errors: []`.
+- Collector stopped: with the collector process frozen (SIGSTOP, ~50 s), `status`, `series` and `events` still return committed history. Status reports `availability: stale`, collector `collector_stopped` and `freshness: stale`. On resume the collector records a `retention_gap` event and freshness returns to `ok` within one interval. `unit.stop` is not on the Nightshift stop allowlist, so freezing was the non-root way to stop collection.
+- Restart: today's two managed SummitFlow rebuilds restarted the collector (new main PID, `NRestarts=0`). The one-hour series stayed continuous across the restart.
+- Owner API and UI after backend recovery: `GET /api/monitor/v1/status` returns 200 locally. The same request with a nonlocal `X-Forwarded-For` returns 401. The public hostname shows the owner-only refusal to a non-owner browser. The local Runtime Monitor tab renders Host now, GPU, Host history timelines, SummitFlow services, process leaders, events and on-demand diagnostics with no console or network errors.
+- Quality gates: full local acceptance passed for the deployed sources (dd95f6438, 3bd60dfcb).
+
+Still open, unchanged from the plan below: a controlled logout/reboot lifecycle check, which needs an owner-scheduled interruption, plus the plain-account session and the multiuser localhost-bypass limitation.
+
 ## System-wide deployment, 2026-09-27
 
 The current monitor is a headless root system service with a single SQLite writer at `/var/lib/summitflow/monitor`. The owner-only Unix socket and root:owner state permissions let the SummitFlow backend and standalone `st monitor` read committed history and request bounded diagnostics without running the backend as root. The legacy user collector is disabled. The system unit is enabled and active as `User=root`; post-migration samples have shown more than 700 processes with zero denied process stat and I/O reads. The Runtime service card reports all four SummitFlow units active. The monitor has no desktop-app dependency or network listener.
