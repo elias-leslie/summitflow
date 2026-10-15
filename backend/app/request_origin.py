@@ -20,7 +20,7 @@ from .api.backups.key_endpoints import _require_same_origin
 
 _UNSAFE_METHODS = frozenset({"POST", "PUT", "PATCH", "DELETE"})
 _OTHER_SITE_FETCH = frozenset({"cross-site", "same-site"})
-_WORKBENCH_PASSTHROUGH = re.compile(r"^/api/projects/[^/]+/db-workbench/(?:proxy|api|proxyapi)(?:/|$)")
+_WORKBENCH_PASSTHROUGH = re.compile(r"^/api/projects/[^/]+/db-workbench/(?:proxy|static|api|proxyapi)(?:/|$)")
 
 
 def cross_site_refusal(request: Request) -> Response | None:

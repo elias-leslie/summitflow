@@ -2,13 +2,16 @@
 
 from __future__ import annotations
 
+import httpx
 import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
 from app import access_control, main
 from app.access_control import AccessPrincipal, access_control_middleware
+from app.api import db_workbench
 from app.request_origin import request_origin_middleware
+from app.services.db_workbench import DbWorkbenchStatus
 
 OWNER = AccessPrincipal(email="owner@example.test", role="owner", is_active=True)
 
@@ -142,7 +145,7 @@ def test_direct_write_from_the_localhost_dashboard_port_stays_refused(monkeypatc
     assert not calls
 
 
-@pytest.mark.parametrize("kind", ["api", "proxy", "proxyapi"])
+@pytest.mark.parametrize("kind", ["api", "proxy", "proxyapi", "static"])
 @pytest.mark.parametrize(
     "headers",
     [
@@ -172,6 +175,84 @@ def test_own_db_workbench_gets_still_work(monkeypatch, headers) -> None:
     response = http.get("/api/projects/x/db-workbench/api/query?query=select+1", headers=headers)
     assert response.status_code == 200
     assert calls == ["workbench:api/query"]
+
+
+def _workbench_client(monkeypatch) -> tuple[TestClient, list[str]]:
+    """The real db_workbench router behind both middlewares, with a running stub and captured upstream."""
+    _client(monkeypatch)  # stub Access and the loopback owner
+    status = DbWorkbenchStatus(
+        project_id="x",
+        running=True,
+        installed=True,
+        configured=True,
+        readonly=True,
+        pid=None,
+        port=9,
+        proxy_url="/api/projects/x/db-workbench/proxy/",
+        direct_url="http://127.0.0.1:9",
+        shared_with=None,
+        started_at=None,
+    )
+    monkeypatch.setattr(db_workbench, "status_workbench", lambda project_id: status)
+    upstream: list[str] = []
+
+    async def send(self, request: httpx.Request, **kwargs) -> httpx.Response:
+        upstream.append(str(request.url))
+        return httpx.Response(200, content=b"asset", request=request)
+
+    monkeypatch.setattr(httpx.AsyncClient, "send", send)
+    app = FastAPI()
+    app.include_router(db_workbench.router, prefix="/api/projects")
+    app.middleware("http")(access_control_middleware)
+    app.middleware("http")(request_origin_middleware)
+    return TestClient(app), upstream
+
+
+TRAVERSALS = [
+    "static/..%2Fapi%2Fquery",
+    "static/%2E%2E%2Fapi%2Fquery",
+    "static/..%2Fproxyapi%2Fquery",
+    "static/.%2E/api/query",
+    "static/%252E%252E%252Fapi%252Fquery",
+    "static/..%5Capi%5Cquery",
+    "static/js/..%2F..%2Fapi%2Fquery",
+    "proxy/..%2Fapi%2Fquery",
+]
+
+
+@pytest.mark.parametrize("path", TRAVERSALS)
+def test_cross_site_get_cannot_reach_workbench_sql_through_static(monkeypatch, path) -> None:
+    http, upstream = _workbench_client(monkeypatch)
+    response = http.get(
+        f"/api/projects/x/db-workbench/{path}?query=delete+from+x",
+        headers={"sec-fetch-site": "cross-site", "origin": "https://evil.example"},
+    )
+    assert response.status_code == 403
+    assert not upstream
+
+
+@pytest.mark.parametrize("path", TRAVERSALS)
+def test_workbench_paths_cannot_leave_their_upstream_prefix(monkeypatch, path) -> None:
+    http, upstream = _workbench_client(monkeypatch)
+    response = http.get(
+        f"/api/projects/x/db-workbench/{path}?query=delete+from+x",
+        headers={"sec-fetch-site": "same-origin"},
+    )
+    assert response.status_code == 400
+    assert not upstream
+
+
+def test_own_workbench_static_and_api_calls_still_proxy(monkeypatch) -> None:
+    http, upstream = _workbench_client(monkeypatch)
+    same_origin = {"sec-fetch-site": "same-origin"}
+    asset = http.get("/api/projects/x/db-workbench/static/js/app.js", headers=same_origin)
+    query = http.get("/api/projects/x/db-workbench/proxyapi/query?query=select+1", headers=same_origin)
+    assert (asset.status_code, asset.content) == (200, b"asset")
+    assert query.status_code == 200
+    assert upstream == [
+        "http://127.0.0.1:9/static/js/app.js",
+        "http://127.0.0.1:9/api/query?query=select+1",
+    ]
 
 
 def test_app_wraps_access_control_with_the_origin_check() -> None:

@@ -5,6 +5,7 @@ from __future__ import annotations
 import os
 from collections.abc import AsyncIterator
 from typing import NoReturn
+from urllib.parse import unquote
 
 import httpx
 from fastapi import APIRouter, HTTPException, Request, Response
@@ -472,6 +473,15 @@ async def stop_db_workbench(project_id: str) -> dict[str, object]:
     return status_payload(stop_workbench(project_id))
 
 
+def _escapes_passthrough(path: str) -> bool:
+    """True for '.'/'..' segments or backslashes (also percent-encoded) that could leave static/ or api/."""
+    decoded = unquote(path)
+    for candidate in (path, decoded):
+        if "\\" in candidate or any(segment in {".", ".."} for segment in candidate.split("/")):
+            return True
+    return False
+
+
 @router.api_route(
     "/{project_id}/db-workbench/proxy",
     methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
@@ -500,6 +510,9 @@ async def proxy_db_workbench(
     status = status_workbench(project_id)
     if not status.running or not status.direct_url:
         raise HTTPException(status_code=503, detail="Pgweb workbench is not running")
+
+    if _escapes_passthrough(path):
+        raise HTTPException(status_code=400, detail="Invalid workbench path")
 
     route_path = request.url.path
     if f"/projects/{project_id}/db-workbench/static/" in route_path:
