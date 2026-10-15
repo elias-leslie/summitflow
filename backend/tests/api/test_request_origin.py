@@ -242,6 +242,14 @@ def test_workbench_paths_cannot_leave_their_upstream_prefix(monkeypatch, path) -
     assert not upstream
 
 
+def test_traversal_is_refused_before_the_workbench_is_looked_up(monkeypatch) -> None:
+    http, upstream = _workbench_client(monkeypatch)
+    monkeypatch.setattr(db_workbench, "status_workbench", lambda project_id: pytest.fail("looked up"))
+    response = http.get("/api/projects/x/db-workbench/static/..%2Fapi%2Fquery")
+    assert response.status_code == 400
+    assert not upstream
+
+
 def test_own_workbench_static_and_api_calls_still_proxy(monkeypatch) -> None:
     http, upstream = _workbench_client(monkeypatch)
     same_origin = {"sec-fetch-site": "same-origin"}

@@ -507,12 +507,12 @@ async def proxy_db_workbench(
     request: Request,
     path: str = "",
 ) -> Response:
+    if _escapes_passthrough(path):
+        raise HTTPException(status_code=400, detail="Invalid workbench path")
+
     status = status_workbench(project_id)
     if not status.running or not status.direct_url:
         raise HTTPException(status_code=503, detail="Pgweb workbench is not running")
-
-    if _escapes_passthrough(path):
-        raise HTTPException(status_code=400, detail="Invalid workbench path")
 
     route_path = request.url.path
     if f"/projects/{project_id}/db-workbench/static/" in route_path:
