@@ -136,7 +136,7 @@ class TestAgentCommandsResolveShortId:
 
         assert result.exit_code == 0, result.output
         # API was called with the *full* UUID, not the prefix.
-        mock_client.get_session.assert_called_once_with(_FULL_UUID)
+        mock_client.get_session.assert_called_once_with(_FULL_UUID, include_events=False)
         assert f"session={_FULL_UUID}" in result.output
 
     def test_agent_status_does_not_report_normal_one_shot_close_as_error(self) -> None:
