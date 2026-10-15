@@ -198,6 +198,27 @@ def test_foreign_hold_refuses_acceptance_but_not_the_holder(repos, monkeypatch):
         proc.wait()
 
 
+def test_command_ack_reaches_local_acceptance(repos, monkeypatch):
+    """st service rebuild / st done --with-ack also covers the acceptance they run internally."""
+    from cli.lib import acceptance
+
+    repo = repos["hostrepo"]
+    as_claude(monkeypatch, "integrator-0001")
+    leases.acquire_mark("hostrepo", str(repo), "hold", "integration")
+    as_codex(monkeypatch, "finisher-00001")
+    request = coord.send("cc:integr", "rebuild hostrepo now?", project="hostrepo")
+    as_claude(monkeypatch, "integrator-0001")
+    coord.ack(request["id"], "yes")
+    as_codex(monkeypatch, "finisher-00001")
+    monkeypatch.setattr(acceptance, "_accept_revision", lambda repo, **kwargs: {"accepted": True})
+    with coord.acked(request["id"]):
+        assert acceptance.accept_revision(repo, sha="x") == {"accepted": True}
+    with pytest.raises(acceptance.AcceptanceError, match="acceptance refused"):
+        acceptance.accept_revision(repo, sha="x")  # scoped to the acked command only
+    with coord.acked("not-a-request"), pytest.raises(acceptance.AcceptanceError, match="acceptance refused"):
+        acceptance.accept_revision(repo, sha="x")
+
+
 def test_active_holder_keeps_its_hold_live(repos, monkeypatch):
     repo = repos["hostrepo"]
     as_claude(monkeypatch, "holder-busy-01")

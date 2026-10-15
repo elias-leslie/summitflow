@@ -285,6 +285,10 @@ def done_command(
         str | None,
         typer.Option("--budget-note", help="Why growth is accepted while the project is over its test/gate budget (st check budget); recorded in the task log."),
     ] = None,
+    with_ack: Annotated[
+        str | None,
+        typer.Option("--with-ack", help="Request id the repo's holder acked yes; covers this closeout's commit and local acceptance."),
+    ] = None,
 ) -> None:
     """Complete a task or subtask.
 
@@ -296,8 +300,8 @@ def done_command(
     Already-completed task/subtask is a no-op (exit 0).
     """
     if is_subtask_id(id):
-        if paths or paths_range or evidence or record_only:
-            output_error("--path / --paths, --paths-from-range and --evidence only apply to task completion.")
+        if paths or paths_range or evidence or record_only or with_ack:
+            output_error("--path / --paths, --paths-from-range, --evidence and --with-ack only apply to task completion.")
             raise typer.Exit(1)
         client = STClient()
         _handle_subtask_completion(
@@ -311,6 +315,9 @@ def done_command(
                 "Resolution: pass them with a subtask id, e.g. st done 1.2 -t <task-id> --citation M:abc12345"
             )
             raise typer.Exit(1)
+        from cli.lib import coord
+
         client = STClient(require_project=False)
-        _handle_task_completion(client, id, message, paths=tuple(paths or ()), evidence=evidence, record_only=record_only,
-                                paths_range=paths_range, budget_note=budget_note)
+        with coord.acked(with_ack):
+            _handle_task_completion(client, id, message, paths=tuple(paths or ()), evidence=evidence, record_only=record_only,
+                                    paths_range=paths_range, budget_note=budget_note)

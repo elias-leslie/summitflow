@@ -19,6 +19,7 @@ import subprocess
 import uuid
 from collections.abc import Iterator, Sequence
 from contextlib import contextmanager, suppress
+from contextvars import ContextVar
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any
@@ -38,6 +39,21 @@ _ETA = re.compile(r"eta:(\d{1,4})")
 
 class CoordBlocked(Exception):
     """A repo operation conflicts with another live agent; message is one line."""
+
+
+# A command's --with-ack also covers the guarded steps it runs internally
+# (its own commit and local acceptance), with the same holder fencing.
+_COMMAND_ACK: ContextVar[str | None] = ContextVar("coord_command_ack", default=None)
+
+
+@contextmanager
+def acked(with_ack: str | None) -> Iterator[None]:
+    """Let guards inside this command honor its ``--with-ack`` request id."""
+    token = _COMMAND_ACK.set(with_ack or _COMMAND_ACK.get())
+    try:
+        yield
+    finally:
+        _COMMAND_ACK.reset(token)
 
 
 # ---------------------------------------------------------------- resolution
@@ -146,6 +162,7 @@ def guard(repo: Path, operation: str, *, paths: Sequence[str] = (), with_ack: st
     if resolved is None:
         return
     project_id, root = resolved
+    with_ack = with_ack or _COMMAND_ACK.get()
     coord_lineage.observe()
     _keep_alive(project_id)
     mine, anchor = leases.self_ids(), leases.my_anchor()

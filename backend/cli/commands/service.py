@@ -341,7 +341,8 @@ def rebuild(
         _backup_restart_preflight(detach=detach)
     if detach:
         try:
-            accepted_source = service_ops.resolve_accepted_source(services, acceptance)
+            with coord.acked(with_ack):
+                accepted_source = service_ops.resolve_accepted_source(services, acceptance)
             print(_acceptance_line(accepted_source, supplied=acceptance is not None))
             raise typer.Exit(
                 service_ops.queue_detached(
@@ -387,7 +388,8 @@ def rebuild(
             (backup_worker_restart_guard() if services.project_id == "summitflow" and backend
              else nullcontext(lambda: None)) as assert_backup_restart_owned,
         ):
-            release, services = service_ops.prepare_accepted_release(services, acceptance)
+            with coord.acked(with_ack):
+                release, services = service_ops.prepare_accepted_release(services, acceptance)
             print(_acceptance_line(vars(release.source), supplied=acceptance is not None))
             service_release.mark_phase(
                 release,
