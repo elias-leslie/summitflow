@@ -345,6 +345,10 @@ def sync_systemd_units(project: ProjectServices) -> int:
     durable_data_root = project.durable_data_root or project.root / "data"
     host_config_root = project.host_config_root or project.root
     units = dict.fromkeys(name for unit in project.all_services for name in (unit, activated_service(unit)) if name)
+    # Required services must come back after a host reboot; optional workers
+    # keep whatever enablement the owner chose.
+    required = {project.backend_service, project.frontend_service, *project.default_workers}
+    boot: list[str] = []
     for service in units:
         if service == host_monitor_deploy.UNIT:
             continue
@@ -359,8 +363,12 @@ def sync_systemd_units(project: ProjectServices) -> int:
         (systemd_dir / service).write_text(text)
         print(f"[service] synced {service}")
         synced = True
-    if synced:
-        return run(["systemctl", "--user", "daemon-reload"])
+        if service in required and not activated_service(service) and "[Install]" in text:
+            boot.append(service)
+    if synced and run(["systemctl", "--user", "daemon-reload"]) != 0:
+        return 1
+    if boot:
+        return run(["systemctl", "--user", "enable", *boot])
     return 0
 
 

@@ -542,3 +542,31 @@ def test_retained_deployment_coverage_is_not_promoted(
         assert evidence["state"] == "succeeded"
         assert evidence["source_commit"] == source.source_commit
         assert evidence["coverage"] == coverage
+
+
+def test_unit_sync_enables_required_services_for_reboot_but_not_optional_workers(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from cli.lib import service_ops
+
+    templates = tmp_path / "scripts" / "systemd"
+    templates.mkdir(parents=True)
+    installable = "[Service]\nExecStart=/bin/true\n[Install]\nWantedBy=default.target\n"
+    for name in ("api.service", "worker.service", "optional.service"):
+        (templates / name).write_text(installable)
+    (templates / "web.service").write_text("[Service]\nExecStart=/bin/true\n")
+    services = service_ops.ProjectServices(
+        project_id="demo", root=tmp_path, backend_service="api.service", frontend_service="web.service",
+        default_workers=("worker.service",), optional_workers=("optional.service",), backend_port=0,
+        frontend_port=0, backend_dir=tmp_path / "backend", frontend_dir=tmp_path / "frontend",
+        health_endpoint="/health",
+    )
+    calls: list[list[str]] = []
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "config"))
+    monkeypatch.setattr(service_ops, "get_repo_root", lambda: tmp_path)
+    monkeypatch.setattr(service_ops, "activated_service", lambda _unit: None)
+    monkeypatch.setattr(service_ops, "run", lambda argv, **_kwargs: calls.append(argv) or 0)
+
+    assert service_ops.sync_systemd_units(services) == 0
+    assert calls == [["systemctl", "--user", "daemon-reload"],
+                     ["systemctl", "--user", "enable", "api.service", "worker.service"]]
