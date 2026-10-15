@@ -167,13 +167,14 @@ def test_semgrep_can_write_private_settings_and_logs_without_changing_home(
 
 
 @pytest.mark.skipif(shutil.which("semgrep") is None, reason="Semgrep is not installed")
-def test_local_shell_rule_detects_execution_without_flagging_argv_or_guard(
+def test_local_rules_detect_shell_execution_and_weak_ciphers_without_flagging_safe_forms(
     tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
     rules = Path(__file__).resolve().parents[3] / ".semgrep.yml"
     shutil.copyfile(rules, tmp_path / ".semgrep.yml")
     # One scan (Semgrep startup dominates): findings must name only the shell
-    # executions, never argv-form calls or the shell=False guard.
+    # executions and the ECB cipher, never argv-form calls, the shell=False
+    # guard or the CTR keystream equivalent CodeQL accepts.
     safe = tmp_path / "src" / "argv_processes.py"
     safe.parent.mkdir()
     safe.write_text(
@@ -181,7 +182,9 @@ def test_local_shell_rule_detects_execution_without_flagging_argv_or_guard(
         "import subprocess\n"
         "subprocess.run(['git', 'status'], shell=False)\n"
         "subprocess.run(['git', 'status'])\n"
-        "asyncio.create_subprocess_exec('git', 'status')\n",
+        "asyncio.create_subprocess_exec('git', 'status')\n"
+        "from cryptography.hazmat.primitives.ciphers import Cipher, algorithms, modes\n"
+        "Cipher(algorithms.AES(key), modes.CTR(nonce)).encryptor().update(bytes(16))\n",
         encoding="utf-8",
     )
     (tmp_path / "src" / "shell_processes.py").write_text(
@@ -189,17 +192,20 @@ def test_local_shell_rule_detects_execution_without_flagging_argv_or_guard(
         "import subprocess\n"
         "subprocess.run(command, shell=True)\n"
         "subprocess.Popen(command, shell=True)\n"
-        "asyncio.create_subprocess_shell(command)\n",
+        "asyncio.create_subprocess_shell(command)\n"
+        "from cryptography.hazmat.primitives.ciphers import Cipher, algorithms, modes\n"
+        "Cipher(algorithms.AES(key), modes.ECB()).encryptor().update(nonce)\n",
         encoding="utf-8",
     )
     assert check_security.run_local_security_check(
         "semgrep", tmp_path, ["src/argv_processes.py", "src/shell_processes.py"], True, []
     ) == 1
     output = capsys.readouterr().out
-    assert "SEMGREP:FAIL:1" in output and "3 findings" in output
+    assert "SEMGREP:FAIL:1" in output and "4 findings" in output
     details = "\n".join(path.read_text(encoding="utf-8")
                         for path in (tmp_path / ".dev-tools").glob("security-semgrep-*-details.txt"))
     assert details.count('"check_id":"summitflow-python-shell-execution"') == 3, details
+    assert details.count('"check_id":"summitflow-python-weak-cipher"') == 1, details
     assert re.search(r'"scanned":\[[^\]]*argv_processes\.py', details), details
     assert not re.search(r'"path":"[^"]*argv_processes\.py"', details), details
 

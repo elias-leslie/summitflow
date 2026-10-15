@@ -27,8 +27,9 @@ def _derive(password: bytes, salt: bytes, n: int, r: int, p: int) -> tuple[bytes
 
 
 def _mac(k: bytes, r: bytes, nonce: bytes, data: bytes) -> bytes:
-    # Restic's Poly1305-AES: the one-time pad is the nonce encrypted under k.
-    pad = Cipher(algorithms.AES(k), modes.ECB()).encryptor().update(nonce)  # single-block AES, as Poly1305-AES requires
+    # Restic's Poly1305-AES: the one-time pad is AES_k(nonce), which is the
+    # first CTR keystream block for counter=nonce (no raw block mode needed).
+    pad = Cipher(algorithms.AES(k), modes.CTR(nonce)).encryptor().update(bytes(16))
     return Poly1305.generate_tag(r + pad, data)
 
 
