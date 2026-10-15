@@ -457,3 +457,16 @@ def test_check_gated_base_fast_forwards_to_the_exact_source(monkeypatch, rejecte
         assert not result['publication_complete']
     else:
         assert result['publication_complete'] and result['delivery']['merged_source'] == sha
+        # The merged delivery branch is removed only while it still names the merged source.
+        assert pushes[2] == ['push', '--porcelain', f'--force-with-lease=refs/heads/st/nightly:{sha}',
+                             'origin', ':refs/heads/st/nightly']
+        assert result['branch_cleanup'] == {'state': 'success', 'branch': 'st/nightly'}
+
+
+def test_merged_branch_cleanup_is_best_effort_and_only_for_st_branches():
+    failed = Mock(return_value=Mock(returncode=1, stdout='', stderr='stale info'))
+    assert publish.delete_merged_branch(Path('/r'), 'st/x', 'a' * 40, failed) == {
+        'state': 'deferred', 'branch': 'st/x', 'detail': 'stale info'}
+    untouched = Mock()
+    assert publish.delete_merged_branch(Path('/r'), 'feature/x', 'a' * 40, untouched) == {'state': 'not_applicable'}
+    untouched.assert_not_called()

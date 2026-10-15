@@ -158,6 +158,8 @@ def publish_git(repo: Path, *, sha: str, task_id: str, message: str,
                 evidence = client.finish_pr(pull['number'], sha, plan, fast_forward=fast_forward)
                 if evidence.get('merge_sha'):
                     result['merge_sha'] = evidence['merge_sha']
+                    result['branch_cleanup'] = delete_merged_branch(repo, publish_branch, sha, run_git,
+                                                                    remote=remote_name, activity_allowed=activity_allowed)
                     current = run_git(repo, ['rev-parse', 'HEAD']) if resume and reconcile_checkout else None
                     if not reconcile_checkout:
                         result['local_reconciliation'] = {'state': 'deferred', 'reason': 'isolated_publication'}
@@ -180,6 +182,20 @@ def publish_git(repo: Path, *, sha: str, task_id: str, message: str,
                           'pull_request_state': 'merged' if result.get('merge_sha') else 'pending' if result.get('pr_url') else 'not_applicable',
                           'merged_source': result.get('merge_sha'), 'pull_request_url': result.get('pr_url')}
     return {**result, **evidence_result(evidence)}
+
+
+def delete_merged_branch(repo: Path, branch: str | None, sha: str, run_git: Callable[..., Any], *,
+                         remote: str = "origin", activity_allowed: Callable[[], bool] | None = None) -> dict[str, Any]:
+    """Drop the merged st/ delivery branch; only while it still points at the merged source (best effort)."""
+    if not branch or not branch.startswith('st/'):
+        return {'state': 'not_applicable'}
+    if activity_allowed is not None and not activity_allowed():
+        return {'state': 'deferred', 'branch': branch, 'reason': 'publication_busy'}
+    deleted = run_git(repo, ['push', '--porcelain', f'--force-with-lease=refs/heads/{branch}:{sha}',
+                             remote, f':refs/heads/{branch}'])
+    if deleted.returncode:
+        return {'state': 'deferred', 'branch': branch, 'detail': (deleted.stderr or deleted.stdout or '').strip()[:200]}
+    return {'state': 'success', 'branch': branch}
 
 
 def reconcile(repo: Path, base: str, run_git: Callable[..., Any], *, remote: str = "origin") -> dict[str, Any]:
