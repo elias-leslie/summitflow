@@ -998,16 +998,17 @@ def run_migrations(project: ProjectServices) -> int:
     }
     for key in database_keys | {
         "REDIS_URL", "AGENT_HUB_REDIS_URL", "HATCHET_CLIENT_TOKEN",
-        "INTERNAL_SERVICE_SECRET", "AGENT_HUB_INTERNAL_SECRET",
+        "INTERNAL_SERVICE_SECRET", "AGENT_HUB_INTERNAL_SECRET", "PORTFOLIO_SECRET_KEY",
     }:
         env.pop(key, None)
     # Alembic runs from immutable accepted source, which deliberately excludes
-    # project env files. Supply only the owning project's database credentials
-    # from the same stable host configuration used by its systemd service.
-    owner_database_keys = {
+    # project env files. Supply only the owning project's database credentials,
+    # plus secrets its data migrations need, from the same stable host
+    # configuration used by its systemd service.
+    owner_migration_keys = {
         "summitflow": {"DATABASE_URL"},
         "agent-hub": {"AGENT_HUB_DB_URL"},
-        "portfolio-ai": {"PORTFOLIO_DB_URL"},
+        "portfolio-ai": {"PORTFOLIO_DB_URL", "PORTFOLIO_SECRET_KEY"},
         "neri": {"NERI_DB_URL", "POSTGRES_ADMIN_URL", "DATABASE_ADMIN_URL"},
         "learn-o-tron": {"LEARN_DB_URL"},
         "jobinator-4000": {"JOBINATOR_DB_URL"},
@@ -1023,7 +1024,7 @@ def run_migrations(project: ProjectServices) -> int:
         if path.name == ".env.example" or not path.is_file():
             continue
         for key, value in dotenv_values(path, interpolate=False).items():
-            if key in owner_database_keys and value is not None:
+            if key in owner_migration_keys and value is not None:
                 env[key] = value
     print("[service] running migrations")
     return run([str(alembic), "upgrade", "head"], cwd=project.backend_dir, env=env, quiet_success=True)

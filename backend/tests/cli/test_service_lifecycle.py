@@ -501,6 +501,24 @@ def test_migrations_get_only_the_approved_project_database_env(project, monkeypa
     assert run.call_args.kwargs["cwd"] == backend_dir
 
 
+def test_portfolio_migrations_get_their_secret_key_from_host_env(project, monkeypatch, tmp_path):
+    backend_dir = tmp_path / "source" / "backend"
+    (backend_dir / ".venv" / "bin").mkdir(parents=True)
+    (backend_dir / "alembic.ini").touch()
+    (backend_dir / ".venv" / "bin" / "alembic").touch()
+    (tmp_path / "host").mkdir()
+    (tmp_path / "host" / ".env.local").write_text("PORTFOLIO_SECRET_KEY=approved-key\n")
+    monkeypatch.setenv("PORTFOLIO_SECRET_KEY", "stale-shell-key")
+    run = Mock(return_value=0)
+    monkeypatch.setattr(service_ops, "run", run)
+
+    for project_id, expected in (("portfolio-ai", "approved-key"), ("neri", None)):
+        deployed = replace(project, project_id=project_id, root=tmp_path / "source", backend_dir=backend_dir,
+                           frontend_dir=tmp_path / "source" / "frontend", host_config_root=tmp_path / "host")
+        assert service_ops.run_migrations(deployed) == 0
+        assert run.call_args.kwargs["env"].get("PORTFOLIO_SECRET_KEY") == expected
+
+
 def test_seed_export_failure_propagates(project, monkeypatch):
     (project.backend_dir / "scripts").mkdir(parents=True)
     (project.backend_dir / "scripts" / "export_seeds.py").touch()
