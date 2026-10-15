@@ -125,3 +125,14 @@ def test_list_sessions_forwards_search_to_agent_hub(mocker: MockerFixture) -> No
         f"{AGENT_HUB_URL}/api/sessions",
         params={"page": 1, "page_size": 100, "q": "c9ffbd05"},
     )
+
+
+def test_session_detail_forwards_metadata_only_reads(mocker: MockerFixture) -> None:
+    # Routine `st sessions show` must not pull every event through the proxy.
+    mock_get_json = AsyncMock(return_value={"id": "sess-1"})
+    mocker.patch("app.api.agent_hub._get_json", mock_get_json)
+
+    assert client.get("/api/agent-hub/sessions/sess-1?include_events=false").status_code == 200
+    assert client.get("/api/agent-hub/sessions/sess-1").status_code == 200
+    assert mock_get_json.await_args_list[0].kwargs == {"params": {"include_events": "false"}}
+    assert mock_get_json.await_args_list[1].kwargs == {"params": None}
