@@ -12,6 +12,8 @@ import tarfile
 from pathlib import Path
 from types import SimpleNamespace
 
+import pytest
+
 from app.services import backup_keys
 from app.tasks.backup_native_archive import DEFAULT_EXCLUDES, _should_exclude
 from app.tasks.backup_native_offsite import encrypt_completed_archive
@@ -143,3 +145,40 @@ def test_infrastructure_restore_test_accepts_new_encrypted_archive(
     assert recorded == [(True, None)]
     assert len(decrypted) == 1 and not decrypted[0].exists()
     assert ciphertext.is_file()
+
+
+def test_infra_validation_restores_repository_points_instead_of_looking_for_a_file(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    import contextlib
+
+    from app.tasks import backup_repository_runtime, backup_restore_test
+
+    archive = tmp_path / "recovery.tar.gz"
+    with tarfile.open(archive, "w:gz") as stream:
+        member = tarfile.TarInfo("infrastructure/pgdumpall.sql.gz")
+        member.size = 0
+        stream.addfile(member, io.BytesIO(b""))
+    restored: list[str] = []
+
+    @contextlib.contextmanager
+    def materialize(backup):
+        restored.append(backup["id"])
+        yield archive
+
+    monkeypatch.setattr(backup_repository_runtime, "materialize_repository_archive", materialize)
+    recorded: list[tuple[bool, str | None]] = []
+    monkeypatch.setattr(backup_restore_test.backup_store, "update_source_restore_test",
+                        lambda _source_id, *, ok, error=None: recorded.append((ok, error)))
+    monkeypatch.setattr(backup_restore_test, "verify_archive_coverage", lambda _verification: SimpleNamespace(
+        complete=True, required_count=1, present_count=1, missing=[]))
+    monkeypatch.setattr(backup_restore_test, "_validate_pgdump_header", lambda _path: True)
+    monkeypatch.setattr(backup_restore_test, "_validate_redis_header", lambda _path: True)
+
+    result = backup_restore_test._validate_infra_archive("infrastructure", {
+        "id": "backup-r", "location": "restic-v1:repo:snap", "name": "snap",
+        "verification_json": {"format": "restic-v1", "snapshot_id": "snap"},
+    })
+
+    assert result["ok"] is True, result
+    assert restored == ["backup-r"] and recorded == [(True, None)]

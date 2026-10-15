@@ -121,7 +121,13 @@ def _validate_infra_archive(source_id: str, backup: dict[str, Any]) -> dict[str,
 
     archive_staging = ExitStack()
     try:
-        archive_path = _locate_archive(location, name, source_id, scratch_stack=archive_staging)
+        from .backup_repository_runtime import is_repository_backup, materialize_repository_archive
+
+        # Repository (restic) points have no archive file; restore them into
+        # disposable staging, as the restore drill does.
+        archive_path = (str(archive_staging.enter_context(materialize_repository_archive(backup)))
+                        if is_repository_backup(backup)
+                        else _locate_archive(location, name, source_id, scratch_stack=archive_staging))
         if archive_path is None:
             raise RuntimeError(f"Cannot locate archive: location={location}, name={name}")
         with materialize_plaintext_archive(Path(archive_path)) as plaintext_archive:
