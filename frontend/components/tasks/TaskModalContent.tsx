@@ -170,6 +170,27 @@ function DoneWhenSection({ doneWhen }: { doneWhen: string[] }) {
   )
 }
 
+/** Only execution facts belong in the gate; other evidence (e.g. publication repair) does not. */
+export function hasExecutionFacts(result: VerificationResult): boolean {
+  return (
+    typeof result.subtask_count === 'number' ||
+    typeof result.execution_clean === 'boolean' ||
+    typeof result.partial_merge === 'boolean'
+  )
+}
+
+export function executionSummary(result: VerificationResult): string {
+  const total = result.subtask_count
+  if (result.partial_merge === true) {
+    return typeof result.passed_count === 'number' && typeof total === 'number'
+      ? `Partial merge — ${result.passed_count}/${total} subtasks passed`
+      : 'Partial merge'
+  }
+  if (result.execution_clean === true) return 'Clean execution'
+  if (typeof total !== 'number') return 'Subtask count not recorded'
+  return `${total} subtask${total === 1 ? '' : 's'} executed`
+}
+
 function VerificationResultSection({ result }: { result: VerificationResult }) {
   const isPartial = result.partial_merge === true
   const isClean = result.execution_clean === true
@@ -208,11 +229,7 @@ function VerificationResultSection({ result }: { result: VerificationResult }) {
                   : 'text-slate-300',
             )}
           >
-            {isPartial
-              ? `Partial merge — ${result.passed_count}/${result.subtask_count} subtasks passed`
-              : isClean
-                ? 'Clean execution'
-                : `${result.subtask_count} subtask${result.subtask_count === 1 ? '' : 's'} executed`}
+            {executionSummary(result)}
           </span>
         </div>
 
@@ -308,9 +325,10 @@ function OverviewPanel({
       </section>
 
       {/* Verification result — shown when task has completion gate output */}
-      {task.verification_result && (
-        <VerificationResultSection result={task.verification_result} />
-      )}
+      {task.verification_result &&
+        hasExecutionFacts(task.verification_result) && (
+          <VerificationResultSection result={task.verification_result} />
+        )}
 
       {/* Acceptance criteria inline */}
       {task.acceptance_criteria && task.acceptance_criteria.length > 0 && (
