@@ -55,8 +55,8 @@ def evaluate_publication_command(command: str, cwd: str | Path | None = None) ->
             return _blocked("hook_disable", "Publication hooks must remain enabled.")
         if executable == "git" and "config" in args and any(arg.lower() == "core.hookspath" for arg in args) and not any(arg in args for arg in ("--get", "--get-all", "--get-regexp")):
             return _blocked("hook_disable", "Publication hooks must remain enabled.")
-        if executable in SHELL_EXECUTABLES:
-            nested = shell_exec_args(args[1:])
+        if executable in SHELL_EXECUTABLES or executable == "eval":
+            nested = _nested_command(executable, args)
             if nested:
                 decision = evaluate_publication_command(nested)
                 if decision.blocked:
@@ -123,8 +123,8 @@ def evaluate_irreversible_command(command: str, cwd: str | None = None) -> Comma
             if "$" not in target and "`" not in target:
                 working = os.path.normpath(os.path.join(working, os.path.expanduser(target)))
             continue
-        if executable in SHELL_EXECUTABLES:
-            nested = shell_exec_args(args[1:])
+        if executable in SHELL_EXECUTABLES or executable == "eval":
+            nested = _nested_command(executable, args)
             if nested:
                 decision = evaluate_irreversible_command(nested, working)
                 if decision.blocked:
@@ -246,6 +246,13 @@ def _inert_output(prefix: str) -> bool:
     words = {Path(word).name.lower() for word in outer.replace('"', " ").replace("'", " ").split()}
     # An empty outer command means the substitution itself is the command.
     return bool(words) and not words & (SHELL_EXECUTABLES | {"eval", "source", "."})
+
+
+def _nested_command(executable: str, args: list[str]) -> str | None:
+    """The command string a ``bash -c`` or ``eval`` segment runs."""
+    if executable == "eval":
+        return " ".join(args[1:]) or None
+    return shell_exec_args(args[1:])
 
 
 def _substitutions(command: str) -> list[str]:

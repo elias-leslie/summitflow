@@ -141,6 +141,7 @@ SYSTEM_DENIED = {
     "irreversible_restic_forget": [
         "restic -r /mnt/x forget --keep-last 1 --prune",
         "sudo env RESTIC_PASSWORD_FILE=x restic -r rclone:summitflow-drive:r forget --keep-daily 1",
+        "exec restic forget abc123", "eval 'restic forget abc123'", "uv run restic forget abc123",
     ],
     "irreversible_restic_prune": ["restic prune"],
     "irreversible_restic_key": ["restic key remove abc"],
@@ -158,6 +159,8 @@ SYSTEM_DENIED = {
     "irreversible_qm_destroy": [
         "ssh proxmox-gem qm destroy 101", "ssh proxmox-gem \"bash -c 'qm destroy 9'\"",
         "ssh proxmox-gem <<'EOF'\nqm destroy 101\nEOF",
+        "exec qm destroy 101", "exec -a x qm destroy 101", "eval qm destroy 101", "eval 'ls; qm destroy 101'",
+        "uv run qm destroy 101", "uvx qm destroy 101", "uv tool run qm destroy 101",
     ],
     "irreversible_pct_destroy": ["ssh root@192.168.86.39 'pct destroy 200 --purge'"],
     "irreversible_lvremove": ["ssh -p 22 -i key davion-gem lvremove -y pve/vm-101-disk-0"],
@@ -184,6 +187,15 @@ SYSTEM_DENIED = {
         "bash -lc 'st backup storage approve-deletion restic-retention --target local --reason x'",
         "env FOO=1 st backup storage approve-deletion restic-retention --target local --reason x",
         "echo $(st backup storage approve-deletion restic-retention --target local --reason x)",
+        "exec st backup storage approve-deletion restic-retention --target local --reason x",
+        "exec -cl st backup storage approve-deletion restic-retention --target local --reason x",
+        "eval 'st backup storage approve-deletion restic-retention --target local --reason x'",
+        "eval st backup storage approve-deletion restic-retention --target local --reason x",
+        "uv run st backup storage approve-deletion restic-retention --target local --reason x",
+        "uv run --project backend --with httpx -- st backup storage approve-deletion r --target local --reason x",
+        "uv --directory /tmp run st backup storage approve-deletion r --target local --reason x",
+        "uvx --from summitflow st backup storage approve-deletion r --target local --reason x",
+        "bash -c 'exec uv run st backup storage approve-deletion r --target local --reason x'",
     ],
 }
 SYSTEM_ALLOWED = [
@@ -205,6 +217,9 @@ SYSTEM_ALLOWED = [
     "rclone move summitflow-drive:x ./local", "rclone sync /data gdrive:backup --dry-run", "rclone copy /data gdrive:x",
     "st backup storage safety", "st backup storage list",
     "st commit -m 'st backup storage approve-deletion is denied'",
+    "exec st backup storage safety", "eval 'st backup storage list'", "uv run st backup storage safety",
+    "uv run pytest", "uv sync", "uv pip install restic", "uvx ruff check .", "eval \"$(ssh-agent -s)\"",
+    "eval 'echo restic forget'",
 ]
 
 
@@ -238,6 +253,12 @@ def test_hook_denies_agent_backup_deletion_approval(monkeypatch, capsys) -> None
     assert "owner's own terminal" in output["permissionDecisionReason"]
 
 
+def test_publication_guard_sees_through_exec_eval_and_uv() -> None:
+    for command in ("exec git push origin main", "eval 'git push origin main'", "uv run git push"):
+        assert evaluate_publication_command(command, SHARED).blocked, command
+
+
 def test_legacy_shell_guard_shares_host_level_policy(tmp_path) -> None:
     assert evaluate_shell_command("sudo mkfs.ext4 /dev/sdb1", tmp_path).blocked
     assert not evaluate_shell_command("dd if=/dev/zero of=./file bs=1M count=1", tmp_path).blocked
+    assert evaluate_shell_command("exec uv run qm destroy 101", tmp_path).blocked

@@ -43,6 +43,18 @@ _SUDO_OPTIONS_WITH_VALUE = frozenset({
     "-C", "--close-from", "-T", "--command-timeout", "-R", "--chroot",
     "-D", "--chdir",
 })
+# `uv run` / `uv tool run` / `uvx` options that take a separate value (uv 0.11).
+_UV_OPTIONS_WITH_VALUE = frozenset({
+    "--extra", "--no-extra", "--group", "--no-group", "--only-group", "--env-file", "-w", "--with",
+    "--with-editable", "--with-requirements", "--package", "--python-platform", "--index", "--default-index",
+    "-i", "--index-url", "--extra-index-url", "-f", "--find-links", "--index-strategy", "--keyring-provider",
+    "--upgrade-group", "--resolution", "--prerelease", "--fork-strategy", "--exclude-newer",
+    "--exclude-newer-package", "--no-sources-package", "--reinstall-package", "--link-mode",
+    "--config-settings-package", "--no-build-isolation-package", "--no-build-package", "--no-binary-package",
+    "--cache-dir", "--refresh-package", "-p", "--python", "--color", "--allow-insecure-host", "--directory",
+    "--project", "--config-file", "-P", "--upgrade-package", "-C", "--config-setting", "--from",
+    "-c", "--constraints", "-b", "--build-constraints", "--overrides", "--torch-backend",
+})
 _GIT_REPO_CHECK = ["git", "rev-parse", "--is-inside-work-tree"]
 
 GIT_ABORT_ACTIONS = frozenset({"--abort", "--continue", "--quit", "--skip"})
@@ -143,6 +155,22 @@ def unwrap_segment_with_privilege(segment: Sequence[str]) -> tuple[list[str], bo
             tokens = tokens[i:]
         elif lead in _COMMAND_WRAPPERS:
             tokens = tokens[1:]
+        elif lead == "exec":
+            # exec [-cl] [-a NAME] COMMAND
+            i = 1
+            while i < len(tokens) and tokens[i].startswith("-"):
+                opt = tokens[i]
+                i += 1
+                if opt == "--":
+                    break
+                if opt.endswith("a") and i < len(tokens):
+                    i += 1
+            tokens = tokens[i:]
+        elif lead in {"uv", "uvx"}:
+            rest = _uv_command(tokens) if lead == "uv" else _skip_uv_options(tokens, 1)
+            if rest is None:
+                break
+            tokens = rest
         elif lead in _OPTION_WRAPPERS:
             i = 1
             while i < len(tokens) and tokens[i].startswith("-"):
@@ -156,6 +184,29 @@ def unwrap_segment_with_privilege(segment: Sequence[str]) -> tuple[list[str], bo
         else:
             break
     return tokens, privileged
+
+
+def _skip_uv_options(tokens: list[str], index: int) -> list[str]:
+    while index < len(tokens) and tokens[index].startswith("-"):
+        opt = tokens[index]
+        index += 1
+        if opt == "--":
+            break
+        if opt in _UV_OPTIONS_WITH_VALUE:
+            index += 1
+    return tokens[index:]
+
+
+def _uv_command(tokens: list[str]) -> list[str] | None:
+    """The command `uv [opts] run|tool run [opts] CMD` runs; None for other uv subcommands."""
+    rest = _skip_uv_options(tokens, 1)
+    if rest[:1] == ["run"]:
+        return _skip_uv_options(rest, 1)
+    if rest[:1] == ["tool"]:
+        rest = _skip_uv_options(rest, 1)
+        if rest[:1] == ["run"]:
+            return _skip_uv_options(rest, 1)
+    return None
 
 
 def unwrap_segment(segment: Sequence[str]) -> list[str]:
