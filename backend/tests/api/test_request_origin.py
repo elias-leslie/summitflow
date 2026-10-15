@@ -13,7 +13,9 @@ from app.request_origin import request_origin_middleware
 OWNER = AccessPrincipal(email="owner@example.test", role="owner", is_active=True)
 
 
-def _client(monkeypatch, base_url: str = "http://testserver") -> tuple[TestClient, list[str]]:
+def _client(
+    monkeypatch, base_url: str = "http://testserver", peer: tuple[str, int] = ("testclient", 50000)
+) -> tuple[TestClient, list[str]]:
     monkeypatch.setattr(access_control, "_cloudflare_configured", lambda: True)
     monkeypatch.setattr(access_control, "_email_from_cloudflare_token", lambda token: OWNER.email)
     monkeypatch.setattr(access_control, "_principal_for_email", lambda email: OWNER)
@@ -34,10 +36,15 @@ def _client(monkeypatch, base_url: str = "http://testserver") -> tuple[TestClien
     def projects() -> list[str]:
         return []
 
+    @app.get("/api/projects/{project_id}/db-workbench/{kind}/{path:path}")
+    def workbench(project_id: str, kind: str, path: str) -> dict[str, str]:
+        calls.append(f"workbench:{kind}/{path}")
+        return {"ran": path}
+
     # Same order as app.main: the origin check wraps access control.
     app.middleware("http")(access_control_middleware)
     app.middleware("http")(request_origin_middleware)
-    return TestClient(app, base_url=base_url), calls
+    return TestClient(app, base_url=base_url, client=peer), calls
 
 
 CROSS_SITE = [
@@ -104,6 +111,67 @@ def test_reads_are_not_affected(monkeypatch) -> None:
     http, _ = _client(monkeypatch)
     response = http.get("/api/projects", headers={"origin": "https://evil.example", "sec-fetch-site": "cross-site"})
     assert response.status_code == 200
+
+
+@pytest.mark.parametrize("dashboard", ["localhost:3001", "127.0.0.1:3001"])
+def test_localhost_dashboard_write_through_its_rewrite_passes(monkeypatch, dashboard) -> None:
+    # The dashboard calls /api/* on its own origin; Next forwards Origin, X-Forwarded-Host and
+    # Sec-Fetch-Site to :8001. Before, it called :8001 directly (same-site) and got 403.
+    http, calls = _client(monkeypatch, base_url="http://localhost:8001", peer=("127.0.0.1", 50000))
+    response = http.delete(
+        "/api/docker/restart/x",
+        headers={"origin": f"http://{dashboard}", "x-forwarded-host": dashboard, "sec-fetch-site": "same-origin"},
+    )
+    assert response.status_code == 405  # route exists only for POST; the guard let it through
+    response = http.post(
+        "/api/docker/restart/x",
+        headers={"origin": f"http://{dashboard}", "x-forwarded-host": dashboard},
+    )
+    assert response.status_code == 200
+    assert calls == ["x"]
+
+
+def test_direct_write_from_the_localhost_dashboard_port_stays_refused(monkeypatch) -> None:
+    # The dashboard no longer calls :8001 directly; such a write is same-site and refused.
+    http, calls = _client(monkeypatch, base_url="http://localhost:8001", peer=("127.0.0.1", 50000))
+    response = http.delete(
+        "/api/docker/restart/x",
+        headers={"origin": "http://localhost:3001", "sec-fetch-site": "same-site"},
+    )
+    assert response.status_code == 403
+    assert not calls
+
+
+@pytest.mark.parametrize("kind", ["api", "proxy", "proxyapi"])
+@pytest.mark.parametrize(
+    "headers",
+    [
+        {"sec-fetch-site": "cross-site"},  # <img src=".../db-workbench/api/query?query=...">
+        {"sec-fetch-site": "same-site"},
+        {"origin": "https://evil.example"},
+        {"origin": "null"},
+    ],
+)
+def test_cross_site_get_cannot_reach_the_db_workbench(monkeypatch, kind, headers) -> None:
+    http, calls = _client(monkeypatch)
+    response = http.get(f"/api/projects/x/db-workbench/{kind}/query?query=select+1", headers=headers)
+    assert response.status_code == 403
+    assert not calls
+
+
+@pytest.mark.parametrize(
+    "headers",
+    [
+        {},
+        {"sec-fetch-site": "same-origin"},  # the dashboard iframe
+        {"sec-fetch-site": "none"},  # owner typed or bookmarked the URL
+    ],
+)
+def test_own_db_workbench_gets_still_work(monkeypatch, headers) -> None:
+    http, calls = _client(monkeypatch)
+    response = http.get("/api/projects/x/db-workbench/api/query?query=select+1", headers=headers)
+    assert response.status_code == 200
+    assert calls == ["workbench:api/query"]
 
 
 def test_app_wraps_access_control_with_the_origin_check() -> None:

@@ -2,8 +2,9 @@
  * API configuration for SummitFlow frontend.
  *
  * Provides consistent URL resolution for:
- * - Development on localhost (direct backend access)
- * - Any deployed or LAN host (same-origin via Next.js rewrites)
+ * - Browser HTTP calls on every host, localhost included (same-origin via Next.js
+ *   rewrites, so backend writes carry our own Origin and pass the cross-site guard)
+ * - WebSockets and Agent Hub voice on localhost (direct backend access)
  *
  * This pattern is self-contained - no external dependencies required.
  */
@@ -19,7 +20,9 @@ function isLocalDev(): boolean {
 /**
  * Get the base URL for SummitFlow backend API calls.
  *
- * @returns Full URL (e.g., http://localhost:8001) or same-origin base ('')
+ * @returns Server-side full URL (e.g., http://localhost:8001); in the browser the
+ *   same-origin base ('') on every host. Going direct from localhost:3001 to :8001
+ *   would be a same-site write, which the backend refuses.
  */
 export function getApiBaseUrl(): string {
   // Server-side: use API_URL env var (set by Docker compose) or localhost fallback
@@ -27,12 +30,6 @@ export function getApiBaseUrl(): string {
     return process.env.API_URL || `http://localhost:${PORTS.backend}`
   }
 
-  // Development: localhost or 127.0.0.1
-  if (isLocalDev()) {
-    return `http://localhost:${PORTS.backend}`
-  }
-
-  // Any non-local browser host should stay same-origin via rewrites.
   return ''
 }
 

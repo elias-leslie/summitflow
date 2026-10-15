@@ -4,11 +4,13 @@ Loopback callers count as the owner and the Cloudflare Access cookie rides along
 cross-site form posts, so a page the owner happens to open could otherwise POST to the
 API (restart services, power off guests, change projects). Browser writes must come from
 our own origin; clients that send neither Origin nor Sec-Fetch-Site (st, agents, services)
-are unaffected.
+are unaffected. The pgweb workbench passthrough runs SQL on plain GETs (?query=), so
+there even reads must not come from another site's page.
 """
 
 from __future__ import annotations
 
+import re
 from collections.abc import Awaitable, Callable
 
 from fastapi import HTTPException, Request
@@ -18,13 +20,18 @@ from .api.backups.key_endpoints import _require_same_origin
 
 _UNSAFE_METHODS = frozenset({"POST", "PUT", "PATCH", "DELETE"})
 _OTHER_SITE_FETCH = frozenset({"cross-site", "same-site"})
+_WORKBENCH_PASSTHROUGH = re.compile(r"^/api/projects/[^/]+/db-workbench/(?:proxy|api|proxyapi)(?:/|$)")
 
 
 def cross_site_refusal(request: Request) -> Response | None:
-    """Return a 403 for a browser write from another origin, else None."""
-    if request.method not in _UNSAFE_METHODS:
-        return None
+    """Return a 403 for a browser write (or workbench call) from another origin, else None."""
     fetch_site = request.headers.get("sec-fetch-site", "").strip().lower()
+    if request.method not in _UNSAFE_METHODS:
+        if not _WORKBENCH_PASSTHROUGH.match(request.url.path):
+            return None
+        # Typed URLs and bookmarks (Sec-Fetch-Site none) are the owner's own navigation.
+        if fetch_site == "none":
+            return None
     if fetch_site in _OTHER_SITE_FETCH:
         return JSONResponse({"detail": "Same-origin request required"}, status_code=403)
     if not fetch_site and "origin" not in request.headers:

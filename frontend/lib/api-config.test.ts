@@ -24,10 +24,10 @@ describe('api-config', () => {
     delete process.env.NEXT_PUBLIC_VOICE_URL
   })
 
-  it('uses direct localhost targets in local development', () => {
+  it('keeps HTTP same-origin on localhost and goes direct only for sockets', () => {
     mockBrowserLocation('http://localhost:3001')
 
-    expect(getApiBaseUrl()).toBe('http://localhost:8001')
+    expect(getApiBaseUrl()).toBe('')
     expect(getWsUrl('/ws/execution/task-123')).toBe(
       'ws://localhost:8001/ws/execution/task-123',
     )
@@ -35,6 +35,12 @@ describe('api-config', () => {
       'ws://localhost:8003/api/voice/ws?user_id=summitflow_user&app=summitflow&mode=transcribe',
     )
     expect(getTtsBaseUrl()).toBe('http://localhost:8003')
+  })
+
+  it('keeps HTTP same-origin on 127.0.0.1', () => {
+    mockBrowserLocation('http://127.0.0.1:3001')
+
+    expect(getApiBaseUrl()).toBe('')
   })
 
   it('uses same-origin routing on production host', () => {
