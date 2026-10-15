@@ -47,7 +47,7 @@ class CopyOnlyClient:
 
     def config_get(self, vmid):
         if vmid == "9910":
-            return {"name": "qualification", "ostype": "l26"}
+            return {"name": "qualification", "ostype": "l26", "net0": "virtio=02:00:00:00:00:01,bridge=vmbr0"}
         return {"template": 1, "ostype": "l26", "ide2": "local:cloudinit", "agent": "1", "net0": "virtio=02:00:00:00:00:01,bridge=vmbr0"}
 
     def config_update(self, vmid, data):
@@ -99,6 +99,7 @@ def test_normal_clone_configures_public_access_before_boot_and_proves_ready(monk
     assert unquote(access["sshkeys"]) == public_key()
     assert access["ipconfig0"] == "ip=dhcp"
     assert access["delete"] == "cipassword"
+    assert access["net0"] == "virtio=02:00:00:00:00:01,bridge=labnet,firewall=1"
     assert client.calls[2] == "start"
     assert client.calls[3][0] == "exec"
     assert "hostname -s" in client.calls[3][1][2]
@@ -112,7 +113,7 @@ def test_clone_only_preserves_windows_copy_without_claiming_ready(monkeypatch):
     client = CopyOnlyClient()
     result = invoke(monkeypatch, client, "--clone-only")
     assert result.exit_code == 0, result.output
-    assert client.calls == ["copy"]
+    assert client.calls == ["copy", ("configure", {"net0": "virtio=02:00:00:00:00:01,bridge=labnet,firewall=1"})]
     assert "COPY ONLY" in result.output
     assert "guest NOT provisioned, started, or ready" in result.output
 
@@ -300,3 +301,18 @@ def test_start_failure_retains_configured_vm(monkeypatch):
     assert "phase=start task=UPID:copy-completed" in result.output
     assert client.calls[1][0] == "configure"
     assert len(client.calls) == 2
+
+
+@pytest.mark.parametrize("net0,expected", [
+    ("virtio=02:00:00:00:00:01,bridge=vmbr0", "virtio=02:00:00:00:00:01,bridge=labnet,firewall=1"),
+    ("e1000=02:00:00:00:00:02,bridge=vmbr0,firewall=0,tag=5,rate=10", "e1000=02:00:00:00:00:02,bridge=labnet,firewall=1,rate=10"),
+    ("virtio,bridge=labnet,firewall=1", "virtio,bridge=labnet,firewall=1"),
+])
+def test_clones_always_attach_to_labnet_never_vmbr0(net0, expected):
+    assert vm_clone.lab_net0(net0) == expected
+
+
+@pytest.mark.parametrize("net0", ["", None, "bridge=vmbr0"])
+def test_clone_without_nic_model_is_refused(net0):
+    with pytest.raises(ProxmoxError):
+        vm_clone.lab_net0(net0)

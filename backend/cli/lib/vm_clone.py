@@ -132,6 +132,26 @@ def load_clone_access_profile() -> CloneAccessProfile:
     return CloneAccessProfile(template, user, _public_keys(Path(keyfile)), network, timeout)
 
 
+LAB_BRIDGE = "labnet"
+
+
+def lab_net0(net0: object) -> str:
+    """Keep the NIC model/MAC but always attach clones to the isolated lab bridge, never vmbr0."""
+    parts = [part for part in str(net0 or "").split(",") if part]
+    if not parts or parts[0].split("=", 1)[0] in {"bridge", "firewall", "tag"}:
+        raise ProxmoxError("Clone has no net0 NIC model to attach to the lab network")
+    kept = [part for part in parts[1:] if part.split("=", 1)[0] not in {"bridge", "firewall", "tag"}]
+    return ",".join([parts[0], f"bridge={LAB_BRIDGE}", "firewall=1", *kept])
+
+
+def isolate_clone_network(client: ProxmoxClient, vmid: str) -> str:
+    """Move a freshly copied (not yet started) guest onto labnet with the PVE firewall."""
+    destination = client.config_get(vmid)
+    net0 = lab_net0(destination.get("net0"))
+    client.config_update(vmid, {"net0": net0, **({"digest": destination["digest"]} if destination.get("digest") else {})})
+    return net0
+
+
 def _usable(address: str) -> bool:
     try:
         ip = ipaddress.IPv4Address(address)
@@ -176,7 +196,7 @@ def managed_clone(
         destination = client.config_get(newid)
         if destination.get("template") or destination.get("name") != name:
             raise ProxmoxError("Destination identity differs from the requested non-template guest")
-        access = {"ciuser": profile.user, "sshkeys": quote(profile.public_keys, safe=""), "ipconfig0": profile.ipconfig0, "agent": "enabled=1", "ciupgrade": "0", "delete": "cipassword"}
+        access = {"ciuser": profile.user, "sshkeys": quote(profile.public_keys, safe=""), "ipconfig0": profile.ipconfig0, "agent": "enabled=1", "ciupgrade": "0", "delete": "cipassword", "net0": lab_net0(destination.get("net0"))}
         if destination.get("digest"):
             access["digest"] = destination["digest"]
         client.config_update(newid, access)

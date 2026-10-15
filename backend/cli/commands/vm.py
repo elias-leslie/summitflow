@@ -15,7 +15,7 @@ import typer
 from ..lib.confirm_token import confirm_gate
 from ..lib.proxmox import ProxmoxClient, ProxmoxError, snapshot_name_default
 from ..lib.usage import usage
-from ..lib.vm_clone import managed_clone
+from ..lib.vm_clone import isolate_clone_network, managed_clone
 from ..output import output_error
 
 app = typer.Typer(
@@ -161,7 +161,8 @@ def clone(
         if clone_only:
             print(f"COPY ONLY: template {template} -> VM {newid} ({vm_name})...", flush=True)
             upid = client.clone(template, newid, vm_name)
-            print(f"Copy complete: VM {newid} task={upid}; guest NOT provisioned, started, or ready", flush=True)
+            print(f"Copy complete: VM {newid} task={upid}; attaching to the isolated lab network...", flush=True)
+            print(f"net0={isolate_clone_network(client, newid)}; guest NOT provisioned, started, or ready", flush=True)
         else:
             managed_clone(client, template, newid, vm_name)
 
