@@ -34,6 +34,12 @@ def classify_observation(result: dict[str, Any]) -> dict[str, Any]:
     ci_value = result.get("ci")
     ci: dict[str, Any] = ci_value if isinstance(ci_value, dict) else {}
     ci_state = str(ci.get("state") or "unknown")
+    checks = ci.get("checks")
+    if ci_state == "success" and isinstance(checks, list) and not any(
+            isinstance(check, dict) and check.get("state") == "success" for check in checks):
+        # No required checks satisfies merge policy, but pending-only (or no)
+        # runs never prove CI passed for this source.
+        ci_state = "pending"
     status = str(result.get("status") or "unknown").lower()
     reason = str(result.get("reason") or "unknown")
     reason = reason if _REASON.fullmatch(reason) else "publication_needs_investigation"
@@ -97,7 +103,7 @@ def record_publication_observation(project_id: str, result: dict[str, Any]) -> s
         task_id = None
         if accepted:
             task_id = record_finding(project_id, "publication", observation, resolved=True,
-                                     resolution_reasons=frozenset({"local_acceptance_failed"}))
+                                     resolution_reasons=_ACCEPTANCE_FAILURES)
         return record_finding(project_id, "outgoing_security", observation, resolved=True,
                               outgoing_scan_verified=True) or task_id
     if observation["state"] not in {"blocked", "verified"}:

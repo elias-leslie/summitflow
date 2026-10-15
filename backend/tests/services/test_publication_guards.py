@@ -72,6 +72,17 @@ _PUSH = "git " + "push origin main"
     "git config core.hooksPath /dev/null", "git config --global core.hooksPath /tmp/none",
     "sudo -u owner git config --local core.hooksPath x", "timeout 5 git -c core.hooksPath=/x commit",
     "python3 - <<'EOF'\nrun('git -c core.hooksPath=/dev/null commit')\nEOF",
+    # Review findings: shell control flow, attached gh field forms, direct HTTP API.
+    "if git diff --quiet; then " + _PUSH + "; fi", "for r in a; do " + _PUSH + "; done",
+    "! " + _PUSH, "while true; do " + _PUSH + "; done",
+    "gh api repos/o/r/git/refs --raw-field=ref=refs/heads/release --raw-field=sha=abc",
+    "gh api repos/o/r/git/refs -fref=refs/heads/x", "gh api repos/o/r/git/refs --input=ref.json",
+    "curl -X PATCH https://api.github.com/repos/o/r/git/refs/heads/main -d @ref.json",
+    "curl --request=POST https://api.github.com/repos/o/r/releases",
+    "curl -H 'Authorization: x' https://api.github.com/repos/o/r/contents/f --data-binary @f.json",
+    "wget --post-data='{}' https://api.github.com/repos/o/r/git/refs",
+    "http PATCH https://api.github.com/repos/o/r archived=true",
+    "curl https://api.github.com/graphql -d '{\"query\":\"mutation { x }\"}'",
 ])
 def test_publication_bypass_forms_denied(command: str) -> None:
     assert evaluate_publication_command(command).blocked
@@ -101,6 +112,8 @@ def test_shared_runtime_intercepts_github_publication(tmp_path: Path) -> None:
     "st check pytest -- tests", "st vcs publish --source fixture --sha aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa --now", "bash -lc 'st commit -m local'",
     "rg core.hooksPath scripts", "git config --get core.hooksPath",
     "timeout 5 git status",
+    "if git diff --quiet; then git status; fi", "curl -s https://api.github.com/repos/o/r/releases",
+    "curl -X POST http://localhost:8001/api/git/fetch", "gh api repos/o/r/git/refs/heads/main",
 ])
 def test_publication_allows_local_and_reads(command: str) -> None:
     assert not evaluate_publication_command(command).blocked
@@ -475,18 +488,18 @@ def test_pre_push_chains_same_arguments_and_stdin(history, tmp_path, adapter) ->
 
 
 def _manifest_scan(history, monkeypatch, key: str, *, line: int = 3, path: str = "extension/manifest.json",
-                   report: bool = True):
+                   report: bool = True, body: bytes | None = None, rule: str = "generic-api-key"):
     import json
 
     from app.services.git import outgoing
 
-    body = json.dumps({"manifest_version": 3, "key": key}, indent=2).encode()
+    body = body or json.dumps({"manifest_version": 3, "key": key}, indent=2).encode()
     oid = history[4](None, "extension/manifest.json", body)
 
     def scanner(command, **kwargs):
         if report:
             Path(command[command.index("--report-path") + 1]).write_text(json.dumps([
-                {"RuleID": "generic-api-key", "Commit": oid, "File": path, "StartLine": line},
+                {"RuleID": rule, "Commit": oid, "File": path, "StartLine": line},
             ]))
         return subprocess.CompletedProcess(command, 1, "", "")
 
@@ -520,3 +533,15 @@ def test_extension_manifest_public_key_finding_is_tolerated(history, monkeypatch
 def test_other_scanner_findings_still_refused(history, monkeypatch, private, options) -> None:
     with pytest.raises(OutgoingVerificationError, match="details redacted"):
         _manifest_scan(history, monkeypatch, _der_key(private), **options)
+
+
+def test_secret_sharing_the_public_key_line_is_refused(history, monkeypatch) -> None:
+    key = _der_key(private=False)
+    body = ('{"manifest_version": 3,\n"key": "' + key + '", "api_key": "' + "s3cr3t" * 6 + '"\n}').encode()
+    with pytest.raises(OutgoingVerificationError, match="details redacted"):
+        _manifest_scan(history, monkeypatch, key, line=2, body=body)
+
+
+def test_other_rule_on_public_key_line_is_refused(history, monkeypatch) -> None:
+    with pytest.raises(OutgoingVerificationError, match="details redacted"):
+        _manifest_scan(history, monkeypatch, _der_key(private=False), rule="private-key")

@@ -80,14 +80,21 @@ def evaluate_publication_command(command: str, cwd: str | Path | None = None) ->
             )
             if args[1] == "api":
                 text = normalize_segment(args[2:]).lower()
-                mutation = any(flag in args for flag in ("-f", "-F", "--field", "--raw-field", "--input"))
-                mutation = mutation or bool(re.search(r"(?:-X(?:=|\s*)|--method(?:=|\s+))(?:POST|PUT|PATCH|DELETE)\b", normalize_segment(args), re.IGNORECASE))
-                publication_endpoint = bool(re.search(r"/(?:git/(?:refs|commits|trees|blobs)|contents|releases|pulls/[^\s]+/merge)\b", text))
-                publication_endpoint = publication_endpoint or bool(re.search(r"/(?:branches/[^\s]+/protection|rulesets|(?:[^\s]+/)?archive)\b", text))
-                publication_endpoint = publication_endpoint or bool(re.search(r"\b(?:archived|visibility|public)\s*=", text))
-                blocked = blocked or (mutation and publication_endpoint) or ("mutation" in text and "graphql" in text)
+                # gh sends POST whenever a field/input is given, in any flag form.
+                mutation = _has_option(args[2:], ("-f", "-F"), ("--field", "--raw-field", "--input"))
+                mutation = mutation or bool(_MUTATING_METHOD.search(normalize_segment(args)))
+                blocked = blocked or (mutation and _publication_endpoint(text)) or ("mutation" in text and "graphql" in text)
             if blocked:
                 return _blocked("direct_publication", "Use the canonical ST publication workflow.")
+        if executable in _HTTP_CLIENTS and len(args) > 1:
+            # Direct GitHub REST/GraphQL calls skip the pre-push verifier entirely.
+            text = normalize_segment(args[1:]).lower()
+            if _GITHUB_API.search(text):
+                mutation = bool(_MUTATING_METHOD.search(normalize_segment(args)))
+                mutation = mutation or any(arg.upper() in _MUTATING_VERBS for arg in args[1:])
+                mutation = mutation or _has_option(args[1:], ("-d", "-F", "-T"), _HTTP_BODY_OPTIONS)
+                if (mutation and _publication_endpoint(text)) or ("mutation" in text and "graphql" in text):
+                    return _blocked("direct_publication", "Use the canonical ST publication workflow.")
     return CommandGuardDecision(False, None, None, None, "")
 
 
@@ -141,6 +148,12 @@ def evaluate_irreversible_command(command: str, cwd: str | None = None) -> Comma
 _REMOTE_CWD = "/root"
 _READ_ONLY = frozenset({"rg", "grep", "cat", "less", "head", "tail", "echo", "printf"})
 _DATA_SINKS = frozenset({"cat", "tee"})
+_SHELL_KEYWORDS = frozenset({"if", "then", "elif", "else", "do", "while", "until", "!", "time"})
+_HTTP_CLIENTS = frozenset({"curl", "wget", "http", "https", "xh", "xhs"})
+_HTTP_BODY_OPTIONS = ("--data", "--data-raw", "--data-binary", "--data-urlencode", "--json", "--form", "--upload-file", "--post-data", "--post-file", "--body-data", "--body-file")
+_MUTATING_VERBS = frozenset({"POST", "PUT", "PATCH", "DELETE"})
+_MUTATING_METHOD = re.compile(r"(?:-X(?:=|\s*)|--(?:method|request)(?:=|\s+))[\"']?(?:POST|PUT|PATCH|DELETE)\b", re.IGNORECASE)
+_GITHUB_API = re.compile(r"\b(?:api|uploads)\.github\.com\b")
 _HEREDOC = re.compile(r"(?<![<\w])<<(-?)[ \t]*(?:'([^'\n]+)'|\"([^\"\n]+)\"|\\?([A-Za-z_][\w.-]*))")
 _SEPARATOR_CHARS = frozenset(";&|\n")
 _XARGS_VALUE_OPTIONS = frozenset({"-a", "-d", "-E", "-I", "-L", "-n", "-P", "-s", "--arg-file", "--delimiter", "--max-args", "--max-procs", "--max-lines", "--max-chars", "--process-slot-var"})
@@ -273,12 +286,34 @@ def _segments(command: str) -> list[list[str]]:
 
 def _unwrap(segment: list[str]) -> list[str]:
     args = unwrap_segment(segment)
-    while args and Path(args[0]).name.lower() == "xargs":
+    while args and (args[0] in _SHELL_KEYWORDS or Path(args[0]).name.lower() == "xargs"):
+        if args[0] in _SHELL_KEYWORDS:
+            # `if x; then git ...; fi`: the command follows the keyword.
+            args = unwrap_segment(args[1:])
+            continue
         index = 1
         while index < len(args) and args[index].startswith("-"):
             index += 2 if args[index] in _XARGS_VALUE_OPTIONS else 1
         args = unwrap_segment(args[index:])
     return args
+
+
+def _has_option(args: list[str], short: tuple[str, ...], long: tuple[str, ...]) -> bool:
+    """Match ``-f v``, ``-fv``, ``--field v`` and ``--field=v`` forms."""
+    return any(
+        arg in short or arg in long
+        or any(arg.startswith(f"{flag}=") for flag in long)
+        or any(arg.startswith(flag) and not arg.startswith("--") for flag in short)
+        for arg in args
+    )
+
+
+def _publication_endpoint(text: str) -> bool:
+    return bool(
+        re.search(r"/(?:git/(?:refs|commits|trees|blobs)|contents|releases|pulls/[^\s]+/merge)\b", text)
+        or re.search(r"/(?:branches/[^\s]+/protection|rulesets|(?:[^\s]+/)?archive)\b", text)
+        or re.search(r"\b(?:archived|visibility|public)\s*=", text)
+    )
 
 
 def _blocked(code: str, message: str) -> CommandGuardDecision:

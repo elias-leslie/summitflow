@@ -50,6 +50,15 @@ def test_incomplete_success_is_never_verified(override):
     assert health.classify_observation(verified(**override))["state"] != "verified"
 
 
+@pytest.mark.parametrize("checks", [[], [{"name": "workflow: .github/workflows/ci.yml", "state": "pending"}]])
+def test_success_without_any_passing_check_is_pending_not_verified(checks):
+    observation = health.classify_observation(verified(ci={"state": "success", "sha": SHA, "checks": checks}))
+    assert observation["state"] != "verified"
+    assert observation["ci_state"] == "pending"
+    assert health.classify_observation(verified(ci={"state": "success", "sha": SHA, "checks": [
+        *checks, {"name": "backend", "state": "success"}]}))["state"] == "verified"
+
+
 def test_merge_requires_successful_checks_bound_to_source():
     assert health.classify_observation(verified(merge_sha=MERGE, ci={
         "state": "success", "sha": MERGE, "pr_checks": {"state": "success", "sha": SHA},
@@ -142,7 +151,7 @@ def test_verified_publication_resolves_only_known_missing_ci_cause(monkeypatch):
     )
 
 
-def test_accepted_no_ci_publication_resolves_only_local_acceptance_and_outgoing_scan(monkeypatch):
+def test_accepted_no_ci_publication_resolves_only_acceptance_failures_and_outgoing_scan(monkeypatch):
     recorder = Mock(return_value="repair")
     monkeypatch.setattr(health, "record_finding", recorder)
     result = verified(ci={"state": "not_applicable", "sha": SHA})
@@ -150,7 +159,7 @@ def test_accepted_no_ci_publication_resolves_only_local_acceptance_and_outgoing_
     observation = health.classify_observation(result)
     assert recorder.call_count == 2
     recorder.assert_any_call("project", "publication", observation,
-                             resolved=True, resolution_reasons=frozenset({"local_acceptance_failed"}))
+                             resolved=True, resolution_reasons=frozenset({"local_acceptance_failed", "nightly_acceptance_failed"}))
     recorder.assert_any_call("project", "outgoing_security", observation, resolved=True, outgoing_scan_verified=True)
 
 

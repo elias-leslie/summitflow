@@ -88,7 +88,10 @@ def _public_manifest_key(root: Path, finding: Any) -> bool:
         if not isinstance(manifest, dict) or "manifest_version" not in manifest or not 0 < line <= len(lines):
             return False
         value = manifest.get("key")
-        if not isinstance(value, str) or not re.match(rb'\s*"key"\s*:', lines[line - 1]):
+        # The flagged line must hold only this key's value: another secret on
+        # the same line (minified JSON) must never ride along the exemption.
+        if (not isinstance(value, str) or finding.get("RuleID") != "generic-api-key"
+                or not re.fullmatch(rb'\s*"key"\s*:\s*"' + re.escape(value).encode() + rb'"\s*,?\s*', lines[line - 1])):
             return False
         from cryptography.hazmat.primitives.serialization import load_der_public_key
 
