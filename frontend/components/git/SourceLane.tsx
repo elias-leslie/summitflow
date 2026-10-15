@@ -8,6 +8,13 @@ import {
 } from './developmentSignals'
 import { TONE_DOT, TONE_TEXT } from './SignalCell'
 
+const VERDICT_LABELS = new Set([
+  'blocked',
+  'no CI result',
+  'checks pending',
+  'unverified',
+])
+
 interface Node {
   label: string
   sha: string | null | undefined
@@ -69,6 +76,14 @@ export function SourceLane({
       note: [
         development.publication.mode,
         evidenceAge(development.publication.observed_at),
+        // Say why Published is not plain "synced" (no CI, checks pending, ...).
+        VERDICT_LABELS.has(cells.published.label)
+          ? [cells.published.label, cells.published.detail]
+              .filter(Boolean)
+              .join(': ')
+          : cells.published.detail === 'no CI'
+            ? 'no CI'
+            : null,
       ]
         .filter((part) => part && part !== 'unknown')
         .join(' · '),

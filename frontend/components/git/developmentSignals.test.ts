@@ -6,6 +6,7 @@ const clean = {
   ...development,
   working_tree: { ...development.working_tree, state: 'clean', uncommitted: 0 },
   running: { ...development.running, source_commit: sourceSha, drift: false },
+  publication: { ...development.publication, verdict: 'verified' },
 }
 const synced = { ...repo, uncommitted: 0, ahead: 0, state: 'clean' as const }
 const pending = (count: number) => ({
@@ -105,7 +106,10 @@ describe('development signals', () => {
       tone: 'ok',
       label: 'synced',
     })
-    expect(at('published')).toMatchObject({ tone: 'warn', label: 'no CI' })
+    expect(at('published')).toMatchObject({
+      tone: 'warn',
+      label: 'no CI result',
+    })
     expect(at('published', 'not_applicable')).toMatchObject({
       tone: 'ok',
       label: 'synced',
@@ -116,12 +120,18 @@ describe('development signals', () => {
       label: 'checks pending',
     })
     expect(at('unknown')).toMatchObject({ tone: 'info', label: 'unverified' })
+    expect(
+      deriveSignals(synced, {
+        ...pending(0),
+        publication: { ...clean.publication, verdict: undefined },
+      }).cells.published,
+    ).toMatchObject({ tone: 'info', label: 'unverified' })
     const blocked = at('blocked', 'failed')
     expect(blocked).toMatchObject({
       tone: 'bad',
       label: 'blocked',
       detail: 'CI failed',
     })
-    expect(blocked.title).toContain('Publication blocked: remote ci failed')
+    expect(blocked.title).toContain('Publication blocked: CI failed')
   })
 })
