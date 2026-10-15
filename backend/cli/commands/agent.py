@@ -195,7 +195,7 @@ def status_agent(session_id: str, raw: Annotated[bool, typer.Option("--raw")] = 
     client = STClient(require_project=False)
     resolved_id = resolve_session_id(session_id, client)
     try:
-        session = client.get_session(resolved_id)
+        session = client.get_session(resolved_id, include_events=raw)
     except APIError as e:
         handle_api_error(e)
         return

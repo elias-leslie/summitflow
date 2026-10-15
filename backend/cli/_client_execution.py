@@ -49,10 +49,12 @@ def list_sessions(
 
 
 def get_session(
-    client: httpx.Client, url_fn: Any, handle_response: Any, session_id: str
+    client: httpx.Client, url_fn: Any, handle_response: Any, session_id: str,
+    *, include_events: bool = True,
 ) -> dict[str, Any]:
-    """Get a specific session."""
-    response = client.get(url_fn(f"/sessions/{session_id}"))
+    """Get a specific session; include_events=False returns metadata and counts only."""
+    params = None if include_events else {"include_events": "false"}
+    response = client.get(url_fn(f"/sessions/{session_id}"), params=params)
     return cast(dict[str, Any], handle_response(response))
 
 

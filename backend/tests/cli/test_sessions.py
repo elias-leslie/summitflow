@@ -97,6 +97,7 @@ class TestSessionClientContract:
             dummy.get_session("sess-123")
 
         assert mock_get.call_args.args[1]("/sessions/sess-123") == "http://test/agent-hub/sessions/sess-123"
+        assert mock_get.call_args.kwargs == {"include_events": True}
 
 
 class TestSessionsListCommand:
@@ -354,8 +355,22 @@ class TestSessionsCommandAliases:
 
         assert result.exit_code == 0
         assert "SESSION:sess-show|project=-|status=-|details:.dev-tools/session-sess-sho-details.txt" in result.output
+        assert "|full=st sessions show sess-sho --raw" in result.output
         mock_client_ctor.assert_called_once_with(require_project=False)
-        mock_client.get_session.assert_called_once_with("sess-show")
+        # Routine inspection stays bounded to metadata and counts.
+        mock_client.get_session.assert_called_once_with("sess-show", include_events=False)
+
+    def test_sessions_show_raw_is_the_explicit_full_export(self) -> None:
+        mock_client = MagicMock()
+        mock_client.list_sessions.return_value = [{"id": "sess-show"}]
+        mock_client.get_session.return_value = {"id": "sess-show", "messages": [{"content": "x"}]}
+
+        with patch("cli.commands.sessions.STClient", return_value=mock_client):
+            result = runner.invoke(app, ["sessions", "show", "sess-show", "--raw"])
+
+        assert result.exit_code == 0
+        assert '"messages"' in result.output
+        mock_client.get_session.assert_called_once_with("sess-show", include_events=True)
 
     def test_sessions_show_project_flag_scopes_short_id_resolution(self) -> None:
         mock_client = MagicMock()

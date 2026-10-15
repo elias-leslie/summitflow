@@ -198,7 +198,7 @@ def _binding_project() -> tuple[str, str]:
 def _get_exact_session(client: STClient, session_id: str) -> dict[str, object] | None:
     """Fetch an exact Agent Hub session, treating only 404 as absent."""
     try:
-        return cast(dict[str, object], client.get_session(session_id))
+        return cast(dict[str, object], client.get_session(session_id, include_events=False))
     except APIError as exc:
         if exc.status_code == 404:
             return None
@@ -563,12 +563,13 @@ def show_session(
     project_id: ProjectLookupOption = None,
     raw: RawSessionOption = False,
 ) -> None:
-    """Show details of a specific session.
+    """Show session metadata and event counts; --raw exports the full session with events.
 
     Works from any directory — no project context required.
 
     Examples:
         st sessions show abc123
+        st sessions show abc123 --raw > session.json
     """
     if session_id.startswith("root-"):
         from .sessions_fleet import _call
@@ -579,7 +580,7 @@ def show_session(
     resolved_id = _resolve_session_id(session_id, client, project_id=project_id)
 
     try:
-        session = client.get_session(resolved_id)
+        session = client.get_session(resolved_id, include_events=raw)
     except APIError as e:
         handle_api_error(e)
         return
@@ -594,6 +595,7 @@ def show_session(
     print(
         f"SESSION:{session.get('id', resolved_id)}|project={session.get('project_id', '-')}"
         f"|status={session.get('status', '-')}|details:{display_path(root, details)}"
+        f"|full=st sessions show {resolved_id[:8]} --raw"
     )
 
 

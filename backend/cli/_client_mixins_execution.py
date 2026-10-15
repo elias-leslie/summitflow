@@ -61,12 +61,13 @@ class ExecutionOperationsMixin:
             q=q,
         )
 
-    def get_session(self, session_id: str) -> dict[str, Any]:
+    def get_session(self, session_id: str, *, include_events: bool = True) -> dict[str, Any]:
         return exec_ops.get_session(
             self._client,
             lambda path: self._global_url(f"/agent-hub{path}"),
             self._handle_response,
             session_id,
+            include_events=include_events,
         )
 
     def close_session(self, session_id: str) -> dict[str, Any]:

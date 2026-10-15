@@ -74,8 +74,8 @@ def test_bind_current_syncs_absent_session_and_requires_active_result(
     get_config.assert_not_called()
     client_cls.assert_called_once_with(require_project=False)
     assert client.get_session.call_args_list == [
-        ((_THREAD_ID,), {}),
-        ((_THREAD_ID,), {}),
+        ((_THREAD_ID,), {"include_events": False}),
+        ((_THREAD_ID,), {"include_events": False}),
     ]
     run.assert_called_once_with(
         [
