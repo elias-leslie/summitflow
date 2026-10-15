@@ -84,3 +84,24 @@ def test_create_project_backup_returns_task_id(monkeypatch):
         "status": "queued",
         "message": "Backup task queued for project proj-1",
     }
+
+
+def test_restore_test_runs_off_the_event_loop(monkeypatch):
+    # A blocking restore on the loop thread froze /health for minutes.
+    import threading
+
+    monkeypatch.setattr("app.api.backups.source_endpoints.backup_store.get_source", lambda _source_id: {"id": "infrastructure"})
+    seen: list[str] = []
+
+    def run(source_id):
+        seen.append(threading.current_thread().name)
+        return {"ok": True, "source_id": source_id}
+
+    monkeypatch.setattr("app.tasks.backup_restore_test.run_restore_test_for_source", run)
+    with TestClient(app) as client:
+        assert client.portal is not None
+        loop_thread = client.portal.call(lambda: threading.current_thread().name)
+        response = client.post("/api/backup-sources/infrastructure/restore-test")
+
+    assert response.status_code == 200 and response.json()["ok"] is True
+    assert seen and seen[0] != loop_thread

@@ -1,5 +1,6 @@
 """Backup source endpoints."""
 
+import asyncio
 from uuid import uuid4
 
 from fastapi import APIRouter, HTTPException, Request
@@ -201,7 +202,9 @@ async def restore_test_source(source_id: str) -> dict:
 
     from ...tasks.backup_restore_test import run_restore_test_for_source
 
-    return run_restore_test_for_source(source_id)
+    # A repository restore and archive validation take minutes; keep them off
+    # the event loop so /health and every other request stay responsive.
+    return await asyncio.to_thread(run_restore_test_for_source, source_id)
 
 
 @router.get("/backup-sources/{source_id}/backups", response_model=BackupListResponse)
