@@ -227,6 +227,10 @@ export interface DevelopmentEvidence {
   } | null
   backup_count?: number
   optional_cloud?: string | null
+  /** Canonical publication verdict: verified, published (no CI), blocked, pending or unknown. */
+  verdict?: string
+  verdict_reason?: string
+  ci_state?: string
 }
 
 export interface DevelopmentProjection {
@@ -293,7 +297,13 @@ function decodeEvidence(value: unknown): DevelopmentEvidence {
     if (row[key] !== undefined && typeof row[key] !== 'boolean')
       throw new Error('Development evidence is malformed')
   }
-  for (const key of ['snapshot_id', 'runtime_health']) {
+  for (const key of [
+    'snapshot_id',
+    'runtime_health',
+    'verdict',
+    'verdict_reason',
+    'ci_state',
+  ]) {
     if (
       row[key] !== undefined &&
       row[key] !== null &&

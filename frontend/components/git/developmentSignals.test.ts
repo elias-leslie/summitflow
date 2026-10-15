@@ -89,4 +89,39 @@ describe('development signals', () => {
     expect(signals.cells.published.label).toBe('synced')
     expect(signals.attention).toBe(0)
   })
+  it('greens a synced publication only when CI and security verified it', () => {
+    const at = (verdict: string, ci_state = 'unknown') =>
+      deriveSignals(synced, {
+        ...pending(0),
+        publication: {
+          ...clean.publication,
+          state: 'published',
+          verdict,
+          verdict_reason: verdict === 'blocked' ? 'remote_ci_failed' : 'pushed',
+          ci_state,
+        },
+      }).cells.published
+    expect(at('verified', 'success')).toMatchObject({
+      tone: 'ok',
+      label: 'synced',
+    })
+    expect(at('published')).toMatchObject({ tone: 'warn', label: 'no CI' })
+    expect(at('published', 'not_applicable')).toMatchObject({
+      tone: 'ok',
+      label: 'synced',
+      detail: 'no CI',
+    })
+    expect(at('pending', 'pending')).toMatchObject({
+      tone: 'info',
+      label: 'checks pending',
+    })
+    expect(at('unknown')).toMatchObject({ tone: 'info', label: 'unverified' })
+    const blocked = at('blocked', 'failed')
+    expect(blocked).toMatchObject({
+      tone: 'bad',
+      label: 'blocked',
+      detail: 'CI failed',
+    })
+    expect(blocked.title).toContain('Publication blocked: remote ci failed')
+  })
 })

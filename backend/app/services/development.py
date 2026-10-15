@@ -231,9 +231,14 @@ def _publication(root: Path, common: Path, project_id: str) -> dict[str, Any]:
     retained = latest_publication_receipt(root, project_id, directory=common / "st" / "publication")
     if retained is None:
         return evidence(reason="No publication recorded", **_nightly(root, project_id))
+    from app.services.publication_health import classify_observation
+
     path, value = retained
     observation = value.get("observation") or {}
+    # The canonical verdict keeps "pushed" apart from "CI and security verified".
+    verdict = classify_observation({**observation, "observed_at": value.get("observed_at")})
     return evidence(str(observation.get("status") or "unknown"), source_commit=value.get("source_commit"), **_nightly(root, project_id),
+                    verdict=verdict["state"], verdict_reason=verdict["reason"], ci_state=verdict["ci_state"],
                     observed_at=value.get("observed_at"), artifact=str(path),
                     reason=str(observation.get("reason") or "Manual publication observation"),
                     pushed=bool(observation.get("pushed")), publication_complete=bool(observation.get("publication_complete")),

@@ -211,6 +211,16 @@ function publishedCell(dev: DevelopmentProjection, repo: RepoStatus): Cell {
     }
   if (publication.state === 'failed')
     return { tone: 'bad', label: 'failed', title: hint(publication) }
+  if (publication.verdict === 'blocked')
+    return {
+      tone: 'bad',
+      label: 'blocked',
+      detail: publication.ci_state === 'failed' ? 'CI failed' : undefined,
+      title: hint(
+        publication,
+        `Publication blocked: ${(publication.verdict_reason ?? 'unknown').replaceAll('_', ' ')}`,
+      ),
+    }
   const nightlyAt = evidenceDate(nightly?.observed_at ?? null)
   const publishedAt = evidenceDate(publication.observed_at)
   if (
@@ -236,6 +246,46 @@ function publishedCell(dev: DevelopmentProjection, repo: RepoStatus): Cell {
     publication.state === 'unavailable'
   )
     return { tone: 'idle', label: 'no remote', title: publication.reason }
+  // Pushed is not verified: only CI and security success on the source earns green.
+  const unverified: Partial<Record<string, Cell>> = {
+    published:
+      publication.ci_state === 'not_applicable'
+        ? {
+            tone: 'ok',
+            label: 'synced',
+            detail: 'no CI',
+            title: hint(
+              publication,
+              `In sync ${remote}; this repository has no CI`,
+            ),
+          }
+        : {
+            tone: 'warn',
+            label: 'no CI',
+            title: hint(
+              publication,
+              `Pushed ${remote}; no CI result for this source`,
+            ),
+          },
+    pending: {
+      tone: 'info',
+      label: 'checks pending',
+      title: hint(
+        publication,
+        `Pushed ${remote}; CI or security still pending`,
+      ),
+    },
+    unknown: {
+      tone: 'info',
+      label: 'unverified',
+      title: hint(
+        publication,
+        `In sync ${remote}; CI and security not verified`,
+      ),
+    },
+  }
+  const cell = publication.verdict ? unverified[publication.verdict] : undefined
+  if (cell) return cell
   return {
     tone: 'ok',
     label: 'synced',
