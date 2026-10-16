@@ -2,11 +2,14 @@
 
 from __future__ import annotations
 
+from typing import Annotated
+
 import typer
 
 from ..config import get_config
 from ..lib.autosnapshot import (
     LAST_PRUNE_REPORT,
+    LAST_PRUNE_SUMMARY,
     LAST_SWEEP_REPORT,
     ensure_all_baselines,
     ensure_baseline,
@@ -69,17 +72,28 @@ def sweep_command() -> None:
 
 
 @app.command("prune")
-def prune_command() -> None:
-    """Run retention cleanup across all active Btrfs-backed scopes."""
+def prune_command(
+    pressure: Annotated[bool, typer.Option("--pressure", help="Disk pressure: keep only the newest few points.")] = False,
+    max_deletes: Annotated[int | None, typer.Option("--max-deletes", min=0, help="Physical deletions this run (default: policy cap).")] = None,
+    dry_run: Annotated[bool, typer.Option("--dry-run", help="Report what would be deleted.")] = False,
+) -> None:
+    """Delete expired snapshot points (oldest first, capped, paced); exit 1 when a deletion is deferred."""
     try:
-        results = prune_all()
+        results = prune_all(pressure=pressure, max_deletes=max_deletes, dry_run=dry_run)
     except SnapshotError as exc:
         _deferred(exc, "prune")
         return
     total = sum(len(v) for v in results.values())
-    print(f"PRUNE[{total}]")
+    summary = LAST_PRUNE_SUMMARY
+    print(f"PRUNE[{total}]|points:{summary['selected']}|deleted:{summary['deleted']}|orphans:{summary['orphans']}|"
+          f"deferred:{len(summary['deferred'])}|backlog:{summary['remaining']}|pressure:{'yes' if pressure else 'no'}")
     for record in LAST_PRUNE_REPORT:
         print(f"  recovery-copy:{record['root_path']}|action:{record['action']}|error:{record['error'] or '-'}")
     for scope_key, entries in results.items():
         for entry in entries:
             print(f"  {entry.id}|source:{entry.source}|scope:{scope_key}")
+    if summary["deferred"]:
+        first = summary["deferred"][0]
+        typer.echo(f"autosnap: prune deferred {len(summary['deferred'])} snapshot deletion(s); first: {first['path']}: "
+                   f"{first['error'].splitlines()[0] if first['error'] else 'unknown'}", err=True)
+        raise typer.Exit(1)

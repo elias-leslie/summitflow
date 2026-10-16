@@ -14,14 +14,9 @@ client = TestClient(app)
 
 class _FakePolicy:
     def to_dict(self) -> dict[str, int]:
-        return {
-            "interval_minutes": 1440,
-            "baseline_stale_minutes": 30,
-            "auto_keep_per_scope": 7,
-            "archived_auto_keep_per_scope": 3,
-            "archived_keep_per_project": 3,
-            "manual_keep_per_scope": 20,
-        }
+        from cli.lib.autosnapshot import AutosnapshotPolicy
+
+        return AutosnapshotPolicy(interval_minutes=1440, archived_keep_days=9).to_dict()
 
 
 def _snapshot(
@@ -132,8 +127,8 @@ def test_snapshot_summary_reports_active_and_archived_counts(monkeypatch) -> Non
     assert body["active_snapshot_count"] == 1
     assert body["archived_snapshot_count"] == 1
     assert body["total_snapshots"] == 2
-    assert body["policy"]["archived_auto_keep_per_scope"] == 3
-    assert body["policy"]["archived_keep_per_project"] == 3
+    assert body["policy"]["archived_keep_days"] == 9
+    assert body["policy"]["daily_days"] == 3
 
 
 def test_list_all_snapshots_filters_exact_archived_scope(monkeypatch) -> None:

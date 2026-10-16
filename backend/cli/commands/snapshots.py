@@ -272,9 +272,8 @@ def prune_command(
             print(
                 f"PRUNE[0]|action:{action}|interval:{policy['interval_minutes']}|"
                 f"baseline_stale:{policy['baseline_stale_minutes']}|"
-                f"auto_keep:{policy['auto_keep_per_scope']}|"
-                f"archived_auto_keep:{policy['archived_auto_keep_per_scope']}|"
-                f"archived_scope_keep:{policy['archived_keep_per_project']}|"
+                f"keep:all {policy['recent_hours']}h,hourly {policy['hourly_hours']}h,daily {policy['daily_days']}d|"
+                f"archived_keep:{policy['archived_keep_days']}d|"
                 f"manual_keep:{policy['manual_keep_per_scope']}"
             )
         else:
@@ -287,9 +286,8 @@ def prune_command(
         print(
             f"PRUNE[{total}]|action:{action}|interval:{policy['interval_minutes']}|"
             f"baseline_stale:{policy['baseline_stale_minutes']}|"
-            f"auto_keep:{policy['auto_keep_per_scope']}|"
-            f"archived_auto_keep:{policy['archived_auto_keep_per_scope']}|"
-            f"archived_scope_keep:{policy['archived_keep_per_project']}|"
+            f"keep:all {policy['recent_hours']}h,hourly {policy['hourly_hours']}h,daily {policy['daily_days']}d|"
+            f"archived_keep:{policy['archived_keep_days']}d|"
             f"manual_keep:{policy['manual_keep_per_scope']}"
         )
         for scope_key, entries in results.items():

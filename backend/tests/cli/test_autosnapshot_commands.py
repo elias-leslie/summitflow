@@ -11,7 +11,7 @@ from cli.lib.quick_snapshots import SnapshotError
 def test_concurrent_snapshot_job_is_a_skip_but_other_errors_fail(
     monkeypatch: pytest.MonkeyPatch, command: str, target: str
 ) -> None:
-    def busy() -> None:
+    def busy(**_: object) -> None:
         raise SnapshotError("Deferred: shared physical snapshot operation in progress")
 
     monkeypatch.setattr(autosnapshot, target, busy)
@@ -19,7 +19,7 @@ def test_concurrent_snapshot_job_is_a_skip_but_other_errors_fail(
     assert result.exit_code == 0
     assert f"autosnap: {command} skipped: Deferred" in result.output
 
-    def broken() -> None:
+    def broken(**_: object) -> None:
         raise SnapshotError("manifest unreadable")
 
     monkeypatch.setattr(autosnapshot, target, broken)

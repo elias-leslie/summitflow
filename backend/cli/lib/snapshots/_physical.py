@@ -54,10 +54,6 @@ def recent(point: QuickSnapshot, minutes: int = 15) -> bool:
     return (datetime.now(UTC) - created).total_seconds() < minutes * 60
 
 
-def referenced_elsewhere(point: QuickSnapshot) -> bool:
-    return any(entry.snapshot_path == point.snapshot_path and (entry.project_id, entry.scope_path, entry.id) != (point.project_id, point.scope_path, point.id) for entry in all_entries())
-
-
 def inventory_nested(boundary: Path, *, project: Path | None = None) -> list[str]:
     """Inspect actual inode/device boundaries; never descend into nested subvolumes."""
     nested = []

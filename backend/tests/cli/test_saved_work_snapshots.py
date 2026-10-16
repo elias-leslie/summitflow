@@ -389,21 +389,57 @@ def point_at(workspace, identity, age, **kwargs):
     return point
 
 
-def test_time_retention_hourly_and_protected_points(workspace):
+def _plan_ids(entries, **kwargs):
+    keys = set(auto.plan_retention(entries, auto.DEFAULT_POLICY, **kwargs))
+    return {p.id for p in entries if auto._point_key(p.snapshot_path) in keys}
+
+
+def test_point_retention_recent_hourly_daily_and_protected_points(workspace):
+    now = datetime.now(UTC)
     entries = [point_at(workspace, "newest", timedelta(minutes=1))]
     entries += [point_at(workspace, f"recent-{i}", timedelta(hours=2, minutes=i)) for i in range(3)]
-    # Same hour two days ago: newest hour point survives, older one is prunable.
-    entries += [point_at(workspace, "hour-first", timedelta(days=2, minutes=1)), point_at(workspace, "hour-second", timedelta(days=2, minutes=2))]
-    # Do not straddle the wall-clock hour when this test runs at minute 1.
-    hour = (datetime.now(UTC) - timedelta(days=2)).replace(minute=30, second=0, microsecond=0)
-    next(point for point in entries if point.id == "hour-first").created_at = hour.isoformat()
-    next(point for point in entries if point.id == "hour-second").created_at = (hour - timedelta(minutes=1)).isoformat()
-    entries += [point_at(workspace, "old", timedelta(days=10)), point_at(workspace, "unfinished", timedelta(days=11), unfinished=True), point_at(workspace, "recovery", timedelta(days=12), recovery_active=True), point_at(workspace, "pinned", timedelta(days=13), pin_reason="review", pin_until=(datetime.now(UTC) + timedelta(days=1)).isoformat())]
-    assert {p.id for p in auto._retention_candidates(entries, auto.DEFAULT_POLICY)} == {"hour-second", "old"}
+    # Same hour twelve hours ago: the newest point of the hour survives.
+    hour = (now - timedelta(hours=12)).replace(minute=30, second=0, microsecond=0)
+    entries += [point_at(workspace, "hour-first", timedelta(0), created_at=hour.isoformat()),
+                point_at(workspace, "hour-second", timedelta(0), created_at=(hour - timedelta(minutes=1)).isoformat())]
+    # Same UTC day two days ago: the newest point of the day survives.
+    day = (now - timedelta(days=2)).replace(hour=12, minute=0, second=0, microsecond=0)
+    entries += [point_at(workspace, "day-first", timedelta(0), created_at=day.isoformat(), unfinished=False),
+                point_at(workspace, "day-second", timedelta(0), created_at=(day - timedelta(hours=2)).isoformat(), unfinished=False)]
+    entries += [point_at(workspace, "old", timedelta(days=10)), point_at(workspace, "old-unfinished", timedelta(days=11), unfinished=True),
+                point_at(workspace, "recovery", timedelta(days=12), recovery_active=True),
+                point_at(workspace, "pinned", timedelta(days=13), pin_reason="review", pin_until=(now + timedelta(days=1)).isoformat())]
+    assert _plan_ids(entries) == {"hour-second", "day-second", "old", "old-unfinished"}
+    # Under pressure only the newest few points plus held ones survive.
+    assert _plan_ids(entries, pressure=True) == {p.id for p in entries} - {"newest", "recent-0", "recent-1", "recovery", "pinned"}
+
+
+def test_point_shared_by_views_is_kept_when_any_view_qualifies(workspace):
+    other = workspace.root / "projects/other"
+    init_repo(other)
+    first = capture(workspace)
+    second = snap.capture_snapshot("point", project_id="other", cwd=other, source="auto-periodic")
+    old = (datetime.now(UTC) - timedelta(days=9)).isoformat()
+    first.created_at = second.created_at = old
+    newer = point_at(workspace, "newer", timedelta(minutes=1))
+    assert _plan_ids([first, second, newer]) == {first.id}
+    second.pin_reason = "review"
+    assert _plan_ids([first, second, newer]) == set()
+
+
+def test_project_whose_root_is_gone_keeps_its_newest_point_for_a_bounded_time(workspace):
+    gone = workspace.root / "projects/gone"
+    newest = point_at(workspace, "newest", timedelta(minutes=1))
+    recent_gone = point_at(workspace, "gone-recent", timedelta(days=5), project_id="gone", scope_name="gone", scope_path=str(gone))
+    older_gone = point_at(workspace, "gone-older", timedelta(days=6), project_id="gone", scope_name="gone", scope_path=str(gone))
+    assert _plan_ids([newest, recent_gone, older_gone]) == {"gone-older"}
+    recent_gone.created_at = (datetime.now(UTC) - timedelta(days=20)).isoformat()
+    older_gone.created_at = (datetime.now(UTC) - timedelta(days=21)).isoformat()
+    assert _plan_ids([newest, recent_gone, older_gone]) == {"gone-recent", "gone-older"}
 
 
 def test_rejected_and_missing_points_leave_without_holding_buckets(workspace):
-    hour = (datetime.now(UTC) - timedelta(days=2)).replace(minute=30, second=0, microsecond=0)
+    hour = (datetime.now(UTC) - timedelta(hours=12)).replace(minute=30, second=0, microsecond=0)
     newest = point_at(workspace, "newest", timedelta(minutes=1))
     missing = point_at(workspace, "missing", timedelta(minutes=0))
     missing.created_at = hour.isoformat()
@@ -414,7 +450,8 @@ def test_rejected_and_missing_points_leave_without_holding_buckets(workspace):
                         deletion_error="Capture not accepted: Skipped: saved source unchanged after capture; cleanup failed: denied")
     pinned_gone = point_at(workspace, "pinned-gone", timedelta(days=3), pin_reason="review")
     pinned_gone.snapshot_path = missing.snapshot_path
-    candidates = {p.id for p in auto._retention_candidates([newest, missing, kept, rejected, pinned_gone], auto.DEFAULT_POLICY)}
+    entries = [newest, missing, kept, rejected, pinned_gone]
+    candidates = {p.id for p in auto._retention_candidates(entries, set(auto.plan_retention(entries)))}
     assert candidates == {"missing", "rejected"}
 
 
@@ -601,7 +638,7 @@ def test_projects_share_one_physical_point_and_prune_keeps_other_view(workspace)
     entries = snap.load_manifest("fixture", scope)
     entries[0].source = "manual"
     snap.save_manifest("fixture", scope, entries)
-    assert [p.id for p in auto.prune_scope(project_id="fixture", scope=scope, policy=auto.AutosnapshotPolicy(manual_keep_per_scope=0))] == [first.id]
+    assert [p.id for p in auto.prune_scope(project_id="fixture", scope=scope, allowed={auto._point_key(first.snapshot_path)})] == [first.id]
     assert Path(second.snapshot_path).exists()
     assert snap.list_snapshots(project_id="other", cwd=other)
 
@@ -907,6 +944,85 @@ def test_privileged_pruning_refuses_symlink_component(tmp_path, monkeypatch):
     monkeypatch.setattr(pruning.subprocess, "run", lambda *a, **k: pytest.fail("must refuse before sudo"))
     with pytest.raises(SnapshotError, match="symlink component"):
         pruning.delete_managed_readonly(tmp_path / ".snapshots/fixture/projects/fixture/point")
+
+
+@pytest.mark.parametrize("recorded_under", ["alias", "real"])
+def test_symlinked_workspace_root_prunes_points_recorded_under_either_spelling(tmp_path, monkeypatch, recorded_under):
+    """Regression: an unresolved symlinked default root refused every deletion yet the unit exited 0."""
+    real = tmp_path / "srv-workspaces"
+    alias = tmp_path / "home/.local/share/summitflow/workspaces"
+    alias.parent.mkdir(parents=True)
+    alias.symlink_to(real, target_is_directory=True)
+    leaf = real / ".snapshots/fixture/projects/fixture/20261010T000000Z-auto-periodic-abc"
+    leaf.mkdir(parents=True)
+    monkeypatch.setenv("ST_WORKSPACES_ROOT", str(alias))
+    calls = []
+    monkeypatch.setattr(pruning.subprocess, "run", lambda command, **kwargs: calls.append(command))
+    recorded = (alias if recorded_under == "alias" else real) / leaf.relative_to(real)
+    pruning.delete_managed_readonly(recorded)
+    assert calls[0][:4] == ["sudo", "-n", pruning.SNAPSHOT_DELETE_HELPER, str(leaf)]
+    assert auto._point_key(alias / leaf.relative_to(real)) == auto._point_key(leaf) == str(leaf)
+
+
+def test_symlink_below_the_resolved_store_is_still_refused(tmp_path, monkeypatch):
+    real = tmp_path / "srv-workspaces"
+    (real / ".snapshots/fixture/projects").mkdir(parents=True)
+    (real / ".snapshots/fixture/projects/fixture").symlink_to(tmp_path / "elsewhere", target_is_directory=True)
+    monkeypatch.setenv("ST_WORKSPACES_ROOT", str(real))
+    monkeypatch.setattr(pruning.subprocess, "run", lambda *a, **k: pytest.fail("must refuse before sudo"))
+    with pytest.raises(SnapshotError, match="symlink component"):
+        pruning.delete_managed_readonly(real / ".snapshots/fixture/projects/fixture/point")
+
+
+def test_prune_all_caps_deletes_oldest_first_and_pauses_between_batches(workspace, monkeypatch):
+    scope = snap.resolve_scope(workspace.project, "fixture")
+    newest = point_at(workspace, "newest", timedelta(minutes=1))
+    old = [point_at(workspace, f"old-{day:02d}", timedelta(days=day)) for day in range(5, 12)]
+    snap.save_manifest("fixture", scope, [newest, *old])
+    settled = []
+    monkeypatch.setattr(auto, "_settle", lambda: settled.append(len([p for p in old if not Path(p.snapshot_path).exists()])))
+    monkeypatch.setattr(auto, "_reanchor", lambda keys: None)
+    policy = auto.AutosnapshotPolicy(max_deletes_per_run=5, delete_batch=2)
+    deleted = auto.prune_all(policy=policy)
+    assert sorted(e.id for e in deleted[auto._scope_key("fixture", scope)]) == ["old-07", "old-08", "old-09", "old-10", "old-11"]
+    assert settled == [2, 4]
+    assert auto.LAST_PRUNE_SUMMARY["deleted"] == 5 and auto.LAST_PRUNE_SUMMARY["remaining"] == 2
+    assert not auto.LAST_PRUNE_SUMMARY["deferred"]
+    auto.prune_all(policy=auto.AutosnapshotPolicy(pressure_keep_points=1), pressure=True)
+    assert [e.id for e in snap.load_manifest("fixture", scope)] == ["newest"]
+
+
+def test_prune_command_exits_nonzero_and_names_the_deferred_deletion(workspace, monkeypatch):
+    from typer.testing import CliRunner
+
+    from cli.commands import autosnapshot as command
+
+    scope = snap.resolve_scope(workspace.project, "fixture")
+    snap.save_manifest("fixture", scope, [point_at(workspace, "newest", timedelta(minutes=1)), point_at(workspace, "old", timedelta(days=9))])
+    monkeypatch.setattr(auto, "delete_subvolume", lambda _: (_ for _ in ()).throw(SnapshotError("Pruning target is outside the managed snapshot store: x")))
+    result = CliRunner().invoke(command.app, ["prune"])
+    assert result.exit_code == 1
+    assert "autosnap: prune deferred 1 snapshot deletion(s)" in result.output
+    assert "outside the managed snapshot store" in result.output
+
+
+def test_unrecorded_old_point_leaves_are_reaped_and_recorded_ones_kept(workspace, monkeypatch):
+    store = workspace.root / ".snapshots"
+    recorded = point_at(workspace, "recorded", timedelta(minutes=1))
+    scope = snap.resolve_scope(workspace.project, "fixture")
+    snap.save_manifest("fixture", scope, [recorded])
+    orphan = store / "fixture/projects/fixture/20261001T000000Z-auto-periodic-0rphan00"
+    fresh = store / "fixture/projects/fixture" / (datetime.now(UTC).strftime("%Y%m%dT%H%M%SZ") + "-auto-periodic-fresh000")
+    recovery = store / "recoveries/fixture/20261001T000000Z-copy/projects"
+    for path in (orphan, fresh, recovery):
+        path.mkdir(parents=True)
+    monkeypatch.setattr(auto, "_owned_subvolume", lambda leaf: True)
+    auto._reset_summary()
+    assert auto.reap_orphans(limit=5, dry_run=True) == [str(orphan)]
+    assert orphan.exists()
+    assert auto.reap_orphans(limit=5) == [str(orphan)]
+    assert not orphan.exists() and fresh.exists() and recovery.exists() and Path(recorded.snapshot_path).exists()
+    assert auto.LAST_PRUNE_SUMMARY["orphans"] == 1
 
 
 def test_privileged_pruning_failure_retains_released_copy(workspace, monkeypatch):

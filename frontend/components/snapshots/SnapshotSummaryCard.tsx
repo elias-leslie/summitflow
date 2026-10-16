@@ -163,18 +163,15 @@ export function SnapshotSummaryCard({
         )}
         {/* Policy summary */}
         <div className="mt-2 text-xs text-slate-400 leading-relaxed">
-          Projects: every {summary.policy.interval_minutes} min
-          {summary.policy.recent_hours != null &&
-          summary.policy.hourly_days != null
-            ? `; keep all captures for ${summary.policy.recent_hours}h, then hourly for ${summary.policy.hourly_days} days`
-            : `, keep ${summary.policy.auto_keep_per_scope}`}
+          Projects: every {summary.policy.interval_minutes} min; keep every
+          capture for {summary.policy.recent_hours}h, one per hour to{' '}
+          {summary.policy.hourly_hours}h, one per day to{' '}
+          {summary.policy.daily_days} days
         </div>
         <div className="mt-1 text-[10px] text-slate-400 leading-relaxed">
-          Archived auto scopes: keep {summary.policy.archived_keep_per_project}{' '}
-          recent scope
-          {summary.policy.archived_keep_per_project === 1 ? '' : 's'} per
-          project, {summary.policy.archived_auto_keep_per_scope} auto snapshot
-          {summary.policy.archived_auto_keep_per_scope === 1 ? '' : 's'} each
+          Deleted projects: newest capture kept{' '}
+          {summary.policy.archived_keep_days} days. Low disk: only the newest{' '}
+          {summary.policy.pressure_keep_points} kept.
         </div>
 
         {/* Actions */}

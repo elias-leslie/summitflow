@@ -49,12 +49,14 @@ export interface BtrfsScope {
 export interface BtrfsPolicy {
   interval_minutes: number
   baseline_stale_minutes: number
-  auto_keep_per_scope: number
-  archived_auto_keep_per_scope: number
-  archived_keep_per_project: number
+  recent_hours: number
+  hourly_hours: number
+  daily_days: number
+  archived_keep_days: number
+  pressure_keep_points: number
   manual_keep_per_scope: number
-  recent_hours?: number
-  hourly_days?: number
+  max_deletes_per_run: number
+  delete_batch: number
 }
 
 export interface BtrfsSummary {

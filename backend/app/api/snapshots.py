@@ -60,12 +60,14 @@ class ScopeResponse(BaseModel):
 class PolicyResponse(BaseModel):
     interval_minutes: int
     baseline_stale_minutes: int
-    auto_keep_per_scope: int
-    archived_auto_keep_per_scope: int
-    archived_keep_per_project: int
-    recent_hours: int = 24
-    hourly_days: int = 7
+    recent_hours: int
+    hourly_hours: int
+    daily_days: int
+    archived_keep_days: int
+    pressure_keep_points: int
     manual_keep_per_scope: int
+    max_deletes_per_run: int
+    delete_batch: int
 
 
 class SnapshotSummaryResponse(BaseModel):

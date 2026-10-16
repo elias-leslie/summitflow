@@ -58,12 +58,14 @@ const summary: BtrfsSummary = {
   policy: {
     interval_minutes: 5,
     baseline_stale_minutes: 15,
-    auto_keep_per_scope: 8,
-    archived_auto_keep_per_scope: 2,
-    archived_keep_per_project: 1,
+    recent_hours: 6,
+    hourly_hours: 24,
+    daily_days: 3,
+    archived_keep_days: 14,
+    pressure_keep_points: 3,
     manual_keep_per_scope: 8,
-    recent_hours: 24,
-    hourly_days: 7,
+    max_deletes_per_run: 15,
+    delete_batch: 5,
   },
 }
 
@@ -296,7 +298,12 @@ describe('Saved-work summary', () => {
     expect(screen.getByText('Unavailable')).toBeInTheDocument()
     expect(
       screen.getByText(
-        /every 5 min; keep all captures for 24h, then hourly for 7 days/,
+        /every 5 min; keep every capture for 6h, one per hour to 24h, one per day to 3 days/,
+      ),
+    ).toBeInTheDocument()
+    expect(
+      screen.getByText(
+        /Deleted projects: newest capture kept 14 days\. Low disk: only the newest 3 kept\./,
       ),
     ).toBeInTheDocument()
   })
