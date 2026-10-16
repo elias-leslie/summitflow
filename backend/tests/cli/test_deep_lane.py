@@ -125,13 +125,18 @@ def test_clean_env_gates_a_fresh_clone_of_head_with_fresh_deps_and_ci_parity(
                           check=True).stdout.strip()
     ran: list[dict] = []
 
-    def record(_root: Path, stage: dict, _env: dict) -> dict:
+    envs: dict[str, dict] = {}
+
+    def record(_root: Path, stage: dict, env: dict) -> dict:
         ran.append(stage)
+        envs[stage["id"]] = env
         return {"id": stage["id"], "state": "pass"}
 
     monkeypatch.setattr(deep_lane, "_run", record)
     assert deep_lane.run_deep(tmp_path)["state"] == "pass"
     assert [stage["id"] for stage in ran] == ["gate", "clean-env"]
+    # Only the gate runs without reuse; later stages (slow tests) must not inherit the flag.
+    assert envs["gate"]["ST_NATIVE_NO_REUSE"] == "1" and "ST_NATIVE_NO_REUSE" not in envs["clean-env"]
     argv = ran[-1]["argv"]
     split = argv.index("--")
     # Deps match the managed checkout's gate environment: dev plus the identity's backend extras.

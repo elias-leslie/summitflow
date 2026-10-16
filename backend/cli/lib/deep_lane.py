@@ -200,10 +200,12 @@ def run_deep(root: Path) -> dict[str, Any]:
     stages = deep_stages(root)
     if head.stdout.strip() and clean_env_applies(root):
         stages.append(clean_env_stage(root, head.stdout.strip()))
-    env = {**os.environ, "ST_NATIVE_NO_REUSE": "1"}
     gate = {"id": "gate", "argv": [*_st(), "check", "--check"], "cwd": ".",
             "timeout_seconds": GATE_TIMEOUT_SECONDS, "admitted": True}
-    outcomes = [_run(root, stage, env) for stage in (gate, *stages)]
+    # Only the gate runs without reuse: in the slow stages the flag would leak
+    # into tests that exercise native-stage reuse and turn it off.
+    outcomes = [_run(root, gate, {**os.environ, "ST_NATIVE_NO_REUSE": "1"}),
+                *(_run(root, stage, dict(os.environ)) for stage in stages)]
     return {"project": root.name, "sha": head.stdout.strip(),
             "state": "pass" if all(row["state"] == "pass" for row in outcomes) else "fail",
             "stages": outcomes}

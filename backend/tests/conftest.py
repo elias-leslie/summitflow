@@ -348,8 +348,12 @@ def _harness_identity_unset(monkeypatch) -> None:
 
 @pytest.fixture(autouse=True)
 def _launcher_roots_unset(monkeypatch) -> None:
-    """scripts/st exports the main checkout; tests must resolve their own tree."""
-    for name in ("SUMMITFLOW_ROOT", "SUMMITFLOW_HOST_CONFIG_ROOT", "ST_DEV_CHECKOUT"):
+    """scripts/st exports the main checkout; tests must resolve their own tree.
+
+    A caller's ``st check`` mode (e.g. the deep lane's no-reuse flag) must not
+    change the behavior tests exercise either.
+    """
+    for name in ("SUMMITFLOW_ROOT", "SUMMITFLOW_HOST_CONFIG_ROOT", "ST_DEV_CHECKOUT", "ST_NATIVE_NO_REUSE"):
         monkeypatch.delenv(name, raising=False)
 
 
