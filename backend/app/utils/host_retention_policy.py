@@ -45,7 +45,10 @@ class HostRetentionPolicy:
     legacy_report_max_age_hours: int = 3 * 24
     veeam_snapshot_max_age_hours: int = 6
     scratch_review_max_age_hours: int = 7 * 24
-    scratch_pressure_max_age_hours: int = 2 * 24  # scratch age when its filesystem is under pressure
+    # Scratch age when its filesystem is under pressure. It matches the weekly
+    # age: pressure runs retention now, it does not shorten the window, so idle
+    # owner work (e.g. a large experiment) is not deleted after two quiet days.
+    scratch_pressure_max_age_hours: int = 7 * 24
     # Per-project `st check` evidence (see app.tasks._retention_check_artifacts).
     check_details_max_age_hours: int = 7 * 24
     check_stages_max_age_hours: int = 14 * 24
@@ -91,6 +94,6 @@ class HostRetentionPolicy:
                 "SF_HOST_RETENTION_SCRATCH_REVIEW_MAX_AGE_HOURS", 7 * 24
             ),
             scratch_pressure_max_age_hours=_int_env(
-                "SF_HOST_RETENTION_SCRATCH_PRESSURE_MAX_AGE_HOURS", 2 * 24
+                "SF_HOST_RETENTION_SCRATCH_PRESSURE_MAX_AGE_HOURS", 7 * 24
             ),
         )

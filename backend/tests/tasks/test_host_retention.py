@@ -29,6 +29,16 @@ def test_host_retention_policy_defaults_keep_docker_cache_minimal() -> None:
     assert policy.image_pressure_max_age_hours == 0
 
 
+def test_scratch_pressure_runs_retention_now_without_shortening_its_age(monkeypatch) -> None:
+    """Pressure must not delete idle owner work in scratch sooner than the weekly pass would."""
+    from app.tasks.host_retention import HostRetentionPolicy
+
+    for name in ("SF_HOST_RETENTION_SCRATCH_PRESSURE_MAX_AGE_HOURS", "SF_HOST_RETENTION_SCRATCH_REVIEW_MAX_AGE_HOURS"):
+        monkeypatch.delenv(name, raising=False)
+    for policy in (HostRetentionPolicy(), HostRetentionPolicy.from_env()):
+        assert policy.scratch_pressure_max_age_hours == policy.scratch_review_max_age_hours == 7 * 24
+
+
 def test_prune_images_without_age_grace_prunes_all_unused_images(mocker) -> None:
     from app.tasks.host_retention import HostRetentionPolicy, _prune_images
 

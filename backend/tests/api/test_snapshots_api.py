@@ -167,6 +167,23 @@ def test_prune_accepts_frontend_json_and_counts_entries(monkeypatch) -> None:
     assert response.json()["dry_run"] is True
 
 
+def test_prune_runs_off_the_event_loop(monkeypatch) -> None:
+    """Regression: the paced prune sleeps between batches and must not block the API loop."""
+    import asyncio
+
+    loops = []
+    def prune(**kwargs):
+        try:
+            loops.append(asyncio.get_running_loop())
+        except RuntimeError:
+            loops.append(None)
+        return {}
+    monkeypatch.setattr("cli.lib.autosnapshot.prune_all", prune)
+    response = client.post("/api/snapshots/prune", json={"dry_run": False})
+    assert response.json()["ok"] is True
+    assert loops == [None]
+
+
 def test_summary_usage_is_unknown_instead_of_zero(monkeypatch) -> None:
     _patch_snapshot_libs(monkeypatch)
     response = client.get("/api/snapshots/summary")

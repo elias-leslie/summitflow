@@ -7,6 +7,7 @@ Reuses CLI library functions from quick_snapshots and autosnapshot.
 
 from __future__ import annotations
 
+import asyncio
 import contextlib
 from typing import Annotated, Any
 
@@ -295,18 +296,22 @@ async def recover_snap(snapshot_id: str, req: SnapshotRequest) -> dict:
 @router.post("/snapshots/prune")
 async def prune_snapshots(dry_run: bool | None = None, body: Annotated[dict[str, Any] | None, Body()] = None) -> dict:
     """Run retention pruning across all scopes."""
-    from cli.lib.autosnapshot import DEFAULT_POLICY, LAST_PRUNE_REPORT
+    from cli.lib.autosnapshot import DEFAULT_POLICY, LAST_PRUNE_REPORT, LAST_PRUNE_SUMMARY
     from cli.lib.autosnapshot import prune_all as do_prune
 
     try:
         actual_dry_run = dry_run if dry_run is not None else (body or {}).get("dry_run", True)
         if not isinstance(actual_dry_run, bool):
             raise ValueError("dry_run must be a boolean")
-        results = do_prune(policy=DEFAULT_POLICY, dry_run=actual_dry_run)
+        # The prune paces its deletions with sleeps; keep it off the event loop.
+        results = await asyncio.to_thread(do_prune, policy=DEFAULT_POLICY, dry_run=actual_dry_run)
         return {
             "ok": True,
             "dry_run": actual_dry_run,
             "pruned": results if isinstance(results, int) else sum(len(entries) for entries in results.values()),
+            "deleted": LAST_PRUNE_SUMMARY.get("deleted", 0),
+            "deferred": len(LAST_PRUNE_SUMMARY.get("deferred") or []),
+            "backlog": LAST_PRUNE_SUMMARY.get("remaining", 0),
             "recovery_copies": list(LAST_PRUNE_REPORT),
             "recovery_copies_deleted": sum(record["action"] == "deleted" for record in LAST_PRUNE_REPORT),
             "recovery_cleanup_failed": sum(record["action"] == "failed" for record in LAST_PRUNE_REPORT),

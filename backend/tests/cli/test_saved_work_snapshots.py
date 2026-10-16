@@ -992,6 +992,28 @@ def test_prune_all_caps_deletes_oldest_first_and_pauses_between_batches(workspac
     assert [e.id for e in snap.load_manifest("fixture", scope)] == ["newest"]
 
 
+def test_prune_all_skips_a_busy_scope_instead_of_aborting_the_run(monkeypatch):
+    """A capture holding the shared lock mid-run skips that scope; later scopes and orphan reaping still run."""
+    scopes = [("busy", object(), "active"), ("free", object(), "active")]
+    visited, reaped = [], []
+    monkeypatch.setattr(auto, "all_entries", lambda: [])
+    monkeypatch.setattr(auto, "enumerate_snapshot_scopes", lambda include_archived: scopes)
+    def prune_scope(*, project_id, **kwargs):
+        visited.append(project_id)
+        if project_id == "busy":
+            raise SnapshotError("Deferred: shared physical snapshot operation in progress")
+        return []
+    monkeypatch.setattr(auto, "prune_scope", prune_scope)
+    monkeypatch.setattr(auto, "reap_orphans", lambda policy, *, limit, dry_run=False: reaped.append(limit) or [])
+    monkeypatch.setattr(auto, "_reanchor", lambda keys: None)
+    assert auto.prune_all() == {}
+    assert visited == ["busy", "free"] and reaped == [auto.DEFAULT_POLICY.max_deletes_per_run]
+    assert auto.LAST_PRUNE_SUMMARY["busy"] == 1 and not auto.LAST_PRUNE_SUMMARY["deferred"]
+    monkeypatch.setattr(auto, "prune_scope", lambda **kwargs: (_ for _ in ()).throw(SnapshotError("Cannot verify shared snapshot references: x")))
+    with pytest.raises(SnapshotError, match="Cannot verify"):
+        auto.prune_all()
+
+
 def test_prune_command_exits_nonzero_and_names_the_deferred_deletion(workspace, monkeypatch):
     from typer.testing import CliRunner
 

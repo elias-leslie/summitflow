@@ -16,6 +16,7 @@ import logging
 import os
 import shutil
 import time
+from collections.abc import Callable
 from dataclasses import asdict, dataclass
 from datetime import UTC, datetime, timedelta
 from functools import partial
@@ -28,6 +29,7 @@ from .autosnapshot_helpers import (
 )
 from .quick_snapshots import (
     QuickSnapshot,
+    SnapshotError,
     SnapshotScope,
     capture_snapshot,
     cleanup_recovery_copies,
@@ -317,7 +319,7 @@ LAST_PRUNE_SUMMARY: dict[str, Any] = {}
 
 def _reset_summary(*, pressure: bool = False, batch: int = DEFAULT_POLICY.delete_batch) -> None:
     LAST_PRUNE_SUMMARY.clear()
-    LAST_PRUNE_SUMMARY.update(pressure=pressure, selected=0, deleted=0, deferred=[], remaining=0, orphans=0, batch=max(1, batch))
+    LAST_PRUNE_SUMMARY.update(pressure=pressure, selected=0, deleted=0, deferred=[], remaining=0, orphans=0, busy=0, batch=max(1, batch))
 
 
 _reset_summary()
@@ -621,13 +623,27 @@ def prune_all(
     allowed = set(prunable[:cap])
     LAST_PRUNE_SUMMARY.update(selected=len(allowed), remaining=len(prunable) - len(allowed))
     for project_id, scope, scope_state in enumerate_snapshot_scopes(include_archived=True):
-        pruned = prune_scope(project_id=project_id, scope=scope, policy=policy, scope_state=scope_state,
-                             dry_run=dry_run, allowed=allowed)
+        # A capture holding the shared lock skips this scope, not the whole run:
+        # its views stay and the points they hold wait for a later run.
+        pruned = _unless_busy(partial(prune_scope, project_id=project_id, scope=scope, policy=policy,
+                                      scope_state=scope_state, dry_run=dry_run, allowed=allowed)) or []
         if pruned:
             results[_scope_key(project_id, scope)] = pruned
     if dry_run:
-        LAST_PRUNE_SUMMARY["orphans"] = len(reap_orphans(policy, limit=cap, dry_run=True))
+        LAST_PRUNE_SUMMARY["orphans"] = len(_unless_busy(partial(reap_orphans, policy, limit=cap, dry_run=True)) or [])
         return results
-    reap_orphans(policy, limit=cap - LAST_PRUNE_SUMMARY["deleted"])
+    _unless_busy(partial(reap_orphans, policy, limit=cap - LAST_PRUNE_SUMMARY["deleted"]))
     _reanchor(set(results))
     return results
+
+
+def _unless_busy(step: Callable[[], Any]) -> Any:
+    """Run one locked prune step; lock contention counts as a busy skip, other errors raise."""
+    try:
+        return step()
+    except SnapshotError as exc:
+        if not str(exc).startswith("Deferred:"):
+            raise
+        LAST_PRUNE_SUMMARY["busy"] += 1
+        logging.getLogger(__name__).info("snapshot prune step skipped: %s", exc)
+        return None

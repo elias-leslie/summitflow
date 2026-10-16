@@ -57,7 +57,9 @@ query SummitFlow's database or call its API.
 - Host maintenance checks pressure on `/` and on the scratch filesystem. When
   scratch is under pressure it runs `st cleanup reclaim` steps at once: `uv
   cache prune`, `pnpm store prune`, Hugging Face repos unchanged for 30 days,
-  then scratch retention at the 48-hour pressure age. The cache roots under
+  then the weekly scratch retention (7-day age,
+  `SF_HOST_RETENTION_SCRATCH_PRESSURE_MAX_AGE_HOURS`) without waiting for the
+  week, so idle owner work in scratch is not cut short. The cache roots under
   `/srv/scratch/cache` stay. `st cleanup reclaim --filesystem /srv/scratch
   --target-free-gib N` runs the same steps on demand and stops at the target.
 - Backups publish `~/.local/state/summitflow/backup-freshness/sources.json`

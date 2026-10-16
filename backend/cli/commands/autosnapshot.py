@@ -86,7 +86,7 @@ def prune_command(
     total = sum(len(v) for v in results.values())
     summary = LAST_PRUNE_SUMMARY
     print(f"PRUNE[{total}]|points:{summary['selected']}|deleted:{summary['deleted']}|orphans:{summary['orphans']}|"
-          f"deferred:{len(summary['deferred'])}|backlog:{summary['remaining']}|pressure:{'yes' if pressure else 'no'}")
+          f"deferred:{len(summary['deferred'])}|busy:{summary['busy']}|backlog:{summary['remaining']}|pressure:{'yes' if pressure else 'no'}")
     for record in LAST_PRUNE_REPORT:
         print(f"  recovery-copy:{record['root_path']}|action:{record['action']}|error:{record['error'] or '-'}")
     for scope_key, entries in results.items():
