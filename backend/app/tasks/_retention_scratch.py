@@ -2,9 +2,9 @@
 
 Each direct child of the scratch root is reviewed as one unit and is a
 candidate only when it is old, not a symlink target, not open by a visible
-process, holds no mount point (bind mounts included) or other filesystem and
-is not a protected root. ``collect_scratch_review`` never deletes;
-``apply_scratch_retention`` re-verifies each candidate and removes it, and the
+process, holds no mount point (bind mounts included) or other filesystem, is
+not the source of a bind mount elsewhere and is not a protected root.
+``collect_scratch_review`` never deletes; ``apply_scratch_retention`` re-verifies each candidate and removes it, and the
 host-retention maintenance step runs it at most weekly. Scratch is excluded
 from backups and holds only replaceable data.
 """
@@ -63,32 +63,67 @@ def _within(path: Path, root: Path) -> bool:
     return path == root or root in path.parents
 
 
+def _unescape(field: str) -> str:
+    return _OCTAL_ESCAPE.sub(lambda match: chr(int(match[1], 8)), field)
+
+
+def _mount_table(mountinfo: Path) -> list[tuple[str, Path, Path]] | None:
+    """``(major:minor, root inside the filesystem, mount point)`` per mount; None when unreadable."""
+    try:
+        lines = mountinfo.read_text().splitlines()
+    except OSError:
+        return None
+    return [(fields[2], Path(_unescape(fields[3])), Path(_unescape(fields[4])))
+            for fields in (line.split() for line in lines) if len(fields) > 4]
+
+
 def mount_points(mountinfo: Path = MOUNTINFO) -> list[Path] | None:
     """Every mount point, bind mounts included; None when the table is unreadable.
 
     A bind mount of the same filesystem shares its ``st_dev``, so only the
     mount table shows it.
     """
-    try:
-        lines = mountinfo.read_text().splitlines()
-    except OSError:
-        return None
-    return [Path(_OCTAL_ESCAPE.sub(lambda match: chr(int(match[1], 8)), fields[4]))
-            for fields in (line.split() for line in lines) if len(fields) > 4]
+    table = _mount_table(mountinfo)
+    return None if table is None else [point for _, _, point in table]
 
 
 def mount_skip_reason(path: Path, mountinfo: Path = MOUNTINFO) -> str | None:
-    """Why ``path`` must not be removed for a mount at or below it; None when it holds none."""
-    mounts = mount_points(mountinfo)
-    if mounts is None:
+    """Why ``path`` must not be removed for a mount at, below or of it; None when there is none.
+
+    Covers mount points inside ``path`` and ``path`` (or part of it) being the
+    source of a bind mount elsewhere, whose data would vanish with it.
+    """
+    table = _mount_table(mountinfo)
+    if table is None:
         return "mount table unreadable"
     target = Path(os.path.realpath(path))
-    inside = next((mount for mount in mounts if _within(mount, target)), None)
-    return None if inside is None else f"mount point {inside} inside"
+    inside = next((point for _, _, point in table if _within(point, target)), None)
+    if inside is not None:
+        return f"mount point {inside} inside"
+    holder: tuple[str, Path, Path] | None = None
+    for mount in table:  # deepest mount holding the path; a later overmount wins
+        if _within(target, mount[2]) and (holder is None or len(mount[2].parts) >= len(holder[2].parts)):
+            holder = mount
+    if holder is None:
+        return "no mount holds it"
+    device, root, point = holder
+    source = root / target.relative_to(point)
+    shown = next((other for other_device, other_root, other in table
+                  if other_device == device and _within(other_root, source)), None)
+    return None if shown is None else f"bind-mounted at {shown}"
 
 
-def _empty_dir(fd: int, device: int) -> None:
-    """Remove everything in the directory open at ``fd`` through directory fds, never leaving ``device``."""
+def _mount_id(fd: int) -> int:
+    """Mount id of the open fd; differs across any mount, same-filesystem bind mounts included."""
+    with open(f"/proc/self/fdinfo/{fd}", encoding="ascii") as stream:
+        for line in stream:
+            if line.startswith("mnt_id:"):
+                return int(line.split()[1])
+    raise OSError(errno.ENOTSUP, "mount id unavailable", str(fd))
+
+
+def _empty_dir(fd: int, device: int, mount: int) -> None:
+    """Remove everything in the directory open at ``fd`` through directory fds, never leaving ``device`` or ``mount``."""
     with os.scandir(fd) as entries:
         names = [entry.name for entry in entries]
     for name in names:
@@ -103,7 +138,9 @@ def _empty_dir(fd: int, device: int) -> None:
             opened = os.fstat(sub)
             if (opened.st_dev, opened.st_ino) != (info.st_dev, info.st_ino):
                 raise OSError(errno.EXDEV, "changed or another filesystem", name)
-            _empty_dir(sub, device)
+            if _mount_id(sub) != mount:
+                raise OSError(errno.EXDEV, "mount point inside", name)
+            _empty_dir(sub, device, mount)
         finally:
             os.close(sub)
         os.rmdir(name, dir_fd=fd)
@@ -113,7 +150,8 @@ def remove_entry(path: Path, ident: tuple[int, int]) -> None:
     """Remove ``path`` (file or tree) only if it is still the entry checked (``st_dev``, ``st_ino``).
 
     Works through directory fds without following links and stops with
-    ``OSError`` (EXDEV) at anything on another device instead of emptying it.
+    ``OSError`` (EXDEV) at anything on another device or mount (a bind mount
+    of the same filesystem included) instead of emptying it.
     """
     parent = os.open(path.parent, _DIR_FLAGS)
     try:
@@ -128,7 +166,10 @@ def remove_entry(path: Path, ident: tuple[int, int]) -> None:
             opened = os.fstat(sub)
             if (opened.st_dev, opened.st_ino) != ident:
                 raise OSError(errno.ESTALE, "changed since it was checked", str(path))
-            _empty_dir(sub, ident[0])
+            mount = _mount_id(parent)
+            if _mount_id(sub) != mount:
+                raise OSError(errno.EXDEV, "mount point", str(path))
+            _empty_dir(sub, ident[0], mount)
         finally:
             os.close(sub)
         os.rmdir(path.name, dir_fd=parent)

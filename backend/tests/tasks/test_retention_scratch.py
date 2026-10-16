@@ -295,3 +295,40 @@ def test_removal_refuses_an_entry_swapped_since_the_check(tmp_path):
     with pytest.raises(OSError):
         scratch.remove_entry(entry, (info.st_dev, info.st_ino))
     assert (entry / "new.txt").exists()
+
+
+def test_entry_bind_mounted_elsewhere_is_never_deleted(layout, tmp_path):
+    """Regression: only mounts inside an entry were checked, so a bind mount sourced from it lost its data."""
+    entry = layout["root"] / "old"
+    (entry / "exported").mkdir(parents=True)
+    (entry / "exported" / "precious.db").write_text("owner data")
+    (layout["root"] / "plain").mkdir()
+    scratch_point = os.path.realpath(layout["root"])
+    table = tmp_path / "mountinfo"
+    table.write_text("22 1 0:21 / / rw - btrfs /dev/p7 rw\n"
+                     f"120 22 0:43 /@disposable {scratch_point} rw - btrfs /dev/p8 rw\n"
+                     "130 22 0:43 /@disposable/old/exported /mnt/live rw - btrfs /dev/p8 rw\n"
+                     "140 22 0:43 /@disposable/plain-other /mnt/other rw - btrfs /dev/p8 rw\n")
+    assert scratch.mount_skip_reason(entry, table) == "bind-mounted at /mnt/live"
+    result = apply(layout, mountinfo=table)
+    assert [Path(path).name for path in result["deleted_paths"]] == ["plain"]
+    assert (entry / "exported" / "precious.db").exists()
+
+
+def test_removal_stops_at_a_same_filesystem_bind_mount(tmp_path, monkeypatch):
+    """A bind mount made after the check shares st_dev; the mount id still stops removal before emptying it."""
+    entry = tmp_path / "old"
+    (entry / "bound").mkdir(parents=True)
+    (entry / "bound" / "keep.bin").write_text("x")
+    info = entry.lstat()
+    real_mount_id = scratch._mount_id
+
+    def fake_mount_id(fd: int) -> int:
+        bound = os.path.basename(os.readlink(f"/proc/self/fd/{fd}")) == "bound"
+        return real_mount_id(fd) + 1000 if bound else real_mount_id(fd)
+
+    monkeypatch.setattr(scratch, "_mount_id", fake_mount_id)
+    with pytest.raises(OSError) as raised:
+        scratch.remove_entry(entry, (info.st_dev, info.st_ino))
+    assert raised.value.errno == errno.EXDEV
+    assert (entry / "bound" / "keep.bin").exists()
