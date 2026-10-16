@@ -33,6 +33,24 @@ def test_local_renewal_requires_matching_checkout_and_project(
         task_claims.renew_local_owned_claim(tmp_path, "task-one")
 
 
+def test_renewal_from_another_project_checkout_uses_repo_registration(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from app.storage import projects
+
+    other = tmp_path / "other"
+    other.mkdir()
+    registered = {"id": "agent-hub", "root_path": str(tmp_path)}
+    monkeypatch.setattr(task_claims, "get_config_optional", lambda: config(other))
+    monkeypatch.setattr(projects, "find_project_by_cwd", lambda cwd: registered if Path(cwd) == tmp_path else None)
+
+    resolved, is_loopback = task_claims._renewal_config(tmp_path)
+
+    assert (resolved.project_id, resolved.project_root, is_loopback) == ("agent-hub", str(tmp_path), True)
+    with pytest.raises(task_claims.TaskClaimRenewalError, match="does not match"):
+        task_claims._renewal_config(tmp_path / "missing")
+
+
 def test_local_renewal_uses_exact_current_worker_owner(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

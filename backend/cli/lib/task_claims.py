@@ -44,9 +44,26 @@ def _renewal_config(repo: Path) -> tuple[Config, bool]:
     if config is None:
         raise TaskClaimRenewalError("cannot renew task claim without local project configuration")
     api_host = (urlparse(config.api_base).hostname or "").lower()
+    is_loopback = api_host in {"localhost", "127.0.0.1", "::1"}
     if not config.project_root or Path(config.project_root).resolve() != repo.resolve():
-        raise TaskClaimRenewalError("task claim project does not match this checkout")
-    return config, api_host in {"localhost", "127.0.0.1", "::1"}
+        # Closing another registered project's task from this checkout: the claim
+        # belongs to the project whose registered root is repo.
+        project = _registered_project_at(repo) if is_loopback else None
+        if project is None:
+            raise TaskClaimRenewalError("task claim project does not match this checkout")
+        config = Config(config.api_base, project["id"], project["root_path"], "repo")
+    return config, is_loopback
+
+
+def _registered_project_at(repo: Path) -> dict[str, Any] | None:
+    if not repo.is_dir():
+        return None
+    from app.storage.projects import find_project_by_cwd
+
+    project = find_project_by_cwd(str(repo))
+    if not project or Path(project["root_path"]).resolve() != repo.resolve():
+        return None
+    return project
 
 
 def renew_local_owned_claim(repo: Path, task_id: str) -> dict[str, object]:
