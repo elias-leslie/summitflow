@@ -75,22 +75,39 @@ def test_nightly_runs_each_project_once_a_day_unless_its_head_recently_passed(pr
     assert (skip_reason(prior, HEAD, date(2026, 10, 12)) is not None) is skipped
 
 
+def _ci_workflow(root: Path, command: str = "uv run pytest") -> None:
+    """A CI job in backend/ whose test step is ``command``, with the local pytest it maps to."""
+    (root / ".github" / "workflows").mkdir(parents=True, exist_ok=True)
+    (root / ".github" / "workflows" / "ci.yml").write_text(
+        "on: [push]\njobs:\n  backend:\n    runs-on: ubuntu-24.04\n"
+        "    defaults:\n      run:\n        working-directory: backend\n"
+        f"    steps:\n      - run: '{command}'\n")
+    (root / "backend" / ".venv" / "bin").mkdir(parents=True, exist_ok=True)
+    (root / "backend" / ".venv" / "bin" / "pytest").write_text("")
+
+
 @pytest.mark.parametrize(
-    ("files", "applies"),
+    ("files", "ci", "applies"),
     [
-        ({"backend/alembic.ini": "[alembic]\n"}, True),
-        ({"migrations/0001_init.sql": "select 1;\n"}, True),
-        ({"pnpm-workspace.yaml": "packages: [web]\n"}, True),
-        ({"pyproject.toml": "[tool.uv.workspace]\nmembers = ['pkgs/*']\n"}, True),
-        ({"pyproject.toml": "[project]\nname = 'x'\n", "web/package.json": "{}\n"}, False),
+        ({"backend/alembic.ini": "[alembic]\n"}, "uv run pytest", True),
+        ({"migrations/0001_init.sql": "select 1;\n"}, "uv run pytest", True),
+        ({"pnpm-workspace.yaml": "packages: [web]\n"}, "uv run pytest", True),
+        ({"pyproject.toml": "[tool.uv.workspace]\nmembers = ['pkgs/*']\n"}, "uv run pytest", True),
+        ({"pyproject.toml": "[project]\nname = 'x'\n", "web/package.json": "{}\n"}, "uv run pytest", False),
+        # No CI workflow (learn-o-tron) or CI that only calls the st gate (neri):
+        # ci_parity has no job env or service database to give the gate.
+        ({"backend/alembic.ini": "[alembic]\n"}, None, False),
+        ({"backend/alembic.ini": "[alembic]\n"}, '"$ST_CANONICAL_BIN" check --check', False),
     ],
 )
-def test_clean_env_runs_only_for_repos_with_migrations_or_workspace_packages(
-        tmp_path: Path, files: dict[str, str], applies: bool) -> None:
+def test_clean_env_runs_only_for_repos_with_migrations_or_workspace_packages_and_a_ci_pytest_job(
+        tmp_path: Path, files: dict[str, str], ci: str | None, applies: bool) -> None:
     subprocess.run(["git", "init", "-q", str(tmp_path)], check=True)
     for name, content in files.items():
         (tmp_path / name).parent.mkdir(parents=True, exist_ok=True)
         (tmp_path / name).write_text(content)
+    if ci is not None:
+        _ci_workflow(tmp_path, ci)
     subprocess.run(["git", "add", "-A"], cwd=tmp_path, check=True)
     assert clean_env_applies(tmp_path) is applies
 
@@ -99,6 +116,8 @@ def test_clean_env_gates_a_fresh_clone_of_head_with_fresh_deps_and_ci_parity(
         tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     subprocess.run(["git", "init", "-q", str(tmp_path)], check=True)
     (tmp_path / "alembic.ini").write_text("[alembic]\n")
+    (tmp_path / "project.identity.json").write_text('{"runtime": {"backend_extras": ["compression"]}}')
+    _ci_workflow(tmp_path)
     subprocess.run(["git", "add", "-A"], cwd=tmp_path, check=True)
     subprocess.run(["git", "-c", "user.name=t", "-c", "user.email=t@example.invalid", "commit", "-qm", "x"],
                    cwd=tmp_path, check=True)
@@ -115,9 +134,14 @@ def test_clean_env_gates_a_fresh_clone_of_head_with_fresh_deps_and_ci_parity(
     assert [stage["id"] for stage in ran] == ["gate", "clean-env"]
     argv = ran[-1]["argv"]
     split = argv.index("--")
-    assert argv[argv.index("cleanroom"):argv.index("cleanroom") + 4] == ["cleanroom", "--clone", head, "--deps"]
+    # Deps match the managed checkout's gate environment: dev plus the identity's backend extras.
+    assert argv[argv.index("cleanroom"):argv.index("cleanroom") + 6] == [
+        "cleanroom", "--clone", head, "--deps", "--extra", "compression"]
     assert "ST_CHECK_CI_PARITY=1" in argv[:split] and "ST_NATIVE_NO_REUSE=1" in argv[:split]
     assert argv[split + 1:][-2:] == ["check", "--check"]
+    # The gate keeps the cleanroom's private HOME; only st's settings file is copied in.
+    assert not any(arg.startswith("HOME=") for arg in argv)
+    assert argv[split + 1] == "/bin/sh" and argv[split + 4].endswith("/.env.local")
 
 
 @pytest.mark.parametrize(
@@ -126,7 +150,6 @@ def test_clean_env_gates_a_fresh_clone_of_head_with_fresh_deps_and_ci_parity(
         ({}, "pass", "2026-10-12"),
         ({"clean_env_green_since": "2026-10-01"}, "pass", "2026-10-01"),
         ({"clean_env_green_since": "2026-10-01"}, "fail", None),
-        ({"clean_env_green_since": "2026-10-01"}, None, "2026-10-01"),
         ({}, None, None),
     ],
 )
@@ -134,3 +157,9 @@ def test_clean_env_green_streak_start_resets_on_a_clean_env_failure(
         prior: dict, clean_env: str | None, expected: str | None) -> None:
     outcome = {"state": "pass", **({"clean_env": clean_env} if clean_env else {})}
     assert clean_env_green_since(prior, outcome, date(2026, 10, 12)) == expected
+
+
+def test_clean_env_green_streak_ends_when_the_whole_lane_times_out() -> None:
+    # The timeout outcome carries no stage results, so a hung clean-env never counts as green.
+    outcome = {"state": "fail", "reason": "deep_lane_timeout"}
+    assert clean_env_green_since({"clean_env_green_since": "2026-10-01"}, outcome, date(2026, 10, 12)) is None

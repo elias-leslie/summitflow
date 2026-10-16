@@ -87,12 +87,10 @@ def _run_deep(root: Path) -> dict[str, Any]:
 
 
 def clean_env_green_since(prior: dict[str, Any], outcome: dict[str, Any], today: date) -> str | None:
-    """Start of the current clean-env pass streak; a clean-env failure restarts it."""
-    if outcome.get("clean_env") == "pass":
-        return str(prior.get("clean_env_green_since") or today.isoformat())
-    if outcome.get("clean_env") is None:
-        return prior.get("clean_env_green_since")
-    return None
+    """Start of the current clean-env pass streak; any run without a clean-env pass (a failure, a lane timeout) ends it."""
+    if outcome.get("clean_env") != "pass":
+        return None
+    return str(prior.get("clean_env_green_since") or today.isoformat())
 
 
 def _notify(rows: list[dict[str, Any]], today: date) -> None:

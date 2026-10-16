@@ -9,10 +9,10 @@ A project opts tests in without new configuration:
   ``.st-check.toml``; explicit stages replace detection.
 Tests needing production or live credentials stay out of every lane.
 
-Repos with migrations or workspace packages also rerun the gate the way a
-hosted CI runner would (``clean-env``): a fresh clone of the commit, locked
-dependencies installed as copies, and the CI workflow's service database
-started empty (``cli.lib.ci_parity``).
+Repos with migrations or workspace packages and a CI pytest job that
+``cli.lib.ci_parity`` can reproduce also rerun the gate the way a hosted CI
+runner would (``clean-env``): a fresh clone of the commit, locked dependencies
+installed as copies, and the CI workflow's service database started empty.
 """
 
 from __future__ import annotations
@@ -121,7 +121,16 @@ def deep_stages(root: Path) -> list[dict[str, Any]]:
 
 
 def clean_env_applies(root: Path) -> bool:
-    """Migrations or workspace packages: where a reused checkout and its deps hid CI-only failures."""
+    """Migrations or workspace packages, where a reused checkout and its deps hid CI-only failures.
+
+    Only when CI has a pytest job ci_parity can mirror: without one (no workflow,
+    or CI that only calls the st gate) the run gets no CI env or service database
+    and would fail on missing local config rather than on a CI difference.
+    """
+    from . import ci_parity
+
+    if not any(job.tests for job in ci_parity.load_jobs(root)):
+        return False
     tracked = subprocess.run(["git", "ls-files", "--", ":(glob)**/alembic.ini", ":(glob)**/migrations/**",
                               ":(glob)**/pnpm-workspace.yaml"], cwd=root, capture_output=True, text=True, check=False)
     if tracked.stdout.strip():
@@ -131,15 +140,26 @@ def clean_env_applies(root: Path) -> bool:
     return bool(uv.stdout.strip())
 
 
-def clean_env_stage(head: str) -> dict[str, Any]:
-    """The full gate with CI parity in a fresh clone of ``head`` with freshly installed deps."""
+def clean_env_stage(root: Path, head: str) -> dict[str, Any]:
+    """The full gate with CI parity in a fresh clone of ``head`` with freshly installed deps.
+
+    Deps are the managed checkout's gate environment: dev plus the identity's
+    ``runtime.backend_extras``.
+    """
+    from app.project_identity import get_project_identity
+
     from . import ci_parity
 
+    runtime = (get_project_identity(root.name, str(root)) or {}).get("runtime") or {}
+    extras = [extra for extra in runtime.get("backend_extras") or [] if isinstance(extra, str) and extra]
+    home = Path(pwd.getpwuid(os.getuid()).pw_dir)
     environment = [f"{ci_parity.PARITY_FLAG}=1", f"{ci_parity.SEED_VAR}={ci_parity.new_seed()}", "ST_NATIVE_NO_REUSE=1"]
-    # The cleanroom's private HOME hides st's own settings; CI parity gives every tool a scrubbed HOME anyway.
-    gate = ["/usr/bin/env", f"HOME={pwd.getpwuid(os.getuid()).pw_dir}", *_st(), "check", "--check"]
+    # HOME stays the cleanroom's private one; st only needs its settings file from the real one.
+    gate = ["/bin/sh", "-c", 'if [ -f "$0" ]; then cp "$0" "$HOME/.env.local"; fi; exec "$@"',
+            str(home / ".env.local"), *_st(), "check", "--check"]
     return {"id": "clean-env",
             "argv": [*_st(), "check", "cleanroom", "--clone", head, "--deps",
+                     *(arg for extra in extras for arg in ("--extra", extra)),
                      *(arg for item in environment for arg in ("--env", item)), "--", *gate],
             "cwd": ".", "timeout_seconds": GATE_TIMEOUT_SECONDS, "admitted": True}
 
@@ -179,7 +199,7 @@ def run_deep(root: Path) -> dict[str, Any]:
     head = subprocess.run(["git", "rev-parse", "HEAD"], cwd=root, capture_output=True, text=True, check=False)
     stages = deep_stages(root)
     if head.stdout.strip() and clean_env_applies(root):
-        stages.append(clean_env_stage(head.stdout.strip()))
+        stages.append(clean_env_stage(root, head.stdout.strip()))
     env = {**os.environ, "ST_NATIVE_NO_REUSE": "1"}
     gate = {"id": "gate", "argv": [*_st(), "check", "--check"], "cwd": ".",
             "timeout_seconds": GATE_TIMEOUT_SECONDS, "admitted": True}
