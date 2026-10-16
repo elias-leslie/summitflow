@@ -9,6 +9,7 @@ from pathlib import Path
 import pytest
 import typer
 import typer.main
+from click.utils import make_default_short_help
 from typer.core import TyperGroup
 
 from cli import main as cli_main
@@ -18,13 +19,15 @@ BACKEND = Path(__file__).parents[2]
 
 @pytest.mark.parametrize("name", sorted(cli_main.LAZY_COMMANDS))
 def test_each_lazy_entry_loads_its_real_command(name: str) -> None:
-    hidden = cli_main.LAZY_COMMANDS[name][4]
+    help_text, hidden = cli_main.LAZY_COMMANDS[name][3:]
     command = cli_main._lazy_command(name)
 
     assert command.name == name
     assert command.callback is not cli_main._lazy_placeholder
     assert "unavailable" not in (command.help or "")
     assert command.hidden == hidden
+    # Root help lists the table's text, so it must stay the real command's one-line help.
+    assert (command.short_help or make_default_short_help(command.help or "", 10_000)) == help_text
 
 
 def test_root_group_resolves_real_command_but_lists_placeholders() -> None:

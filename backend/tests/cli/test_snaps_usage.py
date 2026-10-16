@@ -2,12 +2,14 @@
 
 from __future__ import annotations
 
+import json
 from types import SimpleNamespace
 
 from typer.testing import CliRunner
 
 from cli.commands import snapshots
 from cli.lib.snapshots._models import QuickSnapshot, SnapshotUsage
+from cli.output_context import OutputContext
 
 
 def _snapshot(snapshot_id: str) -> QuickSnapshot:
@@ -19,7 +21,7 @@ def _snapshot(snapshot_id: str) -> QuickSnapshot:
     )
 
 
-def _run(monkeypatch, *args: str):
+def _run(monkeypatch, *args: str, obj: OutputContext | None = None):
     measured: list[str] = []
 
     def usage(snapshot):
@@ -29,7 +31,7 @@ def _run(monkeypatch, *args: str):
     monkeypatch.setattr(snapshots, "get_config", lambda: SimpleNamespace(project_id="demo"))
     monkeypatch.setattr(snapshots, "list_snapshots", lambda *, project_id: [_snapshot("a"), _snapshot("b")])
     monkeypatch.setattr(snapshots, "get_snapshot_usage", usage)
-    result = CliRunner().invoke(snapshots.app, ["snaps", *args])
+    result = CliRunner().invoke(snapshots.app, ["snaps", *args], obj=obj)
     assert result.exit_code == 0, result.output
     return result.output, measured
 
@@ -46,3 +48,15 @@ def test_snaps_usage_flag_measures_each_snapshot(monkeypatch) -> None:
     assert measured == ["a", "b"]
     assert output.splitlines()[0] == "SNAPS[2]|total:4.0KiB|exclusive:2.0KiB|shared:2.0KiB"
     assert output.splitlines()[1].endswith("|total:2.0KiB|exclusive:1.0KiB|shared:1.0KiB")
+
+
+def test_snaps_json_carries_usage_only_when_measured(monkeypatch) -> None:
+    output, measured = _run(monkeypatch, obj=OutputContext(compact=False))
+    payload = json.loads(output)
+    assert measured == [] and payload["total"] == 2
+    assert all("usage" not in row for row in payload["snapshots"])
+
+    output, measured = _run(monkeypatch, "--usage", obj=OutputContext(compact=False))
+    rows = json.loads(output)["snapshots"]
+    assert measured == ["a", "b"]
+    assert [row["usage"]["total_bytes"] for row in rows] == [2048, 2048]

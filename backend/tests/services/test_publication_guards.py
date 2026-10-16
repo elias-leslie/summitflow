@@ -39,7 +39,7 @@ def test_outgoing_admission_failure_is_typed_before_history_work(monkeypatch, tm
 
 @pytest.mark.parametrize("command", [
     "git push origin main", "/usr/bin/git -C /repo push", "git send-pack origin main",
-    "env MODE=x bash -lc 'git push'", "gh pr merge 4",
+    "env MODE=x bash -lc 'git push'", "jj git push", "gh pr merge 4",
     "gh release create v1", "gh api -X PUT repos/a/b/pulls/2/merge",
     "gh api -X PATCH repos/a/b -F archived=true",
     "gh api -XPATCH repos/a/b -F archived=true",
