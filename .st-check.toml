@@ -151,6 +151,12 @@ id = "python-slow"
 argv = ["backend/.venv/bin/python", "backend/scripts/native_check_fixture.py", "deep"]
 timeout_seconds = 2220
 
+# Rebuild, st done and st check accept the exact commit in a private clone,
+# so other agents' uncommitted work never blocks them (green isolated runs at
+# HEAD 2026-10-16).
+[acceptance]
+basis = "isolated"
+
 # Full-suite runs use one database per xdist worker (tests/conftest.py).
 [pytest]
 workers = 8
