@@ -78,3 +78,12 @@ def test_only_the_exact_owner_skip_means_guest_offline() -> None:
     assert not backup.is_guest_stopped_skip(skip, backup_id="bkp-other")
     for key, value in {"reason": "other", "status": "failed", "target_id": 151}.items():
         assert not backup.is_guest_stopped_skip({**skip, key: value}, backup_id="bkp-fixture")
+
+
+def test_owner_failure_code_shows_only_a_fixed_identifier() -> None:
+    failed = {"schema_version": 1, "status": "failed", "error": "backup_previous_qualification_required"}
+    assert backup.owner_failure_code(json.dumps(failed)) == "backup_previous_qualification_required"
+    assert backup.owner_failure_code(json.dumps({**failed, "error": "/root/.ssh/id key"})) is None
+    assert backup.owner_failure_code(json.dumps({**failed, "status": "completed"})) is None
+    assert backup.owner_failure_code("Traceback: not json") is None
+    assert backup.owner_failure_code("") is None

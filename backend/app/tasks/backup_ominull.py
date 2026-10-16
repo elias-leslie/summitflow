@@ -95,8 +95,11 @@ def prepare_ominull_backup(*, project_id: str, source_id: str, project_dir: str,
         env=_environment(binding, context), cwd=root, phase="capture", object_name="Ominull production container snapshot",
     )
     if result.returncode:
-        # Owner diagnostics may contain credential paths or remote output.
-        raise RuntimeError("Ominull production refresh failed; retained owner evidence is required before retry")
+        # Owner stderr may contain credential paths or remote output; only its
+        # fixed failure code from stdout is shown.
+        code = owner_failure_code(result.stdout)
+        raise RuntimeError("Ominull production refresh failed" + (f" ({code})" if code else "")
+                           + "; retained owner evidence is required before retry")
     try:
         response = json.loads(result.stdout)
         if is_guest_stopped_skip(response, backup_id=backup_id):
@@ -104,6 +107,16 @@ def prepare_ominull_backup(*, project_id: str, source_id: str, project_dir: str,
         return validate_preparation(response, backup_id=backup_id)
     except (OSError, ValueError, KeyError, TypeError) as exc:
         raise RuntimeError("Ominull owner returned invalid production backup evidence") from exc
+
+
+def owner_failure_code(stdout: str) -> str | None:
+    """The owner's fixed failure identifier, never free-form output."""
+    try:
+        response = json.loads(stdout)
+    except (TypeError, ValueError):
+        return None
+    code = response.get("error") if isinstance(response, dict) and response.get("status") == "failed" else None
+    return code if isinstance(code, str) and re.fullmatch(r"[a-z][a-z0-9_]{0,63}", code) else None
 
 
 def is_guest_stopped_skip(response: Any, *, backup_id: str) -> bool:
