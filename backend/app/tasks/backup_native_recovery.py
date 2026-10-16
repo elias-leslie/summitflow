@@ -793,12 +793,15 @@ def _compact_git_plan(project_dir: Path, state: dict[str, Any]) -> dict[str, Any
     baseline; capture never contacts a server. A remote that is a local path
     is no offsite copy, so its refs are ordinary tips. Missing baselines or
     unusual traversal semantics retain full history. The source repository is
-    never made shallow.
+    never made shallow. Codex's tree-valued refs/codex/* checkpoints are left
+    out (a compact capture is only requested after a weekly full one, which
+    keeps them), so they no longer force every capture to full history.
     """
     full: dict[str, Any] = {"capture_mode": "full", "shallow_commits": state.get("shallow_commits", [])}
     if state.get("shallow_commits"):
         return {**full, "compact_fallback_reason": "source_already_shallow"}
-    if any(" refs/replace/" in line for line in state["refs"]):
+    refs = [line for line in state["refs"] if not line.split(" ", 1)[1].startswith("refs/codex/")]
+    if any(" refs/replace/" in line for line in refs):
         return {**full, "compact_fallback_reason": "replacement_refs"}
     graft_path = _run_git(project_dir, ["rev-parse", "--path-format=absolute", "--git-path", "info/grafts"])
     if graft_path.returncode != 0 or Path(graft_path.stdout.strip()).exists():
@@ -810,8 +813,8 @@ def _compact_git_plan(project_dir: Path, state: dict[str, Any]) -> dict[str, Any
     remote_names = set(remote_urls)
     network_remotes = {name for name, urls in remote_urls.items() if all(_network_remote(url) for url in urls)}
     published = []
-    tips = [state["head"], *(line.split(" ", 1)[0] for line in state["refs"]), *(item["object_id"] for item in state.get("stash_entries", []))]
-    for line in state["refs"]:
+    tips = [state["head"], *(line.split(" ", 1)[0] for line in refs), *(item["object_id"] for item in state.get("stash_entries", []))]
+    for line in refs:
         object_id, ref_name = line.split(" ", 1)
         if ref_name.startswith("refs/remotes/"):
             if not any(ref_name.startswith(f"refs/remotes/{name}/") for name in remote_names):
@@ -847,7 +850,7 @@ def _compact_git_plan(project_dir: Path, state: dict[str, Any]) -> dict[str, Any
     # Published refs unrelated to current/unpublished work would reintroduce
     # entire historical trees. Retain their names only if their objects already
     # belong to this recovery graph; remote identity remains in configuration.
-    retained = [line for line in state["refs"] if peeled_commits[line.split(" ", 1)[0]] in unpublished | boundaries]
+    retained = [line for line in refs if peeled_commits[line.split(" ", 1)[0]] in unpublished | boundaries]
     return {
         "capture_mode": "compact", "shallow_commits": sorted(boundaries),
         "unpublished_commit_count": len(unpublished), "refs": retained,

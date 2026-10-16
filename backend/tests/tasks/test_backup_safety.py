@@ -273,9 +273,28 @@ def test_pve_side_retention_matches_policy_and_trips_on_mistakes():
     assert plan["per_source"] == {"a": {"total": 192, "delete": 11}, "b": {"total": 54, "delete": 11}}  # Edge point kept.
     assert "manual" not in plan["delete"] and maintain.breaker(plan) == []
     mistake = maintain.plan_retention(snapshots, {"default_days": 30, "sources": {"a": 1}}, now)
-    assert any("of a" in reason for reason in maintain.breaker(mistake))
+    assert maintain.breaker(mistake)[0].startswith("plan removes 149 of 247 snapshots")
     assert maintain.unexplained_loss(1000, 990) is None
     assert maintain.unexplained_loss(1000, 500).startswith("snapshot count fell")
+
+
+def test_pve_side_weekly_expiry_of_floor_and_retired_sources_does_not_trip():
+    # Regression: the weekly run removes about half of every 7-day source and
+    # most of a retired one; that is normal retention, not a breaker trip.
+    maintain = _maintain_module()
+    now = datetime(2026, 10, 18, 5, 31, tzinfo=UTC)
+
+    def points(source: str, newest: int, oldest: int) -> list[dict[str, Any]]:
+        return [{"id": f"{source}-{hour}", "tags": [f"source:{source}"], "time": (now - timedelta(hours=hour)).isoformat()} for hour in range(newest * 24, oldest * 24, 5)]
+
+    snapshots = points("week", 0, 14) + points("retired", 5, 12) + points("month", 0, 37) + points("month2", 0, 37)
+    policy = {"default_days": 30, "sources": {"week": 7, "retired": 7, "month": 30, "month2": 30}}
+    plan = maintain.plan_retention(snapshots, policy, now)
+    assert plan["per_source"]["week"]["delete"] * 2 >= plan["per_source"]["week"]["total"]
+    assert plan["per_source"]["retired"]["delete"] == plan["per_source"]["retired"]["total"] - 10
+    assert maintain.breaker(plan) == []
+    # A clock jump of a few weeks still trips the whole plan.
+    assert maintain.breaker(maintain.plan_retention(snapshots, policy, now + timedelta(days=21)))
 
 
 def test_pve_side_retention_keeps_newest_full_history_capture():

@@ -218,6 +218,26 @@ def test_uncertain_published_baselines_keep_full_history(tmp_path: Path, uncerta
     assert _git(snapshot, "--no-replace-objects", "fsck", "--full", "--no-dangling") == ""
 
 
+def test_codex_tree_checkpoint_refs_no_longer_force_full_history(tmp_path: Path) -> None:
+    # Regression: one tree-valued refs/codex/* ref made every capture full.
+    project, old, _baseline = _project(tmp_path)
+    head = _commit(project, "note", "unpublished main")
+    checkpoint = "refs/codex/turn-diffs/checkpoints/a/b/1/c"
+    _git(project, "update-ref", checkpoint, _git(project, "rev-parse", "HEAD^{tree}"))
+    snapshot, manifest = _snapshot(project, tmp_path / "stage")
+    assert manifest["git"]["capture_mode"] == "compact"
+    assert "compact_fallback_reason" not in manifest["git"]
+    assert not any(checkpoint in line for line in manifest["git"]["refs"])
+    recovery.restore_git_recovery(snapshot)
+    assert _git(snapshot, "rev-parse", "HEAD") == head
+    assert subprocess.run(["git", "-C", str(snapshot), "cat-file", "-e", old], capture_output=True).returncode != 0
+    # The weekly full capture still keeps the checkpoint.
+    full, full_manifest = _snapshot(project, tmp_path / "full", mode="full")
+    assert any(checkpoint in line for line in full_manifest["git"]["refs"])
+    recovery.restore_git_recovery(full)
+    assert _git(full, "cat-file", "-t", checkpoint) == "tree"
+
+
 def test_legacy_full_manifest_without_new_fields_remains_readable(tmp_path: Path) -> None:
     project, old, _baseline = _project(tmp_path)
     snapshot, manifest = _snapshot(project, tmp_path / "stage", mode="full")

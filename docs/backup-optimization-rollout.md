@@ -55,7 +55,9 @@ append-only copy always keep each source's newest one. Every compact capture
 also carries `git-history.bundle`, a blobless bundle with every commit and tree,
 so commit metadata between weekly fulls stays offsite too. The monthly offsite
 restore test rebuilds the restored repository from its bundle into scratch and
-checks HEAD and the commit count against the capture.
+checks HEAD and the commit count against the capture. Compact captures leave out
+Codex's tree-valued `refs/codex/*` checkpoint refs (the weekly full keeps them);
+before, one such ref made a repository fall back to full history every 4 hours.
 The actual AfterTimes Git payload fell from 3,917,612,748 to 277,849,132 bytes;
 isolated Git integrity, HEAD, tree, index and source-unchanged checks passed.
 This is a Git-only measurement, not the new all-source compressed full size.

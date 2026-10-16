@@ -12,6 +12,7 @@ the workstation reads through the restricted key (`ssh ... status`).
 
 from __future__ import annotations
 
+import contextlib
 import json
 import os
 import subprocess
@@ -30,12 +31,13 @@ KEEP_LAST = 3
 # SummitFlow tags its weekly full-Git-history capture; the newest one per
 # source outlives the window so this copy always holds complete history.
 FULL_HISTORY_TAG = "git-history:full"
-# Circuit breaker: normal weekly expiry removes a small slice. Anything larger
-# means a policy mistake or clock jump, so nothing is removed and it alerts.
-TOTAL_TRIP_FRACTION = 0.25
+# Circuit breaker on the whole plan. This runs weekly, so normal expiry is a
+# week of each window: about half of a 7-day source, about a quarter of all
+# snapshots. A clock jump or a policy that lost its windows removes far more,
+# so nothing is removed and it alerts. There is no per-source limit: a 7-day
+# source (the floor) or a retired one sheds most of its points every week.
+TOTAL_TRIP_FRACTION = 0.5
 TOTAL_TRIP_MIN = 10
-SOURCE_TRIP_FRACTION = 0.5
-SOURCE_TRIP_MIN = 6
 LOSS_TRIP_FRACTION = 0.10
 CHECK_BUCKETS = 12
 
@@ -91,9 +93,6 @@ def breaker(plan: dict[str, Any]) -> list[str]:
     total, count = plan["total"], len(plan["delete"])
     if count > TOTAL_TRIP_MIN and total and count / total > TOTAL_TRIP_FRACTION:
         reasons.append(f"plan removes {count} of {total} snapshots (> {TOTAL_TRIP_FRACTION:.0%})")
-    for source, item in sorted(plan["per_source"].items()):
-        if item["delete"] > SOURCE_TRIP_MIN and item["delete"] / item["total"] > SOURCE_TRIP_FRACTION:
-            reasons.append(f"plan removes {item['delete']} of {item['total']} snapshots of {source} (> {SOURCE_TRIP_FRACTION:.0%})")
     return reasons
 
 
@@ -174,10 +173,8 @@ def main() -> int:
         status["alerts"].append({"kind": "maintenance-failed", "message": str(detail)[-300:]})
     status["snapshot_count"] = snapshot_count
     status["finished_at"] = datetime.now(UTC).isoformat()
-    try:
+    with contextlib.suppress(OSError):
         status["repo_bytes"] = sum(path.stat().st_size for path in Path(REPO).rglob("*") if path.is_file())
-    except OSError:
-        pass
     _save(status)
     print(json.dumps({key: status.get(key) for key in ("status", "plan", "breaker", "forget", "check", "alerts")}))
     return 0 if status["status"] == "ok" else 1
