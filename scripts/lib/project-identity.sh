@@ -56,7 +56,7 @@ project_identity_manifest_for_project() {
     fi
 
     find "$workspace_projects_root" -maxdepth 2 -name "$PROJECT_IDENTITY_FILE_NAME" -print0 2>/dev/null |
-        python3 - "$project" <<'INNERPY'
+        python3 -c '
 import json
 import sys
 from pathlib import Path
@@ -88,7 +88,7 @@ for raw_path in sorted(sys.stdin.buffer.read().split(b"\0")):
     if target in aliases:
         print(path)
         break
-INNERPY
+' "$project"
 }
 
 project_identity_repo_dir_for_project() {
@@ -151,10 +151,10 @@ def _default_env_prefix() -> str:
 repo_name = repository.get("name") or project.get("repo_name", "")
 repo_owner = repository.get("owner", "")
 https_url = repository.get("https_url", "")
+# Remotes are https via the gh credential helper; only an explicit ssh_url is passed through.
 ssh_url = repository.get("ssh_url", "")
 if repo_owner and repo_name:
     https_url = https_url or f"https://github.com/{repo_owner}/{repo_name}"
-    ssh_url = ssh_url or f"git@github.com:{repo_owner}/{repo_name}.git"
 
 env = {
     "PROJECT_IDENTITY_ID": project.get("id", ""),

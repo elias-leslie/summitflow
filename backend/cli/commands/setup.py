@@ -185,8 +185,8 @@ def agent_tooling(
         if not shutil.which(command):
             typer.echo(f"Missing required command: {command}", err=True)
             raise typer.Exit(1)
-    claude_repo = os.environ.get("CLAUDE_CONFIG_REPO", "git@github.com:elias-leslie/claude-config.git")
-    codex_repo = os.environ.get("CODEX_CONFIG_REPO", "git@github.com:elias-leslie/codex-config.git")
+    claude_repo = os.environ.get("CLAUDE_CONFIG_REPO", "https://github.com/elias-leslie/claude-config.git")
+    codex_repo = os.environ.get("CODEX_CONFIG_REPO", "https://github.com/elias-leslie/codex-config.git")
     claude_home = Path(os.environ.get("CLAUDE_HOME_DIR", str(Path.home() / ".claude"))).expanduser()
     codex_home = Path(os.environ.get("CODEX_HOME_DIR", str(Path.home() / ".codex"))).expanduser()
     update_existing = os.environ.get("UPDATE_EXISTING_CONFIGS") == "1"
