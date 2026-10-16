@@ -1,6 +1,7 @@
 """SummitFlow Tasks CLI entry point."""
 
 import atexit
+import sys
 from functools import cache
 from importlib import import_module
 from pathlib import Path
@@ -11,18 +12,21 @@ import typer
 import typer.main
 from typer.core import TyperGroup
 
-from app.storage.connection import close_pool
-from app.storage.events import log_task_event
-
 from .config import set_project_override
 from .extensions import ExtensionCommand, register_extensions
-from .lib.commit_workflow import CommitError, commit_repo, current_repo
 from .lib.usage import usage
 from .output import set_compact_output, set_human_output, set_progress_only
 from .output_context import OutputContext
 
-# Ensure connection pool is closed on exit to avoid thread cleanup warnings
-atexit.register(close_pool)
+
+def _close_pool_if_opened() -> None:
+    """Close the connection pool on exit, only when a command opened storage."""
+    connection = sys.modules.get("app.storage.connection")
+    if connection is not None:
+        connection.close_pool()
+
+
+atexit.register(_close_pool_if_opened)
 
 CLI_REFERENCE = """ST: managed-project tools for agents.
 
@@ -205,6 +209,8 @@ def _event_detail_parts(result: dict[str, object]) -> list[str]:
 
 
 def _log_commit_event(task_id: str, result: dict[str, object]) -> None:
+    from app.storage.events import log_task_event
+
     detail = " ".join(part for part in _event_detail_parts(result) if not part.endswith("="))
     log_task_event(task_id, f"{COMMIT_EVENT_PREFIX} {detail}")
 
@@ -411,6 +417,13 @@ def commit_command(
     ] = None,
 ) -> None:
     """Run checks and create a local checkpoint; publish accepted source separately."""
+    from .lib.commit_workflow import (
+        COMMIT_PUBLICATION_GUIDANCE,
+        CommitError,
+        commit_repo,
+        current_repo,
+    )
+
     try:
         if ctx.args:
             # Click options take one value each; the words after --paths a arrive as extra arguments.
@@ -418,8 +431,6 @@ def commit_command(
                 raise CommitError(f"unexpected argument(s): {' '.join(ctx.args)}; select paths with --paths a b")
             paths = [*paths, *ctx.args]
         if push:
-            from .lib.commit_workflow import COMMIT_PUBLICATION_GUIDANCE
-
             raise CommitError(COMMIT_PUBLICATION_GUIDANCE)
         repo_path = current_repo() if repo is None else Path(repo).expanduser().resolve()
         result = commit_repo(

@@ -351,8 +351,8 @@ def test_commit_lock_wait_is_five_minutes_with_progress_lines(tmp_path, monkeypa
 ])
 def test_st_commit_accepts_several_values_per_paths(argv, expected):
     with (
-        patch("cli.main.current_repo", return_value=Path("/repo")),
-        patch("cli.main.commit_repo", return_value={"repo": "repo", "status": "SKIP", "pushed": False}) as commit,
+        patch("cli.lib.commit_workflow.current_repo", return_value=Path("/repo")),
+        patch("cli.lib.commit_workflow.commit_repo", return_value={"repo": "repo", "status": "SKIP", "pushed": False}) as commit,
         patch("cli.main._log_commit_event"),
     ):
         result = CliRunner().invoke(app, ["commit", "-m", "msg", *argv])
@@ -361,7 +361,7 @@ def test_st_commit_accepts_several_values_per_paths(argv, expected):
 
 
 def test_st_commit_rejects_stray_words_without_paths():
-    with patch("cli.main.current_repo", return_value=Path("/repo")), patch("cli.main.commit_repo") as commit:
+    with patch("cli.lib.commit_workflow.current_repo", return_value=Path("/repo")), patch("cli.lib.commit_workflow.commit_repo") as commit:
         result = CliRunner().invoke(app, ["commit", "-m", "msg", "stray.py"])
     assert result.exit_code == 1 and "unexpected argument(s): stray.py" in result.output
     commit.assert_not_called()

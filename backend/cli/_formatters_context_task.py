@@ -4,9 +4,7 @@ from __future__ import annotations
 
 from typing import Any, cast
 
-from app.services.task_context_guardrails import format_task_freshness_lines
 from app.services.task_continuity import format_continuity_lines
-from app.services.task_execution_readiness import is_final_task_status
 from app.services.task_harness import summarize_execution_contract
 
 from ._formatters_compact import _safe_int
@@ -177,6 +175,8 @@ def _format_runtime_line(task: dict[str, Any]) -> str | None:
 
 def _format_workflow_line(task: dict[str, Any]) -> str | None:
     """Return WORKFLOW line if there's anything worth showing."""
+    from app.services.task_execution_readiness import is_final_task_status
+
     if is_final_task_status(task.get("status")):
         return None
     decisions_count = len(task.get("decisions") or [])
@@ -284,6 +284,10 @@ def _format_sync_lines(task: dict[str, Any]) -> list[str]:
 
 def format_context_task(task: dict[str, Any]) -> str:
     """Format task header for context output."""
+    # Imported on use: these pull in task storage, which `st --help` never needs.
+    from app.services.task_context_guardrails import format_task_freshness_lines
+    from app.services.task_execution_readiness import is_final_task_status
+
     status = task.get("status", "pending")
     final_status = is_final_task_status(status)
     lines = _format_identity_lines(task, status)
