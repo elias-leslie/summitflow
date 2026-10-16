@@ -105,9 +105,8 @@ the current location of the Typer callback.
   for the rank-13 admin/client bundle. Its existing API tests remain owner tests;
   SummitFlow CLI tests move/adapt with the commands.
 - Jobinator, Portfolio AI, Neri, and Learn-o-Tron have backend packages and API
-  implementations but no `app/cli` or `tests/cli` package. Portfolio already
-  has `portfolio-ai-mcp`; the others have no CLI script. Add owner-local CLI
-  entrypoints and tests as part of extraction.
+  implementations but no `app/cli` or `tests/cli` package and no CLI script.
+  Add owner-local CLI entrypoints and tests as part of extraction.
 - The proposed extension contract uses executable transport and a public
   `st_sdk` facade (see `docs/st-extension-architecture.md`). Extensions must not
   import ST-private `app.config`, `cli.client`, output, credentials, command, or
