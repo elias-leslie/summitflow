@@ -260,14 +260,7 @@ def _format_preflight(
 
 
 def _record_belongs_to_task(record: dict[str, Any], task_id: str) -> bool:
-    for key in ("task_id", "external_id"):
-        if str(record.get(key) or "") == task_id:
-            return True
-    for key in ("current_branch", "branch"):
-        branch = record.get(key)
-        if isinstance(branch, str) and branch.split("/", 1)[0] == task_id:
-            return True
-    return False
+    return any(str(record.get(key) or "") == task_id for key in ("task_id", "external_id"))
 
 
 def _allowed_task_session_ids(payload: dict[str, Any], task_id: str) -> set[str]:

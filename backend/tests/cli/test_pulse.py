@@ -762,7 +762,7 @@ def test_require_pulse_gate_allows_current_task_read_only_transcript_sync_sessio
         "active_sessions": [
             {
                 "id": "sess-sync",
-                "current_branch": "task-1/main",
+                "task_id": "task-1",
                 "request_source": "codex-transcript-sync",
                 "source_client": "summitflow/codex-session-sync",
             }
@@ -809,7 +809,7 @@ def test_require_pulse_gate_allows_other_task_read_only_session() -> None:
         "active_sessions": [
             {
                 "id": "sess-other",
-                "current_branch": "task-other/main",
+                "task_id": "task-other",
                 "request_source": "codex-transcript-sync",
                 "source_client": "summitflow/codex-session-sync",
             }
@@ -855,7 +855,7 @@ def test_require_pulse_gate_keeps_other_task_write_session_blocking() -> None:
         "active_sessions": [
             {
                 "id": "sess-other",
-                "current_branch": "task-other/main",
+                "task_id": "task-other",
                 "request_source": "codex-transcript-sync",
                 "source_client": "summitflow/codex-session-sync",
             }
