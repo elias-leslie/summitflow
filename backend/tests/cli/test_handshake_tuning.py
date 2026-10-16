@@ -81,6 +81,8 @@ def inbox_module(monkeypatch, tmp_path):
     spec = importlib.util.spec_from_file_location("coord_inbox_under_test", COORD_INBOX)
     assert spec and spec.loader
     module = importlib.util.module_from_spec(spec)
+    # The script takes the backend path as argv[1] at import; pytest's argv has no such slot.
+    monkeypatch.setattr("sys.argv", [str(COORD_INBOX), str(COORD_INBOX.parents[2] / "backend")])
     spec.loader.exec_module(module)
     monkeypatch.setattr(coord_wake, "STATE", tmp_path / "state")
     monkeypatch.setattr(module, "STATE", tmp_path / "state")
