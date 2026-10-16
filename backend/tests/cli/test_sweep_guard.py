@@ -175,7 +175,8 @@ def test_legacy_touch_records_fold_into_writer_sets(repo, monkeypatch):
         commit_git_revision(repo, message="legacy", skip_checks=True)
 
 
-def test_shell_write_skips_a_path_another_session_recorded_during_the_command(repo, monkeypatch):
+def test_shell_write_concurrent_with_another_sessions_edit_is_unknown(repo, monkeypatch):
+    """Either session may own a path both touched during the command: both broad commits stay refused."""
     as_codex(monkeypatch, "bbbbbbbb-session")
     since = datetime.now(UTC) - timedelta(seconds=5)
     as_claude(monkeypatch, "aaaaaaaa-session")
@@ -184,7 +185,31 @@ def test_shell_write_skips_a_path_another_session_recorded_during_the_command(re
     as_codex(monkeypatch, "bbbbbbbb-session")
     coord.record_shell_writes([str(repo / "gen.json")], since)
     entries = leases.writers("hostrepo")[str((repo / "gen.json").resolve())]
-    assert [e["agent_id"] for e in entries] == ["cc:aaaaaa"]
+    assert [leases.writer_label(e) for e in entries] == ["cc:aaaaaa", "unknown(concurrent)"]
+    with pytest.raises(CommitError, match=r"gen\.json"):
+        commit_git_revision(repo, message="B sweep", skip_checks=True)
+    as_claude(monkeypatch, "aaaaaaaa-session")
+    with pytest.raises(CommitError, match=r"gen\.json<-unknown\(concurrent\)"):
+        commit_git_revision(repo, message="A sweep", skip_checks=True)
+    assert commit_git_revision(repo, message="A named", skip_checks=True, paths=["gen.json"])["status"] == "SUCCESS"
+
+
+def test_shell_write_on_a_path_another_session_leased_earlier_is_attributed_to_the_writer(repo, monkeypatch):
+    """A foreign lease's heartbeat ticking during my command must not hand my shell write to its holder."""
+    as_claude(monkeypatch, "aaaaaaaa-session")
+    assert leases.claim("hostrepo", str(repo / "backend" / "a.py"), str(repo))[0]
+    as_codex(monkeypatch, "bbbbbbbb-session")
+    since = datetime.now(UTC)
+    as_claude(monkeypatch, "aaaaaaaa-session")
+    assert leases.claim("hostrepo", str(repo / "backend" / "b.py"), str(repo))[0]  # refreshes A's a.py heartbeat
+    (repo / "backend" / "a.py").write_text("a = 9  # B's sed\n")
+    as_codex(monkeypatch, "bbbbbbbb-session")
+    coord.record_shell_writes([str(repo / "backend" / "a.py")], since)
+    entries = leases.writers("hostrepo")[str((repo / "backend" / "a.py").resolve())]
+    assert [leases.writer_label(e) for e in entries] == ["cc:aaaaaa", "codex:bbbbbb"]
+    as_claude(monkeypatch, "aaaaaaaa-session")
+    with pytest.raises(CommitError, match=r"backend/a\.py<-codex:bbbbbb"):
+        commit_git_revision(repo, message="A sweep", skip_checks=True)
 
 
 # ------------------------------------------------------------ edit hook

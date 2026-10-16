@@ -640,15 +640,17 @@ def record_writes(
 ) -> list[str]:
     """Add the current session (or an ``unknown`` writer with that reason) to each path's writer set.
 
-    With ``since`` (a shell command's start) a path another session recorded or
-    leased after that moment is skipped: its holder edited concurrently, so the
-    change may be theirs. With ``dirty`` and ``root``, writer sets of paths under
-    root that are no longer dirty (committed or reverted) are dropped. Returns
-    the recorded paths.
+    With ``since`` (a shell command's start) a path another session wrote or
+    newly leased after that moment gets an ``unknown(concurrent)`` writer instead:
+    either session may own the change, so broad commits by both stay refused
+    while an explicit ``--paths`` commit remains open. With ``dirty`` and
+    ``root``, writer sets of paths under root that are no longer dirty (committed
+    or reverted) are dropped. Returns the recorded paths.
     """
     mine, anchor = session_ids()
     lease_mine, lease_anchor = self_ids(), my_anchor()
     entry = _writer_entry(unknown=unknown)
+    concurrent = entry if unknown else _writer_entry(unknown="concurrent")
     recorded: list[str] = []
     with _lock(project_id):
         leases = _purge_stale(_load(project_id))
@@ -660,10 +662,11 @@ def record_writes(
                 any(not is_own_writer(e, mine, anchor) and _at_or_after(e.get("at"), since)
                     for e in writers.get(path, []))
                 or any(lease.kind == "file" and lease.matches(path) and not is_mine(lease, lease_mine, lease_anchor)
-                       and _at_or_after(lease.last_heartbeat, since) for lease in leases)
+                       and _at_or_after(lease.acquired_at, since) for lease in leases)
             ):
-                continue
-            _add_writer(writers, path, dict(entry))
+                _add_writer(writers, path, dict(concurrent))
+            else:
+                _add_writer(writers, path, dict(entry))
             recorded.append(path)
         _save(project_id, leases, writers)
     return recorded
