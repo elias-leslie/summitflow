@@ -156,7 +156,7 @@ def op_lease(repo: Path, purpose: str) -> Iterator[None]:
                 leases.release_mark(resolved[0], mark.lease_id)
 
 
-def guard(repo: Path, operation: str, *, paths: Sequence[str] = (), with_ack: str | None = None) -> None:
+def guard(repo: Path, operation: str, *, with_ack: str | None = None) -> None:
     """Refuse a repo-mutating or outward operation that another live agent would collide with.
 
     commit, rebuild and publish (which ship an accepted commit, not the working
