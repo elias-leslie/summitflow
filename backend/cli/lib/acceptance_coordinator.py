@@ -146,16 +146,16 @@ def accept_source(repo: Path, *, sha: str, materialization: Materialization,
     return result
 
 
-ISOLATED_BY_DEFAULT = frozenset({"summitflow"})
 _BASIS_VALUES: dict[str, Materialization] = {"isolated": "isolated", "in-place": "actual"}
 
 
-def configured_materialization(repo: Path, project_id: str | None = None) -> Materialization:
-    """The project's acceptance basis: ``.st-check.toml [acceptance] basis``, else its default.
+def configured_materialization(repo: Path) -> Materialization:
+    """The project's acceptance basis: ``.st-check.toml [acceptance] basis``, else in place.
 
     ``basis = "isolated"`` accepts the exact commit in a private clone, so a
-    dirty shared checkout never blocks it; ``basis = "in-place"`` keeps the
-    working-tree run. Projects in ISOLATED_BY_DEFAULT start isolated.
+    dirty shared checkout never blocks it; ``basis = "in-place"`` (the default)
+    keeps the working-tree run. A project opts in only after green isolated
+    runs at its HEAD, so the switch never blocks its next deploy.
     """
     import tomllib
 
@@ -167,15 +167,15 @@ def configured_materialization(repo: Path, project_id: str | None = None) -> Mat
         raise acceptance.AcceptanceError(f"invalid .st-check.toml: {exc}") from exc
     value = settings.get("basis") if isinstance(settings, dict) else None
     if value is None:
-        return "isolated" if (project_id or repo.resolve().name) in ISOLATED_BY_DEFAULT else "actual"
+        return "actual"
     if value not in _BASIS_VALUES:
         raise acceptance.AcceptanceError('.st-check.toml [acceptance] basis must be "isolated" or "in-place"')
     return _BASIS_VALUES[value]
 
 
-def select_materialization(repo: Path, *, dirty: bool, project_id: str | None = None) -> Materialization:
+def select_materialization(repo: Path, *, dirty: bool) -> Materialization:
     """A dirty checkout or an isolated project accepts in a private clone; otherwise in place."""
-    return "isolated" if dirty else configured_materialization(repo, project_id)
+    return "isolated" if dirty else configured_materialization(repo)
 
 
 def require_scope_matches_revision(repo: Path, sha: str, scope: tuple[str, ...]) -> None:

@@ -160,26 +160,32 @@ def test_isolated_waiter_reuses_the_receipt_the_slot_holder_wrote(repo: Path, mo
     assert len(captures) == 2
 
 
-@pytest.mark.parametrize(("config", "project_id", "expected"), [
-    (None, "summitflow", "isolated"),
-    (None, "nightshift", "actual"),
-    ('[acceptance]\nbasis = "isolated"\n', "nightshift", "isolated"),
-    ('[acceptance]\nbasis = "in-place"\n', "summitflow", "actual"),
-    ('[acceptance]\nhost_tools = ["docker"]\n', "summitflow", "isolated"),
+@pytest.mark.parametrize(("config", "expected"), [
+    (None, "actual"),
+    ('[acceptance]\nbasis = "isolated"\n', "isolated"),
+    ('[acceptance]\nbasis = "in-place"\n', "actual"),
+    ('[acceptance]\nhost_tools = ["docker"]\n', "actual"),
 ])
-def test_acceptance_basis_is_selected_per_project(tmp_path: Path, config: str | None, project_id: str,
-                                                   expected: str) -> None:
+def test_acceptance_basis_is_selected_per_project(tmp_path: Path, config: str | None, expected: str) -> None:
     if config is not None:
         (tmp_path / ".st-check.toml").write_text(config)
-    assert acceptance_coordinator.configured_materialization(tmp_path, project_id) == expected
-    assert acceptance_coordinator.select_materialization(tmp_path, dirty=False, project_id=project_id) == expected
-    assert acceptance_coordinator.select_materialization(tmp_path, dirty=True, project_id=project_id) == "isolated"
+    assert acceptance_coordinator.configured_materialization(tmp_path) == expected
+    assert acceptance_coordinator.select_materialization(tmp_path, dirty=False) == expected
+    assert acceptance_coordinator.select_materialization(tmp_path, dirty=True) == "isolated"
+
+
+def test_no_project_is_isolated_without_opting_in(tmp_path: Path) -> None:
+    # A project switches only by committing basis = "isolated" after green
+    # isolated runs at its HEAD, so the switch never blocks its next deploy.
+    summitflow = tmp_path / "summitflow"
+    summitflow.mkdir()
+    assert acceptance_coordinator.configured_materialization(summitflow) == "actual"
 
 
 def test_unknown_acceptance_basis_is_refused(tmp_path: Path) -> None:
     (tmp_path / ".st-check.toml").write_text('[acceptance]\nbasis = "sometimes"\n')
     with pytest.raises(acceptance.AcceptanceError, match="basis must be"):
-        acceptance_coordinator.configured_materialization(tmp_path, "nightshift")
+        acceptance_coordinator.configured_materialization(tmp_path)
 
 
 def test_slot_waiter_recaptures_a_commit_the_checkout_moved_past(repo: Path, monkeypatch) -> None:

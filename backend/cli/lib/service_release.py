@@ -327,8 +327,8 @@ def require_forward_deploy(project_id: str, repo: Path, commit: str, *, rollback
     unknown = " (it is not in this checkout's history)" if result.returncode != 1 else ""
     raise ReleaseError(
         f"deploy_not_forward: {commit[:12]} does not contain the live release {current[:12]}{unknown}, "
-        "so deploying it would drop deployed commits; deploy a commit that contains the live release, "
-        "or pass --rollback to replace it on purpose"
+        "so deploying it would drop deployed commits; to roll back, git revert the bad commits and deploy "
+        "the new HEAD, which contains the live release"
     )
 
 

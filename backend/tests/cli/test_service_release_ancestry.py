@@ -58,7 +58,7 @@ def test_older_commit_is_refused_unless_rolling_back(history, tmp_path: Path) ->
     repo, commits = history
     state = tmp_path / "state"
     _go_live(state, commits[2])
-    with pytest.raises(service_release.ReleaseError, match=r"deploy_not_forward.*--rollback"):
+    with pytest.raises(service_release.ReleaseError, match=r"deploy_not_forward.*git revert"):
         service_release.require_forward_deploy("example", repo, commits[0], state_root=state)
     service_release.require_forward_deploy("example", repo, commits[0], state_root=state, rollback=True)
 
@@ -102,11 +102,16 @@ def test_rebuild_accepts_isolated_projects_and_dirty_checkouts_in_a_private_clon
     monkeypatch.setattr(acceptance_coordinator, "accept_source", accept_source)
     for project_id, dirty, expected in [("example", False, "actual"), ("summitflow", False, "isolated"),
                                         ("example", True, "isolated")]:
+        if project_id == "summitflow":
+            (repo / ".st-check.toml").write_text('[acceptance]\nbasis = "isolated"\n')
+            git(repo, "add", ".st-check.toml")
+            git(repo, "commit", "-qm", "opt in")
+            commits.append(git(repo, "rev-parse", "HEAD"))
         if dirty:
             (repo / "wip.py").write_text("another agent's work\n")
         project = cast(service_ops.ProjectServices, SimpleNamespace(project_id=project_id, root=repo))
         assert service_ops._acceptance_candidate(project, None) == {"materialization": expected}
-    assert chosen == [(commits[2], "actual"), (commits[2], "isolated"), (commits[2], "isolated")]
+    assert chosen == [(commits[2], "actual"), (commits[3], "isolated"), (commits[3], "isolated")]
 
 
 def test_detached_rollback_reaches_the_queued_rebuild(monkeypatch, tmp_path: Path) -> None:
@@ -117,3 +122,20 @@ def test_detached_rollback_reaches_the_queued_rebuild(monkeypatch, tmp_path: Pat
     monkeypatch.setattr(service_ops, "get_repo_root", lambda: tmp_path)
     service_ops.queue_detached("example", False, rollback=True)
     assert jobs[0]["command"] == ["st", "service", "rebuild", "--rollback", "example"]
+
+
+def test_detached_rebuild_refuses_a_backward_deploy_before_it_queues(history, monkeypatch, tmp_path: Path) -> None:
+    from contextlib import nullcontext
+
+    from cli.lib import acceptance
+
+    repo, commits = history
+    state = tmp_path / "state"
+    _go_live(state, commits[2])
+    monkeypatch.setattr(service_release, "service_state_root", lambda: state)
+    monkeypatch.setattr(service_ops, "_acceptance_candidate", lambda *_a: {"source_commit": commits[0]})
+    monkeypatch.setattr(acceptance, "repo_lock", lambda *_a, **_k: nullcontext())
+    monkeypatch.setattr(acceptance, "validate_acceptance_receipt", lambda _root, candidate: dict(candidate))
+    project = cast(service_ops.ProjectServices, SimpleNamespace(project_id="example", root=repo))
+    with pytest.raises(service_release.ReleaseError, match="deploy_not_forward"):
+        service_ops.resolve_accepted_source(project)

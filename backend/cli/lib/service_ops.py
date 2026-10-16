@@ -1119,7 +1119,7 @@ def _acceptance_candidate(
             raise acceptance.AcceptanceError("Could not inspect the checkout for local acceptance")
         # An isolated project, or any dirty checkout, accepts the exact commit
         # in a private clone: other agents' uncommitted work never blocks it.
-        materialization = select_materialization(project.root, dirty=bool(status.stdout), project_id=project.project_id)
+        materialization = select_materialization(project.root, dirty=bool(status.stdout))
         print(f"[service] accepting {sha[:12]} " + ("in an isolated clone" if materialization == "isolated" else "in place"))
         return accept_source(project.root, sha=sha, materialization=materialization).receipt
     except acceptance.AcceptanceError as exc:
@@ -1129,14 +1129,22 @@ def _acceptance_candidate(
 def resolve_accepted_source(
     project: ProjectServices,
     receipt: Path | Mapping[str, Any] | None = None,
+    *,
+    rollback: bool = False,
 ) -> dict[str, Any]:
-    """Validate a full acceptance receipt for detached deployment evidence."""
+    """Validate a full acceptance receipt for detached deployment evidence.
+
+    The forward-deploy check runs here too, so a detached rebuild refuses
+    before it queues instead of failing later inside the queued unit.
+    """
     from . import acceptance
 
     candidate = _acceptance_candidate(project, receipt)
     try:
         with acceptance.repo_lock(project.root, purpose="deployment", wait_seconds=acceptance.REPO_LOCK_WAIT_SECONDS):
             descriptor = acceptance.validate_acceptance_receipt(project.root, candidate)
+            service_release.require_forward_deploy(project.project_id, project.root,
+                                                   str(descriptor["source_commit"]), rollback=rollback)
     except Exception as exc:
         if isinstance(exc, (ServiceError, service_release.ReleaseError)):
             raise
