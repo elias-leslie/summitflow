@@ -1,12 +1,14 @@
 """SummitFlow Tasks CLI entry point."""
 
 import atexit
+from functools import cache
 from importlib import import_module
 from pathlib import Path
 from types import ModuleType
 from typing import Annotated, Any, cast
 
 import typer
+import typer.main
 from typer.core import TyperGroup
 
 from app.storage.connection import close_pool
@@ -25,9 +27,9 @@ atexit.register(close_pool)
 CLI_REFERENCE = """ST: managed-project tools for agents.
 
 Discover: search "<query>" | tools manifest --surface <surface>.
-Task work: ready | claim <id> | context <id> | pulse --gate | check | commit -m MSG | done <id>.
+Task work: ready | claim <id> | context <id> | check | commit -m MSG | done <id>.
 Task state: pause <id> | reopen <id> | cancel <id> | update <id>.
-Inspect: vcs doctor | service status | browser --help.
+Inspect: pulse | vcs doctor | service status | browser --help.
 Use `st <command> --help` for command-specific syntax. Global options precede the command; -P/--project also works after it."""
 
 SESSION_EVENTS_COMMAND = "session-events"
@@ -45,71 +47,68 @@ PROGRESS_ALIAS_MESSAGE = (
 )
 FORWARD_CONTEXT_SETTINGS = {"allow_extra_args": True, "ignore_unknown_options": True, "help_option_names": []}
 
-OPTIONAL_COMMANDS = (
-    "abandon",
-    "agent",
-    "autosnapshot",
-    "backup",
-    "checkpoints",
-    "claim",
-    "claude",
-    "cleanup",
-    "db",
-    "deps",
-    "docker",
-    "done",
-    "exec_monitor",
-    "git",
-    "health",
-    "lease",
-    "logs",
-    "monitor",
-    "projects",
-    "pulse",
-    "runtime",
-    "service",
-    "session_events",
-    "sessions",
-    "setup",
-    "snapshots",
-    "subtask",
-    "tasks",
-    "tests",
-    "tools",
-    "vcs",
-    "vm",
-)
-
-SUBCOMMAND_GROUPS = (
-    ("dep", "deps"),
-    ("test", "tests"),
-    ("subtask", "subtask"),
-    ("claude", "claude"),
-    ("sessions", "sessions"),
-    ("projects", "projects"),
-    ("git", "git"),
-    ("vcs", "vcs"),
-    ("backup", "backup"),
-    ("service", "service"),
-    ("runtime", "runtime"),
-    ("health", "health"),
-    ("logs", "logs"),
-    ("monitor", "monitor"),
-    ("agent", "agent"),
-    ("tools", "tools"),
-    ("cleanup", "cleanup"),
-    ("docker", "docker"),
-    ("setup", "setup"),
-    ("vm", "vm"),
-)
-
-FORWARDED_ROOT_COMMANDS = (
-    ("check", "check", "check"),
-    ("db", "db", "db"),
-)
-
-SNAPSHOT_COMMAND_NAMES = {"snap", "snaps", "recover", "rollback", "prune"}
-ROOT_TASK_COMMAND_NAMES = ("claim", "done", "abandon")
+# Root commands whose modules import on first use, so `st --help` and every other
+# command skip importing all command modules. name -> (module, kind, attribute,
+# help listed in root --help, hidden). Kinds: "named" registers module.app's
+# command of that name, "group" adds module.app as a group, "call" registers the
+# module attribute, "forward" passes argv through to the module attribute.
+# The help here is only the one-line root --help listing; `st <command> --help`
+# shows the module's own help.
+LAZY_COMMANDS: dict[str, tuple[str, str, str, str, bool]] = {
+    "create": ("tasks", "named", "", "Create a pending task.", False),
+    "list": ("tasks", "named", "", "List tasks with optional filters.", False),
+    "ready": ("tasks", "named", "", "List claimable tasks, or use --blocked to inspect blocked pending tasks.", False),
+    "ready-all": ("tasks", "named", "", "Cross-project summary: ready and blocked tasks across all projects.", False),
+    "context": ("tasks", "named", "", "Get task or subtask context in a single call.", False),
+    "export": ("tasks", "named", "", "Export complete task details to JSON file.", False),
+    "cancel": ("tasks", "named", "", "Cancel a task (mark as cancelled from any state).", False),
+    "pause": ("tasks", "named", "", "Pause a task and release its active claim.", False),
+    "reopen": ("tasks", "named", "", "Reopen a task (move it back to pending).", False),
+    "delete": ("tasks", "named", "", "Delete a task.", False),
+    "update": ("tasks", "named", "", "Update in-flight task fields.", False),
+    "log": ("tasks", "named", "", "Append a task log entry.", False),
+    "sync-progress": ("tasks", "named", "", "Sync subtask pass state from already-completed steps.", False),
+    "verify": ("tasks", "named", "", "Verify a plan.json file against the live schema and task-domain rules.", False),
+    "critique": ("tasks", "named", "", "Request and store a second-opinion critique for a task.", False),
+    SESSION_EVENTS_COMMAND: ("session_events", "call", "show_events", "Agent Hub session events (observability)", False),
+    "pulse": ("pulse", "call", "pulse", "Show the canonical live coordination pulse and optional preflight gate.", False),
+    "lease": ("lease", "call", "lease_command", "File-level lease for parallel-agent coordination.", False),
+    "exec-log": ("exec_monitor", "call", "exec_log_command", "View execution progress for a task.", False),
+    "check": ("check", "forward", "check", "Quality checks through st.", False),
+    "db": ("db", "forward", "db", "Database inspection and migration commands through the managed st surface.", False),
+    "claim": ("claim", "named", "", "Claim a task or subtask to start work.", False),
+    "snap": ("snapshots", "named", "", "Capture a Btrfs snapshot for the current project scope.", False),
+    "snaps": ("snapshots", "named", "", "List snapshots for the current project scope.", False),
+    "recover": ("snapshots", "named", "", "Inspect a read-only side copy or preview/apply selected owned files.", False),
+    "rollback": ("snapshots", "named", "", "Destructively restore the current project root to a recorded snapshot.", False),
+    "prune": ("snapshots", "named", "", "Remove old auto snapshots per retention policy.", False),
+    "done": ("done", "named", "", "Complete a task or subtask.", False),
+    "abandon": ("abandon", "named", "", "Abandon a task or subtask and roll back tracked code changes.", False),
+    "task": ("tasks", "group", "", "Task management commands", True),
+    "dep": ("deps", "group", "", "Dependency management commands", False),
+    "test": ("tests", "group", "", "Test management commands", False),
+    "subtask": ("subtask", "group", "", "Subtask management commands", False),
+    "claude": ("claude", "group", "", "Claude Code worker dispatch", False),
+    "sessions": ("sessions", "group", "", "Agent session management.", False),
+    "projects": ("projects", "group", "", "Project management commands", False),
+    "git": ("git", "group", "", "Low-level Git inspection and residue repair.", False),
+    "vcs": ("vcs", "group", "", "Canonical VCS hygiene and exact-source publication.", False),
+    "backup": ("backup", "group", "", "Backup management commands", False),
+    "service": ("service", "group", "", "Project service lifecycle through st.", False),
+    "runtime": ("runtime", "group", "", "Runtime observability.", False),
+    "health": ("health", "group", "", "Quality gate health and status", False),
+    "logs": ("logs", "group", "", "View and tail service logs", False),
+    "monitor": ("monitor", "group", "", "System and project troubleshooting: bounded JSON with coverage, freshness, and cursors.", False),
+    "agent": ("agent", "group", "", "Run Agent Hub agents with tools", False),
+    "tools": ("tools", "group", "", "Operator tool catalog and Agent Hub usage metrics", False),
+    "cleanup": ("cleanup", "group", "", "Clean up git/checkpoint residue plus managed workspace leftovers.", False),
+    "docker": ("docker", "group", "", "Docker container management for the SummitFlow ecosystem.", False),
+    "setup": ("setup", "group", "", "Host, service, tooling, and test database setup through st.", False),
+    "vm": ("vm", "group", "", "Proxmox VM lifecycle through st.", False),
+    "checkpoints": ("checkpoints", "group", "", "Checkpoint management - show active checkpoints, cleanup stale artifacts", False),
+    "autosnap": ("autosnapshot", "group", "", "Internal autosnapshot commands (systemd timer / hooks)", True),
+}
+_LISTING = "st.listing"
 
 
 class _FailedCommandModule:
@@ -142,37 +141,59 @@ def _load_command_module(command: str, *, required: bool = False) -> ModuleType 
         return _FailedCommandModule(command, exc)
 
 
-def _load_optional_commands() -> dict[str, ModuleType | _FailedCommandModule]:
-    return {name: _load_command_module(name) for name in OPTIONAL_COMMANDS}
+def _register_lazy(target: typer.Typer, name: str) -> None:
+    """Register the real command for one LAZY_COMMANDS entry on ``target``."""
+    module_name, kind, attribute, help_text, hidden = LAZY_COMMANDS[name]
+    module = _load_command_module(module_name, required=module_name == "check")
+    if kind == "group":
+        target.add_typer(module.app, name=name, hidden=hidden)
+    elif kind == "call":
+        target.command(name, help=help_text if name == SESSION_EVENTS_COMMAND else None)(getattr(module, attribute))
+    elif kind == "forward":
+        target.command(
+            name, context_settings=FORWARD_CONTEXT_SETTINGS, help=module.app.info.help, add_help_option=False,
+        )(getattr(module, attribute))
+    else:
+        for cmd in module.app.registered_commands:
+            if cmd.callback is not None and (cmd.name or typer.main.get_command_name(getattr(cmd.callback, "__name__", ""))) == name:
+                target.command(
+                    name=name, hidden=cmd.hidden, help=cmd.help, short_help=cmd.short_help, epilog=cmd.epilog,
+                    context_settings=cmd.context_settings or {},
+                )(cmd.callback)
+                return
+        if not isinstance(module, _FailedCommandModule):
+            raise LookupError(f"{module_name} defines no command {name!r}")
+        target.command(name, help=module.app.info.help)(module.unavailable)
 
 
-_COMMANDS = _load_optional_commands()
-_COMMANDS["check"] = _load_command_module("check", required=True)
+@cache
+def _lazy_command(name: str) -> Any:
+    target = typer.Typer(rich_markup_mode=None)
+    _register_lazy(target, name)
+    group = typer.main.get_group(target)
+    return group.commands[name]
 
 
-def _register_root_task_commands() -> None:
-    for cmd in _COMMANDS["tasks"].app.registered_commands:
-        if cmd.callback is not None:
-            app.command(
-                name=cmd.name, hidden=cmd.hidden,
-                help=cmd.help, short_help=cmd.short_help, epilog=cmd.epilog,
-            )(cmd.callback)
+def _lazy_placeholder() -> None:  # pragma: no cover - _RootGroup resolves the real command
+    raise RuntimeError("lazy st command placeholder invoked")
 
 
-def _register_subcommand_groups() -> None:
-    for command_name, module_name in SUBCOMMAND_GROUPS:
-        app.add_typer(_COMMANDS[module_name].app, name=command_name)
-
-
-def _register_forwarded_root_commands() -> None:
-    for command_name, module_name, callback_name in FORWARDED_ROOT_COMMANDS:
-        module = _COMMANDS[module_name]
+def _register_lazy_placeholders() -> None:
+    """List lazy commands (and reserve their names from extensions) without importing them."""
+    for name, (_module, _kind, _attribute, help_text, hidden) in LAZY_COMMANDS.items():
         app.command(
-            command_name,
-            context_settings=FORWARD_CONTEXT_SETTINGS,
-            help=module.app.info.help,
-            add_help_option=False,
-        )(getattr(module, callback_name))
+            name, help=help_text, hidden=hidden, add_help_option=False, context_settings=FORWARD_CONTEXT_SETTINGS,
+        )(_lazy_placeholder)
+
+
+def _materialize_lazy_commands() -> None:
+    """Replace the placeholders with the real commands; st_sdk.usage calls this before walking."""
+    if getattr(app, "_st_materialized", False):
+        return
+    cast(Any, app)._st_materialized = True
+    app.registered_commands[:] = [cmd for cmd in app.registered_commands if cmd.callback is not _lazy_placeholder]
+    for name in LAZY_COMMANDS:
+        _register_lazy(app, name)
 
 
 def _event_detail_parts(result: dict[str, object]) -> list[str]:
@@ -247,23 +268,6 @@ def _emit_commit_output(ctx: typer.Context, result: dict[str, object]) -> None:
     from .output import output_json
 
     output_json(result)
-
-
-def _register_named_command(command_group: typer.Typer, command_name: str) -> None:
-    for cmd in command_group.registered_commands:
-        if cmd.callback is not None and cmd.name == command_name:
-            app.command(
-                name=command_name, help=cmd.help, short_help=cmd.short_help, epilog=cmd.epilog,
-            )(cmd.callback)
-
-
-def _register_snapshot_commands() -> None:
-    for cmd in _COMMANDS["snapshots"].app.registered_commands:
-        if cmd.callback is not None and cmd.name in SNAPSHOT_COMMAND_NAMES:
-            app.command(
-                name=cmd.name, context_settings=cmd.context_settings or {},
-                help=cmd.help, short_help=cmd.short_help, epilog=cmd.epilog,
-            )(cmd.callback)
 
 
 def _apply_output_context(ctx: typer.Context, *, human: bool, compact: bool, progress_only: bool) -> None:
@@ -341,6 +345,19 @@ class _RootGroup(TyperGroup):
     def parse_args(self, ctx: Any, args: list[str]) -> list[str]:  # Typer vendors Click's Context
         return super().parse_args(ctx, hoist_global_project(self, ctx, list(args)))
 
+    def get_command(self, ctx: Any, cmd_name: str) -> Any:
+        if cmd_name in LAZY_COMMANDS and not ctx.meta.get(_LISTING):
+            return _lazy_command(cmd_name)
+        return super().get_command(ctx, cmd_name)
+
+    def format_commands(self, ctx: Any, formatter: Any) -> None:
+        # Root help lists the placeholders' help instead of importing every command module.
+        ctx.meta[_LISTING] = True
+        try:
+            super().format_commands(ctx, formatter)
+        finally:
+            ctx.meta.pop(_LISTING, None)
+
 
 app = typer.Typer(
     name="st",
@@ -350,20 +367,8 @@ app = typer.Typer(
     rich_markup_mode=None,
 )
 
-# Register task commands at root level
-_register_root_task_commands()
-
-# Also register task as a subcommand group for `st task verify` / `st task import`
-app.add_typer(_COMMANDS["tasks"].app, name="task", hidden=True)
-
-# Register the native command groups in root help.
-_register_subcommand_groups()
-app.command(SESSION_EVENTS_COMMAND, help="Agent Hub session events (observability)")(
-    _COMMANDS["session_events"].show_events
-)
-app.command("pulse")(_COMMANDS["pulse"].pulse)
-app.command("lease")(_COMMANDS["lease"].lease_command)
-app.command("exec-log")(_COMMANDS["exec_monitor"].exec_log_command)
+_register_lazy_placeholders()
+cast(Any, app).st_materialize = _materialize_lazy_commands
 
 
 @app.command("commit", context_settings={"allow_extra_args": True})
@@ -437,9 +442,6 @@ def commit_command(
         raise typer.Exit(2)
 
 
-_register_forwarded_root_commands()
-
-
 @app.command(PROGRESS_COMMAND, hidden=True)
 def progress_alias(
     task_id: Annotated[str | None, typer.Argument(help="Task ID")] = None,
@@ -447,18 +449,6 @@ def progress_alias(
     """Alias hint: use 'st sync-progress' or 'st done <subtask-id> -t <task-id>' instead."""
     typer.echo(PROGRESS_ALIAS_MESSAGE, err=True)
     raise typer.Exit(1)
-
-
-# Register checkpoint-aware commands (override old claim from tasks.py)
-# These are defined with @app.command() in their modules, so access via module.app
-_register_named_command(_COMMANDS["claim"].app, "claim")
-app.add_typer(_COMMANDS["checkpoints"].app, name="checkpoints")
-_register_snapshot_commands()
-app.add_typer(_COMMANDS["autosnapshot"].app, name="autosnap", hidden=True)
-for command_name in ROOT_TASK_COMMAND_NAMES:
-    if command_name == "claim":
-        continue
-    _register_named_command(_COMMANDS[command_name].app, command_name)
 
 
 @app.callback()

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import pytest
+import typer
 from typer.core import TyperGroup
 from typer.main import get_command
 from typer.testing import CliRunner
@@ -18,8 +19,9 @@ runner = CliRunner()
 class TestCLIReferenceCompact:
     def test_cli_reference_is_short_and_agent_focused(self) -> None:
         assert len(CLI_REFERENCE) < 500
-        for text in ("pulse --gate", "pause <id>", "vcs doctor", "check", "browser"):
+        for text in ("pulse", "pause <id>", "vcs doctor", "check", "browser"):
             assert text in CLI_REFERENCE
+        assert "pulse --gate" not in CLI_REFERENCE
 
     def test_root_help_is_bounded(self) -> None:
         result = runner.invoke(app, ["--help"])
@@ -41,8 +43,10 @@ class TestCLIReferenceCompact:
     def test_root_task_help_preserves_owner_description(self, name: str) -> None:
         root = get_command(app)
         assert isinstance(root, TyperGroup)
-        command = root.commands[name]
-        task_group = root.commands["task"]
+        ctx = typer.Context(root)
+        command = root.get_command(ctx, name)
+        task_group = root.get_command(ctx, "task")
+        assert command is not None
         assert isinstance(task_group, TyperGroup)
         owner = task_group.commands[name]
 

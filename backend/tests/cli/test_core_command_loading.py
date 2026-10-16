@@ -12,7 +12,7 @@ runner = CliRunner()
 
 @pytest.mark.parametrize("module_name", ["claim", "done", "tasks", "pulse"])
 def test_core_command_modules_import(module_name: str) -> None:
-    assert not isinstance(cli_main._COMMANDS[module_name], cli_main._FailedCommandModule)
+    assert not isinstance(cli_main._load_command_module(module_name), cli_main._FailedCommandModule)
 
 
 @pytest.mark.parametrize("command", ["claim", "done", "create", "commit", "context", "critique", "pulse"])
