@@ -197,6 +197,28 @@ def test_step_level_working_directory_and_shell_database_setup(tmp_path: Path) -
     assert job.setup[0][:3] == ["/usr/bin/env", "PGPASSWORD=test", "bash"] and "createdb" in job.setup[0][-1]
 
 
+def test_ci_that_only_runs_the_st_gate_still_supplies_its_env_and_services(tmp_path: Path,
+                                                                          capsys: pytest.CaptureFixture[str]) -> None:
+    # neri: one job runs `"$ST_CANONICAL_BIN" check --check` against a postgres service.
+    root = tmp_path / "p"
+    (root / ".github" / "workflows").mkdir(parents=True)
+    (root / ".github" / "workflows" / "ci.yml").write_text(
+        "on: [push]\nenv: {NERI_DB_URL: 'postgresql://app:x@127.0.0.1:5432/app_test'}\njobs:\n  quality:\n"
+        "    services:\n      postgres: {image: postgres:16}\n    steps:\n"
+        "      - run: '\"$ST_CANONICAL_BIN\" check actionlint'\n"
+        "      - run: '\"$ST_CANONICAL_BIN\" check --check'\n")
+    job = ci_parity.pytest_job(root, root / "backend")
+    assert job is not None and job.gate and not job.tests
+    assert job.env == {"NERI_DB_URL": "postgresql://app:x@127.0.0.1:5432/app_test"} and list(job.services) == ["postgres"]
+    calls: list[list[str]] = []
+    work = Mock(run=lambda argv, **_: calls.append(argv) or subprocess.CompletedProcess(argv, 0, "ok", ""))
+    assert check._run_parity_pytest(work, root / "backend", ["pytest", "-q"], [], job, {}, None, ["postgres"]).returncode == 0
+    assert [argv[:2] for argv in calls] == [["pytest", "-q"]]
+    assert "job:ci.yml:quality" in capsys.readouterr().out
+    (root / ".github" / "workflows" / "ci.yml").write_text(WORKFLOW)
+    assert ci_parity.pytest_job(root, root / "backend") is None  # a pytest job elsewhere, no gate job
+
+
 def test_lookup_path_uses_the_account_home_not_a_redirected_home(monkeypatch: pytest.MonkeyPatch) -> None:
     import pwd
 

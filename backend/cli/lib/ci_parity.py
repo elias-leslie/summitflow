@@ -53,6 +53,7 @@ _UV_RUN_FLAGS = {"--locked", "--frozen", "--no-sync", "--all-extras", "--dev", "
 _UV_RUN_VALUE_FLAGS = {"--extra", "--group", "--with", "--python", "-p", "--package", "--project", "--directory"}
 _SERVICE_PORTS = {"postgres": 5432}
 _EXPRESSION = re.compile(r"\$\{\{\s*([^}]*?)\s*\}\}")
+_GATE = re.compile(r"\bcheck\s+--check\b")
 
 
 class CiParityError(RuntimeError):
@@ -69,6 +70,7 @@ class CiJob:
     setup: list[list[str]]
     tests: list[list[str]]
     tools: set[str] = field(default_factory=set)
+    gate: bool = False  # a run step is the st gate (`st check --check`), which runs pytest itself
 
 
 def canonical_tool_path(home: Path | None = None) -> str:
@@ -204,6 +206,7 @@ def load_jobs(root: Path) -> list[CiJob]:
             tools = set(_RUNNER_IMAGE_TOOLS)
             setup: list[list[str]] = []
             tests: list[list[str]] = []
+            gate = False
             for step in job["steps"]:
                 if not isinstance(step, dict):
                     continue
@@ -212,6 +215,7 @@ def load_jobs(root: Path) -> list[CiJob]:
                 command = step.get("run")
                 if not isinstance(command, str):
                     continue
+                gate = gate or bool(_GATE.search(command))
                 step_dir = root / str(step.get("working-directory") or working)
                 argv = translate(command.strip(), root, step_dir) if "\n" not in command.strip() else None
                 if argv is None:
@@ -227,16 +231,21 @@ def load_jobs(root: Path) -> list[CiJob]:
                     tests.append(argv)
                 elif _is_setup(step, command) and not tests:
                     setup.append(argv)
-            jobs.append(CiJob(path.name, str(job_name), working, env, services, setup, tests, tools))
+            jobs.append(CiJob(path.name, str(job_name), working, env, services, setup, tests, tools, gate))
     return jobs
 
 
 def pytest_job(root: Path, workdir: Path) -> CiJob | None:
-    """The CI job that tests the same directory the local pytest gate runs in."""
-    for job in load_jobs(root):
+    """The CI job that tests the same directory the local pytest gate runs in.
+
+    CI that only calls the st gate runs pytest inside it, so that job's env
+    and services still apply; it has no tests of its own to mirror.
+    """
+    jobs = load_jobs(root)
+    for job in jobs:
         if job.tests and (root / job.working_directory).resolve() == workdir.resolve():
             return job
-    return None
+    return next((job for job in jobs if job.gate and not job.tests), None)
 
 
 def has_ci(root: Path) -> bool:

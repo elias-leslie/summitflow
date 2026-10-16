@@ -229,8 +229,8 @@ def _run_parity_pytest(work: HeavyWork, cwd: Path, command: list[str], extra_arg
                        service_names: list[str]) -> subprocess.CompletedProcess[str]:
     """Run the CI job's own pytest invocation(s), with its migration steps first."""
     seed = ci_parity.seed()
-    if job is None:
-        commands, setup = [ci_parity.seeded(command, seed)], []
+    if job is None or not job.tests:
+        commands, setup = [ci_parity.seeded(command, seed)], job.setup if job else []
     else:
         tests = [[*job.tests[0], *extra_args]] if extra_args else [list(argv) for argv in job.tests]
         commands, setup = [ci_parity.seeded(argv, seed) for argv in tests], job.setup
