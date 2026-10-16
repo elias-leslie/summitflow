@@ -85,7 +85,13 @@ def snap_command(
 
 
 @app.command("snaps")
-def snaps_command(ctx: typer.Context) -> None:
+def snaps_command(
+    ctx: typer.Context,
+    measure_usage: Annotated[
+        bool,
+        typer.Option("--usage", help="Also measure disk usage per snapshot (runs btrfs du; slow)"),
+    ] = False,
+) -> None:
     """List snapshots for the current project scope."""
     config = get_config()
     try:
@@ -94,43 +100,46 @@ def snaps_command(ctx: typer.Context) -> None:
         typer.echo(f"Error: {exc}", err=True)
         raise typer.Exit(1) from None
 
-    usage_by_id = {snapshot.id: get_snapshot_usage(snapshot) for snapshot in snapshots}
+    usage_by_id = (
+        {snapshot.id: get_snapshot_usage(snapshot) for snapshot in snapshots} if measure_usage else {}
+    )
     if ctx.obj.is_compact:
-        complete_usage = all(usage is not None for usage in usage_by_id.values())
-        total_bytes = sum(usage.total_bytes for usage in usage_by_id.values() if usage is not None) if complete_usage else None
-        exclusive_bytes = sum(
-            usage.exclusive_bytes for usage in usage_by_id.values() if usage is not None
-        ) if complete_usage else None
-        shared_bytes = sum(usage.shared_bytes for usage in usage_by_id.values() if usage is not None) if complete_usage else None
-        print(
-            f"SNAPS[{len(snapshots)}]|total:{_format_bytes(total_bytes)}|"
-            f"exclusive:{_format_bytes(exclusive_bytes)}|shared:{_format_bytes(shared_bytes)}"
-        )
+        header = f"SNAPS[{len(snapshots)}]"
+        if measure_usage:
+            measured = list(usage_by_id.values())
+            complete = all(usage is not None for usage in measured)
+
+            def _total(field: str) -> str:
+                return _format_bytes(sum(getattr(usage, field) for usage in measured) if complete else None)
+
+            header += f"|total:{_total('total_bytes')}|exclusive:{_total('exclusive_bytes')}|shared:{_total('shared_bytes')}"
+        print(header)
         for index, snapshot in enumerate(snapshots, start=1):
-            usage = usage_by_id.get(snapshot.id)
-            print(
+            line = (
                 f"SNAP {index}|{snapshot.id}|name:{_compact_name(snapshot.name)}|"
                 f"scope:{_compact_scope(snapshot.scope_type, snapshot.scope_name)}|"
                 f"created:{snapshot.created_at}|backend:{snapshot.backend}|"
                 f"source:{snapshot.source}|"
                 f"restored:{snapshot.last_restored_at or '-'}|"
-                f"recovered:{snapshot.last_recovered_at or '-'}|"
-                f"total:{_format_bytes(usage.total_bytes if usage else None)}|"
-                f"exclusive:{_format_bytes(usage.exclusive_bytes if usage else None)}|"
-                f"shared:{_format_bytes(usage.shared_bytes if usage else None)}"
+                f"recovered:{snapshot.last_recovered_at or '-'}"
             )
+            if measure_usage:
+                usage = usage_by_id.get(snapshot.id)
+                line += (
+                    f"|total:{_format_bytes(usage.total_bytes if usage else None)}"
+                    f"|exclusive:{_format_bytes(usage.exclusive_bytes if usage else None)}"
+                    f"|shared:{_format_bytes(usage.shared_bytes if usage else None)}"
+                )
+            print(line)
         return
-    output_json({
-        "snapshots": [
-            {
-                **snapshot.to_dict(),
-                "usage": usage.to_dict() if usage is not None else None,
-            }
-            for snapshot in snapshots
-            for usage in [usage_by_id[snapshot.id]]
-        ],
-        "total": len(snapshots),
-    })
+    rows = []
+    for snapshot in snapshots:
+        row = snapshot.to_dict()
+        if measure_usage:
+            usage = usage_by_id.get(snapshot.id)
+            row["usage"] = usage.to_dict() if usage is not None else None
+        rows.append(row)
+    output_json({"snapshots": rows, "total": len(snapshots)})
 
 
 @app.command(

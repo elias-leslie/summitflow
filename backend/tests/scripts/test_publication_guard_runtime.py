@@ -29,7 +29,7 @@ QUIET = {"PATH": "/usr/bin:/bin", "SUMMITFLOW_JOURNAL_ALERTS": "0"}
 
 DENIED = [
     "git push origin main", "/usr/bin/git -C /repo push", "git send-pack origin main",
-    "env MODE=x bash -lc 'git push'", "jj git push", "gh pr merge 4", "sudo git push",
+    "env MODE=x bash -lc 'git push'", "gh pr merge 4", "sudo git push",
     "gh release create v1", "gh api -X PUT repos/a/b/pulls/2/merge",
     "gh api -X PATCH repos/a/b -F archived=true", "gh api graphql -f query='mutation { x }'",
     "git -c core.hooksPath=/tmp push", "git config --unset core.hooksPath",

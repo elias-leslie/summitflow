@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import os
 from typing import Annotated, Any, cast
 
 import httpx
@@ -121,15 +120,10 @@ def _rough_tokens(text: str) -> int:
 
 
 def _build_internal_headers() -> dict[str, str]:
-    """Build env-backed internal headers for read-only Agent Hub admin surfaces."""
-    secret = os.getenv("INTERNAL_SERVICE_SECRET", "").strip()
-    if not secret:
-        output_error(
-            "INTERNAL_SERVICE_SECRET is not configured. "
-            "st tools requires the shared internal Agent Hub auth header."
-        )
-        raise typer.Exit(1) from None
-    return {"X-Agent-Hub-Internal": secret}
+    """Internal headers for read-only Agent Hub admin surfaces (secret from env or ~/.env.local)."""
+    from st_sdk.credentials import load_internal_service_secret
+
+    return {"X-Agent-Hub-Internal": load_internal_service_secret()}
 
 
 def _handle_response(response: httpx.Response, agent_hub_url: str) -> dict[str, Any]:
@@ -763,7 +757,8 @@ def _fetch_cost_metrics(hours: int, limit: int, task: str | None = DEFAULT_COST_
         psycopg.connect(
             _db_url("agent-hub"),
             application_name="st-tools-cost",
-            options="-c default_transaction_read_only=on -c statement_timeout=10000",
+            # The all-result diagnostics scan takes about 12 s over a day of session events.
+            options="-c default_transaction_read_only=on -c statement_timeout=60000",
         ) as conn,
     ):
         request_rows = conn.execute(request_sql, (hours, session, session, limit)).fetchall()

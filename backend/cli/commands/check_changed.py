@@ -8,8 +8,6 @@ import shlex
 import subprocess
 from pathlib import Path
 
-from ..config import get_config_optional
-from ..lib import leases
 from .check_constants import _TOOL_CONFIG_PATHS, _TOOL_FILE_SUFFIXES
 
 
@@ -107,34 +105,6 @@ def _focused_pytest_paths(root: Path, changed_files: list[str]) -> list[str] | N
     return sorted(path.relative_to(root).as_posix() for path in selected)
 
 
-def _lease_scope_enabled() -> bool:
-    return os.environ.get("ST_CHECK_LEASE_SCOPE", "").strip().lower() in {"1", "true", "yes", "on"}
-
-
-def _scope_to_leases(root: Path, changed: list[str]) -> list[str]:
-    """Restrict changed files to paths the current agent has leased.
-
-    In a shared checkout, parallel agents see each other's uncommitted churn via
-    git, so one agent's `--changed-only` run fails on another agent's in-flight
-    edits. With ST_CHECK_LEASE_SCOPE set, a scoped check considers only files the
-    current agent leased. If the agent holds no leases, behaviour is unchanged
-    (the full changed set) so this never silently narrows an unscoped run.
-    """
-    cfg = get_config_optional()
-    pid = getattr(cfg, "project_id", "") if cfg else ""
-    if not pid:
-        return changed
-    agent_id = leases.identify_agent()[0]
-    mine = [lease for lease in leases.list_active(pid) if lease.agent_id == agent_id]
-    if not mine:
-        return changed
-    return [
-        rel
-        for rel in changed
-        if any(lease.matches(str((root / rel).resolve())) for lease in mine)
-    ]
-
-
 def _changed_files(root: Path) -> list[str]:
     override = os.environ.get("ST_CHECK_CHANGED_FILES", "").strip()
     if override:
@@ -161,10 +131,7 @@ def _changed_files(root: Path) -> list[str]:
         )
         if result.returncode == 0:
             files.update(line.strip() for line in result.stdout.splitlines() if line.strip())
-    changed = sorted(files)
-    if _lease_scope_enabled():
-        changed = _scope_to_leases(root, changed)
-    return changed
+    return sorted(files)
 
 
 def _changed_args(

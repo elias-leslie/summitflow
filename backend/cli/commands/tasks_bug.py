@@ -17,7 +17,7 @@ _BUG_DONE_WHEN = [
 _BUG_SUBTASK_STEPS: list[str | dict[str, Any]] = [
     "Confirm reproduction or recorded failure evidence.",
     "Implement the smallest root-cause fix.",
-    "Verify the original symptom and run st check --quick --changed-only.",
+    "Verify the original symptom no longer reproduces (st commit runs the quick checks).",
 ]
 
 

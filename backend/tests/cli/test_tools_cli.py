@@ -170,20 +170,31 @@ def _json_response(payload: dict[str, object]) -> httpx.Response:
 
 
 def test_build_internal_headers_reads_env_secret() -> None:
-    with patch.dict("cli.commands.tools.os.environ", {"INTERNAL_SERVICE_SECRET": "secret-123"}, clear=True):
+    with patch.dict("os.environ", {"INTERNAL_SERVICE_SECRET": "secret-123"}, clear=True):
         assert _build_internal_headers() == {"X-Agent-Hub-Internal": "secret-123"}
 
 
+def test_build_internal_headers_falls_back_to_env_local() -> None:
+    with (
+        patch.dict("os.environ", {}, clear=True),
+        patch("st_sdk.credentials._read_env_local", return_value={"INTERNAL_SERVICE_SECRET": "local-456"}),
+    ):
+        assert _build_internal_headers() == {"X-Agent-Hub-Internal": "local-456"}
+
+
 def test_tools_status_requires_internal_secret() -> None:
-    with patch.dict("cli.commands.tools.os.environ", {}, clear=True):
+    with (
+        patch.dict("os.environ", {}, clear=True),
+        patch("st_sdk.credentials._read_env_local", return_value={}),
+    ):
         result = runner.invoke(app, ["status"])
 
     assert result.exit_code == 1
-    assert "INTERNAL_SERVICE_SECRET is not configured." in result.output
+    assert "Missing INTERNAL_SERVICE_SECRET" in result.output
 
 
 def test_tools_default_shows_operator_catalog_without_internal_secret() -> None:
-    with patch.dict("cli.commands.tools.os.environ", {}, clear=True):
+    with patch.dict("os.environ", {}, clear=True):
         result = runner.invoke(app, [])
 
     assert result.exit_code == 0
@@ -216,7 +227,7 @@ def test_api_request_uses_env_backed_internal_header() -> None:
     )
 
     with (
-        patch.dict("cli.commands.tools.os.environ", {"INTERNAL_SERVICE_SECRET": "secret-123"}, clear=True),
+        patch.dict("os.environ", {"INTERNAL_SERVICE_SECRET": "secret-123"}, clear=True),
         patch("cli.commands.tools.get_agent_hub_url", return_value="http://agent-hub.test"),
         patch("cli.commands.tools.httpx.Client", return_value=dummy_client),
     ):
