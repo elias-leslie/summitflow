@@ -25,9 +25,13 @@ def test_local_renewal_rejects_remote_api_before_touching_store(
 def test_local_renewal_requires_matching_checkout_and_project(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
+    from app.storage import projects
+
     other = tmp_path / "other"
     other.mkdir()
     monkeypatch.setattr(task_claims, "get_config_optional", lambda: config(other))
+    # tmp_path is no registered project root, so the cross-checkout fallback refuses too.
+    monkeypatch.setattr(projects, "find_project_by_cwd", lambda _cwd: None)
 
     with pytest.raises(task_claims.TaskClaimRenewalError, match="does not match"):
         task_claims.renew_local_owned_claim(tmp_path, "task-one")
