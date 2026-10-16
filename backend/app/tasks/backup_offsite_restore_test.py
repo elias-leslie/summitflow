@@ -5,7 +5,9 @@ Drive repository into private restore scratch: one small file source and one
 project database source. A sampled set of restored files is compared by SHA-256
 against the same files restored from the independent local repository, and a
 database dump is loaded into a disposable PostgreSQL container whose per-table
-row counts must match the dump's own COPY counts. Results are recorded as drill
+row counts must match the dump's own COPY counts. A project with Git is rebuilt
+from its restored bundle into scratch, and HEAD and its commit count must match
+the capture. Results are recorded as drill
 evidence on the source and as ``isolated_restore`` on the backup. Infrastructure
 and critical configuration restores stay with the weekly critical restore.
 """
@@ -31,6 +33,7 @@ from ..storage import backups as backup_store
 from ..storage.notifications import create_notification
 from ..utils.transient_scratch import ensure_scratch_capacity, restore_scratch, tree_bytes
 from .backup_activity import BackupCancelled, run_bulk_process
+from .backup_native_recovery import drill_git_history
 
 logger = get_logger(__name__)
 
@@ -263,7 +266,8 @@ def restore_test_point(source: Mapping[str, Any], point: Mapping[str, Any]) -> d
     _assert_repository_identity(adapter, verification)
     started = time.monotonic()
     known = _known_restore_bytes(point)
-    with restore_scratch("st-monthly-restore-", required_bytes=2 * known) as scratch:
+    # Remote payload, local sample, and a repository rebuilt from its bundle.
+    with restore_scratch("st-monthly-restore-", required_bytes=3 * known) as scratch:
         remote_target = scratch / "remote"
         local_target = scratch / "local"
         for target in (remote_target, local_target):
@@ -291,6 +295,10 @@ def restore_test_point(source: Mapping[str, Any], point: Mapping[str, Any]) -> d
                 raise RuntimeError("Captured database dump is missing from the restored payload")
             evidence["database"] = verify_database_dump(dump, scratch)
             evidence["ok"] = evidence["ok"] and evidence["database"]["ok"]
+        git_drill = scratch / "git"
+        git_drill.mkdir(mode=0o700)
+        evidence["git_history"] = drill_git_history(payload, git_drill)
+        evidence["ok"] = evidence["ok"] and evidence["git_history"]["ok"]
     evidence["duration_ms"] = int((time.monotonic() - started) * 1000)
     return evidence
 

@@ -518,6 +518,29 @@ def test_wallclock_retention_pins_pending_minimum_three_and_last_good():
     assert engine.select_retention(snapshots[-3:], {"fixture": 7}, now=now)["delete"] == []
 
 
+def test_retention_keeps_each_sources_newest_full_history_capture():
+    now = datetime(2026, 10, 16, tzinfo=UTC)
+    full = [engine.FULL_HISTORY_TAG]
+
+    def point(number: int, source: str, age: int, extra: list[str] | None = None) -> RetentionSnapshot:
+        return {"id": f"{number:064x}", "tags": [f"source:{source}", *(extra or [])], "time": (now - timedelta(days=age)).isoformat()}
+
+    snapshots = [point(1, "a", 0), point(2, "a", 1), point(3, "a", 2), point(4, "a", 9, full), point(5, "a", 16, full), point(6, "a", 20), point(7, "b", 0), point(8, "b", 1), point(9, "b", 2), point(10, "b", 30)]
+    selected = engine.select_retention(snapshots, {"a": 7, "b": 7}, now=now)
+    # Only a's newest tagged full outlives the window; an older full and an untagged b point expire.
+    assert selected["reasons"][snapshots[3]["id"]] == ["newest-full-history"]
+    assert selected["delete"] == sorted([snapshots[4]["id"], snapshots[5]["id"], snapshots[9]["id"]])
+
+
+def test_save_payload_adds_plain_extra_tags_and_rejects_source_tags(setup):
+    adapter, process, payload = _adapter(setup)
+    adapter.save_payload("fixture", payload, tags=(engine.FULL_HISTORY_TAG,))
+    backup = next(command for command in process.commands if command[0] == "restic" and "backup" in command)
+    assert backup[backup.index("backup") + 1:backup.index("backup") + 5] == ["--tag", "source:fixture", "--tag", engine.FULL_HISTORY_TAG]
+    with pytest.raises(engine.ResticError, match="must not name a source"):
+        adapter.save_payload("fixture", payload, tags=("source:other",))
+
+
 def test_retention_protects_unmanaged_and_invalid_timestamps():
     snapshots = [{"id": "a" * 64, "time": "bad", "tags": ["source:fixture"]}, {"id": "b" * 64, "time": "2000-01-01T00:00:00Z"}]
     assert engine.select_retention(snapshots, {"fixture": 7})["delete"] == []

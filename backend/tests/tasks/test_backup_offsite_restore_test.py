@@ -120,3 +120,49 @@ def test_failures_record_evidence_alert_once_and_retry_before_cadence(monkeypatc
     assert monthly.run_monthly_offsite_restore_test()["status"] == "verified" and drills[-1]["ok"] is True
     assert monthly.run_monthly_offsite_restore_test()["status"] == "skipped"
     assert monthly.run_monthly_offsite_restore_test(force=True)["status"] == "verified"
+
+
+def test_restore_test_point_rebuilds_the_captured_repository_from_its_bundle(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    import shutil
+    import subprocess
+    from contextlib import contextmanager
+
+    from app.tasks import backup_native_archive as archive
+    from app.tasks import backup_native_recovery as recovery
+    from app.tasks import backup_repository_runtime as runtime
+    from app.tasks import backup_restic
+
+    project = tmp_path / "project"
+    project.mkdir()
+    for command in (("init", "-b", "main"), ("config", "user.name", "Fixture"), ("config", "user.email", "fixture@example.invalid")):
+        subprocess.run(["git", "-C", str(project), *command], check=True, capture_output=True)
+    for value in ("one", "two"):
+        (project / "work.txt").write_text(value)
+        subprocess.run(["git", "-C", str(project), "add", "work.txt"], check=True, capture_output=True)
+        subprocess.run(["git", "-C", str(project), "commit", "-qm", value], check=True, capture_output=True)
+    snapshot, _ = recovery.build_consistent_snapshot(project, tmp_path / "stage", (".git",), archive._should_exclude, git_history_mode="full")
+
+    class Adapter:
+        def __init__(self, _config):
+            pass
+
+        def restore(self, _snapshot_id, target, **_options):
+            shutil.copytree(snapshot, target / "payload")
+            return {"payload_root": str(target / "payload")}
+
+    @contextmanager
+    def scratch_dir(_prefix, **_options):
+        path = tmp_path / "scratch"
+        path.mkdir()
+        yield path
+
+    monkeypatch.setattr(backup_restic, "ResticAdapter", Adapter)
+    monkeypatch.setattr(backup_restic.ResticConfig, "from_env", staticmethod(lambda _env: object()))
+    for name in ("_approved_key_directory", "_assert_repository_identity"):
+        monkeypatch.setattr(runtime, name, lambda *_args, **_kwargs: None)
+    monkeypatch.setattr(runtime, "_backup_environment", lambda _point: {})
+    monkeypatch.setattr(runtime, "_known_restore_bytes", lambda _point: 1024)
+    monkeypatch.setattr(monthly, "restore_scratch", scratch_dir)
+    evidence = monthly.restore_test_point({"id": "project"}, _point("backup", has_db=False))
+    assert evidence["ok"] is True
+    assert evidence["git_history"]["source"] == "full" and evidence["git_history"]["commit_count"] == 2

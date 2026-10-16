@@ -40,10 +40,22 @@ release exports were moved to a recoverable quarantine outside project roots;
 the private cleanup receipt records their exact recovery paths.
 
 Git recovery keeps current trees, unpublished commits across refs, active stashes
-and exact staged/unstaged recovery. Published historical refs/ancestry need not be
-carried in each archive. The source repository stays intact; restored compact
-repositories are shallow at published boundaries and can fetch older published
-history later. Missing or uncertain published baselines retain full history.
+and exact staged/unstaged recovery. Most captures are compact: published
+historical refs/ancestry are not carried, and restored compact repositories are
+shallow at published boundaries. Only network remotes count as published; a
+remote that is a local path (such as a bare repository on this host) is not
+offsite. Missing or uncertain published baselines retain full history.
+
+Revised 2026-10-16: compact-only capture left offsite Git history depending on
+GitHub, so a force-push or account loss could take most history with it. Each
+Git source now takes a full-history capture whenever its last one is a week old
+(tracked per source in the restic state file). That snapshot is tagged
+`git-history:full`, and SummitFlow retention (local and Drive) and the PVE
+append-only copy always keep each source's newest one. Every compact capture
+also carries `git-history.bundle`, a blobless bundle with every commit and tree,
+so commit metadata between weekly fulls stays offsite too. The monthly offsite
+restore test rebuilds the restored repository from its bundle into scratch and
+checks HEAD and the commit count against the capture.
 The actual AfterTimes Git payload fell from 3,917,612,748 to 277,849,132 bytes;
 isolated Git integrity, HEAD, tree, index and source-unchanged checks passed.
 This is a Git-only measurement, not the new all-source compressed full size.

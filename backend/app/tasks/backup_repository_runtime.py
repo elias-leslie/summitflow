@@ -59,6 +59,7 @@ from .backup_native_archive import (
 from .backup_native_infra import prepare_infrastructure_payload
 from .backup_native_recovery import GIT_BUNDLE_NAME, RECOVERY_DIR_NAME, _is_sqlite_database
 from .backup_restic import (
+    FULL_HISTORY_TAG,
     OperationControl,
     ResticAdapter,
     ResticConfig,
@@ -73,6 +74,11 @@ from .backup_utils import (
 
 _capture_batch: ContextVar[dict[str, dict[str, str]] | None] = ContextVar("repository_capture_batch", default=None)
 _CRITICAL_SOURCE_IDS = {"infrastructure", "codex-config", "claude-config", "agent-skills", "claude-user-config"}
+# Each Git source keeps all history offsite at least weekly; captures between
+# are compact. Daily captures drift by minutes, so the slack keeps a source
+# on a 7-day cadence instead of slipping to 8.
+FULL_HISTORY_INTERVAL = timedelta(days=7)
+FULL_HISTORY_SLACK = timedelta(hours=6)
 logger = get_logger(__name__)
 
 
@@ -365,10 +371,32 @@ def initialize_repository(env: dict[str, str], *, local_only: bool = False) -> d
     return {**result, "recovery_key_escrow_confirmed": False, "default_changed": False}
 
 
-def _previous_bundle(adapter: ResticAdapter, previous: Mapping[str, Any], staging: Path) -> dict[str, Any] | None:
+def _git_history_mode(previous: Mapping[str, Any], now: datetime) -> str:
+    """Capture full Git history once the source's newest full capture is a week old."""
+    captured = previous.get("full_history_captured_at")
+    try:
+        due = not captured or datetime.fromisoformat(str(captured)) <= now - FULL_HISTORY_INTERVAL + FULL_HISTORY_SLACK
+    except ValueError:
+        due = True
+    return "full" if due else "compact"
+
+
+def _requested_history_mode(git: Mapping[str, Any]) -> str:
+    """The mode a capture asked for; a compact capture may fall back to full."""
+    return "full" if git.get("capture_mode", "full") == "full" and not git.get("compact_fallback_reason") else "compact"
+
+
+def _full_history_payload(payload: Mapping[str, Any]) -> bool:
+    git = (payload.get("recovery") or {}).get("git")
+    return isinstance(git, Mapping) and git.get("capture_mode") == "full"
+
+
+def _previous_bundle(adapter: ResticAdapter, previous: Mapping[str, Any], staging: Path, history_mode: str = "compact") -> dict[str, Any] | None:
     git = (previous.get("recovery") or {}).get("git")
     snapshot_id = previous.get("snapshot_id")
-    if not git or not snapshot_id:
+    # A bundle captured in the other history mode is never reusable, and the
+    # weekly full one can be gigabytes; do not restore it just to discard it.
+    if not git or not snapshot_id or _requested_history_mode(git) != history_mode:
         return None
     target = staging / "previous"
     target.mkdir(mode=0o700)
@@ -410,9 +438,10 @@ def run_repository_backup(
         try:
             capture.enter_context(bind_scratch(staging))
             previous = state["sources"].get(source_id, {})
+            history_mode = _git_history_mode(previous, datetime.now(UTC))
             # The Codex essentials profile intentionally omits native Git. Do
             # not download its previous multi-GB bundle merely to discard it.
-            reuse = None if infrastructure or Path(project_dir).name == ".codex" else _previous_bundle(adapter, previous, staging)
+            reuse = None if infrastructure or Path(project_dir).name == ".codex" else _previous_bundle(adapter, previous, staging, history_mode)
             if infrastructure:
                 payload = prepare_infrastructure_payload(Path(project_dir), staging, host_config_root=get_host_config_root())
             else:
@@ -420,14 +449,17 @@ def run_repository_backup(
                 payload = prepare_project_payload(
                     Path(project_dir), Path(project_dir).name, staging, {**env, "BACKUP_PROJECT_ID": project_id},
                     source_roots=canonical_backup_source_roots(), sensitive_paths=(config.key_directory,),
-                    git_bundle_reuse=reuse,
+                    git_bundle_reuse=reuse, git_history_mode=history_mode,
                 )
             payload["snapshot_dir"].chmod(0o700)
+            full_history = not infrastructure and _full_history_payload(payload)
+            # A full-history payload must land in a snapshot tagged as one.
+            reusable = not full_history or previous.get("full_history_snapshot_id") == previous.get("snapshot_id")
             fingerprint = _payload_fingerprint(payload)
             batch = _capture_batch.get()
             if batch is not None:
                 batch[_repository_pair(config)] = env
-            if not infrastructure and not _payload_has_database(payload) and previous.get("payload_fingerprint") == fingerprint and _unchanged_snapshot_available(adapter, previous):
+            if not infrastructure and reusable and not _payload_has_database(payload) and previous.get("payload_fingerprint") == fingerprint and _unchanged_snapshot_available(adapter, previous):
                 # Consistency validation and content hashing already ran. Only
                 # an actual file-only payload may reuse its retained snapshot.
                 result = copy.deepcopy(previous["result"])
@@ -435,6 +467,9 @@ def run_repository_backup(
                 result["verification"].update(data_added_bytes=0, stored_bytes=0)
                 result["verification"].update(unchanged=True, capture_checked_at=datetime.now(UTC).isoformat())
                 previous["last_checked_at"] = result["verification"]["capture_checked_at"]
+                if full_history:
+                    # The retained tagged snapshot is still exactly this full capture.
+                    previous["full_history_captured_at"] = previous["last_checked_at"]
                 _save_json(directory / "state.json", state)
                 if local_only:
                     result["verification"]["offsite"] = {"status": "not_requested"}
@@ -455,7 +490,10 @@ def run_repository_backup(
             )
             if not admission["admitted"]:
                 raise ResticError("Capture blocked after staging: insufficient host-policy headroom")
-            result = adapter.save_payload(source_id, payload, defer_check=True) if batch is not None else adapter.save_payload(source_id, payload)
+            options: dict[str, Any] = {"defer_check": True} if batch is not None else {}
+            if full_history:
+                options["tags"] = (FULL_HISTORY_TAG,)
+            result = adapter.save_payload(source_id, payload, **options)
             result["verification"].update(
                 data_added_bytes=result.get("data_added_bytes"), stored_bytes=result.get("stored_bytes"),
                 logical_bytes=result.get("logical_bytes"), total_files=payload["total_files"],
@@ -465,7 +503,7 @@ def run_repository_backup(
             result["verification"]["storage_backend_id"] = env.get("BACKUP_STORAGE_BACKEND_ID")
             return _complete_capture(
                 adapter, directory, state, source_id, env, result, local_only=local_only, batch=batch,
-                recovery=payload.get("recovery", {}), fingerprint=fingerprint,
+                recovery=payload.get("recovery", {}), fingerprint=fingerprint, full_history=full_history,
                 capacity={"staging_peak_bytes": admission["staging_peak_bytes"], "growth_peak_bytes": max(admission["growth_peak_bytes"], int(result.get("stored_bytes") or 0))},
             )
         finally:
@@ -522,10 +560,11 @@ def run_repository_stream(
 def _complete_capture(
     adapter: ResticAdapter, directory: Path, state: dict[str, Any], source_id: str, env: Mapping[str, str],
     result: dict[str, Any], *, local_only: bool, batch: dict[str, Any] | None, recovery: Mapping[str, Any],
-    fingerprint: str | None, capacity: Mapping[str, Any],
+    fingerprint: str | None, capacity: Mapping[str, Any], full_history: bool = False,
 ) -> dict[str, Any]:
     """Record a new local snapshot, queue it for offsite, and copy it unless batched."""
     previous = state["sources"].get(source_id, {})
+    completed_at = datetime.now(UTC).isoformat()
     # Durable local completion precedes Drive and SQL. A failed remote
     # operation must not lose a usable local point.
     source_checkpoint = {
@@ -535,7 +574,9 @@ def _complete_capture(
         "recovery": recovery, "result": result,
         "payload_fingerprint": fingerprint,
         "capacity": capacity,
-        "completed_at": datetime.now(UTC).isoformat(),
+        "completed_at": completed_at,
+        "full_history_snapshot_id": result["snapshot_id"] if full_history else previous.get("full_history_snapshot_id"),
+        "full_history_captured_at": completed_at if full_history else previous.get("full_history_captured_at"),
     }
     state["sources"][source_id] = source_checkpoint
     if not local_only:

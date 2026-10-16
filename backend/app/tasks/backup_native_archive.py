@@ -477,12 +477,14 @@ def prepare_project_payload(
     source_roots: dict[str, Path] | None = None,
     sensitive_paths: tuple[Path, ...] = (),
     git_bundle_reuse: dict[str, Any] | None = None,
+    git_history_mode: str = "compact",
 ) -> dict[str, Any]:
     """Validate and materialize recovery files and plain SQL in private staging.
 
     The caller owns staging lifetime and encryption. No tar/gzip/age is applied;
     total_bytes/logical_bytes count actual regular files including recovery data.
     Reuse is optional {'bundle_path': Path, 'git': prior_manifest['git']}.
+    ``git_history_mode='full'`` keeps all Git history (the weekly capture).
     """
     capture_started = time.monotonic()
     backup_phase("capture")
@@ -501,7 +503,7 @@ def prepare_project_payload(
         project_dir, staging, excludes, capture_excludes, sensitive_paths,
         source_roots=source_roots, git_bundle_reuse=git_bundle_reuse,
         capture_git=not codex_essentials,
-        git_history_mode="compact",
+        git_history_mode=git_history_mode,
     )
     if codex_essentials:
         recovery["capture_profile"] = CODEX_CAPTURE_PROFILE

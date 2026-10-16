@@ -119,9 +119,10 @@ def test_compact_bundle_reuse_is_deterministic_and_rejects_full_mode(tmp_path: P
     original = recovery._create_git_bundle
     calls = []
 
-    def record(*args):
-        calls.append(True)
-        original(*args)
+    def record(*args, **kwargs):
+        if not kwargs.get("object_filter"):  # The small history bundle is always rebuilt.
+            calls.append(True)
+        original(*args, **kwargs)
 
     monkeypatch.setattr(recovery, "_create_git_bundle", record)
     reuse = {"bundle_path": bundle, "git": manifest["git"]}
@@ -307,3 +308,90 @@ def test_unpublished_annotated_tag_on_old_published_commit_retains_annotation(tm
     recovery.restore_git_recovery(snapshot)
     assert _git(snapshot, "cat-file", "tag", tag_id) == _git(project, "cat-file", "tag", tag_id)
     assert _git(snapshot, "fsck", "--full", "--no-dangling") == ""
+
+
+@pytest.mark.parametrize(
+    ("url", "network"),
+    [
+        ("https://github.com/owner/repo.git", True),
+        ("git@github.com:owner/repo.git", True),
+        ("ssh://git@example.invalid/repo.git", True),
+        ("/srv/workspaces/remotes/repo.git", False),
+        ("file:///srv/workspaces/remotes/repo.git", False),
+        ("../sibling.git", False),
+    ],
+)
+def test_only_network_remotes_are_offsite(url: str, network: bool) -> None:
+    assert recovery._network_remote(url) is network
+
+
+def test_local_bare_remote_is_not_a_published_baseline(tmp_path: Path) -> None:
+    project, _old, baseline = _project(tmp_path)
+    bare = tmp_path / "bare.git"
+    _git(tmp_path, "init", "--bare", str(bare))
+    _git(project, "remote", "add", "local", str(bare))
+    local_only = _commit(project, "note", "pushed only to the local bare remote")
+    _git(project, "update-ref", "refs/remotes/local/main", local_only)
+    snapshot, manifest = _snapshot(project, tmp_path / "stage")
+    assert manifest["git"]["capture_mode"] == "compact"
+    assert manifest["git"]["unpublished_commit_count"] == 1
+    assert baseline in manifest["git"]["shallow_commits"]
+    recovery.restore_git_recovery(snapshot)
+    assert _git(snapshot, "rev-parse", "refs/remotes/local/main") == local_only
+    # With only a local remote nothing counts as published: keep full history.
+    _git(project, "remote", "remove", "origin")
+    _, only_local = _snapshot(project, tmp_path / "only-local")
+    assert only_local["git"]["capture_mode"] == "full"
+    assert only_local["git"]["compact_fallback_reason"] == "no_published_baseline"
+
+
+def test_compact_capture_carries_blobless_full_history_that_the_drill_rebuilds(tmp_path: Path) -> None:
+    project, old, _baseline = _project(tmp_path)
+    head = _commit(project, "note", "unpublished")
+    snapshot, manifest = _snapshot(project, tmp_path / "stage")
+    git = manifest["git"]
+    assert git["capture_mode"] == "compact"
+    assert git["history_commit_count"] == 4
+    history = snapshot / recovery.RECOVERY_DIR_NAME / recovery.GIT_HISTORY_BUNDLE_NAME
+    assert git["history_bundle"] == {"name": recovery.GIT_HISTORY_BUNDLE_NAME, "checksum": recovery._sha256(history), "filter": "blob:none"}
+    assert b"@filter=blob:none" in history.read_bytes()[:200]
+    # Identical refs give identical bytes, so an unchanged source stays unchanged.
+    _, again = _snapshot(project, tmp_path / "again")
+    assert again["git"]["history_bundle"] == git["history_bundle"]
+    drill = tmp_path / "drill"
+    drill.mkdir()
+    result = recovery.drill_git_history(snapshot, drill)
+    assert result["ok"] is True and result["source"] == "history"
+    assert result["head"] == head and result["commit_count"] == 4 == result["expected_commit_count"]
+    rebuilt = drill / "git-history-drill.git"
+    assert _git(rebuilt, "log", "--format=%s", "-1", old) == "obsolete published asset"
+    assert subprocess.run(["git", "-C", str(rebuilt), "cat-file", "-e", f"{old}:old"], capture_output=True).returncode != 0
+
+
+def test_drill_rebuilds_full_and_legacy_compact_captures_and_reports_mismatch(tmp_path: Path) -> None:
+    project, _old, _baseline = _project(tmp_path)
+    head = _commit(project, "note", "unpublished")
+    full, full_manifest = _snapshot(project, tmp_path / "full", mode="full")
+    assert "history_bundle" not in full_manifest["git"]
+    (tmp_path / "full-drill").mkdir()
+    result = recovery.drill_git_history(full, tmp_path / "full-drill")
+    assert result["ok"] is True and result["source"] == "full" and result["commit_count"] == 4
+    # A compact capture made before history bundles existed rebuilds shallow.
+    legacy, _ = _snapshot(project, tmp_path / "legacy")
+    manifest_path = legacy / recovery.RECOVERY_DIR_NAME / recovery.RECOVERY_MANIFEST_NAME
+    manifest = json.loads(manifest_path.read_text())
+    del manifest["git"]["history_bundle"], manifest["git"]["history_commit_count"]
+    manifest_path.write_text(json.dumps(manifest))
+    (tmp_path / "legacy-drill").mkdir()
+    result = recovery.drill_git_history(legacy, tmp_path / "legacy-drill")
+    assert result["ok"] is True and result["source"] == "compact" and result["head"] == head
+    manifest_path = full / recovery.RECOVERY_DIR_NAME / recovery.RECOVERY_MANIFEST_NAME
+    manifest = json.loads(manifest_path.read_text())
+    manifest["git"]["history_commit_count"] = 5
+    manifest_path.write_text(json.dumps(manifest))
+    (tmp_path / "mismatch-drill").mkdir()
+    result = recovery.drill_git_history(full, tmp_path / "mismatch-drill")
+    assert result["ok"] is False and result["checks"]["commit_count_matches"] is False
+    plain = tmp_path / "plain"
+    plain.mkdir()
+    assert recovery.drill_git_history(plain, tmp_path)["status"] == "not-applicable"

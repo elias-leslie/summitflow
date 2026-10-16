@@ -12,9 +12,10 @@ What it is
 Retention
   Runs only here: restic-append-maintain.timer (weekly, Sun ~05:15) inside the
   CT. Same per-source windows as SummitFlow (never below 7 days, newest three
-  per source kept). A circuit breaker refuses any run that would delete more
-  than normal retention (>25% of all snapshots, >50% of one source, or an
-  unexplained >10% drop) and records an alert in the status file instead.
+  per source kept, plus each source's newest snapshot tagged
+  git-history:full, its weekly full Git history). A circuit breaker refuses
+  any run that would delete more than normal retention (>25% of all
+  snapshots, >50% of one source, or an unexplained >10% drop) and records an alert in the status file instead.
 
 FIRST THING TO SHRINK if davion-gem needs space
   This copy is the most expendable data on this host: the T7 and Google Drive

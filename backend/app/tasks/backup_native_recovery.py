@@ -28,6 +28,10 @@ from .backup_activity import BackupCancelled, backup_phase, check_backup_cancell
 RECOVERY_DIR_NAME = ".summitflow-recovery"
 RECOVERY_MANIFEST_NAME = "manifest.json"
 GIT_BUNDLE_NAME = "git.bundle"
+# Compact captures also carry every commit and tree (no file contents) here,
+# so commit metadata survives between weekly full-history captures.
+GIT_HISTORY_BUNDLE_NAME = "git-history.bundle"
+GIT_HISTORY_FILTER = "blob:none"
 GIT_INDEX_NAME = "git-index"
 GIT_SHARED_INDEX_NAME = "git-shared-index"
 GIT_RECOVERY_FORMAT = 1
@@ -769,12 +773,27 @@ def _validate_st_metadata_restore(project_dir: Path, recovery_dir: Path, manifes
     return inventory
 
 
+def _network_remote(url: str) -> bool:
+    """A remote on another host; a local path or file:// clone is not offsite."""
+    parsed = urlsplit(url)
+    if parsed.netloc:
+        return parsed.scheme != "file"
+    if "://" in url:
+        return False
+    # scp-like [user@]host:path names a host before the first colon; a single
+    # letter is a Windows drive.
+    host, separator, _ = url.partition(":")
+    return bool(separator) and len(host) > 1 and "/" not in host and "\\" not in host
+
+
 def _compact_git_plan(project_dir: Path, state: dict[str, Any]) -> dict[str, Any]:
     """Select unpublished ancestry and published edge trees, or retain all Git.
 
-    Local remote-tracking refs are the capture's published baseline; capture
-    never contacts a server. Missing baselines or unusual traversal semantics
-    retain full history. The source repository is never made shallow.
+    Local remote-tracking refs of network remotes are the capture's published
+    baseline; capture never contacts a server. A remote that is a local path
+    is no offsite copy, so its refs are ordinary tips. Missing baselines or
+    unusual traversal semantics retain full history. The source repository is
+    never made shallow.
     """
     full: dict[str, Any] = {"capture_mode": "full", "shallow_commits": state.get("shallow_commits", [])}
     if state.get("shallow_commits"):
@@ -784,7 +803,12 @@ def _compact_git_plan(project_dir: Path, state: dict[str, Any]) -> dict[str, Any
     graft_path = _run_git(project_dir, ["rev-parse", "--path-format=absolute", "--git-path", "info/grafts"])
     if graft_path.returncode != 0 or Path(graft_path.stdout.strip()).exists():
         return {**full, "compact_fallback_reason": "uncertain_traversal"}
-    remote_names = {item["key"][7:-4] for item in state.get("remote_config", []) if item["key"].startswith("remote.") and item["key"].endswith(".url")}
+    remote_urls: dict[str, list[str]] = {}
+    for item in state.get("remote_config", []):
+        if item["key"].startswith("remote.") and item["key"].endswith(".url"):
+            remote_urls.setdefault(item["key"][7:-4], []).append(item["value"])
+    remote_names = set(remote_urls)
+    network_remotes = {name for name, urls in remote_urls.items() if all(_network_remote(url) for url in urls)}
     published = []
     tips = [state["head"], *(line.split(" ", 1)[0] for line in state["refs"]), *(item["object_id"] for item in state.get("stash_entries", []))]
     for line in state["refs"]:
@@ -792,7 +816,8 @@ def _compact_git_plan(project_dir: Path, state: dict[str, Any]) -> dict[str, Any
         if ref_name.startswith("refs/remotes/"):
             if not any(ref_name.startswith(f"refs/remotes/{name}/") for name in remote_names):
                 return {**full, "compact_fallback_reason": "unconfigured_remote_baseline"}
-            published.append(object_id)
+            if any(ref_name.startswith(f"refs/remotes/{name}/") for name in network_remotes):
+                published.append(object_id)
     if not published:
         return {**full, "compact_fallback_reason": "no_published_baseline"}
     peeled_commits = {}
@@ -871,6 +896,17 @@ def create_git_recovery_payload(
         verified = _run_git(project_dir, ["bundle", "verify", str(bundle)])
         if verified.returncode != 0:
             raise RuntimeError(f"Git bundle verification failed: {verified.stderr.strip()}")
+        counted = _run_git(project_dir, ["rev-list", "--count", state["head"]])
+        if counted.returncode != 0:
+            raise RuntimeError("Unable to count captured Git history")
+        history: dict[str, Any] = {}
+        if plan["capture_mode"] == "compact":
+            history_bundle = recovery_dir / GIT_HISTORY_BUNDLE_NAME
+            _create_git_bundle(project_dir, history_bundle, state, None, object_filter=GIT_HISTORY_FILTER)
+            verified = _run_git(project_dir, ["bundle", "verify", str(history_bundle)])
+            if verified.returncode != 0:
+                raise RuntimeError(f"Git history bundle verification failed: {verified.stderr.strip()}")
+            history = {"history_bundle": {"name": GIT_HISTORY_BUNDLE_NAME, "checksum": _sha256(history_bundle), "filter": GIT_HISTORY_FILTER}}
         manifest["git"] = {
             "head": state["head"],
             "head_ref": state["head_ref"],
@@ -880,6 +916,10 @@ def create_git_recovery_payload(
             "object_format": state.get("object_format", "sha1"),
             "git_version": state.get("git_version"),
             "recovery_format": bundle_state["recovery_format"],
+            # Commits reachable from HEAD in the source; a full bundle, or the
+            # history bundle of a compact capture, must rebuild exactly these.
+            "history_commit_count": int(counted.stdout.strip()),
+            **history,
             **plan,
             "stash_entries": state.get("stash_entries", []),
             "remote_config": state.get("remote_config", []),
@@ -1001,8 +1041,14 @@ def _create_git_bundle(
     bundle: Path,
     state: dict[str, Any],
     saved_index: Path | None,
+    *,
+    object_filter: str | None = None,
 ) -> None:
-    """Bundle original refs and index objects without writing original Git."""
+    """Bundle original refs and index objects without writing original Git.
+
+    An ``object_filter`` bundle is packed single-threaded so unchanged refs
+    give identical bytes, and an unchanged source keeps an unchanged payload.
+    """
     object_dir_result = _run_git(
         project_dir,
         ["rev-parse", "--path-format=absolute", "--git-path", "objects"],
@@ -1047,7 +1093,13 @@ def _create_git_bundle(
             if updated.returncode != 0:
                 raise RuntimeError(f"Git bundle ref staging failed: {ref_name}")
 
-        created = _run_git(bundle_repo, ["bundle", "create", str(bundle), "--all"])
+        if object_filter is None:
+            created = _run_git(bundle_repo, ["bundle", "create", str(bundle), "--all"])
+        else:
+            created = _run_git(
+                bundle_repo, ["bundle", "create", str(bundle), "--all", f"--filter={object_filter}"],
+                env={"GIT_CONFIG_COUNT": "1", "GIT_CONFIG_KEY_0": "pack.threads", "GIT_CONFIG_VALUE_0": "1"},
+            )
         if created.returncode != 0:
             raise RuntimeError(f"Git bundle creation failed: {created.stderr.strip()}")
 
@@ -1369,4 +1421,66 @@ def restore_git_recovery(project_dir: Path) -> dict[str, Any]:
         "refs_restored": len(git_manifest.get("refs", [])),
         "jj_present": bool(manifest.get("jj_present")),
         "st_metadata_files_restored": len(st_inventory) if st_inventory is not None else 0,
+    }
+
+
+def drill_git_history(project_dir: Path, scratch: Path) -> dict[str, Any]:
+    """Rebuild a restored payload's repository from its bundle into scratch.
+
+    A full capture rebuilds from its main bundle, a compact one from its
+    blobless history bundle (every commit and tree), and an older compact
+    capture without that bundle from its shallow main bundle. HEAD must come
+    back with all of its commits and trees, and with a recorded count, the
+    same number of commits as the source had at capture.
+    """
+    recovery_dir = project_dir / RECOVERY_DIR_NAME
+    manifest_path = recovery_dir / RECOVERY_MANIFEST_NAME
+    git_manifest = json.loads(manifest_path.read_text()).get("git") if manifest_path.is_file() else None
+    if not isinstance(git_manifest, dict):
+        return {"ok": True, "status": "not-applicable"}
+    history = git_manifest.get("history_bundle")
+    object_format = git_manifest.get("object_format", "sha1")
+    if object_format not in {"sha1", "sha256"}:
+        raise RuntimeError("Unsupported Git recovery object format")
+    head = str(git_manifest["head"])
+    shallow: list[str] = []
+    object_filter: str | None = None
+    if git_manifest.get("capture_mode", "full") == "full":
+        source, bundle, checksum = "full", recovery_dir / GIT_BUNDLE_NAME, git_manifest.get("bundle_checksum")
+        shallow = list(git_manifest.get("shallow_commits") or [])
+    elif isinstance(history, dict) and history.get("name") == GIT_HISTORY_BUNDLE_NAME:
+        source, bundle, checksum = "history", recovery_dir / GIT_HISTORY_BUNDLE_NAME, history.get("checksum")
+        object_filter = str(history.get("filter") or GIT_HISTORY_FILTER)
+    else:
+        source, bundle, checksum = "compact", recovery_dir / GIT_BUNDLE_NAME, git_manifest.get("bundle_checksum")
+        shallow = list(git_manifest.get("shallow_commits") or [])
+    if not bundle.is_file() or _sha256(bundle) != checksum:
+        raise RuntimeError(f"Git {source} bundle is missing or fails its checksum")
+    repository = scratch / "git-history-drill.git"
+    initialized = _run_git(scratch, ["init", "--bare", f"--object-format={object_format}", str(repository)])
+    if initialized.returncode != 0:
+        raise RuntimeError(f"Git drill initialization failed: {initialized.stderr.strip()}")
+    if shallow:
+        (repository / "shallow").write_text("\n".join(shallow) + "\n", encoding="ascii")
+    unbundled = _run_git(repository, ["bundle", "unbundle", str(bundle)])
+    if unbundled.returncode != 0:
+        raise RuntimeError(f"Git {source} bundle rebuild failed: {unbundled.stderr.strip()}")
+    bundle_refs = {ref_name: object_id for object_id, ref_name in (line.split(" ", 1) for line in unbundled.stdout.splitlines() if " " in line)}
+    for ref_name, object_id in bundle_refs.items():
+        if _run_git(repository, ["update-ref", ref_name, object_id]).returncode != 0:
+            raise RuntimeError(f"Git drill could not restore ref {ref_name}")
+    filters = [f"--filter={object_filter}"] if object_filter else []
+    connected = _run_git(repository, ["rev-list", "--objects", "--quiet", *filters, head])
+    counted = _run_git(repository, ["rev-list", "--count", head])
+    commit_count = int(counted.stdout.strip()) if counted.returncode == 0 else None
+    expected = git_manifest.get("history_commit_count") if source != "compact" else None
+    checks = {
+        "bundle_head_matches": bundle_refs.get("refs/summitflow-recovery/head") == head,
+        "head_connected": connected.returncode == 0,
+        "commit_count_matches": commit_count is not None and (expected is None or commit_count == expected),
+    }
+    return {
+        "ok": all(checks.values()), "status": "verified" if all(checks.values()) else "failed", "source": source,
+        "head": head, "commit_count": commit_count, "expected_commit_count": expected,
+        "refs_restored": len(bundle_refs), "bundle_bytes": bundle.stat().st_size, "checks": checks,
     }

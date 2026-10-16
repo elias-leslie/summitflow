@@ -1178,7 +1178,9 @@ def test_real_independent_copy_deduplicates_and_recovers_wip(repository_env: dic
     _git(source, "add", "work.txt")
     (source / "work.txt").write_text("working copy\n")
     runtime.initialize_repository(repository_env)
-    with patch.object(runtime, "canonical_backup_source_roots", return_value={}):
+    # Dedup, not the weekly cadence: a first capture asks for full history and
+    # records no fallback reason, so its manifest would differ from the next.
+    with patch.object(runtime, "canonical_backup_source_roots", return_value={}), patch.object(runtime, "_git_history_mode", return_value="compact"):
         first = runtime.run_repository_backup(project_dir=str(source), source_id="fixture", env=repository_env)
         second = runtime.run_repository_backup(project_dir=str(source), source_id="fixture", env=repository_env)
     assert first["verification"]["offsite"]["status"] == "verified"
@@ -1388,3 +1390,73 @@ def test_retire_source_refuses_an_enabled_source(repository_env, monkeypatch):
     monkeypatch.setattr(runtime.backup_store, "get_source", lambda _id: {"id": "guest", "enabled": True})
     with pytest.raises(ResticError, match="Disable the backup source"):
         runtime.retire_repository_source(repository_env, "guest", dry_run=False)
+
+
+def test_git_history_mode_is_full_once_the_last_full_capture_is_a_week_old() -> None:
+    now = datetime(2026, 10, 16, 3, tzinfo=UTC)
+    assert runtime._git_history_mode({}, now) == "full"
+    assert runtime._git_history_mode({"full_history_captured_at": "not a time"}, now) == "full"
+    assert runtime._git_history_mode({"full_history_captured_at": (now - timedelta(days=6)).isoformat()}, now) == "compact"
+    # Daily captures drift by minutes; the slack keeps them on a 7-day cadence.
+    assert runtime._git_history_mode({"full_history_captured_at": (now - timedelta(days=7) + timedelta(minutes=20)).isoformat()}, now) == "full"
+
+
+def test_weekly_full_history_capture_is_tagged_and_tracked_per_source(repository_env: dict[str, str], tmp_path: Path) -> None:
+    from app.tasks.backup_restic import FULL_HISTORY_TAG
+
+    source = tmp_path / "source"
+    source.mkdir()
+    _git(source, "init", "-b", "main")
+    for key, value in (("user.name", "Fixture"), ("user.email", "fixture@example.invalid")):
+        _git(source, "config", key, value)
+    (source / "work.txt").write_text("published")
+    _git(source, "add", "work.txt")
+    _git(source, "commit", "-m", "published")
+    _git(source, "remote", "add", "origin", "https://example.invalid/repository.git")
+    _git(source, "update-ref", "refs/remotes/origin/main", "HEAD")
+    config = ResticConfig.from_env(repository_env)
+    saves: list[tuple[dict[str, Any], dict[str, Any]]] = []
+
+    def save(_adapter, _source_id, payload, **options):
+        number = len(saves) + 1
+        saves.append((payload["recovery"]["git"], options))
+        return {"snapshot_id": f"{number:064x}", "repository_id": "b" * 64, "location": "restic-v1:fixture", "verification": {"verified": True, "capture": {}}}
+
+    def capture(change: str) -> None:
+        (source / "work.txt").write_text(change)
+        _git(source, "commit", "-am", change)
+        runtime.run_repository_backup(project_dir=str(source), source_id="fixture", env=repository_env, local_only=True)
+
+    with (
+        patch.object(runtime, "canonical_backup_source_roots", return_value={}),
+        patch.object(runtime, "_previous_bundle", return_value=None),
+        patch.object(ResticAdapter, "save_payload", save),
+        patch.object(runtime, "record_local_archive"),
+    ):
+        capture("first")
+        with runtime._checkpoint(config) as (_, state):
+            first = state["sources"]["fixture"]
+        assert saves[0][0]["capture_mode"] == "full" and saves[0][1] == {"tags": (FULL_HISTORY_TAG,)}
+        assert first["full_history_snapshot_id"] == first["snapshot_id"] == f"{1:064x}"
+        capture("second")
+        git, options = saves[1]
+        assert git["capture_mode"] == "compact" and git["history_bundle"]["filter"] == "blob:none" and options == {}
+        with runtime._checkpoint(config) as (directory, state):
+            second = state["sources"]["fixture"]
+            assert second["full_history_snapshot_id"] == f"{1:064x}"
+            assert second["full_history_captured_at"] == first["full_history_captured_at"]
+            second["full_history_captured_at"] = (datetime.now(UTC) - timedelta(days=8)).isoformat()
+            runtime._save_json(directory / "state.json", state)
+        capture("third")
+        assert saves[2][0]["capture_mode"] == "full" and saves[2][1] == {"tags": (FULL_HISTORY_TAG,)}
+        with runtime._checkpoint(config) as (_, state):
+            assert state["sources"]["fixture"]["full_history_snapshot_id"] == f"{3:064x}"
+
+
+def test_previous_bundle_from_the_other_history_mode_is_not_downloaded() -> None:
+    adapter = MagicMock()
+    weekly_full = {"snapshot_id": "a" * 64, "recovery": {"git": {"capture_mode": "full"}}}
+    assert runtime._previous_bundle(adapter, weekly_full, Path("/nonexistent"), "compact") is None
+    compact = {"snapshot_id": "a" * 64, "recovery": {"git": {"capture_mode": "compact"}}}
+    assert runtime._previous_bundle(adapter, compact, Path("/nonexistent"), "full") is None
+    adapter.restore.assert_not_called()

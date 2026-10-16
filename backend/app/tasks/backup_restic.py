@@ -230,17 +230,22 @@ def _pair_flocks(directory: Path, repositories: set[str]) -> Iterator[None]:
             os.close(descriptor)
 
 
+FULL_HISTORY_TAG = "git-history:full"
+
+
 def select_retention(
     snapshots: Sequence[Mapping[str, Any]], retention_days: Mapping[str, int], *,
     now: datetime | None = None, pinned: Sequence[str] = (), pending: Sequence[str] = (),
     last_good: Mapping[str, str] | None = None,
 ) -> dict[str, Any]:
-    """Wall-clock expiry, always retaining three points and each source's last good."""
+    """Wall-clock expiry, always retaining three points, each source's last good
+    and its newest full-Git-history capture (``FULL_HISTORY_TAG``)."""
     current = now or _now()
     if current.tzinfo is None or any(days <= 0 for days in retention_days.values()):
         raise ResticError("Retention requires an aware clock and positive day windows")
     reasons: dict[str, set[str]] = {}
     groups: dict[str, list[tuple[datetime, str]]] = {}
+    full_history: dict[str, tuple[datetime, str]] = {}
     for snapshot in snapshots:
         snapshot_id = _id(str(snapshot["id"]))
         keep = reasons.setdefault(snapshot_id, set())
@@ -255,6 +260,8 @@ def select_retention(
             keep.add("unmanaged-source")
         for source in sources:
             groups.setdefault(source, []).append((created, snapshot_id))
+            if FULL_HISTORY_TAG in tags:
+                full_history[source] = max(full_history.get(source, (created, snapshot_id)), (created, snapshot_id))
             days = retention_days.get(source)
             if days is None:
                 keep.add("unmanaged-source")
@@ -263,6 +270,8 @@ def select_retention(
     for group in groups.values():
         for _, snapshot_id in sorted(group, reverse=True)[:3]:
             reasons[snapshot_id].add("minimum-three")
+    for _, snapshot_id in full_history.values():
+        reasons[snapshot_id].add("newest-full-history")
     for label, ids in (("pinned", pinned), ("pending-offsite", pending), ("last-good", (last_good or {}).values())):
         for snapshot_id in ids:
             if snapshot_id in reasons:
@@ -472,9 +481,11 @@ class ResticAdapter:
             raise ResticError("Source ID contains unsupported characters")
         return "source:" + source_id
 
-    def save_payload(self, source_id: str, payload: Mapping[str, Any], *, parent_snapshot: str | None = None, defer_check: bool = False) -> dict[str, Any]:
+    def save_payload(self, source_id: str, payload: Mapping[str, Any], *, parent_snapshot: str | None = None, defer_check: bool = False, tags: Sequence[str] = ()) -> dict[str, Any]:
         """Back up a stable, caller-validated staged tree; never a live source."""
         self.config.validate()
+        if any(tag.startswith("source:") or not re.fullmatch(r"[A-Za-z0-9._:-]+", tag) for tag in tags):
+            raise ResticError("Extra snapshot tags must be plain and must not name a source")
         root = Path(payload["snapshot_dir"])
         if not root.is_absolute() or root.is_symlink() or not root.is_dir() or root.stat().st_mode & 0o077:
             raise ResticError("Prepared payload must be a private directory at a stable absolute path")
@@ -493,7 +504,7 @@ class ResticAdapter:
                     raise ResticError("Explicit parent must match the source, hostname, and stable payload path")
             elif suitable:
                 parent_snapshot = max(suitable, key=lambda item: _timestamp(item["time"]))["id"]
-            args = ["backup", "--tag", self._tag(source_id), "--host", self.config.hostname or socket.gethostname()]
+            args = ["backup", "--tag", self._tag(source_id), *(item for tag in tags for item in ("--tag", tag)), "--host", self.config.hostname or socket.gethostname()]
             args.extend(["--parent", parent_snapshot] if parent_snapshot else ["--force"])
             result = self._run(self._command(*args, "--", str(resolved)), phase="capture")
             try:

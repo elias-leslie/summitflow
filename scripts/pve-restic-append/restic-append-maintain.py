@@ -3,7 +3,8 @@
 
 The workstation can append but never delete, so retention lives here. Every
 run: detect unexplained snapshot loss, plan per-source retention (same windows
-as SummitFlow, never below MIN_DAYS, newest three per source always kept),
+as SummitFlow, never below MIN_DAYS, newest three per source and its newest
+full-Git-history snapshot always kept),
 refuse any plan that removes more than normal retention would, then forget,
 prune and read a rotating 1/12 data subset. Results go to STATUS_PATH, which
 the workstation reads through the restricted key (`ssh ... status`).
@@ -26,6 +27,9 @@ STATUS_PATH = Path(os.environ.get("RESTIC_APPEND_STATUS", "/var/lib/restic-appen
 RESTIC = os.environ.get("RESTIC_BIN", "/usr/local/bin/restic")
 MIN_DAYS = 7
 KEEP_LAST = 3
+# SummitFlow tags its weekly full-Git-history capture; the newest one per
+# source outlives the window so this copy always holds complete history.
+FULL_HISTORY_TAG = "git-history:full"
 # Circuit breaker: normal weekly expiry removes a small slice. Anything larger
 # means a policy mistake or clock jump, so nothing is removed and it alerts.
 TOTAL_TRIP_FRACTION = 0.25
@@ -53,23 +57,29 @@ def _source(snapshot: dict[str, Any]) -> str | None:
 
 
 def plan_retention(snapshots: list[dict[str, Any]], policy: dict[str, Any], now: datetime) -> dict[str, Any]:
-    """Pure selection: delete only snapshots outside their source window and not newest three."""
+    """Pure selection: delete only snapshots outside their source window, not
+    among the newest three and not the source's newest full-history capture."""
     default_days = max(MIN_DAYS, int(policy.get("default_days", 30)))
     windows = {str(key): max(MIN_DAYS, int(value)) for key, value in (policy.get("sources") or {}).items()}
     groups: dict[str, list[tuple[datetime, str]]] = {}
+    full_history: dict[str, tuple[datetime, str]] = {}
     keep: set[str] = set()
     for snapshot in snapshots:
         source = _source(snapshot)
         if source is None:
             keep.add(snapshot["id"])  # Unmanaged or multi-source points stay forever.
             continue
-        groups.setdefault(source, []).append((_parse(snapshot["time"]), snapshot["id"]))
+        point = (_parse(snapshot["time"]), snapshot["id"])
+        groups.setdefault(source, []).append(point)
+        if FULL_HISTORY_TAG in (snapshot.get("tags") or []):
+            full_history[source] = max(full_history.get(source, point), point)
     delete: list[str] = []
     per_source: dict[str, dict[str, int]] = {}
     for source, items in groups.items():
         cutoff = now - timedelta(days=windows.get(source, default_days))
         ordered = sorted(items, reverse=True)
-        removed = [sid for index, (created, sid) in enumerate(ordered) if index >= KEEP_LAST and created < cutoff]
+        newest_full = full_history[source][1] if source in full_history else None
+        removed = [sid for index, (created, sid) in enumerate(ordered) if index >= KEEP_LAST and created < cutoff and sid != newest_full]
         delete.extend(removed)
         per_source[source] = {"total": len(items), "delete": len(removed)}
     return {"delete": sorted(delete), "total": len(snapshots), "per_source": per_source}

@@ -278,6 +278,18 @@ def test_pve_side_retention_matches_policy_and_trips_on_mistakes():
     assert maintain.unexplained_loss(1000, 500).startswith("snapshot count fell")
 
 
+def test_pve_side_retention_keeps_newest_full_history_capture():
+    maintain = _maintain_module()
+    now = datetime(2026, 10, 16, tzinfo=UTC)
+
+    def point(name: str, age: int, *tags: str) -> dict[str, Any]:
+        return {"id": name, "tags": ["source:a", *tags], "time": (now - timedelta(days=age)).isoformat()}
+
+    snapshots = [point("new1", 0), point("new2", 1), point("new3", 2), point("full-newest", 10, maintain.FULL_HISTORY_TAG), point("full-older", 17, maintain.FULL_HISTORY_TAG), point("old", 20)]
+    plan = maintain.plan_retention(snapshots, {"default_days": 30, "sources": {"a": 7}}, now)
+    assert plan["delete"] == ["full-older", "old"]
+
+
 def test_pve_serve_wrapper_only_serves_or_reports_status():
     wrapper = (REPO_ROOT / "scripts" / "pve-restic-append" / "restic-append-serve").read_text()
     stdio = (REPO_ROOT / "scripts" / "pve-restic-append" / "restic-append-stdio").read_text()
