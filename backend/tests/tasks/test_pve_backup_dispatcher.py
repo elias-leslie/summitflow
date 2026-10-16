@@ -177,7 +177,8 @@ def test_config_dump_leaves_out_priv_and_every_key_file(dispatcher, tmp_path, mo
 
 
 LIVE_HOST = ("proxmox://proxmox-gem/host/files?path=/vault/identity&path=/vault/meta/recovery-key.json"
-             "&path=/etc/pve/qemu-server/120.conf&path=/var/lib/vz/snippets/neri-120-init.yaml")
+             "&path=/etc/pve/qemu-server/120.conf&path=/var/lib/vz/snippets/neri-120-init.yaml"
+             "&path=/var/lib/vz/snippets/neri-120-meta.yaml")
 
 
 @pytest.mark.parametrize("path", [
@@ -198,22 +199,57 @@ def test_a_host_path_holding_pve_or_root_secrets_is_refused(dispatcher, path, ca
     assert dispatcher.protected_host_path(path)
 
 
-def test_a_host_path_is_also_checked_where_it_resolves(dispatcher, monkeypatch):
+@pytest.mark.parametrize("target", ["/etc/pve/nodes/davion-gem/priv/lock", "/var/lib/vz/dump", "/proc/4242/root/var/lib/x", "/etc"])
+def test_a_host_path_is_also_checked_where_it_resolves(dispatcher, monkeypatch, target):
     real = os.path.realpath
     monkeypatch.setattr(dispatcher.os.path, "realpath",
-                        lambda path: "/etc/pve/nodes/davion-gem/priv/lock" if path == "/vault/link" else real(path))
-    digests = _install(dispatcher, {"h": "proxmox://proxmox-gem/host/files?path=/vault/link"})
+                        lambda path: path.replace("/vault/meta/link", target, 1) if path.startswith("/vault/meta/link") else real(path))
+    digests = _install(dispatcher, {"h": "proxmox://proxmox-gem/host/files?path=/vault/meta/link/x"})
     runs = Runs()
     assert dispatcher.main(f"capture h {digests['h']}", run=runs, out=io.BytesIO()) == 2
     assert runs.calls == []
+
+
+@pytest.mark.parametrize("path", [
+    # OmniNull's CT 150 vzdump staging (authority keys inside), a guest's root through /proc, Nightshift's dead-man and
+    # Web Push credentials, and other host secrets: none sits in HOST_ROOTS.
+    "/var/lib/vz", "/var/lib/vz/dump", "/var/lib/vz/dump/st-ominull-1/vzdump-lxc-150-x.tar", "/proc/1/root/x",
+    "/proc/4242/root/var/lib/ominull-response-authority", "/etc/shadow", "/etc/gshadow", "/etc/nightshift/deadman",
+    "/var/lib/nightshift", "/var/lib/lxc/150", "/etc/ssl/private", "/usr/local/sbin", "/etc/summitflow-pve-backup",
+    "/var/backups", "/sys/firmware", "/dev/sda", "/vault", "/vault/data", "/vault/identityx", "/etc/pve/lxc/150.conf",
+    "/etc/pve/qemu-server-x", "/var/lib/vz/snippetsx",
+])
+def test_a_host_path_outside_the_allowed_directories_is_refused(dispatcher, path, capsys):
+    files = {"via": "host", "paths": ["/vault/identity", path], "excludes": []}
+    dispatcher.SOURCES.write_text(json.dumps({"h": {"digest": "a" * 64, "kind": "host", "vmid": None, "files": files}}))
+    runs = Runs()
+    assert dispatcher.main(f"capture h {'a' * 64}", run=runs, out=io.BytesIO()) == 2
+    assert runs.calls == [] and "host paths must sit in" in capsys.readouterr().err
+    assert not dispatcher.allowed_host_path(path)
+
+
+def test_a_key_file_inside_an_allowed_directory_is_still_refused(dispatcher, capsys):
+    digests = _install(dispatcher, {"h": "proxmox://proxmox-gem/host/files?path=/vault/meta/admin.KEY"})
+    runs = Runs()
+    assert dispatcher.main(f"capture h {digests['h']}", run=runs, out=io.BytesIO()) == 2
+    assert runs.calls == [] and "holds PVE or root secrets" in capsys.readouterr().err
+
+
+def test_qemu_server_configs_pass_where_proxmox_links_them(dispatcher, monkeypatch):
+    real = os.path.realpath
+    node = "/etc/pve/nodes/davion-gem/qemu-server"
+    monkeypatch.setattr(dispatcher.os.path, "realpath",
+                        lambda path: path.replace("/etc/pve/qemu-server", node, 1) if path.startswith("/etc/pve/qemu-server") else real(path))
+    assert dispatcher.allowed_host_path("/etc/pve/qemu-server/120.conf") and dispatcher.allowed_host_path("/etc/pve/qemu-server")
+    assert not dispatcher.allowed_host_path(node + "/120.conf")  # written outside the list, even though it resolves inside
 
 
 def test_the_registered_host_files_still_pass_the_floor(dispatcher):
     digests = _install(dispatcher, {"h": LIVE_HOST})
     runs = Runs()
     assert dispatcher.main(f"capture h {digests['h']}", run=runs, out=io.BytesIO()) == 0
-    assert runs.calls[0][-4:] == ["vault/identity", "vault/meta/recovery-key.json", "etc/pve/qemu-server/120.conf",
-                                  "var/lib/vz/snippets/neri-120-init.yaml"]
+    assert runs.calls[0][-5:] == ["vault/identity", "vault/meta/recovery-key.json", "etc/pve/qemu-server/120.conf",
+                                  "var/lib/vz/snippets/neri-120-init.yaml", "var/lib/vz/snippets/neri-120-meta.yaml"]
 
 
 @pytest.mark.parametrize("path", [

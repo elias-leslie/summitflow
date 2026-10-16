@@ -18,10 +18,11 @@ and it is refused until root re-runs install.sh.
 The cluster config dump leaves out priv/ and every *.key file (authkey.key, pve-www.key,
 pve-root-ca.key, node ssl keys; PVE regenerates them on restore). The source list is
 built from sources agents can register, so this side keeps its own floor: a host path
-that is /, a *.key file, or holds or sits under PVE's or root's secrets (config.db,
-/etc/pve priv directories, /root, /etc/ssh, /etc/corosync) is refused, host tars always
-exclude them as well, and the OmniNull hub (CT 150) and append-only restic (CT 160) are
-never captured.
+must sit in one of HOST_ROOTS, as written and as resolved here (widening that list
+takes a dispatcher release), and is still refused when it is a *.key file or holds or
+sits under PVE's or root's secrets (config.db, /etc/pve priv directories, /root,
+/etc/ssh, /etc/corosync). Host tars always exclude those secrets as well, and the
+OmniNull hub (CT 150) and append-only restic (CT 160) are never captured.
 """
 
 import base64
@@ -44,6 +45,8 @@ DUMP_LOG_KEEP_DAYS = 7
 THIN_POOL = "pve/data"
 AGENT_PART_BYTES = 12_000_000  # Base64 text per guest-agent read; a multiple of 4, under the 16 MiB limit.
 GUEST_EXEC_TIMEOUT_SECONDS = 1800
+# The only host directories a source may read (/etc/pve/qemu-server resolves to nodes/<node>/qemu-server).
+HOST_ROOTS = ("/vault/identity", "/vault/meta", "/etc/pve/qemu-server", "/var/lib/vz/snippets")
 # Never read on the host, nor any directory holding them; '*' is one path component. /etc/pve/local links to nodes/<node>.
 PROTECTED_PATHS = ("root", "var/lib/pve-cluster", "etc/pve/priv", "etc/pve/nodes/*/priv", "etc/pve/local/priv",
                    "etc/ssh", "etc/corosync")
@@ -74,6 +77,17 @@ def protected_host_path(path):
             if all(fnmatch.fnmatchcase(part, want) for part, want in zip(parts, pattern)):
                 return True
     return False
+
+
+def _within(path, root):
+    path = os.path.normpath(path)
+    return path == root or path.startswith(root + "/")
+
+
+def allowed_host_path(path):
+    """True only for a path in one of HOST_ROOTS both as written and as resolved here (no symlink leads out)."""
+    resolved = os.path.realpath(path)
+    return any(_within(path, root) and _within(resolved, os.path.realpath(root)) for root in HOST_ROOTS)
 
 
 def load_source(source_id, digest):
@@ -108,6 +122,8 @@ def load_source(source_id, digest):
             raise Refused(f"{source_id}: unsafe exclude")
         if kind == "host" and any(protected_host_path(path) for path in paths):
             raise Refused(f"{source_id}: a host path holds PVE or root secrets")
+        if kind == "host" and not all(allowed_host_path(path) for path in paths):
+            raise Refused(f"{source_id}: host paths must sit in {', '.join(HOST_ROOTS)}; more needs a dispatcher release")
     return entry
 
 

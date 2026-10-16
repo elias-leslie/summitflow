@@ -124,9 +124,12 @@ setting), not against a hostile root user.
   installer shows the list against the installed one and asks before a
   change (`--yes` when there is no terminal), and installs only the
   committed dispatcher. The config dump leaves out `priv/` and every `*.key`
-  file; PVE regenerates them on restore. The dispatcher refuses host paths
-  that are `/`, a `*.key` file, or hold or sit under config.db, the
-  `/etc/pve` priv directories, `/root`, `/etc/ssh` or `/etc/corosync`, and
+  file; PVE regenerates them on restore. Host paths must sit in
+  `/vault/identity`, `/vault/meta`, `/etc/pve/qemu-server` or
+  `/var/lib/vz/snippets`, as written and as resolved on PVE; any other host
+  directory needs a dispatcher release (`HOST_ROOTS`). Inside them the
+  dispatcher still refuses `*.key` files and anything under config.db, the
+  `/etc/pve` priv directories, `/root`, `/etc/ssh` or `/etc/corosync`, and it
   never captures CT 150 (OmniNull) or CT 160 (append-only restic). Guest
   files are read only through the dispatcher (`via=pct` or `via=agent`),
   never over an ssh alias.
