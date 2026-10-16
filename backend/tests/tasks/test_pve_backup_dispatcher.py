@@ -9,6 +9,7 @@ import importlib.util
 import io
 import json
 import os
+import shutil
 import sqlite3
 import subprocess
 import time
@@ -175,12 +176,93 @@ def test_config_dump_leaves_out_priv_and_every_key_file(dispatcher, tmp_path, mo
     assert sqlite3.connect(database).execute("SELECT count(*) FROM tree").fetchone() == (18,)
 
 
+LIVE_HOST = ("proxmox://proxmox-gem/host/files?path=/vault/identity&path=/vault/meta/recovery-key.json"
+             "&path=/etc/pve/qemu-server/120.conf&path=/var/lib/vz/snippets/neri-120-init.yaml")
+
+
+@pytest.mark.parametrize("path", [
+    "/", "/var", "/var/lib", "/var/lib/pve-cluster", "/var/lib/pve-cluster/config.db", "/etc", "/etc/pve", "/etc/pve/priv",
+    "/etc/pve/priv/authkey.key", "/etc/pve/nodes", "/etc/pve/nodes/davion-gem", "/etc/pve/nodes/x/priv",
+    "/etc/pve/nodes/x/priv/acme.cfg", "/etc/pve/local/priv", "/etc/pve/local/priv/x", "/etc/pve/pve-www.KEY",
+    "/etc/pve/nodes/x/pve-ssl.key", "/root", "/root/.ssh", "/root/.ssh/authorized_keys", "/etc/ssh",
+    "/etc/ssh/ssh_host_ed25519_key", "/etc/corosync", "/etc/corosync/authkey",
+])
+def test_a_host_path_holding_pve_or_root_secrets_is_refused(dispatcher, path, capsys):
+    # Written as root would install it from an agent-registered source; the floor holds whatever the workstation parsed.
+    files = {"via": "host", "paths": ["/vault/identity", path], "excludes": []}
+    dispatcher.SOURCES.write_text(json.dumps({"h": {"digest": "a" * 64, "kind": "host", "vmid": None, "files": files}}))
+    runs = Runs()
+    assert dispatcher.main(f"capture h {'a' * 64}", run=runs, out=io.BytesIO()) == 2
+    error = capsys.readouterr().err
+    assert runs.calls == [] and ("holds PVE or root secrets" in error or (path == "/" and "unsafe path" in error))
+    assert dispatcher.protected_host_path(path)
+
+
+def test_a_host_path_is_also_checked_where_it_resolves(dispatcher, monkeypatch):
+    real = os.path.realpath
+    monkeypatch.setattr(dispatcher.os.path, "realpath",
+                        lambda path: "/etc/pve/nodes/davion-gem/priv/lock" if path == "/vault/link" else real(path))
+    digests = _install(dispatcher, {"h": "proxmox://proxmox-gem/host/files?path=/vault/link"})
+    runs = Runs()
+    assert dispatcher.main(f"capture h {digests['h']}", run=runs, out=io.BytesIO()) == 2
+    assert runs.calls == []
+
+
+def test_the_registered_host_files_still_pass_the_floor(dispatcher):
+    digests = _install(dispatcher, {"h": LIVE_HOST})
+    runs = Runs()
+    assert dispatcher.main(f"capture h {digests['h']}", run=runs, out=io.BytesIO()) == 0
+    assert runs.calls[0][-4:] == ["vault/identity", "vault/meta/recovery-key.json", "etc/pve/qemu-server/120.conf",
+                                  "var/lib/vz/snippets/neri-120-init.yaml"]
+
+
+@pytest.mark.parametrize("path", [
+    "proxmox://proxmox-gem/lxc/150", "proxmox://proxmox-gem/lxc/160", "proxmox://proxmox-gem/qemu/150",
+    "proxmox://proxmox-gem/lxc/150/files?via=pct&path=/var/lib/ominull-response-authority",
+])
+def test_the_ominull_hub_and_append_only_restic_are_never_captured(dispatcher, path, capsys):
+    digests = _install(dispatcher, {"g": path})
+    runs = Runs()
+    assert dispatcher.main(f"capture g {digests['g']}", run=runs, out=io.BytesIO()) == 2
+    assert runs.calls == [] and "never captured" in capsys.readouterr().err
+
+
+def test_sources_shows_the_installed_list(dispatcher):
+    out = io.BytesIO()
+    assert dispatcher.main("sources", run=Runs(), out=out) == 0 and json.loads(out.getvalue()) == {}
+    _install(dispatcher, {"h": HOST})
+    out = io.BytesIO()
+    assert dispatcher.main("sources", run=Runs(), out=out) == 0 and sorted(json.loads(out.getvalue())) == ["h"]
+
+
+@pytest.mark.skipif(shutil.which("tar") is None, reason="needs GNU tar")
+def test_the_host_floor_excludes_secrets_under_an_allowed_directory(dispatcher, tmp_path):
+    root = tmp_path / "root"
+    files = ["etc/pve/priv/authkey.key", "etc/pve/nodes/gem/priv/acme.cfg", "etc/pve/pve-www.KEY", "etc/pve/nodes/gem/pve-ssl.key",
+             "etc/pve/qemu-server/120.conf", "var/lib/pve-cluster/config.db", "root/.ssh/id", "etc/ssh/ssh_host_ed25519_key",
+             "etc/ssh/sshd_config", "vault/identity/a"]
+    for name in files:
+        (root / name).parent.mkdir(parents=True, exist_ok=True)
+        (root / name).write_text("x")
+    (root / "etc/pve/local").symlink_to("nodes/gem")
+    command = dispatcher.tar_command({"paths": ["/etc", "/var", "/root", "/vault", "/etc/pve/local/priv/acme.cfg"], "excludes": []}, host=True)
+    command[command.index("-C") + 1] = str(root)
+    stream = subprocess.run(command, capture_output=True, check=False)
+    assert stream.returncode <= 1
+    listed = set(subprocess.run(["tar", "-t"], input=stream.stdout, capture_output=True, check=True).stdout.decode().split())
+    assert {"etc/pve/qemu-server/120.conf", "etc/ssh/sshd_config", "vault/identity/a", "etc/pve/local"} <= listed
+    assert not [name for name in listed if "priv" in name or name.lower().endswith(".key") or "pve-cluster/" in name
+                or ".ssh/" in name or "ssh_host" in name]
+
+
 def test_host_tar_never_carries_pve_private_files_and_accepts_a_changed_file(dispatcher):
     digests = _install(dispatcher, {"h": HOST})
     runs = Runs({"tar": (1, "")})
     assert dispatcher.main(f"capture h {digests['h']}", run=runs, out=io.BytesIO()) == 0
     tar = runs.calls[0]
-    assert "--exclude=etc/pve/priv" in tar and "--exclude=etc/pve/*.key" in tar
+    floor = tar[tar.index("--ignore-case"):tar.index("--no-ignore-case")]
+    assert {"--exclude=etc/pve/priv", "--exclude=etc/pve/*/priv", "--exclude=etc/pve/*.key", "--exclude=var/lib/pve-cluster",
+            "--exclude=root/.ssh", "--exclude=etc/ssh/ssh_host_*"} <= set(floor)
     assert tar[tar.index("--") + 1:] == ["vault/identity", "etc/pve/qemu-server/120.conf"]
     assert dispatcher.main(f"capture h {digests['h']}", run=Runs({"tar": (2, "")}), out=io.BytesIO()) == 2
 

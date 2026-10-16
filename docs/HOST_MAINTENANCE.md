@@ -118,10 +118,18 @@ setting), not against a hostile root user.
   config, guest files, host files) reach davion-gem only with
   `pve-backup.ed25519` in the backup key directory, bound to the fixed
   dispatcher `/usr/local/sbin/summitflow-pve-backup` (verbs `guests`,
-  `thinpool`, `capture SOURCE DIGEST`). What each source captures is the list
-  root installs on PVE, so adding or changing a `proxmox://` source needs
-  `sudo scripts/pve-backup/install.sh` before it runs. The config dump leaves
-  out `priv/` and every `*.key` file; PVE regenerates them on restore.
+  `thinpool`, `sources`, `capture SOURCE DIGEST`). What each source captures
+  is the list root installs on PVE, so adding or changing a `proxmox://`
+  source needs `sudo scripts/pve-backup/install.sh` before it runs. The
+  installer shows the list against the installed one and asks before a
+  change (`--yes` when there is no terminal), and installs only the
+  committed dispatcher. The config dump leaves out `priv/` and every `*.key`
+  file; PVE regenerates them on restore. The dispatcher refuses host paths
+  that are `/`, a `*.key` file, or hold or sit under config.db, the
+  `/etc/pve` priv directories, `/root`, `/etc/ssh` or `/etc/corosync`, and
+  never captures CT 150 (OmniNull) or CT 160 (append-only restic). Guest
+  files are read only through the dispatcher (`via=pct` or `via=agent`),
+  never over an ssh alias.
 - **Health.** Every scheduler tick re-reads the daily rotating
   `restic check --read-data-subset` results (failed or older than three days
   raises an alert). Weekly: snapshot-count and repository-size drops and a test

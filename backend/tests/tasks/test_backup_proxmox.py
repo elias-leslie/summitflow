@@ -99,9 +99,11 @@ def test_file_captures_send_the_host_a_verb_never_a_command(monkeypatch):
     assert _verb(px.plan_capture("ct140", path)["command"]) == ["capture", "ct140", px.path_digest(path)]
     host = "proxmox://proxmox-gem/host/files?path=/vault/identity"
     assert _verb(px.plan_capture("files", host)["command"]) == ["capture", "files", px.path_digest(host)]
-    # A guest reached through its own ssh alias is not the Proxmox host's to read.
-    ssh = px.plan_capture("ct140", "proxmox://proxmox-gem/lxc/140/files?via=neri-lab&path=/srv/data")
-    assert ssh["command"][-2] == "neri-lab" and ssh["command"][-1].endswith('rc=$?; [ "$rc" -le 1 ]')
+    # No ssh alias via: an alias such as proxmox-gem may carry the owner's root key, so it is refused before any ssh.
+    for alias in ("neri-lab", "proxmox-gem", "davion-gem"):
+        with pytest.raises(RuntimeError, match="Invalid Proxmox source path"):
+            px.plan_capture("ct140", f"proxmox://proxmox-gem/lxc/140/files?via={alias}&path=/var/lib/pve-cluster")
+        assert px.dispatcher_entry(f"proxmox://proxmox-gem/qemu/100/files?via={alias}&path=/srv") is None
     _guest(monkeypatch, "stopped", prior=False, kind="lxc", vmid=140)
     with pytest.raises(px.ProxmoxGuestOffline):
         px.plan_capture("ct140", "proxmox://proxmox-gem/lxc/140/files?via=pct&path=/srv/data")

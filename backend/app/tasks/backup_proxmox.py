@@ -6,9 +6,10 @@ Source paths name what to capture:
 - ``proxmox://<pve>/config``: a read-only SQLite dump of the cluster database
   (every guest's configuration lives there).
 - ``proxmox://<pve>/<qemu|lxc>/<vmid>/files?via=...&path=...&exclude=...``:
-  only the named paths inside a guest, as a tar stream. ``via`` is an ssh alias
-  that reaches the guest, ``pct`` (container, read with ``pct exec``) or
-  ``agent`` (VM reachable only through its QEMU guest agent).
+  only the named paths inside a guest, as a tar stream. ``via`` is ``pct``
+  (container, read with ``pct exec``) or ``agent`` (VM, read through its QEMU
+  guest agent). There is no ssh alias via: every read goes through the
+  Proxmox host's dispatcher, never through an alias that may hold a root key.
 - ``proxmox://<pve>/host/files?path=...``: paths on the Proxmox host itself,
   such as bind-mounted data whose container is stopped.
 
@@ -30,7 +31,6 @@ import hashlib
 import json
 import os
 import re
-import shlex
 import subprocess
 from dataclasses import dataclass
 from datetime import UTC, datetime
@@ -48,7 +48,6 @@ THIN_POOL_FULL_PERCENT = 98.0  # Snapshot copy-on-write must not exhaust the gue
 CONFIG_ESTIMATED_BYTES = 64 * 1024**2
 SSH_OPTIONS = ("-o", "BatchMode=yes", "-o", "ConnectTimeout=20", "-o", "ServerAliveInterval=30", "-o", "ServerAliveCountMax=6")
 PVE_BACKUP_KEY = "pve-backup.ed25519"  # In the backup key directory; root binds it to scripts/pve-backup/summitflow-pve-backup.
-PVE_VIAS = ("host", "pct", "agent")  # File reads the Proxmox host's dispatcher performs; any other via is an ssh alias to the guest.
 _TARGET = re.compile(
     r"proxmox://(?P<host>[A-Za-z0-9._-]{1,64})/"
     r"(?:(?P<kind>qemu|lxc)/(?P<vmid>[1-9][0-9]{0,8})(?P<files>/files)?|(?P<config>config)|(?P<pvehost>host)/files)"
@@ -56,7 +55,7 @@ _TARGET = re.compile(
 )
 _GUEST_PATH = re.compile(r"/(?:[A-Za-z0-9._@+-][A-Za-z0-9 ._@+-]*/?)+")
 _EXCLUDE = re.compile(r"[A-Za-z0-9 ._*@+/-]{1,128}")
-_VIA = re.compile(r"agent|pct|host|[A-Za-z0-9._-]{1,64}")
+_VIA = re.compile(r"agent|pct|host")
 
 
 class ProxmoxGuestOffline(RuntimeError):
@@ -216,13 +215,6 @@ def plan_capture(source_id: str, path: str) -> dict[str, Any]:
 
 FILES_ESTIMATED_BYTES = 1024**3  # First-run reserve; later runs use measured growth.
 
-def _tar_script(selection: FileSelection) -> str:
-    """A tar stream of the selected paths; exit 1 (a file changed while read) is accepted."""
-    command = ["tar", "--create", "--file=-", "--one-file-system", "--ignore-failed-read", "--warning=no-file-changed",
-               "--warning=no-file-removed", *[f"--exclude={item}" for item in selection.excludes], "-C", "/", "--",
-               *[path.strip("/") for path in selection.paths]]
-    return f"{shlex.join(command)}; rc=$?; [ \"$rc\" -le 1 ]"
-
 
 def _plan_files(source_id: str, target: ProxmoxTarget, path: str) -> dict[str, Any]:
     selection = target.files
@@ -235,11 +227,8 @@ def _plan_files(source_id: str, target: ProxmoxTarget, path: str) -> dict[str, A
             # Files can only be read from a running guest; a stopped one cannot change.
             raise ProxmoxGuestOffline(f"Proxmox {target.kind} {target.vmid} is {state['status']}; file capture resumes when it runs")
         capture.update(vmid=target.vmid, node=state["node"], name=state["name"])
-    if selection.via in PVE_VIAS:
-        # The dispatcher tars on the host, through pct exec, or inside the VM through its QEMU agent.
-        command = [*pve_ssh(target.host), "capture", source_id, path_digest(path)]
-    else:
-        command = ["ssh", *SSH_OPTIONS, selection.via, _tar_script(selection)]
+    # The dispatcher tars on the host, through pct exec, or inside the VM through its QEMU agent.
+    command = [*pve_ssh(target.host), "capture", source_id, path_digest(path)]
     return {"target": target, "estimated_bytes": FILES_ESTIMATED_BYTES, "command": command, "capture": capture}
 
 
@@ -256,9 +245,9 @@ def run_proxmox_backup(*, source_id: str, project_dir: str, env: dict[str, str],
 
 
 def dispatcher_entry(path: str) -> dict[str, Any] | None:
-    """What the Proxmox dispatcher captures for one source path, or None when it is not the host's to read."""
+    """What the Proxmox dispatcher captures for one source path, or None when it is not a valid Proxmox path."""
     target = parse_target(path)
-    if target is None or (target.files is not None and target.files.via not in PVE_VIAS):
+    if target is None:
         return None
     files = target.files and {"via": target.files.via, "paths": list(target.files.paths), "excludes": list(target.files.excludes)}
     return {"digest": path_digest(path), "kind": target.kind, "vmid": target.vmid, "files": files}

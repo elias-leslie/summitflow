@@ -7,6 +7,7 @@ sends one fixed verb; no shell ever runs what it sends:
 
   guests                  guest list (pvesh get /cluster/resources --type vm)
   thinpool                data_percent of the guest thin pool
+  sources                 the installed source list (install.sh shows what a re-install changes)
   capture SOURCE DIGEST   stream one registered source to stdout
 
 What a source captures comes only from /etc/summitflow-pve-backup/sources.json, which
@@ -15,11 +16,16 @@ path as SummitFlow has it now; a mismatch means the source changed on the workst
 and it is refused until root re-runs install.sh.
 
 The cluster config dump leaves out priv/ and every *.key file (authkey.key, pve-www.key,
-pve-root-ca.key, node ssl keys; PVE regenerates them on restore), and host file tars
-always leave out the same files under /etc/pve.
+pve-root-ca.key, node ssl keys; PVE regenerates them on restore). The source list is
+built from sources agents can register, so this side keeps its own floor: a host path
+that is /, a *.key file, or holds or sits under PVE's or root's secrets (config.db,
+/etc/pve priv directories, /root, /etc/ssh, /etc/corosync) is refused, host tars always
+exclude them as well, and the OmniNull hub (CT 150) and append-only restic (CT 160) are
+never captured.
 """
 
 import base64
+import fnmatch
 import json
 import os
 import re
@@ -38,7 +44,13 @@ DUMP_LOG_KEEP_DAYS = 7
 THIN_POOL = "pve/data"
 AGENT_PART_BYTES = 12_000_000  # Base64 text per guest-agent read; a multiple of 4, under the 16 MiB limit.
 GUEST_EXEC_TIMEOUT_SECONDS = 1800
-PVE_SECRETS = ("etc/pve/priv", "etc/pve/*.key")
+# Never read on the host, nor any directory holding them; '*' is one path component. /etc/pve/local links to nodes/<node>.
+PROTECTED_PATHS = ("root", "var/lib/pve-cluster", "etc/pve/priv", "etc/pve/nodes/*/priv", "etc/pve/local/priv",
+                   "etc/ssh", "etc/corosync")
+# Excluded from every host tar, case-insensitively ('*' matches across '/' here, as in tar).
+PVE_SECRETS = ("etc/pve/priv", "etc/pve/*/priv", "etc/pve/*.key", "var/lib/pve-cluster", "root/.ssh", "etc/ssh/ssh_host_*",
+               "etc/corosync/authkey")
+PROTECTED_GUESTS = frozenset({150, 160})  # OmniNull hub and response authority; append-only restic.
 _SOURCE_ID = re.compile(r"[A-Za-z0-9._-]{1,128}")
 _DIGEST = re.compile(r"[0-9a-f]{64}")
 _PATH = re.compile(r"/(?:[A-Za-z0-9._@+-][A-Za-z0-9 ._@+-]*/?)+")
@@ -49,6 +61,19 @@ _VIA = {"host": "host", "lxc": "pct", "qemu": "agent"}
 
 class Refused(Exception):
     pass
+
+
+def protected_host_path(path):
+    """True for /, a *.key file, or a path that holds or sits under a protected one, as written or as resolved here."""
+    for candidate in {path, os.path.realpath(path)}:
+        parts = [part for part in candidate.split("/") if part]
+        if not parts or parts[-1].lower().endswith(".key"):
+            return True
+        for protected in PROTECTED_PATHS:
+            pattern = protected.split("/")
+            if all(fnmatch.fnmatchcase(part, want) for part, want in zip(parts, pattern)):
+                return True
+    return False
 
 
 def load_source(source_id, digest):
@@ -71,6 +96,8 @@ def load_source(source_id, digest):
         raise Refused(f"{source_id}: malformed guest id")
     if kind not in _VIA:
         raise Refused(f"{source_id}: unknown kind")
+    if vmid in PROTECTED_GUESTS:
+        raise Refused(f"{source_id}: guest {vmid} is never captured by this key")
     if files is not None:
         paths, excludes = files.get("paths"), files.get("excludes")
         if files.get("via") != _VIA[kind] or not isinstance(paths, list) or not paths or not isinstance(excludes, list):
@@ -79,6 +106,8 @@ def load_source(source_id, digest):
             raise Refused(f"{source_id}: unsafe path")
         if any(not isinstance(item, str) or not _EXCLUDE.fullmatch(item) for item in excludes):
             raise Refused(f"{source_id}: unsafe exclude")
+        if kind == "host" and any(protected_host_path(path) for path in paths):
+            raise Refused(f"{source_id}: a host path holds PVE or root secrets")
     return entry
 
 
@@ -104,9 +133,9 @@ def config_dump(out):
 
 def tar_command(files, *, host=False):
     """A tar stream of the selected paths; exit 1 (a file changed while read) is accepted by the caller."""
-    excludes = [*files["excludes"], *(PVE_SECRETS if host else ())]
+    floor = ["--ignore-case", *[f"--exclude={item}" for item in PVE_SECRETS], "--no-ignore-case"] if host else []
     return ["tar", "--create", "--file=-", "--one-file-system", "--ignore-failed-read", "--warning=no-file-changed",
-            "--warning=no-file-removed", *[f"--exclude={item}" for item in excludes], "-C", "/", "--",
+            "--warning=no-file-removed", *floor, *[f"--exclude={item}" for item in files["excludes"]], "-C", "/", "--",
             *[path.strip("/") for path in files["paths"]]]
 
 
@@ -191,9 +220,13 @@ def main(command=None, run=subprocess.run, out=None):
             return run(["pvesh", "get", "/cluster/resources", "--type", "vm", "--output-format", "json"]).returncode
         if words == ["thinpool"]:
             return run(["lvs", "--noheadings", "-o", "data_percent", THIN_POOL]).returncode
+        if words == ["sources"]:
+            out.write(SOURCES.read_bytes() if SOURCES.is_file() else b"{}")
+            out.flush()
+            return 0
         if len(words) == 3 and words[0] == "capture":
             return capture(load_source(words[1], words[2]), out, run)
-        raise Refused("unknown request; this key runs only guests, thinpool or capture SOURCE DIGEST")
+        raise Refused("unknown request; this key runs only guests, thinpool, sources or capture SOURCE DIGEST")
     except (Refused, OSError, ValueError, sqlite3.Error, subprocess.CalledProcessError) as exc:
         sys.stderr.write(f"summitflow-pve-backup: {exc}\n")
         return 2
