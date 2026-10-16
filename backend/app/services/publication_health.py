@@ -47,8 +47,6 @@ def classify_observation(result: dict[str, Any]) -> dict[str, Any]:
     security: dict[str, Any] = security_value if isinstance(security_value, dict) else {}
     acceptance_value = result.get("acceptance")
     acceptance: dict[str, Any] = acceptance_value if isinstance(acceptance_value, dict) else {}
-    pr_value = ci.get("pr_checks")
-    pr_checks: dict[str, Any] = pr_value if isinstance(pr_value, dict) else {}
     observed_at = result.get("observed_at")
     try:
         timestamp = datetime.fromisoformat(str(observed_at).replace("Z", "+00:00"))
@@ -60,17 +58,14 @@ def classify_observation(result: dict[str, Any]) -> dict[str, Any]:
         reason = "remote_ci_failed" if ci_state == "failed" else "security_findings_open"
     elif reason in _SETUP_FAILURES or (status in {"failed", "blocked", "failure"} and reason not in _DEFERRED):
         state = "blocked"
-    elif (head and observed_at and result.get("publication_complete") is True and ci_state in {"success", "not_applicable"}
-          and ci.get("sha") and ci.get("sha") in {head, result.get("merge_sha")}
-          and (ci.get("sha") == head or (pr_checks.get("state") in (
-              {"success", "not_applicable"} if ci_state == "not_applicable" else {"success"}) and pr_checks.get("sha") == head))
+    elif (head and observed_at and result.get("publication_complete") is True
           and security.get("state") == "success" and security.get("sha") == head
           and acceptance.get("source_commit") == head
           and ((acceptance.get("state") in {"success", "reused"} and acceptance.get("acceptance_id"))
-               or (acceptance.get("state") == "not_required" and result.get("publication_mode") == "mirror"))):
-        state = "verified" if ci_state == "success" else "published"
-        if state == "published":
-            reason = "published_without_ci"
+               or acceptance.get("state") == "not_required")):
+        # A plain push publishes the source itself. Retained receipts from the
+        # retired PR path may still carry CI that passed on this exact source.
+        state = "verified" if ci_state == "success" and ci.get("sha") == head else "published"
     elif status in {"pending", "queued"} or reason in _DEFERRED:
         state = "pending"
     else:
@@ -93,13 +88,13 @@ def _accepted_source(result: dict[str, Any], head: str | None) -> bool:
 def record_publication_observation(project_id: str, result: dict[str, Any]) -> str | None:
     observation = classify_observation(result)
     # Published and verified states both require a passing outgoing scan bound
-    # to this exact source (classify_observation); CI is independent of it.
+    # to this exact source (classify_observation).
     accepted = _accepted_source(result, observation["source_commit"])
     if observation["state"] == "published":
-        # A CI-less upload proves its outgoing scan and, only when it carries an
-        # exact acceptance receipt (mirror uploads may not), that local
-        # acceptance passes for a source including the failed one (the stored
-        # ancestry proof). It never resolves CI or CodeQL.
+        # A push proves its outgoing scan and, only when it carries an exact
+        # acceptance receipt (private pushes may not), that local acceptance
+        # passes for a source including the failed one (the stored ancestry
+        # proof). It never resolves CodeQL.
         task_id = None
         if accepted:
             task_id = record_finding(project_id, "publication", observation, resolved=True,
@@ -183,5 +178,5 @@ def get_project_publication_health(project_id: str, *, now: datetime | None = No
 
 def format_publication_health(health: dict[str, Any]) -> str:
     return (f"Manual publication: {health['state']}; source={str(health.get('source_commit') or 'unknown')[:12]}; "
-            f"observed={health.get('observed_at') or 'unknown'}; CI={health.get('ci_state', 'unknown')}; "
+            f"observed={health.get('observed_at') or 'unknown'}; "
             f"reason={health.get('reason', 'unknown')}; repair={health.get('repair_task_id') or 'none'}")

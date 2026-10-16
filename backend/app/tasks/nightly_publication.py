@@ -1,24 +1,27 @@
-"""Overnight catch-up publication of committed local sources.
+"""Hourly publication of committed local sources by plain fast-forward push.
 
 The owner selects a mode per project (``agent_configs.publication_mode``):
-``nightly`` publishes the newest committed default-branch head once it has a
-full acceptance receipt, running acceptance at night when it is missing;
-``mirror`` publishes that head with outgoing history/secret verification only,
-for repositories without checks; ``manual`` (the default) never runs here.
+``nightly`` and ``mirror`` both publish hourly; ``manual`` (the default) never
+runs here. A private repository publishes its committed default-branch head;
+a public one (or any non-GitHub remote) publishes its newest commit with a
+valid full acceptance receipt. The outgoing history/secret verifier and the
+workflow-effects gate run before every push.
 
-Daytime work is untouched: nothing is committed, no checkout changes, one
-project runs at a time inside a quiet local window, and a project with a live
-writer or a busy heavy lane is skipped until the next hourly run. A source that
-failed is not retried until its head changes; it surfaces once in the morning
-summary and the existing publication repair task instead.
+Nothing is committed and no checkout changes. Only an owner publication hold
+or an agent's explicit repo hold defers a project; a push is cheap, so live
+editing or heavy work elsewhere never does. A source that failed is not
+retried until a newer commit replaces it; it surfaces in the daily attention
+notification and the existing publication repair task instead. Once a night
+each project also checks that GitHub's branch still contains the last
+published local commit.
 """
 from __future__ import annotations
 
 import asyncio
+import hashlib
 import json
 import os
 import re
-import subprocess
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
@@ -31,21 +34,13 @@ logger = get_logger(__name__)
 
 MODES = ("nightly", "mirror", "manual")
 WINDOW_ZONE = ZoneInfo("America/New_York")
-WINDOW_START_HOUR, WINDOW_END_HOUR = 1, 6
-ACCEPTANCE_TIMEOUT_SECONDS = 90 * 60
+CONTAINMENT_HOUR = 3  # local hour of the nightly GitHub containment check
+ACCEPTED_SEARCH_LIMIT = 64
 _OID = re.compile(r"[0-9a-f]{40}|[0-9a-f]{64}")
-# Pending reasons worth a morning line; only workflow authority stops retries,
-# because no overnight attempt can supply it.
-_OWNER_REASONS = {"workflow_effects_authorization_required", "remote_authentication_unavailable"}
-
-
-def publication_window_open(now: datetime | None = None) -> bool:
-    local = (now or datetime.now(UTC)).astimezone(WINDOW_ZONE)
-    return WINDOW_START_HOUR <= local.hour < WINDOW_END_HOUR
-
-
-def final_window_run(now: datetime | None = None) -> bool:
-    return (now or datetime.now(UTC)).astimezone(WINDOW_ZONE).hour == WINDOW_END_HOUR - 1
+_ATTENTION_REASONS = {"diverged_from_remote", "awaiting_repair", "owner_action_required",
+                      "publication_receipt_unreadable", "hold_source_not_on_branch",
+                      "remote_branch_missing", "remote_not_containing_published",
+                      "remote_authentication_unavailable", "workflow_effects_authorization_required"}
 
 
 def publication_mode(project_id: str) -> str:
@@ -109,34 +104,46 @@ def _write_nightly_state(root: Path, value: dict[str, Any]) -> None:
     os.replace(temporary, path)
 
 
-def _absorbable_merge(root: Path, sha: str, upstream: str) -> bool:
-    """True when the remote tip's tree is already a commit in local history.
+def _hold_lease(project_id: str) -> str | None:
+    """An agent's explicit repo hold freezes publication as well as deploys."""
+    from cli.lib import leases
 
-    Retired PR publication left merge commits on GitHub whose content equals the
-    merged PR head this checkout already has; absorbing them changes no files.
-    """
-    tree = _git(root, "rev-parse", f"{upstream}^{{tree}}")
-    base = _git(root, "merge-base", sha, upstream)
-    if not tree or not base:
-        return False
-    trees = [_git(root, "rev-parse", f"{base}^{{tree}}"), *(_git(root, "log", "--format=%T", f"{base}..{sha}", "--") or "").split()]
-    return tree in trees
+    try:
+        held = leases.list_active(project_id, kinds=("hold",))
+    except Exception:
+        return None
+    return f"{held[0].purpose or 'hold'} by {held[0].agent_id}" if held else None
 
 
-def absorb_published_merge(root: Path, candidate: dict[str, Any]) -> str:
-    """Record the remote merge as a parent with this head's own tree (no file changes)."""
-    branch, sha, upstream = candidate["branch"], candidate["sha"], candidate["upstream"]
-    tree = _git(root, "rev-parse", f"{sha}^{{tree}}")
-    merged = tree and _git(root, "commit-tree", tree, "-p", sha, "-p", upstream,
-                           "-m", f"Absorb published merge {upstream[:12]} (content already present)")
-    if not merged or _git(root, "update-ref", "-m", "st nightly: absorb published merge",
-                          f"refs/heads/{branch}", merged, sha) is None:
-        raise RuntimeError("published merge absorption failed")
-    return merged
+def _newest_accepted(root: Path, upstream: str, sha: str) -> str | None:
+    """Newest first-parent commit after ``upstream`` with a valid full acceptance receipt."""
+    from .backup_publish import _acceptance_for_head
+
+    for commit in (_git(root, "rev-list", "--first-parent", f"--max-count={ACCEPTED_SEARCH_LIMIT}",
+                        f"{upstream}..{sha}") or "").split():
+        if _acceptance_for_head(root, commit).get("state") == "reused":
+            return commit
+    return None
+
+
+def _public(root: Path, branch: str) -> bool | None:
+    """Repository visibility (None when unknown); any non-GitHub remote counts as public."""
+    from ..services.git.utils import network_repository_identity
+    from .backup_publish import is_public, remote_repository
+
+    remote = _git(root, "config", "--get", f"branch.{branch}.remote")
+    url = remote and _git(root, "remote", "get-url", "--push", remote)
+    identity = network_repository_identity(url) if url else None
+    if identity is None:
+        return True
+    try:
+        return is_public(remote_repository(root, identity))
+    except Exception:
+        return None
 
 
 def select_candidate(project_id: str, root: Path, mode: str, hold: dict[str, Any] | None = None) -> dict[str, Any]:
-    """Decide what tonight would do for one project without side effects."""
+    """Decide what this hour would publish for one project without side effects."""
     row: dict[str, Any] = {"project_id": project_id, "mode": mode, "action": "skip"}
     if mode == "manual":
         return {**row, "reason": "manual_mode"}
@@ -154,7 +161,7 @@ def select_candidate(project_id: str, root: Path, mode: str, hold: dict[str, Any
         through = hold.get("through")
         if not through:
             return {**row, "sha": sha, "reason": "held", "detail": hold.get("reason")}
-        # Publish exactly the released source; later local commits stay local.
+        # Publish at most the released source; later local commits stay local.
         if _git(root, "merge-base", "--is-ancestor", str(through), sha) is None:
             return {**row, "sha": sha, "reason": "hold_source_not_on_branch", "detail": through}
         sha = str(through)
@@ -168,167 +175,75 @@ def select_candidate(project_id: str, root: Path, mode: str, hold: dict[str, Any
     behind, ahead = map(int, counts.split())
     row.update(ahead=ahead, behind=behind)
     if behind:
-        if hold is None and _absorbable_merge(root, sha, upstream):
-            return {**row, "action": "absorb", "reason": "published_merge_absorbable", "upstream": upstream}
         # Remote work this checkout lacks needs a person; never publish around it.
         return {**row, "reason": "diverged_from_remote"}
     if not ahead:
         return {**row, "reason": "up_to_date"}
+    public = _public(root, branch)
+    if public is None:
+        return {**row, "reason": "remote_visibility_unknown"}
+    row["visibility"] = "public" if public else "private"
+    if public:
+        accepted = _newest_accepted(root, upstream, sha)
+        if accepted is None:
+            return {**row, "reason": "no_accepted_commit"}
+        row.update(sha=accepted, unaccepted_later=sha != accepted)
     from .backup_manual_publish import read_publication_receipt
 
     try:
-        receipt = read_publication_receipt(root, sha)
+        receipt = read_publication_receipt(root, row["sha"])
     except (OSError, ValueError):
         return {**row, "reason": "publication_receipt_unreadable"}
     observation = (receipt or {}).get("observation") or {}
     if observation.get("publication_complete") is True:
         return {**row, "reason": "published"}
-    status = str(observation.get("status") or "").lower()
-    if receipt and status in {"failed", "blocked"}:
+    # A source that failed is not retried until a new commit replaces it.
+    if receipt and str(observation.get("status") or "").lower() in {"failed", "blocked"}:
         return {**row, "reason": "awaiting_repair", "detail": observation.get("reason")}
     if receipt and observation.get("reason") == "workflow_effects_authorization_required":
         return {**row, "reason": "owner_action_required", "detail": observation.get("reason"),
                 "unauthorized_workflows": observation.get("unauthorized_workflows") or []}
-    state = read_nightly_state(root) or {}
-    if state.get("sha") == sha and state.get("outcome") == "acceptance_failed":
-        return {**row, "reason": "acceptance_failed", "detail": state.get("evidence")}
-    row["resume"] = bool(receipt)
-    if mode == "mirror":
-        return {**row, "action": "publish", "reason": "mirror"}
-    from .backup_publish import _acceptance_for_head
-
-    accepted = _acceptance_for_head(root, sha).get("state") == "reused"
-    if not accepted and row.get("held_through"):
-        # Full acceptance runs only for a checkout's HEAD; an older released
-        # source needs a valid receipt already (or the hold moved forward).
-        return {**row, "reason": "held_source_needs_acceptance"}
-    return {**row, "action": "publish" if accepted else "accept_then_publish",
-            "reason": "accepted" if accepted else "acceptance_missing"}
-
-
-RECENT_EDIT_SECONDS = 30 * 60
-
-
-def _recently_edited(root: Path, now: float) -> bool:
-    """Uncommitted edits made minutes ago mean someone is working, registered or not."""
-    from .backup_publish import _git as guarded_git
-
-    status = guarded_git(root, "status", "--porcelain=v1", "-z", "--untracked-files=normal")
-    for entry in (status.stdout if status.returncode == 0 else "").split("\0"):
-        if len(entry) > 3:
-            try:
-                if now - (root / entry[3:]).lstat().st_mtime < RECENT_EDIT_SECONDS:
-                    return True
-            except OSError:
-                continue
-    return False
-
-
-def busy_reason(project_id: str, root: Path | None = None) -> str | None:
-    """Defer while someone works on the project or heavy work is running."""
-    import time
-
-    from ..utils.heavy_work import HeavyWorkError, lane_activity
-
-    if root is not None and _recently_edited(root, time.time()):
-        return "recent_edits"
-
-    try:
-        if lane_activity("heavy"):
-            return "heavy_lane_busy"
-    except HeavyWorkError:
-        return "heavy_lane_unavailable"
-    from ..services.project_pulse import count_active_writers
-
-    try:
-        writers = asyncio.run(count_active_writers(project_id))
-    except Exception:
-        return "activity_unknown"
-    return "active_writers" if writers else None
-
-
-def _run_acceptance(root: Path, sha: str) -> dict[str, Any]:
-    """Run canonical acceptance like an owner shell would, under its own admission."""
-    environment = {key: os.environ[key] for key in ("HOME", "USER", "LOGNAME", "LANG", "XDG_RUNTIME_DIR")
-                   if key in os.environ}
-    environment["PATH"] = "/usr/local/bin:/usr/bin:/bin"
-    try:
-        completed = subprocess.run(
-            ["bash", "-lc", 'exec st check --acceptance --sha "$1"', "st-nightly-acceptance", sha],
-            cwd=root, env=environment, stdin=subprocess.DEVNULL, capture_output=True, text=True,
-            timeout=ACCEPTANCE_TIMEOUT_SECONDS, check=False,
-        )
-    except subprocess.TimeoutExpired:
-        return {"state": "failed", "reason": "acceptance_timeout"}
-    except OSError:
-        return {"state": "failed", "reason": "acceptance_unavailable"}
-    # A failure names its receipt as "acceptance evidence: X"; a pass as "artifact=X".
-    evidence = re.findall(r"(?:acceptance evidence: |\|artifact=)(\S+?\.(?:json|log))(?=\||\s|$)",
-                          completed.stdout + completed.stderr)
-    if completed.returncode == 0:
-        return {"state": "pass", "reason": "acceptance_passed", "evidence": evidence[-1] if evidence else None}
-    # Only failed checks are a source finding. Inputs changing underneath the
-    # run (another session editing, dependency sync) are retried next hour.
-    failed = _checks_failed(root, sha)
-    return {"state": "failed" if failed else "unavailable",
-            "reason": "acceptance_failed" if failed else "acceptance_unavailable",
-            "evidence": evidence[-1] if evidence else None}
-
-
-def _checks_failed(root: Path, sha: str) -> bool:
-    common = _git(root, "rev-parse", "--path-format=absolute", "--git-common-dir")
-    if not common:
-        return False
-    receipts = sorted((Path(common) / "st" / "acceptance").glob("*.json"),
-                      key=lambda path: path.stat().st_mtime_ns, reverse=True)[:16]
-    for path in receipts:
-        try:
-            value = json.loads(path.read_text())
-        except (OSError, ValueError):
-            continue
-        if isinstance(value, dict) and (value.get("source") or {}).get("commit") == sha:
-            return value.get("reason") == "acceptance_checks_failed"
-    return False
+    return {**row, "action": "publish", "reason": "accepted" if public else "private_head"}
 
 
 def execute_candidate(candidate: dict[str, Any], root: Path) -> dict[str, Any]:
-    from ..services.publication_health import record_publication_observation
     from .backup_manual_publish import publish_project_now
-    from .backup_publish import _acceptance_for_head
 
-    project_id, sha, mode = candidate["project_id"], candidate["sha"], candidate["mode"]
-    observed = datetime.now(UTC).isoformat()
-    if candidate["action"] == "accept_then_publish":
-        acceptance = _run_acceptance(root, sha)
-        if acceptance["state"] == "unavailable":
-            return {**candidate, "outcome": "deferred", "reason": acceptance["reason"],
-                    "evidence": acceptance.get("evidence"), "observed_at": observed}
-        if acceptance["state"] == "pass":
-            reuse = _acceptance_for_head(root, sha)
-            if reuse.get("state") != "reused":
-                # The checks passed; this process just cannot reuse the receipt
-                # they wrote. That is a SummitFlow gate fault, not a source
-                # finding: never record it as failed acceptance or hold the
-                # source, so the next hourly run retries.
-                return {**candidate, "outcome": "failed", "reason": "acceptance_receipt_not_reusable",
-                        "detail": reuse.get("state"), "evidence": acceptance.get("evidence"),
-                        "observed_at": observed}
-        else:
-            outcome = {**candidate, "outcome": "acceptance_failed", "reason": acceptance["reason"],
-                       "evidence": acceptance.get("evidence"), "observed_at": observed}
-            _write_nightly_state(root, outcome)
-            # A failed acceptance is a source finding for the rolling repair task.
-            record_publication_observation(project_id, {"status": "failed", "reason": "nightly_acceptance_failed",
-                                                        "head": sha, "observed_at": observed})
-            return outcome
-    result = publish_project_now(project_id, sha, publication_mode=mode)
+    result = publish_project_now(candidate["project_id"], candidate["sha"])
     outcome = {**candidate, "outcome": str(result.get("status") or "unknown").lower(),
                "reason": result.get("reason"), "publication_complete": bool(result.get("publication_complete")),
-               "merged_source": (result.get("delivery") or {}).get("merged_source"),
                "unauthorized_workflows": result.get("unauthorized_workflows") or [],
                "evidence": result.get("evidence"), "observed_at": datetime.now(UTC).isoformat()}
     _write_nightly_state(root, outcome)
     return outcome
+
+
+def remote_containment(project_id: str, root: Path, mode: str) -> dict[str, Any] | None:
+    """Attention row when GitHub's branch no longer contains the last published local commit."""
+    if mode == "manual" or not (root / ".git").exists():
+        return None
+    from .backup_publish import _git as guarded_git
+
+    branch = next((name for name in ("main", "master")
+                   if _git(root, "rev-parse", "--verify", "--quiet", f"refs/heads/{name}")), None)
+    remote = branch and _git(root, "config", "--get", f"branch.{branch}.remote")
+    published = branch and _git(root, "rev-parse", "--verify", "--quiet", f"{branch}@{{upstream}}^{{commit}}")
+    if not remote or not published:
+        return None
+    row = {"project_id": project_id, "mode": mode, "action": "check", "sha": published}
+    try:
+        listed = guarded_git(root, "ls-remote", "--refs", remote, f"refs/heads/{branch}")
+    except Exception:
+        return None
+    if listed.returncode:
+        return None
+    rows = listed.stdout.split()
+    if not rows:
+        return {**row, "reason": "remote_branch_missing"}
+    live = rows[0]
+    if live == published or _git(root, "merge-base", "--is-ancestor", published, live) is not None:
+        return None
+    return {**row, "reason": "remote_not_containing_published", "detail": live}
 
 
 def _projects(project_ids: list[str] | None) -> list[tuple[str, Path]]:
@@ -353,68 +268,105 @@ def summary_line(row: dict[str, Any]) -> str:
     text = f"{row['project_id']}: {detail} ({row.get('reason')}) mode={row['mode']} source={sha}"
     if row.get("unauthorized_workflows"):
         paths = " ".join(f"--authorize-workflow {path}" for path in row["unauthorized_workflows"])
-        text += f" | st vcs publish --source {row['project_id']} --sha {row.get('sha')} --now {paths}"
+        text += f" | st vcs publish --source {row['project_id']} --sha {row.get('sha')} {paths}"
     return text
 
 
 def needs_attention(row: dict[str, Any]) -> bool:
-    return (row.get("outcome") in {"failed", "blocked", "acceptance_failed"}
-            or row.get("reason") in {"diverged_from_remote", "awaiting_repair", "owner_action_required",
-                                     "acceptance_failed", "publication_receipt_unreadable", "hold_source_not_on_branch",
-                                     "held_source_needs_acceptance"}
-            or row.get("reason") in _OWNER_REASONS)
+    return row.get("outcome") in {"failed", "blocked"} or row.get("reason") in _ATTENTION_REASONS
 
 
-def _notify(rows: list[dict[str, Any]]) -> None:
+def _notify(rows: list[dict[str, Any]], now: datetime) -> None:
+    """One notification per distinct attention set per day."""
     attention = [row for row in rows if needs_attention(row)]
     if not attention:
         return
     from ..storage.notifications import create_notification
 
+    lines = [summary_line(row) for row in attention]
+    digest = hashlib.sha256("\n".join(sorted(f"{row['project_id']}:{row.get('reason')}" for row in attention)).encode()).hexdigest()[:12]
     try:
         create_notification(
             project_id="summitflow", notification_type="system", severity="warning",
-            title=f"Nightly publication: {len(attention)} project(s) need attention",
-            message="\n".join(summary_line(row) for row in attention),
-            metadata={"nightly_publication": True},
-            dedupe_key=f"nightly-publication-{datetime.now(WINDOW_ZONE).date().isoformat()}",
+            title=f"Publication: {len(attention)} project(s) need attention",
+            message="\n".join(lines), metadata={"nightly_publication": True},
+            dedupe_key=f"publication-{now.astimezone(WINDOW_ZONE).date().isoformat()}-{digest}",
         )
     except Exception:
         logger.warning("nightly_publication_notification_failed")
 
 
 def run_nightly_publication(*, dry_run: bool = False, now: datetime | None = None,
-                            project_ids: list[str] | None = None, ignore_window: bool = False) -> dict[str, Any]:
-    """One sequential pass; hourly runs resume pending CI and pick up new heads."""
-    def window_open() -> bool:
-        return ignore_window or publication_window_open(now)
-
-    if not dry_run and not window_open():
-        return {"status": "outside_window"}
+                            project_ids: list[str] | None = None) -> dict[str, Any]:
+    """One sequential pass over the auto-published projects."""
+    now = now or datetime.now(UTC)
+    containment = now.astimezone(WINDOW_ZONE).hour == CONTAINMENT_HOUR
     rows: list[dict[str, Any]] = []
     for project_id, root in _projects(project_ids):
+        mode = "unknown"
         try:
-            candidate = select_candidate(project_id, root, publication_mode(project_id), publication_hold(project_id))
+            mode = publication_mode(project_id)
+            candidate = select_candidate(project_id, root, mode, publication_hold(project_id))
         except Exception:
             logger.warning("nightly_publication_selection_failed", project_id=project_id)
-            candidate = {"project_id": project_id, "mode": "unknown", "action": "skip", "reason": "selection_failed"}
+            candidate = {"project_id": project_id, "mode": mode, "action": "skip", "reason": "selection_failed"}
         if candidate["action"] != "skip":
-            busy = busy_reason(project_id, root)
-            if busy:
-                candidate = {**candidate, "action": "skip", "reason": busy}
-            elif not dry_run and not window_open():
-                candidate = {**candidate, "action": "skip", "reason": "window_closed"}
+            held = _hold_lease(project_id)
+            if held:
+                candidate = {**candidate, "action": "skip", "reason": "held", "detail": held}
             elif not dry_run:
                 try:
-                    if candidate["action"] == "absorb":
-                        absorb_published_merge(root, candidate)
-                        candidate = select_candidate(project_id, root, candidate["mode"], None)
-                    if candidate["action"] != "skip":
-                        candidate = execute_candidate(candidate, root)
+                    candidate = execute_candidate(candidate, root)
                 except Exception:
                     logger.warning("nightly_publication_failed", project_id=project_id)
                     candidate = {**candidate, "outcome": "failed", "reason": "nightly_publication_unavailable"}
         rows.append(candidate)
-    if not dry_run and not ignore_window and final_window_run(now):
-        _notify(rows)
+        if containment and not dry_run:
+            check = remote_containment(project_id, root, mode)
+            if check:
+                rows.append(check)
+    if not dry_run:
+        _notify(rows, now)
     return {"status": "dry_run" if dry_run else "completed", "projects": rows}
+
+
+# The nightly deep lane shares this busy check; publication itself never defers on it.
+RECENT_EDIT_SECONDS = 30 * 60
+
+
+def _recently_edited(root: Path, now: float) -> bool:
+    """Uncommitted edits made minutes ago mean someone is working, registered or not."""
+    from .backup_publish import _git as guarded_git
+
+    status = guarded_git(root, "status", "--porcelain=v1", "-z", "--untracked-files=normal")
+    for entry in (status.stdout if status.returncode == 0 else "").split("\0"):
+        if len(entry) > 3:
+            try:
+                if now - (root / entry[3:]).lstat().st_mtime < RECENT_EDIT_SECONDS:
+                    return True
+            except OSError:
+                continue
+    return False
+
+
+def busy_reason(project_id: str, root: Path | None = None) -> str | None:
+    """Defer deep-lane work while someone works on the project or heavy work is running."""
+    import time
+
+    from ..utils.heavy_work import HeavyWorkError, lane_activity
+
+    if root is not None and _recently_edited(root, time.time()):
+        return "recent_edits"
+
+    try:
+        if lane_activity("heavy"):
+            return "heavy_lane_busy"
+    except HeavyWorkError:
+        return "heavy_lane_unavailable"
+    from ..services.project_pulse import count_active_writers
+
+    try:
+        writers = asyncio.run(count_active_writers(project_id))
+    except Exception:
+        return "activity_unknown"
+    return "active_writers" if writers else None

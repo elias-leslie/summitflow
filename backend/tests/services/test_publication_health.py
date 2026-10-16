@@ -59,37 +59,19 @@ def test_success_without_any_passing_check_is_pending_not_verified(checks):
         *checks, {"name": "backend", "state": "success"}]}))["state"] == "verified"
 
 
-def test_merge_requires_successful_checks_bound_to_source():
-    assert health.classify_observation(verified(merge_sha=MERGE, ci={
-        "state": "success", "sha": MERGE, "pr_checks": {"state": "success", "sha": SHA},
-    }))["state"] == "verified"
-    assert health.classify_observation(verified(merge_sha=MERGE, ci={
-        "state": "success", "sha": MERGE, "pr_checks": {"state": "success", "sha": MERGE},
-    }))["state"] == "unknown"
-
-
-def test_accepted_uploaded_source_without_ci_is_published_not_verified():
+def test_plain_push_without_ci_is_published_not_verified():
     observation = health.classify_observation(verified(ci={"state": "not_applicable", "sha": SHA}))
     assert observation["state"] == "published"
-    assert observation["reason"] == "published_without_ci"
+    assert observation["reason"] == "published"
     text = health.format_publication_health(observation)
-    assert "Manual publication: published;" in text and "CI=not_applicable;" in text
+    assert "Manual publication: published;" in text
     assert "verified" not in text
-
-
-@pytest.mark.parametrize("pr_state", ["success", "not_applicable"])
-def test_no_ci_merge_keeps_actual_ci_source_and_requires_exact_head_relation(pr_state):
-    result = verified(merge_sha=MERGE, ci={"state": "not_applicable", "sha": MERGE,
-                      "pr_checks": {"state": pr_state, "sha": SHA}})
-    assert health.classify_observation(result)["state"] == "published"
-    result["ci"]["pr_checks"]["sha"] = MERGE
-    assert health.classify_observation(result)["state"] == "unknown"
+    assert health.classify_observation(verified(ci={}))["state"] == "published"
 
 
 @pytest.mark.parametrize("override", [
     {"publication_complete": False}, {"observed_at": None}, {"acceptance": {}},
     {"security": {"state": "not_run"}}, {"security": {"state": "success", "sha": MERGE}},
-    {"ci": {"state": "not_applicable"}}, {"ci": {"state": "not_applicable", "sha": MERGE}},
 ])
 def test_no_ci_upload_still_requires_exact_acceptance_security_and_source(override):
     result = verified(ci={"state": "not_applicable", "sha": SHA})
@@ -244,12 +226,10 @@ def test_unrelated_publication_defect_does_not_gate_local_completion(monkeypatch
     assert gates == []
 
 
-def test_mirror_publication_needs_no_receipt_only_in_mirror_mode():
-    mirrored = {"state": "not_required", "reason": "mirror_publication", "source_commit": SHA}
-    assert health.classify_observation(verified(acceptance=mirrored, publication_mode="mirror"))["state"] == "verified"
-    assert health.classify_observation(verified(acceptance=mirrored, publication_mode="nightly"))["state"] != "verified"
-    assert health.classify_observation(verified(acceptance={**mirrored, "source_commit": MERGE},
-                                                publication_mode="mirror"))["state"] != "verified"
+def test_private_publication_needs_no_receipt_but_stays_source_bound():
+    private = {"state": "not_required", "reason": "private_repository", "source_commit": SHA}
+    assert health.classify_observation(verified(acceptance=private))["state"] == "verified"
+    assert health.classify_observation(verified(acceptance={**private, "source_commit": MERGE}))["state"] != "verified"
 
 
 def test_fast_forward_publication_is_verified_on_the_accepted_commit_itself():

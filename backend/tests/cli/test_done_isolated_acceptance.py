@@ -381,7 +381,7 @@ def native_source(tmp_path: Path, monkeypatch):
     monkeypatch.setattr(done_task, "get_project_root_path", lambda _: str(repo))
     store = Mock(return_value=True)
     monkeypatch.setattr("app.storage.tasks.closeout.store_owned_acceptance", store)
-    monkeypatch.setattr("cli.lib.publish_workflow.publish_git", Mock(side_effect=AssertionError("GitHub unavailable")))
+    monkeypatch.setattr("app.tasks.backup_publish.publish_source", Mock(side_effect=AssertionError("GitHub unavailable")))
     return repo, sha, store
 
 

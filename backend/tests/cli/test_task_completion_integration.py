@@ -52,7 +52,7 @@ def completion_source(tmp_path: Path, monkeypatch, local_gate_tools):
     requested = Mock(return_value={"request_id": "retained-closeout"})
     monkeypatch.setattr("app.services.task_closeout.request_closeout", requested)
     monkeypatch.setattr("app.services.task_closeout.resume_closeout", lambda *a, **kw: {"action": "completed"})
-    monkeypatch.setattr("cli.lib.publish_workflow.publish_git", Mock(side_effect=AssertionError("Local completion must not publish")))
+    monkeypatch.setattr("app.tasks.backup_publish.publish_source", Mock(side_effect=AssertionError("Local completion must not publish")))
     return tmp_path, sha, claim, spirit, client, attached, requested
 
 

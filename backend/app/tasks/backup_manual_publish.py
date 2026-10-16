@@ -1,4 +1,4 @@
-"""Owner-triggered accepted-source publication, independent of backup capture."""
+"""Exact-source publication with a retained receipt, independent of backup capture."""
 from __future__ import annotations
 
 import hashlib
@@ -15,7 +15,7 @@ from cli.lib.acceptance import AcceptanceError, repo_lock
 from ..services.publication_health import record_publication_observation
 from ..storage import backups as backup_store
 from ..storage.projects import get_project_root_path
-from .backup_publish import _public_evidence, _value, publish_source_before_backup
+from .backup_publish import _public_evidence, _value, publish_source
 
 _OID = re.compile(r"(?:[0-9a-f]{40}|[0-9a-f]{64})")
 
@@ -83,16 +83,16 @@ def _retain_publication(project: Path, project_id: str, source_commit: str, obse
     return immutable
 
 
-def publish_project_now(source_id: str, source_commit: str, *, authorized_workflows: tuple[str, ...] = (),
-                        publication_mode: str = "manual") -> dict[str, Any]:
-    """Publish only the supplied accepted OID; no checkpoint, capture or deployment."""
+def publish_project_now(source_id: str, source_commit: str, *,
+                        authorized_workflows: tuple[str, ...] = ()) -> dict[str, Any]:
+    """Publish only the supplied exact OID; no checkpoint, capture or deployment."""
     if not _OID.fullmatch(source_commit):
         raise ValueError("Publication requires an exact lowercase 40- or 64-character commit OID")
-    result: dict[str, Any] = {"source_id": source_id, "publication_mode": publication_mode,
-        "requested_source_commit": source_commit, "observed_at": datetime.now(UTC).isoformat(),
-        "publication_complete": False, "evidence_recorded": False}
+    result: dict[str, Any] = {"source_id": source_id, "requested_source_commit": source_commit,
+                              "observed_at": datetime.now(UTC).isoformat(),
+                              "publication_complete": False, "evidence_recorded": False}
     # Registered project ownership authorizes source lookup. Backup scheduling,
-    # capture records and Redis are independent of this manually selected source.
+    # capture records and Redis are independent of this selected source.
     root = get_project_root_path(source_id)
     registered = backup_store.get_source(source_id) if not root else None
     project_id = source_id if root else str((registered or {}).get("project_id") or "")
@@ -105,14 +105,8 @@ def publish_project_now(source_id: str, source_commit: str, *, authorized_workfl
     project = Path(root).resolve()
     source = {"id": source_id, "project_id": project_id, "path": str(project), "enabled": True, "source_type": "project"}
     try:
-        with repo_lock(project, purpose="manual publication"):
-            previous = read_publication_receipt(project, source_commit)
-            retained = (previous or {}).get("observation")
-            options: dict[str, Any] = {"authorized_workflows": authorized_workflows} if authorized_workflows else {}
-            if publication_mode != "manual":
-                options["publication_mode"] = publication_mode
-            publication = publish_source_before_backup(source, retained=retained,
-                manual_source_commit=source_commit, activity_allowed=lambda: True, **options)
+        with repo_lock(project, purpose="publication"):
+            publication = publish_source(source, source_commit, authorized_workflows=authorized_workflows)
             result.update(publication)
             try:
                 artifact = _retain_publication(project, project_id, source_commit, publication)

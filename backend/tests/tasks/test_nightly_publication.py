@@ -1,8 +1,10 @@
-"""Overnight publication selects only committed, eligible heads and never blocks day work."""
+"""Hourly publication: private repos push their head, public repos their newest accepted commit."""
 from __future__ import annotations
 
 import hashlib
 import json
+import subprocess
+import time
 from datetime import UTC, datetime
 from pathlib import Path
 from unittest.mock import Mock
@@ -13,7 +15,8 @@ from app.tasks import backup_publish
 from app.tasks import nightly_publication as nightly
 from tests.tasks.test_backup_native_recovery import _git
 
-NIGHT = datetime(2026, 10, 10, 7, 30, tzinfo=UTC)  # 03:30 EDT
+DAY = datetime(2026, 10, 10, 15, 5, tzinfo=UTC)  # 11:05 EDT
+NIGHT = datetime(2026, 10, 10, 7, 5, tzinfo=UTC)  # 03:05 EDT, the containment hour
 
 
 @pytest.fixture
@@ -33,29 +36,24 @@ def repo(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
     _git(project, "commit", "-am", "unpublished")
     (project / "note").write_text("work in progress")  # never published
     monkeypatch.setattr(backup_publish, "_acceptance_for_head", lambda *_: {"state": "missing"})
+    monkeypatch.setattr(backup_publish, "remote_repository", lambda *_: {"private": True, "default_branch": "main"})
     return project
+
+
+def _public(monkeypatch, accepted: set[str]) -> None:
+    monkeypatch.setattr(backup_publish, "remote_repository", lambda *_: {"private": False, "default_branch": "main"})
+    monkeypatch.setattr(backup_publish, "_acceptance_for_head",
+                        lambda _root, sha: {"state": "reused" if sha in accepted else "missing"})
 
 
 def _receipt(project: Path, sha: str, observation: dict) -> None:
     directory = project / ".git" / "st" / "publication"
     directory.mkdir(parents=True, exist_ok=True)
     value = {"kind": "manual_publication.v1", "schema_version": 1, "source_commit": sha,
-              "requested_source_commit": sha, "project_id": "fixture", "observed_at": "2026-10-10T07:00:00+00:00",
-              "observation": observation, "previous_receipt_id": None}
+             "requested_source_commit": sha, "project_id": "fixture", "observed_at": "2026-10-10T07:00:00+00:00",
+             "observation": observation, "previous_receipt_id": None}
     value["receipt_id"] = hashlib.sha256(json.dumps(value, sort_keys=True, separators=(",", ":")).encode()).hexdigest()
     (directory / f"{sha}.json").write_text(json.dumps(value))
-
-
-@pytest.mark.parametrize(("utc", "open_"), [
-    (datetime(2026, 10, 10, 4, 59, tzinfo=UTC), False),   # 00:59 EDT
-    (datetime(2026, 10, 10, 5, 5, tzinfo=UTC), True),     # 01:05 EDT
-    (datetime(2026, 10, 10, 9, 55, tzinfo=UTC), True),    # 05:55 EDT
-    (datetime(2026, 10, 10, 10, 5, tzinfo=UTC), False),   # 06:05 EDT
-    (datetime(2026, 12, 10, 5, 30, tzinfo=UTC), False),   # 00:30 EST
-    (datetime(2026, 12, 10, 10, 30, tzinfo=UTC), True),   # 05:30 EST
-])
-def test_window_is_new_york_local_across_dst(utc, open_):
-    assert nightly.publication_window_open(utc) is open_
 
 
 def test_manual_projects_are_never_selected(repo):
@@ -63,17 +61,32 @@ def test_manual_projects_are_never_selected(repo):
         "project_id": "fixture", "mode": "manual", "action": "skip", "reason": "manual_mode"}
 
 
-def test_committed_head_without_receipt_is_accepted_first_and_wip_is_ignored(repo):
+@pytest.mark.parametrize("mode", ["nightly", "mirror"])
+def test_private_repository_publishes_committed_head_without_acceptance(repo, mode):
+    row = nightly.select_candidate("fixture", repo, mode)
+    assert (row["action"], row["reason"], row["visibility"]) == ("publish", "private_head", "private")
+    assert row["sha"] == _git(repo, "rev-parse", "HEAD") and row["ahead"] == 1 and row["behind"] == 0
+
+
+def test_public_repository_publishes_its_newest_accepted_commit(repo, monkeypatch):
+    accepted = _git(repo, "rev-parse", "HEAD")
+    _git(repo, "commit", "-am", "not yet accepted")
+    _public(monkeypatch, {accepted})
     row = nightly.select_candidate("fixture", repo, "nightly")
-    assert row["action"] == "accept_then_publish" and row["sha"] == _git(repo, "rev-parse", "HEAD")
-    assert row["ahead"] == 1 and row["behind"] == 0 and row["resume"] is False
+    assert (row["action"], row["reason"], row["sha"]) == ("publish", "accepted", accepted)
+    assert row["unaccepted_later"] is True
+    _public(monkeypatch, set())
+    assert nightly.select_candidate("fixture", repo, "nightly")["reason"] == "no_accepted_commit"
 
 
-def test_accepted_head_publishes_and_mirror_needs_no_receipt(repo, monkeypatch):
-    monkeypatch.setattr(backup_publish, "_acceptance_for_head", lambda *_: {"state": "reused"})
-    assert nightly.select_candidate("fixture", repo, "nightly")["action"] == "publish"
-    monkeypatch.setattr(backup_publish, "_acceptance_for_head", Mock(side_effect=AssertionError("mirror")))
-    assert nightly.select_candidate("fixture", repo, "mirror")["action"] == "publish"
+def test_unknown_visibility_never_publishes(repo, monkeypatch):
+    from cli.lib.github_publish import GitHubError
+
+    monkeypatch.setattr(backup_publish, "remote_repository", Mock(side_effect=GitHubError("offline", unavailable=True)))
+    assert nightly.select_candidate("fixture", repo, "nightly")["reason"] == "remote_visibility_unknown"
+    _git(repo, "remote", "set-url", "origin", "https://gitlab.com/fixture/project.git")
+    monkeypatch.setattr(backup_publish, "remote_repository", lambda *_: None)
+    assert nightly.select_candidate("fixture", repo, "nightly")["reason"] == "no_accepted_commit"  # non-GitHub counts as public
 
 
 def test_up_to_date_and_diverged_heads_are_skipped(repo):
@@ -85,184 +98,146 @@ def test_up_to_date_and_diverged_heads_are_skipped(repo):
     assert nightly.select_candidate("fixture", repo, "nightly")["reason"] == "diverged_from_remote"
 
 
-def test_published_merge_with_known_tree_is_absorbed_without_touching_files(repo):
-    published = _git(repo, "rev-parse", "origin/main")
-    head = _git(repo, "rev-parse", "HEAD")
-    # The retired PR flow merged the published head on GitHub: same tree, new commit.
-    merge = _git(repo, "commit-tree", "-p", published, "-m", "Merge pull request", f"{published}^{{tree}}")
-    _git(repo, "update-ref", "refs/remotes/origin/main", merge)
-    candidate = nightly.select_candidate("fixture", repo, "nightly")
-    assert (candidate["action"], candidate["reason"]) == ("absorb", "published_merge_absorbable")
-    absorbed = nightly.absorb_published_merge(repo, candidate)
-    assert _git(repo, "rev-parse", "HEAD") == absorbed
-    assert _git(repo, "rev-parse", f"{absorbed}^{{tree}}") == _git(repo, "rev-parse", f"{head}^{{tree}}")
-    assert _git(repo, "rev-parse", f"{absorbed}^1", f"{absorbed}^2").split() == [head, merge]
-    assert (repo / "note").read_text() == "work in progress"
-    assert nightly.select_candidate("fixture", repo, "nightly")["behind"] == 0
-
-
-def test_held_or_unknown_remote_content_is_never_absorbed(repo):
-    published = _git(repo, "rev-parse", "origin/main")
-    merge = _git(repo, "commit-tree", "-p", published, "-m", "merge", f"{published}^{{tree}}")
-    _git(repo, "update-ref", "refs/remotes/origin/main", merge)
-    held = nightly.select_candidate("fixture", repo, "nightly", {"through": None, "reason": "owner"})
-    assert held["reason"] == "held"
-    hold = {"through": _git(repo, "rev-parse", "HEAD"), "reason": "owner"}
-    assert nightly.select_candidate("fixture", repo, "nightly", hold)["reason"] == "diverged_from_remote"
-
-
 @pytest.mark.parametrize(("observation", "reason", "action"), [
     ({"publication_complete": True, "status": "published"}, "published", "skip"),
     ({"status": "failed", "reason": "outgoing_verification_failed"}, "awaiting_repair", "skip"),
     ({"status": "pending", "reason": "workflow_effects_authorization_required",
       "unauthorized_workflows": [".github/workflows/ci.yml"]}, "owner_action_required", "skip"),
-    ({"status": "pending", "reason": "remote_ci_pending"}, "acceptance_missing", "accept_then_publish"),
-    ({"status": "pending", "reason": "remote_authentication_unavailable"}, "acceptance_missing", "accept_then_publish"),
+    ({"status": "pending", "reason": "remote_transport_unavailable"}, "private_head", "publish"),
 ])
-def test_retained_receipt_decides_resume_or_wait(repo, observation, reason, action):
-    head = _git(repo, "rev-parse", "HEAD")
-    _receipt(repo, head, observation)
+def test_retained_receipt_decides_retry_or_wait(repo, observation, reason, action):
+    _receipt(repo, _git(repo, "rev-parse", "HEAD"), observation)
     row = nightly.select_candidate("fixture", repo, "nightly")
     assert (row["reason"], row["action"]) == (reason, action)
 
 
-def test_failed_night_acceptance_is_not_retried_until_head_changes(repo):
+def test_hold_keeps_later_commits_local_and_caps_at_released_source(repo, monkeypatch):
+    released = _git(repo, "rev-parse", "HEAD")
+    _git(repo, "commit", "-am", "needs review")
+    assert nightly.select_candidate("fixture", repo, "nightly", {"through": None})["reason"] == "held"
+    row = nightly.select_candidate("fixture", repo, "nightly", {"through": released})
+    assert (row["action"], row["sha"], row["held_through"]) == ("publish", released, released)
+    _public(monkeypatch, set())
+    assert nightly.select_candidate("fixture", repo, "nightly", {"through": released})["reason"] == "no_accepted_commit"
+    stray = _git(repo, "commit-tree", "-m", "elsewhere", f"{released}^{{tree}}")
+    assert nightly.select_candidate("fixture", repo, "nightly", {"through": stray})["reason"] == "hold_source_not_on_branch"
+
+
+def test_execute_publishes_the_selected_source_and_records_state(repo, monkeypatch):
     head = _git(repo, "rev-parse", "HEAD")
-    nightly._write_nightly_state(repo, {"sha": head, "outcome": "acceptance_failed"})
-    assert nightly.select_candidate("fixture", repo, "nightly")["reason"] == "acceptance_failed"
-    _git(repo, "commit", "-am", "fix")
-    assert nightly.select_candidate("fixture", repo, "nightly")["action"] == "accept_then_publish"
-
-
-def _sweep(monkeypatch, repo, rows_by_mode, busy=None):
-    monkeypatch.setattr(nightly, "_projects", lambda _ids: [(name, repo) for name in rows_by_mode])
-    monkeypatch.setattr(nightly, "publication_mode", lambda name: rows_by_mode[name])
-    monkeypatch.setattr(nightly, "busy_reason", lambda name, _root: (busy or {}).get(name))
-    executed = Mock(side_effect=lambda row, _root: {**row, "outcome": "published", "reason": "source_publication_verified"})
-    monkeypatch.setattr(nightly, "execute_candidate", executed)
-    notify = Mock()
-    monkeypatch.setattr(nightly, "_notify", notify)
-    return executed, notify
-
-
-def test_sweep_outside_window_does_nothing(repo, monkeypatch):
-    executed, _ = _sweep(monkeypatch, repo, {"a": "nightly"})
-    assert nightly.run_nightly_publication(now=datetime(2026, 10, 10, 15, 0, tzinfo=UTC)) == {"status": "outside_window"}
-    executed.assert_not_called()
-
-
-def test_sweep_runs_eligible_projects_one_at_a_time_and_skips_busy(repo, monkeypatch):
-    monkeypatch.setattr(nightly, "publication_window_open", lambda *_: True)
-    executed, notify = _sweep(monkeypatch, repo, {"a": "nightly", "b": "manual", "c": "mirror"}, busy={"c": "active_writers"})
-    result = nightly.run_nightly_publication(now=NIGHT)
-    rows = {row["project_id"]: row for row in result["projects"]}
-    assert executed.call_count == 1 and executed.call_args.args[0]["project_id"] == "a"
-    assert rows["b"]["reason"] == "manual_mode" and rows["c"]["reason"] == "active_writers"
-    notify.assert_not_called()  # 03:30 is not the final window run
-
-
-def test_dry_run_selects_without_executing_and_final_run_notifies(repo, monkeypatch):
-    executed, notify = _sweep(monkeypatch, repo, {"a": "nightly"})
-    dry = nightly.run_nightly_publication(dry_run=True, now=datetime(2026, 10, 10, 15, 0, tzinfo=UTC))
-    assert dry["status"] == "dry_run" and dry["projects"][0]["action"] == "accept_then_publish"
-    executed.assert_not_called()
-    monkeypatch.setattr(nightly, "publication_window_open", lambda *_: True)
-    nightly.run_nightly_publication(now=datetime(2026, 10, 10, 9, 5, tzinfo=UTC))  # 05:05 EDT
-    notify.assert_called_once()
-
-
-def test_failed_acceptance_records_repair_and_never_publishes(repo, monkeypatch):
-    head = _git(repo, "rev-parse", "HEAD")
-    monkeypatch.setattr(nightly, "_run_acceptance", lambda *_: {"state": "failed", "reason": "acceptance_failed", "evidence": "x.json"})
-    observed = Mock()
-    monkeypatch.setattr("app.services.publication_health.record_publication_observation", observed)
-    publisher = Mock(side_effect=AssertionError("unaccepted source published"))
+    publisher = Mock(return_value={"status": "published", "reason": "source_published", "publication_complete": True})
     monkeypatch.setattr("app.tasks.backup_manual_publish.publish_project_now", publisher)
-    row = nightly.execute_candidate({"project_id": "fixture", "sha": head, "mode": "nightly",
-                                     "action": "accept_then_publish"}, repo)
-    assert row["outcome"] == "acceptance_failed"
-    assert observed.call_args.args[1]["reason"] == "nightly_acceptance_failed"
+    row = nightly.execute_candidate({"project_id": "fixture", "sha": head, "mode": "nightly", "action": "publish"}, repo)
+    publisher.assert_called_once_with("fixture", head)
+    assert (row["outcome"], row["publication_complete"]) == ("published", True)
     assert (nightly.read_nightly_state(repo) or {}).get("sha") == head
 
 
-def test_passing_acceptance_with_an_unreusable_receipt_is_a_gate_fault_not_a_source_finding(repo, monkeypatch):
-    # fydor 2026-10-13: checks passed, the worker could not reuse the receipt,
-    # and the row said outcome=acceptance_failed reason=acceptance_passed.
-    head = _git(repo, "rev-parse", "HEAD")
-    monkeypatch.setattr(nightly, "_run_acceptance",
-                        lambda *_: {"state": "pass", "reason": "acceptance_passed", "evidence": "r.json"})
-    monkeypatch.setattr(backup_publish, "_acceptance_for_head", lambda *_: {"state": "invalid"})
-    observed = Mock()
-    monkeypatch.setattr("app.services.publication_health.record_publication_observation", observed)
-    monkeypatch.setattr("app.tasks.backup_manual_publish.publish_project_now",
-                        Mock(side_effect=AssertionError("unreusable acceptance published")))
-    row = nightly.execute_candidate({"project_id": "fixture", "sha": head, "mode": "nightly",
-                                     "action": "accept_then_publish"}, repo)
-    assert (row["outcome"], row["reason"], row["detail"]) == ("failed", "acceptance_receipt_not_reusable", "invalid")
-    assert row["evidence"] == "r.json" and nightly.needs_attention(row)
-    observed.assert_not_called()
-    assert nightly.read_nightly_state(repo) is None  # the next hourly run retries
+def _sweep(monkeypatch, repo, rows_by_mode, holds=None):
+    monkeypatch.setattr(nightly, "_projects", lambda _ids: [(name, repo) for name in rows_by_mode])
+    monkeypatch.setattr(nightly, "publication_mode", lambda name: rows_by_mode[name])
+    monkeypatch.setattr(nightly, "publication_hold", lambda _name: None)
+    monkeypatch.setattr(nightly, "_hold_lease", lambda name: (holds or {}).get(name))
+    executed = Mock(side_effect=lambda row, _root: {**row, "outcome": "published", "reason": "source_published"})
+    monkeypatch.setattr(nightly, "execute_candidate", executed)
+    notify = Mock()
+    monkeypatch.setattr(nightly, "_notify", notify)
+    containment = Mock(return_value=None)
+    monkeypatch.setattr(nightly, "remote_containment", containment)
+    return executed, notify, containment
 
 
-@pytest.mark.parametrize(("output", "evidence"), [
-    ("ACCEPTANCE:state=success|source=abc|id=1|artifact=/r/.git/st/acceptance/1.json|reused=false\n",
-     "/r/.git/st/acceptance/1.json"),
-    ("ERROR checks failed; reproduce: st check --ci-repro --seed 7; acceptance evidence: /r/2.json\n", "/r/2.json"),
-])
-def test_acceptance_evidence_is_recorded_for_passes_and_failures(repo, monkeypatch, output, evidence):
-    completed = Mock(returncode=0 if "success" in output else 1, stdout=output, stderr="")
-    monkeypatch.setattr(nightly.subprocess, "run", lambda *_a, **_k: completed)
-    monkeypatch.setattr(nightly, "_checks_failed", lambda *_: True)
-    assert nightly._run_acceptance(repo, "abc")["evidence"] == evidence
+def test_hourly_pass_runs_all_day_and_only_a_hold_defers(repo, monkeypatch):
+    # Live edits (the fixture's WIP) and heavy work never defer a push.
+    monkeypatch.setattr("app.utils.heavy_work.lane_activity", Mock(side_effect=AssertionError("not consulted")))
+    executed, notify, containment = _sweep(monkeypatch, repo, {"a": "nightly", "b": "manual", "c": "mirror", "d": "nightly"},
+                                           holds={"d": "integration by cc:other"})
+    result = nightly.run_nightly_publication(now=DAY)
+    rows = {row["project_id"]: row for row in result["projects"]}
+    assert [call.args[0]["project_id"] for call in executed.call_args_list] == ["a", "c"]
+    assert rows["b"]["reason"] == "manual_mode"
+    assert (rows["d"]["reason"], rows["d"]["detail"]) == ("held", "integration by cc:other")
+    notify.assert_called_once()
+    containment.assert_not_called()  # only in the nightly containment hour
 
 
-def test_attention_lines_print_the_exact_authorization_command():
+def test_dry_run_selects_without_executing_or_notifying(repo, monkeypatch):
+    executed, notify, _ = _sweep(monkeypatch, repo, {"a": "nightly"})
+    dry = nightly.run_nightly_publication(dry_run=True, now=DAY)
+    assert dry["status"] == "dry_run" and dry["projects"][0]["action"] == "publish"
+    executed.assert_not_called()
+    notify.assert_not_called()
+
+
+def test_nightly_hour_checks_github_containment(repo, monkeypatch):
+    _, notify, containment = _sweep(monkeypatch, repo, {"a": "nightly"})
+    lost = {"project_id": "a", "mode": "nightly", "action": "check", "reason": "remote_not_containing_published"}
+    containment.return_value = lost
+    result = nightly.run_nightly_publication(now=NIGHT)
+    assert lost in result["projects"]
+    assert nightly.needs_attention(lost)
+    assert lost in notify.call_args.args[0]
+
+
+@pytest.fixture
+def published(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> tuple[Path, Path]:
+    """A checkout whose upstream matches a local bare remote."""
+    remote = tmp_path / "remote.git"
+    project = tmp_path / "checkout"
+    subprocess.run(["git", "init", "-q", "--bare", "-b", "main", str(remote)], check=True)
+    subprocess.run(["git", "clone", "-q", str(remote), str(project)], check=True, capture_output=True)
+    _git(project, "-c", "user.name=F", "-c", "user.email=f@example.invalid", "commit", "--allow-empty", "-m", "one")
+    _git(project, "-c", "core.hooksPath=/dev/null", "push", "-q", "-u", "origin", "main")
+    original = backup_publish._git
+
+    def local(root, *args):
+        if args[0] == "ls-remote":  # the guarded transport refuses local paths; read the bare repo directly
+            return subprocess.run(["git", "-C", str(root), *args], capture_output=True, text=True, check=False)
+        return original(root, *args)
+
+    monkeypatch.setattr(backup_publish, "_git", local)
+    return project, remote
+
+
+def test_containment_passes_while_github_contains_the_last_published_commit(published):
+    project, _remote = published
+    assert nightly.remote_containment("p", project, "nightly") is None
+    assert nightly.remote_containment("p", project, "manual") is None
+
+
+def test_containment_flags_a_rewound_or_unknown_remote(published, tmp_path):
+    project, remote = published
+    _git(project, "-c", "user.name=F", "-c", "user.email=f@example.invalid", "commit", "--allow-empty", "-m", "two")
+    _git(project, "-c", "core.hooksPath=/dev/null", "push", "-q", "origin", "main")
+    # GitHub's branch moves back to an older commit: the published one is gone.
+    subprocess.run(["git", "-C", str(remote), "update-ref", "refs/heads/main", _git(project, "rev-parse", "HEAD~1")], check=True)
+    row = nightly.remote_containment("p", project, "nightly")
+    assert row is not None and row["reason"] == "remote_not_containing_published"
+    subprocess.run(["git", "-C", str(remote), "update-ref", "-d", "refs/heads/main"], check=True)
+    row = nightly.remote_containment("p", project, "nightly")
+    assert row is not None and row["reason"] == "remote_branch_missing"
+
+
+def test_attention_notifies_once_per_distinct_set_per_day(monkeypatch):
+    created = Mock()
+    monkeypatch.setattr("app.storage.notifications.create_notification", created)
     row = {"project_id": "p", "mode": "nightly", "sha": "a" * 40, "action": "skip", "reason": "owner_action_required",
            "unauthorized_workflows": [".github/workflows/ci.yml"]}
     assert nightly.needs_attention(row)
     assert "--authorize-workflow .github/workflows/ci.yml" in nightly.summary_line(row)
     assert not nightly.needs_attention({**row, "reason": "up_to_date", "unauthorized_workflows": []})
+    nightly._notify([row, {**row, "project_id": "q", "reason": "up_to_date"}], DAY)
+    nightly._notify([row], DAY)
+    keys = [call.kwargs["dedupe_key"] for call in created.call_args_list]
+    assert keys[0] == keys[1] and keys[0].startswith("publication-2026-10-10-")
+    nightly._notify([{**row, "reason": "diverged_from_remote"}], DAY)
+    assert created.call_args.kwargs["dedupe_key"] != keys[0]
 
 
-def test_inputs_changing_during_acceptance_defer_without_a_repair_finding(repo, monkeypatch):
-    head = _git(repo, "rev-parse", "HEAD")
-    monkeypatch.setattr(nightly, "_run_acceptance", lambda *_: {"state": "unavailable", "reason": "acceptance_unavailable"})
-    observed = Mock()
-    monkeypatch.setattr("app.services.publication_health.record_publication_observation", observed)
-    row = nightly.execute_candidate({"project_id": "fixture", "sha": head, "mode": "nightly",
-                                     "action": "accept_then_publish"}, repo)
-    assert row["outcome"] == "deferred"
-    observed.assert_not_called()
-    assert nightly.read_nightly_state(repo) is None
-
-
-def test_only_failed_checks_are_a_sticky_source_finding(repo):
-    head = _git(repo, "rev-parse", "HEAD")
-    receipts = repo / ".git" / "st" / "acceptance"
-    receipts.mkdir(parents=True)
-    (receipts / "a.json").write_text(json.dumps({"source": {"commit": head}, "reason": "acceptance_plan_changed_during_acceptance"}))
-    assert not nightly._checks_failed(repo, head)
-    (receipts / "a.json").write_text(json.dumps({"source": {"commit": head}, "reason": "acceptance_checks_failed"}))
-    assert nightly._checks_failed(repo, head)
-
-
-def test_fresh_uncommitted_edits_mean_someone_is_working(repo):
-    import time
-
+def test_deep_lane_busy_check_still_sees_fresh_edits(repo):
     assert nightly._recently_edited(repo, time.time())  # fixture just wrote WIP
     assert not nightly._recently_edited(repo, time.time() + 2 * nightly.RECENT_EDIT_SECONDS)
     assert nightly.busy_reason("fixture", repo) == "recent_edits"
-
-
-def test_hold_keeps_later_commits_local_and_caps_at_released_source(repo):
-    released = _git(repo, "rev-parse", "HEAD")
-    _git(repo, "commit", "-am", "needs review")
-    assert nightly.select_candidate("fixture", repo, "nightly", {"through": None})["reason"] == "held"
-    row = nightly.select_candidate("fixture", repo, "nightly", {"through": released})
-    assert row["sha"] == released and row["held_through"] == released
-    assert (row["action"], row["reason"]) == ("skip", "held_source_needs_acceptance")
-    stray = _git(repo, "commit-tree", "-m", "elsewhere", f"{released}^{{tree}}")
-    assert nightly.select_candidate("fixture", repo, "nightly", {"through": stray})["reason"] == "hold_source_not_on_branch"
 
 
 def test_retired_projects_are_never_considered(monkeypatch, tmp_path):

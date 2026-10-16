@@ -1,6 +1,5 @@
 """Rolling repair evidence survives claims and out-of-order nightly callbacks."""
 import subprocess
-from unittest.mock import patch
 
 import psycopg
 import pytest
@@ -38,7 +37,8 @@ def source_history(tmp_path, monkeypatch):
     return {"base": base, "failed": failed, "fixed": fixed, "divergent": divergent}
 
 
-def test_rolling_repair_is_ready_for_normal_pickup(test_project_id, cleanup_task):
+def test_rolling_repair_is_ready_for_pickup_without_plan_ceremony(test_project_id, cleanup_task):
+    """A finding opens a claimable task; nothing approves a plan or invents subtasks for it."""
     from app.services.task_execution_readiness import load_task_execution_readiness
     from app.storage.subtasks import get_subtasks_for_task
     from app.storage.task_spirit import get_task_spirit
@@ -49,42 +49,10 @@ def test_rolling_repair_is_ready_for_normal_pickup(test_project_id, cleanup_task
     readiness = load_task_execution_readiness(task_id)
     assert readiness.ready, readiness.issues
     spirit = get_task_spirit(task_id)
-    assert spirit is not None and spirit["plan_status"] == "approved"
-    assert len(get_subtasks_for_task(task_id)) == 1
-    record_finding(test_project_id, "publication", {"observed_at": "2026-10-03T08:00:00+00:00"}, resolved=False)
-    assert len(get_subtasks_for_task(task_id)) == 1
-
-
-@pytest.mark.parametrize("interrupted_api", ["create_subtask", "approve_plan"])
-def test_retry_recovers_partial_repair_initialization(test_project_id, cleanup_task, interrupted_api):
-    from app.services.task_execution_readiness import load_task_execution_readiness
-    from app.storage.subtasks import get_subtasks_for_task
-    from app.storage.task_spirit import get_task_spirit
-
-    module = "app.storage.subtasks" if interrupted_api == "create_subtask" else "app.storage.task_spirit"
-    observation = {"observed_at": "2026-10-02T08:00:00+00:00"}
-    with patch(f"{module}.{interrupted_api}", side_effect=RuntimeError("fixture interruption")), pytest.raises(RuntimeError):
-        record_finding(test_project_id, "codeql", observation, resolved=False)
-    partial = get_repair_task(test_project_id)
-    assert partial is not None
-    cleanup_task(partial["id"])
-    assert record_finding(test_project_id, "codeql", observation, resolved=False) == partial["id"]
-    assert load_task_execution_readiness(partial["id"]).ready
-    spirit = get_task_spirit(partial["id"])
-    assert spirit is not None and spirit["plan_status"] == "approved"
-    assert len(get_subtasks_for_task(partial["id"])) == 1
-
-
-def test_new_observation_preserves_owner_plan_revision(test_project_id, cleanup_task):
-    from app.storage.task_spirit import get_task_spirit, set_plan_status
-
-    task_id = record_finding(test_project_id, "codeql", {"observed_at": "2026-10-02T08:00:00+00:00"}, resolved=False)
-    assert task_id is not None
-    cleanup_task(task_id)
-    set_plan_status(task_id, "draft", actor="owner", notes="Owner revising the repair plan")
-    record_finding(test_project_id, "codeql", {"observed_at": "2026-10-03T08:00:00+00:00"}, resolved=False)
-    spirit = get_task_spirit(task_id)
-    assert spirit is not None and spirit["plan_status"] == "draft"
+    assert spirit is not None and spirit.get("plan_approved_by") is None
+    assert get_subtasks_for_task(task_id) == []
+    assert record_finding(test_project_id, "publication", {"observed_at": "2026-10-03T08:00:00+00:00"}, resolved=False) == task_id
+    assert get_subtasks_for_task(task_id) == []
 
 
 def test_rolling_findings_merge_and_preserve_newest_failure(test_project_id, cleanup_task):

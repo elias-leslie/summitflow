@@ -25,7 +25,7 @@ def dependencies(monkeypatch, tmp_path):
     monkeypatch.setattr(manual.backup_store, "merge_backup_verification_json", Mock(side_effect=AssertionError("Preserve backup history")))
     monkeypatch.setattr(manual, "publication_receipt_directory", lambda _: tmp_path / "publication")
     for name, target in {"lock": "repo_lock", "root_path": "get_project_root_path",
-                         "publish": "publish_source_before_backup", "record": "record_publication_observation"}.items():
+                         "publish": "publish_source", "record": "record_publication_observation"}.items():
         monkeypatch.setattr(manual, target, mocks[name])
     mocks["root"] = tmp_path
     return mocks
@@ -33,10 +33,8 @@ def dependencies(monkeypatch, tmp_path):
 
 def test_manual_pins_source_and_retains_evidence_without_backup(dependencies):
     result = manual.publish_project_now("source", HEAD)
-    kwargs = dependencies["publish"].call_args.kwargs
-    assert kwargs["manual_source_commit"] == HEAD
-    assert kwargs["retained"] is None
-    assert kwargs["activity_allowed"]()
+    assert dependencies["publish"].call_args.args[1] == HEAD
+    assert dependencies["publish"].call_args.kwargs == {"authorized_workflows": ()}
     dependencies["record"].assert_called_once_with("project", dependencies["publish"].return_value)
     assert result["evidence_recorded"] is True
     receipt = manual.read_publication_receipt(dependencies["root"], HEAD)
@@ -60,19 +58,14 @@ def test_latest_publication_selects_only_authenticated_current_project_pointers(
         manual.latest_publication_receipt(root, "project")
 
 
-def test_explicit_reobservation_reuses_only_matching_source_and_preserves_history(dependencies):
-    dependencies["publish"].return_value = {"status": "published", "head": OLD, "publication_complete": True}
-    first = manual.publish_project_now("source", OLD)
-    old = manual.read_publication_receipt(dependencies["root"], OLD)
-    assert old is not None
-    dependencies["publish"].return_value = {"status": "published", "head": HEAD, "publication_complete": True}
-    manual.publish_project_now("source", HEAD)
-    assert dependencies["publish"].call_args.kwargs["retained"] is None
-    dependencies["publish"].return_value = {"status": "published", "head": OLD, "publication_complete": True}
-    manual.publish_project_now("source", OLD)
-    assert dependencies["publish"].call_args.kwargs["retained"] == old["observation"]
+def test_republishing_a_source_keeps_its_earlier_receipt(dependencies):
     from pathlib import Path
-    assert Path(first["evidence"]).is_file()
+
+    first = manual.publish_project_now("source", HEAD)
+    second = manual.publish_project_now("source", HEAD)
+    assert Path(first["evidence"]).is_file() and Path(second["evidence"]).is_file()
+    receipt = manual.read_publication_receipt(dependencies["root"], HEAD)
+    assert receipt is not None and receipt["previous_receipt_id"]
 
 
 @pytest.mark.parametrize("source_commit", ["HEAD", "a" * 39, "A" * 40, "a" * 65, "HEAD:refs/heads/main"])
@@ -119,12 +112,12 @@ def test_observation_of_different_source_cannot_report_publication(dependencies)
 
 def test_failed_publication_retains_complete_evidence(dependencies):
     dependencies["publish"].return_value = {"status": "failed", "head": HEAD, "publication_complete": False,
-        "ci": {"state": "failed", "sha": HEAD}, "detail": "private-diagnostic"}
+        "reason": "remote_push_rejected", "detail": "private-diagnostic"}
     result = manual.publish_project_now("source", HEAD)
     assert result["evidence_recorded"] is True
     receipt = manual.read_publication_receipt(dependencies["root"], HEAD)
     assert receipt is not None
-    assert receipt["observation"]["ci"]["state"] == "failed"
+    assert receipt["observation"]["reason"] == "remote_push_rejected"
     assert "private-diagnostic" not in str(receipt)
 
 

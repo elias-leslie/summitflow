@@ -19,7 +19,7 @@ def test_closeout_persists_local_acceptance_without_publisher(tmp_path, local_ga
     with (
         patch("app.storage.task_spirit.get_task_spirit", return_value=None),
         patch("app.storage.tasks.closeout.store_owned_acceptance", return_value=True) as store,
-        patch("cli.lib.publish_workflow.publish_git", side_effect=AssertionError("GitHub is unavailable")),
+        patch("app.tasks.backup_publish.publish_source", side_effect=AssertionError("GitHub is unavailable")),
     ):
         result = accept_owned_task_work(tmp_path, "task-local", "summitflow", paths=("owned.py",), acceptance_receipt=receipt,
             claim={"id": "task-local", "project_id": "summitflow", "claimed_by": "fixture", "claimed_at": "claim", "verification_result": {}})

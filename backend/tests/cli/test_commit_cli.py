@@ -581,37 +581,6 @@ def test_checkpoint_uses_git_even_with_legacy_metadata(tmp_path: Path) -> None:
     commit.assert_called_once_with(tmp_path, message="checkpoint", task_id="", push=False, skip_checks=True, paths=())
 
 
-def test_commit_follows_identical_tree_publication_merge(tmp_path: Path, monkeypatch) -> None:
-    from cli.lib import commit_workflow
-
-    remote, repo = tmp_path / "remote.git", tmp_path / "repo"
-
-    def git(*args: str) -> str:
-        return subprocess.run(["git", *args], cwd=repo, text=True, capture_output=True, check=True).stdout.strip()
-
-    subprocess.run(["git", "init", "-q", "--bare", "-b", "main", str(remote)], check=True)
-    subprocess.run(["git", "clone", "-q", str(remote), str(repo)], check=True, capture_output=True)
-    git("config", "user.name", "Test")
-    git("config", "user.email", "test@example.invalid")
-    (repo / "note.md").write_text("before")
-    (repo / "unrelated.py").write_text("before")
-    git("add", ".")
-    git("commit", "-qm", "accepted source")
-    git("push", "-q", "-u", "origin", "main")
-    merge = git("commit-tree", "HEAD^{tree}", "-p", "HEAD", "-m", "Merge pull request")
-    git("push", "-q", "origin", f"{merge}:refs/heads/main")
-    git("fetch", "-q")
-    (repo / "note.md").write_text("after")
-    (repo / "unrelated.py").write_text("unfinished work")
-    monkeypatch.setattr(commit_workflow, "run_checks", lambda repo, **kw: (True, ""))
-
-    result = commit_workflow.commit_git_revision(repo, message="next", paths=("note.md",), push=False)
-
-    assert result["status"] == "SUCCESS" and result["followed_published_merge"] is True
-    assert git("rev-parse", "HEAD^") == merge
-    assert (repo / "unrelated.py").read_text() == "unfinished work"
-
-
 def _selected_repo(tmp_path: Path) -> Path:
     def git(*args: str) -> None:
         subprocess.run(["git", *args], cwd=tmp_path, text=True, capture_output=True, check=True)

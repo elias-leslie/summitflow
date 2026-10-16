@@ -124,9 +124,9 @@ SCHEDULE_DEFINITIONS: tuple[ScheduleDefinition, ...] = (
     ScheduleDefinition(
         schedule_id="nightly_publication",
         config_key="nightly_publication_enabled",
-        label="Nightly publication",
-        description="Publishes each opted-in project's committed head to GitHub between 01:00 and 06:00 New York time.",
-        cron="5 5-11 * * *",
+        label="Hourly publication",
+        description="Pushes each auto-published project to GitHub every hour: private repos their committed head, public repos their newest accepted commit.",
+        cron="5 * * * *",
         scope="system",
     ),
     ScheduleDefinition(

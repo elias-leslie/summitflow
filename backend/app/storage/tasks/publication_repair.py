@@ -17,31 +17,7 @@ from .core import create_task
 from .mapping import row_to_dict_with_spirit
 
 REPAIR_LABEL = "publication-repair"
-_POLICY_APPROVER = "owner-approved-local-repair-policy"
 _SOURCE_OID = re.compile(r"[0-9a-f]{40}|[0-9a-f]{64}")
-
-
-def _ensure_policy_plan(task_id: str) -> None:
-    """Recover interrupted factory setup without rewriting an owner's later plan."""
-    from ..subtasks import create_subtask, get_subtasks_for_task
-    from ..task_spirit import approve_plan, get_task_spirit
-
-    spirit = get_task_spirit(task_id) or {}
-    if not (spirit.get("context") or {}).get("publication_repair"):
-        return
-    fresh = not spirit.get("plan_history")
-    if not fresh and not (spirit.get("plan_status") == "approved" and spirit.get("plan_approved_by") == _POLICY_APPROVER):
-        return
-    if not get_subtasks_for_task(task_id):
-        create_subtask(
-            task_id, "1.1",
-            "Inspect retained source-bound findings, repair their causes and any demonstrated workflow gaps, "
-            "add focused regression coverage, and run canonical local acceptance. Submit the accepted "
-            "repair with local acceptance and any explicit runtime evidence. Publication is independent.",
-            display_order=0, phase="implementation",
-        )
-    if fresh and spirit.get("plan_status") != "approved":
-        approve_plan(task_id, approved_by=_POLICY_APPROVER)
 
 
 def unresolved_repair(task: dict[str, Any]) -> list[str]:
@@ -247,15 +223,14 @@ def _record_finding(conn: psycopg.Connection, project_id: str, category: str, ob
                              "Do not weaken checks, disable hooks, change visibility, or enable autonomous execution. "
                              "Repair process defects that caused the failure. Closure requires relevant local acceptance "
                              "and explicit task runtime evidence; publication is independent."),
-                priority=1, task_type="bug", complexity="STANDARD", execution_mode="manual",
+                priority=1, task_type="bug", complexity="SIMPLE", execution_mode="manual",
                 labels=[REPAIR_LABEL], initial_spirit={
-                    "complexity": "STANDARD", "context": {"publication_repair": True},
+                    "complexity": "SIMPLE", "context": {"publication_repair": True},
                     "done_when": ["All retained actionable findings are resolved with evidence.",
                                   "Canonical local acceptance passes for the repair source.",
                                   "Required local and runtime evidence is retained; no gate was bypassed."],
                 },
             )
-        _ensure_policy_plan(task["id"])
         observed_at = observation.get("observed_at")
         try:
             timestamp = datetime.fromisoformat(str(observed_at).replace("Z", "+00:00"))

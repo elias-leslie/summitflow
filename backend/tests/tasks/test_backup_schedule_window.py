@@ -240,7 +240,7 @@ def test_capture_never_publishes_even_with_retained_legacy_setting(monkeypatch, 
     monkeypatch.setattr(scheduler, "get_settings", lambda: SimpleNamespace(
         backup_publish_before_backup=True, backup_schedule_start_hour=None))
     publish = Mock(side_effect=AssertionError("No remote work during backup"))
-    monkeypatch.setattr(backup_publish, "publish_source_before_backup", publish)
+    monkeypatch.setattr(backup_publish, "publish_source", publish)
     monkeypatch.setattr(scheduler, "create_backup", lambda **_: {"status": capture_status, "backup_id": "saved"})
     monkeypatch.setattr(scheduler.backup_store, "update_source_last_run", lambda *_: None)
     result = scheduler._process_due_source({"id": "source", "frequency": "daily"})

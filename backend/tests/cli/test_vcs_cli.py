@@ -3,6 +3,7 @@ from __future__ import annotations
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
+import pytest
 from typer.testing import CliRunner
 
 from cli.commands import vcs
@@ -11,42 +12,98 @@ from cli.output_context import OutputContext
 runner = CliRunner()
 
 
-def test_publish_requires_explicit_now():
-    with patch("app.tasks.backup_manual_publish.publish_project_now") as publish:
-        result = runner.invoke(vcs.app, ["publish", "--source", "source", "--sha", "a" * 40])
-    assert result.exit_code == 2
-    assert "requires --now" in result.stdout
-    publish.assert_not_called()
+@pytest.fixture
+def project(tmp_path, monkeypatch):
+    """A registered project checkout with two commits; coordination is out of scope here."""
+    import subprocess
+
+    root = tmp_path / "project"
+    root.mkdir()
+    for args in (["init", "-q", "-b", "main"], ["commit", "-q", "--allow-empty", "-m", "one"],
+                 ["commit", "-q", "--allow-empty", "-m", "two"]):
+        subprocess.run(["git", "-c", "user.name=T", "-c", "user.email=t@example.invalid", *args], cwd=root, check=True)
+    monkeypatch.setattr("app.storage.projects.get_project_root_path", lambda project_id: str(root) if project_id == "source" else None)
+    monkeypatch.setattr(vcs, "_coord_guard", lambda *_: None)
+    head = subprocess.run(["git", "rev-parse", "HEAD"], cwd=root, check=True, capture_output=True, text=True).stdout.strip()
+    return root, head
 
 
-def test_publish_exact_source_only_and_no_hygiene_actions():
+_DONE = {"publication_complete": True, "evidence_recorded": True, "status": "published"}
+
+
+def test_publish_resolves_a_short_sha_and_does_no_hygiene(project):
+    _root, head = project
     with (
-        patch("app.tasks.backup_manual_publish.publish_project_now", return_value={
-            "publication_complete": True, "evidence_recorded": True, "health": {"state": "verified"},
-        }) as publish,
+        patch("app.tasks.backup_manual_publish.publish_project_now", return_value=_DONE) as publish,
         patch.object(vcs, "pull_repository") as pull,
         patch.object(vcs, "cleanup_safe_git_residue") as cleanup,
     ):
-        result = runner.invoke(vcs.app, ["publish", "--source", "source", "--sha", "a" * 40, "--now"])
-    assert result.exit_code == 0
-    publish.assert_called_once_with("source", "a" * 40)
+        result = runner.invoke(vcs.app, ["publish", "--source", "source", "--sha", head[:9]])
+    assert result.exit_code == 0, result.stdout
+    publish.assert_called_once_with("source", head, authorized_workflows=())
     pull.assert_not_called()
     cleanup.assert_not_called()
 
 
-def test_retained_findings_do_not_relabel_successful_explicit_publication():
-    with patch("app.tasks.backup_manual_publish.publish_project_now", return_value={
-        "publication_complete": True, "evidence_recorded": True, "health": {"state": "blocked"},
-    }):
-        result = runner.invoke(vcs.app, ["publish", "--source", "source", "--sha", "a" * 40, "--now"])
+def test_publish_defaults_source_from_cwd_and_sha_from_the_hourly_selection(project):
+    root, head = project
+    with (
+        patch("cli.config.get_config_optional", return_value=MagicMock(project_id="source")),
+        patch("app.tasks.nightly_publication.publication_hold", return_value=None),
+        patch("app.tasks.nightly_publication.select_candidate", return_value={"action": "publish", "sha": head}) as select,
+        patch("app.tasks.backup_manual_publish.publish_project_now", return_value=_DONE) as publish,
+    ):
+        result = runner.invoke(vcs.app, ["publish", "--now"])  # --now is still accepted
+    assert result.exit_code == 0, result.stdout
+    assert select.call_args.args[:2] == ("source", root)
+    publish.assert_called_once_with("source", head, authorized_workflows=())
+
+
+@pytest.mark.parametrize(("reason", "code"), [("up_to_date", 0), ("no_accepted_commit", 2)])
+def test_publish_with_nothing_selected_explains_why(project, reason, code):
+    with (
+        patch("app.tasks.nightly_publication.publication_hold", return_value=None),
+        patch("app.tasks.nightly_publication.select_candidate", return_value={"action": "skip", "reason": reason}),
+        patch("app.tasks.backup_manual_publish.publish_project_now") as publish,
+    ):
+        result = runner.invoke(vcs.app, ["publish", "--source", "source"])
+    assert result.exit_code == code and reason in result.stdout
+    publish.assert_not_called()
+
+
+def test_publish_refuses_unknown_project_or_commit(project):
+    with patch("app.tasks.backup_manual_publish.publish_project_now") as publish:
+        unknown = runner.invoke(vcs.app, ["publish", "--source", "elsewhere"])
+        bad_sha = runner.invoke(vcs.app, ["publish", "--source", "source", "--sha", "f" * 12])
+    assert unknown.exit_code == 2 and "No registered project" in unknown.stdout
+    assert bad_sha.exit_code == 2 and "Unknown commit" in bad_sha.stdout
+    publish.assert_not_called()
+
+
+def test_publish_forwards_workflow_authority(project):
+    _root, head = project
+    with patch("app.tasks.backup_manual_publish.publish_project_now", return_value=_DONE) as publish:
+        result = runner.invoke(vcs.app, ["publish", "--source", "source", "--sha", head,
+                                         "--authorize-workflow", ".github/workflows/ci.yml"])
     assert result.exit_code == 0
+    publish.assert_called_once_with("source", head, authorized_workflows=(".github/workflows/ci.yml",))
 
 
-def test_publish_never_prints_unexpected_diagnostics():
+def test_publish_never_prints_unexpected_diagnostics(project):
+    _root, head = project
     with patch("app.tasks.backup_manual_publish.publish_project_now", side_effect=RuntimeError("private-token-diagnostic")):
-        result = runner.invoke(vcs.app, ["publish", "--source", "source", "--sha", "a" * 40, "--now"])
+        result = runner.invoke(vcs.app, ["publish", "--source", "source", "--sha", head])
     assert result.exit_code == 2
     assert "private-token-diagnostic" not in result.stdout
+
+
+def test_pending_publication_is_not_reported_complete(project):
+    _root, head = project
+    with patch("app.tasks.backup_manual_publish.publish_project_now", return_value={
+        "publication_complete": False, "pushed": False, "evidence_recorded": True, "reason": "source_acceptance_required",
+    }):
+        result = runner.invoke(vcs.app, ["publish", "--source", "source", "--sha", head])
+    assert result.exit_code == 2 and "source_acceptance_required" in result.stdout
 
 
 def _cleanup_payload(needs_cleanup: bool = False) -> dict[str, object]:
@@ -199,14 +256,6 @@ def test_discover_unmanaged_repos_ignores_config_mirrors(tmp_path: Path) -> None
         assert vcs._discover_unmanaged_repos([]) == [extra]
 
 
-def test_pending_publication_is_not_reported_complete():
-    with patch("app.tasks.backup_manual_publish.publish_project_now", return_value={
-        "publication_complete": False, "pushed": True, "evidence_recorded": True, "ci": {"state": "pending"},
-    }):
-        result = runner.invoke(vcs.app, ["publish", "--source", "source", "--sha", "a" * 40, "--now"])
-    assert result.exit_code == 2
-
-
 def test_doctor_fetches_git_only_when_requested(tmp_path: Path) -> None:
     repo = tmp_path / "repo"
     repo.mkdir()
@@ -223,20 +272,6 @@ def test_doctor_fetches_git_only_when_requested(tmp_path: Path) -> None:
         result = runner.invoke(vcs.app, ["doctor", "--fetch"], obj=OutputContext(compact=True))
     assert result.exit_code == 0
     fetch.assert_called_once_with(repo)
-
-
-def test_publish_now_honors_mirror_mode_and_workflow_authority():
-    with (
-        patch("app.tasks.nightly_publication.publication_mode", return_value="mirror"),
-        patch("app.tasks.backup_manual_publish.publish_project_now", return_value={
-            "publication_complete": True, "evidence_recorded": True, "health": {"state": "verified"},
-        }) as publish,
-    ):
-        result = runner.invoke(vcs.app, ["publish", "--source", "source", "--sha", "a" * 40, "--now",
-                                         "--authorize-workflow", ".github/workflows/ci.yml"])
-    assert result.exit_code == 0
-    publish.assert_called_once_with("source", "a" * 40, authorized_workflows=(".github/workflows/ci.yml",),
-                                    publication_mode="mirror")
 
 
 def test_publication_reobserve_replays_retained_receipt_only_on_request():

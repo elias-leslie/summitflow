@@ -56,7 +56,7 @@ def pending_task(test_project_id, cleanup_task, monkeypatch, tmp_path):
     monkeypatch.setattr("app.services.task_acceptance.load_completion_assessment", Mock(return_value=Mock(complete=True)))
     monkeypatch.setattr("cli.lib.task_closeout_adapter.LocalCloseoutOperations.require_owned_source", Mock())
     monkeypatch.setattr("cli.lib.task_closeout_adapter.LocalCloseoutOperations.cleanup", Mock())
-    monkeypatch.setattr("cli.lib.publish_workflow.publish_git", Mock(side_effect=AssertionError("No remote publication")))
+    monkeypatch.setattr("app.tasks.backup_publish.publish_source", Mock(side_effect=AssertionError("No remote publication")))
     monkeypatch.setattr("cli.lib.commit_workflow.commit_repo", Mock(side_effect=AssertionError("No later work checkpoint")))
     return task
 

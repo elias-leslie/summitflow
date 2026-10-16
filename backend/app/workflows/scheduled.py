@@ -388,10 +388,9 @@ async def runtime_hygiene_wf(input: EmptyInput, ctx: Context) -> dict[str, Any]:
 @hatchet.task(
     name="summitflow-nightly-publication",
     input_validator=EmptyInput,
-    # UTC hours 05-11 cover 01:00-06:00 New York across DST; the task applies
-    # the exact local window. Night acceptance can exceed an hour per project.
-    on_crons=["5 5-11 * * *"],
-    execution_timeout="18000s",
+    # Hourly plain pushes; a pass that overruns skips the next trigger.
+    on_crons=["5 * * * *"],
+    execution_timeout="3300s",
     retries=0,
     concurrency=ConcurrencyExpression(
         expression="'summitflow-nightly-publication'",

@@ -70,7 +70,7 @@ def queue(monkeypatch: pytest.MonkeyPatch, tmp_path: Path):
     monkeypatch.setattr(drain, "sync_backup_offsite", sync)
     monkeypatch.setattr(drain.backup_store, "merge_backup_verification_json", merge)
     publication_module = ModuleType("app.tasks.backup_publish")
-    monkeypatch.setattr(publication_module, "publish_source_before_backup", publish, raising=False)
+    monkeypatch.setattr(publication_module, "publish_source", publish, raising=False)
     monkeypatch.setitem(sys.modules, "app.tasks.backup_publish", publication_module)
     return drain, state
 

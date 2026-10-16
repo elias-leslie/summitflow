@@ -30,7 +30,7 @@ from .cleanup_handlers import cleanup_safe_git_residue
 
 app = typer.Typer(
     help=(
-        "Canonical VCS hygiene and isolated exact-source publication. Prefer "
+        "Canonical VCS hygiene and exact-source publication. Prefer "
         "`st vcs doctor` and `st vcs reconcile` over separate status sweeps."
     )
 )
@@ -38,13 +38,12 @@ app = typer.Typer(
 
 @app.command("publication")
 @usage(surface="st.vcs.publication", cmd="st vcs publication [--mode nightly|mirror|manual] [--hold [--through SHA] | --release] [--reobserve]",
-       when="read publication status; set overnight mode; hold reviewed-later commits local; replay the retained receipt",
-       precautions=("unknown is not passing CI",
-                    "nightly publishes the accepted committed head overnight; mirror skips acceptance for check-less repos",
+       when="read publication status; set auto or manual publication; hold commits local; replay the retained receipt",
+       precautions=("nightly and mirror both push hourly: private repos their head, public repos their newest accepted commit",
                     "--reobserve replays only the newest retained receipt; it never fetches or publishes"),
        tier="reference")
 def publication_status(
-    mode: Annotated[str | None, typer.Option("--mode", help="Set overnight publication: nightly, mirror or manual")] = None,
+    mode: Annotated[str | None, typer.Option("--mode", help="Set publication: nightly or mirror (hourly push) or manual")] = None,
     hold: Annotated[bool, typer.Option("--hold", help="Keep committed work local until released")] = False,
     through: Annotated[str | None, typer.Option("--through", help="With --hold: still publish up to this commit")] = None,
     reason: Annotated[str, typer.Option("--reason", help="With --hold: why later commits must stay local")] = "owner hold",
@@ -110,34 +109,47 @@ def publication_status(
 
 
 @app.command("publish")
-@usage(surface="st.vcs.publish", cmd="st vcs publish --source ID --sha FULL_OID --now",
-       when="owner-authorized immediate publication of an accepted exact commit",
-       precautions=("requires explicit publication authority; never creates commits or reconciles the checkout",
-                    "acceptance, outgoing-history and actual repository requirements remain guarded"), tier="reference")
+@usage(surface="st.vcs.publish", cmd="st vcs publish [--source ID] [--sha SHA]",
+       when="publish now instead of waiting for the hourly push",
+       precautions=("defaults: this checkout's project; private repos its head, public repos their newest accepted commit",
+                    "never creates commits or touches the checkout; outgoing-secret and workflow-effects checks still apply"),
+       tier="reference")
 def publish_now(
-    source: Annotated[str, typer.Option("--source", help="Registered project ID (or existing project source ID)")],
-    sha: Annotated[str, typer.Option("--sha", help="Exact accepted lowercase full commit OID")],
-    now: Annotated[bool, typer.Option("--now", help="Explicit owner-triggered publication of the supplied source")] = False,
+    source: Annotated[str | None, typer.Option("--source", help="Registered project ID (default: this checkout's project)")] = None,
+    sha: Annotated[str | None, typer.Option("--sha", help="Commit to publish, short or full (default: what the hourly push would pick)")] = None,
+    now: Annotated[bool, typer.Option("--now", hidden=True, help="Accepted for compatibility; publishing is immediate")] = False,
     authorize_workflow: Annotated[list[str] | None, typer.Option("--authorize-workflow", help="Explicit authority for a listed workflow: exact path for selected source, BASE_SHA:path for a different base workflow; repeat as needed")] = None,
     json_output: Annotated[bool, typer.Option("--json", help="Show the complete retained structured observation")] = False,
     with_ack: Annotated[str | None, typer.Option("--with-ack", help="Request id the repo's holder acked yes")] = None,
 ) -> None:
-    """Publish an exact accepted source in isolation and retain its real CI evidence."""
-    if not now:
-        typer.echo("Immediate publication requires --now and explicit owner authorization; overnight publication follows st vcs publication --mode.")
-        raise typer.Exit(2)
-    _coord_guard(get_projects_base_dir() / source, "publish", with_ack)
+    """Push one exact committed source and retain the observation."""
+    from app.storage.projects import get_project_root_path
     from app.tasks.backup_manual_publish import publish_project_now
-    from app.tasks.nightly_publication import publication_mode
+    from app.tasks.nightly_publication import publication_hold, select_candidate
+    from cli.config import get_config_optional
 
+    source = source or get_config_optional().project_id
+    root = get_project_root_path(source) if source else None
+    if not source or not root:
+        typer.echo("No registered project: run from a project checkout or pass --source.")
+        raise typer.Exit(2)
+    _coord_guard(Path(root), "publish", with_ack)
+    if sha:
+        resolved = subprocess.run(["git", "-C", root, "rev-parse", "--verify", "--quiet", f"{sha}^{{commit}}"],
+                                  capture_output=True, text=True, check=False)
+        if resolved.returncode:
+            typer.echo(f"Unknown commit: {sha}")
+            raise typer.Exit(2)
+        sha = resolved.stdout.strip()
+    else:
+        candidate = select_candidate(source, Path(root), "nightly", publication_hold(source))
+        if candidate["action"] != "publish":
+            typer.echo(f"Nothing to publish: {candidate.get('reason')}"
+                       + (f" ({candidate['detail']})" if candidate.get("detail") else ""))
+            raise typer.Exit(0 if candidate.get("reason") in {"up_to_date", "published"} else 2)
+        sha = str(candidate["sha"])
     try:
-        # Mirror projects have no acceptance gate; on-demand publication honors that tier.
-        mirror = publication_mode(source) == "mirror"
-        if mirror or authorize_workflow:
-            result = publish_project_now(source, sha, authorized_workflows=tuple(authorize_workflow or ()),
-                                         publication_mode="mirror" if mirror else "manual")
-        else:
-            result = publish_project_now(source, sha)
+        result = publish_project_now(source, sha, authorized_workflows=tuple(authorize_workflow or ()))
     except ValueError as exc:
         typer.echo(str(exc))
         raise typer.Exit(2) from None
@@ -148,38 +160,33 @@ def publish_now(
     from app.tasks.backup_publish import _public_evidence
 
     safe_result = _public_evidence(result)
+    complete = bool(result.get("publication_complete") and result.get("evidence_recorded"))
     if json_output:
         output_json(safe_result)
     else:
         details = write_details(Path.cwd(), "publication", json.dumps(safe_result, indent=2, sort_keys=True))
-        delivery = result.get("delivery") or {}
-        complete = bool(result.get("publication_complete") and result.get("evidence_recorded"))
         output_json({"outcome": result.get("status", "completed" if complete else "pending"),
-                     "source": sha, "uploaded_source": delivery.get("uploaded_source"),
-                     "pull_request": delivery.get("pull_request_state", "unknown"),
-                     "merged_source": delivery.get("merged_source"),
+                     "source": sha, "pushed": bool(result.get("pushed")),
                      "blockers": [] if complete else [result.get("reason", "publication_evidence_incomplete")],
                      "unauthorized_workflows": result.get("unauthorized_workflows", []),
-                     "next_action": "none" if complete else "Inspect retained evidence; explicitly reobserve this source after resolving the blocker",
                      "evidence": result.get("evidence"), "details": display_path(Path.cwd(), details)})
-    if not (result.get("publication_complete") and result.get("evidence_recorded")):
+    if not complete:
         raise typer.Exit(2)
 
 @app.command("nightly")
 @usage(surface="st.vcs.nightly", cmd="st vcs nightly --dry-run",
-       when="preview or run the overnight publication sweep for opted-in projects",
-       precautions=("without --dry-run it publishes immediately outside the window; owner-authorized only",
-                    "never commits, changes checkouts or authorizes workflow files"), tier="reference")
+       when="preview or run the hourly publication pass for auto-published projects",
+       precautions=("--run publishes immediately", "never commits, changes checkouts or authorizes workflow files"),
+       tier="reference")
 def nightly(
-    dry_run: Annotated[bool, typer.Option("--dry-run/--run", help="Show tonight's selection without side effects")] = True,
+    dry_run: Annotated[bool, typer.Option("--dry-run/--run", help="Show this hour's selection without side effects")] = True,
     project: Annotated[list[str] | None, typer.Option("--project", help="Limit to project IDs; repeat as needed")] = None,
     json_output: Annotated[bool, typer.Option("--json", help="Show complete structured rows")] = False,
 ) -> None:
-    """Select (and with --run, execute) one sequential overnight publication pass."""
+    """Select (and with --run, execute) one sequential publication pass."""
     from app.tasks.nightly_publication import run_nightly_publication, summary_line
 
-    # An explicit owner --run is authority to publish outside the quiet window.
-    result = run_nightly_publication(dry_run=dry_run, project_ids=project or None, ignore_window=not dry_run)
+    result = run_nightly_publication(dry_run=dry_run, project_ids=project or None)
     if json_output:
         output_json(result)
         return
