@@ -366,3 +366,23 @@ def test_reclaim_stops_at_target_and_keeps_cache_roots(mocker, tmp_path: Path) -
     pruned = reclaim.prune_unused_hf_repos(hub=hub, now=datetime.now(UTC), proc_root=tmp_path / "no-proc")
     assert pruned["deleted_paths"] == [str(old_repo)]
     assert hub.is_dir() and used_repo.exists() and not old_repo.exists()
+
+
+def test_hf_prune_keeps_repos_holding_a_mount(mocker, tmp_path: Path) -> None:
+    """Regression: an old hub repo with a bind mount inside was removed with rmtree, mount data included."""
+    from app.tasks import _retention_reclaim as reclaim
+
+    hub = tmp_path / "hub"
+    mounted_repo, plain_repo = hub / "models--mounted--x", hub / "models--plain--y"
+    for repo in (mounted_repo, plain_repo):
+        (repo / "blobs").mkdir(parents=True)
+        (repo / "blobs" / "b").write_text("weights")
+    table = tmp_path / "mountinfo"
+    table.write_text("22 1 0:21 / / rw - btrfs /dev/p7 rw\n"
+                     f"90 22 0:21 /data {os.path.realpath(mounted_repo / 'blobs')} rw - btrfs /dev/p8 rw\n")
+    old = (datetime.now(UTC) - timedelta(days=40)).timestamp()
+    mocker.patch.object(reclaim, "_tree_stats", lambda path, max_entries: (old, 7, 3))
+    pruned = reclaim.prune_unused_hf_repos(hub=hub, now=datetime.now(UTC), proc_root=tmp_path / "no-proc", mountinfo=table)
+    assert pruned["deleted_paths"] == [str(plain_repo)] and not plain_repo.exists()
+    assert (mounted_repo / "blobs" / "b").exists()
+    assert pruned["kept"][0]["reason"].startswith("mount point ")

@@ -2,7 +2,8 @@
 
 Each direct child of the scratch root is reviewed as one unit and is a
 candidate only when it is old, not a symlink target, not open by a visible
-process and not a protected root. ``collect_scratch_review`` never deletes;
+process, holds no mount point (bind mounts included) or other filesystem and
+is not a protected root. ``collect_scratch_review`` never deletes;
 ``apply_scratch_retention`` re-verifies each candidate and removes it, and the
 host-retention maintenance step runs it at most weekly. Scratch is excluded
 from backups and holds only replaceable data.
@@ -10,9 +11,10 @@ from backups and holds only replaceable data.
 
 from __future__ import annotations
 
+import errno
 import json
 import os
-import shutil
+import re
 import stat
 import tempfile
 from collections.abc import Iterable, Sequence
@@ -29,6 +31,9 @@ DEFAULT_SYMLINK_DEPTH = 4
 DEFAULT_MAX_ENTRIES = 200_000
 APPLY_INTERVAL_HOURS = 7 * 24
 DEFAULT_STAMP = Path.home() / ".local/state/summitflow/scratch-retention.json"
+MOUNTINFO = Path("/proc/self/mountinfo")
+_DIR_FLAGS = os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW | os.O_CLOEXEC
+_OCTAL_ESCAPE = re.compile(r"\\([0-7]{3})")
 
 
 class ScratchCandidate(TypedDict):
@@ -56,6 +61,79 @@ class ScratchReview(TypedDict):
 
 def _within(path: Path, root: Path) -> bool:
     return path == root or root in path.parents
+
+
+def mount_points(mountinfo: Path = MOUNTINFO) -> list[Path] | None:
+    """Every mount point, bind mounts included; None when the table is unreadable.
+
+    A bind mount of the same filesystem shares its ``st_dev``, so only the
+    mount table shows it.
+    """
+    try:
+        lines = mountinfo.read_text().splitlines()
+    except OSError:
+        return None
+    return [Path(_OCTAL_ESCAPE.sub(lambda match: chr(int(match[1], 8)), fields[4]))
+            for fields in (line.split() for line in lines) if len(fields) > 4]
+
+
+def mount_skip_reason(path: Path, mountinfo: Path = MOUNTINFO) -> str | None:
+    """Why ``path`` must not be removed for a mount at or below it; None when it holds none."""
+    mounts = mount_points(mountinfo)
+    if mounts is None:
+        return "mount table unreadable"
+    target = Path(os.path.realpath(path))
+    inside = next((mount for mount in mounts if _within(mount, target)), None)
+    return None if inside is None else f"mount point {inside} inside"
+
+
+def _empty_dir(fd: int, device: int) -> None:
+    """Remove everything in the directory open at ``fd`` through directory fds, never leaving ``device``."""
+    with os.scandir(fd) as entries:
+        names = [entry.name for entry in entries]
+    for name in names:
+        info = os.stat(name, dir_fd=fd, follow_symlinks=False)
+        if info.st_dev != device:
+            raise OSError(errno.EXDEV, "another filesystem inside", name)
+        if not stat.S_ISDIR(info.st_mode):
+            os.unlink(name, dir_fd=fd)
+            continue
+        sub = os.open(name, _DIR_FLAGS, dir_fd=fd)
+        try:
+            opened = os.fstat(sub)
+            if (opened.st_dev, opened.st_ino) != (info.st_dev, info.st_ino):
+                raise OSError(errno.EXDEV, "changed or another filesystem", name)
+            _empty_dir(sub, device)
+        finally:
+            os.close(sub)
+        os.rmdir(name, dir_fd=fd)
+
+
+def remove_entry(path: Path, ident: tuple[int, int]) -> None:
+    """Remove ``path`` (file or tree) only if it is still the entry checked (``st_dev``, ``st_ino``).
+
+    Works through directory fds without following links and stops with
+    ``OSError`` (EXDEV) at anything on another device instead of emptying it.
+    """
+    parent = os.open(path.parent, _DIR_FLAGS)
+    try:
+        info = os.stat(path.name, dir_fd=parent, follow_symlinks=False)
+        if (info.st_dev, info.st_ino) != ident:
+            raise OSError(errno.ESTALE, "changed since it was checked", str(path))
+        if not stat.S_ISDIR(info.st_mode):
+            os.unlink(path.name, dir_fd=parent)
+            return
+        sub = os.open(path.name, _DIR_FLAGS, dir_fd=parent)
+        try:
+            opened = os.fstat(sub)
+            if (opened.st_dev, opened.st_ino) != ident:
+                raise OSError(errno.ESTALE, "changed since it was checked", str(path))
+            _empty_dir(sub, ident[0])
+        finally:
+            os.close(sub)
+        os.rmdir(path.name, dir_fd=parent)
+    finally:
+        os.close(parent)
 
 
 def _link_target(link: Path) -> list[Path]:
@@ -170,7 +248,11 @@ def _activity(info: os.stat_result) -> float:
 
 
 def _tree_stats(path: Path, *, max_entries: int) -> tuple[float, int, int] | None:
-    """Newest activity (file mtime/ctime/atime, dir mtime/ctime), size and entry count; None past the cap."""
+    """Newest activity (file mtime/ctime/atime, dir mtime/ctime), size and entry count; None past the cap.
+
+    Raises ``OSError`` (EXDEV) when anything inside is on another device
+    (a mount or a nested Btrfs subvolume); such a tree is never removed.
+    """
     info = path.lstat()
     newest = _activity(info)
     size = info.st_size
@@ -186,6 +268,8 @@ def _tree_stats(path: Path, *, max_entries: int) -> tuple[float, int, int] | Non
                 child = os.lstat(os.path.join(current, name))
             except OSError:
                 continue
+            if child.st_dev != info.st_dev:
+                raise OSError(errno.EXDEV, "another filesystem inside", os.path.join(current, name))
             newest = max(newest, _activity(child))
             size += child.st_size
     return newest, size, count
@@ -199,6 +283,7 @@ def collect_scratch_review(
     symlink_roots: Sequence[Path] | None = None,
     proc_root: Path = Path("/proc"),
     max_entries: int = DEFAULT_MAX_ENTRIES,
+    mountinfo: Path = MOUNTINFO,
 ) -> ScratchReview:
     """Report old, unreferenced, unused scratch entries; never deletes."""
     effective_now = now or datetime.now(UTC)
@@ -231,10 +316,15 @@ def collect_scratch_review(
         if pid is not None:
             review["protected"].append(ScratchSkip(path=str(child), reason=f"in use by pid {pid}"))
             continue
+        mounted = mount_skip_reason(child, mountinfo)
+        if mounted is not None:
+            review["protected"].append(ScratchSkip(path=str(child), reason=mounted))
+            continue
         try:
             stats = _tree_stats(child, max_entries=max_entries)
         except OSError as exc:
-            review["protected"].append(ScratchSkip(path=str(child), reason=f"unreadable: {exc.strerror or exc}"))
+            reason = exc.strerror if exc.errno == errno.EXDEV else f"unreadable: {exc.strerror or exc}"
+            review["protected"].append(ScratchSkip(path=str(child), reason=reason or str(exc)))
             continue
         if stats is None:
             review["protected"].append(ScratchSkip(path=str(child), reason=f"over {max_entries} entries; not verified"))
@@ -269,17 +359,20 @@ def apply_scratch_retention(
     symlink_roots: Sequence[Path] | None = None,
     proc_root: Path = Path("/proc"),
     max_entries: int = DEFAULT_MAX_ENTRIES,
+    mountinfo: Path = MOUNTINFO,
 ) -> ScratchApply:
     """Delete review candidates after re-checking each one immediately before removal.
 
     Only direct, non-symlink children owned by this user on the scratch device
-    are removed. Age includes file atime, so anything read within the window
-    keeps its entry even when its process is not visible.
+    are removed, never one with a mount point or another filesystem inside,
+    and removal itself never crosses a device. Age includes file atime, so
+    anything read within the window keeps its entry even when its process is
+    not visible.
     """
     effective_now = now or datetime.now(UTC)
     review = collect_scratch_review(
         max_age_hours=max_age_hours, now=effective_now, scratch_root=scratch_root,
-        symlink_roots=symlink_roots, proc_root=proc_root, max_entries=max_entries,
+        symlink_roots=symlink_roots, proc_root=proc_root, max_entries=max_entries, mountinfo=mountinfo,
     )
     result = ScratchApply(
         status="skipped" if review["status"] == "skipped" else "success", root=str(scratch_root),
@@ -290,7 +383,6 @@ def apply_scratch_retention(
         return result
     device = scratch_root.lstat().st_dev
     cutoff = effective_now.timestamp() - max_age_hours * 3600
-    held, _ = open_scratch_paths(scratch_root, proc_root)
     for candidate in review["candidates"]:
         path = Path(candidate["path"])
         try:
@@ -298,17 +390,26 @@ def apply_scratch_retention(
             if path.parent != scratch_root or stat.S_ISLNK(info.st_mode) or info.st_dev != device or info.st_uid != os.getuid():
                 result["kept"].append(ScratchSkip(path=str(path), reason="not a user-owned scratch entry"))
                 continue
-            if any(_within(target, path) for target in held):
-                result["kept"].append(ScratchSkip(path=str(path), reason="in use"))
+            try:
+                stats = _tree_stats(path, max_entries=max_entries)
+            except OSError as exc:
+                if exc.errno != errno.EXDEV:
+                    raise
+                result["kept"].append(ScratchSkip(path=str(path), reason=exc.strerror or "another filesystem inside"))
                 continue
-            stats = _tree_stats(path, max_entries=max_entries)
             if stats is None or stats[0] > cutoff:
                 result["kept"].append(ScratchSkip(path=str(path), reason="changed since review"))
                 continue
-            if stat.S_ISDIR(info.st_mode):
-                shutil.rmtree(path)
-            else:
-                path.unlink()
+            mounted = mount_skip_reason(path, mountinfo)
+            if mounted is not None:
+                result["kept"].append(ScratchSkip(path=str(path), reason=mounted))
+                continue
+            # Fresh process scan right before removal: the tree walk can take a while.
+            held, _ = open_scratch_paths(scratch_root, proc_root)
+            if any(_within(target, path) for target in held):
+                result["kept"].append(ScratchSkip(path=str(path), reason="in use"))
+                continue
+            remove_entry(path, (info.st_dev, info.st_ino))
         except OSError as exc:
             result["kept"].append(ScratchSkip(path=str(path), reason=f"delete failed: {exc.strerror or exc}"))
             result["status"] = "partial"

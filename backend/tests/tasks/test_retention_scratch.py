@@ -2,9 +2,11 @@
 
 from __future__ import annotations
 
+import errno
 import os
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
+from typing import Any
 
 import pytest
 
@@ -188,3 +190,108 @@ def test_weekly_runner_respects_cadence_stamp(layout, tmp_path):
     assert again == {"status": "skipped", "reason": "weekly-cadence", "last_applied_at": now.isoformat()}
     later = scratch.weekly_scratch_retention(max_age_hours=7 * 24, now=now + timedelta(days=7), stamp=stamp, **kwargs)
     assert [Path(path).name for path in later["deleted_paths"]] == ["old2"]
+
+
+def fake_mountinfo(tmp_path: Path, *mount_points: Path) -> Path:
+    """A mountinfo with '/' plus the given mount points (spaces escaped as the kernel does)."""
+    lines = ["22 1 0:21 / / rw,relatime shared:1 - btrfs /dev/nvme0n1p7 rw"]
+    for index, point in enumerate(mount_points, start=100):
+        escaped = os.path.realpath(point).replace(" ", "\\040")
+        lines.append(f"{index} 22 0:21 /@workspaces/projects {escaped} rw,relatime shared:2 - btrfs /dev/nvme0n1p8 rw")
+    table = tmp_path / "mountinfo"
+    table.write_text("\n".join(lines) + "\n")
+    return table
+
+
+@pytest.mark.parametrize("where", ["nested", "entry"])
+def test_entry_holding_a_bind_mount_is_never_deleted(layout, tmp_path, where):
+    """Regression: only the entry's own device was checked, so rmtree emptied a bind mount inside it."""
+    entry = layout["root"] / "old work"
+    mounted = entry / "data dir" if where == "nested" else entry
+    mounted.mkdir(parents=True)
+    (mounted / "precious.db").write_text("owner data")
+    table = fake_mountinfo(tmp_path, mounted)
+    reviewed = review(layout, mountinfo=table)
+    assert reviewed["candidates"] == []
+    assert reviewed["protected"][0]["reason"] == f"mount point {os.path.realpath(mounted)} inside"
+    result = apply(layout, mountinfo=table)
+    assert result["deleted_paths"] == [] and (mounted / "precious.db").exists()
+
+
+def test_unreadable_mount_table_keeps_everything(layout, tmp_path):
+    (layout["root"] / "old").mkdir()
+    result = apply(layout, mountinfo=tmp_path / "missing-mountinfo")
+    assert result["deleted_paths"] == [] and (layout["root"] / "old").exists()
+
+
+def test_unrelated_mounts_do_not_protect(layout, tmp_path):
+    (layout["root"] / "old").mkdir()
+    sibling = tmp_path / "elsewhere"
+    sibling.mkdir()
+    table = fake_mountinfo(tmp_path, layout["root"], sibling)
+    assert [Path(path).name for path in apply(layout, mountinfo=table)["deleted_paths"]] == ["old"]
+
+
+def _fake_device(monkeypatch, name: str) -> None:
+    """Report entries called ``name`` as living on another device."""
+    real_stat, real_lstat = os.stat, os.lstat
+
+    class Shifted:
+        def __init__(self, result: os.stat_result) -> None:
+            self._result = result
+            self.st_dev = result.st_dev + 1
+
+        def __getattr__(self, attribute: str) -> object:
+            return getattr(self._result, attribute)
+
+    def shifted(result: os.stat_result) -> Any:
+        return Shifted(result)
+
+    def fake_stat(path, *args, **kwargs):
+        result = real_stat(path, *args, **kwargs)
+        return shifted(result) if os.path.basename(os.fsdecode(path)) == name else result
+
+    def fake_lstat(path, *args, **kwargs):
+        result = real_lstat(path, *args, **kwargs)
+        return shifted(result) if os.path.basename(os.fsdecode(path)) == name else result
+
+    monkeypatch.setattr(os, "stat", fake_stat)
+    monkeypatch.setattr(os, "lstat", fake_lstat)
+
+
+def test_entry_with_another_filesystem_inside_is_protected(layout, monkeypatch):
+    entry = layout["root"] / "old"
+    (entry / "othermount").mkdir(parents=True)
+    (entry / "othermount" / "keep.bin").write_text("x")
+    _fake_device(monkeypatch, "othermount")
+    result = apply(layout)
+    assert result["deleted_paths"] == [] and (entry / "othermount" / "keep.bin").exists()
+    assert review(layout)["protected"][0]["reason"] == "another filesystem inside"
+
+
+def test_removal_stops_at_another_device(tmp_path, monkeypatch):
+    entry = tmp_path / "old"
+    (entry / "a").mkdir(parents=True)
+    (entry / "a" / "gone.txt").write_text("x")
+    (entry / "othermount").mkdir()
+    (entry / "othermount" / "keep.bin").write_text("x")
+    info = entry.lstat()
+    _fake_device(monkeypatch, "othermount")
+    with pytest.raises(OSError) as raised:
+        scratch.remove_entry(entry, (info.st_dev, info.st_ino))
+    assert raised.value.errno == errno.EXDEV
+    assert (entry / "othermount" / "keep.bin").exists()
+
+
+def test_removal_refuses_an_entry_swapped_since_the_check(tmp_path):
+    entry = tmp_path / "old"
+    entry.mkdir()
+    info = entry.lstat()
+    entry.rmdir()
+    entry.mkdir()
+    (entry / "new.txt").write_text("x")
+    if entry.lstat().st_ino == info.st_ino:
+        pytest.skip("filesystem reused the inode")
+    with pytest.raises(OSError):
+        scratch.remove_entry(entry, (info.st_dev, info.st_ino))
+    assert (entry / "new.txt").exists()

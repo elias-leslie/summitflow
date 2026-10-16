@@ -4,8 +4,9 @@ Steps, each only when its data lives on the target filesystem:
 
 1. ``uv cache prune`` on the owner's uv cache.
 2. ``pnpm store prune`` on the owner's pnpm store.
-3. Hugging Face hub repos untouched for ``HF_UNUSED_DAYS`` and not open by any
-   visible process (scratch is mounted noatime, so mtime/ctime is the age).
+3. Hugging Face hub repos untouched for ``HF_UNUSED_DAYS``, not open by any
+   visible process and holding no mount point or other filesystem (scratch is
+   mounted noatime, so mtime/ctime is the age).
 4. ``/srv/scratch`` retention with the pressure age.
 
 The cache roots under ``/srv/scratch/cache`` are live symlink targets (see the
@@ -25,11 +26,14 @@ from typing import Any
 
 from ..utils.host_retention_policy import HostRetentionPolicy
 from ._retention_scratch import (
+    MOUNTINFO,
     SCRATCH_ROOT,
     _tree_stats,
     apply_scratch_retention,
     collect_scratch_review,
+    mount_skip_reason,
     open_scratch_paths,
+    remove_entry,
 )
 
 CACHE_ROOT = SCRATCH_ROOT / "cache"
@@ -89,24 +93,39 @@ def _pnpm_store(run: Runner) -> Path | None:
 
 
 def prune_unused_hf_repos(*, hub: Path = HF_HUB, now: datetime, max_age_days: int = HF_UNUSED_DAYS,
-                          dry_run: bool = False, proc_root: Path = Path("/proc")) -> dict[str, Any]:
-    """Remove hub repos (``models--*``, ``datasets--*``) with no change in ``max_age_days`` and no open file."""
-    result: dict[str, Any] = {"step": "hf_hub", "status": "success", "deleted_paths": [], "bytes": 0}
+                          dry_run: bool = False, proc_root: Path = Path("/proc"),
+                          mountinfo: Path = MOUNTINFO) -> dict[str, Any]:
+    """Remove hub repos (``models--*``, ``datasets--*``) with no change in ``max_age_days``, no open file and no mount inside.
+
+    Removal never crosses a device; a repo that changed device or identity since it was checked stays.
+    """
+    result: dict[str, Any] = {"step": "hf_hub", "status": "success", "deleted_paths": [], "bytes": 0, "kept": []}
     if not hub.is_dir() or hub.is_symlink():
         return {**result, "status": "skipped", "reason": "no hub cache"}
-    held, _ = open_scratch_paths(hub, proc_root)
     cutoff = now.timestamp() - max_age_days * 86400
     for repo in sorted(hub.iterdir()):
         if repo.is_symlink() or not repo.is_dir() or not repo.name.startswith(("models--", "datasets--", "spaces--")):
             continue
-        if any(target == repo or repo in target.parents for target in held):
+        try:
+            info = repo.lstat()
+            stats = _tree_stats(repo, max_entries=200_000)
+        except OSError as exc:
+            result["kept"].append({"path": str(repo), "reason": exc.strerror or str(exc)})
             continue
-        stats = _tree_stats(repo, max_entries=200_000)
         if stats is None or stats[0] > cutoff:
+            continue
+        mounted = mount_skip_reason(repo, mountinfo)
+        if mounted is not None:
+            result["kept"].append({"path": str(repo), "reason": mounted})
+            continue
+        # Fresh process scan per repo, right before removal.
+        held, _ = open_scratch_paths(hub, proc_root)
+        if any(target == repo or repo in target.parents for target in held):
+            result["kept"].append({"path": str(repo), "reason": "in use"})
             continue
         if not dry_run:
             try:
-                shutil.rmtree(repo)
+                remove_entry(repo, (info.st_dev, info.st_ino))
             except OSError as exc:
                 result.update(status="partial", error=str(exc))
                 continue
