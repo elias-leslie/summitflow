@@ -1,4 +1,4 @@
-"""Reclaimed repair closeout rechecks the original audited patch, never an empty diff."""
+"""A reclaimed task whose work landed before the claim closes on validated source, not on a fresh diff."""
 
 from __future__ import annotations
 
@@ -95,32 +95,20 @@ def test_reclaimed_repair_preserves_unrelated_uncommitted_work(repair_refresh):
     assert repair_refresh["git"]("status", "--porcelain") == "?? other-agent.py"
 
 
+def test_reclaimed_ordinary_task_needs_no_new_diff_or_imported_receipt(repair_refresh):
+    repair_refresh["task"]["labels"] = []
+    assert finish(repair_refresh, acceptance_receipt=None)["action"] == "completed"
+    assert repair_refresh["queued"].call_args.kwargs["source_sha"] == repair_refresh["head"]
+
+
 @pytest.mark.parametrize("defect", [
-    "no_event", "wrong_task_event", "wrong_project_event", "abbreviated_event",
-    "ordinary_task", "wrong_rolling_task", "wrong_checkpoint_project", "no_receipt",
-    "tampered_receipt", "selected_dirty", "foreign_head", "ancestor_event", "wrong_source",
-    "empty_original_patch", "no_paths",
+    "wrong_checkpoint_project", "tampered_receipt", "selected_dirty", "foreign_head", "wrong_source", "no_paths",
 ])
-def test_repair_refresh_requires_exact_audited_accepted_patch(repair_refresh, monkeypatch, defect):
+def test_reclaimed_closeout_still_requires_exact_accepted_source(repair_refresh, defect):
     fixture = repair_refresh
     options = {}
-    if defect == "no_event":
-        fixture["events"].clear()
-    elif defect == "wrong_task_event":
-        fixture["events"][0]["trace_id"] = "task-other"
-    elif defect == "wrong_project_event":
-        fixture["events"][0]["project_id"] = "other-project"
-    elif defect == "abbreviated_event":
-        fixture["events"][0]["message"] = f"st commit commit={fixture['head'][:12]} pushed=false"
-    elif defect == "ordinary_task":
-        fixture["task"]["labels"] = []
-    elif defect == "wrong_rolling_task":
-        monkeypatch.setattr("app.storage.tasks.publication_repair.get_repair_task",
-                            lambda _project: {"id": "task-other"})
-    elif defect == "wrong_checkpoint_project":
+    if defect == "wrong_checkpoint_project":
         fixture["snapshot"]["project_id"] = "other-project"
-    elif defect == "no_receipt":
-        options["acceptance_receipt"] = None
     elif defect == "tampered_receipt":
         fixture["receipt"]["acceptance_id"] = "0" * 64
     elif defect == "selected_dirty":
@@ -128,57 +116,14 @@ def test_repair_refresh_requires_exact_audited_accepted_patch(repair_refresh, mo
     elif defect == "no_paths":
         options["paths"] = ()
     else:
-        # A later commit must not borrow the earlier repair's audited patch.
-        if defect == "empty_original_patch":
-            fixture["git"]("commit", "--allow-empty", "-qm", "empty work")
-        else:
-            (fixture["repo"] / "app.py").write_text("print('later source')\n")
-            fixture["git"]("commit", "-qam", "later work")
+        # A later commit must not borrow the earlier receipt.
+        (fixture["repo"] / "app.py").write_text("print('later source')\n")
+        fixture["git"]("commit", "-qam", "later work")
         new_head = fixture["git"]("rev-parse", "HEAD")
-        if defect not in {"wrong_source", "foreign_head"}:
-            fixture["receipt"] = acceptance.accept_revision(
-                fixture["repo"], sha=new_head,
-                runner=lambda command, cwd: subprocess.CompletedProcess(command, 0, "fixture", ""),
-            )
         fixture["snapshot"]["base_commit"] = new_head
-        if defect in {"empty_original_patch", "wrong_source"}:
+        if defect == "wrong_source":
             fixture["events"][0]["message"] = f"st commit commit={new_head} pushed=false"
     with pytest.raises(Exit):
         finish(fixture, **options)
     fixture["queued"].assert_not_called()
     fixture["client"].update_status.assert_not_called()
-
-
-def test_failure_inspecting_original_patch_cannot_requeue(repair_refresh, monkeypatch):
-    original_run = subprocess.run
-    parent = repair_refresh["git"]("rev-parse", "HEAD^")
-
-    def fail_original_diff(command, *args, **kwargs):
-        if command[-4:-2] == ["diff", "--numstat"] and command[-2] == parent:
-            return subprocess.CompletedProcess(command, 1, "", "fixture Git inspection failure")
-        return original_run(command, *args, **kwargs)
-
-    monkeypatch.setattr(subprocess, "run", fail_original_diff)
-    with pytest.raises(Exit):
-        finish(repair_refresh)
-    repair_refresh["queued"].assert_not_called()
-
-
-@pytest.mark.parametrize("drift", ["selected_path", "head"])
-def test_source_drift_during_original_patch_check_cannot_requeue(repair_refresh, monkeypatch, drift):
-    original_run = subprocess.run
-    parent = repair_refresh["git"]("rev-parse", "HEAD^")
-
-    def change_after_original_diff(command, *args, **kwargs):
-        result = original_run(command, *args, **kwargs)
-        if command[-4:-2] == ["diff", "--numstat"] and command[-2] == parent:
-            (repair_refresh["repo"] / "app.py").write_text("print('changed during check')\n")
-            if drift == "head":
-                original_run(["git", "commit", "-qam", "fixture source drift"],
-                             cwd=repair_refresh["repo"], check=True, capture_output=True)
-        return result
-
-    monkeypatch.setattr(subprocess, "run", change_after_original_diff)
-    with pytest.raises(Exit):
-        finish(repair_refresh)
-    repair_refresh["queued"].assert_not_called()

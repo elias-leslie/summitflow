@@ -8,7 +8,7 @@ from typing import Any
 
 from app.services.task_acceptance import CompletionRequirements, hydrate_completion_task
 
-from .acceptance import AcceptanceError
+from .acceptance import REPO_LOCK_WAIT_SECONDS, AcceptanceError
 from .acceptance_coordinator import AcceptanceResult, Materialization
 
 
@@ -53,7 +53,7 @@ def accept_owned_task_work(repo: Path, task_id: str, project_id: str, *, claim: 
         local.require_owned_source(repo, source, paths, task)
         return validate_source_receipt(repo, receipt, sha=source)
 
-    with repo_lock(repo, purpose="capture task completion evidence"):
+    with repo_lock(repo, purpose="capture task completion evidence", wait_seconds=REPO_LOCK_WAIT_SECONDS):
         head = run_git(repo, ["rev-parse", "--verify", "HEAD^{commit}"])
         if head.returncode or not head.stdout.strip():
             raise ValueError("Task source commit is unavailable")
@@ -79,7 +79,7 @@ def accept_owned_task_work(repo: Path, task_id: str, project_id: str, *, claim: 
     if result is None:
         result = accept_source(repo, sha=sha, materialization=materialization, scope=paths, task_id=task_id,
                                coverage=requirements.coverage, required_stages=requirements.stages)
-    with repo_lock(repo, purpose="attach task completion evidence"):
+    with repo_lock(repo, purpose="attach task completion evidence", wait_seconds=REPO_LOCK_WAIT_SECONDS):
         current_task = hydrate_completion_task({**claim, "id": task["id"]})
         if CompletionRequirements.from_task(current_task) != requirements:
             raise ValueError("Task completion requirements changed during acceptance; checkpoint preserved")

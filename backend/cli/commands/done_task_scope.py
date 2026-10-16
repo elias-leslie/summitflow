@@ -62,6 +62,38 @@ def paths_from_range(repo_root: str, spec: str) -> tuple[str, ...]:
     return paths
 
 
+def paths_from_task_commits(repo_root: str, commits: Any) -> tuple[str, ...]:
+    """Files the task's own recorded commits added or modified that still exist at HEAD.
+
+    Returns nothing unless every recorded commit is in this checkout's history,
+    so an unlinked or foreign commit falls back to an explicit --paths selection.
+    """
+    shas = [sha for sha in commits or () if isinstance(sha, str) and sha.strip()]
+    if not shas:
+        return ()
+
+    def git(*args: str) -> subprocess.CompletedProcess[str]:
+        return subprocess.run(["git", "--no-optional-locks", "-C", repo_root, *args],
+                              text=True, capture_output=True, check=False)
+
+    touched: set[str] = set()
+    for sha in shas:
+        if sha.startswith("-") or git("merge-base", "--is-ancestor", sha, "HEAD").returncode:
+            return ()
+        changed = git("diff-tree", "-r", "--root", "--no-commit-id", "--name-only", "-z",
+                      "--no-renames", "--diff-filter=d", sha)
+        if changed.returncode:
+            return ()
+        touched.update(path for path in changed.stdout.split("\0") if path)
+    if not touched:
+        return ()
+    present = git("ls-tree", "-r", "--name-only", "-z", "HEAD", "--",
+                  *(f":(literal){path}" for path in sorted(touched)))
+    if present.returncode:
+        return ()
+    return tuple(sorted(path for path in present.stdout.split("\0") if path))
+
+
 def task_scope_paths(task: dict[str, Any]) -> set[str]:
     """Only structured ownership declarations establish automatic commit scope."""
     scope: set[str] = set()
@@ -75,10 +107,12 @@ def task_scope_paths(task: dict[str, Any]) -> set[str]:
 
 def closeout_paths(repo_root: str, task_id: str, task: dict[str, Any], *,
                    project_id: str | None, paths: tuple[str, ...] = ()) -> tuple[str, ...]:
-    """Resolve declared or leased paths; never infer ownership from prose or HEAD."""
+    """Resolve explicit, declared, leased or task-committed paths; never infer from prose or HEAD."""
     from pathlib import Path
 
     from cli.lib.leases import identify_agent, list_active
+
+    from ..output import output_success, output_warning
 
     root = Path(repo_root).resolve()
     scope = set(paths) if paths else task_scope_paths(task)
@@ -93,6 +127,16 @@ def closeout_paths(repo_root: str, task_id: str, task: dict[str, Any], *,
             ))
     else:
         leases = []
+    if not paths and not scope and (committed := paths_from_task_commits(repo_root, task.get("commits"))):
+        # The task's own recorded commits name its files. Uncommitted edits to
+        # them may belong to someone else, so those still need an explicit choice.
+        if pending := sorted(set(dirty) & set(committed)):
+            raise ValueError(f"Task path {pending[0]} has uncommitted changes. Commit it with st commit --task {task_id} "
+                             f"--paths <path>, or rerun st done {task_id} --paths <owned-path> (repeat for each task path)")
+        scope = set(committed)
+        output_success(f"Selected {len(committed)} task path(s) from {task_id}'s recorded commits.")
+        if dirty:
+            output_warning(f"Left {len(dirty)} uncommitted path(s) outside those commits untouched.")
     normalized: set[str] = set()
     for value in scope:
         # Git pathspec magic and globs can silently expand a declaration beyond

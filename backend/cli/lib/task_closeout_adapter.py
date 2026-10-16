@@ -16,9 +16,10 @@ class LocalCloseoutOperations:
         return current_worker_id()
 
     def source_lock(self, root: Path) -> AbstractContextManager[None]:
-        from .acceptance import repo_lock
+        from .acceptance import REPO_LOCK_WAIT_SECONDS, repo_lock
 
-        return repo_lock(root, purpose="local closeout cleanup")
+        # Wait out another agent's short commit or acceptance instead of failing at once.
+        return repo_lock(root, purpose="local closeout cleanup", wait_seconds=REPO_LOCK_WAIT_SECONDS)
 
     def validate_source(self, root: Path, acceptance: dict[str, Any], source_sha: str) -> dict[str, Any]:
         from .acceptance_coordinator import validate_source_receipt

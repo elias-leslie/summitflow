@@ -173,7 +173,8 @@ def test_initial_repository_closeout_requires_post_claim_initial_reflog(tmp_path
             git("commit", "-qm", "continue implementation")
     if history == "missing_reflog":
         git("reflog", "expire", "--expire=all", "--all")
-    passes = passes and history in {"initial", "amended_root", "amended_then_commit"}
+    # An empty initial commit has no diff, which no longer blocks once its origin is proven.
+    passes = passes and history in {"initial", "amended_root", "amended_then_commit", "empty_commit"}
     monkeypatch.setattr("cli.commands.done_task.resolve_task_branch", lambda *a, **k: "task-new/main")
     if passes:
         _run_diff_gate(str(tmp_path), "task-new", "test", "main", claimed_at=claimed_at)

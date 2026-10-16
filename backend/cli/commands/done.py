@@ -110,6 +110,19 @@ def _report_requirement_amendments(task: dict[str, Any]) -> None:
         output_success(f"{prefix}: {format_amendment(item)}")
 
 
+def _claim_lapsed(task: dict[str, Any]) -> bool:
+    """A started task whose claim expired back to pending, so no agent holds it."""
+    return task.get("status") == "pending" and not task.get("claimed_by") and bool(task.get("started_at"))
+
+
+def _recover_lapsed_claim(client: STClient, task_id: str) -> None:
+    """Re-claim through st claim so the claim, checkpoint and writer count stay real."""
+    from .claim import _claim_task
+
+    _claim_task(client, task_id)
+    output_success(f"Re-claimed {task_id}: its claim had lapsed and no other agent holds it.")
+
+
 def _handle_task_completion(
     client: STClient,
     id: str,
@@ -134,13 +147,14 @@ def _handle_task_completion(
         return
     project_id = str(task.get("project_id") or "") or None
     preflight(id, project_id, op="done")
+    if _claim_lapsed(task):
+        _recover_lapsed_claim(STClient(project_id=project_id) if project_id else client, id)
     _report_requirement_amendments(task)
     if paths_range:
-        from app.storage.projects import get_project_root_path
-
+        from .done_task import _checkpoint_repo_root
         from .done_task_scope import paths_from_range
 
-        range_root = get_project_root_path(project_id) if project_id else None
+        range_root = _checkpoint_repo_root(project_id)
         try:
             if not range_root:
                 raise ValueError("--paths-from-range requires a registered project checkout")
@@ -151,11 +165,12 @@ def _handle_task_completion(
         output_success(f"Selected {len(paths)} task path(s) from {paths_range}.")
     acceptance_receipt = None
     if evidence:
-        from app.storage.projects import get_project_root_path
         from app.storage.tasks.closeout import store_owned_verification
         from cli.lib.completion_evidence import load_completion_evidence
 
-        root = get_project_root_path(project_id) if project_id else None
+        from .done_task import _checkpoint_repo_root
+
+        root = _checkpoint_repo_root(project_id)
         if not project_id or not root:
             output_error("Completion evidence requires a registered project checkout")
             raise typer.Exit(1)
@@ -236,7 +251,7 @@ def _record_budget(client: STClient, task_id: str, budget: tuple[Path, str, Any]
     when="assigned-task closeout: acceptance, evidence, checkpoint cleanup",
     precautions=(
         "needs an active owned claim",
-        "with unrelated changes, repeat --paths <owned-path> per task path on the first call",
+        "scope defaults to the task's declared, leased or committed paths; else --paths a b",
         "--evidence JSON for required deployment/live checks; never claim done while acceptance remains",
     ),
     tier="mandate",
@@ -263,7 +278,7 @@ def done_command(
     ] = None,
     paths: Annotated[
         list[str] | None,
-        typer.Option("--path", "--paths", help="Only commit selected task paths; repeat for multiple paths. Preserves unrelated work."),
+        typer.Option("--path", "--paths", help="Only commit selected task paths (--paths a b, or repeat the flag). Defaults to the task's declared, leased or committed paths. Preserves unrelated work."),
     ] = None,
     acknowledge_none: Annotated[
         bool,
@@ -289,6 +304,10 @@ def done_command(
         str | None,
         typer.Option("--with-ack", help="Request id the repo's holder acked yes; covers this closeout's commit and local acceptance."),
     ] = None,
+    more_paths: Annotated[
+        list[str] | None,
+        typer.Argument(hidden=True, metavar="[PATHS]", help="Further task paths after --paths (--paths a b)."),
+    ] = None,
 ) -> None:
     """Complete a task or subtask.
 
@@ -299,6 +318,11 @@ def done_command(
     Subtasks: optionally pass --citation when useful memory evidence exists.
     Already-completed task/subtask is a no-op (exit 0).
     """
+    if more_paths:
+        if not paths:
+            output_error(f"Unexpected argument(s): {' '.join(more_paths)}. Select task paths with --paths a b.")
+            raise typer.Exit(2)
+        paths = [*paths, *more_paths]
     if is_subtask_id(id):
         if paths or paths_range or evidence or record_only or with_ack:
             output_error("--path / --paths, --paths-from-range, --evidence and --with-ack only apply to task completion.")

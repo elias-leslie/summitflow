@@ -8,7 +8,7 @@ from typing import Any
 
 import typer
 
-from app.services.diff_gate import DiffGateResult, check_diff_gate
+from app.services.diff_gate import check_diff_gate
 from app.services.task_closeout import completion_evidence
 from app.storage.projects import get_project_root_path
 from app.utils.git_base import normalize_base_branch
@@ -58,7 +58,20 @@ def _done_result(
 
 
 def _checkpoint_repo_root(project_id: str | None) -> str | None:
-    return get_project_root_path(project_id) if project_id else None
+    """The current checkout when it belongs to the project's repository, else its registered root."""
+    registered = get_project_root_path(project_id) if project_id else None
+    if not registered:
+        return None
+    from ..lib.execution_context import canonical_repo_root, resolve_checkout_root
+
+    try:
+        checkout, canonical = resolve_checkout_root(), canonical_repo_root()
+        registered_path = Path(registered).resolve()
+    except OSError:
+        return registered
+    if checkout is None or canonical is None or canonical.resolve() != registered_path:
+        return registered
+    return registered if checkout.resolve() == registered_path else str(checkout)
 
 
 def _task_project_id(task: dict[str, Any]) -> str | None:
@@ -112,14 +125,6 @@ def _run_smart_prereqs(client: STClient, task_id: str, project_id: str | None, *
         output_success(f"Pre-synced subtasks before completion: {', '.join(sync_analysis.synced)}")
     auto_close_subtasks(client, task_id, project_id, **({"owned_claim": owned_claim} if owned_claim is not None else {}))
     _auto_verify_readiness(client, task_id)
-
-
-def _is_rolling_repair(task: dict[str, Any]) -> bool:
-    if "publication-repair" not in (task.get("labels") or []) or not task.get("project_id"):
-        return False
-    from app.storage.tasks.publication_repair import get_repair_task
-    repair = get_repair_task(str(task["project_id"]))
-    return bool(repair and repair["id"] == task["id"])
 
 
 def _task_has_published_commit_event(task_id: str) -> bool:
@@ -264,8 +269,7 @@ def _initial_checkpoint_tree(repo_root: str, claimed_at: str | None) -> str | No
         return None
 
 
-def _task_commit_diff_ref(repo_root: str, task_id: str, *, exact_commit: str | None = None,
-                          project_id: str | None = None) -> tuple[str, str] | None:
+def _task_commit_diff_ref(repo_root: str, task_id: str) -> tuple[str, str] | None:
     """Recover a direct-main task diff when a broken checkpoint lacks its base."""
     import re
 
@@ -276,16 +280,11 @@ def _task_commit_diff_ref(repo_root: str, task_id: str, *, exact_commit: str | N
     except Exception:
         return None
     for event in events:
-        if exact_commit is not None and (event.get("trace_id") != task_id or event.get("project_id") != project_id):
-            continue
         message = event.get("message") or ""
-        commit_pattern = r"[0-9a-f]{40}(?:[0-9a-f]{24})?" if exact_commit is not None else r"[0-9a-f]{7,40}"
-        match = re.search(r"\bst commit\b.*\bcommit=(" + commit_pattern + r")\b", message)
+        match = re.search(r"\bst commit\b.*\bcommit=([0-9a-f]{7,40})\b", message)
         if not match:
             continue
         commit = match.group(1)
-        if exact_commit is not None and commit != exact_commit:
-            continue
         ancestor = subprocess.run(
             ["git", "merge-base", "--is-ancestor", commit, "HEAD"],
             cwd=repo_root, capture_output=True, check=False,
@@ -302,37 +301,6 @@ def _task_commit_diff_ref(repo_root: str, task_id: str, *, exact_commit: str | N
     return None
 
 
-def _reclaimed_repair_diff(repo_root: str, task_id: str, project_id: str | None, *,
-                           base_commit: str, paths: tuple[str, ...],
-                           acceptance_receipt: dict[str, Any]) -> DiffGateResult | None:
-    """Recheck the original patch for an exact-source, accepted repair refresh."""
-    from cli.lib.acceptance import AcceptanceError, repo_lock
-    from cli.lib.acceptance_coordinator import validate_source_receipt
-    from cli.lib.commit_workflow import run_git
-
-    if not paths or not project_id:
-        return None
-    repo = Path(repo_root)
-    try:
-        with repo_lock(repo, purpose="repair refresh diff validation"):
-            if not _selected_work_is_clean(repo_root, paths):
-                return None
-            validated = validate_source_receipt(repo, acceptance_receipt, sha="HEAD").reference.to_dict()
-            if validated["source_commit"] != base_commit:
-                return None
-            task_diff = _task_commit_diff_ref(repo_root, task_id, exact_commit=base_commit, project_id=project_id)
-            if task_diff is None:
-                return None
-            commit, parent = task_diff
-            result = check_diff_gate(repo_root, head_ref=commit, base_tree=parent)
-            head = run_git(repo, ["rev-parse", "--verify", "HEAD^{commit}"])
-            if head.returncode or head.stdout.strip() != commit or not _selected_work_is_clean(repo_root, paths):
-                return None
-            return result
-    except (AcceptanceError, ValueError, OSError, subprocess.SubprocessError):
-        return None
-
-
 def _run_diff_gate(
     repo_root: str,
     task_id: str,
@@ -341,8 +309,6 @@ def _run_diff_gate(
     *,
     base_commit: str | None = None,
     claimed_at: str | None = None,
-    repair_acceptance_receipt: dict[str, Any] | None = None,
-    paths: tuple[str, ...] = (),
 ) -> None:
     # Emergency escape: ST_DIFF_GATE=off disables the gate entirely.
     if (os.environ.get("ST_DIFF_GATE") or "").strip().lower() == "off":
@@ -360,14 +326,9 @@ def _run_diff_gate(
             and (task_diff := _task_commit_diff_ref(repo_root, task_id))):
         commit, parent = task_diff
         diff_result = check_diff_gate(repo_root, head_ref=commit, base_tree=parent)
-    if (not diff_result.passed and diff_result.files_changed == 0 and base_commit
-            and repair_acceptance_receipt is not None
-            and diff_result.summary == "No files changed vs base branch — task has no code changes"):
-        recovered = _reclaimed_repair_diff(repo_root, task_id, project_id, base_commit=base_commit,
-                                          paths=paths, acceptance_receipt=repair_acceptance_receipt)
-        if recovered is not None:
-            diff_result = recovered
-    if diff_result.passed:
+    # Work landed before this claim (a reclaim, or another task's commit) leaves
+    # no diff since the checkpoint; acceptance still validates the exact source.
+    if diff_result.passed or diff_result.summary.startswith("No files changed"):
         return
     output_error(
         f"Diff gate blocked completion: {diff_result.summary}\n"
@@ -404,9 +365,15 @@ def _capture_and_remove_snapshot(task_id: str, project_id: str | None) -> None:
 
 
 def _owned_completion_claim(root: Path, task_id: str, project_id: str) -> dict[str, Any]:
+    from cli.lib.execution_context import canonical_repo_root
     from cli.lib.task_claims import current_worker_id, renew_local_owned_claim
 
-    task = renew_local_owned_claim(root, task_id)
+    # Claim identity is the project's repository, also from one of its worktrees.
+    try:
+        identity_root = canonical_repo_root(Path(root)) or root
+    except OSError:
+        identity_root = root
+    task = renew_local_owned_claim(Path(identity_root), task_id)
     if (task.get("project_id") != project_id or task.get("status") != "running"
             or task.get("claimed_by") != current_worker_id() or not task.get("claimed_at")):
         raise ValueError("Task claim is not actively owned by this worker; run st claim before completion")
@@ -577,7 +544,6 @@ def _complete_with_snapshot(client: STClient, task_id: str, snapshot_info: dict[
         if task.get("project_id") and task["project_id"] != snapshot_info.get("project_id"):
             output_error("Checkpoint project differs from task ownership; checkpoint preserved")
             raise typer.Exit(1)
-        is_repair = _is_rolling_repair(task)
     except APIError as exc:
         output_error(
             f"Task closeout blocked: current task status is unavailable: {exc.detail}\n"
@@ -607,13 +573,9 @@ def _complete_with_snapshot(client: STClient, task_id: str, snapshot_info: dict[
     snapshot_info["base_branch"] = base_branch
     try:
         base_commit = str(snapshot_info.get("base_commit") or "") or None
-        repair_options: dict[str, Any] = {}
-        if is_repair and project_id == task.get("project_id") and paths and acceptance_receipt is not None:
-            repair_options = {"repair_acceptance_receipt": acceptance_receipt, "paths": paths}
         if not already_completed and repo_root and not skip_diff_gate:
             _run_diff_gate(repo_root, task_id, project_id, base_branch, base_commit=base_commit,
-                           claimed_at=str(snapshot_info.get("created_at") or "") or None,
-                           **repair_options)
+                           claimed_at=str(snapshot_info.get("created_at") or "") or None)
         if not already_completed:
             receipt = _accept_completed_work_or_exit(task_id, project_id, paths=paths, **({"acceptance_receipt": acceptance_receipt} if acceptance_receipt is not None else {}))
             if strict:

@@ -40,7 +40,7 @@ def test_done_forwards_acceptance_with_explicit_or_established_paths(tmp_path, m
     monkeypatch.setattr(done, "STClient", Mock(return_value=client))
     monkeypatch.setattr(done, "preflight", Mock())
     monkeypatch.setattr(done, "_release_task_leases", Mock())
-    monkeypatch.setattr("app.storage.projects.get_project_root_path", lambda _: str(tmp_path))
+    monkeypatch.setattr(done_task, "get_project_root_path", lambda _: str(tmp_path))
     receipt = {"state": "success"}
     monkeypatch.setattr("cli.lib.completion_evidence.load_completion_evidence", Mock(return_value={"acceptance": receipt}))
     monkeypatch.setattr(done_task, "_owned_completion_claim", lambda *a: {"project_id": "example", "claimed_by": "fixture", "claimed_at": "claim", "verification_result": {}})
