@@ -110,13 +110,15 @@ def closeout_paths(repo_root: str, task_id: str, task: dict[str, Any], *,
     """Resolve explicit, declared, leased or task-committed paths; never infer from prose or HEAD."""
     from pathlib import Path
 
-    from cli.lib.leases import identify_agent, list_active
+    from cli.lib import coord
+    from cli.lib.leases import UNKNOWN_WRITER, identify_agent, list_active
 
     from ..output import output_success, output_warning
 
     root = Path(repo_root).resolve()
     scope = set(paths) if paths else task_scope_paths(task)
     dirty = git_dirty_paths(repo_root)
+    contested: set[str] = set()
     if project_id:
         agent_id = identify_agent()[0]
         leases = list_active(project_id)
@@ -125,6 +127,9 @@ def closeout_paths(repo_root: str, task_id: str, task: dict[str, Any], *,
                 lease.agent_id == agent_id and lease.task_id == task_id
                 and lease.matches(str(root / path)) for lease in leases
             ))
+        # Writer sets outlive leases; an unknown writer alone does not contest an explicitly selected path.
+        contested = {path for path, writers in coord.foreign_writers(project_id, root, dirty).items()
+                     if any(entry.get("agent_id") != UNKNOWN_WRITER for entry in writers)}
     else:
         leases = []
     if not paths and not scope and (committed := paths_from_task_commits(repo_root, task.get("commits"))):
@@ -157,10 +162,13 @@ def closeout_paths(repo_root: str, task_id: str, task: dict[str, Any], *,
     for path in dirty:
         selected = any(prefix == "." or path == prefix or path.startswith(prefix.rstrip("/") + "/")
                        for prefix in normalized)
-        if selected and any(lease.matches(str(root / path)) and
-                            (lease.agent_id != agent_id or lease.task_id not in {None, task_id})
-                            for lease in leases):
-            raise ValueError(f"Task path {path} has another active owner; resolve its lease before completion")
+        if not selected:
+            continue
+        if path in contested:
+            raise ValueError(f"Task path {path} was also written by another session; leave it to them, "
+                             "or once agreed adopt it with st lease --take <path>")
+        if any(lease.matches(str(root / path)) and lease.task_id not in {None, task_id} for lease in leases):
+            raise ValueError(f"Task path {path} is leased for another task; resolve its lease before completion")
     if dirty and not normalized:
         raise ValueError(f"Task scope is ambiguous. Rerun st done {task_id} --paths <owned-path> (repeat for each task path)")
     return tuple(sorted(normalized))

@@ -1,7 +1,8 @@
 """Host-wide agent coordination on top of the lease store.
 
 One identity (``leases.identify_agent``), one store (``~/.summitflow/leases``):
-- file leases are auto-claimed by the edit hook (``st lease --hook``);
+- file leases are auto-claimed by the edit hook (``scripts/lib/lease-hook``); they are
+  advisory: a collision warns, and st commit's writer-set guard prevents sweeps;
 - writer sets: every session (or "unknown") that wrote a dirty path, from the
   edit hook and shell commands (bash-pre/post), kept until commit or revert;
 - repo marks: ``hold`` (declared coarse purpose, idle TTL) and ``op``
@@ -155,11 +156,11 @@ def op_lease(repo: Path, purpose: str) -> Iterator[None]:
 def guard(repo: Path, operation: str, *, paths: Sequence[str] = (), with_ack: str | None = None) -> None:
     """Refuse a repo-mutating or outward operation that another live agent would collide with.
 
-    commit: blocked by any live op, or another agent's hold. acceptance: only by
-    another agent's hold. Path overlap stays
-    with the existing commit lease check. publish/rebuild/reconcile: also
-    blocked by another agent's file lease touched within ACTIVE_WINDOW.
-    An acked request (``--with-ack``) from that holder authorizes the operation.
+    commit and rebuild (which deploys an accepted commit, not the working tree):
+    blocked by any live op, or another agent's hold. acceptance: only by another
+    agent's hold. publish/reconcile: also blocked by another agent's file lease
+    touched within ACTIVE_WINDOW. An acked request (``--with-ack``) from that
+    holder authorizes the operation.
     """
     resolved = project_for_path(repo)
     if resolved is None:
@@ -170,7 +171,8 @@ def guard(repo: Path, operation: str, *, paths: Sequence[str] = (), with_ack: st
     _keep_alive(project_id)
     mine, anchor = leases.session_ids()  # my harness process's child threads are not other agents
     # Acceptance only yields to an integration hold; concurrent runs are fine.
-    kinds = {"commit": ("op", "hold"), "acceptance": ("hold",)}.get(operation, ("op", "hold", "file"))
+    kinds = {"commit": ("op", "hold"), "rebuild": ("op", "hold"), "acceptance": ("hold",)}.get(
+        operation, ("op", "hold", "file"))
     now = datetime.now(UTC)
     for lease in leases.list_active(project_id, kinds=kinds):
         if lease.kind == "op":
@@ -212,11 +214,11 @@ def _op_block(project_id: str, root: Path, real: str) -> str | None:
     return None
 
 
-def _claim_edit(path: str, *, advisory: bool, check_op: bool = True) -> tuple[str, str] | None:
+def _claim_edit(path: str, *, check_op: bool = True) -> tuple[str, str] | None:
     """Claim ``path`` for the current agent: ("block", line) under a live op, ("warn", line) on a foreign lease.
 
-    ``advisory`` (the edit hook) still leases and records the path on a foreign
-    lease, because the edit goes ahead; st commit then refuses to sweep it.
+    File leases are advisory: on a foreign lease the path is still leased and
+    recorded, because the edit goes ahead; st commit then refuses to sweep it.
     """
     target = Path(path).expanduser()
     resolved = project_for_path(target)
@@ -227,25 +229,19 @@ def _claim_edit(path: str, *, advisory: bool, check_op: bool = True) -> tuple[st
     blocked = _op_block(project_id, root, real) if check_op else None
     if blocked:
         return "block", blocked
-    ok, holder = leases.claim(project_id, real, project_root=str(root), force=advisory)
-    if advisory or ok or holder is None:
-        _keep_alive(project_id)
+    ok, holder = leases.claim(project_id, real, project_root=str(root))
+    _keep_alive(project_id)
     if ok or holder is None:
         return None
-    if advisory:
-        return "warn", (
-            f"{holder_line(project_id, holder, root)}; edit allowed, both of you are now its writers and "
-            f'st commit refuses to sweep it; tell them: st sessions send {holder.agent_id} "<what changed>" --delivery handshake'
-        )
     return "warn", (
-        f"{holder_line(project_id, holder, root)}; ask: st sessions send {holder.agent_id} "
-        '"<ask>" --delivery handshake, or st lease --take <path>'
+        f"{holder_line(project_id, holder, root)}; edit allowed, both of you are now its writers and "
+        f'st commit refuses to sweep it; tell them: st sessions send {holder.agent_id} "<what changed>" --delivery handshake'
     )
 
 
 def edit_conflict(path: str) -> str | None:
-    """Claim ``path`` for the current agent when free; return one line on an op or foreign-lease conflict."""
-    found = _claim_edit(path, advisory=False)
+    """Claim ``path`` as the edit hook does; return one line on a live op or a foreign lease."""
+    found = _claim_edit(path)
     return found[1] if found else None
 
 
@@ -316,7 +312,7 @@ def _mark_main_thread() -> None:
 
 
 def run_hook(payload: dict[str, Any]) -> str | None:
-    """Return one blocking message, or None to allow (fail-open on infra errors)."""
+    """Return one "BLOCKED: " (live op) or "WARNING: " (foreign lease) message, or None (fail-open on infra errors)."""
     adopt_hook_identity(payload)
     with suppress(Exception):  # lineage is best effort; never wedge an editor
         coord_lineage.observe()
@@ -330,14 +326,15 @@ def run_hook(payload: dict[str, Any]) -> str | None:
             blocked = None
         if blocked:
             return "\n".join(["BLOCKED: " + blocked, *notices()])
+    lines: list[str] = []
     for path in paths:
         try:
-            found = _claim_edit(path, advisory=False, check_op=False)
+            found = _claim_edit(path, check_op=False)
         except Exception:
             found = None
         if found:
-            return "\n".join(["BLOCKED: " + found[1], *notices()])
-    return None
+            lines.append("WARNING: " + found[1])
+    return "\n".join(lines) or None
 
 
 # ---------------------------------------------------------------- ledger

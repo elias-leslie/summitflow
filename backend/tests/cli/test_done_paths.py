@@ -93,7 +93,7 @@ def test_scoped_done_preserves_unrelated_index_and_worktree(tmp_path: Path, monk
     renew_claim = Mock(return_value={'id': 'task-1', 'status': 'running'})
     monkeypatch.setattr(commit_workflow, 'renew_owned_claim', renew_claim)
     publish = Mock(side_effect=AssertionError('local completion must not publish'))
-    monkeypatch.setattr('cli.lib.publish_workflow.publish_git', publish)
+    monkeypatch.setattr('app.tasks.backup_publish.publish_source', publish)
     monkeypatch.setattr('cli.lib.execution_context.resolve_checkout_project_id', lambda _repo: 'example')
     monkeypatch.setattr('app.storage.tasks.add_commit', Mock(return_value={'id': 'task-1'}))
     acceptances = []
@@ -103,8 +103,6 @@ def test_scoped_done_preserves_unrelated_index_and_worktree(tmp_path: Path, monk
 
     monkeypatch.setattr(done_task, '_accept_completed_work', accept)
     monkeypatch.setattr(done_task, '_finish_local_completion', Mock(return_value={'action': 'completed'}))
-    stash = Mock(side_effect=AssertionError('must not move unrelated work'))
-    monkeypatch.setattr('cli.commands.done_git.git_stash_push', stash)
     if not gate_passes:
         with pytest.raises(typer.Exit):
             done_task.complete_task(client, 'task-1', paths=('task.txt',))
@@ -125,7 +123,6 @@ def test_scoped_done_preserves_unrelated_index_and_worktree(tmp_path: Path, monk
     assert acceptances == [('task.txt',)]
     checks.assert_called()
     renew_claim.assert_called_once_with(tmp_path, 'task-1')
-    stash.assert_not_called()
     publish.assert_not_called()
 
 
@@ -179,6 +176,6 @@ def test_explicit_foreign_lease_is_preserved(tmp_path, monkeypatch):
     now = datetime.now(UTC).isoformat()
     lease = Lease("foreign", "other", "other", "other", "test", [str(tmp_path / "foreign.py")], "task-other", now, now)
     monkeypatch.setattr("cli.lib.leases.list_active", lambda _: [lease])
-    with pytest.raises(ValueError, match="another active owner"):
+    with pytest.raises(ValueError, match="leased for another task"):
         closeout_paths(str(tmp_path), "task-1", {}, project_id="example", paths=("foreign.py",))
     assert (tmp_path / "foreign.py").read_text() == "foreign work"

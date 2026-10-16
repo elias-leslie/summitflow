@@ -133,16 +133,18 @@ def scope_lock(project_id: str, scope: SnapshotScope) -> Iterator[None]:
 
 
 def require_owned(project_id: str, root: Path, paths: list[str], owned_paths: list[str]) -> None:
-    from ..leases import identify_agent, list_active
-    agent_id, _, session_id, _ = identify_agent()
+    from .. import coord
+    from ..leases import is_mine, list_active, session_ids
+    mine, anchor = session_ids()
     leases = list_active(project_id)
+    foreign = coord.foreign_writers(project_id, root, paths)  # writer sets outlive leases; unknown writers count
     declared = [safe_relative(p) for p in owned_paths]
     claims: dict[str, list[str]] = {}
     for path in paths:
-        absolute = str(root / path)
-        matching = [lease for lease in leases if lease.matches(absolute)]
-        if any(lease.agent_id != agent_id or lease.session_id != session_id for lease in matching):
+        if path in foreign:
             raise SnapshotError(f"Foreign ownership blocks recovery: {path}")
+        absolute = str(root / path)
+        matching = [lease for lease in leases if lease.matches(absolute) and is_mine(lease, mine, anchor)]
         if not beneath(path, declared) or not matching:
             raise SnapshotError(f"An active own lease and declared path are required: {path}")
         permitted = False

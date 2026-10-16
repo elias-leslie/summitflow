@@ -110,26 +110,25 @@ def split_owned_dirty_files(
     """Split dirty files into (owned by this task, everything else).
 
     A path is owned when the task declares it (files_to_modify/files_to_create)
-    or a live lease tagged with this task covers it, and no other task's or
-    agent's live lease covers it. Everything else in the shared checkout stays.
+    or a live lease tagged with this task covers it, no other session (or
+    unknown writer) is in its writer set, and no lease tagged with another task
+    covers it. Everything else in the shared checkout stays.
     """
     if not dirty_files:
         return [], []
-    from ..lib.leases import identify_agent, list_active
+    from ..lib import coord
+    from ..lib.leases import list_active
 
     root = Path(repo_root or ".").resolve()
     declared = _declared_prefixes(task)
     leases = list_active(project_id) if project_id else []
-    agent_id = identify_agent()[0] if leases else ""
+    written = coord.foreign_writers(project_id, root, dirty_files) if project_id else {}
     owned: list[str] = []
     unowned: list[str] = []
     for path in dirty_files:
         absolute = str(root / path)
         matching = [lease for lease in leases if lease.matches(absolute)]
-        foreign = any(
-            lease.task_id not in {None, task_id} or (lease.task_id is None and lease.agent_id != agent_id)
-            for lease in matching
-        )
+        foreign = path in written or any(lease.task_id not in {None, task_id} for lease in matching)
         claimed = any(path == prefix or path.startswith(prefix + "/") for prefix in declared) or any(
             lease.task_id == task_id for lease in matching
         )

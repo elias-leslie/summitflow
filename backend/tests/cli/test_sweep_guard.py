@@ -212,7 +212,24 @@ def test_shell_write_on_a_path_another_session_leased_earlier_is_attributed_to_t
         commit_git_revision(repo, message="A sweep", skip_checks=True)
 
 
-# ------------------------------------------------------------ edit hook
+# ------------------------------------------------------------ advisory edit leases
+
+def test_edit_hook_warns_on_foreign_lease_and_records_both_writers(repo, monkeypatch):
+    target = str(repo / "backend" / "a.py")
+    as_claude(monkeypatch, "aaaaaaaa-session")
+    assert coord.run_hook({"tool_input": {"file_path": target}, "cwd": str(repo)}) is None
+    as_codex(monkeypatch, "bbbbbbbb-session")
+    message = coord.run_hook({"tool_input": {"file_path": target}, "cwd": str(repo)})
+    assert message is not None and message.startswith("WARNING: hostrepo: backend/a.py leased by cc:aaaaaa")
+    assert "\n" not in message
+    assert coord.dispatch_hook({"tool_input": {"file_path": target}, "cwd": str(repo)}) == ("warn", message)
+    (repo / "backend" / "a.py").write_text("a = 5\n")
+    labels = sorted(e["agent_id"] for e in leases.writers("hostrepo")[str(Path(target).resolve())])
+    assert labels == ["cc:aaaaaa", "codex:bbbbbb"]
+    as_claude(monkeypatch, "aaaaaaaa-session")
+    with pytest.raises(CommitError):
+        commit_git_revision(repo, message="contested", skip_checks=True, paths=["backend/a.py"])
+
 
 def test_op_lease_still_blocks_edits(repo, monkeypatch):
     proc = subprocess.Popen([sys.executable, "-c", "import time; time.sleep(60)"])
@@ -355,7 +372,7 @@ def test_st_commit_rejects_stray_words_without_paths():
 def _hook(payload: dict | str, tmp: Path, *args: str, **env: str) -> subprocess.CompletedProcess[str]:
     clean = {k: v for k, v in os.environ.items() if k not in {
         "CLAUDE_CODE_SESSION_ID", "CODEX_THREAD_ID", "CLAUDE_SESSION_ID", "TMUX_PANE", "ST_SESSION_ID",
-        "CODEX_SESSION_ID", "ALLOW_LEASE_OVERLAP", "ST_COORD_SENSITIVE", "PI_SESSION_ID"}}
+        "CODEX_SESSION_ID", "ST_COORD_SENSITIVE", "PI_SESSION_ID"}}
     clean.update({"ST_LEASES_DIR": str(tmp / "hook-leases"), "ST_DEV_CHECKOUT": "1", "ST_COORD_ANCHOR": "",
                   "XDG_RUNTIME_DIR": str(tmp / "run"), **env})
     clean["PATH"] = f"{clean.get('PATH', '')}:/usr/bin:/bin"
@@ -402,6 +419,20 @@ def test_real_hook_marks_background_and_other_repo_writes_unknown(repo, tmp_path
     assert _hook({**shell, "hook_event_name": "PostToolUse"}, tmp_path, "bash-post", **env).returncode == 0
     assert _hook_writers(tmp_path) == {"gen.json": ["unknown(background)"]}
     assert _hook_writers(tmp_path, "siblingrepo") == {"new.txt": ["unknown(other-repo)"]}
+
+
+def test_real_hook_edit_collision_warns_and_exits_zero(repo, tmp_path):
+    target = str(repo / "backend" / "a.py")
+    claude = {"session_id": "11111111-aaaa", "tool_name": "Edit", "cwd": str(repo), "tool_input": {"file_path": target}}
+    assert _hook(claude, tmp_path).returncode == 0
+    patch_text = "*** Begin Patch\n*** Update File: backend/a.py\n@@\n-a = 1\n+a = 2\n*** End Patch\n"
+    codex = {"session_id": "22222222-bbbb", "tool_name": "apply_patch", "cwd": str(repo),
+             "transcript_path": "/home/u/.codex/sessions/x.jsonl", "tool_input": {"command": patch_text}}
+    second = _hook(codex, tmp_path)
+    assert second.returncode == 0 and second.stdout == ""
+    lines = second.stderr.strip().splitlines()
+    assert len(lines) == 1 and lines[0].startswith("WARNING: hostrepo: backend/a.py leased by cc:111111")
+    assert _hook_writers(tmp_path) == {"a.py": ["cc:111111", "codex:222222"]}
 
 
 def test_real_hook_escaped_payload_falls_back_to_python_parse(repo, tmp_path):

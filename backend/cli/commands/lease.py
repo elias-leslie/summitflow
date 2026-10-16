@@ -1,13 +1,14 @@
 """File-level lease coordination for parallel agents.
 
 The lease primitive replaces per-task branches as the coordination mechanism.
-Edit-time gate: agents check before touching a file held by another agent's
-lease. st commit refuses to sweep another session's recorded writes.
+Leases are advisory: the edit hook warns on another agent's file lease and
+records every writer; st commit refuses to sweep another session's writes.
 """
 
 from __future__ import annotations
 
 import sys
+from pathlib import Path
 from typing import Annotated
 
 import typer
@@ -24,7 +25,6 @@ from ..lib.leases import (
     release,
     repo_marks,
     take,
-    wait,
 )
 from ..lib.usage import usage
 from ..output import output_error, output_success
@@ -33,24 +33,27 @@ app = typer.Typer(help="File-level lease coordination across parallel agents")
 
 
 def _resolve_project() -> tuple[str, str | None]:
+    """Project id plus the root relative paths resolve against: the current checkout of that project."""
     cfg = get_config_optional()
     pid = cfg.project_id if cfg else ""
     if not pid:
         output_error("No project detected. Run inside a registered project or set ST_PROJECT_ID.")
         raise typer.Exit(2)
+    here = coord.project_for_path(Path.cwd())
+    if here is not None and here[0] == pid:
+        return pid, str(here[1])
     return pid, cfg.project_root if cfg else None
 
 
 @app.command(name="lease")
 @usage(
     surface="st.lease",
-    cmd="st lease '<glob>...' | --hold '<purpose>' | --check <path> | --list [--all] | --release | --take <path>",
-    when="declare sweep scope before refactor; --hold a repo for integration; check before edit; release on completion",
+    cmd="st lease '<glob>...' | --hold '<purpose>' | --list [--all] | --release | --take <path>",
+    when="declare sweep scope before refactor; --hold a repo for integration; release on completion",
     precautions=(
-        "the edit hook auto-leases each edited file; own st commit releases committed paths",
-        "relative globs are normalized against project root at acquire time",
+        "the edit hook auto-leases each edited file and warns on another agent's lease; own st commit releases committed paths",
+        "relative globs resolve against the current checkout at acquire time",
         "stale leases auto-release after 30min idle",
-        "--check exits 2 when another agent holds the path",
     ),
     tier="reference",
 )
@@ -70,10 +73,6 @@ def lease_command(
     take_path: Annotated[
         str | None,
         typer.Option("--take", help="Forcibly claim a path from another holder"),
-    ] = None,
-    wait_path: Annotated[
-        str | None,
-        typer.Option("--wait", help="Block until path is released"),
     ] = None,
     release_glob: Annotated[
         str | None,
@@ -99,15 +98,8 @@ def lease_command(
         bool,
         typer.Option("--all", help="With --list: every project on this host"),
     ] = False,
-    hook: Annotated[
-        bool,
-        typer.Option("--hook", help="PreToolUse hook mode: read hook JSON on stdin, auto-lease edited files"),
-    ] = False,
 ) -> None:
     """File-level lease for parallel-agent coordination."""
-    if hook:
-        _run_hook()
-        return
     if list_flag and all_projects:
         for line in coord.system_lines():
             print(line)
@@ -147,13 +139,6 @@ def lease_command(
         output_success(f"Took over {take_path}. lease_id={lease.lease_id}")
         return
 
-    if wait_path:
-        if wait(pid, wait_path, project_root=project_root):
-            output_success(f"{wait_path} is now free.")
-            return
-        output_error(f"Timeout waiting for {wait_path}.")
-        raise typer.Exit(1)
-
     if release_all or release_glob is not None:
         n = release(pid, release_glob if not release_all else None, project_root=project_root)
         output_success(f"Released {n} lease(s).")
@@ -166,24 +151,9 @@ def lease_command(
 
     if not globs:
         output_error(
-            "Provide globs to acquire, or use --list / --check / --take / --wait / --release."
+            "Provide globs to acquire, or use --list / --check / --take / --release."
         )
         raise typer.Exit(2)
     lease = acquire(pid, list(globs), task_id=task_id, project_root=project_root)
     output_success(f"Acquired lease {lease.lease_id} on: {', '.join(lease.globs)}")
 
-
-def _run_hook() -> None:
-    """Exit 2 with one line when the edit collides; otherwise silent exit 0."""
-    import json
-
-    try:
-        payload = json.loads(sys.stdin.read() or "{}")
-    except ValueError:
-        return
-    if not isinstance(payload, dict):
-        return
-    message = coord.run_hook(payload)
-    if message:
-        print(message, file=sys.stderr)
-        raise typer.Exit(2)

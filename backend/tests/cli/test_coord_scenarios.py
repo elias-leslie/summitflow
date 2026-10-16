@@ -88,7 +88,7 @@ def _tokens(text: str) -> int:
 
 # ------------------------------------------------------------ edits
 
-def test_concurrent_edit_same_file_blocks_then_commit_releases(repos, monkeypatch):
+def test_concurrent_edit_same_file_warns_then_take_and_commit_release(repos, monkeypatch):
     repo = repos["hostrepo"]
     target = str(repo / "backend" / "a.py")
     as_claude(monkeypatch, "claude-aaaaaaaa")
@@ -96,11 +96,14 @@ def test_concurrent_edit_same_file_blocks_then_commit_releases(repos, monkeypatc
     (repo / "backend" / "a.py").write_text("a = 2\n")
 
     as_codex(monkeypatch, "codex-bbbbbbbb")
-    blocked = coord.edit_conflict(target)
-    assert blocked is not None and "leased by cc:claude" in blocked
-    assert blocked.count("\n") == 0 and _tokens(blocked) < 60
+    warned = coord.edit_conflict(target)  # advisory: the edit goes ahead and codex joins the writers
+    assert warned is not None and "leased by cc:claude" in warned
+    assert warned.count("\n") == 0 and _tokens(warned) < 60
 
     as_claude(monkeypatch, "claude-aaaaaaaa")
+    with pytest.raises(CommitError):
+        commit_git_revision(repo, message="edit", skip_checks=True, paths=["backend/a.py"])
+    leases.take("hostrepo", target)  # once agreed, adopt the contested change
     result = commit_git_revision(repo, message="edit", skip_checks=True, paths=["backend/a.py"])
     assert result["status"] == "SUCCESS"
     as_codex(monkeypatch, "codex-bbbbbbbb")
@@ -291,8 +294,9 @@ def test_commit_of_own_paths_is_not_blocked_by_parallel_file_work(repos, monkeyp
     assert coord.edit_conflict(str(repo / "backend" / "a.py")) is None
     (repo / "backend" / "a.py").write_text("a = 9\n")
     assert commit_git_revision(repo, message="own", skip_checks=True, paths=["backend/a.py"])["status"] == "SUCCESS"
+    coord.guard(repo, "rebuild")  # rebuild deploys an accepted commit; file leases do not block it
     with pytest.raises(coord.CoordBlocked, match="leased by codex:parall"):
-        coord.guard(repo, "rebuild")
+        coord.guard(repo, "publish")
 
 
 def test_unacked_request_surfaces_once_and_late_ack_still_lands(repos, monkeypatch):
@@ -451,7 +455,7 @@ def test_no_overlap_awareness_output_is_empty(repos, monkeypatch):
 def _hook(payload: dict, tmp: Path, *args: str, **env: str) -> subprocess.CompletedProcess[str]:
     clean = {k: v for k, v in os.environ.items() if k not in {
         "CLAUDE_CODE_SESSION_ID", "CODEX_THREAD_ID", "CLAUDE_SESSION_ID", "TMUX_PANE", "ST_SESSION_ID",
-        "CODEX_SESSION_ID", "ALLOW_LEASE_OVERLAP", "ST_COORD_SENSITIVE", "PI_SESSION_ID"}}
+        "CODEX_SESSION_ID", "ST_COORD_SENSITIVE", "PI_SESSION_ID"}}
     # Exercise this checkout's coord code, not the deployed release.
     clean.update({"ST_LEASES_DIR": str(tmp / "hook-leases"), "ST_DEV_CHECKOUT": "1", "ST_COORD_ANCHOR": "", **env})
     # Harnesses run hooks with the user's PATH; the native gate's allowlist lacks coreutils.
@@ -460,7 +464,7 @@ def _hook(payload: dict, tmp: Path, *args: str, **env: str) -> subprocess.Comple
                           text=True, env=clean, check=False, timeout=30)
 
 
-def test_real_hook_claude_edit_then_codex_apply_patch(repos, tmp_path):
+def test_real_hook_claude_edit_then_codex_apply_patch_warns(repos, tmp_path):
     repo = repos["hostrepo"]
     claude = {"session_id": "11111111-aaaa", "tool_name": "Edit", "cwd": str(repo),
               "tool_input": {"file_path": str(repo / "backend" / "a.py")}}
@@ -470,11 +474,10 @@ def test_real_hook_claude_edit_then_codex_apply_patch(repos, tmp_path):
     codex = {"session_id": "22222222-bbbb", "tool_name": "apply_patch", "cwd": str(repo),
              "transcript_path": "/home/u/.codex/sessions/x.jsonl", "tool_input": {"command": patch}}
     second = _hook(codex, tmp_path)
-    assert second.returncode == 2
+    assert second.returncode == 0
     lines = second.stderr.strip().splitlines()
-    assert len(lines) == 1 and lines[0].startswith("BLOCKED: hostrepo: backend/a.py leased by cc:111111")
+    assert len(lines) == 1 and lines[0].startswith("WARNING: hostrepo: backend/a.py leased by cc:111111")
     assert _hook(claude, tmp_path).returncode == 0  # same session keeps editing
-    assert _hook(codex, tmp_path, ALLOW_LEASE_OVERLAP="1").returncode == 0
 
 
 

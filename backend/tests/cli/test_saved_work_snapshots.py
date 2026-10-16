@@ -341,7 +341,12 @@ def test_foreign_ownership_and_unleased_paths_refused(workspace, monkeypatch):
         snap.recovery_preview(point.id, project_id="fixture", cwd=workspace.project, paths=["source.txt"], owned_paths=["source.txt"])
     own(workspace, monkeypatch)
     monkeypatch.setenv("ST_SESSION_ID", "foreign-native-session")
-    leases.acquire("fixture", [str(workspace.project / "source.txt")], task_id="task-other")
+    leases.acquire("fixture", [str(workspace.project / "source.txt")])  # a lease alone is advisory
+    monkeypatch.setenv("ST_SESSION_ID", "saved-work-test")
+    snap.recovery_preview(point.id, project_id="fixture", cwd=workspace.project, paths=["source.txt"], owned_paths=["source.txt"])
+    monkeypatch.setenv("ST_SESSION_ID", "foreign-native-session")
+    leases.record_writes("fixture", [str(workspace.project / "source.txt")])
+    leases.release("fixture")  # its lease expired or was released; the write still blocks
     monkeypatch.setenv("ST_SESSION_ID", "saved-work-test")
     with pytest.raises(SnapshotError, match="Foreign ownership"):
         snap.recovery_preview(point.id, project_id="fixture", cwd=workspace.project, paths=["source.txt"], owned_paths=["source.txt"])

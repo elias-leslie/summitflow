@@ -185,17 +185,6 @@ def test_relative_take_and_release_use_project_root(isolated_store, monkeypatch)
     assert leases.list_active("example") == []
 
 
-def test_relative_wait_observes_foreign_lease(isolated_store, monkeypatch):
-    root = str(isolated_store / "example")
-    monkeypatch.setenv("CLAUDE_SESSION_ID", "alice")
-    leases.acquire("example", ["docs/README.md"], project_root=root)
-
-    monkeypatch.setenv("CLAUDE_SESSION_ID", "bob")
-    assert not leases.wait(
-        "example", "docs/README.md", timeout=0.01, poll=0.02, project_root=root
-    )
-
-
 @pytest.mark.parametrize("project_id", ["../escape", "a/b", "", ".hidden"])
 def test_project_id_cannot_escape_lease_dir(isolated_store, project_id):
     with pytest.raises(ValueError, match="invalid project id"):

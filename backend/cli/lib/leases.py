@@ -12,9 +12,9 @@ support is a follow-up via an Agent Hub API wrapper.
 Agent identity uses env vars so Claude Code, Codex CLI, Agent Hub persona
 (Jenny), and Agent Hub specialists all coexist in the same lease table.
 
-The same store keeps per-path writer sets (every session that wrote a dirty
-path, kept until commit or revert) that st commit uses to refuse sweeping
-another session's work.
+File leases are advisory; the same store keeps per-path writer sets (every
+session that wrote a dirty path, kept until commit or revert) that st commit
+uses to refuse sweeping another session's work.
 """
 
 from __future__ import annotations
@@ -23,7 +23,6 @@ import fcntl
 import json
 import os
 import re
-import time
 import uuid
 from contextlib import contextmanager
 from dataclasses import asdict, dataclass
@@ -478,23 +477,6 @@ def take(project_id: str, path: str, project_root: str | None = None) -> Lease:
     return new_lease
 
 
-def wait(
-    project_id: str,
-    path: str,
-    timeout: float = 1800.0,
-    poll: float = 2.0,
-    project_root: str | None = None,
-) -> bool:
-    """Block until path is free for the current agent. Returns True if freed, False on timeout."""
-    deadline = time.monotonic() + timeout
-    while time.monotonic() < deadline:
-        ok, _ = check(project_id, path, project_root=project_root)
-        if ok:
-            return True
-        time.sleep(poll)
-    return False
-
-
 def idle_string(lease: Lease, now: datetime | None = None) -> str:
     """Format idle duration for pulse display (e.g. '2m', '18s', '7h')."""
     now = now or datetime.now(UTC)
@@ -587,16 +569,13 @@ def writer_label(entry: dict) -> str:
     return str(entry.get("agent_id"))
 
 
-def claim(
-    project_id: str, path: str, project_root: str | None = None, *, force: bool = False
-) -> tuple[bool, Lease | None]:
-    """Atomically check a single file and lease it to the current agent.
+def claim(project_id: str, path: str, project_root: str | None = None) -> tuple[bool, Lease | None]:
+    """Atomically lease a single file to the current agent for an edit (advisory).
 
     Returns (ok, conflicting_lease): a conflict is another session's lease (my
-    child threads' leases are not). On success every own lease in the project
-    is heartbeated and the current session joins the path's writer set. With
-    ``force`` (advisory edits) a foreign lease is reported but the path is
-    still leased and recorded, since the edit goes ahead.
+    child threads' leases are not); it is reported, but the path is still
+    leased and recorded because the edit goes ahead. Every own lease in the
+    project is heartbeated and the current session joins the path's writer set.
     """
     path = _project_path(path, project_root)
     agent_id, slug, sid, provider = identify_agent()
@@ -607,9 +586,6 @@ def claim(
         leases = _purge_stale(_load(project_id))
         conflict = next((lease for lease in leases if lease.kind == "file" and lease.matches(path)
                          and not is_mine(lease, session, session_anchor)), None)
-        if conflict is not None and not force:
-            _save(project_id, leases)
-            return False, conflict
         own = None
         for lease in leases:
             if lease.kind != "op" and is_mine(lease, mine, anchor):
