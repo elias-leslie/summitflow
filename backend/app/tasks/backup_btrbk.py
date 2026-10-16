@@ -435,13 +435,30 @@ def _publish_capture(payload: dict[str, Any], operation: Path) -> None:
     _write_receipt(payload)
 
 
+def _receipt_metadata(directory: Path) -> str | None:
+    """Return the receipt's ``uid:mode:type``, or None when the receipt is absent.
+
+    One root stat covers the directory and its receipt: the directory line
+    proves the probe itself ran, so a missing receipt line means the receipt is
+    gone rather than that sudo or stat failed.
+    """
+    receipt = directory / "capture.json"
+    result = _run(["sudo", "-n", "stat", "-c", "%n|%u:%a:%F", "--", str(directory), str(receipt)])
+    lines = dict(line.rsplit("|", 1) for line in result.stdout.splitlines() if "|" in line)
+    if str(directory) not in lines or (result.returncode == 0 and str(receipt) not in lines):
+        raise RuntimeError(f"stat failed (exit {result.returncode}); inspect host recovery journal")
+    return lines.get(str(receipt))
+
+
 def _cleanup_superseded(target: Path, current_run: str) -> dict[str, Any]:
     """Remove only successful adapter metadata whose referenced points are gone."""
     metadata = target.parent / "summitflow-host-recovery" / "captures"
     _qualify_target_directory(metadata)
     live = set(_native_listing(target, "target"))
     captures = _native_listing(target, "captures")
-    removed, blockers = [], []
+    removed: list[str] = []
+    blockers: list[dict[str, str]] = []
+    uncatalogued: list[str] = []
     before = shutil.disk_usage(target)
     for value in captures:
         directory = Path(value)
@@ -449,8 +466,14 @@ def _cleanup_superseded(target: Path, current_run: str) -> dict[str, Any]:
             continue
         try:
             _qualify_target_directory(directory)
-            receipt = directory / "capture.json"
-            owner, mode, kind = _checked(["sudo", "-n", "stat", "-c", "%u:%a:%F", "--", str(receipt)]).strip().split(":", 2)
+            metadata_line = _receipt_metadata(directory)
+            if metadata_line is None:
+                # An interrupted removal (or a directory holding only operator
+                # files) has no receipt: it catalogues no recovery point, so it
+                # is reported, never retried as a blocker or deleted blindly.
+                uncatalogued.append(directory.name)
+                continue
+            owner, mode, kind = metadata_line.split(":", 2)
             if owner != "0" or int(mode, 8) & 0o077 or kind != "regular file":
                 raise RuntimeError("Unqualified native capture receipt")
             saved = json.loads(_native("read", directory.name))
@@ -479,7 +502,7 @@ def _cleanup_superseded(target: Path, current_run: str) -> dict[str, Any]:
             blockers.append({"run_id": directory.name, "error": str(exc)})
     _native("sync", "target")
     after = shutil.disk_usage(target)
-    return {"result": "partial" if blockers else "completed", "removed": removed, "blockers": blockers,
+    return {"result": "partial" if blockers else "completed", "removed": removed, "blockers": blockers, "uncatalogued": uncatalogued,
             "reclaimed_bytes": max(0, before.used - after.used), "free_bytes": after.free,
             "evidence": "Observed target usage before/after metadata cleanup; concurrent growth can mask reclamation"}
 
