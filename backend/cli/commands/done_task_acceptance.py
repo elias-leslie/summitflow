@@ -139,7 +139,9 @@ def require_scope_matches_revision(repo: Path, sha: str, scope: tuple[str, ...])
                 or any(char in path for char in "*?\\")):
             raise acceptance.AcceptanceError("Acceptance scope must contain project-local literal task paths")
     literal = [f":(literal){path}" for path in scope]
-    if not _git(repo, "ls-tree", "-r", "--name-only", sha, "--", *literal):
+    # A deletion-only task owns paths absent from the tree but present in its history; a typo is in neither.
+    if (not _git(repo, "ls-tree", "-r", "--name-only", sha, "--", *literal)
+            and not _git(repo, "log", "-1", "--format=%H", sha, "--", *literal)):
         raise acceptance.AcceptanceError("Acceptance scope contains no source in the selected revision")
     if _git(repo, "diff", "--no-ext-diff", "--name-only", sha, head, "--", *literal):
         raise acceptance.AcceptanceError("Task-owned source changed since the selected acceptance revision")

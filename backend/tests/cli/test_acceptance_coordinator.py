@@ -56,6 +56,12 @@ def test_task_receipt_runs_scoped_gate_once_without_claiming_full(tmp_path: Path
     with pytest.raises(AcceptanceError, match="scope contains no source"):
         accept_source(tmp_path, sha="HEAD", materialization="actual", coverage="task", scope=("missing.py",), runner=run)
 
+    # A deletion-only task still accepts: its path is gone from the tree but in the history.
+    subprocess.run(["git", "rm", "-q", "owned.py"], cwd=tmp_path, check=True)
+    subprocess.run(["git", "commit", "-qm", "drop"], cwd=tmp_path, check=True)
+    assert accept_source(tmp_path, sha="HEAD", materialization="actual", coverage="task",
+                         scope=("owned.py",), runner=run).reference.coverage == "task"
+
 
 def test_task_receipt_cannot_omit_required_scoped_evidence(tmp_path: Path, local_gate_tools: None) -> None:
     import json
