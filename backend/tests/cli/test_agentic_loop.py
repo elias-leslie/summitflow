@@ -327,7 +327,7 @@ class TestResolutionHints:
         msg = mock_error.call_args.args[0]
         assert "Pulse gate blocked" in msg
         assert "Resolution" in msg
-        assert "st pulse --gate" in msg
+        assert "st pulse --details" in msg
 
     def test_resolution_hints_name_real_non_destructive_commands(self) -> None:
         """Hints use existing flags and never route agents to st abandon on a shared checkout."""

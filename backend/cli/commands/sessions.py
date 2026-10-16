@@ -721,8 +721,8 @@ def reap_sessions(
 @usage(
     surface="st.sessions.ownership",
     cmd="st sessions ownership -P <project>",
-    when="check lane truth when st pulse --gate reports blocked",
-    precautions=("don't inspect routinely; only when pulse names ownership as the blocker",),
+    when="check lane truth when a claim or done refusal names an ownership conflict",
+    precautions=("don't inspect routinely; only when a refusal names ownership as the blocker",),
     task_types=("devops",),
     tier="reference",
 )

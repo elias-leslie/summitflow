@@ -60,8 +60,19 @@ def preflight_reasons_for_payload(payload: dict[str, Any], *, allow_task_id: str
 
 
 def _print_compact(payloads: list[dict[str, Any]], *, details: bool = False) -> None:
+    from .pulse_friction import friction_line, payload_repo, worktree_lines
+
+    repos = [repo for payload in payloads if (repo := payload_repo(payload))]
     for payload in payloads:
         print_compact_payload(payload, details=details)
+    for _, path in repos:
+        try:
+            for line in worktree_lines(path):
+                print(line)
+        except Exception:  # the worktree audit never breaks the pulse
+            continue
+    # Publication lag only for a single-project pulse, so `--all` stays one line.
+    print(friction_line(repos if len(payloads) == 1 else ()))
     try:
         from ..lib.coord import notices
 

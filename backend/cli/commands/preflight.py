@@ -16,6 +16,7 @@ from app.services.task_lane_preflight import check_task_lane_conflicts
 from ..output import output_error
 from .claim_helpers import require_claim_safe_tree
 from .pulse import require_pulse_gate
+from .pulse_formatters import resolution_hint
 
 Operation = Literal["claim", "done", "edit"]
 
@@ -29,7 +30,7 @@ def _project_lane_clear(task_id: str, project_id: str | None) -> None:
     for issue in lane_check.issues:
         output_error(
             f"{issue}\n"
-            f"Resolution: st pulse --gate, then coordinate with the holder or st abandon <conflicting-task-id>."
+            f"Resolution: {resolution_hint('task_lane_conflict')}."
         )
     raise typer.Exit(2)
 

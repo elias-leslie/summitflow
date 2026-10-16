@@ -212,7 +212,7 @@ def test_select_specs_for_task_density_adds_matching_task_surfaces() -> None:
 
 def test_select_specs_adaptive_floor_always_present() -> None:
     specs = [
-        UsageSpec(surface="st.pulse"),
+        UsageSpec(surface="st.commit"),
         UsageSpec(surface="st.check"),
         UsageSpec(surface="st.backup.veeam"),  # non-floor, no score -> dropped
     ]
@@ -220,7 +220,7 @@ def test_select_specs_adaptive_floor_always_present() -> None:
     out = select_specs_for_density(specs, density="adaptive", scores=None)
 
     surfaces = [s.surface for s in out]
-    assert "st.pulse" in surfaces
+    assert "st.commit" in surfaces
     assert "st.check" in surfaces
     assert "st.backup.veeam" not in surfaces
     assert "st.details" in surfaces
@@ -228,7 +228,7 @@ def test_select_specs_adaptive_floor_always_present() -> None:
 
 def test_select_specs_adaptive_includes_high_score_surface() -> None:
     specs = [
-        UsageSpec(surface="st.pulse"),  # floor
+        UsageSpec(surface="st.commit"),  # floor
         UsageSpec(surface="st.browser"),  # non-floor, scored high
         UsageSpec(surface="st.backup.veeam"),  # non-floor, scored low
     ]
@@ -238,7 +238,7 @@ def test_select_specs_adaptive_includes_high_score_surface() -> None:
     out = select_specs_for_density(specs, density="adaptive", scores=scores)
 
     surfaces = [s.surface for s in out]
-    assert "st.pulse" in surfaces  # floor
+    assert "st.commit" in surfaces  # floor
     assert "st.browser" in surfaces  # score >= threshold
     assert "st.backup.veeam" not in surfaces  # score below threshold
 

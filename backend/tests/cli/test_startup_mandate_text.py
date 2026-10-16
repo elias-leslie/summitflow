@@ -38,9 +38,8 @@ def test_rebuild_needs_no_permission_ask() -> None:
     assert any(item.startswith("no ask needed: deploys committed HEAD only") for item in spec["precautions"])
 
 
-def test_startup_inject_lists_pulse_only_as_a_reference() -> None:
-    result = runner.invoke(tools_app, ["manifest", "--format", "inject", "--density", "core"])
-    assert result.exit_code == 0, result.output
-    mandates, _, references = result.output.partition("references:")
-    assert "\n- st pulse" not in mandates
-    assert "- st pulse — " in references
+def test_startup_inject_leaves_pulse_out() -> None:
+    for density in ("core", "adaptive"):
+        result = runner.invoke(tools_app, ["manifest", "--format", "inject", "--density", density])
+        assert result.exit_code == 0, result.output
+        assert "- st pulse" not in result.output

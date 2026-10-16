@@ -19,6 +19,15 @@ def _stub_observability_refresh(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(pulse_cmd, "refresh_agent_observability", lambda: None)
 
 
+@pytest.fixture(autouse=True)
+def _stub_friction(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Keep these tests off the live Agent Hub DB, jobs store and real worktrees."""
+    from cli.commands import pulse_friction
+
+    monkeypatch.setattr(pulse_friction, "friction_line", lambda repos=(): "FRICTION[stub]")
+    monkeypatch.setattr(pulse_friction, "worktree_lines", lambda repo: [])
+
+
 def test_pulse_compact_renders_canonical_summary() -> None:
     mock_client = MagicMock()
     mock_client.get.return_value = {

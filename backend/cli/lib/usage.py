@@ -19,7 +19,6 @@ from st_sdk.usage import usage as usage
 VALID_MANIFEST_DENSITIES = ("core", "task", "full", "adaptive")
 
 _CORE_SURFACES = {
-    "st.pulse",
     "st.search",
     "st.check",
     "st.db",
@@ -35,7 +34,6 @@ _CORE_SURFACES = {
 # Implementation floor for compact discovery and `adaptive` density. Ordinary
 # task work must not require retrieving the complete catalogue.
 _FLOOR_SURFACES = {
-    "st.pulse",
     "st.search",
     "st.context",
     "st.check",
@@ -290,7 +288,7 @@ def render_inject(specs: Iterable[UsageSpec]) -> str:
         mandates:
         - st service rebuild <project> --detach — service/config/worker change — careful: explicit project; ...
         references:
-        - st pulse --gate — implementation ownership + lane state
+        - st search "query" — optional ranked discovery
 
     Rules:
       - Group by tier as `mandates|guardrails|references:`
