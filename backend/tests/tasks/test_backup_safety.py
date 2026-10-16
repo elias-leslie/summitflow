@@ -278,6 +278,22 @@ def test_pve_side_retention_matches_policy_and_trips_on_mistakes():
     assert maintain.unexplained_loss(1000, 500).startswith("snapshot count fell")
 
 
+def test_pve_side_maintenance_clears_stale_locks_before_anything_else(monkeypatch, tmp_path):
+    # Regression: two pushers killed on 10-13 left locks that failed every run until 10-16.
+    maintain = _maintain_module()
+    calls: list[tuple[str, ...]] = []
+
+    def fake(*args: str, capture: bool = True):
+        calls.append(args)
+        raise subprocess.CalledProcessError(1, "restic", stderr="stop here")
+
+    monkeypatch.setattr(maintain, "_restic", fake)
+    monkeypatch.setattr(maintain, "STATUS_PATH", tmp_path / "status.json")
+    monkeypatch.setattr(maintain, "REPO", str(tmp_path / "repo"))
+    assert maintain.main() == 1
+    assert calls == [("unlock",)]
+
+
 def test_pve_side_weekly_expiry_of_floor_and_retired_sources_does_not_trip():
     # Regression: the weekly run removes about half of every 7-day source and
     # most of a retired one; that is normal retention, not a breaker trip.

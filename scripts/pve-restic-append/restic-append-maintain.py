@@ -132,6 +132,9 @@ def main() -> int:
                               "check": previous.get("check") or {}, "breaker": {"tripped": False}}
     snapshot_count = previous.get("snapshot_count")
     try:
+        # A pusher that died mid-upload leaves its lock behind and every later run fails on it; unlock
+        # removes only locks restic itself calls stale (unrefreshed for 30 minutes), never a live upload's.
+        _restic("unlock")
         snapshots = json.loads(_restic("snapshots", "--json").stdout) or []
         status["snapshot_count_before"] = len(snapshots)
         loss = unexplained_loss(previous.get("snapshot_count"), len(snapshots))
