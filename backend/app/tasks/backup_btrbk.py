@@ -439,13 +439,15 @@ def _receipt_metadata(directory: Path) -> str | None:
     """Return the receipt's ``uid:mode:type``, or None when the receipt is absent.
 
     One root stat covers the directory and its receipt: the directory line
-    proves the probe itself ran, so a missing receipt line means the receipt is
-    gone rather than that sudo or stat failed.
+    proves the probe itself ran, and only stat's own not-found error for the
+    receipt counts as absence; any other receipt error (I/O, permissions) stays
+    a blocker rather than being reported as an uncatalogued directory.
     """
     receipt = directory / "capture.json"
     result = _run(["sudo", "-n", "stat", "-c", "%n|%u:%a:%F", "--", str(directory), str(receipt)])
     lines = dict(line.rsplit("|", 1) for line in result.stdout.splitlines() if "|" in line)
-    if str(directory) not in lines or (result.returncode == 0 and str(receipt) not in lines):
+    absent = any(str(receipt) in line and line.endswith("No such file or directory") for line in result.stderr.splitlines())
+    if str(directory) not in lines or (str(receipt) not in lines and not absent):
         raise RuntimeError(f"stat failed (exit {result.returncode}); inspect host recovery journal")
     return lines.get(str(receipt))
 

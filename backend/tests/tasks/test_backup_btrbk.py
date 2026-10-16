@@ -171,16 +171,19 @@ def capture(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> dict[str, Any]:
             raise AssertionError(f"Unexpected native helper command: {command}")
         return ""
     monkeypatch.setattr(host, "_checked", checked)
-    stat_probe = {"sudo_fails": False}
+    stat_probe: dict[str, str | None] = {"fault": None}
     def run(args: list[str]) -> subprocess.CompletedProcess[str]:
-        # Multi-path root stat: one line per existing path, exit 1 if any is missing.
+        # Multi-path GNU root stat: one line per existing path, an error line per
+        # missing one, exit 1 if any is missing.
         calls.append(args)
         assert args[:3] == ["sudo", "-n", "stat"], args
-        if stat_probe["sudo_fails"]:
+        if stat_probe["fault"] == "sudo":
             return subprocess.CompletedProcess(args, 1, "", "sudo: a password is required\n")
         paths = [Path(value) for value in args[args.index("--") + 1:]]
         lines = [f"{path}|0:{700 if path.is_dir() else 600}:{'directory' if path.is_dir() else 'regular file'}" for path in paths if path.exists()]
-        return subprocess.CompletedProcess(args, 0 if len(lines) == len(paths) else 1, "".join(f"{line}\n" for line in lines), "")
+        error = "Input/output error" if stat_probe["fault"] == "io" else "No such file or directory"
+        errors = [f"stat: cannot statx '{path}': {error}" for path in paths if not path.exists()]
+        return subprocess.CompletedProcess(args, 0 if not errors else 1, "".join(f"{line}\n" for line in lines), "".join(f"{line}\n" for line in errors))
     monkeypatch.setattr(host, "_run", run)
     return {"root": root, "target": target, "rows": rows, "bulk": bulk, "calls": calls, "fail": fail, "checked": checked, "stat_probe": stat_probe}
 
@@ -376,19 +379,19 @@ def test_boot_metadata_cleanup_follows_native_point_lifetime_and_retains_failed_
     assert result["reclaimed_bytes"] == 0  # Unchanged usage proves no invented savings.
 
 
-@pytest.mark.parametrize("sudo_fails", [False, True])
-def test_metadata_cleanup_reports_a_receiptless_capture_directory_without_blocking(capture: dict[str, Any], sudo_fails: bool) -> None:
+@pytest.mark.parametrize("fault", [None, "sudo", "io"])
+def test_metadata_cleanup_reports_a_receiptless_capture_directory_without_blocking(capture: dict[str, Any], fault: str | None) -> None:
     # An interrupted removal deleted boot and the receipt but left operator files behind.
     run_id = "20261006T115729Z-984410df"
     directory = capture["target"].parent / "summitflow-host-recovery" / "captures" / run_id
     directory.mkdir(parents=True)
     (directory / "bounded-recovery-verification.json").write_text("{}")
-    capture["stat_probe"]["sudo_fails"] = sudo_fails
+    capture["stat_probe"]["fault"] = fault
     result = host._cleanup_superseded(capture["target"], "20261016T063000Z-0e0f6422")
     assert (directory / "bounded-recovery-verification.json").is_file()
     assert not result["removed"]
-    if sudo_fails:
-        # A failed probe is never mistaken for an absent receipt.
+    if fault:
+        # A failed probe or a receipt read error is never mistaken for an absent receipt.
         assert result["result"] == "partial" and result["blockers"][0]["run_id"] == run_id
         assert not result["uncatalogued"]
     else:
