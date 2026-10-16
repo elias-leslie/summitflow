@@ -301,7 +301,9 @@ Usage:
   st check --native [--stage ID] [--no-reuse] [--json]
   st check --acceptance [--sha REV] [--task TASK] [--scope PATH] [--no-reuse] [--json]
   st check --ci-repro [--seed N] [PYTEST_ARGS...]  # replay acceptance tests with CI env and order
-  st check --deep [--json]  # nightly: --check without reuse, then opted-in slow tests
+  st check --deep [--json]  # nightly: --check without reuse, then opted-in slow tests, then clean-env
+                            # (fresh clone, fresh deps, empty CI DB) in repos with migrations or
+                            # workspace packages and a CI pytest job
   st check budget [--json]  # test/source LOC, gate median, slow tests vs budget
   st check --changed-only
   st check --quick [--changed-only]
