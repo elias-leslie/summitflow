@@ -15,8 +15,9 @@ import sys
 import time
 from collections.abc import Iterator
 from contextlib import contextmanager, redirect_stdout
+from dataclasses import dataclass, field
 from pathlib import Path
-from typing import cast
+from typing import TYPE_CHECKING, cast
 from uuid import uuid4
 
 import typer
@@ -80,6 +81,9 @@ from .check_runner import (
     _workdir,
 )
 from .check_security import run_local_security_check
+
+if TYPE_CHECKING:
+    from ..lib.acceptance_coordinator import Materialization
 
 app = typer.Typer(
     help=(
@@ -517,130 +521,174 @@ def _acceptance_summary(receipt: dict[str, object]) -> str:
 
 def _handle_check_args(ctx: typer.Context, configs: dict[str, dict[str, object]]) -> int:
     args = list(ctx.args)
-    if args and args[0] in {"--native", "--check", "-c"}:
-        try:
-            root = _resolve_repo_root()
-            plan = native_plan(root)
-            if plan is not None:
-                stage_id = None
-                native_args = args[1:]
-                json_output = "--json" in native_args
-                native_reuse = "--no-reuse" not in native_args and os.environ.get("ST_NATIVE_NO_REUSE") != "1"
-                native_args = [arg for arg in native_args if arg not in {"--json", "--no-reuse"}]
-                if native_args:
-                    if args[0] != "--native" or len(native_args) != 2 or native_args[0] != "--stage":
-                        raise NativeCheckError("native full gates do not accept scope/fix arguments; use --native --stage ID")
-                    stage_id = native_args[1]
-                full_gate = args[0] in {"--check", "-c"}
-                legacy = _native_legacy_checks(root, plan, configs, print_output=not json_output) if full_gate and plan["legacy_tools"] else None
-                result = (blocked_native_result(plan, "cheap_legacy_gate_failed") if legacy and legacy["state"] != "pass"
-                          else run_native(root, plan, stage_id=stage_id, reuse=native_reuse, full_gate=full_gate))
-                if legacy is not None:
-                    result["legacy"] = legacy
-                if not json_output:
-                    for stage in result["stages"]:
-                        print(f"NATIVE:{stage['state']}:{stage['id']}|coverage:{stage['coverage']}|reason:{stage['reason']}")
-                print("NATIVE_EVIDENCE:" + json.dumps(result, sort_keys=True, separators=(",", ":")))
-                return 0 if result["state"] == "pass" else 1
+    mode = args[0] if args else None
+    if mode in {"--native", "--check", "-c"}:
+        code = _native_mode(args, configs)
+        if code is not None:
+            return code
+    if mode == "--ci-repro":
+        return _ci_repro(args[1:], configs)
+    if mode == "budget":
+        return _budget_mode(args)
+    if mode == "--deep":
+        return _deep_mode(args)
+    if mode == "--acceptance":
+        return _acceptance_mode(args)
+    return handle_check_args(ctx, configs, runtime=_runtime())
+
+
+def _native_options(args: list[str]) -> tuple[str | None, bool, bool]:
+    """Return (stage_id, json_output, reuse) for a native gate invocation."""
+    native_args = args[1:]
+    json_output = "--json" in native_args
+    reuse = "--no-reuse" not in native_args and os.environ.get("ST_NATIVE_NO_REUSE") != "1"
+    native_args = [arg for arg in native_args if arg not in {"--json", "--no-reuse"}]
+    if not native_args:
+        return None, json_output, reuse
+    if args[0] != "--native" or len(native_args) != 2 or native_args[0] != "--stage":
+        raise NativeCheckError("native full gates do not accept scope/fix arguments; use --native --stage ID")
+    return native_args[1], json_output, reuse
+
+
+def _native_mode(args: list[str], configs: dict[str, dict[str, object]]) -> int | None:
+    """Run a declared native gate; None lets an undeclared --check/-c fall through to the tool gates."""
+    try:
+        root = _resolve_repo_root()
+        plan = native_plan(root)
+        if plan is None:
             if args[0] == "--native":
                 raise NativeCheckError("project has no versioned native stage declaration")
-        except NativeCheckError as exc:
-            output_error(str(exc))
-            return 2
-    if args and args[0] == "--ci-repro":
-        return _ci_repro(args[1:], configs)
-    if args and args[0] == "budget":
-        from cli.lib.quality_budget import report
-        return report(_resolve_repo_root(), json_output="--json" in args)
-    if args and args[0] == "--deep":
-        from cli.lib.deep_lane import DeepLaneError, run_deep
-        try:
-            result = run_deep(_resolve_repo_root())
-        except DeepLaneError as exc:
-            output_error(str(exc))
-            return 2
-        for stage in result["stages"]:
-            print(f"DEEP:{stage['state']}:{stage['id']}|reason:{stage['reason']}|duration_ms:{stage['duration_ms']}")
-            for line in stage["failures"]:
-                print(f"  {line}")
-        if "--json" in args:
-            print("DEEP_EVIDENCE:" + json.dumps(result, sort_keys=True, separators=(",", ":")))
+            return None
+        stage_id, json_output, reuse = _native_options(args)
+        full_gate = args[0] in {"--check", "-c"}
+        legacy = _native_legacy_checks(root, plan, configs, print_output=not json_output) if full_gate and plan["legacy_tools"] else None
+        result = (blocked_native_result(plan, "cheap_legacy_gate_failed") if legacy and legacy["state"] != "pass"
+                  else run_native(root, plan, stage_id=stage_id, reuse=reuse, full_gate=full_gate))
+        if legacy is not None:
+            result["legacy"] = legacy
+        if not json_output:
+            for stage in result["stages"]:
+                print(f"NATIVE:{stage['state']}:{stage['id']}|coverage:{stage['coverage']}|reason:{stage['reason']}")
+        print("NATIVE_EVIDENCE:" + json.dumps(result, sort_keys=True, separators=(",", ":")))
         return 0 if result["state"] == "pass" else 1
-    if args and args[0] == "--acceptance":
-        if any(option in {"-h", "--help"} for option in args[1:]):
-            print(
-                "Usage: st check --acceptance [--sha REV] [--task TASK] "
-                "[--scope PATH] [--coverage full|task] [--stage ID] [--no-reuse] [--json]"
-            )
-            return 0
-        sha = "HEAD"
-        task_id = ""
-        scope: list[str] = []
-        coverage = "full"
-        required_stages: list[str] = []
-        reuse = True
-        json_output = False
-        index = 1
-        while index < len(args):
-            option = args[index]
-            if option == "--no-reuse":
-                reuse = False
-                index += 1
-                continue
-            if option == "--json":
-                json_output = True
-                index += 1
-                continue
-            if option not in {"--sha", "--task", "--scope", "--coverage", "--stage"} or index + 1 >= len(args):
-                output_error(f"Unknown or incomplete st check --acceptance option: {option}")
-                return 2
-            value = args[index + 1]
-            if option == "--sha":
-                sha = value
-            elif option == "--task":
-                task_id = value
-            elif option == "--coverage":
-                if value not in {"task", "full"}:
-                    output_error("Acceptance coverage must be task or full")
-                    return 2
-                coverage = value
-            elif option == "--stage":
-                required_stages.append(value)
-            else:
-                scope.append(value)
-            index += 2
-        try:
-            root = _resolve_repo_root()
-            owned_task = None
-            if task_id:
-                owned_task = renew_owned_claim(root, task_id)
-            from cli.lib.acceptance_coordinator import Coverage, Materialization, accept_source
-            from cli.lib.commit_workflow import run_git
-            selected = run_git(root, ["rev-parse", "--verify", f"{sha}^{{commit}}"])
-            head = run_git(root, ["rev-parse", "HEAD"])
-            if (selected.returncode == 0 and head.returncode == 0 and selected.stdout.strip() != head.stdout.strip()
-                    and (not task_id or not scope)):
-                raise AcceptanceError("Historical acceptance requires --task and explicit --scope task-owned paths")
-            dirty = run_git(root, ["status", "--porcelain=v1", "--untracked-files=all"])
-            materialization = "isolated" if dirty.returncode == 0 and dirty.stdout.strip() else "actual"
-            if selected.returncode == 0 and head.returncode == 0 and selected.stdout.strip() != head.stdout.strip():
-                materialization = "isolated"
-            receipt = accept_source(root, sha=sha, materialization=cast(Materialization, materialization), task_id=task_id,
-                                    scope=scope, reuse=reuse, coverage=cast(Coverage, coverage),
-                                    required_stages=required_stages).to_dict()
-            if owned_task and receipt.get("state") == "success":
-                from cli.lib.task_claims import attach_owned_acceptance
-                if not attach_owned_acceptance(root, owned_task, receipt):
-                    output_error("Acceptance artifact retained; task proof was not attached because the local claim/evidence changed or the API is remote. Reclaim and revalidate before completion.")
-        except (AcceptanceError, TaskClaimRenewalError) as exc:
-            output_error(str(exc))
+    except NativeCheckError as exc:
+        output_error(str(exc))
+        return 2
+
+
+def _budget_mode(args: list[str]) -> int:
+    from cli.lib.quality_budget import report
+    return report(_resolve_repo_root(), json_output="--json" in args)
+
+
+def _deep_mode(args: list[str]) -> int:
+    from cli.lib.deep_lane import DeepLaneError, run_deep
+    try:
+        result = run_deep(_resolve_repo_root())
+    except DeepLaneError as exc:
+        output_error(str(exc))
+        return 2
+    for stage in result["stages"]:
+        print(f"DEEP:{stage['state']}:{stage['id']}|reason:{stage['reason']}|duration_ms:{stage['duration_ms']}")
+        for line in stage["failures"]:
+            print(f"  {line}")
+    if "--json" in args:
+        print("DEEP_EVIDENCE:" + json.dumps(result, sort_keys=True, separators=(",", ":")))
+    return 0 if result["state"] == "pass" else 1
+
+
+@dataclass
+class _AcceptanceOptions:
+    sha: str = "HEAD"
+    task_id: str = ""
+    scope: list[str] = field(default_factory=list)
+    coverage: str = "full"
+    required_stages: list[str] = field(default_factory=list)
+    reuse: bool = True
+    json_output: bool = False
+
+
+def _parse_acceptance_args(args: list[str]) -> _AcceptanceOptions | int:
+    """Parse the options after --acceptance; an int is the exit code to return instead (help or error)."""
+    if any(option in {"-h", "--help"} for option in args):
+        print(
+            "Usage: st check --acceptance [--sha REV] [--task TASK] "
+            "[--scope PATH] [--coverage full|task] [--stage ID] [--no-reuse] [--json]"
+        )
+        return 0
+    options = _AcceptanceOptions()
+    index = 0
+    while index < len(args):
+        option = args[index]
+        if option == "--no-reuse":
+            options.reuse = False
+            index += 1
+            continue
+        if option == "--json":
+            options.json_output = True
+            index += 1
+            continue
+        if option not in {"--sha", "--task", "--scope", "--coverage", "--stage"} or index + 1 >= len(args):
+            output_error(f"Unknown or incomplete st check --acceptance option: {option}")
             return 2
-        if json_output:
-            print("ACCEPTANCE:" + json.dumps(receipt, sort_keys=True, separators=(",", ":")))
+        value = args[index + 1]
+        if option == "--sha":
+            options.sha = value
+        elif option == "--task":
+            options.task_id = value
+        elif option == "--coverage":
+            if value not in {"task", "full"}:
+                output_error("Acceptance coverage must be task or full")
+                return 2
+            options.coverage = value
+        elif option == "--stage":
+            options.required_stages.append(value)
         else:
-            print(_acceptance_summary(receipt))
-        return 0 if receipt.get("state") == "success" else 1
-    return handle_check_args(ctx, configs, runtime=_runtime())
+            options.scope.append(value)
+        index += 2
+    return options
+
+
+def _acceptance_materialization(root: Path, sha: str, *, task_id: str, scope: list[str]) -> Materialization:
+    """A dirty tree or a historical revision is accepted in isolation; a clean HEAD in place."""
+    from cli.lib.commit_workflow import run_git
+    selected = run_git(root, ["rev-parse", "--verify", f"{sha}^{{commit}}"])
+    head = run_git(root, ["rev-parse", "HEAD"])
+    historical = selected.returncode == 0 and head.returncode == 0 and selected.stdout.strip() != head.stdout.strip()
+    if historical and (not task_id or not scope):
+        raise AcceptanceError("Historical acceptance requires --task and explicit --scope task-owned paths")
+    dirty = run_git(root, ["status", "--porcelain=v1", "--untracked-files=all"])
+    if historical or (dirty.returncode == 0 and dirty.stdout.strip()):
+        return "isolated"
+    return "actual"
+
+
+def _acceptance_mode(args: list[str]) -> int:
+    options = _parse_acceptance_args(args[1:])
+    if isinstance(options, int):
+        return options
+    try:
+        root = _resolve_repo_root()
+        owned_task = None
+        if options.task_id:
+            owned_task = renew_owned_claim(root, options.task_id)
+        from cli.lib.acceptance_coordinator import Coverage, accept_source
+        materialization = _acceptance_materialization(root, options.sha, task_id=options.task_id, scope=options.scope)
+        receipt = accept_source(root, sha=options.sha, materialization=materialization, task_id=options.task_id,
+                                scope=options.scope, reuse=options.reuse, coverage=cast(Coverage, options.coverage),
+                                required_stages=options.required_stages).to_dict()
+        if owned_task and receipt.get("state") == "success":
+            from cli.lib.task_claims import attach_owned_acceptance
+            if not attach_owned_acceptance(root, owned_task, receipt):
+                output_error("Acceptance artifact retained; task proof was not attached because the local claim/evidence changed or the API is remote. Reclaim and revalidate before completion.")
+    except (AcceptanceError, TaskClaimRenewalError) as exc:
+        output_error(str(exc))
+        return 2
+    if options.json_output:
+        print("ACCEPTANCE:" + json.dumps(receipt, sort_keys=True, separators=(",", ":")))
+    else:
+        print(_acceptance_summary(receipt))
+    return 0 if receipt.get("state") == "success" else 1
 
 
 def _ci_repro(args: list[str], configs: dict[str, dict[str, object]]) -> int:
