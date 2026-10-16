@@ -26,7 +26,8 @@ from ._retention_fs import (
     playwright_required_children,
 )
 from ._retention_policy import HostRetentionPolicy
-from ._retention_scratch import weekly_scratch_retention
+from ._retention_reclaim import filesystem_source, reclaim_filesystem
+from ._retention_scratch import SCRATCH_ROOT, weekly_scratch_retention
 
 logger = get_logger(__name__)
 
@@ -181,8 +182,15 @@ def cleanup_host_artifacts(
     effective_home = home_dir or Path.home()
     effective_tmp = tmp_dir or Path("/tmp")
 
+    # Pressure is per filesystem this step cleans: "/" (tool caches, Docker)
+    # and the scratch filesystem (shared with /srv/workspaces on this host).
     before = _disk_snapshot("/")
-    pressure_mode = _is_pressure_mode(before, effective_policy)
+    root_pressure = _is_pressure_mode(before, effective_policy)
+    scratch_before: dict[str, float | int | str] | None = None
+    if SCRATCH_ROOT.is_dir() and filesystem_source(SCRATCH_ROOT) != filesystem_source(Path("/")):
+        scratch_before = _disk_snapshot(str(SCRATCH_ROOT))
+    scratch_pressure = SCRATCH_ROOT.is_dir() and _is_pressure_mode(scratch_before or before, effective_policy)
+    pressure_mode = root_pressure or scratch_pressure
 
     npx_result = cleanup_old_children(
         effective_home / ".npm" / "_npx",
@@ -220,15 +228,25 @@ def cleanup_host_artifacts(
         + hermes_checkpoints_result["bytes_reclaimed"]
     )
 
+    reclaim: dict[str, Any] | None = None
     try:
-        scratch_result: dict[str, Any] = weekly_scratch_retention(
-            max_age_hours=effective_policy.scratch_review_max_age_hours, now=effective_now,
-        )
+        if scratch_pressure:
+            # Do not wait for the weekly cadence: owner-tool cache prunes, then
+            # scratch retention at the pressure age, on the scratch filesystem.
+            reclaim = reclaim_filesystem(SCRATCH_ROOT, policy=effective_policy, now=effective_now)
+            step = next((item for item in reclaim["steps"] if item["step"] == "scratch"), {})
+            scratch_result: dict[str, Any] = {"status": step.get("status", "skipped"), "trigger": "pressure",
+                                              "deleted_paths": step.get("deleted_paths") or [],
+                                              "bytes_reclaimed": step.get("bytes", 0), **({"error": step["error"]} if step.get("error") else {})}
+        else:
+            scratch_result = weekly_scratch_retention(
+                max_age_hours=effective_policy.scratch_review_max_age_hours, now=effective_now,
+            )
     except Exception as exc:  # one step must not abort host retention
         logger.warning("scratch_retention_failed", error=str(exc))
         scratch_result = {"status": "error", "error": str(exc)}
     check_artifacts = _prune_project_check_artifacts(project_roots, effective_policy, effective_now)
-    docker = _run_docker_cleanup(policy=effective_policy, pressure_mode=pressure_mode, now=effective_now)
+    docker = _run_docker_cleanup(policy=effective_policy, pressure_mode=root_pressure, now=effective_now)
     veeam_snapshots = cleanup_stale_veeam_snapshots(policy=effective_policy, now=effective_now)
 
     after = _disk_snapshot("/")
@@ -250,11 +268,14 @@ def cleanup_host_artifacts(
     summary: dict[str, object] = {
         "status": status,
         "pressure_mode": pressure_mode,
+        "pressure_filesystems": [snapshot["path"] for snapshot, pressured in ((before, root_pressure), (scratch_before, scratch_pressure)) if snapshot and pressured],
         "items_deleted": items_deleted,
         "bytes_reclaimed": bytes_reclaimed,
         "bytes_reclaimed_from_path_cleanup": tool_cache_reclaimed,
         "disk_before": before,
         "disk_after": after,
+        "scratch_disk_before": scratch_before,
+        "scratch_reclaim": reclaim,
         "tool_caches": {
             "deleted_paths": tool_cache_deleted,
             "bytes_reclaimed": tool_cache_reclaimed,

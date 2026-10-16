@@ -13,6 +13,7 @@ import pytest
 @pytest.fixture(autouse=True)
 def _isolate_scratch(mocker) -> Any:
     """Host retention must never touch the live /srv/scratch or its stamp in tests."""
+    mocker.patch("app.tasks.host_retention.SCRATCH_ROOT", Path("/nonexistent-test-scratch"))
     return mocker.patch("app.tasks.host_retention.weekly_scratch_retention",
                         return_value={"status": "skipped", "reason": "weekly-cadence"})
 
@@ -291,3 +292,67 @@ def test_veeam_retention_preserves_old_incremental_parents(mocker, tmp_path: Pat
     assert result["deleted"] == []
     assert parent.is_dir()
     command.assert_not_called()
+
+
+def test_scratch_filesystem_pressure_reclaims_now_while_root_stays_normal(mocker, tmp_path: Path) -> None:
+    """Regression: pressure only looked at '/', so a nearly full scratch filesystem waited for the weekly pass."""
+    from app.tasks import host_retention
+
+    scratch = tmp_path / "scratch"
+    scratch.mkdir()
+    mocker.patch.object(host_retention, "SCRATCH_ROOT", scratch)
+    mocker.patch.object(host_retention, "filesystem_source", lambda path: "p8" if path == scratch else "p7")
+    usage = {"/": (100 * 1024**3, 40 * 1024**3, 60 * 1024**3), str(scratch): (100 * 1024**3, 89 * 1024**3, 11 * 1024**3)}
+    mocker.patch.object(host_retention.shutil, "disk_usage", lambda path: usage[str(path)])
+    mocker.patch.object(host_retention, "_docker_available", return_value=False)
+    reclaim = mocker.patch.object(host_retention, "reclaim_filesystem", return_value={"steps": [
+        {"step": "uv_cache", "status": "success"},
+        {"step": "scratch", "status": "success", "deleted_paths": ["/srv/scratch/old"], "bytes": 5}]})
+    weekly = host_retention.weekly_scratch_retention
+
+    result = cast(dict[str, Any], host_retention.cleanup_host_artifacts(
+        home_dir=tmp_path / "home", tmp_dir=tmp_path, project_roots=[]))
+
+    assert reclaim.call_args.args == (scratch,)
+    assert not weekly.called  # type: ignore[attr-defined]
+    assert result["pressure_mode"] is True and result["pressure_filesystems"] == [str(scratch)]
+    assert result["scratch"]["trigger"] == "pressure" and result["scratch"]["deleted_paths"] == ["/srv/scratch/old"]
+
+
+def test_reclaim_stops_at_target_and_keeps_cache_roots(mocker, tmp_path: Path) -> None:
+    from app.tasks import _retention_reclaim as reclaim
+
+    cache = tmp_path / "cache"
+    hub = cache / "huggingface-hub"
+    old_repo, used_repo = hub / "models--old--x", hub / "models--new--y"
+    for repo in (old_repo, used_repo):
+        (repo / "blobs").mkdir(parents=True)
+        (repo / "blobs" / "b").write_text("weights")
+    old = (datetime.now(UTC) - timedelta(days=40)).timestamp()
+    (cache / "uv").mkdir()
+    mocker.patch.multiple(reclaim, UV_CACHE=cache / "uv", HF_HUB=hub, SCRATCH_ROOT=tmp_path)
+    mocker.patch.object(reclaim, "filesystem_source", lambda path: "p8")
+    mocker.patch.object(reclaim.shutil, "which", lambda name: f"/usr/bin/{name}")
+    free = {"bytes": 10}
+    mocker.patch.object(reclaim, "free_bytes", lambda path: free["bytes"])
+    calls: list[tuple[list[str], dict[str, str] | None]] = []
+
+    def run(args: list[str], *, env: dict[str, str] | None = None):
+        calls.append((args, env))
+        if args[:3] == ["pnpm", "store", "path"]:
+            return type("Proc", (), {"returncode": 0, "stdout": f"{cache}\n", "stderr": ""})()
+        if args[:3] == ["pnpm", "store", "prune"]:
+            free["bytes"] = 100
+        return type("Proc", (), {"returncode": 0, "stdout": "", "stderr": ""})()
+
+    receipt = reclaim.reclaim_filesystem(tmp_path, target_free_bytes=50, run=run)
+    assert [step["step"] for step in receipt["steps"]] == ["uv_cache", "pnpm_store"]
+    assert receipt["target_met"] and receipt["steps"][1]["freed_bytes"] == 90
+    assert (["uv", "cache", "prune"], {"UV_CACHE_DIR": str(cache / "uv")}) in calls
+    assert old_repo.exists()  # target met before the Hugging Face step
+
+    # Scratch is mounted noatime; age is the newest mtime/ctime, which utime cannot backdate.
+    mocker.patch.object(reclaim, "_tree_stats", lambda path, max_entries: (old if path == old_repo else datetime.now(UTC).timestamp(), 7, 3))
+    pruned = reclaim.prune_unused_hf_repos(hub=hub, now=datetime.now(UTC), proc_root=tmp_path / "no-proc")
+    assert pruned["deleted_paths"] == [str(old_repo)]
+    assert hub.is_dir() and used_repo.exists() and not old_repo.exists()

@@ -67,6 +67,7 @@ app = typer.Typer(
         "Read-only: status, checkpoints, inspect-orphans.\n"
         "Cleanup: checkpoints --auto, checkpoints --force, snapshots, cleanrooms.\n"
         "Scratch: reports old /srv/scratch entries; --apply deletes them (weekly in host maintenance).\n"
+        "Reclaim: frees one filesystem now (owner caches, then pressure scratch retention) up to a free-space target.\n"
         "Path cleanup removes literal paths only. Globs are rejected and directories require --recursive."
     )
 )
@@ -396,3 +397,27 @@ def cleanup_scratch(
         f"{len(review['candidates'])} review candidate(s), {cleanroom_prune.format_bytes(total)}; "
         f"{len(review['protected'])} protected, {review['recent']} recent{visibility}"
     )
+
+
+@app.command("reclaim")
+def cleanup_reclaim(
+    filesystem: Annotated[Path, typer.Option("--filesystem", help="Any path on the filesystem to free (e.g. /srv/scratch).")],
+    target_free_gib: Annotated[float | None, typer.Option("--target-free-gib", min=0, help="Stop once this much is free; default runs every step.")] = None,
+    dry_run: DryRunOpt = False,
+) -> None:
+    """Free space now: uv cache prune, pnpm store prune, unused Hugging Face repos, then scratch at the pressure age.
+
+    Steps run only for data on the given filesystem and stop once the target is free.
+    Prints a JSON receipt; exits 1 when the target is still not met or a step failed.
+    Snapshot thinning is separate: st autosnap prune --pressure.
+    """
+    from app.tasks._retention_reclaim import reclaim_filesystem
+
+    if not filesystem.exists():
+        typer.echo(f"Error: {filesystem} does not exist", err=True)
+        raise typer.Exit(2)
+    target = None if target_free_gib is None else int(target_free_gib * 1024**3)
+    receipt = reclaim_filesystem(filesystem, target_free_bytes=target, dry_run=dry_run)
+    output_json(receipt)
+    if not dry_run and (not receipt["target_met"] or receipt["errors"]):
+        raise typer.Exit(1)
