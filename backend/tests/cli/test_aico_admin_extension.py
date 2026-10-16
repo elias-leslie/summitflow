@@ -64,3 +64,25 @@ def test_aico_create_cli_preserves_exact_owner_argv_and_help(monkeypatch):
     help_result = CliRunner().invoke(app, ["aico", "create", "--help"])
     assert help_result.exit_code == 0 and "--resume-session SESSION_ID" in help_result.output
     assert observed == [args]
+
+
+def test_aico_create_help_names_tools_without_routing_policy():
+    """`st aico create --help` prints the manifest page, never the owner's argparse.
+
+    Which tool to pick is routing policy that lives elsewhere; Tether decides which
+    tools can start a root, so the help only names them and the refusal.
+    """
+    registry = Path(__file__).resolve().parents[3] / "scripts/lib/tool-registry.json"
+    record = next(row for row in load_extensions(set(), registry_path=registry).records
+                  if row.manifest is not None and row.manifest.namespace == "aico")
+    assert record.manifest is not None
+    create = next(row for row in record.manifest.usage if row["surface"] == "st.aico.create")
+    when, precautions = create["when"], create["precautions"]
+    assert isinstance(when, str) and isinstance(precautions, list)
+    pages = [record.manifest.help[""], record.manifest.help["create"], when, *map(str, precautions)]
+    text = " ".join(pages).lower()
+    for phrase in ("routing", "by default", "neri", "delegated work", "only codex"):
+        assert phrase not in text, phrase
+    assert "claude-code or codex" in record.manifest.help["create"]
+    assert "unsupported_tool" in record.manifest.help["create"]
+    assert all("claude code" in page.lower() for page in (record.manifest.help[""], when))

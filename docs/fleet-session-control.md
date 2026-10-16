@@ -32,9 +32,9 @@ retained. Retry with `--request-id ROOT` and the same capsule; do not recreate a
 root after an uncertain response.
 
 `--resume-session SESSION_ID` passes one exact saved native session ID to the
-owner's resume adapter, which launches it in the newly allocated root (Codex
-with a canonical lowercase UUID is the only implemented adapter; others fail
-closed and the root is retained as `launch: unavailable`). There is no picker,
+owner's resume adapter, which launches it in the newly allocated root (Claude
+Code and Codex each take a canonical lowercase UUID; Tether refuses other tools
+with `unsupported_tool`). There is no picker,
 latest-thread inference or terminal input. Start validates the ID's bounded
 shape and that the instruction plus fleet directions fit the owner's 2000-byte
 resumed-prompt limit before it registers intent. The capsule retains only
@@ -198,11 +198,13 @@ changes require their normal managed release before live use.
 
 `st aico create REQUEST_ID [PROMPT] --tool claude-code|codex --project PROJECT
 --project-root PATH --resume-session SESSION_ID [--surface aico|a-term]` forwards
-directly to the existing owner create contract. `--tool` has no default: callers
-pick the agent on purpose (claude-code for delegated work unless routing assigns
-Codex); each tool runs the model set in its own configuration. It retains no prompt or fleet event and supplies no fleet
-orchestration text. The public ID is TUI-agnostic; only the Codex resume adapter
-is currently implemented, requiring a canonical lowercase UUID.
+directly to the existing owner create contract. `--tool` has no default and the
+client keeps no tool list: it sends the tool as given, and Tether refuses one
+without a resume adapter with `unsupported_tool` naming the tools it accepts
+(today claude-code and codex). Each tool runs the model set in its own configuration. It retains no prompt or fleet event and supplies no fleet
+orchestration text. The public ID is TUI-agnostic; the Claude Code and Codex resume
+adapters each require a canonical lowercase UUID. Tether's `docs/root-control.md`
+is the contract.
 The default surface is Aico; A-Term uses its established loopback HTTP route and
 enforces configured authentication. Aico shows the allocated root; A-Term creates
 a detached pane. Neither command starts the owner service.
