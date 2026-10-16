@@ -89,14 +89,39 @@ def _worker_db_manager_url(url: str) -> str:
     return url
 
 
+def _worker_database_name(shared: str, worker: str, run: int) -> str:
+    """Per-run worker database: two concurrent pytest runs never share or drop each other's."""
+    return f"{shared}_r{run}_{worker}"
+
+
+def _pid_alive(pid: int) -> bool:
+    try:
+        os.kill(pid, 0)
+    except ProcessLookupError:
+        return False
+    except PermissionError:
+        return True
+    return True
+
+
+def _orphaned_worker_databases(names: list[str], shared: str, alive: Callable[[int], bool] = _pid_alive) -> list[str]:
+    """Worker databases left by runs whose controller process has exited (killed or crashed runs)."""
+    pattern = re.compile(rf"{re.escape(shared)}_r([0-9]+)_gw[0-9]+")
+    return [name for name in names if (match := pattern.fullmatch(name)) and not alive(int(match[1]))]
+
+
 def _xdist_worker_database(url: str, worker: str) -> str:
     """Give each pytest-xdist worker its own database beside the shared test one.
 
     Tests commit shared rows, so concurrent workers on one database deadlock and
-    observe each other's data. The worker database is created through the
-    configured admin URL (owned by the test role) or by a role that can create
-    databases, and dropped again when the worker finishes.
+    observe each other's data. The name carries the run's controller pid, so
+    concurrent runs (isolated acceptance next to an agent's check) never share
+    one. The worker database is created through the configured admin URL
+    (owned by the test role) or by a role that can create databases, and
+    dropped again when the worker finishes; databases of runs that died are
+    dropped by the next run.
     """
+    from contextlib import suppress
     from urllib.parse import urlsplit, urlunsplit
 
     import psycopg
@@ -104,13 +129,19 @@ def _xdist_worker_database(url: str, worker: str) -> str:
 
     parts = urlsplit(url)
     shared = parts.path.lstrip("/")
-    name = f"{shared}_{worker}"
+    # Every xdist worker of one run is a child of the same controller process.
+    name = _worker_database_name(shared, worker, os.getppid())
     manager_url = _worker_db_manager_url(url)
     # An admin copies the bootstrapped shared database (schema and pgvector);
     # a CREATEDB role starts empty and is bootstrapped below.
     template = sql.SQL(" TEMPLATE {}").format(sql.Identifier(shared)) if manager_url != url else sql.SQL("")
     with psycopg.connect(manager_url, autocommit=True) as conn:
         conn.execute("SELECT pg_advisory_lock(hashtext('summitflow-xdist-databases'))")
+        existing = [row[0] for row in conn.execute("SELECT datname FROM pg_database").fetchall()]
+        for orphan in _orphaned_worker_databases(existing, shared):
+            # A database another role owns stays where it is.
+            with suppress(psycopg.Error):
+                conn.execute(sql.SQL("DROP DATABASE IF EXISTS {} WITH (FORCE)").format(sql.Identifier(orphan)))
         for attempt in range(30):
             if conn.execute("SELECT 1 FROM pg_database WHERE datname = %s", (name,)).fetchone() is not None:
                 break
