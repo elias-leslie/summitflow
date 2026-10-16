@@ -110,7 +110,7 @@ def test_concurrent_edit_same_file_warns_then_take_and_commit_release(repos, mon
     assert coord.edit_conflict(target) is None
 
 
-def test_commit_of_foreign_leased_path_is_refused_in_unregistered_repo(repos, monkeypatch):
+def test_commit_of_foreign_written_path_is_refused_in_unregistered_repo(repos, monkeypatch):
     """Fixture repos are not registered projects; the per-path commit check must still apply."""
     repo = repos["hostrepo"]
     as_claude(monkeypatch, "claude-aaaaaaaa")
@@ -118,7 +118,7 @@ def test_commit_of_foreign_leased_path_is_refused_in_unregistered_repo(repos, mo
     (repo / "backend" / "a.py").write_text("a = 3\n")
 
     as_codex(monkeypatch, "codex-bbbbbbbb")
-    with pytest.raises(CommitError, match="leased by another agent"):
+    with pytest.raises(CommitError, match="another session also wrote"):
         commit_git_revision(repo, message="steal", skip_checks=True, paths=["backend/a.py"], with_ack=None)
 
 
@@ -247,7 +247,7 @@ def test_idle_hold_expires_and_take_overrides_file_lease(repos, monkeypatch):
             row.last_heartbeat = (datetime.now(UTC) - timedelta(hours=1)).isoformat()
         leases._save("hostrepo", rows)
     as_codex(monkeypatch, "survivor-0001")
-    coord.guard(repo, "publish")  # stale hold and stale file lease no longer block
+    coord.guard(repo, "reconcile")  # stale hold and stale file lease no longer block
     as_claude(monkeypatch, "holder-crash-01")
     assert coord.edit_conflict(str(repo / "backend" / "a.py")) is None
     as_codex(monkeypatch, "survivor-0001")
@@ -294,9 +294,10 @@ def test_commit_of_own_paths_is_not_blocked_by_parallel_file_work(repos, monkeyp
     assert coord.edit_conflict(str(repo / "backend" / "a.py")) is None
     (repo / "backend" / "a.py").write_text("a = 9\n")
     assert commit_git_revision(repo, message="own", skip_checks=True, paths=["backend/a.py"])["status"] == "SUCCESS"
-    coord.guard(repo, "rebuild")  # rebuild deploys an accepted commit; file leases do not block it
+    coord.guard(repo, "rebuild")  # rebuild and publish ship an accepted commit; file leases do not block them
+    coord.guard(repo, "publish")
     with pytest.raises(coord.CoordBlocked, match="leased by codex:parall"):
-        coord.guard(repo, "publish")
+        coord.guard(repo, "reconcile")
 
 
 def test_unacked_request_surfaces_once_and_late_ack_still_lands(repos, monkeypatch):

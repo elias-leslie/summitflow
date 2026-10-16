@@ -159,11 +159,11 @@ def op_lease(repo: Path, purpose: str) -> Iterator[None]:
 def guard(repo: Path, operation: str, *, paths: Sequence[str] = (), with_ack: str | None = None) -> None:
     """Refuse a repo-mutating or outward operation that another live agent would collide with.
 
-    commit and rebuild (which deploys an accepted commit, not the working tree):
-    blocked by any live op, or another agent's hold. acceptance: only by another
-    agent's hold. publish/reconcile: also blocked by another agent's file lease
-    touched within ACTIVE_WINDOW. An acked request (``--with-ack``) from that
-    holder authorizes the operation.
+    commit, rebuild and publish (which ship an accepted commit, not the working
+    tree): blocked by any live op, or another agent's hold. acceptance: only by
+    another agent's hold. reconcile (syncs working trees): also blocked by another
+    agent's file lease touched within ACTIVE_WINDOW. An acked request
+    (``--with-ack``) from that holder authorizes the operation.
     """
     resolved = project_for_path(repo)
     if resolved is None:
@@ -174,8 +174,8 @@ def guard(repo: Path, operation: str, *, paths: Sequence[str] = (), with_ack: st
     _keep_alive(project_id)
     mine, anchor = leases.session_ids()  # my harness process's child threads are not other agents
     # Acceptance only yields to an integration hold; concurrent runs are fine.
-    kinds = {"commit": ("op", "hold"), "rebuild": ("op", "hold"), "acceptance": ("hold",)}.get(
-        operation, ("op", "hold", "file"))
+    kinds = {"commit": ("op", "hold"), "rebuild": ("op", "hold"), "publish": ("op", "hold"),
+             "acceptance": ("hold",)}.get(operation, ("op", "hold", "file"))
     now = datetime.now(UTC)
     for lease in leases.list_active(project_id, kinds=kinds):
         if lease.kind == "op":

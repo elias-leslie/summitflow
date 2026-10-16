@@ -18,9 +18,9 @@ runner = CliRunner()
 @pytest.mark.parametrize("extra", [[], ["--skip-checks"], ["--paths", "owned.py"]])
 def test_st_commit_push_rejects_before_repository_resolution(extra) -> None:
     with (
-        patch("cli.main.current_repo") as resolve,
-        patch("cli.main.commit_repo") as commit,
-        patch("cli.main.log_task_event") as event,
+        patch("cli.lib.commit_workflow.current_repo") as resolve,
+        patch("cli.lib.commit_workflow.commit_repo") as commit,
+        patch("app.storage.events.log_task_event") as event,
     ):
         result = runner.invoke(app, ["commit", "-m", "checkpoint", "--push", "--task", "task-1", *extra])
     assert result.exit_code == 1
@@ -78,38 +78,6 @@ def test_scoped_git_commit_preserves_unrelated_staged_work(tmp_path: Path, monke
     assert git("diff", "--cached", "--name-only").strip() == "unrelated.py"
 
 
-def test_commit_blocks_foreign_lease_on_changed_file(tmp_path: Path, monkeypatch) -> None:
-    from cli.lib import commit_workflow
-
-    def git(*args: str) -> str:
-        return subprocess.run(
-            ["git", *args], cwd=tmp_path, text=True, capture_output=True, check=True
-        ).stdout.strip()
-
-    git("init", "-q")
-    git("config", "user.name", "Test")
-    git("config", "user.email", "test@example.invalid")
-    (tmp_path / "shared.py").write_text("before\n")
-    git("add", ".")
-    git("commit", "-qm", "baseline")
-    baseline = git("rev-parse", "HEAD")
-    (tmp_path / "shared.py").write_text("after\n")
-
-    monkeypatch.setattr(leases, "LEASES_DIR", tmp_path / "leases")
-    monkeypatch.setattr(
-        "cli.lib.execution_context.resolve_checkout_project_id", lambda _repo: "example"
-    )
-    monkeypatch.setenv("CLAUDE_SESSION_ID", "alice")
-    leases.acquire("example", ["shared.py"], project_root=str(tmp_path))
-    monkeypatch.setenv("CLAUDE_SESSION_ID", "bob")
-
-    with pytest.raises(CommitError, match="leased by another agent"):
-        commit_workflow.commit_repo(
-            tmp_path, message="overwrite shared", skip_checks=True
-        )
-    assert git("rev-parse", "HEAD") == baseline
-
-
 def test_scoped_commit_ignores_foreign_lease_outside_selection(
     tmp_path: Path, monkeypatch
 ) -> None:
@@ -147,9 +115,9 @@ def test_scoped_commit_ignores_foreign_lease_outside_selection(
     assert git("status", "--porcelain", "--", "shared.py")
 
 
-@patch("cli.main.log_task_event")
-@patch("cli.main.commit_repo")
-@patch("cli.main.current_repo")
+@patch("app.storage.events.log_task_event")
+@patch("cli.lib.commit_workflow.commit_repo")
+@patch("cli.lib.commit_workflow.current_repo")
 def test_st_commit_uses_canonical_workflow_and_logs_task(
     mock_current_repo: MagicMock,
     mock_commit_repo: MagicMock,
@@ -183,8 +151,8 @@ def test_st_commit_uses_canonical_workflow_and_logs_task(
 
 def test_failed_checkpoint_prints_existing_gate_artifact_hints() -> None:
     with (
-        patch("cli.main.current_repo", return_value=Path("/repo")),
-        patch("cli.main.commit_repo", return_value={
+        patch("cli.lib.commit_workflow.current_repo", return_value=Path("/repo")),
+        patch("cli.lib.commit_workflow.commit_repo", return_value={
             "status": "BLOCKED", "reason": "quality_gates_failed",
             "detail": "LINT:OK:0|details:lint.txt\nTYPE:FAIL:1|details:types.txt\nTEST:FAIL:1|details:tests.txt",
         }),
@@ -212,8 +180,8 @@ def test_local_task_commit_renews_owned_claim_before_repository_work(tmp_path: P
     commit.assert_called_once()
 
 
-@patch("cli.main.commit_repo")
-@patch("cli.main.current_repo")
+@patch("cli.lib.commit_workflow.commit_repo")
+@patch("cli.lib.commit_workflow.current_repo")
 def test_st_commit_forwards_selected_paths(
     mock_current_repo: MagicMock,
     mock_commit_repo: MagicMock,
@@ -276,7 +244,6 @@ def test_commit_repo_skips_gitignored_paths_in_add_step(tmp_path: Path) -> None:
         patch.object(commit_workflow, "run_checks", return_value=(True, "")),
         patch.object(commit_workflow, "repo_lock", return_value=nullcontext()),
         patch.object(commit_workflow, "workspace_fingerprint", return_value="stable"),
-        patch.object(commit_workflow, "_require_foreign_leases_clear"),
         patch.object(
             commit_workflow.subprocess,
             "run",

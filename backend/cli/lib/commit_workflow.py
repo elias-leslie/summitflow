@@ -223,27 +223,6 @@ def _commit_repo_lock(repo: Path) -> Iterator[None]:
         return
 
 
-def _require_foreign_leases_clear(repo: Path, changed_paths: Sequence[str]) -> None:
-    """Keep a Git checkpoint from absorbing another agent's leased work."""
-    if not changed_paths:
-        return
-    resolved = coord.project_for_path(repo)
-    if resolved is None:
-        return
-    project_id, root = resolved
-    active = leases.list_active(project_id)
-    mine, anchor = leases.session_ids()  # a parent commits its child threads' leased work
-    for path in changed_paths:
-        absolute = os.path.normpath(root / path)
-        holder = next((lease for lease in active
-                       if lease.matches(absolute) and not leases.is_mine(lease, mine, anchor)), None)
-        if holder is not None:
-            raise CommitError(
-                f"cannot commit {path}: leased by another agent {holder.agent_id} "
-                f"(task={holder.task_id or '--'}); coordinate or select only your own paths"
-            )
-
-
 def _require_no_sweep(repo: Path, selected: Sequence[str], changed: Sequence[str]) -> None:
     """Refuse to absorb another session's dirty work into this checkpoint.
 
@@ -389,7 +368,6 @@ def commit_git_revision(
         return {**result, "reason": "no_changes_in_selected_paths" if selected_paths else "clean"}
     selected_files = _selected_changed_files(repo, selected_paths) if selected_paths and has_changes else []
     changed_scope = (selected_files if selected_paths else _selected_changed_files(repo, ["."])) if has_changes else []
-    _require_foreign_leases_clear(repo, changed_scope)
     _require_no_sweep(repo, selected_paths, changed_scope)
     try:
         coord.guard(repo, "commit", with_ack=with_ack)
