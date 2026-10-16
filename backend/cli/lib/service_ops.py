@@ -1065,6 +1065,34 @@ def sync_seeds(project: ProjectServices) -> int:
     return run([str(python), "-m", "scripts.export_seeds"], cwd=project.backend_dir, quiet_success=True)
 
 
+API_WAIT_SECONDS = 60
+
+
+def wait_for_summitflow_api(seconds: float = API_WAIT_SECONDS) -> bool:
+    """Give a restarting SummitFlow API up to a minute before a rebuild's first call to it.
+
+    A dependent project's rebuild queued behind SummitFlow's own restart
+    otherwise fails at once on connection refused. Any HTTP answer means up.
+    """
+    from st_sdk.config import get_api_base
+
+    url = get_api_base().rstrip("/").removesuffix("/api") + "/health"
+    deadline = time.monotonic() + seconds
+    announced = False
+    while True:
+        try:
+            httpx.get(url, timeout=3.0)
+            return True
+        except httpx.TransportError:
+            if time.monotonic() >= deadline:
+                print(f"[service] SummitFlow API still unreachable after {int(seconds)}s")
+                return False
+            if not announced:
+                print(f"[service] SummitFlow API unreachable; waiting up to {int(seconds)}s for it to come back")
+                announced = True
+            time.sleep(2)
+
+
 def verify_health(project: ProjectServices) -> int:
     errors = 0
     if project.backend_service and project.backend_port > 0:

@@ -23,6 +23,7 @@ from app.tasks.backup_lock import (
 
 from ..lib import service_ops, service_release
 from ..lib.confirm_token import confirm_gate
+from ..lib.service_ops import wait_for_summitflow_api
 from ..lib.usage import usage
 from ..output import output_error
 from .pulse import require_pulse_gate
@@ -488,6 +489,7 @@ def rebuild(
     if unknown or (scope == RebuildScope.frontend and (requested_workers or include_all_workers)):
         output_error("Unknown worker or frontend-only scope combined with worker selection.")
         raise typer.Exit(1)
+    wait_for_summitflow_api()
     require_pulse_gate(services.project_id)
     overlapping_components = (
         services.backend_dir.is_relative_to(services.frontend_dir)

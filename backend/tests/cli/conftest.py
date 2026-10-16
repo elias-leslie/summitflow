@@ -13,6 +13,7 @@ def unit_service_preflight(monkeypatch):
 
     gate = Mock()
     monkeypatch.setattr(service, "require_pulse_gate", gate)
+    monkeypatch.setattr(service, "wait_for_summitflow_api", lambda: True)
     return gate
 
 

@@ -305,3 +305,29 @@ def test_restart_cli_forwards_with_ack_to_rebuild(monkeypatch):
     assert result.exit_code == 0, result.output
     assert rebuild.call_args.kwargs["with_ack"] == "req-1"
     assert rebuild.call_args.kwargs["detach"] is True
+
+
+def test_rebuild_waits_out_a_restarting_summitflow_api(monkeypatch, capsys):
+    import httpx
+
+    answers = [httpx.ConnectError("refused"), httpx.ConnectError("refused"), Mock()]
+    calls: list[str] = []
+
+    def get(url, **_kwargs):
+        calls.append(url)
+        answer = answers.pop(0)
+        if isinstance(answer, Exception):
+            raise answer
+        return answer
+
+    monkeypatch.setattr(service_ops.httpx, "get", get)
+    monkeypatch.setattr(service_ops.time, "sleep", lambda _seconds: None)
+    monkeypatch.setattr("st_sdk.config.get_api_base", lambda: "http://localhost:9/api")
+    assert service_ops.wait_for_summitflow_api() is True
+    assert calls == ["http://localhost:9/health"] * 3
+    assert capsys.readouterr().out.count("waiting up to 60s") == 1
+    clock = iter([0.0, 30.0, 61.0])
+    monkeypatch.setattr(service_ops.time, "monotonic", lambda: next(clock))
+    monkeypatch.setattr(service_ops.httpx, "get", Mock(side_effect=httpx.ConnectError("refused")))
+    assert service_ops.wait_for_summitflow_api() is False
+    assert "still unreachable after 60s" in capsys.readouterr().out
