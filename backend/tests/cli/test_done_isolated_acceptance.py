@@ -698,6 +698,22 @@ def test_isolation_preserves_unsafe_protected_mode_and_fails_the_real_guard(nati
     store.assert_not_called()
 
 
+def test_clone_paths_in_check_output_point_at_retained_copies(tmp_path: Path):
+    from cli.commands.done_task_acceptance import _retarget_clone_paths
+
+    repo, retained = tmp_path / "repo", tmp_path / "repo/.git/st/acceptance/isolated-observations/abc"
+    output = (f"evidence: {repo}/.git/st/acceptance/r.json\n"
+              f"details:.dev-tools/ruff-details.txt and {repo}/.dev-tools/tsc-details.txt\n"
+              f"junit: {repo}/.git/st/native-stages/artifacts/native-python.xml\n"
+              f"nested: {repo}/.git/st/acceptance/isolated-observations/old.log\n")
+    assert _retarget_clone_paths(output, repo, repo / ".git", retained).splitlines() == [
+        f"evidence: {retained}/r.json",
+        f"details:{retained}/ruff-details.txt and {retained}/tsc-details.txt",
+        f"junit: {retained}/native-artifacts/native-python.xml",
+        f"nested: {repo}/.git/st/acceptance/isolated-observations/old.log",
+    ]
+
+
 def test_permission_copy_rejects_changed_content_execute_bit_and_links(native_source, tmp_path: Path):
     from cli.commands.done_task_acceptance import _git, _preserve_equivalent_modes
 
@@ -939,6 +955,8 @@ def test_isolation_rejects_committed_checkout_content_transforms(native_source):
         accept_isolated_revision(repo, sha=sha, scope=("check.py",), task_id="task-source")
     log = Path(str(failure.value).split("retained check evidence: ", 1)[1])
     assert "isolated source materialization" in log.read_text()
+    assert "isolated source materialization" in str(failure.value)
+    assert f"check details: {log.with_suffix('')};" in str(failure.value)
     store.assert_not_called()
 
 

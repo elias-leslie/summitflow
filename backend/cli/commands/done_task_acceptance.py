@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -334,6 +335,20 @@ def _sandbox_command(repo: Path, source: Path, metadata: Path, common: Path,
     return command
 
 
+def _retarget_clone_paths(output: str, repo: Path, common: Path, retained: Path) -> str:
+    """Point the check output's paths into the deleted clone at their retained copies.
+
+    Inside the sandbox the clone sits at the repository's own path, so its
+    receipts and details print as main-checkout paths that never held them.
+    """
+    copies = f"{retained}/"
+    output = output.replace(f"{common}/st/native-stages/artifacts/", f"{retained}/native-artifacts/")
+    output = re.sub(re.escape(f"{common}/st/acceptance/") + r"(?!isolated-observations/)",
+                    lambda _match: copies, output)
+    output = output.replace(f"{repo}/.dev-tools/", copies)
+    return re.sub(r"(?<![\w./-])\.dev-tools/", lambda _match: copies, output)
+
+
 def _capture_isolated(repo: Path, *, sha: str, scope: tuple[str, ...], task_id: str, reuse: bool,
                       coverage: str, required_stages: Sequence[str]) -> tuple[dict[str, Any], dict[str, Any], dict[str, Any] | None]:
     """Capture the exact source and plan; return a reusable receipt for them when one exists."""
@@ -472,9 +487,14 @@ def _run_isolated(repo: Path, before: dict[str, Any], plan: dict[str, Any], *, s
                     for artifact in evidence.iterdir():
                         if artifact.is_file() and not artifact.is_symlink():
                             shutil.copy2(artifact, native_artifacts / artifact.name)
-            log.write_text(result.stdout + "\n" + result.stderr, encoding="utf-8")
+            output = _retarget_clone_paths(result.stdout + "\n" + result.stderr, repo, common, retained)
+            log.write_text(output, encoding="utf-8")
             if result.returncode:
-                raise acceptance.AcceptanceError(f"Isolated full acceptance failed or is unavailable; retained check evidence: {log}")
+                failure = next((line.split("AcceptanceError: ", 1)[1] for line in reversed(output.splitlines())
+                                if "AcceptanceError: " in line), "")
+                raise acceptance.AcceptanceError(
+                    f"Isolated full acceptance failed or is unavailable{': ' + failure if failure else ''}; "
+                    f"check details: {retained}; retained check evidence: {log}")
             lines = [line.removeprefix("ISOLATED_ACCEPTANCE:") for line in result.stdout.splitlines()
                      if line.startswith("ISOLATED_ACCEPTANCE:")]
             if len(lines) != 1:
