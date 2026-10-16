@@ -166,18 +166,23 @@ def require_task_created_paths(repo: Path, sha: str, task: dict[str, Any]) -> No
                 raise acceptance.AcceptanceError(f"Declared task file is missing from the accepted source: {path}")
 
 
+_DEPENDENCY_INPUT_NAMES = frozenset({
+    "package-lock.json", "package.json", "pnpm-lock.yaml", "pnpm-workspace.yaml", "poetry.lock",
+    "pyproject.toml", "requirements.txt", "uv.lock", "yarn.lock",
+})
+
+
 def _bindings(repo: Path, source: Path) -> list[tuple[Path, Path]]:
     """Map same-project local inputs to canonical paths without copying WIP."""
     bindings = [(path, path) for path in _dependency_roots(repo)]
-    # Existing prepared environments may only be borrowed for the committed
-    # lock/configuration inputs. Foreign dependency updates remain untouched.
-    # Both revisions' quality/dependency inputs must agree. The gate registry,
-    # agent guidance and cloud workflows stay in the selected source receipt,
-    # but do not prepare the local Python/frontend environment.
+    # Prepared environments are borrowed, so the dependency manifests and
+    # locks they were built from must match the selected commit. Every other
+    # source input (gate config, guidance, migrations) comes from the clone,
+    # which binds the commit, so older commits stay acceptable.
     inputs = set(acceptance._source_input_paths(repo, _git(repo, "rev-parse", "HEAD")))
     inputs.update(acceptance._source_input_paths(source, _git(source, "rev-parse", "HEAD")))
     for relative in sorted(inputs):
-        if relative == "scripts/lib/tool-registry.json" or relative.startswith((".github/workflows/", ".agents/")):
+        if Path(relative).name not in _DEPENDENCY_INPUT_NAMES:
             continue
         path = repo / relative
         accepted = source / relative
@@ -197,14 +202,12 @@ def _bindings(repo: Path, source: Path) -> list[tuple[Path, Path]]:
         if not path.is_file() or not path.resolve().is_relative_to(repo):
             raise acceptance.AcceptanceError("Local acceptance configuration escapes this project")
         relative = path.relative_to(repo)
-        accepted = source / relative
         if _git(repo, "ls-files", "--", relative.as_posix()):
-            if not accepted.is_file() or accepted.read_bytes() != path.read_bytes():
-                raise acceptance.AcceptanceError("Acceptance configuration differs from the committed task source; commit the owned configuration first")
-        else:
-            accepted.parent.mkdir(parents=True, exist_ok=True)
-            accepted.touch()
-            bindings.append((path, path))
+            continue  # The clone already holds the commit's version.
+        accepted = source / relative
+        accepted.parent.mkdir(parents=True, exist_ok=True)
+        accepted.touch()
+        bindings.append((path, path))
     for original, canonical in bindings:
         candidate = source / canonical.relative_to(repo)
         if original.is_dir():

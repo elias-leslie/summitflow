@@ -183,15 +183,47 @@ def _local_gate_inputs(repo: Path) -> dict[str, Any]:
     return payload
 
 
+def _receipt_local_inputs(repo: Path) -> dict[str, Any]:
+    """Local gate inputs plus the ~/.env.local gate keys receipts validate.
+
+    The keys sit outside the fingerprint (which binds the whole file), so
+    reuse and stage cache keys do not change.
+    """
+    return {**_local_gate_inputs(repo), "home_gate_keys": _home_gate_keys()}
+
+
+def _home_gate_keys() -> dict[str, str]:
+    """SHA-256 of each gate-environment key ~/.env.local sets.
+
+    Isolated runs mount this file and test suites load it with override, so
+    these keys pick the test database and runner options. Other projects'
+    keys in the same file cannot change this gate's outcome.
+    """
+    path = Path.home() / ".env.local"
+    try:
+        with path.open(encoding="utf-8") as stream:
+            bindings = list(parse_stream(stream))
+    except FileNotFoundError:
+        return {}
+    except (OSError, UnicodeError):
+        return {"": "unreadable"}
+    if any(binding.error for binding in bindings):
+        return {"": hashlib.sha256(path.read_bytes()).hexdigest()}
+    values = {binding.key: binding.value for binding in bindings
+              if binding.key in _GATE_ENVIRONMENT_NAMES and binding.value is not None}
+    return {key: hashlib.sha256(value.encode()).hexdigest() for key, value in sorted(values.items())}
+
+
 def _outcome_local_inputs(repo: Path, commit: str, local_inputs: Mapping[str, Any]) -> dict[str, Any]:
     """The recorded local inputs that can still change a commit's gate outcome.
 
     Receipt validation compares only these, so unrelated host drift does not
-    void a receipt. Dropped: ~/.env.local (a shared all-project file that
-    gate stages never read, since they run with their own HOME), files the
-    commit tracks (the commit already binds them, e.g. .st-check.toml), and
-    file ownership/link/size metadata (content is what a test reads).
-    Kept: untracked project env files by content and the gate environment.
+    void a receipt. ~/.env.local is shared by every project, so only its
+    gate-environment keys count (receipts older than that record fall back
+    to the whole file). Dropped: files the commit tracks (the commit already
+    binds them, e.g. .st-check.toml) and file ownership/link/size metadata
+    (content is what a test reads). Kept: untracked project env files by
+    content and the gate environment.
     """
     labels = {name: path for name, path in _local_gate_file_candidates(repo)}
     relative = {name: path.relative_to(repo).as_posix() for name, path in labels.items() if path.is_relative_to(repo)}
@@ -199,14 +231,16 @@ def _outcome_local_inputs(repo: Path, commit: str, local_inputs: Mapping[str, An
     if relative:
         listed = _git(repo, ["ls-tree", "--name-only", "-z", commit, "--", *(f":(literal){path}" for path in relative.values())])
         tracked = set(listed.stdout.split("\0")) if not listed.returncode else set()
+    home_keys = local_inputs.get("home_gate_keys")
     files = []
     for entry in local_inputs.get("files", []):
         name = entry.get("name") if isinstance(entry, dict) else None
-        if name not in relative or relative[name] in tracked:
+        legacy_home = name == "~/.env.local" and home_keys is None
+        if not legacy_home and (name not in relative or relative[name] in tracked):
             continue
         files.append({"name": name, "state": entry.get("state"), "sha256": entry.get("sha256")})
     return {"files": sorted(files, key=lambda item: str(item["name"])),
-            "environment": local_inputs.get("environment", [])}
+            "environment": local_inputs.get("environment", []), "home_gate_keys": home_keys}
 
 
 def _git(
@@ -594,7 +628,7 @@ def source_identity(repo: Path, *, sha: str = "HEAD", execution_basis: str = "ac
         if actual != execution["materialization"]:
             raise AcceptanceError("isolated source materialization differs from canonical Git inputs; checkout transformations are unsupported")
     working_materialization = working_source_materialization_identity(repo)
-    local_inputs = _local_gate_inputs(repo)
+    local_inputs = _receipt_local_inputs(repo)
     source = {
         "commit": commit,
         "tree": tree,
@@ -1263,8 +1297,11 @@ def validate_acceptance_receipt(
         if execution != recorded_execution:
             raise AcceptanceError("accepted source materialization no longer matches its consumed source binding")
     recorded_local = inputs.get("local_inputs")
+    current_local = _receipt_local_inputs(repo)
+    if isinstance(recorded_local, dict) and "home_gate_keys" not in recorded_local:
+        current_local.pop("home_gate_keys")  # older receipt: whole-file check
     if not isinstance(recorded_local, dict) or (
-            _outcome_local_inputs(repo, commit, _local_gate_inputs(repo))
+            _outcome_local_inputs(repo, commit, current_local)
             != _outcome_local_inputs(repo, commit, recorded_local)):
         raise AcceptanceError("accepted local environment/configuration inputs no longer match")
     current_plan = requested_plan(repo, commit=commit if recorded_execution["basis"] == "isolated" else None,

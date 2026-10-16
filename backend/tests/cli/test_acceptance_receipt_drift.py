@@ -69,3 +69,28 @@ def test_in_place_receipt_for_head_survives_another_agents_uncommitted_work(acce
     (repo / "new_wip.py").write_text("draft = True\n", encoding="utf-8")
     validated = acceptance.validate_acceptance_receipt(repo, Path(receipt["acceptance_artifact"]), sha="HEAD")
     assert validated["source_commit"] == receipt["source_commit"]
+
+
+@pytest.mark.parametrize("line", ["TEST_DATABASE_URL=postgresql://other/test\n", "DATABASE_ADMIN_URL=postgresql://admin/other\n"])
+def test_receipt_binds_gate_keys_of_the_shared_home_env(accepted, line: str) -> None:
+    repo, home, receipt = accepted
+    # Isolated runs mount ~/.env.local and suites load it with override, so a
+    # key that picks the test database still voids the receipt.
+    (home / ".env.local").write_text("OTHER_PROJECT_KEY=one\n" + line, encoding="utf-8")
+    with pytest.raises(acceptance.AcceptanceError, match="local environment/configuration inputs no longer match"):
+        acceptance.validate_acceptance_receipt(repo, Path(receipt["acceptance_artifact"]), sha=receipt["source_commit"])
+
+
+def test_receipt_without_home_gate_keys_falls_back_to_whole_home_file(accepted) -> None:
+    import json
+
+    repo, home, receipt = accepted
+    artifact = Path(receipt["acceptance_artifact"])
+    value = json.loads(artifact.read_text(encoding="utf-8"))
+    del value["inputs"]["local_inputs"]["home_gate_keys"]
+    value["acceptance_id"] = acceptance._receipt_digest(value)
+    artifact.write_text(json.dumps(value), encoding="utf-8")
+    assert acceptance.validate_acceptance_receipt(repo, artifact, sha=receipt["source_commit"])
+    (home / ".env.local").write_text("OTHER_PROJECT_KEY=two\n", encoding="utf-8")
+    with pytest.raises(acceptance.AcceptanceError, match="local environment/configuration inputs no longer match"):
+        acceptance.validate_acceptance_receipt(repo, artifact, sha=receipt["source_commit"])
