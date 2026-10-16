@@ -180,3 +180,18 @@ def test_unknown_acceptance_basis_is_refused(tmp_path: Path) -> None:
     (tmp_path / ".st-check.toml").write_text('[acceptance]\nbasis = "sometimes"\n')
     with pytest.raises(acceptance.AcceptanceError, match="basis must be"):
         acceptance_coordinator.configured_materialization(tmp_path, "nightshift")
+
+
+def test_slot_waiter_recaptures_a_commit_the_checkout_moved_past(repo: Path, monkeypatch) -> None:
+    accepted = git(repo, "rev-parse", "HEAD")
+    (repo / "later.py").write_text("later = True\n")
+    git(repo, "add", "later.py")
+    git(repo, "commit", "-qm", "another agent's commit")
+    before, _plan, reused = done_task_acceptance._capture_isolated(
+        repo, sha=accepted, scope=(), task_id="", reuse=True, coverage="full", required_stages=())
+    assert before["commit"] == accepted and reused is None
+    git(repo, "reset", "-q", "--hard", accepted)
+    git(repo, "commit", "-q", "--amend", "-m", "rewritten")
+    with pytest.raises(acceptance.AcceptanceError, match="does not contain the accepted commit"):
+        done_task_acceptance._capture_isolated(
+            repo, sha=accepted, scope=(), task_id="", reuse=True, coverage="full", required_stages=())

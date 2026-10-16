@@ -147,6 +147,14 @@ def require_scope_matches_revision(repo: Path, sha: str, scope: tuple[str, ...])
         raise acceptance.AcceptanceError("Task-owned paths have uncommitted changes after the selected acceptance revision")
 
 
+def _require_checkout_contains(repo: Path, sha: str) -> None:
+    """Full proof binds its captured commit; the checkout may only have moved forward meanwhile."""
+    try:
+        _git(repo, "merge-base", "--is-ancestor", sha, "HEAD")
+    except acceptance.AcceptanceError:
+        raise acceptance.AcceptanceError("The checkout does not contain the accepted commit; HEAD was reset or rewritten") from None
+
+
 def require_task_created_paths(repo: Path, sha: str, task: dict[str, Any]) -> None:
     """A declared new file must exist in the accepted task source."""
     context = task.get("context") or {}
@@ -327,7 +335,11 @@ def _capture_isolated(repo: Path, *, sha: str, scope: tuple[str, ...], task_id: 
     with acceptance.repo_lock(repo, purpose="capture isolated acceptance", wait_seconds=acceptance.REPO_LOCK_WAIT_SECONDS):
         _require_local_objects(repo)
         before = acceptance.isolated_input_identity(repo, sha=sha, scope=scope)
-        require_scope_matches_revision(repo, before["commit"], scope)
+        if scope:
+            require_scope_matches_revision(repo, before["commit"], scope)
+        else:
+            # A slot waiter recaptures after other agents may have committed.
+            _require_checkout_contains(repo, before["commit"])
         plan = acceptance.requested_plan(repo, commit=before["commit"], coverage=coverage, scope=scope, required_stages=required_stages)
         if not reuse:
             return before, plan, None
@@ -469,6 +481,9 @@ def _run_isolated(repo: Path, before: dict[str, Any], plan: dict[str, Any], *, s
                                                          scope=scope, required_stages=required_stages)
                 if after != before or current_plan != plan:
                     raise acceptance.AcceptanceError("Consumed source or local inputs changed during isolated acceptance; retry with stable prepared inputs")
-                require_scope_matches_revision(repo, before["commit"], scope)
+                if scope:
+                    require_scope_matches_revision(repo, before["commit"], scope)
+                else:
+                    _require_checkout_contains(repo, before["commit"])
                 persisted = acceptance.persist_validated_receipt(repo, receipt, sha=before["commit"], evidence_directory=evidence)
             return {**persisted, "task_id": task_id, "scope": list(scope)}

@@ -968,3 +968,38 @@ def test_declared_created_file_must_exist_in_accepted_source(native_source):
     with pytest.raises(acceptance.AcceptanceError, match="Declared task file is missing"):
         require_task_created_paths(repo, sha, {"context": {"files_to_create": ["missing.py"]}})
     require_task_created_paths(repo, sha, {"context": {"files_to_create": ["check.py"]}})
+
+
+@pytest.mark.parametrize("move", ["advance", "rewrite"])
+def test_full_isolated_proof_survives_head_advancing_but_not_a_rewrite(native_source, monkeypatch, move):
+    """Other agents commit during a rebuild's acceptance; the receipt binds the captured commit."""
+    from cli.commands import done_task_acceptance
+
+    repo, sha, _store = native_source
+    original = done_task_acceptance.heavy_work
+
+    class ForeignCommit:
+        def __enter__(self):
+            self.manager = original("isolated head movement regression")
+            self.work = self.manager.__enter__()
+            return self
+
+        def run(self, command, **kwargs):
+            parent = ["-p", sha] if move == "advance" else []
+            moved = git(repo, "commit-tree", f"{sha}^{{tree}}", *parent, "-m", "foreign commit")
+            git(repo, "update-ref", "refs/heads/main", moved)
+            return self.work.run(command, **kwargs)
+
+        def __exit__(self, *args):
+            return self.manager.__exit__(*args)
+
+    monkeypatch.setattr(done_task_acceptance, "heavy_work", lambda purpose: ForeignCommit())
+    if move == "rewrite":
+        with pytest.raises(acceptance.AcceptanceError, match="does not contain the accepted commit"):
+            accept_isolated_revision(repo, sha=sha, scope=(), task_id="")
+        return
+    result = accept_isolated_revision(repo, sha=sha, scope=(), task_id="")
+    assert result["state"] == "success" and result["source_commit"] == sha
+    assert git(repo, "rev-parse", "HEAD") != sha
+    found = acceptance.receipt_for_commit(repo, sha, "full")
+    assert found is not None and found["acceptance_id"] == result["acceptance_id"]
