@@ -892,3 +892,184 @@ def test_release_installer_must_live_inside_the_project(monkeypatch, tmp_path, v
     monkeypatch.setattr(service_ops, "get_project_identity_root", lambda _: str(tmp_path))
     with pytest.raises(service_ops.ServiceError, match="release_install"):
         service_ops.load_project("example")
+
+
+def _mock(patched: object) -> Mock:
+    assert isinstance(patched, Mock)
+    return patched
+
+
+def _phases() -> list[tuple[str, str | None]]:
+    return [(call.args[1], call.kwargs.get("status")) for call in _mock(service_release.mark_phase).call_args_list]
+
+
+def test_full_rebuild_marks_release_phases_in_order(lifecycle):
+    result = CliRunner().invoke(service.app, ["rebuild", "example"])
+
+    assert result.exit_code == 0, result.output
+    assert _phases() == [
+        ("deployment_scope", "selected"), ("infrastructure", "succeeded"),
+        ("backend_dependencies", "succeeded"), ("host_monitor_build", "succeeded"),
+        ("frontend_build", "succeeded"), ("migrations", "succeeded"), ("systemd_units", "succeeded"),
+        ("host_monitor_policy", "succeeded"), ("restart", "succeeded"), ("health", "succeeded"),
+        ("seeds", "succeeded"),
+    ]
+    restart = _mock(service_release.mark_phase).call_args_list[-3]
+    assert restart.kwargs["services"] == ["backend.service", "required.service", "active.service", "frontend.service"]
+    _mock(service_release.fail_release).assert_not_called()
+    _mock(service_release.complete_release).assert_called_once()
+    assert "[service] worker required.service: active" in result.output
+
+
+def test_frontend_rebuild_marks_migrations_not_applicable_in_sequence(lifecycle):
+    result = CliRunner().invoke(service.app, ["rebuild", "example", "--scope", "frontend"])
+
+    assert result.exit_code == 0, result.output
+    assert _phases() == [
+        # Recorded while the step list is built, before any step runs.
+        ("deployment_scope", "selected"), ("migrations", "not_applicable"),
+        ("infrastructure", "succeeded"), ("backend_dependencies", "succeeded"),
+        ("frontend_build", "succeeded"), ("systemd_units", "succeeded"), ("restart", "succeeded"),
+        ("health", "succeeded"), ("seeds", "succeeded"),
+    ]
+    restarted = [call.args[0] for call in lifecycle["restart_service"].call_args_list]
+    assert restarted == ["frontend.service"]
+
+
+def test_seed_failure_fails_release_after_health(lifecycle, monkeypatch):
+    restore = Mock(return_value=True)
+    monkeypatch.setattr(service, "_restore_previous_units", restore)
+    lifecycle["sync_seeds"].return_value = 1
+
+    result = CliRunner().invoke(service.app, ["rebuild", "example"])
+
+    assert result.exit_code == 1
+    assert _phases()[-3:] == [("restart", "succeeded"), ("health", "succeeded"), ("seeds", "failed")]
+    restore.assert_called_once()
+    _mock(service_release.fail_release).assert_called_once()
+    assert _mock(service_release.fail_release).call_args.args[1] == "restart_health"
+    assert _mock(service_release.fail_release).call_args.kwargs == {
+        "migrations": "applied; automatic database rollback is unsupported"}
+    assert "rebuild completed with 1 error(s)" in result.output
+    _mock(service_release.complete_release).assert_not_called()
+
+
+def test_restart_failure_skips_seeds_and_reports_every_error(lifecycle, monkeypatch):
+    monkeypatch.setattr(service, "_restore_previous_units", Mock(return_value=True))
+    lifecycle["restart_service"].side_effect = lambda name, **_kwargs: int(name == "backend.service")
+    lifecycle["verify_health"].return_value = 1
+
+    result = CliRunner().invoke(service.app, ["rebuild", "example"])
+
+    assert result.exit_code == 1
+    assert _phases()[-2:] == [("restart", "failed"), ("health", "failed")]
+    lifecycle["sync_seeds"].assert_not_called()
+    assert "rebuild completed with 2 error(s)" in result.output
+
+
+def test_failed_unit_sync_restores_units_and_stops_before_restart(lifecycle, monkeypatch):
+    restore = Mock(return_value=True)
+    monkeypatch.setattr(service, "_restore_previous_units", restore)
+    lifecycle["sync_systemd_units"].return_value = 1
+
+    result = CliRunner().invoke(service.app, ["rebuild", "example"])
+
+    assert result.exit_code == 1
+    assert _phases()[-1] == ("systemd_units", "failed")
+    restore.assert_called_once()
+    assert _mock(service_release.fail_release).call_args_list[0].args[1] == "systemd_units"
+    assert "rebuild stopped: systemd units failed; services were not restarted" in result.output
+    lifecycle["restart_service"].assert_not_called()
+
+
+def test_failed_build_step_does_not_restore_units(lifecycle, monkeypatch):
+    restore = Mock(return_value=True)
+    monkeypatch.setattr(service, "_restore_previous_units", restore)
+    lifecycle["build_frontend"].return_value = 1
+
+    result = CliRunner().invoke(service.app, ["rebuild", "example"])
+
+    assert result.exit_code == 1
+    assert _phases()[-1] == ("frontend_build", "failed")
+    restore.assert_not_called()
+    lifecycle["run_migrations"].assert_not_called()
+
+
+@pytest.fixture
+def collector(lifecycle, monkeypatch, project):
+    deployments: list[str] = []
+    monkeypatch.setattr(service, "_load", lambda _: replace(project, project_id="summitflow"))
+    monkeypatch.setattr(service_ops, "has_host_monitor", lambda _project: True)
+    monkeypatch.setattr(service_ops, "preflight_host_monitor", lambda _project: 0)
+    monkeypatch.setattr(service_ops, "verify_host_monitor", lambda _project: 0)
+    monkeypatch.setattr(service_ops, "host_monitor_deployment",
+                        lambda _project, _build, action: deployments.append(action) or 0)
+    monkeypatch.setattr(service, "backup_worker_restart_guard", lambda: nullcontext(lambda: None))
+    rollback = Mock(return_value=True)
+    monkeypatch.setattr(service, "_rollback_monitor_and_reader", rollback)
+    return SimpleNamespace(deployments=deployments, rollback=rollback)
+
+
+def test_collector_rollback_after_health_failure_restarts_previous_reader(lifecycle, collector):
+    lifecycle["verify_health"].return_value = 1
+
+    result = CliRunner().invoke(service.app, ["rebuild", "summitflow"])
+
+    assert result.exit_code == 1
+    assert collector.deployments == ["install"]
+    collector.rollback.assert_called_once()
+    assert collector.rollback.call_args.args[3] is True
+    assert _mock(service_release.fail_release).call_args.args[1] == "restart_health"
+
+
+def test_guard_loss_at_backend_restart_still_counts_restart_as_attempted(
+    lifecycle, collector, monkeypatch
+):
+    from app.tasks.backup_lock import BackupLockLeaseError
+
+    def assert_owned():
+        if collector.deployments:
+            raise BackupLockLeaseError("backup started")
+
+    monkeypatch.setattr(service, "backup_worker_restart_guard", lambda: nullcontext(assert_owned))
+
+    result = CliRunner().invoke(service.app, ["rebuild", "summitflow"])
+
+    assert result.exit_code == 1
+    lifecycle["restart_service"].assert_not_called()
+    collector.rollback.assert_called_once()
+    assert collector.rollback.call_args.args[3] is True
+    assert _mock(service_release.fail_release).call_args.args[1] == "deployment"
+
+
+def test_collector_verification_failure_rolls_back_without_reader_restart(lifecycle, collector, monkeypatch):
+    monkeypatch.setattr(service_ops, "verify_host_monitor", lambda _project: 1)
+
+    result = CliRunner().invoke(service.app, ["rebuild", "summitflow"])
+
+    assert result.exit_code == 1
+    assert "root collector activation failed verification" in result.output
+    lifecycle["restart_service"].assert_not_called()
+    collector.rollback.assert_called_once()
+    assert collector.rollback.call_args.args[3] is False
+
+
+def test_activated_collector_is_listed_as_restarted_without_a_unit_restart(
+    lifecycle, collector, monkeypatch, project
+):
+    monitor = "summitflow-host-monitor.service"
+    monkeypatch.setattr(service, "_load", lambda _: replace(
+        project, project_id="summitflow", default_workers=(monitor,), optional_workers=()))
+    for name in ("build_host_monitor", "sync_host_monitor_policy", "install_st_monitor_launcher"):
+        monkeypatch.setattr(service_ops, name, lambda _project: 0)
+
+    result = CliRunner().invoke(service.app, ["rebuild", "summitflow"])
+
+    assert result.exit_code == 0, result.output
+    assert collector.deployments == ["install", "finalize"]
+    restarted = [call.args[0] for call in lifecycle["restart_service"].call_args_list]
+    assert monitor not in restarted
+    assert restarted == ["backend.service", "frontend.service"]
+    restart = next(call for call in _mock(service_release.mark_phase).call_args_list if call.args[1] == "restart")
+    assert restart.kwargs["services"] == ["backend.service", monitor, "frontend.service"]
+    collector.rollback.assert_not_called()

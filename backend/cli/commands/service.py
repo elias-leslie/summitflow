@@ -6,7 +6,7 @@ import contextlib
 import json
 import os
 import time
-from collections.abc import Mapping
+from collections.abc import Callable, Mapping
 from contextlib import nullcontext, suppress
 from enum import StrEnum
 from pathlib import Path
@@ -258,6 +258,162 @@ def _backup_restart_preflight(*, detach: bool) -> None:
     raise typer.Exit(1)
 
 
+ReleaseStep = tuple[str, Callable[[], int]]
+
+
+def _selected_workers(
+    services: service_ops.ProjectServices,
+    *,
+    backend: bool,
+    include_all_workers: bool,
+    requested_workers: tuple[str, ...],
+) -> tuple[str, ...]:
+    """Capture worker restart intent before any lifecycle mutation.
+
+    Backend and worker scopes share one environment, so all running consumers
+    must receive the update.
+    """
+    if not backend:
+        return ()
+    active_optional = tuple(
+        name for name in services.optional_workers if service_ops.service_state(name) == "active"
+    )
+    return tuple(dict.fromkeys((
+        *services.default_workers,
+        *(services.optional_workers if include_all_workers else active_optional),
+        *requested_workers,
+    )))
+
+
+def _timed_phase(release: service_release.PreparedRelease, name: str, run: Callable[[], int]) -> int:
+    """Run one phase and record it as succeeded only when it returns 0."""
+    started = time.monotonic()
+    result = run()
+    service_release.mark_phase(
+        release,
+        name,
+        status="succeeded" if result == 0 else "failed",
+        duration_seconds=time.monotonic() - started,
+    )
+    return result
+
+
+def _release_steps(
+    services: service_ops.ProjectServices,
+    release: service_release.PreparedRelease,
+    *,
+    backend: bool,
+    development_root: Path,
+) -> list[ReleaseStep]:
+    """List the pre-restart release steps; frontend scope records migrations as not applicable."""
+    steps: list[ReleaseStep] = [("infrastructure", lambda: service_ops.ensure_infra(services))]
+    steps.append(("backend_dependencies", lambda: service_ops.sync_backend(services)))
+    if backend:
+        steps.append(("host_monitor_build", lambda: service_ops.build_host_monitor(services)))
+    steps.append(("frontend_build", lambda: service_ops.build_frontend(services)))
+    if backend:
+        steps.append(("migrations", lambda: service_ops.run_migrations(services)))
+    else:
+        service_release.mark_phase(
+            release,
+            "migrations",
+            status="not_applicable",
+            reason="frontend_restart_scope",
+        )
+    steps.append(("systemd_units", lambda: service_ops.sync_systemd_units(services)))
+    if backend and services.release_install:
+        steps.append(("release_install", lambda: service_ops.run_release_install(
+            services, development_root=development_root, source_commit=release.source.source_commit)))
+    if backend:
+        steps.append(("host_monitor_policy", lambda: service_ops.sync_host_monitor_policy(services)))
+    return steps
+
+
+def _run_release_steps(
+    steps: list[ReleaseStep],
+    release: service_release.PreparedRelease,
+    development_services: service_ops.ProjectServices,
+    assert_backup_restart_owned: Callable[[], None],
+) -> None:
+    """Run each step in order; the first failure fails the release before any restart."""
+    for name, step in steps:
+        assert_backup_restart_owned()
+        if _timed_phase(release, name, step) != 0:
+            if name == "systemd_units":
+                _restore_previous_units(development_services, release)
+            service_release.fail_release(release, name)
+            print(
+                f"[service] rebuild stopped: {name.replace('_', ' ')} failed; "
+                "services were not restarted"
+            )
+            raise typer.Exit(1)
+
+
+def _restart_services(
+    services: service_ops.ProjectServices,
+    release: service_release.PreparedRelease,
+    workers: tuple[str, ...],
+    *,
+    restart_backend: bool,
+    frontend: bool,
+    monitor_activated: bool,
+    assert_backup_restart_owned: Callable[[], None],
+) -> int:
+    """Restart backend, workers, then frontend; return the restart error count.
+
+    The caller decides ``restart_backend`` and marks the backend restart as
+    attempted before calling, so its rollback handlers see it even when the
+    guard or a restart raises here.
+    """
+    errors = 0
+    restarted: list[str] = []
+    restart_started = time.monotonic()
+    if restart_backend and services.backend_service:
+        assert_backup_restart_owned()
+        errors += service_ops.restart_service(
+            services.backend_service, port=services.backend_port
+        ) != 0
+        restarted.append(services.backend_service)
+    for name in workers:
+        if monitor_activated and name == "summitflow-host-monitor.service":
+            restarted.append(name)
+            continue
+        assert_backup_restart_owned()
+        errors += service_ops.restart_service(name) != 0
+        restarted.append(name)
+    if frontend and services.frontend_service:
+        assert_backup_restart_owned()
+        errors += service_ops.restart_service(
+            services.frontend_service, port=services.frontend_port
+        ) != 0
+        restarted.append(services.frontend_service)
+    service_release.mark_phase(
+        release,
+        "restart",
+        status="succeeded" if errors == 0 else "failed",
+        services=restarted,
+        duration_seconds=time.monotonic() - restart_started,
+    )
+    return errors
+
+
+def _verify_and_seed(
+    services: service_ops.ProjectServices,
+    release: service_release.PreparedRelease,
+    workers: tuple[str, ...],
+    errors: int,
+) -> int:
+    """Check health and worker state, sync seeds only when nothing failed; return total errors."""
+    errors += _timed_phase(release, "health", lambda: service_ops.verify_health(services))
+    for name in workers:
+        state = service_ops.service_state(name)
+        print(f"[service] worker {name}: {state}")
+        errors += state != "active"
+    if errors == 0:
+        errors += _timed_phase(release, "seeds", lambda: service_ops.sync_seeds(services)) != 0
+    return errors
+
+
 @app.command()
 @usage(
     surface="st.service.rebuild",
@@ -365,18 +521,10 @@ def rebuild(
             "[service] stable releases build the full accepted source; "
             f"restart scope remains {scope.value}"
         )
-    # Capture intent before any lifecycle mutation. Backend and worker scopes
-    # share one environment, so all running consumers must receive the update.
-    active_optional = tuple(
-        name for name in services.optional_workers if service_ops.service_state(name) == "active"
-    ) if backend else ()
-    workers = tuple(dict.fromkeys((
-        *services.default_workers,
-        *(services.optional_workers if include_all_workers else active_optional),
-        *requested_workers,
-    ))) if backend else ()
+    workers = _selected_workers(
+        services, backend=backend, include_all_workers=include_all_workers, requested_workers=requested_workers
+    )
     start_time = time.time()
-    errors = 0
     release: service_release.PreparedRelease | None = None
     monitor_activated = False
     backend_restart_attempted = False
@@ -403,50 +551,12 @@ def rebuild(
                 f"Rebuilding {services.project_id} (scope: {scope.value}, "
                 f"source: {release.source.source_commit}, build: {release.build_id})"
             )
-            steps = [("infrastructure", lambda: service_ops.ensure_infra(services))]
-            steps.append(("backend_dependencies", lambda: service_ops.sync_backend(services)))
-            if backend:
-                steps.append(("host_monitor_build", lambda: service_ops.build_host_monitor(services)))
-            steps.append(("frontend_build", lambda: service_ops.build_frontend(services)))
-            if backend:
-                steps.append(("migrations", lambda: service_ops.run_migrations(services)))
-            else:
-                service_release.mark_phase(
-                    release,
-                    "migrations",
-                    status="not_applicable",
-                    reason="frontend_restart_scope",
-                )
-            steps.append(("systemd_units", lambda: service_ops.sync_systemd_units(services)))
-            if backend and services.release_install:
-                steps.append(("release_install", lambda: service_ops.run_release_install(
-                    services, development_root=development_root, source_commit=release.source.source_commit)))
-            if backend:
-                steps.append(("host_monitor_policy", lambda: service_ops.sync_host_monitor_policy(services)))
-            for name, step in steps:
-                assert_backup_restart_owned()
-                phase_started = time.monotonic()
-                if step() != 0:
-                    service_release.mark_phase(
-                        release,
-                        name,
-                        status="failed",
-                        duration_seconds=time.monotonic() - phase_started,
-                    )
-                    if name == "systemd_units":
-                        _restore_previous_units(development_services, release)
-                    service_release.fail_release(release, name)
-                    print(
-                        f"[service] rebuild stopped: {name.replace('_', ' ')} failed; "
-                        "services were not restarted"
-                    )
-                    raise typer.Exit(1)
-                service_release.mark_phase(
-                    release,
-                    name,
-                    status="succeeded",
-                    duration_seconds=time.monotonic() - phase_started,
-                )
+            _run_release_steps(
+                _release_steps(services, release, backend=backend, development_root=development_root),
+                release,
+                development_services,
+                assert_backup_restart_owned,
+            )
             if migrate_monitor_store:
                 assert_backup_restart_owned()
                 try:
@@ -474,58 +584,19 @@ def rebuild(
             skipped = [name for name in services.optional_workers if name not in workers]
             if skipped:
                 print("[service] leaving optional workers unchanged: " + " ".join(skipped))
-            restarted: list[str] = []
-            restart_started = time.monotonic()
-            if backend and services.backend_service:
+            restart_backend = bool(backend and services.backend_service)
+            if restart_backend:
                 backend_restart_attempted = True
-                assert_backup_restart_owned()
-                errors += service_ops.restart_service(
-                    services.backend_service, port=services.backend_port
-                ) != 0
-                restarted.append(services.backend_service)
-            for name in workers:
-                if monitor_activated and name == "summitflow-host-monitor.service":
-                    restarted.append(name)
-                    continue
-                assert_backup_restart_owned()
-                errors += service_ops.restart_service(name) != 0
-                restarted.append(name)
-            if frontend and services.frontend_service:
-                assert_backup_restart_owned()
-                errors += service_ops.restart_service(
-                    services.frontend_service, port=services.frontend_port
-                ) != 0
-                restarted.append(services.frontend_service)
-            service_release.mark_phase(
+            errors = _restart_services(
+                services,
                 release,
-                "restart",
-                status="succeeded" if errors == 0 else "failed",
-                services=restarted,
-                duration_seconds=time.monotonic() - restart_started,
+                workers,
+                restart_backend=restart_backend,
+                frontend=frontend,
+                monitor_activated=monitor_activated,
+                assert_backup_restart_owned=assert_backup_restart_owned,
             )
-            health_started = time.monotonic()
-            health_errors = service_ops.verify_health(services)
-            errors += health_errors
-            service_release.mark_phase(
-                release,
-                "health",
-                status="succeeded" if health_errors == 0 else "failed",
-                duration_seconds=time.monotonic() - health_started,
-            )
-            for name in workers:
-                state = service_ops.service_state(name)
-                print(f"[service] worker {name}: {state}")
-                errors += state != "active"
-            if errors == 0:
-                seeds_started = time.monotonic()
-                seed_errors = service_ops.sync_seeds(services) != 0
-                errors += seed_errors
-                service_release.mark_phase(
-                    release,
-                    "seeds",
-                    status="failed" if seed_errors else "succeeded",
-                    duration_seconds=time.monotonic() - seeds_started,
-                )
+            errors = _verify_and_seed(services, release, workers, errors)
             if errors:
                 if monitor_activated:
                     _rollback_monitor_and_reader(services, development_services, release, backend_restart_attempted)
