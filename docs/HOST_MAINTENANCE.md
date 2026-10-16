@@ -46,6 +46,23 @@ query SummitFlow's database or call its API.
 - Unreferenced anonymous Docker volumes retain a 48-hour grace period. Do not
   bypass it during active agent work merely because a volume currently appears
   dangling.
+- Project autosnapshots are whole-`@workspaces` points, so retention is per
+  point: every point from the last 6 hours, one per hour to 24 hours, one per
+  day to 3 days (btrbk keeps the off-machine dailies). Pins, active recovery
+  copies and unclassified state hold a point; a deleted project keeps its
+  newest point 14 days. `st autosnap prune` deletes at most 15 points per run,
+  oldest first, pausing between batches of 5, and exits 1 when any deletion is
+  deferred. `--pressure` keeps only the newest 3 points; `--max-deletes N`
+  changes the cap. It also reaps old unrecorded read-only points in the store.
+- Host maintenance checks pressure on `/` and on the scratch filesystem. When
+  scratch is under pressure it runs `st cleanup reclaim` steps at once: `uv
+  cache prune`, `pnpm store prune`, Hugging Face repos unchanged for 30 days,
+  then scratch retention at the 48-hour pressure age. The cache roots under
+  `/srv/scratch/cache` stay. `st cleanup reclaim --filesystem /srv/scratch
+  --target-free-gib N` runs the same steps on demand and stops at the target.
+- Backups publish `~/.local/state/summitflow/backup-freshness/sources.json`
+  after each scheduler pass: active alert conditions, whether capture is
+  refused for disk space (and since when), and per-source freshness.
 
 ## Operator commands
 

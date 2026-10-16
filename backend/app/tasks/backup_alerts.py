@@ -10,9 +10,11 @@ from __future__ import annotations
 
 import hashlib
 import json
+import os
 import shutil
 from collections.abc import Mapping
 from datetime import UTC, datetime, timedelta
+from pathlib import Path
 from typing import Any
 
 from ..logging_config import get_logger
@@ -30,6 +32,8 @@ PRUNE_OVERDUE_DAYS = 14  # Twice the weekly prune cadence.
 SOURCE_STALE_FACTOR = 2  # Alert when a source has no success in 2x its frequency.
 _CAPACITY_ERROR = "insufficient host-policy headroom"
 OFFLINE_MARKER_SECONDS = 3 * 3600  # Offline sources are retried every tick, refreshing this.
+# Active conditions and per-source freshness for Nightshift, next to the PVE receipt.
+SOURCES_RECEIPT = Path.home() / ".local/state/summitflow/backup-freshness/sources.json"
 
 
 def _offline_key(source_id: str) -> str:
@@ -139,35 +143,47 @@ def _repository_conditions(now: datetime, copies: Mapping[str, Any]) -> dict[str
     return conditions
 
 
-def _source_conditions(now: datetime) -> dict[str, dict[str, str]]:
-    stale: list[str] = []
-    details: list[str] = []
+def _source_statuses(now: datetime) -> dict[str, dict[str, Any]]:
+    """Per enabled source: fresh within twice its schedule (new or powered-off guests count as ok)."""
+    statuses: dict[str, dict[str, Any]] = {}
     sources = {str(source["id"]): source for source in backup_store.list_sources()}
     for row in backup_store.get_backup_health_summary():
-        source = sources.get(str(row["source_id"])) or {}
+        source_id = str(row["source_id"])
+        source = sources.get(source_id) or {}
         if not row.get("enabled") or not source:
             continue
-        window = _FREQUENCY_DELTAS.get(str(source.get("frequency") or "daily"), timedelta(days=1)) * SOURCE_STALE_FACTOR
+        frequency = str(source.get("frequency") or "daily")
+        window = _FREQUENCY_DELTAS.get(frequency, timedelta(days=1)) * SOURCE_STALE_FACTOR
         last_success = _parse(row.get("last_success_at"))
         created = _parse(source.get("created_at"))
-        if last_success and now - last_success <= window:
-            continue
-        if last_success is None and created and now - created <= window:
-            continue
-        if source_offline_since(str(row["source_id"])):
-            continue  # The owner powered the guest off; it resumes when the guest runs.
-        rows, _ = backup_store.list_backups(source_id=str(row["source_id"]), limit=1)
-        latest = rows[0] if rows else {}
-        error = latest.get("error_message") or (f"latest attempt {latest.get('status')}" if latest else "no attempt recorded")
-        age = f"{(now - last_success).total_seconds() / 3600:.0f}h ago" if last_success else "never"
-        stale.append(str(row["source_id"]))
-        details.append(f"{row['source_id']} (last success {age}; {str(error)[:200]})")
+        fresh = bool(last_success and now - last_success <= window) or (last_success is None and created is not None and now - created <= window)
+        offline = None if fresh else source_offline_since(source_id)
+        ok = fresh or bool(offline)
+        error = None
+        if not ok or row.get("last_backup_status") == "failed":
+            rows, _ = backup_store.list_backups(source_id=source_id, limit=1)
+            latest = rows[0] if rows else {}
+            error = latest.get("error_message") or (None if ok else f"latest attempt {latest.get('status')}" if latest else "no attempt recorded")
+        statuses[source_id] = {"ok": ok, "frequency": frequency, "stale_after_hours": round(window.total_seconds() / 3600, 1),
+                               "last_success_at": last_success.isoformat() if last_success else None,
+                               "last_status": row.get("last_backup_status"), "offline_since": offline,
+                               "last_error": str(error)[:500] if error else None}
+    return statuses
+
+
+def _source_conditions(statuses: Mapping[str, Mapping[str, Any]], now: datetime) -> dict[str, dict[str, str]]:
+    stale = sorted(source_id for source_id, status in statuses.items() if not status["ok"])
     if not stale:
         return {}
+    details = []
+    for source_id in stale:
+        last_success = _parse(statuses[source_id]["last_success_at"])
+        age = f"{(now - last_success).total_seconds() / 3600:.0f}h ago" if last_success else "never"
+        details.append(f"{source_id} (last success {age}; {str(statuses[source_id]['last_error'])[:200]})")
     return {"sources-stale": {
         "title": "Backups are overdue",
         "message": f"No successful backup within twice the schedule for: {'; '.join(details)}",
-        "reason": "sources-stale:" + ",".join(sorted(stale)),
+        "reason": "sources-stale:" + ",".join(stale),
     }}
 
 
@@ -251,13 +267,49 @@ def _fingerprint(key: str, reason: str) -> str:
     return hashlib.sha256(json.dumps([key, reason]).encode()).hexdigest()[:16]
 
 
+def _write_sources_receipt(now: datetime, conditions: Mapping[str, Mapping[str, str]], statuses: Mapping[str, Mapping[str, Any]]) -> None:
+    """Atomically publish the active alert conditions for Nightshift; never fails the alert pass.
+
+    ``capture_refused`` is true while backups stop capturing for disk space, and
+    ``capture_refused_since`` keeps the time that streak began.
+    """
+    try:
+        previous: dict[str, Any] = {}
+        try:
+            loaded = json.loads(SOURCES_RECEIPT.read_text())
+            previous = loaded if isinstance(loaded, dict) else {}
+        except (OSError, ValueError):
+            pass
+        refused = "capacity" in conditions
+        since = (previous.get("capture_refused_since") if previous.get("capture_refused") else None) or now.isoformat()
+        receipt = {
+            "schema_version": 1, "generated_at": now.isoformat(), "ok": not conditions,
+            "capture_refused": refused, "capture_refused_since": since if refused else None,
+            "conditions": [{"key": key, "title": condition["title"], "reason": condition["reason"], "message": condition["message"][:1000]}
+                           for key, condition in sorted(conditions.items())],
+            "sources": dict(sorted(statuses.items())),
+        }
+        SOURCES_RECEIPT.parent.mkdir(parents=True, exist_ok=True)
+        temporary = SOURCES_RECEIPT.with_suffix(".tmp")
+        temporary.write_text(json.dumps(receipt, indent=1, default=str) + "\n")
+        os.replace(temporary, SOURCES_RECEIPT)
+    except Exception:
+        logger.exception("backup_sources_receipt_failed")
+
+
 def evaluate_backup_alerts(summary: Mapping[str, Any], *, now: datetime | None = None) -> dict[str, Any]:
     """Raise or clear persistent-failure alerts after each scheduler run."""
     current = now or datetime.now(UTC)
     conditions: dict[str, dict[str, str]] = {}
+    statuses: dict[str, dict[str, Any]] = {}
+
+    def sources() -> dict[str, dict[str, str]]:
+        statuses.update(_source_statuses(current))
+        return _source_conditions(statuses, current)
+
     for name, collect in (
         ("repository", lambda: _repository_conditions(current, summary.get("repository_copy") or {})),
-        ("sources", lambda: _source_conditions(current)),
+        ("sources", sources),
         ("capacity", lambda: _capacity_conditions(summary)),
         ("proxmox", lambda: _proxmox_conditions(current)),
         ("safety", _safety_conditions),
@@ -297,6 +349,7 @@ def evaluate_backup_alerts(summary: Mapping[str, Any], *, now: datetime | None =
         )
         cleared.append(key)
     active = sorted(conditions)
+    _write_sources_receipt(current, conditions, statuses)
     if raised or cleared:
         logger.warning("backup_alerts_changed", raised=raised, cleared=cleared, active=active)
     return {"active": active, "raised": raised, "cleared": cleared}

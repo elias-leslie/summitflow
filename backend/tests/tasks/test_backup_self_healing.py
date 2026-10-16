@@ -19,7 +19,7 @@ from app.tasks import backup_alerts as alerts
 from app.tasks import backup_lock
 from app.tasks import backup_scheduler as scheduler
 
-REAL_SOURCE_CONDITIONS = alerts._source_conditions
+REAL_SOURCE_STATUSES = alerts._source_statuses
 REAL_CAPACITY_CONDITIONS = alerts._capacity_conditions
 
 
@@ -236,12 +236,13 @@ class AlertStore:
 
 
 @pytest.fixture
-def alert_store(monkeypatch):
+def alert_store(monkeypatch, tmp_path):
     store = AlertStore()
     monkeypatch.setattr(alerts, "create_notification", store.create)
     monkeypatch.setattr(alerts, "dismiss_notification", store.dismiss)
     monkeypatch.setattr(alerts.backup_store, "latest_backup_alerts", store.latest)
-    monkeypatch.setattr(alerts, "_source_conditions", lambda now: {})
+    monkeypatch.setattr(alerts, "SOURCES_RECEIPT", tmp_path / "backup-freshness/sources.json")
+    monkeypatch.setattr(alerts, "_source_statuses", lambda now: {})
     monkeypatch.setattr(alerts, "_capacity_conditions", lambda summary: {})
     monkeypatch.setattr(alerts, "_proxmox_conditions", lambda now: {})
     return store
@@ -329,7 +330,7 @@ def test_prune_alerts_after_more_than_two_failed_runs_and_when_overdue(monkeypat
 
 
 def test_stale_sources_alert_names_each_source_and_its_error(monkeypatch, alert_store):
-    monkeypatch.setattr(alerts, "_source_conditions", REAL_SOURCE_CONDITIONS)
+    monkeypatch.setattr(alerts, "_source_statuses", REAL_SOURCE_STATUSES)
     monkeypatch.setattr(alerts, "_restic_backends", lambda: [])
     sources = [
         {"id": "fresh", "frequency": "four_hourly", "created_at": "2026-01-01T00:00:00+00:00"},
@@ -354,6 +355,38 @@ def test_stale_sources_alert_names_each_source_and_its_error(monkeypatch, alert_
     message = alert_store.notifications[0]["message"]
     assert "stale (last success 9h ago; Capture blocked" in message and "fresh" not in message and "new" not in message
     assert "parked" not in message
+
+
+def test_sources_receipt_publishes_per_source_freshness_and_refusal_streak(monkeypatch, alert_store):
+    import json
+
+    monkeypatch.setattr(alerts, "_source_statuses", REAL_SOURCE_STATUSES)
+    monkeypatch.setattr(alerts, "_restic_backends", lambda: [])
+    monkeypatch.setattr(alerts, "source_offline_since", lambda source_id: None)
+    monkeypatch.setattr(alerts.backup_store, "list_sources", lambda: [
+        {"id": "fresh", "frequency": "daily", "created_at": "2026-01-01T00:00:00+00:00"},
+        {"id": "stale", "frequency": "daily", "created_at": "2026-01-01T00:00:00+00:00"}])
+    monkeypatch.setattr(alerts.backup_store, "get_backup_health_summary", lambda: [
+        {"source_id": "fresh", "enabled": True, "last_success_at": NOW - timedelta(hours=3), "last_backup_status": "completed"},
+        {"source_id": "stale", "enabled": True, "last_success_at": NOW - timedelta(days=3), "last_backup_status": "failed"}])
+    monkeypatch.setattr(alerts.backup_store, "list_backups", lambda **_: ([{"status": "failed", "error_message": "Capture blocked: insufficient host-policy headroom"}], 1))
+    refused = {"results": [{"source_id": "stale", "error": "Capture blocked: insufficient host-policy headroom"}]}
+    monkeypatch.setattr(alerts, "_capacity_conditions", REAL_CAPACITY_CONDITIONS)
+    monkeypatch.setenv("SF_HOST_RETENTION_PRESSURE_MIN_FREE_GB", "0")
+    alerts.evaluate_backup_alerts(refused, now=NOW)
+    first = json.loads(alerts.SOURCES_RECEIPT.read_text())
+    assert first["ok"] is False and first["capture_refused"] is True and first["capture_refused_since"] == NOW.isoformat()
+    assert {item["key"] for item in first["conditions"]} == {"sources-stale", "capacity"}
+    assert first["sources"]["fresh"] == {"ok": True, "frequency": "daily", "stale_after_hours": 48.0,
+                                         "last_success_at": (NOW - timedelta(hours=3)).isoformat(), "last_status": "completed",
+                                         "offline_since": None, "last_error": None}
+    assert first["sources"]["stale"]["ok"] is False and "insufficient host-policy headroom" in first["sources"]["stale"]["last_error"]
+    # The streak start survives later runs and clears once capture resumes.
+    alerts.evaluate_backup_alerts(refused, now=NOW + timedelta(hours=1))
+    assert json.loads(alerts.SOURCES_RECEIPT.read_text())["capture_refused_since"] == NOW.isoformat()
+    alerts.evaluate_backup_alerts({}, now=NOW + timedelta(hours=2))
+    last = json.loads(alerts.SOURCES_RECEIPT.read_text())
+    assert last["capture_refused"] is False and last["capture_refused_since"] is None
 
 
 def test_capacity_alert_on_refused_capture_or_low_free_space(monkeypatch, alert_store, tmp_path):
