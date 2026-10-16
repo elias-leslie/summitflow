@@ -1383,12 +1383,10 @@ def _accept_revision(
         }
         receipt["acceptance_id"] = _receipt_digest(receipt)
         cache_artifact = artifact
-        if state != "success":
-            # A retry of these exact inputs may later pass. Its reusable cache
-            # entry must not erase the failure artifact already given to users.
-            artifact = _receipt_path(repo, receipt["acceptance_id"])
-        else:
-            artifact = _receipt_path(repo, receipt["acceptance_id"])
+        # Every outcome is written under its own immutable id: a retry of these
+        # exact inputs may later pass, and its reusable cache entry must not
+        # erase the failure artifact already given to users.
+        artifact = _receipt_path(repo, receipt["acceptance_id"])
         _write_receipt(artifact, receipt)
         if state == "success":
             # The lookup entry can advance; the evidence hyperlink remains

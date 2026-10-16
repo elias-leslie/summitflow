@@ -773,6 +773,23 @@ def test_later_success_does_not_overwrite_failed_acceptance_evidence(repo: Path)
     assert json.loads(failed_bytes)["state"] == "failed"
 
 
+def test_failed_run_writes_only_its_immutable_receipt_and_success_also_fills_cache(repo: Path) -> None:
+    def fail(command, _cwd):
+        return subprocess.CompletedProcess(command, 1, "failed", "")
+
+    directory = acceptance.acceptance_artifact_directory(repo)
+    with pytest.raises(acceptance.AcceptanceError) as error:
+        acceptance.accept_revision(repo, sha="HEAD", runner=fail)
+    failed_path = Path(str(error.value).split("acceptance evidence: ", 1)[1])
+    assert failed_path.stem == json.loads(failed_path.read_text())["acceptance_id"]
+    assert sorted(directory.glob("*.json")) == [failed_path]
+    successful = acceptance.accept_revision(repo, sha="HEAD", runner=successful_runner([]))
+    accepted_path = Path(successful["acceptance_artifact"])
+    assert accepted_path.stem == successful["acceptance_id"]
+    (cache_path,) = set(directory.glob("*.json")) - {failed_path, accepted_path}
+    assert cache_path.read_bytes() == accepted_path.read_bytes()
+
+
 def test_repo_lock_reports_concurrent_mutation(repo: Path) -> None:
     with (
         acceptance.repo_lock(repo, purpose="first"),
