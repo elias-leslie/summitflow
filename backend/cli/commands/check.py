@@ -13,7 +13,7 @@ import shutil
 import subprocess
 import sys
 import time
-from collections.abc import Iterator
+from collections.abc import Iterator, Sequence
 from contextlib import contextmanager, redirect_stdout
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -140,7 +140,23 @@ _QUEUE_NOTICE_MS = 1000.0
 # Measured per project: a vitest suite whose last run took seconds and little
 # memory (aico: 470 tests, 6.7 s, 164 MB peak) joins the light lane instead of
 # queueing behind full suites. Unmeasured or larger suites stay heavy.
-_MEASURED_LIGHT = {"vitest": (30_000.0, 1024 * 1024)}  # execution ms, peak child RSS KiB
+# Type checks of one file, or of a whole project that takes no paths (tsc),
+# join it when the same scope last ran in about 2 s: a 0.08 s basedpyright
+# check waited 66.9 s behind a full pytest suite in the heavy lane.
+_MEASURED_LIGHT = {  # execution ms, peak child RSS KiB
+    "vitest": (30_000.0, 1024 * 1024),
+    "types": (2_000.0, 1024 * 1024),
+    "tsc": (2_000.0, 1024 * 1024),
+}
+_SCOPED_MEASUREMENTS = frozenset({"types", "tsc"})
+
+
+def _measurement_key(name: str, extra_args: Sequence[str] = ()) -> str | None:
+    """Where a run's timing is kept; None when its scope is not lane-eligible."""
+    if name not in _SCOPED_MEASUREMENTS:
+        return name
+    paths = sum(1 for arg in extra_args if arg and not arg.startswith("-"))
+    return {0: f"{name}:project", 1: f"{name}:file"}.get(paths)
 
 
 def _lane_measurements(root: Path) -> Path | None:
@@ -148,25 +164,26 @@ def _lane_measurements(root: Path) -> Path | None:
     return state / "lane-measurements.json" if state.is_dir() else None
 
 
-def _measured_light(root: Path, name: str) -> bool:
-    limits, path = _MEASURED_LIGHT.get(name), _lane_measurements(root)
-    if limits is None or path is None:
+def _measured_light(root: Path, name: str, extra_args: Sequence[str] = ()) -> bool:
+    limits, path, key = _MEASURED_LIGHT.get(name), _lane_measurements(root), _measurement_key(name, extra_args)
+    if limits is None or path is None or key is None:
         return False
     try:
-        last = json.loads(path.read_text()).get(name) or {}
+        last = json.loads(path.read_text()).get(key) or {}
         return float(last["execution_ms"]) <= limits[0] and int(last["max_rss_kb"]) <= limits[1]
     except (OSError, ValueError, KeyError, TypeError, AttributeError):
         return False
 
 
-def _record_measurement(root: Path, name: str, execution_ms: float, max_rss_kb: int, returncode: int) -> None:
-    path = _lane_measurements(root)
-    if name not in _MEASURED_LIGHT or path is None or returncode not in {0, 1}:
+def _record_measurement(root: Path, name: str, execution_ms: float, max_rss_kb: int, returncode: int,
+                        extra_args: Sequence[str] = ()) -> None:
+    path, key = _lane_measurements(root), _measurement_key(name, extra_args)
+    if name not in _MEASURED_LIGHT or path is None or key is None or returncode not in {0, 1}:
         return
     try:
         values = json.loads(path.read_text()) if path.is_file() else {}
         values = values if isinstance(values, dict) else {}
-        values[name] = {"execution_ms": round(execution_ms, 3), "max_rss_kb": max_rss_kb}
+        values[key] = {"execution_ms": round(execution_ms, 3), "max_rss_kb": max_rss_kb}
         temporary = path.with_name(f".{path.name}.{os.getpid()}.tmp")
         temporary.write_text(json.dumps(values, sort_keys=True))
         os.replace(temporary, path)
@@ -309,7 +326,7 @@ def _execute_tool(root: Path, cwd: Path, name: str, binary: str, base_args: list
     # Only direct adapters of fast, low-memory linters are light.
     # Configured wrappers and all other tools retain the heavy default.
     direct = binary == name or (binary == "npx" and base_args[:1] == [name])
-    work_class = "light" if (name in _LIGHT_TOOLS and direct) or _measured_light(root, name) else "heavy"
+    work_class = "light" if (name in _LIGHT_TOOLS and direct) or _measured_light(root, name, extra_args) else "heavy"
     parity = ci_parity.active() and ci_parity.has_ci(root)
     remote = (_run_on_ci_runner(root, command, cwd, report)
               if name == "pytest" and work_class == "heavy" and not extra_args and not parity else None)
@@ -335,7 +352,7 @@ def _execute_tool(root: Path, cwd: Path, name: str, binary: str, base_args: list
         execution_ms = (time.monotonic() - started) * 1000
         # Largest single child so far: conservative when earlier tools ran first.
         _record_measurement(root, name, execution_ms,
-                            resource.getrusage(resource.RUSAGE_CHILDREN).ru_maxrss, result.returncode)
+                            resource.getrusage(resource.RUSAGE_CHILDREN).ru_maxrss, result.returncode, extra_args)
         timing = (f"|lane:{work.lane}|queue_ms:{queue_ms:.3f}"
                   f"|execution_ms:{execution_ms:.3f}")
         if work.waited_behind and queue_ms >= _QUEUE_NOTICE_MS:
@@ -760,7 +777,7 @@ def _native_legacy_checks(root: Path, plan: dict[str, object], configs: dict[str
 @usage(
     surface="st.check",
     cmd="st check --quick --changed-only",
-    when="verify changes before committing or claiming a fix",
+    when="iterate on a failing check; st commit already runs the quick check",
     precautions=(
         "never raw pytest/vitest/biome/tsc/ruff/sqlfluff/squawk",
         "st check codeql: GitHub CodeQL alert state after code-scanning work",
