@@ -131,12 +131,8 @@ def _pulse_payloads(
 @app.command()
 @usage(
     surface="st.pulse",
-    cmd="st pulse --gate",
-    when="implementation ownership or cross-project lane state matters",
-    precautions=(
-        "run once; PREFLIGHT clear: edit without re-checking; blocked: fix only listed reasons",
-    ),
-    tier="mandate",
+    cmd="st pulse",
+    when="read live lane and ownership state when a hint or refusal points at it",
 )
 def pulse(
     project_id: Annotated[

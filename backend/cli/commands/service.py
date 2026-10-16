@@ -424,6 +424,7 @@ def _verify_and_seed(
     ),
     precautions=(
         "explicit project, not cwd; resolve blockers its preflight reports",
+        "no ask needed: deploys committed HEAD only; preflight refuses when unsafe",
         "full scope for shared or uncertain changes; worker scope includes backend consumers",
         "required and active optional workers restart automatically; --include-all-workers also starts inactive optional workers",
     ),

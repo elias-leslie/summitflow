@@ -1,0 +1,38 @@
+"""Startup mandate wording for st pulse and st service rebuild."""
+
+from __future__ import annotations
+
+import json
+
+from typer.testing import CliRunner
+
+from cli.commands.tools import app as tools_app
+
+runner = CliRunner()
+
+
+def _spec(surface: str) -> dict:
+    result = runner.invoke(tools_app, ["manifest", "--surface", surface, "--format", "json"])
+    assert result.exit_code == 0, result.output
+    return json.loads(result.output)["tools"][0]
+
+
+def test_pulse_is_no_longer_a_mandate() -> None:
+    spec = _spec("st.pulse")
+    assert spec["tier"] == "reference"
+    assert spec["cmd"] == "st pulse"
+    assert "precautions" not in spec
+
+
+def test_rebuild_needs_no_permission_ask() -> None:
+    spec = _spec("st.service.rebuild")
+    assert spec["tier"] == "mandate"
+    assert any(item.startswith("no ask needed: deploys committed HEAD only") for item in spec["precautions"])
+
+
+def test_startup_inject_lists_pulse_only_as_a_reference() -> None:
+    result = runner.invoke(tools_app, ["manifest", "--format", "inject", "--density", "core"])
+    assert result.exit_code == 0, result.output
+    mandates, _, references = result.output.partition("references:")
+    assert "\n- st pulse" not in mandates
+    assert "- st pulse — " in references
