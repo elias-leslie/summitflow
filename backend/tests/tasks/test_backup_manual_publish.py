@@ -7,6 +7,7 @@ import pytest
 
 from app.tasks import backup_manual_publish as manual
 
+REAL_PUBLICATION_LOCK = manual._publication_lock
 HEAD = "a" * 40
 OLD = "b" * 40
 
@@ -15,7 +16,7 @@ OLD = "b" * 40
 def dependencies(monkeypatch, tmp_path):
     mocks = {
         "source": Mock(return_value={"id": "source", "project_id": "project", "path": str(tmp_path), "enabled": True, "source_type": "project"}),
-        "lock": Mock(side_effect=lambda *_args, **_kwargs: nullcontext()),
+        "lock": Mock(side_effect=lambda *_args, **_kwargs: nullcontext(True)),
         "root_path": Mock(side_effect=lambda project: str(tmp_path) if project == "project" else None),
         "publish": Mock(return_value={"status": "published", "head": HEAD, "publication_complete": True}),
         "record": Mock(),
@@ -24,7 +25,7 @@ def dependencies(monkeypatch, tmp_path):
     monkeypatch.setattr(manual.backup_store, "get_latest_backup", Mock(side_effect=AssertionError("Sharing is independent of backups")))
     monkeypatch.setattr(manual.backup_store, "merge_backup_verification_json", Mock(side_effect=AssertionError("Preserve backup history")))
     monkeypatch.setattr(manual, "publication_receipt_directory", lambda _: tmp_path / "publication")
-    for name, target in {"lock": "repo_lock", "root_path": "get_project_root_path",
+    for name, target in {"lock": "_publication_lock", "root_path": "get_project_root_path",
                          "publish": "publish_source", "record": "record_publication_observation"}.items():
         monkeypatch.setattr(manual, target, mocks[name])
     mocks["root"] = tmp_path
@@ -96,10 +97,28 @@ def test_disabled_backup_schedule_does_not_disable_manual_publication(dependenci
     assert manual.publish_project_now("source", HEAD)["publication_complete"]
 
 
-def test_busy_repository_does_not_publish(dependencies):
-    dependencies["lock"].side_effect = manual.AcceptanceError("repo_mutation_in_progress")
-    assert manual.publish_project_now("source", HEAD)["reason"] == "repository_busy"
+def test_concurrent_publication_of_the_same_repository_defers(dependencies, monkeypatch):
+    monkeypatch.setattr(manual, "_publication_lock", REAL_PUBLICATION_LOCK)
+    with REAL_PUBLICATION_LOCK(dependencies["root"]) as held:
+        assert held
+        assert manual.publish_project_now("source", HEAD)["reason"] == "publication_busy"
     dependencies["publish"].assert_not_called()
+    assert manual.publish_project_now("source", HEAD)["publication_complete"]
+
+
+def test_publication_never_takes_the_repository_mutation_lock(dependencies, monkeypatch, tmp_path):
+    """Publication waits for heavy admission during verification; holding the
+    shared repo lock then would invert lock order with acceptance finalizers
+    and stall commits, so a held repo lock must neither block nor be taken."""
+    import subprocess
+
+    from cli.lib.acceptance import repo_lock
+
+    subprocess.run(["git", "init", "-q", str(tmp_path)], check=True)
+    monkeypatch.setattr(manual, "_publication_lock", REAL_PUBLICATION_LOCK)
+    with repo_lock(tmp_path, purpose="isolated acceptance finalize"):
+        result = manual.publish_project_now("source", HEAD)
+    assert result["publication_complete"] and result["evidence_recorded"]
 
 
 def test_observation_of_different_source_cannot_report_publication(dependencies):

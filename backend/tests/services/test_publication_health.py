@@ -22,75 +22,53 @@ def test_manual_receipt_is_read_without_backup_publication_dependency(monkeypatc
     monkeypatch.setattr(health, "get_latest_backup", lambda **_kwargs: {
         "id": "old", "verification_json": {"publish_before_backup": {"status": "failed"}}})
     monkeypatch.setattr("app.tasks.backup_manual_publish.latest_publication_receipt", lambda *_args: (
-        tmp_path / "manual.json", {"observed_at": "2026-10-03T08:00:00+00:00", "observation": verified()}))
+        tmp_path / "manual.json", {"observed_at": "2026-10-03T08:00:00+00:00", "observation": pushed()}))
 
     result = health.get_project_publication_health("project")
 
-    assert result["state"] == "verified"
+    assert result["state"] == "published"
     assert result["backup_id"] is None
     assert result["evidence"] == str(tmp_path / "manual.json")
 
 
-def verified(**overrides):
-    return {"status": "success", "head": SHA, "publication_complete": True,
-            "observed_at": "2026-10-02T08:00:00+00:00", "reason": "published",
-            "ci": {"state": "success", "sha": SHA},
+def pushed(**overrides):
+    return {"status": "published", "head": SHA, "publication_complete": True,
+            "observed_at": "2026-10-02T08:00:00+00:00", "reason": "source_published",
             "security": {"state": "success", "sha": SHA},
             "acceptance": {"state": "reused", "source_commit": SHA, "acceptance_id": "receipt"}, **overrides}
 
 
+PRIVATE = {"state": "not_required", "reason": "private_repository", "source_commit": SHA}
+
+
 @pytest.mark.parametrize("override", [
-    {"observed_at": None}, {"observed_at": "2026-10-02T08:00:00"},
-    {"acceptance": {}}, {"security": {"state": "not_run"}},
-    {"ci": {"state": "success", "sha": MERGE}},
-    {"ci": {"state": "success"}},
+    {"publication_complete": False}, {"observed_at": None}, {"observed_at": "2026-10-02T08:00:00"},
+    {"acceptance": {}}, {"security": {"state": "not_run"}}, {"security": {"state": "success", "sha": MERGE}},
     {"acceptance": {"state": "reused", "source_commit": MERGE, "acceptance_id": "receipt"}},
+    {"acceptance": {**PRIVATE, "source_commit": MERGE}},
 ])
-def test_incomplete_success_is_never_verified(override):
-    assert health.classify_observation(verified(**override))["state"] != "verified"
+def test_incomplete_push_is_never_published(override):
+    assert health.classify_observation(pushed(**override))["state"] != "published"
 
 
-@pytest.mark.parametrize("checks", [[], [{"name": "workflow: .github/workflows/ci.yml", "state": "pending"}]])
-def test_success_without_any_passing_check_is_pending_not_verified(checks):
-    observation = health.classify_observation(verified(ci={"state": "success", "sha": SHA, "checks": checks}))
-    assert observation["state"] != "verified"
-    assert observation["ci_state"] == "pending"
-    assert health.classify_observation(verified(ci={"state": "success", "sha": SHA, "checks": [
-        *checks, {"name": "backend", "state": "success"}]}))["state"] == "verified"
-
-
-def test_plain_push_without_ci_is_published_not_verified():
-    observation = health.classify_observation(verified(ci={"state": "not_applicable", "sha": SHA}))
-    assert observation["state"] == "published"
-    assert observation["reason"] == "published"
-    text = health.format_publication_health(observation)
-    assert "Manual publication: published;" in text
-    assert "verified" not in text
-    assert health.classify_observation(verified(ci={}))["state"] == "published"
-
-
-@pytest.mark.parametrize("override", [
-    {"publication_complete": False}, {"observed_at": None}, {"acceptance": {}},
-    {"security": {"state": "not_run"}}, {"security": {"state": "success", "sha": MERGE}},
-])
-def test_no_ci_upload_still_requires_exact_acceptance_security_and_source(override):
-    result = verified(ci={"state": "not_applicable", "sha": SHA})
-    result.update(override)
-    assert health.classify_observation(result)["state"] not in {"published", "verified"}
-
-
+def test_private_push_needs_no_receipt_and_ci_never_decides_the_verdict():
+    assert health.classify_observation(pushed(acceptance=PRIVATE))["state"] == "published"
+    # Receipts retained from the retired PR path keep their CI state for display only.
+    legacy = health.classify_observation(pushed(ci={"state": "failed", "sha": SHA}))
+    assert (legacy["state"], legacy["ci_state"]) == ("published", "failed")
+    assert health.classify_observation(pushed())["ci_state"] == "unknown"
+    assert "Manual publication: published;" in health.format_publication_health(health.classify_observation(pushed()))
 
 
 @pytest.mark.parametrize("category", ["publication", "outgoing_security", "codeql"])
-def test_no_ci_uploaded_source_cannot_hide_retained_findings(monkeypatch, category):
-    result = verified(ci={"state": "not_applicable", "sha": SHA})
+def test_published_source_cannot_hide_retained_findings(monkeypatch, category):
     monkeypatch.setattr(health, "get_latest_backup", lambda **_kwargs: {
-        "id": "backup", "verification_json": {"publish_before_backup": result}})
+        "id": "backup", "verification_json": {"publish_before_backup": pushed()}})
     monkeypatch.setattr(health, "get_repair_task", lambda *_args, **_kwargs: {
         "id": "repair", "verification_result": {"publication_repair": {category: {"state": "unresolved"}}}})
     observed = health.get_project_publication_health("project", now=datetime.fromisoformat("2026-10-02T10:00:00+00:00"))
     assert observed["state"] == "blocked" and observed["reason"] == "actionable_repair_findings"
-    assert observed["ci_state"] == "not_applicable" and observed["unresolved_categories"] == [category]
+    assert observed["unresolved_categories"] == [category]
 
 
 @pytest.mark.parametrize("reason", sorted(health._SETUP_FAILURES))
@@ -116,99 +94,58 @@ def test_shared_outage_is_not_a_project_repair_even_with_failed_transport_status
     recorder.assert_not_called()
 
 
-def test_success_does_not_resolve_independent_codeql_findings(monkeypatch):
-    recorder = Mock()
+@pytest.mark.parametrize("acceptance", [pushed()["acceptance"], PRIVATE])
+def test_completed_push_resolves_publication_findings_but_never_codeql(monkeypatch, acceptance):
+    """A later clean push (private ones carry no receipt) must clear an earlier
+    push failure such as remote_push_rejected; storage still proves the failed
+    source is included and the observation is newer."""
+    recorder = Mock(return_value="repair")
     monkeypatch.setattr(health, "record_finding", recorder)
-    health.record_publication_observation("project", verified())
+    result = pushed(acceptance=acceptance)
+    observation = health.classify_observation(result)
+    assert health.record_publication_observation("project", result) == "repair"
+    recorder.assert_any_call("project", "publication", observation, resolved=True)
+    recorder.assert_any_call("project", "outgoing_security", observation, resolved=True, outgoing_scan_verified=True)
+    recorder.assert_any_call("project", "cloud_ci", observation, resolved=True,
+                             resolution_reasons=frozenset({"cloud_ci_missing"}))
+    recorder.assert_any_call("project", "nightly_repair_attempt_failed", observation, resolved=True,
+                             resolution_reasons=frozenset({"nightly_repair_attempt_failed"}))
     assert "codeql" not in {call.args[1] for call in recorder.call_args_list}
 
 
-def test_verified_publication_resolves_only_known_missing_ci_cause(monkeypatch):
+@pytest.mark.parametrize("reason", ["remote_push_rejected", "pre_push_hook_rejected", "remote_base_diverged"])
+def test_failed_push_records_an_unresolved_publication_finding(monkeypatch, reason):
+    recorder = Mock(return_value="repair")
+    monkeypatch.setattr(health, "record_finding", recorder)
+    result = {"status": "failed", "reason": reason, "head": SHA, "observed_at": "2026-10-02T08:00:00+00:00"}
+    assert health.record_publication_observation("project", result) == "repair"
+    recorder.assert_called_once_with("project", "publication", health.classify_observation(result), resolved=False)
+
+
+def test_incomplete_push_resolves_nothing(monkeypatch):
     recorder = Mock()
     monkeypatch.setattr(health, "record_finding", recorder)
-    health.record_publication_observation("project", verified())
-    recorder.assert_any_call(
-        "project", "cloud_ci", health.classify_observation(verified()),
-        resolved=True, resolution_reasons=frozenset({"cloud_ci_missing"}),
-    )
-
-
-def test_accepted_no_ci_publication_resolves_only_acceptance_failures_and_outgoing_scan(monkeypatch):
-    recorder = Mock(return_value="repair")
-    monkeypatch.setattr(health, "record_finding", recorder)
-    result = verified(ci={"state": "not_applicable", "sha": SHA})
-    assert health.record_publication_observation("project", result) == "repair"
-    observation = health.classify_observation(result)
-    assert recorder.call_count == 2
-    recorder.assert_any_call("project", "publication", observation,
-                             resolved=True, resolution_reasons=frozenset({"local_acceptance_failed", "nightly_acceptance_failed"}))
-    recorder.assert_any_call("project", "outgoing_security", observation, resolved=True, outgoing_scan_verified=True)
-
-
-def test_mirror_upload_without_receipt_never_resolves_local_acceptance(monkeypatch):
-    recorder = Mock(return_value="repair")
-    monkeypatch.setattr(health, "record_finding", recorder)
-    mirrored = {"state": "not_required", "reason": "mirror_publication", "source_commit": SHA}
-    result = verified(ci={"state": "not_applicable", "sha": SHA}, acceptance=mirrored, publication_mode="mirror")
-    assert health.classify_observation(result)["state"] == "published"
-    health.record_publication_observation("project", result)
-    assert [call.args[1] for call in recorder.call_args_list] == ["outgoing_security"]
-
-
-def test_verified_mirror_without_receipt_retains_acceptance_failures(monkeypatch):
-    recorder = Mock(return_value="repair")
-    monkeypatch.setattr(health, "record_finding", recorder)
-    mirrored = {"state": "not_required", "reason": "mirror_publication", "source_commit": SHA}
-    result = verified(acceptance=mirrored, publication_mode="mirror")
-    health.record_publication_observation("project", result)
-    recorder.assert_any_call("project", "publication", health.classify_observation(result), resolved=True,
-                             retained_reasons=frozenset({"local_acceptance_failed", "nightly_acceptance_failed"}))
-    accepted = Mock(return_value="repair")
-    monkeypatch.setattr(health, "record_finding", accepted)
-    health.record_publication_observation("project", verified())
-    accepted.assert_any_call("project", "publication", health.classify_observation(verified()), resolved=True,
-                             retained_reasons=frozenset())
-
-
-def test_verified_publication_confirms_only_failed_nightly_repair_and_outgoing_scan(monkeypatch):
-    recorder = Mock(return_value="repair")
-    monkeypatch.setattr(health, "record_finding", recorder)
-    health.record_publication_observation("project", verified())
-    observation = health.classify_observation(verified())
-    recorder.assert_any_call("project", "nightly_repair_attempt_failed", observation, resolved=True,
-                             resolution_reasons=frozenset({"nightly_repair_attempt_failed"}))
-    recorder.assert_any_call("project", "outgoing_security", observation, resolved=True, outgoing_scan_verified=True)
+    health.record_publication_observation("project", pushed(publication_complete=False, status="pending",
+                                                            reason="workflow_effects_authorization_required"))
+    recorder.assert_not_called()
 
 
 def test_reobserve_replays_the_newest_retained_receipt(monkeypatch, tmp_path):
     recorder = Mock(return_value="repair")
     monkeypatch.setattr(health, "record_finding", recorder)
     monkeypatch.setattr(health, "get_project_root_path", lambda _: str(tmp_path))
-    receipt = {k: v for k, v in verified().items() if k != "observed_at"}
+    receipt = {k: v for k, v in pushed().items() if k != "observed_at"}
     monkeypatch.setattr("app.tasks.backup_manual_publish.latest_publication_receipt", lambda *_args: (
         tmp_path / "receipt.json", {"observed_at": "2026-10-03T08:00:00+00:00", "observation": receipt}))
     replay = health.reobserve_retained_publication("project")
-    assert replay is not None and replay["state"] == "verified" and replay["repair_task_id"] == "repair"
+    assert replay is not None and replay["state"] == "published" and replay["repair_task_id"] == "repair"
     assert replay["observed_at"] == "2026-10-03T08:00:00+00:00"
     assert {call.args[1] for call in recorder.call_args_list} >= {"publication", "outgoing_security"}
     monkeypatch.setattr("app.tasks.backup_manual_publish.latest_publication_receipt", lambda *_args: None)
     assert health.reobserve_retained_publication("project") is None
 
 
-@pytest.mark.parametrize("override", [
-    {"publication_complete": False},
-    {"ci": {"state": "pending", "sha": SHA}},
-    {"ci": {"state": "failed", "sha": SHA}},
-    {"ci": {"state": "not_applicable", "sha": SHA}},
-])
-def test_missing_ci_is_not_resolved_by_incomplete_or_failed_publication(monkeypatch, override):
-    recorder = Mock()
-    monkeypatch.setattr(health, "record_finding", recorder)
-    health.record_publication_observation("project", verified(**override))
-    assert "cloud_ci" not in {call.args[1] for call in recorder.call_args_list}
-
-
-@pytest.mark.parametrize("state", ["pending", "unknown", "verified", "published"])
+@pytest.mark.parametrize("state", ["pending", "unknown", "published"])
 @pytest.mark.parametrize("repair_id", [None, "repair"])
 def test_normal_publication_states_allow_local_completion(state, repair_id, monkeypatch):
     monkeypatch.setattr(health, "get_project_publication_health", lambda _pid: {
@@ -224,14 +161,3 @@ def test_unrelated_publication_defect_does_not_gate_local_completion(monkeypatch
     })
     gates = completion_gates({"id": "normal", "project_id": "project", "verification_result": {}})
     assert gates == []
-
-
-def test_private_publication_needs_no_receipt_but_stays_source_bound():
-    private = {"state": "not_required", "reason": "private_repository", "source_commit": SHA}
-    assert health.classify_observation(verified(acceptance=private))["state"] == "verified"
-    assert health.classify_observation(verified(acceptance={**private, "source_commit": MERGE}))["state"] != "verified"
-
-
-def test_fast_forward_publication_is_verified_on_the_accepted_commit_itself():
-    assert health.classify_observation(verified(merge_sha=SHA, ci={
-        "state": "success", "sha": SHA, "pr_checks": {"state": "success", "sha": SHA}}))["state"] == "verified"

@@ -8,12 +8,13 @@ valid full acceptance receipt. The outgoing history/secret verifier and the
 workflow-effects gate run before every push.
 
 Nothing is committed and no checkout changes. Only an owner publication hold
-or an agent's explicit repo hold defers a project; a push is cheap, so live
-editing or heavy work elsewhere never does. A source that failed is not
-retried until a newer commit replaces it; it surfaces in the daily attention
-notification and the existing publication repair task instead. Once a night
-each project also checks that GitHub's branch still contains the last
-published local commit.
+defers a project; a push is cheap, so live editing, agent repo holds or heavy
+work elsewhere never do. A source that failed is not retried until a newer
+commit replaces it; it surfaces in the daily attention notification and the
+existing publication repair task instead. Once a night each project also
+checks that GitHub's branch still contains the last published local commit
+and re-reads CodeQL for the commit GitHub now holds (analysis finishes well
+after a push, so it is never read right after one).
 """
 from __future__ import annotations
 
@@ -34,13 +35,15 @@ logger = get_logger(__name__)
 
 MODES = ("nightly", "mirror", "manual")
 WINDOW_ZONE = ZoneInfo("America/New_York")
-CONTAINMENT_HOUR = 3  # local hour of the nightly GitHub containment check
+CONTAINMENT_HOUR = 3  # local hour of the nightly GitHub containment and CodeQL check
 ACCEPTED_SEARCH_LIMIT = 64
+STALE_UNACCEPTED_SECONDS = 24 * 3600  # public commits waiting this long on acceptance need attention
 _OID = re.compile(r"[0-9a-f]{40}|[0-9a-f]{64}")
 _ATTENTION_REASONS = {"diverged_from_remote", "awaiting_repair", "owner_action_required",
                       "publication_receipt_unreadable", "hold_source_not_on_branch",
-                      "remote_branch_missing", "remote_not_containing_published",
-                      "remote_authentication_unavailable", "workflow_effects_authorization_required"}
+                      "remote_branch_missing", "remote_not_containing_published", "remote_containment_unverified",
+                      "remote_authentication_unavailable", "remote_visibility_unknown",
+                      "workflow_effects_authorization_required"}
 
 
 def publication_mode(project_id: str) -> str:
@@ -104,17 +107,6 @@ def _write_nightly_state(root: Path, value: dict[str, Any]) -> None:
     os.replace(temporary, path)
 
 
-def _hold_lease(project_id: str) -> str | None:
-    """An agent's explicit repo hold freezes publication as well as deploys."""
-    from cli.lib import leases
-
-    try:
-        held = leases.list_active(project_id, kinds=("hold",))
-    except Exception:
-        return None
-    return f"{held[0].purpose or 'hold'} by {held[0].agent_id}" if held else None
-
-
 def _newest_accepted(root: Path, upstream: str, sha: str) -> str | None:
     """Newest first-parent commit after ``upstream`` with a valid full acceptance receipt."""
     from .backup_publish import _acceptance_for_head
@@ -126,20 +118,40 @@ def _newest_accepted(root: Path, upstream: str, sha: str) -> str | None:
     return None
 
 
-def _public(root: Path, branch: str) -> bool | None:
-    """Repository visibility (None when unknown); any non-GitHub remote counts as public."""
+def _identity(root: Path, branch: str) -> tuple[str, int | None, str] | None:
     from ..services.git.utils import network_repository_identity
-    from .backup_publish import is_public, remote_repository
 
     remote = _git(root, "config", "--get", f"branch.{branch}.remote")
     url = remote and _git(root, "remote", "get-url", "--push", remote)
-    identity = network_repository_identity(url) if url else None
+    return network_repository_identity(url) if url else None
+
+
+def _public(root: Path, branch: str) -> tuple[bool | None, str | None]:
+    """Repository visibility, or None with the reason it is unknown.
+
+    Any non-GitHub remote counts as public.
+    """
+    from cli.lib.github_publish import GitHubError
+
+    from .backup_publish import is_public, remote_repository
+
+    identity = _identity(root, branch)
     if identity is None:
-        return True
+        return True, None
     try:
-        return is_public(remote_repository(root, identity))
+        return is_public(remote_repository(root, identity)), None
+    except GitHubError as exc:
+        return None, exc.reason
     except Exception:
-        return None
+        return None, "remote_visibility_unknown"
+
+
+def _waiting_seconds(root: Path, upstream: str, sha: str) -> int | None:
+    """How long the oldest unpublished commit has waited, by committer time."""
+    import time
+
+    times = (_git(root, "log", "--first-parent", "--format=%ct", f"{upstream}..{sha}") or "").split()
+    return int(time.time()) - int(times[-1]) if times else None
 
 
 def select_candidate(project_id: str, root: Path, mode: str, hold: dict[str, Any] | None = None) -> dict[str, Any]:
@@ -179,14 +191,14 @@ def select_candidate(project_id: str, root: Path, mode: str, hold: dict[str, Any
         return {**row, "reason": "diverged_from_remote"}
     if not ahead:
         return {**row, "reason": "up_to_date"}
-    public = _public(root, branch)
+    public, unknown = _public(root, branch)
     if public is None:
-        return {**row, "reason": "remote_visibility_unknown"}
+        return {**row, "reason": unknown or "remote_visibility_unknown"}
     row["visibility"] = "public" if public else "private"
     if public:
         accepted = _newest_accepted(root, upstream, sha)
         if accepted is None:
-            return {**row, "reason": "no_accepted_commit"}
+            return {**row, "reason": "no_accepted_commit", "waiting_seconds": _waiting_seconds(root, upstream, sha)}
         row.update(sha=accepted, unaccepted_later=sha != accepted)
     from .backup_manual_publish import read_publication_receipt
 
@@ -230,20 +242,56 @@ def remote_containment(project_id: str, root: Path, mode: str) -> dict[str, Any]
     published = branch and _git(root, "rev-parse", "--verify", "--quiet", f"{branch}@{{upstream}}^{{commit}}")
     if not remote or not published:
         return None
+    # The tracking ref moves only on a push or fetch. A fetched rewrite
+    # surfaces hourly as diverged_from_remote and a fetched reset is
+    # re-pushed, so the tracking ref is the published baseline here.
     row = {"project_id": project_id, "mode": mode, "action": "check", "sha": published}
+    unverified = {**row, "reason": "remote_containment_unverified"}
+    destination = f"refs/heads/{branch}"
     try:
-        listed = guarded_git(root, "ls-remote", "--refs", remote, f"refs/heads/{branch}")
+        listed = guarded_git(root, "ls-remote", "--refs", remote, destination)
+        if listed.returncode:
+            return unverified
+        rows = listed.stdout.split()
+        if not rows:
+            return {**row, "reason": "remote_branch_missing"}
+        live = rows[0]
+        if live == published:
+            return None
+        if guarded_git(root, "cat-file", "-e", f"{live}^{{commit}}").returncode and \
+                guarded_git(root, "fetch", "--no-tags", remote, destination).returncode:
+            return unverified
+        ancestry = guarded_git(root, "merge-base", "--is-ancestor", published, live).returncode
     except Exception:
+        return unverified
+    if ancestry == 0:
         return None
-    if listed.returncode:
-        return None
-    rows = listed.stdout.split()
-    if not rows:
-        return {**row, "reason": "remote_branch_missing"}
-    live = rows[0]
-    if live == published or _git(root, "merge-base", "--is-ancestor", published, live) is not None:
-        return None
+    if ancestry != 1:
+        return unverified
     return {**row, "reason": "remote_not_containing_published", "detail": live}
+
+
+def observe_codeql(project_id: str, root: Path, mode: str) -> None:
+    """Record CodeQL for the commit GitHub's default branch holds now.
+
+    Runs once a night, long after the day's pushes were analyzed, so it can
+    record success as well as open alerts. Pending or unavailable coverage
+    records nothing and never clears a retained finding.
+    """
+    if mode == "manual" or not (root / ".git").exists():
+        return
+    branch = next((name for name in ("main", "master")
+                   if _git(root, "rev-parse", "--verify", "--quiet", f"refs/heads/{name}")), None)
+    identity = _identity(root, branch) if branch else None
+    if identity is None or identity[0] != "github.com" or identity[1] is not None:
+        return
+    from ..services.publication_security import observe_codeql as observe
+    from ..services.publication_security import record_codeql_observation
+
+    try:
+        record_codeql_observation(root, observe(root, identity[2]), project_id=project_id)
+    except Exception:
+        logger.warning("nightly_publication_codeql_failed", project_id=project_id)
 
 
 def _projects(project_ids: list[str] | None) -> list[tuple[str, Path]]:
@@ -273,6 +321,8 @@ def summary_line(row: dict[str, Any]) -> str:
 
 
 def needs_attention(row: dict[str, Any]) -> bool:
+    if row.get("reason") == "no_accepted_commit":
+        return (row.get("waiting_seconds") or 0) >= STALE_UNACCEPTED_SECONDS
     return row.get("outcome") in {"failed", "blocked"} or row.get("reason") in _ATTENTION_REASONS
 
 
@@ -310,21 +360,18 @@ def run_nightly_publication(*, dry_run: bool = False, now: datetime | None = Non
         except Exception:
             logger.warning("nightly_publication_selection_failed", project_id=project_id)
             candidate = {"project_id": project_id, "mode": mode, "action": "skip", "reason": "selection_failed"}
-        if candidate["action"] != "skip":
-            held = _hold_lease(project_id)
-            if held:
-                candidate = {**candidate, "action": "skip", "reason": "held", "detail": held}
-            elif not dry_run:
-                try:
-                    candidate = execute_candidate(candidate, root)
-                except Exception:
-                    logger.warning("nightly_publication_failed", project_id=project_id)
-                    candidate = {**candidate, "outcome": "failed", "reason": "nightly_publication_unavailable"}
+        if candidate["action"] != "skip" and not dry_run:
+            try:
+                candidate = execute_candidate(candidate, root)
+            except Exception:
+                logger.warning("nightly_publication_failed", project_id=project_id)
+                candidate = {**candidate, "outcome": "failed", "reason": "nightly_publication_unavailable"}
         rows.append(candidate)
         if containment and not dry_run:
             check = remote_containment(project_id, root, mode)
             if check:
                 rows.append(check)
+            observe_codeql(project_id, root, mode)
     if not dry_run:
         _notify(rows, now)
     return {"status": "dry_run" if dry_run else "completed", "projects": rows}

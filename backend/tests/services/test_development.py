@@ -115,18 +115,6 @@ def test_publication_reads_only_authenticated_current_receipts(tmp_path, mocker)
     reader.assert_called_once_with(tmp_path, "alpha", directory=directory)
 
 
-def test_publication_pushed_with_failed_ci_is_a_blocked_verdict_not_published(tmp_path, mocker):
-    sha = "a" * 40
-    mocker.patch("app.tasks.backup_manual_publish.latest_publication_receipt", return_value=(tmp_path / "r.json", {
-        "source_commit": sha, "observed_at": "2026-10-15T06:00:00+00:00",
-        "observation": {"status": "published", "reason": "pushed", "pushed": True, "publication_complete": True,
-                        "head": sha, "ci": {"state": "failed", "sha": sha}},
-    }))
-    result = service._publication(tmp_path, tmp_path, "alpha")
-    assert result["pushed"] is True
-    assert (result["verdict"], result["verdict_reason"], result["ci_state"]) == ("blocked", "remote_ci_failed", "failed")
-
-
 def test_native_runtime_reads_trusted_store_independently_of_task_history(tmp_path, mocker):
     mocker.patch.object(service, "current_source_root", return_value=None)
     directory = tmp_path / "native"

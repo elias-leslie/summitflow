@@ -52,7 +52,6 @@ def source(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> dict:
     monkeypatch.setattr(publish, "_git", routed)
     monkeypatch.setattr(publish, "_acceptance_for_head", lambda _repo, _head: {"state": "missing"})
     monkeypatch.setattr(publish, "remote_repository", lambda *_: {"private": True, "default_branch": "main"})
-    monkeypatch.setattr(publish, "_codeql_after_publication", lambda *_: {"state": "unavailable", "reason": "fixture_only"})
     monkeypatch.setattr(outgoing, "verify_outgoing", Mock(return_value=Mock(commits_scanned=1, refs_checked=1)))
     return {"id": "fixture", "path": str(project), "source_type": "project", "enabled": True, "project_id": "fixture",
             "remote": remote}
@@ -342,14 +341,45 @@ def test_verifier_sees_the_exact_fast_forward_update(source, monkeypatch):
     assert verifier.call_args.kwargs["published_bases"] == (base,)
 
 
-def test_codeql_is_observed_after_a_github_push(source, monkeypatch):
-    codeql = Mock(return_value={"state": "unavailable", "reason": "fixture_only"})
-    monkeypatch.setattr(publish, "_codeql_after_publication", codeql)
-    head = _head(source)
-    result = publish.publish_source(source, head)
-    assert result["codeql"] == {"state": "unavailable", "reason": "fixture_only"}
-    codeql.assert_called_once()
-    assert codeql.call_args.args[-1] == head
+def test_pre_push_hook_rejection_is_a_finding_not_a_transport_blip(source, monkeypatch, tmp_path):
+    """A refusing pre-push hook (such as the pinned outgoing verifier) prints no
+    porcelain ref line; it must still reach repair instead of retrying silently."""
+    hooks = tmp_path / "hooks"
+    hooks.mkdir()
+    (hooks / "pre-push").write_text("#!/bin/sh\necho hook-diagnostic >&2\nexit 1\n")
+    (hooks / "pre-push").chmod(0o755)
+    remote = source["remote"]
+    original = publish._git
+    before = _remote_main(source)
+
+    def hooked(repo, *args):
+        if args[0] == "push":
+            return subprocess.run(["git", "-c", f"url.{remote}.insteadOf={_URL}", "-c", f"core.hooksPath={hooks}",
+                                   "-C", str(repo), *args], capture_output=True, text=True, check=False)
+        return original(repo, *args)
+
+    monkeypatch.setattr(publish, "_git", hooked)
+    result = publish.publish_source(source, _head(source))
+    assert result["status"] == "failed" and result["reason"] == "pre_push_hook_rejected"
+    assert not result["publication_complete"] and _remote_main(source) == before
+    assert "hook-diagnostic" not in json.dumps(result)
+
+    def dropped(repo, *args):
+        if args[0] == "push":
+            return subprocess.CompletedProcess(args, 128, "", "fatal: Could not read from remote repository.")
+        return original(repo, *args)
+
+    monkeypatch.setattr(publish, "_git", dropped)
+    result = publish.publish_source(source, _head(source))
+    assert result["status"] == "pending" and result["reason"] == "remote_transport_unavailable"
+
+
+def test_push_never_reads_codeql_before_github_analyzed_it(source, monkeypatch):
+    from app.services import publication_security
+
+    monkeypatch.setattr(publication_security, "observe_codeql", Mock(side_effect=AssertionError("too early")))
+    result = publish.publish_source(source, _head(source))
+    assert result["publication_complete"] and "codeql" not in result
 
 
 def test_acceptance_lookup_uses_the_canonical_receipt_index(source, monkeypatch):

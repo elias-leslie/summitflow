@@ -1,16 +1,17 @@
 """Exact-source publication with a retained receipt, independent of backup capture."""
 from __future__ import annotations
 
+import fcntl
 import hashlib
 import json
 import os
 import re
 import uuid
+from collections.abc import Iterator
+from contextlib import contextmanager
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
-
-from cli.lib.acceptance import AcceptanceError, repo_lock
 
 from ..services.publication_health import record_publication_observation
 from ..storage import backups as backup_store
@@ -83,6 +84,29 @@ def _retain_publication(project: Path, project_id: str, source_commit: str, obse
     return immutable
 
 
+@contextmanager
+def _publication_lock(project: Path) -> Iterator[bool]:
+    """One publication per repository at a time.
+
+    A push changes no worktree, index or branch, so it never takes the shared
+    repository-mutation lock: commits, deploys and acceptance finalizers keep
+    running, and waiting for heavy admission here can never invert lock order
+    with them.
+    """
+    directory = publication_receipt_directory(project)
+    directory.mkdir(parents=True, exist_ok=True)
+    with (directory / ".publish.lock").open("a+", encoding="utf-8") as handle:
+        try:
+            fcntl.flock(handle.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except BlockingIOError:
+            yield False
+            return
+        try:
+            yield True
+        finally:
+            fcntl.flock(handle.fileno(), fcntl.LOCK_UN)
+
+
 def publish_project_now(source_id: str, source_commit: str, *,
                         authorized_workflows: tuple[str, ...] = ()) -> dict[str, Any]:
     """Publish only the supplied exact OID; no checkpoint, capture or deployment."""
@@ -104,16 +128,15 @@ def publish_project_now(source_id: str, source_commit: str, *,
         return {**result, "status": "failed", "reason": "registered_project_required"}
     project = Path(root).resolve()
     source = {"id": source_id, "project_id": project_id, "path": str(project), "enabled": True, "source_type": "project"}
-    try:
-        with repo_lock(project, purpose="publication"):
-            publication = publish_source(source, source_commit, authorized_workflows=authorized_workflows)
-            result.update(publication)
-            try:
-                artifact = _retain_publication(project, project_id, source_commit, publication)
-            except (OSError, ValueError):
-                return {**result, "status": "pending", "reason": "publication_receipt_unavailable", "publication_complete": False}
-            result.update(evidence_recorded=True, evidence=str(artifact))
-            record_publication_observation(project_id, publication)
-    except AcceptanceError:
-        return {**result, "status": "pending", "reason": "repository_busy", "publication_complete": False}
+    with _publication_lock(project) as acquired:
+        if not acquired:
+            return {**result, "status": "pending", "reason": "publication_busy", "publication_complete": False}
+        publication = publish_source(source, source_commit, authorized_workflows=authorized_workflows)
+        result.update(publication)
+        try:
+            artifact = _retain_publication(project, project_id, source_commit, publication)
+        except (OSError, ValueError):
+            return {**result, "status": "pending", "reason": "publication_receipt_unavailable", "publication_complete": False}
+        result.update(evidence_recorded=True, evidence=str(artifact))
+        record_publication_observation(project_id, publication)
     return result

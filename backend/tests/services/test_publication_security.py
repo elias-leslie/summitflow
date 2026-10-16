@@ -192,33 +192,6 @@ def test_rolling_category_metadata_only_never_clears_on_pending(tmp_path, monkey
         assert record.call_args.kwargs == {"resolved": state == "success"}
 
 
-def test_completed_publication_callback_uses_repository_path_and_pushed_head(tmp_path, monkeypatch):
-    from app.tasks.backup_publish import _codeql_after_publication
-
-    observe = Mock(return_value={"state": "pending", "reason": "codeql_analysis_pending", "diagnostics": {"alerts": []}})
-    record = Mock()
-    monkeypatch.setattr(security, "observe_codeql", observe)
-    monkeypatch.setattr(security, "record_codeql_observation", record)
-    result = _codeql_after_publication(tmp_path, {"project_id": "project"}, ("github.com", None, "fixture/project"), SHA)
-    observe.assert_called_once_with(tmp_path, "fixture/project", expected_sha=SHA)
-    assert "diagnostics" not in result
-    assert record.call_args.kwargs == {"project_id": "project"}
-    assert (tmp_path / ".dev-tools/codeql-details.txt").exists()
-
-
-@pytest.mark.parametrize("bound", [False, True])
-def test_callback_binds_accepted_source_only_to_a_source_bound_pushed_head(tmp_path, monkeypatch, bound):
-    from app.tasks.backup_publish import _codeql_after_publication
-
-    record = Mock()
-    monkeypatch.setattr(security, "record_codeql_observation", record)
-    monkeypatch.setattr(security, "observe_codeql", lambda *_args, **_kw: {
-        "state": "failed", "reason": "codeql_alerts_open", "source_commit": SHA, "source_bound": bound})
-    result = _codeql_after_publication(tmp_path, {"project_id": "project"}, ("github.com", None, "fixture/project"), SHA)
-    assert result["source_commit"] == SHA
-    assert (result.get("accepted_source_commit") == SHA) is bound
-
-
 def test_pagination_limit_is_failure_not_partial_zero_alerts(tmp_path, monkeypatch):
     from cli.lib.github_publish import GitHub
 
@@ -279,19 +252,18 @@ def test_configuration_changes_cannot_reuse_same_source_scan(tmp_path, github, c
 
 
 def test_stale_alert_after_verified_publication_never_becomes_candidate_failure(tmp_path, github, monkeypatch):
-    from app.tasks.backup_publish import _codeql_after_publication
-
     old = "a" * 40
     alerts = [{"number": 12, "tool": {"name": "CodeQL"},
         "most_recent_instance": {"commit_sha": old, "ref": "refs/heads/main"}}]
     github.pages.side_effect = [alerts, [analysis()], alerts]
     record = Mock()
-    monkeypatch.setattr(security, "record_codeql_observation", record)
-    result = _codeql_after_publication(tmp_path, {"project_id": "project"}, ("github.com", None, "fixture/project"), SHA)
+    monkeypatch.setattr(security, "record_finding", record)
+    result = security.observe_codeql(tmp_path, "fixture/project")
     assert result["state"] == "failed" and result["source_commit"] == old
     assert result["observed_live_commit"] == SHA and result["alert_source_commits"] == [old]
-    assert result["source_bound"] is False and "accepted_source_commit" not in result
-    assert record.call_args.args[1]["source_commit"] == old
+    assert result["source_bound"] is False
+    security.record_codeql_observation(tmp_path, result, project_id="project")
+    assert record.call_args.args[2]["source_commit"] == old
 
 
 def test_current_alert_requires_complete_bracket_before_candidate_binding(tmp_path, github):

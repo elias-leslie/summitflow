@@ -31,15 +31,10 @@ def classify_observation(result: dict[str, Any]) -> dict[str, Any]:
     """Keep only safe structured metadata, not scanner/transport output or credential URLs."""
     head = result.get("head") or result.get("sha")
     head = head if isinstance(head, str) and _SHA.fullmatch(head) else None
+    # CI no longer gates publication; retained receipts from the retired PR
+    # path may still carry a CI state, reported only for display.
     ci_value = result.get("ci")
-    ci: dict[str, Any] = ci_value if isinstance(ci_value, dict) else {}
-    ci_state = str(ci.get("state") or "unknown")
-    checks = ci.get("checks")
-    if ci_state == "success" and isinstance(checks, list) and not any(
-            isinstance(check, dict) and check.get("state") == "success" for check in checks):
-        # No required checks satisfies merge policy, but pending-only (or no)
-        # runs never prove CI passed for this source.
-        ci_state = "pending"
+    ci_state = str((ci_value if isinstance(ci_value, dict) else {}).get("state") or "unknown")
     status = str(result.get("status") or "unknown").lower()
     reason = str(result.get("reason") or "unknown")
     reason = reason if _REASON.fullmatch(reason) else "publication_needs_investigation"
@@ -53,9 +48,8 @@ def classify_observation(result: dict[str, Any]) -> dict[str, Any]:
         observed_at = timestamp.astimezone(UTC).isoformat() if timestamp.tzinfo else None
     except (TypeError, ValueError):
         observed_at = None
-    if ci_state == "failed" or security.get("state") in {"failed", "blocked"}:
-        state = "blocked"
-        reason = "remote_ci_failed" if ci_state == "failed" else "security_findings_open"
+    if security.get("state") in {"failed", "blocked"}:
+        state, reason = "blocked", "security_findings_open"
     elif reason in _SETUP_FAILURES or (status in {"failed", "blocked", "failure"} and reason not in _DEFERRED):
         state = "blocked"
     elif (head and observed_at and result.get("publication_complete") is True
@@ -63,9 +57,7 @@ def classify_observation(result: dict[str, Any]) -> dict[str, Any]:
           and acceptance.get("source_commit") == head
           and ((acceptance.get("state") in {"success", "reused"} and acceptance.get("acceptance_id"))
                or acceptance.get("state") == "not_required")):
-        # A plain push publishes the source itself. Retained receipts from the
-        # retired PR path may still carry CI that passed on this exact source.
-        state = "verified" if ci_state == "success" and ci.get("sha") == head else "published"
+        state = "published"
     elif status in {"pending", "queued"} or reason in _DEFERRED:
         state = "pending"
     else:
@@ -74,55 +66,28 @@ def classify_observation(result: dict[str, Any]) -> dict[str, Any]:
             "ci_state": ci_state if ci_state in {"success", "failed", "pending", "not_applicable"} else "unknown"}
 
 
-# Local acceptance failures are proven fixed only by an observation that
-# carries a valid acceptance receipt for its own source.
-_ACCEPTANCE_FAILURES = frozenset({"local_acceptance_failed", "nightly_acceptance_failed"})
-
-
-def _accepted_source(result: dict[str, Any], head: str | None) -> bool:
-    acceptance = result.get("acceptance")
-    return (isinstance(acceptance, dict) and head is not None and acceptance.get("source_commit") == head
-            and acceptance.get("state") in {"success", "reused"} and bool(acceptance.get("acceptance_id")))
+# Categories and causes only the retired PR/nightly-acceptance path produced.
+# A completed push of a source including the failed one supersedes them.
+_LEGACY_CAUSES = {"cloud_ci": frozenset({"cloud_ci_missing"}),
+                  "nightly_repair_attempt_failed": frozenset({"nightly_repair_attempt_failed"})}
 
 
 def record_publication_observation(project_id: str, result: dict[str, Any]) -> str | None:
     observation = classify_observation(result)
-    # Published and verified states both require a passing outgoing scan bound
-    # to this exact source (classify_observation).
-    accepted = _accepted_source(result, observation["source_commit"])
     if observation["state"] == "published":
-        # A push proves its outgoing scan and, only when it carries an exact
-        # acceptance receipt (private pushes may not), that local acceptance
-        # passes for a source including the failed one (the stored ancestry
-        # proof). It never resolves CodeQL.
-        task_id = None
-        if accepted:
-            task_id = record_finding(project_id, "publication", observation, resolved=True,
-                                     resolution_reasons=_ACCEPTANCE_FAILURES)
-        return record_finding(project_id, "outgoing_security", observation, resolved=True,
-                              outgoing_scan_verified=True) or task_id
-    if observation["state"] not in {"blocked", "verified"}:
+        # A completed push proves its exact source passed the outgoing scan and
+        # every publication gate (acceptance when the repository is public).
+        # Storage resolves a finding only when this source includes the failed
+        # one. Independent CodeQL alerts are observed separately.
+        record_finding(project_id, "outgoing_security", observation, resolved=True, outgoing_scan_verified=True)
+        for category, causes in _LEGACY_CAUSES.items():
+            record_finding(project_id, category, observation, resolved=True, resolution_reasons=causes)
+        return record_finding(project_id, "publication", observation, resolved=True)
+    if observation["state"] != "blocked":
         return None
-    # Outgoing secret verification and remote CodeQL findings are distinct.
-    # A green publication may resolve the former, never independent CodeQL alerts.
     if observation["reason"] == "security_findings_open":
         return record_finding(project_id, "outgoing_security", observation, resolved=False)
-    verified = observation["state"] == "verified"
-    task_id = record_finding(project_id, "publication", observation, resolved=verified,
-                             retained_reasons=frozenset() if accepted else _ACCEPTANCE_FAILURES)
-    if verified:
-        record_finding(project_id, "outgoing_security", observation, resolved=True, outgoing_scan_verified=True)
-        # This proves CI now exists AND passes for the accepted source. Resolve
-        # only the known missing-CI setup cause, never arbitrary CI policy or
-        # independent CodeQL findings. Storage still requires failed-source
-        # inclusion, observation ordering, and an exact-category CAS.
-        record_finding(project_id, "cloud_ci", observation, resolved=True,
-                       resolution_reasons=frozenset({"cloud_ci_missing"}))
-        # A failed nightly repair awaited remote confirmation of its source; a
-        # verified publication including that source is the confirmation.
-        record_finding(project_id, "nightly_repair_attempt_failed", observation, resolved=True,
-                       resolution_reasons=frozenset({"nightly_repair_attempt_failed"}))
-    return task_id
+    return record_finding(project_id, "publication", observation, resolved=False)
 
 
 def reobserve_retained_publication(project_id: str) -> dict[str, Any] | None:
@@ -164,8 +129,6 @@ def get_project_publication_health(project_id: str, *, now: datetime | None = No
             result = {**(receipt.get("observation") or {}), "observed_at": receipt.get("observed_at")}
             evidence_path = str(path)
     observation = classify_observation(result)
-    if not observation["observed_at"] and observation["state"] == "verified":
-        observation.update(state="unknown", reason="publication_observation_time_missing")
     findings = ((repair or {}).get("verification_result") or {}).get("publication_repair") or {}
     unresolved = sorted(key for key, finding in findings.items()
                         if isinstance(finding, dict) and finding_actionable(finding))

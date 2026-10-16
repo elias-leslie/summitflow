@@ -10,7 +10,6 @@ published commit in the checkout's remote-tracking ref.
 
 from __future__ import annotations
 
-import json
 import os
 import re
 import shutil
@@ -133,10 +132,11 @@ def _push(project: Path, head: str, branch: str, remote: str, remote_url: str,
 
     def network(*arguments: str) -> subprocess.CompletedProcess[str]:
         response = _git(project, *arguments)
-        if response.returncode and not (arguments[0] == "push" and any(
-                line.startswith("!\t") and len(line.split("\t")) == 3 for line in response.stdout.splitlines())):
-            # Only porcelain's explicit per-ref rejection proves the update was
-            # refused. Raw transport diagnostics prove no project defect.
+        # A refused push exits 1: porcelain lists the remote's per-ref
+        # rejection, or a pre-push hook refused it before any ref was sent.
+        # Transport failures exit 128 (or the watchdog's code) and prove no
+        # project defect.
+        if response.returncode and not (arguments[0] == "push" and response.returncode == 1):
             raise _TransportUnavailable
         return response
 
@@ -178,8 +178,10 @@ def _push(project: Path, head: str, branch: str, remote: str, remote_url: str,
                 "action": "Authorize the listed workflow effects explicitly for this source before publication"}
     pushed = network("push", "--porcelain", "--no-follow-tags", "--recurse-submodules=no", remote, f"{head}:{destination}")
     if pushed.returncode:
-        return {"status": "BLOCKED", "reason": "remote_push_rejected", "pushed": False, "sha": head,
-                "publication_complete": False, "security": security, "workflow_authority": authority}
+        rejected = any(line.startswith("!\t") and len(line.split("\t")) == 3 for line in pushed.stdout.splitlines())
+        return {"status": "BLOCKED", "reason": "remote_push_rejected" if rejected else "pre_push_hook_rejected",
+                "pushed": False, "sha": head, "publication_complete": False, "security": security,
+                "workflow_authority": authority}
     return {"status": "SUCCESS", "reason": "source_published", "pushed": True, "sha": head,
             "publication_complete": True, "security": security, "workflow_authority": authority,
             "delivery": {"uploaded_source": head}}
@@ -280,13 +282,6 @@ def publish_source(source: dict[str, Any], source_commit: str, *,
         result["attempted"] = True
         delivered = _push(project, head, branch, remote, push_urls[0], authorized_workflows)
         result.update(delivered)
-        if delivered["publication_complete"] and repository is not None:
-            try:
-                result["codeql"] = _codeql_after_publication(project, source, identity, head)
-            except Exception:
-                # Security ingestion may fail independently; retain truthful
-                # coverage without discarding the completed push.
-                result["codeql"] = {"state": "pending", "reason": "codeql_ingestion_unavailable"}
         result["remote_status"] = ("uploaded" if delivered["publication_complete"] else
                                    "pending" if delivered["status"] == "PENDING" else "blocked")
         status = ("published" if delivered["publication_complete"] else
@@ -312,20 +307,3 @@ def publish_source(source: dict[str, Any], source_commit: str, *,
     except (ImportError, OSError, ValueError, TypeError, KeyError, RuntimeError, subprocess.SubprocessError):
         return outcome("failed", "publication_inspection_unavailable")
 
-
-def _codeql_after_publication(project: Path, source: dict[str, Any], identity: tuple[str, int | None, str],
-                              head: str) -> dict[str, Any]:
-    from cli.details import write_details
-
-    from ..services.publication_security import (
-        codeql_metadata,
-        observe_codeql,
-        record_codeql_observation,
-    )
-
-    evidence = observe_codeql(project, identity[2], expected_sha=head)
-    if evidence.get("source_commit") == head and evidence.get("source_bound") is True:
-        evidence["accepted_source_commit"] = head
-    write_details(project, "codeql", json.dumps(evidence, indent=2))
-    record_codeql_observation(project, evidence, project_id=source.get("project_id"))
-    return codeql_metadata(evidence)

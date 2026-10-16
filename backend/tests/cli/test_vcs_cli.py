@@ -24,6 +24,7 @@ def project(tmp_path, monkeypatch):
         subprocess.run(["git", "-c", "user.name=T", "-c", "user.email=t@example.invalid", *args], cwd=root, check=True)
     monkeypatch.setattr("app.storage.projects.get_project_root_path", lambda project_id: str(root) if project_id == "source" else None)
     monkeypatch.setattr(vcs, "_coord_guard", lambda *_: None)
+    monkeypatch.setattr("app.tasks.nightly_publication.publication_hold", lambda _project_id: None)
     head = subprocess.run(["git", "rev-parse", "HEAD"], cwd=root, check=True, capture_output=True, text=True).stdout.strip()
     return root, head
 
@@ -78,6 +79,25 @@ def test_publish_refuses_unknown_project_or_commit(project):
     assert unknown.exit_code == 2 and "No registered project" in unknown.stdout
     assert bad_sha.exit_code == 2 and "Unknown commit" in bad_sha.stdout
     publish.assert_not_called()
+
+
+def test_explicit_sha_cannot_publish_past_an_owner_hold(project, monkeypatch):
+    import subprocess
+
+    root, head = project
+    released = subprocess.run(["git", "rev-parse", "HEAD~1"], cwd=root, check=True, capture_output=True, text=True).stdout.strip()
+    with patch("app.tasks.backup_manual_publish.publish_project_now", return_value=_DONE) as publish:
+        monkeypatch.setattr("app.tasks.nightly_publication.publication_hold",
+                            lambda _project_id: {"through": None, "reason": "embargo"})
+        everything = runner.invoke(vcs.app, ["publish", "--source", "source", "--sha", head])
+        monkeypatch.setattr("app.tasks.nightly_publication.publication_hold",
+                            lambda _project_id: {"through": released, "reason": "embargo"})
+        later = runner.invoke(vcs.app, ["publish", "--source", "source", "--sha", head])
+        allowed = runner.invoke(vcs.app, ["publish", "--source", "source", "--sha", released[:10]])
+    assert everything.exit_code == 2 and "held (embargo)" in everything.stdout
+    assert later.exit_code == 2 and "--release" in later.stdout
+    assert allowed.exit_code == 0, allowed.stdout
+    publish.assert_called_once_with("source", released, authorized_workflows=())
 
 
 def test_publish_forwards_workflow_authority(project):

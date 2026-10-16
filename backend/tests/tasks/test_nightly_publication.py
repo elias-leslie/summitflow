@@ -79,11 +79,28 @@ def test_public_repository_publishes_its_newest_accepted_commit(repo, monkeypatc
     assert nightly.select_candidate("fixture", repo, "nightly")["reason"] == "no_accepted_commit"
 
 
-def test_unknown_visibility_never_publishes(repo, monkeypatch):
+def test_public_commits_stuck_without_acceptance_for_a_day_need_attention(repo, monkeypatch):
+    _public(monkeypatch, set())
+    row = nightly.select_candidate("fixture", repo, "nightly")
+    assert row["reason"] == "no_accepted_commit" and 0 <= row["waiting_seconds"] < 600
+    assert not nightly.needs_attention(row)  # normal gap before the next acceptance
+    assert nightly.needs_attention({**row, "waiting_seconds": nightly.STALE_UNACCEPTED_SECONDS})
+
+
+def test_unknown_visibility_never_publishes_and_auth_loss_is_surfaced(repo, monkeypatch):
     from cli.lib.github_publish import GitHubError
 
-    monkeypatch.setattr(backup_publish, "remote_repository", Mock(side_effect=GitHubError("offline", unavailable=True)))
-    assert nightly.select_candidate("fixture", repo, "nightly")["reason"] == "remote_visibility_unknown"
+    expired = GitHubError("unavailable", unavailable=True, reason="remote_authentication_unavailable")
+    monkeypatch.setattr(backup_publish, "remote_repository", Mock(side_effect=expired))
+    row = nightly.select_candidate("fixture", repo, "nightly")
+    assert (row["action"], row["reason"]) == ("skip", "remote_authentication_unavailable")
+    assert nightly.needs_attention(row)
+    monkeypatch.setattr(backup_publish, "remote_repository", Mock(side_effect=GitHubError(
+        "unavailable", unavailable=True, reason="remote_rate_limited")))
+    assert not nightly.needs_attention(nightly.select_candidate("fixture", repo, "nightly"))  # transient
+    monkeypatch.setattr(backup_publish, "remote_repository", Mock(side_effect=KeyError("bug")))
+    row = nightly.select_candidate("fixture", repo, "nightly")
+    assert row["reason"] == "remote_visibility_unknown" and nightly.needs_attention(row)
     _git(repo, "remote", "set-url", "origin", "https://gitlab.com/fixture/project.git")
     monkeypatch.setattr(backup_publish, "remote_repository", lambda *_: None)
     assert nightly.select_candidate("fixture", repo, "nightly")["reason"] == "no_accepted_commit"  # non-GitHub counts as public
@@ -133,36 +150,38 @@ def test_execute_publishes_the_selected_source_and_records_state(repo, monkeypat
     assert (nightly.read_nightly_state(repo) or {}).get("sha") == head
 
 
-def _sweep(monkeypatch, repo, rows_by_mode, holds=None):
+def _sweep(monkeypatch, repo, rows_by_mode):
     monkeypatch.setattr(nightly, "_projects", lambda _ids: [(name, repo) for name in rows_by_mode])
     monkeypatch.setattr(nightly, "publication_mode", lambda name: rows_by_mode[name])
     monkeypatch.setattr(nightly, "publication_hold", lambda _name: None)
-    monkeypatch.setattr(nightly, "_hold_lease", lambda name: (holds or {}).get(name))
+    codeql = Mock()
+    monkeypatch.setattr(nightly, "observe_codeql", codeql)
     executed = Mock(side_effect=lambda row, _root: {**row, "outcome": "published", "reason": "source_published"})
     monkeypatch.setattr(nightly, "execute_candidate", executed)
     notify = Mock()
     monkeypatch.setattr(nightly, "_notify", notify)
     containment = Mock(return_value=None)
     monkeypatch.setattr(nightly, "remote_containment", containment)
-    return executed, notify, containment
+    return executed, notify, containment, codeql
 
 
-def test_hourly_pass_runs_all_day_and_only_a_hold_defers(repo, monkeypatch):
-    # Live edits (the fixture's WIP) and heavy work never defer a push.
+def test_hourly_pass_runs_all_day_and_never_defers_on_activity(repo, monkeypatch):
+    # Live edits (the fixture's WIP), heavy work and agents' repo holds never
+    # defer a push; only the owner's publication hold does (select_candidate).
     monkeypatch.setattr("app.utils.heavy_work.lane_activity", Mock(side_effect=AssertionError("not consulted")))
-    executed, notify, containment = _sweep(monkeypatch, repo, {"a": "nightly", "b": "manual", "c": "mirror", "d": "nightly"},
-                                           holds={"d": "integration by cc:other"})
+    monkeypatch.setattr("cli.lib.leases.list_active", Mock(side_effect=AssertionError("not consulted")))
+    executed, notify, containment, codeql = _sweep(monkeypatch, repo, {"a": "nightly", "b": "manual", "c": "mirror"})
     result = nightly.run_nightly_publication(now=DAY)
     rows = {row["project_id"]: row for row in result["projects"]}
     assert [call.args[0]["project_id"] for call in executed.call_args_list] == ["a", "c"]
     assert rows["b"]["reason"] == "manual_mode"
-    assert (rows["d"]["reason"], rows["d"]["detail"]) == ("held", "integration by cc:other")
     notify.assert_called_once()
     containment.assert_not_called()  # only in the nightly containment hour
+    codeql.assert_not_called()
 
 
 def test_dry_run_selects_without_executing_or_notifying(repo, monkeypatch):
-    executed, notify, _ = _sweep(monkeypatch, repo, {"a": "nightly"})
+    executed, notify, _, _ = _sweep(monkeypatch, repo, {"a": "nightly"})
     dry = nightly.run_nightly_publication(dry_run=True, now=DAY)
     assert dry["status"] == "dry_run" and dry["projects"][0]["action"] == "publish"
     executed.assert_not_called()
@@ -170,13 +189,14 @@ def test_dry_run_selects_without_executing_or_notifying(repo, monkeypatch):
 
 
 def test_nightly_hour_checks_github_containment(repo, monkeypatch):
-    _, notify, containment = _sweep(monkeypatch, repo, {"a": "nightly"})
+    _, notify, containment, codeql = _sweep(monkeypatch, repo, {"a": "nightly"})
     lost = {"project_id": "a", "mode": "nightly", "action": "check", "reason": "remote_not_containing_published"}
     containment.return_value = lost
     result = nightly.run_nightly_publication(now=NIGHT)
     assert lost in result["projects"]
     assert nightly.needs_attention(lost)
     assert lost in notify.call_args.args[0]
+    codeql.assert_called_once_with("a", repo, "nightly")
 
 
 @pytest.fixture
@@ -191,7 +211,7 @@ def published(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> tuple[Path, Pa
     original = backup_publish._git
 
     def local(root, *args):
-        if args[0] == "ls-remote":  # the guarded transport refuses local paths; read the bare repo directly
+        if args[0] in {"ls-remote", "fetch"}:  # the guarded transport refuses local paths; read the bare repo directly
             return subprocess.run(["git", "-C", str(root), *args], capture_output=True, text=True, check=False)
         return original(root, *args)
 
@@ -216,6 +236,46 @@ def test_containment_flags_a_rewound_or_unknown_remote(published, tmp_path):
     subprocess.run(["git", "-C", str(remote), "update-ref", "-d", "refs/heads/main"], check=True)
     row = nightly.remote_containment("p", project, "nightly")
     assert row is not None and row["reason"] == "remote_branch_missing"
+
+
+def test_containment_fetches_a_remote_commit_it_lacks_before_judging(published, tmp_path):
+    """GitHub moving ahead from elsewhere still contains the published commit;
+    an object missing locally must not read as a lost publication."""
+    project, remote = published
+    other = tmp_path / "other"
+    subprocess.run(["git", "clone", "-q", str(remote), str(other)], check=True, capture_output=True)
+    _git(other, "-c", "user.name=F", "-c", "user.email=f@example.invalid", "commit", "--allow-empty", "-m", "elsewhere")
+    _git(other, "-c", "core.hooksPath=/dev/null", "push", "-q", "origin", "main")
+    assert nightly.remote_containment("p", project, "nightly") is None
+
+
+def test_containment_that_cannot_run_is_reported_not_silent(published, monkeypatch):
+    project, _remote = published
+    original = backup_publish._git
+    monkeypatch.setattr(backup_publish, "_git", lambda root, *args: subprocess.CompletedProcess(
+        args, 128, "", "offline") if args[0] == "ls-remote" else original(root, *args))
+    row = nightly.remote_containment("p", project, "nightly")
+    assert row is not None and row["reason"] == "remote_containment_unverified" and nightly.needs_attention(row)
+
+
+def test_nightly_codeql_read_records_github_projects_only(repo, monkeypatch):
+    from app.services import publication_security
+
+    evidence = {"state": "success", "reason": "codeql_default_source_verified"}
+    observe = Mock(return_value=evidence)
+    record = Mock()
+    monkeypatch.setattr(publication_security, "observe_codeql", observe)
+    monkeypatch.setattr(publication_security, "record_codeql_observation", record)
+    nightly.observe_codeql("fixture", repo, "nightly")
+    observe.assert_called_once_with(repo, "fixture/project")
+    record.assert_called_once_with(repo, evidence, project_id="fixture")
+    nightly.observe_codeql("fixture", repo, "manual")
+    _git(repo, "remote", "set-url", "origin", "https://gitlab.com/fixture/project.git")
+    nightly.observe_codeql("fixture", repo, "nightly")
+    assert observe.call_count == 1
+    observe.side_effect = RuntimeError("api down")
+    _git(repo, "remote", "set-url", "origin", "https://github.com/fixture/project.git")
+    nightly.observe_codeql("fixture", repo, "nightly")  # never breaks the pass
 
 
 def test_attention_notifies_once_per_distinct_set_per_day(monkeypatch):

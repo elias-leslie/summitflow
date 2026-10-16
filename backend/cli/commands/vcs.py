@@ -134,6 +134,7 @@ def publish_now(
         typer.echo("No registered project: run from a project checkout or pass --source.")
         raise typer.Exit(2)
     _coord_guard(Path(root), "publish", with_ack)
+    hold = publication_hold(source)
     if sha:
         resolved = subprocess.run(["git", "-C", root, "rev-parse", "--verify", "--quiet", f"{sha}^{{commit}}"],
                                   capture_output=True, text=True, check=False)
@@ -141,8 +142,17 @@ def publish_now(
             typer.echo(f"Unknown commit: {sha}")
             raise typer.Exit(2)
         sha = resolved.stdout.strip()
+        # The owner's hold keeps later commits local for every publisher.
+        through = (hold or {}).get("through")
+        if hold is not None and not (through and subprocess.run(
+                ["git", "-C", root, "merge-base", "--is-ancestor", sha, str(through)],
+                capture_output=True, check=False).returncode == 0):
+            typer.echo(f"Publication is held ({hold.get('reason')})"
+                       + (f" through {str(through)[:12]}" if through else "")
+                       + "; only the owner releases it: st vcs publication --release")
+            raise typer.Exit(2)
     else:
-        candidate = select_candidate(source, Path(root), "nightly", publication_hold(source))
+        candidate = select_candidate(source, Path(root), "nightly", hold)
         if candidate["action"] != "publish":
             typer.echo(f"Nothing to publish: {candidate.get('reason')}"
                        + (f" ({candidate['detail']})" if candidate.get("detail") else ""))
