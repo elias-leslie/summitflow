@@ -76,7 +76,7 @@ def lifecycle(monkeypatch, project):
         receipt_path=project.root / "deployment.json",
     )
     monkeypatch.setattr(
-        service_ops, "prepare_accepted_release", lambda current, _receipt=None: (release, current)
+        service_ops, "prepare_accepted_release", lambda current, _receipt=None, **_kwargs: (release, current)
     )
     monkeypatch.setattr(service_release, "deployment_lock", lambda _project: nullcontext())
     monkeypatch.setattr(service_release, "mark_phase", Mock())
@@ -570,7 +570,7 @@ def test_detached_rebuild_preserves_scope_and_named_worker(lifecycle, monkeypatc
         "source_commit": "c" * 40,
         "source_tree": "d" * 40,
     }
-    monkeypatch.setattr(service_ops, "resolve_accepted_source", lambda *_args: accepted)
+    monkeypatch.setattr(service_ops, "resolve_accepted_source", lambda *_args, **_kwargs: accepted)
     result = CliRunner().invoke(service.app, [
         "rebuild", "example", "--detach", "--scope", "worker", "--worker", "stopped.service",
     ])
@@ -582,6 +582,7 @@ def test_detached_rebuild_preserves_scope_and_named_worker(lifecycle, monkeypatc
         workers=("stopped.service",),
         accepted_source=accepted,
         with_ack=None,
+        rollback=False,
     )
     lifecycle["ensure_infra"].assert_not_called()
 

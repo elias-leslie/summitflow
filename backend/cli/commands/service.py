@@ -466,6 +466,10 @@ def rebuild(
         str | None,
         typer.Option("--with-ack", help="Request id the repo's holder acked yes"),
     ] = None,
+    rollback: Annotated[
+        bool,
+        typer.Option("--rollback", help="Deploy an accepted commit that does not contain the live release"),
+    ] = False,
 ) -> None:
     """Build, migrate, restart, and health-check a project."""
     services = _load(project)
@@ -499,7 +503,7 @@ def rebuild(
     if detach:
         try:
             with coord.acked(with_ack):
-                accepted_source = service_ops.resolve_accepted_source(services, acceptance)
+                accepted_source = service_ops.resolve_accepted_source(services, acceptance, rollback=rollback)
             print(_acceptance_line(accepted_source, supplied=acceptance is not None))
             raise typer.Exit(
                 service_ops.queue_detached(
@@ -509,6 +513,7 @@ def rebuild(
                     workers=requested_workers,
                     accepted_source=accepted_source,
                     with_ack=with_ack,
+                    rollback=rollback,
                     **({"migrate_monitor_store": True} if migrate_monitor_store else {}),
                 )
             )
@@ -538,7 +543,7 @@ def rebuild(
              else nullcontext(lambda: None)) as assert_backup_restart_owned,
         ):
             with coord.acked(with_ack):
-                release, services = service_ops.prepare_accepted_release(services, acceptance)
+                release, services = service_ops.prepare_accepted_release(services, acceptance, rollback=rollback)
             print(_acceptance_line(vars(release.source), supplied=acceptance is not None))
             service_release.mark_phase(
                 release,

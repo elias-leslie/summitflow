@@ -288,7 +288,7 @@ def test_detached_rebuild_cli_passes_with_ack(monkeypatch):
     monkeypatch.setattr(service, "_load", lambda _project: Mock(root=Path("/x"), backend_dir=Path("/x/b"), frontend_dir=Path("/x/f"), project_id="example", workers=lambda **_: ()))
     monkeypatch.setattr(service, "require_pulse_gate", lambda _project: None)
     monkeypatch.setattr(service_ops, "preflight_host_monitor", lambda _services: 0)
-    monkeypatch.setattr(service_ops, "resolve_accepted_source", lambda *_args: None)
+    monkeypatch.setattr(service_ops, "resolve_accepted_source", lambda *_args, **_kwargs: None)
     monkeypatch.setattr(service_ops, "queue_detached", queue)
     result = CliRunner().invoke(service.app, ["rebuild", "example", "--detach", "--with-ack", "req-1"])
     assert result.exit_code == 0, result.output

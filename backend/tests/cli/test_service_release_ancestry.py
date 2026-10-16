@@ -139,3 +139,27 @@ def test_detached_rebuild_refuses_a_backward_deploy_before_it_queues(history, mo
     project = cast(service_ops.ProjectServices, SimpleNamespace(project_id="example", root=repo))
     with pytest.raises(service_release.ReleaseError, match="deploy_not_forward"):
         service_ops.resolve_accepted_source(project)
+
+
+def test_rebuild_rollback_flag_reaches_validation_and_the_queue(monkeypatch) -> None:
+    from unittest.mock import Mock
+
+    from typer.testing import CliRunner
+
+    from cli.commands import service
+    from cli.lib import coord
+
+    monkeypatch.setattr(coord, "guard", Mock())
+    monkeypatch.setattr(service, "_load", lambda _p: Mock(root=Path("/x"), backend_dir=Path("/x/b"),
+                                                          frontend_dir=Path("/x/f"), project_id="example",
+                                                          workers=lambda **_: ()))
+    monkeypatch.setattr(service, "require_pulse_gate", lambda _p: None)
+    monkeypatch.setattr(service_ops, "preflight_host_monitor", lambda _s: 0)
+    resolve = Mock(return_value={"acceptance_id": "a", "source_commit": "c" * 40})
+    queue = Mock(return_value=0)
+    monkeypatch.setattr(service_ops, "resolve_accepted_source", resolve)
+    monkeypatch.setattr(service_ops, "queue_detached", queue)
+    result = CliRunner().invoke(service.app, ["rebuild", "example", "--detach", "--rollback"])
+    assert result.exit_code == 0, result.output
+    assert resolve.call_args.kwargs["rollback"] is True
+    assert queue.call_args.kwargs["rollback"] is True
