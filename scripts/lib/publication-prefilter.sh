@@ -23,6 +23,10 @@
 _PF_WORDS='git|jj|gh|curl|wget|https?|xhs?|ssh|rm|find|btrfs|btrbk|restic|rclone|dmsetup|dd|wipefs|blkdiscard|mke2fs|mkswap|mkdosfs|mkntfs|mkexfatfs|parted|sgdisk|fdisk|sfdisk|gdisk|cfdisk|cryptsetup|qm|pct|pvesm|pvesh|zfs|zpool|lvremove|vgremove|pvremove|eval|base64'
 _PF_TRIGGER="(^|[^a-z0-9_])(${_PF_WORDS})([^a-z0-9_]|\$)|(^|[^a-z0-9_])mkfs|hook|no-verify|sf_command_guard_disable|git_allow_secret|secretguard_disable|approve-deletion|api\\.github\\.com"
 
+# Bash's regex engine backtracks superlinearly on long escape-heavy payloads;
+# anything larger goes straight to Python so the hook never nears its timeout.
+_PF_MAX_BYTES=32768
+
 _PF_WS='[[:space:]]*'
 _PF_BASH="\"tool_name\"${_PF_WS}:${_PF_WS}\"Bash\""
 _PF_INPUT="\"tool_input\"${_PF_WS}:${_PF_WS}[{]"
@@ -32,6 +36,7 @@ _PF_COMMAND="\"command\"${_PF_WS}:${_PF_WS}\"(([^\"\\\\]|\\\\.)*)\""
 
 publication_prefilter_skip() {
     local LC_ALL=C payload="$1" command
+    (( ${#payload} <= _PF_MAX_BYTES )) || return 1
     [[ $payload =~ $_PF_BASH && $payload =~ $_PF_INPUT ]] || return 1
     # Exactly one non-empty "command" string and no "cmd": the guard reads tool_input.command.
     [[ $payload =~ $_PF_CMD_KEY || $payload =~ $_PF_TWO_COMMANDS ]] && return 1

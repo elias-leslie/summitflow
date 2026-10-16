@@ -161,3 +161,13 @@ def test_live_hook_still_denies_through_prefilter(tmp_path: Path) -> None:
                             capture_output=True, check=True, timeout=10,
                             env={**QUIET, "HOME": str(tmp_path), "XDG_STATE_HOME": str(tmp_path / "state")})
     assert json.loads(result.stdout)["hookSpecificOutput"]["permissionDecision"] == "deny"
+
+
+def test_large_escape_heavy_payload_reaches_python_well_inside_hook_timeout(tmp_path: Path) -> None:
+    """Bash regex backtracking on a huge payload must never push the hook past its 5 s timeout."""
+    heredoc = "cat <<'EOF'\n" + '"x\n' * 120_000 + "EOF\n"
+    assert _skips([json.dumps(_payload(heredoc + "ls"))]) == [False]
+    result = subprocess.run(["bash", str(HOOK)], input=json.dumps(_payload(heredoc + "&& git push origin main")),
+                            text=True, capture_output=True, check=True, timeout=4,
+                            env={**QUIET, "HOME": str(tmp_path), "XDG_STATE_HOME": str(tmp_path / "state")})
+    assert json.loads(result.stdout)["hookSpecificOutput"]["permissionDecision"] == "deny"
