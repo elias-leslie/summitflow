@@ -1,9 +1,22 @@
 #!/usr/bin/env bash
-# Thin adapter: all policy lives in the shared Python guard. Explicit deny on
+# Thin adapter: all policy lives in the shared Python guard. A pure-shell
+# prefilter (publication-prefilter.sh) answers allow without starting Python
+# only for Bash calls that name nothing the policy inspects. Explicit deny on
 # startup failures because native runtimes may continue after hook exit errors.
 set -uo pipefail
 script_path="$(readlink -f "${BASH_SOURCE[0]}")"
 root="$(cd "$(dirname "$script_path")/../.." && pwd)"
-if ! BASH_ENV='' "$root/scripts/lib/command-guard" --publication-hook; then
+payload=""
+IFS= read -r -d '' payload
+# A guard install missing its pieces still refuses everything, prefiltered or not.
+# shellcheck source=publication-prefilter.sh
+if [[ "${SF_COMMAND_GUARD_PREFILTER:-1}" != "0" && -x "$root/scripts/lib/command-guard" \
+  && -f "$root/scripts/lib/publication_guard_entry.py" ]] \
+  && source "$root/scripts/lib/publication-prefilter.sh" 2>/dev/null \
+  && publication_prefilter_skip "$payload"; then
+  printf '%s\n' '{}'
+  exit 0
+fi
+if ! BASH_ENV='' "$root/scripts/lib/command-guard" --publication-hook <<<"$payload"; then
   printf '%s\n' '{"hookSpecificOutput":{"hookEventName":"PreToolUse","permissionDecision":"deny","permissionDecisionReason":"Publication guard unavailable; execution refused."}}'
 fi
