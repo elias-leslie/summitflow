@@ -384,5 +384,5 @@ def run_reactivate(project_id: str) -> None:
     projects_api("DELETE", f"/{project_id}/retirement")
     output_success(
         f"Reactivated '{project_id}': listed again with its project backup schedule on. "
-        f"Publication stays manual; change with st -P {project_id} vcs publication --mode nightly|mirror."
+        f"Publication stays manual; change with st -P {project_id} vcs publication --mode nightly."
     )

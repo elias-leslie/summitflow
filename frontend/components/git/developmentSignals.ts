@@ -185,7 +185,7 @@ function runningCell(dev: DevelopmentProjection): Cell {
   return { tone: 'bad', label: 'unverified', title: hint(running) }
 }
 
-/** Commits not yet published; prefers the backend count, which also trusts verified publication receipts. */
+/** Commits not yet published; prefers the backend count over the repo status. */
 export function unpublished(dev: DevelopmentProjection, repo: RepoStatus) {
   return dev.working_tree.unpublished ?? repo.ahead
 }
@@ -196,9 +196,7 @@ function publishedCell(dev: DevelopmentProjection, repo: RepoStatus): Cell {
   const modeLabel = mode ? publication.mode : undefined
   const nightly = publication.nightly
   const ahead = unpublished(dev, repo)
-  const remote = dev.working_tree.remote_basis?.startsWith('Last verified')
-    ? 'than the last verified publication'
-    : `vs origin/${repo.branch} (local refs)`
+  const remote = `vs origin/${repo.branch} (local refs)`
   if (ahead > 0 && repo.behind > 0)
     return {
       tone: 'bad',
