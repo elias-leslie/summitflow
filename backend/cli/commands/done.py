@@ -19,7 +19,7 @@ from ..lib.checkpoint import get_snapshot_info
 from ..lib.usage import usage
 from ..output import output_error, output_success, output_warning
 from .done_subtask import complete_subtask
-from .done_task import _refuse_failed_task, complete_task
+from .done_task import _refuse_failed_task, complete_task, unlanded_worktree_reason
 from .done_validators import is_subtask_id
 from .preflight import preflight
 
@@ -147,7 +147,12 @@ def _handle_task_completion(
         return
     project_id = str(task.get("project_id") or "") or None
     preflight(id, project_id, op="done")
-    if _claim_lapsed(task):
+    if not record_only and not cleanup_pending and (worktree_reason := unlanded_worktree_reason(project_id)):
+        output_error(worktree_reason)
+        raise typer.Exit(1)
+    # A retained queued/blocked closeout resumes from its accepted source; re-claiming
+    # would retire that intent and force fresh acceptance against today's HEAD.
+    if _claim_lapsed(task) and not cleanup_pending:
         _recover_lapsed_claim(STClient(project_id=project_id) if project_id else client, id)
     _report_requirement_amendments(task)
     if paths_range:

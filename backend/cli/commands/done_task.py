@@ -58,7 +58,20 @@ def _done_result(
 
 
 def _checkpoint_repo_root(project_id: str | None) -> str | None:
-    """The current checkout when it belongs to the project's repository, else its registered root."""
+    """Closeout acceptance and cleanup both run in the project's registered checkout."""
+    return get_project_root_path(project_id) if project_id else None
+
+
+def _git_out(root: str | Path, *args: str) -> subprocess.CompletedProcess[str]:
+    return subprocess.run(["git", "-C", str(root), *args], capture_output=True, text=True, check=False)
+
+
+def unlanded_worktree_reason(project_id: str | None) -> str | None:
+    """Why st done cannot close out from the current checkout, when it is an unlanded worktree.
+
+    Closeout validates and cleans up in the registered checkout, so work that only
+    exists in a linked worktree of the same repository must land there first.
+    """
     registered = get_project_root_path(project_id) if project_id else None
     if not registered:
         return None
@@ -68,10 +81,19 @@ def _checkpoint_repo_root(project_id: str | None) -> str | None:
         checkout, canonical = resolve_checkout_root(), canonical_repo_root()
         registered_path = Path(registered).resolve()
     except OSError:
-        return registered
-    if checkout is None or canonical is None or canonical.resolve() != registered_path:
-        return registered
-    return registered if checkout.resolve() == registered_path else str(checkout)
+        return None
+    if (checkout is None or canonical is None or canonical.resolve() != registered_path
+            or checkout.resolve() == registered_path):
+        return None
+    head = _git_out(checkout, "rev-parse", "HEAD").stdout.strip()
+    landed = bool(head) and _git_out(registered_path, "merge-base", "--is-ancestor", head, "HEAD").returncode == 0
+    dirty = [line for line in _git_out(checkout, "status", "--porcelain").stdout.splitlines() if line.strip()]
+    if landed and not dirty:
+        return None
+    problems = [*([] if landed else ["commits not on its HEAD"]), *([f"{len(dirty)} uncommitted change(s)"] if dirty else [])]
+    return (f"st done closes out from the registered checkout {registered_path}; this worktree "
+            f"({checkout.resolve()}) has {' and '.join(problems)}.\n"
+            f"  Commit the work, land it on {registered_path}'s HEAD (merge or cherry-pick), then rerun st done.")
 
 
 def _task_project_id(task: dict[str, Any]) -> str | None:

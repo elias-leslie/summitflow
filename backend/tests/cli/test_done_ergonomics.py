@@ -101,6 +101,7 @@ def _completion_fixture(monkeypatch, task):
     monkeypatch.setattr(done, "_report_requirement_amendments", Mock())
     monkeypatch.setattr(done, "_assess_budget", Mock(return_value=None))
     monkeypatch.setattr(done, "_release_task_leases", Mock())
+    monkeypatch.setattr(done, "unlanded_worktree_reason", Mock(return_value=None))
     complete = Mock(return_value={})
     monkeypatch.setattr(done, "complete_task", complete)
     reclaim = Mock(return_value={"action": "resumed"})
@@ -130,6 +131,17 @@ def test_done_never_takes_a_held_handed_off_or_unstarted_claim(monkeypatch, task
     reclaim.assert_not_called()
 
 
+@pytest.mark.parametrize("state", ["pending", "blocked"])
+def test_done_resumes_a_retained_closeout_instead_of_reclaiming(monkeypatch, state):
+    _, reclaim, complete = _completion_fixture(monkeypatch, {
+        "status": "pending", "project_id": "example", "claimed_by": None, "started_at": "then",
+        "verification_result": {"closeout": {"kind": "local_closeout.v1", "state": state}}})
+    result = CliRunner().invoke(done.app, ["task-1"])
+    assert result.exit_code == 0, result.output
+    reclaim.assert_not_called()
+    complete.assert_called_once()
+
+
 def test_done_paths_accepts_several_values_per_flag(monkeypatch):
     _, _, complete = _completion_fixture(monkeypatch, {"status": "running", "project_id": "example"})
     result = CliRunner().invoke(done.app, ["task-1", "--paths", "src/a.py", "src/b.py", "--path", "tests"])
@@ -145,23 +157,49 @@ def test_done_rejects_stray_arguments_without_paths(monkeypatch):
     complete.assert_not_called()
 
 
-def test_checkout_root_follows_a_worktree_of_the_registered_repo(tmp_path, monkeypatch):
+def _worktree_setup(tmp_path, monkeypatch):
     repo = tmp_path / "repo"
     git = _repo(repo)
     worktree = tmp_path / "wt"
     git("worktree", "add", "-q", "--detach", str(worktree))
+    monkeypatch.setattr(done_task, "get_project_root_path", lambda _project: str(repo))
+    monkeypatch.chdir(worktree)
+    return repo, git, worktree
+
+
+def test_closeout_root_is_always_the_registered_checkout(tmp_path, monkeypatch):
+    repo, _, _ = _worktree_setup(tmp_path, monkeypatch)
+    assert done_task._checkpoint_repo_root("example") == str(repo)
+
+
+def test_landed_worktree_may_close_out_from_the_registered_checkout(tmp_path, monkeypatch):
+    repo, git, _ = _worktree_setup(tmp_path, monkeypatch)
+    assert done_task.unlanded_worktree_reason("example") is None
+    _task_commit(repo, git, {"app.py": "main moved on\n"})
+    assert done_task.unlanded_worktree_reason("example") is None
+    monkeypatch.chdir(repo)
+    assert done_task.unlanded_worktree_reason("example") is None
     other = tmp_path / "other"
     _repo(other)
-    monkeypatch.setattr(done_task, "get_project_root_path", lambda _project: str(repo))
-
-    monkeypatch.chdir(worktree)
-    assert done_task._checkpoint_repo_root("example") == str(worktree.resolve())
-    monkeypatch.chdir(repo)
-    assert done_task._checkpoint_repo_root("example") == str(repo)
     monkeypatch.chdir(other)
-    assert done_task._checkpoint_repo_root("example") == str(repo)
-    monkeypatch.chdir(tmp_path)
-    assert done_task._checkpoint_repo_root("example") == str(repo)
+    assert done_task.unlanded_worktree_reason("example") is None
+
+
+def test_unlanded_or_dirty_worktree_is_refused_before_any_closeout(tmp_path, monkeypatch):
+    repo, _, worktree = _worktree_setup(tmp_path, monkeypatch)
+    (worktree / "new.py").write_text("draft\n")
+    assert "1 uncommitted change(s)" in (done_task.unlanded_worktree_reason("example") or "")
+    subprocess.run(["git", "-C", str(worktree), "add", "new.py"], check=True)
+    subprocess.run(["git", "-C", str(worktree), "commit", "-qm", "worktree only"], check=True)
+    reason = done_task.unlanded_worktree_reason("example") or ""
+    assert "commits not on its HEAD" in reason and str(repo.resolve()) in reason
+
+    _, _, complete = _completion_fixture(monkeypatch, {"status": "running", "project_id": "example"})
+    monkeypatch.setattr(done, "unlanded_worktree_reason", done_task.unlanded_worktree_reason)
+    result = CliRunner().invoke(done.app, ["task-1"])
+    assert result.exit_code == 1
+    assert "land it on" in result.output
+    complete.assert_not_called()
 
 
 def test_worktree_closeout_renews_the_claim_against_the_project_repo(tmp_path, monkeypatch):
