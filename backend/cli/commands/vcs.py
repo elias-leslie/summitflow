@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import subprocess
+from collections.abc import Sequence
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Annotated, Any
@@ -211,14 +212,65 @@ def _target_repos(all_projects: bool) -> list[Path]:
     repos = _get_managed_repos()
     if all_projects:
         return repos
+    from ..lib.execution_context import canonical_repo_root
+
     cwd = Path.cwd().resolve()
+    # A worktree of a managed repo audits that repo.
+    candidates = [cwd, *([canonical] if (canonical := canonical_repo_root(cwd)) else [])]
+    for candidate in candidates:
+        for repo in repos:
+            if candidate.is_relative_to(repo.resolve()):
+                return [repo]
+    typer.echo(f"--current needs a managed repository, but {cwd} is not inside one. "
+               "Run it from a project checkout, or use --all.", err=True)
+    raise typer.Exit(2)
+
+
+def _parse_worktrees(porcelain: str) -> list[dict[str, str]]:
+    entries: list[dict[str, str]] = []
+    for block in porcelain.strip().split("\n\n"):
+        entry: dict[str, str] = {}
+        for line in block.splitlines():
+            key, _, value = line.partition(" ")
+            entry[key] = value
+        if entry.get("worktree"):
+            entries.append(entry)
+    return entries
+
+
+def _worktree_rows(repos: list[Path]) -> list[dict[str, Any]]:
+    """Linked worktrees of each repo, with where they live and what work they hold."""
+    from ..lib.workspace_paths import get_workspaces_root
+
+    workspaces = get_workspaces_root().resolve()
+    rows: list[dict[str, Any]] = []
     for repo in repos:
-        try:
-            cwd.relative_to(repo)
-            return [repo]
-        except ValueError:
+        if not (repo / ".git").exists():
             continue
-    return repos[:1] if repos else []
+        listed = subprocess.run(["git", "-C", str(repo), "worktree", "list", "--porcelain"],
+                                capture_output=True, text=True, check=False)
+        if listed.returncode:
+            continue
+        main, *linked = _parse_worktrees(listed.stdout)
+        for entry in linked:
+            path = Path(entry["worktree"])
+            row: dict[str, Any] = {
+                "repo": repo.name, "path": str(path),
+                "branch": entry.get("branch", "").removeprefix("refs/heads/") or "detached",
+                "outside_workspace": not path.resolve().is_relative_to(workspaces),
+                "prunable": "prunable" in entry or not path.is_dir(), "dirty": 0, "unlanded": 0,
+            }
+            if not row["prunable"]:
+                status = subprocess.run(["git", "-C", str(path), "status", "--porcelain"],
+                                        capture_output=True, text=True, check=False)
+                row["dirty"] = len(status.stdout.splitlines()) if status.returncode == 0 else -1
+                if entry.get("HEAD") and main.get("HEAD"):
+                    ahead = subprocess.run(["git", "-C", str(repo), "rev-list", "--count",
+                                            f"{main['HEAD']}..{entry['HEAD']}"],
+                                           capture_output=True, text=True, check=False)
+                    row["unlanded"] = int(ahead.stdout.strip() or 0) if ahead.returncode == 0 else -1
+            rows.append(row)
+    return rows
 
 
 def _discover_unmanaged_repos(repos: list[Path]) -> list[Path]:
@@ -289,8 +341,19 @@ def _issues(
     cleanup_payload: dict[str, Any],
     unmanaged: list[Path],
     task_refs: list[dict[str, Any]],
+    worktrees: Sequence[dict[str, Any]] = (),
 ) -> list[VcsIssue]:
     issues: list[VcsIssue] = []
+    for tree in worktrees:
+        if tree["prunable"]:
+            issues.append(VcsIssue(tree["repo"], "worktree", f"missing:{tree['path']}", "git worktree prune"))
+        elif tree["outside_workspace"] or tree["dirty"] or tree["unlanded"]:
+            where = " outside_workspace" if tree["outside_workspace"] else ""
+            issues.append(VcsIssue(
+                tree["repo"], "worktree",
+                f"{tree['path']} dirty:{tree['dirty']} unlanded:{tree['unlanded']}{where}",
+                "land or hand off its work, then git worktree remove",
+            ))
     for row in git_rows:
         repo = str(row.get("name") or "?")
         if int(row.get("uncommitted") or 0):
@@ -335,9 +398,11 @@ def _summary(
     cleanup_payload: dict[str, Any],
     unmanaged: list[Path],
     task_refs: list[dict[str, Any]],
+    worktrees: Sequence[dict[str, Any]] = (),
 ) -> dict[str, int]:
     cleanup_summary = cleanup_payload["summary"]
     return {
+        "worktrees": len(worktrees),
         "repos": len(repos),
         "dirty": sum(1 for row in git_rows if int(row.get("uncommitted") or 0)),
         "ahead": sum(int(row.get("ahead") or 0) for row in git_rows),
@@ -357,8 +422,10 @@ def _details_text(
     unmanaged: list[Path],
     task_refs: list[dict[str, Any]],
     issues: list[VcsIssue],
+    worktrees: Sequence[dict[str, Any]] = (),
 ) -> str:
     payload = {
+        "worktrees": list(worktrees),
         "summary": summary,
         "sync": sync,
         "git": git_rows,
@@ -376,7 +443,8 @@ def _print_compact(label: str, summary: dict[str, int], issues: list[VcsIssue], 
         f"{label}:{status} repos={summary['repos']} dirty={summary['dirty']} "
         f"ahead={summary['ahead']} behind={summary['behind']} "
         f"cleanup={summary['cleanup']} unmanaged={summary['unmanaged']} "
-        f"task_refs={summary['task_refs']} blockers={len(issues)} details:{display_path(Path.cwd(), details)}"
+        f"task_refs={summary['task_refs']} worktrees={summary.get('worktrees', 0)} "
+        f"blockers={len(issues)} details:{display_path(Path.cwd(), details)}"
     )
     for issue in issues[:8]:
         print(f"BLOCKER:{issue.repo}:{issue.kind}:{issue.detail}|next:{issue.next_action}")
@@ -391,8 +459,9 @@ def _run_doctor(*, all_projects: bool, fetch: bool) -> tuple[dict[str, Any], lis
     cleanup = _cleanup_payload(all_projects)
     unmanaged = _discover_unmanaged_repos(repos) if all_projects else []
     task_refs = _safe_task_ref_rows(repos)
-    summary = _summary(repos, git_rows, cleanup, unmanaged, task_refs)
-    issues = _issues(git_rows, cleanup, unmanaged, task_refs)
+    worktrees = _worktree_rows(repos)
+    summary = _summary(repos, git_rows, cleanup, unmanaged, task_refs, worktrees)
+    issues = _issues(git_rows, cleanup, unmanaged, task_refs, worktrees)
     details = write_details(
         Path.cwd(),
         "vcs-doctor",
@@ -404,6 +473,7 @@ def _run_doctor(*, all_projects: bool, fetch: bool) -> tuple[dict[str, Any], lis
             unmanaged=unmanaged,
             task_refs=task_refs,
             issues=issues,
+            worktrees=worktrees,
         ),
     )
     result = {"summary": summary, "issues": [issue.__dict__ for issue in issues], "details": str(details)}
@@ -426,7 +496,7 @@ def doctor(
         typer.Option("--fail-on-issues/--no-fail", help="Exit 2 when VCS debt remains."),
     ] = True,
 ) -> None:
-    """Report Git, cleanup, and unmanaged-repo debt in one compact check."""
+    """Report Git, cleanup, unmanaged-repo and informal-worktree debt in one compact check."""
     result, issues, details = _run_doctor(all_projects=all_projects, fetch=fetch)
     if ctx.obj.is_compact:
         _print_compact("VCS", result["summary"], issues, details)

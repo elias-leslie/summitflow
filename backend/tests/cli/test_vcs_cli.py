@@ -257,3 +257,75 @@ def test_publication_reobserve_replays_retained_receipt_only_on_request():
     assert plain.exit_code == 0 and result.exit_code == 0
     replay.assert_called_once_with("project")
     assert "Reobserved: verified; source=aaaaaaaaaaaa; evidence=/receipt.json" in result.stdout
+
+
+def _git_repo(path: Path):
+    import subprocess
+
+    path.mkdir(parents=True)
+
+    def git(*args: str) -> str:
+        return subprocess.run(["git", *args], cwd=path, check=True, capture_output=True, text=True).stdout.strip()
+
+    git("init", "-q", "--initial-branch=main")
+    git("config", "user.name", "Test")
+    git("config", "user.email", "test@example.invalid")
+    (path / "app.py").write_text("before\n")
+    git("add", ".")
+    git("commit", "-qm", "baseline")
+    return git
+
+
+def test_doctor_current_outside_a_managed_repo_errors_instead_of_auditing_another(tmp_path, monkeypatch) -> None:
+    repo = tmp_path / "repo"
+    _git_repo(repo)
+    elsewhere = tmp_path / "elsewhere"
+    elsewhere.mkdir()
+    monkeypatch.setattr(vcs, "_get_managed_repos", lambda: [tmp_path / "first", repo])
+    monkeypatch.chdir(elsewhere)
+    result = runner.invoke(vcs.app, ["doctor", "--current"], obj=OutputContext(compact=True))
+    assert result.exit_code == 2
+    assert "not inside one" in result.output
+
+
+def test_doctor_current_from_a_worktree_audits_its_repo(tmp_path, monkeypatch) -> None:
+    repo = tmp_path / "repo"
+    git = _git_repo(repo)
+    git("worktree", "add", "-q", "--detach", str(tmp_path / "wt"))
+    monkeypatch.setattr(vcs, "_get_managed_repos", lambda: [tmp_path / "first", repo])
+    monkeypatch.chdir(tmp_path / "wt")
+    assert vcs._target_repos(False) == [repo]
+
+
+def test_doctor_reports_informal_worktrees_with_location_and_work(tmp_path, monkeypatch) -> None:
+    workspaces = tmp_path / "workspaces"
+    repo = workspaces / "projects" / "repo"
+    git = _git_repo(repo)
+    clean = workspaces / "worktrees" / "clean"
+    git("worktree", "add", "-q", "--detach", str(clean))
+    outside = tmp_path / "scratch" / "wt"
+    git("worktree", "add", "-q", "-b", "side", str(outside))
+    (outside / "app.py").write_text("unlanded\n")
+    subprocess_git = ["git", "-C", str(outside)]
+    import subprocess
+
+    subprocess.run([*subprocess_git, "commit", "-qam", "side work"], check=True, capture_output=True)
+    (outside / "notes.txt").write_text("dirty\n")
+    gone = workspaces / "worktrees" / "gone"
+    git("worktree", "add", "-q", "--detach", str(gone))
+    import shutil
+
+    shutil.rmtree(gone)
+    monkeypatch.setattr("cli.lib.workspace_paths.get_workspaces_root", lambda: workspaces)
+
+    rows = {Path(row["path"]).name: row for row in vcs._worktree_rows([repo])}
+    assert rows["clean"] | {"path": ""} == {"repo": "repo", "path": "", "branch": "detached", "outside_workspace": False,
+                                            "prunable": False, "dirty": 0, "unlanded": 0}
+    assert rows["wt"]["branch"] == "side" and rows["wt"]["outside_workspace"] is True
+    assert rows["wt"]["dirty"] == 1 and rows["wt"]["unlanded"] == 1
+    assert rows["gone"]["prunable"] is True
+
+    issues = vcs._issues([], _cleanup_payload(), [], [], list(rows.values()))
+    details = sorted(issue.detail for issue in issues)
+    assert details == sorted([f"missing:{gone}", f"{outside} dirty:1 unlanded:1 outside_workspace"])
+    assert {issue.kind for issue in issues} == {"worktree"}
