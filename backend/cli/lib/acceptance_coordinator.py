@@ -139,10 +139,43 @@ def accept_source(repo: Path, *, sha: str, materialization: Materialization,
         raise acceptance.AcceptanceError("Acceptance materialization must be actual or isolated")
     proof = acceptance.validate_acceptance_receipt(repo, _reference_artifact(repo, receipt), sha=sha)
     result = _result(receipt, proof)
-    if result.reused and coverage == "task" and (result.reference.scope != scope
+    # Reused full proof already ran every required stage over the whole tree.
+    if result.reused and coverage == "task" and result.reference.coverage == "task" and (result.reference.scope != scope
             or result.reference.declared_stages != tuple(sorted(set(required_stages)))):
         raise acceptance.AcceptanceError("Task acceptance reuse requires the exact owned scope and declared stages")
     return result
+
+
+ISOLATED_BY_DEFAULT = frozenset({"summitflow"})
+_BASIS_VALUES: dict[str, Materialization] = {"isolated": "isolated", "in-place": "actual"}
+
+
+def configured_materialization(repo: Path, project_id: str | None = None) -> Materialization:
+    """The project's acceptance basis: ``.st-check.toml [acceptance] basis``, else its default.
+
+    ``basis = "isolated"`` accepts the exact commit in a private clone, so a
+    dirty shared checkout never blocks it; ``basis = "in-place"`` keeps the
+    working-tree run. Projects in ISOLATED_BY_DEFAULT start isolated.
+    """
+    import tomllib
+
+    try:
+        settings = tomllib.loads((repo / ".st-check.toml").read_text(encoding="utf-8")).get("acceptance")
+    except FileNotFoundError:
+        settings = None
+    except (OSError, UnicodeError, tomllib.TOMLDecodeError) as exc:
+        raise acceptance.AcceptanceError(f"invalid .st-check.toml: {exc}") from exc
+    value = settings.get("basis") if isinstance(settings, dict) else None
+    if value is None:
+        return "isolated" if (project_id or repo.resolve().name) in ISOLATED_BY_DEFAULT else "actual"
+    if value not in _BASIS_VALUES:
+        raise acceptance.AcceptanceError('.st-check.toml [acceptance] basis must be "isolated" or "in-place"')
+    return _BASIS_VALUES[value]
+
+
+def select_materialization(repo: Path, *, dirty: bool, project_id: str | None = None) -> Materialization:
+    """A dirty checkout or an isolated project accepts in a private clone; otherwise in place."""
+    return "isolated" if dirty else configured_materialization(repo, project_id)
 
 
 def require_scope_matches_revision(repo: Path, sha: str, scope: tuple[str, ...]) -> None:

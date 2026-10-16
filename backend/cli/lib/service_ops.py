@@ -1107,15 +1107,21 @@ def _acceptance_candidate(
     receipt: Path | Mapping[str, Any] | None,
 ) -> Path | Mapping[str, Any]:
     from . import acceptance
+    from .acceptance_coordinator import accept_source, select_materialization
 
     if receipt is not None:
         return receipt
-    identity = acceptance.source_identity(project.root)
-    sha = str(identity.get("source_commit") or identity.get("commit") or "")
-    if not sha:
-        raise ServiceError("Could not identify current source for local acceptance")
     try:
-        return acceptance.accept_revision(project.root, sha=sha, reuse=True)
+        sha = acceptance._git_value(project.root, ["rev-parse", "--verify", "HEAD^{commit}"],
+                                    "Could not identify current source for local acceptance")
+        status = acceptance._git(project.root, ["status", "--porcelain=v1", "--untracked-files=all"])
+        if status.returncode:
+            raise acceptance.AcceptanceError("Could not inspect the checkout for local acceptance")
+        # An isolated project, or any dirty checkout, accepts the exact commit
+        # in a private clone: other agents' uncommitted work never blocks it.
+        materialization = select_materialization(project.root, dirty=bool(status.stdout), project_id=project.project_id)
+        print(f"[service] accepting {sha[:12]} " + ("in an isolated clone" if materialization == "isolated" else "in place"))
+        return accept_source(project.root, sha=sha, materialization=materialization).receipt
     except acceptance.AcceptanceError as exc:
         raise ServiceError(f"Local acceptance failed: {exc}") from exc
 
@@ -1150,11 +1156,13 @@ def resolve_accepted_source(
 def prepare_accepted_release(
     project: ProjectServices,
     receipt: Path | Mapping[str, Any] | None = None,
+    *,
+    rollback: bool = False,
 ) -> tuple[service_release.PreparedRelease, ProjectServices]:
     """Validate and materialize accepted source while holding the repo mutation lock."""
     candidate = _acceptance_candidate(project, receipt)
     try:
-        release = service_release.prepare_release(project.project_id, project.root, candidate)
+        release = service_release.prepare_release(project.project_id, project.root, candidate, rollback=rollback)
     except Exception as exc:
         if isinstance(exc, (ServiceError, service_release.ReleaseError)):
             raise
@@ -1305,6 +1313,7 @@ def queue_detached(
     accepted_source: Mapping[str, Any] | None = None,
     migrate_monitor_store: bool = False,
     with_ack: str | None = None,
+    rollback: bool = False,
 ) -> int:
     unit = f"sf-rebuild-{project}"
     if systemctl("is-active", f"{unit}.service").stdout.strip() in {"active", "activating", "deactivating", "reloading"}:
@@ -1321,6 +1330,8 @@ def queue_detached(
         command.extend(["--worker", worker])
     if with_ack:
         command.extend(["--with-ack", with_ack])
+    if rollback:
+        command.append("--rollback")
     source_evidence = None
     if accepted_source is not None:
         source = service_release.AcceptedSource.from_descriptor(accepted_source)

@@ -587,12 +587,15 @@ def test_detached_rebuild_preserves_scope_and_named_worker(lifecycle, monkeypatc
 
 
 def test_detached_rebuild_reports_local_acceptance_failure_without_traceback(lifecycle, monkeypatch):
-    from cli.lib import acceptance
+    import subprocess
 
-    monkeypatch.setattr(acceptance, "source_identity", lambda _root: {"source_commit": "c" * 40})
+    from cli.lib import acceptance, acceptance_coordinator
+
+    monkeypatch.setattr(acceptance, "_git_value", lambda *_args: "c" * 40)
+    monkeypatch.setattr(acceptance, "_git", lambda *_args: subprocess.CompletedProcess([], 0, "", ""))
     monkeypatch.setattr(
-        acceptance,
-        "accept_revision",
+        acceptance_coordinator,
+        "accept_source",
         Mock(side_effect=acceptance.AcceptanceError("acceptance_checks_failed; TEST:FAIL:1; acceptance evidence: /tmp/check.json")),
     )
     result = CliRunner().invoke(service.app, ["rebuild", "example", "--detach"])

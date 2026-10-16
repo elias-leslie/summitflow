@@ -680,7 +680,8 @@ def test_valid_task_receipt_does_not_hide_older_exact_full_receipt(source, monke
     if with_full:
         full = acceptance.accept_revision(project, sha=head, runner=runner)
         os.utime(full["acceptance_artifact"], ns=(1_000_000_000, 1_000_000_000))
-    task = acceptance.accept_revision(project, sha=head, coverage="task", scope=("note",), runner=runner)
+    # Without reuse=False the task request would reuse the full proof itself.
+    task = acceptance.accept_revision(project, sha=head, coverage="task", scope=("note",), runner=runner, reuse=False)
     os.utime(task["acceptance_artifact"], ns=(2_000_000_000, 2_000_000_000))
     assert acceptance.validate_acceptance_receipt(project, Path(task["acceptance_artifact"]), sha=head)["coverage"] == "task"
     monkeypatch.setattr(acceptance, "accept_revision", Mock(side_effect=AssertionError("Reuse only; no acceptance gate")))

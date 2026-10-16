@@ -298,12 +298,47 @@ def _materialize_release(
     return prepared
 
 
+def current_release_commit(project_id: str, *, state_root: Path | None = None) -> str | None:
+    """The source commit of the live release, read from its sealed receipt."""
+    project_state = _project_state(project_id, state_root)
+    build_id = _current_build(project_state)
+    if build_id is None:
+        return None
+    try:
+        value = json.loads((project_state / "receipts" / f"{build_id}.json").read_text())
+    except (OSError, ValueError):
+        return None
+    if not isinstance(value, dict) or value.get("deployment_id") != _receipt_id(value):
+        return None
+    commit = (value.get("source") or {}).get("source_commit")
+    return commit if isinstance(commit, str) and commit else None
+
+
+def require_forward_deploy(project_id: str, repo: Path, commit: str, *, rollback: bool = False,
+                           state_root: Path | None = None) -> None:
+    """Refuse to replace the live release with a commit that does not contain it, unless rolling back."""
+    current = current_release_commit(project_id, state_root=state_root)
+    if rollback or current is None or current == commit:
+        return
+    result = subprocess.run(["git", "merge-base", "--is-ancestor", current, commit], cwd=repo,
+                            capture_output=True, text=True, check=False)
+    if result.returncode == 0:
+        return
+    unknown = " (it is not in this checkout's history)" if result.returncode != 1 else ""
+    raise ReleaseError(
+        f"deploy_not_forward: {commit[:12]} does not contain the live release {current[:12]}{unknown}, "
+        "so deploying it would drop deployed commits; deploy a commit that contains the live release, "
+        "or pass --rollback to replace it on purpose"
+    )
+
+
 def prepare_release(
     project_id: str,
     repo: Path,
     source: Mapping[str, Any] | Path,
     *,
     state_root: Path | None = None,
+    rollback: bool = False,
 ) -> PreparedRelease:
     """Validate a receipt and materialize its commit/tree under the shared repo lock."""
     from . import acceptance
@@ -311,6 +346,8 @@ def prepare_release(
     with acceptance.repo_lock(repo, purpose="deployment", wait_seconds=acceptance.REPO_LOCK_WAIT_SECONDS):
         descriptor = acceptance.validate_acceptance_receipt(repo, source)
         AcceptedSource.from_descriptor(descriptor, require_full=True)
+        require_forward_deploy(project_id, repo, str(descriptor["source_commit"]), rollback=rollback,
+                               state_root=state_root)
         if not isinstance(source, Path):
             descriptor = {
                 **descriptor,

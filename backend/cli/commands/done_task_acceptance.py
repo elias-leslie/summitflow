@@ -321,26 +321,58 @@ def _sandbox_command(repo: Path, source: Path, metadata: Path, common: Path,
     return command
 
 
-def accept_isolated_revision(repo: Path, *, sha: str, scope: tuple[str, ...], task_id: str, reuse: bool = True,
-                             coverage: str = "full", required_stages: Sequence[str] = ()) -> dict[str, Any]:
-    """Run canonical full acceptance over the committed tree, preserving WIP."""
-    repo = repo.resolve()
-    with acceptance.repo_lock(repo, purpose="capture isolated acceptance"):
+def _capture_isolated(repo: Path, *, sha: str, scope: tuple[str, ...], task_id: str, reuse: bool,
+                      coverage: str, required_stages: Sequence[str]) -> tuple[dict[str, Any], dict[str, Any], dict[str, Any] | None]:
+    """Capture the exact source and plan; return a reusable receipt for them when one exists."""
+    with acceptance.repo_lock(repo, purpose="capture isolated acceptance", wait_seconds=acceptance.REPO_LOCK_WAIT_SECONDS):
         _require_local_objects(repo)
         before = acceptance.isolated_input_identity(repo, sha=sha, scope=scope)
         require_scope_matches_revision(repo, before["commit"], scope)
         plan = acceptance.requested_plan(repo, commit=before["commit"], coverage=coverage, scope=scope, required_stages=required_stages)
-        if reuse:
-            key = acceptance._accepted_source_cache_key(before, plan)
-            artifact = acceptance._receipt_path(repo, key)
-            if artifact.is_file():
-                try:
-                    validated = acceptance.validate_acceptance_receipt(repo, artifact, sha=before["commit"])
-                except acceptance.AcceptanceError:
-                    pass
-                else:
-                    return {**validated, "task_id": task_id, "scope": list(scope),
-                            "reused": True, "working_tree_clean": not _git(repo, "status", "--porcelain=v1", "--untracked-files=all")}
+        if not reuse:
+            return before, plan, None
+        validated = None
+        artifact = acceptance._receipt_path(repo, acceptance._accepted_source_cache_key(before, plan))
+        if artifact.is_file():
+            try:
+                validated = acceptance.validate_acceptance_receipt(repo, artifact, sha=before["commit"])
+            except acceptance.AcceptanceError:
+                validated = None
+        if validated is None:
+            # A receipt done, rebuild or nightly wrote for this commit on
+            # either basis, validated on its own basis.
+            validated = acceptance.receipt_for_commit(repo, before["commit"], coverage, scope=scope,
+                                                      required_stages=required_stages)
+        if validated is None:
+            return before, plan, None
+        return before, plan, {**validated, "task_id": task_id, "scope": list(scope), "reused": True,
+                              "working_tree_clean": not _git(repo, "status", "--porcelain=v1", "--untracked-files=all")}
+
+
+def accept_isolated_revision(repo: Path, *, sha: str, scope: tuple[str, ...], task_id: str, reuse: bool = True,
+                             coverage: str = "full", required_stages: Sequence[str] = ()) -> dict[str, Any]:
+    """Run canonical acceptance over the committed tree, preserving WIP and never blocking edits."""
+    repo = repo.resolve()
+
+    def capture() -> tuple[dict[str, Any], dict[str, Any], dict[str, Any] | None]:
+        return _capture_isolated(repo, sha=sha, scope=scope, task_id=task_id, reuse=reuse,
+                                 coverage=coverage, required_stages=required_stages)
+
+    _before, _plan, reused = capture()
+    if reused is not None:
+        return reused
+    # One isolated run per repository at a time. A waiter recaptures: the
+    # holder has often just accepted this same commit.
+    with acceptance.acceptance_slot(repo, purpose="isolated acceptance"):
+        before, plan, reused = capture()
+        if reused is not None:
+            return reused
+        return _run_isolated(repo, before, plan, scope=scope, task_id=task_id, reuse=reuse,
+                             coverage=coverage, required_stages=required_stages)
+
+
+def _run_isolated(repo: Path, before: dict[str, Any], plan: dict[str, Any], *, scope: tuple[str, ...],
+                  task_id: str, reuse: bool, coverage: str, required_stages: Sequence[str]) -> dict[str, Any]:
     with heavy_work("isolated task acceptance") as work:
         # /tmp is private and short inside bwrap. Keep its backing directory
         # visible at the same host path for Docker, including nested acceptance.
@@ -431,7 +463,7 @@ def accept_isolated_revision(repo: Path, *, sha: str, scope: tuple[str, ...], ta
             if len(lines) != 1:
                 raise acceptance.AcceptanceError(f"Isolated acceptance returned no unique receipt; evidence: {log}")
             receipt = json.loads(lines[0])
-            with acceptance.repo_lock(repo, purpose="finalize isolated acceptance"):
+            with acceptance.repo_lock(repo, purpose="finalize isolated acceptance", wait_seconds=acceptance.REPO_LOCK_WAIT_SECONDS):
                 after = acceptance.isolated_input_identity(repo, sha=before["commit"], captured=before, scope=scope)
                 current_plan = acceptance.requested_plan(repo, commit=before["commit"], coverage=coverage,
                                                          scope=scope, required_stages=required_stages)

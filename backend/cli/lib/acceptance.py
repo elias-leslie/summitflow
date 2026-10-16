@@ -13,7 +13,7 @@ import sys
 import tempfile
 import time
 from collections.abc import Callable, Iterator, Mapping, Sequence
-from contextlib import contextmanager
+from contextlib import contextmanager, suppress
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
@@ -208,7 +208,13 @@ def _git_common_dir(repo: Path) -> Path:
     return Path(value)
 
 
-REPO_LOCK_WAIT_SECONDS = 60.0
+# Matches st commit's wait: a commit running its failing checks inside the
+# lock must not time out rebuild, acceptance or deployment waiters.
+REPO_LOCK_WAIT_SECONDS = 300.0
+# Isolated acceptance takes one per-repo slot instead of an edit-freezing op
+# lease. A full summitflow run takes about 2-7 minutes; its slowest declared
+# stage may run 37, so waiters give up only after a long bound.
+ACCEPTANCE_SLOT_WAIT_SECONDS = 2700.0
 
 
 @contextmanager
@@ -237,6 +243,40 @@ def repo_lock(repo: Path, *, purpose: str, wait_seconds: float = 0.0) -> Iterato
                 if not noticed:
                     print(f"st: another repository operation is running; waiting up to {wait_seconds:.0f}s "
                           f"to start {purpose}", file=sys.stderr)
+                    noticed = True
+                time.sleep(2.0)
+        try:
+            yield
+        finally:
+            fcntl.flock(handle.fileno(), fcntl.LOCK_UN)
+
+
+@contextmanager
+def acceptance_slot(repo: Path, *, purpose: str, wait_seconds: float = ACCEPTANCE_SLOT_WAIT_SECONDS) -> Iterator[None]:
+    """Run one isolated acceptance per repository at a time without blocking edits.
+
+    The private clone already makes shared-checkout edits harmless, so this
+    slot only serializes the heavy runs: a waiter usually finds the receipt
+    the holder just wrote and reuses it instead of running again. Never hold
+    ``repo_lock`` while waiting here.
+    """
+    lock_dir = _git_common_dir(repo) / "st"
+    lock_dir.mkdir(parents=True, exist_ok=True)
+    with (lock_dir / "acceptance-slot.lock").open("a+", encoding="utf-8") as handle:
+        deadline = time.monotonic() + wait_seconds
+        noticed = False
+        while True:
+            try:
+                fcntl.flock(handle.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+                break
+            except BlockingIOError as exc:
+                if time.monotonic() >= deadline:
+                    raise AcceptanceError(
+                        f"acceptance_slot_busy: cannot start {purpose}; another isolated acceptance of this repository is still running"
+                    ) from exc
+                if not noticed:
+                    print(f"st: another isolated acceptance of this repository is running; waiting up to "
+                          f"{wait_seconds:.0f}s to start {purpose} (edits are not blocked)", file=sys.stderr)
                     noticed = True
                 time.sleep(2.0)
         try:
@@ -962,22 +1002,86 @@ def acceptance_artifact_directory(repo: Path) -> Path:
 
 
 _RECEIPT_SCAN_LIMIT = 16
+_COMMIT_INDEX_LIMIT = 32
+_COMMIT_ID = re.compile(r"[0-9a-f]{40}|[0-9a-f]{64}")
 
 
-def _validated_receipt_for_commit(repo: Path, commit: str, coverage: str) -> dict[str, Any] | None:
-    """Return the newest successful receipt for commit; validation re-derives its plan on its own basis."""
-    directory = acceptance_artifact_directory(repo)
-    try:
-        candidates = sorted(directory.glob("*.json"), key=lambda path: path.stat().st_mtime, reverse=True)
-    except OSError:
+def _commit_index_path(repo: Path, commit: str) -> Path | None:
+    if not _COMMIT_ID.fullmatch(commit):
         return None
-    for artifact in candidates[:_RECEIPT_SCAN_LIMIT]:
+    return acceptance_artifact_directory(repo) / "commits" / f"{commit}.json"
+
+
+def _index_receipt(repo: Path, receipt: Mapping[str, Any]) -> None:
+    """List a successful receipt under its commit, whichever basis or caller wrote it.
+
+    Callers hold ``repo_lock``. The index only finds receipts; every use still
+    validates the immutable receipt itself, so a lost or stale entry is harmless.
+    """
+    path = _commit_index_path(repo, str((receipt.get("source") or {}).get("commit") or ""))
+    acceptance_id = receipt.get("acceptance_id")
+    if path is None or not isinstance(acceptance_id, str):
+        return
+    try:
+        listed = json.loads(path.read_text(encoding="utf-8")).get("receipts", [])
+    except (OSError, ValueError, AttributeError):
+        listed = []
+    ids = [acceptance_id, *(item for item in listed if isinstance(item, str) and item != acceptance_id)]
+    with suppress(OSError):
+        path.parent.mkdir(parents=True, exist_ok=True)
+        _write_receipt(path, {"receipts": ids[:_COMMIT_INDEX_LIMIT]})
+
+
+def _full_receipt_covers(receipt: Mapping[str, Any], required_stages: Sequence[str]) -> bool:
+    """A full receipt stands in for task proof only when each required stage passed in it."""
+    passed = {stage.get("id") for check in receipt.get("checks") or () if isinstance(check, dict)
+              for stage in (check.get("evidence") or {}).get("stages") or ()
+              if isinstance(stage, dict) and stage.get("state") == "pass" and stage.get("coverage") == "full"}
+    return set(required_stages) <= passed
+
+
+def receipt_for_commit(repo: Path, commit: str, coverage: str = "full", *,
+                       scope: Sequence[str] = (), required_stages: Sequence[str] = ()) -> dict[str, Any] | None:
+    """Find a valid successful receipt for one commit, whichever caller or basis produced it.
+
+    done, rebuild and nightly share this lookup, so one receipt per commit and
+    plan serves all of them. Each candidate is validated on its own recorded
+    basis. Full proof also serves task coverage when it ran every required
+    stage; task proof serves only the identical owned scope and stages.
+    """
+    directory = acceptance_artifact_directory(repo)
+    candidates: list[Path] = []
+    index = _commit_index_path(repo, commit)
+    if index is not None:
+        try:
+            listed = json.loads(index.read_text(encoding="utf-8")).get("receipts", [])
+        except (OSError, ValueError, AttributeError):
+            listed = []
+        candidates.extend(directory / f"{item}.json" for item in listed
+                          if isinstance(item, str) and re.fullmatch(r"[0-9a-f]{64}", item))
+    # Receipts written before the commit index existed.
+    with suppress(OSError):
+        candidates.extend(sorted(directory.glob("*.json"), key=lambda path: path.stat().st_mtime,
+                                 reverse=True)[:_RECEIPT_SCAN_LIMIT])
+    wanted_scope = sorted({str(path).strip() for path in scope if str(path).strip()})
+    wanted_stages = sorted(set(required_stages))
+    seen: set[Path] = set()
+    for artifact in candidates:
+        if artifact in seen:
+            continue
+        seen.add(artifact)
         try:
             value = json.loads(artifact.read_text())
         except (OSError, ValueError):
             continue
-        if (not isinstance(value, dict) or value.get("coverage") != coverage
-                or (value.get("source") or {}).get("commit") != commit):
+        if not isinstance(value, dict) or (value.get("source") or {}).get("commit") != commit:
+            continue
+        kind = value.get("coverage")
+        if kind == "task":
+            if (coverage != "task" or value.get("scope") != wanted_scope
+                    or (value.get("plan") or {}).get("required_stages", []) != wanted_stages):
+                continue
+        elif kind != "full" or (coverage == "task" and not _full_receipt_covers(value, wanted_stages)):
             continue
         try:
             return validate_acceptance_receipt(repo, artifact, sha=commit)
@@ -1215,22 +1319,27 @@ def persist_validated_receipt(
     key = _hash_parts([value["source"]["commit"].encode(), value["source"]["tree"].encode(),
                        value["inputs"]["fingerprint"].encode(), value["plan"]["fingerprint"].encode()])
     _write_receipt(_receipt_path(repo, key), value)
+    _index_receipt(repo, value)
     return _descriptor(value, artifact, reused=False)
 
 
 def accept_revision(repo: Path, **kwargs: Any) -> dict[str, Any]:
-    """Run acceptance under an op lease so other agents' edits wait instead of invalidating it."""
+    """Run in-place acceptance under an op lease so other agents' edits wait instead of invalidating it.
+
+    The isolated basis runs inside a private clone of the exact commit, so
+    shared-checkout edits cannot invalidate it: it takes neither the guard nor
+    the edit-freezing op lease. Its outer caller holds ``acceptance_slot``.
+    """
+    if kwargs.get("execution_basis") == "isolated":
+        return _accept_revision(repo, **kwargs)
     from .coord import CoordBlocked, guard, op_lease
 
-    # The isolated child sees a private, possibly read-only store; its outer
-    # caller is the one other agents can see.
-    if kwargs.get("execution_basis") != "isolated":
-        try:
-            guard(repo, "acceptance")
-        except CoordBlocked as exc:
-            raise AcceptanceError(str(exc)) from exc
-        except OSError:
-            pass  # coordination is best effort; acceptance itself must not depend on it
+    try:
+        guard(repo, "acceptance")
+    except CoordBlocked as exc:
+        raise AcceptanceError(str(exc)) from exc
+    except OSError:
+        pass  # coordination is best effort; acceptance itself must not depend on it
     with op_lease(repo, "acceptance"):
         return _accept_revision(repo, **kwargs)
 
@@ -1285,9 +1394,10 @@ def _accept_revision(
         # isolated receipt for this HEAD never matches the actual lookup, on a
         # clean or a dirty tree. Accept any receipt for this commit that passes
         # the same validation an explicit --acceptance gets, on its own basis.
-        # Task proof is scope-bound, so a clean tree only borrows full proof.
-        borrow = reuse and (coverage == "full" or not before["clean"])
-        validated = _validated_receipt_for_commit(repo, before["commit"], coverage) if borrow else None
+        # Task proof is scope-bound: it borrows a task receipt for the same
+        # scope and stages, or a full receipt that ran every required stage.
+        validated = receipt_for_commit(repo, before["commit"], coverage, scope=normalized_scope,
+                                       required_stages=required_stages) if reuse else None
         if validated is not None:
             return {
                 **validated,
@@ -1392,6 +1502,7 @@ def _accept_revision(
             # The lookup entry can advance; the evidence hyperlink remains
             # immutable so reruns never overwrite an earlier accepted receipt.
             _write_receipt(cache_artifact, receipt)
+            _index_receipt(repo, receipt)
         if state != "success":
             failed_check = next((check for check in checks if check["state"] == "failed"), None)
             lines = (failed_check or {}).get("detail", "").splitlines()
