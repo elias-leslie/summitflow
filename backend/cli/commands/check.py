@@ -251,19 +251,16 @@ def _run_on_ci_runner(
     return result, f"|runner:proxmox|execution_ms:{(time.monotonic() - started) * 1000:.3f}"
 
 
-def _run_tool(name: str, config: dict[str, object], extra_args: list[str]) -> int:
-    root = _resolve_repo_root()
-    cwd = _workdir(root, config)
-    binary = str(config.get("binary") or name)
-    base_args = shlex.split(str(config.get("args") or ""))
-    base_args, extra_args = adjusted_tool_args(name, base_args, extra_args, root)
-    # Acceptance resolves gate binaries on a fixed path so its receipt names
-    # the same tools whichever shell or worker validates it later.
-    resolved_command = _resolve_command(binary, root, cwd, base_args,
-                                        search_path=ci_parity.canonical_tool_path() if ci_parity.active() else None)
-    command = [*resolved_command, *extra_args]
-    label = str(config.get("label") or name.upper())
-    print(f"{label}:{name}:start")
+def _tool_failure(root: Path, label: str, name: str, output: str) -> int:
+    """Record why a tool could not run and print its 127 result line."""
+    details = write_check_details(root, name, output)
+    print(tool_result_line(label, name, 127, display_path(root, details), summary_hint(output)))
+    return 127
+
+
+def _npx_preflight(name: str, binary: str, base_args: list[str], resolved_command: list[str],
+                   root: Path, label: str) -> int | None:
+    """Skip or fail an npx tsc/biome that would fall back to an uninstalled package; None runs it."""
     if (name == "tsc" and binary == "npx" and base_args[:1] == ["tsc"]
             and resolved_command[1:2] == ["--no-install"] and tool_not_installed(name, root)):
         # Without project node_modules, npx would run whatever cached package
@@ -279,67 +276,92 @@ def _run_tool(name: str, config: dict[str, object], extra_args: list[str]) -> in
         if tool_not_installed(name, root):
             print(f"{label}:SKIP:{name}:{missing_tool_skip(name, root)}")
             return 0
-        output = (
+        return _tool_failure(root, label, name, (
             "Biome is declared for this project, but no project-local "
             "node_modules/.bin/biome was found. Install the project's frontend "
             "dependencies or fix its .st-check.toml [paths].biome declaration."
-        )
-        details = write_check_details(root, name, output)
-        print(tool_result_line(label, name, 127, display_path(root, details), summary_hint(output)))
-        return 127
-    report: Path | None = None
-    timing = ""
+        ))
+    return None
+
+
+def _add_pytest_report(root: Path, name: str, command: list[str]) -> Path | None:
+    """Append --junitxml to `command` in place for pytest without a report; return the report path."""
     # A real full-suite failure produced empty stdout/stderr. Retain pytest's
     # built-in report from this same run, not a second diagnostic test run.
     pytest_options = " ".join([*command, os.environ.get("PYTEST_ADDOPTS", "")])
-    if name == "pytest" and not re.search(r"(?:^|\s)--junit-?xml(?:=|\s)|no:junitxml", pytest_options):
-        report = detail_path(root, f"pytest-{uuid4().hex}").with_suffix(".xml")
-        command.append(f"--junitxml={report}")
-    try:
-        if name == "frontend-test":
-            result = _run_frontend_script(command, cwd, tool_env(root, os.environ, name))
+    if name != "pytest" or re.search(r"(?:^|\s)--junit-?xml(?:=|\s)|no:junitxml", pytest_options):
+        return None
+    report = detail_path(root, f"pytest-{uuid4().hex}").with_suffix(".xml")
+    command.append(f"--junitxml={report}")
+    return report
+
+
+def _execute_tool(root: Path, cwd: Path, name: str, binary: str, base_args: list[str], command: list[str],
+                  extra_args: list[str], report: Path | None) -> tuple[subprocess.CompletedProcess[str], str]:
+    """Run the tool where it belongs and return its result with the timing suffix."""
+    if name == "frontend-test":
+        return _run_frontend_script(command, cwd, tool_env(root, os.environ, name)), ""
+    queued = time.monotonic()
+    # Only direct adapters of fast, low-memory linters are light.
+    # Configured wrappers and all other tools retain the heavy default.
+    direct = binary == name or (binary == "npx" and base_args[:1] == [name])
+    work_class = "light" if (name in _LIGHT_TOOLS and direct) or _measured_light(root, name) else "heavy"
+    parity = ci_parity.active() and ci_parity.has_ci(root)
+    remote = (_run_on_ci_runner(root, command, cwd, report)
+              if name == "pytest" and work_class == "heavy" and not extra_args and not parity else None)
+    if remote is not None:
+        return remote
+    with (heavy_work(f"check {name}", work_class=work_class, project=root.name) as work,
+          _tool_environment(root, cwd, name, parity=parity) as (env, job, service_names)):
+        started = time.monotonic()
+        queue_ms = (started - queued) * 1000
+        if parity and name == "pytest":
+            result = _run_parity_pytest(work, cwd, command, extra_args, job, env, report, service_names)
         else:
-            queued = time.monotonic()
-            # Only direct adapters of fast, low-memory linters are light.
-            # Configured wrappers and all other tools retain the heavy default.
-            direct = binary == name or (binary == "npx" and base_args[:1] == [name])
-            work_class = "light" if (name in _LIGHT_TOOLS and direct) or _measured_light(root, name) else "heavy"
-            parity = ci_parity.active() and ci_parity.has_ci(root)
-            remote = (_run_on_ci_runner(root, command, cwd, report)
-                      if name == "pytest" and work_class == "heavy" and not extra_args and not parity else None)
-            if remote is not None:
-                result, timing = remote
-            else:
-                with (heavy_work(f"check {name}", work_class=work_class, project=root.name) as work,
-                      _tool_environment(root, cwd, name, parity=parity) as (env, job, service_names)):
-                    started = time.monotonic()
-                    queue_ms = (started - queued) * 1000
-                    if parity and name == "pytest":
-                        result = _run_parity_pytest(work, cwd, command, extra_args, job, env, report, service_names)
-                    else:
-                        result = work.run(
-                            command,
-                            cwd=cwd,
-                            env=env,
-                            capture_output=True,
-                            text=True,
-                            encoding="utf-8",
-                            errors="replace",
-                            check=False,
-                        )
-                    execution_ms = (time.monotonic() - started) * 1000
-                    # Largest single child so far: conservative when earlier tools ran first.
-                    _record_measurement(root, name, execution_ms,
-                                        resource.getrusage(resource.RUSAGE_CHILDREN).ru_maxrss, result.returncode)
-                    timing = (f"|lane:{work.lane}|queue_ms:{queue_ms:.3f}"
-                              f"|execution_ms:{execution_ms:.3f}")
-                    if work.waited_behind and queue_ms >= _QUEUE_NOTICE_MS:
-                        timing += f"|queued_behind:{work.waited_behind}"
+            result = work.run(
+                command,
+                cwd=cwd,
+                env=env,
+                capture_output=True,
+                text=True,
+                encoding="utf-8",
+                errors="replace",
+                check=False,
+            )
+        execution_ms = (time.monotonic() - started) * 1000
+        # Largest single child so far: conservative when earlier tools ran first.
+        _record_measurement(root, name, execution_ms,
+                            resource.getrusage(resource.RUSAGE_CHILDREN).ru_maxrss, result.returncode)
+        timing = (f"|lane:{work.lane}|queue_ms:{queue_ms:.3f}"
+                  f"|execution_ms:{execution_ms:.3f}")
+        if work.waited_behind and queue_ms >= _QUEUE_NOTICE_MS:
+            timing += f"|queued_behind:{work.waited_behind}"
+    return result, timing
+
+
+def _run_tool(name: str, config: dict[str, object], extra_args: list[str]) -> int:
+    root = _resolve_repo_root()
+    cwd = _workdir(root, config)
+    binary = str(config.get("binary") or name)
+    base_args = shlex.split(str(config.get("args") or ""))
+    base_args, extra_args = adjusted_tool_args(name, base_args, extra_args, root)
+    # Acceptance resolves gate binaries on a fixed path so its receipt names
+    # the same tools whichever shell or worker validates it later.
+    resolved_command = _resolve_command(binary, root, cwd, base_args,
+                                        search_path=ci_parity.canonical_tool_path() if ci_parity.active() else None)
+    command = [*resolved_command, *extra_args]
+    label = str(config.get("label") or name.upper())
+    print(f"{label}:{name}:start")
+    preflight = _npx_preflight(name, binary=binary, base_args=base_args, resolved_command=resolved_command,
+                               root=root, label=label)
+    if preflight is not None:
+        return preflight
+    report = _add_pytest_report(root, name, command)
+    try:
+        result, timing = _execute_tool(root, cwd, name, binary=binary, base_args=base_args, command=command,
+                                       extra_args=extra_args, report=report)
     except ci_parity.CiParityError as exc:
-        output = f"CI parity unavailable: {exc}"
-        details = write_check_details(root, name, output)
-        print(tool_result_line(label, name, 127, display_path(root, details), summary_hint(output)))
-        return 127
+        return _tool_failure(root, label, name, f"CI parity unavailable: {exc}")
     except OSError as exc:
         if name not in {"vitest", "frontend-test"} and isinstance(exc, FileNotFoundError):
             # A missing tool skips when it was never installable, or when the
@@ -348,18 +370,7 @@ def _run_tool(name: str, config: dict[str, object], extra_args: list[str]) -> in
             if skip == "no_relevant_paths" or tool_not_installed(name, root):
                 print(f"{label}:SKIP:{name}:{skip}")
                 return 0
-        output = f"{type(exc).__name__}: {exc}"
-        details = write_check_details(root, name, output)
-        print(
-            tool_result_line(
-                label,
-                name,
-                127,
-                display_path(root, details),
-                summary_hint(output),
-            )
-        )
-        return 127
+        return _tool_failure(root, label, name, f"{type(exc).__name__}: {exc}")
     output = tool_output(result.stdout, result.stderr)
     if name == "pytest" and not output.strip():
         output = f"pytest exited {result.returncode} with no console output."

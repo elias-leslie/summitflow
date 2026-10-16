@@ -15,8 +15,13 @@ fallback to the default candidate list).
 from __future__ import annotations
 
 import json
+import re
 import subprocess
+from collections.abc import Iterator
+from contextlib import contextmanager
 from pathlib import Path
+from types import SimpleNamespace
+from unittest.mock import Mock
 
 import pytest
 
@@ -29,6 +34,7 @@ from cli.commands.check_execution import (
     read_tool_paths,
     tool_env,
 )
+from cli.lib import ci_parity
 
 
 def test_tool_env_forces_node_env_test_for_vitest(tmp_path: Path) -> None:
@@ -244,3 +250,107 @@ def test_vitest_lane_follows_its_last_measured_run(
     assert admitted == [expected]
     recorded = json.loads(store.read_text())["vitest"]
     assert recorded["execution_ms"] >= 0 and recorded["max_rss_kb"] >= 0
+
+
+def test_unavailable_ci_parity_fails_with_127_before_running(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str],
+) -> None:
+    @contextmanager
+    def unavailable() -> Iterator[Path]:
+        raise ci_parity.CiParityError("scratch directory missing")
+        yield tmp_path
+
+    monkeypatch.setattr(guard, "_LOCK_DIRECTORY", tmp_path / "lane")
+    monkeypatch.setattr(check, "_resolve_repo_root", lambda: tmp_path)
+    monkeypatch.setattr(check, "_resolve_command", lambda binary, *_args, **_: [binary])
+    monkeypatch.setattr(ci_parity, "active", lambda *_: True)
+    monkeypatch.setattr(ci_parity, "has_ci", lambda _root: True)
+    monkeypatch.setattr(ci_parity, "scratch_directory", unavailable)
+    ran = Mock()
+    monkeypatch.setattr(guard.HeavyWork, "run", ran)
+
+    assert check._run_tool("ruff", {"binary": "ruff"}, []) == 127
+
+    ran.assert_not_called()
+    lines = capsys.readouterr().out.splitlines()
+    assert lines[0] == "RUFF:ruff:start"
+    result = re.fullmatch(r"RUFF:FAIL:127\|details:(\.dev-tools/[^|]+)\|hint:(.*)", lines[-1])
+    assert result is not None
+    assert result.group(2) == "CI parity unavailable: scratch directory missing"
+    assert (tmp_path / result.group(1)).read_text().strip() == "CI parity unavailable: scratch directory missing"
+
+
+@pytest.mark.parametrize(("clock", "waited_behind", "suffix"), [
+    ([10.0, 12.5, 13.0], "check pytest project=other",
+     "|lane:light1|queue_ms:2500.000|execution_ms:500.000|queued_behind:check pytest project=other"),
+    ([10.0, 10.25, 11.0], "check pytest project=other", "|lane:light1|queue_ms:250.000|execution_ms:750.000"),
+    ([10.0, 12.5, 13.0], None, "|lane:light1|queue_ms:2500.000|execution_ms:500.000"),
+])
+def test_admitted_run_reports_lane_queue_and_execution_timing(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str],
+    clock: list[float], waited_behind: str | None, suffix: str,
+) -> None:
+    admissions: list[tuple[str, dict[str, object]]] = []
+    commands: list[list[str]] = []
+
+    class Work:
+        lane = "light1"
+
+        def run(self, command: list[str], **_kwargs: object) -> subprocess.CompletedProcess[str]:
+            commands.append(command)
+            return subprocess.CompletedProcess(command, 1, "Found 2 errors.", "")
+
+    Work.waited_behind = waited_behind  # type: ignore[attr-defined]
+
+    @contextmanager
+    def admitted(description: str, **kwargs: object) -> Iterator[Work]:
+        admissions.append((description, kwargs))
+        yield Work()
+
+    ticks = iter(clock)
+    monkeypatch.setattr(check, "_resolve_repo_root", lambda: tmp_path)
+    monkeypatch.setattr(check, "_resolve_command", lambda binary, *_args, **_: [binary, "check"])
+    monkeypatch.setattr(check, "heavy_work", admitted)
+    monkeypatch.setattr(check, "time", SimpleNamespace(monotonic=lambda: next(ticks)))
+
+    assert check._run_tool("ruff", {"binary": "ruff"}, ["src"]) == 1
+
+    assert admissions == [("check ruff", {"work_class": "light", "project": tmp_path.name})]
+    assert commands == [["ruff", "check", "src"]]
+    line = capsys.readouterr().out.splitlines()[-1]
+    assert re.fullmatch(r"RUFF:FAIL:1\|details:\.dev-tools/[^|]+\|hint:Found 2 errors\." + re.escape(suffix), line)
+
+
+def test_ci_parity_pytest_runs_the_job_locally_with_its_report(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str],
+) -> None:
+    job = object()
+    env = {"CI": "true"}
+
+    @contextmanager
+    def environment(root: Path, cwd: Path, name: str, *, parity: bool) -> Iterator[tuple[dict, object, list[str]]]:
+        assert (root, cwd, name, parity) == (tmp_path, tmp_path, "pytest", True)
+        yield env, job, ["postgres"]
+
+    parity_run = Mock(return_value=subprocess.CompletedProcess([], 0, "3 passed", ""))
+    monkeypatch.delenv("PYTEST_ADDOPTS", raising=False)
+    monkeypatch.setattr(guard, "_LOCK_DIRECTORY", tmp_path / "lane")
+    monkeypatch.setattr(check, "_resolve_repo_root", lambda: tmp_path)
+    monkeypatch.setattr(check, "_workdir", lambda *_: tmp_path)
+    monkeypatch.setattr(check, "_resolve_command", lambda *_, **__: ["pytest"])
+    monkeypatch.setattr(ci_parity, "active", lambda *_: True)
+    monkeypatch.setattr(ci_parity, "has_ci", lambda _root: True)
+    monkeypatch.setattr(check, "_tool_environment", environment)
+    monkeypatch.setattr(check, "_run_on_ci_runner", Mock(side_effect=AssertionError("offloaded")))
+    monkeypatch.setattr(check, "_run_parity_pytest", parity_run)
+
+    assert check._run_tool("pytest", {"label": "TEST"}, []) == 0
+
+    work, cwd, command, extra_args, used_job, used_env, report, services = parity_run.call_args.args
+    assert isinstance(work, guard.HeavyWork) and work.work_class == "heavy"
+    assert (cwd, extra_args, used_job, used_env, services) == (tmp_path, [], job, env, ["postgres"])
+    assert isinstance(report, Path) and report.parent == tmp_path / ".dev-tools" and report.suffix == ".xml"
+    assert command == ["pytest", f"--junitxml={report}"]
+    line = capsys.readouterr().out.splitlines()[-1]
+    assert line.startswith("TEST:OK:0|details:") and "|hint:3 passed|lane:" in line
+    assert "|report:" not in line
