@@ -37,13 +37,13 @@ app = typer.Typer(
 
 
 @app.command("publication")
-@usage(surface="st.vcs.publication", cmd="st vcs publication [--mode nightly|mirror|manual] [--hold [--through SHA] | --release] [--reobserve]",
+@usage(surface="st.vcs.publication", cmd="st vcs publication [--mode nightly|manual] [--hold [--through SHA] | --release] [--reobserve]",
        when="read publication status; set auto or manual publication; hold commits local; replay the retained receipt",
-       precautions=("nightly and mirror both push hourly: private repos their head, public repos their newest accepted commit",
+       precautions=("nightly pushes hourly: private repos their head, public repos their newest accepted commit",
                     "--reobserve replays only the newest retained receipt; it never fetches or publishes"),
        tier="reference")
 def publication_status(
-    mode: Annotated[str | None, typer.Option("--mode", help="Set publication: nightly or mirror (hourly push) or manual")] = None,
+    mode: Annotated[str | None, typer.Option("--mode", help="Set publication: nightly (hourly push) or manual")] = None,
     hold: Annotated[bool, typer.Option("--hold", help="Keep committed work local until released")] = False,
     through: Annotated[str | None, typer.Option("--through", help="With --hold: still publish up to this commit")] = None,
     reason: Annotated[str, typer.Option("--reason", help="With --hold: why later commits must stay local")] = "owner hold",

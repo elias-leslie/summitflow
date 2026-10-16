@@ -15,21 +15,60 @@ because ``cli.lib.ci_parity`` reads it.
 """
 from __future__ import annotations
 
+import asyncio
 import json
 import os
 import subprocess
+import time
 from datetime import UTC, date, datetime, timedelta
 from pathlib import Path
 from typing import Any
 
 from ..logging_config import get_logger
-from .nightly_publication import WINDOW_ZONE, _git, _projects, busy_reason
+from .nightly_publication import WINDOW_ZONE, _git, _projects
 
 logger = get_logger(__name__)
 
 WINDOW_START_HOUR, WINDOW_END_HOUR = 1, 7
 DEEP_TIMEOUT_SECONDS = 5 * 60 * 60  # gate, slow stages and the clean-env gate
 PASS_VALID_DAYS = 7
+RECENT_EDIT_SECONDS = 30 * 60
+
+
+def _recently_edited(root: Path, now: float) -> bool:
+    """Uncommitted edits made minutes ago mean someone is working, registered or not."""
+    from .backup_publish import _git as guarded_git
+
+    status = guarded_git(root, "status", "--porcelain=v1", "-z", "--untracked-files=normal")
+    for entry in (status.stdout if status.returncode == 0 else "").split("\0"):
+        if len(entry) > 3:
+            try:
+                if now - (root / entry[3:]).lstat().st_mtime < RECENT_EDIT_SECONDS:
+                    return True
+            except OSError:
+                continue
+    return False
+
+
+def busy_reason(project_id: str, root: Path | None = None) -> str | None:
+    """Defer deep-lane work while someone works on the project or heavy work is running."""
+    from ..utils.heavy_work import HeavyWorkError, lane_activity
+
+    if root is not None and _recently_edited(root, time.time()):
+        return "recent_edits"
+
+    try:
+        if lane_activity("heavy"):
+            return "heavy_lane_busy"
+    except HeavyWorkError:
+        return "heavy_lane_unavailable"
+    from ..services.project_pulse import count_active_writers
+
+    try:
+        writers = asyncio.run(count_active_writers(project_id))
+    except Exception:
+        return "activity_unknown"
+    return "active_writers" if writers else None
 
 
 def deep_window_open(now: datetime) -> bool:

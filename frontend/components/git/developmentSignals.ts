@@ -108,7 +108,7 @@ function sourceCell(dev: DevelopmentProjection): Cell {
 }
 
 function autoPublished(dev: DevelopmentProjection) {
-  return ['nightly', 'mirror'].includes(dev.publication.mode ?? '')
+  return dev.publication.mode === 'nightly'
 }
 
 function acceptedCell(dev: DevelopmentProjection): Cell {
@@ -129,7 +129,7 @@ function acceptedCell(dev: DevelopmentProjection): Cell {
       }
     case 'stale':
       return {
-        // Nightly re-runs acceptance before publishing; mirror needs none.
+        // Hourly publication pushes a private head as is and a public repo's newest accepted commit.
         tone: autoPublished(dev) ? 'info' : 'warn',
         label: accepted.drift ? shortSha(accepted.source_commit) : 'outdated',
         detail: accepted.drift ? 'older commit' : 'inputs changed',

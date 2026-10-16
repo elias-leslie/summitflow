@@ -12,6 +12,7 @@ from unittest.mock import Mock
 import pytest
 
 from app.tasks import backup_publish
+from app.tasks import nightly_deep_lane as deep_lane
 from app.tasks import nightly_publication as nightly
 from tests.tasks.test_backup_native_recovery import _git
 
@@ -61,11 +62,19 @@ def test_manual_projects_are_never_selected(repo):
         "project_id": "fixture", "mode": "manual", "action": "skip", "reason": "manual_mode"}
 
 
-@pytest.mark.parametrize("mode", ["nightly", "mirror"])
-def test_private_repository_publishes_committed_head_without_acceptance(repo, mode):
-    row = nightly.select_candidate("fixture", repo, mode)
+def test_private_repository_publishes_committed_head_without_acceptance(repo):
+    row = nightly.select_candidate("fixture", repo, "nightly")
     assert (row["action"], row["reason"], row["visibility"]) == ("publish", "private_head", "private")
     assert row["sha"] == _git(repo, "rev-parse", "HEAD") and row["ahead"] == 1 and row["behind"] == 0
+
+
+def test_stored_mirror_mode_reads_as_nightly(monkeypatch):
+    stored = {"publication_mode": "mirror"}
+    monkeypatch.setattr(nightly, "get_agent_config", lambda _project: stored)
+    monkeypatch.setattr(nightly, "update_agent_config", lambda _project, config: stored.update(config))
+    assert nightly.publication_mode("fixture") == "nightly"
+    assert nightly.set_publication_mode("fixture", "mirror") == "nightly"
+    assert stored["publication_mode"] == "nightly"
 
 
 def test_public_repository_publishes_its_newest_accepted_commit(repo, monkeypatch):
@@ -170,7 +179,7 @@ def test_hourly_pass_runs_all_day_and_never_defers_on_activity(repo, monkeypatch
     # defer a push; only the owner's publication hold does (select_candidate).
     monkeypatch.setattr("app.utils.heavy_work.lane_activity", Mock(side_effect=AssertionError("not consulted")))
     monkeypatch.setattr("cli.lib.leases.list_active", Mock(side_effect=AssertionError("not consulted")))
-    executed, notify, containment, codeql = _sweep(monkeypatch, repo, {"a": "nightly", "b": "manual", "c": "mirror"})
+    executed, notify, containment, codeql = _sweep(monkeypatch, repo, {"a": "nightly", "b": "manual", "c": "nightly"})
     result = nightly.run_nightly_publication(now=DAY)
     rows = {row["project_id"]: row for row in result["projects"]}
     assert [call.args[0]["project_id"] for call in executed.call_args_list] == ["a", "c"]
@@ -295,9 +304,9 @@ def test_attention_notifies_once_per_distinct_set_per_day(monkeypatch):
 
 
 def test_deep_lane_busy_check_still_sees_fresh_edits(repo):
-    assert nightly._recently_edited(repo, time.time())  # fixture just wrote WIP
-    assert not nightly._recently_edited(repo, time.time() + 2 * nightly.RECENT_EDIT_SECONDS)
-    assert nightly.busy_reason("fixture", repo) == "recent_edits"
+    assert deep_lane._recently_edited(repo, time.time())  # fixture just wrote WIP
+    assert not deep_lane._recently_edited(repo, time.time() + 2 * deep_lane.RECENT_EDIT_SECONDS)
+    assert deep_lane.busy_reason("fixture", repo) == "recent_edits"
 
 
 def test_retired_projects_are_never_considered(monkeypatch, tmp_path):

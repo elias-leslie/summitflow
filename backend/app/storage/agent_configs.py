@@ -52,7 +52,7 @@ class AgentConfig(TypedDict, total=False):
     runtime_hygiene_enabled: bool  # Enable scheduled runtime hygiene audit
     nightly_publication_enabled: bool  # Enable the overnight publication sweep (system kill switch)
     nightly_deep_lane_enabled: bool  # Enable the nightly deep lane (system kill switch)
-    publication_mode: str  # Per project: "nightly", "mirror" or "manual" (default)
+    publication_mode: str  # Per project: "nightly" (hourly push) or "manual" (default)
     publication_hold: dict[str, Any] | None  # {"through": OID | None, "reason", "set_at"}; keeps later commits local
     autonomous_max_tasks_per_day: int | None  # Max tasks per day
     autonomous_cooldown_minutes: int  # Gap between autonomous dispatches

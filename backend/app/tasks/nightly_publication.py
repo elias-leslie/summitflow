@@ -1,8 +1,8 @@
 """Hourly publication of committed local sources by plain fast-forward push.
 
 The owner selects a mode per project (``agent_configs.publication_mode``):
-``nightly`` and ``mirror`` both publish hourly; ``manual`` (the default) never
-runs here. A private repository publishes its committed default-branch head;
+``nightly`` publishes hourly; ``manual`` (the default) never runs here. A
+stored ``mirror``, the retired twin of ``nightly``, still reads as ``nightly``. A private repository publishes its committed default-branch head;
 a public one (or any non-GitHub remote) publishes its newest commit with a
 valid full acceptance receipt. The outgoing history/secret verifier and the
 workflow-effects gate run before every push.
@@ -18,7 +18,6 @@ after a push, so it is never read right after one).
 """
 from __future__ import annotations
 
-import asyncio
 import hashlib
 import json
 import os
@@ -33,7 +32,8 @@ from ..storage.agent_configs import AgentConfig, get_agent_config, update_agent_
 
 logger = get_logger(__name__)
 
-MODES = ("nightly", "mirror", "manual")
+MODES = ("nightly", "manual")
+_MODE_ALIASES = {"mirror": "nightly"}
 WINDOW_ZONE = ZoneInfo("America/New_York")
 CONTAINMENT_HOUR = 3  # local hour of the nightly GitHub containment and CodeQL check
 ACCEPTED_SEARCH_LIMIT = 64
@@ -48,10 +48,12 @@ _ATTENTION_REASONS = {"diverged_from_remote", "awaiting_repair", "owner_action_r
 
 def publication_mode(project_id: str) -> str:
     value = get_agent_config(project_id).get("publication_mode", "manual")
+    value = _MODE_ALIASES.get(value, value)
     return value if value in MODES else "manual"
 
 
 def set_publication_mode(project_id: str, mode: str) -> str:
+    mode = _MODE_ALIASES.get(mode, mode)
     if mode not in MODES:
         raise ValueError(f"publication mode must be one of {', '.join(MODES)}")
     update_agent_config(project_id, AgentConfig(publication_mode=mode))
@@ -376,44 +378,3 @@ def run_nightly_publication(*, dry_run: bool = False, now: datetime | None = Non
         _notify(rows, now)
     return {"status": "dry_run" if dry_run else "completed", "projects": rows}
 
-
-# The nightly deep lane shares this busy check; publication itself never defers on it.
-RECENT_EDIT_SECONDS = 30 * 60
-
-
-def _recently_edited(root: Path, now: float) -> bool:
-    """Uncommitted edits made minutes ago mean someone is working, registered or not."""
-    from .backup_publish import _git as guarded_git
-
-    status = guarded_git(root, "status", "--porcelain=v1", "-z", "--untracked-files=normal")
-    for entry in (status.stdout if status.returncode == 0 else "").split("\0"):
-        if len(entry) > 3:
-            try:
-                if now - (root / entry[3:]).lstat().st_mtime < RECENT_EDIT_SECONDS:
-                    return True
-            except OSError:
-                continue
-    return False
-
-
-def busy_reason(project_id: str, root: Path | None = None) -> str | None:
-    """Defer deep-lane work while someone works on the project or heavy work is running."""
-    import time
-
-    from ..utils.heavy_work import HeavyWorkError, lane_activity
-
-    if root is not None and _recently_edited(root, time.time()):
-        return "recent_edits"
-
-    try:
-        if lane_activity("heavy"):
-            return "heavy_lane_busy"
-    except HeavyWorkError:
-        return "heavy_lane_unavailable"
-    from ..services.project_pulse import count_active_writers
-
-    try:
-        writers = asyncio.run(count_active_writers(project_id))
-    except Exception:
-        return "activity_unknown"
-    return "active_writers" if writers else None
