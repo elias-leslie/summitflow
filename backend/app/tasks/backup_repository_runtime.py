@@ -222,7 +222,8 @@ def _payload_has_database(payload: Mapping[str, Any]) -> bool:
 def _capacity_admission(config: ResticConfig, state: Mapping[str, Any], source_id: str, *, staging_directory: Path, staged_bytes: int = 0, payload_bytes: int | None = None, streamed: bool = False) -> dict[str, Any]:
     """Reserve existing host-policy headroom plus measured capture/growth peaks.
 
-    A streamed capture stages nothing, so only repository growth is reserved.
+    A capture that stages nothing more (streamed, or already staged) leaves the
+    staging filesystem out of admission, so only repository growth is reserved.
     """
     previous = state.get("sources", {}).get(source_id, {})
     history = previous.get("capacity", {})
@@ -231,6 +232,8 @@ def _capacity_admission(config: ResticConfig, state: Mapping[str, Any], source_i
     policy = HostRetentionPolicy.from_env()
     filesystems: dict[int, dict[str, Any]] = {}
     for label, path, needed in (("staging", staging_directory, max(0, staging_peak - staged_bytes)), ("repository", config.local_repository, max(staged_bytes if payload_bytes is None else payload_bytes, growth_peak))):
+        if label == "staging" and needed == 0 and (streamed or staged_bytes):
+            continue
         while not path.exists():
             path = path.parent
         usage = shutil.disk_usage(path)

@@ -151,6 +151,21 @@ def test_streamed_admission_reserves_no_scratch_staging(tmp_path, monkeypatch):
     assert staged["admitted"] is False and streamed["admitted"] is True and streamed["staging_peak_bytes"] == 0
 
 
+def test_admission_leaves_out_the_staging_filesystem_when_nothing_more_stages(tmp_path, monkeypatch):
+    """Regression: a full scratch filesystem blocked streamed captures that stage zero bytes."""
+    from app.tasks import backup_repository_runtime as runtime
+
+    monkeypatch.setenv("SF_HOST_RETENTION_PRESSURE_MIN_FREE_GB", "0")
+    config = cast("ResticConfig", type("Config", (), {"local_repository": tmp_path})())
+    fresh: dict = {"sources": {}}
+    def paths(**kwargs):
+        return [path for item in runtime._capacity_admission(config, fresh, "s", staging_directory=tmp_path, **kwargs)["filesystems"] for path in item["paths"]]
+    assert paths(streamed=True, payload_bytes=1) == ["repository"]
+    assert paths(staged_bytes=10, payload_bytes=10) == ["repository"]
+    # Before staging, an unmeasured capture still needs the staging reserve.
+    assert paths() == ["staging", "repository"]
+
+
 def test_save_stream_backs_up_command_stdout_without_a_path(monkeypatch):
     from app.tasks import backup_restic
 
