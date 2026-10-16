@@ -784,15 +784,14 @@
     },
     {
       "id": "task_workflow",
-      "canonical": "st pulse / st claim / st context / st done",
+      "canonical": "st claim / st context / st done",
       "replaces": [
         "manual task branch setup",
         "st tasks claim"
       ],
-      "summary": "Task lifecycle workflow: inspect coordination gate, claim task checkpoint, read context, and close completed task.",
+      "summary": "Task lifecycle workflow: claim task checkpoint, read context, and close completed task.",
       "safety": "mutating",
       "commands": [
-        "pulse --gate",
         "claim <task-id>",
         "context <task-id>",
         "subtask list <task-id>",
@@ -800,7 +799,6 @@
         "done <task-id>"
       ],
       "examples": [
-        "st pulse --gate",
         "st claim task-abc123",
         "st context task-abc123",
         "st done task-abc123 -m \"complete\""

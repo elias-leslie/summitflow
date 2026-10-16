@@ -138,3 +138,9 @@ def test_pulse_compact_prints_worktree_and_friction_lines(monkeypatch: pytest.Mo
     assert printed.count("FRICTION[x]") == 2
     # Publication lag only for a single-project pulse.
     assert seen == [[("proj", repo)], []]
+
+
+def test_tool_registry_no_longer_steers_agents_to_pulse_gate() -> None:
+    from cli.tool_registry import load_tool_registry
+
+    assert "pulse --gate" not in json.dumps(load_tool_registry())

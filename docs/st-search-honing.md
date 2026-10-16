@@ -136,7 +136,7 @@ st search --json "<query>"                     # inspect metadata: missed_identi
 Run one honing iteration on the `st search` feature in /srv/workspaces/projects/summitflow.
 
 1. Read docs/st-search-honing.md (architecture map, invariants, work log, open items).
-2. Run `st pulse --gate`, then AUDIT the live deployed behavior as an agent would use it —
+2. AUDIT the live deployed behavior as an agent would use it —
    do not start from the code. Probe at minimum:
    - a healthy identifier search, a CamelCase search, an NL phrase search
    - a nonexistent identifier alone, and one combined with a generic word
