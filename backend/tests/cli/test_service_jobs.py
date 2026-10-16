@@ -294,3 +294,14 @@ def test_detached_rebuild_cli_passes_with_ack(monkeypatch):
     assert result.exit_code == 0, result.output
     guard.assert_called_once_with(Path("/x"), "rebuild", with_ack="req-1")
     assert queue.call_args.kwargs["with_ack"] == "req-1"
+
+
+def test_restart_cli_forwards_with_ack_to_rebuild(monkeypatch):
+    # A held repo's guard tells the caller to rerun with --with-ack; restart
+    # goes through rebuild, so it must accept and forward that request id.
+    rebuild = Mock()
+    monkeypatch.setattr(service, "rebuild", rebuild)
+    result = CliRunner().invoke(service.app, ["restart", "example", "--detach", "--with-ack", "req-1"])
+    assert result.exit_code == 0, result.output
+    assert rebuild.call_args.kwargs["with_ack"] == "req-1"
+    assert rebuild.call_args.kwargs["detach"] is True

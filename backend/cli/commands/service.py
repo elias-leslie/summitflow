@@ -673,6 +673,10 @@ def restart(
         Path | None,
         typer.Option("--acceptance", help="Full successful local-acceptance receipt."),
     ] = None,
+    with_ack: Annotated[
+        str | None,
+        typer.Option("--with-ack", help="Request id the repo's holder acked yes"),
+    ] = None,
 ) -> None:
     """Restart a managed project through the rebuild path."""
     rebuild(
@@ -682,6 +686,7 @@ def restart(
         scope=scope,
         worker=worker,
         acceptance=acceptance,
+        with_ack=with_ack,
     )
 
 
