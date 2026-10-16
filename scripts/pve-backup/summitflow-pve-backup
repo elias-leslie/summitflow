@@ -18,10 +18,10 @@ and it is refused until root re-runs install.sh.
 The cluster config dump leaves out priv/ and every *.key file (authkey.key, pve-www.key,
 pve-root-ca.key, node ssl keys; PVE regenerates them on restore). The source list is
 built from sources agents can register, so this side keeps its own floor: a host path
-must sit in one of HOST_ROOTS, as written and as resolved here (widening that list
-takes a dispatcher release), and is still refused when it is a *.key file or holds or
-sits under PVE's or root's secrets (config.db, /etc/pve priv directories, /root,
-/etc/ssh, /etc/corosync). Host tars always exclude those secrets as well, and the
+must be one of HOST_PATHS exactly (adding one takes a dispatcher release), and is still
+refused when it is a *.key file or, as written or as resolved here, holds or sits under
+PVE's or root's secrets (config.db, /etc/pve priv directories, /root, /etc/ssh,
+/etc/corosync). Host tars always exclude those secrets as well, and the
 OmniNull hub (CT 150) and append-only restic (CT 160) are never captured.
 """
 
@@ -45,8 +45,9 @@ DUMP_LOG_KEEP_DAYS = 7
 THIN_POOL = "pve/data"
 AGENT_PART_BYTES = 12_000_000  # Base64 text per guest-agent read; a multiple of 4, under the 16 MiB limit.
 GUEST_EXEC_TIMEOUT_SECONDS = 1800
-# The only host directories a source may read (/etc/pve/qemu-server resolves to nodes/<node>/qemu-server).
-HOST_ROOTS = ("/vault/identity", "/vault/meta", "/etc/pve/qemu-server", "/var/lib/vz/snippets")
+# The only host files and directories a source may read: exactly what pve-host-files captures.
+HOST_PATHS = frozenset({"/vault/identity", "/vault/meta/recovery-key.json", "/etc/pve/qemu-server/120.conf",
+                        "/var/lib/vz/snippets/neri-120-init.yaml", "/var/lib/vz/snippets/neri-120-meta.yaml"})
 # Never read on the host, nor any directory holding them; '*' is one path component. /etc/pve/local links to nodes/<node>.
 PROTECTED_PATHS = ("root", "var/lib/pve-cluster", "etc/pve/priv", "etc/pve/nodes/*/priv", "etc/pve/local/priv",
                    "etc/ssh", "etc/corosync")
@@ -79,15 +80,9 @@ def protected_host_path(path):
     return False
 
 
-def _within(path, root):
-    path = os.path.normpath(path)
-    return path == root or path.startswith(root + "/")
-
-
 def allowed_host_path(path):
-    """True only for a path in one of HOST_ROOTS both as written and as resolved here (no symlink leads out)."""
-    resolved = os.path.realpath(path)
-    return any(_within(path, root) and _within(resolved, os.path.realpath(root)) for root in HOST_ROOTS)
+    """True only for one of HOST_PATHS (tar never follows a symlink inside /vault/identity)."""
+    return os.path.normpath(path) in HOST_PATHS
 
 
 def load_source(source_id, digest):
@@ -123,7 +118,7 @@ def load_source(source_id, digest):
         if kind == "host" and any(protected_host_path(path) for path in paths):
             raise Refused(f"{source_id}: a host path holds PVE or root secrets")
         if kind == "host" and not all(allowed_host_path(path) for path in paths):
-            raise Refused(f"{source_id}: host paths must sit in {', '.join(HOST_ROOTS)}; more needs a dispatcher release")
+            raise Refused(f"{source_id}: host paths must be one of {', '.join(sorted(HOST_PATHS))}; another needs a dispatcher release")
     return entry
 
 

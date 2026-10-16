@@ -3,7 +3,8 @@
 #
 #   sudo scripts/pve-backup/install.sh      # as root: the authorized_keys change is an install receipt, not a tripwire ask
 #   scripts/pve-backup/install.sh           # as the owner: same install, Nightshift then asks about the key change
-#   ... install.sh --yes                    # accept a changed source list without the prompt (no terminal)
+#   ... install.sh --yes DIGEST             # no terminal: install only the dispatcher and source list a first run
+#                                           # (without --yes) printed as 'Approval digest: DIGEST'
 #
 # Layout:  PVE host     /usr/local/sbin/summitflow-pve-backup     (forced command, root 0755)
 #                       /etc/summitflow-pve-backup/sources.json   (what each source captures, root 0644)
@@ -11,12 +12,17 @@
 # The owner's PVE ssh alias runs the one install session; the new key can only run the dispatcher's verbs
 # (guests, thinpool, sources, capture SOURCE DIGEST), from the workstation address only.
 # Re-run after adding or changing a proxmox:// backup source: the dispatcher refuses a source whose path changed.
-# Agents can register sources, so the list is shown against the installed one and a change is installed only once
-# confirmed. The dispatcher installed is the committed one (git HEAD), and root keeps every file it installs from or
-# submits as evidence in its own 0700 work directory.
+# Agents can register sources and commit, so the list is shown against the installed one, and nothing is installed
+# until the owner confirms at the terminal or passes the approval digest of exactly what was shown (the dispatcher's
+# sha256 and the source list). The dispatcher installed is the committed one (git HEAD), and root keeps every file it
+# installs from or submits as evidence in its own 0700 work directory.
 set -euo pipefail
-yes=0
-case "${1:-}" in --yes) yes=1 ;; "") ;; *) echo "usage: install.sh [--yes]" >&2; exit 2 ;; esac
+approved=""
+case "$#:${1:-}" in
+  2:--yes) approved="$2" ;;
+  0:) ;;
+  *) echo "usage: install.sh [--yes DIGEST]" >&2; exit 2 ;;
+esac
 HERE="$(cd "$(dirname "$0")" && pwd)"
 ROOT="$(cd "$HERE/../.." && pwd)"
 PVE="${PVE_HOST:-proxmox-gem}"
@@ -48,9 +54,13 @@ fi
 head="$(as_admin git -C "$ROOT" rev-parse HEAD)"
 as_admin git -C "$ROOT" show "$head:scripts/pve-backup/summitflow-pve-backup" > "$work/dispatcher"
 sha256() { python3 -I -c 'import hashlib, sys; print(hashlib.sha256(open(sys.argv[1], "rb").read()).hexdigest())' "$1"; }
-echo "Dispatcher: scripts/pve-backup/summitflow-pve-backup at $head, sha256 $(sha256 "$work/dispatcher")"
+dispatcher_sha="$(sha256 "$work/dispatcher")"
+echo "Dispatcher: scripts/pve-backup/summitflow-pve-backup at $head, sha256 $dispatcher_sha"
 
-(cd "$ROOT/backend" && as_admin "$uv_bin" run --quiet python -m app.tasks.backup_proxmox dispatcher-sources "$PVE") > "$work/sources.json"
+(cd "$ROOT/backend" && as_admin "$uv_bin" run --quiet python -m app.tasks.backup_proxmox dispatcher-sources "$PVE") > "$work/built.json"
+# Canonical bytes, so the approval digest names the list and not its formatting.
+python3 -I -c 'import json, sys; json.dump(json.load(open(sys.argv[1])), sys.stdout, indent=1, sort_keys=True); print()' \
+  "$work/built.json" > "$work/sources.json"
 # The new key reaches only the dispatcher (from here: what is installed now; at the end: the proof).
 check=(ssh -F /dev/null -i "$KEY" -o IdentitiesOnly=yes -o IdentityAgent=none -o BatchMode=yes
   -o "UserKnownHostsFile=$admin_home/.ssh/known_hosts" "root@$(as_admin ssh -G "$PVE" | awk '$1 == "hostname" {print $2}')")
@@ -76,9 +86,14 @@ for name in sorted(set(installed) | set(wanted)):
 sys.exit(0 if installed == wanted else 3)
 PY
 [ "$changed" = 0 ] || [ "$changed" = 3 ] || { echo "cannot read the source list SummitFlow built" >&2; exit 1; }
-if [ "$changed" = 3 ] && [ "$yes" = 0 ]; then
-  [ -t 0 ] || { echo "the source list changes; review it above and re-run with --yes" >&2; exit 1; }
-  read -r -p "Install this source list on $PVE? [y/N] " answer
+{ printf 'dispatcher %s\n' "$dispatcher_sha"; cat "$work/sources.json"; } > "$work/approval"
+digest="$(sha256 "$work/approval")"
+echo "Approval digest: $digest (this dispatcher and this source list)"
+if [ -n "$approved" ]; then
+  [ "$approved" = "$digest" ] || { echo "the dispatcher or source list is not the one approved ($approved); nothing installed" >&2; exit 1; }
+else
+  [ -t 0 ] || { echo "review the dispatcher and list above; to install them, re-run with --yes $digest" >&2; exit 1; }
+  read -r -p "Install this dispatcher and source list on $PVE? [y/N] " answer
   [ "$answer" = y ] || [ "$answer" = Y ] || { echo "nothing installed" >&2; exit 1; }
 fi
 

@@ -121,13 +121,16 @@ setting), not against a hostile root user.
   `thinpool`, `sources`, `capture SOURCE DIGEST`). What each source captures
   is the list root installs on PVE, so adding or changing a `proxmox://`
   source needs `sudo scripts/pve-backup/install.sh` before it runs. The
-  installer shows the list against the installed one and asks before a
-  change (`--yes` when there is no terminal), and installs only the
-  committed dispatcher. The config dump leaves out `priv/` and every `*.key`
-  file; PVE regenerates them on restore. Host paths must sit in
-  `/vault/identity`, `/vault/meta`, `/etc/pve/qemu-server` or
-  `/var/lib/vz/snippets`, as written and as resolved on PVE; any other host
-  directory needs a dispatcher release (`HOST_ROOTS`). Inside them the
+  installer shows the committed dispatcher's sha256 and the list against the
+  installed one, and installs nothing until confirmed: `y` at a terminal, or,
+  with no terminal, a re-run with `--yes DIGEST`, where DIGEST is the
+  `Approval digest` the first run printed for exactly that dispatcher and
+  list. The config dump leaves out `priv/` and every `*.key` file; PVE
+  regenerates them on restore. Host paths must be exactly one of
+  `/vault/identity`, `/vault/meta/recovery-key.json`,
+  `/etc/pve/qemu-server/120.conf` and the two
+  `/var/lib/vz/snippets/neri-120-*.yaml` files; any other host path needs a
+  dispatcher release (`HOST_PATHS`). The
   dispatcher still refuses `*.key` files and anything under config.db, the
   `/etc/pve` priv directories, `/root`, `/etc/ssh` or `/etc/corosync`, and it
   never captures CT 150 (OmniNull) or CT 160 (append-only restic). Guest

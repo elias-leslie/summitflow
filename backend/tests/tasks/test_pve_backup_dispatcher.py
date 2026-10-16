@@ -212,19 +212,22 @@ def test_a_host_path_is_also_checked_where_it_resolves(dispatcher, monkeypatch, 
 
 @pytest.mark.parametrize("path", [
     # OmniNull's CT 150 vzdump staging (authority keys inside), a guest's root through /proc, Nightshift's dead-man and
-    # Web Push credentials, and other host secrets: none sits in HOST_ROOTS.
+    # Web Push credentials, other host secrets, and anything next to or under the captured files: none is in HOST_PATHS.
     "/var/lib/vz", "/var/lib/vz/dump", "/var/lib/vz/dump/st-ominull-1/vzdump-lxc-150-x.tar", "/proc/1/root/x",
     "/proc/4242/root/var/lib/ominull-response-authority", "/etc/shadow", "/etc/gshadow", "/etc/nightshift/deadman",
     "/var/lib/nightshift", "/var/lib/lxc/150", "/etc/ssl/private", "/usr/local/sbin", "/etc/summitflow-pve-backup",
     "/var/backups", "/sys/firmware", "/dev/sda", "/vault", "/vault/data", "/vault/identityx", "/etc/pve/lxc/150.conf",
-    "/etc/pve/qemu-server-x", "/var/lib/vz/snippetsx",
+    "/etc/pve/qemu-server-x", "/var/lib/vz/snippetsx", "/vault/meta", "/vault/meta/other.json", "/vault/identity/../data",
+    "/etc/pve/qemu-server", "/etc/pve/qemu-server/130.conf", "/var/lib/vz/snippets", "/var/lib/vz/snippets/other.yaml",
+    "/etc/pve/nodes/davion-gem/qemu-server/120.conf",
 ])
-def test_a_host_path_outside_the_allowed_directories_is_refused(dispatcher, path, capsys):
+def test_a_host_path_outside_the_allowed_list_is_refused(dispatcher, path, capsys):
     files = {"via": "host", "paths": ["/vault/identity", path], "excludes": []}
     dispatcher.SOURCES.write_text(json.dumps({"h": {"digest": "a" * 64, "kind": "host", "vmid": None, "files": files}}))
     runs = Runs()
     assert dispatcher.main(f"capture h {'a' * 64}", run=runs, out=io.BytesIO()) == 2
-    assert runs.calls == [] and "host paths must sit in" in capsys.readouterr().err
+    error = capsys.readouterr().err
+    assert runs.calls == [] and ("host paths must be one of" in error or (".." in path and "unsafe path" in error))
     assert not dispatcher.allowed_host_path(path)
 
 
@@ -235,13 +238,19 @@ def test_a_key_file_inside_an_allowed_directory_is_still_refused(dispatcher, cap
     assert runs.calls == [] and "holds PVE or root secrets" in capsys.readouterr().err
 
 
-def test_qemu_server_configs_pass_where_proxmox_links_them(dispatcher, monkeypatch):
+def test_qemu_server_configs_pass_where_proxmox_links_them(dispatcher, monkeypatch, capsys):
     real = os.path.realpath
     node = "/etc/pve/nodes/davion-gem/qemu-server"
     monkeypatch.setattr(dispatcher.os.path, "realpath",
                         lambda path: path.replace("/etc/pve/qemu-server", node, 1) if path.startswith("/etc/pve/qemu-server") else real(path))
-    assert dispatcher.allowed_host_path("/etc/pve/qemu-server/120.conf") and dispatcher.allowed_host_path("/etc/pve/qemu-server")
-    assert not dispatcher.allowed_host_path(node + "/120.conf")  # written outside the list, even though it resolves inside
+    digests = _install(dispatcher, {"h": "proxmox://proxmox-gem/host/files?path=/etc/pve/qemu-server/120.conf",
+                                    "n": f"proxmox://proxmox-gem/host/files?path={node}/120.conf"})
+    runs = Runs()
+    assert dispatcher.main(f"capture h {digests['h']}", run=runs, out=io.BytesIO()) == 0
+    assert runs.calls[0][-1] == "etc/pve/qemu-server/120.conf"
+    # Written outside the list, even though it is the same file.
+    assert dispatcher.main(f"capture n {digests['n']}", run=Runs(), out=io.BytesIO()) == 2
+    assert "host paths must be one of" in capsys.readouterr().err
 
 
 def test_the_registered_host_files_still_pass_the_floor(dispatcher):
