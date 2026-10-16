@@ -173,6 +173,21 @@ def test_scratch_residue_is_reaped_only_when_old_and_unused(tmp_path, monkeypatc
     assert not old.exists() and recent.exists() and open_job.exists()
 
 
+def test_leaked_isolated_acceptance_clone_is_reaped_by_age(tmp_path, monkeypatch):
+    monkeypatch.setattr(scheduler, "SCRATCH_ROOT", tmp_path)
+    parent = tmp_path / f"st-acceptance-{os.getuid()}"
+    leaked, running = parent / "st-a-killed", parent / "st-a-running"
+    for clone in (leaked, running):
+        (clone / "source").mkdir(parents=True)
+        (clone / "source" / "app.py").write_bytes(b"x" * 7)
+    stale = time.time() - (scheduler.SCRATCH_RESIDUE_HOURS + 1) * 3600
+    for path in (leaked, leaked / "source", leaked / "source" / "app.py"):
+        os.utime(path, (stale, stale))
+    monkeypatch.setattr(scheduler, "_open_paths", set)
+    assert scheduler._reap_backup_scratch() == {"removed": 1, "bytes": 7}
+    assert not leaked.exists() and running.exists()
+
+
 def test_outside_window_tick_still_heals_and_alerts(monkeypatch):
     from app.tasks import backup_repository_runtime as runtime
 

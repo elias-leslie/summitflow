@@ -79,14 +79,14 @@ def test_acceptance_accumulates_repeated_options(repo: Path, accept: dict[str, o
     assert result.stdout.startswith("ACCEPTANCE:state=success|source=" + "a" * 40)
 
 
-@pytest.mark.parametrize("extra", [[], ["--task", "task-one"], ["--scope", "app.py"]])
-def test_historical_acceptance_requires_task_and_scope(repo: Path, accept: dict[str, object],
-                                                       monkeypatch: pytest.MonkeyPatch, extra: list[str]) -> None:
-    monkeypatch.setattr("cli.commands.check.renew_owned_claim", lambda *_args: None)
-    result = _invoke("--acceptance", "--sha", "HEAD~1", *extra)
-    assert result.exit_code == 2
-    assert "Historical acceptance requires --task and explicit --scope" in result.stderr
-    assert "root" not in accept
+def test_historical_full_acceptance_needs_no_task_and_runs_isolated(repo: Path, accept: dict[str, object]) -> None:
+    # Publishing an older accepted commit re-accepts exactly that commit.
+    result = _invoke("--acceptance", "--sha", "HEAD~1")
+    assert result.exit_code == 0, result.output
+    assert accept["materialization"] == "isolated"
+    assert accept["sha"] == "HEAD~1"
+    assert accept["task_id"] == ""
+    assert accept["coverage"] == "full"
 
 
 def test_historical_acceptance_with_task_and_scope_is_isolated(repo: Path, accept: dict[str, object],
@@ -192,7 +192,16 @@ def test_acceptance_materialization_with_failed_git_calls(monkeypatch: pytest.Mo
 
     results = iter([selected, head, status])
     monkeypatch.setattr("cli.lib.commit_workflow.run_git", lambda *_args, **_kwargs: next(results))
-    assert _acceptance_materialization(tmp_path, "rev", task_id="task-one", scope=["app.py"]) == expected
+    assert _acceptance_materialization(tmp_path, "rev") == expected
+
+
+def test_clean_head_follows_the_projects_isolated_basis(repo: Path, accept: dict[str, object]) -> None:
+    (repo / ".st-check.toml").write_text('[acceptance]\nbasis = "isolated"\n')
+    _git(repo, "add", ".st-check.toml")
+    _git(repo, "commit", "-qm", "opt in")
+    result = _invoke("--acceptance")
+    assert result.exit_code == 0, result.output
+    assert accept["materialization"] == "isolated"
 
 
 def test_parse_acceptance_args_maps_options_and_help() -> None:

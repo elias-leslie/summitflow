@@ -9,7 +9,7 @@ from typing import Any
 from app.services.task_acceptance import CompletionRequirements, hydrate_completion_task
 
 from .acceptance import REPO_LOCK_WAIT_SECONDS, AcceptanceError
-from .acceptance_coordinator import AcceptanceResult, Materialization
+from .acceptance_coordinator import AcceptanceResult, Materialization, select_materialization
 
 
 class AcceptedTaskWork(dict[str, Any]):
@@ -75,7 +75,7 @@ def accept_owned_task_work(repo: Path, task_id: str, project_id: str, *, claim: 
         status = run_git(repo, ["--no-optional-locks", "status", "--porcelain=v1", "--untracked-files=all"])
         if status.returncode:
             raise ValueError("Cannot inspect task checkout")
-        materialization: Materialization = "isolated" if status.stdout else "actual"
+        materialization: Materialization = select_materialization(repo, dirty=bool(status.stdout))
     if result is None:
         result = accept_source(repo, sha=sha, materialization=materialization, scope=paths, task_id=task_id,
                                coverage=requirements.coverage, required_stages=requirements.stages)

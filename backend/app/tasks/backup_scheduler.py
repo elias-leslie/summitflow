@@ -130,14 +130,15 @@ def _open_paths() -> set[Path]:
 
 
 def _reap_backup_scratch(now: datetime | None = None) -> dict[str, int]:
-    """Remove transient backup/restore scratch left by killed attempts.
+    """Remove transient backup/restore scratch and isolated acceptance clones left by killed attempts.
 
     Every job directory belongs to one attempt; one untouched for a day and
-    open by no process can never be resumed (restic caches are rebuilt).
+    open by no process can never be resumed (restic caches are rebuilt). A
+    SIGKILLed isolated acceptance leaks its st-a-* clone (about 600 MB).
     """
     cutoff = (now or datetime.now(UTC)).timestamp() - SCRATCH_RESIDUE_HOURS * 3600
     removed = reclaimed = 0
-    parents = [SCRATCH_ROOT / f"{namespace}-{os.getuid()}" for namespace in ("st-backups", "st-restores")]
+    parents = [SCRATCH_ROOT / f"{namespace}-{os.getuid()}" for namespace in ("st-backups", "st-restores", "st-acceptance")]
     candidates = [entry for parent in parents if parent.is_dir() and not parent.is_symlink() for entry in parent.iterdir()]
     if not candidates:
         return {"removed": 0, "bytes": 0}

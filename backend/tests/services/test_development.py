@@ -46,29 +46,31 @@ def test_acceptance_validates_current_inputs_and_marks_drift(tmp_path, mocker):
     directory.mkdir(parents=True)
     path = directory / "receipt.json"
     path.write_text('{"state":"success","source":{"commit":"old"},"completed_at":"2026-10-03"}')
+    mocker.patch.object(service, "receipt_for_commit", return_value=None)
     validator = mocker.patch.object(service, "validate_acceptance_receipt", return_value={"completed_at": "2026-10-03", "check_count": 12})
     result = service._accepted(tmp_path, tmp_path, "new")
     assert result["state"] == "stale"
     assert result["drift"] is True
     assert result["full_coverage"] is True
     validator.assert_called_once_with(tmp_path, path)
-    validator.side_effect = service.AcceptanceError("local inputs changed")
+    # HEAD's own receipt that the per-commit lookup rejected is not full proof.
     result = service._accepted(tmp_path, tmp_path, "old")
     assert result["state"] == "stale"
     assert result["full_coverage"] is False
 
 
-def test_acceptance_validation_is_reused_only_for_identical_source_state(tmp_path, mocker):
+def test_head_acceptance_uses_the_shared_commit_lookup_and_reuses_it_for_identical_state(tmp_path, mocker):
     directory = tmp_path / "st" / "acceptance"
     directory.mkdir(parents=True)
     (directory / "receipt.json").write_text('{"state":"success","source":{"commit":"head"},"completed_at":"2026-10-03"}')
-    validator = mocker.patch.object(service, "validate_acceptance_receipt", return_value={"completed_at": "2026-10-03"})
+    lookup = mocker.patch.object(service, "receipt_for_commit", return_value={
+        "completed_at": "2026-10-03", "check_count": 1, "acceptance_artifact": str(directory / "receipt.json")})
     assert service._accepted(tmp_path, tmp_path, "head", "")["state"] == "accepted"
     assert service._accepted(tmp_path, tmp_path, "head", "")["state"] == "accepted"
-    assert validator.call_count == 1
-    validator.side_effect = service.AcceptanceError("local inputs changed")
+    lookup.assert_called_once_with(tmp_path, "head")
+    lookup.return_value = None
     assert service._accepted(tmp_path, tmp_path, "head", " M file")["state"] == "stale"
-    assert validator.call_count == 2
+    assert lookup.call_count == 2
 
 
 def test_missing_stores_do_not_become_zero_or_success(tmp_path, mocker):

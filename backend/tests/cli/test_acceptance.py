@@ -451,7 +451,8 @@ def test_receipt_without_consumed_source_binding_remains_immutable(repo: Path) -
     assert artifact.read_bytes() == retained
 
 
-def test_ignored_local_file_link_count_invalidates_acceptance(repo: Path) -> None:
+def test_ignored_local_file_link_count_does_not_invalidate_acceptance(repo: Path) -> None:
+    """A gate reads a local config file's content; its link count is host metadata."""
     import os
 
     config = repo / ".env.test"
@@ -461,23 +462,13 @@ def test_ignored_local_file_link_count_invalidates_acceptance(repo: Path) -> Non
     (repo / ".gitignore").write_text(".env.test\n.links/\n")
     git(repo, "add", ".gitignore")
     git(repo, "commit", "-qm", "ignored local configuration")
-    calls = []
-
-    def guard(command: list[str], cwd: Path):
-        calls.append(command)
-        return subprocess.CompletedProcess(command, int((cwd / ".env.test").stat().st_nlink != 1), "local metadata guard", "")
-
-    accepted = acceptance.accept_revision(repo, sha="HEAD", runner=guard)
-    artifact = Path(accepted["acceptance_artifact"])
-    retained = artifact.read_bytes()
+    accepted = acceptance.accept_revision(repo, sha="HEAD", runner=successful_runner([]))
     os.link(config, ignored / "outside-source.env")
     assert git(repo, "status", "--porcelain") == ""
+    acceptance.validate_acceptance_receipt(repo, accepted)
+    config.write_text("FIXTURE_MODE=other\n")
     with pytest.raises(acceptance.AcceptanceError, match="local environment/configuration"):
         acceptance.validate_acceptance_receipt(repo, accepted)
-    with pytest.raises(acceptance.AcceptanceError, match="acceptance_checks_failed"):
-        acceptance.accept_revision(repo, sha="HEAD", runner=guard)
-    assert len(calls) == 2
-    assert artifact.read_bytes() == retained
 
 
 @pytest.mark.parametrize("change", ["tracked_mode", "tracked_content", "untracked_mode"])

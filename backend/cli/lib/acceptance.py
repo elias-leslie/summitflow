@@ -183,6 +183,32 @@ def _local_gate_inputs(repo: Path) -> dict[str, Any]:
     return payload
 
 
+def _outcome_local_inputs(repo: Path, commit: str, local_inputs: Mapping[str, Any]) -> dict[str, Any]:
+    """The recorded local inputs that can still change a commit's gate outcome.
+
+    Receipt validation compares only these, so unrelated host drift does not
+    void a receipt. Dropped: ~/.env.local (a shared all-project file that
+    gate stages never read, since they run with their own HOME), files the
+    commit tracks (the commit already binds them, e.g. .st-check.toml), and
+    file ownership/link/size metadata (content is what a test reads).
+    Kept: untracked project env files by content and the gate environment.
+    """
+    labels = {name: path for name, path in _local_gate_file_candidates(repo)}
+    relative = {name: path.relative_to(repo).as_posix() for name, path in labels.items() if path.is_relative_to(repo)}
+    tracked = set()
+    if relative:
+        listed = _git(repo, ["ls-tree", "--name-only", "-z", commit, "--", *(f":(literal){path}" for path in relative.values())])
+        tracked = set(listed.stdout.split("\0")) if not listed.returncode else set()
+    files = []
+    for entry in local_inputs.get("files", []):
+        name = entry.get("name") if isinstance(entry, dict) else None
+        if name not in relative or relative[name] in tracked:
+            continue
+        files.append({"name": name, "state": entry.get("state"), "sha256": entry.get("sha256")})
+    return {"files": sorted(files, key=lambda item: str(item["name"])),
+            "environment": local_inputs.get("environment", [])}
+
+
 def _git(
     repo: Path, args: Sequence[str], *, text: bool = True, input: str | bytes | None = None
 ) -> subprocess.CompletedProcess[Any]:
@@ -1223,13 +1249,23 @@ def validate_acceptance_receipt(
                 if (not stat.S_ISREG(info.st_mode) or info.st_uid != os.getuid() or info.st_nlink != 1
                         or stat.S_IMODE(info.st_mode) & 0o777 != mode):
                     raise AcceptanceError("Owned source permission inputs no longer match")
-    execution, source_modes = _source_execution(repo, commit, recorded_execution["basis"], mode_entries)
-    if source_modes != inputs.get("source_modes"):
-        raise AcceptanceError("accepted source permission inputs no longer match or were not recorded")
-    if execution != recorded_execution:
-        raise AcceptanceError("accepted source materialization no longer matches its consumed source binding")
-    local_inputs = _local_gate_inputs(repo)
-    if local_inputs != inputs.get("local_inputs"):
+    basis = recorded_execution["basis"]
+    # Isolated bindings derive from Git and the recorded modes alone. An
+    # in-place binding is re-read only while the checkout is still clean at
+    # that commit, the one case where an in-place rerun would consume those
+    # same physical files. Once the shared checkout has moved on or holds
+    # other work, a rerun goes isolated and the receipt stands for its commit.
+    if basis == "isolated" or (_git_value(repo, ["rev-parse", "HEAD"], "HEAD unavailable") == commit
+                               and not _git(repo, ["status", "--porcelain=v1", "--untracked-files=all"]).stdout):
+        execution, source_modes = _source_execution(repo, commit, basis, mode_entries)
+        if source_modes != inputs.get("source_modes"):
+            raise AcceptanceError("accepted source permission inputs no longer match or were not recorded")
+        if execution != recorded_execution:
+            raise AcceptanceError("accepted source materialization no longer matches its consumed source binding")
+    recorded_local = inputs.get("local_inputs")
+    if not isinstance(recorded_local, dict) or (
+            _outcome_local_inputs(repo, commit, _local_gate_inputs(repo))
+            != _outcome_local_inputs(repo, commit, recorded_local)):
         raise AcceptanceError("accepted local environment/configuration inputs no longer match")
     current_plan = requested_plan(repo, commit=commit if recorded_execution["basis"] == "isolated" else None,
                                   coverage=coverage, scope=plan.get("scope", ()), required_stages=plan.get("required_stages", ()))

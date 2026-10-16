@@ -666,18 +666,19 @@ def _parse_acceptance_args(args: list[str]) -> _AcceptanceOptions | int:
     return options
 
 
-def _acceptance_materialization(root: Path, sha: str, *, task_id: str, scope: list[str]) -> Materialization:
-    """A dirty tree or a historical revision is accepted in isolation; a clean HEAD in place."""
+def _acceptance_materialization(root: Path, sha: str) -> Materialization:
+    """A historical revision or a dirty tree is accepted in isolation; otherwise per the project's basis.
+
+    A historical full acceptance needs no task: the isolated clone runs exactly
+    that commit, which is what publishing an older accepted commit needs.
+    """
+    from cli.lib.acceptance_coordinator import select_materialization
     from cli.lib.commit_workflow import run_git
     selected = run_git(root, ["rev-parse", "--verify", f"{sha}^{{commit}}"])
     head = run_git(root, ["rev-parse", "HEAD"])
     historical = selected.returncode == 0 and head.returncode == 0 and selected.stdout.strip() != head.stdout.strip()
-    if historical and (not task_id or not scope):
-        raise AcceptanceError("Historical acceptance requires --task and explicit --scope task-owned paths")
     dirty = run_git(root, ["status", "--porcelain=v1", "--untracked-files=all"])
-    if historical or (dirty.returncode == 0 and dirty.stdout.strip()):
-        return "isolated"
-    return "actual"
+    return select_materialization(root, dirty=historical or (dirty.returncode == 0 and bool(dirty.stdout.strip())))
 
 
 def _acceptance_mode(args: list[str]) -> int:
@@ -690,7 +691,7 @@ def _acceptance_mode(args: list[str]) -> int:
         if options.task_id:
             owned_task = renew_owned_claim(root, options.task_id)
         from cli.lib.acceptance_coordinator import Coverage, accept_source
-        materialization = _acceptance_materialization(root, options.sha, task_id=options.task_id, scope=options.scope)
+        materialization = _acceptance_materialization(root, options.sha)
         receipt = accept_source(root, sha=options.sha, materialization=materialization, task_id=options.task_id,
                                 scope=options.scope, reuse=options.reuse, coverage=cast(Coverage, options.coverage),
                                 required_stages=options.required_stages).to_dict()

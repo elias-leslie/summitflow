@@ -10,13 +10,19 @@ import os
 import re
 import threading
 import time
+from collections.abc import Callable
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
 from app.storage import backups, tasks
 from app.utils import safe_subprocess
-from cli.lib.acceptance import AcceptanceError, _git_common_dir, validate_acceptance_receipt
+from cli.lib.acceptance import (
+    AcceptanceError,
+    _git_common_dir,
+    receipt_for_commit,
+    validate_acceptance_receipt,
+)
 from cli.lib.service_release import current_source_root, validate_deployment_receipt
 
 
@@ -51,50 +57,60 @@ _validation_cache: dict[tuple[str, int, str, str], tuple[float, dict[str, Any] |
 _validation_lock = threading.Lock()
 
 
-def _validated(root: Path, path: Path, head: str, worktree: str) -> dict[str, Any] | None:
-    key = (str(path), path.stat().st_mtime_ns, head, worktree)
+def _cached(key: tuple[str, int, str, str], compute: Callable[[], dict[str, Any] | None]) -> dict[str, Any] | None:
     now = time.monotonic()
     with _validation_lock:
         cached = _validation_cache.get(key)
     if cached and now - cached[0] < _VALIDATION_TTL:
         return cached[1]
     try:
-        accepted: dict[str, Any] | None = validate_acceptance_receipt(root, path)
+        value = compute()
     except (AcceptanceError, OSError, ValueError):
-        accepted = None
+        value = None
     with _validation_lock:
         for stale in [k for k, (at, _) in _validation_cache.items() if now - at >= _VALIDATION_TTL]:
             del _validation_cache[stale]
-        _validation_cache[key] = (now, accepted)
-    return accepted
+        _validation_cache[key] = (now, value)
+    return value
+
+
+def _validated(root: Path, path: Path, head: str, worktree: str) -> dict[str, Any] | None:
+    return _cached((str(path), path.stat().st_mtime_ns, head, worktree), lambda: validate_acceptance_receipt(root, path))
 
 
 def _accepted(root: Path, common: Path, head: str, worktree: str = "") -> dict[str, Any]:
+    directory = common / "st" / "acceptance"
+    if directory.is_dir():
+        # The shared per-commit lookup done, rebuild and nightly use: any valid
+        # full receipt for HEAD, on either basis. A new receipt changes the
+        # directory's mtime, so the cache never hides one.
+        accepted = _cached((str(directory), directory.stat().st_mtime_ns, head, worktree),
+                           lambda: receipt_for_commit(root, head))
+        if accepted is not None:
+            return evidence("accepted", source_commit=head, observed_at=accepted.get("completed_at"),
+                            artifact=str(accepted.get("acceptance_artifact") or ""), reason="Full local acceptance",
+                            full_coverage=True, check_count=accepted.get("check_count"), drift=False)
     candidates = []
     unreadable = False
-    for path in (common / "st" / "acceptance").glob("*.json"):
+    for path in directory.glob("*.json"):
         try:
             value = _read(path)
             if value.get("state") == "success" and isinstance(value.get("source"), dict):
                 candidates.append((str(value.get("completed_at") or ""), path, value))
         except (OSError, ValueError):
             unreadable = True
-    candidates.sort(reverse=True, key=lambda row: row[0])
-    # Prefer acceptance for HEAD; retain the latest historical source otherwise.
-    selected = next((row for row in candidates if row[2].get("source", {}).get("commit") == head),
-                    candidates[0] if candidates else None)
-    if not selected:
+    if not candidates:
         return evidence("error" if unreadable else "unavailable", reason="Acceptance receipt unreadable" if unreadable else "No full acceptance recorded")
-    _, path, value = selected
+    # No valid full proof for HEAD: report the newest retained source as stale.
+    _, path, value = max(candidates, key=lambda row: row[0])
     source = value.get("source", {}).get("commit")
-    accepted = _validated(root, path, head, worktree)
-    if accepted is None:
+    validated = _validated(root, path, head, worktree) if source != head else None
+    if validated is None:
         return evidence("stale", source_commit=source, observed_at=value.get("completed_at"),
                         artifact=str(path), reason="Retained acceptance does not validate against current source, local inputs or check plan", full_coverage=False, drift=source != head)
-    return evidence("accepted" if source == head else "stale", source_commit=source,
-                    observed_at=accepted.get("completed_at"), artifact=str(path),
-                    reason="Full local acceptance" if source == head else "Accepted source differs from working HEAD",
-                    full_coverage=True, check_count=accepted.get("check_count"), drift=source != head)
+    return evidence("stale", source_commit=source, observed_at=validated.get("completed_at"), artifact=str(path),
+                    reason="Accepted source differs from working HEAD", full_coverage=True,
+                    check_count=validated.get("check_count"), drift=True)
 
 
 def _native_metadata_project(path: Path) -> str | None:
