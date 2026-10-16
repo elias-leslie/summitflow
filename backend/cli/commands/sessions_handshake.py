@@ -5,7 +5,7 @@ from __future__ import annotations
 from typing import Annotated
 
 import typer
-from st_sdk.usage import usage
+from st_sdk.usage import USAGE_SPECS_ATTR, UsageSpec, usage
 
 from ..config import get_config_optional
 from ..lib import coord, leases
@@ -99,6 +99,23 @@ def inbox() -> None:
         typer.echo(f"{row['id']} {state} {row['from']}->{row['to']} {detail} | {row['text']}")
     for line in coord.notices():
         typer.echo(line)
+
+
+# The inbox hook also shows memory notices; Nightshift owns that record and its reader.
+setattr(inbox, USAGE_SPECS_ATTR, (UsageSpec(
+    surface="nightshift.memory.events",
+    cmd="nightshift memory events --mine",
+    when="a command ended early (exit 137, a pipeline with missing output, a lost background job) or a memory notice "
+         "appeared: what memctl or the kernel killed in this agent pane, when, and why",
+    precautions=(
+        "read-only; Nightshift owns the record; --mine also finds kills in an earlier pane this session was resumed out of",
+        "other panes or windows: --scope <unit> or --since 2h; --json gives the v1 records",
+    ),
+    examples=("nightshift memory events --mine --since 2h",),
+    task_types=("devops", "debugging"),
+    on_demand="host and project troubleshooting",
+    tier="reference",
+),))
 
 
 def register(app: typer.Typer) -> None:

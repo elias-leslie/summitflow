@@ -6,7 +6,8 @@ ran `st pulse` / `st sessions inbox`, hit an edit collision, or reset. This
 module surfaces new requests addressed to the current agent (and acks of
 requests it sent) on every harness surface that can carry text:
 
-  turn   UserPromptSubmit / PostToolUse      additionalContext (Claude + Codex)
+  turn   UserPromptSubmit / PostToolUse(Failure) / SessionStart
+                                             additionalContext (Claude + Codex)
   stop   Stop                                decision=block so the turn continues
                                              and answers; on Codex, arms `watch`
   watch  Claude: asyncRewake background hook (exit 2 wakes an idle session)
@@ -14,7 +15,11 @@ requests it sent) on every harness surface that can carry text:
                  pane (Codex has no rewake hook; only armed between turns)
 
 Items surface once per agent, then again every REMIND seconds while still
-unanswered. Text starting with URGENT/CONFLICT is flagged as such. Fails open
+unanswered. Text starting with URGENT/CONFLICT is flagged as such. The same
+surfaces carry memory notices (cli.lib.coord_memory): a process in this pane
+killed for memory, a stopped pane, a memory warning. Each shows once per agent
+and per subagent, needs no answer and never blocks Stop; SessionStart,
+SubagentStart and subagent tool hooks carry only these. Fails open
 and is silent when nothing is waiting. Pane typing goes only through
 cli.lib.coord_wake.type_line (idle pane, empty composer), the single injection
 path; `st sessions send --delivery native-thread` to a live Codex thread writes
@@ -33,7 +38,7 @@ import sys
 import time
 
 sys.path.insert(0, sys.argv[1])
-from cli.lib import coord, coord_lineage, coord_wake, leases  # type: ignore[import-not-found]  # noqa: E402  # SummitFlow backend on sys.path
+from cli.lib import coord, coord_lineage, coord_memory, coord_wake, leases  # type: ignore[import-not-found]  # noqa: E402  # SummitFlow backend on sys.path
 
 REMIND = 300
 POLL = 2.0
@@ -43,6 +48,14 @@ STATE = coord_wake.STATE
 LEDGER = leases.LEASES_DIR / "_coord.json"
 _key = coord_wake.state_key
 _load_seen = coord_wake.load_seen
+
+
+def memory(agent: str, resumed: bool = False) -> coord_memory.Notice | None:
+    """This agent's memory notice, or None; a failure here never costs the coordination items."""
+    try:
+        return coord_memory.check(agent, resumed=resumed, paths=coord_memory.Paths(state_dir=STATE))
+    except Exception:  # noqa: BLE001 - fail open: no notice
+        return None
 
 
 def _save_seen(agent_id: str, seen: dict[str, float]) -> None:
@@ -145,6 +158,7 @@ def watch(provider: str) -> int:
     deadline = time.time() + WATCH_SECONDS
     last_mtime = -1.0
     last_check = 0.0
+    mem_retry = 0.0
     while time.time() < deadline:
         if anchor and not coord_lineage.anchor_alive(anchor):
             return 0
@@ -153,25 +167,36 @@ def watch(provider: str) -> int:
         except OSError:
             mtime = 0.0
         now = time.time()
+        fresh: list[tuple[str, str, bool]] = []
         if mtime != last_mtime or now - last_check >= 60:
             last_mtime, last_check = mtime, now
             agent_id, items = pending()
             fresh = due(agent_id, items)
-            if fresh:
-                text = render(fresh)
-                if provider == "codex":
-                    sock = os.environ.get("TMUX", "").split(",")[0]
-                    line = coord_wake.pane_line(text, sum(":req" in key for key, _, _ in fresh))
-                    if not coord_wake.type_line(line, sock, os.environ.get("TMUX_PANE", "")):
-                        last_check = now - 60 + RETRY  # busy composer: leave it queued, look again soon
-                        time.sleep(POLL)
-                        continue
+        note = memory(agent_id) if now >= mem_retry else None
+        if fresh or note:
+            if provider == "codex":
+                # Codex: wake the pane; its UserPromptSubmit hook then shows the memory notice in full
+                if note:
+                    note.done(delivered=False)
+                sock = os.environ.get("TMUX", "").split(",")[0]
+                line = (coord_wake.pane_line(render(fresh), sum(":req" in key for key, _, _ in fresh)) if fresh
+                        else coord_memory.WAKE_LINE)
+                if not coord_wake.type_line(line, sock, os.environ.get("TMUX_PANE", "")):
+                    last_check = now - 60 + RETRY  # busy composer: leave it queued, look again soon
+                    mem_retry = now + RETRY
+                    time.sleep(POLL)
+                    continue
+                if fresh:
                     mark(agent_id, fresh, "codex-tmux-wake")
-                    coord_wake.codex_pidfile(agent_id).unlink(missing_ok=True)
-                    return 0
+                coord_wake.codex_pidfile(agent_id).unlink(missing_ok=True)
+                return 0
+            if fresh:
                 mark(agent_id, fresh, "claude-rewake")
-                print(text, file=sys.stderr)
-                return 2  # asyncRewake: wake Claude, even when idle
+            if note:
+                note.done()
+            print("\n\n".join(t for t in (render(fresh) if fresh else "", note.text if note else "") if t),
+                  file=sys.stderr)
+            return 2  # asyncRewake: wake Claude, even when idle
         time.sleep(POLL)
     return 0
 
@@ -187,17 +212,23 @@ def main() -> int:
         payload = {}
     if not isinstance(payload, dict):
         payload = {}
-    if payload.get("agent_id") and provider == "claude_code":
-        return 0  # Claude subagent hooks share the parent session id; leave items for the parent
+    event = str(payload.get("hook_event_name") or "")
+    subagent = str(payload.get("agent_id") or "") if provider == "claude_code" else ""
+    if subagent:  # Claude subagent hooks share the parent session id: coordination items stay for the parent
+        if mode == "turn":
+            emit(event, [], memory(f"{leases.identify_agent()[0]}/{subagent}"))
+        return 0
     coord.adopt_hook_identity(payload)
     # Register every turn, not only on edits: an agent that only reads and messages must stay addressable.
     try:
         coord_lineage.observe()
     except Exception:  # noqa: BLE001 - registration is best effort; the inbox still answers
         pass
-    event = str(payload.get("hook_event_name") or "")
     if mode == "watch":
         return watch(provider)
+    if mode == "turn" and event == "SessionStart":
+        emit(event, [], memory(leases.identify_agent()[0], resumed=payload.get("source") == "resume"))
+        return 0
     agent_id, items = pending()
     if mode == "turn" and provider == "codex" and event == "UserPromptSubmit":
         disarm_codex(agent_id)
@@ -211,9 +242,18 @@ def main() -> int:
         return 0
     if fresh:
         mark(agent_id, fresh, f"{provider}-{event or mode}")
-        print(json.dumps({"hookSpecificOutput": {"hookEventName": event or "PostToolUse",
-                                                  "additionalContext": render(fresh)}}))
+    emit(event, fresh, memory(agent_id))
     return 0
+
+
+def emit(event: str, fresh: list[tuple[str, str, bool]], note: coord_memory.Notice | None) -> None:
+    """Print coordination items and a memory notice as one additionalContext; the notice counts once printed."""
+    text = "\n\n".join(t for t in (render(fresh) if fresh else "", note.text if note else "") if t)
+    if text:
+        print(json.dumps({"hookSpecificOutput": {"hookEventName": event or "PostToolUse", "additionalContext": text}}),
+              flush=True)
+    if note:
+        note.done()
 
 
 if __name__ == "__main__":

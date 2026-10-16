@@ -831,6 +831,18 @@ def test_inbox_hook_is_silent_when_empty_then_surfaces_a_request_once(repos, tmp
     assert (stop.returncode, stop.stdout) == (0, "")  # already surfaced: no block until the reminder is due
 
 
+def test_inbox_hook_leaves_requests_for_the_parent_and_session_start_shows_only_memory(repos, tmp_path, monkeypatch):
+    target = {"session_id": "c9ffbd05-c536-446f-82f7-30690775f33e", "hook_event_name": "PostToolUseFailure"}
+    monkeypatch.setattr(leases, "LEASES_DIR", tmp_path / "hook-leases")
+    as_claude(monkeypatch, "sender-0001")
+    coord.send("cc:c9ffbd", "please release backend/a.py")
+    sub = _inbox({**target, "agent_id": "a1b2c3"}, tmp_path, "turn")
+    start = _inbox({**target, "hook_event_name": "SessionStart", "source": "resume"}, tmp_path, "turn")
+    assert [(r.returncode, r.stdout, r.stderr) for r in (sub, start)] == [(0, "", "")] * 2  # not in a pane: no notice
+    parent = json.loads(_inbox(target, tmp_path, "turn").stdout)["hookSpecificOutput"]
+    assert parent["hookEventName"] == "PostToolUseFailure" and "please release" in parent["additionalContext"]
+
+
 def test_inbox_hook_registers_a_tether_root_under_its_harness_id(tmp_path):
     """A root that never edits (only reads and messages) must still become addressable by its cc: id."""
     anchor = f"{os.getpid()}:{leases._process_start(os.getpid())}"
