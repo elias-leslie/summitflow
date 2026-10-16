@@ -1,8 +1,7 @@
-"""Tests for the Aico-supporting st surface: `st selection` and `st mandates`.
+"""Tests for the Aico-supporting st surface: `st projects switch` and `st projects active`.
 
-Selection reads Aico's sidecar selection bus over HTTP (Phase 2); mandates
-fetches the mandate block from Agent Hub's progressive-context endpoint. Both
-follow the frozen bare-payload output contract (docs/contracts/01-output-conventions.md).
+Tether reads the active-project pointer these commands persist and reports it
+to Aico as the active project; both print bare JSON payloads.
 """
 
 from __future__ import annotations
