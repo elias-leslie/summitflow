@@ -6,6 +6,12 @@ It shares the publication night window, runs one project at a time, skips a
 project with a live writer or a busy heavy lane until the next hourly run, and
 skips a head that already passed within a week. Failures surface once per day
 as a SummitFlow notification.
+
+``clean_env_green_since`` in each repo's deep-lane state is the first night of
+the current unbroken run of passing clean-env stages (fresh clone, fresh deps,
+empty CI database). Once every repo that has it shows 14 or more days, the
+private repos' GitHub Actions runs can be turned off; their workflow YAML stays,
+because ``cli.lib.ci_parity`` reads it.
 """
 from __future__ import annotations
 
@@ -22,7 +28,7 @@ from .nightly_publication import WINDOW_ZONE, _git, _projects, busy_reason
 logger = get_logger(__name__)
 
 WINDOW_START_HOUR, WINDOW_END_HOUR = 1, 7
-DEEP_TIMEOUT_SECONDS = 3 * 60 * 60
+DEEP_TIMEOUT_SECONDS = 5 * 60 * 60  # gate, slow stages and the clean-env gate
 PASS_VALID_DAYS = 7
 
 
@@ -73,9 +79,20 @@ def _run_deep(root: Path) -> dict[str, Any]:
         if line.startswith("DEEP_EVIDENCE:"):
             result = json.loads(line.removeprefix("DEEP_EVIDENCE:"))
             failed = [stage for stage in result.get("stages", []) if stage.get("state") != "pass"]
+            clean_env = next((stage.get("state") for stage in result.get("stages", []) if stage.get("id") == "clean-env"), None)
             return {"state": result.get("state"), "reason": ",".join(stage["id"] for stage in failed) or "passed",
-                    "failures": [line for stage in failed for line in stage.get("failures", [])][:5]}
+                    "failures": [line for stage in failed for line in stage.get("failures", [])][:5],
+                    **({"clean_env": clean_env} if clean_env else {})}
     return {"state": "unavailable", "reason": f"no_deep_evidence_exit_{completed.returncode}"}
+
+
+def clean_env_green_since(prior: dict[str, Any], outcome: dict[str, Any], today: date) -> str | None:
+    """Start of the current clean-env pass streak; a clean-env failure restarts it."""
+    if outcome.get("clean_env") == "pass":
+        return str(prior.get("clean_env_green_since") or today.isoformat())
+    if outcome.get("clean_env") is None:
+        return prior.get("clean_env_green_since")
+    return None
 
 
 def _notify(rows: list[dict[str, Any]], today: date) -> None:
@@ -111,7 +128,8 @@ def run_nightly_deep_lane(*, now: datetime | None = None, project_ids: list[str]
         if not head:
             continue
         path = _state_path(root)
-        reason = skip_reason(_read_state(path), head, today) or busy_reason(project_id, root)
+        prior = _read_state(path)
+        reason = skip_reason(prior, head, today) or busy_reason(project_id, root)
         if reason is None and not window_open():
             reason = "window_closed"
         if reason:
@@ -126,6 +144,8 @@ def run_nightly_deep_lane(*, now: datetime | None = None, project_ids: list[str]
         rows.append(row)
         if path is not None and outcome["state"] in {"pass", "fail"}:
             path.parent.mkdir(parents=True, exist_ok=True)
-            path.write_text(json.dumps({"date": today.isoformat(), "sha": head, **outcome}))
+            since = clean_env_green_since(prior, outcome, today)
+            path.write_text(json.dumps({"date": today.isoformat(), "sha": head, **outcome,
+                                        **({"clean_env_green_since": since} if since else {})}))
     _notify(rows, today)
     return {"status": "completed", "projects": rows}

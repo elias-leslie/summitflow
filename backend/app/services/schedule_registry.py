@@ -133,7 +133,7 @@ SCHEDULE_DEFINITIONS: tuple[ScheduleDefinition, ...] = (
         schedule_id="nightly_deep_lane",
         config_key="nightly_deep_lane_enabled",
         label="Nightly deep lane",
-        description="Runs st check --deep (full gate without reuse plus opted-in slow tests) once a day per project between 01:00 and 07:00 New York time.",
+        description="Runs st check --deep (full gate without reuse, opted-in slow tests, and for repos with migrations or workspace packages the gate in a fresh clone with fresh deps and an empty CI database) once a day per project between 01:00 and 07:00 New York time.",
         cron="35 5-11 * * *",
         scope="system",
     ),

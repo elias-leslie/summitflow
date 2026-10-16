@@ -1,4 +1,4 @@
-"""Run commands in an isolated snapshot of the current working tree."""
+"""Run commands in an isolated snapshot of the current working tree, or a fresh clone of one commit."""
 
 from __future__ import annotations
 
@@ -61,6 +61,9 @@ class CleanroomOptions:
     collect_to: Path | None = None
     # Content-addressed host package caches reused by installs only.
     share_caches: bool = True
+    # Commit to clone fresh instead of snapshotting the working tree; its
+    # installs copy packages rather than linking them from a shared cache.
+    clone: str | None = None
 
 
 def _validate_temp_parent(path: Path, *, private: bool = False) -> None:
@@ -117,6 +120,18 @@ def create_snapshot(project_root: Path, snapshot_root: Path) -> None:
     """Copy the current tracked + untracked checkout content into snapshot_root."""
     for relative_path in _git_snapshot_paths(project_root):
         _copy_snapshot_entry(project_root, snapshot_root, relative_path)
+
+
+def clone_revision(project_root: Path, destination: Path, revision: str) -> None:
+    """Committed content of one revision only, sharing no objects or files with the checkout.
+
+    Its git directory sits beside the tree, so ``.git`` is a link file and
+    identity checks treat the clone as a linked checkout of the registered root.
+    """
+    subprocess.run(["git", "clone", "-q", "--no-local", "--no-checkout", "--no-recurse-submodules",
+                    "--separate-git-dir", str(destination.parent / "git"), str(project_root), str(destination)],
+                   check=True)
+    subprocess.run(["git", "-C", str(destination), "checkout", "-q", "--detach", revision], check=True)
 
 
 def initialize_snapshot_git(snapshot_root: Path) -> None:
@@ -239,6 +254,8 @@ def _install_env(env: Mapping[str, str], base_env: Mapping[str, str]) -> dict[st
     caches = {
         "UV_CACHE_DIR": Path(base_env.get("UV_CACHE_DIR") or real_home / ".cache" / "uv"),
         "npm_config_cache": Path(base_env.get("npm_config_cache") or real_home / ".npm"),
+        # pnpm here is a corepack shim; without its prepared cache it re-downloads pnpm.
+        "COREPACK_HOME": Path(base_env.get("COREPACK_HOME") or real_home / ".cache" / "node" / "corepack"),
     }
     for key, path in caches.items():
         if key not in install and path.is_dir():
@@ -341,7 +358,8 @@ def run_cleanroom(
         _validate_collect_pattern(pattern)
     collect_to = options.collect_to or (default_artifact_dir(project_root) if options.collect else None)
 
-    if not keep_dir and collect_to is None and not options.extras and not env_overrides and not unset_keys:
+    if (not keep_dir and collect_to is None and not options.extras and not env_overrides and not unset_keys
+            and options.clone is None):
         remote = _run_on_ci_runner(project_root, command)
         if remote is not None:
             return remote
@@ -363,8 +381,11 @@ def run_cleanroom(
                 raise CleanroomUsageError("--to must be outside the disposable cleanroom directory")
             snapshot_root.mkdir(parents=True, exist_ok=True)
             temp_root.mkdir(mode=0o700)
-            create_snapshot(project_root, snapshot_root)
-            initialize_snapshot_git(snapshot_root)
+            if options.clone is not None:
+                clone_revision(project_root, snapshot_root, options.clone)
+            else:
+                create_snapshot(project_root, snapshot_root)
+                initialize_snapshot_git(snapshot_root)
             base_env = os.environ.copy()
             env = build_cleanroom_env(
                 project_root,
@@ -380,6 +401,8 @@ def run_cleanroom(
                 env["TMPDIR"] = str(temp_root)
             if options.deps:
                 install_env = _install_env(env, base_env) if options.share_caches else env
+                if options.clone is not None:
+                    install_env = {**install_env, "UV_LINK_MODE": "copy", "npm_config_package_import_method": "copy"}
                 code = install_dependencies(snapshot_root, options.extras, runner=work.run, env=install_env)
                 if code != 0:
                     return code
@@ -420,6 +443,10 @@ def _build_parser() -> argparse.ArgumentParser:
         help="Additional backend optional-dependency group for --deps (repeatable).",
     )
     parser.add_argument(
+        "--clone", default=None, metavar="REV",
+        help="Run in a fresh clone of this commit instead of a working-tree snapshot; --deps then copies packages.",
+    )
+    parser.add_argument(
         "--collect", action="append", default=[], metavar="GLOB",
         help="Copy matching snapshot paths out before cleanup (repeatable; relative to snapshot root).",
     )
@@ -448,6 +475,7 @@ def main(argv: list[str] | None = None) -> int:
         extras=tuple(args.extra),
         collect=tuple(args.collect),
         collect_to=args.to.resolve() if args.to is not None else None,
+        clone=args.clone,
     )
     try:
         return run_cleanroom(

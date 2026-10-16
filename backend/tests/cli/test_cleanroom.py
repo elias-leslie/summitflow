@@ -529,3 +529,54 @@ def test_install_env_shares_only_existing_download_caches(tmp_path: Path) -> Non
     assert "npm_config_cache" not in env
     assert "UV_PROJECT_ENVIRONMENT" not in env
     assert env["HOME"] == "/isolated"
+
+
+def test_clone_runs_committed_revision_with_copied_dependency_installs(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    project = _deps_project(tmp_path)
+    subprocess.run(["git", "add", "-A"], cwd=project, check=True)
+    subprocess.run(["git", "commit", "-qm", "initial"], cwd=project, check=True)
+    head = subprocess.run(["git", "rev-parse", "HEAD"], cwd=project, capture_output=True, text=True,
+                          check=True).stdout.strip()
+    (project / "backend" / "pyproject.toml").write_text("uncommitted edit\n")
+    (project / "untracked.txt").write_text("not committed\n")
+    seen: list[tuple[list[str], dict[str, str], dict[str, bool]]] = []
+
+    class Work(_RecordingWork):
+        def run(self, command: list[str], *, cwd: Path, env: dict[str, str]) -> subprocess.CompletedProcess[str]:
+            root = Path(cwd) if command == ["build"] else Path(cwd).parent
+            seen.append((command, env, {
+                "committed": "dev=['a']" in (root / "backend" / "pyproject.toml").read_text(),
+                "untracked": (root / "untracked.txt").exists(),
+                "own_objects": not (root.parent / "git" / "objects" / "info" / "alternates").exists()
+                and (root / ".git").is_file(),
+            }))
+            return subprocess.CompletedProcess(command, 0)
+
+    _use_recording_work(monkeypatch, Work(), tmp_path / "parent")
+    monkeypatch.setattr(cleanroom, "_run_on_ci_runner", lambda *_a: pytest.fail("a clone runs locally"))
+    options = cleanroom.CleanroomOptions(deps=True, share_caches=False, clone=head)
+    assert cleanroom.run_cleanroom(project, ["build"], options=options) == 0
+    assert [command[0] for command, _env, _state in seen] == ["uv", "npm", "build"]
+    assert all(state == {"committed": True, "untracked": False, "own_objects": True} for *_, state in seen)
+    for _command, env, _state in seen[:2]:
+        assert env["UV_LINK_MODE"] == "copy"
+        assert env["npm_config_package_import_method"] == "copy"
+    assert "UV_LINK_MODE" not in seen[2][1]
+    assert list((tmp_path / "parent").iterdir()) == []
+
+
+def test_clone_flag_reaches_options(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    captured: dict[str, object] = {}
+
+    def fake_run(project_root: Path, command: list[str], **kwargs: object) -> int:
+        captured.update(kwargs)
+        return 0
+
+    monkeypatch.setattr(cleanroom, "run_cleanroom", fake_run)
+    assert cleanroom.main(["--project-root", str(tmp_path), "--clone", "abc123", "--deps", "--", "true"]) == 0
+    options = captured["options"]
+    assert isinstance(options, cleanroom.CleanroomOptions)
+    assert options.clone == "abc123"
+    assert options.deps

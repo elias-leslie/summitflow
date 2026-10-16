@@ -6,8 +6,9 @@ from pathlib import Path
 
 import pytest
 
-from app.tasks.nightly_deep_lane import skip_reason
-from cli.lib.deep_lane import DeepLaneError, _run, deep_stages
+from app.tasks.nightly_deep_lane import clean_env_green_since, skip_reason
+from cli.lib import deep_lane
+from cli.lib.deep_lane import DeepLaneError, _run, clean_env_applies, deep_stages
 
 SLOW_INI = "[pytest]\nmarkers =\n    slow: long tests\n    unit: fast\n"
 
@@ -72,3 +73,64 @@ HEAD, OTHER = "a" * 40, "b" * 40
 )
 def test_nightly_runs_each_project_once_a_day_unless_its_head_recently_passed(prior: dict, skipped: bool) -> None:
     assert (skip_reason(prior, HEAD, date(2026, 10, 12)) is not None) is skipped
+
+
+@pytest.mark.parametrize(
+    ("files", "applies"),
+    [
+        ({"backend/alembic.ini": "[alembic]\n"}, True),
+        ({"migrations/0001_init.sql": "select 1;\n"}, True),
+        ({"pnpm-workspace.yaml": "packages: [web]\n"}, True),
+        ({"pyproject.toml": "[tool.uv.workspace]\nmembers = ['pkgs/*']\n"}, True),
+        ({"pyproject.toml": "[project]\nname = 'x'\n", "web/package.json": "{}\n"}, False),
+    ],
+)
+def test_clean_env_runs_only_for_repos_with_migrations_or_workspace_packages(
+        tmp_path: Path, files: dict[str, str], applies: bool) -> None:
+    subprocess.run(["git", "init", "-q", str(tmp_path)], check=True)
+    for name, content in files.items():
+        (tmp_path / name).parent.mkdir(parents=True, exist_ok=True)
+        (tmp_path / name).write_text(content)
+    subprocess.run(["git", "add", "-A"], cwd=tmp_path, check=True)
+    assert clean_env_applies(tmp_path) is applies
+
+
+def test_clean_env_gates_a_fresh_clone_of_head_with_fresh_deps_and_ci_parity(
+        tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    subprocess.run(["git", "init", "-q", str(tmp_path)], check=True)
+    (tmp_path / "alembic.ini").write_text("[alembic]\n")
+    subprocess.run(["git", "add", "-A"], cwd=tmp_path, check=True)
+    subprocess.run(["git", "-c", "user.name=t", "-c", "user.email=t@example.invalid", "commit", "-qm", "x"],
+                   cwd=tmp_path, check=True)
+    head = subprocess.run(["git", "rev-parse", "HEAD"], cwd=tmp_path, capture_output=True, text=True,
+                          check=True).stdout.strip()
+    ran: list[dict] = []
+
+    def record(_root: Path, stage: dict, _env: dict) -> dict:
+        ran.append(stage)
+        return {"id": stage["id"], "state": "pass"}
+
+    monkeypatch.setattr(deep_lane, "_run", record)
+    assert deep_lane.run_deep(tmp_path)["state"] == "pass"
+    assert [stage["id"] for stage in ran] == ["gate", "clean-env"]
+    argv = ran[-1]["argv"]
+    split = argv.index("--")
+    assert argv[argv.index("cleanroom"):argv.index("cleanroom") + 4] == ["cleanroom", "--clone", head, "--deps"]
+    assert "ST_CHECK_CI_PARITY=1" in argv[:split] and "ST_NATIVE_NO_REUSE=1" in argv[:split]
+    assert argv[split + 1:][-2:] == ["check", "--check"]
+
+
+@pytest.mark.parametrize(
+    ("prior", "clean_env", "expected"),
+    [
+        ({}, "pass", "2026-10-12"),
+        ({"clean_env_green_since": "2026-10-01"}, "pass", "2026-10-01"),
+        ({"clean_env_green_since": "2026-10-01"}, "fail", None),
+        ({"clean_env_green_since": "2026-10-01"}, None, "2026-10-01"),
+        ({}, None, None),
+    ],
+)
+def test_clean_env_green_streak_start_resets_on_a_clean_env_failure(
+        prior: dict, clean_env: str | None, expected: str | None) -> None:
+    outcome = {"state": "pass", **({"clean_env": clean_env} if clean_env else {})}
+    assert clean_env_green_since(prior, outcome, date(2026, 10, 12)) == expected

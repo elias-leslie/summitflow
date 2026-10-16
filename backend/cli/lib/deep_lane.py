@@ -8,12 +8,18 @@ A project opts tests in without new configuration:
   (``id``, ``argv``, optional ``cwd`` and ``timeout_seconds``) in
   ``.st-check.toml``; explicit stages replace detection.
 Tests needing production or live credentials stay out of every lane.
+
+Repos with migrations or workspace packages also rerun the gate the way a
+hosted CI runner would (``clean-env``): a fresh clone of the commit, locked
+dependencies installed as copies, and the CI workflow's service database
+started empty (``cli.lib.ci_parity``).
 """
 
 from __future__ import annotations
 
 import configparser
 import os
+import pwd
 import re
 import subprocess
 import sys
@@ -114,6 +120,30 @@ def deep_stages(root: Path) -> list[dict[str, Any]]:
     return stages
 
 
+def clean_env_applies(root: Path) -> bool:
+    """Migrations or workspace packages: where a reused checkout and its deps hid CI-only failures."""
+    tracked = subprocess.run(["git", "ls-files", "--", ":(glob)**/alembic.ini", ":(glob)**/migrations/**",
+                              ":(glob)**/pnpm-workspace.yaml"], cwd=root, capture_output=True, text=True, check=False)
+    if tracked.stdout.strip():
+        return True
+    uv = subprocess.run(["git", "grep", "-lF", "[tool.uv.workspace]", "--", ":(glob)**/pyproject.toml"],
+                        cwd=root, capture_output=True, text=True, check=False)
+    return bool(uv.stdout.strip())
+
+
+def clean_env_stage(head: str) -> dict[str, Any]:
+    """The full gate with CI parity in a fresh clone of ``head`` with freshly installed deps."""
+    from . import ci_parity
+
+    environment = [f"{ci_parity.PARITY_FLAG}=1", f"{ci_parity.SEED_VAR}={ci_parity.new_seed()}", "ST_NATIVE_NO_REUSE=1"]
+    # The cleanroom's private HOME hides st's own settings; CI parity gives every tool a scrubbed HOME anyway.
+    gate = ["/usr/bin/env", f"HOME={pwd.getpwuid(os.getuid()).pw_dir}", *_st(), "check", "--check"]
+    return {"id": "clean-env",
+            "argv": [*_st(), "check", "cleanroom", "--clone", head, "--deps",
+                     *(arg for item in environment for arg in ("--env", item)), "--", *gate],
+            "cwd": ".", "timeout_seconds": GATE_TIMEOUT_SECONDS, "admitted": True}
+
+
 def _run(root: Path, stage: dict[str, Any], env: dict[str, str]) -> dict[str, Any]:
     from app.utils.heavy_work import heavy_work
 
@@ -139,15 +169,17 @@ def _run(root: Path, stage: dict[str, Any], env: dict[str, str]) -> dict[str, An
         state, reason = "fail", f"exit_{returncode}"
     # Gate output ends in a large evidence line; lead with the failing results.
     failures = [line[:300] for line in output.splitlines()
-                if re.match(r"^(NATIVE:fail:|DEEP:fail:|[A-Z_]+:FAIL:)", line)]
+                if re.match(r"^(NATIVE:fail:|DEEP:fail:|CLEANROOM:deps-failed:|[A-Z_]+:FAIL:)", line)]
     return {"id": stage["id"], "state": state, "reason": reason, "failures": failures[:20],
             "duration_ms": round((time.monotonic() - started) * 1000), "detail": output[-1500:]}
 
 
 def run_deep(root: Path) -> dict[str, Any]:
-    """Run the fresh full gate, then every deep stage; all of them, even after a failure."""
+    """Run the fresh full gate, every deep stage, then clean-env; all of them, even after a failure."""
     head = subprocess.run(["git", "rev-parse", "HEAD"], cwd=root, capture_output=True, text=True, check=False)
     stages = deep_stages(root)
+    if head.stdout.strip() and clean_env_applies(root):
+        stages.append(clean_env_stage(head.stdout.strip()))
     env = {**os.environ, "ST_NATIVE_NO_REUSE": "1"}
     gate = {"id": "gate", "argv": [*_st(), "check", "--check"], "cwd": ".",
             "timeout_seconds": GATE_TIMEOUT_SECONDS, "admitted": True}
