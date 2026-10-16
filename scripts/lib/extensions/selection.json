@@ -8,7 +8,6 @@
   "summary": "Explicit delivery of a capture to the active Aico session.",
   "effects": [
     "network",
-    "read-remote",
     "write-remote"
   ],
   "namespace": "selection",

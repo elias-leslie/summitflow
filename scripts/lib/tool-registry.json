@@ -417,7 +417,6 @@
         "enabled": true,
         "effects": [
           "network",
-          "read-remote",
           "write-remote"
         ]
       },
