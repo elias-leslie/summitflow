@@ -1,4 +1,4 @@
-"""Handshake tuning (owner decisions 2026-10-16): 500-char send, eta lapse, plain ack notice, one-line mandate."""
+"""Handshake tuning (owner decisions 2026-10-16): 500-char send, eta lapse, ack wake, one-line mandate."""
 
 from __future__ import annotations
 
@@ -103,25 +103,27 @@ def test_lapsed_eta_request_line_says_so(monkeypatch, inbox_module):
         f"REQUEST {sent['id']} from cc:eta-se (your eta:3 ran out): may I commit")
 
 
-def test_claude_watcher_types_an_ack_as_a_plain_line_instead_of_a_blocking_wake(monkeypatch, capsys, inbox_module):
+def test_claude_watcher_wakes_the_sender_for_an_ack_without_typing_into_its_pane(monkeypatch, capsys, inbox_module):
+    # The wake stays asyncRewake (claude-config labels it a plain notice); agent text is never typed as a user prompt.
     ack = ("ab12:ack:t1", "ACK ab12 yes from codex:abcdef | close with `st sessions confirm ab12`", False)
     monkeypatch.setattr(inbox_module, "pending", lambda: ("cc:sender", [ack]))
-    typed: list[tuple[str, str, str]] = []
-    monkeypatch.setattr(coord_wake, "type_line", lambda line, sock, pane: typed.append((line, sock, pane)) or True)
-    assert inbox_module.watch("claude_code") == 0
-    assert capsys.readouterr().err == ""  # nothing for Claude to render as a hook error
-    assert len(typed) == 1 and typed[0][1:] == ("/sock", "%7")
-    assert typed[0][0].startswith("st coordination (update on a request you sent): ; ACK ab12 yes")
+    monkeypatch.setattr(coord_wake, "type_line", lambda *_a: pytest.fail("Claude acks never type into the pane"))
+    assert inbox_module.watch("claude_code") == 2
+    assert "st coordination (update on a request you sent):\nACK ab12 yes" in capsys.readouterr().err
     assert "ab12:ack:t1" in json.loads(coord_wake.seen_path("cc:sender").read_text())
 
 
-def test_claude_watcher_leaves_an_ack_for_the_next_turn_when_the_pane_is_busy(monkeypatch, capsys, inbox_module):
-    ack = ("ab12:ack:t1", "ACK ab12 yes from codex:abcdef", False)
-    monkeypatch.setattr(inbox_module, "pending", lambda: ("cc:sender", [ack]))
-    monkeypatch.setattr(coord_wake, "type_line", lambda *_a: False)
-    assert inbox_module.watch("claude_code") == 0
-    assert capsys.readouterr().err == ""
-    assert not coord_wake.seen_path("cc:sender").exists()  # still due: the turn hook shows it as context
+def test_ack_reason_stays_one_short_line_so_a_wake_line_carries_it(monkeypatch, inbox_module):
+    _as(monkeypatch, "claude", "note-sender-01")
+    sent = coord.send("codex:abcdef", "may I rebuild summitflow?")
+    _as(monkeypatch, "codex", "abcdef-thread")
+    with pytest.raises(ValueError, match="160 chars"):
+        coord.ack(sent["id"], "no", "x" * 161)
+    coord.ack(sent["id"], "no", "y" * 160)
+    _as(monkeypatch, "claude", "note-sender-01")
+    _agent, items = inbox_module.pending()
+    line = coord_wake.pane_line(inbox_module.render([i for i in items if i[0].startswith(sent["id"])]), 0)
+    assert "y" * 160 in line  # the reason itself, not the generic inbox pointer
 
 
 def test_claude_watcher_still_wakes_the_receiver_for_a_request(monkeypatch, capsys, inbox_module):
