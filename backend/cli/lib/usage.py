@@ -140,6 +140,96 @@ def discover_specs(specs: Iterable[UsageSpec], query: str) -> list[UsageSpec]:
     return out
 
 
+def _words(value: str) -> list[str]:
+    return value.casefold().replace("-", " ").replace("_", " ").replace(".", " ").split()
+
+
+def _discovery_labels(specs: list[UsageSpec]) -> dict[str, tuple[tuple[str, ...], list[UsageSpec]]]:
+    """Every family ID prefix ("st.neri.hunt") and workflow label, with its words and specs."""
+    labels: dict[str, tuple[tuple[str, ...], list[UsageSpec]]] = {}
+    for spec in specs:
+        parts = spec.surface.split(".")
+        for depth in range(2, len(parts) + 1):
+            family = ".".join(parts[:depth])
+            words = tuple(word for word in _words(family) if word != "st")
+            labels.setdefault(family, (words, []))[1].append(spec)
+        if spec.on_demand:
+            label = f"workflow '{' '.join(_words(spec.on_demand))}'"
+            labels.setdefault(label, (tuple(_words(spec.on_demand)), []))[1].append(spec)
+    return labels
+
+
+def _word_matches(query: str, word: str, *, exact: bool) -> bool:
+    # Short query words ("vm", "ui", "db") match whole words only; singular and
+    # plural ("service"/"services", "session"/"sessions") name the same word.
+    if query in {word, word + "s"} or word == query + "s":
+        return True
+    return not exact and len(query) >= 3 and query in word
+
+
+def discover_matches(specs: Iterable[UsageSpec], query: str) -> tuple[list[UsageSpec], list[str]]:
+    """Exact discovery first; otherwise every label containing each query word.
+
+    Returns the specs plus the labels that matched by word or substring (empty
+    for an exact family or workflow match). Whole-word matches win over
+    substrings. A surface is never substituted silently: callers show the
+    matched labels, and manifest --surface still needs the exact ID.
+    """
+    spec_list = list(specs)
+    exact = discover_specs(spec_list, query)
+    if exact:
+        return exact, []
+    wanted = [word for word in _words(query) if word != "st"]
+    if not wanted:
+        return [], []
+    labels = _discovery_labels(spec_list)
+    for whole_words in (True, False):
+        matched = [label for label, (words, _) in labels.items()
+                   if all(any(_word_matches(item, word, exact=whole_words) for word in words) for item in wanted)]
+        if matched:
+            break
+    # A family whose parent family also matched adds nothing to the index.
+    shown = [label for label in matched
+             if not any(other != label and label.startswith(other + ".") for other in matched)]
+    selected = {id(spec) for label in shown for spec in labels[label][1]}
+    out: list[UsageSpec] = []
+    seen: set[str] = set()
+    for spec in spec_list:
+        if id(spec) in selected and spec.surface not in seen:
+            seen.add(spec.surface)
+            out.append(spec)
+    return out, shown
+
+
+def discover_suggestions(specs: Iterable[UsageSpec], query: str, limit: int = 5) -> tuple[list[str], list[str]]:
+    """Ranked near-miss labels plus surfaces whose guidance mentions the query words."""
+    from difflib import SequenceMatcher
+
+    spec_list = list(specs)
+    wanted = [word for word in _words(query) if word != "st"]
+    joined = " ".join(wanted)
+    if not wanted:
+        return [], []
+    scored: list[tuple[float, str]] = []
+    for label, (words, _) in _discovery_labels(spec_list).items():
+        # Suggest top-level families and workflows; deeper IDs come from the family index.
+        if not label.startswith("workflow ") and label.count(".") > 1:
+            continue
+        score = max([SequenceMatcher(None, joined, " ".join(words)).ratio(),
+                     *(SequenceMatcher(None, item, word).ratio() for item in wanted for word in words)])
+        if score >= 0.75:
+            scored.append((score, label))
+    labels = [label for _, label in sorted(scored, key=lambda item: (-item[0], item[1]))[:limit]]
+    mentions: list[tuple[int, str]] = []
+    for spec in spec_list:
+        text = " ".join([spec.cmd, spec.when, spec.why, *spec.precautions]).casefold()
+        hits = sum(item in text for item in wanted if len(item) >= 4)
+        if hits:
+            mentions.append((hits, spec.surface))
+    surfaces = [surface for _, surface in sorted(mentions, key=lambda item: -item[0])[:3]]
+    return labels, surfaces
+
+
 def select_specs_for_density(
     specs: Iterable[UsageSpec],
     *,

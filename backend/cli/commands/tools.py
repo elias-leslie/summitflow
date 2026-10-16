@@ -13,7 +13,8 @@ from ..config import get_agent_hub_url
 from ..lib.usage import (
     VALID_MANIFEST_DENSITIES,
     collect_usage_specs,
-    discover_specs,
+    discover_matches,
+    discover_suggestions,
     filter_specs,
     render_inject,
     select_specs_for_density,
@@ -1117,6 +1118,8 @@ def cost(
 def _emit_manifest_markdown(payload: dict[str, Any]) -> None:
     if "discovery_query" in payload:
         print(f"Discovery: {payload['discovery_query']}\n")
+        if payload.get("discovery_matched"):
+            print(f"Matched: {', '.join(payload['discovery_matched'])}\n")
     for tool in payload["tools"]:
         print(f"### `{tool['surface']}`")
         if tool.get("cmd"):
@@ -1200,12 +1203,27 @@ def _manifest_specs(
     return select_specs_for_density(specs, density=density, task_type=task, scores=scores)
 
 
+def _unknown_discovery_message(registry: list[Any], query: str) -> str:
+    """Name the nearest labels and mentioning surfaces; never pick one for the caller."""
+    labels, surfaces = discover_suggestions(registry, query)
+    message = f"Unknown --discover topic {query!r}; no registered family or workflow label matches."
+    if labels:
+        message += f" Did you mean: {', '.join(labels)}?"
+    else:
+        workflows = sorted({spec.on_demand for spec in registry if spec.on_demand})
+        message += f" Workflows: {', '.join(workflows)}." if workflows else ""
+    if surfaces:
+        message += f" Surfaces mentioning it: {', '.join(surfaces)}."
+    return message + " --density full lists the complete catalogue."
+
+
 def _emit_manifest_payload(
     specs: list[Any],
     *,
     density: str,
     fmt: str,
     discovery_query: str | None = None,
+    discovery_matched: list[str] | None = None,
 ) -> None:
     if fmt == INJECT_FORMAT and discovery_query is None:
         print(render_inject(specs))
@@ -1213,6 +1231,9 @@ def _emit_manifest_payload(
     payload: dict[str, Any] = {"manifest_version": DEFAULT_MANIFEST_VERSION}
     if discovery_query is not None:
         payload["discovery_query"] = discovery_query
+        if discovery_matched:
+            # Not an exact label: show which labels the words matched.
+            payload["discovery_matched"] = discovery_matched
         payload["tools"] = [
             {key: value for key, value in spec.to_dict().items() if key in {"surface", "cmd", "on_demand"}}
             for spec in specs
@@ -1237,7 +1258,10 @@ def manifest(
         str | None, typer.Option("--surface", help="Filter to one surface (e.g., st.service.rebuild)")
     ] = None,
     discover: Annotated[
-        str | None, typer.Option("--discover", help="Index canonical IDs and commands for a family or workflow label")
+        str | None, typer.Option(
+            "--discover",
+            help="Index canonical IDs and commands for a family or workflow label; words and substrings match",
+        )
     ] = None,
     task: Annotated[
         str | None, typer.Option("--task", help="Filter to surfaces declaring this task_type")
@@ -1292,15 +1316,16 @@ def manifest(
         discover = discover.strip()
         if not discover:
             raise typer.BadParameter("--discover requires a non-empty family or workflow label")
-        candidates = discover_specs(collect_usage_specs(root_app), discover)
+        registry = collect_usage_specs(root_app)
+        candidates, matched = discover_matches(registry, discover)
         if not candidates:
-            output_error(f"Unknown --discover topic {discover!r}; no registered family or workflow label matches.")
+            output_error(_unknown_discovery_message(registry, discover))
             raise typer.Exit(1)
         specs = filter_specs(candidates, task_type=task, agent_slug=agent, consumer_profile=profile)
         if not specs:
             output_error(f"Filtered --discover topic {discover!r}; no registered surfaces are available for these filters.")
             raise typer.Exit(1)
-        _emit_manifest_payload(specs, density=density, fmt=fmt, discovery_query=discover)
+        _emit_manifest_payload(specs, density=density, fmt=fmt, discovery_query=discover, discovery_matched=matched)
         return
 
     scores = _load_scores_file(scores_file)
