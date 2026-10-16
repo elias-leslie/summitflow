@@ -2,6 +2,8 @@
 
 One identity (``leases.identify_agent``), one store (``~/.summitflow/leases``):
 - file leases are auto-claimed by the edit hook (``st lease --hook``);
+- writer sets: every session (or "unknown") that wrote a dirty path, from the
+  edit hook and shell commands (bash-pre/post), kept until commit or revert;
 - repo marks: ``hold`` (declared coarse purpose, idle TTL) and ``op``
   (acceptance/deployment, fenced to the running process);
 - a handshake ledger: request -> ack (intent) -> confirm, with one-line notices.
@@ -13,6 +15,7 @@ as an opaque busy line; message text is one short neutral line.
 from __future__ import annotations
 
 import json
+import os
 import re
 import shlex
 import subprocess
@@ -165,7 +168,7 @@ def guard(repo: Path, operation: str, *, paths: Sequence[str] = (), with_ack: st
     with_ack = with_ack or _COMMAND_ACK.get()
     coord_lineage.observe()
     _keep_alive(project_id)
-    mine, anchor = leases.self_ids(), leases.my_anchor()
+    mine, anchor = leases.session_ids()  # my harness process's child threads are not other agents
     # Acceptance only yields to an integration hold; concurrent runs are fine.
     kinds = {"commit": ("op", "hold"), "acceptance": ("hold",)}.get(operation, ("op", "hold", "file"))
     now = datetime.now(UTC)
@@ -198,30 +201,52 @@ def _keep_alive(project_id: str) -> None:
 
 
 def _own_pid() -> int:
-    import os
-
     return os.getpid()
 
 
-def edit_conflict(path: str) -> str | None:
-    """Claim ``path`` for the current agent; return one blocking line on conflict."""
+def _op_block(project_id: str, root: Path, real: str) -> str | None:
+    """One line when a live op (acceptance/deployment) would be invalidated by editing ``real``."""
+    marks = [m for m in leases.repo_marks(project_id) if m.kind == "op"]
+    if marks and not _ignored(root, Path(real)):
+        return f"{holder_line(project_id, marks[0], root)}; edits now invalidate it; work elsewhere, retry later"
+    return None
+
+
+def _claim_edit(path: str, *, advisory: bool, check_op: bool = True) -> tuple[str, str] | None:
+    """Claim ``path`` for the current agent: ("block", line) under a live op, ("warn", line) on a foreign lease.
+
+    ``advisory`` (the edit hook) still leases and records the path on a foreign
+    lease, because the edit goes ahead; st commit then refuses to sweep it.
+    """
     target = Path(path).expanduser()
     resolved = project_for_path(target)
     if resolved is None:
         return None
     project_id, root = resolved
     real = str(target.resolve())
-    marks = [m for m in leases.repo_marks(project_id) if m.kind == "op"]
-    if marks and not _ignored(root, Path(real)):
-        return f"{holder_line(project_id, marks[0], root)}; edits now invalidate it; work elsewhere, retry later"
-    ok, holder = leases.claim(project_id, real, project_root=str(root))
-    if ok or holder is None:
+    blocked = _op_block(project_id, root, real) if check_op else None
+    if blocked:
+        return "block", blocked
+    ok, holder = leases.claim(project_id, real, project_root=str(root), force=advisory)
+    if advisory or ok or holder is None:
         _keep_alive(project_id)
+    if ok or holder is None:
         return None
-    return (
+    if advisory:
+        return "warn", (
+            f"{holder_line(project_id, holder, root)}; edit allowed, both of you are now its writers and "
+            f'st commit refuses to sweep it; tell them: st sessions send {holder.agent_id} "<what changed>" --delivery handshake'
+        )
+    return "warn", (
         f"{holder_line(project_id, holder, root)}; ask: st sessions send {holder.agent_id} "
         '"<ask>" --delivery handshake, or st lease --take <path>'
     )
+
+
+def edit_conflict(path: str) -> str | None:
+    """Claim ``path`` for the current agent when free; return one line on an op or foreign-lease conflict."""
+    found = _claim_edit(path, advisory=False)
+    return found[1] if found else None
 
 
 # ---------------------------------------------------------------- hook
@@ -254,8 +279,6 @@ _IDENTITY_ENV = ("CLAUDE_SESSION_ID", "CLAUDE_CODE_SESSION_ID", "CODEX_SESSION_I
 
 def adopt_hook_identity(payload: dict[str, Any]) -> None:
     """Key the hook on the event's session id: after a reset it is newer than any inherited env."""
-    import os
-
     sid = str(payload.get("session_id") or payload.get("conversationId") or "")
     st_sid = os.environ.get("ST_SESSION_ID") or ""
     if not sid or (st_sid and not st_sid.startswith(leases.ROOT_HANDLE_PREFIX)):
@@ -275,7 +298,21 @@ def session_start(payload: dict[str, Any]) -> str | None:
     source = str(payload.get("source") or payload.get("reason") or "")
     subagent = bool(payload.get("agent_id")) or source in ("resume", "compact")
     lines = coord_lineage.observe(reset=True, subagent=subagent, emit=True)
+    if not payload.get("agent_id"):
+        with suppress(Exception):
+            _mark_main_thread()
     return "\n".join(lines) or None
+
+
+def _mark_main_thread() -> None:
+    """Record this identity as its harness process's main thread (SessionStart never fires for child threads)."""
+    agent_id = leases.identify_agent()[0]
+    with leases._lock("_coord"):
+        doc = coord_lineage.load_doc()
+        row = (doc.get("identities") or {}).get(agent_id)
+        if isinstance(row, dict) and not row.get("main"):
+            row["main"] = True
+            coord_lineage.save_doc(doc)
 
 
 def run_hook(payload: dict[str, Any]) -> str | None:
@@ -283,19 +320,24 @@ def run_hook(payload: dict[str, Any]) -> str | None:
     adopt_hook_identity(payload)
     with suppress(Exception):  # lineage is best effort; never wedge an editor
         coord_lineage.observe()
-    lines: list[str] = []
-    for path in hook_paths(payload):
+    paths = hook_paths(payload)
+    for path in paths:  # a blocked edit never happens, so nothing is claimed or recorded before this pass
         try:
-            conflict = edit_conflict(path)
+            target = Path(path).expanduser()
+            resolved = project_for_path(target)
+            blocked = _op_block(*resolved, str(target.resolve())) if resolved else None
         except Exception:  # the hook must never wedge an editor on infra faults
-            conflict = None
-        if conflict:
-            lines.append("BLOCKED: " + conflict)
-            break
-    if not lines:
-        return None
-    lines.extend(notices())
-    return "\n".join(lines)
+            blocked = None
+        if blocked:
+            return "\n".join(["BLOCKED: " + blocked, *notices()])
+    for path in paths:
+        try:
+            found = _claim_edit(path, advisory=False, check_op=False)
+        except Exception:
+            found = None
+        if found:
+            return "\n".join(["BLOCKED: " + found[1], *notices()])
+    return None
 
 
 # ---------------------------------------------------------------- ledger
@@ -537,26 +579,90 @@ def system_lines() -> list[str]:
     return out
 
 
-def dirty_owner_line(project_id: str, root: Path) -> str | None:
-    """Attribute dirty paths edited by other agents (from 24 h touch records)."""
+def dirty_paths(root: Path) -> list[str] | None:
+    """Repo-relative dirty paths, rename sources included (they are deletions); None when git fails."""
     result = subprocess.run(
         ["git", "-C", str(root), "status", "--porcelain=v1", "-z", "--untracked-files=all"],
         capture_output=True, text=True, check=False,
     )
     if result.returncode:
         return None
-    entries = [item[3:] for item in result.stdout.split("\0") if len(item) > 3]
-    record = leases.touches(project_id)
-    mine, anchor = leases.self_ids(), leases.my_anchor()
+    items = iter(result.stdout.split("\0"))
+    out: list[str] = []
+    for item in items:
+        if len(item) < 4:
+            continue
+        out.append(item[3:])
+        if item[0] in "RC":
+            source = next(items, "")
+            if item[0] == "R" and source:
+                out.append(source)
+    return out
+
+
+def foreign_writers(project_id: str, root: Path, rels: Sequence[str]) -> dict[str, list[dict]]:
+    """Repo-relative path -> writer entries that are not my session (unknown writers included)."""
+    record = leases.writers(project_id)
+    if not record:
+        return {}
+    mine, anchor = leases.session_ids()
+    out: dict[str, list[dict]] = {}
+    for rel in rels:
+        entries = record.get(str((root / rel).resolve())) or record.get(str(root / rel)) or []
+        foreign = [e for e in entries if not leases.is_own_writer(e, mine, anchor)]
+        if foreign:
+            out[rel] = foreign
+    return out
+
+
+def dirty_owner_line(project_id: str, root: Path) -> str | None:
+    """Attribute dirty paths written by other sessions or unknown writers (from writer sets)."""
+    entries = dirty_paths(root)
+    if not entries:
+        return None
     foreign: list[str] = []
-    for rel in entries:
-        touch = record.get(str((root / rel).resolve())) or record.get(str(root / rel))
-        if touch and touch.get("agent_id") not in mine and not (anchor and touch.get("anchor") == anchor):
-            shown = _coarse(str(root / rel), root) if touch.get("sensitive") else rel
-            foreign.append(f"{shown}<-{touch['agent_id']}({_age(touch['at'])})")
+    for rel, writers in foreign_writers(project_id, root, entries).items():
+        for entry in writers:
+            shown = _coarse(str(root / rel), root) if entry.get("sensitive") else rel
+            foreign.append(f"{shown}<-{leases.writer_label(entry)}({_age(str(entry.get('at')))})")
     if not foreign:
         return None
     return f"DIRTY-OWNER:{project_id}|" + ",".join(sorted(set(foreign))[:3])
+
+
+def record_shell_writes(
+    written: Sequence[str],
+    since: datetime,
+    *,
+    other: Sequence[str] = (),
+    background: bool = False,
+    dirty: Sequence[str] | None = None,
+) -> None:
+    """Join the writer sets of paths a shell command wrote (deletions included).
+
+    ``written`` is from the command's cwd repo and is recorded for this
+    session, or as unknown for a background command whose writes continue
+    after the hook. ``other`` (writes in other repos the command named) is
+    recorded as unknown. ``dirty`` is the cwd repo's whole dirty set after the
+    command: writer sets of paths no longer dirty there are dropped.
+    """
+    dirty_set = {os.path.realpath(p) for p in dirty} if dirty is not None else None
+    groups: dict[str, tuple[Path, list[str], str | None]] = {}
+    for paths, reason in ((written, "background" if background else None), (other, "other-repo")):
+        for path in paths:
+            resolved = project_for_path(path)
+            if resolved is None:
+                continue
+            key = f"{resolved[0]}\0{reason or ''}"
+            groups.setdefault(key, (resolved[1], [], reason))[1].append(os.path.realpath(path))
+    pruned: set[str] = set()
+    for key, (root, paths, reason) in groups.items():
+        project_id = key.split("\0", 1)[0]
+        prune = dirty_set is not None and reason != "other-repo" and project_id not in pruned
+        leases.record_writes(project_id, paths, since=since, unknown=reason,
+                             dirty=dirty_set if prune else None, root=str(root.resolve()) if prune else None)
+        if prune:
+            pruned.add(project_id)
 
 
 def shell_write_warning(paths: Sequence[str], since: datetime) -> str | None:
@@ -570,7 +676,7 @@ def shell_write_warning(paths: Sequence[str], since: datetime) -> str | None:
         resolved = project_for_path(path)
         if resolved is not None:
             by_repo.setdefault(resolved[0], (resolved[1], []))[1].append(str(Path(path).resolve()))
-    mine, anchor = leases.self_ids(), leases.my_anchor()
+    mine, anchor = leases.session_ids()
     for project_id, (root, written) in by_repo.items():
         for lease in leases.list_active(project_id, kinds=("file",)):
             if leases.is_mine(lease, mine, anchor):
@@ -661,7 +767,17 @@ def dispatch_hook(payload: dict[str, Any]) -> tuple[str, str] | None:
             since = datetime.fromisoformat(str(payload.get("st_since")))
         except ValueError:
             return None
-        line = shell_write_warning([str(p) for p in payload["st_written"]], since)
+        written = [str(p) for p in payload["st_written"]]
+        line = shell_write_warning(written, since)
+        with suppress(Exception):  # attribution is best effort; never fail the shell hook
+            dirty = payload.get("st_dirty")
+            record_shell_writes(
+                written, since, other=[str(p) for p in payload.get("st_other") or []],
+                background=bool(payload.get("st_background")),
+                dirty=[str(p) for p in dirty] if isinstance(dirty, list) else None,
+            )
         return ("warn", line) if line else None
     message = run_hook(payload)
-    return ("block", message) if message else None
+    if not message:
+        return None
+    return ("block" if message.startswith("BLOCKED: ") else "warn", message)

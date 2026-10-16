@@ -1,11 +1,15 @@
 #!/usr/bin/env bash
 # Coordination hook for every harness (Claude Code, Codex, Pi extension). Not a
 # safety gate: any internal error or timeout fails open (exit 0, one stderr line).
-#   lease-hook            PreToolUse edit: auto-lease; exit 2 + one line on a live collision
+#   lease-hook            PreToolUse edit: auto-lease and join the file's writer set; exit 2 + one line on a
+#                         live collision
 #   lease-hook session    SessionStart: register identity; one stdout line if a reset left work open
-#   lease-hook bash-pre   PreToolUse shell: snapshot the cwd repo's dirty files (pure shell)
-#   lease-hook bash-post  PostToolUse(Failure) shell: one warning line if the command wrote a foreign-leased
-#                         file; one additionalContext line when a gh/git push error shows GitHub's fine-grained-PAT 403
+#   lease-hook bash-pre   PreToolUse shell: snapshot the dirty files of the cwd repo and of sibling repos
+#                         the command names (pure shell)
+#   lease-hook bash-post  PostToolUse(Failure) shell: record written/deleted paths in writer sets (other repos
+#                         and background commands as unknown); one warning line if the command wrote a
+#                         foreign-leased file; one additionalContext line when a gh/git push error shows
+#                         GitHub's fine-grained-PAT 403
 # Silent when nothing overlaps. Bypass: ALLOW_LEASE_OVERLAP=1 (lease checks only).
 mode="${1:-edit}"
 input=$(cat)
@@ -33,37 +37,86 @@ fi
 # Diagnostics: ST_COORD_HOOK_TRACE=<file> appends each mode and payload.
 [ -n "${ST_COORD_HOOK_TRACE:-}" ] && printf '%s %s\n' "$mode" "$input" >>"$ST_COORD_HOOK_TRACE" 2>/dev/null
 
-snapshot() {  # "<mtime_ns> <abs path>" per dirty file of the cwd repo
-    local top
-    top=$(git -C "$1" rev-parse --show-toplevel 2>/dev/null) || return 0
-    git -C "$top" status --porcelain=v1 -z --untracked-files=all 2>/dev/null \
-        | tr '\0' '\n' | sed -n 's/^.. //p' | grep -v '^$' \
-        | while IFS= read -r rel; do printf '%s\n' "$top/$rel"; done \
-        | xargs -r -d '\n' stat -c '%.9Y %n' 2>/dev/null | sort
+snapshot() {  # "<mtime_ns> <abs path>" per dirty file of repo $1, "D <abs path>" per deleted path
+    local top=$1 rec src
+    local -a present=()
+    while IFS= read -r -d '' rec; do
+        case "$rec" in
+            R*) IFS= read -r -d '' src; [ -e "$top/$src" ] || [ -L "$top/$src" ] || printf 'D %s\n' "$top/$src" ;;
+            C*) IFS= read -r -d '' src ;;
+        esac
+        rec=${rec:3}
+        [ -n "$rec" ] || continue
+        if [ -e "$top/$rec" ] || [ -L "$top/$rec" ]; then present+=("$top/$rec"); else printf 'D %s\n' "$top/$rec"; fi
+    done < <(git -C "$top" status --porcelain=v1 -z --untracked-files=all 2>/dev/null)
+    [ ${#present[@]} -eq 0 ] || printf '%s\0' "${present[@]}" | xargs -0 -r stat -c '%.9Y %n' 2>/dev/null
+}
+field() {  # top-level JSON string value of key $1 (pure shell); exit 1 when absent or escaped
+    local re="\"$1\"[[:space:]]*:[[:space:]]*\"([^\"]*)\""
+    [[ $input =~ $re ]] || return 1
+    case "${BASH_REMATCH[1]}" in *\\*) return 1 ;; esac
+    printf '%s' "${BASH_REMATCH[1]}"
 }
 [ -x "$py" ] || { echo "lease-hook: summitflow venv unavailable; allowing" >&2; exit 0; }
 if [ "$mode" = bash-pre ] || [ "$mode" = bash-post ]; then
-    # Python, not jq: the native gate's PATH allowlist has no jq.
-    { IFS= read -r key; IFS= read -r cwd; } < <("$py" -I -c '
+    # Pure shell on the hot path (no Python start per command); Python only when a value is escaped.
+    if sid=$(field session_id) && cwd=$(field cwd); then
+        tid=$(field tool_use_id) || tid=$(field toolCallId) || tid=""
+        key="$sid-$tid"
+    else
+        { IFS= read -r key; IFS= read -r cwd; } < <("$py" -I -c '
 import json, sys
 d = json.loads(sys.stdin.read() or "{}")
 print("%s-%s" % (d.get("session_id") or "", d.get("tool_use_id") or d.get("toolCallId") or ""))
 print(d.get("cwd") or "")' <<<"$input" 2>/dev/null)
+    fi
     key=$(printf '%s' "$key" | tr -c 'A-Za-z0-9_.-' '_')
     [ -n "$cwd" ] && [ -n "$key" ] || exit 0
     dir="${XDG_RUNTIME_DIR:-/tmp}/st-lease-bash"
     mkdir -p "$dir" 2>/dev/null || exit 0
     if [ "$mode" = bash-pre ]; then
-        { date -u +%Y-%m-%dT%H:%M:%S.%6N+00:00; snapshot "$cwd"; } >"$dir/$key" 2>/dev/null
+        top=$(git -C "$cwd" rev-parse --show-toplevel 2>/dev/null) || top=""
+        tops=()
+        if [ -n "$top" ]; then
+            tops=("$top")
+            # Sibling repos the command names by absolute path (cd /x/other, git -C /x/other): writes there are unknown.
+            parent=${top%/*}
+            pat=$(printf '%s' "$parent" | sed 's/[][\.*^$]/\\&/g')
+            while IFS= read -r other; do
+                [ "$other" != "$top" ] && [ -e "$other/.git" ] && tops+=("$other")
+            done < <(grep -o "$pat/[A-Za-z0-9._-]\+" <<<"$input" 2>/dev/null | sort -u)
+        fi
+        bg=0
+        [[ $input =~ \"run_in_background\"[[:space:]]*:[[:space:]]*true ]] && bg=1
+        {
+            date -u +%Y-%m-%dT%H:%M:%S.%6N+00:00
+            printf '%s %s\n' "$bg" "${#tops[@]}"
+            [ ${#tops[@]} -eq 0 ] || printf '%s\n' "${tops[@]}"
+            for t in "${tops[@]}"; do snapshot "$t"; done | sort
+        } >"$dir/$key" 2>/dev/null
         find "$dir" -maxdepth 1 -type f -mmin +120 -delete 2>/dev/null
         exit 0
     fi
     [ -f "$dir/$key" ] || exit 0
-    since=$(head -1 "$dir/$key")
-    written=$(comm -13 <(tail -n +2 "$dir/$key") <(snapshot "$cwd") | cut -d' ' -f2-)
+    { IFS= read -r since; read -r bg ntops; } <"$dir/$key"
+    case "$ntops" in ''|*[!0-9]*) ntops=0 ;; esac
+    mapfile -t tops < <(sed -n "3,$((ntops + 2))p" "$dir/$key")
+    after=$(for t in "${tops[@]}"; do snapshot "$t"; done | sort)
+    written=$(comm -13 <(tail -n +$((ntops + 3)) "$dir/$key") <(printf '%s\n' "$after" | grep -v '^$') | cut -d' ' -f2-)
     rm -f "$dir/$key"
     [ -n "$written" ] || exit 0
-    export ST_HOOK_SINCE="$since" ST_HOOK_WRITTEN="$written"
+    top=${tops[0]} own="" other="" dirty=""
+    while IFS= read -r line; do
+        case "$line" in "$top/"*) own+="$line"$'\n' ;; ?*) other+="$line"$'\n' ;; esac
+    done <<<"$written"
+    while IFS= read -r line; do
+        line=${line#* }
+        case "$line" in "$top/"*) dirty+="$line"$'\n' ;; esac
+    done <<<"$after"
+    export ST_HOOK_SINCE="$since" ST_HOOK_WRITTEN="$own" ST_HOOK_OTHER="$other" ST_HOOK_BG="$bg"
+    # The whole dirty set goes by file: it can outgrow the environment.
+    dirty_file=$(mktemp "$dir/.dirty.XXXXXX" 2>/dev/null) && printf '%s' "$dirty" >"$dirty_file" \
+        && export ST_HOOK_DIRTY_FILE="$dirty_file"
 fi
 out=$(timeout 2 env PYTHONPATH="$sf/backend" "$py" -I -c '
 import json, os, sys
@@ -71,8 +124,18 @@ sys.path.insert(0, sys.argv[1])
 from cli.lib.coord import dispatch_hook
 payload = json.loads(sys.stdin.read() or "{}")
 if "ST_HOOK_WRITTEN" in os.environ:
+    def lines(text):
+        return [line for line in text.split("\n") if line]
     payload["st_since"] = os.environ.get("ST_HOOK_SINCE", "")
-    payload["st_written"] = [line for line in os.environ["ST_HOOK_WRITTEN"].split("\n") if line]
+    payload["st_written"] = lines(os.environ["ST_HOOK_WRITTEN"])
+    payload["st_other"] = lines(os.environ.get("ST_HOOK_OTHER", ""))
+    payload["st_background"] = os.environ.get("ST_HOOK_BG") == "1"
+    if os.environ.get("ST_HOOK_DIRTY_FILE"):
+        try:
+            with open(os.environ["ST_HOOK_DIRTY_FILE"]) as handle:
+                payload["st_dirty"] = lines(handle.read())
+        except OSError:
+            pass
 result = dispatch_hook(payload)
 if result:
     kind, text = result
@@ -82,6 +145,7 @@ if result:
     sys.exit({"block": 3, "warn": 4, "context": 5}[kind])
 ' "$sf/backend" <<<"$input" 2>&1)
 rc=$?
+[ -z "${dirty_file:-}" ] || rm -f "$dirty_file"
 case "$rc:$out" in
     3:BLOCKED*) printf '%s\n' "$out" >&2; exit 2 ;;
     4:OVERLAP*) printf '%s\n' "$out" >&2; [ -z "$hint" ] || printf '%s\n' "$hint" >&2; exit 2 ;;  # exit 2 drops stdout JSON

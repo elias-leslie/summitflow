@@ -366,7 +366,7 @@ app.command("lease")(_COMMANDS["lease"].lease_command)
 app.command("exec-log")(_COMMANDS["exec_monitor"].exec_log_command)
 
 
-@app.command("commit")
+@app.command("commit", context_settings={"allow_extra_args": True})
 @usage(
     surface="st.commit",
     cmd='st commit -m "msg"',
@@ -395,8 +395,8 @@ def commit_command(
             "--path",
             "--paths",
             help=(
-                "Only commit selected path(s); repeat for multiple paths "
-                "(--paths a --paths b)."
+                "Only commit selected path(s); takes several values "
+                "(--paths a b) or repeats (--paths a --paths b)."
             ),
         ),
     ] = None,
@@ -407,6 +407,11 @@ def commit_command(
 ) -> None:
     """Run checks and create a local checkpoint; publish accepted source separately."""
     try:
+        if ctx.args:
+            # Click options take one value each; the words after --paths a arrive as extra arguments.
+            if not paths:
+                raise CommitError(f"unexpected argument(s): {' '.join(ctx.args)}; select paths with --paths a b")
+            paths = [*paths, *ctx.args]
         if push:
             from .lib.commit_workflow import COMMIT_PUBLICATION_GUIDANCE
 

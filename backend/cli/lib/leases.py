@@ -11,6 +11,10 @@ support is a follow-up via an Agent Hub API wrapper.
 
 Agent identity uses env vars so Claude Code, Codex CLI, Agent Hub persona
 (Jenny), and Agent Hub specialists all coexist in the same lease table.
+
+The same store keeps per-path writer sets (every session that wrote a dirty
+path, kept until commit or revert) that st commit uses to refuse sweeping
+another session's work.
 """
 
 from __future__ import annotations
@@ -156,26 +160,73 @@ def identify_agent(*, native: bool = True) -> tuple[str, str, str, str]:
     return f"pid:{pid}", "pid", pid, "unknown"
 
 
-def self_ids() -> set[str]:
-    """Current identity, its predecessors on the same live harness process, and the legacy tmux alias."""
-    from .coord_lineage import family_ids
+def _lineage() -> tuple[str, str | None, set[str], set[str], bool]:
+    """(agent id, live anchor, whole family, main-thread family, current id is a child thread).
 
-    ids = {identify_agent()[0]} | family_ids()
+    The family is every identity seen on this live harness process: context
+    resets and Codex child threads alike. Main-thread keys are the ones whose
+    SessionStart hook ran (coord.session_start marks them); once a process has
+    any, an unmarked identity on it is a child thread. Without marks (a harness
+    with no session hook) the whole family counts as main.
+    """
+    from .coord_lineage import current_anchor, load_doc
+
+    agent_id = identify_agent()[0]
+    anchor = current_anchor(agent_id)
+    if not anchor:
+        return agent_id, None, set(), set(), False
+    rows = {
+        aid: row for aid, row in (load_doc().get("identities") or {}).items()
+        if isinstance(row, dict) and row.get("anchor") == anchor
+    }
+    mains = {aid for aid, row in rows.items() if row.get("main")}
+    if not mains:
+        return agent_id, anchor, set(rows), set(rows), False
+    return agent_id, anchor, set(rows), mains, agent_id not in mains
+
+
+def _with_tmux(ids: set[str]) -> set[str]:
     pane = os.environ.get("TMUX_PANE")
     if pane:
         ids.add(f"tmux:{pane.lstrip('%')}")
     return ids
 
 
-def my_anchor() -> str | None:
-    from .coord_lineage import current_anchor
+def self_ids() -> set[str]:
+    """Lease owners I act for: my id, main-thread predecessors on my live harness process, the legacy tmux alias.
 
-    return current_anchor(identify_agent()[0])
+    A Codex child thread owns only its own leases, so its release-all never drops a sibling's or its parent's.
+    """
+    agent_id, _, _, mains, child = _lineage()
+    return _with_tmux({agent_id} | (set() if child else mains))
+
+
+def my_anchor() -> str | None:
+    """Anchor a lease is stamped and matched with; None for a child thread (see self_ids)."""
+    _, anchor, _, _, child = _lineage()
+    return None if child else anchor
 
 
 def is_mine(lease: Lease, mine: set[str], anchor: str | None) -> bool:
-    """Own lease: one of my identities, or recorded on my live harness process."""
+    """Own lease: one of my identities, or recorded on my live harness process by a main-thread key."""
     return lease.agent_id in mine or bool(anchor and lease.anchor == anchor)
+
+
+def session_ids() -> tuple[set[str], str | None]:
+    """(identities, anchor) of my whole session for writer attribution: child threads and resets included."""
+    agent_id, anchor, family, _, _ = _lineage()
+    return _with_tmux({agent_id} | family), anchor
+
+
+def root_key() -> str:
+    """Writer key: a child thread records under its process's latest main-thread key."""
+    agent_id, _, _, mains, child = _lineage()
+    if not child:
+        return agent_id
+    from .coord_lineage import load_doc
+
+    rows = load_doc().get("identities") or {}
+    return max(mains, key=lambda aid: str((rows.get(aid) or {}).get("last") or ""), default=agent_id)
 
 
 def _project_file(project_id: str, suffix: str) -> Path:
@@ -231,15 +282,15 @@ def _load(project_id: str) -> list[Lease]:
     return leases
 
 
-def _save(project_id: str, leases: list[Lease], touches: dict | None = None) -> None:
-    """Write leases, keeping the touch history unless a new one is given (caller holds the lock)."""
+def _save(project_id: str, leases: list[Lease], writers: dict | None = None) -> None:
+    """Write leases, keeping the writer sets unless new ones are given (caller holds the lock)."""
     path = _store_path(project_id)
     path.parent.mkdir(parents=True, exist_ok=True)
-    if touches is None:
-        touches = _read(project_id).get("touches", {})
+    if writers is None:
+        writers = _load_writers(_read(project_id))
     doc: dict = {"leases": [asdict(lease) for lease in leases]}
-    if touches:
-        doc["touches"] = touches
+    if writers:
+        doc["writers"] = writers
     tmp = path.with_suffix(".tmp")
     tmp.write_text(json.dumps(doc, indent=2))
     tmp.replace(path)
@@ -314,12 +365,12 @@ def check(
 ) -> tuple[bool, Lease | None]:
     """Return (ok_to_edit, conflicting_lease).
 
-    ok_to_edit=False when another agent's lease matches the path, even if the
-    current agent also has a matching lease. An uncontested own lease extends
-    its heartbeat as a side effect.
+    ok_to_edit=False when another session's lease matches the path, even if the
+    current agent also has a matching lease (child threads of my harness process
+    are my session). An uncontested own lease extends its heartbeat as a side effect.
     """
     path = _project_path(path, project_root)
-    mine, anchor = self_ids(), my_anchor()
+    mine, anchor = session_ids()
     now = datetime.now(UTC).isoformat()
     with _lock(project_id):
         leases = _purge_stale(_load(project_id))
@@ -352,22 +403,34 @@ def heartbeat(project_id: str) -> int:
 
 
 def release(project_id: str, glob: str | None = None, project_root: str | None = None) -> int:
-    """Release current agent's leases. Glob None → release all. Returns count released."""
-    if glob is not None:
-        glob = _project_path(glob, project_root)
+    """Release current agent's leases: all (glob None), one lease id, or one glob.
+
+    Releasing one glob of a multi-glob lease drops only that glob; the lease
+    keeps its id and other globs. Returns the count of globs or leases released.
+    """
     mine, anchor = self_ids(), my_anchor()
     with _lock(project_id):
         leases = _purge_stale(_load(project_id))
         before = len(leases)
         if glob is None:
             leases = [lease for lease in leases if not (lease.kind != "op" and is_mine(lease, mine, anchor))]
-        else:
-            leases = [
-                lease for lease in leases
-                if not (is_mine(lease, mine, anchor) and glob in lease.globs)
-            ]
-        _save(project_id, leases)
-        return before - len(leases)
+            _save(project_id, leases)
+            return before - len(leases)
+        if any(lease.lease_id == glob and lease.kind != "op" and is_mine(lease, mine, anchor) for lease in leases):
+            _save(project_id, [lease for lease in leases if lease.lease_id != glob])
+            return 1
+        target = _project_path(glob, project_root)
+        released = 0
+        kept: list[Lease] = []
+        for lease in leases:
+            if is_mine(lease, mine, anchor) and target in lease.globs:
+                released += 1
+                lease.globs = [g for g in lease.globs if g != target]
+                if not lease.globs:
+                    continue
+            kept.append(lease)
+        _save(project_id, kept)
+        return released
 
 
 def release_task(project_id: str, task_id: str) -> int:
@@ -408,7 +471,10 @@ def take(project_id: str, path: str, project_root: str | None = None) -> Lease:
         for lease in current:
             if lease.lease_id == new_lease.lease_id:
                 lease.taken_over_by = agent_id
-        _save(project_id, current)
+        # Taking a path adopts its dirty change: other writers no longer block my commit of it.
+        writers = _load_writers(_read(project_id))
+        writers[path] = [_writer_entry()]
+        _save(project_id, current, writers)
     return new_lease
 
 
@@ -451,7 +517,8 @@ def format_pulse_line(lease: Lease) -> str:
     return f"{lease.agent_id} · lease:'{globs_str}' · task:{task_str} · idle:{idle_string(lease)}"
 
 
-TOUCH_TTL = timedelta(hours=24)
+TOUCH_TTL = timedelta(hours=24)  # legacy last-writer records, folded into writer sets on read
+UNKNOWN_WRITER = "unknown"
 
 
 def _session_sensitive() -> bool:
@@ -471,24 +538,78 @@ def _session_sensitive() -> bool:
     return False
 
 
-def claim(project_id: str, path: str, project_root: str | None = None) -> tuple[bool, Lease | None]:
+# ---------------------------------------------------------------- writer sets
+# path -> [{agent_id, session_id, anchor, at, sensitive[, reason]}]: every session (or
+# "unknown") that wrote a dirty path, kept until the path is committed or reverted.
+
+def _writer_entry(*, unknown: str | None = None, sensitive: bool | None = None) -> dict:
+    agent_id, _, sid, _ = identify_agent()
+    _, anchor = session_ids()
+    entry = {
+        "agent_id": UNKNOWN_WRITER if unknown else root_key(), "session_id": sid, "anchor": anchor,
+        "at": datetime.now(UTC).isoformat(),
+        "sensitive": _session_sensitive() if sensitive is None else sensitive,
+    }
+    if unknown:
+        entry.update(reason=unknown, by=agent_id)
+    return entry
+
+
+def _load_writers(doc: dict) -> dict[str, list[dict]]:
+    raw = doc.get("writers")
+    writers = {
+        path: [e for e in entries if isinstance(e, dict) and e.get("agent_id")]
+        for path, entries in (raw.items() if isinstance(raw, dict) else ()) if isinstance(entries, list)
+    }
+    legacy = doc.get("touches")
+    now = datetime.now(UTC)
+    for path, touch in (legacy.items() if isinstance(legacy, dict) else ()):
+        if _touch_fresh(touch, now) and touch.get("agent_id"):
+            _add_writer(writers, path, dict(touch))
+    return {path: entries for path, entries in writers.items() if entries}
+
+
+def _add_writer(writers: dict[str, list[dict]], path: str, entry: dict) -> None:
+    entries = [e for e in writers.get(path, []) if e.get("agent_id") != entry["agent_id"]]
+    writers[path] = [*entries, entry]
+
+
+def is_own_writer(entry: dict, mine: set[str], anchor: str | None) -> bool:
+    """A writer entry from my session (an unknown writer is never mine)."""
+    if entry.get("agent_id") == UNKNOWN_WRITER:
+        return False
+    return entry.get("agent_id") in mine or bool(anchor and entry.get("anchor") == anchor)
+
+
+def writer_label(entry: dict) -> str:
+    if entry.get("agent_id") == UNKNOWN_WRITER:
+        return f"{UNKNOWN_WRITER}({entry.get('reason') or '?'})"
+    return str(entry.get("agent_id"))
+
+
+def claim(
+    project_id: str, path: str, project_root: str | None = None, *, force: bool = False
+) -> tuple[bool, Lease | None]:
     """Atomically check a single file and lease it to the current agent.
 
-    Returns (ok, conflicting_lease). On success every own lease in the project
-    is heartbeated and a 24 h touch record keeps dirty-file attribution after
-    the lease itself expires or is released.
+    Returns (ok, conflicting_lease): a conflict is another session's lease (my
+    child threads' leases are not). On success every own lease in the project
+    is heartbeated and the current session joins the path's writer set. With
+    ``force`` (advisory edits) a foreign lease is reported but the path is
+    still leased and recorded, since the edit goes ahead.
     """
     path = _project_path(path, project_root)
     agent_id, slug, sid, provider = identify_agent()
     mine, anchor = self_ids(), my_anchor()
-    now_dt = datetime.now(UTC)
-    now = now_dt.isoformat()
+    session, session_anchor = session_ids()
+    now = datetime.now(UTC).isoformat()
     with _lock(project_id):
         leases = _purge_stale(_load(project_id))
-        for lease in leases:
-            if lease.kind == "file" and lease.matches(path) and not is_mine(lease, mine, anchor):
-                _save(project_id, leases)
-                return False, lease
+        conflict = next((lease for lease in leases if lease.kind == "file" and lease.matches(path)
+                         and not is_mine(lease, session, session_anchor)), None)
+        if conflict is not None and not force:
+            _save(project_id, leases)
+            return False, conflict
         own = None
         for lease in leases:
             if lease.kind != "op" and is_mine(lease, mine, anchor):
@@ -502,13 +623,80 @@ def claim(project_id: str, path: str, project_root: str | None = None) -> tuple[
                 acquired_at=now, last_heartbeat=now, sensitive=_session_sensitive(), anchor=anchor,
             )
             leases.append(own)
-        touches = {
-            key: value for key, value in _read(project_id).get("touches", {}).items()
-            if _touch_fresh(value, now_dt)
-        }
-        touches[path] = {"agent_id": agent_id, "session_id": sid, "at": now, "sensitive": own.sensitive, "anchor": anchor}
-        _save(project_id, leases, touches)
-        return True, own
+        writers = _load_writers(_read(project_id))
+        _add_writer(writers, path, _writer_entry(sensitive=own.sensitive))
+        _save(project_id, leases, writers)
+        return conflict is None, conflict or own
+
+
+def record_writes(
+    project_id: str,
+    paths: list[str],
+    *,
+    since: datetime | None = None,
+    unknown: str | None = None,
+    dirty: set[str] | None = None,
+    root: str | None = None,
+) -> list[str]:
+    """Add the current session (or an ``unknown`` writer with that reason) to each path's writer set.
+
+    With ``since`` (a shell command's start) a path another session recorded or
+    leased after that moment is skipped: its holder edited concurrently, so the
+    change may be theirs. With ``dirty`` and ``root``, writer sets of paths under
+    root that are no longer dirty (committed or reverted) are dropped. Returns
+    the recorded paths.
+    """
+    mine, anchor = session_ids()
+    lease_mine, lease_anchor = self_ids(), my_anchor()
+    entry = _writer_entry(unknown=unknown)
+    recorded: list[str] = []
+    with _lock(project_id):
+        leases = _purge_stale(_load(project_id))
+        writers = _load_writers(_read(project_id))
+        if dirty is not None and root:
+            _prune(writers, root, dirty)
+        for path in paths:
+            if since and (
+                any(not is_own_writer(e, mine, anchor) and _at_or_after(e.get("at"), since)
+                    for e in writers.get(path, []))
+                or any(lease.kind == "file" and lease.matches(path) and not is_mine(lease, lease_mine, lease_anchor)
+                       and _at_or_after(lease.last_heartbeat, since) for lease in leases)
+            ):
+                continue
+            _add_writer(writers, path, dict(entry))
+            recorded.append(path)
+        _save(project_id, leases, writers)
+    return recorded
+
+
+def _at_or_after(stamp: object, since: datetime) -> bool:
+    try:
+        return datetime.fromisoformat(str(stamp)) >= since
+    except ValueError:
+        return False
+
+
+def _prune(writers: dict[str, list[dict]], root: str, dirty: set[str]) -> None:
+    prefix = root.rstrip("/") + "/"
+    for path in [p for p in writers if p.startswith(prefix) and p not in dirty]:
+        del writers[path]
+
+
+def prune_writers(project_id: str, root: str, dirty: set[str]) -> None:
+    """Drop writer sets of paths under ``root`` that are no longer dirty (committed or reverted)."""
+    with _lock(project_id):
+        doc = _read(project_id)
+        writers = _load_writers(doc)
+        before = len(writers)
+        _prune(writers, root, dirty)
+        if len(writers) != before or "touches" in doc:
+            _save(project_id, _load(project_id), writers)
+
+
+def writers(project_id: str) -> dict[str, list[dict]]:
+    """Path -> writer entries for every dirty path some session recorded."""
+    with _lock(project_id):
+        return _load_writers(_read(project_id))
 
 
 def _touch_fresh(value: object, now: datetime) -> bool:
@@ -522,11 +710,13 @@ def _touch_fresh(value: object, now: datetime) -> bool:
 
 
 def touches(project_id: str) -> dict[str, dict]:
-    """Recent path -> {agent_id, session_id, at} edit records (attribution only)."""
-    now = datetime.now(UTC)
-    with _lock(project_id):
-        raw = _read(project_id).get("touches", {})
-    return {k: v for k, v in raw.items() if _touch_fresh(v, now)} if isinstance(raw, dict) else {}
+    """Path -> latest known writer {agent_id, session_id, at, ...} (attribution only)."""
+    out: dict[str, dict] = {}
+    for path, entries in writers(project_id).items():
+        known = [e for e in entries if e.get("agent_id") != UNKNOWN_WRITER]
+        if known:
+            out[path] = max(known, key=lambda e: str(e.get("at") or ""))
+    return out
 
 
 def release_paths(project_id: str, paths: list[str], project_root: str | None = None) -> int:

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import os
 import subprocess
 import sys
@@ -9,6 +10,7 @@ import tempfile
 import time
 from collections.abc import Iterator, Sequence
 from contextlib import ExitStack, contextmanager, suppress
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
@@ -21,10 +23,12 @@ class CommitError(RuntimeError):
     """Raised when commit workflow cannot run."""
 
 
-# Concurrent sessions share one repository mutation lock; a commit waits briefly
-# for another session's commit/acceptance instead of failing immediately.
-REPO_LOCK_WAIT_SECONDS = 60.0
+# Concurrent sessions share one repository mutation lock; a commit waits for
+# another session's commit/acceptance (whose checks run inside the lock)
+# instead of failing immediately, printing a progress line while it waits.
+REPO_LOCK_WAIT_SECONDS = 300.0
 REPO_LOCK_POLL_SECONDS = 2.0
+REPO_LOCK_PROGRESS_SECONDS = 30.0
 # Checks rerun once when only files outside a --paths selection changed.
 CHECK_ATTEMPTS = 2
 
@@ -192,19 +196,26 @@ def _changed_detail(changed: set[str], scope: Sequence[str], *, retried: bool) -
 @contextmanager
 def _commit_repo_lock(repo: Path) -> Iterator[None]:
     """Take the repository mutation lock, waiting briefly while another operation holds it."""
-    deadline = time.monotonic() + REPO_LOCK_WAIT_SECONDS
+    started = time.monotonic()
+    deadline = started + REPO_LOCK_WAIT_SECONDS
     noticed = False
+    next_progress = started + REPO_LOCK_PROGRESS_SECONDS
     while True:
         stack = ExitStack()
         try:
             stack.enter_context(repo_lock(repo, purpose="commit"))
         except AcceptanceError as exc:
-            if not str(exc).startswith("repo_mutation_in_progress") or time.monotonic() >= deadline:
+            now = time.monotonic()
+            if not str(exc).startswith("repo_mutation_in_progress") or now >= deadline:
                 raise
             if not noticed:
                 print(f"st commit: another repository operation is running; waiting up to "
                       f"{REPO_LOCK_WAIT_SECONDS:.0f}s for it to finish", file=sys.stderr)
                 noticed = True
+            elif now >= next_progress:
+                print(f"st commit: still waiting for the repository lock "
+                      f"({now - started:.0f}s of {REPO_LOCK_WAIT_SECONDS:.0f}s)", file=sys.stderr)
+                next_progress = now + REPO_LOCK_PROGRESS_SECONDS
             time.sleep(REPO_LOCK_POLL_SECONDS)
             continue
         with stack:
@@ -220,22 +231,81 @@ def _require_foreign_leases_clear(repo: Path, changed_paths: Sequence[str]) -> N
     if resolved is None:
         return
     project_id, root = resolved
+    active = leases.list_active(project_id)
+    mine, anchor = leases.session_ids()  # a parent commits its child threads' leased work
     for path in changed_paths:
-        ok, holder = leases.check(project_id, path, project_root=str(root))
-        if not ok and holder is not None:
+        absolute = os.path.normpath(root / path)
+        holder = next((lease for lease in active
+                       if lease.matches(absolute) and not leases.is_mine(lease, mine, anchor)), None)
+        if holder is not None:
             raise CommitError(
                 f"cannot commit {path}: leased by another agent {holder.agent_id} "
                 f"(task={holder.task_id or '--'}); coordinate or select only your own paths"
             )
 
 
+def _require_no_sweep(repo: Path, selected: Sequence[str], changed: Sequence[str]) -> None:
+    """Refuse to absorb another session's dirty work into this checkpoint.
+
+    A whole-tree or directory scope is refused when any dirty path in it has a
+    writer from another session or an unknown writer; an explicitly named file
+    is refused only when another session wrote it.
+    """
+    resolved = coord.project_for_path(repo)
+    if resolved is None or not changed:
+        return
+    project_id, root = resolved
+    foreign = coord.foreign_writers(project_id, root, changed)
+    if not foreign:
+        return
+    # A changed file not named exactly came in through the whole tree, a directory or a glob.
+    explicit = {os.path.normpath(path) for path in selected} - {"."}
+    swept: list[str] = []
+    contested: list[str] = []
+    for path, writers in sorted(foreign.items()):
+        labels = ",".join(sorted({leases.writer_label(entry) for entry in writers}))
+        if path not in explicit:
+            swept.append(f"{path}<-{labels}")
+        elif any(entry.get("agent_id") != leases.UNKNOWN_WRITER for entry in writers):
+            contested.append(f"{path}<-{labels}")
+
+    def listed(items: list[str]) -> str:
+        return ", ".join(items[:5]) + (f" (+{len(items) - 5} more)" if len(items) > 5 else "")
+
+    reasons = []
+    if swept:
+        reasons.append(f"this scope would sweep in work written by another session or an unknown writer: {listed(swept)}; "
+                       "commit only your own files with explicit paths: st commit -m ... --paths <file> <file>")
+    if contested:
+        reasons.append(f"another session also wrote {listed(contested)}; leave it to them, or once agreed adopt it "
+                       "with st lease --take <path>")
+    if not reasons:
+        return
+    _log_sweep_refusal(project_id, swept + contested)
+    raise CommitError("; ".join(reasons))
+
+
+def _log_sweep_refusal(project_id: str, items: Sequence[str]) -> None:
+    """Append one line per refusal so the guard's false-positive rate can be reviewed."""
+    with suppress(OSError):
+        leases.LEASES_DIR.mkdir(parents=True, exist_ok=True)
+        with (leases.LEASES_DIR / "_sweep_refusals.jsonl").open("a") as handle:
+            handle.write(json.dumps({"at": datetime.now(UTC).isoformat(), "project": project_id,
+                                     "agent": leases.identify_agent()[0], "paths": list(items)[:20]}) + "\n")
+
+
 def _release_committed_leases(repo: Path, committed: Sequence[str]) -> None:
-    """Committed work is no longer in flight: drop the committer's file leases on it."""
+    """Committed work is no longer in flight: drop the committer's file leases and clean paths' writer sets."""
     resolved = coord.project_for_path(repo)
     if resolved is None or not committed:
         return
     with suppress(OSError):
         leases.release_paths(resolved[0], [str(resolved[1] / path) for path in committed])
+    remaining = coord.dirty_paths(resolved[1])
+    if remaining is not None:
+        with suppress(OSError):
+            root = resolved[1].resolve()
+            leases.prune_writers(resolved[0], str(root), {str(root / rel) for rel in remaining})
 
 
 def _addable_paths(repo: Path, paths: Sequence[str]) -> list[str]:
@@ -333,6 +403,7 @@ def commit_git_revision(
     selected_files = _selected_changed_files(repo, selected_paths) if selected_paths and has_changes else []
     changed_scope = (selected_files if selected_paths else _selected_changed_files(repo, ["."])) if has_changes else []
     _require_foreign_leases_clear(repo, changed_scope)
+    _require_no_sweep(repo, selected_paths, changed_scope)
     try:
         coord.guard(repo, "commit", with_ack=with_ack)
     except coord.CoordBlocked as exc:

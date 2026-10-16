@@ -2,7 +2,7 @@
 
 The lease primitive replaces per-task branches as the coordination mechanism.
 Edit-time gate: agents check before touching a file held by another agent's
-lease. Commit-time has no gate.
+lease. st commit refuses to sweep another session's recorded writes.
 """
 
 from __future__ import annotations
@@ -77,7 +77,7 @@ def lease_command(
     ] = None,
     release_glob: Annotated[
         str | None,
-        typer.Option("--release", help="Release a specific glob (or use --release-all)"),
+        typer.Option("--release", help="Release one glob or lease id (or use --release-all)"),
     ] = None,
     release_all: Annotated[
         bool,
