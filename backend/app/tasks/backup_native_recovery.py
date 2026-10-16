@@ -786,6 +786,10 @@ def _network_remote(url: str) -> bool:
     return bool(separator) and len(host) > 1 and "/" not in host and "\\" not in host
 
 
+# Ref namespaces a compact capture carries; every other ref is full-only.
+COMPACT_REF_PREFIXES = ("refs/heads/", "refs/tags/", "refs/remotes/", "refs/notes/", "refs/stash", "refs/summitflow/")
+
+
 def _compact_git_plan(project_dir: Path, state: dict[str, Any]) -> dict[str, Any]:
     """Select unpublished ancestry and published edge trees, or retain all Git.
 
@@ -793,19 +797,20 @@ def _compact_git_plan(project_dir: Path, state: dict[str, Any]) -> dict[str, Any
     baseline; capture never contacts a server. A remote that is a local path
     is no offsite copy, so its refs are ordinary tips. Missing baselines or
     unusual traversal semantics retain full history. The source repository is
-    never made shallow. Codex's tree-valued refs/codex/* checkpoints are left
-    out (a compact capture is only requested after a weekly full one, which
-    keeps them), so they no longer force every capture to full history.
+    never made shallow. Only standard ref namespaces are carried; tool-private
+    ones (Codex's tree-valued refs/codex/* checkpoints, old archive mirrors
+    such as refs/ra/*) stay in the weekly full capture, which a compact one
+    is only requested after, so they no longer force or bloat every capture.
     """
     full: dict[str, Any] = {"capture_mode": "full", "shallow_commits": state.get("shallow_commits", [])}
     if state.get("shallow_commits"):
         return {**full, "compact_fallback_reason": "source_already_shallow"}
-    refs = [line for line in state["refs"] if not line.split(" ", 1)[1].startswith("refs/codex/")]
-    if any(" refs/replace/" in line for line in refs):
+    if any(" refs/replace/" in line for line in state["refs"]):
         return {**full, "compact_fallback_reason": "replacement_refs"}
     graft_path = _run_git(project_dir, ["rev-parse", "--path-format=absolute", "--git-path", "info/grafts"])
     if graft_path.returncode != 0 or Path(graft_path.stdout.strip()).exists():
         return {**full, "compact_fallback_reason": "uncertain_traversal"}
+    refs = [line for line in state["refs"] if line.split(" ", 1)[1].startswith(COMPACT_REF_PREFIXES)]
     remote_urls: dict[str, list[str]] = {}
     for item in state.get("remote_config", []):
         if item["key"].startswith("remote.") and item["key"].endswith(".url"):

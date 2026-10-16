@@ -238,6 +238,34 @@ def test_codex_tree_checkpoint_refs_no_longer_force_full_history(tmp_path: Path)
     assert _git(full, "cat-file", "-t", checkpoint) == "tree"
 
 
+def test_private_archive_ref_namespaces_stay_out_of_compact_captures(tmp_path: Path) -> None:
+    # Regression: old archive mirrors (refs/ra/*, refs/rpull/*) of unpublished
+    # history kept summitflow and portfolio-ai compact captures near full size.
+    project, _old, _baseline = _project(tmp_path)
+    _git(project, "checkout", "-b", "archived")
+    archived = _commit(project, "archived", "pre-rewrite history only in the archive mirror")
+    _git(project, "checkout", "main")
+    _git(project, "update-ref", "refs/ra/pull/1", archived)
+    _git(project, "update-ref", "refs/summitflow/snapshots/pre-merge/keep", archived)
+    _git(project, "branch", "-D", "archived")
+    _git(project, "checkout", "-b", "work")
+    work = _commit(project, "work", "unpublished branch work")
+    _git(project, "checkout", "main")
+    snapshot, manifest = _snapshot(project, tmp_path / "stage")
+    git = manifest["git"]
+    assert git["capture_mode"] == "compact"
+    assert not any(" refs/ra/" in line for line in git["refs"])
+    assert f"{work} refs/heads/work" in git["refs"]
+    assert f"{archived} refs/summitflow/snapshots/pre-merge/keep" in git["refs"]
+    recovery.restore_git_recovery(snapshot)
+    assert _git(snapshot, "show", "work:work") == "unpublished branch work"
+    assert subprocess.run(["git", "-C", str(snapshot), "rev-parse", "--verify", "-q", "refs/ra/pull/1"], capture_output=True).returncode != 0
+    full, full_manifest = _snapshot(project, tmp_path / "full", mode="full")
+    assert f"{archived} refs/ra/pull/1" in full_manifest["git"]["refs"]
+    recovery.restore_git_recovery(full)
+    assert _git(full, "show", "refs/ra/pull/1:archived") == "pre-rewrite history only in the archive mirror"
+
+
 def test_legacy_full_manifest_without_new_fields_remains_readable(tmp_path: Path) -> None:
     project, old, _baseline = _project(tmp_path)
     snapshot, manifest = _snapshot(project, tmp_path / "stage", mode="full")

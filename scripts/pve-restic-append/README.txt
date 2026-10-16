@@ -15,8 +15,9 @@ Retention
   per source kept, plus each source's newest snapshot tagged
   git-history:full, its weekly full Git history). A circuit breaker refuses
   any run that would delete more than normal weekly retention (>50% of all
-  snapshots; normal is about 25%), or that follows an unexplained >10% drop,
-  and records an alert in the status file instead.
+  snapshots; steady state is about 25%), or that follows an unexplained >10%
+  drop, and records an alert in the status file instead. There is no
+  per-source limit, so a wrong window for a single source is not caught.
 
 FIRST THING TO SHRINK if davion-gem needs space
   This copy is the most expendable data on this host: the T7 and Google Drive
