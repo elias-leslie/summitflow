@@ -3,10 +3,8 @@
 from __future__ import annotations
 
 import hashlib
-import sys
 from contextlib import contextmanager, nullcontext
 from pathlib import Path
-from types import ModuleType
 from typing import Any
 from unittest.mock import Mock
 
@@ -28,9 +26,8 @@ def queue(monkeypatch: pytest.MonkeyPatch, tmp_path: Path):
 
     for key in ("BACKUP_OFFSITE_GIO_URI", "BACKUP_OFFSITE_TRANSPORT"):
         monkeypatch.delenv(key, raising=False)
-    state: dict[str, Any] = {"offsite": [], "legacy": [], "publication": [], "sync": [], "publish": [],
-                             "archive_calls": [], "busy": set(), "outcomes": {}, "publish_outcomes": {},
-                             "merges": []}
+    state: dict[str, Any] = {"offsite": [], "legacy": [], "publication": [], "sync": [],
+                             "archive_calls": [], "busy": set(), "outcomes": {}, "merges": []}
     monkeypatch.setattr(drain.backup_store, "get_pending_upload_backups", lambda: state["legacy"])
     monkeypatch.setattr(drain.backup_store, "get_pending_native_offsite_backups", lambda: state["offsite"])
     monkeypatch.setattr(drain, "build_storage_env", lambda *_args: {"BACKUP_OFFSITE_GIO_URI": "google-drive://fixture/root"})
@@ -54,14 +51,6 @@ def queue(monkeypatch: pytest.MonkeyPatch, tmp_path: Path):
             raise outcome
         return {"verification_json": {"offsite": {"status": outcome, "error": "offline"}}}
 
-    def publish(source, *, retained=None):
-        state["publish"].append(source["id"])
-        outcome = state["publish_outcomes"].get(source["id"], "published")
-        if isinstance(outcome, Exception):
-            raise outcome
-        return {"status": outcome, "reason": "push_unavailable" if outcome in {"failed", "pending"} else "published",
-                "backup_can_continue": True, "attempted": True, "source_id": source["id"]}
-
     def merge(backup_id, update, **_kwargs):
         state["merges"].append((backup_id, update))
         return {"id": backup_id, "verification_json": update}
@@ -69,9 +58,6 @@ def queue(monkeypatch: pytest.MonkeyPatch, tmp_path: Path):
     monkeypatch.setattr(drain, "drain_pending_archives", drain_archives)
     monkeypatch.setattr(drain, "sync_backup_offsite", sync)
     monkeypatch.setattr(drain.backup_store, "merge_backup_verification_json", merge)
-    publication_module = ModuleType("app.tasks.backup_publish")
-    monkeypatch.setattr(publication_module, "publish_source", publish, raising=False)
-    monkeypatch.setitem(sys.modules, "app.tasks.backup_publish", publication_module)
     return drain, state
 
 
@@ -148,7 +134,7 @@ def test_dry_run_is_read_only_for_all_queues(queue):
     assert result["status"] == "dry_run"
     assert result["pending_before"] == 1
     assert result["offsite_backups"][0]["id"] == "archive-1"
-    assert not state["sync"] and not state["publish"] and not state["merges"]
+    assert not state["sync"] and not state["merges"]
     assert state["archive_calls"] == [True]
 
 
@@ -237,7 +223,7 @@ def test_retained_publication_is_never_retried_or_counted_as_backup_work(queue):
     state["publication"] = [retained]
     result = drain.drain_pending_backups()
     assert result["remaining"] == 0
-    assert not state["publish"] and not state["merges"]
+    assert not state["merges"]
     assert retained["verification_json"]["publication"]["status"] == "failed"
 
 
@@ -247,5 +233,5 @@ def test_offsite_copy_retries_while_publication_history_stays_unchanged(queue):
     state["offsite"] = state["publication"] = [retained]
     result = drain.drain_pending_backups()
     assert result["offsite_verified"] == 1
-    assert not state["publish"] and not state["merges"]
+    assert not state["merges"]
     assert retained["verification_json"]["publication"]["status"] == "pending"
