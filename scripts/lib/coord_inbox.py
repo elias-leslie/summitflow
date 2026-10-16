@@ -10,12 +10,16 @@ requests it sent) on every harness surface that can carry text:
                                              additionalContext (Claude + Codex)
   stop   Stop                                decision=block so the turn continues
                                              and answers; on Codex, arms `watch`
-  watch  Claude: asyncRewake background hook (exit 2 wakes an idle session)
+  watch  Claude: asyncRewake background hook; a request addressed to it or a
+                 memory notice exits 2 (wakes an idle session), while an ack
+                 of a request it sent is typed into its idle tmux pane as a
+                 plain line (Claude shows any exit 2 as a blocking hook error)
          Codex:  detached idle watcher that types one line into its own tmux
                  pane (Codex has no rewake hook; only armed between turns)
 
-Items surface once per agent, then again every REMIND seconds while still
-unanswered. Text starting with URGENT/CONFLICT is flagged as such. The same
+Requests surface once per agent, then again every REMIND seconds while still
+unanswered (an eta ack whose minutes ran out counts as unanswered again); an
+ack surfaces once. Text starting with URGENT/CONFLICT is flagged as such. The same
 surfaces carry memory notices (cli.lib.coord_memory): a process in this pane
 killed for memory, a stopped pane, a memory warning. Each shows once per agent
 and per subagent, needs no answer and never blocks Stop; SessionStart,
@@ -80,8 +84,9 @@ def pending() -> tuple[str, list[tuple[str, str, bool]]]:
         if row["state"] == "open" and row["from"] not in mine:
             urgent = _urgent(row["text"])
             flag = "URGENT " if urgent else ""
+            lapsed = f" (your eta:{row['eta_min']} ran out)" if row.get("intent") == "eta" else ""
             items.append((f"{row['id']}:req", (
-                f"{flag}REQUEST {row['id']} from {row['from']}: {row['text']} | answer now with "
+                f"{flag}REQUEST {row['id']} from {row['from']}{lapsed}: {row['text']} | answer now with "
                 f"`st sessions ack {row['id']} yes|no 'reason'|eta:MIN`"), urgent))
         elif row["state"] == "acked" and row["from"] in mine:
             intent = (row.get("intent") or "?") + (f" {row['eta_min']}m" if row.get("eta_min") else "")
@@ -173,14 +178,23 @@ def watch(provider: str) -> int:
             agent_id, items = pending()
             fresh = due(agent_id, items)
         note = memory(agent_id) if now >= mem_retry else None
+        requests = sum(":req" in key for key, _, _ in fresh)
+        if fresh and not requests and not note and provider != "codex":
+            # Claude, acks only: a plain line in the idle pane, never an exit-2 "blocking error"
+            if not coord_wake.type_line(coord_wake.pane_line(render(fresh), 0), os.environ.get("TMUX", "").split(",")[0],
+                                        os.environ.get("TMUX_PANE", "")):
+                last_check = now - 60 + RETRY  # busy pane or no tmux: the next turn hook or a later look delivers it
+            else:
+                mark(agent_id, fresh, "claude-tmux-notice")
+            time.sleep(POLL)
+            continue
         if fresh or note:
             if provider == "codex":
                 # Codex: wake the pane; its UserPromptSubmit hook then shows the memory notice in full
                 if note:
                     note.done(delivered=False)
                 sock = os.environ.get("TMUX", "").split(",")[0]
-                line = (coord_wake.pane_line(render(fresh), sum(":req" in key for key, _, _ in fresh)) if fresh
-                        else coord_memory.WAKE_LINE)
+                line = coord_wake.pane_line(render(fresh), requests) if fresh else coord_memory.WAKE_LINE
                 if not coord_wake.type_line(line, sock, os.environ.get("TMUX_PANE", "")):
                     last_check = now - 60 + RETRY  # busy composer: leave it queued, look again soon
                     mem_retry = now + RETRY

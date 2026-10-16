@@ -147,17 +147,9 @@ def start(
 
 @usage(
     surface="st.sessions.send",
-    cmd="st sessions send AGENT_OR_WINDOW 'one line' --source-key REVISION | st -P PROJECT sessions send ROOT_OR_UUID 'instruction' --source-key REVISION [--delivery native-thread]",
-    when="message another agent session (handshake: it acks, you confirm), or deliver a bounded instruction to a fleet root or native Codex thread",
-    precautions=(
-        "Agent-to-agent: one line <=160 chars pointing at a brief file; target is an agent id, Aico widget id, st aico create request id or window title. Reusing --source-key never records a second request; st sessions inbox shows open/seen, acked. This is the one channel: never also type the same instruction into the window.",
-        "Agent ids and labels default to the handshake ledger (a label must name exactly one live agent, else exit 2 with candidates); root-*/UUID default to passive fleet-stream retention consumed through wait; native-thread uses exact project/UUID provenance and local owner transport.",
-        "Native-thread to a live Codex TUI records a ledger request instead of queueing; an idle-armed tmux watcher wakes it (delivery=woken), otherwise it stays queued for its next turn hook (delivery=queued).",
-        "Native-thread requires exact UUID + stable revision and <=2000 sanitized UTF-8 bytes. Queued/durable does not mean working or observed consumption and is not generation-fenced; offline input can execute on same-thread resume.",
-        "Reuse the source key to reconcile pending/uncertain attempts; never blindly replay with a new key. No secrets or transcripts.",
-        "Use sessions verify UUID --source-key REVISION for content-free correlated queue/consumption/turn status; missing queue entries alone prove nothing.",
-        "Use current-client native delegation for subagents; this addresses existing root threads, not spawned children.",
-    ),
+    cmd="st sessions send AGENT_OR_WINDOW 'question' | st sessions ack ID yes|no 'reason'|eta:MIN | st sessions confirm ID [--withdraw]",
+    when="ask another agent a question (<=500 chars; a brief file only for long material): it acks, you confirm",
+    precautions=("don't-touch is an enforced repo hold (st lease --hold), not a message; fleet roots and native threads: --help",),
     tier="reference",
 )
 def send(
@@ -169,17 +161,25 @@ def send(
 ) -> None:
     """Agent ids and labels go to the handshake ledger; root-* handles and UUIDs to the fleet stream.
 
-    Handshake: one line (<=160 chars, point at a brief file); the recipient acks
-    with st sessions ack, you close with st sessions confirm. Reusing
+    Handshake: up to 500 chars (a brief file only for long material). The
+    recipient is interrupted until it acks yes, no 'reason' or eta:MIN; when an
+    eta runs out the request waits on it again. You get the ack as a notice and
+    close with st sessions confirm (or --withdraw an unacked one). Reusing
     --source-key returns the existing request instead of sending again; st
-    sessions inbox shows open/seen, open/unseen or acked.
+    sessions inbox shows open/seen, open/unseen or acked. This is the one
+    channel: never also type the same text into the window.
 
     A label (Agent Hub session name/persona/tmux session, identity short id, or
     lease holder slug) must name exactly one live agent; it prints ``→ <id>``.
-    Native-thread requires an exact bound UUID, stable --source-key revision,
-    and <=2000 sanitized UTF-8 bytes. Queued/durable does not mean working or
-    observed consumption and is not generation-fenced; offline input may run
-    when that same thread resumes.
+    root-* handles and UUIDs default to passive fleet-stream retention consumed
+    through wait. Native-thread requires an exact bound UUID, stable
+    --source-key revision, and <=2000 sanitized UTF-8 bytes; to a live Codex TUI
+    it records a ledger request and its idle watcher wakes it (delivery=woken),
+    else it waits for the next turn hook (delivery=queued). Queued/durable does
+    not mean working or observed consumption and is not generation-fenced;
+    offline input may run when that same thread resumes. Reuse the source key to
+    reconcile uncertain attempts, never a new key; sessions verify UUID
+    --source-key REVISION reports correlated status. No secrets or transcripts.
     """
     if delivery is None:
         # Coordination agent ids are never fleet roots; route them to the ledger.

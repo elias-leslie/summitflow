@@ -36,18 +36,15 @@ def send_request(to: str, text: str, source_key: str | None = None) -> None:
                    f"it cannot see or ack this. Live agents: {live}", err=True)
 
 
-@usage(
-    surface="st.sessions.ack",
-    cmd="st sessions ack ID yes|no|eta:MIN ['short reason']",
-    when="answer a coordination request addressed to you; acks are one short line",
-    precautions=("'no' needs a reason; yes authorizes the requester's --with-ack for 2h",),
-    tier="reference",
-)
 def ack(
     message_id: Annotated[str, typer.Argument(help="Request id from st sessions inbox")],
     intent: Annotated[str, typer.Argument(help="yes | no | eta:<minutes>")],
     note: Annotated[str | None, typer.Argument(help="Short neutral reason")] = None,
 ) -> None:
+    """Answer a request addressed to you; 'no' needs a reason, and yes authorizes the requester's --with-ack for 2h.
+
+    An eta whose minutes run out puts the request back to waiting on you: answer yes, no or a new eta.
+    """
     try:
         row = coord.ack(message_id, intent, note)
     except ValueError as exc:
@@ -56,12 +53,6 @@ def ack(
     typer.echo(f"acked {row['id']} {intent}")
 
 
-@usage(
-    surface="st.sessions.confirm",
-    cmd="st sessions confirm ID [--withdraw]",
-    when="close a request you sent once its ack arrived, or withdraw one nobody acked",
-    tier="reference",
-)
 def confirm(
     message_id: Annotated[str, typer.Argument(help="Request id you sent")],
     withdraw: Annotated[bool, typer.Option("--withdraw", help="Close an unacked request you sent")] = False,

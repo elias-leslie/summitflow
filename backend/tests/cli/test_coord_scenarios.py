@@ -358,8 +358,8 @@ def test_duplicate_and_replayed_messages(repos, monkeypatch):
     as_codex(monkeypatch, "abcdef-thread")
     with pytest.raises(ValueError, match="closed"):
         coord.ack(first["id"], "yes")
-    with pytest.raises(ValueError, match="160"):
-        coord.send("cc:x", "x" * 200)
+    with pytest.raises(ValueError, match="500"):
+        coord.send("cc:x", "x" * 501)
 
 
 def test_send_flags_targets_the_ledger_can_never_match(repos, monkeypatch):
@@ -911,8 +911,8 @@ def test_long_native_instruction_rides_the_ledger_and_wakes_with_a_pointer(repos
     row = next(r for r in coord._load_ledger() if r["id"] == out["request_id"])
     assert row["text"] == " ".join(body.split())
     assert delivery._deliver_live("thread", "x" * (coord.NATIVE_MAX_TEXT + 1), project="fixture", source_key="k2") is None
-    with pytest.raises(ValueError, match="160"):
-        coord.send("cx:target", body)  # agent-to-agent handshakes stay one short line
+    with pytest.raises(ValueError, match="500"):
+        coord.send("cx:target", body)  # agent-to-agent handshakes stay short; long material goes in a brief file
 
     line = coord_wake.pane_line(f"st coordination:\nREQUEST {row['id']} from cc:x: {row['text']}", 1)
     assert len(line) <= coord_wake.TYPE_MAX and "st sessions inbox" in line and row["text"] not in line

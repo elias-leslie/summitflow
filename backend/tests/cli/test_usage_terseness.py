@@ -28,7 +28,7 @@ LEGACY_OVER_CAP = frozenset({
     "st.neri.owner.request", "st.neri.portfolio.join", "st.neri.report.readiness",
     "st.neri.report.save", "st.neri.report.show", "st.neri.reports",
     "st.neri.target.lab_authority_set", "st.neri.target.list", "st.neri.target.show",
-    "st.neri.timeline", "st.service.rebuild", "st.sessions.send", "st.sessions.verify",
+    "st.neri.timeline", "st.service.rebuild", "st.sessions.verify",
     "st.slopminer", "st.ui.gif", "st.web",
 })
 PADDING = re.compile(

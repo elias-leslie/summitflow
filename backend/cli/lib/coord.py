@@ -7,10 +7,11 @@ One identity (``leases.identify_agent``), one store (``~/.summitflow/leases``):
   edit hook and shell commands (bash-pre/post), kept until commit or revert;
 - repo marks: ``hold`` (declared coarse purpose, idle TTL) and ``op``
   (acceptance/deployment, fenced to the running process);
-- a handshake ledger: request -> ack (intent) -> confirm, with one-line notices.
+- a handshake ledger: request -> ack (intent) -> confirm, with one-line notices; an
+  eta ack whose minutes run out puts the request back to waiting on the recipient.
 
 Output is silent without overlap. Minimal disclosure: sensitive holders render
-as an opaque busy line; message text is one short neutral line.
+as an opaque busy line; message text is short and neutral (long material goes in a brief file).
 """
 
 from __future__ import annotations
@@ -34,7 +35,7 @@ ACTIVE_WINDOW = timedelta(minutes=10)
 UNACKED_AFTER = timedelta(minutes=10)
 ACK_VALID_FOR = timedelta(hours=2)
 LEDGER_TTL = timedelta(hours=24)
-MAX_TEXT = 160
+MAX_TEXT = 500
 # Owner/fleet instructions to a live Codex thread ride the ledger; same bound as sanitized_instruction.
 NATIVE_MAX_TEXT = 2000
 INTENTS = ("yes", "no")
@@ -358,7 +359,16 @@ def _load_ledger() -> list[dict[str, Any]]:
                 kept.append(row)
         except (KeyError, ValueError, TypeError):
             continue
+        with suppress(KeyError, ValueError, TypeError):
+            _reopen_lapsed_eta(row, now)
     return kept
+
+
+def _reopen_lapsed_eta(row: dict[str, Any], now: datetime) -> None:
+    """An eta ack whose minutes ran out is waiting on the recipient again (open, intent stays eta)."""
+    if (row["state"] == "acked" and row["intent"] == "eta" and row.get("eta_min") is not None
+            and now >= datetime.fromisoformat(row["acked_at"]) + timedelta(minutes=int(row["eta_min"]))):
+        row["state"] = "open"
 
 
 def _save_ledger(rows: list[dict[str, Any]]) -> None:
@@ -373,7 +383,7 @@ def _clean_text(text: str, limit: int = MAX_TEXT) -> str:
     if not flat:
         raise ValueError("message text is empty")
     if len(flat) > limit:
-        raise ValueError(f"message text exceeds {limit} chars; keep it to one neutral line")
+        raise ValueError(f"message text exceeds {limit} chars; put long material in a brief file and send its path")
     return flat
 
 
@@ -551,7 +561,7 @@ def notices() -> list[str]:
                 out.append(f"ACK {row['id']} {intent} from {row.get('acked_by')}; close: st sessions confirm {row['id']}")
                 row["ack_seen"] = True
                 changed = True
-            elif row["state"] == "open" and not row.get("surfaced_at"):
+            elif row["state"] == "open" and not row.get("surfaced_at") and not row.get("intent"):
                 if now - datetime.fromisoformat(row["created"]) >= UNACKED_AFTER:
                     out.append(f"UNACKED {row['id']} -> {row['to']} ({_age(row['created'], now)}); escalate or route around")
                     row["surfaced_at"] = now.isoformat()
