@@ -58,7 +58,7 @@ def test_older_commit_is_refused_unless_rolling_back(history, tmp_path: Path) ->
     repo, commits = history
     state = tmp_path / "state"
     _go_live(state, commits[2])
-    with pytest.raises(service_release.ReleaseError, match=r"deploy_not_forward.*git revert"):
+    with pytest.raises(service_release.ReleaseError, match=r"deploy_not_forward.*git revert.*st service rebuild example --rollback"):
         service_release.require_forward_deploy("example", repo, commits[0], state_root=state)
     service_release.require_forward_deploy("example", repo, commits[0], state_root=state, rollback=True)
 
