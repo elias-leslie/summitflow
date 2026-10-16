@@ -5,7 +5,8 @@
  * session_start (startup, /new, /resume, /fork) and routes the same events the
  * Claude Code and Codex hooks use through ~/.claude/hooks/lease-check.sh:
  *   session_start          -> `session`   (reset notice, appended once to the next prompt)
- *   tool_call edit/write   -> edit mode   (auto-lease; blocks with one line on a live collision)
+ *   tool_call edit/write   -> edit mode   (auto-lease; a foreign lease WARNING is added to the tool
+ *                                          result; blocks with one line only under a live acceptance/deploy)
  *   tool_call/result bash  -> bash-pre / bash-post (one warning line on a foreign-leased shell write)
  * Silent when nothing overlaps; every failure allows the tool.
  */
@@ -42,8 +43,17 @@ function runHook(mode: string | null, payload: Record<string, unknown>): Promise
 	});
 }
 
+function additionalContext(result: HookResult): string | undefined {
+	try {
+		return result.stdout ? JSON.parse(result.stdout).hookSpecificOutput?.additionalContext : undefined;
+	} catch {
+		return undefined;
+	}
+}
+
 export default function (pi: ExtensionAPI) {
 	let notice: string | undefined;
+	const editWarnings = new Map<string, string>();
 
 	const base = (ctx: ExtensionContext) => ({
 		session_id: ctx.sessionManager.getSessionId(),
@@ -57,11 +67,7 @@ export default function (pi: ExtensionAPI) {
 			hook_event_name: "SessionStart",
 			source: event.reason === "new" ? "clear" : event.reason,
 		});
-		try {
-			notice = result.stdout ? JSON.parse(result.stdout).hookSpecificOutput?.additionalContext : undefined;
-		} catch {
-			notice = undefined;
-		}
+		notice = additionalContext(result);
 	});
 
 	pi.on("before_agent_start", async (event) => {
@@ -81,6 +87,8 @@ export default function (pi: ExtensionAPI) {
 				tool_input: { file_path: input.path },
 			});
 			if (result.code === 2 && result.stderr) return { block: true, reason: result.stderr };
+			const warning = additionalContext(result);
+			if (warning) editWarnings.set(event.toolCallId, warning);
 		} else if (event.toolName === "bash") {
 			await runHook("bash-pre", {
 				...base(ctx),
@@ -92,6 +100,11 @@ export default function (pi: ExtensionAPI) {
 	});
 
 	pi.on("tool_result", async (event, ctx) => {
+		const warning = editWarnings.get(event.toolCallId);
+		if (warning !== undefined) {
+			editWarnings.delete(event.toolCallId);
+			return { content: [...event.content, { type: "text", text: warning }] };
+		}
 		if (event.toolName !== "bash") return;
 		const result = await runHook("bash-post", {
 			...base(ctx),
