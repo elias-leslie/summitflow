@@ -93,7 +93,7 @@ the current location of the Typer callback.
 | `pulsebrief` | **executable wrapper / mixed** — `commands/pulsebrief.py`; pulse-briefing destination is to establish script/schema ownership. | Current CLI wraps script/process and JSON/schema; no destination package contract is established in this snapshot. |
 | `skills` | **mixed** — `commands/skills.py`; canonical skill content belongs to Agent Hub; ST currently installs/checks harness symlinks and remains responsible for core command discovery. | Mutates symlinks/materialized files across harnesses; preserve canonical-source, adoption, and drift behavior when moving distribution tooling. |
 | `jobs` | **client** — `commands/jobs.py`, `_jobs_client.py`; Jobinator owns job/evaluation/application APIs and state. | Thin HTTP client plus ST output/usage and project resolver. `_project_client.py` registry path imports private ST config/`APIError`; replace with approved public SDK/context, not a reverse import. `test_jobs_command.py` is the CLI suite to move. |
-| `portfolio` | **client** — `commands/portfolio.py`, `_portfolio_client.py`; Portfolio AI owns portfolio/catalyst/retirement APIs and state. | HTTP client/resolver also reaches private ST `app.config` and `APIError`; migrate transport/config dependency with CLI. `test_portfolio_command.py` is the CLI suite to move. |
+| `portfolio` | **client** — `commands/portfolio.py`, `_portfolio_client.py`; Portfolio AI owns portfolio/retirement APIs and state. | HTTP client/resolver also reaches private ST `app.config` and `APIError`; migrate transport/config dependency with CLI. `test_portfolio_command.py` is the CLI suite to move. |
 | `neri` | **project extension** — Neri owns scope, hunts, evidence, reports, reviews and bounty outcomes. | ST resolves the versioned extension manifest and executable; Neri owns its domain CLI and tests. Generic service lifecycle remains in ST. |
 | `learn` | **client / mixed** — `commands/learn.py`, `learn_pty.py`; Learn-o-Tron owns learning state; local sanitized transcript spool is client state; SummitFlow owns promoted task records. | Project API, PTY/SSH and transcript handling plus private `STClient` promotion call; promotion needs public ST task interface. CLI suites: `test_learn.py`, `test_learn_predictions.py`, `test_learn_pty.py`. |
 | `memory`, `models`, `prompt`, `persona`, `agents`, `feedback`; root `mandates`, `note` | **client / mixed** — Agent Hub owns model catalog, completion, memory/prompts/persona/agents/feedback data. ST implementations are `commands/{memory,memory_*,_memory_crud_helpers,models,prompt,prompt_*,persona,persona_*,agents,agents_*,preview_formatters,feedback,feedback_*,mandates,note}.py`; rank-12 Agent Hub CLI destination. | Shared `memory_api.py` currently imports private ST URL, credentials, output and HTTP-error helpers; `prompt_api`, `agents_api`, `models`, `mandates`, Neri also share it. Persona/feedback clients duplicate private URL/auth use. `note` is a memory-save alias; `mandates` is an Agent Hub fetch with SessionStart/hook-facing ST compatibility. Preserve a small ST facade for aliases. Relevant tests: `test_memory*.py`, `test_models_cli.py`, `test_prompt_cli.py`, `test_persona.py`, `test_agents_cli.py`, `test_feedback_cli.py`, `test_natural_language_authoring.py`. |
@@ -105,8 +105,10 @@ the current location of the Typer callback.
   for the rank-13 admin/client bundle. Its existing API tests remain owner tests;
   SummitFlow CLI tests move/adapt with the commands.
 - Jobinator, Portfolio AI, Neri, and Learn-o-Tron have backend packages and API
-  implementations but no `app/cli` or `tests/cli` package and no CLI script.
-  Add owner-local CLI entrypoints and tests as part of extraction.
+  implementations but had no `app/cli` or `tests/cli` package at the baseline.
+  Add owner-local CLI entrypoints and tests as part of extraction. Portfolio AI
+  has since done this: its `portfolio-st` script runs `app.st_cli`, tested in
+  `backend/tests/cli`.
 - The proposed extension contract uses executable transport and a public
   `st_sdk` facade (see `docs/st-extension-architecture.md`). Extensions must not
   import ST-private `app.config`, `cli.client`, output, credentials, command, or
