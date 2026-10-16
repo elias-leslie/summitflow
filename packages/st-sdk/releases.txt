@@ -4,3 +4,4 @@
 # before this record may hold older code: compare against this digest.
 0.1.0 e814c81d42ae1da3ca21f54328064de2f4aa1c693ffebb5f948582aec60c90a6
 0.1.1 e814c81d42ae1da3ca21f54328064de2f4aa1c693ffebb5f948582aec60c90a6
+0.1.2 afb7d1641d8b7e71581d9c5a0ab58e9d057e274e89ca0d61c7f16f57df91917c

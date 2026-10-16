@@ -9,13 +9,15 @@ import time
 from dataclasses import dataclass
 from functools import lru_cache
 from pathlib import Path
-from typing import Any, cast
+from typing import TYPE_CHECKING, Any, cast
 from urllib.parse import quote
 
-import httpx
 import yaml
 
 from .execution_context import canonical_repo_root
+
+if TYPE_CHECKING:
+    import httpx
 
 logger = logging.getLogger(__name__)
 _RETRY_DELAY = 0.5
@@ -181,6 +183,8 @@ def _parse_projects_response(response: httpx.Response) -> list[object] | str | N
 
 
 def _fetch_projects_with_retry(api_base: str, max_retries: int) -> list[object] | None:
+    import httpx  # imported on use: httpx costs about 70 ms of every st start
+
     for attempt in range(max_retries):
         try:
             response = httpx.get(f"{api_base}/projects", timeout=5.0)
@@ -286,6 +290,8 @@ def _fetch_project(api_base: str, project_id: str) -> dict[str, Any] | None:
     The single-project read avoids serializing every registered project on each
     extension dispatch; the list remains the fallback for older APIs.
     """
+    import httpx
+
     try:
         response = httpx.get(f"{api_base}/projects/{quote(project_id, safe='')}", timeout=5.0)
     except httpx.HTTPError:

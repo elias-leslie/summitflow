@@ -2,9 +2,10 @@
 
 from __future__ import annotations
 
-from typing import Any, cast
+from typing import TYPE_CHECKING, Any, cast
 
-import httpx
+if TYPE_CHECKING:
+    import httpx
 
 
 class APIError(Exception):
@@ -27,6 +28,8 @@ class BaseHTTPClient:
         *,
         transport: httpx.BaseTransport | None = None,
     ) -> None:
+        import httpx  # imported on use so importing the SDK stays cheap
+
         self.base_url = base_url.rstrip("/")
         self.project_id = project_id
         self._client = httpx.Client(timeout=timeout, transport=transport)

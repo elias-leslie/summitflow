@@ -126,7 +126,7 @@ def registered_projects(url, **kwargs):
     project = {{"id": "selected-project", "root_path": {str(selected_root)!r}}}
     return httpx.Response(200, json=project if url.endswith("/selected-project") else [project])
 
-config.httpx.get = registered_projects
+httpx.get = registered_projects
 config.set_project_override("selected-project")
 resolved = config.get_config_optional()
 print(json.dumps({{
@@ -160,6 +160,7 @@ def test_selected_project_override_is_lazy_during_static_description(tmp_path: P
     env = os.environ.copy()
     env["PYTHONPATH"] = str(package_root)
     script = """
+import httpx
 import typer
 from st_sdk import config
 from st_sdk.runtime import describe_app
@@ -167,7 +168,7 @@ from st_sdk.runtime import describe_app
 def forbidden(*args, **kwargs):
     raise AssertionError("static description contacted the project registry")
 
-config.httpx.get = forbidden
+httpx.get = forbidden
 config.set_project_override("selected-project")
 app = typer.Typer(help="Static owner help")
 @app.callback()

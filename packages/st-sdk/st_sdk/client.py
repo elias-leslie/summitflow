@@ -2,12 +2,13 @@
 
 from __future__ import annotations
 
-from typing import Any
-
-import httpx
+from typing import TYPE_CHECKING, Any
 
 from .config import get_config, get_config_optional
 from .http import BaseHTTPClient
+
+if TYPE_CHECKING:
+    import httpx
 
 
 class STClient(BaseHTTPClient):

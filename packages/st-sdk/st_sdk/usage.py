@@ -96,6 +96,10 @@ def _callback_specs(callback: Callable[..., Any]) -> Iterable[UsageSpec]:
 
 
 def _walk(app: typer.Typer, seen: set[int]) -> Iterable[UsageSpec]:
+    # An app that registers commands on first use exposes st_materialize to load them all.
+    materialize = getattr(app, "st_materialize", None)
+    if callable(materialize):
+        materialize()
     callback_info = getattr(app, "registered_callback", None)
     callback = getattr(callback_info, "callback", None) if callback_info is not None else None
     if callback is not None:
