@@ -1,7 +1,8 @@
-"""Owner checks (abandon, done, manual st lease) follow writer sets, not file leases.
+"""Owner checks (abandon, done, manual st lease) follow writer sets, which outlive leases.
 
-Leases are advisory and expire after 30 min idle; a contested edit leaves two
-leases. Writer sets last until commit or revert, so they decide ownership.
+Leases are advisory and expire after 30 min idle. Writer sets last until commit
+or revert. Abandon still honours a foreign live lease too: Agent Hub tools write
+without the hook, so their lease is the only mark, and a revert is destructive.
 """
 
 from __future__ import annotations
@@ -57,11 +58,24 @@ def test_abandon_keeps_foreign_writes_after_their_lease_is_gone(repo, monkeypatc
     assert kept == ["mine/a.py"]
 
 
-def test_abandon_owns_a_path_whose_only_foreign_mark_is_an_untagged_lease(repo, monkeypatch):
-    _as(monkeypatch, "other-session-1")
-    leases.acquire("proj", ["mine/**"], project_root=str(repo))  # declared scope, never wrote
+def test_abandon_keeps_a_path_under_an_unhooked_agents_live_lease(repo, monkeypatch):
+    monkeypatch.setenv("AGENT_HUB_SESSION_ID", "hub-session-1")  # write_file never records a writer
+    monkeypatch.setenv("AGENT_HUB_AGENT_SLUG", "jenny")
+    leases.acquire("proj", ["mine/a.py"], project_root=str(repo))
+    monkeypatch.delenv("AGENT_HUB_SESSION_ID")
+    monkeypatch.delenv("AGENT_HUB_AGENT_SLUG")
     _as(monkeypatch, "my-session-0001")
-    leases.claim("proj", str(repo / "mine" / "a.py"))
+    assert leases.writers("proj") == {}
+    owned, kept = split_owned_dirty_files(
+        "task-1", {"files_to_modify": ["mine/"]}, get_dirty_files(str(repo)), project_id="proj", repo_root=str(repo),
+    )
+    assert owned == ["mine/b.py"]
+    assert kept == ["mine/a.py"]
+
+
+def test_abandon_owns_paths_under_its_own_untagged_lease(repo, monkeypatch):
+    _as(monkeypatch, "my-session-0001")
+    leases.acquire("proj", ["mine/**"], project_root=str(repo))
     owned, kept = split_owned_dirty_files(
         "task-1", {"files_to_modify": ["mine/"]}, get_dirty_files(str(repo)), project_id="proj", repo_root=str(repo),
     )
@@ -94,3 +108,21 @@ def test_manual_relative_lease_resolves_against_current_checkout(repo, tmp_path,
     result = CliRunner().invoke(lease_command.app, ["mine/**"])
     assert result.exit_code == 0, result.output
     assert [lease.globs for lease in leases.list_active("proj")] == [[f"{worktree.resolve()}/mine/**"]]
+
+
+def test_check_claims_like_the_edit_hook_for_unhooked_writers(repo, monkeypatch):
+    """Agent Hub write_file runs st lease --check: it warns, exits 0 and joins the writer set."""
+    monkeypatch.setattr("cli.lib.execution_context.resolve_checkout_project_id", lambda _top: "proj")
+    monkeypatch.setattr(lease_command, "get_config_optional",
+                        lambda: SimpleNamespace(project_id="proj", project_root=str(repo)))
+    monkeypatch.chdir(repo)
+    _as(monkeypatch, "other-session-1")
+    leases.acquire("proj", ["mine/a.py"], project_root=str(repo))
+    monkeypatch.delenv("CLAUDE_CODE_SESSION_ID")
+    monkeypatch.setenv("AGENT_HUB_SESSION_ID", "hub-session-1")
+    monkeypatch.setenv("AGENT_HUB_AGENT_SLUG", "jenny")
+    result = CliRunner().invoke(lease_command.app, ["--check", "mine/a.py"])
+    assert result.exit_code == 0, result.output
+    assert "WARNING: " in result.output and "leased by cc:other-" in result.output
+    writers = leases.writers("proj")[str(repo / "mine" / "a.py")]
+    assert [entry["agent_id"] for entry in writers] == [leases.identify_agent()[0]]

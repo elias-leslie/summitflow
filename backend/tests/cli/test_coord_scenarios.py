@@ -464,23 +464,6 @@ def _hook(payload: dict, tmp: Path, *args: str, **env: str) -> subprocess.Comple
                           text=True, env=clean, check=False, timeout=30)
 
 
-def test_real_hook_claude_edit_then_codex_apply_patch_warns(repos, tmp_path):
-    repo = repos["hostrepo"]
-    claude = {"session_id": "11111111-aaaa", "tool_name": "Edit", "cwd": str(repo),
-              "tool_input": {"file_path": str(repo / "backend" / "a.py")}}
-    first = _hook(claude, tmp_path)
-    assert first.returncode == 0 and first.stderr == ""
-    patch = "*** Begin Patch\n*** Update File: backend/a.py\n@@\n-a = 1\n+a = 2\n*** End Patch\n"
-    codex = {"session_id": "22222222-bbbb", "tool_name": "apply_patch", "cwd": str(repo),
-             "transcript_path": "/home/u/.codex/sessions/x.jsonl", "tool_input": {"command": patch}}
-    second = _hook(codex, tmp_path)
-    assert second.returncode == 0
-    lines = second.stderr.strip().splitlines()
-    assert len(lines) == 1 and lines[0].startswith("WARNING: hostrepo: backend/a.py leased by cc:111111")
-    assert _hook(claude, tmp_path).returncode == 0  # same session keeps editing
-
-
-
 # ------------------------------------------------------------ context resets (lineage)
 
 HARNESSES = [

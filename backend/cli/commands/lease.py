@@ -18,7 +18,6 @@ from ..lib import coord
 from ..lib.leases import (
     acquire,
     acquire_mark,
-    check,
     format_pulse_line,
     heartbeat,
     list_active,
@@ -64,7 +63,8 @@ def lease_command(
     ] = None,
     check_path: Annotated[
         str | None,
-        typer.Option("--check", help="Check if a path is held by another agent. Exit 0 free, 2 held."),
+        typer.Option("--check", help="Claim a path before a write the edit hook does not see (Agent Hub tools), "
+                     "as the hook does: warn on another agent's lease; exit 2 only under a live acceptance/deploy."),
     ] = None,
     list_flag: Annotated[
         bool,
@@ -123,16 +123,13 @@ def lease_command(
         return
 
     if check_path:
-        ok, holder = check(pid, check_path, project_root=project_root)
-        if ok:
-            return
-        assert holder is not None
-        print(
-            f"BLOCKED: {check_path} held by {holder.agent_id} "
-            f"(acquired {holder.acquired_at}, task={holder.task_id or '--'})",
-            file=sys.stderr,
-        )
-        raise typer.Exit(2)
+        found = coord.claim_edit(str(Path(project_root or ".") / check_path))  # an absolute path wins the join
+        if found:
+            kind, line = found
+            print(("BLOCKED: " if kind == "block" else "WARNING: ") + line, file=sys.stderr)
+            if kind == "block":
+                raise typer.Exit(2)
+        return
 
     if take_path:
         lease = take(pid, take_path, project_root=project_root)

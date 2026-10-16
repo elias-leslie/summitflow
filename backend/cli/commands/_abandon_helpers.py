@@ -110,25 +110,31 @@ def split_owned_dirty_files(
     """Split dirty files into (owned by this task, everything else).
 
     A path is owned when the task declares it (files_to_modify/files_to_create)
-    or a live lease tagged with this task covers it, no other session (or
-    unknown writer) is in its writer set, and no lease tagged with another task
-    covers it. Everything else in the shared checkout stays.
+    or a live lease tagged with this task covers it, and nobody else touched it:
+    no other session (or unknown writer) in its writer set, which outlives
+    leases, and no other session's or task's live lease, which covers agents
+    whose writes no hook records. A revert is destructive, so either keeps the
+    file; everything else in the shared checkout stays.
     """
     if not dirty_files:
         return [], []
     from ..lib import coord
-    from ..lib.leases import list_active
+    from ..lib.leases import is_mine, list_active, session_ids
 
     root = Path(repo_root or ".").resolve()
     declared = _declared_prefixes(task)
     leases = list_active(project_id) if project_id else []
+    mine, anchor = session_ids() if leases else (set(), None)
     written = coord.foreign_writers(project_id, root, dirty_files) if project_id else {}
     owned: list[str] = []
     unowned: list[str] = []
     for path in dirty_files:
         absolute = str(root / path)
         matching = [lease for lease in leases if lease.matches(absolute)]
-        foreign = path in written or any(lease.task_id not in {None, task_id} for lease in matching)
+        foreign = path in written or any(
+            lease.task_id not in {None, task_id} or (lease.task_id is None and not is_mine(lease, mine, anchor))
+            for lease in matching
+        )
         claimed = any(path == prefix or path.startswith(prefix + "/") for prefix in declared) or any(
             lease.task_id == task_id for lease in matching
         )

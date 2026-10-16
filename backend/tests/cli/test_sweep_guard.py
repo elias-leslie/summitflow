@@ -222,7 +222,7 @@ def test_edit_hook_warns_on_foreign_lease_and_records_both_writers(repo, monkeyp
     message = coord.run_hook({"tool_input": {"file_path": target}, "cwd": str(repo)})
     assert message is not None and message.startswith("WARNING: hostrepo: backend/a.py leased by cc:aaaaaa")
     assert "\n" not in message
-    assert coord.dispatch_hook({"tool_input": {"file_path": target}, "cwd": str(repo)}) == ("warn", message)
+    assert coord.dispatch_hook({"tool_input": {"file_path": target}, "cwd": str(repo)}) == ("context", message)
     (repo / "backend" / "a.py").write_text("a = 5\n")
     labels = sorted(e["agent_id"] for e in leases.writers("hostrepo")[str(Path(target).resolve())])
     assert labels == ["cc:aaaaaa", "codex:bbbbbb"]
@@ -421,18 +421,25 @@ def test_real_hook_marks_background_and_other_repo_writes_unknown(repo, tmp_path
     assert _hook_writers(tmp_path, "siblingrepo") == {"new.txt": ["unknown(other-repo)"]}
 
 
-def test_real_hook_edit_collision_warns_and_exits_zero(repo, tmp_path):
+def test_real_hook_edit_collision_reaches_the_model_and_exits_zero(repo, tmp_path):
+    """The warning is PreToolUse additionalContext (stdout JSON): exit-0 stderr reaches no harness model."""
     target = str(repo / "backend" / "a.py")
-    claude = {"session_id": "11111111-aaaa", "tool_name": "Edit", "cwd": str(repo), "tool_input": {"file_path": target}}
-    assert _hook(claude, tmp_path).returncode == 0
+    claude = {"session_id": "11111111-aaaa", "hook_event_name": "PreToolUse", "tool_name": "Edit",
+              "cwd": str(repo), "tool_input": {"file_path": target}}
+    first = _hook(claude, tmp_path)
+    assert (first.returncode, first.stdout, first.stderr) == (0, "", "")
     patch_text = "*** Begin Patch\n*** Update File: backend/a.py\n@@\n-a = 1\n+a = 2\n*** End Patch\n"
-    codex = {"session_id": "22222222-bbbb", "tool_name": "apply_patch", "cwd": str(repo),
-             "transcript_path": "/home/u/.codex/sessions/x.jsonl", "tool_input": {"command": patch_text}}
+    codex = {"session_id": "22222222-bbbb", "hook_event_name": "PreToolUse", "tool_name": "apply_patch",
+             "cwd": str(repo), "transcript_path": "/home/u/.codex/sessions/x.jsonl",
+             "tool_input": {"command": patch_text}}
     second = _hook(codex, tmp_path)
-    assert second.returncode == 0 and second.stdout == ""
-    lines = second.stderr.strip().splitlines()
-    assert len(lines) == 1 and lines[0].startswith("WARNING: hostrepo: backend/a.py leased by cc:111111")
+    assert (second.returncode, second.stderr) == (0, "")
+    output = json.loads(second.stdout)["hookSpecificOutput"]
+    assert output["hookEventName"] == "PreToolUse" and "permissionDecision" not in output
+    assert output["additionalContext"].startswith("WARNING: hostrepo: backend/a.py leased by cc:111111")
     assert _hook_writers(tmp_path) == {"a.py": ["cc:111111", "codex:222222"]}
+    again = _hook(claude, tmp_path)  # the first session keeps editing and now hears of the second
+    assert again.returncode == 0 and "leased by codex:222222" in again.stdout
 
 
 def test_real_hook_escaped_payload_falls_back_to_python_parse(repo, tmp_path):

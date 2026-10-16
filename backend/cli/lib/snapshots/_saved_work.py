@@ -141,10 +141,12 @@ def require_owned(project_id: str, root: Path, paths: list[str], owned_paths: li
     declared = [safe_relative(p) for p in owned_paths]
     claims: dict[str, list[str]] = {}
     for path in paths:
-        if path in foreign:
-            raise SnapshotError(f"Foreign ownership blocks recovery: {path}")
         absolute = str(root / path)
-        matching = [lease for lease in leases if lease.matches(absolute) and is_mine(lease, mine, anchor)]
+        covering = [lease for lease in leases if lease.matches(absolute)]
+        # A foreign live lease still counts: unhooked writers (Agent Hub tools) never join writer sets.
+        if path in foreign or any(not is_mine(lease, mine, anchor) for lease in covering):
+            raise SnapshotError(f"Foreign ownership blocks recovery: {path}")
+        matching = covering
         if not beneath(path, declared) or not matching:
             raise SnapshotError(f"An active own lease and declared path are required: {path}")
         permitted = False

@@ -39,7 +39,7 @@ def test_relative_glob_resolves_against_project_root(isolated_store, monkeypatch
     assert lease.globs == [f"{project_root}/docs/README.md"]
 
     monkeypatch.setenv("CLAUDE_SESSION_ID", "bob")
-    ok, holder = leases.check("example", f"{project_root}/docs/README.md")
+    ok, holder = leases.claim("example", f"{project_root}/docs/README.md")
     assert not ok
     assert holder is not None
     assert holder.agent_id.startswith("cc:alice")
@@ -122,23 +122,8 @@ def test_check_returns_ok_for_unmanaged_path(isolated_store, monkeypatch):
     )
 
     monkeypatch.setenv("CLAUDE_SESSION_ID", "bob")
-    ok, holder = leases.check(
-        "example", "/srv/workspaces/projects/example/docs/README.md"
-    )
+    ok, _ = leases.claim("example", "/srv/workspaces/projects/example/docs/README.md")
     assert ok
-    assert holder is None
-
-
-def test_cli_relative_check_blocks_other_agent(isolated_store, monkeypatch):
-    root = str(isolated_store / "example")
-    monkeypatch.setattr(lease_command, "_resolve_project", lambda: ("example", root))
-    monkeypatch.setenv("CLAUDE_SESSION_ID", "alice")
-    leases.acquire("example", ["docs/README.md"], project_root=root)
-
-    monkeypatch.setenv("CLAUDE_SESSION_ID", "bob")
-    result = runner.invoke(lease_command.app, ["lease", "--check", "docs/README.md"])
-    assert result.exit_code == 2
-    assert "BLOCKED" in result.output
 
 
 def test_check_rejects_foreign_overlap_even_when_own_lease_matches(
@@ -152,7 +137,7 @@ def test_check_rejects_foreign_overlap_even_when_own_lease_matches(
     leases.acquire("example", ["docs/**"], project_root=root)
 
     monkeypatch.setenv("CLAUDE_SESSION_ID", "alice")
-    ok, holder = leases.check("example", path)
+    ok, holder = leases.claim("example", path)
     assert not ok
     assert holder is not None
     assert holder.agent_id == "cc:bob"
@@ -164,7 +149,7 @@ def test_lease_check_does_not_block_other_projects(isolated_store, monkeypatch):
     leases.acquire("example", ["docs/README.md"], project_root=root)
 
     monkeypatch.setenv("CLAUDE_SESSION_ID", "bob")
-    assert leases.check("another-project", f"{root}/docs/README.md") == (True, None)
+    assert leases.claim("another-project", f"{root}/docs/README.md")[0]
 
 
 def test_relative_take_and_release_use_project_root(isolated_store, monkeypatch):

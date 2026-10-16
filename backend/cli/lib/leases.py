@@ -359,33 +359,6 @@ def list_active(project_id: str, kinds: tuple[str, ...] = ("file",)) -> list[Lea
         return [lease for lease in leases if lease.kind in kinds]
 
 
-def check(
-    project_id: str, path: str, project_root: str | None = None
-) -> tuple[bool, Lease | None]:
-    """Return (ok_to_edit, conflicting_lease).
-
-    ok_to_edit=False when another session's lease matches the path, even if the
-    current agent also has a matching lease (child threads of my harness process
-    are my session). An uncontested own lease extends its heartbeat as a side effect.
-    """
-    path = _project_path(path, project_root)
-    mine, anchor = session_ids()
-    now = datetime.now(UTC).isoformat()
-    with _lock(project_id):
-        leases = _purge_stale(_load(project_id))
-        matching = [lease for lease in leases if lease.kind == "file" and lease.matches(path)]
-        for lease in matching:
-            if not is_mine(lease, mine, anchor):
-                _save(project_id, leases)
-                return False, lease
-        if matching:
-            matching[0].last_heartbeat = now
-            _save(project_id, leases)
-            return True, matching[0]
-        _save(project_id, leases)
-        return True, None
-
-
 def heartbeat(project_id: str) -> int:
     """Touch all leases held by current agent. Returns count touched."""
     mine, anchor = self_ids(), my_anchor()

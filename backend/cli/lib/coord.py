@@ -214,7 +214,7 @@ def _op_block(project_id: str, root: Path, real: str) -> str | None:
     return None
 
 
-def _claim_edit(path: str, *, check_op: bool = True) -> tuple[str, str] | None:
+def claim_edit(path: str, *, check_op: bool = True) -> tuple[str, str] | None:
     """Claim ``path`` for the current agent: ("block", line) under a live op, ("warn", line) on a foreign lease.
 
     File leases are advisory: on a foreign lease the path is still leased and
@@ -241,7 +241,7 @@ def _claim_edit(path: str, *, check_op: bool = True) -> tuple[str, str] | None:
 
 def edit_conflict(path: str) -> str | None:
     """Claim ``path`` as the edit hook does; return one line on a live op or a foreign lease."""
-    found = _claim_edit(path)
+    found = claim_edit(path)
     return found[1] if found else None
 
 
@@ -329,7 +329,7 @@ def run_hook(payload: dict[str, Any]) -> str | None:
     lines: list[str] = []
     for path in paths:
         try:
-            found = _claim_edit(path, check_op=False)
+            found = claim_edit(path, check_op=False)
         except Exception:
             found = None
         if found:
@@ -753,7 +753,10 @@ def github_pat_denied_event(payload: dict[str, Any]) -> str | None:
 
 
 def dispatch_hook(payload: dict[str, Any]) -> tuple[str, str] | None:
-    """Route one harness hook event: ("block", line) | ("context", line) | ("warn", line) | None."""
+    """Route one harness hook event: ("block", line) | ("context", line) | ("warn", line) | None.
+
+    An edit's foreign-lease WARNING is "context": the edit proceeds and the model sees the line.
+    """
     event = str(payload.get("hook_event_name") or payload.get("event") or "")
     if event in ("SessionStart", "session_start"):
         line = session_start(payload)
@@ -777,4 +780,4 @@ def dispatch_hook(payload: dict[str, Any]) -> tuple[str, str] | None:
     message = run_hook(payload)
     if not message:
         return None
-    return ("block" if message.startswith("BLOCKED: ") else "warn", message)
+    return ("block" if message.startswith("BLOCKED: ") else "context", message)
