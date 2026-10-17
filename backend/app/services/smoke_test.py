@@ -24,24 +24,19 @@ _REDIS_KEY = "smoke_test:last_status"
 _REDIS_TTL = 3600  # 1 hour — re-notify if still failing after TTL expires
 
 # Health endpoints — only check services whose URL is explicitly configured.
-# SummitFlow self-health is always checked; another project with an identity
-# is checked only when <PROJECT_ID>_HEALTH_URL is set (e.g. AGENT_HUB_HEALTH_URL),
-# so partial profiles skip services they don't include.
+# SummitFlow self-health is always checked; any other project is checked when
+# <PROJECT_ID>_HEALTH_URL is set (e.g. AGENT_HUB_HEALTH_URL -> agent-hub), so
+# partial profiles skip services they don't include.
 def _build_health_urls() -> dict[str, str]:
-    from ..project_identity import list_project_identities
-
     urls: dict[str, str] = {
         "summitflow": os.getenv(
             "SUMMITFLOW_HEALTH_URL",
             f"http://localhost:{SUMMITFLOW_BACKEND_PORT}/health",
         ),
     }
-    for identity in list_project_identities():
-        project = identity.get("project")
-        project_id = project.get("id") if isinstance(project, dict) else None
-        if not isinstance(project_id, str) or not project_id or project_id in urls:
-            continue
-        if url := os.getenv(f"{project_id.upper().replace('-', '_')}_HEALTH_URL"):
+    for key, url in sorted(os.environ.items()):
+        project_id = key.removesuffix("_HEALTH_URL").lower().replace("_", "-")
+        if key.endswith("_HEALTH_URL") and url and project_id and project_id not in urls:
             urls[project_id] = url
     return urls
 

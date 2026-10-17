@@ -219,9 +219,13 @@ def test_dbs(
     """Create or refresh test databases."""
     from app.project_identity import project_databases
 
+    databases = project_databases()
+    production = {database["name"] for database in databases.values()}
+    # A project's identity can't name a declared production database as its test database.
     targets = {
         project_id: (database["test"]["name"], database["test"]["owner"])
-        for project_id, database in sorted(project_databases().items()) if "test" in database
+        for project_id, database in sorted(databases.items())
+        if "test" in database and database["test"]["name"] not in production
     }
     if project and project not in targets:
         raise typer.BadParameter("No test database configured for this project")

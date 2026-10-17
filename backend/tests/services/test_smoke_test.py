@@ -42,3 +42,16 @@ def test_tether_socket_that_does_not_answer_fails(monkeypatch) -> None:
     monkeypatch.setattr(smoke_test.tether, "health", lambda **_: {"status": "ok"})
     healthy = smoke_test.check_tether_health()
     assert healthy is not None and healthy["ok"] is True
+
+
+def test_health_urls_follow_project_health_url_env(monkeypatch) -> None:
+    from app.services import smoke_test
+
+    for key in [key for key in smoke_test.os.environ if key.endswith("_HEALTH_URL")]:
+        monkeypatch.delenv(key)
+    monkeypatch.setenv("PORTFOLIO_AI_HEALTH_URL", "http://portfolio-api:8000/health")
+    monkeypatch.setenv("AGENT_HUB_HEALTH_URL", "")
+    urls = smoke_test._build_health_urls()
+    assert urls["summitflow"].endswith("/health")
+    assert urls["portfolio-ai"] == "http://portfolio-api:8000/health"
+    assert "agent-hub" not in urls

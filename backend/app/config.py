@@ -34,7 +34,10 @@ def _local_url(project_id: str, key: str) -> str:
     """http://localhost:<port> from another project's identity, or "" when it is not on this host."""
     from .project_identity import get_runtime_port
 
-    port = get_runtime_port(project_id, key)
+    try:
+        port = get_runtime_port(project_id, key)
+    except (OSError, ValueError):  # another project's unreadable identity must not break SummitFlow
+        return ""
     return f"http://localhost:{port}" if port else ""
 
 POSTGRES_PORT = 5432

@@ -17,7 +17,11 @@ def _identity_user_services() -> dict[str, str]:
     from app.project_identity import list_project_identities
 
     services: dict[str, str] = {}
-    for identity in list_project_identities():
+    try:
+        identities = list_project_identities()
+    except (OSError, ValueError):  # one unreadable identity must not break every st command
+        identities = []
+    for identity in identities:
         project = identity.get("project")
         project_id = project.get("id") if isinstance(project, dict) else None
         declared = identity.get("services")

@@ -309,10 +309,10 @@ def _alembic(project: str, args: list[str]) -> int:
     command = [str(alembic) if alembic.exists() else "alembic", *args]
     from ..lib import migration_env
 
-    env = os.environ.copy()
-    migration_url = env.pop("ST_DB_MIGRATION_URL", None)
-    for key in migration_env.strip_keys():
-        env.pop(key, None)
+    # Same base as st service rebuild: non-secret process variables plus the
+    # keys SummitFlow's migration table grants this project.
+    env = migration_env.migration_env(project, _project_root(project))
+    migration_url = os.environ.get("ST_DB_MIGRATION_URL")
     if migration_url:
         database_env = migration_env.grant_for(project).database_key
         env[database_env] = migration_url

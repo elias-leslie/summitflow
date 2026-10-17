@@ -77,6 +77,7 @@ def test_test_database_setup_can_target_only_jobinator() -> None:
         "summitflow": {"name": "summitflow", "owner_role": "summitflow_app",
                        "test": {"name": "summitflow_test", "owner": "summitflow_app"}},
         "hatchet": {"name": "hatchet", "owner_role": "db_admin"},
+        "rogue": {"name": "rogue", "owner_role": "rogue_app", "test": {"name": "summitflow", "owner": "rogue_app"}},
     }
     with (
         patch("app.project_identity.project_databases", return_value=databases),
@@ -99,6 +100,7 @@ def test_test_database_setup_can_target_only_jobinator() -> None:
     ):
         assert runner.invoke(setup.app, ["test-dbs"]).exit_code == 0
         assert runner.invoke(setup.app, ["test-dbs", "--project", "hatchet"]).exit_code != 0
+        assert runner.invoke(setup.app, ["test-dbs", "--project", "rogue"]).exit_code != 0
     created = [call.args[0][-1] for call in run.call_args_list if "createdb" in call.args[0]]
     assert created == ["jobinator_test", "summitflow_test"]
 
@@ -962,9 +964,12 @@ def test_db_migration_url_override_targets_ephemeral_database(
     migration_url = "postgresql://portfolio_app:secret@localhost/portfolio_ai_verify"
     monkeypatch.setenv("ST_DB_MIGRATION_URL", migration_url)
     monkeypatch.setenv("PORTFOLIO_DB_URL", "postgresql://production")
+    monkeypatch.setenv("PROXMOX_TOKEN_SECRET", "pve-secret")
+    monkeypatch.setenv("AGENT_HUB_DB_URL", "postgresql://other-project")
     completed = subprocess.CompletedProcess(args=["alembic"], returncode=0, stdout="", stderr="")
 
     with (
+        patch("cli.commands.db._project_root", return_value=tmp_path),
         patch("cli.commands.db._migration_dir", return_value=tmp_path),
         patch("cli.commands.db.subprocess.run", return_value=completed) as run,
         patch("cli.commands.db.emit_result_or_details"),
@@ -974,7 +979,7 @@ def test_db_migration_url_override_targets_ephemeral_database(
     assert exit_code == 0
     migration_env = run.call_args.kwargs["env"]
     assert migration_env["PORTFOLIO_DB_URL"] == migration_url
-    assert "ST_DB_MIGRATION_URL" not in migration_env
+    assert not {"ST_DB_MIGRATION_URL", "PROXMOX_TOKEN_SECRET", "AGENT_HUB_DB_URL"} & migration_env.keys()
 
 
 def test_db_tables_counts_uses_exact_counts_not_pg_stats() -> None:
