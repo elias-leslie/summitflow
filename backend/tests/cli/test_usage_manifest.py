@@ -522,3 +522,28 @@ def test_discovery_exact_registered_id_returns_its_own_row() -> None:
     result = runner.invoke(tools_app, ["manifest", "--discover", "st.sessions.send", "--format", "json"])
     assert result.exit_code == 0, result.output
     assert [row["surface"] for row in json.loads(result.output)["tools"]] == ["st.sessions.send"]
+
+
+def test_density_tiers_come_from_the_tool_registry(monkeypatch: pytest.MonkeyPatch) -> None:
+    from cli import tool_registry
+    from cli.lib import usage as usage_lib
+
+    specs = [UsageSpec(surface="st.floor"), UsageSpec(surface="st.core"), UsageSpec(surface="st.busy"),
+             UsageSpec(surface="st.other")]
+    registry = {"usage_tiers": {"floor": ["st.floor"], "core": ["st.core"], "adaptive_score_threshold": 40}}
+    monkeypatch.setattr(tool_registry, "load_tool_registry", lambda: registry)
+
+    core = [spec.surface for spec in usage_lib.select_specs_for_density(specs, density="core")
+            if spec.surface != "st.details"]
+    adaptive = [spec.surface for spec in usage_lib.select_specs_for_density(
+        specs, density="adaptive", scores={"busy": 50, "other": 30}) if spec.surface != "st.details"]
+    assert core == ["st.floor", "st.core"]
+    assert adaptive == ["st.floor", "st.busy"]
+
+
+def test_committed_registry_keeps_the_implementation_floor() -> None:
+    from cli.lib.usage import _usage_tiers
+
+    floor, core, threshold = _usage_tiers()
+    assert {"st.search", "st.context", "st.check", "st.commit", "st.claim", "st.done"} <= floor
+    assert "st.check" in core and threshold > 0

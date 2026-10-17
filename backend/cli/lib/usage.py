@@ -18,36 +18,17 @@ from st_sdk.usage import usage as usage
 
 VALID_MANIFEST_DENSITIES = ("core", "task", "full", "adaptive")
 
-_CORE_SURFACES = {
-    "st.search",
-    "st.check",
-    "st.db",
-    "st.service.rebuild",
-    "st.tools.status",
-    "st.tools.adoption",
-    "st.tools.audit",
-    "st.tools.cost",
-    "st.feedback.report",
-    "st.agents.preview",
-}
+def _usage_tiers() -> tuple[frozenset[str], frozenset[str], float]:
+    """Floor and core surfaces plus the adaptive threshold, from the tool registry's usage_tiers.
 
-# Implementation floor for compact discovery and `adaptive` density. Ordinary
-# task work must not require retrieving the complete catalogue.
-_FLOOR_SURFACES = {
-    "st.search",
-    "st.context",
-    "st.check",
-    "st.db",
-    "st.service.rebuild",
-    "st.commit",
-    "st.create",
-    "st.claim",
-    "st.done",
-}
+    The floor keeps ordinary task work from requiring the complete catalogue;
+    adaptive density adds a non-floor surface once its usage score reaches the
+    threshold (curation by signal, not a hardcoded count).
+    """
+    from cli.tool_registry import load_tool_registry
 
-# Normalized (0-100) decay score at or above which a non-floor surface is
-# injected by the adaptive density. Curation by signal, not a hardcoded count.
-_ADAPTIVE_SCORE_THRESHOLD = 15.0
+    tiers = load_tool_registry()["usage_tiers"]
+    return frozenset(tiers["floor"]), frozenset(tiers["core"]), float(tiers["adaptive_score_threshold"])
 
 
 def _surface_score(surface: str, scores: dict[str, float] | None) -> float:
@@ -234,7 +215,7 @@ def select_specs_for_density(
     density: str = "full",
     task_type: str | None = None,
     scores: dict[str, float] | None = None,
-    score_threshold: float = _ADAPTIVE_SCORE_THRESHOLD,
+    score_threshold: float | None = None,
 ) -> list[UsageSpec]:
     """Select a context-density slice while keeping @usage as the source of truth.
 
@@ -249,6 +230,9 @@ def select_specs_for_density(
     spec_list = list(specs)
     if density == "full":
         return spec_list
+    floor_surfaces, core_surfaces, default_threshold = _usage_tiers()
+    if score_threshold is None:
+        score_threshold = default_threshold
 
     out: list[UsageSpec] = []
     seen: set[str] = set()
@@ -257,12 +241,12 @@ def select_specs_for_density(
         include_task = bool(task_type and _matches_task_type(spec.task_types, task_type))
         if density == "adaptive":
             include = (
-                spec.surface in _FLOOR_SURFACES
+                spec.surface in floor_surfaces
                 or include_task
                 or (not spec.on_demand and _surface_score(spec.surface, scores) >= score_threshold)
             )
         else:
-            include_core = spec.surface in _FLOOR_SURFACES or (spec.surface in _CORE_SURFACES and not spec.on_demand)
+            include_core = spec.surface in floor_surfaces or (spec.surface in core_surfaces and not spec.on_demand)
             include = include_core or (density != "core" and include_task)
         if not include:
             if spec.on_demand:
