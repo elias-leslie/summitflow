@@ -44,6 +44,9 @@ class ProxmoxConfig:
     pool: str = "summitflow"
 
 
+# PVE pool of production guests the token may start/stop/reboot and resize (role SummitFlowOps: VM.PowerMgmt,
+# VM.Config.CPU, VM.Config.Memory); never destroy, snapshot, roll back, or change disks/network
+OPS_POOL = "summitflow-ops"
 # PVE pool whose members the token may only start/stop/reset (role SummitFlowPower: VM.PowerMgmt)
 POWER_POOL = "summitflow-power"
 
@@ -170,7 +173,8 @@ class ProxmoxClient:
         if response.status_code == 403 and "Permission check failed" in response.text:
             raise ProxmoxError(
                 f"Proxmox API error 403: {response.text.strip()} (the ST token's VM rights come from PVE pools: "
-                f"lifecycle in '{self.config.pool or 'summitflow'}', power only in '{POWER_POOL}'; other VMs are read-only)"
+                f"full lifecycle in '{self.config.pool or 'summitflow'}', power + cores/memory in '{OPS_POOL}', "
+                f"power only in '{POWER_POOL}'; everything else is read-only)"
             )
         if response.status_code >= 400:
             raise ProxmoxError(f"Proxmox API error {response.status_code}: {response.text}")

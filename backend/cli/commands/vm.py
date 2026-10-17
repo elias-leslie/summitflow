@@ -21,8 +21,9 @@ from ..output import output_error
 app = typer.Typer(
     help=(
         "Proxmox VM lifecycle through st: status, IPs, snapshots, start/stop/reboot, "
-        "resize, rollback, clone. Lab-pool guests are fully managed; power-pool guests "
-        "start/stop/reboot only; others are read-only (PVE enforces it). Destroy keeps a "
+        "resize, rollback, clone. Lab-pool guests are fully managed; ops-pool (production) "
+        "guests start/stop/reboot and change cores/memory; power-pool guests start/stop/reboot "
+        "only; everything else is read-only (PVE enforces it). Destroy keeps a "
         "two-pass confirmation. For browser work, st browser uses the default "
         "browser VM; use st vm list/status/ip/start only when changing or repairing it."
     ),
@@ -180,8 +181,8 @@ def start(
     _run(lambda client: (client.start(vmid, lab_hours=hours, lab_reason=reason), print(f"VM {vmid} started")))
 
 
-# Which guests these may touch is decided by the PVE token's pools (lifecycle in the lab pool, power only in the
-# power pool, everything else read-only), so routine lab work needs no confirmation round trip here.
+# Which guests these may touch is decided by the PVE token's pools (lifecycle in the lab pool, power + cores/memory in
+# the ops pool, power only in the power pool, everything else read-only), so routine work needs no confirmation here.
 @app.command()
 def stop(vmid: Annotated[str, typer.Argument(help="VM ID")]) -> None:
     """Stop a VM (hard stop)."""

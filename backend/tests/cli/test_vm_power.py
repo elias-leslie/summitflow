@@ -59,7 +59,7 @@ def test_permission_403_names_the_pools_that_grant_vm_rights(monkeypatch):
         client().start("120")
     message = str(failure.value)
     assert "/vms/120, VM.PowerMgmt" in message
-    assert "'summitflow'" in message and f"'{proxmox.POWER_POOL}'" in message
+    assert "'summitflow'" in message and f"'{proxmox.POWER_POOL}'" in message and f"'{proxmox.OPS_POOL}'" in message
 
 
 def write_registry(path, rows):
