@@ -1,5 +1,6 @@
 """Regression coverage for managed lifecycle selection and failure reporting."""
 
+import json
 import subprocess
 from contextlib import contextmanager, nullcontext
 from dataclasses import replace
@@ -481,7 +482,8 @@ def test_migrations_get_only_the_approved_project_database_env(project, monkeypa
     for name, content in files.items():
         path = tmp_path / name
         path.parent.mkdir(parents=True, exist_ok=True)
-        extra = f"{other}=postgresql://other-project\nINTERNAL_SERVICE_SECRET=not-for-migrations\n"
+        extra = (f"{other}=postgresql://other-project\nINTERNAL_SERVICE_SECRET=not-for-migrations\n"
+                 "PROXMOX_TOKEN_SECRET=pve-secret\n")
         path.write_text(content + ("" if "stale" in content or "base" in content else extra))
     (tmp_path / "home").mkdir(exist_ok=True)
     monkeypatch.setattr(service_ops.Path, "home", lambda: tmp_path / "home")
@@ -489,6 +491,11 @@ def test_migrations_get_only_the_approved_project_database_env(project, monkeypa
         monkeypatch.setenv(wanted, "postgresql://stale-shell")
         monkeypatch.setenv("DATABASE_URL", "postgresql://other-project")
     monkeypatch.delenv("INTERNAL_SERVICE_SECRET", raising=False)
+    # Neither an unclaimed internal/PVE secret nor another project's database
+    # key in the operator shell reaches the migration.
+    monkeypatch.setenv("PROXMOX_TOKEN_SECRET", "pve-secret")
+    monkeypatch.setenv("OMINULL_INTERNAL_TOKEN", "unclaimed-internal")
+    monkeypatch.setenv(other, "postgresql://other-project-shell")
     run = Mock(return_value=0)
     monkeypatch.setattr(service_ops, "run", run)
     deployed = replace(project, project_id=project_id, root=accepted_root, backend_dir=backend_dir,
@@ -497,8 +504,56 @@ def test_migrations_get_only_the_approved_project_database_env(project, monkeypa
     assert service_ops.run_migrations(deployed) == 0
     migration_env = run.call_args.kwargs["env"]
     assert migration_env[wanted] == "postgresql://approved"
-    assert not {other, "DATABASE_URL", "INTERNAL_SERVICE_SECRET"} & migration_env.keys()
+    assert not {other, "DATABASE_URL", "INTERNAL_SERVICE_SECRET", "PROXMOX_TOKEN_SECRET",
+                "OMINULL_INTERNAL_TOKEN"} & migration_env.keys()
+    assert "PATH" in migration_env
     assert run.call_args.kwargs["cwd"] == backend_dir
+
+
+def test_unlisted_project_migrations_get_only_database_url_from_own_env(project, monkeypatch, tmp_path):
+    backend_dir = tmp_path / "source" / "backend"
+    (backend_dir / ".venv" / "bin").mkdir(parents=True)
+    (backend_dir / "alembic.ini").touch()
+    (backend_dir / ".venv" / "bin" / "alembic").touch()
+    (tmp_path / "home").mkdir()
+    (tmp_path / "home" / ".env.local").write_text("DATABASE_URL=postgresql://shared\nPROXMOX_TOKEN_SECRET=pve\n")
+    (tmp_path / "host").mkdir()
+    (tmp_path / "host" / ".env.local").write_text(
+        "DATABASE_URL=postgresql://own\nAGENT_HUB_DB_URL=postgresql://other\nPROXMOX_TOKEN_SECRET=pve\n")
+    monkeypatch.setattr(service_ops.Path, "home", lambda: tmp_path / "home")
+    run = Mock(return_value=0)
+    monkeypatch.setattr(service_ops, "run", run)
+    deployed = replace(project, project_id="unlisted-project", root=tmp_path / "source", backend_dir=backend_dir,
+                       frontend_dir=tmp_path / "source" / "frontend", host_config_root=tmp_path / "host")
+
+    assert service_ops.run_migrations(deployed) == 0
+    migration_env = run.call_args.kwargs["env"]
+    assert migration_env["DATABASE_URL"] == "postgresql://own"
+    assert not {"AGENT_HUB_DB_URL", "PROXMOX_TOKEN_SECRET"} & migration_env.keys()
+
+
+def test_migration_table_refuses_a_key_granted_to_two_projects(tmp_path):
+    from cli.lib import migration_env
+
+    table = tmp_path / "migration-env.json"
+    table.write_text(json.dumps({"projects": {
+        "a": {"database_key": "A_DB_URL", "keys": ["A_DB_URL"], "sources": ["project"]},
+        "b": {"database_key": "B_DB_URL", "keys": ["B_DB_URL", "A_DB_URL"], "sources": ["project"]},
+    }}))
+    with pytest.raises(ValueError, match="A_DB_URL is granted to both a and b"):
+        migration_env._load(table)
+    table.write_text(json.dumps({"projects": {
+        "a": {"database_key": "A_DB_URL", "keys": ["A_DB_URL"], "sources": ["anywhere"]}}}))
+    with pytest.raises(ValueError, match="invalid migration grant"):
+        migration_env._load(table)
+
+
+def test_committed_migration_table_loads():
+    from cli.lib import migration_env
+
+    assert migration_env.grant_for("agent-hub").database_key == "AGENT_HUB_DB_URL"
+    assert migration_env.grant_for("neri").sources == ("shared", "project")
+    assert {"PORTFOLIO_SECRET_KEY", "LEARN_DB_URL", "INTERNAL_SERVICE_SECRET"} <= migration_env.strip_keys()
 
 
 def test_portfolio_migrations_get_their_secret_key_from_host_env(project, monkeypatch, tmp_path):

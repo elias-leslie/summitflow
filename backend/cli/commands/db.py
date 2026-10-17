@@ -307,19 +307,14 @@ def _alembic(project: str, args: list[str]) -> int:
         venv = cwd.parent / ".venv"
     alembic = venv / "bin" / "alembic"
     command = [str(alembic) if alembic.exists() else "alembic", *args]
+    from ..lib import migration_env
+
     env = os.environ.copy()
     migration_url = env.pop("ST_DB_MIGRATION_URL", None)
-    for key in ("DATABASE_URL", "REDIS_URL", "AGENT_HUB_DB_URL", "AGENT_HUB_REDIS_URL", "PORTFOLIO_DB_URL", "PORTFOLIO_AI_DB_URL", "HATCHET_CLIENT_TOKEN"):
+    for key in migration_env.strip_keys():
         env.pop(key, None)
     if migration_url:
-        database_env = {
-            "agent-hub": "AGENT_HUB_DB_URL",
-            "portfolio-ai": "PORTFOLIO_DB_URL",
-            "summitflow": "DATABASE_URL",
-        }.get(project)
-        if not database_env:
-            output_error(f"No migration URL environment mapping for {project}")
-            return 1
+        database_env = migration_env.grant_for(project).database_key
         env[database_env] = migration_url
     result = subprocess.run(
         command,
