@@ -67,13 +67,14 @@ from .backup_restic import (
     command_operation,
 )
 from .backup_utils import (
+    CANONICAL_CONFIG_SOURCE_IDS,
     REPOSITORY_CRITICAL_RESTORE_DAYS,
     build_storage_env,
     canonical_backup_source_roots,
 )
 
 _capture_batch: ContextVar[dict[str, dict[str, str]] | None] = ContextVar("repository_capture_batch", default=None)
-_CRITICAL_SOURCE_IDS = {"infrastructure", "codex-config", "claude-config", "agent-skills", "claude-user-config"}
+_CRITICAL_SOURCE_IDS = {"infrastructure", "claude-user-config", *CANONICAL_CONFIG_SOURCE_IDS}
 # Each Git source keeps all history offsite at least weekly; captures between
 # are compact. Daily captures drift by minutes, so the slack keeps a source
 # on a 7-day cadence instead of slipping to 8.
@@ -1367,7 +1368,7 @@ def _weekly_critical_restore(env: dict[str, str], maintenance: dict[str, Any], *
                     return failure
         for source_id, target in targets.items():
             try:
-                mapped = _complete_mapped_recovery(target, {key: root for key, root in targets.items() if key in {"codex-config", "claude-config", "agent-skills"}})
+                mapped = _complete_mapped_recovery(target, {key: root for key, root in targets.items() if key in CANONICAL_CONFIG_SOURCE_IDS})
                 evidence[source_id].update(mapped)
                 if not mapped["recovery_complete"]:
                     raise ResticError("Canonical configuration links remain unresolved")

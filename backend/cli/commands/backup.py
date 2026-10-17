@@ -7,7 +7,7 @@ from typing import Annotated, Any
 
 import typer
 
-from app.tasks.backup_utils import _FREQUENCY_DELTAS
+from app.tasks.backup_utils import _FREQUENCY_DELTAS, CANONICAL_CONFIG_SOURCE_IDS
 
 from ..client import APIError, STClient
 from ..config import get_config
@@ -383,7 +383,7 @@ def restore_backup(
     destination_roots: dict[str, Path] = {}
     for mapping in source_root or []:
         source_id, separator, root = mapping.partition("=")
-        if not separator or source_id not in {"codex-config", "claude-config", "agent-skills"} or not Path(root).is_absolute():
+        if not separator or source_id not in CANONICAL_CONFIG_SOURCE_IDS or not Path(root).is_absolute():
             output_error("--source-root requires a canonical source ID and an absolute path: ID=/absolute/path")
             raise typer.Exit(1)
         if source_id in destination_roots:

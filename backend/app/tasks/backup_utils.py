@@ -416,11 +416,15 @@ def offsite_is_configured(env: Mapping[str, str]) -> bool:
     return transport == "rclone" or bool(env.get("BACKUP_OFFSITE_GIO_URI") or os.environ.get("BACKUP_OFFSITE_GIO_URI"))
 
 
+# Canonical agent configuration sources: the only roots that may be mapped links.
+CANONICAL_CONFIG_SOURCE_IDS = frozenset({"codex-config", "claude-config", "agent-skills"})
+
+
 def canonical_backup_source_roots() -> dict[str, Path]:
     """Only explicitly registered canonical agent roots may be mapped links."""
     from ..storage.backups import list_sources
 
-    canonical = {"codex-config", "claude-config", "agent-skills"}
+    canonical = CANONICAL_CONFIG_SOURCE_IDS
     return {
         str(source["id"]): Path(_translate_path(str(source["path"])) or str(source["path"]))
         for source in list_sources()
