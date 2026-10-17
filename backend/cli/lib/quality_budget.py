@@ -131,17 +131,24 @@ def _state_dir(root: Path) -> Path | None:
     return Path(common.decode().strip()) / "st" if common else None
 
 
+class BudgetConfigError(ValueError):
+    """The project's .st-check.toml [budget] is unreadable or holds an invalid value."""
+
+
 def thresholds(root: Path) -> dict[str, float]:
     values = dict(DEFAULTS)
     try:
         configured = tomllib.loads((root / ".st-check.toml").read_text(encoding="utf-8")).get("budget", {})
-    except (OSError, UnicodeError, tomllib.TOMLDecodeError):
-        configured = {}
-    if isinstance(configured, dict):
-        for key in DEFAULTS:
-            value = configured.get(key)
-            if isinstance(value, (int, float)) and not isinstance(value, bool) and value > 0:
-                values[key] = float(value)
+    except FileNotFoundError:
+        return values
+    except (OSError, UnicodeError, tomllib.TOMLDecodeError) as exc:
+        raise BudgetConfigError(f"invalid .st-check.toml: {exc}") from exc
+    if not isinstance(configured, dict):
+        raise BudgetConfigError("[budget] in .st-check.toml must be a table")
+    for key, value in configured.items():
+        if key not in DEFAULTS or not isinstance(value, (int, float)) or isinstance(value, bool) or value <= 0:
+            raise BudgetConfigError(f"invalid [budget] {key} = {value!r} in .st-check.toml")
+        values[key] = float(value)
     return values
 
 

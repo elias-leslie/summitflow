@@ -154,3 +154,21 @@ def test_one_open_trim_task_per_over_budget_project(existing: list[dict], create
     assert bool(created) is creates
     budget.ensure_trim_task("p", _measurement(test_loc=100), list_open=list, create=lambda task: created.append(task) or {})
     assert len(created) == int(creates)
+
+
+@pytest.mark.parametrize("budget_toml", [
+    "[budget]\nratio_ceiling = 0\n",
+    "[budget]\nratio_ceiling = \"high\"\n",
+    "[budget]\nratio_cieling = 0.9\n",
+    "[budget\n",
+])
+def test_invalid_budget_config_raises_instead_of_falling_back(tmp_path: Path, budget_toml: str) -> None:
+    (tmp_path / ".st-check.toml").write_text(budget_toml)
+    with pytest.raises(budget.BudgetConfigError):
+        budget.thresholds(tmp_path)
+
+
+def test_budget_config_overrides_and_missing_file_uses_defaults(tmp_path: Path) -> None:
+    assert budget.thresholds(tmp_path) == budget.DEFAULTS
+    (tmp_path / ".st-check.toml").write_text("[budget]\nratio_ceiling = 0.9\n")
+    assert budget.thresholds(tmp_path)["ratio_ceiling"] == 0.9

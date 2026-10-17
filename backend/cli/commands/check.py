@@ -594,8 +594,12 @@ def _native_mode(args: list[str], configs: dict[str, dict[str, object]]) -> int 
 
 
 def _budget_mode(args: list[str]) -> int:
-    from cli.lib.quality_budget import report
-    return report(_resolve_repo_root(), json_output="--json" in args)
+    from cli.lib.quality_budget import BudgetConfigError, report
+    try:
+        return report(_resolve_repo_root(), json_output="--json" in args)
+    except BudgetConfigError as exc:
+        output_error(str(exc))
+        return 2
 
 
 def _deep_mode(args: list[str]) -> int:

@@ -223,12 +223,16 @@ def _handle_task_completion(
 def _assess_budget(project_id: str | None, note: str | None) -> tuple[Path, str, Any] | None:
     """Print the budget line; refuse when an over-budget project grows without --budget-note."""
     from app.storage.projects import get_project_root_path
-    from cli.lib.quality_budget import assess, environment_disabled
+    from cli.lib.quality_budget import BudgetConfigError, assess, environment_disabled
 
     root = get_project_root_path(project_id) if project_id and not environment_disabled() else None
     if not project_id or not root:
         return None
-    decision = assess(Path(root), project_id, note=note)
+    try:
+        decision = assess(Path(root), project_id, note=note)
+    except BudgetConfigError as exc:
+        output_error(str(exc))
+        raise typer.Exit(1) from None
     print(decision.line)
     if not decision.allowed:
         output_error(
