@@ -170,9 +170,13 @@ def clone(
 
 
 @app.command()
-def start(vmid: Annotated[str, typer.Argument(help="VM ID")]) -> None:
-    """Start a VM."""
-    _run(lambda client: (client.start(vmid), print(f"VM {vmid} started")))
+def start(
+    vmid: Annotated[str, typer.Argument(help="VM ID")],
+    hours: Annotated[float, typer.Option("--hours", help="Parked/lab VM: hours it is in use (Nightshift lab-use)")] = 4.0,
+    reason: Annotated[str, typer.Option("--reason", help="Parked/lab VM: what it is used for (Nightshift board)")] = "",
+) -> None:
+    """Start a VM. A parked or lab VM is declared with `nightshift lab-use start` first."""
+    _run(lambda client: (client.start(vmid, lab_hours=hours, lab_reason=reason), print(f"VM {vmid} started")))
 
 
 @app.command()

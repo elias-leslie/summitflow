@@ -2,8 +2,11 @@
 
 from __future__ import annotations
 
+import json
 import os
 import ssl
+import subprocess
+import sys
 import time
 from contextlib import suppress
 from dataclasses import dataclass
@@ -43,6 +46,40 @@ class ProxmoxConfig:
 
 # PVE pool whose members the token may only start/stop/reset (role SummitFlowPower: VM.PowerMgmt)
 POWER_POOL = "summitflow-power"
+
+
+# Nightshift's world-readable registry finding: which PVE guests are parked or lab assets
+NIGHTSHIFT_REGISTRY = Path("/var/lib/nightshift/findings/registry.json")
+
+
+def reserved_lab_asset(vmid: str, registry: Path | None = None) -> str | None:
+    """Nightshift asset id when the VM is a parked or lab-tier guest (its registry check warns when one runs
+    undeclared); None for other VMs, templates, or when the registry is unreadable."""
+    try:
+        findings = json.loads((registry or NIGHTSHIFT_REGISTRY).read_text()).get("findings") or []
+        rows = next(f["details"]["assets"] for f in findings if f.get("code") == "assets.registry")
+    except (OSError, ValueError, AttributeError, KeyError, TypeError, StopIteration):
+        return None
+    for row in rows:
+        same = isinstance(row, dict) and str(row.get("vmid")) == str(vmid) and row.get("kind") != "template"
+        if same and (row.get("presence") == "parked" or row.get("tier") == "lab"):
+            return str(row.get("id") or vmid)
+    return None
+
+
+def declare_lab_use(asset: str, hours: float, reason: str) -> None:
+    """`nightshift lab-use start` so the board shows who runs the parked machine; fails open with a warning."""
+    cmd = ["nightshift", "lab-use", "start", asset, "--hours", f"{hours:g}", "--reason", reason]
+    try:
+        result = subprocess.run(cmd, capture_output=True, text=True, timeout=20, check=False)
+    except (OSError, subprocess.SubprocessError) as exc:
+        print(f"Warning: could not declare lab use of {asset} with Nightshift ({exc}); starting anyway", file=sys.stderr)
+        return
+    if result.returncode != 0:
+        detail = (result.stdout + result.stderr).strip()[:200] or f"exit {result.returncode}"
+        print(f"Warning: Nightshift lab-use declaration for {asset} failed ({detail}); starting anyway", file=sys.stderr)
+        return
+    print(f"Nightshift: {result.stdout.strip() or f'declared {asset}'}")
 
 
 def _read_env_file(path: Path) -> dict[str, str]:
@@ -209,7 +246,10 @@ class ProxmoxClient:
             raise ProxmoxTaskError(upid) from exc
         return upid
 
-    def start(self, vmid: str) -> None:
+    def start(self, vmid: str, *, lab_hours: float = 4.0, lab_reason: str = "") -> None:
+        # A parked/lab guest is declared to Nightshift first, so the board names who runs it and why.
+        if asset := reserved_lab_asset(vmid):
+            declare_lab_use(asset, lab_hours, lab_reason or f"st vm start {vmid}")
         # PVE accepts the request before checking state; the task says whether it ran ("already running" fails it).
         self.wait_task(str(self.request("POST", f"/nodes/{self.config.node}/qemu/{vmid}/status/start")), timeout_seconds=120)
 
