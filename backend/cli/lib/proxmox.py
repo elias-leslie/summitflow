@@ -247,11 +247,12 @@ class ProxmoxClient:
         return upid
 
     def start(self, vmid: str, *, lab_hours: float = 4.0, lab_reason: str = "") -> None:
-        # A parked/lab guest is declared to Nightshift first, so the board names who runs it and why.
-        if asset := reserved_lab_asset(vmid):
-            declare_lab_use(asset, lab_hours, lab_reason or f"st vm start {vmid}")
         # PVE accepts the request before checking state; the task says whether it ran ("already running" fails it).
         self.wait_task(str(self.request("POST", f"/nodes/{self.config.node}/qemu/{vmid}/status/start")), timeout_seconds=120)
+        # Only a start this call made is declared: a refused start, or a VM someone else already runs, must not get a
+        # declaration naming this session (it would hide their undeclared run on the board and replace their claim).
+        if asset := reserved_lab_asset(vmid):
+            declare_lab_use(asset, lab_hours, lab_reason or f"st vm start {vmid}")
 
     def stop(self, vmid: str) -> None:
         self.wait_task(str(self.request("POST", f"/nodes/{self.config.node}/qemu/{vmid}/status/stop")), timeout_seconds=120)

@@ -66,7 +66,7 @@ def test_reserved_lab_asset_follows_the_nightshift_registry(tmp_path):
     assert proxmox.reserved_lab_asset("112", tmp_path / "missing.json") is None
 
 
-def test_start_declares_a_parked_vm_before_starting_it(monkeypatch, tmp_path):
+def test_start_declares_a_parked_vm_after_starting_it(monkeypatch, tmp_path):
     reg = tmp_path / "registry.json"
     write_registry(reg, [{"id": "ominull-target-linux", "vmid": 112, "presence": "parked", "tier": "lab", "kind": "vm"}])
     monkeypatch.setattr(proxmox, "NIGHTSHIFT_REGISTRY", reg)
@@ -77,8 +77,8 @@ def test_start_declares_a_parked_vm_before_starting_it(monkeypatch, tmp_path):
     monkeypatch.setattr(pve, "wait_task", lambda upid, **_: None)
     pve.start("112", lab_hours=2, lab_reason="pentest run")
     assert calls == [
-        ["nightshift", "lab-use", "start", "ominull-target-linux", "--hours", "2", "--reason", "pentest run"],
         "/nodes/node/qemu/112/status/start",
+        ["nightshift", "lab-use", "start", "ominull-target-linux", "--hours", "2", "--reason", "pentest run"],
     ]
     pve.start("100")  # not in the registry: no declaration
     assert calls[-1] == "/nodes/node/qemu/100/status/start" and len(calls) == 3
@@ -100,3 +100,23 @@ def test_start_fails_open_when_nightshift_is_unavailable(monkeypatch, tmp_path, 
     pve.start("120")
     assert started == ["/nodes/node/qemu/120/status/start"]
     assert "could not declare lab use of neri-lab" in capsys.readouterr().err
+
+
+@pytest.mark.parametrize("failure", ["Proxmox task failed: VM 112 already running", "Permission check failed (/vms/112, VM.PowerMgmt)"])
+def test_failed_start_declares_nothing(monkeypatch, tmp_path, failure):
+    # A refused start, or a VM someone else already runs, must not get a declaration naming this session.
+    reg = tmp_path / "registry.json"
+    write_registry(reg, [{"id": "ominull-target-linux", "vmid": 112, "presence": "parked", "tier": "lab", "kind": "vm"}])
+    monkeypatch.setattr(proxmox, "NIGHTSHIFT_REGISTRY", reg)
+    declared = []
+    monkeypatch.setattr(proxmox.subprocess, "run", lambda cmd, **_: declared.append(cmd))
+    pve = client()
+    monkeypatch.setattr(pve, "request", lambda method, path, **_: "UPID:x")
+
+    def fail(upid, **_):
+        raise ProxmoxError(failure)
+
+    monkeypatch.setattr(pve, "wait_task", fail)
+    with pytest.raises(ProxmoxError):
+        pve.start("112")
+    assert declared == []
