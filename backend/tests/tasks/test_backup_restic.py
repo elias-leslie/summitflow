@@ -263,6 +263,15 @@ def test_repository_commands_use_private_scratch_and_remove_child_work(setup, tm
     assert observed and all(not path.exists() for path in observed)
 
 
+@pytest.mark.parametrize("missing", ["RESTIC_LOCAL_REPOSITORY", "RESTIC_LOCAL_PASSWORD_FILE"])
+def test_local_repository_and_password_file_are_both_required(missing):
+    env = {"BACKUP_ENGINE": "restic", "RESTIC_LOCAL_PASSWORD_FILE": "/keys/local.password",
+           "RESTIC_LOCAL_REPOSITORY": "/backups/restic"}
+    env.pop(missing)
+    with pytest.raises(engine.ResticError, match=f"{missing} is required"):
+        engine.ResticConfig.from_env(env)
+
+
 def test_configuration_references_and_local_readiness(setup, monkeypatch):
     config, process, _ = setup
     monkeypatch.setenv("RESTIC_PASSWORD", "must-not-reach-child")

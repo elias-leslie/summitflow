@@ -44,7 +44,6 @@ RCLONE_VERSION = "1.75.1"
 # slow remote from holding the pair lock (and every capture) overnight.
 PRUNE_PLAN_TIMEOUT_SECONDS = 2 * 60 * 60
 VERSION_TIMEOUT_SECONDS = 30  # Status must answer even when a binary hangs.
-DEFAULT_LOCAL_REPOSITORY = "/media/kasadis/Backups/davion-gem/restic"
 _ID = re.compile(r"^[0-9a-f]{64}$")
 _OBJECT = re.compile(r"^(?:data/[0-9a-f]{2}|index|snapshots|keys)/([0-9a-f]{64})$")
 Runner = Callable[..., subprocess.CompletedProcess[Any]]
@@ -149,11 +148,12 @@ class ResticConfig:
     def from_env(cls, env: Mapping[str, str]) -> ResticConfig:
         if env.get("BACKUP_ENGINE", "restic") != "restic":
             raise ResticError("Restic configuration requires BACKUP_ENGINE=restic")
-        if not env.get("RESTIC_LOCAL_PASSWORD_FILE"):
-            raise ResticError("RESTIC_LOCAL_PASSWORD_FILE is required")
+        for key in ("RESTIC_LOCAL_REPOSITORY", "RESTIC_LOCAL_PASSWORD_FILE"):
+            if not env.get(key):
+                raise ResticError(f"{key} is required")
         password = Path(env["RESTIC_LOCAL_PASSWORD_FILE"])
         return cls(
-            local_repository=Path(env.get("RESTIC_LOCAL_REPOSITORY", DEFAULT_LOCAL_REPOSITORY)),
+            local_repository=Path(env["RESTIC_LOCAL_REPOSITORY"]),
             local_password_file=password,
             key_directory=Path(env.get("RESTIC_KEY_DIRECTORY", str(password.parent))),
             remote_repository=env.get("RESTIC_REMOTE_REPOSITORY") or None,
