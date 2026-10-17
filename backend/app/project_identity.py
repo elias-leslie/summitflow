@@ -222,6 +222,13 @@ def list_project_identities() -> list[dict[str, Any]]:
     return [_load_manifest(path) for path in _workspace_manifest_paths()]
 
 
+def get_runtime_port(project_id: str, key: str) -> int | None:
+    """A project's declared runtime port (``backend_port``/``frontend_port``), if any."""
+    runtime = (get_project_identity(project_id) or {}).get("runtime")
+    value = runtime.get(key) if isinstance(runtime, dict) else None
+    return value if isinstance(value, int) and not isinstance(value, bool) and value > 0 else None
+
+
 def _safe_db_identifier(value: object) -> bool:
     return isinstance(value, str) and bool(value) and all(char.isalnum() or char == "_" for char in value)
 

@@ -13,6 +13,18 @@ from pytest_mock import MockerFixture
 
 from app.main import app
 
+_RUNTIME_IDENTITIES = [
+    {"project": {"id": "agent-hub"},
+     "runtime": {"backend_port": 8003, "frontend_port": 3003, "health_endpoint": "/health"},
+     "services": {"backend": "agent-hub-backend.service", "frontend": "agent-hub-frontend.service",
+                  "default_workers": ["agent-hub-hatchet-ops-worker.service"],
+                  "optional_workers": ["agent-hub-hatchet-agent-worker.service"]}},
+    {"project": {"id": "vantage"},
+     "runtime": {"backend_port": 8004, "frontend_port": 3004, "health_endpoint": "/health"},
+     "services": {"backend": "vantage-backend.service", "frontend": "vantage-frontend.service",
+                  "default_workers": ["vantage-hatchet-worker.service"]}},
+]
+
 client = TestClient(app)
 
 
@@ -124,36 +136,24 @@ class TestDockerRuntime:
         assert created[0].parent == tmp_path
         assert created[0].name.endswith("-escape--touch-owned.sql")
 
-    def test_runtime_service_map_includes_registered_native_projects(self) -> None:
-        from app.api import docker as docker_api
+    def test_runtime_services_come_from_identity_plus_infra(self, mocker: MockerFixture) -> None:
+        from app import project_identity
+        from app.api.docker.constants import runtime_service_definitions
 
-        assert docker_api._RUNTIME_SERVICE_MAP["agent-hub-worker"]["unit"] == (
-            "agent-hub-hatchet-agent-worker.service"
-        )
-        assert docker_api._RUNTIME_SERVICE_MAP["a-loom-api"]["unit"] == "a-loom-backend.service"
-        assert docker_api._RUNTIME_SERVICE_MAP["a-loom-api"]["ports"] == ["8012"]
-        assert docker_api._RUNTIME_SERVICE_MAP["a-loom-web"]["unit"] == "a-loom-frontend.service"
-        assert docker_api._RUNTIME_SERVICE_MAP["a-loom-web"]["ports"] == ["3012"]
-        assert docker_api._RUNTIME_SERVICE_MAP["agent-hub-ops-worker"]["unit"] == (
-            "agent-hub-hatchet-ops-worker.service"
-        )
-        assert docker_api._RUNTIME_SERVICE_MAP["vantage-api"]["unit"] == "vantage-backend.service"
-        assert docker_api._RUNTIME_SERVICE_MAP["vantage-web"]["unit"] == "vantage-frontend.service"
-        assert docker_api._RUNTIME_SERVICE_MAP["vantage-worker"]["unit"] == (
-            "vantage-hatchet-worker.service"
-        )
-        assert docker_api._RUNTIME_SERVICE_MAP["test1-api"]["unit"] == "test1-backend.service"
-        assert docker_api._RUNTIME_SERVICE_MAP["test1-web"]["unit"] == "test1-frontend.service"
-        assert docker_api._RUNTIME_SERVICE_MAP["test2-api"]["unit"] == "test2-backend.service"
-        assert docker_api._RUNTIME_SERVICE_MAP["test2-web"]["unit"] == "test2-frontend.service"
-        assert docker_api._RUNTIME_SERVICE_MAP["test3-api"]["unit"] == "test3-backend.service"
-        assert docker_api._RUNTIME_SERVICE_MAP["test3-web"]["unit"] == "test3-frontend.service"
-        assert docker_api._RUNTIME_SERVICE_MAP["sha-api"]["unit"] == "sha-backend.service"
-        assert docker_api._RUNTIME_SERVICE_MAP["sha-web"]["unit"] == "sha-frontend.service"
-        assert docker_api._RUNTIME_SERVICE_MAP["hermes-dashboard"]["unit"] == (
-            "hermes-dashboard.service"
-        )
-        assert docker_api._RUNTIME_SERVICE_MAP["hermes-dashboard"]["ports"] == ["9119"]
+        mocker.patch.object(project_identity, "list_project_identities", return_value=_RUNTIME_IDENTITIES)
+        mocker.patch.object(project_identity, "get_project_lifecycles",
+                            side_effect=lambda ids, **_: dict.fromkeys(ids, "active"))
+        services = {svc["service"]: svc for svc in runtime_service_definitions()}
+
+        assert set(services) == {
+            "postgres", "redis", "hatchet",
+            "agent-hub-api", "agent-hub-web", "agent-hub-hatchet-ops-worker", "agent-hub-hatchet-agent-worker",
+            "vantage-api", "vantage-web", "vantage-hatchet-worker",
+        }
+        assert services["agent-hub-api"]["ports"] == ["8003"]
+        assert services["agent-hub-api"]["probe_url"] == "http://localhost:8003/health"
+        assert services["agent-hub-hatchet-agent-worker"]["unit"] == "agent-hub-hatchet-agent-worker.service"
+        assert services["vantage-hatchet-worker"]["project_id"] == "vantage"
 
     def test_detect_repo_root_walks_up_container_layout(self, tmp_path) -> None:
         from app.api import docker as docker_api
@@ -437,6 +437,11 @@ class TestDockerRuntime:
             new=mocker.AsyncMock(),
         )
 
+        from app import project_identity
+
+        mocker.patch.object(project_identity, "list_project_identities", return_value=_RUNTIME_IDENTITIES)
+        mocker.patch.object(project_identity, "get_project_lifecycles",
+                            side_effect=lambda ids, **_: dict.fromkeys(ids, "active"))
         result = asyncio.run(docker_api._service_action("vantage-api", "stop"))
 
         assert result == docker_api.ActionResult(
@@ -452,7 +457,7 @@ class TestDockerRuntime:
         )
         assert [call.args[0]["service"] for call in clear_ports.await_args_list] == [
             "vantage-web",
-            "vantage-worker",
+            "vantage-hatchet-worker",
             "vantage-api",
         ]
 
@@ -505,7 +510,9 @@ class TestDockerRuntime:
 
         result = asyncio.run(
             docker_api._runtime_service_status(
-                docker_api._RUNTIME_SERVICE_MAP["summitflow-api"],
+                {"service": "summitflow-api", "display_name": "summitflow-api", "manager": "systemd",
+                 "category": "app", "unit": "summitflow-backend.service", "ports": ["8001"],
+                 "probe_url": "http://localhost:8001/health", "project_id": "summitflow"},
                 {},
             )
         )

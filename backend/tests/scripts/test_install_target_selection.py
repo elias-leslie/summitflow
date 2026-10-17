@@ -25,9 +25,6 @@ def _select_target(
     # helper or cleanup trap exists. The isolated layout cannot load credentials.
     scripts = tmp_path / "scripts"
     scripts.mkdir()
-    metadata = tmp_path / "backend" / "cli" / "commands"
-    metadata.mkdir(parents=True)
-    (metadata / "docker.py").write_text("_BUILD_PROJECTS = []\n")
     source = SCRIPT.read_text()
     prefix = source.split("# ─── Proxmox API helper", 1)[0]
     if guest_ip is not None:

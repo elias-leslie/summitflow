@@ -152,7 +152,7 @@ services:
       # Non-self health URLs only set when services are expected to be running.
       # Partial profiles leave these unset; smoke tests skip unconfigured services.
       AGENT_HUB_HEALTH_URL: "${AGENT_HUB_HEALTH_URL:-}"
-      PORTFOLIO_HEALTH_URL: "${PORTFOLIO_HEALTH_URL:-}"
+      PORTFOLIO_AI_HEALTH_URL: "${PORTFOLIO_AI_HEALTH_URL:-}"
       COMPOSE_DIR: "/compose"
       BACKUP_DIR: "/app/docker-backups"
       BACKUP_HOST_ROOT: "${HOST_HOME_PATH:?}"
@@ -213,7 +213,7 @@ services:
       SUMMITFLOW_REQUEST_SOURCE: "summitflow"
       SUMMITFLOW_HEALTH_URL: "http://summitflow-api:8001/health"
       AGENT_HUB_HEALTH_URL: "${AGENT_HUB_HEALTH_URL:-}"
-      PORTFOLIO_HEALTH_URL: "${PORTFOLIO_HEALTH_URL:-}"
+      PORTFOLIO_AI_HEALTH_URL: "${PORTFOLIO_AI_HEALTH_URL:-}"
       BACKUP_HOST_ROOT: "${HOST_HOME_PATH:?}"
       HOST_HOME_PATH: "${HOST_HOME_PATH:?Set HOST_HOME_PATH in .env}"
       HOME: "${HOST_HOME_PATH:?}"

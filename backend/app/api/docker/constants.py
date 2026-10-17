@@ -6,34 +6,7 @@ import os
 from pathlib import Path
 from typing import Any
 
-from ...config import (
-    A_TERM_BACKEND_PORT,
-    A_TERM_FRONTEND_PORT,
-    AGENT_HUB_BACKEND_PORT,
-    AGENT_HUB_FRONTEND_PORT,
-    ALOOM_BACKEND_PORT,
-    ALOOM_FRONTEND_PORT,
-    HATCHET_GRPC_PORT,
-    HATCHET_HEALTH_PORT,
-    HERMES_DASHBOARD_PORT,
-    MONKEY_FIGHT_PORT,
-    PORTFOLIO_BACKEND_PORT,
-    PORTFOLIO_FRONTEND_PORT,
-    POSTGRES_PORT,
-    REDIS_PORT,
-    SHA_BACKEND_PORT,
-    SHA_FRONTEND_PORT,
-    SUMMITFLOW_BACKEND_PORT,
-    SUMMITFLOW_FRONTEND_PORT,
-    TEST1_BACKEND_PORT,
-    TEST1_FRONTEND_PORT,
-    TEST2_BACKEND_PORT,
-    TEST2_FRONTEND_PORT,
-    TEST3_BACKEND_PORT,
-    TEST3_FRONTEND_PORT,
-    VANTAGE_BACKEND_PORT,
-    VANTAGE_FRONTEND_PORT,
-)
+from ...config import HATCHET_GRPC_PORT, HATCHET_HEALTH_PORT, POSTGRES_PORT, REDIS_PORT
 from ...utils.env import float_env as _float_env
 
 
@@ -73,244 +46,9 @@ _HTTP_PROBE_TIMEOUT_SECONDS = _float_env("SUMMITFLOW_RUNTIME_HTTP_PROBE_TIMEOUT"
 COMPOSE_PROJECT = os.environ.get("COMPOSE_PROJECT_NAME", "summitflow-stack")
 BACKUP_DIR = Path(os.environ.get("BACKUP_DIR", str(Path.home() / "docker-backups")))
 
+# SummitFlow's own infra containers. Project services come from each
+# project's project.identity.json (see runtime_service_definitions).
 _RUNTIME_SERVICE_DEFS: tuple[dict[str, Any], ...] = (
-    {
-        "service": "summitflow-api",
-        "display_name": "summitflow-api",
-        "manager": "systemd",
-        "category": "app",
-        "unit": "summitflow-backend.service",
-        "ports": [str(SUMMITFLOW_BACKEND_PORT)],
-        "probe_url": f"http://localhost:{SUMMITFLOW_BACKEND_PORT}/health",
-    },
-    {
-        "service": "summitflow-web",
-        "display_name": "summitflow-web",
-        "manager": "systemd",
-        "category": "app",
-        "unit": "summitflow-frontend.service",
-        "ports": [str(SUMMITFLOW_FRONTEND_PORT)],
-        "probe_url": f"http://localhost:{SUMMITFLOW_FRONTEND_PORT}/",
-    },
-    {
-        "service": "summitflow-worker",
-        "display_name": "summitflow-worker",
-        "manager": "systemd",
-        "category": "worker",
-        "unit": "summitflow-hatchet-worker.service",
-        "ports": [],
-    },
-    {
-        "service": "a-loom-api",
-        "display_name": "a-loom-api",
-        "manager": "systemd",
-        "category": "app",
-        "unit": "a-loom-backend.service",
-        "ports": [str(ALOOM_BACKEND_PORT)],
-        "probe_url": f"http://localhost:{ALOOM_BACKEND_PORT}/health",
-    },
-    {
-        "service": "a-loom-web",
-        "display_name": "a-loom-web",
-        "manager": "systemd",
-        "category": "app",
-        "unit": "a-loom-frontend.service",
-        "ports": [str(ALOOM_FRONTEND_PORT)],
-        "probe_url": f"http://localhost:{ALOOM_FRONTEND_PORT}/",
-    },
-    {
-        "service": "agent-hub-api",
-        "display_name": "agent-hub-api",
-        "manager": "systemd",
-        "category": "app",
-        "unit": "agent-hub-backend.service",
-        "ports": [str(AGENT_HUB_BACKEND_PORT)],
-        "probe_url": f"http://localhost:{AGENT_HUB_BACKEND_PORT}/health",
-    },
-    {
-        "service": "agent-hub-web",
-        "display_name": "agent-hub-web",
-        "manager": "systemd",
-        "category": "app",
-        "unit": "agent-hub-frontend.service",
-        "ports": [str(AGENT_HUB_FRONTEND_PORT)],
-        "probe_url": f"http://localhost:{AGENT_HUB_FRONTEND_PORT}/",
-    },
-    {
-        "service": "agent-hub-worker",
-        "display_name": "agent-hub-worker",
-        "manager": "systemd",
-        "category": "worker",
-        "unit": "agent-hub-hatchet-agent-worker.service",
-        "ports": [],
-    },
-    {
-        "service": "agent-hub-ops-worker",
-        "display_name": "agent-hub-ops-worker",
-        "manager": "systemd",
-        "category": "worker",
-        "unit": "agent-hub-hatchet-ops-worker.service",
-        "ports": [],
-    },
-    {
-        "service": "a-term-api",
-        "display_name": "a-term-api",
-        "manager": "systemd",
-        "category": "app",
-        "unit": "a-term-backend.service",
-        "ports": [str(A_TERM_BACKEND_PORT)],
-        "probe_url": f"http://localhost:{A_TERM_BACKEND_PORT}/health",
-    },
-    {
-        "service": "a-term-web",
-        "display_name": "a-term-web",
-        "manager": "systemd",
-        "category": "app",
-        "unit": "a-term-frontend.service",
-        "ports": [str(A_TERM_FRONTEND_PORT)],
-        "probe_url": f"http://localhost:{A_TERM_FRONTEND_PORT}/",
-    },
-    {
-        "service": "hermes-dashboard",
-        "display_name": "hermes-dashboard",
-        "manager": "systemd",
-        "category": "app",
-        "unit": "hermes-dashboard.service",
-        "ports": [str(HERMES_DASHBOARD_PORT)],
-    },
-    {
-        "service": "portfolio-api",
-        "display_name": "portfolio-api",
-        "manager": "systemd",
-        "category": "app",
-        "unit": "portfolio-backend.service",
-        "ports": [str(PORTFOLIO_BACKEND_PORT)],
-        "probe_url": f"http://localhost:{PORTFOLIO_BACKEND_PORT}/health",
-    },
-    {
-        "service": "portfolio-web",
-        "display_name": "portfolio-web",
-        "manager": "systemd",
-        "category": "app",
-        "unit": "portfolio-frontend.service",
-        "ports": [str(PORTFOLIO_FRONTEND_PORT)],
-        "probe_url": f"http://localhost:{PORTFOLIO_FRONTEND_PORT}/",
-    },
-    {
-        "service": "portfolio-worker",
-        "display_name": "portfolio-worker",
-        "manager": "systemd",
-        "category": "worker",
-        "unit": "portfolio-hatchet-worker.service",
-        "ports": [],
-    },
-    {
-        "service": "sha-api",
-        "display_name": "sha-api",
-        "manager": "systemd",
-        "category": "app",
-        "unit": "sha-backend.service",
-        "ports": [str(SHA_BACKEND_PORT)],
-        "probe_url": f"http://localhost:{SHA_BACKEND_PORT}/health",
-    },
-    {
-        "service": "sha-web",
-        "display_name": "sha-web",
-        "manager": "systemd",
-        "category": "app",
-        "unit": "sha-frontend.service",
-        "ports": [str(SHA_FRONTEND_PORT)],
-        "probe_url": f"http://localhost:{SHA_FRONTEND_PORT}/",
-    },
-    {
-        "service": "vantage-api",
-        "display_name": "vantage-api",
-        "manager": "systemd",
-        "category": "app",
-        "unit": "vantage-backend.service",
-        "ports": [str(VANTAGE_BACKEND_PORT)],
-        "probe_url": f"http://localhost:{VANTAGE_BACKEND_PORT}/health",
-    },
-    {
-        "service": "vantage-web",
-        "display_name": "vantage-web",
-        "manager": "systemd",
-        "category": "app",
-        "unit": "vantage-frontend.service",
-        "ports": [str(VANTAGE_FRONTEND_PORT)],
-        "probe_url": f"http://localhost:{VANTAGE_FRONTEND_PORT}/",
-    },
-    {
-        "service": "vantage-worker",
-        "display_name": "vantage-worker",
-        "manager": "systemd",
-        "category": "worker",
-        "unit": "vantage-hatchet-worker.service",
-        "ports": [],
-    },
-    {
-        "service": "monkey-fight",
-        "display_name": "monkey-fight",
-        "manager": "systemd",
-        "category": "app",
-        "unit": "monkey-fight.service",
-        "ports": [str(MONKEY_FIGHT_PORT)],
-        "probe_url": f"http://localhost:{MONKEY_FIGHT_PORT}/",
-    },
-    {
-        "service": "test1-api",
-        "display_name": "test1-api",
-        "manager": "systemd",
-        "category": "app",
-        "unit": "test1-backend.service",
-        "ports": [str(TEST1_BACKEND_PORT)],
-        "probe_url": f"http://localhost:{TEST1_BACKEND_PORT}/health",
-    },
-    {
-        "service": "test1-web",
-        "display_name": "test1-web",
-        "manager": "systemd",
-        "category": "app",
-        "unit": "test1-frontend.service",
-        "ports": [str(TEST1_FRONTEND_PORT)],
-        "probe_url": f"http://localhost:{TEST1_FRONTEND_PORT}/",
-    },
-    {
-        "service": "test2-api",
-        "display_name": "test2-api",
-        "manager": "systemd",
-        "category": "app",
-        "unit": "test2-backend.service",
-        "ports": [str(TEST2_BACKEND_PORT)],
-        "probe_url": f"http://localhost:{TEST2_BACKEND_PORT}/health",
-    },
-    {
-        "service": "test2-web",
-        "display_name": "test2-web",
-        "manager": "systemd",
-        "category": "app",
-        "unit": "test2-frontend.service",
-        "ports": [str(TEST2_FRONTEND_PORT)],
-        "probe_url": f"http://localhost:{TEST2_FRONTEND_PORT}/",
-    },
-    {
-        "service": "test3-api",
-        "display_name": "test3-api",
-        "manager": "systemd",
-        "category": "app",
-        "unit": "test3-backend.service",
-        "ports": [str(TEST3_BACKEND_PORT)],
-        "probe_url": f"http://localhost:{TEST3_BACKEND_PORT}/health",
-    },
-    {
-        "service": "test3-web",
-        "display_name": "test3-web",
-        "manager": "systemd",
-        "category": "app",
-        "unit": "test3-frontend.service",
-        "ports": [str(TEST3_FRONTEND_PORT)],
-        "probe_url": f"http://localhost:{TEST3_FRONTEND_PORT}/",
-    },
     {
         "service": "postgres",
         "display_name": "postgres",
@@ -338,55 +76,24 @@ _RUNTIME_SERVICE_DEFS: tuple[dict[str, Any], ...] = (
 )
 _RUNTIME_SERVICE_MAP = {svc["service"]: svc for svc in _RUNTIME_SERVICE_DEFS}
 
-_STATIC_PROJECT_SERVICE_PREFIXES = (
-    ("summitflow-", "summitflow"),
-    ("a-loom-", "a-loom"),
-    ("agent-hub-", "agent-hub"),
-    ("a-term-", "a-term"),
-    ("portfolio-", "portfolio-ai"),
-    ("sha-", "sha"),
-    ("vantage-", "vantage"),
-    ("test1-", "test1"),
-    ("test2-", "test2"),
-    ("test3-", "test3"),
-)
-
-
-def _static_service_project_id(service: str) -> str | None:
-    if service == "monkey-fight":
-        return "monkey-fight"
-    return next(
-        (project_id for prefix, project_id in _STATIC_PROJECT_SERVICE_PREFIXES if service.startswith(prefix)),
-        None,
-    )
-
-
 def runtime_service_definitions() -> tuple[dict[str, Any], ...]:
-    """Discover declared project services on each request, retaining legacy IDs."""
+    """Infra containers plus the services each active project declares in its identity."""
     from ...project_identity import get_project_lifecycles, list_project_identities
 
-    identities = list_project_identities()
-    project_ids = {
-        identity["project"]["id"] for identity in identities
+    identities = [
+        identity for identity in list_project_identities()
         if isinstance(identity.get("project"), dict) and isinstance(identity["project"].get("id"), str)
-    }
-    project_ids.update(
-        project_id for svc in _RUNTIME_SERVICE_DEFS
-        if (project_id := _static_service_project_id(svc["service"])) is not None
+    ]
+    lifecycles = get_project_lifecycles(
+        sorted({identity["project"]["id"] for identity in identities}), allow_unavailable=True,
     )
-    lifecycles = get_project_lifecycles(sorted(project_ids), allow_unavailable=True)
-    definitions = {
-        svc["service"]: dict(svc) for svc in _RUNTIME_SERVICE_DEFS
-        if (project_id := _static_service_project_id(svc["service"])) is None
-        or lifecycles[project_id] == "active"
-    }
-    by_unit = {svc.get("unit"): svc["service"] for svc in definitions.values()}
+    definitions = {svc["service"]: dict(svc) for svc in _RUNTIME_SERVICE_DEFS}
     for identity in identities:
-        if lifecycles.get(identity["project"]["id"]) != "active":
-            continue
         project_id = identity["project"]["id"]
-        services = identity.get("services", {})
-        runtime = identity.get("runtime", {})
+        if lifecycles.get(project_id) != "active":
+            continue
+        services = identity.get("services") or {}
+        runtime = identity.get("runtime") or {}
         roles = [
             (services.get("backend"), "api", runtime.get("backend_port"), runtime.get("health_endpoint", "/health")),
             (services.get("frontend"), "web", runtime.get("frontend_port"), "/"),
@@ -399,9 +106,7 @@ def runtime_service_definitions() -> tuple[dict[str, Any], ...]:
             if not unit or unit in seen:
                 continue
             seen.add(unit)
-            service = by_unit.get(unit) or (
-                unit.removesuffix(".service") if role == "worker" else f"{project_id}-{role}"
-            )
+            service = unit.removesuffix(".service") if role == "worker" else f"{project_id}-{role}"
             definition = {
                 "service": service, "display_name": service, "manager": "systemd",
                 "category": "worker" if role == "worker" else "app", "unit": unit,

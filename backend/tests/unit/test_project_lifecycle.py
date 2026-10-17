@@ -134,18 +134,16 @@ def test_service_discovery_recovers_when_database_is_unavailable(identities, mon
     )
 
 
-def test_retired_static_runtime_services_are_filtered(identities, monkeypatch):
+def test_retired_project_runtime_services_are_filtered(identities, monkeypatch):
     from app.api.docker.constants import runtime_service_definitions
 
-    monkeypatch.setattr(project_identity, "list_project_identities", lambda: [])
+    monkeypatch.setattr(project_identity, "list_project_identities", lambda: [
+        {"project": {"id": project_id}, "runtime": {"backend_port": port},
+         "services": {"backend": f"{project_id}-backend.service"}}
+        for project_id, port in (("a-term", 8002), ("summitflow", 8001))
+    ])
     monkeypatch.setattr(project_identity, "get_project_lifecycles", lambda ids, **kwargs: {
-        project_id: "retired" if project_id in {"a-term", "portfolio-ai"} else "active" for project_id in ids
+        project_id: "retired" if project_id == "a-term" else "active" for project_id in ids
     })
     services = {item["service"] for item in runtime_service_definitions()}
-    assert "a-term-api" not in services
-    assert "a-term-web" not in services
-    assert "portfolio-api" not in services
-    assert "portfolio-web" not in services
-    assert "summitflow-api" in services
-    assert "hermes-dashboard" in services
-    assert "postgres" in services
+    assert services == {"summitflow-api", "postgres", "redis", "hatchet"}

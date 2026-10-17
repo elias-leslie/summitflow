@@ -217,18 +217,17 @@ async def _service_action(service: str, action: Literal["start", "stop", "restar
 def _systemd_stop_service_defs(svc: dict[str, Any]) -> list[dict[str, Any]]:
     """Return systemd services that must stop to keep an API service down."""
     service = svc["service"]
-    if not service.endswith("-api"):
+    project_id = svc.get("project_id")
+    if not service.endswith("-api") or not project_id:
         return [svc]
 
-    project_prefix = service.removesuffix("-api")
-    sibling_prefix = f"{project_prefix}-"
     siblings = [
         candidate
         for candidate in runtime_service_definitions()
         if (
             candidate["manager"] == "systemd"
             and candidate["service"] != service
-            and candidate["service"].startswith(sibling_prefix)
+            and candidate.get("project_id") == project_id
             and not _is_system_unit(candidate.get("unit"))
         )
     ]

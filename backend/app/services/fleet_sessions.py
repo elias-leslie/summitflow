@@ -117,13 +117,22 @@ def _owner_socket(surface: str, *, owner_control: bool) -> str:
     return f"/run/user/{os.getuid()}/aico/{filename}"
 
 
+def _a_term_default_url() -> str:
+    from ..project_identity import get_runtime_port
+
+    port = get_runtime_port("a-term", "backend_port")
+    if port is None:
+        raise ValueError("A-Term root control needs A-Term's backend port in its project identity")
+    return f"http://127.0.0.1:{port}"
+
+
 def _host_request(surface: str, path: str, payload: dict[str, Any], *, owner_control: bool = False, method: str = "POST") -> dict[str, Any]:
     if surface in {"aico", "tether"}:
         socket = _owner_socket(surface, owner_control=owner_control)
         with httpx.Client(transport=httpx.HTTPTransport(uds=socket), timeout=30) as client:
             response = client.get(f"http://aico{path}") if method == "GET" else client.post(f"http://aico{path}", json=payload)
     elif surface == "a-term":
-        base = os.environ.get("A_TERM_ROOT_CONTROL_URL", "http://127.0.0.1:8002").rstrip("/")
+        base = (os.environ.get("A_TERM_ROOT_CONTROL_URL") or _a_term_default_url()).rstrip("/")
         parsed = urlsplit(base)
         if parsed.scheme != "http" or parsed.hostname not in {"127.0.0.1", "localhost", "::1"} or parsed.username or parsed.password:
             raise ValueError("A-Term root control requires the existing local owner route")

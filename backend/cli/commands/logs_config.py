@@ -6,34 +6,41 @@ from dataclasses import dataclass
 from datetime import datetime
 from typing import Any
 
-# Service name to systemd unit mapping
+
+def _identity_user_services() -> dict[str, str]:
+    """Log names for each project's declared units (project.identity.json services).
+
+    ``<project>`` is the backend (or the frontend when there is none),
+    ``<project>-web`` the frontend, ``<project>-worker`` the first default
+    worker, and every worker also answers to its unit name without suffix.
+    """
+    from app.project_identity import list_project_identities
+
+    services: dict[str, str] = {}
+    for identity in list_project_identities():
+        project = identity.get("project")
+        project_id = project.get("id") if isinstance(project, dict) else None
+        declared = identity.get("services")
+        if not isinstance(project_id, str) or not project_id or not isinstance(declared, dict):
+            continue
+        backend, frontend = declared.get("backend") or "", declared.get("frontend") or ""
+        default_workers = [unit for unit in declared.get("default_workers") or [] if isinstance(unit, str) and unit]
+        workers = [*default_workers, *(u for u in declared.get("optional_workers") or [] if isinstance(u, str) and u)]
+        names = {project_id: backend or frontend}
+        if frontend:
+            names[f"{project_id}-web"] = frontend
+        if default_workers:
+            names[f"{project_id}-worker"] = default_workers[0]
+        for unit in workers:
+            names[unit.rsplit(".", 1)[0] if unit.endswith((".service", ".timer", ".socket")) else unit] = unit
+        for name, unit in names.items():
+            if isinstance(unit, str) and unit:
+                services.setdefault(name, unit)
+    return services
+
+
 # User services (run with --user flag)
-USER_SERVICES = {
-    "portfolio-ai": "portfolio-backend.service",
-    "portfolio-companion": "portfolio-dev-companion.service",
-    "portfolio-web": "portfolio-frontend.service",
-    "portfolio-worker": "portfolio-hatchet-worker.service",
-    "summitflow": "summitflow-backend.service",
-    "sf-frontend": "summitflow-frontend.service",
-    "sf-worker": "summitflow-hatchet-worker.service",
-    "agent-hub": "agent-hub-backend.service",
-    "ah-frontend": "agent-hub-frontend.service",
-    "ah-worker": "agent-hub-hatchet-agent-worker.service",
-    "ah-agent-worker": "agent-hub-hatchet-agent-worker.service",
-    "ah-ops-worker": "agent-hub-hatchet-ops-worker.service",
-    "a-term": "a-term-backend.service",
-    "tether": "tether@default.service",
-    "vantage": "vantage-backend.service",
-    "vantage-web": "vantage-frontend.service",
-    "vantage-worker": "vantage-hatchet-worker.service",
-    "monkey-fight": "monkey-fight.service",
-    "test1": "test1-backend.service",
-    "test1-web": "test1-frontend.service",
-    "test2": "test2-backend.service",
-    "test2-web": "test2-frontend.service",
-    "test3": "test3-backend.service",
-    "test3-web": "test3-frontend.service",
-}
+USER_SERVICES = _identity_user_services()
 
 # System services (run without --user flag)
 SYSTEM_SERVICES = {

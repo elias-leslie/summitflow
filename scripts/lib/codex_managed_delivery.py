@@ -151,7 +151,7 @@ def configured_outbox(project_id: str | None = None) -> ManagedOutbox | None:
 def agent_hub_frontend_url() -> str:
     """Use the registered operator frontend, which is distinct from its API."""
     try:
-        from app.project_identity import get_project_identity
+        from app.project_identity import get_project_identity, get_runtime_port
 
         identity = get_project_identity("agent-hub") or {}
         host = (identity.get("hosts") or {}).get("production_frontend")
@@ -159,9 +159,8 @@ def agent_hub_frontend_url() -> str:
             if "://" in host:
                 return host.rstrip("/")
             return ("http://" if host.startswith(("localhost", "127.0.0.1")) else "https://") + host
-        from app.config import AGENT_HUB_FRONTEND_PORT
-
-        return f"http://localhost:{AGENT_HUB_FRONTEND_PORT}"
+        port = get_runtime_port("agent-hub", "frontend_port")
+        return f"http://localhost:{port}" if port else ""
     except (ImportError, ValueError, OSError):
         return ""
 

@@ -15,8 +15,6 @@ from typing import Annotated
 import typer
 from typer.main import get_command
 
-from app.utils.shared_paths import get_repo_root
-
 from ..details import emit_result_or_details
 from ..runtime import (
     COMPOSE_ENV_FILE,
@@ -37,17 +35,30 @@ app = typer.Typer(
 # ─── Constants ───────────────────────────────────────────────────
 
 ENV_PREFIX = "stenv-"
-GHCR_PREFIX = "ghcr.io/elias-leslie/"
 
-_BUILD_PROJECTS = [
-    ("summitflow",  "docker/backend.Dockerfile",       GHCR_PREFIX + "summitflow-api"),
-    ("summitflow",  "docker/frontend.Dockerfile",      GHCR_PREFIX + "summitflow-web"),
-    ("agent-hub",   "docker/backend.Dockerfile",       GHCR_PREFIX + "agent-hub-api"),
-    ("agent-hub",   "docker/frontend.Dockerfile",      GHCR_PREFIX + "agent-hub-web"),
-    ("portfolio-ai","docker/backend.Dockerfile",       GHCR_PREFIX + "portfolio-api"),
-    ("portfolio-ai","docker/frontend.Dockerfile",      GHCR_PREFIX + "portfolio-web"),
-    ("monkey-fight","Dockerfile",                      GHCR_PREFIX + "monkey-fight"),
-]
+
+def build_targets() -> list[tuple[str, Path, str, str]]:
+    """(project, checkout, dockerfile, image) for every image a project's identity declares.
+
+    Images are ``ghcr.io/<repository.owner>/<name>``; the build context is the
+    project checkout holding the identity.
+    """
+    from app.project_identity import get_project_identity_root, list_project_identities
+
+    targets: list[tuple[str, Path, str, str]] = []
+    for identity in list_project_identities():
+        project = identity.get("project")
+        project_id = project.get("id") if isinstance(project, dict) else None
+        images = identity.get("images")
+        owner = (identity.get("repository") or {}).get("owner")
+        root = get_project_identity_root(project_id) if isinstance(project_id, str) and project_id else None
+        if not root or not isinstance(images, list) or not isinstance(owner, str) or not owner:
+            continue
+        for image in images:
+            if isinstance(image, dict) and isinstance(image.get("dockerfile"), str) and isinstance(image.get("name"), str):
+                targets.append((str(project_id), Path(root), str(image["dockerfile"]), f"ghcr.io/{owner}/{image['name']}"))
+    return targets
+
 
 # ─── Helpers ─────────────────────────────────────────────────────
 
@@ -121,25 +132,6 @@ def _list_envs() -> list[dict]:
 def _env_compose_cmd(project_name: str, *args: str) -> list[str]:
     """Build a docker compose command targeting an ephemeral environment."""
     return ["docker", "compose", "--env-file", str(COMPOSE_ENV_FILE), "-p", project_name, *args]
-
-
-def _resolve_project_context(project: str) -> Path | None:
-    """Resolve a repo checkout for a buildable project.
-
-    Prefer sibling repos relative to the current SummitFlow checkout, then fall
-    back to historical `$HOME/<project>` paths that exist on older setups.
-    """
-    summitflow_root = get_repo_root()
-    sibling_root = summitflow_root.parent
-    candidates = [
-        sibling_root / project,
-        Path.home() / project,
-    ]
-
-    for candidate in candidates:
-        if candidate.exists():
-            return candidate
-    return None
 
 
 # ─── Status ──────────────────────────────────────────────────────
@@ -276,12 +268,8 @@ def build(
 ) -> None:
     """Build Docker images for all services."""
     typer.echo(f"Building images with tag: {tag}")
-    for project, dockerfile, image_base in _BUILD_PROJECTS:
+    for _project, context, dockerfile, image_base in build_targets():
         image = f"{image_base}:{tag}"
-        context = _resolve_project_context(project)
-        if context is None:
-            typer.echo(f"  SKIP {image} (project checkout not found)")
-            continue
         df_path = context / dockerfile
         if not df_path.exists():
             typer.echo(f"  SKIP {image} (Dockerfile not found)")

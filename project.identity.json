@@ -24,6 +24,10 @@
   "infra": {
     "hatchet": {"database": {"name": "hatchet", "owner_role": "db_admin"}}
   },
+  "images": [
+    {"dockerfile": "docker/backend.Dockerfile", "name": "summitflow-api"},
+    {"dockerfile": "docker/frontend.Dockerfile", "name": "summitflow-web"}
+  ],
   "services": {
     "backend": "summitflow-backend.service",
     "frontend": "summitflow-frontend.service",

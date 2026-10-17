@@ -13,33 +13,30 @@ from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 from pydantic import Field, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
-# ---------------------------------------------------------------------------
-# Port allocation — single source of truth for the SummitFlow management plane.
-# Other projects define their own ports in their own config.py; these are here
-# because SummitFlow manages the full runtime (docker/constants.py, smoke_test, etc.).
-# ---------------------------------------------------------------------------
-SUMMITFLOW_BACKEND_PORT = 8001
-SUMMITFLOW_FRONTEND_PORT = 3001
-ALOOM_BACKEND_PORT = 8012
-ALOOM_FRONTEND_PORT = 3012
-AGENT_HUB_BACKEND_PORT = 8003
-AGENT_HUB_FRONTEND_PORT = 3003
-A_TERM_BACKEND_PORT = 8002
-A_TERM_FRONTEND_PORT = 3002
-PORTFOLIO_BACKEND_PORT = 8000
-PORTFOLIO_FRONTEND_PORT = 3000
-SHA_BACKEND_PORT = 8010
-SHA_FRONTEND_PORT = 3010
-MONKEY_FIGHT_PORT = 4001
-VANTAGE_BACKEND_PORT = 8004
-VANTAGE_FRONTEND_PORT = 3004
-TEST1_BACKEND_PORT = 9001
-TEST1_FRONTEND_PORT = 4004
-TEST2_BACKEND_PORT = 9002
-TEST2_FRONTEND_PORT = 4002
-TEST3_BACKEND_PORT = 9003
-TEST3_FRONTEND_PORT = 4003
-HERMES_DASHBOARD_PORT = 9119
+
+# Project ports live in each project's project.identity.json (runtime
+# backend_port/frontend_port). SummitFlow reads its own from its identity; the
+# infra ports below belong to SummitFlow's own stack.
+def _own_runtime_port(key: str) -> int:
+    import json
+
+    from .utils.shared_paths import get_repo_root
+
+    identity = json.loads((get_repo_root() / "project.identity.json").read_text(encoding="utf-8"))
+    return int(identity["runtime"][key])
+
+
+SUMMITFLOW_BACKEND_PORT = _own_runtime_port("backend_port")
+SUMMITFLOW_FRONTEND_PORT = _own_runtime_port("frontend_port")
+
+
+def _local_url(project_id: str, key: str) -> str:
+    """http://localhost:<port> from another project's identity, or "" when it is not on this host."""
+    from .project_identity import get_runtime_port
+
+    port = get_runtime_port(project_id, key)
+    return f"http://localhost:{port}" if port else ""
+
 POSTGRES_PORT = 5432
 REDIS_PORT = 6379
 HATCHET_GRPC_PORT = 7070
@@ -91,9 +88,11 @@ class Settings(BaseSettings):
 
     # CORS
     cors_origins: list[str] = [
-        f"http://localhost:{SUMMITFLOW_FRONTEND_PORT}",
-        f"http://localhost:{MONKEY_FIGHT_PORT}",
-        f"http://localhost:{AGENT_HUB_FRONTEND_PORT}",
+        origin for origin in (
+            f"http://localhost:{SUMMITFLOW_FRONTEND_PORT}",
+            _local_url("monkey-fight", "frontend_port"),
+            _local_url("agent-hub", "frontend_port"),
+        ) if origin
     ]
 
     # Cloudflare Access / SummitFlow identity.
@@ -144,4 +143,4 @@ settings = get_settings()
 DATABASE_URL = settings.database_url
 REDIS_URL = settings.redis_url
 DEFAULT_API_BASE = _env_or_default("ST_API_BASE", f"http://localhost:{SUMMITFLOW_BACKEND_PORT}/api")
-AGENT_HUB_URL = _env_or_default("AGENT_HUB_URL", f"http://localhost:{AGENT_HUB_BACKEND_PORT}")
+AGENT_HUB_URL = _env_or_default("AGENT_HUB_URL", _local_url("agent-hub", "backend_port"))

@@ -70,23 +70,21 @@ scp_vm() {
 }
 
 build_project_images() {
-    python - "$PROJECT_DIR/backend/cli/commands/docker.py" <<'PY'
-import ast
+    # Images each sibling checkout's project.identity.json declares.
+    python - "$PROJECT_DIR/.." <<'PY'
+import json
 import pathlib
 import sys
 
-source = pathlib.Path(sys.argv[1]).read_text()
-module = ast.parse(source)
-
-for node in module.body:
-    if isinstance(node, ast.Assign):
-        for target in node.targets:
-            if getattr(target, "id", None) == "_BUILD_PROJECTS":
-                for _project, _dockerfile, image in ast.literal_eval(node.value):
-                    print(f"{_project}\t{image}")
-                raise SystemExit(0)
-
-raise SystemExit("Could not read _BUILD_PROJECTS from docker.py")
+for manifest in sorted(pathlib.Path(sys.argv[1]).glob("*/project.identity.json")):
+    try:
+        identity = json.loads(manifest.read_text())
+        project, owner = identity["project"]["id"], identity["repository"]["owner"]
+        names = [image["name"] for image in identity.get("images") or []]
+    except (OSError, ValueError, KeyError, TypeError):
+        continue
+    for name in names:
+        print(f"{project}\tghcr.io/{owner}/{name}")
 PY
 }
 

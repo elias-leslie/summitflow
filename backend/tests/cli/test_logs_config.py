@@ -7,53 +7,62 @@ from cli.commands.logs_config import (
     validate_since,
 )
 
+_IDENTITIES = [
+    {"project": {"id": "portfolio-ai"}, "services": {
+        "backend": "portfolio-backend.service", "frontend": "portfolio-frontend.service",
+        "default_workers": ["portfolio-hatchet-worker.service"], "optional_workers": []}},
+    {"project": {"id": "agent-hub"}, "services": {
+        "backend": "agent-hub-backend.service", "frontend": "agent-hub-frontend.service",
+        "default_workers": ["agent-hub-hatchet-ops-worker.service"],
+        "optional_workers": ["agent-hub-hatchet-agent-worker.service"]}},
+    {"project": {"id": "monkey-fight"}, "services": {
+        "backend": "", "frontend": "monkey-fight.service", "default_workers": [], "optional_workers": []}},
+    {"project": {"id": "tether"}, "services": {"backend": "tether@default.service", "frontend": ""}},
+    {"project": {"id": "docs-only"}},
+]
 
-def test_get_service_list_includes_portfolio_ai_user_service() -> None:
-    """Portfolio AI logs should be reachable through the shared st logs service map."""
-    user_svcs, system_svcs = get_service_list("portfolio-ai,portfolio-companion,redis")
 
-    assert "portfolio-ai" in USER_SERVICES
-    assert USER_SERVICES["portfolio-ai"] == "portfolio-backend.service"
-    assert USER_SERVICES["portfolio-companion"] == "portfolio-dev-companion.service"
-    assert user_svcs == ["portfolio-ai", "portfolio-companion"]
+@pytest.fixture
+def identity_services(monkeypatch: pytest.MonkeyPatch) -> dict[str, str]:
+    from app import project_identity
+    from cli.commands import logs_config
+
+    monkeypatch.setattr(project_identity, "list_project_identities", lambda: _IDENTITIES)
+    services = logs_config._identity_user_services()
+    monkeypatch.setattr(logs_config, "USER_SERVICES", services)
+    return services
+
+
+def test_user_services_come_from_identity(identity_services: dict[str, str]) -> None:
+    assert identity_services == {
+        "portfolio-ai": "portfolio-backend.service",
+        "portfolio-ai-web": "portfolio-frontend.service",
+        "portfolio-ai-worker": "portfolio-hatchet-worker.service",
+        "portfolio-hatchet-worker": "portfolio-hatchet-worker.service",
+        "agent-hub": "agent-hub-backend.service",
+        "agent-hub-web": "agent-hub-frontend.service",
+        "agent-hub-worker": "agent-hub-hatchet-ops-worker.service",
+        "agent-hub-hatchet-ops-worker": "agent-hub-hatchet-ops-worker.service",
+        "agent-hub-hatchet-agent-worker": "agent-hub-hatchet-agent-worker.service",
+        "monkey-fight": "monkey-fight.service",
+        "monkey-fight-web": "monkey-fight.service",
+        "tether": "tether@default.service",
+    }
+
+
+def test_get_service_list_splits_user_and_system_services(identity_services: dict[str, str]) -> None:
+    user_svcs, system_svcs = get_service_list("portfolio-ai,agent-hub-worker,redis,test2")
+    assert user_svcs == ["portfolio-ai", "agent-hub-worker"]
     assert system_svcs == ["redis"]
 
-
-def test_get_service_list_includes_portfolio_web_and_worker() -> None:
-    """Portfolio frontend and worker logs should be reachable."""
-    user_svcs, system_svcs = get_service_list("portfolio-web,portfolio-worker")
-
-    assert USER_SERVICES["portfolio-web"] == "portfolio-frontend.service"
-    assert USER_SERVICES["portfolio-worker"] == "portfolio-hatchet-worker.service"
-    assert user_svcs == ["portfolio-web", "portfolio-worker"]
-    assert system_svcs == []
-
-
-def test_get_service_list_all_includes_portfolio_ai() -> None:
-    """The all-services view should not silently omit Portfolio AI."""
     user_svcs, system_svcs = get_service_list("all")
-
-    assert "portfolio-ai" in user_svcs
-    assert "monkey-fight" in user_svcs
-    assert "vantage" in user_svcs
-    assert "test1" in user_svcs
-    assert "test2" in user_svcs
-    assert "test3" in user_svcs
-    assert USER_SERVICES["monkey-fight"] == "monkey-fight.service"
-    assert USER_SERVICES["vantage"] == "vantage-backend.service"
-    assert USER_SERVICES["test1"] == "test1-backend.service"
+    assert user_svcs == list(identity_services)
     assert set(system_svcs) == set(SYSTEM_SERVICES)
 
 
-def test_get_service_list_includes_split_agent_hub_workers() -> None:
-    """Agent Hub logs should expose both the protected agent worker and ops worker."""
-    user_svcs, system_svcs = get_service_list("ah-worker,ah-ops-worker")
-
-    assert USER_SERVICES["ah-worker"] == "agent-hub-hatchet-agent-worker.service"
-    assert USER_SERVICES["ah-agent-worker"] == "agent-hub-hatchet-agent-worker.service"
-    assert USER_SERVICES["ah-ops-worker"] == "agent-hub-hatchet-ops-worker.service"
-    assert user_svcs == ["ah-worker", "ah-ops-worker"]
-    assert system_svcs == []
+def test_real_identities_cover_summitflow() -> None:
+    assert USER_SERVICES["summitflow"] == "summitflow-backend.service"
+    assert USER_SERVICES["summitflow-worker"] == "summitflow-hatchet-worker.service"
 
 
 @pytest.mark.parametrize(
@@ -81,9 +90,3 @@ def test_validate_since_rejects_invalid_input() -> None:
     """Invalid inputs should fall back to the default 30-minute window."""
     assert validate_since("garbage") == "30 minutes ago"
     assert validate_since("2x") == "30 minutes ago"
-
-
-def test_get_service_list_includes_tether_default_instance() -> None:
-    user_svcs, _ = get_service_list("tether")
-    assert USER_SERVICES["tether"] == "tether@default.service"
-    assert user_svcs == ["tether"]

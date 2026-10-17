@@ -91,6 +91,8 @@ RUN mkdir -p /app/logs && chown appuser:appuser /app/logs
 ENV PATH="/app/backend/.venv/bin:$PATH"
 ENV PYTHONUNBUFFERED=1
 
+# The app reads its own runtime ports from the identity at its repo root (/ here).
+COPY project.identity.json /project.identity.json
 COPY --chmod=755 docker/scripts/entrypoint-backend.sh /entrypoint.sh
 
 USER appuser
