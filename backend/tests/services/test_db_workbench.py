@@ -188,3 +188,23 @@ def test_workbench_targets_skip_retired_projects_env_urls(monkeypatch: pytest.Mo
     )
 
     assert [target.id for target in targets.workbench_targets()] == ["__global__", "alpha"]
+
+
+def test_default_db_urls_come_from_identity_databases(monkeypatch: pytest.MonkeyPatch) -> None:
+    from app import project_identity
+    from app.services import db_workbench_targets
+
+    identities = [
+        {"project": {"id": "agent-hub"}, "database": {"name": "agent_hub", "owner_role": "agent_hub_app"}},
+        {"project": {"id": "summitflow"}, "database": {"name": "summitflow", "owner_role": "summitflow_app"},
+         "infra": {"hatchet": {"database": {"name": "hatchet", "owner_role": "db_admin"}}}},
+        {"project": {"id": "unsafe"}, "database": {"name": "x; drop", "owner_role": "x"}},
+        {"project": {"id": "shared"}, "database": {"shared_with": "summitflow"}},
+    ]
+    monkeypatch.setattr(project_identity, "list_project_identities", lambda: identities)
+
+    assert db_workbench_targets._default_db_url("agent-hub") == "postgresql://agent_hub_app@localhost:5432/agent_hub"
+    assert db_workbench_targets._default_db_url("hatchet") == "postgresql://db_admin@localhost:5432/hatchet"
+    assert db_workbench_targets._default_db_url("unsafe") is None
+    assert db_workbench_targets._default_db_url("shared") is None
+    assert db_workbench_targets.project_ids_from_env({}) >= {"agent-hub", "summitflow", "hatchet"}

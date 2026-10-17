@@ -71,7 +71,15 @@ def test_db_subcommand_help_is_targeted_and_read_only(args: list[str], expected:
 
 
 def test_test_database_setup_can_target_only_jobinator() -> None:
+    databases = {
+        "jobinator-4000": {"name": "jobinator", "owner_role": "jobinator_app",
+                           "test": {"name": "jobinator_test", "owner": "jobinator_app"}},
+        "summitflow": {"name": "summitflow", "owner_role": "summitflow_app",
+                       "test": {"name": "summitflow_test", "owner": "summitflow_app"}},
+        "hatchet": {"name": "hatchet", "owner_role": "db_admin"},
+    }
     with (
+        patch("app.project_identity.project_databases", return_value=databases),
         patch("cli.commands.setup._preview"),
         patch("app.tasks.backup_native_infra._find_compose_container", return_value="test-postgres"),
         patch("cli.commands.setup._run", return_value=0) as run,
@@ -83,6 +91,16 @@ def test_test_database_setup_can_target_only_jobinator() -> None:
         "docker", "exec", "-i", "test-postgres", "createdb", "-U", "admin",
         "-O", "jobinator_app", "jobinator_test",
     ]
+    with (
+        patch("app.project_identity.project_databases", return_value=databases),
+        patch("cli.commands.setup._preview"),
+        patch("app.tasks.backup_native_infra._find_compose_container", return_value="test-postgres"),
+        patch("cli.commands.setup._run", return_value=0) as run,
+    ):
+        assert runner.invoke(setup.app, ["test-dbs"]).exit_code == 0
+        assert runner.invoke(setup.app, ["test-dbs", "--project", "hatchet"]).exit_code != 0
+    created = [call.args[0][-1] for call in run.call_args_list if "createdb" in call.args[0]]
+    assert created == ["jobinator_test", "summitflow_test"]
 
 
 def _project() -> ProjectServices:

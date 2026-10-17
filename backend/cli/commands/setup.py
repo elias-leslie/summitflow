@@ -217,15 +217,15 @@ def test_dbs(
     project: Annotated[str | None, typer.Option("--project", help="Set up only this project's test database")] = None,
 ) -> None:
     """Create or refresh test databases."""
+    from app.project_identity import project_databases
+
     targets = {
-        "summitflow": ("summitflow_test", "summitflow_app"),
-        "agent-hub": ("agent_hub_test", "agent_hub_app"),
-        "portfolio-ai": ("portfolio_ai_test", "portfolio_app"),
-        "jobinator-4000": ("jobinator_test", "jobinator_app"),
+        project_id: (database["test"]["name"], database["test"]["owner"])
+        for project_id, database in sorted(project_databases().items()) if "test" in database
     }
     if project and project not in targets:
         raise typer.BadParameter("No test database configured for this project")
-    selected = [targets[project]] if project else list(targets.values())[:3]
+    selected = [targets[project]] if project else list(targets.values())
     lines = [
         "SETUP TEST DATABASES",
         *(f"Create test database {name}, owned by {owner}" for name, owner in selected),

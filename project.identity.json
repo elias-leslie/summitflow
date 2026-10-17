@@ -16,6 +16,14 @@
     "frontend_dir": "frontend",
     "health_endpoint": "/health"
   },
+  "database": {
+    "name": "summitflow",
+    "owner_role": "summitflow_app",
+    "test": {"name": "summitflow_test", "owner": "summitflow_app"}
+  },
+  "infra": {
+    "hatchet": {"database": {"name": "hatchet", "owner_role": "db_admin"}}
+  },
   "services": {
     "backend": "summitflow-backend.service",
     "frontend": "summitflow-frontend.service",

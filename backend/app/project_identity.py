@@ -222,6 +222,39 @@ def list_project_identities() -> list[dict[str, Any]]:
     return [_load_manifest(path) for path in _workspace_manifest_paths()]
 
 
+def _safe_db_identifier(value: object) -> bool:
+    return isinstance(value, str) and bool(value) and all(char.isalnum() or char == "_" for char in value)
+
+
+def project_databases() -> dict[str, dict[str, Any]]:
+    """Declared databases by project id: identity ``database`` blocks plus SummitFlow ``infra``.
+
+    Only entries with a safe ``name`` and ``owner_role`` count; ``test`` is kept
+    when it has a safe ``name`` and ``owner``.
+    """
+    databases: dict[str, dict[str, Any]] = {}
+    for identity in list_project_identities():
+        project = identity.get("project")
+        project_id = project.get("id") if isinstance(project, dict) else None
+        if not isinstance(project_id, str) or not project_id:
+            continue
+        entries = [(project_id, identity.get("database"))]
+        infra = identity.get("infra") if project_id == "summitflow" else None
+        if isinstance(infra, dict):
+            entries.extend((name, item.get("database")) for name, item in infra.items() if isinstance(item, dict))
+        for owner_id, database in entries:
+            if not isinstance(database, dict):
+                continue
+            if not (_safe_db_identifier(database.get("name")) and _safe_db_identifier(database.get("owner_role"))):
+                continue
+            entry = {"name": database["name"], "owner_role": database["owner_role"]}
+            test = database.get("test")
+            if isinstance(test, dict) and _safe_db_identifier(test.get("name")) and _safe_db_identifier(test.get("owner")):
+                entry["test"] = {"name": test["name"], "owner": test["owner"]}
+            databases.setdefault(owner_id, entry)
+    return databases
+
+
 ProjectLifecycle = Literal["active", "retired"]
 
 

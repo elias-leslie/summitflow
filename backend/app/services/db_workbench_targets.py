@@ -9,14 +9,7 @@ from urllib.parse import quote, urlsplit, urlunsplit
 
 import psycopg
 
-from ..project_identity import get_project_identity, get_project_lifecycles
-
-_DEFAULT_DB_URLS = {
-    "summitflow": "postgresql://summitflow_app@localhost:5432/summitflow",
-    "agent-hub": "postgresql://agent_hub_app@localhost:5432/agent_hub",
-    "portfolio-ai": "postgresql://portfolio_app@localhost:5432/portfolio_ai",
-    "hatchet": "postgresql://db_admin@localhost:5432/hatchet?sslmode=disable",
-}
+from ..project_identity import get_project_identity, get_project_lifecycles, project_databases
 
 _GLOBAL_PROJECT_ID = "__global__"
 _GLOBAL_DATABASE_NAME = "postgres"
@@ -144,9 +137,17 @@ def project_db_url(project_id: str) -> str | None:
         os.environ.get("DATABASE_URL") if project_id == "summitflow" else None,
         env_file.get("DATABASE_URL") if project_id == "summitflow" else None,
         project_db_url(shared_project_id) if shared_project_id else None,
-        _DEFAULT_DB_URLS.get(project_id),
+        _default_db_url(project_id),
     ]
     return next((candidate for candidate in candidates if candidate), None)
+
+
+def _default_db_url(project_id: str) -> str | None:
+    """Passwordless local URL from the project's declared database (identity)."""
+    database = project_databases().get(project_id)
+    if not database:
+        return None
+    return f"postgresql://{database['owner_role']}@localhost:5432/{database['name']}"
 
 
 def database_name_from_url(url: str | None) -> str | None:
@@ -157,7 +158,7 @@ def database_name_from_url(url: str | None) -> str | None:
 
 
 def project_ids_from_env(env_file: dict[str, str]) -> set[str]:
-    project_ids = set(_DEFAULT_DB_URLS)
+    project_ids = set(project_databases())
     values = {**env_file, **os.environ}
     for key, value in values.items():
         if not value or key.startswith("TEST"):
