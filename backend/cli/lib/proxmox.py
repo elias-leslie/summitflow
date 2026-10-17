@@ -264,6 +264,25 @@ class ProxmoxClient:
     def stop(self, vmid: str) -> None:
         self.wait_task(str(self.request("POST", f"/nodes/{self.config.node}/{self._kind(vmid)}/{vmid}/status/stop")), timeout_seconds=120)
 
+    def reboot(self, vmid: str) -> None:
+        """Guest shutdown then start; PVE applies pending hardware changes (cores, memory) on the way back up."""
+        self.wait_task(str(self.request("POST", f"/nodes/{self.config.node}/{self._kind(vmid)}/{vmid}/status/reboot")), timeout_seconds=300)
+
+    def resize(self, vmid: str, *, cores: int | None = None, memory_mb: int | None = None, balloon_mb: int | None = None) -> bool:
+        """Set CPU cores and/or memory; True when the VM is running and the change waits for a reboot."""
+        kind = self._kind(vmid)
+        data: dict[str, Any] = {}
+        if cores is not None:
+            data["cores"] = cores
+        if memory_mb is not None:
+            data["memory"] = memory_mb
+        if balloon_mb is not None and kind == "qemu":
+            data["balloon"] = balloon_mb
+        if not data:
+            raise ProxmoxError("Nothing to change: pass cores and/or memory")
+        self.request("PUT", f"/nodes/{self.config.node}/{kind}/{vmid}/config", data=data)
+        return kind == "qemu" and self.status(vmid).get("status") == "running"
+
     def destroy(self, vmid: str) -> None:
         if vmid == "9000" or self.config_get(vmid).get("template"):
             raise ProxmoxError(f"Cannot destroy template VM {vmid}")

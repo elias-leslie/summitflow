@@ -1062,16 +1062,17 @@ def test_vm_status_uses_native_client() -> None:
     assert "VM 100 (test-vm): running" in result.output
 
 
-def test_vm_stop_uses_confirm_gate() -> None:
+def test_vm_stop_needs_no_confirmation_round_trip() -> None:
+    # PVE pools bound which guests the token may stop; lab work shouldn't pay a second pass.
     fake = _FakeVmClient()
     with (
         patch("cli.commands.vm._client", return_value=fake),
         patch("cli.commands.vm.confirm_gate") as confirm_gate,
     ):
-        result = runner.invoke(vm.app, ["stop", "100", "--confirm", "abc12345"])
+        result = runner.invoke(vm.app, ["stop", "100"])
 
     assert result.exit_code == 0
-    confirm_gate.assert_called_once()
+    confirm_gate.assert_not_called()
     assert fake.stopped == ["100"]
 
 

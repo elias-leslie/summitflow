@@ -135,3 +135,29 @@ def test_failed_start_declares_nothing(monkeypatch, tmp_path, failure):
     with pytest.raises(ProxmoxError):
         pve.start("112")
     assert declared == []
+
+
+def test_reboot_waits_for_the_task(monkeypatch):
+    pve = client()
+    monkeypatch.setattr(pve, "request", lambda method, path, **_: [] if path.startswith("/cluster") else f"UPID:{path}")
+    waited = []
+    monkeypatch.setattr(pve, "wait_task", lambda upid, **_: waited.append(upid))
+    pve.reboot("111")
+    assert waited == ["UPID:/nodes/node/qemu/111/status/reboot"]
+
+
+def test_resize_sets_only_what_was_asked_and_reports_a_pending_reboot(monkeypatch):
+    pve = client()
+    calls = []
+
+    def request(method, path, **kw):
+        calls.append((method, path, kw.get("data")))
+        if path.startswith("/cluster"):
+            return [{"vmid": 111, "type": "qemu"}]
+        return {"status": "running"} if path.endswith("/status/current") else None
+
+    monkeypatch.setattr(pve, "request", request)
+    assert pve.resize("111", cores=6, memory_mb=8192) is True
+    assert ("PUT", "/nodes/node/qemu/111/config", {"cores": 6, "memory": 8192}) in calls
+    with pytest.raises(ProxmoxError, match="Nothing to change"):
+        pve.resize("111")

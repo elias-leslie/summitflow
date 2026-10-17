@@ -20,9 +20,10 @@ from ..output import output_error
 
 app = typer.Typer(
     help=(
-        "Proxmox VM lifecycle through st. Use for browser/test VM status, IPs, "
-        "snapshots, start/stop, rollback, and clone. Destructive actions use "
-        "two-pass confirmation gates. For browser work, st browser uses the default "
+        "Proxmox VM lifecycle through st: status, IPs, snapshots, start/stop/reboot, "
+        "resize, rollback, clone. Lab-pool guests are fully managed; power-pool guests "
+        "start/stop/reboot only; others are read-only (PVE enforces it). Destroy keeps a "
+        "two-pass confirmation. For browser work, st browser uses the default "
         "browser VM; use st vm list/status/ip/start only when changing or repairing it."
     ),
 )
@@ -179,41 +180,48 @@ def start(
     _run(lambda client: (client.start(vmid, lab_hours=hours, lab_reason=reason), print(f"VM {vmid} started")))
 
 
+# Which guests these may touch is decided by the PVE token's pools (lifecycle in the lab pool, power only in the
+# power pool, everything else read-only), so routine lab work needs no confirmation round trip here.
 @app.command()
-def stop(
-    vmid: Annotated[str, typer.Argument(help="VM ID")],
-    confirm: Annotated[str | None, typer.Option("--confirm", help="Confirm token from preview run")] = None,
-) -> None:
-    """Stop a VM. Two-pass confirmation required."""
-    _confirm(
-        f"vm-stop-{vmid}",
-        confirm,
-        f"st vm stop {vmid}",
-        [
-            f"STOP VM: {vmid}",
-            "This may interrupt running workloads.",
-        ],
-    )
+def stop(vmid: Annotated[str, typer.Argument(help="VM ID")]) -> None:
+    """Stop a VM (hard stop)."""
     _run(lambda client: (client.stop(vmid), print(f"VM {vmid} stopped")))
+
+
+@app.command()
+def reboot(vmid: Annotated[str, typer.Argument(help="VM ID")]) -> None:
+    """Reboot a VM; pending hardware changes (cores, memory) take effect."""
+    _run(lambda client: (client.reboot(vmid), print(f"VM {vmid} rebooted")))
+
+
+@app.command()
+def resize(
+    vmid: Annotated[str, typer.Argument(help="VM ID")],
+    cores: Annotated[int | None, typer.Option("--cores", min=1, help="CPU cores")] = None,
+    memory: Annotated[int | None, typer.Option("--memory", min=256, help="Memory in MB")] = None,
+    balloon: Annotated[int | None, typer.Option("--balloon", min=0, help="Minimum (balloon) memory in MB; 0 disables ballooning")] = None,
+    restart: Annotated[bool, typer.Option("--restart", help="Reboot a running VM now so the change applies")] = False,
+) -> None:
+    """Change a VM's CPU cores and/or memory."""
+    def action(client: ProxmoxClient) -> None:
+        pending = client.resize(vmid, cores=cores, memory_mb=memory, balloon_mb=balloon)
+        if pending and restart:
+            client.reboot(vmid)
+            print(f"VM {vmid} resized and rebooted")
+        elif pending:
+            print(f"VM {vmid} resized; applies at its next reboot (st vm reboot {vmid}, or pass --restart)")
+        else:
+            print(f"VM {vmid} resized")
+
+    _run(action)
 
 
 @app.command()
 def rollback(
     vmid: Annotated[str, typer.Argument(help="VM ID")],
     snapshot_name: Annotated[str, typer.Argument(help="Snapshot name")],
-    confirm: Annotated[str | None, typer.Option("--confirm", help="Confirm token from preview run")] = None,
 ) -> None:
-    """Rollback a VM snapshot. Two-pass confirmation required."""
-    _confirm(
-        f"vm-rollback-{vmid}-{snapshot_name}",
-        confirm,
-        f"st vm rollback {vmid} {snapshot_name}",
-        [
-            f"ROLLBACK VM: {vmid}",
-            f"Snapshot: {snapshot_name}",
-            "This will discard VM state newer than the snapshot.",
-        ],
-    )
+    """Roll a VM back to a snapshot, discarding newer state."""
     def action(client: ProxmoxClient) -> None:
         print(f"Rolling back VM {vmid} to snapshot '{snapshot_name}'...")
         client.rollback(vmid, snapshot_name)
