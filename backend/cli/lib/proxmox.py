@@ -194,8 +194,15 @@ class ProxmoxClient:
         data = self.request("GET", f"/nodes/{self.config.node}/qemu")
         return sorted(data or [], key=lambda item: int(item.get("vmid", 0)))
 
+    def _kind(self, vmid: str) -> str:
+        """'lxc' for a container (e.g. blackbox-vault), else 'qemu': start, stop and status work on both."""
+        data = self.request("GET", "/cluster/resources?type=vm")
+        rows = data if isinstance(data, list) else []
+        row = next((r for r in rows if isinstance(r, dict) and str(r.get("vmid")) == str(vmid)), {})
+        return "lxc" if row.get("type") == "lxc" else "qemu"
+
     def status(self, vmid: str) -> dict[str, Any]:
-        data = self.request("GET", f"/nodes/{self.config.node}/qemu/{vmid}/status/current")
+        data = self.request("GET", f"/nodes/{self.config.node}/{self._kind(vmid)}/{vmid}/status/current")
         if not isinstance(data, dict):
             raise ProxmoxError(f"Missing status for VM {vmid}")
         return data
@@ -248,14 +255,14 @@ class ProxmoxClient:
 
     def start(self, vmid: str, *, lab_hours: float = 4.0, lab_reason: str = "") -> None:
         # PVE accepts the request before checking state; the task says whether it ran ("already running" fails it).
-        self.wait_task(str(self.request("POST", f"/nodes/{self.config.node}/qemu/{vmid}/status/start")), timeout_seconds=120)
+        self.wait_task(str(self.request("POST", f"/nodes/{self.config.node}/{self._kind(vmid)}/{vmid}/status/start")), timeout_seconds=120)
         # Only a start this call made is declared: a refused start, or a VM someone else already runs, must not get a
         # declaration naming this session (it would hide their undeclared run on the board and replace their claim).
         if asset := reserved_lab_asset(vmid):
             declare_lab_use(asset, lab_hours, lab_reason or f"st vm start {vmid}")
 
     def stop(self, vmid: str) -> None:
-        self.wait_task(str(self.request("POST", f"/nodes/{self.config.node}/qemu/{vmid}/status/stop")), timeout_seconds=120)
+        self.wait_task(str(self.request("POST", f"/nodes/{self.config.node}/{self._kind(vmid)}/{vmid}/status/stop")), timeout_seconds=120)
 
     def destroy(self, vmid: str) -> None:
         if vmid == "9000" or self.config_get(vmid).get("template"):

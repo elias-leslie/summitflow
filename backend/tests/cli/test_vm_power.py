@@ -36,6 +36,21 @@ def test_power_waits_for_the_task_and_surfaces_its_failure(monkeypatch, action):
     assert waited == [f"UPID:/nodes/node/qemu/120/status/{action}"]
 
 
+@pytest.mark.parametrize("action", ["start", "stop"])
+def test_power_on_a_container_uses_the_lxc_path(monkeypatch, action):
+    pve = client()
+    calls = []
+
+    def request(method, path, **_):
+        calls.append(path)
+        return [{"vmid": 140, "type": "lxc"}, {"vmid": 120, "type": "qemu"}] if path.startswith("/cluster") else "UPID:x"
+
+    monkeypatch.setattr(pve, "request", request)
+    monkeypatch.setattr(pve, "wait_task", lambda upid, **_: None)
+    getattr(pve, action)("140")
+    assert calls[-1] == f"/nodes/node/lxc/140/status/{action}"
+
+
 def test_permission_403_names_the_pools_that_grant_vm_rights(monkeypatch):
     monkeypatch.setattr(proxmox, "_tls_context", lambda _: None)
     body = '{"message":"Permission check failed (/vms/120, VM.PowerMgmt)\\n","data":null}'
@@ -73,7 +88,7 @@ def test_start_declares_a_parked_vm_after_starting_it(monkeypatch, tmp_path):
     calls = []
     monkeypatch.setattr(proxmox.subprocess, "run", lambda cmd, **_: calls.append(cmd) or subprocess.CompletedProcess(cmd, 0, "declared\n", ""))
     pve = client()
-    monkeypatch.setattr(pve, "request", lambda method, path, **_: calls.append(path) or "UPID:x")
+    monkeypatch.setattr(pve, "request", lambda method, path, **_: ("/cluster" not in path and calls.append(path)) or "UPID:x")
     monkeypatch.setattr(pve, "wait_task", lambda upid, **_: None)
     pve.start("112", lab_hours=2, lab_reason="pentest run")
     assert calls == [
@@ -95,7 +110,7 @@ def test_start_fails_open_when_nightshift_is_unavailable(monkeypatch, tmp_path, 
     monkeypatch.setattr(proxmox.subprocess, "run", missing)
     pve = client()
     started = []
-    monkeypatch.setattr(pve, "request", lambda method, path, **_: started.append(path) or "UPID:x")
+    monkeypatch.setattr(pve, "request", lambda method, path, **_: ("/cluster" not in path and started.append(path)) or "UPID:x")
     monkeypatch.setattr(pve, "wait_task", lambda upid, **_: None)
     pve.start("120")
     assert started == ["/nodes/node/qemu/120/status/start"]
