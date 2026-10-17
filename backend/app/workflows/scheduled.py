@@ -22,6 +22,7 @@ from ..hatchet_app import hatchet
 from ..services.schedule_registry import (
     SUMMITFLOW_CONTROL_PROJECT_ID,
     is_schedule_enabled,
+    schedule_cron,
 )
 from .backup_progress import make_backup_progress_callback
 from .models import (
@@ -61,7 +62,7 @@ def _explorer_schedule_concurrency() -> ConcurrencyExpression:
     execution_timeout="120s",
     retries=3,
     backoff_factor=2.0,
-    on_crons=["*/15 * * * *"],
+    on_crons=[schedule_cron("reset_claims")],
     concurrency=ConcurrencyExpression(
         expression="'summitflow-reset-claims'",
         max_runs=1,
@@ -84,7 +85,7 @@ async def reset_claims_wf(input: EmptyInput, ctx: Context) -> dict[str, Any]:
     execution_timeout="1800s",
     retries=3,
     backoff_factor=2.0,
-    on_crons=["0 */6 * * *"],
+    on_crons=[schedule_cron("scan_projects")],
     concurrency=_explorer_schedule_concurrency(),
 )
 async def scan_projects_wf(input: EmptyInput, ctx: Context) -> dict[str, Any]:
@@ -108,7 +109,7 @@ async def scan_projects_wf(input: EmptyInput, ctx: Context) -> dict[str, Any]:
     input_validator=EmptyInput,
     execution_timeout="1800s",
     retries=1,
-    on_crons=["45 */6 * * *"],
+    on_crons=[schedule_cron("dependency_reviews")],
     concurrency=ConcurrencyExpression(
         expression="'summitflow-dependency-reviews'",
         max_runs=1,
@@ -139,7 +140,7 @@ async def dependency_reviews_wf(input: EmptyInput, ctx: Context) -> dict[str, An
     execution_timeout="1200s",
     retries=3,
     backoff_factor=2.0,
-    on_crons=["10 3 * * *"],
+    on_crons=[schedule_cron("refresh_precision_indexes")],
     concurrency=_explorer_schedule_concurrency(),
 )
 async def refresh_precision_indexes_wf(input: EmptyInput, ctx: Context) -> dict[str, Any]:
@@ -163,7 +164,7 @@ async def refresh_precision_indexes_wf(input: EmptyInput, ctx: Context) -> dict[
     execution_timeout="1200s",
     retries=3,
     backoff_factor=2.0,
-    on_crons=["25 */2 * * *"],
+    on_crons=[schedule_cron("refresh_graphify_graphs")],
     concurrency=_explorer_schedule_concurrency(),
 )
 async def refresh_graphify_graphs_wf(input: EmptyInput, ctx: Context) -> dict[str, Any]:
@@ -184,7 +185,7 @@ async def refresh_graphify_graphs_wf(input: EmptyInput, ctx: Context) -> dict[st
     execution_timeout="7200s",
     retries=3,
     backoff_factor=2.0,
-    on_crons=["30 * * * *"],
+    on_crons=[schedule_cron("scheduled_backups")],
     concurrency=ConcurrencyExpression(
         expression="'summitflow-scheduled-backups'",
         max_runs=1,
@@ -208,7 +209,7 @@ async def scheduled_backups_wf(input: EmptyInput, ctx: Context) -> dict[str, Any
     execution_timeout="600s",
     retries=3,
     backoff_factor=2.0,
-    on_crons=["0 4 * * *"],
+    on_crons=[schedule_cron("stale_cleanup")],
     concurrency=ConcurrencyExpression(
         expression="'summitflow-stale-cleanup'",
         max_runs=1,
@@ -229,7 +230,7 @@ async def stale_cleanup_wf(input: StaleCleanupInput, ctx: Context) -> dict[str, 
     input_validator=EmptyInput,
     execution_timeout="7200s",
     retries=1,
-    on_crons=["45 4 * * 0"],
+    on_crons=[schedule_cron("hatchet_retention")],
     concurrency=ConcurrencyExpression(
         expression="'summitflow-hatchet-retention'",
         max_runs=1,
@@ -250,7 +251,7 @@ async def hatchet_retention_wf(input: EmptyInput, ctx: Context) -> dict[str, Any
     input_validator=EmptyInput,
     execution_timeout="60s",
     retries=1,
-    on_crons=["*/30 * * * *"],
+    on_crons=[schedule_cron("prod_smoke_test")],
     concurrency=ConcurrencyExpression(
         expression="'summitflow-prod-smoke-test'",
         max_runs=1,
@@ -294,7 +295,7 @@ async def prod_smoke_test_wf(input: EmptyInput, ctx: Context) -> dict[str, Any]:
     input_validator=EmptyInput,
     execution_timeout="60s",
     retries=1,
-    on_crons=["*/5 * * * *"],
+    on_crons=[schedule_cron("health_monitor")],
     concurrency=ConcurrencyExpression(
         expression="'summitflow-health-monitor'",
         max_runs=1,
@@ -318,7 +319,7 @@ async def health_monitor_wf(input: EmptyInput, ctx: Context) -> dict[str, Any]:
     execution_timeout="7200s",
     retries=2,
     backoff_factor=2.0,
-    on_crons=["*/30 * * * *"],
+    on_crons=[schedule_cron("pending_drain")],
     concurrency=ConcurrencyExpression(
         expression="'summitflow-pending-drain'",
         max_runs=1,
@@ -342,7 +343,7 @@ async def pending_drain_wf(input: EmptyInput, ctx: Context) -> dict[str, Any]:
     # (stream 45 min + two quick_checks up to 20 min each).
     execution_timeout="10800s",
     retries=1,
-    on_crons=["0 6 * * 0"],
+    on_crons=[schedule_cron("restore_tests")],
     concurrency=ConcurrencyExpression(
         expression="'summitflow-restore-tests'",
         max_runs=1,
@@ -369,7 +370,7 @@ async def restore_tests_wf(input: EmptyInput, ctx: Context) -> dict[str, Any]:
     input_validator=EmptyInput,
     execution_timeout="1800s",
     retries=1,
-    on_crons=["10 16 * * *"],
+    on_crons=[schedule_cron("runtime_hygiene")],
     concurrency=ConcurrencyExpression(
         expression="'summitflow-runtime-hygiene'",
         max_runs=1,
@@ -389,7 +390,7 @@ async def runtime_hygiene_wf(input: EmptyInput, ctx: Context) -> dict[str, Any]:
     name="summitflow-nightly-publication",
     input_validator=EmptyInput,
     # Hourly plain pushes; a pass that overruns skips the next trigger.
-    on_crons=["5 * * * *"],
+    on_crons=[schedule_cron("nightly_publication")],
     execution_timeout="3300s",
     retries=0,
     concurrency=ConcurrencyExpression(
@@ -412,7 +413,7 @@ async def nightly_publication_wf(input: EmptyInput, ctx: Context) -> dict[str, A
     input_validator=EmptyInput,
     # UTC 05-11 covers the 01:00-07:00 New York window across DST; offset from
     # publication so the busy heavy lane defers whichever starts second.
-    on_crons=["35 5-11 * * *"],
+    on_crons=[schedule_cron("nightly_deep_lane")],
     execution_timeout="21600s",
     retries=0,
     concurrency=ConcurrencyExpression(

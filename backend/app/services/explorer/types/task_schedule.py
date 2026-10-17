@@ -106,7 +106,11 @@ def parse_hatchet_scheduled_workflows(
                 for kw in decorator.keywords
                 if kw.arg is not None
             }
-            on_crons = _literal_value(keyword_map.get("on_crons"))
+            raw_crons = keyword_map.get("on_crons")
+            on_crons = _literal_value(raw_crons)
+            if not on_crons and isinstance(raw_crons, ast.List) and raw_crons.elts:
+                # A cron read from a registry (e.g. schedule_cron("id")) shows as its source.
+                on_crons = [ast.unparse(raw_crons.elts[0])]
             if not on_crons:
                 continue
 

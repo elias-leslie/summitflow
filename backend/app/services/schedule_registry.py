@@ -162,6 +162,11 @@ def get_schedule_definition(schedule_id: str) -> ScheduleDefinition:
     return definition
 
 
+def schedule_cron(schedule_id: str) -> str:
+    """The one cron literal for a schedule; scheduled.py registers it with Hatchet."""
+    return get_schedule_definition(schedule_id).cron
+
+
 def _control_project_id(
     project_id: str,
     definition: ScheduleDefinition,

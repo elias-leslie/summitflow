@@ -76,3 +76,15 @@ async def refresh_watchlist(ctx):
     assert schedule["daily-maintenance"]["source_file"] == "backend/app/workflows/maintenance.py"
     assert schedule["watchlist-refresh"]["source_file"] == "backend/app/workflows/watchlist.py"
     assert all(item["scheduler"] == "hatchet" for item in schedule.values())
+
+
+def test_registry_cron_call_is_kept_as_its_source() -> None:
+    from app.services.explorer.types.task_schedule import parse_hatchet_scheduled_workflows
+
+    content = """
+@hatchet.task(name="summitflow-reset-claims", on_crons=[schedule_cron("reset_claims")])
+async def reset_claims_wf(input, ctx):
+    return {}
+"""
+    schedule = parse_hatchet_scheduled_workflows(content)
+    assert schedule["summitflow-reset-claims"]["schedule_crontab"] == "schedule_cron('reset_claims')"
