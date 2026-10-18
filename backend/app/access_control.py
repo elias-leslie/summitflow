@@ -16,7 +16,6 @@ from jwt import PyJWKClient, PyJWTError
 from starlette.responses import JSONResponse, Response
 
 from .config import settings
-from .peer_identity import peer_uid, uids_for_users
 from .storage.access import (
     bootstrap_owners,
     get_user,
@@ -27,6 +26,7 @@ from .storage.access import (
 PUBLIC_API_PREFIXES = ("/api/health",)
 PUBLIC_PATHS = {"/health", "/api/auth/me"}
 OWNER_TOKEN_HEADER = "X-SummitFlow-Owner-Token"
+AGENT_TOKEN_HEADER = "X-SummitFlow-Agent-Token"
 AGENT_ROLE = "agent"
 
 
@@ -119,13 +119,14 @@ def resolve_principal(request: Request) -> AccessPrincipal | None:
         email = _email_from_cloudflare_token(header_token)
         return _principal_for_email(email)
 
-    if _owner_token_matches(request.headers.get(OWNER_TOKEN_HEADER)):
+    if _token_matches(settings.summitflow_owner_token_file, request.headers.get(OWNER_TOKEN_HEADER)):
         return _local_owner_principal()
 
-    if _is_local_development_request(request):
-        if settings.summitflow_loopback_is_owner:
-            return _local_owner_principal()
-        return _local_principal_by_user(request)
+    if _token_matches(settings.summitflow_agent_token_file, request.headers.get(AGENT_TOKEN_HEADER)):
+        return AccessPrincipal(email="agent@summitflow.local", role=AGENT_ROLE, is_active=True, is_local_bypass=True)
+
+    if settings.summitflow_loopback_is_owner and _is_local_development_request(request):
+        return _local_owner_principal()
 
     if _cloudflare_configured():
         cookie_token = _access_cookie_token(request)
@@ -138,9 +139,9 @@ def resolve_principal(request: Request) -> AccessPrincipal | None:
     return None
 
 
-def _owner_token_matches(presented: str | None) -> bool:
-    """True when the presented token equals the owner token file (its file mode keeps agents out)."""
-    path = settings.summitflow_owner_token_file.strip()
+def _token_matches(token_file: str, presented: str | None) -> bool:
+    """True when the presented token equals the token file's content (its file mode keeps other users out)."""
+    path = token_file.strip()
     if not path or not presented:
         return False
     try:
@@ -148,28 +149,6 @@ def _owner_token_matches(presented: str | None) -> bool:
     except (OSError, ValueError):
         return False
     return bool(expected) and compare_digest(presented.strip().encode(), expected.encode())
-
-
-def _local_principal_by_user(request: Request) -> AccessPrincipal | None:
-    """With loopback_is_owner off, tell local callers apart by the Unix user on the socket."""
-    if not _is_loopback_client(request):
-        return None
-    uid = peer_uid(request)
-    if uid is None:
-        return None
-    if uid in uids_for_users(settings.summitflow_owner_users):
-        return _local_owner_principal()
-    if uid in uids_for_users(settings.summitflow_agent_users):
-        return AccessPrincipal(email="agent@summitflow.local", role=AGENT_ROLE, is_active=True, is_local_bypass=True)
-    return None
-
-
-def _is_loopback_client(request: Request) -> bool:
-    client_host = request.client.host if request.client else ""
-    try:
-        return ip_address(client_host).is_loopback
-    except ValueError:
-        return client_host == "localhost"
 
 
 def _access_header_token(request: Request) -> str | None:

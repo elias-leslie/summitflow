@@ -19,10 +19,9 @@ export function backendApiUrl(): string {
 /**
  * Copy the caller's identity onto an upstream request.
  *
- * The backend trusts loopback callers without a Cloudflare identity, and this
- * proxy reaches it over loopback. Forwarding the Access JWT, the cookie and the
- * original host keeps the backend deciding on the real caller instead of the
- * proxy.
+ * This proxy reaches the backend over loopback, so it forwards only what the
+ * caller itself sent (Access JWT, cookie, owner token, original host) and adds no
+ * credential of its own: the proxy's own user never counts as the caller.
  */
 export function setIdentityHeaders(
   request: Request,

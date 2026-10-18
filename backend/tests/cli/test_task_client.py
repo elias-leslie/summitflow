@@ -97,3 +97,16 @@ def test_st_client_names_its_subcommand_as_request_source(monkeypatch) -> None:
 
     monkeypatch.setattr(client_module.sys, "argv", ["st", "--json"])
     assert client_module.request_source() == "st-cli"
+
+
+def test_st_client_sends_the_agent_token_when_the_file_is_readable(monkeypatch, tmp_path) -> None:
+    from cli import client as client_module
+
+    token_file = tmp_path / "agent-token"
+    token_file.write_text("agent-s3cret\n")
+    monkeypatch.setenv("SUMMITFLOW_AGENT_TOKEN_FILE", str(token_file))
+    assert client_module.agent_token_headers() == {"X-SummitFlow-Agent-Token": "agent-s3cret"}
+    monkeypatch.setenv("SUMMITFLOW_AGENT_TOKEN_FILE", str(tmp_path / "missing"))
+    assert client_module.agent_token_headers() == {}
+    monkeypatch.delenv("SUMMITFLOW_AGENT_TOKEN_FILE")
+    assert client_module.agent_token_headers() == {}

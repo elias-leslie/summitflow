@@ -2,8 +2,10 @@
 
 from __future__ import annotations
 
+import os
 import re
 import sys
+from pathlib import Path
 
 from ._client_base import APIError, BaseHTTPClient
 from ._client_mixins import (
@@ -22,6 +24,16 @@ def request_source() -> str:
     """Name the st subcommand for the backend's request usage log."""
     command = sys.argv[1] if len(sys.argv) > 1 else ""
     return f"st-cli/{command}" if _COMMAND_TOKEN.match(command) else "st-cli"
+
+
+def agent_token_headers() -> dict[str, str]:
+    """The agent token header when SUMMITFLOW_AGENT_TOKEN_FILE names a readable file, else nothing."""
+    path = os.environ.get("SUMMITFLOW_AGENT_TOKEN_FILE", "").strip()
+    try:
+        token = Path(path).read_text(encoding="utf-8").strip() if path else ""
+    except (OSError, ValueError):
+        return {}
+    return {"X-SummitFlow-Agent-Token": token} if token else {}
 
 
 class STClient(
@@ -55,6 +67,7 @@ class STClient(
 
         super().__init__(resolved_base_url, resolved_project_id, timeout)
         self._client.headers.setdefault("X-Request-Source", request_source())
+        self._client.headers.update(agent_token_headers())
 
 
 __all__ = ["APIError", "STClient"]
