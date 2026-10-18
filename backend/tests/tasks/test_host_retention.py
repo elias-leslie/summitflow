@@ -14,6 +14,7 @@ import pytest
 def _isolate_scratch(mocker) -> Any:
     """Host retention must never touch the live /srv/scratch or its stamp in tests."""
     mocker.patch("app.tasks.host_retention.SCRATCH_ROOT", Path("/nonexistent-test-scratch"))
+    mocker.patch("app.tasks.host_retention.UV_CACHE", Path("/nonexistent-test-scratch/cache/uv"))
     return mocker.patch("app.tasks.host_retention.weekly_scratch_retention",
                         return_value={"status": "skipped", "reason": "weekly-cadence"})
 
@@ -159,6 +160,25 @@ def test_cleanup_host_artifacts_prunes_rebuildable_data_and_reports_review_candi
     assert not playwright_old.exists()
     assert result["review_candidates"][0]["reason"] == "legacy_project_root"
     assert result["review_candidates"][0]["path"].endswith("2026-03-01-btrfs-cutover")
+
+
+def test_daily_retention_prunes_the_uv_cache_in_the_owner_cache_dir(mocker, tmp_path: Path) -> None:
+    from app.tasks import host_retention
+
+    cache = tmp_path / "uv"
+    cache.mkdir()
+    mocker.patch.object(host_retention, "UV_CACHE", cache)
+    mocker.patch("app.tasks._retention_reclaim.shutil.which", return_value="/usr/bin/uv")
+    seen: dict[str, Any] = {}
+
+    def fake_run(args: list[str], *, env: dict[str, str] | None = None):
+        seen.update(args=args, env=env)
+        return type("Proc", (), {"returncode": 0, "stdout": "", "stderr": ""})()
+
+    mocker.patch.object(host_retention, "_run", fake_run)
+
+    assert host_retention._uv_cache_prune() == {"status": "success"}
+    assert seen == {"args": ["uv", "cache", "prune"], "env": {"UV_CACHE_DIR": str(cache)}}
 
 
 def test_playwright_retention_keeps_builds_pinned_by_installed_packages(tmp_path: Path) -> None:

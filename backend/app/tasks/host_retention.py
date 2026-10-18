@@ -29,7 +29,14 @@ from ._retention_fs import (
     playwright_required_children,
 )
 from ._retention_policy import HostRetentionPolicy
-from ._retention_reclaim import filesystem_source, go_cache_dir, reclaim_filesystem
+from ._retention_reclaim import (
+    UV_CACHE,
+    _run,
+    _tool,
+    filesystem_source,
+    go_cache_dir,
+    reclaim_filesystem,
+)
 from ._retention_scratch import SCRATCH_ROOT, weekly_scratch_retention
 
 logger = get_logger(__name__)
@@ -168,6 +175,14 @@ def _go_cache_over_limit(policy: HostRetentionPolicy) -> dict[str, object]:
     return {"status": "success", "size_bytes": size, "limit_bytes": limit}
 
 
+def _uv_cache_prune() -> dict[str, object]:
+    """Daily `uv cache prune` (unused entries only) on the owner's uv cache; Nightshift's housekeeping no longer does it."""
+    if not UV_CACHE.is_dir():
+        return {"status": "skipped", "reason": "no uv cache"}
+    result = _tool("uv_cache", ["uv", "cache", "prune"], run=_run, env={"UV_CACHE_DIR": str(UV_CACHE)})
+    return {key: value for key, value in result.items() if key != "step"}
+
+
 def _prune_project_check_artifacts(
     roots: list[Path] | None, policy: HostRetentionPolicy, now: datetime,
 ) -> dict[str, object]:
@@ -256,6 +271,7 @@ def cleanup_host_artifacts(
         logger.warning("agent_tmp_retention_failed", error=str(exc))
         agent_tmp_result = {"status": "error", "error": str(exc), "deleted_paths": [], "bytes": 0}
     go_cache_result = _go_cache_over_limit(effective_policy)
+    uv_cache_result = _uv_cache_prune()
     agent_tmp_removed: list[str] = list(agent_tmp_result.get("deleted_paths") or [])
     agent_tmp_bytes = int(agent_tmp_result.get("bytes") or 0)
     tool_cache_deleted = (
@@ -305,7 +321,7 @@ def cleanup_host_artifacts(
     errors = [
         entry["error"]
         for entry in (docker["containers"], docker["builder_cache"], docker["images"], docker["anonymous_volumes"],
-                      scratch_result, check_artifacts, agent_tmp_result, go_cache_result)
+                      scratch_result, check_artifacts, agent_tmp_result, go_cache_result, uv_cache_result)
         if isinstance(entry, dict) and entry.get("status") == "error" and entry.get("error")
     ]
     status = "partial" if errors else "success"
@@ -330,6 +346,7 @@ def cleanup_host_artifacts(
         },
         "agent_tmp": agent_tmp_result,
         "go_cache": go_cache_result,
+        "uv_cache": uv_cache_result,
         "temp_backups": tmp_backups_result,
         "scratch": scratch_result,
         "check_artifacts": check_artifacts,
