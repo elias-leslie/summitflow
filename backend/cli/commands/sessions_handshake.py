@@ -109,7 +109,47 @@ setattr(inbox, USAGE_SPECS_ATTR, (UsageSpec(
 ),))
 
 
+@usage(
+    surface="st.sessions.may_disrupt",
+    cmd="st sessions may-disrupt [TARGET] [--requests ID,ID]",
+    when="before a host-level disruption (reboot, service restart): who is working, replies to your handshakes, "
+         "repo holds and leases, running backups, as one JSON answer",
+    precautions=("read-only; TARGET is host (default), a project id or a unit; clear stays false while any part "
+                 "is unreadable (see unknown); it does not send handshakes",),
+    tier="reference",
+)
+def may_disrupt(
+    target: Annotated[str, typer.Argument(help="host (default), a project id, or a unit name")] = "host",
+    requests: Annotated[str | None, typer.Option("--requests", help="Comma-separated handshake ids to report; "
+                                                 "defaults to every request you sent")] = None,
+) -> None:
+    """One JSON answer to "may I disrupt TARGET now?": agents, handshake replies, holds, leases, running backups."""
+    import json
+
+    from ..client import STClient
+    from ..lib import coord_disrupt
+
+    client: STClient | None = None
+
+    def _client() -> STClient:
+        nonlocal client
+        client = client or STClient(require_project=False)
+        return client
+
+    def _sessions() -> list[dict]:
+        return _client().list_sessions(status="active", limit=100)
+
+    def _backups() -> list[dict]:
+        body = _client().get(_client()._global_url("/backups?status=running&limit=50"))
+        return list(body.get("backups") or []) if isinstance(body, dict) else []
+
+    ids = [r.strip() for r in (requests or "").split(",") if r.strip()]
+    payload = coord_disrupt.snapshot(target, request_ids=ids, sessions=_sessions, running_backups=_backups)
+    typer.echo(json.dumps(payload, indent=2, default=str))
+
+
 def register(app: typer.Typer) -> None:
+    app.command("may-disrupt")(may_disrupt)
     app.command("ack")(ack)
     app.command("confirm")(confirm)
     app.command("inbox")(inbox)
