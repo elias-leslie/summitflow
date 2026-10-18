@@ -2,12 +2,21 @@
 
 Steps, each only when its data lives on the target filesystem:
 
-1. ``uv cache prune`` on the owner's uv cache.
-2. ``pnpm store prune`` on the owner's pnpm store.
-3. Hugging Face hub repos untouched for ``HF_UNUSED_DAYS``, not open by any
+1. Stale agent and build temp in ``/tmp`` (``_retention_agent_tmp``).
+2. ``go clean -cache`` on the owner's Go build cache.
+3. ``uv cache prune`` on the owner's uv cache.
+4. ``pnpm store prune`` on the owner's pnpm store.
+5. Docker: stopped containers past the policy age, build cache and images at
+   the pressure targets, anonymous volumes past their age.
+6. Hugging Face hub repos untouched for ``HF_UNUSED_DAYS``, not open by any
    visible process and holding no mount point or other filesystem (scratch is
    mounted noatime, so mtime/ctime is the age).
-4. ``/srv/scratch`` retention with the pressure age.
+7. ``/srv/scratch`` retention with the pressure age.
+
+This is SummitFlow's emergency reclaim entry: Nightshift's space-guard runs it
+(``st cleanup reclaim --filesystem PATH --target-free-gib N``) as the owner
+when a disk is under its critical line; each real run is recorded as the
+``emergency_reclaim`` maintenance run.
 
 The cache roots under ``/srv/scratch/cache`` are live symlink targets (see the
 README there): their tools prune inside them and the roots themselves stay.
@@ -25,6 +34,13 @@ from pathlib import Path
 from typing import Any
 
 from ..utils.host_retention_policy import HostRetentionPolicy
+from ._retention_agent_tmp import TMP_ROOT, age_agent_tmp
+from ._retention_docker import (
+    prune_anonymous_docker_volumes,
+    prune_builder_cache,
+    prune_images,
+    prune_stopped_containers,
+)
 from ._retention_scratch import (
     MOUNTINFO,
     SCRATCH_ROOT,
@@ -134,6 +150,40 @@ def prune_unused_hf_repos(*, hub: Path = HF_HUB, now: datetime, max_age_days: in
     return result
 
 
+def go_cache_dir(run: Runner) -> Path | None:
+    if shutil.which("go") is None:
+        return None
+    try:
+        proc = run(["go", "env", "GOCACHE"], timeout=30)
+    except (OSError, subprocess.TimeoutExpired):
+        return None
+    value = proc.stdout.strip() if isinstance(proc.stdout, str) else ""
+    return Path(value) if proc.returncode == 0 and value.startswith("/") else None
+
+
+def docker_root(run: Runner) -> Path | None:
+    if shutil.which("docker") is None:
+        return None
+    try:
+        proc = run(["docker", "info", "--format", "{{.DockerRootDir}}"], timeout=30)
+    except (OSError, subprocess.TimeoutExpired):
+        return None
+    value = proc.stdout.strip() if isinstance(proc.stdout, str) else ""
+    return Path(value) if proc.returncode == 0 and value.startswith("/") else None
+
+
+def _docker(policy: HostRetentionPolicy, now: datetime, run: Runner) -> dict[str, Any]:
+    parts = {
+        "containers": prune_stopped_containers(policy=policy, run=run),
+        "builder_cache": prune_builder_cache(policy=policy, pressure_mode=True, run=run),
+        "images": prune_images(policy=policy, pressure_mode=True, run=run),
+        "anonymous_volumes": prune_anonymous_docker_volumes(policy=policy, now=now, run=run),
+    }
+    errors = [f"{name}: {part['error']}" for name, part in parts.items() if part.get("status") == "error" and part.get("error")]
+    return {"step": "docker", "status": "partial" if errors else "success", "parts": parts,
+            **({"error": "; ".join(errors)} if errors else {})}
+
+
 def _scratch(max_age_hours: int, now: datetime, dry_run: bool) -> dict[str, Any]:
     if dry_run:
         review = collect_scratch_review(max_age_hours=max_age_hours, now=now)
@@ -168,9 +218,21 @@ def reclaim_filesystem(
         return location is not None and location.exists() and filesystem_source(location) == source
 
     pnpm_store = _pnpm_store(run)
+    go_cache = go_cache_dir(run)
+    docker_dir = docker_root(run)
+
+    def pressured() -> bool:
+        return not met() if target_free_bytes is not None else True
+
     steps: list[tuple[str, Path | None, Callable[[], dict[str, Any]]]] = [
+        ("agent_tmp", TMP_ROOT, lambda: age_agent_tmp(
+            agent_max_age_hours=effective_policy.agent_tmp_max_age_hours,
+            build_max_age_hours=effective_policy.build_tmp_max_age_hours,
+            now=effective_now, root=TMP_ROOT, pressured=pressured, dry_run=dry_run)),
+        ("go_cache", go_cache, lambda: _tool("go_cache", ["go", "clean", "-cache"], run=run)),
         ("uv_cache", UV_CACHE, lambda: _tool("uv_cache", ["uv", "cache", "prune"], run=run, env={"UV_CACHE_DIR": str(UV_CACHE)})),
         ("pnpm_store", pnpm_store, lambda: _tool("pnpm_store", ["pnpm", "store", "prune"], run=run)),
+        ("docker", docker_dir, lambda: _docker(effective_policy, effective_now, run)),
         ("hf_hub", HF_HUB, lambda: prune_unused_hf_repos(now=effective_now, dry_run=dry_run)),
         ("scratch", SCRATCH_ROOT, lambda: _scratch(effective_policy.scratch_pressure_max_age_hours, effective_now, dry_run)),
     ]
@@ -180,7 +242,7 @@ def reclaim_filesystem(
         if not here(location):
             receipt["steps"].append({"step": name, "status": "skipped", "reason": "not on this filesystem"})
             continue
-        if dry_run and name in {"uv_cache", "pnpm_store"}:
+        if dry_run and name in {"uv_cache", "pnpm_store", "go_cache", "docker"}:
             receipt["steps"].append({"step": name, "status": "would-run"})
             continue
         start = free_bytes(path)

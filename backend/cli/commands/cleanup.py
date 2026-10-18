@@ -405,19 +405,43 @@ def cleanup_reclaim(
     target_free_gib: Annotated[float | None, typer.Option("--target-free-gib", min=0, help="Stop once this much is free; default runs every step.")] = None,
     dry_run: DryRunOpt = False,
 ) -> None:
-    """Free space now: uv cache prune, pnpm store prune, unused Hugging Face repos, then scratch at the pressure age.
+    """Emergency reclaim: free space now, safest steps first, on the given filesystem only.
 
-    Steps run only for data on the given filesystem and stop once the target is free.
-    Prints a JSON receipt; exits 1 when the target is still not met or a step failed.
+    Steps: stale agent/build temp in /tmp, go clean -cache, uv cache prune, pnpm store prune, Docker (old stopped
+    containers, build cache, images, old anonymous volumes), unused Hugging Face repos, then scratch at the pressure
+    age. Stops once the target is free. Prints a JSON receipt and records the run (Runtime > Maintenance);
+    exits 1 when the target is still not met or a step failed. Nightshift's space-guard calls this.
     Snapshot thinning is separate: st autosnap prune --pressure.
     """
+    from datetime import UTC, datetime
+
     from app.tasks._retention_reclaim import reclaim_filesystem
 
     if not filesystem.exists():
         typer.echo(f"Error: {filesystem} does not exist", err=True)
         raise typer.Exit(2)
     target = None if target_free_gib is None else int(target_free_gib * 1024**3)
+    started = datetime.now(UTC)
     receipt = reclaim_filesystem(filesystem, target_free_bytes=target, dry_run=dry_run)
+    if not dry_run:
+        _record_reclaim(receipt, started)
     output_json(receipt)
     if not dry_run and (not receipt["target_met"] or receipt["errors"]):
         raise typer.Exit(1)
+
+
+def _record_reclaim(receipt: dict, started) -> None:
+    """Record the run for the Runtime page; a full disk or a stopped database never fails the reclaim itself."""
+    try:
+        from app.storage import maintenance_runs
+
+        freed = max(0, int(receipt.get("free_after", 0)) - int(receipt.get("free_before", 0)))
+        removed = sum(len(step.get("deleted_paths") or []) for step in receipt.get("steps", []))
+        status = "success" if receipt.get("target_met") and not receipt.get("errors") else "partial"
+        maintenance_runs.record_maintenance_run(
+            "emergency_reclaim", status, started_at=started, rows_cleaned=removed,
+            summary={**receipt, "freed_bytes": freed},
+            error_message="; ".join(str(e) for e in receipt.get("errors") or [])[:500] or None,
+        )
+    except Exception as exc:
+        typer.echo(f"note: reclaim run not recorded ({type(exc).__name__})", err=True)

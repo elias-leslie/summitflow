@@ -122,7 +122,7 @@ export function HostDisruptionCard() {
         <span className="shrink-0 text-sm font-medium text-slate-100">
           Restart or reboot
         </span>
-        <span className="min-w-0 flex-1 truncate text-xs text-slate-500">
+        <span className="min-w-0 flex-1 text-xs text-slate-500 sm:truncate">
           {summary(data)}
         </span>
         <svg

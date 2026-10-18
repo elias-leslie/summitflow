@@ -25,6 +25,7 @@ MONITORED_MAINTENANCE_WORKFLOWS = (
     "scheduled_backups",
     "refresh_graphify_graphs",
     "runtime_hygiene",
+    "emergency_reclaim",
 )
 
 
@@ -201,3 +202,47 @@ async def get_host_disruption(
 ) -> dict[str, Any]:
     """Whether this host can be disrupted now: the same answer as st sessions may-disrupt, every open request listed."""
     return await host_disruption(target)
+
+
+class CleanupSetting(BaseModel):
+    name: str
+    value: float
+    default: float
+    saved: bool
+    min: float
+    max: float
+
+
+class CleanupSettingsResponse(BaseModel):
+    settings: list[CleanupSetting]
+
+
+def _cleanup_settings() -> CleanupSettingsResponse:
+    from ..utils.host_retention_policy import EDITABLE, HostRetentionPolicy, read_settings
+
+    policy = HostRetentionPolicy.from_env()
+    defaults = policy.defaults_for()
+    saved = read_settings()
+    return CleanupSettingsResponse(settings=[
+        CleanupSetting(name=name, value=float(getattr(policy, name)), default=float(defaults[name]),
+                       saved=name in saved, min=low, max=high)
+        for name, (low, high) in EDITABLE.items()
+    ])
+
+
+@router.get("/cleanup-settings", response_model=CleanupSettingsResponse)
+def get_cleanup_settings() -> CleanupSettingsResponse:
+    """Ages and limits for dev-tool cleanup (agent temp, build temp, stopped containers, Go cache)."""
+    return _cleanup_settings()
+
+
+@router.put("/cleanup-settings", response_model=CleanupSettingsResponse)
+def put_cleanup_settings(values: dict[str, float | None]) -> CleanupSettingsResponse:
+    """Save some settings; null resets one to its default."""
+    from ..utils.host_retention_policy import write_settings
+
+    try:
+        write_settings(values)
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    return _cleanup_settings()

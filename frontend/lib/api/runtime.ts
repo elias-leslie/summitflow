@@ -196,6 +196,15 @@ export interface HostDisruption {
   }
 }
 
+export interface CleanupSetting {
+  name: string
+  value: number
+  default: number
+  saved: boolean
+  min: number
+  max: number
+}
+
 export interface MaintenanceStatus {
   latest: Record<string, MaintenanceRun>
   recent: MaintenanceRun[]
@@ -412,6 +421,21 @@ export const runtimeApi = {
     fetchWithErrorHandling<HostDisruption>(apiUrl('/api/system/disruption'), {
       errorMessage: 'Failed to check whether the host can be disrupted',
     }),
+  getCleanupSettings: () =>
+    fetchWithErrorHandling<{ settings: CleanupSetting[] }>(
+      apiUrl('/api/system/cleanup-settings'),
+      { errorMessage: 'Failed to load cleanup settings' },
+    ),
+  saveCleanupSettings: (values: Record<string, number | null>) =>
+    fetchWithErrorHandling<{ settings: CleanupSetting[] }>(
+      apiUrl('/api/system/cleanup-settings'),
+      {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(values),
+        errorMessage: 'Failed to save cleanup settings',
+      },
+    ),
   getMaintenanceStatus: () =>
     fetchWithErrorHandling<MaintenanceStatus>(
       apiUrl('/api/system/maintenance'),

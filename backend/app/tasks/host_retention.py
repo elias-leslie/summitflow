@@ -9,14 +9,17 @@ from pathlib import Path
 from typing import Any, TypedDict
 
 from ..logging_config import get_logger
+from ._retention_agent_tmp import age_agent_tmp
 from ._retention_check_artifacts import prune_check_artifacts
 from ._retention_docker import (
     CacheResult,
+    ContainerResult,
     ImageResult,
     VolumeResult,
     prune_anonymous_docker_volumes,
     prune_builder_cache,
     prune_images,
+    prune_stopped_containers,
 )
 from ._retention_fs import (
     cleanup_old_children,
@@ -26,7 +29,7 @@ from ._retention_fs import (
     playwright_required_children,
 )
 from ._retention_policy import HostRetentionPolicy
-from ._retention_reclaim import filesystem_source, reclaim_filesystem
+from ._retention_reclaim import filesystem_source, go_cache_dir, reclaim_filesystem
 from ._retention_scratch import SCRATCH_ROOT, weekly_scratch_retention
 
 logger = get_logger(__name__)
@@ -44,6 +47,7 @@ class VeeamSnapshotResult(TypedDict, total=False):
 
 
 class _DockerSummary(TypedDict):
+    containers: ContainerResult
     builder_cache: CacheResult
     images: ImageResult
     anonymous_volumes: VolumeResult
@@ -117,6 +121,7 @@ def _docker_available() -> bool:
 
 
 _DOCKER_SKIPPED = _DockerSummary(
+    containers=ContainerResult(status="skipped", reason="docker_unavailable"),
     builder_cache=CacheResult(status="skipped", reason="docker_unavailable"),
     images=ImageResult(status="skipped", reason="docker_unavailable"),
     anonymous_volumes=VolumeResult(status="skipped", deleted=[], reason="docker_unavailable"),
@@ -132,10 +137,35 @@ def _run_docker_cleanup(
     if not _docker_available():
         return _DOCKER_SKIPPED
     return _DockerSummary(
+        containers=prune_stopped_containers(policy=policy, run=_run_command),
         builder_cache=prune_builder_cache(policy=policy, pressure_mode=pressure_mode, run=_run_command),
         images=prune_images(policy=policy, pressure_mode=pressure_mode, run=_run_command),
         anonymous_volumes=prune_anonymous_docker_volumes(policy=policy, now=now, run=_run_command),
     )
+
+
+def _go_cache_over_limit(policy: HostRetentionPolicy) -> dict[str, object]:
+    """Clear Go's build cache once it is larger than the policy limit."""
+    def run(args: list[str], *, timeout: int = 600, env: dict[str, str] | None = None) -> subprocess.CompletedProcess[str]:
+        return _run_command(args, timeout=timeout)
+
+    cache = go_cache_dir(run)
+    if cache is None or not cache.is_dir():
+        return {"status": "skipped", "reason": "no go build cache"}
+    try:
+        from ._retention_scratch import _tree_stats
+
+        stats = _tree_stats(cache, max_entries=2_000_000)
+    except OSError as exc:
+        return {"status": "error", "error": str(exc)}
+    size = stats[1] if stats else None
+    limit = int(policy.go_cache_max_gb * _BYTES_PER_GB)
+    if size is not None and size <= limit:
+        return {"status": "kept", "size_bytes": size, "limit_bytes": limit}
+    proc = run(["go", "clean", "-cache"])
+    if proc.returncode != 0:
+        return {"status": "error", "error": (proc.stderr or proc.stdout).strip()[-400:]}
+    return {"status": "success", "size_bytes": size, "limit_bytes": limit}
 
 
 def _prune_project_check_artifacts(
@@ -215,14 +245,29 @@ def cleanup_host_artifacts(
         internal_workdir_max_age_hours=effective_policy.hermes_checkpoint_internal_max_age_hours,
         now=effective_now,
     )
+    agent_tmp_result: dict[str, Any]
+    try:
+        agent_tmp_result = age_agent_tmp(
+            agent_max_age_hours=effective_policy.agent_tmp_max_age_hours,
+            build_max_age_hours=effective_policy.build_tmp_max_age_hours,
+            now=effective_now, root=effective_tmp,
+        )
+    except Exception as exc:  # one step must not abort host retention
+        logger.warning("agent_tmp_retention_failed", error=str(exc))
+        agent_tmp_result = {"status": "error", "error": str(exc), "deleted_paths": [], "bytes": 0}
+    go_cache_result = _go_cache_over_limit(effective_policy)
+    agent_tmp_removed: list[str] = list(agent_tmp_result.get("deleted_paths") or [])
+    agent_tmp_bytes = int(agent_tmp_result.get("bytes") or 0)
     tool_cache_deleted = (
-        npx_result["deleted_paths"]
+        len(agent_tmp_removed)
+        + npx_result["deleted_paths"]
         + playwright_result["deleted_paths"]
         + tmp_backups_result["deleted_paths"]
         + hermes_checkpoints_result["deleted_paths"]
     )
     tool_cache_reclaimed = (
-        npx_result["bytes_reclaimed"]
+        agent_tmp_bytes
+        + npx_result["bytes_reclaimed"]
         + playwright_result["bytes_reclaimed"]
         + tmp_backups_result["bytes_reclaimed"]
         + hermes_checkpoints_result["bytes_reclaimed"]
@@ -259,7 +304,8 @@ def cleanup_host_artifacts(
 
     errors = [
         entry["error"]
-        for entry in (docker["builder_cache"], docker["images"], docker["anonymous_volumes"], scratch_result, check_artifacts)
+        for entry in (docker["containers"], docker["builder_cache"], docker["images"], docker["anonymous_volumes"],
+                      scratch_result, check_artifacts, agent_tmp_result, go_cache_result)
         if isinstance(entry, dict) and entry.get("status") == "error" and entry.get("error")
     ]
     status = "partial" if errors else "success"
@@ -282,10 +328,13 @@ def cleanup_host_artifacts(
             "npx": npx_result,
             "playwright": playwright_result,
         },
+        "agent_tmp": agent_tmp_result,
+        "go_cache": go_cache_result,
         "temp_backups": tmp_backups_result,
         "scratch": scratch_result,
         "check_artifacts": check_artifacts,
         "hermes_checkpoints": hermes_checkpoints_result,
+        "docker_containers": docker["containers"],
         "docker_builder_cache": docker["builder_cache"],
         "docker_images": docker["images"],
         "docker_anonymous_volumes": docker["anonymous_volumes"],

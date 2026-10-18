@@ -128,3 +128,20 @@ def prune_anonymous_docker_volumes(
         delete_proc = run(["docker", "volume", "rm", name], timeout=120)
         (deleted if delete_proc.returncode == 0 else skipped).append(name)
     return {"status": "success", "deleted": deleted, "skipped": skipped}
+
+
+class ContainerResult(TypedDict, total=False):
+    status: str
+    max_age_hours: int
+    stdout_tail: str
+    error: str
+    reason: str
+
+
+def prune_stopped_containers(*, policy: HostRetentionPolicy, run: _RunFn) -> ContainerResult:
+    """Stopped containers older than the policy age (running ones are never touched by docker container prune)."""
+    max_age_hours = policy.container_max_age_hours
+    proc = run(["docker", "container", "prune", "--force", "--filter", f"until={max_age_hours}h"], timeout=300)
+    if proc.returncode != 0:
+        return {"status": "error", "max_age_hours": max_age_hours, "error": _tail(proc.stderr or proc.stdout)}
+    return {"status": "success", "max_age_hours": max_age_hours, "stdout_tail": _tail(proc.stdout)}

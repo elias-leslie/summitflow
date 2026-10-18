@@ -6,6 +6,8 @@ const queryMocks = vi.hoisted(() => ({
   useQuery: vi.fn(),
 }))
 
+vi.mock('./CleanupSettings', () => ({ CleanupSettings: () => null }))
+
 vi.mock('@tanstack/react-query', () => ({
   useQuery: queryMocks.useQuery,
 }))
@@ -133,6 +135,41 @@ describe('MaintenanceStatusCard', () => {
     expect(screen.getByText('No runs recorded')).toBeInTheDocument()
     expect(
       screen.getByText('No maintenance runs recorded yet.'),
+    ).toBeInTheDocument()
+  })
+
+  it('shows freed space for an emergency reclaim and a placeholder before the first one', () => {
+    mockLatest({
+      daily_maintenance: run(
+        'daily_maintenance',
+        'success',
+        '2026-10-10T04:00:00Z',
+      ),
+    })
+    const { unmount } = render(<MaintenanceStatusCard />)
+    fireEvent.click(screen.getByRole('button'))
+    expect(
+      screen.getByText(
+        'Not needed yet. Nightshift runs it when a disk is nearly full.',
+      ),
+    ).toBeInTheDocument()
+    unmount()
+
+    mockLatest({
+      emergency_reclaim: run(
+        'emergency_reclaim',
+        'success',
+        '2026-10-10T11:00:00Z',
+        {
+          rows_cleaned: 3,
+          summary: { freed_bytes: 3 * 1024 ** 3, filesystem: '/' },
+        },
+      ),
+    })
+    render(<MaintenanceStatusCard />)
+    fireEvent.click(screen.getByRole('button'))
+    expect(
+      screen.getByText('Freed 3.0 GB on / · 3 items removed'),
     ).toBeInTheDocument()
   })
 })

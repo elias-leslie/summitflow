@@ -340,15 +340,18 @@ def test_reclaim_stops_at_target_and_keeps_cache_roots(mocker, tmp_path: Path) -
         (repo / "blobs" / "b").write_text("weights")
     old = (datetime.now(UTC) - timedelta(days=40)).timestamp()
     (cache / "uv").mkdir()
-    mocker.patch.multiple(reclaim, UV_CACHE=cache / "uv", HF_HUB=hub, SCRATCH_ROOT=tmp_path)
+    mocker.patch.multiple(reclaim, UV_CACHE=cache / "uv", HF_HUB=hub, SCRATCH_ROOT=tmp_path, TMP_ROOT=tmp_path / "tmp")
+    (tmp_path / "tmp").mkdir()
     mocker.patch.object(reclaim, "filesystem_source", lambda path: "p8")
     mocker.patch.object(reclaim.shutil, "which", lambda name: f"/usr/bin/{name}")
     free = {"bytes": 10}
     mocker.patch.object(reclaim, "free_bytes", lambda path: free["bytes"])
     calls: list[tuple[list[str], dict[str, str] | None]] = []
 
-    def run(args: list[str], *, env: dict[str, str] | None = None):
+    def run(args: list[str], *, env: dict[str, str] | None = None, timeout: int = 0):
         calls.append((args, env))
+        if args[:3] in (["go", "env", "GOCACHE"], ["docker", "info", "--format"]):
+            return type("Proc", (), {"returncode": 1, "stdout": "", "stderr": ""})()
         if args[:3] == ["pnpm", "store", "path"]:
             return type("Proc", (), {"returncode": 0, "stdout": f"{cache}\n", "stderr": ""})()
         if args[:3] == ["pnpm", "store", "prune"]:
@@ -356,8 +359,9 @@ def test_reclaim_stops_at_target_and_keeps_cache_roots(mocker, tmp_path: Path) -
         return type("Proc", (), {"returncode": 0, "stdout": "", "stderr": ""})()
 
     receipt = reclaim.reclaim_filesystem(tmp_path, target_free_bytes=50, run=run)
-    assert [step["step"] for step in receipt["steps"]] == ["uv_cache", "pnpm_store"]
-    assert receipt["target_met"] and receipt["steps"][1]["freed_bytes"] == 90
+    assert [step["step"] for step in receipt["steps"]] == ["agent_tmp", "go_cache", "uv_cache", "pnpm_store"]
+    assert receipt["steps"][1]["reason"] == "not on this filesystem"  # no Go cache reported
+    assert receipt["target_met"] and receipt["steps"][3]["freed_bytes"] == 90
     assert (["uv", "cache", "prune"], {"UV_CACHE_DIR": str(cache / "uv")}) in calls
     assert old_repo.exists()  # target met before the Hugging Face step
 

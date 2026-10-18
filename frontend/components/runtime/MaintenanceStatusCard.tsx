@@ -4,8 +4,9 @@ import { useQuery } from '@tanstack/react-query'
 import { clsx } from 'clsx'
 import { useState } from 'react'
 import { type MaintenanceRun, runtimeApi } from '@/lib/api/runtime'
-import { formatDuration, formatTimeAgo } from '@/lib/format'
+import { formatBytes, formatDuration, formatTimeAgo } from '@/lib/format'
 import { POLL_NOTIFICATIONS } from '@/lib/polling'
+import { CleanupSettings } from './CleanupSettings'
 
 type Severity = 'ok' | 'warn' | 'fail'
 
@@ -24,8 +25,15 @@ function workflowLabel(name: string): string {
     .join(' ')
 }
 
+const RECLAIM = 'emergency_reclaim'
+
 function rowsCleanedLabel(run: MaintenanceRun): string {
   const count = run.rows_cleaned ?? 0
+  if (run.workflow_name === RECLAIM) {
+    const freed = Number(run.summary?.freed_bytes ?? 0)
+    const where = String(run.summary?.filesystem ?? '')
+    return `Freed ${freed > 0 ? formatBytes(freed) : 'nothing'} on ${where || 'disk'} · ${count} ${count === 1 ? 'item' : 'items'} removed`
+  }
   return `${count} ${count === 1 ? 'row' : 'rows'} cleaned`
 }
 
@@ -133,44 +141,55 @@ export function MaintenanceStatusCard() {
       </button>
 
       {expanded && (
-        <div className="grid gap-2 border-t border-slate-800/60 px-4 py-4 md:grid-cols-2 lg:grid-cols-3">
-          {latestRuns.length === 0 ? (
-            <p className="text-xs text-slate-500">
-              No maintenance runs recorded yet.
-            </p>
-          ) : (
-            latestRuns.map((run) => (
-              <div
-                key={run.workflow_name}
-                className={clsx(
-                  'rounded-lg border p-3 text-sm',
-                  tone(run.status),
-                )}
-              >
-                <div className="flex items-center justify-between gap-2">
-                  <span className="font-medium">
-                    {workflowLabel(run.workflow_name)}
-                  </span>
-                  <span className="text-[10px] uppercase tracking-[0.14em]">
-                    {run.status}
-                  </span>
-                </div>
-                <div className="mt-2 space-y-0.5 text-xs text-slate-300">
-                  <div title={new Date(run.started_at).toLocaleString()}>
-                    Started {formatTimeAgo(run.started_at)}
-                    {run.duration_ms != null &&
-                      ` · took ${formatDuration(run.duration_ms)}`}
+        <div className="space-y-3 border-t border-slate-800/60 px-4 py-4">
+          <div className="grid gap-2 md:grid-cols-2 lg:grid-cols-3">
+            {latestRuns.length === 0 ? (
+              <p className="text-xs text-slate-500">
+                No maintenance runs recorded yet.
+              </p>
+            ) : (
+              latestRuns.map((run) => (
+                <div
+                  key={run.workflow_name}
+                  className={clsx(
+                    'rounded-lg border p-3 text-sm',
+                    tone(run.status),
+                  )}
+                >
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="font-medium">
+                      {workflowLabel(run.workflow_name)}
+                    </span>
+                    <span className="text-[10px] uppercase tracking-[0.14em]">
+                      {run.status}
+                    </span>
                   </div>
-                  <div>{rowsCleanedLabel(run)}</div>
-                </div>
-                {run.error_message && (
-                  <div className="mt-2 text-xs text-rose-200">
-                    {run.error_message}
+                  <div className="mt-2 space-y-0.5 text-xs text-slate-300">
+                    <div title={new Date(run.started_at).toLocaleString()}>
+                      Started {formatTimeAgo(run.started_at)}
+                      {run.duration_ms != null &&
+                        ` · took ${formatDuration(run.duration_ms)}`}
+                    </div>
+                    <div>{rowsCleanedLabel(run)}</div>
                   </div>
-                )}
+                  {run.error_message && (
+                    <div className="mt-2 text-xs text-rose-200">
+                      {run.error_message}
+                    </div>
+                  )}
+                </div>
+              ))
+            )}
+            {!data.latest[RECLAIM] && (
+              <div className="rounded-lg border border-slate-700/60 p-3 text-sm text-slate-300">
+                <span className="font-medium">Emergency Reclaim</span>
+                <p className="mt-2 text-xs text-slate-500">
+                  Not needed yet. Nightshift runs it when a disk is nearly full.
+                </p>
               </div>
-            ))
-          )}
+            )}
+          </div>
+          <CleanupSettings />
         </div>
       )}
     </div>
