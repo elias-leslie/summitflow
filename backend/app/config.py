@@ -105,6 +105,16 @@ class Settings(BaseSettings):
     cloudflare_access_aud: str = ""
     summitflow_owner_emails: str = ""
 
+    # Owner by caller identity, not address. While summitflow_loopback_is_owner is on (default,
+    # SUMMITFLOW_LOOPBACK_IS_OWNER) every local caller is the owner. Off, a local caller is the owner
+    # only with the token in summitflow_owner_token_file (X-SummitFlow-Owner-Token) or as one of
+    # summitflow_owner_users (comma-separated Unix users); summitflow_agent_users get the agent role:
+    # the API except the owner-only decisions. Anyone else local is unauthenticated.
+    summitflow_loopback_is_owner: bool = True
+    summitflow_owner_token_file: str = ""
+    summitflow_owner_users: str = ""
+    summitflow_agent_users: str = ""
+
     backup_btrbk_enabled: bool = False
 
     # Optional window for the existing scheduled backup workflow, in the shared maintenance-window format

@@ -180,3 +180,117 @@ def test_non_owner_identity_is_denied_and_viewer_routes_are_gone(monkeypatch) ->
         "is_owner": True,
         "is_local_bypass": False,
     }
+
+
+# --- owner by caller identity, not loopback address ---------------------------------------------
+
+import os  # noqa: E402
+import socket  # noqa: E402
+
+OWNER = access_control.AccessPrincipal("owner@example.com", "owner", True, is_local_bypass=True)
+
+
+def _local_request(headers: list[tuple[bytes, bytes]] | None = None, client=("127.0.0.1", 54321)) -> Request:
+    return Request(
+        {
+            "type": "http",
+            "method": "GET",
+            "scheme": "http",
+            "path": "/api/auth/me",
+            "query_string": b"",
+            "headers": [(b"host", b"localhost:8001"), *(headers or [])],
+            "client": client,
+            "server": ("127.0.0.1", 8001),
+        }
+    )
+
+
+def _flag_off(monkeypatch, **settings) -> None:
+    monkeypatch.setattr(access_control, "_local_owner_principal", lambda: OWNER)
+    monkeypatch.setattr(access_control.settings, "summitflow_loopback_is_owner", False)
+    for key, value in settings.items():
+        monkeypatch.setattr(access_control.settings, key, value)
+
+
+def test_flag_on_keeps_every_loopback_caller_owner(monkeypatch) -> None:
+    monkeypatch.setattr(access_control, "_local_owner_principal", lambda: OWNER)
+    monkeypatch.setattr(access_control, "peer_uid", lambda _r: (_ for _ in ()).throw(AssertionError("no uid lookup")))
+    assert access_control.settings.summitflow_loopback_is_owner is True
+    assert access_control.resolve_principal(_local_request()) == OWNER
+
+
+def test_flag_off_loopback_without_a_credential_is_not_owner(monkeypatch) -> None:
+    _flag_off(monkeypatch)
+    monkeypatch.setattr(access_control, "peer_uid", lambda _r: 4242)
+    assert access_control.resolve_principal(_local_request()) is None
+    monkeypatch.setattr(access_control, "peer_uid", lambda _r: None)
+    assert access_control.resolve_principal(_local_request()) is None
+
+
+def test_flag_off_owner_user_is_owner_and_agent_user_gets_the_agent_role(monkeypatch) -> None:
+    _flag_off(monkeypatch, summitflow_owner_users="1000", summitflow_agent_users="2000,2001")
+    monkeypatch.setattr(access_control, "peer_uid", lambda _r: 1000)
+    assert access_control.resolve_principal(_local_request()) == OWNER
+    monkeypatch.setattr(access_control, "peer_uid", lambda _r: 2001)
+    agent = access_control.resolve_principal(_local_request())
+    assert agent is not None and agent.is_agent and not agent.is_owner
+    monkeypatch.setattr(access_control, "peer_uid", lambda _r: 3000)
+    assert access_control.resolve_principal(_local_request()) is None
+
+
+def test_flag_off_private_lan_callers_get_no_local_identity(monkeypatch) -> None:
+    _flag_off(monkeypatch, summitflow_owner_users="1000")
+    monkeypatch.setattr(access_control, "peer_uid", lambda _r: 1000)
+    assert access_control.resolve_principal(_local_request(client=("192.168.1.9", 5000))) is None
+
+
+def test_flag_off_owner_token_makes_the_caller_owner(monkeypatch, tmp_path) -> None:
+    token_file = tmp_path / "owner-token"
+    token_file.write_text("s3cret\n")
+    _flag_off(monkeypatch, summitflow_owner_token_file=str(token_file))
+    monkeypatch.setattr(access_control, "peer_uid", lambda _r: 4242)
+    good = [(b"x-summitflow-owner-token", b"s3cret")]
+    bad = [(b"x-summitflow-owner-token", b"nope")]
+    assert access_control.resolve_principal(_local_request(good)) == OWNER
+    assert access_control.resolve_principal(_local_request(bad)) is None
+
+
+def test_owner_token_needs_a_readable_file(monkeypatch, tmp_path) -> None:
+    _flag_off(monkeypatch, summitflow_owner_token_file=str(tmp_path / "missing"))
+    assert access_control.resolve_principal(_local_request([(b"x-summitflow-owner-token", b"x")])) is None
+
+
+def test_agent_reaches_the_api_but_not_owner_decisions(monkeypatch) -> None:
+    from fastapi.testclient import TestClient
+
+    from app.main import app
+
+    agent = access_control.AccessPrincipal("agent@summitflow.local", "agent", True, is_local_bypass=True)
+    monkeypatch.setattr(access_control, "resolve_principal", lambda _request: agent)
+    client = TestClient(app)
+    assert client.get("/api/viewer/projects").status_code == 404  # past the gate
+    assert client.post("/api/backup-storage/x/initialize").status_code == 403
+    assert client.get("/api/auth/me").json()["is_owner"] is False
+
+
+def test_peer_uid_reads_the_socket_owner_from_the_kernel() -> None:
+    from app.peer_identity import peer_uid
+
+    for family, host in ((socket.AF_INET, "127.0.0.1"), (socket.AF_INET6, "::1")):
+        try:
+            listener = socket.socket(family)
+            listener.bind((host, 0))
+        except OSError:
+            continue
+        listener.listen()
+        client = socket.socket(family)
+        client.connect(listener.getsockname()[:2])
+        conn, _ = listener.accept()
+        try:
+            request = Request(
+                {"type": "http", "headers": [], "client": client.getsockname()[:2], "server": listener.getsockname()[:2]}
+            )
+            assert peer_uid(request) == os.getuid()
+        finally:
+            for sock in (client, conn, listener):
+                sock.close()

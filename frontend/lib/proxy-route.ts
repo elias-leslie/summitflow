@@ -34,6 +34,8 @@ export function setIdentityHeaders(
     request.headers.get('x-forwarded-host') ?? request.headers.get('host')
   if (jwt) headers.set('Cf-Access-Jwt-Assertion', jwt)
   if (cookie) headers.set('Cookie', cookie)
+  const ownerToken = request.headers.get('x-summitflow-owner-token')
+  if (ownerToken) headers.set('X-SummitFlow-Owner-Token', ownerToken)
   if (host) headers.set('X-Forwarded-Host', host)
   return headers
 }
