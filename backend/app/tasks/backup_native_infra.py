@@ -20,7 +20,7 @@ import yaml
 
 from ..logging_config import get_logger
 from ..services.backup_keys import backup_key_directory
-from ..utils.shared_paths import get_host_config_root, get_repo_root
+from ..utils.shared_paths import get_compose_env_file, get_host_config_root, get_repo_root
 from ..utils.transient_scratch import (
     disposable_scratch,
     ensure_scratch_capacity,
@@ -679,7 +679,7 @@ def prepare_infrastructure_payload(
         raise RuntimeError("Infrastructure database dump is empty")
     _copy_if_exists(Path.home() / ".env.local", configs / "env.local")
     _copy_if_exists(Path.home() / ".config" / "summitflow" / "backup-schedule.env", configs / "backup-schedule.env")
-    _copy_if_exists(config_root / "docker" / "compose" / ".env", configs / "compose-env")
+    _copy_if_exists(get_compose_env_file(), configs / "compose-env")
     _copy_if_exists(Path.home() / ".smbcredentials", configs / "smbcredentials")
     _copy_if_exists(
         config_root / "docker" / "compose" / "hatchet-config",

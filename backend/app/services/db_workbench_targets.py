@@ -10,6 +10,7 @@ from urllib.parse import quote, urlsplit, urlunsplit
 import psycopg
 
 from ..project_identity import get_project_identity, get_project_lifecycles, project_databases
+from ..utils.shared_paths import get_compose_env_file
 
 _GLOBAL_PROJECT_ID = "__global__"
 _GLOBAL_DATABASE_NAME = "postgres"
@@ -43,7 +44,7 @@ def env_values() -> dict[str, str]:
     values: dict[str, str] = {}
     env_paths = (
         Path.home() / ".env.local",
-        Path.home() / "summitflow" / "docker" / "compose" / ".env",
+        get_compose_env_file(),
     )
     for path in env_paths:
         values.update(load_env_file(path))

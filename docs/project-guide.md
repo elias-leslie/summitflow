@@ -296,8 +296,8 @@ the requested hostname, an active SSH daemon, completed cloud-init provisioning,
 and a usable IPv4 address. Copy completion is reported separately from guest
 readiness. It does not guess SSH credentials or repair an unqualified image.
 
-Set this explicit owner access profile in the environment or the ignored
-`docker/compose/.env` alongside the existing `PROXMOX_*` API configuration:
+Set this explicit owner access profile in the environment or the
+`~/.config/credstore/summitflow/compose.env` alongside the existing `PROXMOX_*` API configuration:
 
 ```dotenv
 PROXMOX_CLONE_TEMPLATE=QUALIFIED_TEMPLATE_ID

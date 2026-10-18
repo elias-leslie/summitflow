@@ -15,7 +15,7 @@ from enum import StrEnum
 from pathlib import Path
 from urllib.parse import quote
 
-from app.utils.shared_paths import get_repo_root
+from app.utils.shared_paths import get_compose_env_file
 
 from .proxmox import ProxmoxClient, ProxmoxError, ProxmoxTaskError, _read_env_file
 
@@ -98,7 +98,7 @@ def _public_keys(path: Path) -> str:
 
 
 def load_clone_access_profile() -> CloneAccessProfile:
-    values = _read_env_file(get_repo_root() / "docker" / "compose" / ".env")
+    values = _read_env_file(get_compose_env_file())
 
     def value(name: str) -> str:
         return os.environ.get(name, values.get(name, "")).strip()

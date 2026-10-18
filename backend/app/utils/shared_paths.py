@@ -18,6 +18,11 @@ def get_repo_root() -> Path:
     return _REPO_ROOT
 
 
+def get_compose_env_file() -> Path:
+    """Return the owner-only Docker Compose credentials file, kept outside the repo."""
+    return Path.home() / ".config" / "credstore" / "summitflow" / "compose.env"
+
+
 def get_host_config_root() -> Path:
     """Return the stable host configuration root, independent of release source."""
     override = os.environ.get("SUMMITFLOW_HOST_CONFIG_ROOT", "").strip()

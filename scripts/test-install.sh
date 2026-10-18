@@ -19,7 +19,7 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_DIR="$(dirname "$SCRIPT_DIR")"
 
 # Load credentials from .env
-ENV_FILE="${PROJECT_DIR}/docker/compose/.env"
+ENV_FILE="$HOME/.config/credstore/summitflow/compose.env"
 if [[ -f "$ENV_FILE" ]]; then
     eval "$(grep -E '^(PROXMOX_|TEST_VM_)' "$ENV_FILE" | sed 's/^/export /')"
 fi

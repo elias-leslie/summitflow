@@ -16,6 +16,10 @@ fi
 
 cd "$COMPOSE_DIR"
 
+# Credentials live outside the repo; compose reads them through COMPOSE_ENV_FILES.
+ENV_FILE="${COMPOSE_ENV_FILE:-$HOME/.config/credstore/summitflow/compose.env}"
+export COMPOSE_ENV_FILES="$ENV_FILE"
+
 TENANT_ID="$(docker compose exec -T postgres psql -U admin -d hatchet -t -A \
   -c "SELECT id FROM \"Tenant\" LIMIT 1" 2>/dev/null | tr -d '[:space:]' || true)"
 
@@ -37,10 +41,10 @@ if [[ -z "$HATCHET_TOKEN" ]]; then
   exit 1
 fi
 
-if [[ -f .env ]] && grep -q '^HATCHET_CLIENT_TOKEN=' .env; then
-  sed -i "s|^HATCHET_CLIENT_TOKEN=.*|HATCHET_CLIENT_TOKEN=$HATCHET_TOKEN|" .env
+if [[ -f "$ENV_FILE" ]] && grep -q '^HATCHET_CLIENT_TOKEN=' "$ENV_FILE"; then
+  sed -i "s|^HATCHET_CLIENT_TOKEN=.*|HATCHET_CLIENT_TOKEN=$HATCHET_TOKEN|" "$ENV_FILE"
 else
-  printf 'HATCHET_CLIENT_TOKEN=%s\n' "$HATCHET_TOKEN" >> .env
+  printf 'HATCHET_CLIENT_TOKEN=%s\n' "$HATCHET_TOKEN" >> "$ENV_FILE"
 fi
 
-echo "Hatchet token generated and saved to $COMPOSE_DIR/.env"
+echo "Hatchet token generated and saved to $ENV_FILE"

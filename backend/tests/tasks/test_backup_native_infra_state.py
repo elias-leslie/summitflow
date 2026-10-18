@@ -50,7 +50,9 @@ def test_infrastructure_archive_captures_required_recovery_state(
     compose = project / "docker" / "compose"
     compose.mkdir(parents=True)
     (roots["home"] / ".env.local").write_text("secret=global\n")
-    (compose / ".env").write_text("secret=compose\n")
+    credentials = roots["home"] / ".config" / "credstore" / "summitflow" / "compose.env"
+    credentials.parent.mkdir(parents=True)
+    credentials.write_text("secret=compose\n")
     (compose / "hatchet-config").mkdir()
     (compose / "hatchet-config" / "server.yaml").write_text("server: local\n")
     (roots["home"] / ".smbcredentials").write_text("secret=smb\n")
@@ -159,19 +161,21 @@ def test_infrastructure_archive_captures_required_recovery_state(
     assert not coverage.missing
 
 
-def test_infrastructure_archive_reads_compose_state_from_stable_host_root(
+def test_infrastructure_archive_reads_compose_credentials_from_credstore_and_config_from_host_root(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    _configure_recovery_roots(tmp_path, monkeypatch)
+    roots = _configure_recovery_roots(tmp_path, monkeypatch)
     release_root = tmp_path / "immutable-release"
     release_compose = release_root / "docker" / "compose"
     release_compose.mkdir(parents=True)
     (release_compose / ".env").write_text("wrong=release\n")
+    credentials = roots["home"] / ".config" / "credstore" / "summitflow" / "compose.env"
+    credentials.parent.mkdir(parents=True)
+    credentials.write_text("right=host\n")
     host_root = tmp_path / "stable-host-checkout"
     host_compose = host_root / "docker" / "compose"
     host_compose.mkdir(parents=True)
-    (host_compose / ".env").write_text("right=host\n")
     (host_compose / "hatchet-config").mkdir()
     (host_compose / "hatchet-config" / "server.yaml").write_text("host: true\n")
     monkeypatch.setattr(

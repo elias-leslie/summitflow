@@ -41,7 +41,7 @@ INFRA_COVERAGE: tuple[CoverageComponent, ...] = (
         key="compose_env",
         label="Docker compose env",
         category="required",
-        description="docker/compose/.env — container configuration and credentials",
+        description="~/.config/credstore/summitflow/compose.env — container configuration and credentials",
         archive_marker="configs/compose-env",
     ),
     CoverageComponent(

@@ -24,7 +24,7 @@ def test_project_db_url_reads_canonical_env_store(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     home = tmp_path / "home"
-    env_file = home / "summitflow" / "docker" / "compose" / ".env"
+    env_file = home / ".config" / "credstore" / "summitflow" / "compose.env"
     env_file.parent.mkdir(parents=True)
     env_file.write_text("AGENT_HUB_DB_URL=postgresql://agent:pw@localhost/agent_hub\n")
     monkeypatch.setattr(Path, "home", lambda: home)

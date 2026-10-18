@@ -69,7 +69,7 @@ Before=agent-hub-backend.service agent-hub-hatchet-agent-worker.service agent-hu
 [Service]
 Type=oneshot
 WorkingDirectory=/srv/workspaces/projects/summitflow/docker/compose
-ExecStart=/usr/bin/docker compose --env-file /srv/workspaces/projects/summitflow/docker/compose/.env -f /srv/workspaces/projects/summitflow/docker/compose/docker-compose.yml --profile infra up -d --remove-orphans
+ExecStart=/usr/bin/docker compose --env-file %h/.config/credstore/summitflow/compose.env -f /srv/workspaces/projects/summitflow/docker/compose/docker-compose.yml --profile infra up -d --remove-orphans
 RemainAfterExit=yes
 Restart=on-failure
 RestartSec=15
