@@ -1,6 +1,7 @@
 """Periodic health monitor with Johnny-branded notifications.
 
-Checks system health and sends push notifications on state transitions.
+Checks system health and records an in-app notification on state transitions (shown in SummitFlow's
+notification bell; SummitFlow sends no phone push, owner alerts go through Nightshift).
 Tracks last-known state in Redis to detect changes.
 """
 
@@ -43,7 +44,7 @@ _LABEL_UNAVAILABLE = "unavailable"
 _TRANSITION_SEVERITY: dict[str, str] = {
     _STATUS_UNHEALTHY: "error",
     _STATUS_DEGRADED: "warning",
-    _STATUS_HEALTHY: "info",  # Recovery — info (no push)
+    _STATUS_HEALTHY: "info",  # Recovery — info
 }
 
 

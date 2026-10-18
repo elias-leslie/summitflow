@@ -1,15 +1,12 @@
 // SummitFlow Service Worker — offline caching and PWA support
 
-const CACHE_NAME = 'summitflow-v24'
-const STATIC_CACHE_NAME = 'summitflow-static-v24'
+const CACHE_NAME = 'summitflow-v25'
+const STATIC_CACHE_NAME = 'summitflow-static-v25'
 const CACHE_PREFIX = 'summitflow-'
 const CF_ACCESS_HOST = 'cloudflareaccess.com'
 const ACCEPT_HTML = 'text/html'
 const MSG_SKIP_WAITING = 'SKIP_WAITING'
 const CACHEABLE_EXTS = ['.js', '.css', '.png']
-const ICON_PATH = '/icons/icon-192.png'
-const DEFAULT_NOTIF_TAG = 'summitflow-notification'
-const CRITICAL_SEVERITIES = ['critical', 'error']
 const OFFLINE_STATUS = 503
 const STATIC_ASSETS = ['/manifest.json', '/icons/icon-192.png', '/icons/icon-512.png']
 
@@ -101,62 +98,4 @@ self.addEventListener('fetch', (event) => {
     return
   }
   event.respondWith(cacheFirstAsset(request, url))
-})
-
-// ============================================================================
-// Push notifications
-// ============================================================================
-
-self.addEventListener('push', (event) => {
-  if (!event.data) return
-  let data
-  try { data = event.data.json() } catch { data = { title: 'SummitFlow', body: event.data.text() } }
-
-  const severity = data.severity || 'info'
-  const isCritical = CRITICAL_SEVERITIES.includes(severity)
-  const notifType = data.type || ''
-
-  // Build actions based on notification type
-  const actions = []
-  if (data.task_id) {
-    actions.push({ action: 'view', title: 'View Task' })
-    if (notifType === 'task_needs_input') {
-      actions.push({ action: 'view', title: 'Respond' })
-    }
-  }
-
-  // Vibration pattern scales with severity
-  const vibrate = isCritical ? [300, 100, 300, 100, 300] : [200, 100, 200]
-
-  event.waitUntil(
-    self.registration.showNotification(data.title || 'SummitFlow', {
-      body: data.body || '',
-      icon: ICON_PATH,
-      badge: ICON_PATH,
-      tag: data.tag || DEFAULT_NOTIF_TAG,
-      renotify: true,
-      requireInteraction: isCritical,
-      vibrate,
-      data: {
-        url: data.url || '/',
-        task_id: data.task_id || null,
-        notification_id: data.notification_id || null,
-        severity,
-      },
-      actions,
-    })
-  )
-})
-
-self.addEventListener('notificationclick', (event) => {
-  event.notification.close()
-  const url = event.notification.data?.url || '/'
-  event.waitUntil(
-    clients.matchAll({ type: 'window', includeUncontrolled: true }).then((windowClients) => {
-      for (const client of windowClients) {
-        if ('focus' in client) { client.focus(); client.navigate(url); return }
-      }
-      return clients.openWindow(url)
-    })
-  )
 })

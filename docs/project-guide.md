@@ -282,7 +282,6 @@ Optional values enable integrations:
   `SUMMITFLOW_REQUEST_SOURCE` connect SummitFlow to Agent Hub.
 - `HATCHET_CLIENT_TOKEN`, `HATCHET_CLIENT_HOST_PORT`, and
   `HATCHET_CLIENT_TLS_STRATEGY` enable Hatchet workers.
-- `VAPID_*` values configure web-push notifications, which are delivered through the Agent Hub push service.
 - `SMB_*` values enable the optional SMB backup target.
 - Browser-runtime variables are optional; if absent, browser evidence features
   should fail clearly instead of crashing the core app.

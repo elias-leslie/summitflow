@@ -32,10 +32,6 @@ vi.mock('sonner', () => ({
   toast: sonnerMocks,
 }))
 
-vi.mock('./PushNotificationToggle', () => ({
-  PushNotificationToggle: () => <div data-testid="push-toggle" />,
-}))
-
 describe('NotificationBell', () => {
   beforeEach(() => {
     vi.clearAllMocks()
