@@ -24,6 +24,10 @@ class ProxmoxError(RuntimeError):
     """Raised when Proxmox returns an error or required config is missing."""
 
 
+class ProxmoxTokenMissing(ProxmoxError):
+    """No Proxmox API token is configured here (an agent shell); `st vm` then goes through the backend route."""
+
+
 class ProxmoxTaskError(ProxmoxError):
     """A submitted copy failed or timed out; keep its task identity inspectable."""
 
@@ -85,6 +89,13 @@ def declare_lab_use(asset: str, hours: float, reason: str) -> None:
     print(f"Nightshift: {result.stdout.strip() or f'declared {asset}'}")
 
 
+def declare_if_lab(vmid: str, hours: float, reason: str) -> None:
+    """Only a start this call made is declared: a refused start, or a VM someone else already runs, must not get a
+    declaration naming this session (it would hide their undeclared run on the board and replace their claim)."""
+    if asset := reserved_lab_asset(vmid):
+        declare_lab_use(asset, hours, reason or f"st vm start {vmid}")
+
+
 def _read_env_file(path: Path) -> dict[str, str]:
     if not path.exists():
         return {}
@@ -125,6 +136,8 @@ def load_proxmox_config() -> ProxmoxConfig:
         if not configured
     ]
     if missing:
+        if "PROXMOX_TOKEN_ID" in missing or "PROXMOX_TOKEN_SECRET" in missing:
+            raise ProxmoxTokenMissing(f"Missing Proxmox configuration: {', '.join(missing)}")
         raise ProxmoxError(f"Missing Proxmox configuration: {', '.join(missing)}")
     ca_bundle = value("PROXMOX_CA_BUNDLE")
     if not ca_bundle or not Path(ca_bundle).is_file():
@@ -257,13 +270,11 @@ class ProxmoxClient:
             raise ProxmoxTaskError(upid) from exc
         return upid
 
-    def start(self, vmid: str, *, lab_hours: float = 4.0, lab_reason: str = "") -> None:
+    def start(self, vmid: str, *, lab_hours: float = 4.0, lab_reason: str = "", declare_lab: bool = True) -> None:
         # PVE accepts the request before checking state; the task says whether it ran ("already running" fails it).
         self.wait_task(str(self.request("POST", f"/nodes/{self.config.node}/{self._kind(vmid)}/{vmid}/status/start")), timeout_seconds=120)
-        # Only a start this call made is declared: a refused start, or a VM someone else already runs, must not get a
-        # declaration naming this session (it would hide their undeclared run on the board and replace their claim).
-        if asset := reserved_lab_asset(vmid):
-            declare_lab_use(asset, lab_hours, lab_reason or f"st vm start {vmid}")
+        if declare_lab:
+            declare_if_lab(vmid, lab_hours, lab_reason)
 
     def stop(self, vmid: str) -> None:
         self.wait_task(str(self.request("POST", f"/nodes/{self.config.node}/{self._kind(vmid)}/{vmid}/status/stop")), timeout_seconds=120)

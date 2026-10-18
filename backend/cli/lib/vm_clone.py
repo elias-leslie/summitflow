@@ -152,6 +152,25 @@ def isolate_clone_network(client: ProxmoxClient, vmid: str) -> str:
     return net0
 
 
+def run_clone(
+    client: ProxmoxClient,
+    template: str,
+    newid: str,
+    name: str,
+    *,
+    clone_only: bool,
+    progress: Callable[[str], None] = lambda message: print(message, flush=True),
+) -> None:
+    """`st vm clone`: copy only (then attach to labnet), or the managed clone-provision-boot-ready workflow."""
+    if not clone_only:
+        managed_clone(client, template, newid, name, progress=progress)
+        return
+    progress(f"COPY ONLY: template {template} -> VM {newid} ({name})...")
+    upid = client.clone(template, newid, name)
+    progress(f"Copy complete: VM {newid} task={upid}; attaching to the isolated lab network...")
+    progress(f"net0={isolate_clone_network(client, newid)}; guest NOT provisioned, started, or ready")
+
+
 def _usable(address: str) -> bool:
     try:
         ip = ipaddress.IPv4Address(address)

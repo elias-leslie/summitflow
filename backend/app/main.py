@@ -41,6 +41,7 @@ from .api import (
     snapshots,
     system,
     tasks,
+    vm,
 )
 from .config import settings
 from .exception_handlers import setup_exception_handlers
@@ -149,6 +150,7 @@ app.include_router(schemas.router, prefix="/api", tags=["schemas"])
 app.include_router(git.router, prefix="/api", tags=["git"])
 app.include_router(backups.router, prefix="/api", tags=["backups"])
 app.include_router(snapshots.router, prefix="/api", tags=["snapshots"])
+app.include_router(vm.router, prefix="/api", tags=["vm"])
 app.include_router(design_standards.router, prefix="/api", tags=["design-standards"])
 app.include_router(activity.router, prefix="/api", tags=["activity"])
 app.include_router(mockups.router, prefix="/api", tags=["mockups"])

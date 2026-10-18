@@ -13,9 +13,10 @@ from typing import Annotated
 import typer
 
 from ..lib.confirm_token import confirm_gate
-from ..lib.proxmox import ProxmoxClient, ProxmoxError, snapshot_name_default
+from ..lib.proxmox import ProxmoxClient, ProxmoxError, ProxmoxTokenMissing, snapshot_name_default
+from ..lib.proxmox_remote import RemoteProxmoxClient
 from ..lib.usage import usage
-from ..lib.vm_clone import isolate_clone_network, managed_clone
+from ..lib.vm_clone import run_clone
 from ..output import output_error
 
 app = typer.Typer(
@@ -34,9 +35,12 @@ def _confirm(command_key: str, confirm: str | None, command_hint: str, preview_l
     confirm_gate(command_key, confirm, preview_lines, command_hint)
 
 
-def _client() -> ProxmoxClient:
+def _client() -> ProxmoxClient | RemoteProxmoxClient:
+    """The direct client when this shell has the Proxmox token (rollback path); else the backend route that holds it."""
     try:
         return ProxmoxClient()
+    except ProxmoxTokenMissing:
+        return RemoteProxmoxClient()
     except ProxmoxError as exc:
         output_error(str(exc))
         raise typer.Exit(1) from None
@@ -159,14 +163,12 @@ def clone(
     """Clone, provision explicit owner access, boot, and prove guest readiness."""
     vm_name = name or "test-" + datetime.now(UTC).strftime("%Y%m%d-%H%M%S")
 
-    def action(client: ProxmoxClient) -> None:
-        if clone_only:
-            print(f"COPY ONLY: template {template} -> VM {newid} ({vm_name})...", flush=True)
-            upid = client.clone(template, newid, vm_name)
-            print(f"Copy complete: VM {newid} task={upid}; attaching to the isolated lab network...", flush=True)
-            print(f"net0={isolate_clone_network(client, newid)}; guest NOT provisioned, started, or ready", flush=True)
+    def action(client: ProxmoxClient | RemoteProxmoxClient) -> None:
+        if isinstance(client, RemoteProxmoxClient):
+            for line in client.run_clone(template, newid, vm_name, clone_only=clone_only):
+                print(line, flush=True)
         else:
-            managed_clone(client, template, newid, vm_name)
+            run_clone(client, template, newid, vm_name, clone_only=clone_only)
 
     _run(action)
 
