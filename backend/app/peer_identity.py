@@ -12,6 +12,7 @@ import pwd
 import socket
 from ipaddress import IPv6Address, ip_address
 from pathlib import Path
+from typing import Any
 
 from starlette.requests import Request
 
@@ -34,8 +35,22 @@ def _proc_address(host: str, port: int) -> tuple[Path, str] | None:
     return _TABLES[0], f"{address.packed[::-1].hex().upper()}:{port:04X}"
 
 
+# Headers a proxy adds. With one present the socket belongs to the proxy (a frontend running as one fixed
+# user), not the caller, and uvicorn may have rewritten scope["client"], port included, from X-Forwarded-For:
+# either way the socket's uid says nothing about who is calling.
+FORWARDING_HEADERS = ("x-forwarded-for", "x-forwarded-host", "x-forwarded-port", "x-forwarded-proto",
+                      "x-real-ip", "forwarded", "via")
+
+
+def came_through_proxy(headers: Any) -> bool:
+    """True when the request carries any header a proxy adds (even an empty one)."""
+    return any(name in headers for name in FORWARDING_HEADERS)
+
+
 def peer_uid(request: Request) -> int | None:
-    """Owning uid of the client socket of this connection, or None when it cannot be told."""
+    """Owning uid of the client socket of this connection, or None when it cannot be told (or proxied)."""
+    if came_through_proxy(request.headers):
+        return None
     client, server = request.scope.get("client"), request.scope.get("server")
     if not client or not server or client[1] is None or server[1] is None:
         return None

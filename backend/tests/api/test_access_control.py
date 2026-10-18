@@ -294,3 +294,26 @@ def test_peer_uid_reads_the_socket_owner_from_the_kernel() -> None:
         finally:
             for sock in (client, conn, listener):
                 sock.close()
+
+
+def test_peer_uid_tells_nothing_for_a_proxied_request() -> None:
+    """A proxy's socket is the proxy's uid, and X-Forwarded-For can name another connection's port."""
+    from app.peer_identity import peer_uid
+
+    def request(scope: dict, headers: dict[str, str]) -> Request:
+        raw = [(name.lower().encode(), value.encode()) for name, value in headers.items()]
+        return Request({"type": "http", "headers": raw, **scope})
+
+    server = socket.socket()
+    server.bind(("127.0.0.1", 0))
+    server.listen(1)
+    client = socket.create_connection(server.getsockname())
+    try:
+        scope = {"client": client.getsockname(), "server": server.getsockname()}
+        assert peer_uid(request(scope, {})) == os.getuid()
+        for name in ("X-Forwarded-For", "X-Forwarded-Host", "X-Real-IP", "Forwarded", "Via"):
+            for value in ("", f"127.0.0.1:{client.getsockname()[1]}"):
+                assert peer_uid(request(scope, {name: value})) is None
+    finally:
+        client.close()
+        server.close()
