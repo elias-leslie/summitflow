@@ -270,6 +270,7 @@ def test_nightshift_memory_reads_only_a_fresh_v1_state(tmp_path, monkeypatch) ->
     f = tmp_path / "admission.json"
     monkeypatch.setattr(heavy_work, "NIGHTSHIFT_ADMISSION", f)
     assert heavy_work.nightshift_memory(100.0) is None
-    f.write_text(json.dumps({"v": 1, "state": "amber", "reason": "x", "expires_at": 130, "mem_available_gib": 5.5}))
-    assert heavy_work.nightshift_memory(100.0) == {"state": "amber", "reason": "x", "mem_available_gib": 5.5}
+    reason = "Memory is tight: 5.5 GiB available, swap 80%"
+    f.write_text(json.dumps({"v": 1, "state": "amber", "reason": reason + "\x1b<", "expires_at": 130, "mem_available_gib": 5.5}))
+    assert heavy_work.nightshift_memory(100.0) == {"state": "amber", "reason": reason, "mem_available_gib": 5.5}
     assert heavy_work.nightshift_memory(131.0) is None

@@ -143,7 +143,8 @@ def nightshift_memory(now: float | None = None) -> dict[str, Any] | None:
             return None
     except (OSError, ValueError, TypeError, KeyError, AttributeError):
         return None
-    return {"state": state["state"], "reason": _public_label(str(state.get("reason", ""))),
+    reason = re.sub(r"[^a-zA-Z0-9 .,:%()_-]", "", str(state.get("reason", "")))[:160]  # Nightshift's plain sentence
+    return {"state": state["state"], "reason": reason,
             **{k: state[k] for k in ("mem_available_gib", "swap_used_pct", "psi_some_avg60") if isinstance(state.get(k), int | float)}}
 
 
