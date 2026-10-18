@@ -36,7 +36,7 @@ def test_power_waits_for_the_task_and_surfaces_its_failure(monkeypatch, action):
     assert waited == [f"UPID:/nodes/node/qemu/120/status/{action}"]
 
 
-@pytest.mark.parametrize("action", ["start", "stop"])
+@pytest.mark.parametrize("action", ["start", "stop", "shutdown"])
 def test_power_on_a_container_uses_the_lxc_path(monkeypatch, action):
     pve = client()
     calls = []
@@ -161,3 +161,14 @@ def test_resize_sets_only_what_was_asked_and_reports_a_pending_reboot(monkeypatc
     assert ("PUT", "/nodes/node/qemu/111/config", {"cores": 6, "memory": 8192}) in calls
     with pytest.raises(ProxmoxError, match="Nothing to change"):
         pve.resize("111")
+
+
+def test_shutdown_is_clean_and_waits_past_the_guest_timeout(monkeypatch):
+    pve = client()
+    calls = []
+    monkeypatch.setattr(pve, "request", lambda method, path, **kw: [] if path.startswith("/cluster") else calls.append((path, kw.get("data"))) or "UPID:x")
+    waited = []
+    monkeypatch.setattr(pve, "wait_task", lambda upid, **kw: waited.append(kw["timeout_seconds"]))
+    pve.shutdown("111", 60)
+    assert calls == [("/nodes/node/qemu/111/status/shutdown", {"timeout": 60})]
+    assert waited == [90]

@@ -20,7 +20,7 @@ from ..output import output_error
 
 app = typer.Typer(
     help=(
-        "Proxmox VM lifecycle through st: status, IPs, snapshots, start/stop/reboot, "
+        "Proxmox VM lifecycle through st: status, IPs, snapshots, start/stop/shutdown/reboot, "
         "resize, rollback, clone. Lab-pool guests are fully managed; ops-pool (production) "
         "guests start/stop/reboot and change cores/memory; power-pool guests start/stop/reboot "
         "only; everything else is read-only (PVE enforces it). Destroy keeps a "
@@ -187,6 +187,15 @@ def start(
 def stop(vmid: Annotated[str, typer.Argument(help="VM ID")]) -> None:
     """Stop a VM (hard stop)."""
     _run(lambda client: (client.stop(vmid), print(f"VM {vmid} stopped")))
+
+
+@app.command()
+def shutdown(
+    vmid: Annotated[str, typer.Argument(help="VM ID")],
+    timeout: Annotated[int, typer.Option("--timeout", min=10, help="Seconds to wait for the guest to power off")] = 180,
+) -> None:
+    """Shut a VM down cleanly through its OS; it keeps running if that does not finish in time."""
+    _run(lambda client: (client.shutdown(vmid, timeout), print(f"VM {vmid} shut down")))
 
 
 @app.command()

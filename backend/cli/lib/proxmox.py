@@ -268,6 +268,11 @@ class ProxmoxClient:
     def stop(self, vmid: str) -> None:
         self.wait_task(str(self.request("POST", f"/nodes/{self.config.node}/{self._kind(vmid)}/{vmid}/status/stop")), timeout_seconds=120)
 
+    def shutdown(self, vmid: str, timeout_seconds: int = 180) -> None:
+        """Clean guest shutdown; the task fails, leaving the guest running, if it is not down in time (never force-stops)."""
+        path = f"/nodes/{self.config.node}/{self._kind(vmid)}/{vmid}/status/shutdown"
+        self.wait_task(str(self.request("POST", path, data={"timeout": timeout_seconds})), timeout_seconds=timeout_seconds + 30)
+
     def reboot(self, vmid: str) -> None:
         """Guest shutdown then start; PVE applies pending hardware changes (cores, memory) on the way back up."""
         self.wait_task(str(self.request("POST", f"/nodes/{self.config.node}/{self._kind(vmid)}/{vmid}/status/reboot")), timeout_seconds=300)
