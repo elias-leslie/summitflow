@@ -28,10 +28,9 @@ def current_scratch() -> Path | None:
     return _ACTIVE_SCRATCH.get()
 
 
-def _group_or_other_writable(path: Path) -> bool:
-    """With an access ACL the mode's group bits are the mask, so read group_obj itself."""
-    mode = path.lstat().st_mode
-    group_write = bool(mode & 0o020)
+def _group_perm(path: Path) -> int:
+    """Owning-group rwx bits. With an access ACL the mode's group bits are the mask, so read group_obj."""
+    perm = (path.lstat().st_mode >> 3) & 0o7
     try:
         acl = os.getxattr(path, "system.posix_acl_access", follow_symlinks=False)
     except OSError as exc:
@@ -39,10 +38,28 @@ def _group_or_other_writable(path: Path) -> bool:
             raise
     else:
         if len(acl) >= 4 and struct.unpack_from("<I", acl)[0] == 2:
-            for tag, perm, _id in struct.iter_unpack("<HHI", acl[4:]):
+            for tag, entry, _id in struct.iter_unpack("<HHI", acl[4:]):
                 if tag == 0x04:  # ACL_GROUP_OBJ
-                    group_write = bool(perm & 0x2)
-    return group_write or bool(mode & 0o002)
+                    perm = entry & 0o7
+    return perm
+
+
+def _group_or_other_writable(path: Path) -> bool:
+    return bool(_group_perm(path) & 0o2 or path.lstat().st_mode & 0o002)
+
+
+def _strip_inherited_acl(path: Path) -> None:
+    """Make an owned owner-only dir plain: a default ACL would make the kernel ignore the umask."""
+    info = path.lstat()
+    if not stat.S_ISDIR(info.st_mode) or info.st_uid != os.getuid():
+        return
+    names = [name for name in ("system.posix_acl_default", "system.posix_acl_access")
+             if name in os.listxattr(path, follow_symlinks=False)]
+    # A group/other-readable dir is not ours to repair; validation still refuses it.
+    if names and not _group_perm(path) and not info.st_mode & 0o007:
+        for name in names:
+            os.removexattr(path, name, follow_symlinks=False)
+        path.chmod(0o700)  # the mode's group bits were the ACL mask
 
 
 def validate_temp_parent(path: Path, *, private: bool = False, label: str = "Restore") -> None:
@@ -83,6 +100,7 @@ def mounted_scratch_parent(
             raise ValueError(f"{label} scratch root must be a mounted, owner-controlled directory")
         parent = root / f"{namespace}-{os.getuid()}"
         parent.mkdir(mode=0o700, exist_ok=True)
+        _strip_inherited_acl(parent)
         validate_temp_parent(parent, private=True, label=label)
         return parent
     except (OSError, ValueError) as exc:

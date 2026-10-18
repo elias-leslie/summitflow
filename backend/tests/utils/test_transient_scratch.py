@@ -5,6 +5,7 @@ from __future__ import annotations
 import os
 import shutil
 import stat
+import struct
 import subprocess
 import sys
 from pathlib import Path
@@ -220,21 +221,43 @@ def test_private_overlay_admission_does_not_allocate_on_read_only_host_mount(mou
     assert not list(mounted.iterdir())
 
 
-@pytest.mark.skipif(shutil.which("setfacl") is None, reason="setfacl unavailable")
+def _set_acl(path: Path, name: str, *, group: int = 0, other: int = 0, mask: int = 7) -> None:
+    """Owner and a named user (the owner's uid, as an agent stand-in) get rwx; group/other as given."""
+    entries = [(0x01, 7, 0xFFFFFFFF), (0x02, 7, os.getuid()), (0x04, group, 0xFFFFFFFF),
+               (0x10, mask, 0xFFFFFFFF), (0x20, other, 0xFFFFFFFF)]
+    os.setxattr(path, f"system.posix_acl_{name}",
+                struct.pack("<I", 2) + b"".join(struct.pack("<HHI", *entry) for entry in entries))
+
+
 def test_named_user_acl_mask_does_not_make_scratch_look_group_writable(mounted):
     # A named-user ACL turns the mode's group bits into the mask (rwx here), but the
     # owning group and other still have no write.
-    acl = subprocess.run(["setfacl", "-m", f"u:{os.getuid()}:rwx,g::---,m::rwx", str(mounted)], capture_output=True)
-    if acl.returncode:
-        pytest.skip("filesystem has no POSIX ACL support")
+    _set_acl(mounted, "access")
     assert mounted.stat().st_mode & 0o020
     scratch.validate_temp_parent(mounted, label="Fixture")
     with scratch.restore_scratch("fixture-") as job:
         assert job.parent.parent == mounted
     # Real group or other write without the sticky bit is still refused.
-    subprocess.run(["setfacl", "-m", "g::rwx", str(mounted)], check=True)
-    with pytest.raises(ValueError, match="sticky bit"):
-        scratch.validate_temp_parent(mounted, label="Fixture")
-    subprocess.run(["setfacl", "-m", "g::---,o::rwx", str(mounted)], check=True)
-    with pytest.raises(ValueError, match="sticky bit"):
-        scratch.validate_temp_parent(mounted, label="Fixture")
+    for group, other in ((7, 0), (0, 7)):
+        _set_acl(mounted, "access", group=group, other=other)
+        with pytest.raises(ValueError, match="sticky bit"):
+            scratch.validate_temp_parent(mounted, label="Fixture")
+
+
+def test_private_namespace_sheds_inherited_default_acl(mounted):
+    _set_acl(mounted, "default")
+    # An existing namespace left over from a recursive ACL install is cleaned too.
+    (mounted / f"st-restores-{os.getuid()}").mkdir(mode=0o700)
+    for name in ("st-restores", "st-backups"):
+        parent = scratch.mounted_scratch_parent(name)
+        assert parent is not None
+        assert parent == mounted / f"{name}-{os.getuid()}" and stat.S_IMODE(parent.stat().st_mode) == 0o700
+        assert not {"system.posix_acl_default", "system.posix_acl_access"} & set(os.listxattr(parent))
+        old = os.umask(0o022)
+        try:
+            (parent / "file").write_text("x")
+            (parent / "dir").mkdir()
+        finally:
+            os.umask(old)
+        assert stat.S_IMODE((parent / "file").stat().st_mode) == 0o644
+        assert stat.S_IMODE((parent / "dir").stat().st_mode) == 0o755
