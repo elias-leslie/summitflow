@@ -211,7 +211,10 @@ fn service_names(path: &Path) -> Result<(Vec<String>, u16, String), String> {
     }
     if names.is_empty()
         || names.iter().any(|n| {
-            !n.ends_with(".service") || n.len() > 160 || n.contains('/') || n.starts_with('-')
+            !(n.ends_with(".service") || n.ends_with(".timer"))
+                || n.len() > 160
+                || n.contains('/')
+                || n.starts_with('-')
         })
     {
         return Err("invalid service names".into());
@@ -1415,7 +1418,8 @@ mod tests {
             .unwrap()
             .join("project.identity.json");
         let (names, _, _) = service_names(&identity).unwrap();
-        assert!(names.contains(&"codex-session-sync.service".to_owned()));
+        assert!(names.contains(&"summitflow-backend.service".to_owned()));
+        assert!(names.contains(&"summitflow-codex-managed-drain.timer".to_owned()));
     }
 
     #[test]

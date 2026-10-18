@@ -68,30 +68,23 @@ query SummitFlow's database or call its API.
 
 ## Operator commands
 
-Codex session sync writes one status summary per scan to stdout, and warnings
-and errors to stderr. `synced` counts successful session operations (including
-heartbeats); `warnings` counts warnings emitted during the scan. The periodic
-user service sends both streams to the journal without per-session verbose
-output. Direct CLI calls can add `--verbose` for per-session success details.
-Journal retention is the host policy owned by Nightshift; Codex sync adds no
-separate retention policy, daemon, or scheduler.
+Codex session sync and the inactive-session closer belong to Agent Hub
+(`codex-session-sync.timer`, `codex-session-close-inactive.timer`, installed by
+`st service rebuild agent-hub`). Their scan window and the close switch are
+Agent Hub session close settings (Sessions page, Closing). See Agent Hub's
+`scripts/codex-session-sync.py`.
 
-The legacy `~/.codex/session-integrations/codex-session-sync.log` is preserved
-in place and is no longer appended to. Keep it available for diagnostic recovery;
-this change does not rotate or delete existing history.
-
-`codex-session-sync.timer` scans every 2 minutes (`--scan`), and
-`codex-session-close-inactive.timer` runs `--scan --close-inactive` every
-5 minutes. Both services are optional workers, so `st service rebuild summitflow`
-renders their `__SUMMITFLOW_ROOT__`. Timers are installed from
-`scripts/systemd/*.timer` into `~/.config/systemd/user/`. Change their cadence in
-the template, not in a drop-in. An override that sets `OnUnitActiveSec=` to empty
-also clears `OnBootSec=`. A monotonic `OnUnitActiveSec=` has no base until the service runs in the current boot, so these timers also use `OnCalendar=`.
+SummitFlow keeps only its managed Codex outbox drain:
+`summitflow-codex-managed-drain.timer` runs `scripts/codex-managed-drain.py`
+every 2 minutes and is a default worker, so `st service rebuild summitflow`
+installs and enables it. Change its cadence in the template, not in a drop-in.
+A monotonic `OnUnitActiveSec=` has no base until the service runs in the current
+boot, so these timers use `OnCalendar=`.
 `btrfs-autosnapshot.timer` uses `OnCalendar=*:0/30` with `Persistent=true`
 for the same reason.
 
 ```bash
-journalctl --user -u codex-session-sync.service --since '10 days ago'
+journalctl --user -u summitflow-codex-managed-drain.service --since '10 days ago'
 ```
 
 ```bash

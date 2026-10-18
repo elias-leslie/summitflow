@@ -8,7 +8,6 @@ import subprocess
 import sys
 from collections.abc import Iterable
 from contextlib import suppress
-from importlib import import_module
 from pathlib import Path
 from typing import Annotated, NoReturn, Protocol, cast
 
@@ -142,7 +141,6 @@ def managed_codex(
         argv.extend(["--update-action", update_action])
     os.execv(python, argv)
 
-_CODEX_SESSION_SYNC = Path(__file__).resolve().parents[3] / "scripts" / "codex-session-sync.py"
 
 
 class _NativeTranscript(Protocol):
@@ -154,10 +152,9 @@ class _NativeTranscript(Protocol):
 
 def _current_codex_transcript() -> _NativeTranscript:
     """Use the synchronizer's native provenance validation without mutating state."""
-    library = str(_CODEX_SESSION_SYNC.parent / "lib")
-    if library not in sys.path:
-        sys.path.insert(0, library)
-    return import_module("codex_sync_transcripts").resolve_current_transcript()
+    from ..lib.agent_hub_codex import collector_module
+
+    return collector_module("codex_sync_transcripts").resolve_current_transcript()
 
 
 def _require_native_binding(session: dict[str, object], info: _NativeTranscript) -> None:
@@ -524,8 +521,15 @@ def bind_session(
         else "reactivated"
     )
 
+    from ..lib.agent_hub_codex import collector_script
+
+    try:
+        sync_script = collector_script()
+    except ImportError as exc:
+        _bind_error(str(exc))
     command = [
-        str(_CODEX_SESSION_SYNC),
+        sys.executable,
+        str(sync_script),
         "--bind-session",
         session_id,
         "--bind-project",
@@ -538,7 +542,7 @@ def bind_session(
     try:
         completed = subprocess.run(
             command,
-            cwd=_CODEX_SESSION_SYNC.parents[1],
+            cwd=sync_script.parents[1],
             capture_output=True,
             text=True,
             check=False,

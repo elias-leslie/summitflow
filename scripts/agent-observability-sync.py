@@ -10,11 +10,6 @@ import sys
 from pathlib import Path
 
 DEFAULT_TIMEOUT_SECONDS = 10.0
-DEFAULT_CODEX_RECENT_HOURS = 24
-
-
-def _repo_root() -> Path:
-    return Path(__file__).resolve().parents[1]
 
 
 def _python_bin() -> str:
@@ -22,20 +17,26 @@ def _python_bin() -> str:
     return override or sys.executable
 
 
+def _codex_sync_script() -> Path | None:
+    """Agent Hub owns the Codex collector; st passes its registered root."""
+    root = os.environ.get("ST_AGENT_HUB_ROOT")
+    if not root:
+        return None
+    script = Path(root).expanduser() / "scripts" / "codex-session-sync.py"
+    return script if script.is_file() else None
+
+
 def _commands(*, include_codex: bool, verbose: bool) -> list[list[str]]:
-    repo_root = _repo_root()
     python_bin = _python_bin()
     commands: list[list[str]] = []
+    codex_script = _codex_sync_script() if include_codex else None
 
-    if include_codex:
-        recent_hours = os.environ.get("AGENT_OBSERVABILITY_CODEX_RECENT_HOURS", str(DEFAULT_CODEX_RECENT_HOURS))
-        cmd = [
-            python_bin,
-            str(repo_root / "scripts" / "codex-session-sync.py"),
-            "--scan",
-            "--recent-hours",
-            recent_hours,
-        ]
+    if codex_script is not None:
+        # The scan window defaults to Agent Hub's session close settings.
+        cmd = [python_bin, str(codex_script), "--scan"]
+        recent_hours = os.environ.get("AGENT_OBSERVABILITY_CODEX_RECENT_HOURS")
+        if recent_hours:
+            cmd.extend(["--recent-hours", recent_hours])
         close_inactive = os.environ.get("AGENT_OBSERVABILITY_CODEX_CLOSE_INACTIVE", "1").strip().lower()
         if close_inactive not in {"0", "false", "no", "off"}:
             cmd.append("--close-inactive")

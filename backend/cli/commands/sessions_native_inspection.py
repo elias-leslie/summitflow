@@ -3,9 +3,6 @@
 from __future__ import annotations
 
 import re
-import sys
-from importlib import import_module
-from pathlib import Path
 from types import ModuleType
 from typing import Annotated, Any
 
@@ -16,10 +13,10 @@ from .sessions_options import JsonOutputOption
 
 
 def transcript_library() -> ModuleType:
-    library = str(Path(__file__).resolve().parents[3] / "scripts/lib")
-    if library not in sys.path:
-        sys.path.insert(0, library)
-    return import_module("codex_sync_transcripts")
+    """Agent Hub's Codex transcript reader (its collector library)."""
+    from ..lib.agent_hub_codex import collector_module
+
+    return collector_module("codex_sync_transcripts")
 
 
 def native_inspection_receipt(info: Any) -> dict[str, object]:

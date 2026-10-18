@@ -17,9 +17,20 @@ from typing import Any
 from uuid import UUID
 
 from ..commands.sessions_native_inspection import transcript_library
+from .agent_hub_codex import collector_module
 
 RPC_TIMEOUT_SECONDS = 30  # Existing fleet host RPC timeout.
 MAX_RECEIPT_BYTES = 16384  # Existing fleet compact-event payload quota.
+
+
+def _managed_capture():
+    """SummitFlow's own managed Codex capture module (scripts/lib)."""
+    import sys
+
+    library = str(Path(__file__).resolve().parents[3] / "scripts" / "lib")
+    if library not in sys.path:
+        sys.path.insert(0, library)
+    return import_module("codex_managed_capture")
 
 
 class NativeQueueError(ValueError):
@@ -44,7 +55,7 @@ def verify_thread_binding(thread: str, project: str, project_root: str) -> dict[
     """Reuse immutable sync bindings and exact local native provenance, including offline threads."""
     exact_uuid(thread)
     library = transcript_library()
-    bindings = import_module("codex_sync_bindings").load_snapshot()
+    bindings = collector_module("codex_sync_bindings").load_snapshot()
     binding = bindings.get(thread)
     root = Path(project_root).resolve()
     if binding is not None and (binding.project_id != project or Path(binding.project_root).resolve() != root):
@@ -61,7 +72,7 @@ def verify_thread_binding(thread: str, project: str, project_root: str) -> dict[
         raise ValueError("Native thread provenance is ambiguous")
     if (binding is not None and binding.parent_session_id) or info.parent_session_id or info.agent_path not in (None, "/root"):
         raise ValueError("Direct native delivery to spawned subagents is unsupported")
-    runner = import_module("codex_sync_runner")
+    runner = collector_module("codex_sync_runner")
     context, _, _, git_verified = runner._resolve_project_context(info, binding)
     if (context is None or context.get("project_id") != project
             or Path(str(context.get("repo_root") or "")).resolve() != root):
@@ -79,8 +90,7 @@ class NativeRPC:
     """The existing local stdio transport, with one deadline and bounded receipts."""
 
     def __init__(self, project_root: str, timeout: float):
-        transcript_library()
-        binary = import_module("codex_managed_capture").codex_binary()
+        binary = _managed_capture().codex_binary()
         try:
             self.proc = subprocess.Popen(
                 [binary, "app-server", "--listen", "stdio://"], cwd=project_root,

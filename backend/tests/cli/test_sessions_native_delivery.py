@@ -112,7 +112,7 @@ def identity(tmp_path, monkeypatch):
     runner = SimpleNamespace(_resolve_project_context=lambda *args: ({"project_id": "fixture", "repo_root": str(tmp_path)}, tmp_path, "", True), _project_mapping_state=lambda *args, **kwargs: ("matched", ""))
     modules = {"codex_sync_bindings": SimpleNamespace(load_snapshot=lambda: {THREAD: binding}), "codex_sync_runner": runner}
     monkeypatch.setattr(native, "transcript_library", lambda: library)
-    monkeypatch.setattr(native, "import_module", lambda name: modules[name])
+    monkeypatch.setattr(native, "collector_module", lambda name: modules[name])
     return tmp_path, binding, info, modules, runner
 
 

@@ -33,12 +33,10 @@
     "frontend": "summitflow-frontend.service",
     "default_workers": [
       "summitflow-hatchet-worker.service",
-      "summitflow-host-monitor.service"
+      "summitflow-host-monitor.service",
+      "summitflow-codex-managed-drain.timer"
     ],
-    "optional_workers": [
-      "codex-session-sync.service",
-      "codex-session-close-inactive.service"
-    ]
+    "optional_workers": []
   },
   "hosts": {
     "production_frontend": "localhost:3001",

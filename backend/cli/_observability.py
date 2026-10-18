@@ -52,6 +52,14 @@ def refresh_agent_observability() -> None:
     if not script_path.is_file():
         return
 
+    env = os.environ.copy()
+    if "ST_AGENT_HUB_ROOT" not in env:
+        try:
+            from .lib.agent_hub_codex import agent_hub_root
+
+            env["ST_AGENT_HUB_ROOT"] = str(agent_hub_root())
+        except (ImportError, OSError, ValueError):
+            pass
     try:
         timeout = _sync_timeout_seconds()
         subprocess.run(
@@ -60,7 +68,7 @@ def refresh_agent_observability() -> None:
             stdout=subprocess.DEVNULL,
             stderr=subprocess.DEVNULL,
             timeout=timeout,
-            env=os.environ.copy(),
+            env=env,
         )
     except (OSError, subprocess.TimeoutExpired):
         return

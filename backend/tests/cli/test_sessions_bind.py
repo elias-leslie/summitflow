@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import os
 import subprocess
+import sys
 from collections.abc import Iterator
 from pathlib import Path
 from types import SimpleNamespace
@@ -21,6 +22,7 @@ runner = CliRunner()
 _THREAD_ID = "019f62d8-881c-7393-8c19-ae9b2b21e56b"
 _PROJECT_ID = "rootfall"
 _PROJECT_ROOT = "/srv/workspaces/projects/rootfall"
+_AGENT_HUB_ROOT = "/srv/workspaces/projects/agent-hub-fixture"
 
 
 @pytest.fixture(autouse=True)
@@ -35,6 +37,7 @@ def _reset_project_override(monkeypatch: pytest.MonkeyPatch) -> Iterator[None]:
 
     monkeypatch.setattr(sessions_cmd, "_current_codex_transcript", current)
     monkeypatch.delenv("CODEX_SESSION_ID", raising=False)
+    monkeypatch.setenv("ST_AGENT_HUB_ROOT", _AGENT_HUB_ROOT)
     set_project_override(None)
     yield
     set_project_override(None)
@@ -79,7 +82,8 @@ def test_bind_current_syncs_absent_session_and_requires_active_result(
     ]
     run.assert_called_once_with(
         [
-            str(sessions_cmd._CODEX_SESSION_SYNC),
+            sys.executable,
+            f"{_AGENT_HUB_ROOT}/scripts/codex-session-sync.py",
             "--bind-session",
             _THREAD_ID,
             "--bind-project",
@@ -89,7 +93,7 @@ def test_bind_current_syncs_absent_session_and_requires_active_result(
             "--force",
             "--verbose",
         ],
-        cwd=Path(sessions_cmd._CODEX_SESSION_SYNC).parents[1],
+        cwd=Path(_AGENT_HUB_ROOT),
         capture_output=True,
         text=True,
         check=False,
@@ -249,7 +253,7 @@ def test_bind_prefers_native_session_id_over_inherited_thread_id(
     assert result.exit_code == 0, result.output
     assert f"SESSION_BIND:{native_session_id}" in result.output
     run.assert_called_once()
-    assert run.call_args.args[0][2] == native_session_id
+    assert run.call_args.args[0][3] == native_session_id
 
 
 def test_bind_falls_back_to_config_project_and_requires_registered_root(

@@ -28,7 +28,7 @@ Each configured project has its own process fence, producer/epoch, quota, delive
 lease, runtime selection and capture switch. Default status selects `agent-hub` when
 configured, otherwise the first sorted project. Project controls require the exact
 configured and durably bound project; a mixed or mismatched spool fails closed.
-The existing `codex-session-sync.service`/timer drains every configured spool
+`summitflow-codex-managed-drain.timer` drains every configured spool
 independently, including while capture is off. A failing spool does not prevent the
 other project's delivery or ordinary rollout ingestion.
 

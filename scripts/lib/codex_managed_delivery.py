@@ -10,6 +10,8 @@ import sqlite3
 from pathlib import Path
 
 from codex_managed_outbox import ManagedOutbox
+
+HTTP_TIMEOUT = 20
 from codex_managed_update import ManagedUpdateError as ManagedUpdateError
 
 
@@ -48,7 +50,7 @@ async def deliver(outbox: ManagedOutbox, client, *, execution_owner_secret: str,
                         await client.register_native_source(thread["id"], rollout, execution_owner_secret=execution_owner_secret)
                     except Exception:
                         # A missing/rejected rollout locator cannot block durable
-                        # App Server evidence; the collector retries registration.
+                        # App Server evidence; the drain timer retries registration.
                         await asyncio.to_thread(outbox.delivery_health, "rollout_registration_unavailable")
                 if register_only:
                     continue
@@ -62,7 +64,7 @@ async def deliver(outbox: ManagedOutbox, client, *, execution_owner_secret: str,
             except Exception:
                 await asyncio.to_thread(outbox.delivery_health, "delivery_unavailable")
                 # Other owned threads remain independent. No sleep or retry loop;
-                # the existing sync timer retries the exact pending receipt.
+                # the drain timer retries the exact pending receipt.
         if not register_only and session_id is None and await asyncio.to_thread(outbox.quarantines):
             from agent_hub.models.native_observation import (
                 NativeQuarantineBatch,
@@ -239,9 +241,7 @@ def owner_credentials() -> tuple[str | None, str | None]:
 
 
 def recover_configured_outbox(api_url: str, *, project_id: str | None = None, session_id: str | None = None, register_only: bool = False, transcript_path: Path | None = None) -> dict | None:
-    """Called by the existing host collector even when managed capture is off."""
-    from codex_sync_api import HTTP_TIMEOUT
-
+    """Called by SummitFlow's managed-outbox drain timer, even when managed capture is off."""
     outbox = configured_outbox(project_id)
     if outbox is None:
         return None
@@ -269,7 +269,7 @@ def recover_configured_outbox(api_url: str, *, project_id: str | None = None, se
 
 
 def recover_configured_outboxes(api_url: str) -> list[dict]:
-    """Existing collector drains independent configured owners even if one fails."""
+    """The drain timer recovers independent configured owners even if one fails."""
     results = []
     for project in sorted(configured_paths()) or [None]:
         try:
