@@ -28,6 +28,7 @@ from ..project_identity import get_project_aliases, get_project_identity
 from ..storage import backups as backup_store
 from ..storage.projects import list_projects, testing_project_ids
 from ..utils import safe_subprocess
+from ..utils.maintenance_window import MaintenanceWindow
 from ..utils.shared_paths import get_workspaces_root
 from ._retention_policy import HostRetentionPolicy
 from .backup_activity import BackupCancelled, run_bulk_process
@@ -814,9 +815,8 @@ def run_scheduled_host_backup(now: datetime) -> dict[str, Any]:
             # Association/metadata retry does not start another boot or host job.
             return _resume_association(last, now)
         return {"status": "partial", "reason": "daily-host-backup-incomplete", "evidence": last.get("evidence"), "last_result": last}
-    start, end = settings.backup_schedule_start_hour, settings.backup_schedule_end_hour
-    if start is not None and end is not None:
-        within = start <= local.hour < end if start < end else local.hour >= start or local.hour < end
-        if not within:
-            return {"status": "skipped", "reason": "outside-host-backup-window"}
+    if settings.backup_schedule_window and not MaintenanceWindow.parse(settings.backup_schedule_window).contains(
+        now, ZoneInfo(settings.backup_schedule_timezone),
+    ):
+        return {"status": "skipped", "reason": "outside-host-backup-window"}
     return run_native_host_backup(now=now)

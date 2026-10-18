@@ -83,7 +83,9 @@ pushes, new remotes or new daemons are part of this policy.
 
 The non-secret worker settings live in
 `~/.config/summitflow/backup-schedule.env`, loaded after `.env.local` by the managed
-worker unit and included in the infrastructure archive. The Restic pilot is
+worker unit and included in the infrastructure archive. The scheduled-backup window is
+`BACKUP_SCHEDULE_WINDOW` in the shared maintenance-window format (`02:00-06:00`, up to four
+comma-joined ranges, a trailing `Z` for UTC; otherwise read in `BACKUP_SCHEDULE_TIMEZONE`). The Restic pilot is
 disabled. Retained Restic repositories remain available for recovery; automatic
 maintenance can be disabled without changing their identity or deleting points.
 

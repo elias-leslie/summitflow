@@ -14,6 +14,7 @@ from ..config import get_settings
 from ..logging_config import get_logger
 from ..storage import backups as backup_store
 from ..storage import maintenance_runs as maintenance_store
+from ..utils.maintenance_window import MaintenanceWindow
 from ..utils.transient_scratch import SCRATCH_ROOT
 from .backup_executor import create_backup
 from .backup_local_cleanup import cleanup_local_backup_archives
@@ -31,26 +32,23 @@ DEAD_HOLDER_AGE_MINUTES = 1
 SCRATCH_RESIDUE_HOURS = 24
 
 
-def _scheduled_backup_window_open(now: datetime) -> bool:
-    """Allow scheduled work within the optional local-time window, including DST."""
+def _schedule_window() -> tuple[MaintenanceWindow, ZoneInfo] | None:
+    """The scheduled-backup window (shared maintenance-window format) and the clock it reads in; None = unrestricted."""
     settings = get_settings()
-    start = settings.backup_schedule_start_hour
-    end = settings.backup_schedule_end_hour
-    if start is None or end is None:
-        return True
-    hour = now.astimezone(ZoneInfo(settings.backup_schedule_timezone)).hour
-    if start < end:
-        return start <= hour < end
-    return hour >= start or hour < end
+    if not settings.backup_schedule_window:
+        return None
+    return MaintenanceWindow.parse(settings.backup_schedule_window), ZoneInfo(settings.backup_schedule_timezone)
+
+
+def _scheduled_backup_window_open(now: datetime) -> bool:
+    """Allow scheduled work within the optional window, in wall-clock time (daylight saving included)."""
+    window = _schedule_window()
+    return True if window is None else window[0].contains(now, window[1])
 
 
 def _latest_finished_window_end(now: datetime) -> datetime:
-    settings = get_settings()
-    local = now.astimezone(ZoneInfo(settings.backup_schedule_timezone))
-    end = local.replace(hour=settings.backup_schedule_end_hour or 0, minute=0, second=0, microsecond=0, fold=0)
-    if end.astimezone(UTC) > now.astimezone(UTC):
-        end -= timedelta(days=1)
-    return end.astimezone(UTC)
+    window = _schedule_window()
+    return now.astimezone(UTC) if window is None else window[0].latest_end(now, window[1])
 
 
 def _catchup_source(source: dict[str, Any], finished_window_end: datetime) -> bool:
@@ -78,15 +76,10 @@ def _catchup_source(source: dict[str, Any], finished_window_end: datetime) -> bo
 
 
 def _align_next_run_to_window(next_run: datetime, now: datetime) -> datetime:
-    settings = get_settings()
-    start = settings.backup_schedule_start_hour
-    if start is None:
+    window = _schedule_window()
+    if window is None:
         return next_run
-    local = next_run.astimezone(ZoneInfo(settings.backup_schedule_timezone))
-    aligned = local.replace(hour=start, minute=0, second=0, microsecond=0, fold=0)
-    if aligned.astimezone(UTC) <= now.astimezone(UTC):
-        aligned += timedelta(days=1)
-    return aligned.astimezone(UTC)
+    return window[0].align_start(next_run, now, window[1])
 
 
 def _cleanup_stale_records() -> int:

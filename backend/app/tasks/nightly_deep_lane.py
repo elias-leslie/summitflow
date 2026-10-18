@@ -25,11 +25,12 @@ from pathlib import Path
 from typing import Any
 
 from ..logging_config import get_logger
+from ..utils.maintenance_window import MaintenanceWindow
 from .nightly_publication import WINDOW_ZONE, _git, _projects
 
 logger = get_logger(__name__)
 
-WINDOW_START_HOUR, WINDOW_END_HOUR = 1, 7
+DEEP_WINDOW = MaintenanceWindow.parse("01:00-07:00")  # the shared window format, read in WINDOW_ZONE
 DEEP_TIMEOUT_SECONDS = 5 * 60 * 60  # gate, slow stages and the clean-env gate
 PASS_VALID_DAYS = 7
 RECENT_EDIT_SECONDS = 30 * 60
@@ -72,7 +73,7 @@ def busy_reason(project_id: str, root: Path | None = None) -> str | None:
 
 
 def deep_window_open(now: datetime) -> bool:
-    return WINDOW_START_HOUR <= now.astimezone(WINDOW_ZONE).hour < WINDOW_END_HOUR
+    return DEEP_WINDOW.contains(now, WINDOW_ZONE)
 
 
 def _state_path(root: Path) -> Path | None:

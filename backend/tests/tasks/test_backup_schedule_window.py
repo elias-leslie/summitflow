@@ -20,31 +20,31 @@ def isolated_host_backup(monkeypatch):
 
 
 @pytest.mark.parametrize(
-    ("start", "end", "instant", "expected"),
+    ("window", "instant", "expected"),
     [
-        (None, None, "2026-07-01T18:00:00", True),
-        (2, 6, "2026-07-01T05:59:59", False),
-        (2, 6, "2026-07-01T06:00:00", True),
-        (2, 6, "2026-07-01T09:59:59", True),
-        (2, 6, "2026-07-01T10:00:00", False),
-        (2, 6, "2026-01-01T06:59:59", False),
-        (2, 6, "2026-01-01T07:00:00", True),
-        (2, 6, "2026-01-01T11:00:00", False),
-        (22, 2, "2026-07-02T02:00:00", True),
-        (22, 2, "2026-07-02T05:59:59", True),
-        (22, 2, "2026-07-02T06:00:00", False),
+        (None, "2026-07-01T18:00:00", True),
+        ("02:00-06:00", "2026-07-01T05:59:59", False),
+        ("02:00-06:00", "2026-07-01T06:00:00", True),
+        ("02:00-06:00", "2026-07-01T09:59:59", True),
+        ("02:00-06:00", "2026-07-01T10:00:00", False),
+        ("02:00-06:00", "2026-01-01T06:59:59", False),
+        ("02:00-06:00", "2026-01-01T07:00:00", True),
+        ("02:00-06:00", "2026-01-01T11:00:00", False),
+        ("22:00-02:00", "2026-07-02T02:00:00", True),
+        ("22:00-02:00", "2026-07-02T05:59:59", True),
+        ("22:00-02:00", "2026-07-02T06:00:00", False),
         # Spring skips 02:00 and fall repeats 01:00; use local wall time.
-        (2, 6, "2026-03-08T07:00:00", True),
-        (1, 2, "2026-11-01T05:30:00", True),
-        (1, 2, "2026-11-01T06:30:00", True),
+        ("02:00-06:00", "2026-03-08T07:00:00", True),
+        ("01:00-02:00", "2026-11-01T05:30:00", True),
+        ("01:00-02:00", "2026-11-01T06:30:00", True),
     ],
 )
 def test_local_schedule_window(
-    monkeypatch: pytest.MonkeyPatch, start: int | None, end: int | None,
+    monkeypatch: pytest.MonkeyPatch, window: str | None,
     instant: str, expected: bool,
 ) -> None:
     settings = SimpleNamespace(
-        backup_schedule_start_hour=start, backup_schedule_end_hour=end,
+        backup_schedule_window=window,
         backup_schedule_timezone="America/New_York",
         backup_publish_before_backup=False,
     )
@@ -87,18 +87,18 @@ def test_outside_window_skips_scheduled_work_without_changing_due_sources(
 @pytest.mark.parametrize(
     "window",
     [
-        {"backup_schedule_start_hour": 2},
-        {"backup_schedule_end_hour": 6},
-        {"backup_schedule_start_hour": 2, "backup_schedule_end_hour": 2},
-        {"backup_schedule_start_hour": -1, "backup_schedule_end_hour": 6},
-        {"backup_schedule_start_hour": 2, "backup_schedule_end_hour": 24},
+        {"backup_schedule_window": "02:00"},
+        {"backup_schedule_window": "02:00-02:00"},
+        {"backup_schedule_window": "2:00-6:00"},
+        {"backup_schedule_window": "02:00-24:00"},
+        {"backup_schedule_window": "01:00-02:00,03:00-04:00,05:00-06:00,07:00-08:00,09:00-10:00"},
         {"backup_schedule_timezone": "not/a-timezone"},
     ],
 )
 def test_schedule_configuration_rejects_invalid_window(
     monkeypatch: pytest.MonkeyPatch, window: dict[str, Any],
 ) -> None:
-    for name in ("BACKUP_SCHEDULE_START_HOUR", "BACKUP_SCHEDULE_END_HOUR", "BACKUP_SCHEDULE_TIMEZONE"):
+    for name in ("BACKUP_SCHEDULE_WINDOW", "BACKUP_SCHEDULE_TIMEZONE"):
         monkeypatch.delenv(name, raising=False)
     values: dict[str, Any] = {"_env_file": None, "database_url": "postgresql://localhost/fixture", **window}
     with pytest.raises(ValidationError):
@@ -106,20 +106,18 @@ def test_schedule_configuration_rejects_invalid_window(
 
 
 def test_schedule_settings_load_requested_window_from_environment(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setenv("BACKUP_SCHEDULE_START_HOUR", "2")
-    monkeypatch.setenv("BACKUP_SCHEDULE_END_HOUR", "6")
+    monkeypatch.setenv("BACKUP_SCHEDULE_WINDOW", "02:00-06:00")
     monkeypatch.setenv("BACKUP_SCHEDULE_TIMEZONE", "America/New_York")
     values: dict[str, Any] = {"_env_file": None, "database_url": "postgresql://localhost/fixture"}
     settings = Settings(**values)
-    assert settings.backup_schedule_start_hour == 2
-    assert settings.backup_schedule_end_hour == 6
+    assert settings.backup_schedule_window == "02:00-06:00"
     assert settings.backup_schedule_timezone == "America/New_York"
 
 
 @pytest.fixture
 def nightly_window(monkeypatch: pytest.MonkeyPatch) -> None:
     settings = SimpleNamespace(
-        backup_schedule_start_hour=2, backup_schedule_end_hour=6,
+        backup_schedule_window="02:00-06:00",
         backup_schedule_timezone="America/New_York",
         backup_publish_before_backup=False,
     )
@@ -143,7 +141,7 @@ def test_latest_finished_window_uses_local_day_and_dst(
 
 def test_overnight_window_finished_end(monkeypatch: pytest.MonkeyPatch) -> None:
     settings = SimpleNamespace(
-        backup_schedule_start_hour=22, backup_schedule_end_hour=2,
+        backup_schedule_window="22:00-02:00",
         backup_schedule_timezone="America/New_York",
         backup_publish_before_backup=False,
     )
@@ -238,7 +236,7 @@ def test_capture_never_publishes_even_with_retained_legacy_setting(monkeypatch, 
 
     from app.tasks import backup_publish
     monkeypatch.setattr(scheduler, "get_settings", lambda: SimpleNamespace(
-        backup_publish_before_backup=True, backup_schedule_start_hour=None))
+        backup_publish_before_backup=True, backup_schedule_window=None))
     publish = Mock(side_effect=AssertionError("No remote work during backup"))
     monkeypatch.setattr(backup_publish, "publish_source", publish)
     monkeypatch.setattr(scheduler, "create_backup", lambda **_: {"status": capture_status, "backup_id": "saved"})

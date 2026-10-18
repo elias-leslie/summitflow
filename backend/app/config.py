@@ -10,8 +10,10 @@ from functools import lru_cache
 from pathlib import Path
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
-from pydantic import Field, field_validator, model_validator
+from pydantic import field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
+
+from .utils.maintenance_window import MaintenanceWindow
 
 
 # Project ports live in each project's project.identity.json (runtime
@@ -105,10 +107,10 @@ class Settings(BaseSettings):
 
     backup_btrbk_enabled: bool = False
 
-    # Optional local-time window for the existing scheduled backup workflow.
-    # Unset hours preserve unrestricted scheduling; manual backups are separate.
-    backup_schedule_start_hour: int | None = Field(default=None, ge=0, le=23)
-    backup_schedule_end_hour: int | None = Field(default=None, ge=0, le=23)
+    # Optional window for the existing scheduled backup workflow, in the shared maintenance-window format
+    # (app/utils/maintenance_window.py): "02:00-06:00", up to 4 comma-joined ranges, a trailing Z for UTC. Otherwise it
+    # reads in backup_schedule_timezone. Unset preserves unrestricted scheduling; manual backups are separate.
+    backup_schedule_window: str | None = None
     backup_schedule_timezone: str = "America/New_York"
 
     @field_validator("backup_schedule_timezone")
@@ -120,14 +122,13 @@ class Settings(BaseSettings):
             raise ValueError("Backup schedule timezone must be an IANA timezone") from exc
         return value
 
-    @model_validator(mode="after")
-    def validate_backup_schedule_window(self) -> Settings:
-        start, end = self.backup_schedule_start_hour, self.backup_schedule_end_hour
-        if (start is None) != (end is None):
-            raise ValueError("Backup schedule requires both start and end hours")
-        if start is not None and start == end:
-            raise ValueError("Backup schedule start and end hours must differ")
-        return self
+    @field_validator("backup_schedule_window", mode="before")
+    @classmethod
+    def validate_backup_schedule_window(cls, value: str | None) -> str | None:
+        if value is None or not str(value).strip():
+            return None
+        MaintenanceWindow.parse(str(value).strip())
+        return str(value).strip()
 
 
 @lru_cache

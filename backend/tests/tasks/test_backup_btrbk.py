@@ -254,7 +254,7 @@ def test_partial_database_association_finishes_without_another_host_capture(capt
     assert not (capture["root"] / "last-good.json").exists()
     monkeypatch.setattr(host, "_database_manifests", lambda *_: {"status": "qualified", "manifests": [{"project_id": "nested-db", "has_db": True}], "missing": []})
     # Association can finish outside the heavyweight host capture window.
-    monkeypatch.setattr(host, "get_settings", lambda: SimpleNamespace(backup_schedule_timezone="UTC", backup_schedule_start_hour=2, backup_schedule_end_hour=6))
+    monkeypatch.setattr(host, "get_settings", lambda: SimpleNamespace(backup_schedule_timezone="UTC", backup_schedule_window="02:00-06:00"))
     result = host.run_scheduled_host_backup(NOW + timedelta(hours=1))
     assert result["status"] == "completed"
     assert result["run_id"] == partial["run_id"]
@@ -268,7 +268,7 @@ def test_disabled_and_daily_incomplete_never_start_capture(capture: dict[str, An
     assert host.run_scheduled_host_backup(NOW) == {"status": "skipped", "reason": "host-backup-disabled"}
     capture["bulk"].assert_not_called()
     monkeypatch.setenv("BACKUP_BTRBK_ENABLED", "true")
-    monkeypatch.setattr(host, "get_settings", lambda: SimpleNamespace(backup_schedule_timezone="UTC", backup_schedule_start_hour=None, backup_schedule_end_hour=None))
+    monkeypatch.setattr(host, "get_settings", lambda: SimpleNamespace(backup_schedule_timezone="UTC", backup_schedule_window=None))
     host._write_receipt({"status": "failed", "started_at": NOW.isoformat(), "evidence": "retained partial operation"})
     assert host.run_scheduled_host_backup(NOW)["reason"] == "daily-host-backup-incomplete"
     capture["bulk"].assert_not_called()
