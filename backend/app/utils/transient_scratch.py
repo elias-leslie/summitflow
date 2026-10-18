@@ -2,9 +2,11 @@
 
 from __future__ import annotations
 
+import errno
 import os
 import shutil
 import stat
+import struct
 import tempfile
 from collections.abc import Iterator
 from contextlib import contextmanager
@@ -26,6 +28,23 @@ def current_scratch() -> Path | None:
     return _ACTIVE_SCRATCH.get()
 
 
+def _group_or_other_writable(path: Path) -> bool:
+    """With an access ACL the mode's group bits are the mask, so read group_obj itself."""
+    mode = path.lstat().st_mode
+    group_write = bool(mode & 0o020)
+    try:
+        acl = os.getxattr(path, "system.posix_acl_access", follow_symlinks=False)
+    except OSError as exc:
+        if exc.errno not in {errno.ENODATA, errno.ENOTSUP}:
+            raise
+    else:
+        if len(acl) >= 4 and struct.unpack_from("<I", acl)[0] == 2:
+            for tag, perm, _id in struct.iter_unpack("<HHI", acl[4:]):
+                if tag == 0x04:  # ACL_GROUP_OBJ
+                    group_write = bool(perm & 0x2)
+    return group_write or bool(mode & 0o002)
+
+
 def validate_temp_parent(path: Path, *, private: bool = False, label: str = "Restore") -> None:
     """Validate without changing permissions or following directory aliases."""
     if not path.is_absolute() or path.resolve() != path:
@@ -37,7 +56,7 @@ def validate_temp_parent(path: Path, *, private: bool = False, label: str = "Res
     if private:
         if info.st_uid != os.getuid() or mode != 0o700:
             raise ValueError(f"{label} scratch directory must be private and owned by the current user")
-    elif mode & 0o022 and not mode & stat.S_ISVTX:
+    elif _group_or_other_writable(path) and not mode & stat.S_ISVTX:
         raise ValueError(f"{label} shared temporary directory requires the sticky bit")
 
 
@@ -60,7 +79,7 @@ def mounted_scratch_parent(
         raise ValueError("Scratch namespace must be a single directory name")
     try:
         validate_temp_parent(root, label=label)
-        if not root.is_mount() or root.stat().st_mode & 0o022:
+        if not root.is_mount() or _group_or_other_writable(root):
             raise ValueError(f"{label} scratch root must be a mounted, owner-controlled directory")
         parent = root / f"{namespace}-{os.getuid()}"
         parent.mkdir(mode=0o700, exist_ok=True)
@@ -121,7 +140,7 @@ def managed_temp_parent(namespace: str, *, label: str, required_bytes: int = 0) 
                         parent = private_tmp
                     else:
                         validate_temp_parent(SCRATCH_ROOT, label=label)
-                        if not SCRATCH_ROOT.is_mount() or SCRATCH_ROOT.stat().st_mode & 0o022:
+                        if not SCRATCH_ROOT.is_mount() or _group_or_other_writable(SCRATCH_ROOT):
                             raise ValueError(f"{label} scratch root must be a mounted, owner-controlled directory")
                         if private_tmp.stat().st_dev == SCRATCH_ROOT.stat().st_dev:
                             parent = private_tmp

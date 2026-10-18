@@ -218,3 +218,23 @@ def test_private_overlay_admission_does_not_allocate_on_read_only_host_mount(mou
         with pytest.raises(scratch.ScratchError, match="read-only host scratch"):
             scratch.managed_temp_parent("st-first-use", label="Validation")
     assert not list(mounted.iterdir())
+
+
+@pytest.mark.skipif(shutil.which("setfacl") is None, reason="setfacl unavailable")
+def test_named_user_acl_mask_does_not_make_scratch_look_group_writable(mounted):
+    # A named-user ACL turns the mode's group bits into the mask (rwx here), but the
+    # owning group and other still have no write.
+    acl = subprocess.run(["setfacl", "-m", f"u:{os.getuid()}:rwx,g::---,m::rwx", str(mounted)], capture_output=True)
+    if acl.returncode:
+        pytest.skip("filesystem has no POSIX ACL support")
+    assert mounted.stat().st_mode & 0o020
+    scratch.validate_temp_parent(mounted, label="Fixture")
+    with scratch.restore_scratch("fixture-") as job:
+        assert job.parent.parent == mounted
+    # Real group or other write without the sticky bit is still refused.
+    subprocess.run(["setfacl", "-m", "g::rwx", str(mounted)], check=True)
+    with pytest.raises(ValueError, match="sticky bit"):
+        scratch.validate_temp_parent(mounted, label="Fixture")
+    subprocess.run(["setfacl", "-m", "g::---,o::rwx", str(mounted)], check=True)
+    with pytest.raises(ValueError, match="sticky bit"):
+        scratch.validate_temp_parent(mounted, label="Fixture")
