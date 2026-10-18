@@ -243,6 +243,8 @@ def alert_store(monkeypatch, tmp_path):
     monkeypatch.setattr(alerts.backup_store, "latest_backup_alerts", store.latest)
     monkeypatch.setattr(alerts, "SOURCES_RECEIPT", tmp_path / "backup-freshness/sources.json")
     monkeypatch.setattr(alerts, "_source_statuses", lambda now: {})
+    # Backups other projects run come from the DB; these tests cover SummitFlow sources only.
+    monkeypatch.setattr(alerts, "external_statuses", lambda now: {})
     monkeypatch.setattr(alerts, "_capacity_conditions", lambda summary: {})
     monkeypatch.setattr(alerts, "_proxmox_conditions", lambda now: {})
     return store
