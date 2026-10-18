@@ -1,17 +1,18 @@
 """Proxmox VM operations for `st vm` callers that hold no Proxmox token (agents); the backend's token does the work.
 
-A pass-through: the token's own PVE rights decide what is allowed (lab pool full, ops pool power + cores/memory,
+A pass-through (an `X-Proxmox-Admin-Token` header swaps in the elevated token for that request): the token's own PVE rights decide what is allowed (lab pool full, ops pool power + cores/memory,
 power pool power, everything else read-only), and PVE errors come back unchanged.
 """
 
 from __future__ import annotations
 
-from typing import Any
+from dataclasses import replace
+from typing import Annotated, Any
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, Header, HTTPException
 from pydantic import BaseModel, Field
 
-from cli.lib.proxmox import ProxmoxClient, ProxmoxError
+from cli.lib.proxmox import ProxmoxClient, ProxmoxError, parse_admin_token
 from cli.lib.vm_clone import run_clone
 
 from ..access_control import require_authenticated
@@ -68,10 +69,20 @@ def run_vm_op(client: ProxmoxClient, body: VmOp) -> Any:
     return getattr(client, body.op)(body.vmid, **kwargs)
 
 
+def request_client(admin_token: str | None) -> ProxmoxClient:
+    """The backend's client; with an elevated token header (Nightshift's proxmox-admin) its token is swapped in for
+    this request only."""
+    client = ProxmoxClient()
+    if admin_token and admin_token.strip():
+        token_id, secret = parse_admin_token(admin_token.strip())
+        client = ProxmoxClient(replace(client.config, token_id=token_id, token_secret=secret))
+    return client
+
+
 @router.post("/vm/op")
-def vm_op(body: VmOp) -> dict[str, Any]:
+def vm_op(body: VmOp, x_proxmox_admin_token: Annotated[str | None, Header()] = None) -> dict[str, Any]:
     try:
-        return {"result": run_vm_op(ProxmoxClient(), body)}
+        return {"result": run_vm_op(request_client(x_proxmox_admin_token), body)}
     except KeyError as exc:
         raise HTTPException(status_code=400, detail=f"Missing argument: {exc}") from exc
     except ProxmoxError as exc:

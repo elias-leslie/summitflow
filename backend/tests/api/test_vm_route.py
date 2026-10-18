@@ -62,3 +62,43 @@ def test_unauthenticated_call_is_refused(monkeypatch):
     FakeClient.calls = []
     assert TestClient(app).post("/api/vm/op", json={"op": "status", "vmid": "191"}).status_code == 401
     assert FakeClient.calls == []
+
+
+ADMIN = "summitflow@pve!prod-admin=s3cret-value"
+
+
+@pytest.fixture()
+def real_client(monkeypatch):
+    """Real ProxmoxClient, stubbed Proxmox HTTP: records the Authorization header of each call."""
+    from cli.lib import proxmox
+
+    seen = []
+    config = proxmox.ProxmoxConfig("https://pve", "summitflow@pve!backend", "backend-secret", "node")
+    monkeypatch.setattr(proxmox, "load_proxmox_config", lambda: config)
+    monkeypatch.setattr(proxmox, "_tls_context", lambda _: None)
+
+    def fake_request(method, url, headers, **_):
+        seen.append(headers["Authorization"])
+        return proxmox.httpx.Response(200, json={"data": [{"vmid": 1, "type": "qemu"}]})
+
+    monkeypatch.setattr(proxmox.httpx, "request", fake_request)
+    monkeypatch.setattr(access_control, "resolve_principal", lambda request: AGENT)
+    return seen
+
+
+def test_admin_header_swaps_the_token_for_that_request_only(real_client):
+    api = TestClient(app)
+    body = {"op": "list_vms"}
+    assert api.post("/api/vm/op", json=body, headers={"X-Proxmox-Admin-Token": ADMIN}).status_code == 200
+    assert api.post("/api/vm/op", json=body).status_code == 200
+    assert real_client == [
+        "PVEAPIToken=summitflow@pve!prod-admin=s3cret-value",
+        "PVEAPIToken=summitflow@pve!backend=backend-secret",
+    ]
+
+
+def test_malformed_admin_header_is_refused_without_echo(real_client):
+    response = TestClient(app).post("/api/vm/op", json={"op": "list_vms"}, headers={"X-Proxmox-Admin-Token": "nosplit-secret"})
+    assert response.status_code == 400
+    assert "nosplit-secret" not in response.text
+    assert real_client == []

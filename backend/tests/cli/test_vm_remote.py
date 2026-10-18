@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from types import SimpleNamespace
+
 import pytest
 from typer.testing import CliRunner
 
@@ -14,6 +16,7 @@ from cli.lib.proxmox_remote import RemoteProxmoxClient
 class FakeHttp:
     def __init__(self, response=None, error=None):
         self.posted, self.response, self.error = [], response or {"result": None}, error
+        self._client = SimpleNamespace(headers={})
 
     def _global_url(self, path):
         return f"http://api{path}"
@@ -73,3 +76,30 @@ def test_remote_clone_returns_server_progress():
     http = FakeHttp({"result": ["COPY ONLY", "done"]})
     assert RemoteProxmoxClient(http).run_clone("9001", "200", "x", clone_only=True) == ["COPY ONLY", "done"]
     assert http.posted[0][1]["args"] == {"template": "9001", "newid": "200", "name": "x", "clone_only": True}
+
+
+def test_admin_token_env_is_sent_as_a_header_on_route_calls(monkeypatch):
+    http = FakeHttp()
+    monkeypatch.setattr("cli.lib.proxmox_remote.STClient", lambda **_: http)
+    monkeypatch.setenv("PROXMOX_ADMIN_TOKEN", "summitflow@pve!prod-admin=sekrit")
+    RemoteProxmoxClient().stop("150")
+    assert http._client.headers == {"X-Proxmox-Admin-Token": "summitflow@pve!prod-admin=sekrit"}
+
+
+def test_admin_token_env_replaces_the_local_token(monkeypatch, tmp_path):
+    monkeypatch.setenv("PROXMOX_API_URL", "https://pve")
+    monkeypatch.setenv("PROXMOX_NODE", "node")
+    monkeypatch.setenv("PROXMOX_TOKEN_ID", "summitflow@pve!lab")
+    monkeypatch.setenv("PROXMOX_TOKEN_SECRET", "lab-secret")
+    monkeypatch.setenv("PROXMOX_CA_BUNDLE", str(tmp_path / "ca.pem"))
+    (tmp_path / "ca.pem").write_text("x")
+    monkeypatch.setenv("PROXMOX_ADMIN_TOKEN", "summitflow@pve!prod-admin=a=b")
+    config = proxmox.load_proxmox_config()
+    assert (config.token_id, config.token_secret) == ("summitflow@pve!prod-admin", "a=b")
+
+
+def test_malformed_admin_token_is_refused_without_echo(monkeypatch):
+    monkeypatch.setenv("PROXMOX_ADMIN_TOKEN", "nosplit-secret")
+    with pytest.raises(ProxmoxError) as failure:
+        proxmox.load_proxmox_config()
+    assert "nosplit-secret" not in str(failure.value)

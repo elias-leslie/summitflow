@@ -112,6 +112,17 @@ def _read_env_file(path: Path) -> dict[str, str]:
     return values
 
 
+ADMIN_TOKEN_ENV = "PROXMOX_ADMIN_TOKEN"
+
+
+def parse_admin_token(value: str) -> tuple[str, str]:
+    """PVE's own token form `user@realm!name=secret` -> (token id, secret); never echoes the value."""
+    token_id, sep, secret = value.partition("=")
+    if "!" not in token_id or not sep or not secret or token_id.startswith("!") or token_id.endswith("!"):
+        raise ProxmoxError(f"{ADMIN_TOKEN_ENV} is malformed; expected user@realm!tokenname=secret")
+    return token_id, secret
+
+
 def load_proxmox_config() -> ProxmoxConfig:
     # ~/.env.local is the host secret source the backend service already uses;
     # agent shells do not export PROXMOX_* themselves.
@@ -124,6 +135,8 @@ def load_proxmox_config() -> ProxmoxConfig:
     host = value("PROXMOX_API_URL")
     token_id = value("PROXMOX_TOKEN_ID")
     secret = value("PROXMOX_TOKEN_SECRET")
+    if admin_token := os.environ.get(ADMIN_TOKEN_ENV, "").strip():  # elevated, owner-tapped; env only, never a file
+        token_id, secret = parse_admin_token(admin_token)
     node = value("PROXMOX_NODE")
     missing = [
         name
@@ -136,7 +149,7 @@ def load_proxmox_config() -> ProxmoxConfig:
         if not configured
     ]
     if missing:
-        if "PROXMOX_TOKEN_ID" in missing or "PROXMOX_TOKEN_SECRET" in missing:
+        if {"PROXMOX_API_URL", "PROXMOX_TOKEN_ID", "PROXMOX_TOKEN_SECRET"} & set(missing):
             raise ProxmoxTokenMissing(f"Missing Proxmox configuration: {', '.join(missing)}")
         raise ProxmoxError(f"Missing Proxmox configuration: {', '.join(missing)}")
     ca_bundle = value("PROXMOX_CA_BUNDLE")
@@ -187,7 +200,8 @@ class ProxmoxClient:
             raise ProxmoxError(
                 f"Proxmox API error 403: {response.text.strip()} (the ST token's VM rights come from PVE pools: "
                 f"full lifecycle in '{self.config.pool or 'summitflow'}', power + cores/memory in '{OPS_POOL}', "
-                f"power only in '{POWER_POOL}'; everything else is read-only)"
+                f"power only in '{POWER_POOL}'; everything else is read-only; production destroy/rollback/disk changes: "
+                f"st elevate request proxmox-admin --reason '...' --wait, then st elevate run proxmox-admin -- st vm ...)"
             )
         if response.status_code >= 400:
             raise ProxmoxError(f"Proxmox API error {response.status_code}: {response.text}")

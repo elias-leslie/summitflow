@@ -2,13 +2,15 @@
 
 from __future__ import annotations
 
+import os
 from typing import Any
 
 from ..client import APIError, STClient
-from .proxmox import ProxmoxError, declare_if_lab
+from .proxmox import ADMIN_TOKEN_ENV, ProxmoxError, declare_if_lab
 
 # Clone/provision/boot can take minutes; the route returns once the guest is ready
 _TIMEOUT_SECONDS = 900.0
+ADMIN_TOKEN_HEADER = "X-Proxmox-Admin-Token"
 
 
 class RemoteProxmoxClient:
@@ -16,6 +18,8 @@ class RemoteProxmoxClient:
 
     def __init__(self, http: Any = None) -> None:
         self._http = http or STClient(require_project=False, timeout=_TIMEOUT_SECONDS)
+        if admin_token := os.environ.get(ADMIN_TOKEN_ENV, "").strip():  # the route swaps it in for this caller's calls
+            self._http._client.headers[ADMIN_TOKEN_HEADER] = admin_token
 
     def _call(self, op: str, vmid: str | None = None, **args: Any) -> Any:
         try:
