@@ -92,3 +92,13 @@ def test_agent_hub_sessions_merge_by_handshake_identity(monkeypatch):
     assert row["project"] == "agent-hub" and row["source"] == "agent_hub"
     assert "codex:00d00d" in out["unasked"]
     assert not any(a["session"] == "elsewhere-1" for a in out["agents"])
+
+
+def test_everyone_lists_open_requests_from_any_sender(monkeypatch):
+    _as(monkeypatch, "claude", "disrupt-other-sender")
+    sent = coord.send("codex:dddddd", "Nightshift: restart docker in 2 min")
+    _as(monkeypatch, "claude", "runtime-page-reader")
+    assert not any(r["id"] == sent["id"] for r in coord_disrupt.snapshot(run=_quiet)["handshakes"])
+    page = coord_disrupt.snapshot(everyone=True, run=_quiet)
+    assert any(r["id"] == sent["id"] and r["reply"] == "none" for r in page["handshakes"])
+    assert "codex:dddddd" in page["awaiting_reply"]

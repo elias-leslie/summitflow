@@ -72,8 +72,11 @@ def live_agents(sessions: Iterable[dict[str, Any]] | None, host: str) -> list[di
     return sorted(out.values(), key=lambda r: r["agent"])
 
 
-def handshakes(request_ids: Iterable[str] | None, now: datetime) -> list[dict[str, Any]]:
-    """Requests by id, or every request the caller sent when none are named, with reply state."""
+def handshakes(request_ids: Iterable[str] | None, now: datetime, *, everyone: bool = False) -> list[dict[str, Any]]:
+    """Requests by id, or every request the caller sent when none are named, with reply state.
+
+    ``everyone`` (the Runtime page) lists every request still open or acked, whoever sent it.
+    """
     wanted = {r for r in (request_ids or ()) if r}
     mine = leases.self_ids()
     with leases._lock("_coord"):
@@ -82,7 +85,9 @@ def handshakes(request_ids: Iterable[str] | None, now: datetime) -> list[dict[st
     for row in rows:
         if wanted and row.get("id") not in wanted:
             continue
-        if not wanted and row.get("from") not in mine:
+        if everyone and not wanted and row.get("state") == "closed":
+            continue
+        if not wanted and not everyone and row.get("from") not in mine:
             continue
         reply = "none"
         if row.get("state") == "closed" and row.get("withdrawn"):
@@ -147,6 +152,7 @@ def snapshot(
     target: str = HOST_TARGET,
     *,
     request_ids: Iterable[str] | None = None,
+    everyone: bool = False,
     sessions: Callable[[], list[dict[str, Any]]] | None = None,
     running_backups: Callable[[], list[dict[str, Any]]] | None = None,
     run: Runner = _run,
@@ -164,7 +170,7 @@ def snapshot(
             unknown.append(f"agent hub sessions unavailable ({type(exc).__name__})")
     agents = live_agents(session_rows, host)
 
-    replies = handshakes(request_ids, now)
+    replies = handshakes(request_ids, now, everyone=everyone)
     ready = {r["acked_by"] or r["to"] for r in replies if r["reply"] == "yes"}
     holds, files = marks_and_leases()
 

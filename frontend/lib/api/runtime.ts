@@ -150,6 +150,52 @@ export interface MaintenanceRun {
   created_at: string
 }
 
+export interface DisruptionAgent {
+  agent: string
+  provider: string | null
+  project: string | null
+  source: string
+}
+
+export interface DisruptionHandshake {
+  id: string
+  to: string
+  from: string
+  state: string
+  reply: 'none' | 'yes' | 'no' | 'eta' | 'withdrawn'
+  acked_by: string | null
+  note: string | null
+  eta_until: string | null
+  eta_running: boolean
+  created: string
+}
+
+export interface DisruptionHold {
+  project: string
+  holder: string
+  kind: 'hold' | 'op'
+  purpose: string | null
+  since: string
+}
+
+export interface HostDisruption {
+  target: string
+  host: string
+  generated_at: string
+  clear: boolean
+  blocking: string[]
+  unknown: string[]
+  agents: DisruptionAgent[]
+  handshakes: DisruptionHandshake[]
+  holds: DisruptionHold[]
+  leases: { project: string; holder: string; paths: number }[]
+  backups: {
+    summitflow: { id: string; source_id: string | null }[]
+    units: string[]
+    processes: string[]
+  }
+}
+
 export interface MaintenanceStatus {
   latest: Record<string, MaintenanceRun>
   recent: MaintenanceRun[]
@@ -362,6 +408,10 @@ export const runtimeApi = {
         errorMessage: `Failed to set auto-start for Proxmox guest ${vmid}`,
       },
     ),
+  getHostDisruption: () =>
+    fetchWithErrorHandling<HostDisruption>(apiUrl('/api/system/disruption'), {
+      errorMessage: 'Failed to check whether the host can be disrupted',
+    }),
   getMaintenanceStatus: () =>
     fetchWithErrorHandling<MaintenanceStatus>(
       apiUrl('/api/system/maintenance'),

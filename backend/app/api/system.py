@@ -8,6 +8,7 @@ from typing import Any
 from fastapi import APIRouter, HTTPException, Query
 from pydantic import BaseModel, Field
 
+from ..services.host_disruption import host_disruption
 from ..services.resource_monitor import (
     get_cpu_usage,
     get_disk_usage,
@@ -192,3 +193,11 @@ def get_maintenance_status(
         for run in maintenance_store.list_maintenance_runs(limit=limit)
     ]
     return MaintenanceStatusResponse(latest=latest, recent=recent)
+
+
+@router.get("/disruption")
+async def get_host_disruption(
+    target: str = Query(default="host", min_length=1, max_length=120, pattern=r"^[A-Za-z0-9@._-]+$"),
+) -> dict[str, Any]:
+    """Whether this host can be disrupted now: the same answer as st sessions may-disrupt, every open request listed."""
+    return await host_disruption(target)

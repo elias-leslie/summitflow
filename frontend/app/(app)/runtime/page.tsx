@@ -7,6 +7,7 @@ import { useState } from 'react'
 import { SystemHealthWidget } from '@/components/dashboard/SystemHealthWidget'
 import { GpuStatusCard } from '@/components/runtime/GpuStatusCard'
 import { HealthBar } from '@/components/runtime/HealthBar'
+import { HostDisruptionCard } from '@/components/runtime/HostDisruptionCard'
 import { HostMonitor } from '@/components/runtime/HostMonitor'
 import { MaintenanceStatusCard } from '@/components/runtime/MaintenanceStatusCard'
 import { ManagedCodexCapture } from '@/components/runtime/ManagedCodexCapture'
@@ -133,6 +134,9 @@ export default function RuntimePage() {
 
           {/* Maintenance — compact row */}
           <MaintenanceStatusCard />
+
+          {/* May this host be restarted now: agents, replies, holds, backups */}
+          <HostDisruptionCard />
 
           <ManagedCodexCapture />
 
