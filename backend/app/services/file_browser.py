@@ -9,6 +9,7 @@ from functools import lru_cache
 from pathlib import Path
 from typing import BinaryIO
 
+from ..config import settings
 from ..utils import safe_subprocess
 from ..utils.shared_paths import get_workspaces_root
 
@@ -25,6 +26,15 @@ def _load_explorer_constants() -> tuple[frozenset[str], dict[str, str]]:
 
 def _root_prefix(root: str) -> str:
     return root if root.endswith(os.sep) else root + os.sep
+
+
+def _is_credential_path(target: str) -> bool:
+    """True for the owner/agent token files and anything under the credential store."""
+    for token_file in (settings.summitflow_owner_token_file, settings.summitflow_agent_token_file):
+        if token_file.strip() and os.path.realpath(token_file.strip()) == target:
+            return True
+    store = os.path.realpath(os.path.expanduser('~/.config/credstore'))
+    return target == store or target.startswith(_root_prefix(store))
 
 
 def resolve_safe_path(root_path: str | Path, relative_path: str) -> Path:
@@ -44,6 +54,9 @@ def resolve_safe_path(root_path: str | Path, relative_path: str) -> Path:
     # because CodeQL does not treat the equality branch as a sanitizer.
     if not target.startswith(_root_prefix(os.path.dirname(root))):
         msg = f'Path escapes browse root: {relative_path}'
+        raise ValueError(msg)
+    if _is_credential_path(target):
+        msg = f'Credential files are not served: {relative_path}'
         raise ValueError(msg)
     return Path(target)
 

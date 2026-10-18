@@ -239,3 +239,12 @@ def test_delete_path_routes_through_destructive_path_guard(tmp_path, monkeypatch
 
     assert calls == [(checkout.resolve(), ['src'])]
     assert (checkout / 'src' / 'owned.py').exists()
+
+
+def test_token_files_and_credstore_are_never_served(monkeypatch, tmp_path) -> None:
+    token = tmp_path / 'owner-token'
+    token.write_text('x')
+    monkeypatch.setattr(file_browser.settings, 'summitflow_owner_token_file', str(token))
+    with pytest.raises(ValueError, match='Credential'):
+        file_browser.resolve_safe_path('/', str(token))
+    assert file_browser.resolve_safe_path(tmp_path, 'other') == tmp_path / 'other'

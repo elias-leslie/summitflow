@@ -19,6 +19,7 @@ from fastapi import APIRouter, HTTPException, Query, Request
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 
+from ..access_control import require_owner
 from ..services._agent_hub_config import (
     AGENT_HUB_URL,
     build_agent_hub_headers,
@@ -256,8 +257,9 @@ async def get_session(session_id: str, include_events: bool = Query(default=True
 
 
 @router.post("/agent-hub/sessions/{session_id}/close")
-async def close_session(session_id: str) -> object:
-    """Close an Agent Hub session through the SDK."""
+async def close_session(session_id: str, request: Request) -> object:
+    """Close an Agent Hub session through the SDK (owner only)."""
+    require_owner(request)
     return await _sdk_call(lambda client: client.close_session(session_id))
 
 

@@ -10,7 +10,7 @@ import tempfile
 import uuid
 from pathlib import Path
 
-from fastapi import APIRouter, HTTPException, Request
+from fastapi import APIRouter, Depends, HTTPException, Request
 
 from ...access_control import require_owner
 from ...services.backup_keys import backup_key_directory, get_backup_key_status
@@ -195,9 +195,11 @@ async def list_storage_backends() -> list[StorageBackendResponse]:
     return [_backend_to_response(b) for b in backends]
 
 
-@router.post("/backup-storage", response_model=StorageBackendResponse, status_code=201)
+@router.post(
+    "/backup-storage", response_model=StorageBackendResponse, status_code=201, dependencies=[Depends(require_owner)]
+)
 async def create_storage_backend(request: StorageBackendCreate) -> StorageBackendResponse:
-    """Create a storage backend and optionally generate credentials file."""
+    """Create a storage backend and optionally generate credentials file (owner only)."""
     config = dict(request.config or {})
     _validate_engine_config(config, request.backend_type)
 
@@ -240,11 +242,13 @@ async def get_storage_backend(backend_id: str) -> StorageBackendResponse:
     return _backend_to_response(backend)
 
 
-@router.put("/backup-storage/{backend_id}", response_model=StorageBackendResponse)
+@router.put(
+    "/backup-storage/{backend_id}", response_model=StorageBackendResponse, dependencies=[Depends(require_owner)]
+)
 async def update_storage_backend(
     backend_id: str, request: StorageBackendUpdate
 ) -> StorageBackendResponse:
-    """Update storage backend configuration."""
+    """Update storage backend configuration (owner only)."""
     existing = backup_store.get_backend(backend_id)
     if not existing:
         raise HTTPException(status_code=404, detail=f"Backend {backend_id} not found")
@@ -278,9 +282,9 @@ async def update_storage_backend(
     return _backend_to_response(updated)
 
 
-@router.delete("/backup-storage/{backend_id}")
+@router.delete("/backup-storage/{backend_id}", dependencies=[Depends(require_owner)])
 async def delete_storage_backend(backend_id: str) -> dict[str, object]:
-    """Remove a storage backend."""
+    """Remove a storage backend (owner only)."""
     if not backup_store.get_backend(backend_id):
         raise HTTPException(status_code=404, detail=f"Backend {backend_id} not found")
     if backup_store.backend_has_backups(backend_id):
