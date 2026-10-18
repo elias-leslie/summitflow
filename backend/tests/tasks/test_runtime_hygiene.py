@@ -241,3 +241,35 @@ def test_run_runtime_hygiene_records_summary(mocker) -> None:
     record_run.assert_called_once()
     assert record_run.call_args.args[:2] == ("runtime_hygiene", "partial")
     assert record_run.call_args.kwargs["summary"]["targets"]["summitflow"]["status"] == "warning"
+
+
+def test_memory_pressure_follows_nightshifts_state() -> None:
+    from types import SimpleNamespace
+
+    from app.tasks import runtime_hygiene_host as host_checks
+
+    deps = SimpleNamespace(host_issue=lambda kind, fp, sev, msg, ev: {"fingerprint": fp, "severity": sev, "message": msg})
+
+    def issues(state: dict | None) -> list[dict]:
+        out: list[dict] = []
+        host_checks._append_memory_issue({"memory": {"percent_used": 99.0, "nightshift": state}}, out, deps)
+        return out
+
+    assert issues(None) == []  # no SummitFlow threshold: 99% used alone is not an issue
+    assert issues({"state": "green", "reason": "Enough memory"}) == []
+    assert issues({"state": "amber", "reason": "4 GiB available"})[0]["severity"] == "warning"
+    red = issues({"state": "red", "reason": "2 GiB available"})[0]
+    assert red["severity"] == "critical" and "2 GiB available" in red["message"]
+
+
+def test_nightshift_memory_reads_only_a_fresh_v1_state(tmp_path, monkeypatch) -> None:
+    import json
+
+    from app.utils import heavy_work
+
+    f = tmp_path / "admission.json"
+    monkeypatch.setattr(heavy_work, "NIGHTSHIFT_ADMISSION", f)
+    assert heavy_work.nightshift_memory(100.0) is None
+    f.write_text(json.dumps({"v": 1, "state": "amber", "reason": "x", "expires_at": 130, "mem_available_gib": 5.5}))
+    assert heavy_work.nightshift_memory(100.0) == {"state": "amber", "reason": "x", "mem_available_gib": 5.5}
+    assert heavy_work.nightshift_memory(131.0) is None

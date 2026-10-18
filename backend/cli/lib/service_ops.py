@@ -765,15 +765,15 @@ def sync_host_monitor_policy(project: ProjectServices) -> int:
         CPU_CRIT_PERCENT,
         DISK_CRIT_FREE_GB,
         DISK_CRIT_PERCENT,
-        MEMORY_CRIT_PERCENT,
     )
+    from app.utils.heavy_work import NIGHTSHIFT_ADMISSION
 
     state_dir = project.root / "host-monitor/target/release"
     state_dir.mkdir(parents=True, exist_ok=True)
     policy = {
         "schema": 1,
         "cpu_critical_pct": CPU_CRIT_PERCENT,
-        "memory_critical_pct": MEMORY_CRIT_PERCENT,
+        "memory_status_path": str(NIGHTSHIFT_ADMISSION),  # memory pressure is Nightshift's state, not a threshold here
         "disk_critical_pct": DISK_CRIT_PERCENT,
         "disk_critical_free_bytes": int(DISK_CRIT_FREE_GB * 1024**3),
         "source": "runtime_hygiene_common",

@@ -164,7 +164,8 @@ impl Config {
 #[derive(Clone)]
 struct Policy {
     cpu: f64,
-    memory: f64,
+    /// Nightshift's memory state file (admission.json, contract v1): the host's one memory-pressure source.
+    memory_status: PathBuf,
     disk: f64,
     free: u64,
 }
@@ -186,7 +187,11 @@ fn policy(path: &Path) -> Result<Policy, String> {
         .ok_or("missing disk_critical_free_bytes")?;
     Ok(Policy {
         cpu: pct("cpu_critical_pct")?,
-        memory: pct("memory_critical_pct")?,
+        memory_status: v["memory_status_path"]
+            .as_str()
+            .filter(|s| s.starts_with('/'))
+            .map(PathBuf::from)
+            .ok_or("missing memory_status_path")?,
         disk: pct("disk_critical_pct")?,
         free,
     })
@@ -459,13 +464,23 @@ fn probe(port: u16, path: &str) -> Value {
     json!({"availability":"ok","healthy":line.starts_with("HTTP/1.") && line.contains(" 200 ")})
 }
 
+/// Whether Nightshift calls memory tight (amber or red); None when its state is missing or stale.
+fn memory_tight(path: &Path, now_s: f64) -> Option<bool> {
+    let v: Value = serde_json::from_slice(&fs::read(path).ok()?).ok()?;
+    if v["v"] != 1 || v["expires_at"].as_f64().is_none_or(|e| e <= now_s) {
+        return None;
+    }
+    match v["state"].as_str()? {
+        "green" => Some(false),
+        "amber" | "red" => Some(true),
+        _ => None,
+    }
+}
+
 fn pressure(host: &Value, p: &Policy) -> Option<bool> {
     let cpu = host["cpu_busy_pct"].as_f64();
-    let memory = host["memory_total_bytes"]
-        .as_f64()
-        .zip(host["memory_available_bytes"].as_f64())
-        .filter(|(t, _)| *t > 0.0)
-        .map(|(t, a)| 100.0 * (t - a) / t);
+    let now_s = Utc::now().timestamp_millis() as f64 / 1000.0;
+    let memory = memory_tight(&p.memory_status, now_s);
     let disk = host["disk_total_bytes"]
         .as_f64()
         .zip(host["disk_free_bytes"].as_f64())
@@ -473,7 +488,7 @@ fn pressure(host: &Value, p: &Policy) -> Option<bool> {
         .map(|(t, f)| 100.0 * (t - f) / t);
     let free = host["disk_free_bytes"].as_u64();
     if cpu.is_some_and(|x| x >= p.cpu)
-        || memory.is_some_and(|x| x >= p.memory)
+        || memory == Some(true)
         || disk.is_some_and(|x| x >= p.disk)
         || free.is_some_and(|x| x <= p.free)
     {
@@ -1732,6 +1747,21 @@ mod tests {
         let d = tempfile::tempdir().unwrap();
         assert!(policy(&d.path().join("missing")).is_err());
         fs::write(d.path().join("policy"),r#"{"schema":1,"source":"runtime_hygiene_common","cpu_critical_pct":90,"memory_critical_pct":95,"disk_critical_pct":90,"disk_critical_free_bytes":10737418240}"#).unwrap();
+        assert!(policy(&d.path().join("policy")).is_err()); // memory thresholds are Nightshift's now
+        fs::write(d.path().join("policy"),r#"{"schema":1,"source":"runtime_hygiene_common","cpu_critical_pct":90,"memory_status_path":"/run/user/1000/nightshift/admission.json","disk_critical_pct":90,"disk_critical_free_bytes":10737418240}"#).unwrap();
         assert!(policy(&d.path().join("policy")).is_ok());
+    }
+    #[test]
+    fn memory_pressure_is_nightshifts_state() {
+        let d = tempfile::tempdir().unwrap();
+        let f = d.path().join("admission.json");
+        assert_eq!(memory_tight(&f, 100.0), None);
+        fs::write(&f, r#"{"v":1,"state":"amber","expires_at":130}"#).unwrap();
+        assert_eq!(memory_tight(&f, 100.0), Some(true));
+        assert_eq!(memory_tight(&f, 131.0), None); // stale
+        fs::write(&f, r#"{"v":1,"state":"green","expires_at":130}"#).unwrap();
+        assert_eq!(memory_tight(&f, 100.0), Some(false));
+        fs::write(&f, r#"{"v":2,"state":"red","expires_at":130}"#).unwrap();
+        assert_eq!(memory_tight(&f, 100.0), None);
     }
 }

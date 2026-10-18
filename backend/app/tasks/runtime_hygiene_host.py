@@ -14,8 +14,6 @@ from .runtime_hygiene_common import (
     DISK_REMEDIATE_FREE_GB,
     DISK_WARN_PERCENT,
     HOST_SCOPE,
-    MEMORY_CRIT_PERCENT,
-    MEMORY_WARN_PERCENT,
     ROOT_MOUNT,
     Severity,
     normalize_action_status,
@@ -29,7 +27,7 @@ def collect_host_snapshot(*, include_top_processes: bool, deps: Any) -> dict[str
     summary = {
         "disk": root_disk,
         "disks": list(disks.values()),
-        "memory": deps.get_memory_usage(),
+        "memory": {**deps.get_memory_usage(), "nightshift": deps.nightshift_memory()},
         "cpu": deps.get_cpu_usage(),
     }
     if include_top_processes:
@@ -191,12 +189,15 @@ def _append_disk_issue(host: dict[str, Any], issues: list[dict[str, Any]], deps:
 
 
 def _append_memory_issue(host: dict[str, Any], issues: list[dict[str, Any]], deps: Any) -> None:
+    """Memory pressure is Nightshift's call (its memory controller's green/amber/red, admission.json); SummitFlow keeps no
+    memory thresholds of its own. No issue while Nightshift's state is missing: Nightshift reports its own outage."""
     memory = host["memory"]
-    percent = float(memory.get("percent_used") or 0.0)
-    if percent < MEMORY_WARN_PERCENT:
+    state = memory.get("nightshift") if isinstance(memory.get("nightshift"), dict) else None
+    if state is None or state.get("state") not in ("amber", "red"):
         return
-    severity: Severity = "critical" if percent >= MEMORY_CRIT_PERCENT else "warning"
-    issues.append(deps.host_issue("resource", "memory", severity, f"Host memory pressure is {percent}% used", {"memory": memory}))
+    severity: Severity = "critical" if state["state"] == "red" else "warning"
+    issues.append(deps.host_issue("resource", "memory", severity, f"Host memory pressure ({state['state']}): {state.get('reason')}",
+                                  {"memory": memory}))
 
 
 def _append_cpu_issue(host: dict[str, Any], issues: list[dict[str, Any]], deps: Any) -> None:

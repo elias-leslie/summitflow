@@ -133,6 +133,20 @@ def _nightshift_admission(now: float) -> Admission | None:
         return None
 
 
+def nightshift_memory(now: float | None = None) -> dict[str, Any] | None:
+    """Nightshift's host memory state (admission.json, contract v1: green, amber or red with its reason), the one
+    memory-pressure source on this host; None when it is missing or stale."""
+    now = time.time() if now is None else now
+    try:
+        state = json.loads(NIGHTSHIFT_ADMISSION.read_text())
+        if state.get("v") != 1 or float(state["expires_at"]) <= now or state.get("state") not in ("green", "amber", "red"):
+            return None
+    except (OSError, ValueError, TypeError, KeyError, AttributeError):
+        return None
+    return {"state": state["state"], "reason": _public_label(str(state.get("reason", ""))),
+            **{k: state[k] for k in ("mem_available_gib", "swap_used_pct", "psi_some_avg60") if isinstance(state.get(k), int | float)}}
+
+
 def admission_state(now: float | None = None) -> Admission:
     """Whether new heavy work may start on this host now (advisory)."""
     decided = _nightshift_admission(time.time() if now is None else now)

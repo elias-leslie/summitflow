@@ -28,6 +28,7 @@ from app.tasks.backup_drain import drain_pending_backups
 from app.tasks.backup_executor import create_backup
 from app.tasks.host_retention import cleanup_host_artifacts
 from app.tasks.subtask_builder import create_single_subtask_with_steps
+from app.utils.heavy_work import nightshift_memory
 
 from . import runtime_hygiene_backups as backups_impl
 from . import runtime_hygiene_db as db_impl
@@ -68,6 +69,7 @@ _PATCH_SURFACE = (
     get_cpu_usage,
     get_disk_usages,
     get_memory_usage,
+    nightshift_memory,
     SystemdMonitor,
     backup_store,
     maintenance_store,
