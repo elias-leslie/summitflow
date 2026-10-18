@@ -1,7 +1,8 @@
 """Memory notices for the coordination inbox hook (scripts/lib/coord_inbox.py).
 
 Tells an agent, once, when memory pressure killed a process in its pane, stopped the pane, or warned about it.
-Nightshift owns the facts: memctl writes the memory event record and `nightshift memory events --mine --json`
+Nightshift owns the record: memctl writes kernel kills and stopped panes to the memory event record, Tether's memory
+guard adds its tool-job kills, warnings and agent-hog (killer tether), and `nightshift memory events --mine --json`
 reads it (v1 records: ts, kind, killer, scope, pid, comm, cmdline_head, bytes, class, ...). This module only
 renders them for the agent.
 
@@ -39,13 +40,15 @@ QUIET_SLACK_S = 15
 WAKE_LINE = "Memory notice for this pane: the details are in this turn's hook context."
 
 _REASON = {
+    "tether": "the workstation was critically low on memory",
     "memctl": "the workstation was critically low on memory",
     "kernel-pane-cap": "{pane} reached its memory limit",
     "kernel-cgroup": "a shared memory limit was reached",
     "kernel-global": "the workstation ran out of memory",
     "oomd": "memory pressure stayed too high",
 }
-_KILLER = {"memctl": "memctl", "oomd": "systemd-oomd"}
+_KILLER = {"tether": "Tether's memory guard", "memctl": "memctl", "oomd": "systemd-oomd"}
+GUARD_KILLERS = frozenset({"tether", "memctl"})  # tool-job kills (memctl's before 2026-10-17), not the kernel
 
 
 @dataclass(frozen=True)
@@ -161,21 +164,21 @@ def line_for(r: dict[str, Any], scope: str) -> str:
             count = int(r.get("count") or 1)
             victim = f"{count} process{'es' if count != 1 else ''} in {pane}"
         members = int(r.get("members") or 0)
-        job = f", and the rest of its tool job ({members} processes in all)" if killer == "memctl" and members > 1 else ""
+        job = f", and the rest of its tool job ({members} processes in all)" if killer in GUARD_KILLERS and members > 1 else ""
         reason = _REASON.get(killer, "memory ran out").format(pane=pane)
         return f"{at} {actor} killed {victim}{job}; {reason}."
     if kind == "pane-stopped":
         return (f"{at} {pane} stopped as a whole after that kill, and its agent with it. This session was resumed "
                 "afterwards: check git status and your notes before you continue.")
     if kind == "agent-hog":
-        return (f"{at} memory is critical and {_who(r, pane)} is the biggest user ({size or 'size unknown'}). memctl does "
+        return (f"{at} memory is critical and {_who(r, pane)} is the biggest user ({size or 'size unknown'}). Tether does "
                 "not kill agents, but the kernel will if memory runs out: save your notes now, compact, and keep big "
                 "outputs out of your context.")
-    # warning: memctl names the fastest-growing pane while memory is getting low
+    # warning: Tether's memory guard names the fastest-growing pane while memory is getting low
     if r.get("class") == "agent":
         what = f"{_who(r, pane)} uses {size or 'the most'}. Save notes and compact soon; keep big outputs out of your context."
     elif r.get("pid"):
-        what = f"{_who(r, pane)} uses {size or 'the most'}. If it is yours, finish or shrink it before memctl has to kill it."
+        what = f"{_who(r, pane)} uses {size or 'the most'}. If it is yours, finish or shrink it before Tether has to kill it."
     else:
         what = f"it uses {size or 'the most'}. Avoid starting more big jobs here for now."
     return f"{at} memory is getting low on the workstation and {pane} is growing fastest: {what}"
@@ -293,7 +296,7 @@ def _collect(state: dict[str, Any] | None, scope: str, counter: int | None, sig:
         seen[key] = ts
         if r.get("kind") not in NOTICE_KINDS:
             continue
-        kernel_kill = r.get("kind") == "kill" and r.get("killer") != "memctl"
+        kernel_kill = r.get("kind") == "kill" and r.get("killer") not in GUARD_KILLERS
         scope_of = str(r.get("scope"))
         if kernel_kill and scope_of in quiet and ts <= quiet[scope_of] + QUIET_SLACK_S:
             continue  # already told from the counter

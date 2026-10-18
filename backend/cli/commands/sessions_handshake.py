@@ -97,7 +97,7 @@ setattr(inbox, USAGE_SPECS_ATTR, (UsageSpec(
     surface="nightshift.memory.events",
     cmd="nightshift memory events --mine",
     when="a command ended early (exit 137, a pipeline with missing output, a lost background job) or a memory notice "
-         "appeared: what memctl or the kernel killed in this agent pane, when, and why",
+         "appeared: what Tether's memory guard or the kernel killed in this agent pane, when, and why",
     precautions=(
         "read-only; Nightshift owns the record; --mine also finds kills in an earlier pane this session was resumed out of",
         "other panes or windows: --scope <unit> or --since 2h; --json gives the v1 records",

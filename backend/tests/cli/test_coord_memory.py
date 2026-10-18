@@ -91,6 +91,18 @@ def test_memctl_kill_is_told_once_then_quiet_without_asking_again(host):
     assert host.queries() == asked  # nothing changed: no Nightshift call on the hot path
 
 
+def test_tether_guard_kill_is_told_as_a_tool_job_kill_not_a_kernel_kill(host):
+    """Since 2026-10-17 Tether's memory guard kills runaway tool jobs (killer tether); a counter-only notice from the
+    same moment never silences it, because the guard's SIGKILL is not a kernel OOM kill."""
+    assert take("cc:aaaaaa", host) is None
+    now = time.time()
+    host.add(ts=now, killer="tether", pid=4242, comm="python", bytes=3 * 2**30, members=2)
+    host.counter(1)  # an unrelated kernel kill in the same pane, same moment
+    text = take("cc:aaaaaa", host, now=now)
+    assert text and "Tether's memory guard killed python (pid 4242), 3.0 GiB" in text
+    assert "rest of its tool job (2 processes in all)" in text and "critically low on memory" in text
+
+
 def test_kernel_kill_counter_tells_at_once_and_the_later_record_stays_quiet(host):
     assert take("cc:aaaaaa", host) is None
     now = time.time()
