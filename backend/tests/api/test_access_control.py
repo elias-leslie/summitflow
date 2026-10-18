@@ -267,3 +267,11 @@ def test_agent_reaches_the_api_but_not_owner_decisions(monkeypatch) -> None:
     assert client.get("/api/viewer/projects").status_code == 404  # past the gate
     assert client.post("/api/backup-storage/x/initialize").status_code == 403
     assert client.get("/api/auth/me").json()["is_owner"] is False
+
+
+def test_flag_on_agent_token_changes_nothing(monkeypatch, tmp_path) -> None:
+    token_file = tmp_path / "agent-token"
+    token_file.write_text("agent-s3cret\n")
+    monkeypatch.setattr(access_control, "_local_owner_principal", lambda: OWNER)
+    monkeypatch.setattr(access_control.settings, "summitflow_agent_token_file", str(token_file))
+    assert access_control.resolve_principal(_local_request([(b"x-summitflow-agent-token", b"agent-s3cret")])) == OWNER

@@ -122,7 +122,9 @@ def resolve_principal(request: Request) -> AccessPrincipal | None:
     if _token_matches(settings.summitflow_owner_token_file, request.headers.get(OWNER_TOKEN_HEADER)):
         return _local_owner_principal()
 
-    if _token_matches(settings.summitflow_agent_token_file, request.headers.get(AGENT_TOKEN_HEADER)):
+    if not settings.summitflow_loopback_is_owner and _token_matches(
+        settings.summitflow_agent_token_file, request.headers.get(AGENT_TOKEN_HEADER)
+    ):
         return AccessPrincipal(email="agent@summitflow.local", role=AGENT_ROLE, is_active=True, is_local_bypass=True)
 
     if settings.summitflow_loopback_is_owner and _is_local_development_request(request):
