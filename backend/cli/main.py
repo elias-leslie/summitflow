@@ -108,7 +108,7 @@ LAZY_COMMANDS: dict[str, tuple[str, str, str, str, bool]] = {
     "cleanup": ("cleanup", "group", "", "Clean up git/checkpoint residue plus managed workspace leftovers.", False),
     "docker": ("docker", "group", "", "Docker container management for the SummitFlow ecosystem.", False),
     "setup": ("setup", "group", "", "Host, service, tooling, and test database setup through st.", False),
-    "vm": ("vm", "group", "", "Proxmox VM lifecycle through st: status, IPs, snapshots, start/stop/reboot, resize, rollback, clone.", False),
+    "vm": ("vm", "group", "", "Proxmox VM lifecycle through st: status, IPs, snapshots, start/stop/shutdown/reboot, resize, rollback, clone.", False),
     "checkpoints": ("checkpoints", "group", "", "Checkpoint management - show active checkpoints, cleanup stale artifacts", False),
     "autosnap": ("autosnapshot", "group", "", "Internal autosnapshot commands (systemd timer / hooks)", True),
 }
