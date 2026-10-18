@@ -488,3 +488,26 @@ export async function fetchNativeHostBackupStatus(): Promise<NativeHostBackupSta
   }
   return row as unknown as NativeHostBackupStatus
 }
+
+export interface ExternalBackupSource {
+  id: string
+  name: string | null
+  owner_project: string | null
+  kind: 'systemd_unit' | 'artifact_glob'
+  target: string
+  frequency: string
+  ok: boolean
+  stale_after_hours: number
+  last_success_at: string | null
+  last_status: string | null
+  last_error: string | null
+}
+
+export function fetchExternalBackups(): Promise<{
+  generated_at: string
+  sources: ExternalBackupSource[]
+}> {
+  return fetchWithErrorHandling('/api/backups/external', {
+    errorMessage: 'Failed to load backups other projects run',
+  })
+}

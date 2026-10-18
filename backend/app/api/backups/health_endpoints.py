@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import asyncio
 from collections.abc import Mapping
-from datetime import UTC
+from datetime import UTC, datetime
 from typing import Any
 
 from fastapi import APIRouter
@@ -253,6 +253,16 @@ async def drain_pending(dry_run: bool = False) -> dict:
     from ...tasks.backup_drain import drain_pending_backups
 
     return drain_pending_backups(dry_run=dry_run)
+
+
+@router.get("/backups/external")
+async def external_backups() -> dict[str, Any]:
+    """Backups other projects run (Blackbox archive pull, Portfolio-AI artifacts) and whether each is fresh."""
+    from ...tasks.backup_alerts import external_statuses
+
+    now = datetime.now(UTC)
+    statuses = await asyncio.to_thread(external_statuses, now)
+    return {"generated_at": now.isoformat(), "sources": [{"id": key, **value} for key, value in sorted(statuses.items())]}
 
 
 @router.get("/backups/proxmox/freshness")

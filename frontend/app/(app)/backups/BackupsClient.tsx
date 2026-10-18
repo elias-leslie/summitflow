@@ -32,6 +32,7 @@ import { useBackupHistoryRefresh } from '@/components/backup/backupPolling'
 import { CollapsibleSection } from '@/components/backup/CollapsibleSection'
 import { CreateBackupModal } from '@/components/backup/CreateBackupModal'
 import { EncryptionSetup } from '@/components/backup/EncryptionSetup'
+import { ExternalBackups } from '@/components/backup/ExternalBackups'
 import { NativeHostBackupCard } from '@/components/backup/NativeHostBackupCard'
 import { SetupChecklist } from '@/components/backup/SetupChecklist'
 import { SourcesManager } from '@/components/backup/SourcesManager'
@@ -573,6 +574,9 @@ export function BackupsClient() {
           onBackupTriggered={invalidateAll}
           showHeader={false}
         />
+        <div className="mt-4">
+          <ExternalBackups />
+        </div>
       </CollapsibleSection>
 
       {/* Storage */}

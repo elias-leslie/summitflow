@@ -168,7 +168,36 @@ def _source_statuses(now: datetime) -> dict[str, dict[str, Any]]:
                                "last_success_at": last_success.isoformat() if last_success else None,
                                "last_status": row.get("last_backup_status"), "offline_since": offline,
                                "last_error": str(error)[:500] if error else None}
+    statuses.update(external_statuses(now))
     return statuses
+
+
+def external_statuses(now: datetime) -> dict[str, dict[str, Any]]:
+    """Backups other projects run (Blackbox archive pull, Portfolio-AI artifacts), with the same freshness window."""
+    from .backup_external import list_external_sources, probe
+
+    out: dict[str, dict[str, Any]] = {}
+    try:
+        sources = list_external_sources()
+    except Exception:  # a missing table or database hiccup never breaks the alert pass
+        logger.exception("external_backup_sources_unreadable")
+        return out
+    for source in sources:
+        if not source.get("enabled"):
+            continue
+        frequency = str(source.get("frequency") or "daily")
+        window = _FREQUENCY_DELTAS.get(frequency, timedelta(days=1)) * SOURCE_STALE_FACTOR
+        seen = probe(source)
+        last_success = _parse(seen["last_success_at"])
+        ok = bool(last_success and now - last_success <= window) or seen["last_status"] == "running"
+        error = seen["last_error"] or (None if ok else "no success within the freshness window")
+        out[str(source["id"])] = {"ok": ok, "frequency": frequency, "stale_after_hours": round(window.total_seconds() / 3600, 1),
+                                  "last_success_at": last_success.isoformat() if last_success else None,
+                                  "last_status": seen["last_status"], "offline_since": None,
+                                  "last_error": str(error)[:500] if error else None,
+                                  "external": True, "name": source.get("name"), "owner_project": source.get("owner_project"),
+                                  "kind": source.get("kind"), "target": source.get("target")}
+    return out
 
 
 def _source_conditions(statuses: Mapping[str, Mapping[str, Any]], now: datetime) -> dict[str, dict[str, str]]:
