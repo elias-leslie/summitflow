@@ -481,6 +481,7 @@ def test_infrastructure_drill_uses_repository_materialization_and_records_actual
     backup = _catalogue_row("infrastructure-point", source_id="infrastructure")
     archive = tmp_path / "materialized-infrastructure.tar.gz"
     archive.touch()
+    monkeypatch.setattr(drill, "drill_runtime_available", lambda: True)  # not this host's stack
     monkeypatch.setattr(drill, "_find_infra_source", lambda: {"id": "infrastructure"})
     monkeypatch.setattr(drill.backup_store, "get_latest_backup", lambda **_kwargs: backup)
     materialize = MagicMock(return_value=nullcontext(archive))

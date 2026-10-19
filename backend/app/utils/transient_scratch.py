@@ -13,7 +13,9 @@ from contextlib import contextmanager
 from contextvars import ContextVar
 from pathlib import Path
 
-SCRATCH_ROOT = Path("/srv/scratch")
+# A host gives each service user its own disposable mount (the deploy gate sets ST_SCRATCH_ROOT); one shared by
+# another user is refused below, since its owner could swap what gets materialized.
+SCRATCH_ROOT = Path(os.environ.get("ST_SCRATCH_ROOT") or "/srv/scratch")
 _FSTAB = Path("/etc/fstab")
 _MOUNTINFO = Path("/proc/self/mountinfo")
 _ACTIVE_SCRATCH: ContextVar[Path | None] = ContextVar("active_disposable_scratch", default=None)

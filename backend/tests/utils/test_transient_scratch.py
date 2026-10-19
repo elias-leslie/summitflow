@@ -261,3 +261,11 @@ def test_private_namespace_sheds_inherited_default_acl(mounted):
             os.umask(old)
         assert stat.S_IMODE((parent / "file").stat().st_mode) == 0o644
         assert stat.S_IMODE((parent / "dir").stat().st_mode) == 0o755
+
+
+def test_a_service_user_scratch_root_comes_from_the_environment(tmp_path: Path) -> None:
+    code = "from app.utils import transient_scratch as t; print(t.SCRATCH_ROOT)"
+    env = {**os.environ, "ST_SCRATCH_ROOT": str(tmp_path)}
+    out = subprocess.run([sys.executable, "-c", code], env=env, capture_output=True, text=True, check=True,
+                         cwd=Path(__file__).resolve().parents[2]).stdout.strip()
+    assert out == str(tmp_path)
