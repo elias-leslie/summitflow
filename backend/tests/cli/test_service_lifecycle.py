@@ -575,6 +575,8 @@ def test_cli_runtime_backend_scope_does_not_restart_the_only_frontend(project, l
     restarted = [call.args[0] for call in lifecycle["restart_service"].call_args_list]
     assert restarted == ["required.service", "active.service"]
     assert "shared component directory; using full rebuild" not in result.output
+    checked = lifecycle["verify_health"].call_args.args[0]
+    assert not checked.frontend_service
 
 
 def test_daemon_reload_failure_propagates(project, monkeypatch, tmp_path):

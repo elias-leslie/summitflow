@@ -8,6 +8,7 @@ import os
 import time
 from collections.abc import Callable, Mapping
 from contextlib import nullcontext, suppress
+from dataclasses import replace
 from enum import StrEnum
 from pathlib import Path
 from typing import Annotated, Any
@@ -415,9 +416,14 @@ def _verify_and_seed(
     release: service_release.PreparedRelease,
     workers: tuple[str, ...],
     errors: int,
+    *,
+    backend: bool,
+    frontend: bool,
 ) -> int:
-    """Check health and worker state, sync seeds only when nothing failed; return total errors."""
-    errors += _timed_phase(release, "health", lambda: service_ops.verify_health(services))
+    """Check selected services and workers, then sync seeds when nothing failed."""
+    selected = replace(services, backend_service=services.backend_service if backend else "",
+                       frontend_service=services.frontend_service if frontend else "")
+    errors += _timed_phase(release, "health", lambda: service_ops.verify_health(selected))
     for name in workers:
         state = service_ops.service_state(name)
         print(f"[service] worker {name}: {state}")
@@ -647,7 +653,7 @@ def rebuild(
                 monitor_activated=monitor_activated,
                 assert_backup_restart_owned=assert_backup_restart_owned,
             )
-            errors = _verify_and_seed(services, release, workers, errors)
+            errors = _verify_and_seed(services, release, workers, errors, backend=backend, frontend=frontend)
             if errors:
                 if monitor_activated:
                     _rollback_monitor_and_reader(services, development_services, release, backend_restart_attempted)
