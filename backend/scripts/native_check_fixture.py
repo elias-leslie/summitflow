@@ -42,9 +42,14 @@ FLEET_LIFETIME_SECONDS = 1800
 def engine_command() -> tuple[list[str], bool] | None:
     """container_cli(), reaching the user's podman socket from a stage environment that drops XDG_RUNTIME_DIR."""
     runtime = f"/run/user/{os.getuid()}"
-    if os.path.isdir(runtime):
-        os.environ.setdefault("XDG_RUNTIME_DIR", runtime)
-    return container_cli()
+    if "XDG_RUNTIME_DIR" in os.environ or not os.path.isdir(runtime):
+        return container_cli()
+    # Not left set: the tests this fixture hosts must still see the stage's environment.
+    os.environ["XDG_RUNTIME_DIR"] = runtime
+    try:
+        return container_cli()
+    finally:
+        del os.environ["XDG_RUNTIME_DIR"]
 
 
 def container(*arguments: str, environment: dict[str, str] | None = None) -> str:

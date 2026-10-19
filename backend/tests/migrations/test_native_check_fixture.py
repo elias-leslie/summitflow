@@ -243,3 +243,12 @@ def test_missing_image_error_names_the_locked_reference(prepared_fixture, monkey
     with pytest.raises(RuntimeError, match="podman pull " + reference), fixture.database_fixture():
         pytest.fail("Fixture must not pull or substitute an image")
     assert operations == []
+
+
+def test_engine_lookup_does_not_leak_the_runtime_dir_into_hosted_tests(monkeypatch):
+    monkeypatch.delenv("XDG_RUNTIME_DIR", raising=False)
+    monkeypatch.setattr(fixture.os.path, "isdir", lambda _path: True)
+    seen = []
+    monkeypatch.setattr(fixture, "container_cli", lambda: seen.append(fixture.os.environ.get("XDG_RUNTIME_DIR")))
+    fixture.engine_command()
+    assert seen == [f"/run/user/{fixture.os.getuid()}"] and "XDG_RUNTIME_DIR" not in fixture.os.environ
