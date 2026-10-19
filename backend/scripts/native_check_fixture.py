@@ -52,10 +52,13 @@ def container(*arguments: str, environment: dict[str, str] | None = None) -> str
     engine = engine_command()
     if engine is None:
         raise RuntimeError("Isolated PostgreSQL fixture needs docker or rootless podman")
-    result = subprocess.run(
-        [*engine[0], *arguments], env=environment, capture_output=True, text=True,
-        timeout=CONTAINER_TIMEOUT_SECONDS, check=False,
-    )
+    # The podman client writes under XDG_RUNTIME_DIR, read-only inside the isolated gate; its --url is explicit.
+    with tempfile.TemporaryDirectory(prefix="client-", dir="/tmp") as runtime:
+        result = subprocess.run(
+            [*engine[0], *arguments], env={**(os.environ if environment is None else environment),
+                                           "XDG_RUNTIME_DIR": runtime},
+            capture_output=True, text=True, timeout=CONTAINER_TIMEOUT_SECONDS, check=False,
+        )
     if result.returncode:
         # Never include container environment/credentials in retained diagnostics.
         # Only the read-only image check says why: create/start/rm run with the fixture's credential in their environment.
