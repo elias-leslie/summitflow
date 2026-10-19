@@ -26,7 +26,10 @@ app = typer.Typer(
         "guests start/stop/reboot and change cores/memory; power-pool guests start/stop/reboot "
         "only; everything else is read-only (PVE enforces it). Destroy keeps a "
         "two-pass confirmation. For browser work, st browser uses the default "
-        "browser VM; use st vm list/status/ip/start only when changing or repairing it."
+        "browser VM; use st vm list/status/ip/start only when changing or repairing it. "
+        "Unreviewed code (unfamiliar repos, installers, targets) runs in a lab clone: st vm clone 9001 <ID free in "
+        "st vm list> <name>, then ssh <its 10.20.0.x IP> (lab key, no forwarding; internet only, no LAN); move code "
+        "in and out with git or scp over that ssh; destroy the clone when done."
     ),
 )
 
