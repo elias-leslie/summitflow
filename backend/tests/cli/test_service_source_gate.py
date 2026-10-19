@@ -185,3 +185,21 @@ def test_compose_container_lookup_is_skipped_once_the_stack_unit_exists(monkeypa
     monkeypatch.setattr(infra.nightshift_stack, "stack_installed", lambda: True)
 
     assert infra._find_compose_container("postgres") is None
+
+
+def test_clone_dependencies_install_in_the_pinned_clone_not_the_checkout(project, tmp_path, monkeypatch):
+    clone = tmp_path / "state" / "source"
+    (clone / "backend").mkdir(parents=True)
+    (clone / "frontend").mkdir()
+    (clone / "frontend" / "package.json").write_text("{}")
+    pinned = replace(project, root=tmp_path / "checkout", backend_dir=tmp_path / "checkout" / "backend",
+                     frontend_dir=tmp_path / "checkout" / "frontend", source_repo=clone)
+    seen = []
+    monkeypatch.setattr(service_ops, "sync_backend", lambda p: seen.append(("backend", p.backend_dir)) or 0)
+    monkeypatch.setattr(service_ops, "run", lambda command, cwd=None, **kw: seen.append((tuple(command), cwd)) or 0)
+
+    assert service_ops.install_clone_dependencies(pinned) == 0
+    assert seen == [("backend", clone / "backend"), (("pnpm", "install", "--frozen-lockfile"), clone / "frontend")]
+    assert service_ops.install_clone_dependencies(project) == 0  # no pinned source: nothing to install
+    monkeypatch.setattr(service_ops, "sync_backend", lambda p: 3)
+    assert service_ops.install_clone_dependencies(pinned) == 3

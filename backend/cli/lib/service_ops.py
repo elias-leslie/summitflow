@@ -182,6 +182,24 @@ def use_source_repo(project: ProjectServices, mirror: Path, sha: str) -> Project
     return replace(project, source_repo=clone, source_sha=sha)
 
 
+def install_clone_dependencies(project: ProjectServices) -> int:
+    """Install the project's own tools into the pinned clone, so local acceptance can run them.
+
+    A fresh private clone has no venv or node_modules, and acceptance runs the
+    project's pytest, type, lint and frontend tools (they are skipped or fail
+    as not installed otherwise). The release build installs again, from the
+    accepted copy. Ignored directories survive the next ``git clean -qfd``, so
+    later deploys only update.
+    """
+    if project.source_repo is None:
+        return 0
+    clone = project_at_source(project, project.source_repo)
+    if (code := sync_backend(clone)) != 0:
+        return code
+    plan = frontend_install_plan(clone.frontend_dir, clone.root)
+    return run(list(plan.command), cwd=plan.cwd, quiet_success=True, _heavy=True) if plan else 0
+
+
 def project_ids(*, include_inactive: bool = False) -> list[str]:
     ids: list[str] = []
     from app.storage.projects import testing_project_ids

@@ -505,6 +505,10 @@ def rebuild(
         except service_ops.ServiceError as exc:
             output_error(str(exc))
             raise typer.Exit(1) from None
+        print("[service] installing the pinned source's tools for acceptance")
+        if service_ops.install_clone_dependencies(services) != 0:
+            output_error("Could not install dependencies in the pinned source.")
+            raise typer.Exit(1)
     elif user := service_deploy_client.delegated_user(services.runtime_user):
         if acceptance or with_ack or migrate_monitor_store:
             output_error("--acceptance, --with-ack and --migrate-monitor-store are not available through the deploy gate.")
