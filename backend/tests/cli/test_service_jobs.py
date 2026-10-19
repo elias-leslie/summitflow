@@ -164,6 +164,17 @@ def test_configured_extras_are_loaded_from_managed_identity(monkeypatch, tmp_pat
     assert service_ops.load_project("example").backend_extras == ("voice",)
 
 
+@pytest.mark.parametrize(("user", "ok"), [("svc", True), ("broker", True), ("agent", True), ("kasadis", False)])
+def test_runtime_user_must_be_a_gate_instance(monkeypatch, tmp_path, user, ok):
+    monkeypatch.setattr(service_ops, "get_project_identity", lambda _: {"runtime": {"runtime_user": user}})
+    monkeypatch.setattr(service_ops, "get_project_identity_root", lambda _: str(tmp_path))
+    if ok:
+        assert service_ops.load_project("example").runtime_user == user
+    else:
+        with pytest.raises(service_ops.ServiceError, match="svc, broker or agent"):
+            service_ops.load_project("example")
+
+
 def test_invalid_extra_configuration_is_not_silently_dropped(monkeypatch, tmp_path):
     monkeypatch.setattr(service_ops, "get_project_identity", lambda _: {"runtime": {"backend_extras": "voice"}})
     monkeypatch.setattr(service_ops, "get_project_identity_root", lambda _: str(tmp_path))

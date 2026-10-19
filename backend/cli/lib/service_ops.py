@@ -40,7 +40,7 @@ from .monitor_store_migration import (
 )
 
 HOST_MONITOR_HELPER = Path("/usr/local/sbin/summitflow-host-monitor-deploy")
-RUNTIME_USERS = frozenset({"", "svc", "broker"})
+RUNTIME_USERS = frozenset({"", "svc", "broker", "agent"})
 
 
 class ServiceError(RuntimeError):
@@ -134,7 +134,7 @@ def load_project(project_id: str) -> ProjectServices:
         raise ServiceError("runtime.release_install must be a path inside the project")
     runtime_user = runtime.get("runtime_user") or ""
     if runtime_user not in RUNTIME_USERS:
-        raise ServiceError("runtime.runtime_user must be svc or broker")
+        raise ServiceError("runtime.runtime_user must be svc, broker or agent")
     canonical_id = str(project.get("id") or project_id)
     root = Path(root_raw)
     backend_dir, frontend_dir = runtime_source_dirs(runtime, root)
