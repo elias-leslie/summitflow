@@ -200,7 +200,7 @@ def test_a_user_without_docker_runs_ci_services_in_its_own_podman(monkeypatch: p
     monkeypatch.setattr(ci_parity.subprocess, "run", run)
     remote = ["/usr/bin/podman", "--remote", "--url", f"unix://{tmp_path}/podman/podman.sock"]
     with ci_parity.services(job, {}):
-        assert commands[0] == ["systemctl", "--user", "start", "podman.socket"]
+        assert commands[0] == ["/usr/bin/systemctl", "--user", "start", "podman.socket"]
         assert commands[1][:5] == [*remote, "run"] and commands[1][-1] == "docker.io/library/postgres:16"
     assert commands[-1][:6] == [*remote, "rm", "-f"]
 

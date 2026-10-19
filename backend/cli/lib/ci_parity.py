@@ -103,7 +103,7 @@ def container_cli() -> tuple[list[str], bool] | None:
     if podman and runtime:
         sock = Path(runtime) / "podman" / "podman.sock"
         # idempotent; a socket file alone may be left over from a stopped unit
-        started = subprocess.run(["systemctl", "--user", "start", "podman.socket"], capture_output=True, timeout=60, check=False)
+        started = subprocess.run([which("systemctl") or "systemctl", "--user", "start", "podman.socket"], capture_output=True, timeout=60, check=False)
         if started.returncode == 0 and sock.exists():
             return [podman, "--remote", "--url", f"unix://{sock}"], True
     return ([docker], False) if docker else None

@@ -39,9 +39,17 @@ LIFETIME_SECONDS = (PYTHON_TEST_TIMEOUT_SECONDS + BOOTSTRAP_TIMEOUT_SECONDS
 FLEET_LIFETIME_SECONDS = 1800
 
 
+def engine_command() -> tuple[list[str], bool] | None:
+    """container_cli(), reaching the user's podman socket from a stage environment that drops XDG_RUNTIME_DIR."""
+    runtime = f"/run/user/{os.getuid()}"
+    if os.path.isdir(runtime):
+        os.environ.setdefault("XDG_RUNTIME_DIR", runtime)
+    return container_cli()
+
+
 def container(*arguments: str, environment: dict[str, str] | None = None) -> str:
     """Run the container CLI: docker when reachable, else this user's rootless podman (see container_cli)."""
-    engine = container_cli()
+    engine = engine_command()
     if engine is None:
         raise RuntimeError("Isolated PostgreSQL fixture needs docker or rootless podman")
     result = subprocess.run(
@@ -107,7 +115,7 @@ def database_fixture(*, lifetime_seconds: int = LIFETIME_SECONDS):
                 raise RuntimeError("Native scratch mapping requires a private /tmp socket")
             host_socket = host_root / socket.relative_to("/tmp")
         # Rootless podman rejects tmpfs uid=/gid= options; its U flag hands the mount to --user instead.
-        engine = container_cli()
+        engine = engine_command()
         data = (["--mount", "type=tmpfs,destination=/var/lib/postgresql/data,tmpfs-mode=0700,U=true"]
                 if engine and engine[1]
                 else ["--tmpfs", "/var/lib/postgresql/data:rw,uid=999,gid=999,mode=0700"])

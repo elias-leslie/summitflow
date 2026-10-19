@@ -29,7 +29,7 @@ def prepared_fixture(tmp_path, monkeypatch):
         return image if arguments[:2] == ("image", "inspect") else "fixture-id"
 
     monkeypatch.setattr(fixture, "container", container)
-    monkeypatch.setattr(fixture, "container_cli", lambda: (["/usr/bin/docker"], False))
+    monkeypatch.setattr(fixture, "engine_command", lambda: (["/usr/bin/docker"], False))
     connection = MagicMock()
     connection.__enter__.return_value = connection
     connection.execute.return_value.fetchone.return_value = (0,)
@@ -201,12 +201,12 @@ def test_fixture_cleanup_failure_is_visible_and_bounded(prepared_fixture, monkey
 def test_container_runs_through_the_chosen_cli(monkeypatch):
     remote = ["/usr/bin/podman", "--remote", "--url", "unix:///run/user/1000/podman/podman.sock"]
     calls = []
-    monkeypatch.setattr(fixture, "container_cli", lambda: (remote, True))
+    monkeypatch.setattr(fixture, "engine_command", lambda: (remote, True))
     monkeypatch.setattr(fixture.subprocess, "run", lambda command, **kwargs: (
         calls.append(command), subprocess.CompletedProcess(command, 0, "out\n", ""))[1])
     assert fixture.container("rm", "--force", "name") == "out"
     assert calls == [[*remote, "rm", "--force", "name"]]
-    monkeypatch.setattr(fixture, "container_cli", lambda: None)
+    monkeypatch.setattr(fixture, "engine_command", lambda: None)
     with pytest.raises(RuntimeError, match="docker or rootless podman"):
         fixture.container("rm", "name")
 
@@ -218,7 +218,7 @@ def test_rootless_podman_gets_tmpfs_ownership_by_flag_not_uid_options(prepared_f
     docker_create = next(arguments for arguments, _env in operations if arguments[0] == "create")
     assert "--tmpfs" in docker_create and "uid=999" in docker_create[docker_create.index("--tmpfs") + 1]
     operations.clear()
-    monkeypatch.setattr(fixture, "container_cli", lambda: (["/usr/bin/podman"], True))
+    monkeypatch.setattr(fixture, "engine_command", lambda: (["/usr/bin/podman"], True))
     with fixture.database_fixture(lifetime_seconds=210):
         pass
     create = next(arguments for arguments, _env in operations if arguments[0] == "create")
