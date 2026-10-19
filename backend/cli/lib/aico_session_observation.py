@@ -67,8 +67,8 @@ def _query_owner(path: str, widget: str) -> object:
 
 def _query_tether(widget: str) -> object:
     """Tether's session descriptor in the legacy owner receipt shape, or None."""
-    status, data = tether.request("GET", f"/v1/sessions/{widget}", timeout=TETHER_TIMEOUT_SECONDS,
-                                  max_bytes=MAX_OWNER_RESPONSE_BYTES)
+    status, data = tether.request_first("GET", f"/v1/sessions/{widget}", timeout=TETHER_TIMEOUT_SECONDS,
+                                        max_bytes=MAX_OWNER_RESPONSE_BYTES)
     if status != 200 or not isinstance(data, dict) or not isinstance(data.get("tmux"), dict):
         return None
     return {"owner": "aico", "widgetId": data.get("id"), "sessionId": data.get("ownershipId"),
@@ -78,7 +78,7 @@ def _query_tether(widget: str) -> object:
 
 def _query_session(widget: str) -> object:
     """Prefer Tether; fall back to the legacy owner socket when Tether cannot answer."""
-    if tether.socket_present():
+    if tether.present_sockets():
         try:
             wire = _query_tether(widget)
         except (OSError, ValueError, http.client.HTTPException):
@@ -151,7 +151,7 @@ def observe_aico_owners(sessions: list[dict[str, Any]]) -> list[dict[str, Any]]:
                     if (identity := _eligible_identity(session)) is not None]
         if not eligible:
             return projected
-        if not tether.socket_present():
+        if not tether.present_sockets():
             _owner_socket()  # no owner at all: skip transcript discovery
         library = transcript_library()
         snapshot = library.discover_open_transcripts()

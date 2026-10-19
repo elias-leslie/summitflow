@@ -10,7 +10,6 @@ Every lookup is best effort: without Tether, lines stay as they were.
 
 from __future__ import annotations
 
-import http.client
 import os
 from functools import cache
 from pathlib import Path
@@ -21,24 +20,18 @@ from . import coord_lineage, leases
 _TIMEOUT = 0.5
 
 
-def _get(path: str) -> Any:
-    from app.services import tether
-
-    if not tether.socket_present():
-        return None
-    try:
-        status, data = tether.request("GET", path, timeout=_TIMEOUT)
-    except (OSError, ValueError, http.client.HTTPException):
-        return None
-    return data if status == 200 else None
-
-
 @cache
 def sessions() -> dict[str, dict[str, Any]]:
-    """Running Tether session descriptors by id (= Aico widget id)."""
-    data = _get("/v1/sessions")
-    items = data.get("items") if isinstance(data, dict) else None
-    return {str(d["id"]): d for d in items or [] if isinstance(d, dict) and d.get("id")}
+    """Running Tether session descriptors by id (= Aico widget id), across the owner and agent instances."""
+    from app.services import tether
+
+    found: dict[str, dict[str, Any]] = {}
+    for status, data in tether.request_all("/v1/sessions", timeout=_TIMEOUT):
+        items = data.get("items") if status == 200 and isinstance(data, dict) else None
+        for d in items or []:
+            if isinstance(d, dict) and d.get("id"):
+                found.setdefault(str(d["id"]), d)
+    return found
 
 
 def title(desc: dict[str, Any]) -> str:

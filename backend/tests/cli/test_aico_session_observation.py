@@ -202,18 +202,20 @@ TETHER_DESCRIPTOR = {
 
 def test_tether_is_preferred_and_mapped_to_owner_receipt(local_owner, monkeypatch):
     monkeypatch.setattr(observation.tether, "socket_present", lambda *_: True)
+    monkeypatch.setattr(observation.tether, "present_sockets", lambda: ["/fixture/owner.sock"])
     request = MagicMock(return_value=(200, deepcopy(TETHER_DESCRIPTOR)))
     monkeypatch.setattr(observation.tether, "request", request)
     result = observation.observe_aico_owners([local_owner.session])[0]
     assert result["aico_owner_observation"] == RECEIPT
     assert result["tmux_pane_id"] == "%21"
-    assert request.call_args.args == ("GET", f"/v1/sessions/{WIDGET}")
+    assert request.call_args.args[:2] == ("GET", f"/v1/sessions/{WIDGET}")
     local_owner.query.assert_not_called()
 
 
 @pytest.mark.parametrize("outcome", [(404, {"error": "not_found"}), OSError(), (200, {"id": WIDGET})])
 def test_unanswered_tether_falls_back_to_legacy_owner(local_owner, monkeypatch, outcome):
     monkeypatch.setattr(observation.tether, "socket_present", lambda *_: True)
+    monkeypatch.setattr(observation.tether, "present_sockets", lambda: ["/fixture/owner.sock"])
     request = MagicMock(side_effect=outcome) if isinstance(outcome, Exception) else MagicMock(return_value=outcome)
     monkeypatch.setattr(observation.tether, "request", request)
     assert observation.observe_aico_owners([local_owner.session])[0]["aico_owner_observation"] == RECEIPT

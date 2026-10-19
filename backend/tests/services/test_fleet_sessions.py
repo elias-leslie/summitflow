@@ -537,3 +537,22 @@ def test_tether_surface_is_a_valid_start_surface(roots):
     state = roots(scope={}, surface="tether")
     assert state["surface"] == "tether"
     assert state["capabilities"]["launch"] == "host-acknowledged"
+
+
+def test_tether_end_tries_the_other_instance_on_404_but_start_does_not(monkeypatch):
+    active, other = "/fixture/agent.sock", "/fixture/owner.sock"
+    monkeypatch.setenv("TETHER_SOCKET", active)
+    monkeypatch.setattr(service.tether, "sockets", lambda: [active, other])
+    monkeypatch.setattr(service.tether, "present_sockets", lambda: [active, other])
+    request, transport = _socket_client(monkeypatch, {"status": "ended"})
+    missing = MagicMock(status_code=404)
+    found = MagicMock(status_code=200)
+    found.json.return_value = {"status": "ended"}
+    request.post.side_effect = [missing, found]
+    assert service._host_end(AICO_DESCRIPTOR, root="root-fixture", surface="tether")
+    assert [call.kwargs["uds"] for call in transport.call_args_list] == [active, other]
+    transport.reset_mock()
+    request.post.side_effect = [missing]
+    with pytest.raises(ValueError):
+        service._host_start("root-fixture", "fixture", "/fixture", "codex", "Exact capsule", role="portfolio-root", lead_root=None, facet=None, surface="tether")
+    assert [call.kwargs["uds"] for call in transport.call_args_list] == [active]

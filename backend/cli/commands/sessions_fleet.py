@@ -54,18 +54,15 @@ def _tether_aliases(target: str) -> list[str]:
     A window answers to its widget id, its st aico create request id, or its
     title; the tmux session name then resolves through Agent Hub to one live agent.
     """
-    from http.client import HTTPException
-
     from app.services import tether
 
-    try:
-        status, body = tether.request("GET", "/v1/sessions")
-    except (OSError, ValueError, HTTPException):
-        return []
-    items = body.get("items") if status == 200 and isinstance(body, dict) else None
+    items: list[Any] = []
+    for status, body in tether.request_all("/v1/sessions"):
+        if status == 200 and isinstance(body, dict) and isinstance(body.get("items"), list):
+            items += body["items"]
     want = target.strip().casefold()
     out: list[str] = []
-    for item in items if isinstance(items, list) else []:
+    for item in items:
         if not isinstance(item, dict) or not isinstance(item.get("tmux"), dict):
             continue
         names = {str(item.get(k) or "").casefold() for k in ("id", "ownershipId", "rootRequestId", "name", "label", "displayTitle")}
@@ -247,7 +244,7 @@ def _tether_get(path: str) -> dict[str, Any]:
     from app.services import tether
 
     try:
-        status, body = tether.request("GET", quote(path))
+        status, body = tether.request_first("GET", quote(path))
     except (OSError, ValueError) as exc:
         typer.echo(f"ERROR Tether is not reachable at {tether.socket_path()}: {exc}", err=True)
         raise typer.Exit(2) from exc

@@ -166,13 +166,14 @@ def test_tether_aliases_match_exact_window_names_only(monkeypatch):
     item = {"id": "9ef2ce53", "ownershipId": "aico-widget-9ef2ce53", "rootRequestId": "ns-coordtest-1",
             "name": "Coordination test", "label": "Coordination test", "tmux": {"sessionName": "aico-9ef2ce53"}}
     monkeypatch.undo()  # drop the autouse stub so the real parser runs
-    monkeypatch.setattr(tether, "request", lambda method, path: (200, {"items": [item, {"id": "x", "tmux": None}]}))
+    monkeypatch.setattr(tether, "present_sockets", lambda: ["/fixture/owner.sock"])
+    monkeypatch.setattr(tether, "request", lambda method, path, *a, **k: (200, {"items": [item, {"id": "x", "tmux": None}]}))
     assert sessions_fleet._tether_aliases("COORDINATION TEST") == ["aico-9ef2ce53"]
     assert sessions_fleet._tether_aliases("ns-coordtest-1") == ["aico-9ef2ce53"]
     assert sessions_fleet._tether_aliases("Coordination") == []
     assert sessions_fleet._tether_aliases("") == []
 
-    def down(method, path):
+    def down(method, path, *a, **k):
         raise OSError("no socket")
 
     monkeypatch.setattr(tether, "request", down)

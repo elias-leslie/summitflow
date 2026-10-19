@@ -129,8 +129,17 @@ def _a_term_default_url() -> str:
 def _host_request(surface: str, path: str, payload: dict[str, Any], *, owner_control: bool = False, method: str = "POST") -> dict[str, Any]:
     if surface in {"aico", "tether"}:
         socket = _owner_socket(surface, owner_control=owner_control)
-        with httpx.Client(transport=httpx.HTTPTransport(uds=socket), timeout=30) as client:
-            response = client.get(f"http://aico{path}") if method == "GET" else client.post(f"http://aico{path}", json=payload)
+        # New roots start on the active Tether. A root already started lives on
+        # whichever instance made it, so lookups and ends also try the other one.
+        creating = method == "POST" and path == "/v1/roots"
+        candidates = [socket]
+        if not creating and socket in tether.sockets():
+            candidates += [other for other in tether.present_sockets() if other != socket]
+        for socket in candidates:
+            with httpx.Client(transport=httpx.HTTPTransport(uds=socket), timeout=30) as client:
+                response = client.get(f"http://aico{path}") if method == "GET" else client.post(f"http://aico{path}", json=payload)
+            if response.status_code != 404:
+                break
     elif surface == "a-term":
         base = (os.environ.get("A_TERM_ROOT_CONTROL_URL") or _a_term_default_url()).rstrip("/")
         parsed = urlsplit(base)
