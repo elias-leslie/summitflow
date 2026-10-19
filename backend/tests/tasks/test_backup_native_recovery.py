@@ -85,6 +85,59 @@ def _git(project: Path, *args: str) -> str:
     return result.stdout.strip()
 
 
+@pytest.mark.parametrize("metadata", ["directory", "gitfile", "symlink"])
+def test_archive_rejects_checkout_when_git_inspection_fails(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, metadata: str,
+) -> None:
+    from app.tasks import backup_native_archive as archive
+    from app.tasks import backup_native_recovery as recovery
+
+    project = tmp_path / "project"
+    project.mkdir()
+    if metadata == "gitfile":
+        _git(project, "init", "--separate-git-dir", str(tmp_path / "metadata"))
+    else:
+        _git(project, "init")
+        if metadata == "symlink":
+            (project / ".git").rename(tmp_path / "metadata")
+            (project / ".git").symlink_to(tmp_path / "metadata", target_is_directory=True)
+    (project / "source.txt").write_text("recoverable source\n")
+
+    def refuse_git(project_dir: Path, args: list[str]) -> subprocess.CompletedProcess[str]:
+        assert project_dir == project
+        assert args == ["rev-parse", "--show-toplevel"]
+        return subprocess.CompletedProcess(
+            ["git", *args], 128, stdout="",
+            stderr="fatal: detected dubious ownership in repository\n",
+        )
+
+    monkeypatch.setattr(recovery, "_run_git", refuse_git)
+    monkeypatch.setattr(archive, "_dump_database", lambda *_args: (0, False))
+    staging = tmp_path / "staging"
+    staging.mkdir()
+    with pytest.raises(RuntimeError, match="Unable to capture Git recovery state"):
+        archive._create_project_archive(project, "project", staging, {})
+    assert not list(staging.glob("*.tar.gz"))
+
+
+def test_archive_verifies_non_git_project_without_git_recovery(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from app.tasks import backup_native_archive as archive
+
+    project = tmp_path / "project"
+    project.mkdir()
+    (project / "source.txt").write_text("recoverable source\n")
+    monkeypatch.setattr(archive, "_dump_database", lambda *_args: (0, False))
+    staging = tmp_path / "staging"
+    staging.mkdir()
+
+    result = archive._create_project_archive(project, "project", staging, {})
+
+    assert result["verification"]["verified"] is True
+    assert result["verification"]["recovery"]["git"] is None
+
+
 def test_archive_restores_nested_backup_modules_staged_index_and_wip(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
 ) -> None:

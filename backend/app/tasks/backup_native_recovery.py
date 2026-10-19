@@ -482,7 +482,11 @@ def _run_git(
 def git_state(project_dir: Path) -> dict[str, Any] | None:
     """Return portable Git identity used to detect ref/index changes."""
     top = _run_git(project_dir, ["rev-parse", "--show-toplevel"])
-    if top.returncode != 0 or Path(top.stdout.strip()).resolve() != project_dir.resolve():
+    if top.returncode != 0:
+        if os.path.lexists(project_dir / ".git"):
+            raise RuntimeError("Unable to capture Git recovery state: repository inspection failed")
+        return None
+    if Path(top.stdout.strip()).resolve() != project_dir.resolve():
         return None
     head = _run_git(project_dir, ["rev-parse", "--verify", "HEAD"])
     symbolic = _run_git(project_dir, ["symbolic-ref", "-q", "HEAD"])
