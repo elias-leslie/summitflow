@@ -26,14 +26,27 @@ def request_source() -> str:
     return f"st-cli/{command}" if _COMMAND_TOKEN.match(command) else "st-cli"
 
 
-def agent_token_headers() -> dict[str, str]:
-    """The agent token header when SUMMITFLOW_AGENT_TOKEN_FILE names a readable file, else nothing."""
-    path = os.environ.get("SUMMITFLOW_AGENT_TOKEN_FILE", "").strip()
-    try:
-        token = Path(path).read_text(encoding="utf-8").strip() if path else ""
-    except (OSError, ValueError):
-        return {}
-    return {"X-SummitFlow-Agent-Token": token} if token else {}
+# (env var naming the token file, default file under HOME, header). The server reads the same files.
+_TOKEN_SOURCES = (
+    ("SUMMITFLOW_OWNER_TOKEN_FILE", ".config/credstore/summitflow/owner-token", "X-SummitFlow-Owner-Token"),
+    ("SUMMITFLOW_AGENT_TOKEN_FILE", ".config/agent-tokens/summitflow", "X-SummitFlow-Agent-Token"),
+)
+
+
+def token_headers() -> dict[str, str]:
+    """The caller's SummitFlow token header: the owner token if its file is readable, else the agent token.
+
+    Each file is the env var's path or its default under HOME; file modes keep the other user's token unreadable.
+    """
+    for env_name, default_path, header in _TOKEN_SOURCES:
+        path = os.environ.get(env_name, "").strip() or str(Path.home() / default_path)
+        try:
+            token = Path(path).read_text(encoding="utf-8").strip()
+        except (OSError, ValueError):
+            continue
+        if token:
+            return {header: token}
+    return {}
 
 
 class STClient(
@@ -67,7 +80,7 @@ class STClient(
 
         super().__init__(resolved_base_url, resolved_project_id, timeout)
         self._client.headers.setdefault("X-Request-Source", request_source())
-        self._client.headers.update(agent_token_headers())
+        self._client.headers.update(token_headers())
 
 
 __all__ = ["APIError", "STClient"]

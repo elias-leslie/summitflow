@@ -99,14 +99,24 @@ def test_st_client_names_its_subcommand_as_request_source(monkeypatch) -> None:
     assert client_module.request_source() == "st-cli"
 
 
-def test_st_client_sends_the_agent_token_when_the_file_is_readable(monkeypatch, tmp_path) -> None:
+def test_st_client_sends_the_owner_or_agent_token_when_a_file_is_readable(monkeypatch, tmp_path) -> None:
     from cli import client as client_module
 
-    token_file = tmp_path / "agent-token"
-    token_file.write_text("agent-s3cret\n")
-    monkeypatch.setenv("SUMMITFLOW_AGENT_TOKEN_FILE", str(token_file))
-    assert client_module.agent_token_headers() == {"X-SummitFlow-Agent-Token": "agent-s3cret"}
+    monkeypatch.setenv("HOME", str(tmp_path))
+    for name in ("SUMMITFLOW_OWNER_TOKEN_FILE", "SUMMITFLOW_AGENT_TOKEN_FILE"):
+        monkeypatch.delenv(name, raising=False)
+    assert client_module.token_headers() == {}
+
+    agent_file = tmp_path / ".config" / "agent-tokens" / "summitflow"
+    agent_file.parent.mkdir(parents=True)
+    agent_file.write_text("agent-s3cret\n")
+    assert client_module.token_headers() == {"X-SummitFlow-Agent-Token": "agent-s3cret"}
+
+    owner_file = tmp_path / "owner-token"
+    owner_file.write_text("owner-s3cret\n")
+    monkeypatch.setenv("SUMMITFLOW_OWNER_TOKEN_FILE", str(owner_file))
+    assert client_module.token_headers() == {"X-SummitFlow-Owner-Token": "owner-s3cret"}
+
+    monkeypatch.setenv("SUMMITFLOW_OWNER_TOKEN_FILE", str(tmp_path / "missing"))
     monkeypatch.setenv("SUMMITFLOW_AGENT_TOKEN_FILE", str(tmp_path / "missing"))
-    assert client_module.agent_token_headers() == {}
-    monkeypatch.delenv("SUMMITFLOW_AGENT_TOKEN_FILE")
-    assert client_module.agent_token_headers() == {}
+    assert client_module.token_headers() == {}

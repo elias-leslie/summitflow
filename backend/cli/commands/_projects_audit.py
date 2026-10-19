@@ -12,6 +12,7 @@ import typer
 
 from app.utils.shared_paths import get_repo_root
 
+from ..client import token_headers
 from ..output import output_error, output_json
 from ._projects_helpers import get_api_base
 
@@ -20,7 +21,7 @@ def _get_list(path: str, *, required: bool = False) -> tuple[list[dict[str, Any]
     """Read a public list API, preserving unavailable evidence as unknown."""
     try:
         with httpx.Client(timeout=15.0) as client:
-            response = client.get(f"{get_api_base()}{path}")
+            response = client.get(f"{get_api_base()}{path}", headers=token_headers())
             response.raise_for_status()
             value = response.json()
         if not isinstance(value, list) or not all(isinstance(row, dict) for row in value):

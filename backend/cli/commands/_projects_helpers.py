@@ -12,6 +12,7 @@ import typer
 
 from app.config import DEFAULT_API_BASE
 
+from ..client import token_headers
 from ..output import output_error, output_json, output_success
 from ._http_errors import parse_error_detail
 
@@ -162,7 +163,7 @@ def projects_api(
     url = f"{get_api_base()}{_project_path(path)}"
     try:
         with httpx.Client(timeout=10.0) as client:
-            response = client.request(method, url, **kwargs)
+            response = client.request(method, url, headers=token_headers(), **kwargs)
             if response.status_code == 204:
                 return None
             if response.status_code >= 400:

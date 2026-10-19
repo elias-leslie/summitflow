@@ -8,12 +8,13 @@ from typing import Any
 
 import httpx
 
+from ..client import token_headers
 from ._projects_helpers import get_api_base
 
 
 def _fetch(path: str) -> Any:
     with httpx.Client(timeout=3.0) as client:
-        response = client.get(f"{get_api_base()}{path}")
+        response = client.get(f"{get_api_base()}{path}", headers=token_headers())
         response.raise_for_status()
         return response.json()
 

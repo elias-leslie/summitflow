@@ -9,7 +9,7 @@ import typer
 
 from app.tasks.backup_utils import _FREQUENCY_DELTAS, CANONICAL_CONFIG_SOURCE_IDS
 
-from ..client import APIError, STClient
+from ..client import APIError, STClient, token_headers
 from ..config import get_config
 from ..lib.usage import usage
 from ..output import handle_api_error, output_error, output_json
@@ -638,7 +638,7 @@ def restore_test(
     params: dict[str, str] = {"force": str(force).lower()}
     if source:
         params["source_id"] = source
-    response = httpx.post(f"{STClient().base_url}/backups/restore-test/offsite", params=params, timeout=httpx.Timeout(30.0, read=None))
+    response = httpx.post(f"{STClient().base_url}/backups/restore-test/offsite", params=params, headers=token_headers(), timeout=httpx.Timeout(30.0, read=None))
     if response.status_code >= 400:
         handle_api_error(APIError(response.status_code, response.text))
         return
