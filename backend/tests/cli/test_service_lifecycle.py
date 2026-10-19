@@ -1107,3 +1107,11 @@ def test_activated_collector_is_listed_as_restarted_without_a_unit_restart(
     restart = next(call for call in _mock(service_release.mark_phase).call_args_list if call.args[1] == "restart")
     assert restart.kwargs["services"] == ["backend.service", monitor, "frontend.service"]
     collector.rollback.assert_not_called()
+
+
+def test_infrastructure_checks_only_what_the_project_declares(project, monkeypatch):
+    run = _probe_infra(monkeypatch, pg_ok=False, hatchet_status=None)
+
+    assert service_ops.ensure_infra(replace(project, infra=())) == 0
+    assert service_ops.ensure_infra(replace(project, infra=("hatchet",))) == 1
+    run.assert_not_called()

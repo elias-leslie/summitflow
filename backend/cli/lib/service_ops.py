@@ -41,6 +41,8 @@ from .monitor_store_migration import (
 
 HOST_MONITOR_HELPER = Path("/usr/local/sbin/summitflow-host-monitor-deploy")
 RUNTIME_USERS = frozenset({"", "svc", "broker", "agent"})
+# Shared infrastructure a deploy checks first; runtime.infra in project.identity.json narrows it.
+INFRA = ("postgres", "hatchet")
 
 
 class ServiceError(RuntimeError):
@@ -65,6 +67,7 @@ class ProjectServices:
     durable_data_root: Path | None = None
     release_install: str = ""
     runtime_user: str = ""
+    infra: tuple[str, ...] = INFRA
     source_repo: Path | None = None
     source_sha: str = ""
 
@@ -135,6 +138,9 @@ def load_project(project_id: str) -> ProjectServices:
     runtime_user = runtime.get("runtime_user") or ""
     if runtime_user not in RUNTIME_USERS:
         raise ServiceError("runtime.runtime_user must be svc, broker or agent")
+    infra = runtime.get("infra", list(INFRA))
+    if not isinstance(infra, list) or any(item not in INFRA for item in infra):
+        raise ServiceError(f"runtime.infra must list only {', '.join(INFRA)}")
     canonical_id = str(project.get("id") or project_id)
     root = Path(root_raw)
     backend_dir, frontend_dir = runtime_source_dirs(runtime, root)
@@ -155,6 +161,7 @@ def load_project(project_id: str) -> ProjectServices:
         durable_data_root=root / "data",
         release_install=release_install,
         runtime_user=runtime_user,
+        infra=tuple(infra),
     )
 
 
@@ -693,14 +700,15 @@ INFRA_RESTART_HINT = (
 
 def ensure_infra(project: ProjectServices | None = None) -> int:
     """Check the shared Postgres and Hatchet answer; the root stack unit owns starting them."""
-    pg = capture(["pg_isready", "-h", "localhost", "-p", "5432", "-U", "admin"])
+    needs = INFRA if project is None else project.infra
+    pg = "postgres" not in needs or capture(["pg_isready", "-h", "localhost", "-p", "5432", "-U", "admin"]).returncode == 0
     try:
-        hatchet = httpx.get("http://localhost:8888/ready", timeout=2.0).status_code < 400
+        hatchet = "hatchet" not in needs or httpx.get("http://localhost:8888/ready", timeout=2.0).status_code < 400
     except httpx.HTTPError:
         hatchet = False
-    if pg.returncode == 0 and hatchet:
+    if pg and hatchet:
         return 0
-    down = [name for name, up in (("postgres :5432", pg.returncode == 0), ("hatchet :8888", hatchet)) if not up]
+    down = [name for name, up in (("postgres :5432", pg), ("hatchet :8888", hatchet)) if not up]
     print(f"[service] infrastructure is down ({', '.join(down)}); {INFRA_RESTART_HINT}")
     return 1
 
