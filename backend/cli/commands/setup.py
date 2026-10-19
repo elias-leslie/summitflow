@@ -237,12 +237,10 @@ def test_dbs(
     _preview("st setup test-dbs", lines, dry_run, confirm)
     if dry_run:
         return
-    from app.tasks.backup_native_infra import _find_compose_container
-    container = _find_compose_container("postgres")
-    use_docker = container is not None
-    base = ["docker", "exec", "-i", container] if container else ["sudo", "-u", "postgres"]
+    from app.config import POSTGRES_PORT
+    base = ["-h", "localhost", "-p", str(POSTGRES_PORT), "-U", "admin"]
     for db_name, owner in selected:
-        _run([*base, "createdb", "-U", "admin", "-O", owner, db_name] if use_docker else [*base, "createdb", "-O", owner, db_name])
-        _run([*base, "psql", "-U", "admin", "-c", f"GRANT ALL PRIVILEGES ON DATABASE {db_name} TO {owner};"] if use_docker else [*base, "psql", "-c", f"GRANT ALL PRIVILEGES ON DATABASE {db_name} TO {owner};"])
-        _run([*base, "psql", "-U", "admin", "-d", db_name, "-c", f"GRANT ALL ON SCHEMA public TO {owner};"] if use_docker else [*base, "psql", "-d", db_name, "-c", f"GRANT ALL ON SCHEMA public TO {owner};"])
+        _run(["createdb", *base, "-O", owner, db_name])
+        _run(["psql", *base, "-c", f"GRANT ALL PRIVILEGES ON DATABASE {db_name} TO {owner};"])
+        _run(["psql", *base, "-d", db_name, "-c", f"GRANT ALL ON SCHEMA public TO {owner};"])
     print("test databases ready")

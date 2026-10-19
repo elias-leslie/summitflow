@@ -14,7 +14,7 @@ from unittest.mock import patch
 import pytest
 from typer.testing import CliRunner
 
-from cli.commands import check, db, docker, service, setup, vm
+from cli.commands import check, db, service, setup, vm
 from cli.lib import service_ops, service_release
 from cli.lib.proxmox import ProxmoxClient, ProxmoxConfig
 from cli.lib.service_ops import ProjectServices
@@ -82,26 +82,22 @@ def test_test_database_setup_can_target_only_jobinator() -> None:
     with (
         patch("app.project_identity.project_databases", return_value=databases),
         patch("cli.commands.setup._preview"),
-        patch("app.tasks.backup_native_infra._find_compose_container", return_value="test-postgres"),
         patch("cli.commands.setup._run", return_value=0) as run,
     ):
         result = runner.invoke(setup.app, ["test-dbs", "--project", "jobinator-4000"])
     assert result.exit_code == 0
     assert run.call_count == 3
-    assert run.call_args_list[0].args[0] == [
-        "docker", "exec", "-i", "test-postgres", "createdb", "-U", "admin",
-        "-O", "jobinator_app", "jobinator_test",
-    ]
+    assert run.call_args_list[0].args[0][:1] == ["createdb"]
+    assert run.call_args_list[0].args[0][-3:] == ["-O", "jobinator_app", "jobinator_test"]
     with (
         patch("app.project_identity.project_databases", return_value=databases),
         patch("cli.commands.setup._preview"),
-        patch("app.tasks.backup_native_infra._find_compose_container", return_value="test-postgres"),
         patch("cli.commands.setup._run", return_value=0) as run,
     ):
         assert runner.invoke(setup.app, ["test-dbs"]).exit_code == 0
         assert runner.invoke(setup.app, ["test-dbs", "--project", "hatchet"]).exit_code != 0
         assert runner.invoke(setup.app, ["test-dbs", "--project", "rogue"]).exit_code != 0
-    created = [call.args[0][-1] for call in run.call_args_list if "createdb" in call.args[0]]
+    created = [call.args[0][-1] for call in run.call_args_list if call.args[0][0] == "createdb"]
     assert created == ["jobinator_test", "summitflow_test"]
 
 
@@ -990,21 +986,6 @@ def test_db_tables_counts_uses_exact_counts_not_pg_stats() -> None:
     assert "information_schema.tables" in sql
     assert "n_live_tup" not in sql
     assert "pg_stat_user_tables" not in sql
-
-
-def test_docker_large_output_goes_to_details_file(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]) -> None:
-    monkeypatch.chdir(tmp_path)
-    output = "\n".join(f"layer {index}" for index in range(45))
-    result = subprocess.CompletedProcess(["docker", "compose", "pull"], 0, stdout=output, stderr="")
-    with patch("cli.commands.docker.subprocess.run", return_value=result):
-        returned = docker._run(["docker", "compose", "pull"])
-
-    captured = capsys.readouterr()
-    details = tmp_path / ".dev-tools" / "docker-docker-compose-pull-details.txt"
-    assert returned is result
-    assert details.read_text(encoding="utf-8") == output
-    assert "layer 0" not in captured.out
-    assert "DOCKER:OK:0|lines=45|details:.dev-tools/docker-docker-compose-pull-details.txt" in captured.out
 
 
 @pytest.mark.parametrize("arguments", [

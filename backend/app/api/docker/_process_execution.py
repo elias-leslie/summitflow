@@ -1,4 +1,4 @@
-"""Subprocess runners for Docker and systemd commands."""
+"""Subprocess runners for systemd and journald commands."""
 
 from __future__ import annotations
 
@@ -71,7 +71,7 @@ async def _run_docker(
     stdin_data: bytes | None = None,
     timeout: float | None = None,
 ) -> tuple[str, str, int]:
-    """Run a docker command asynchronously."""
+    """Docker CLI, used only until the Nightshift-managed stack unit is installed."""
     return await _run_safe_command(args, stdin_data=stdin_data, timeout=timeout)
 
 

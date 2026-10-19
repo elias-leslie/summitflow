@@ -40,6 +40,7 @@ from .monitor_store_migration import (
 )
 
 HOST_MONITOR_HELPER = Path("/usr/local/sbin/summitflow-host-monitor-deploy")
+RUNTIME_USERS = frozenset({"", "svc", "broker"})
 
 
 class ServiceError(RuntimeError):
@@ -63,6 +64,14 @@ class ProjectServices:
     host_config_root: Path | None = None
     durable_data_root: Path | None = None
     release_install: str = ""
+    runtime_user: str = ""
+    source_repo: Path | None = None
+    source_sha: str = ""
+
+    @property
+    def git_root(self) -> Path:
+        """The repository acceptance and release read: a pinned mirror, else the checkout."""
+        return self.source_repo or self.root
 
     @property
     def all_services(self) -> tuple[str, ...]:
@@ -123,6 +132,9 @@ def load_project(project_id: str) -> ProjectServices:
     release_install = runtime.get("release_install") or ""
     if not isinstance(release_install, str) or Path(release_install).is_absolute() or ".." in Path(release_install).parts:
         raise ServiceError("runtime.release_install must be a path inside the project")
+    runtime_user = runtime.get("runtime_user") or ""
+    if runtime_user not in RUNTIME_USERS:
+        raise ServiceError("runtime.runtime_user must be svc or broker")
     canonical_id = str(project.get("id") or project_id)
     root = Path(root_raw)
     backend_dir, frontend_dir = runtime_source_dirs(runtime, root)
@@ -142,7 +154,32 @@ def load_project(project_id: str) -> ProjectServices:
         host_config_root=root,
         durable_data_root=root / "data",
         release_install=release_install,
+        runtime_user=runtime_user,
     )
+
+
+def use_source_repo(project: ProjectServices, mirror: Path, sha: str) -> ProjectServices:
+    """Read the project's git state at ``sha`` from ``mirror`` instead of the owner's checkout.
+
+    The commit is checked out detached and clean in a private clone under the
+    service state, so acceptance and release see exactly that commit.
+    """
+    if not re.fullmatch(r"[0-9a-f]{40}", sha):
+        raise ServiceError("--sha must be a full 40-character lowercase commit id")
+    clone = service_release.source_checkout_path(project.project_id)
+    git = ["git", "-c", "core.fsmonitor=false", "-C", str(clone)]
+    steps = [
+        *([["git", "init", "-q", str(clone)]] if not (clone / ".git").exists() else []),
+        [*git, "fetch", "-q", "--no-tags", "--force", str(mirror), "+refs/heads/*:refs/remotes/mirror/*"],
+        [*git, "checkout", "-q", "--force", "--detach", sha],
+        [*git, "clean", "-qfd"],
+    ]
+    clone.parent.mkdir(parents=True, exist_ok=True)
+    for step in steps:
+        result = subprocess.run(step, capture_output=True, text=True, check=False)
+        if result.returncode != 0:
+            raise ServiceError(f"could not check out {sha[:12]} from {mirror}: {result.stderr.strip()}")
+    return replace(project, source_repo=clone, source_sha=sha)
 
 
 def project_ids(*, include_inactive: bool = False) -> list[str]:
@@ -340,6 +377,23 @@ def release_references_for_services(releases_root: Path) -> set[Path] | None:
     return user_references | system_references
 
 
+def credstore_root(project: ProjectServices) -> Path:
+    return Path(f"/etc/credstore.{project.runtime_user}")
+
+
+def credstore_units(text: str, project: ProjectServices) -> str:
+    """Point a unit at the root-owned credential dir instead of the owner's home secrets."""
+    store = credstore_root(project)
+    text = text.replace("%h/.config/credstore/", f"{store}/")
+    lines: list[str] = []
+    for line in text.splitlines(keepends=True):
+        if line.startswith("EnvironmentFile=") and line.rstrip().endswith("%h/.env.local"):
+            line = f"{line.partition('=')[0]}={'-' if line.startswith('EnvironmentFile=-') else ''}{store}/{project.project_id}/env\n"
+        if not line.startswith("EnvironmentFile=") or line not in lines:
+            lines.append(line)
+    return "".join(lines)
+
+
 def sync_systemd_units(project: ProjectServices) -> int:
     systemd_dir = Path(os.environ.get("XDG_CONFIG_HOME", str(Path.home() / ".config"))) / "systemd" / "user"
     systemd_dir.mkdir(parents=True, exist_ok=True)
@@ -363,6 +417,8 @@ def sync_systemd_units(project: ProjectServices) -> int:
         text = text.replace("__SUMMITFLOW_ROOT__", summitflow_root)
         text = text.replace("__SUMMITFLOW_DATA_ROOT__", str(durable_data_root))
         text = text.replace("__SUMMITFLOW_HOST_CONFIG_ROOT__", str(host_config_root))
+        if project.runtime_user:
+            text = credstore_units(text, project)
         (systemd_dir / service).write_text(text)
         print(f"[service] synced {service}")
         synced = True
@@ -612,91 +668,22 @@ def stop_transient_unit(project: ProjectServices, unit: str) -> tuple[int, str]:
     return (0, "stopped") if systemctl("stop", "--", unit).returncode == 0 else (1, "stop_failed")
 
 
+INFRA_RESTART_HINT = (
+    "run: nightshift request unit.restart unit=summitflow-stack.service --reason recover --wait"
+)
+
+
 def ensure_infra(project: ProjectServices | None = None) -> int:
-    compose_root = project.root if project is not None else get_repo_root()
-    config_root = (
-        project.host_config_root
-        if project is not None and project.host_config_root is not None
-        else compose_root
-    )
-    compose_dir = compose_root / "docker" / "compose"
-    compose_file = compose_dir / "docker-compose.yml"
-    env_file = config_root / "docker" / "compose" / ".env"
-    if not compose_file.exists():
+    """Check the shared Postgres and Hatchet answer; the root stack unit owns starting them."""
+    pg = capture(["pg_isready", "-h", "localhost", "-p", "5432", "-U", "admin"])
+    try:
+        hatchet = httpx.get("http://localhost:8888/ready", timeout=2.0).status_code < 400
+    except httpx.HTTPError:
+        hatchet = False
+    if pg.returncode == 0 and hatchet:
         return 0
-    missing = False
-    for service in ("postgres", "redis", "hatchet"):
-        result = capture(
-            [
-                "docker",
-                "ps",
-                "--filter",
-                "label=com.docker.compose.project=summitflow-stack",
-                "--filter",
-                f"label=com.docker.compose.service={service}",
-                "--format",
-                "{{.ID}}",
-            ]
-        )
-        if not result.stdout.strip():
-            missing = True
-            break
-    if not missing:
-        return 0
-    if not env_file.is_file():
-        print(
-            "[service] infrastructure is down and the host compose environment "
-            f"is unavailable: {env_file}"
-        )
-        return 1
-    print("[service] starting Docker infra")
-    env = os.environ.copy()
-    for key in (
-        "PORT",
-        "HATCHET_CLIENT_TOKEN",
-        "HATCHET_COOKIE_SECRET",
-        "DATABASE_URL",
-        "REDIS_URL",
-        "AGENT_HUB_DB_URL",
-        "AGENT_HUB_REDIS_URL",
-        "PORTFOLIO_DB_URL",
-        "INTERNAL_SERVICE_SECRET",
-        "AGENT_HUB_SECRET_KEY",
-    ):
-        env.pop(key, None)
-    code = run(
-        [
-            "docker",
-            "compose",
-            "--env-file",
-            str(env_file),
-            "-f",
-            str(compose_file),
-            "up",
-            "-d",
-            "postgres",
-            "redis",
-            "hatchet-migrate",
-            "hatchet-setup-config",
-            "hatchet",
-        ],
-        env=env,
-    )
-    if code != 0:
-        return code
-    for _ in range(45):
-        pg = capture(["pg_isready", "-h", "localhost", "-p", "5432", "-U", "admin"])
-        ready = None
-        if pg.returncode == 0:
-            try:
-                ready = httpx.get("http://localhost:8888/ready", timeout=2.0)
-            except httpx.HTTPError:
-                ready = None
-        if pg.returncode == 0 and ready is not None and ready.status_code < 400:
-            print("[service] Docker infra ready")
-            return 0
-        time.sleep(2)
-    print("[service] Docker infra not ready after 90s")
+    down = [name for name, up in (("postgres :5432", pg.returncode == 0), ("hatchet :8888", hatchet)) if not up]
+    print(f"[service] infrastructure is down ({', '.join(down)}); {INFRA_RESTART_HINT}")
     return 1
 
 
@@ -1009,7 +996,8 @@ def run_migrations(project: ProjectServices) -> int:
     # Alembic runs from immutable accepted source, which deliberately excludes
     # project env files. Supply only the keys SummitFlow's migration table
     # grants this project, from the host configuration its service uses.
-    env = migration_env.migration_env(project.project_id, project.host_config_root or project.root)
+    credstore = credstore_root(project) / project.project_id / "env" if project.runtime_user else None
+    env = migration_env.migration_env(project.project_id, project.host_config_root or project.root, credstore=credstore)
     print("[service] running migrations")
     return run([str(alembic), "upgrade", "head"], cwd=project.backend_dir, env=env, quiet_success=True)
 
@@ -1100,16 +1088,16 @@ def _acceptance_candidate(
     if receipt is not None:
         return receipt
     try:
-        sha = acceptance._git_value(project.root, ["rev-parse", "--verify", "HEAD^{commit}"],
+        sha = acceptance._git_value(project.git_root, ["rev-parse", "--verify", "HEAD^{commit}"],
                                     "Could not identify current source for local acceptance")
-        status = acceptance._git(project.root, ["status", "--porcelain=v1", "--untracked-files=all"])
+        status = acceptance._git(project.git_root, ["status", "--porcelain=v1", "--untracked-files=all"])
         if status.returncode:
             raise acceptance.AcceptanceError("Could not inspect the checkout for local acceptance")
         # An isolated project, or any dirty checkout, accepts the exact commit
         # in a private clone: other agents' uncommitted work never blocks it.
-        materialization = select_materialization(project.root, dirty=bool(status.stdout))
+        materialization = select_materialization(project.git_root, dirty=bool(status.stdout))
         print(f"[service] accepting {sha[:12]} " + ("in an isolated clone" if materialization == "isolated" else "in place"))
-        return accept_source(project.root, sha=sha, materialization=materialization).receipt
+        return accept_source(project.git_root, sha=sha, materialization=materialization).receipt
     except acceptance.AcceptanceError as exc:
         raise ServiceError(f"Local acceptance failed: {exc}") from exc
 
@@ -1129,9 +1117,9 @@ def resolve_accepted_source(
 
     candidate = _acceptance_candidate(project, receipt)
     try:
-        with acceptance.repo_lock(project.root, purpose="deployment", wait_seconds=acceptance.REPO_LOCK_WAIT_SECONDS):
-            descriptor = acceptance.validate_acceptance_receipt(project.root, candidate)
-            service_release.require_forward_deploy(project.project_id, project.root,
+        with acceptance.repo_lock(project.git_root, purpose="deployment", wait_seconds=acceptance.REPO_LOCK_WAIT_SECONDS):
+            descriptor = acceptance.validate_acceptance_receipt(project.git_root, candidate)
+            service_release.require_forward_deploy(project.project_id, project.git_root,
                                                    str(descriptor["source_commit"]), rollback=rollback)
     except Exception as exc:
         if isinstance(exc, (ServiceError, service_release.ReleaseError)):
@@ -1158,7 +1146,7 @@ def prepare_accepted_release(
     """Validate and materialize accepted source while holding the repo mutation lock."""
     candidate = _acceptance_candidate(project, receipt)
     try:
-        release = service_release.prepare_release(project.project_id, project.root, candidate, rollback=rollback)
+        release = service_release.prepare_release(project.project_id, project.git_root, candidate, rollback=rollback)
     except Exception as exc:
         if isinstance(exc, (ServiceError, service_release.ReleaseError)):
             raise

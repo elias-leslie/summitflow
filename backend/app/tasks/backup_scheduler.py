@@ -492,5 +492,7 @@ def run_scheduled_drills() -> dict[str, Any]:
     from .backup_restore_drill import run_infra_drill
 
     result = run_infra_drill()
+    if result.get("unsupported"):
+        return {"status": "skipped", "reason": result["error"]}
     logger.info("scheduled_drill_completed", ok=result.get("ok"))
     return {"status": "completed", "ok": result.get("ok"), "result": result}

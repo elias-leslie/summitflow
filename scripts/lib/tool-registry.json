@@ -1238,7 +1238,7 @@
   "docker_redirects": [
     {
       "pattern": "docker\\s+compose\\b",
-      "message": "Use 'st docker' for the managed compose stack and named test environments. Commands: st docker status, st docker up, st docker down, st docker logs <service>, st docker restart <service>, st docker build, st docker backup/restore, st docker env-create <name>, st docker env-exec <name> <service> <cmd...>, st docker metrics.",
+      "message": "Use 'st docker' for the shared docker stack, which Nightshift runs as summitflow-stack.service. Commands: st docker status (port probes), st docker up/down/restart (Nightshift unit actions, whole stack; may return an approve link), st docker logs <service>, st docker backup/restore.",
       "component_id": "sf.docker"
     }
   ],

@@ -181,9 +181,21 @@ def test_drill_materializes_encrypted_archive_before_script(monkeypatch) -> None
     monkeypatch.setattr(backup_restore_drill, "_run_drill_script", run_script)
     monkeypatch.setattr(backup_restore_drill, "_record_drill_result", MagicMock())
     monkeypatch.setattr(backup_restore_drill, "_cleanup_temp", MagicMock())
+    monkeypatch.setattr(backup_restore_drill.nightshift_stack, "stack_installed", lambda: False)
 
     assert backup_restore_drill.run_infra_drill()["ok"] is True
     run_script.assert_called_once_with(str(plaintext), "backup-1")
+
+
+def test_drill_is_marked_unsupported_without_a_container_runtime(monkeypatch) -> None:
+    from app.tasks import backup_restore_drill
+
+    monkeypatch.setattr(backup_restore_drill.nightshift_stack, "stack_installed", lambda: True)
+
+    result = backup_restore_drill.run_infra_drill()
+
+    assert result["ok"] is False
+    assert result["unsupported"] is True
 
 
 @pytest.mark.parametrize("failure", [None, "timeout", "cancel", "capacity", "nonzero"])

@@ -28,6 +28,11 @@ _RUNTIME_IDENTITIES = [
 client = TestClient(app)
 
 
+@pytest.fixture(autouse=True)
+def stack_unit_installed(mocker: MockerFixture) -> None:
+    mocker.patch("app.utils.nightshift_stack.stack_installed", return_value=True)
+
+
 def _status(
     *,
     name: str,
@@ -79,7 +84,6 @@ class TestDockerRuntime:
                 for project_id in project_ids
             },
         )
-        mocker.patch.object(helpers, "_docker_container_map", new=mocker.AsyncMock(return_value={}))
         probe = mocker.patch.object(_status_probing, "_runtime_service_status", new=mocker.AsyncMock())
         await helpers._runtime_service_statuses()
         assert not any(call.args[0]["service"] == "new-project-api" for call in probe.call_args_list)
@@ -118,10 +122,9 @@ class TestDockerRuntime:
         from app.api.docker import routes
 
         mocker.patch.object(routes, "BACKUP_DIR", tmp_path)
-        mocker.patch.object(routes, "_find_container_name", return_value="postgres")
         mocker.patch.object(
             routes,
-            "_run_docker",
+            "_run_command",
             new=mocker.AsyncMock(return_value=("database dump", "", 0)),
         )
 
@@ -135,6 +138,50 @@ class TestDockerRuntime:
         assert len(created) == 1
         assert created[0].parent == tmp_path
         assert created[0].name.endswith("-escape--touch-owned.sql")
+
+    @pytest.mark.asyncio
+    async def test_container_action_uses_docker_until_the_stack_unit_is_installed(
+        self, mocker: MockerFixture
+    ) -> None:
+        from app.api.docker import _runtime_control
+
+        mocker.patch("app.utils.nightshift_stack.stack_installed", return_value=False)
+        mocker.patch.object(
+            _runtime_control._h, "_service_definition",
+            return_value={"manager": "docker", "container_service": "redis"},
+        )
+        run_docker = mocker.patch.object(
+            _runtime_control._h, "_run_docker", new=mocker.AsyncMock(return_value=("", "", 0))
+        )
+        request = mocker.patch("app.utils.nightshift_stack.request_stack")
+
+        result = await _runtime_control._service_action("redis", "restart")
+
+        assert result.success is True
+        assert run_docker.await_args_list[0].args[:2] == ("docker", "restart")
+        request.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_container_action_goes_through_nightshift_and_can_be_pending(
+        self, mocker: MockerFixture
+    ) -> None:
+        from app.api.docker import _runtime_control
+        from app.utils.nightshift_stack import StackResult
+
+        mocker.patch.object(
+            _runtime_control._h, "_service_definition",
+            return_value={"manager": "docker", "container_service": "redis"},
+        )
+        mocker.patch(
+            "app.utils.nightshift_stack.request_stack",
+            return_value=StackResult(True, "waiting", pending=True, approve_url="https://example.test/n/1"),
+        )
+
+        result = await _runtime_control._service_action("redis", "restart")
+
+        assert result.pending is True
+        assert result.approve_url == "https://example.test/n/1"
+        assert "whole stack" in result.message
 
     def test_runtime_services_come_from_identity_plus_infra(self, mocker: MockerFixture) -> None:
         from app import project_identity
@@ -168,116 +215,6 @@ class TestDockerRuntime:
 
         assert docker_api._detect_repo_root(module_path) == repo_root
 
-    def test_st_cli_prefers_host_repo_root(self, mocker: MockerFixture, tmp_path) -> None:
-        from app.api import docker as docker_api
-
-        host_repo_root = tmp_path / "summitflow"
-        st_path = host_repo_root / "backend" / ".venv" / "bin" / "st"
-        st_path.parent.mkdir(parents=True)
-        st_path.write_text("#!/bin/bash\n")
-
-        mocker.patch("app.api.docker.helpers._HOST_REPO_ROOT", host_repo_root)
-        mocker.patch("app.api.docker.helpers._HOST_HOME_PATH", tmp_path)
-        mocker.patch("app.api.docker.helpers._REPO_ROOT", Path("/app"))
-
-        assert docker_api._st_cli_path() == st_path
-
-    def test_launch_runtime_switch_adds_socket_group(
-        self,
-        mocker: MockerFixture,
-        tmp_path,
-    ) -> None:
-        from app.api import docker as docker_api
-
-        st_path = tmp_path / "summitflow" / "backend" / ".venv" / "bin" / "st"
-        st_path.parent.mkdir(parents=True)
-        st_path.write_text("#!/bin/bash\n")
-
-        docker_socket = tmp_path / "docker.sock"
-        docker_socket.write_text("")
-
-        mocker.patch("app.api.docker.helpers._DOCKER_SOCKET", docker_socket)
-        mocker.patch("app.api.docker.helpers._HOST_HOME_PATH", tmp_path)
-        mocker.patch("app.api.docker.helpers.COMPOSE_PROJECT", "summitflow-stack")
-        mocker.patch(
-            "app.api.docker.helpers._helper_image_ref",
-            new=mocker.AsyncMock(return_value="ghcr.io/elias-leslie/summitflow-api:test"),
-        )
-        run_docker = mocker.patch(
-            "app.api.docker.helpers._run_docker",
-            new=mocker.AsyncMock(side_effect=[("", "", 0), ("helper-id\n", "", 0)]),
-        )
-
-        helper_name = asyncio.run(docker_api._launch_runtime_switch("dev", st_path))
-
-        assert helper_name == "summitflow-stack-mode-switch"
-        run_args = run_docker.await_args_list[1].args
-        assert "--entrypoint" in run_args
-        assert "--group-add" in run_args
-        assert "--network" in run_args
-        assert "host" in run_args
-        assert str(docker_socket.stat().st_gid) in run_args
-        assert "docker up --dev --detach" in run_args[-1]
-
-    def test_runtime_status_prefers_detected_running_mode(
-        self,
-        mocker: MockerFixture,
-        tmp_path,
-    ) -> None:
-        compose_dir = tmp_path / "compose"
-        compose_dir.mkdir()
-        compose_file = compose_dir / "docker-compose.yml"
-        compose_file.write_text("services: {}\n")
-        runtime_file = compose_dir / ".runtime-mode"
-        runtime_file.write_text("prod\n")
-
-        mocker.patch("app.api.docker.constants._COMPOSE_FILE", compose_file)
-        mocker.patch("app.api.docker.constants._RUNTIME_MODE_FILE", runtime_file)
-        mocker.patch("app.api.docker.constants._DEFAULT_STACK_MODE", "dev")
-        mocker.patch(
-            "app.api.docker.helpers._runtime_service_statuses",
-            new=mocker.AsyncMock(
-                return_value=[
-                    _status(
-                        name="summitflow-backend.service",
-                        service="summitflow-api",
-                        manager="systemd",
-                        category="app",
-                        state="stopped",
-                    )
-                ]
-            ),
-        )
-        mocker.patch(
-            "app.api.docker.helpers._project_containers",
-            new=mocker.AsyncMock(
-                return_value=[
-                    {
-                        "ID": "abc123",
-                        "Labels": "com.docker.compose.service=summitflow-api",
-                    }
-                ]
-            ),
-        )
-        mocker.patch(
-            "app.api.docker.helpers._detect_running_mode",
-            new=mocker.AsyncMock(return_value="dev"),
-        )
-
-        response = client.get("/api/docker/runtime")
-
-        assert response.status_code == 200
-        assert response.json() == {
-            "runtime": "docker",
-            "apps_runtime": "docker",
-            "infra_runtime": "stopped",
-            "current_mode": "dev",
-            "configured_mode": "prod",
-            "default_mode": "dev",
-            "source": "detected",
-            "is_running": True,
-        }
-
     def test_runtime_status_falls_back_to_default_when_no_stack_running(
         self,
         mocker: MockerFixture,
@@ -296,10 +233,6 @@ class TestDockerRuntime:
             "app.api.docker.helpers._runtime_service_statuses",
             new=mocker.AsyncMock(return_value=[]),
         )
-        mocker.patch(
-            "app.api.docker.helpers._project_containers",
-            new=mocker.AsyncMock(return_value=[]),
-        )
 
         response = client.get("/api/docker/runtime")
 
@@ -314,47 +247,6 @@ class TestDockerRuntime:
             "source": "default",
             "is_running": False,
         }
-
-    def test_runtime_mode_switch_uses_detached_helper(
-        self,
-        mocker: MockerFixture,
-        tmp_path,
-    ) -> None:
-        from app.api import docker as docker_api
-
-        st_path = tmp_path / "st"
-        st_path.write_text("#!/bin/bash\n")
-
-        mocker.patch("app.api.docker.routes._st_cli_path", return_value=st_path)
-        mocker.patch("app.api.docker.helpers._INTERNAL_SECRET", "")
-        mocker.patch(
-            "app.api.docker.routes._get_runtime_status",
-            new=mocker.AsyncMock(
-                return_value=docker_api.RuntimeModeStatus(
-                    runtime="docker",
-                    apps_runtime="docker",
-                    infra_runtime="docker",
-                    current_mode="prod",
-                    configured_mode="prod",
-                    default_mode="dev",
-                    source="persisted",
-                    is_running=True,
-                )
-            ),
-        )
-        launch_switch = mocker.patch(
-            "app.api.docker.routes._launch_runtime_switch",
-            new=mocker.AsyncMock(return_value="summitflow-stack-mode-switch"),
-        )
-
-        response = client.post("/api/docker/runtime", json={"mode": "dev"})
-
-        assert response.status_code == 200
-        assert response.json() == {
-            "success": True,
-            "message": "Queued Docker stack switch to dev mode via summitflow-stack-mode-switch",
-        }
-        launch_switch.assert_awaited_once_with("dev", st_path)
 
     def test_runtime_mode_switch_persists_preference_for_hybrid_runtime(
         self,
@@ -379,10 +271,6 @@ class TestDockerRuntime:
             ),
         )
         write_mode = mocker.patch("app.api.docker.routes._write_runtime_mode")
-        launch_switch = mocker.patch(
-            "app.api.docker.routes._launch_runtime_switch",
-            new=mocker.AsyncMock(),
-        )
 
         response = client.post("/api/docker/runtime", json={"mode": "prod"})
 
@@ -390,9 +278,10 @@ class TestDockerRuntime:
         assert response.json() == {
             "success": True,
             "message": "Saved Docker parity preference: prod. Live services remain native apps with Docker infra.",
+            "pending": False,
+            "approve_url": None,
         }
         write_mode.assert_called_once_with("prod")
-        launch_switch.assert_not_called()
 
     def test_restart_service_clears_native_ports_before_start(
         self,
@@ -513,7 +402,6 @@ class TestDockerRuntime:
                 {"service": "summitflow-api", "display_name": "summitflow-api", "manager": "systemd",
                  "category": "app", "unit": "summitflow-backend.service", "ports": ["8001"],
                  "probe_url": "http://localhost:8001/health", "project_id": "summitflow"},
-                {},
             )
         )
 

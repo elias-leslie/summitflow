@@ -11,16 +11,6 @@ from typing import Any, TypedDict
 from ..logging_config import get_logger
 from ._retention_agent_tmp import age_agent_tmp
 from ._retention_check_artifacts import prune_check_artifacts
-from ._retention_docker import (
-    CacheResult,
-    ContainerResult,
-    ImageResult,
-    VolumeResult,
-    prune_anonymous_docker_volumes,
-    prune_builder_cache,
-    prune_images,
-    prune_stopped_containers,
-)
 from ._retention_fs import (
     cleanup_old_children,
     cleanup_stale_hermes_checkpoints,
@@ -51,13 +41,6 @@ class VeeamSnapshotResult(TypedDict, total=False):
     max_age_hours: int
     reason: str
     error: str
-
-
-class _DockerSummary(TypedDict):
-    containers: ContainerResult
-    builder_cache: CacheResult
-    images: ImageResult
-    anonymous_volumes: VolumeResult
 
 
 def _run_command(
@@ -101,16 +84,6 @@ def _is_pressure_mode(snapshot: dict[str, float | int | str], policy: HostRetent
     return percent_used >= policy.pressure_disk_percent or free_gb <= policy.pressure_min_free_gb
 
 
-def _prune_images(
-    *,
-    policy: HostRetentionPolicy,
-    pressure_mode: bool,
-) -> ImageResult:
-    """Thin wrapper so tests can patch _run_command via this module's namespace."""
-    return prune_images(policy=policy, pressure_mode=pressure_mode, run=_run_command)
-
-
-
 def cleanup_stale_veeam_snapshots(
     *, policy: HostRetentionPolicy, now: datetime, run: Any = None,
     mount_point: Path | None = None,
@@ -121,34 +94,6 @@ def cleanup_stale_veeam_snapshots(
     tooling. A quiet session list does not establish that a parent is disposable.
     """
     return {"status": "skipped", "reason": "vendor-managed-incremental-parents", "deleted": [], "skipped": []}
-
-
-def _docker_available() -> bool:
-    return shutil.which("docker") is not None
-
-
-_DOCKER_SKIPPED = _DockerSummary(
-    containers=ContainerResult(status="skipped", reason="docker_unavailable"),
-    builder_cache=CacheResult(status="skipped", reason="docker_unavailable"),
-    images=ImageResult(status="skipped", reason="docker_unavailable"),
-    anonymous_volumes=VolumeResult(status="skipped", deleted=[], reason="docker_unavailable"),
-)
-
-
-def _run_docker_cleanup(
-    *,
-    policy: HostRetentionPolicy,
-    pressure_mode: bool,
-    now: datetime,
-) -> _DockerSummary:
-    if not _docker_available():
-        return _DOCKER_SKIPPED
-    return _DockerSummary(
-        containers=prune_stopped_containers(policy=policy, run=_run_command),
-        builder_cache=prune_builder_cache(policy=policy, pressure_mode=pressure_mode, run=_run_command),
-        images=prune_images(policy=policy, pressure_mode=pressure_mode, run=_run_command),
-        anonymous_volumes=prune_anonymous_docker_volumes(policy=policy, now=now, run=_run_command),
-    )
 
 
 def _go_cache_over_limit(policy: HostRetentionPolicy) -> dict[str, object]:
@@ -307,7 +252,6 @@ def cleanup_host_artifacts(
         logger.warning("scratch_retention_failed", error=str(exc))
         scratch_result = {"status": "error", "error": str(exc)}
     check_artifacts = _prune_project_check_artifacts(project_roots, effective_policy, effective_now)
-    docker = _run_docker_cleanup(policy=effective_policy, pressure_mode=root_pressure, now=effective_now)
     veeam_snapshots = cleanup_stale_veeam_snapshots(policy=effective_policy, now=effective_now)
 
     after = _disk_snapshot("/")
@@ -320,12 +264,11 @@ def cleanup_host_artifacts(
 
     errors = [
         entry["error"]
-        for entry in (docker["containers"], docker["builder_cache"], docker["images"], docker["anonymous_volumes"],
-                      scratch_result, check_artifacts, agent_tmp_result, go_cache_result, uv_cache_result)
+        for entry in (scratch_result, check_artifacts, agent_tmp_result, go_cache_result, uv_cache_result)
         if isinstance(entry, dict) and entry.get("status") == "error" and entry.get("error")
     ]
     status = "partial" if errors else "success"
-    items_deleted = tool_cache_deleted + len(docker["anonymous_volumes"].get("deleted", [])) + len(scratch_result.get("deleted_paths") or [])
+    items_deleted = tool_cache_deleted + len(scratch_result.get("deleted_paths") or [])
 
     summary: dict[str, object] = {
         "status": status,
@@ -351,10 +294,6 @@ def cleanup_host_artifacts(
         "scratch": scratch_result,
         "check_artifacts": check_artifacts,
         "hermes_checkpoints": hermes_checkpoints_result,
-        "docker_containers": docker["containers"],
-        "docker_builder_cache": docker["builder_cache"],
-        "docker_images": docker["images"],
-        "docker_anonymous_volumes": docker["anonymous_volumes"],
         "veeam_snapshots": veeam_snapshots,
         "review_candidates": review_candidates,
         "errors": errors,

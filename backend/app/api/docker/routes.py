@@ -10,21 +10,20 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 
+from ...config import POSTGRES_PORT
 from ...services.runtime_metrics_sampler import clamp_window_minutes
 from ...storage import runtime_metrics as runtime_metric_store
-from ...utils import safe_subprocess
+from ...utils import nightshift_stack, safe_subprocess
 from .._runtime_proxmox import ProxmoxStatus
 from .._runtime_proxmox import control_proxmox_guest as _control_proxmox_guest
 from .._runtime_proxmox import get_proxmox_status as _get_proxmox_status
 from .._runtime_proxmox import set_proxmox_guest_autostart as _set_proxmox_guest_autostart
-from ._process_execution import _is_system_unit, _run_command
+from ._process_execution import _is_system_unit, _run_command, _run_docker
 from .constants import BACKUP_DIR
 from .helpers import (
     _find_container_name,
     _get_runtime_status,
-    _launch_runtime_switch,
     _require_auth,
-    _run_docker,
     _run_journalctl_user,
     _runtime_metrics,
     _runtime_service_statuses,
@@ -32,7 +31,6 @@ from .helpers import (
     _service_action,
     _service_definition,
     _set_service_autostart,
-    _st_cli_path,
     _systemctl_user_env,
     _write_runtime_mode,
 )
@@ -101,30 +99,15 @@ async def control_proxmox_guest_endpoint(
 
 @router.post("/runtime", response_model=ActionResult, dependencies=[Depends(_require_auth)])
 async def update_runtime_mode(payload: RuntimeModeUpdate) -> ActionResult:
-    """Switch live container mode or save the preferred Docker parity mode."""
-    runtime = await _get_runtime_status()
-    if runtime.runtime != "docker":
-        return _handle_non_docker_mode_update(runtime, payload.mode)
-
-    st_path = _st_cli_path()
-    if not st_path.exists():
-        raise HTTPException(status_code=500, detail="st CLI not found")
-
-    if runtime.current_mode == payload.mode and runtime.is_running:
-        return ActionResult(success=True, message=f"Docker stack already running in {payload.mode} mode")
-
-    helper_name = await _launch_runtime_switch(payload.mode, st_path)
-    return ActionResult(
-        success=True,
-        message=f"Queued Docker stack switch to {payload.mode} mode via {helper_name}",
-    )
+    """Save the preferred Docker parity mode."""
+    return _save_mode_preference(await _get_runtime_status(), payload.mode)
 
 
-def _handle_non_docker_mode_update(
+def _save_mode_preference(
     runtime: RuntimeModeStatus,
     mode: Literal["dev", "prod"],
 ) -> ActionResult:
-    """Handle runtime mode update when not in full Docker mode."""
+    """Remember the parity preference; live services stay native apps with Docker infra."""
     if runtime.configured_mode == mode:
         return ActionResult(
             success=True,
@@ -205,8 +188,8 @@ async def _stream_logs(svc: dict, tail: int):
     else:
         proc = safe_subprocess.spawn_pipe(
             [
-                "docker", "logs", "-f", "--tail", str(tail),
-                _find_container_name(svc["container_service"]),
+                "journalctl", f"CONTAINER_NAME={_find_container_name(svc['container_service'])}",
+                "-n", str(tail), "-f", "--output=short-iso",
             ],
             stderr_to_stdout=True,
         )
@@ -237,10 +220,13 @@ async def _fetch_logs(svc: dict, service: str, tail: int) -> dict[str, str]:
             raise HTTPException(status_code=404, detail=f"Service not found: {service}")
         return {"logs": stdout + stderr}
 
-    stdout, stderr, rc = await _run_docker(
-        "docker", "logs", "--tail", str(tail),
-        _find_container_name(svc["container_service"]),
-    )
+    container = _find_container_name(svc["container_service"])
+    if nightshift_stack.stack_installed():
+        stdout, stderr, rc = await _run_command(
+            "journalctl", f"CONTAINER_NAME={container}", "-n", str(tail), "--output=short-iso", "--no-pager",
+        )
+    else:
+        stdout, stderr, rc = await _run_docker("docker", "logs", "--tail", str(tail), container)
     if rc != 0:
         raise HTTPException(status_code=404, detail=f"Service not found: {service}")
     return {"logs": stdout + stderr}
@@ -330,10 +316,14 @@ async def _backup_fallback(note: str, error: Exception) -> ActionResult:
     filename = f"docker-pgdump-{timestamp}{suffix}.sql"
     filepath = BACKUP_DIR / filename
 
-    postgres_container = _find_container_name("postgres")
-    stdout, stderr, rc = await _run_docker(
-        "docker", "exec", postgres_container, "pg_dumpall", "-U", "admin"
-    )
+    if nightshift_stack.stack_installed():
+        stdout, stderr, rc = await _run_command(
+            "pg_dumpall", "-h", "localhost", "-p", str(POSTGRES_PORT), "-U", "admin", timeout=None
+        )
+    else:
+        stdout, stderr, rc = await _run_docker(
+            "docker", "exec", _find_container_name("postgres"), "pg_dumpall", "-U", "admin"
+        )
     if rc != 0:
         return ActionResult(success=False, message=f"Backup failed: {stderr}")
 

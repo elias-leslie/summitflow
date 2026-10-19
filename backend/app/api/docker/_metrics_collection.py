@@ -16,7 +16,6 @@ from .constants import runtime_service_definitions
 from .models import RuntimeServiceMetrics
 
 __all__ = [
-    "_collect_docker_metrics",
     "_listener_pids",
     "_ps_metrics",
     "_runtime_metrics",
@@ -155,46 +154,9 @@ async def _systemd_service_metric(svc: dict[str, Any]) -> RuntimeServiceMetrics 
     )
 
 
-async def _collect_docker_metrics(
-    docker_containers: dict[str, dict[str, Any]],
-) -> list[RuntimeServiceMetrics]:
-    """Collect metrics for all running Docker containers."""
-    docker_container_names = {
-        container.get("Names", ""): service
-        for service, container in docker_containers.items()
-    }
-
-    id_stdout, _id_stderr, rc = await _h._run_docker("docker", "ps", "-q", *_h._project_filter())
-    if rc != 0 or not id_stdout.strip():
-        return []
-
-    container_ids = id_stdout.strip().split()
-    stdout, _stderr, rc = await _h._run_docker(
-        "docker", "stats", "--no-stream", "--format", "json", *container_ids,
-    )
-    if rc != 0 or not stdout.strip():
-        return []
-
-    return [
-        RuntimeServiceMetrics(
-            name=c.get("Name", ""),
-            service=docker_container_names.get(c.get("Name", ""), c.get("Name", "")),
-            cpu_percent=c.get("CPUPerc", "0%"),
-            mem_usage=c.get("MemUsage", "0B / 0B"),
-            mem_percent=c.get("MemPerc", "0%"),
-            net_io=c.get("NetIO", "0B / 0B"),
-            block_io=c.get("BlockIO", "0B / 0B"),
-        )
-        for c in _h._parse_json_lines(stdout)
-    ]
-
-
 async def _runtime_metrics() -> list[RuntimeServiceMetrics]:
-    docker_containers = await _h._docker_container_map(all_containers=False)
-    docker_metrics = await _collect_docker_metrics(docker_containers)
-
+    """Metrics for systemd services; docker stack containers are not inspected."""
     systemd_metrics = await asyncio.gather(
         *[_systemd_service_metric(svc) for svc in runtime_service_definitions() if svc["manager"] == "systemd"]
     )
-
-    return docker_metrics + [m for m in systemd_metrics if m is not None]
+    return [m for m in systemd_metrics if m is not None]

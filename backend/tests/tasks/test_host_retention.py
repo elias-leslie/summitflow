@@ -40,53 +40,6 @@ def test_scratch_pressure_runs_retention_now_without_shortening_its_age(monkeypa
         assert policy.scratch_pressure_max_age_hours == policy.scratch_review_max_age_hours == 7 * 24
 
 
-def test_prune_images_without_age_grace_prunes_all_unused_images(mocker) -> None:
-    from app.tasks.host_retention import HostRetentionPolicy, _prune_images
-
-    run_command = mocker.patch(
-        "app.tasks.host_retention._run_command",
-        return_value=type("Proc", (), {"returncode": 0, "stdout": "ok", "stderr": ""})(),
-    )
-
-    result = _prune_images(policy=HostRetentionPolicy(image_max_age_hours=0), pressure_mode=False)
-
-    assert run_command.call_args.args[0] == [
-        "docker",
-        "image",
-        "prune",
-        "--force",
-        "--all",
-    ]
-    assert result["status"] == "success"
-    assert result["max_age_hours"] == 0
-
-
-def test_prune_builder_cache_uses_supported_keep_storage_flag(mocker) -> None:
-    from app.tasks._retention_docker import prune_builder_cache
-    from app.tasks.host_retention import HostRetentionPolicy
-
-    run_command = mocker.Mock(
-        return_value=type("Proc", (), {"returncode": 0, "stdout": "ok", "stderr": ""})()
-    )
-
-    result = prune_builder_cache(
-        policy=HostRetentionPolicy(builder_cache_target_gb=2),
-        pressure_mode=False,
-        run=run_command,
-    )
-
-    assert run_command.call_args.args[0] == [
-        "docker",
-        "builder",
-        "prune",
-        "--force",
-        "--all",
-        "--keep-storage",
-        "2gb",
-    ]
-    assert result["status"] == "success"
-
-
 def test_cleanup_host_artifacts_prunes_rebuildable_data_and_reports_review_candidates(
     mocker,
     tmp_path: Path,
@@ -124,26 +77,8 @@ def test_cleanup_host_artifacts_prunes_rebuildable_data_and_reports_review_candi
             (100 * 1024**3, 55 * 1024**3, 45 * 1024**3),
         ],
     )
-    mocker.patch("app.tasks.host_retention.shutil.which", return_value="/usr/bin/docker")
-
     def _run_command(args: list[str], *, timeout: int = 0, cwd: str | None = None):
-        _ = timeout, cwd
-        anon_name = "a" * 64
-        if args[:4] == ["docker", "volume", "ls", "-q"]:
-            return type(
-                "Proc",
-                (),
-                {"returncode": 0, "stdout": f"{anon_name}\nnot-anon\n", "stderr": ""},
-            )()
-        if args[:3] == ["docker", "volume", "inspect"]:
-            name = args[-1]
-            if name == anon_name:
-                stdout = f'[{{"Name":"{anon_name}","CreatedAt":"2026-03-01T00:00:00Z"}}]'
-            else:
-                stdout = (
-                    '[{"Name":"not-anon","CreatedAt":"2026-03-01T00:00:00Z"}]'
-                )
-            return type("Proc", (), {"returncode": 0, "stdout": stdout, "stderr": ""})()
+        _ = args, timeout, cwd
         return type("Proc", (), {"returncode": 0, "stdout": "ok", "stderr": ""})()
 
     mocker.patch("app.tasks.host_retention._run_command", side_effect=_run_command)
@@ -153,9 +88,8 @@ def test_cleanup_host_artifacts_prunes_rebuildable_data_and_reports_review_candi
     assert result["status"] == "success"
     assert result["pressure_mode"] is False
     assert result["bytes_reclaimed"] == 5 * 1024**3
-    assert result["items_deleted"] >= 3
+    assert result["items_deleted"] >= 2
     assert result["tool_caches"]["deleted_paths"] == 2
-    assert len(result["docker_anonymous_volumes"]["deleted"]) == 1
     assert not npx_old.exists()
     assert not playwright_old.exists()
     assert result["review_candidates"][0]["reason"] == "legacy_project_root"
@@ -334,7 +268,6 @@ def test_scratch_filesystem_pressure_reclaims_now_while_root_stays_normal(mocker
     mocker.patch.object(host_retention, "filesystem_source", lambda path: "p8" if path == scratch else "p7")
     usage = {"/": (100 * 1024**3, 40 * 1024**3, 60 * 1024**3), str(scratch): (100 * 1024**3, 89 * 1024**3, 11 * 1024**3)}
     mocker.patch.object(host_retention.shutil, "disk_usage", lambda path: usage[str(path)])
-    mocker.patch.object(host_retention, "_docker_available", return_value=False)
     reclaim = mocker.patch.object(host_retention, "reclaim_filesystem", return_value={"steps": [
         {"step": "uv_cache", "status": "success"},
         {"step": "scratch", "status": "success", "deleted_paths": ["/srv/scratch/old"], "bytes": 5}]})
@@ -370,7 +303,7 @@ def test_reclaim_stops_at_target_and_keeps_cache_roots(mocker, tmp_path: Path) -
 
     def run(args: list[str], *, env: dict[str, str] | None = None, timeout: int = 0):
         calls.append((args, env))
-        if args[:3] in (["go", "env", "GOCACHE"], ["docker", "info", "--format"]):
+        if args[:3] == ["go", "env", "GOCACHE"]:
             return type("Proc", (), {"returncode": 1, "stdout": "", "stderr": ""})()
         if args[:3] == ["pnpm", "store", "path"]:
             return type("Proc", (), {"returncode": 0, "stdout": f"{cache}\n", "stderr": ""})()

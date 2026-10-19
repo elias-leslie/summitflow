@@ -1,4 +1,4 @@
-"""Health and status probing for Docker and systemd services."""
+"""Health and status probing for the docker stack (port probes) and systemd services."""
 
 from __future__ import annotations
 
@@ -16,9 +16,8 @@ from .models import RuntimeServiceStatus
 __all__ = [
     "_auto_start_from_unit_file_state",
     "_classify_systemd_state",
-    "_docker_status",
     "_fill_timeout_defaults",
-    "_parse_docker_health",
+    "_infra_status",
     "_probe_http",
     "_runtime_service_status",
     "_runtime_service_statuses",
@@ -98,44 +97,30 @@ async def _probe_http(url: str | None) -> tuple[bool, int | None]:
     return await asyncio.to_thread(_sync_probe_http, url, _HTTP_PROBE_TIMEOUT_SECONDS)
 
 
-def _parse_docker_health(status_str: str) -> str:
-    """Extract health indicator from Docker status string."""
-    if "(healthy)" in status_str:
-        return "healthy"
-    if "(unhealthy)" in status_str:
-        return "unhealthy"
-    if "(health: starting)" in status_str:
-        return "starting"
-    return ""
-
-
-async def _docker_status(svc: dict[str, Any], container: dict[str, Any] | None) -> RuntimeServiceStatus:
-    """Build status for a Docker-managed service."""
-    if container:
-        status_str = container.get("Status", "")
-        health = _parse_docker_health(status_str)
-        state = container.get("State", "unknown")
-        return RuntimeServiceStatus(
-            name=container.get("Names", _h._find_container_name(svc["container_service"])),
-            service=svc["service"],
-            display_name=svc["display_name"],
-            manager="docker",
-            category=svc["category"],
-            state=state,
-            health=health,
-            status=status_str or state,
-            ports=list(svc["ports"]),
+async def _port_open(port: str) -> bool:
+    try:
+        _reader, writer = await asyncio.wait_for(
+            asyncio.open_connection("127.0.0.1", int(port)), timeout=_HTTP_PROBE_TIMEOUT_SECONDS,
         )
+    except (OSError, TimeoutError, ValueError):
+        return False
+    writer.close()
+    return True
 
+
+async def _infra_status(svc: dict[str, Any]) -> RuntimeServiceStatus:
+    """Status of a docker stack service from its published ports; docker itself is not asked."""
+    up = await asyncio.gather(*[_port_open(port) for port in svc["ports"]])
+    running = bool(up) and all(up)
     return RuntimeServiceStatus(
         name=_h._find_container_name(svc["container_service"]),
         service=svc["service"],
         display_name=svc["display_name"],
         manager="docker",
         category=svc["category"],
-        state="stopped",
-        health="",
-        status="Docker infra not running",
+        state="running" if running else "stopped",
+        health="healthy" if running else "",
+        status="Listening on " + ", ".join(svc["ports"]) if running else "Docker infra not running",
         ports=list(svc["ports"]),
     )
 
@@ -193,20 +178,11 @@ def _classify_systemd_state(
     return state, "", status
 
 
-async def _runtime_service_status(
-    svc: dict[str, Any],
-    docker_containers: dict[str, dict[str, Any]],
-) -> RuntimeServiceStatus:
+async def _runtime_service_status(svc: dict[str, Any]) -> RuntimeServiceStatus:
     if svc["manager"] == "docker":
-        container = docker_containers.get(svc["container_service"])
-        return await _docker_status(svc, container)
+        return await _infra_status(svc)
     return await _systemd_status(svc)
 
 
 async def _runtime_service_statuses() -> list[RuntimeServiceStatus]:
-    docker_containers = await _h._docker_container_map(all_containers=True)
-    return list(
-        await asyncio.gather(
-            *[_runtime_service_status(svc, docker_containers) for svc in runtime_service_definitions()]
-        )
-    )
+    return list(await asyncio.gather(*[_runtime_service_status(svc) for svc in runtime_service_definitions()]))

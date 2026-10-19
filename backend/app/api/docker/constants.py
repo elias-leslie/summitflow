@@ -21,18 +21,12 @@ def _detect_repo_root(start_path: Path | None = None) -> Path:
 _INTERNAL_SECRET = os.environ.get("INTERNAL_SERVICE_SECRET", "")
 
 _REPO_ROOT = _detect_repo_root()
-_HOST_HOME_PATH = Path(os.environ.get("HOST_HOME_PATH", str(Path.home())))
-_HOST_REPO_ROOT = Path(os.environ.get("HOST_REPO_ROOT", str(_HOST_HOME_PATH / "summitflow")))
 _DEFAULT_STACK_MODE = os.environ.get("SUMMITFLOW_DOCKER_DEFAULT_MODE", "prod")
 if _DEFAULT_STACK_MODE not in {"dev", "prod"}:
     _DEFAULT_STACK_MODE = "prod"
 _COMPOSE_DIR = Path(os.environ.get("COMPOSE_DIR", str(_REPO_ROOT / "docker" / "compose")))
 _COMPOSE_FILE = _COMPOSE_DIR / "docker-compose.yml"
 _RUNTIME_MODE_FILE = _COMPOSE_DIR / ".runtime-mode"
-_INFRA_SERVICES = {"postgres", "redis", "hatchet", "hatchet-migrate", "hatchet-setup-config", "docker-socket-proxy"}
-_DOCKER_SOCKET = Path("/var/run/docker.sock")
-_DOCKER_GID_RAW = os.environ.get("DOCKER_GID", "")
-_DOCKER_GID: int | None = int(_DOCKER_GID_RAW) if _DOCKER_GID_RAW.isdigit() else None
 _USER_UID = os.getuid()
 _USER_RUNTIME_DIR = Path(os.environ.get("XDG_RUNTIME_DIR", f"/run/user/{_USER_UID}"))
 _USER_DBUS_ADDRESS = os.environ.get(

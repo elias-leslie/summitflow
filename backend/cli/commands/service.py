@@ -21,7 +21,7 @@ from app.tasks.backup_lock import (
     wait_for_backup_restart_window,
 )
 
-from ..lib import service_ops, service_release
+from ..lib import service_deploy_client, service_ops, service_release
 from ..lib.confirm_token import confirm_gate
 from ..lib.service_ops import wait_for_summitflow_api
 from ..lib.usage import usage
@@ -78,6 +78,15 @@ def _load(project: str) -> service_ops.ProjectServices:
     except service_ops.ServiceError as exc:
         output_error(str(exc))
         raise typer.Exit(1) from None
+
+
+def _deploy_via_socket(services: service_ops.ProjectServices, user: str, verb: str, sha: str | None) -> int:
+    """Hand the verb to the project's deploy gate and stream its answer."""
+    try:
+        return service_deploy_client.send(user, services.project_id, sha or service_deploy_client.main_sha(services.root), verb)
+    except OSError as exc:
+        output_error(f"deploy gate for {services.project_id} ({user}) unavailable: {exc}")
+        return 1
 
 
 def _restore_previous_units(
@@ -203,6 +212,9 @@ def status(
     errors = 0
     for project_id in projects:
         services = _load(project_id)
+        if user := service_deploy_client.delegated_user(services.runtime_user):
+            errors += _deploy_via_socket(services, user, "status", None) != 0
+            continue
         parts = []
         for svc in services.all_services:
             state = service_ops.service_state(svc)
@@ -471,13 +483,39 @@ def rebuild(
         bool,
         typer.Option("--rollback", help="Deploy an accepted commit that does not contain the live release"),
     ] = False,
+    source_repo: Annotated[
+        Path | None,
+        typer.Option("--source-repo", help="Bare mirror to read git state from instead of the checkout (used by the deploy gate); needs --sha"),
+    ] = None,
+    sha: Annotated[
+        str | None,
+        typer.Option("--sha", help="Full commit id to deploy: with --source-repo it is read from the mirror; for a runtime_user project it replaces the checkout's main"),
+    ] = None,
 ) -> None:
     """Build, migrate, restart, and health-check a project."""
     services = _load(project)
     from ..lib import coord
 
+    if source_repo is not None:
+        if detach:
+            output_error("--source-repo cannot be combined with --detach.")
+            raise typer.Exit(1)
+        try:
+            services = service_ops.use_source_repo(services, source_repo, sha or "")
+        except service_ops.ServiceError as exc:
+            output_error(str(exc))
+            raise typer.Exit(1) from None
+    elif user := service_deploy_client.delegated_user(services.runtime_user):
+        if acceptance or with_ack or migrate_monitor_store:
+            output_error("--acceptance, --with-ack and --migrate-monitor-store are not available through the deploy gate.")
+            raise typer.Exit(1)
+        raise typer.Exit(_deploy_via_socket(services, user, "rollback" if rollback else "deploy", sha))
+    elif sha:
+        output_error("--sha needs --source-repo or a project with a runtime user.")
+        raise typer.Exit(1)
     try:
-        coord.guard(services.root, "rebuild", with_ack=with_ack)
+        if source_repo is None:  # a pinned mirror has no working tree for other agents to hold
+            coord.guard(services.root, "rebuild", with_ack=with_ack)
     except coord.CoordBlocked as exc:
         output_error(str(exc))
         raise typer.Exit(2) from None
@@ -537,7 +575,7 @@ def rebuild(
     monitor_activated = False
     backend_restart_attempted = False
     development_services = services
-    development_root = services.root
+    development_root = services.git_root
     try:
         with (
             service_release.deployment_lock(services.project_id),
@@ -787,6 +825,8 @@ def stop(
 ) -> None:
     """Stop a managed project's service set. Two-pass confirmation required."""
     services = _load(project)
+    if user := service_deploy_client.delegated_user(services.runtime_user):
+        raise typer.Exit(_deploy_via_socket(services, user, "stop", None))
     confirm_gate(
         f"service-stop-{services.project_id}",
         confirm,

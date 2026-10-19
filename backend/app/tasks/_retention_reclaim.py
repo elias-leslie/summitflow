@@ -35,12 +35,6 @@ from typing import Any
 
 from ..utils.host_retention_policy import HostRetentionPolicy
 from ._retention_agent_tmp import TMP_ROOT, age_agent_tmp
-from ._retention_docker import (
-    prune_anonymous_docker_volumes,
-    prune_builder_cache,
-    prune_images,
-    prune_stopped_containers,
-)
 from ._retention_scratch import (
     MOUNTINFO,
     SCRATCH_ROOT,
@@ -161,29 +155,6 @@ def go_cache_dir(run: Runner) -> Path | None:
     return Path(value) if proc.returncode == 0 and value.startswith("/") else None
 
 
-def docker_root(run: Runner) -> Path | None:
-    if shutil.which("docker") is None:
-        return None
-    try:
-        proc = run(["docker", "info", "--format", "{{.DockerRootDir}}"], timeout=30)
-    except (OSError, subprocess.TimeoutExpired):
-        return None
-    value = proc.stdout.strip() if isinstance(proc.stdout, str) else ""
-    return Path(value) if proc.returncode == 0 and value.startswith("/") else None
-
-
-def _docker(policy: HostRetentionPolicy, now: datetime, run: Runner) -> dict[str, Any]:
-    parts = {
-        "containers": prune_stopped_containers(policy=policy, run=run),
-        "builder_cache": prune_builder_cache(policy=policy, pressure_mode=True, run=run),
-        "images": prune_images(policy=policy, pressure_mode=True, run=run),
-        "anonymous_volumes": prune_anonymous_docker_volumes(policy=policy, now=now, run=run),
-    }
-    errors = [f"{name}: {part['error']}" for name, part in parts.items() if part.get("status") == "error" and part.get("error")]
-    return {"step": "docker", "status": "partial" if errors else "success", "parts": parts,
-            **({"error": "; ".join(errors)} if errors else {})}
-
-
 def _scratch(max_age_hours: int, now: datetime, dry_run: bool) -> dict[str, Any]:
     if dry_run:
         review = collect_scratch_review(max_age_hours=max_age_hours, now=now)
@@ -219,7 +190,6 @@ def reclaim_filesystem(
 
     pnpm_store = _pnpm_store(run)
     go_cache = go_cache_dir(run)
-    docker_dir = docker_root(run)
 
     def pressured() -> bool:
         return not met() if target_free_bytes is not None else True
@@ -232,7 +202,6 @@ def reclaim_filesystem(
         ("go_cache", go_cache, lambda: _tool("go_cache", ["go", "clean", "-cache"], run=run)),
         ("uv_cache", UV_CACHE, lambda: _tool("uv_cache", ["uv", "cache", "prune"], run=run, env={"UV_CACHE_DIR": str(UV_CACHE)})),
         ("pnpm_store", pnpm_store, lambda: _tool("pnpm_store", ["pnpm", "store", "prune"], run=run)),
-        ("docker", docker_dir, lambda: _docker(effective_policy, effective_now, run)),
         ("hf_hub", HF_HUB, lambda: prune_unused_hf_repos(now=effective_now, dry_run=dry_run)),
         ("scratch", SCRATCH_ROOT, lambda: _scratch(effective_policy.scratch_pressure_max_age_hours, effective_now, dry_run)),
     ]
@@ -242,7 +211,7 @@ def reclaim_filesystem(
         if not here(location):
             receipt["steps"].append({"step": name, "status": "skipped", "reason": "not on this filesystem"})
             continue
-        if dry_run and name in {"uv_cache", "pnpm_store", "go_cache", "docker"}:
+        if dry_run and name in {"uv_cache", "pnpm_store", "go_cache"}:
             receipt["steps"].append({"step": name, "status": "would-run"})
             continue
         start = free_bytes(path)

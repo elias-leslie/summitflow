@@ -12,6 +12,7 @@ from typing import Any
 
 from ..logging_config import get_logger
 from ..storage import backups as backup_store
+from ..utils import nightshift_stack
 from ..utils.transient_scratch import (
     ensure_scratch_capacity,
     mounted_scratch_parent,
@@ -26,6 +27,13 @@ logger = get_logger(__name__)
 
 DRILL_SCRIPT = Path(__file__).resolve().parents[3] / "scripts" / "infra-restore-drill.sh"
 DRILL_TIMEOUT = 600  # 10 minutes
+# The drill script drives the docker CLI. Once the Nightshift stack unit is installed SummitFlow
+# loses docker access; rootless podman holds no images, so the drill is then unsupported.
+DRILL_UNSUPPORTED = "Restore drill unsupported: no container runtime (docker access removed, podman has no images)"
+
+
+def drill_runtime_available() -> bool:
+    return not nightshift_stack.stack_installed()
 
 # Source types
 SOURCE_TYPE_INFRASTRUCTURE = "infrastructure"
@@ -62,6 +70,8 @@ def run_infra_drill() -> dict[str, Any]:
     Returns:
         Drill result dict with ok, components, duration_ms.
     """
+    if not drill_runtime_available():
+        return {"ok": False, "unsupported": True, "error": DRILL_UNSUPPORTED}
     logger.info("infra_drill_started")
 
     infra_source = _find_infra_source()

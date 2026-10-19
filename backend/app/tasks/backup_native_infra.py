@@ -20,6 +20,7 @@ import yaml
 
 from ..logging_config import get_logger
 from ..services.backup_keys import backup_key_directory
+from ..utils import nightshift_stack
 from ..utils.shared_paths import get_compose_env_file, get_host_config_root, get_repo_root
 from ..utils.transient_scratch import (
     disposable_scratch,
@@ -69,7 +70,8 @@ CAPTURE_MANIFEST_VERSION = 1
 
 
 def _find_compose_container(service: str) -> str | None:
-    if not Path("/var/run/docker.sock").exists():
+    """Pre-install fallback: the docker CLI is only used while the Nightshift stack unit is missing."""
+    if nightshift_stack.stack_installed() or not Path("/var/run/docker.sock").exists():
         return None
     commands = [
         ["docker", "compose", "-p", "summitflow-stack", "ps", "--format", "{{.Name}}", service],

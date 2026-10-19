@@ -31,6 +31,7 @@ from typing import Any
 from ..logging_config import get_logger
 from ..storage import backups as backup_store
 from ..storage.notifications import create_notification
+from ..utils import nightshift_stack
 from ..utils.transient_scratch import ensure_scratch_capacity, restore_scratch, tree_bytes
 from .backup_activity import BackupCancelled, run_bulk_process
 from .backup_native_recovery import drill_git_history
@@ -183,6 +184,8 @@ def _first_error(stderr: object) -> str:
 
 def verify_database_dump(dump: Path, scratch: Path) -> dict[str, Any]:
     """Load a plain project dump into a disposable PostgreSQL and compare row counts."""
+    if nightshift_stack.stack_installed():
+        return {"skipped": True, "reason": "unsupported: no container runtime for the disposable restore database"}
     if dump.suffix == ".gz":
         plain = scratch / "database.sql"
         with gzip.open(dump, "rb") as source, plain.open("wb") as target:
@@ -294,7 +297,7 @@ def restore_test_point(source: Mapping[str, Any], point: Mapping[str, Any]) -> d
             if Path(name).is_absolute() or ".." in Path(name).parts or not dump.is_file():
                 raise RuntimeError("Captured database dump is missing from the restored payload")
             evidence["database"] = verify_database_dump(dump, scratch)
-            evidence["ok"] = evidence["ok"] and evidence["database"]["ok"]
+            evidence["ok"] = evidence["ok"] and evidence["database"].get("ok", True)
         git_drill = scratch / "git"
         git_drill.mkdir(mode=0o700)
         evidence["git_history"] = drill_git_history(payload, git_drill)

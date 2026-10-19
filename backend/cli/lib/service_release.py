@@ -129,6 +129,11 @@ def _project_state(project_id: str, state_root: Path | None = None) -> Path:
     return (state_root or service_state_root()) / "projects" / _safe_project_id(project_id)
 
 
+def source_checkout_path(project_id: str, state_root: Path | None = None) -> Path:
+    """Private checkout of the pinned commit when a deploy reads a mirror, not the owner's checkout."""
+    return _project_state(project_id, state_root) / "source"
+
+
 def jobs_root(state_root: Path | None = None) -> Path:
     return (state_root or service_state_root()) / "jobs"
 

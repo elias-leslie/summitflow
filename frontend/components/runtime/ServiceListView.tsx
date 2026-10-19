@@ -11,6 +11,7 @@ import {
   TableRow,
 } from '@/components/ui/table'
 import type {
+  RuntimeActionResult,
   RuntimeMetricSeries,
   RuntimeServiceMetrics,
   RuntimeServiceStatus,
@@ -35,9 +36,10 @@ function ActionCell({
   isRunning: boolean
   controllable: boolean
 }) {
-  const restartMut = useServiceAction(service, 'restart')
-  const stopMut = useServiceAction(service, 'stop')
-  const startMut = useServiceAction(service, 'start')
+  const [note, setNote] = useState<RuntimeActionResult | null>(null)
+  const restartMut = useServiceAction(service, 'restart', setNote)
+  const stopMut = useServiceAction(service, 'stop', setNote)
+  const startMut = useServiceAction(service, 'start', setNote)
 
   if (!controllable) {
     return <span className="text-2xs text-slate-500">System unit</span>
@@ -70,6 +72,29 @@ function ActionCell({
         >
           {startMut.isPending ? '...' : 'Start'}
         </button>
+      )}
+      {note && (note.pending || !note.success) && (
+        <span
+          className={clsx(
+            'text-2xs self-center',
+            note.success ? 'text-amber-400' : 'text-red-400',
+          )}
+        >
+          {note.message}
+          {note.approve_url && (
+            <>
+              {' '}
+              <a
+                href={note.approve_url}
+                target="_blank"
+                rel="noreferrer"
+                className="underline"
+              >
+                Approve
+              </a>
+            </>
+          )}
+        </span>
       )}
     </div>
   )

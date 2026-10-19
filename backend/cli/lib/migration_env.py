@@ -79,7 +79,8 @@ def strip_keys() -> frozenset[str]:
     return STRIP_FLOOR.union(*(grant.keys for grant in _load().values()))
 
 
-def migration_env(project_id: str, host_root: Path, *, environ: Mapping[str, str] | None = None) -> dict[str, str]:
+def migration_env(project_id: str, host_root: Path, *, environ: Mapping[str, str] | None = None,
+                  credstore: Path | None = None) -> dict[str, str]:
     source = os.environ if environ is None else environ
     env = {key: value for key, value in source.items() if key in _BASE_KEYS or key.startswith("LC_")}
     for key in strip_keys():
@@ -87,7 +88,7 @@ def migration_env(project_id: str, host_root: Path, *, environ: Mapping[str, str
     grant = grant_for(project_id)
     files = {
         "shared": [Path.home() / ".env.local"],
-        "project": project_env_files(host_root),
+        "project": [*project_env_files(host_root), *([credstore] if credstore else [])],
         "backend/.env": [host_root / "backend" / ".env"],
     }
     for name in grant.sources:

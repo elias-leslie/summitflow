@@ -109,7 +109,7 @@ def test_rebuild_accepts_isolated_projects_and_dirty_checkouts_in_a_private_clon
             commits.append(git(repo, "rev-parse", "HEAD"))
         if dirty:
             (repo / "wip.py").write_text("another agent's work\n")
-        project = cast(service_ops.ProjectServices, SimpleNamespace(project_id=project_id, root=repo))
+        project = cast(service_ops.ProjectServices, SimpleNamespace(project_id=project_id, root=repo, git_root=repo))
         assert service_ops._acceptance_candidate(project, None) == {"materialization": expected}
     assert chosen == [(commits[2], "actual"), (commits[3], "isolated"), (commits[3], "isolated")]
 
@@ -136,7 +136,7 @@ def test_detached_rebuild_refuses_a_backward_deploy_before_it_queues(history, mo
     monkeypatch.setattr(service_ops, "_acceptance_candidate", lambda *_a: {"source_commit": commits[0]})
     monkeypatch.setattr(acceptance, "repo_lock", lambda *_a, **_k: nullcontext())
     monkeypatch.setattr(acceptance, "validate_acceptance_receipt", lambda _root, candidate: dict(candidate))
-    project = cast(service_ops.ProjectServices, SimpleNamespace(project_id="example", root=repo))
+    project = cast(service_ops.ProjectServices, SimpleNamespace(project_id="example", root=repo, git_root=repo))
     with pytest.raises(service_release.ReleaseError, match="deploy_not_forward"):
         service_ops.resolve_accepted_source(project)
 
@@ -150,7 +150,7 @@ def test_rebuild_rollback_flag_reaches_validation_and_the_queue(monkeypatch) -> 
     from cli.lib import coord
 
     monkeypatch.setattr(coord, "guard", Mock())
-    monkeypatch.setattr(service, "_load", lambda _p: Mock(root=Path("/x"), backend_dir=Path("/x/b"),
+    monkeypatch.setattr(service, "_load", lambda _p: Mock(root=Path("/x"), git_root=Path("/x"), runtime_user="", backend_dir=Path("/x/b"),
                                                           frontend_dir=Path("/x/f"), project_id="example",
                                                           workers=lambda **_: ()))
     monkeypatch.setattr(service, "require_pulse_gate", lambda _p: None)

@@ -309,63 +309,38 @@ def test_frontend_frozen_install_runs_at_workspace_root_and_keeps_cache(project,
     assert (cache / "retained").exists()
 
 
-def test_infrastructure_uses_accepted_compose_and_existing_host_secret_source(
-    project, monkeypatch, tmp_path
-):
-    accepted_root = tmp_path / "release" / "source"
-    host_root = tmp_path / "host-checkout"
-    accepted_compose = accepted_root / "docker" / "compose" / "docker-compose.yml"
-    host_env = host_root / "docker" / "compose" / ".env"
-    accepted_compose.parent.mkdir(parents=True)
-    host_env.parent.mkdir(parents=True)
-    accepted_compose.write_text("services: {}\n")
-    host_env.write_text("POSTGRES_PASSWORD=test-only\n")
-    deployed = replace(
-        project,
-        root=accepted_root,
-        backend_dir=accepted_root / "backend",
-        frontend_dir=accepted_root / "frontend",
-        host_config_root=host_root,
-    )
-
+def _probe_infra(monkeypatch, *, pg_ok: bool, hatchet_status: int | None):
     def capture(command, **_kwargs):
-        if command[:2] == ["docker", "ps"]:
-            return subprocess.CompletedProcess(command, 0, "", "")
-        return subprocess.CompletedProcess(command, 0, "ready", "")
+        assert command[0] == "pg_isready"
+        return subprocess.CompletedProcess(command, 0 if pg_ok else 2, "", "")
 
-    run = Mock(return_value=0)
+    def get(*_args, **_kwargs):
+        if hatchet_status is None:
+            raise service_ops.httpx.ConnectError("down")
+        return SimpleNamespace(status_code=hatchet_status)
+
+    run = Mock()
     monkeypatch.setattr(service_ops, "capture", capture)
     monkeypatch.setattr(service_ops, "run", run)
-    monkeypatch.setattr(service_ops.httpx, "get", lambda *_args, **_kwargs: SimpleNamespace(status_code=200))
-
-    assert service_ops.ensure_infra(deployed) == 0
-    command = run.call_args.args[0]
-    assert command[command.index("--env-file") + 1] == str(host_env)
-    assert command[command.index("-f") + 1] == str(accepted_compose)
+    monkeypatch.setattr(service_ops.httpx, "get", get)
+    return run
 
 
-def test_infrastructure_fails_safely_when_host_secret_source_is_missing(
-    project, monkeypatch, tmp_path, capsys
-):
-    accepted_root = tmp_path / "release" / "source"
-    compose_file = accepted_root / "docker" / "compose" / "docker-compose.yml"
-    compose_file.parent.mkdir(parents=True)
-    compose_file.write_text("services: {}\n")
-    deployed = replace(
-        project,
-        root=accepted_root,
-        host_config_root=tmp_path / "missing-host",
-    )
-    monkeypatch.setattr(
-        service_ops,
-        "capture",
-        lambda command, **_kwargs: subprocess.CompletedProcess(command, 0, "", ""),
-    )
-    run = Mock()
-    monkeypatch.setattr(service_ops, "run", run)
+def test_infrastructure_is_a_port_probe_that_never_starts_anything(project, monkeypatch):
+    run = _probe_infra(monkeypatch, pg_ok=True, hatchet_status=200)
 
-    assert service_ops.ensure_infra(deployed) == 1
-    assert "host compose environment is unavailable" in capsys.readouterr().out
+    assert service_ops.ensure_infra(project) == 0
+    run.assert_not_called()
+
+
+def test_infrastructure_down_points_at_the_nightshift_restart(project, monkeypatch, capsys):
+    run = _probe_infra(monkeypatch, pg_ok=True, hatchet_status=None)
+
+    assert service_ops.ensure_infra(project) == 1
+    out = capsys.readouterr().out
+    assert "hatchet :8888" in out
+    assert "postgres" not in out
+    assert "nightshift request unit.restart unit=summitflow-stack.service" in out
     run.assert_not_called()
 
 

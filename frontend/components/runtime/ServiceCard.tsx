@@ -3,6 +3,7 @@
 import { clsx } from 'clsx'
 import { useState } from 'react'
 import type {
+  RuntimeActionResult,
   RuntimeMetricSeries,
   RuntimeServiceMetrics,
   RuntimeServiceStatus,
@@ -54,9 +55,10 @@ export function ServiceCard({
   const isRunning = container.state === 'running'
   const controllable = container.controllable !== false
 
-  const restartMut = useServiceAction(container.service, 'restart')
-  const stopMut = useServiceAction(container.service, 'stop')
-  const startMut = useServiceAction(container.service, 'start')
+  const [note, setNote] = useState<RuntimeActionResult | null>(null)
+  const restartMut = useServiceAction(container.service, 'restart', setNote)
+  const stopMut = useServiceAction(container.service, 'stop', setNote)
+  const startMut = useServiceAction(container.service, 'start', setNote)
 
   return (
     <>
@@ -135,6 +137,30 @@ export function ServiceCard({
             />
             <span className="text-[10px] text-slate-600">on reboot</span>
           </div>
+        )}
+
+        {note && (note.pending || !note.success) && (
+          <p
+            className={clsx(
+              'mb-2.5 text-2xs',
+              note.success ? 'text-amber-400' : 'text-red-400',
+            )}
+          >
+            {note.message}
+            {note.approve_url && (
+              <>
+                {' '}
+                <a
+                  href={note.approve_url}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="underline"
+                >
+                  Approve
+                </a>
+              </>
+            )}
+          </p>
         )}
 
         {/* Actions */}
