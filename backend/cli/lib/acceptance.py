@@ -1396,6 +1396,23 @@ def persist_validated_receipt(
     return _descriptor(value, artifact, reused=False)
 
 
+def _failure_excerpt(repo: Path, failure_line: str) -> str:
+    """The failing lines of a check's details file, for a caller that can't read the receipt's home.
+
+    Security checks are left out: their output can quote the secret they found.
+    """
+    match = re.search(r"details:([^|]+)", failure_line)
+    if not match or failure_line.startswith("SECURITY") or "security-" in match.group(1):
+        return ""
+    try:
+        text = (repo / match.group(1)).read_text(encoding="utf-8", errors="replace")
+    except OSError:
+        return ""
+    marks = ("FAIL", "Error", "error:", "\u00d7", "\u2717", "AssertionError", "expected")
+    picked = [line.rstrip()[:240] for line in text.splitlines() if any(mark in line for mark in marks)][:15]
+    return ("\n" + "\n".join(picked)) if picked else ""
+
+
 def accept_revision(repo: Path, **kwargs: Any) -> dict[str, Any]:
     """Run in-place acceptance under an op lease so other agents' edits wait instead of invalidating it.
 
@@ -1586,5 +1603,6 @@ def _accept_revision(
             failure_line = (failure_line or ((failed_check or {}).get("evidence") or {}).get("reason")
                             or next((line.strip()[:300] for line in reversed(lines) if line.strip()), None))
             summary = f"{reason}; {failure_line}" if failure_line else reason
+            summary += _failure_excerpt(repo, failure_line or "")
             raise AcceptanceError(f"{summary}; reproduce: {ci_parity.repro_command(seed)}; acceptance evidence: {artifact}")
         return _descriptor(receipt, artifact, reused=False)

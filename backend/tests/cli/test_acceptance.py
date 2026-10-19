@@ -760,6 +760,17 @@ def test_failed_full_gate_without_fail_line_still_says_why(repo: Path) -> None:
     assert str(error.value).split("; reproduce: ", 1)[0] != "acceptance_checks_failed"  # names a cause
 
 
+def test_failure_excerpt_quotes_failing_lines_but_never_security_output(tmp_path: Path) -> None:
+    (tmp_path / ".dev-tools").mkdir()
+    (tmp_path / ".dev-tools/vitest-1-details.txt").write_text(" ✓ ok\n FAIL src/a.test.ts > refuses\n passed\n")
+    (tmp_path / ".dev-tools/security-gitleaks-1-details.txt").write_text("FAIL secret=hunter2\n")
+    line = "VITEST:FAIL:1|details:.dev-tools/vitest-1-details.txt|hint:Tests 1 failed"
+
+    assert acceptance._failure_excerpt(tmp_path, line) == "\n FAIL src/a.test.ts > refuses"
+    assert acceptance._failure_excerpt(tmp_path, "SECURITY:FAIL:1|details:.dev-tools/security-gitleaks-1-details.txt") == ""
+    assert acceptance._failure_excerpt(tmp_path, "VITEST:FAIL:1|details:.dev-tools/missing.txt") == ""
+
+
 def test_later_success_does_not_overwrite_failed_acceptance_evidence(repo: Path) -> None:
     def fail(command, _cwd):
         return subprocess.CompletedProcess(command, 1, "failure artifact remains useful", "")
