@@ -88,6 +88,35 @@ def which(name: str) -> str | None:
     return shutil.which(name, path=canonical_tool_path())
 
 
+def container_cli() -> tuple[list[str], bool] | None:
+    """The command that runs CI service containers, and whether it needs registry-qualified image names.
+
+    Docker when this user can reach it. Else the user's own rootless podman service (service and agent
+    users have no docker access, by design), reached over its socket: the podman.socket user unit runs it
+    in the user's manager, outside a sandbox (the deploy gate's) that blocks the setuid uid-mapping
+    helpers rootless podman needs. Podman resolves no short image names without a search-registry config.
+    """
+    docker = which("docker")
+    if docker and ("DOCKER_HOST" in os.environ or os.access("/var/run/docker.sock", os.R_OK | os.W_OK)):
+        return [docker], False
+    podman, runtime = which("podman"), os.environ.get("XDG_RUNTIME_DIR")
+    if podman and runtime:
+        sock = Path(runtime) / "podman" / "podman.sock"
+        # idempotent; a socket file alone may be left over from a stopped unit
+        started = subprocess.run(["systemctl", "--user", "start", "podman.socket"], capture_output=True, timeout=60, check=False)
+        if started.returncode == 0 and sock.exists():
+            return [podman, "--remote", "--url", f"unix://{sock}"], True
+    return ([docker], False) if docker else None
+
+
+def qualified_image(image: str) -> str:
+    """Docker Hub's implicit naming, spelled out: postgres:16 -> docker.io/library/postgres:16."""
+    first, _, rest = image.partition("/")
+    if rest and ("." in first or ":" in first or first == "localhost"):
+        return image
+    return f"docker.io/{image}" if rest else f"docker.io/library/{image}"
+
+
 def active(environ: Mapping[str, str] | None = None) -> bool:
     return (os.environ if environ is None else environ).get(PARITY_FLAG) == "1"
 
@@ -312,16 +341,18 @@ def services(job: CiJob | None, env: dict[str, str]) -> Iterator[list[str]]:
                          if key in name or key in str(spec.get("image") or "")), None)
             if port is None:
                 raise CiParityError(f"CI service {name} ({spec.get('image')}) has no local equivalent")
-            docker = which("docker")
-            if docker is None:
-                raise CiParityError("docker is required to provide the CI service database")
+            engine = container_cli()
+            if engine is None:
+                raise CiParityError("docker or podman is required to provide the CI service database")
+            cli, qualify = engine
             host_port = _free_port()
             container = f"st-ci-{name}-{secrets.token_hex(4)}"
             service_env = [item for key, value in (spec.get("env") or {}).items()
                            for item in ("-e", f"{key}={value}")]
             result = subprocess.run(
-                [docker, "run", "-d", "--rm", "--name", container, "-p", f"127.0.0.1:{host_port}:{port}",
-                 "--tmpfs", "/var/lib/postgresql/data", *service_env, str(spec["image"])],
+                [*cli, "run", "-d", "--rm", "--name", container, "-p", f"127.0.0.1:{host_port}:{port}",
+                 "--tmpfs", "/var/lib/postgresql/data", *service_env,
+                 qualified_image(str(spec["image"])) if qualify else str(spec["image"])],
                 capture_output=True, text=True, timeout=600, check=False)
             if result.returncode:
                 raise CiParityError(f"CI service {name} did not start: {result.stderr.strip()[-300:]}")
@@ -332,7 +363,7 @@ def services(job: CiJob | None, env: dict[str, str]) -> Iterator[list[str]]:
             deadline = time.monotonic() + 60
             # pg_isready inside the container passes on the init server too;
             # a TCP query through the mapped port only answers once it is final.
-            while subprocess.run([docker, "exec", container, "psql", "-h", "127.0.0.1", "-U", user, "-d", database,
+            while subprocess.run([*cli, "exec", container, "psql", "-h", "127.0.0.1", "-U", user, "-d", database,
                                   "-tAc", "select 1"], capture_output=True, check=False).returncode:
                 if time.monotonic() > deadline:
                     raise CiParityError(f"CI service {name} did not become ready")
@@ -343,10 +374,10 @@ def services(job: CiJob | None, env: dict[str, str]) -> Iterator[list[str]]:
                 env[key] = re.sub(rf"(?<=@)(localhost|127\.0\.0\.1):{port}\b", f"127.0.0.1:{host_port}", value)
         yield names
     finally:
-        docker = which("docker")
+        engine = container_cli()
         for container in started:
-            if docker:
-                subprocess.run([docker, "rm", "-f", container], capture_output=True, timeout=60, check=False)
+            if engine:
+                subprocess.run([*engine[0], "rm", "-f", container], capture_output=True, timeout=60, check=False)
 
 
 def randomly_installed(argv: list[str]) -> bool:

@@ -170,6 +170,7 @@ def test_service_urls_point_at_the_fresh_container(monkeypatch: pytest.MonkeyPat
         return subprocess.CompletedProcess(argv, 0, "container\n", "")
 
     monkeypatch.setattr(ci_parity, "which", lambda name: f"/usr/bin/{name}")
+    monkeypatch.setattr(ci_parity.os, "access", lambda *_: True)
     monkeypatch.setattr(ci_parity, "_free_port", lambda: 55432)
     monkeypatch.setattr(ci_parity.subprocess, "run", run)
     env = {"APP_DB_URL": "postgresql://app:test@localhost:5432/app_test", "OTHER": "localhost:5432"}
@@ -179,6 +180,36 @@ def test_service_urls_point_at_the_fresh_container(monkeypatch: pytest.MonkeyPat
                        "PGHOST": "127.0.0.1", "PGPORT": "55432"}
         assert "--tmpfs" in commands[0] and "127.0.0.1:55432:5432" in commands[0]
     assert commands[-1][:3] == ["/usr/bin/docker", "rm", "-f"]
+
+
+def test_a_user_without_docker_runs_ci_services_in_its_own_podman(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    job = ci_parity.CiJob("ci.yml", "backend", ".", {}, {"postgres": {"image": "postgres:16"}}, [], [["pytest"]])
+    commands: list[list[str]] = []
+
+    def run(argv, **_):
+        commands.append(argv)
+        return subprocess.CompletedProcess(argv, 0, "container\n", "")
+
+    (tmp_path / "podman").mkdir()
+    (tmp_path / "podman" / "podman.sock").touch()
+    monkeypatch.delenv("DOCKER_HOST", raising=False)
+    monkeypatch.setenv("XDG_RUNTIME_DIR", str(tmp_path))
+    monkeypatch.setattr(ci_parity, "which", lambda name: f"/usr/bin/{name}")
+    monkeypatch.setattr(ci_parity.os, "access", lambda *_: False)  # the docker socket is not this user's
+    monkeypatch.setattr(ci_parity, "_free_port", lambda: 55432)
+    monkeypatch.setattr(ci_parity.subprocess, "run", run)
+    remote = ["/usr/bin/podman", "--remote", "--url", f"unix://{tmp_path}/podman/podman.sock"]
+    with ci_parity.services(job, {}):
+        assert commands[0] == ["systemctl", "--user", "start", "podman.socket"]
+        assert commands[1][:5] == [*remote, "run"] and commands[1][-1] == "docker.io/library/postgres:16"
+    assert commands[-1][:6] == [*remote, "rm", "-f"]
+
+
+@pytest.mark.parametrize("image,full", [("postgres:16", "docker.io/library/postgres:16"),
+                                        ("pgvector/pgvector:pg16", "docker.io/pgvector/pgvector:pg16"),
+                                        ("ghcr.io/o/i:1", "ghcr.io/o/i:1"), ("localhost/x", "localhost/x")])
+def test_image_names_get_docker_hubs_implicit_registry(image: str, full: str) -> None:
+    assert ci_parity.qualified_image(image) == full
 
 
 def test_step_level_working_directory_and_shell_database_setup(tmp_path: Path) -> None:
