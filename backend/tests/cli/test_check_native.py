@@ -127,6 +127,19 @@ def test_native_stage_preserves_only_explicit_docker_scratch_mapping(native_repo
     assert result["state"] == "pass", result["stages"][0]["detail"]
 
 
+def test_native_stage_retains_configured_scratch_in_fingerprinted_plan(native_repo: Path, monkeypatch, tmp_path: Path) -> None:
+    scratch = tmp_path / "account-scratch"
+    monkeypatch.setenv("ST_SCRATCH_ROOT", str(scratch))
+    plan = _plan(native_repo)
+    assert plan["environment"]["ST_SCRATCH_ROOT"] == str(scratch)
+    suite = native_repo / ".tools/suite.py"
+    suite.write_text(suite.read_text() + f"assert os.environ['ST_SCRATCH_ROOT'] == {str(scratch)!r}\n")
+    result = run_native(native_repo, plan)
+    assert result["state"] == "pass", result["stages"][0]["detail"]
+    monkeypatch.setenv("ST_SCRATCH_ROOT", str(tmp_path / "different-scratch"))
+    assert _plan(native_repo)["environment"] != plan["environment"]
+
+
 @pytest.mark.parametrize("missing", ["project.lock", ".tools/python"])
 def test_missing_preparation_is_unavailable(native_repo: Path, missing: str) -> None:
     (native_repo / missing).unlink()

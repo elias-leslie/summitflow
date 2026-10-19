@@ -354,6 +354,10 @@ def native_plan(root: Path, *, commit: str | None = None) -> dict[str, Any] | No
         for k, v in environment.items()
     ) or {"PATH", "ST_HEAVY_LEASE"}.intersection(environment):
         raise NativeCheckError("native.environment must contain literal strings; PATH is declared through native.paths")
+    # Account-specific scratch is a prepared execution input, not a secret.
+    # Pin it in the plan so isolated stages retain it and reuse detects changes.
+    if scratch_root := os.environ.get("ST_SCRATCH_ROOT"):
+        environment = {"ST_SCRATCH_ROOT": scratch_root, **environment}
     if not isinstance(stages, list) or not stages:
         raise NativeCheckError("native.stages must declare at least one required stage")
     normalized = []
