@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import os
 import shutil
 import subprocess
 from pathlib import Path
@@ -515,6 +516,24 @@ def test_projected_permission_modes_use_old_blob_defaults_and_actual_equivalent_
     modes = acceptance.projected_source_modes(repo, old_sha)
     assert modes['app.py'] == 0o644
     assert modes['pyproject.toml'] == (repo / 'pyproject.toml').stat().st_mode & 0o777
+
+
+@pytest.mark.parametrize(('actual', 'expected'), [(0o600, 0o644), (0o700, 0o755)])
+def test_projected_modes_use_git_defaults_for_equivalent_foreign_owned_files(repo: Path, monkeypatch, actual: int, expected: int) -> None:
+    selected = repo / 'app.py'
+    selected.chmod(actual)
+    git(repo, 'commit', '--only', '--allow-empty', '-qm', 'tracked file mode', '--', 'app.py')
+    uid = os.getuid()
+    original_lstat = Path.lstat
+
+    def foreign_owner(path: Path, *args, **kwargs):
+        info = original_lstat(path, *args, **kwargs)
+        return os.stat_result((*info[:4], uid + 1, *info[5:])) if path == selected else info
+
+    monkeypatch.setattr(Path, 'lstat', foreign_owner)
+    monkeypatch.setattr(acceptance.os, 'getuid', lambda: uid)
+    assert acceptance.projected_source_modes(repo, 'HEAD')['app.py'] == expected
+    assert selected.stat().st_mode & 0o777 == actual
 
 
 @pytest.mark.parametrize('object_format', ['sha1', 'sha256'])

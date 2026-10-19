@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import os
 import re
+import shlex
 import shutil
 import subprocess
 import sys
@@ -40,7 +41,12 @@ def _git(repo: Path, *args: str) -> str:
              "GIT_CONFIG_NOSYSTEM": "1", "GIT_CONFIG_GLOBAL": "/dev/null"},
     )
     if result.returncode:
-        raise acceptance.AcceptanceError("Cannot prepare the immutable local acceptance source")
+        detail = next(iter(result.stderr.strip().splitlines()), "")
+        detail = re.sub(r"\b[a-zA-Z][a-zA-Z0-9+.-]*://\S+", "[REDACTED URL]", detail)
+        detail = re.sub(r"(?i)(\b(?:password|passwd|pwd|secret|token|api[_-]?key|access[_-]?key|authorization)\b\s*[:=]\s*)"
+                        r"(?:(?:Bearer|Basic)\s+\S+|\"[^\"]*\"|'[^']*'|[^\s,;]+)", r"\1[REDACTED]", detail)
+        detail = re.sub(r"(?i)\b(Bearer|Basic)\s+\S+", r"\1 [REDACTED]", detail)
+        raise acceptance.AcceptanceError("Cannot prepare the immutable local acceptance source" + (f": {detail[:1024]}" if detail else ""))
     return result.stdout.strip()
 
 
@@ -54,6 +60,19 @@ def _require_local_objects(repo: Path) -> None:
         or line.lower().endswith(" true") for line in result.stdout.splitlines()
     ):
         raise acceptance.AcceptanceError("Isolated local acceptance requires complete local Git objects; partial/promisor checkout is unavailable")
+
+
+def _clone_source(repo: Path, source: Path) -> None:
+    """Copy committed objects without sharing links or ambient configuration."""
+    metadata = _git(repo, "rev-parse", "--absolute-git-dir")
+    # Clone checks source metadata in both the local copy and upload-pack.
+    # Git clears command-line config before starting the source-side process.
+    # Trust only this exact metadata path in each process, including worktrees.
+    upload_pack = shlex.join(["git", "-c", f"safe.directory={metadata}", "upload-pack"])
+    _git(repo, "-c", f"safe.directory={metadata}",
+         "-c", "protocol.allow=never", "-c", "protocol.file.allow=always",
+         "clone", "--quiet", "--local", "--no-recurse-submodules", "--no-hardlinks", "--no-checkout",
+         f"--upload-pack={upload_pack}", "--", str(repo), str(source))
 
 
 def _preserve_equivalent_modes(repo: Path, source: Path, mode_entries: dict[str, int] | None = None) -> None:
@@ -432,9 +451,7 @@ def _run_isolated(repo: Path, before: dict[str, Any], plan: dict[str, Any], *, s
             source = temporary / "source"
             # A local object-only clone copies committed history and exact HEAD,
             # never staged/untracked files, hook configuration, or a mutable @.
-            _git(repo, "-c", "protocol.allow=never", "-c", "protocol.file.allow=always",
-                 "clone", "--local", "--no-recurse-submodules", "--no-hardlinks", "--no-checkout",
-                 "--", str(repo), str(source))
+            _clone_source(repo, source)
             _git(source, "-c", "core.hooksPath=/dev/null", "checkout", "--detach", before["commit"])
             _preserve_equivalent_modes(repo, source, before["source_mode_entries"])
             metadata = source / ".git"

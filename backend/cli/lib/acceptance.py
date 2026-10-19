@@ -448,9 +448,9 @@ def projected_source_modes(repo: Path, sha: str) -> dict[str, int]:
     """Project exact ordinary file modes consumed by an isolated Git revision.
 
     Equivalent current tracked regular files keep their actual ordinary bits
-    only when owned by this user with one link; ambiguous metadata is rejected.
-    Historical, changed, linked or execute-mismatched files retain safe Git
-    defaults. Isolation and receipt validation use this one policy.
+    only when owned by this user with one link; equivalent hardlinks are rejected.
+    Historical, changed, foreign-owned, symlinked or execute-mismatched files
+    retain safe Git defaults. Isolation and receipt validation use this one policy.
     """
     repo = repo.resolve()
     current = _regular_source_blobs(repo, "HEAD")
@@ -465,9 +465,10 @@ def projected_source_modes(repo: Path, sha: str) -> dict[str, int]:
                 if (stat.S_ISREG(info.st_mode) and original.parent.resolve() == original.parent
                         and bool(actual & stat.S_IXUSR) == (git_mode == "100755")
                         and _matches_git_blob(original, oid)):
-                    if info.st_uid != os.getuid() or info.st_nlink != 1:
+                    if info.st_nlink != 1:
                         raise AcceptanceError("equivalent source metadata cannot be safely preserved in isolation")
-                    permissions = actual
+                    if info.st_uid == os.getuid():
+                        permissions = actual
             except (FileNotFoundError, NotADirectoryError):
                 pass
         projected[name] = permissions

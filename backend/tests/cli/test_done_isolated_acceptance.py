@@ -21,6 +21,67 @@ from cli.lib.acceptance_coordinator import validate_source_receipt
 from cli.lib.task_completion_adapter import AcceptedTaskWork
 
 
+@pytest.mark.parametrize(('stderr', 'detail'), [
+    ('fatal: cannot copy Git objects: Permission denied\nprivate second line',
+     ': fatal: cannot copy Git objects: Permission denied'),
+    ('fatal: https://fixture:private@example.invalid/repo?token=private token=private Bearer private\nprivate second line',
+     ': fatal: [REDACTED URL] token=[REDACTED] Bearer [REDACTED]'),
+    ('fatal: password="private value" Authorization: Bearer private',
+     ': fatal: password=[REDACTED] Authorization: [REDACTED]'),
+    ('', ''),
+])
+def test_immutable_source_error_reports_only_redacted_first_stderr_line(tmp_path: Path, monkeypatch, stderr: str, detail: str):
+    from cli.commands.done_task_acceptance import _git
+
+    monkeypatch.setattr(subprocess, 'run', lambda *a, **kw: subprocess.CompletedProcess([], 128, 'private stdout', stderr))
+    with pytest.raises(acceptance.AcceptanceError) as failure:
+        _git(tmp_path, 'rev-parse', 'HEAD')
+    assert str(failure.value) == 'Cannot prepare the immutable local acceptance source' + detail
+
+
+@pytest.mark.parametrize('linked_worktree', [False, True])
+def test_isolated_clone_trusts_source_metadata_in_both_git_processes(native_source, tmp_path: Path, monkeypatch, linked_worktree: bool):
+    from cli.commands.done_task_acceptance import _clone_source
+
+    repo, sha, _store = native_source
+    quoted_repo = tmp_path / "owner's project"
+    if linked_worktree:
+        git(repo, 'worktree', 'add', '--detach', str(quoted_repo), sha)
+        repo = quoted_repo
+    else:
+        repo = repo.rename(quoted_repo)
+    metadata = git(repo, 'rev-parse', '--absolute-git-dir')
+    common = Path(git(repo, 'rev-parse', '--path-format=absolute', '--git-common-dir'))
+    real_git = shutil.which('git')
+    assert real_git is not None
+    tools = tmp_path / 'git-tools'
+    tools.mkdir()
+    wrapper = tools / 'git'
+    # Require the effective trust configuration at both ownership checks. This
+    # exercises real cloning and child config propagation without needing chown.
+    wrapper.write_text(
+        f'#!{sys.executable}\n'
+        'import os, subprocess, sys\n'
+        'args = sys.argv[1:]\n'
+        "operation = next((arg for arg in args if arg in {'clone', 'upload-pack'}), None)\n"
+        'if operation:\n'
+        f"    result = subprocess.run([{real_git!r}, *args[:args.index(operation)], 'config', '--get-all', 'safe.directory'], capture_output=True, text=True)\n"
+        f'    if {metadata!r} not in result.stdout.splitlines() or "*" in result.stdout.splitlines():\n'
+        "        sys.exit('fatal: detected dubious ownership in source metadata')\n"
+        f'os.execv({real_git!r}, [{real_git!r}, *args])\n'
+    )
+    wrapper.chmod(0o755)
+    monkeypatch.setenv('PATH', str(tools) + os.pathsep + os.environ['PATH'])
+    source = tmp_path / 'private-source'
+    _clone_source(repo, source)
+    assert git(source, 'rev-parse', 'HEAD') == sha
+    assert git(source, 'show', 'HEAD:implementation.py') == "VALUE = 'accepted'"
+    assert not (source / 'untracked.txt').exists()
+    original_object = next((common / 'objects').glob('??/*'))
+    copied_object = source / '.git/objects' / original_object.relative_to(common / 'objects')
+    assert not original_object.samefile(copied_object)
+
+
 def test_isolated_acceptance_materializes_on_private_mounted_scratch(native_source, monkeypatch, tmp_path):
     from app.utils import transient_scratch
 
