@@ -331,3 +331,16 @@ def test_labnet_permission_failure_is_explained_and_never_boots(monkeypatch):
     assert "phase=configure" in result.output
     assert "labnet lab network" in result.output and "SDN.Use" in result.output
     assert client.calls == ["copy"]
+
+
+def test_refused_copy_shows_the_proxmox_reason(monkeypatch):
+    client = ReadyClient()
+
+    def refuse(template, newid, name):
+        raise ProxmoxError("Proxmox API error 403: Permission check failed (/sdn/zones/localnetwork/vmbr0, SDN.Use)")
+
+    monkeypatch.setattr(client, "clone", refuse)
+    result = invoke(monkeypatch, client)
+    assert "SDN.Use" in result.output
+    assert "refused or never confirmed" in result.output
+    assert "retained" not in result.output

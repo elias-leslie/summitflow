@@ -70,7 +70,7 @@ def _gb(value: object) -> str:
 
 @app.command("list")
 def list_vms() -> None:
-    """List all configured Proxmox test VMs."""
+    """List every Proxmox guest (VMs and containers)."""
     def action(client: ProxmoxClient) -> None:
         print(f"{'VMID':<6} {'NAME':<25} {'STATUS':<10} {'RAM':<8} {'DISK':<8}")
         print(f"{'----':<6} {'----':<25} {'------':<10} {'---':<8} {'----':<8}")

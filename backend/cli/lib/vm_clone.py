@@ -34,6 +34,8 @@ class ManagedCloneError(ProxmoxError):
         recovery = (
             "No copy submitted; correct the profile/template and retry."
             if phase == ClonePhase.PREFLIGHT
+            else f"Proxmox refused or never confirmed the copy; check st vm status {vmid} before retrying."
+            if phase == ClonePhase.COPY and upid is None
             else f"VM {vmid} retained; inspect st vm status {vmid}, st vm config {vmid}, and the task. "
             "Use verified exec-ssh/repair-agent recovery if needed; do not blindly reclone or delete."
         )
@@ -268,6 +270,8 @@ def managed_clone(
     except ProxmoxTaskError as exc:
         raise ManagedCloneError(newid, phase, "Copy failed or timed out", exc.upid) from exc
     except ProxmoxError as exc:
-        # Only preflight text is safe to echo. Config/API errors may reflect keys.
-        reason = str(exc) if phase == ClonePhase.PREFLIGHT else "Proxmox operation failed; inspect the retained VM/task"
+        # Only preflight text and a refused copy (no task yet, nothing created) are safe to echo; config errors may
+        # reflect keys.
+        refused = phase == ClonePhase.COPY and upid is None
+        reason = str(exc) if phase == ClonePhase.PREFLIGHT or refused else "Proxmox operation failed; inspect the retained VM/task"
         raise ManagedCloneError(newid, phase, reason, upid) from exc

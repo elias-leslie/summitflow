@@ -222,8 +222,10 @@ class ProxmoxClient:
         raise ProxmoxError("Timed out waiting for Proxmox task")
 
     def list_vms(self) -> list[dict[str, Any]]:
-        data = self.request("GET", f"/nodes/{self.config.node}/qemu")
-        return sorted(data or [], key=lambda item: int(item.get("vmid", 0)))
+        """Every guest, VMs and containers alike, so an ID in use by either shows up."""
+        data = self.request("GET", "/cluster/resources?type=vm")
+        rows = [r for r in data or [] if isinstance(r, dict) and r.get("node", self.config.node) == self.config.node]
+        return sorted(rows, key=lambda item: int(item.get("vmid", 0)))
 
     def _kind(self, vmid: str) -> str:
         """'lxc' for a container (e.g. blackbox-vault), else 'qemu': start, stop and status work on both."""
