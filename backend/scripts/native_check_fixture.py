@@ -58,7 +58,9 @@ def container(*arguments: str, environment: dict[str, str] | None = None) -> str
     )
     if result.returncode:
         # Never include container environment/credentials in retained diagnostics.
-        raise RuntimeError(f"Isolated PostgreSQL fixture container operation failed: {arguments[0]}")
+        # Only the read-only image check says why: create/start/rm run with the fixture's credential in their environment.
+        why = f" ({engine[0][0]}: {result.stderr.strip()[-200:]})" if arguments[0] == "image" else ""
+        raise RuntimeError(f"Isolated PostgreSQL fixture container operation failed: {arguments[0]}{why}")
     return result.stdout.strip()
 
 
@@ -72,13 +74,14 @@ def database_fixture(*, lifetime_seconds: int = LIFETIME_SECONDS):
     image = image.strip()
     if not image.startswith("sha256:") or len(image) != 71:
         raise RuntimeError("Fixture image must be pinned to a full immutable local image ID")
+    why = ""
     try:
         prepared = container("image", "inspect", image, "--format", "{{.Id}}").removeprefix("sha256:")
-    except RuntimeError:
-        prepared = ""
+    except RuntimeError as exc:
+        prepared, why = "", f" [{exc}]"
     if prepared != image.removeprefix("sha256:"):
         pull = f"podman pull {reference.strip()}" if reference.strip() else "pull the locked image"
-        raise RuntimeError(f"Prepared PostgreSQL fixture image unavailable; preparation must be explicit ({pull})")
+        raise RuntimeError(f"Prepared PostgreSQL fixture image unavailable; preparation must be explicit ({pull}){why}")
     name = "st-native-db-" + uuid4().hex
     ledger_dir = ROOT / ".dev-tools" / "native-fixtures"
     ledger_dir.mkdir(parents=True, exist_ok=True)
