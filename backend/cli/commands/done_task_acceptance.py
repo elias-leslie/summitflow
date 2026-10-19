@@ -27,7 +27,9 @@ from cli.lib import acceptance
 
 def _git(repo: Path, *args: str) -> str:
     result = subprocess.run(
-        ["git", "--no-replace-objects", "--no-optional-locks", "-c", "diff.autoRefreshIndex=false", *args], cwd=repo, capture_output=True,
+        # safe.directory on the command line: the agent user reads owner-owned checkouts, and global config is off here.
+        ["git", "--no-replace-objects", "--no-optional-locks", "-c", "diff.autoRefreshIndex=false",
+         "-c", f"safe.directory={repo}", *args], cwd=repo, capture_output=True,
         text=True, check=False,
         # Git restores regular/executable files as 0644/0755. A shared worker's
         # group-writable umask must not weaken protected configuration files in
