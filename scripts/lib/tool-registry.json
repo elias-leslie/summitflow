@@ -426,6 +426,25 @@
       ]
     },
     {
+      "id": "desktop-automation.show",
+      "owner": "desktop-automation",
+      "namespace": "show",
+      "manifest": "extensions/show.json",
+      "executable": ".venv/bin/desktop-st-show",
+      "grant": {
+        "enabled": true,
+        "effects": [
+          "read-local",
+          "write-local",
+          "network",
+          "write-remote"
+        ]
+      },
+      "environment": [
+        "AICO_WIDGET_ID"
+      ]
+    },
+    {
       "id": "vault-tools.wiki",
       "owner": "vault-tools",
       "namespace": "wiki",

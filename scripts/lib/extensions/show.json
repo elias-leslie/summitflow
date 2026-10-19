@@ -1,0 +1,36 @@
+{
+  "id": "desktop-automation.show",
+  "owner": "desktop-automation",
+  "version": "0.2.0",
+  "st_contract_versions": [
+    1
+  ],
+  "summary": "Show a file or link to the owner through agent Tether.",
+  "effects": [
+    "read-local",
+    "write-local",
+    "network",
+    "write-remote"
+  ],
+  "namespace": "show",
+  "help": {
+    "": "Usage: show [OPTIONS] {target}\n\n  Show a file or link to the owner through the agent Tether instance.\n\nArguments:\n  target  HTTP(S) URL or file path  [required]\n\nOptions:\n  --title <str>         Notification title (up to 120 plain-text characters)\n  --install-completion  Install completion for the current shell.\n  --show-completion     Show completion for the current shell, to copy it or\n                        customize the installation.\n  --help                Show this message and exit."
+  },
+  "help_options": {},
+  "usage": [
+    {
+      "surface": "st.show",
+      "tier": "reference",
+      "cmd": "st show <url|file> [--title T]",
+      "when": "hand a file or HTTP(S) link to the owner",
+      "precautions": [
+        "Files are copied into the agent exchange; the owner apps receive show.requested."
+      ],
+      "task_types": [
+        "desktop",
+        "ui"
+      ],
+      "on_demand": "owner handoff"
+    }
+  ]
+}
