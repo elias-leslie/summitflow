@@ -353,8 +353,10 @@ def _is_legacy_git_checkout(root: Path, project_id: str) -> bool:
     """Allow existing manifest-free projects only at a real matching Git root."""
     if root.name != project_id or not (root / ".git").exists():
         return False
+    from app.utils.agent_execution import run_source_git
+
     try:
-        result = subprocess.run(
+        result = run_source_git(
             ["git", "-C", str(root), "rev-parse", "--show-toplevel"],
             check=False,
             capture_output=True,

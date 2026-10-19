@@ -16,7 +16,8 @@ from pathlib import Path
 from typing import Any
 
 from app.storage import backups, tasks
-from app.utils import safe_subprocess
+from app.utils import safe_subprocess  # noqa: F401  # retained patch surface
+from app.utils.agent_execution import run_source_git
 from cli.lib.acceptance import (
     AcceptanceError,
     _git_common_dir,
@@ -41,7 +42,7 @@ def _read(path: Path) -> dict[str, Any]:
 
 
 def _git(root: Path, *args: str) -> str:
-    result = safe_subprocess.run(["git", "--no-optional-locks", "-C", str(root), *args],
+    result = run_source_git(["git", "--no-optional-locks", "-C", str(root), *args],
                                  capture_output=True, text=True, timeout=10)
     if result.returncode:
         raise ValueError("Local Git evidence unavailable")

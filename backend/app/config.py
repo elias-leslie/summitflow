@@ -13,6 +13,9 @@ from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 from pydantic import field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
+from .tether_config import TETHER_AGENT_SOCKET_DEFAULT as TETHER_AGENT_SOCKET_DEFAULT
+from .tether_config import TETHER_AGENT_USER_DEFAULT as TETHER_AGENT_USER_DEFAULT
+from .tether_config import TETHER_DEFAULT_INSTANCE as TETHER_DEFAULT_INSTANCE
 from .utils.maintenance_window import MaintenanceWindow
 
 
@@ -49,11 +52,8 @@ HATCHET_HEALTH_PORT = 8888
 # Tether (per-user session daemon for Aico and A-Term) has no TCP port: it serves
 # its API on $XDG_RUNTIME_DIR/tether/<instance>/control.sock under
 # tether@<instance>.service. TETHER_SOCKET overrides the socket path.
-TETHER_DEFAULT_INSTANCE = "default"
 # The agent user's Tether instance (system-run; shared to the owner's group).
 # TETHER_AGENT_SOCKET / TETHER_AGENT_USER override these.
-TETHER_AGENT_SOCKET_DEFAULT = "/run/tether/agent/default/control.sock"
-TETHER_AGENT_USER_DEFAULT = "agent"
 
 
 def _env_or_default(name: str, default: str) -> str:

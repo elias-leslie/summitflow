@@ -793,4 +793,16 @@ def check(ctx: typer.Context) -> None:
     """Run quality gates or named check subcommands."""
     if ctx.invoked_subcommand is not None:
         return
+    if (ctx.args[:1] and ctx.args[0] in {"-h", "--help", "help"}) or (
+        ctx.args[:1] == ["--acceptance"] and any(option in {"-h", "--help"} for option in ctx.args)
+    ):
+        raise typer.Exit(_handle_check_args(ctx, _tool_configs()))
+    from app.utils.agent_execution import run_as_agent, source_requires_agent
+
+    root = _resolve_repo_root()
+    if source_requires_agent(root):
+        response = run_as_agent(["st", "check", *ctx.args], cwd=root, capture_output=True, text=True, timeout=3600)
+        sys.stdout.write(response.stdout)
+        sys.stderr.write(response.stderr)
+        raise typer.Exit(response.returncode)
     raise typer.Exit(_handle_check_args(ctx, _tool_configs()))

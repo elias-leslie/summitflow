@@ -570,3 +570,28 @@ def test_unit_sync_enables_required_services_for_reboot_but_not_optional_workers
     assert service_ops.sync_systemd_units(services) == 0
     assert calls == [["systemctl", "--user", "daemon-reload"],
                      ["systemctl", "--user", "enable", "api.service", "worker.service"]]
+
+
+def test_source_archive_is_captured_before_owner_writes_private_staging(accepted_repo, tmp_path, monkeypatch):
+    from app.utils.agent_execution import run_source_git
+
+    repo, source = accepted_repo
+    commands = []
+    def run(argv, **kwargs):
+        commands.append((argv, kwargs))
+        return run_source_git(argv, **kwargs)
+    monkeypatch.setattr(service_release, "run_source_git", run)
+    release = service_release._materialize_release("example", repo, source, state_root=tmp_path / "private-state")
+    argv, options = next((argv, options) for argv, options in commands if "archive" in argv)
+    assert "--output" not in argv
+    assert options["max_output_bytes"] == 128 * 1024 * 1024
+    assert (release.source_root / "backend" / "app.py").read_text() == "ACCEPTED = True\n"
+
+
+def test_source_archive_bound_is_explicit_and_staging_is_removed(accepted_repo, tmp_path, monkeypatch):
+    repo, source = accepted_repo
+    monkeypatch.setattr(service_release, "_SOURCE_ARCHIVE_MAX_BYTES", 1)
+    state = tmp_path / "state"
+    with pytest.raises(service_release.ReleaseError, match="archive exceeds"):
+        service_release._materialize_release("example", repo, source, state_root=state)
+    assert not list((service_release._project_state("example", state) / "releases").iterdir())

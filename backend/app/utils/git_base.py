@@ -6,7 +6,8 @@ import re
 import subprocess
 from pathlib import Path
 
-from . import safe_subprocess
+from . import safe_subprocess  # noqa: F401  # retained patch surface
+from .agent_execution import run_source_git
 
 _BASE_BRANCH_CANDIDATES = ("main", "master", "develop")
 _INVALID_BASE_BRANCHES = {"", "HEAD"}
@@ -18,7 +19,7 @@ def _run_git(args: list[str], repo_path: str | Path | None = None) -> subprocess
     command = ["git", *args]
     if repo_path is not None:
         command = ["git", "-C", str(repo_path), *args]
-    return safe_subprocess.run(
+    return run_source_git(
         command,
         capture_output=True,
         text=True,

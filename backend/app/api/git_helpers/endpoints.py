@@ -11,7 +11,8 @@ from fastapi import HTTPException
 from ...logging_config import get_logger
 from ...storage import tasks as task_store
 from ...storage.tasks.update import update_task_fields
-from ...utils import safe_subprocess
+from ...utils import safe_subprocess  # noqa: F401  # retained patch surface
+from ...utils.agent_execution import run_source_git
 from ...utils.git_helpers import (
     enrich_branch_cleanup_details,
     get_all_branches,
@@ -61,7 +62,7 @@ def find_repo_for_sha(commit_sha: str) -> Path | None:
     """Find which managed repo contains the given SHA."""
     for repo_path in get_managed_repos():
         try:
-            result = safe_subprocess.run(
+            result = run_source_git(
                 ["git", "-C", str(repo_path), "cat-file", "-t", commit_sha],
                 capture_output=True,
                 text=True,
@@ -77,7 +78,7 @@ def find_repo_for_sha(commit_sha: str) -> Path | None:
 def _validate_sha_in_repo(sha: str, repo_path: Path, project_id: str) -> None:
     """Validate that a SHA exists as a commit in the given repo."""
     try:
-        check = safe_subprocess.run(
+        check = run_source_git(
             ["git", "-C", str(repo_path), "cat-file", "-t", sha],
             capture_output=True,
             text=True,
@@ -95,7 +96,7 @@ def _validate_sha_in_repo(sha: str, repo_path: Path, project_id: str) -> None:
 def _get_commit_metadata(sha: str, repo_path: Path) -> tuple[str, list[str]]:
     """Get commit title and list of parent SHAs."""
     try:
-        meta_result = safe_subprocess.run(
+        meta_result = run_source_git(
             ["git", "-C", str(repo_path), "log", "-1", "--format=%s%n%P", sha],
             capture_output=True,
             text=True,

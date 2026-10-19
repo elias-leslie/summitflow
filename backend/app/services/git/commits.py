@@ -6,7 +6,8 @@ import re
 from pathlib import Path
 from typing import Any
 
-from ...utils import safe_subprocess
+from ...utils import safe_subprocess  # noqa: F401  # retained patch surface
+from ...utils.agent_execution import run_source_git
 
 
 def get_current_commit(repo_path: Path | str) -> str:
@@ -20,7 +21,7 @@ def get_current_commit(repo_path: Path | str) -> str:
     """
     repo_path = Path(repo_path)
 
-    result = safe_subprocess.run(
+    result = run_source_git(
         ["git", "-C", str(repo_path), "rev-parse", "HEAD"],
         capture_output=True,
         text=True,
@@ -49,7 +50,7 @@ def capture_diff(
     """
     repo_path = Path(repo_path)
 
-    result = safe_subprocess.run(
+    result = run_source_git(
         ["git", "-C", str(repo_path), "diff", f"{base_sha}..{head_sha}", "--unified=3"],
         capture_output=True,
         text=True,
@@ -78,7 +79,7 @@ def get_diff_stats(
     """
     repo_path = Path(repo_path)
 
-    result = safe_subprocess.run(
+    result = run_source_git(
         ["git", "-C", str(repo_path), "diff", f"{base_sha}..{head_sha}", "--shortstat"],
         capture_output=True,
         text=True,

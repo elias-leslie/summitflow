@@ -615,7 +615,9 @@ def test_isolated_plan_uses_selected_native_declaration(repo: Path) -> None:
 def test_accept_revision_detects_shared_plan_mutation_during_checks(repo: Path, monkeypatch) -> None:
     scanner = repo.parent / "shared-scanner"
     scanner.write_text("original scanner")
-    monkeypatch.setattr(acceptance.ci_parity.shutil, "which", lambda _name, **_: str(scanner))
+    original_which = acceptance.ci_parity.which
+    monkeypatch.setattr(acceptance.ci_parity, "which", lambda name: str(scanner)
+                        if name in {"gitleaks", "semgrep", "osv-scanner"} else original_which(name))
 
     def mutate(command: list[str], cwd: Path):
         scanner.write_text("changed scanner during acceptance")

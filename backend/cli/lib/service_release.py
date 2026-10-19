@@ -19,6 +19,11 @@ from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import Any
 
+from app.utils.agent_execution import run_source_git
+
+# Tether bounds one execution response at 128 MiB; archives remain bounded too.
+_SOURCE_ARCHIVE_MAX_BYTES = 128 * 1024 * 1024
+
 
 class ReleaseError(RuntimeError):
     """Raised when a stable release cannot be prepared or recorded safely."""
@@ -176,7 +181,7 @@ def _read_receipt(release: PreparedRelease) -> dict[str, Any]:
 
 
 def _git(repo: Path, *arguments: str) -> str:
-    result = subprocess.run(
+    result = run_source_git(
         ["git", *arguments],
         cwd=repo,
         text=True,
@@ -256,17 +261,16 @@ def _materialize_release(
     source_root = staging / "source"
     source_root.mkdir()
     try:
-        result = subprocess.run(
-            ["git", "archive", "--format=tar", "--output", str(archive_path), commit],
-            cwd=repo,
-            text=True,
-            capture_output=True,
-            encoding="utf-8",
-            errors="replace",
-            check=False,
+        result = run_source_git(
+            ["git", "archive", "--format=tar", commit],
+            cwd=repo, capture_output=True, check=False,
+            max_output_bytes=_SOURCE_ARCHIVE_MAX_BYTES,
         )
         if result.returncode != 0:
             raise ReleaseError("Accepted source could not be archived")
+        if len(result.stdout) > _SOURCE_ARCHIVE_MAX_BYTES:
+            raise ReleaseError("Accepted source archive exceeds the 128 MiB execution bound")
+        archive_path.write_bytes(result.stdout)
         with tarfile.open(archive_path) as archive:
             archive.extractall(source_root, filter="data")
         archive_path.unlink()
@@ -325,7 +329,7 @@ def require_forward_deploy(project_id: str, repo: Path, commit: str, *, rollback
     current = current_release_commit(project_id, state_root=state_root)
     if rollback or current is None or current == commit:
         return
-    result = subprocess.run(["git", "merge-base", "--is-ancestor", current, commit], cwd=repo,
+    result = run_source_git(["git", "merge-base", "--is-ancestor", current, commit], cwd=repo,
                             capture_output=True, text=True, check=False)
     if result.returncode == 0:
         return

@@ -59,6 +59,7 @@ FORWARD_CONTEXT_SETTINGS = {"allow_extra_args": True, "ignore_unknown_options": 
 # The help here is only the one-line root --help listing; `st <command> --help`
 # shows the module's own help.
 LAZY_COMMANDS: dict[str, tuple[str, str, str, str, bool]] = {
+    "checkout-job": ("checkout_job", "forward", "checkout_job", "Run an internal agent checkout job.", True),
     "create": ("tasks", "named", "", "Create a pending task.", False),
     "list": ("tasks", "named", "", "List tasks with optional filters.", False),
     "ready": ("tasks", "named", "", "List claimable tasks, or use --blocked to inspect blocked pending tasks.", False),
@@ -155,7 +156,7 @@ def _register_lazy(target: typer.Typer, name: str) -> None:
         target.command(name, help=help_text if name == SESSION_EVENTS_COMMAND else None)(getattr(module, attribute))
     elif kind == "forward":
         target.command(
-            name, context_settings=FORWARD_CONTEXT_SETTINGS, help=module.app.info.help, add_help_option=False,
+            name, context_settings=FORWARD_CONTEXT_SETTINGS, help=module.app.info.help, add_help_option=False, hidden=hidden,
         )(getattr(module, attribute))
     else:
         for cmd in module.app.registered_commands:

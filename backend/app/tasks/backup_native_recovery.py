@@ -743,6 +743,10 @@ def _copy_st_metadata(roots: dict[str, Path], destination: Path, inventory: dict
 
 
 def _validate_st_metadata_restore(project_dir: Path, recovery_dir: Path, manifest: dict[str, Any]) -> dict[str, tuple[SnapshotEntry, str]] | None:
+    # Legacy manifests must also restore into an empty Git destination: an
+    # extracted config or hook must never participate in owner-side Git work.
+    if (project_dir / ".git").exists() or (project_dir / ".git").is_symlink():
+        raise RuntimeError("ST recovery refuses existing destination Git metadata")
     if "st_metadata" not in manifest:
         return None  # Older backups retain their existing recovery behavior.
     metadata = manifest["st_metadata"]
@@ -762,10 +766,6 @@ def _validate_st_metadata_restore(project_dir: Path, recovery_dir: Path, manifes
     inventory = _inventory_st_metadata({"": recovery_dir / ST_METADATA_DIR_NAME}, payload=True, missing_ok=not expected)
     if inventory.keys() != expected.keys() or any(digest != expected[rel]["sha256"] or entry.size != expected[rel]["size"] or entry.mode != expected[rel]["mode"] for rel, (entry, digest) in inventory.items()):
         raise RuntimeError("ST recovery metadata checksum or file inventory mismatch")
-    # This payload belongs only to an isolated reconstructed repository. Existing
-    # metadata may be a foreign repository or pointer to another checkout.
-    if (project_dir / ".git").exists() or (project_dir / ".git").is_symlink():
-        raise RuntimeError("ST recovery refuses existing destination Git metadata")
     if any(os.environ.get(key) for key in (
         "GIT_DIR", "GIT_WORK_TREE", "GIT_COMMON_DIR", "GIT_INDEX_FILE",
         "GIT_OBJECT_DIRECTORY", "GIT_ALTERNATE_OBJECT_DIRECTORIES",
@@ -1129,6 +1129,17 @@ def build_consistent_snapshot(
     git_history_mode: str = "full",
 ) -> tuple[Path, dict[str, Any]]:
     """Stage a tree and fail closed if source files or Git refs changed."""
+    from .backup_native_agent import capture_snapshot_as_agent, requires_agent_snapshot
+
+    if requires_agent_snapshot(project_dir):
+        from .backup_native_archive import _should_exclude
+
+        if should_exclude is not _should_exclude:
+            raise RuntimeError("Agent backup capture requires the canonical exclusion policy")
+        return capture_snapshot_as_agent(
+            project_dir, staging, excludes, sensitive_paths, source_roots=source_roots,
+            capture_git=capture_git, git_history_mode=git_history_mode,
+        )
     root_metadata = project_dir.lstat()
     if not (stat.S_ISDIR(root_metadata.st_mode) or stat.S_ISREG(root_metadata.st_mode)):
         raise RuntimeError("Backup source must be a directory or explicit regular file")

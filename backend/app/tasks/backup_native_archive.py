@@ -500,7 +500,7 @@ def prepare_project_payload(
         return (codex_essentials and not is_codex_recovery_input(relative)) or _should_exclude(relative, patterns)
 
     snapshot_dir, recovery = build_consistent_snapshot(
-        project_dir, staging, excludes, capture_excludes, sensitive_paths,
+        project_dir, staging, excludes, capture_excludes if codex_essentials else _should_exclude, sensitive_paths,
         source_roots=source_roots, git_bundle_reuse=git_bundle_reuse,
         capture_git=not codex_essentials,
         git_history_mode=git_history_mode,

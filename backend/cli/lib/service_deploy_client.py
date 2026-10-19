@@ -6,8 +6,9 @@ import getpass
 import json
 import re
 import socket
-import subprocess
 from pathlib import Path
+
+from app.utils.agent_execution import run_source_git
 
 SOCKET_DIR = Path("/run/summitflow-deploy")
 VERBS = ("deploy", "rollback", "stop", "status")
@@ -21,7 +22,7 @@ def delegated_user(runtime_user: str) -> str:
 
 
 def main_sha(checkout: Path) -> str:
-    result = subprocess.run(["git", "-C", str(checkout), "rev-parse", "--verify", "refs/heads/main^{commit}"],
+    result = run_source_git(["git", "-C", str(checkout), "rev-parse", "--verify", "refs/heads/main^{commit}"],
                             capture_output=True, text=True, check=False)
     sha = result.stdout.strip()
     if result.returncode != 0 or not re.fullmatch(r"[0-9a-f]{40}", sha):

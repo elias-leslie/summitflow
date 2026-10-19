@@ -7,15 +7,23 @@ the pre-Tether paths, so every consumer works before and after the cutover.
 
 from __future__ import annotations
 
+import contextlib
+import contextvars
 import http.client
 import json
 import os
 import pwd
 import socket
 import stat
+import threading
+from collections.abc import Callable
 from typing import Any
 
-from ..config import TETHER_AGENT_SOCKET_DEFAULT, TETHER_AGENT_USER_DEFAULT, TETHER_DEFAULT_INSTANCE
+from ..tether_config import (
+    TETHER_AGENT_SOCKET_DEFAULT,
+    TETHER_AGENT_USER_DEFAULT,
+    TETHER_DEFAULT_INSTANCE,
+)
 
 # Lifecycle states in which Tether serves sessions and roots ("disabled" does not).
 _SERVING = {"ready", "reconciling"}
@@ -95,10 +103,34 @@ class _Connection(http.client.HTTPConnection):
 
 def request(method: str, path: str, body: dict[str, Any] | None = None, *,
             timeout: float = 2.0, max_bytes: int = MAX_RESPONSE_BYTES,
-            socket_file: str | None = None) -> tuple[int, Any]:
+            socket_file: str | None = None,
+            cancel_check: Callable[[], None] | None = None) -> tuple[int, Any]:
     """One JSON request (active instance unless socket_file); raises OSError/ValueError/HTTPException on transport failure."""
     connection = _Connection(socket_file or socket_path(), timeout)
+    stopped = threading.Event()
+    cancelled: list[BaseException] = []
+    monitor: threading.Thread | None = None
+
+    def watch_cancellation() -> None:
+        while not stopped.is_set():
+            try:
+                assert cancel_check is not None
+                cancel_check()
+            except BaseException as exc:
+                cancelled.append(exc)
+                if connection.sock is not None:
+                    with contextlib.suppress(OSError):
+                        connection.sock.shutdown(socket.SHUT_RDWR)
+                return
+            stopped.wait(0.2)
+
     try:
+        if cancel_check is not None:
+            cancel_check()
+            connection.connect()
+            context = contextvars.copy_context()
+            monitor = threading.Thread(target=context.run, args=(watch_cancellation,), daemon=True, name="tether-cancel")
+            monitor.start()
         payload = json.dumps(body).encode() if body is not None else None
         headers = {"content-type": "application/json"} if payload is not None else {}
         connection.request(method, path, body=payload, headers=headers)
@@ -106,8 +138,17 @@ def request(method: str, path: str, body: dict[str, Any] | None = None, *,
         raw = response.read(max_bytes + 1)
         if len(raw) > max_bytes:
             raise ValueError("Tether response exceeds bound")
+        if cancelled:
+            raise cancelled[0]
         return response.status, json.loads(raw) if raw else None
+    except BaseException:
+        if cancelled:
+            raise cancelled[0] from None
+        raise
     finally:
+        stopped.set()
+        if monitor is not None:
+            monitor.join()
         connection.close()
 
 

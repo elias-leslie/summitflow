@@ -8,10 +8,11 @@ namespace where they execute.
 
 from __future__ import annotations
 
-import subprocess
 from pathlib import Path
 
 import typer
+
+from app.utils.agent_execution import run_source_git
 
 from ..config import get_project_override, get_project_root_path
 from ..tool_registry import load_tool_registry
@@ -24,12 +25,17 @@ def _resolve_repo_root() -> Path:
         if not registered_root or not Path(registered_root).is_dir():
             raise typer.BadParameter(f"Project {project!r} has no available registered root", param_hint="--project")
         return Path(registered_root).resolve()
-    result = subprocess.run(
+    try:
+        result = run_source_git(
         ["git", "rev-parse", "--show-toplevel"],
         text=True,
         capture_output=True,
         check=False,
-    )
+        )
+    except OSError:
+        # Root discovery is only a hint; execution still checks source ownership
+        # before loading tools. A detached/non-repository cwd remains valid.
+        return Path.cwd()
     if result.returncode == 0 and result.stdout.strip():
         return Path(result.stdout.strip())
     return Path.cwd()
