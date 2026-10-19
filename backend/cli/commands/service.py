@@ -534,8 +534,9 @@ def rebuild(
     wait_for_summitflow_api()
     require_pulse_gate(services.project_id)
     overlapping_components = (
-        services.backend_dir.is_relative_to(services.frontend_dir)
-        or services.frontend_dir.is_relative_to(services.backend_dir)
+        services.backend_service and services.frontend_service
+        and (services.backend_dir.is_relative_to(services.frontend_dir)
+             or services.frontend_dir.is_relative_to(services.backend_dir))
     )
     if scope != RebuildScope.full and overlapping_components:
         print("[service] shared component directory; using full rebuild")

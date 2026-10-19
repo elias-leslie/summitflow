@@ -563,6 +563,18 @@ def test_shared_component_directory_falls_back_to_full(project, lifecycle, monke
     result = CliRunner().invoke(service.app, ["rebuild", "example", "--scope", "backend"])
     assert result.exit_code == 0, result.output
     lifecycle["build_frontend"].assert_called_once()
+    assert "frontend.service" in [call.args[0] for call in lifecycle["restart_service"].call_args_list]
+
+
+def test_cli_runtime_backend_scope_does_not_restart_the_only_frontend(project, lifecycle, monkeypatch):
+    monkeypatch.setattr(service, "_load", lambda _: replace(
+        project, backend_service="", backend_dir=project.root, frontend_dir=project.root,
+    ))
+    result = CliRunner().invoke(service.app, ["rebuild", "example", "--scope", "backend"])
+    assert result.exit_code == 0, result.output
+    restarted = [call.args[0] for call in lifecycle["restart_service"].call_args_list]
+    assert restarted == ["required.service", "active.service"]
+    assert "shared component directory; using full rebuild" not in result.output
 
 
 def test_daemon_reload_failure_propagates(project, monkeypatch, tmp_path):
