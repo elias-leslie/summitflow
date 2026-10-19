@@ -18,6 +18,16 @@ def _fetch(path: str) -> Any:
         return response.json()
 
 
+def _is_pinned_deploy_clone(root: Path, project_id: str) -> bool:
+    """The private clone a pinned-source deploy accepts in: a registered project lives elsewhere by design."""
+    from ..lib import service_release
+
+    try:
+        return root.resolve() == service_release.source_checkout_path(project_id).resolve()
+    except (OSError, service_release.ReleaseError, ValueError):
+        return False
+
+
 def run_project_identity_check(root: Path) -> int:
     """Fail proven identity drift; keep network-only evidence unavailable offline."""
     manifest_path = root / "project.identity.json"
@@ -67,11 +77,12 @@ def run_project_identity_check(root: Path) -> int:
         registered_root = registered.get("root_path")
         if not isinstance(registered_root, str) or not registered_root:
             failures.append("registry_root_missing")
-        elif Path(registered_root).expanduser().resolve() != root.resolve() and not (root / ".git").is_file():
+        elif (Path(registered_root).expanduser().resolve() != root.resolve() and not (root / ".git").is_file()
+              and not _is_pinned_deploy_clone(root, project_id)):
             failures.append("registry_root_mismatch")
         elif Path(registered_root).expanduser().resolve() != root.resolve():
             remote_unknown = True
-            print("IDENTITY:UNKNOWN:worktree_registry_root_differs")
+            print("IDENTITY:UNKNOWN:worktree_registry_root_differs")  # also the pinned deploy clone
         effective_lifecycle = registered.get("lifecycle")
         if not isinstance(effective_lifecycle, str) or effective_lifecycle not in {"active", "retired"}:
             failures.append("registry_lifecycle_missing")

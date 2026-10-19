@@ -107,6 +107,26 @@ def test_identity_gate_allows_git_worktree_at_another_path(tmp_path: Path, monke
     assert "worktree_registry_root_differs" in capsys.readouterr().out
 
 
+def test_identity_gate_allows_the_pinned_deploy_clone(tmp_path: Path, monkeypatch, capsys) -> None:
+    monkeypatch.setenv("SUMMITFLOW_SERVICE_STATE_ROOT", str(tmp_path / "state"))
+    clone = tmp_path / "state" / "projects" / "aico" / "source"
+    clone.mkdir(parents=True)
+    (clone / ".git").mkdir()
+    (clone / "project.identity.json").write_text(json.dumps({"project": {"id": "aico"}}))
+    elsewhere = checkout(tmp_path)  # a standalone copy anywhere else is still drift
+    (elsewhere / ".git").rmdir()
+    (elsewhere / ".git").mkdir()
+    def fetch(path: str):
+        if path == "/projects/aico":
+            return {"id": "aico", "root_path": str(tmp_path / "canonical"), "lifecycle": "active", "category": "dev"}
+        return [{"id": "aico"}]
+    monkeypatch.setattr(gate, "_fetch", fetch)
+    assert gate.run_project_identity_check(clone) == 0
+    assert "worktree_registry_root_differs" in capsys.readouterr().out
+    assert gate.run_project_identity_check(elsewhere) == 1
+    assert "registry_root_mismatch" in capsys.readouterr().out
+
+
 def test_aggregate_check_runs_identity_gate(tmp_path: Path) -> None:
     runtime = Mock(spec=list(check_dispatch.CheckRuntime.__dataclass_fields__))
     runtime.resolve_repo_root.return_value = tmp_path
