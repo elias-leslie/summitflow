@@ -132,11 +132,19 @@ def _xdist_worker_database(url: str, worker: str) -> str:
     # Every xdist worker of one run is a child of the same controller process.
     name = _worker_database_name(shared, worker, os.getppid())
     manager_url = _worker_db_manager_url(url)
-    # An admin copies the bootstrapped shared database (schema and pgvector);
-    # a CREATEDB role starts empty and is bootstrapped below.
-    template = sql.SQL(" TEMPLATE {}").format(sql.Identifier(shared)) if manager_url != url else sql.SQL("")
-    with psycopg.connect(manager_url, autocommit=True) as conn:
+    # The test role manages from the maintenance database: a session on the
+    # shared database would block copying it.
+    manager_dsn = urlunsplit(urlsplit(manager_url)._replace(path="/postgres")) if manager_url == url else manager_url
+    with psycopg.connect(manager_dsn, autocommit=True) as conn:
         conn.execute("SELECT pg_advisory_lock(hashtext('summitflow-xdist-databases'))")
+        # An admin, or a CREATEDB role that owns the shared database, copies the
+        # bootstrapped shared database (schema and pgvector); any other role starts
+        # empty and is bootstrapped below.
+        owns_shared = conn.execute(
+            "SELECT pg_get_userbyid(datdba) = current_user FROM pg_database WHERE datname = %s", (shared,)
+        ).fetchone() == (True,)
+        copy = manager_url != url or owns_shared
+        template = sql.SQL(" TEMPLATE {}").format(sql.Identifier(shared)) if copy else sql.SQL("")
         existing = [row[0] for row in conn.execute("SELECT datname FROM pg_database").fetchall()]
         for orphan in _orphaned_worker_databases(existing, shared):
             # A database another role owns stays where it is.
