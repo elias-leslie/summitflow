@@ -750,6 +750,16 @@ def test_failed_full_gate_names_failed_check_before_receipt_path(repo: Path) -> 
     assert "acceptance evidence: " in str(error.value)
 
 
+def test_failed_full_gate_without_fail_line_still_says_why(repo: Path) -> None:
+    def fail(command: list[str], _cwd: Path):
+        return subprocess.CompletedProcess(command, 1, "starting checks\nERROR pnpm: command not found\n\n", "")
+
+    with pytest.raises(acceptance.AcceptanceError) as error:
+        acceptance.accept_revision(repo, sha="HEAD", runner=fail)
+
+    assert str(error.value).split("; reproduce: ", 1)[0] != "acceptance_checks_failed"  # names a cause
+
+
 def test_later_success_does_not_overwrite_failed_acceptance_evidence(repo: Path) -> None:
     def fail(command, _cwd):
         return subprocess.CompletedProcess(command, 1, "failure artifact remains useful", "")

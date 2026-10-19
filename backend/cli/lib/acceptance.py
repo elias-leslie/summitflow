@@ -1581,6 +1581,10 @@ def _accept_revision(
             lines = (failed_check or {}).get("detail", "").splitlines()
             failure_line = next((line for line in lines if ":FAIL:" in line),
                                 next((line for line in lines if _blocking_skip(line)), None))
+            # Without a FAIL line, the evidence reason or the last output line: the
+            # receipt can sit in another user's home (deploy gate) the caller can't read.
+            failure_line = (failure_line or ((failed_check or {}).get("evidence") or {}).get("reason")
+                            or next((line.strip()[:300] for line in reversed(lines) if line.strip()), None))
             summary = f"{reason}; {failure_line}" if failure_line else reason
             raise AcceptanceError(f"{summary}; reproduce: {ci_parity.repro_command(seed)}; acceptance evidence: {artifact}")
         return _descriptor(receipt, artifact, reused=False)
