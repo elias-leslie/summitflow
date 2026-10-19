@@ -112,7 +112,7 @@ def test_route_template_survives_http_middleware_in_between(captured: _Capture) 
     app = FastAPI()
 
     @app.middleware("http")
-    async def passthrough(request, call_next):  # type: ignore[no-untyped-def]
+    async def passthrough(request, call_next):
         return await call_next(request)
 
     @app.get("/api/items/{item_id}")
