@@ -4,6 +4,8 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Any, cast
 
+from .identity import token_headers
+
 if TYPE_CHECKING:
     import httpx
 
@@ -32,7 +34,7 @@ class BaseHTTPClient:
 
         self.base_url = base_url.rstrip("/")
         self.project_id = project_id
-        self._client = httpx.Client(timeout=timeout, transport=transport)
+        self._client = httpx.Client(timeout=timeout, transport=transport, headers=token_headers())
 
     def close(self) -> None:
         self._client.close()

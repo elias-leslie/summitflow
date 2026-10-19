@@ -1,6 +1,6 @@
 [project]
 name = "summitflow-st-sdk"
-version = "0.1.2"
+version = "0.1.3"
 description = "Public SDK for trusted SummitFlow ST command extensions"
 requires-python = ">=3.13"
 dependencies = [

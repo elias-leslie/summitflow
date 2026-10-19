@@ -15,6 +15,7 @@ from urllib.parse import quote
 import yaml
 
 from .execution_context import canonical_repo_root
+from .identity import token_headers
 
 if TYPE_CHECKING:
     import httpx
@@ -187,7 +188,7 @@ def _fetch_projects_with_retry(api_base: str, max_retries: int) -> list[object] 
 
     for attempt in range(max_retries):
         try:
-            response = httpx.get(f"{api_base}/projects", timeout=5.0)
+            response = httpx.get(f"{api_base}/projects", headers=token_headers(), timeout=5.0)
         except httpx.TimeoutException as exc:
             logger.warning(
                 "Project detection timeout (attempt %d/%d): %s", attempt + 1, max_retries, exc
@@ -293,7 +294,9 @@ def _fetch_project(api_base: str, project_id: str) -> dict[str, Any] | None:
     import httpx
 
     try:
-        response = httpx.get(f"{api_base}/projects/{quote(project_id, safe='')}", timeout=5.0)
+        response = httpx.get(
+            f"{api_base}/projects/{quote(project_id, safe='')}", headers=token_headers(), timeout=5.0
+        )
     except httpx.HTTPError:
         response = None
     if response is not None and response.status_code == 404:

@@ -12,6 +12,7 @@ import httpx
 
 from .config import get_api_base
 from .http import APIError
+from .identity import token_headers
 
 
 @dataclass(frozen=True)
@@ -83,7 +84,7 @@ def _registry_root(api: ProjectApi) -> Path | None:
     api_base = get_api_base()
     try:
         with httpx.Client(timeout=5.0) as client:
-            response = client.get(f"{api_base}/projects/{api.project_id}")
+            response = client.get(f"{api_base}/projects/{api.project_id}", headers=token_headers())
     except httpx.HTTPError:
         return None
     if response.status_code != 200:
