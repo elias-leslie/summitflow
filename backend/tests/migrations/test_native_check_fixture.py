@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import itertools
 import json
 import subprocess
 import tomllib
@@ -23,11 +24,12 @@ def prepared_fixture(tmp_path, monkeypatch):
     monkeypatch.setattr(fixture, "IMAGE_LOCK", image_lock)
     operations = []
 
-    def docker(*arguments, environment=None):
+    def container(*arguments, environment=None):
         operations.append((arguments, environment))
         return image if arguments[:2] == ("image", "inspect") else "fixture-id"
 
-    monkeypatch.setattr(fixture, "docker", docker)
+    monkeypatch.setattr(fixture, "container", container)
+    monkeypatch.setattr(fixture, "container_cli", lambda: (["/usr/bin/docker"], False))
     connection = MagicMock()
     connection.__enter__.return_value = connection
     connection.execute.return_value.fetchone.return_value = (0,)
@@ -78,7 +80,7 @@ def test_fixture_rejects_nonempty_database_before_yield(prepared_fixture):
 
 def test_fixture_refuses_unavailable_image_without_create(prepared_fixture, monkeypatch):
     _root, operations, _connection = prepared_fixture
-    monkeypatch.setattr(fixture, "docker", lambda *_args, **_kwargs: "changed-image")
+    monkeypatch.setattr(fixture, "container", lambda *_args, **_kwargs: "changed-image")
     with pytest.raises(RuntimeError, match="preparation must be explicit"), fixture.database_fixture():
         pytest.fail("Fixture must not pull or substitute an image")
     assert operations == []
@@ -174,23 +176,70 @@ def test_fixture_rejects_invalid_host_scratch_mapping_before_container_create(pr
     _root, operations, _connection = prepared_fixture
     monkeypatch.setenv("ST_NATIVE_TMP_HOST_ROOT", mapping)
     with pytest.raises(RuntimeError, match="scratch mapping"), fixture.database_fixture(lifetime_seconds=210):
-        pytest.fail("Invalid mapping must never reach Docker create")
+        pytest.fail("Invalid mapping must never reach container create")
     assert all(arguments[0] != "create" for arguments, _env in operations)
 
 
 def test_fixture_cleanup_failure_is_visible_and_bounded(prepared_fixture, monkeypatch):
     root, _operations, _connection = prepared_fixture
-    original = fixture.docker
+    original = fixture.container
 
-    def docker(*arguments, **kwargs):
+    def container(*arguments, **kwargs):
         if arguments[0] == "rm":
             raise RuntimeError("Fixture cleanup unavailable")
         return original(*arguments, **kwargs)
 
-    monkeypatch.setattr(fixture, "docker", docker)
+    monkeypatch.setattr(fixture, "container", container)
     with pytest.raises(RuntimeError, match="cleanup unavailable"), fixture.database_fixture(lifetime_seconds=210):
         pass
     ledger = next((root / ".dev-tools" / "native-fixtures").glob("*.json"))
     data = json.loads(ledger.read_text())
     assert data["state"] == "cleanup_unavailable_watchdog_bounded"
     assert data["maximum_lifetime_seconds"] == 210
+
+
+def test_container_runs_through_the_chosen_cli(monkeypatch):
+    remote = ["/usr/bin/podman", "--remote", "--url", "unix:///run/user/1000/podman/podman.sock"]
+    calls = []
+    monkeypatch.setattr(fixture, "container_cli", lambda: (remote, True))
+    monkeypatch.setattr(fixture.subprocess, "run", lambda command, **kwargs: (
+        calls.append(command), subprocess.CompletedProcess(command, 0, "out\n", ""))[1])
+    assert fixture.container("rm", "--force", "name") == "out"
+    assert calls == [[*remote, "rm", "--force", "name"]]
+    monkeypatch.setattr(fixture, "container_cli", lambda: None)
+    with pytest.raises(RuntimeError, match="docker or rootless podman"):
+        fixture.container("rm", "name")
+
+
+def test_rootless_podman_gets_tmpfs_ownership_by_flag_not_uid_options(prepared_fixture, monkeypatch):
+    _root, operations, _connection = prepared_fixture
+    with fixture.database_fixture(lifetime_seconds=210):
+        pass
+    docker_create = next(arguments for arguments, _env in operations if arguments[0] == "create")
+    assert "--tmpfs" in docker_create and "uid=999" in docker_create[docker_create.index("--tmpfs") + 1]
+    operations.clear()
+    monkeypatch.setattr(fixture, "container_cli", lambda: (["/usr/bin/podman"], True))
+    with fixture.database_fixture(lifetime_seconds=210):
+        pass
+    create = next(arguments for arguments, _env in operations if arguments[0] == "create")
+    assert "--tmpfs" not in create
+    mount = next(value for flag, value in itertools.pairwise(create)
+                 if flag == "--mount" and value.startswith("type=tmpfs"))
+    assert "U=true" in mount and "uid=" not in mount
+    assert create[create.index("--user") + 1] == "999:999" and "--read-only" in create
+
+
+def test_missing_image_error_names_the_locked_reference(prepared_fixture, monkeypatch, tmp_path):
+    _root, operations, _connection = prepared_fixture
+    reference = "docker.io/pgvector/pgvector:pg16@sha256:" + "b" * 64
+    lock = tmp_path / "with-reference.lock"
+    lock.write_text("sha256:" + "a" * 64 + "\n" + reference + "\n")
+    monkeypatch.setattr(fixture, "IMAGE_LOCK", lock)
+
+    def missing(*_args, **_kwargs):
+        raise RuntimeError("image inspect failed")
+
+    monkeypatch.setattr(fixture, "container", missing)
+    with pytest.raises(RuntimeError, match="podman pull " + reference), fixture.database_fixture():
+        pytest.fail("Fixture must not pull or substitute an image")
+    assert operations == []

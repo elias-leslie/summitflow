@@ -2,20 +2,25 @@
 
 from __future__ import annotations
 
+import sys
+from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))  # run as a script, only scripts/ is on the path
+
 import json
 import os
 import secrets
 import signal
 import subprocess
-import sys
 import tempfile
 import time
 from contextlib import contextmanager
-from pathlib import Path
 from urllib.parse import urlsplit
 from uuid import uuid4
 
 import psycopg
+
+from cli.lib.ci_parity import container_cli
 
 BACKEND = Path(__file__).resolve().parents[1]
 ROOT = BACKEND.parent
@@ -26,23 +31,26 @@ PYTHON_TEST_TIMEOUT_SECONDS = 1860
 BOOTSTRAP_TIMEOUT_SECONDS = 180
 PYTHON_TEST_WORKERS = max(1, min(8, (os.cpu_count() or 2) // 2))
 READINESS_TIMEOUT_SECONDS = 60
-DOCKER_TIMEOUT_SECONDS = 30
-# Keep bootstrap, readiness and one Docker cleanup operation inside the
-# watchdog. The outer Python stage also reserves three Docker setup operations.
+CONTAINER_TIMEOUT_SECONDS = 30
+# Keep bootstrap, readiness and one container cleanup operation inside the
+# watchdog. The outer Python stage also reserves three container setup operations.
 LIFETIME_SECONDS = (PYTHON_TEST_TIMEOUT_SECONDS + BOOTSTRAP_TIMEOUT_SECONDS
-                    + READINESS_TIMEOUT_SECONDS + DOCKER_TIMEOUT_SECONDS)
+                    + READINESS_TIMEOUT_SECONDS + CONTAINER_TIMEOUT_SECONDS)
 FLEET_LIFETIME_SECONDS = 1800
-DOCKER = "/usr/bin/docker"
 
 
-def docker(*arguments: str, environment: dict[str, str] | None = None) -> str:
+def container(*arguments: str, environment: dict[str, str] | None = None) -> str:
+    """Run the container CLI: docker when reachable, else this user's rootless podman (see container_cli)."""
+    engine = container_cli()
+    if engine is None:
+        raise RuntimeError("Isolated PostgreSQL fixture needs docker or rootless podman")
     result = subprocess.run(
-        [DOCKER, *arguments], env=environment, capture_output=True, text=True,
-        timeout=DOCKER_TIMEOUT_SECONDS, check=False,
+        [*engine[0], *arguments], env=environment, capture_output=True, text=True,
+        timeout=CONTAINER_TIMEOUT_SECONDS, check=False,
     )
     if result.returncode:
         # Never include container environment/credentials in retained diagnostics.
-        raise RuntimeError(f"Isolated PostgreSQL fixture Docker operation failed: {arguments[0]}")
+        raise RuntimeError(f"Isolated PostgreSQL fixture container operation failed: {arguments[0]}")
     return result.stdout.strip()
 
 
@@ -51,11 +59,18 @@ def database_fixture(*, lifetime_seconds: int = LIFETIME_SECONDS):
     """Only this invocation's named fixture is created or removed; no host DB access."""
     if not 60 <= lifetime_seconds <= LIFETIME_SECONDS:
         raise RuntimeError("Fixture lifetime exceeds the canonical native stage bound")
-    image = IMAGE_LOCK.read_text().strip()
+    # Line 1 is the immutable image ID; line 2, when present, is the registry reference to pull it from.
+    image, _, reference = IMAGE_LOCK.read_text().strip().partition("\n")
+    image = image.strip()
     if not image.startswith("sha256:") or len(image) != 71:
         raise RuntimeError("Fixture image must be pinned to a full immutable local image ID")
-    if docker("image", "inspect", image, "--format", "{{.Id}}") != image:
-        raise RuntimeError("Prepared PostgreSQL fixture image unavailable; preparation must be explicit")
+    try:
+        prepared = container("image", "inspect", image, "--format", "{{.Id}}").removeprefix("sha256:")
+    except RuntimeError:
+        prepared = ""
+    if prepared != image.removeprefix("sha256:"):
+        pull = f"podman pull {reference.strip()}" if reference.strip() else "pull the locked image"
+        raise RuntimeError(f"Prepared PostgreSQL fixture image unavailable; preparation must be explicit ({pull})")
     name = "st-native-db-" + uuid4().hex
     ledger_dir = ROOT / ".dev-tools" / "native-fixtures"
     ledger_dir.mkdir(parents=True, exist_ok=True)
@@ -87,10 +102,15 @@ def database_fixture(*, lifetime_seconds: int = LIFETIME_SECONDS):
             host_root = Path(mapping)
             if (not host_root.is_absolute() or ".." in host_root.parts or host_root == Path("/tmp")
                     or not host_root.is_dir() or host_root.resolve() != host_root):
-                raise RuntimeError("Invalid native Docker scratch mapping")
+                raise RuntimeError("Invalid native scratch mapping")
             if not socket.is_relative_to("/tmp"):
-                raise RuntimeError("Native Docker scratch mapping requires a private /tmp socket")
+                raise RuntimeError("Native scratch mapping requires a private /tmp socket")
             host_socket = host_root / socket.relative_to("/tmp")
+        # Rootless podman rejects tmpfs uid=/gid= options; its U flag hands the mount to --user instead.
+        engine = container_cli()
+        data = (["--mount", "type=tmpfs,destination=/var/lib/postgresql/data,tmpfs-mode=0700,U=true"]
+                if engine and engine[1]
+                else ["--tmpfs", "/var/lib/postgresql/data:rw,uid=999,gid=999,mode=0700"])
         home = directory / "home"
         home.mkdir()
         password = secrets.token_urlsafe(32)
@@ -100,15 +120,15 @@ def database_fixture(*, lifetime_seconds: int = LIFETIME_SECONDS):
         command = (f"(sleep {lifetime_seconds}; kill -TERM 1) & "
                    "exec /usr/local/bin/docker-entrypoint.sh postgres "
                    "-c listen_addresses='' -c unix_socket_directories=/var/run/postgresql")
-        docker("create", "--pull", "never", "--name", name, "--label", "summitflow.native-fixture=true",
+        container("create", "--pull", "never", "--name", name, "--label", "summitflow.native-fixture=true",
                "--network", "none", "--read-only", "--user", "999:999",
-               "--tmpfs", "/var/lib/postgresql/data:rw,uid=999,gid=999,mode=0700",
+               *data,
                "--mount", f"type=bind,source={host_socket},target=/var/run/postgresql",
                "--env", "POSTGRES_DB=summitflow_test", "--env", "POSTGRES_USER=summitflow_app",
                "--env", "POSTGRES_PASSWORD", "--entrypoint", "/bin/sh", image,
                "-c", command, environment=environment)
         record("created")
-        docker("start", name)
+        container("start", name)
         # tempfile's fixed prefix and generated suffix need no URL escaping;
         # avoiding percent escapes also supports Alembic's ConfigParser URL.
         url = f"postgresql://summitflow_app:{password}@/summitflow_test?host={socket}"
@@ -134,7 +154,7 @@ def database_fixture(*, lifetime_seconds: int = LIFETIME_SECONDS):
                "AGENT_HUB_URL": "http://127.0.0.1:1", "PYTHONPATH": str(BACKEND)}
     finally:
         try:
-            docker("rm", "--force", name)
+            container("rm", "--force", name)
             record("removed")
         except RuntimeError:
             record("cleanup_unavailable_watchdog_bounded")
@@ -149,7 +169,7 @@ def main() -> int:
     if mode not in {"bootstrap", "python", "fleet", "deep"}:
         raise SystemExit("Usage: native_check_fixture.py bootstrap|python|fleet|deep")
     full_suite = mode in {"python", "deep"}
-    lifetime_seconds = (BOOTSTRAP_TIMEOUT_SECONDS + DOCKER_TIMEOUT_SECONDS if mode == "bootstrap"
+    lifetime_seconds = (BOOTSTRAP_TIMEOUT_SECONDS + CONTAINER_TIMEOUT_SECONDS if mode == "bootstrap"
                         else LIFETIME_SECONDS if full_suite else FLEET_LIFETIME_SECONDS)
     with database_fixture(lifetime_seconds=lifetime_seconds) as environment:
         bootstrap = subprocess.run(
