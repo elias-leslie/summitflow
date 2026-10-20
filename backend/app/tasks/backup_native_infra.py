@@ -15,6 +15,7 @@ from collections.abc import Callable
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
+from urllib.parse import unquote, urlsplit
 
 import yaml
 
@@ -40,6 +41,7 @@ from .backup_native_archive import (
     INFRASTRUCTURE_DATABASE_DUMP_NAME,
     INFRASTRUCTURE_DATABASE_PAYLOAD_NAME,
     _gzip_payload_file,
+    _read_env_file,
     _regular_file_filter,
     _run_gzip_stream,
     _run_plain_stream,
@@ -93,8 +95,27 @@ def _dump_infra_database(destination: Path) -> int:
         command = ["docker", "exec", pg_container, "pg_dumpall", "-U", pg_user]
         returncode, stderr = stream(command, destination, env=scratch_subprocess_env(), timeout=INFRA_BACKUP_TIMEOUT)
     else:
-        env = scratch_subprocess_env({**os.environ, "PGPASSWORD": os.environ.get("PGPASSWORD", "")})
-        command = ["pg_dumpall", "-U", pg_user, "-h", pg_host]
+        # Match project dumps: the installed worker need not export PGPASSWORD;
+        # its existing owner-held administrator URL is the backup credential.
+        env = dict(os.environ)
+        pg_port = env.get("PGPORT", "5432")
+        password = env.get("PGPASSWORD", "")
+        if not (env.get("PGUSER") and password):
+            admin_url = env.get("POSTGRES_ADMIN_URL") or _read_env_file(Path.home() / ".env.local").get("POSTGRES_ADMIN_URL")
+            if admin_url:
+                admin = urlsplit(admin_url)
+                aliases = {"localhost": "127.0.0.1", "::1": "127.0.0.1"}
+                if ((env.get("PGHOST") and aliases.get(pg_host, pg_host) != aliases.get(admin.hostname or "", admin.hostname))
+                        or (env.get("PGPORT") and int(pg_port) != (admin.port or 5432))):
+                    raise RuntimeError("Backup administrator and infrastructure database endpoints differ")
+                if admin.username and admin.password:
+                    pg_user, password = unquote(admin.username), unquote(admin.password)
+                    pg_host, pg_port = admin.hostname or pg_host, str(admin.port or 5432)
+        if not password:
+            raise RuntimeError("Configured infrastructure database credentials are unavailable; capture refused")
+        env["PGPASSWORD"] = password
+        command = ["pg_dumpall", "-U", pg_user, "-h", pg_host, "-p", pg_port]
+        env = scratch_subprocess_env(env)
         returncode, stderr = stream(command, destination, env=env, timeout=INFRA_BACKUP_TIMEOUT)
     if returncode != 0:
         detail = stderr.decode(errors="ignore").strip()
