@@ -291,8 +291,12 @@ def _restore(project: service_ops.ProjectServices, frozen: dict[str, Any], appli
             raise ValueError("Owner unit configuration restored; previous activity is unavailable")
     services = (service_ops.project_at_source(project, prior.source_root, source_sha=prior.source.source_commit)
                 if prior else project)
+    workers = (*services.default_workers, *frozen["optional"])
+    if prior is None:
+        mains = {service_ops.canonical_unit(unit) for unit in (services.backend_service, services.frontend_service)}
+        workers = tuple(unit for unit in frozen["active"] if unit not in mains)
     for unit, port in ((services.backend_service, services.backend_port),
-                       *((unit, 0) for unit in (*services.default_workers, *frozen["optional"])),
+                       *((unit, 0) for unit in workers),
                        (services.frontend_service, services.frontend_port)):
         if prior is None and service_ops.canonical_unit(unit) not in frozen["active"]:
             continue

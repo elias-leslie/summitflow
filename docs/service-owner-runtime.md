@@ -66,16 +66,22 @@ are migrations with existing credentials, unit sync, service restart, health che
 and deployment receipts. Source and dependency builds remain agent operations.
 
 The import binds project, exact commit/tree, canonical full acceptance, build
-outputs and tool revision. Initial app support covers portable Node releases such
-as Aico. Python runtime environments and custom release installers are explicitly
-unsupported until their relocation contract is implemented. Aico runs prebuilt
-entrypoints from the accepted release layout without startup builds.
+outputs and tool revision. Supported apps include portable Node releases such as
+Aico and Python backends with `pyproject.toml` and `uv.lock`. Python preparation
+copies the build tool's compatible interpreter unchanged, builds a locked,
+non-editable relocatable environment, and bundles both with internal relative
+links. A moved-copy smoke check verifies that the bundled interpreter supplies its
+own standard library under a clean home. Runtime Python downloads and dependencies
+on the agent's interpreter or package caches are unnecessary. Custom release
+installers remain unsupported. Aico runs prebuilt entrypoints without startup builds.
 
 Existing current/previous pointers and the deployment lock are retained. The
-transaction snapshots unit files, including timer/socket companion services.
-Failed activation restores and checks the previous accepted release. Undo preserves
-later release changes or owner unit edits; a first deployment without a previous
-accepted runtime reports that limitation rather than rebuilding old source as owner.
+transaction snapshots unit files and their activity, including timer/socket
+companion services. Failed activation restores and checks the previous accepted
+release. On the first managed deployment, it restores the existing unit files and
+restarts only the previously active units; inactive timers remain inactive even
+when their companion service was running. Undo preserves later release changes or
+owner unit edits. Neither recovery path rebuilds source as the owner.
 Successful private import removes the agent's transfer archive and unused staging.
 
 ## Pinned tool installation
