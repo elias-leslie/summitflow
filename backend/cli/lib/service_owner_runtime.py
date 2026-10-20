@@ -233,9 +233,11 @@ def _precheck(project: service_ops.ProjectServices, request: dict[str, Any], ope
                 raise ValueError("Artifact differs from canonical accepted source")
         tracked = proof["tracked"]
     units = _unit_contents(project)
-    active_optional = [unit for unit in project.optional_workers if service_ops.service_state(unit) == "active"]
+    active = [unit for unit, contents in units.items()
+              if contents is not None and service_ops.service_state(unit) == "active"]
+    active_optional = [unit for unit in project.optional_workers if service_ops.canonical_unit(unit) in active]
     frozen = {"request_id": request.get("request_id"), "sha": sha, "current": current,
-              "previous": previous, "units": units, "optional": active_optional, "tracked": tracked}
+              "previous": previous, "units": units, "active": active, "optional": active_optional, "tracked": tracked}
     path = _snapshot_path(project.project_id, transaction)
     path.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
     releases._write_json(path, frozen)
@@ -283,22 +285,21 @@ def _restore(project: service_ops.ProjectServices, frozen: dict[str, Any], appli
         raise ValueError("Previous owner runtime daemon reload failed")
     prior = _retained(project.project_id, frozen["current"]) if frozen["current"] else None
     if prior is None:
-        state = releases._project_state(project.project_id)
-        for name in ("current", "previous"):
-            if frozen[name]:
-                releases._replace_symlink(state / name, state / "releases" / frozen[name])
-            else:
-                (state / name).unlink(missing_ok=True)
         if service_ops.stop_services(project):
             raise ValueError("Failed initial owner runtime could not be stopped")
-        raise ValueError("Owner unit configuration restored; no previous accepted runtime exists to restart")
-    services = service_ops.project_at_source(project, prior.source_root, source_sha=prior.source.source_commit)
+        if "active" not in frozen:
+            raise ValueError("Owner unit configuration restored; previous activity is unavailable")
+    services = (service_ops.project_at_source(project, prior.source_root, source_sha=prior.source.source_commit)
+                if prior else project)
     for unit, port in ((services.backend_service, services.backend_port),
                        *((unit, 0) for unit in (*services.default_workers, *frozen["optional"])),
                        (services.frontend_service, services.frontend_port)):
+        if prior is None and service_ops.canonical_unit(unit) not in frozen["active"]:
+            continue
         if unit and service_ops.restart_service(unit, port=port, project=services):
             raise ValueError("Previous owner runtime restart failed")
-    if service_ops.verify_health(services):
+    running = {service_ops.canonical_unit(unit) for unit in (services.backend_service, services.frontend_service) if unit}
+    if (prior is not None or running.issubset(frozen["active"])) and service_ops.verify_health(services):
         raise ValueError("Previous owner runtime health verification failed")
     state = releases._project_state(project.project_id)
     for name in ("current", "previous"):

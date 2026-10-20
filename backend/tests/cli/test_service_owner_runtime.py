@@ -69,3 +69,38 @@ def test_private_handler_only_accepts_deploy_action(installed, action_request, a
     action_request["action"] = action
     with pytest.raises(ValueError, match="protocol, action or phase"):
         owner.handle("precheck", action_request)
+
+
+@pytest.mark.parametrize("active", [[], ["example-backend.service", "example-frontend.service"]])
+def test_first_deployment_rollback_restores_existing_runtime(tmp_path, monkeypatch, active):
+    project = owner.service_ops.ProjectServices(
+        project_id="example", root=tmp_path, backend_service="example-backend.service",
+        frontend_service="example-frontend.service", backend_port=8000, frontend_port=3000,
+        default_workers=(), optional_workers=(), backend_dir=tmp_path, frontend_dir=tmp_path,
+        health_endpoint="/health", runtime_user="owner")
+    units = tmp_path / "units"
+    units.mkdir()
+    previous = {name: f"old {name}\n" for name in (project.backend_service, project.frontend_service)}
+    for name in previous:
+        (units / name).write_text("failed new release\n")
+    state = tmp_path / "state"
+    state.mkdir()
+    (state / "current").symlink_to("failed-release")
+    monkeypatch.setattr(owner, "_pointer", lambda *args: "b" * 32)
+    monkeypatch.setattr(owner, "_units_dir", lambda: units)
+    monkeypatch.setattr(owner.releases, "_project_state", lambda _: state)
+    monkeypatch.setattr(owner.service_ops, "run", lambda _: 0)
+    stop = Mock(return_value=0)
+    restart = Mock(return_value=0)
+    health = Mock(return_value=0)
+    monkeypatch.setattr(owner.service_ops, "stop_services", stop)
+    monkeypatch.setattr(owner.service_ops, "restart_service", restart)
+    monkeypatch.setattr(owner.service_ops, "verify_health", health)
+    frozen = {"current": None, "previous": None, "units": previous, "optional": [], "active": active}
+
+    assert owner._restore(project, frozen, "b" * 32) is True
+    assert {name: (units / name).read_text() for name in previous} == previous
+    assert not (state / "current").is_symlink()
+    stop.assert_called_once_with(project)
+    assert [call.args[0] for call in restart.call_args_list] == active
+    assert health.call_count == bool(active)
