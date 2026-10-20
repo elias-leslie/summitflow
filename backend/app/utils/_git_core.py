@@ -10,7 +10,7 @@ if TYPE_CHECKING:
     from ..api.models.git_models import RepoStatus, SyncResult
 
 from ..logging_config import get_logger
-from . import safe_subprocess  # noqa: F401  # retained patch surface
+from . import safe_subprocess
 
 # Re-export repo-source helpers so existing imports and mocks on this module work.
 from ._git_repo_sources import (  # noqa: F401
@@ -29,7 +29,6 @@ from ._git_repo_sources import (  # noqa: F401
     _translate_path,
     is_valid_git_repo,
 )
-from .agent_execution import run_source_git
 
 logger = get_logger(__name__)
 
@@ -92,7 +91,7 @@ def get_managed_repos() -> list[Path]:
 
 def run_git(args: list[str], cwd: Path) -> subprocess.CompletedProcess[str]:
     """Run a git command and return the result."""
-    return run_source_git(
+    return safe_subprocess.run(
         ["git", "-C", str(cwd), *args],
         capture_output=True,
         text=True,

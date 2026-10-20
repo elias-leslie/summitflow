@@ -13,7 +13,6 @@ from urllib.parse import urlsplit
 
 from ...logging_config import get_logger
 from ...utils import safe_subprocess
-from ...utils.agent_execution import run_as_agent, run_source_git, source_requires_agent
 
 logger = get_logger(__name__)
 
@@ -87,13 +86,12 @@ def push_captured_head_to_upstream(
     })
     command = [
         timeout, "--signal=TERM", "--kill-after=5s", f"{timeout_seconds}s",
-        "git", "--no-replace-objects", "-C", str(project_path), "-c", "push.followTags=false",
+        "git", "-C", str(project_path), "-c", "push.followTags=false",
         "push", "--porcelain", "--no-follow-tags", "--recurse-submodules=no",
         "--", push_url, f"{head}:{upstream_ref}",
     ]
     try:
-        runner = run_as_agent if source_requires_agent(project_path) else safe_subprocess.run
-        result = runner(
+        result = safe_subprocess.run(
             command, stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL,
             stderr=subprocess.DEVNULL, env=environment, timeout=timeout_seconds + 10,
             check=False,
@@ -135,7 +133,7 @@ def push_branch(
     else:
         cmd.extend(["origin", branch_name])
 
-    result = run_source_git(
+    result = safe_subprocess.run(
         ["git", "-C", str(project_path), *cmd[1:]],
         capture_output=True,
         text=True,
@@ -166,7 +164,7 @@ def revert_to(repo_path: Path | str, sha: str) -> bool:
     """
     repo_path = Path(repo_path)
 
-    result = run_source_git(
+    result = safe_subprocess.run(
         ["git", "-C", str(repo_path), "reset", "--hard", sha],
         capture_output=True,
         text=True,
@@ -191,7 +189,7 @@ def get_head_sha(repo_path: str | Path) -> str:
     """
     repo_path = Path(repo_path)
 
-    result = run_source_git(
+    result = safe_subprocess.run(
         ["git", "-C", str(repo_path), "rev-parse", "HEAD"],
         capture_output=True,
         text=True,
@@ -218,7 +216,7 @@ def get_blob_shas(repo_path: str | Path, paths: list[str]) -> dict[str, str]:
 
     for path in paths:
         try:
-            proc = run_source_git(
+            proc = safe_subprocess.run(
                 ["git", "-C", str(repo_path), "ls-files", "-s", path],
                 capture_output=True,
                 text=True,

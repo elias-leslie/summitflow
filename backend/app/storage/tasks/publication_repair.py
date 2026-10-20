@@ -11,8 +11,7 @@ import psycopg
 from psycopg.types.json import Jsonb
 
 from ...config import DATABASE_URL
-from ...utils import safe_subprocess  # noqa: F401  # retained patch surface
-from ...utils.agent_execution import run_source_git
+from ...utils import safe_subprocess
 from .columns import TASK_COLUMNS_WITH_SPIRIT
 from .core import create_task
 from .mapping import row_to_dict_with_spirit
@@ -66,7 +65,7 @@ def _local_git(root: str, *arguments: str) -> subprocess.CompletedProcess[str] |
     environment = {key: value for key, value in os.environ.items() if not key.startswith("GIT_")}
     environment.update(GIT_NO_LAZY_FETCH="1", GIT_OPTIONAL_LOCKS="0", GIT_TERMINAL_PROMPT="0")
     try:
-        return run_source_git(
+        return safe_subprocess.run(
             ["git", "--no-replace-objects", "-C", root, *arguments],
             env=environment, capture_output=True, text=True, stdin=subprocess.DEVNULL, timeout=10,
             check=False,

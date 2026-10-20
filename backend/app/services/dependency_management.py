@@ -16,8 +16,7 @@ import httpx
 
 from ..storage import dependency_reviews, explorer_entries
 from ..storage.projects import get_project_root_path
-from ..utils import safe_subprocess  # noqa: F401  # retained patch surface
-from ..utils.agent_execution import run_source_git
+from ..utils import safe_subprocess
 
 REVIEW_INTERVAL = timedelta(days=7)
 _DEPENDENCY_MANIFESTS = {"pyproject.toml", "uv.lock", "package.json", "pnpm-lock.yaml", "package-lock.json", "yarn.lock", "bun.lockb"}
@@ -88,7 +87,7 @@ def _github_repository(project_id: str) -> str | None:
     root = get_project_root_path(project_id)
     if not root:
         return None
-    result = run_source_git(
+    result = safe_subprocess.run(
         ["git", "config", "--get", "remote.origin.url"], cwd=root,
         capture_output=True, text=True, check=False,
     )

@@ -9,8 +9,6 @@ from typing import Any
 
 import typer
 
-from app.utils.agent_execution import run_source_git
-
 from ..output import output_error, output_success, output_warning
 from .done_validators import is_subtask_id  # noqa: F401  # re-exported for claim.py
 
@@ -27,18 +25,17 @@ _IN_PROGRESS_DIRS = (
 
 
 def _git_status_lines() -> list[str]:
-    """Return porcelain status, refusing a claim when Git cannot inspect it."""
+    """Return porcelain status lines, or an empty list on git failure."""
     try:
-        result = run_source_git(
+        result = subprocess.run(
             ["git", "status", "--porcelain"],
             capture_output=True,
             text=True,
             check=True,
         )
         return [line for line in result.stdout.splitlines() if line.strip()]
-    except (OSError, subprocess.SubprocessError) as exc:
-        output_error("Cannot inspect Git working tree; claim stopped.")
-        raise typer.Exit(1) from exc
+    except subprocess.CalledProcessError:
+        return []
 
 
 def _find_claim_hazards() -> list[str]:

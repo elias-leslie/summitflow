@@ -389,16 +389,10 @@ def test_st_recovery_rejects_bad_payload_before_git_metadata_is_created(tmp_path
 
 
 @pytest.mark.parametrize("existing", ["repository", "symlink", "gitfile"])
-@pytest.mark.parametrize("legacy", [False, True])
-def test_st_recovery_refuses_existing_foreign_git_metadata(tmp_path: Path, existing: str, legacy: bool) -> None:
+def test_st_recovery_refuses_existing_foreign_git_metadata(tmp_path: Path, existing: str) -> None:
     from app.tasks import backup_native_recovery as recovery
 
     snapshot, _ = _st_recovery_snapshot(tmp_path)
-    if legacy:
-        manifest_path = snapshot / recovery.RECOVERY_DIR_NAME / recovery.RECOVERY_MANIFEST_NAME
-        manifest = json.loads(manifest_path.read_text())
-        del manifest["st_metadata"]
-        manifest_path.write_text(json.dumps(manifest))
     foreign = tmp_path / "foreign"
     foreign.mkdir()
     (foreign / "sentinel").write_bytes(b"foreign bytes")

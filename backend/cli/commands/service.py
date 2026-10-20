@@ -84,9 +84,8 @@ def _load(project: str) -> service_ops.ProjectServices:
 def _deploy_via_socket(services: service_ops.ProjectServices, user: str, verb: str, sha: str | None) -> int:
     """Hand the verb to the project's deploy gate and stream its answer."""
     try:
-        source_sha = (sha or service_deploy_client.main_sha(services.root)) if user != "owner" or verb in {"deploy", "rollback"} else ""
-        return service_deploy_client.send(user, services.project_id, source_sha, verb)
-    except (OSError, ValueError) as exc:
+        return service_deploy_client.send(user, services.project_id, sha or service_deploy_client.main_sha(services.root), verb)
+    except OSError as exc:
         output_error(f"deploy gate for {services.project_id} ({user}) unavailable: {exc}")
         return 1
 
@@ -513,13 +512,6 @@ def rebuild(
     services = _load(project)
     from ..lib import coord
 
-    # Owner routing precedes source overrides: an agent's --source-repo must
-    # never turn an owner project into a caller-manager deployment.
-    if services.runtime_user == "owner":
-        if source_repo is not None or acceptance or with_ack or migrate_monitor_store or include_all_workers or worker or scope != RebuildScope.full:
-            output_error("Owner deployment accepts a full release at an exact main SHA through Nightshift; source, receipt and component overrides are unavailable.")
-            raise typer.Exit(1)
-        raise typer.Exit(_deploy_via_socket(services, "owner", "rollback" if rollback else "deploy", sha))
     if source_repo is not None:
         if detach:
             output_error("--source-repo cannot be combined with --detach.")
@@ -867,69 +859,3 @@ def stop(
         f"st service stop {services.project_id}",
     )
     raise typer.Exit(service_ops.stop_services(services))
-
-
-@app.command("owner-runtime", hidden=True)
-def owner_runtime(
-    phase: Annotated[str, typer.Option("--phase")],
-) -> None:
-    """Installed/private JSON protocol for Nightshift; never a caller-user fallback."""
-    import sys
-
-    from ..lib import service_owner_runtime
-
-    try:
-        raw = sys.stdin.read(65537)
-        if len(raw) > 65536:
-            raise ValueError("Owner runtime request is too large")
-        request = json.loads(raw)
-        if not isinstance(request, dict):
-            raise ValueError("Owner runtime request must be an object")
-        with contextlib.redirect_stdout(sys.stderr):
-            result = service_owner_runtime.handle(phase, request)
-    except (OSError, ValueError, KeyError, service_ops.ServiceError, service_release.ReleaseError) as exc:
-        print(json.dumps({"schema": 1, "ok": False, "error": str(exc)}))
-        raise typer.Exit(1) from None
-    print(json.dumps(result, sort_keys=True))
-    raise typer.Exit(0 if result["ok"] else 1)
-
-
-@app.command("owner-prepare", hidden=True)
-def owner_prepare(
-    project: str,
-    sha: Annotated[str, typer.Option("--sha")],
-    build_id: Annotated[str, typer.Option("--build-id")],
-    tool_revision: Annotated[str, typer.Option("--tool-revision")],
-) -> None:
-    """Prepare an accepted artifact as agent; stdout contains only its descriptor."""
-    import sys
-
-    from ..lib import service_owner_runtime
-
-    try:
-        with contextlib.redirect_stdout(sys.stderr):
-            result = service_owner_runtime.prepare(project, sha=sha, build_id=build_id, tool_revision=tool_revision)
-    except (OSError, ValueError, KeyError, service_ops.ServiceError, service_release.ReleaseError) as exc:
-        output_error(str(exc))
-        raise typer.Exit(1) from None
-    print(json.dumps(result, sort_keys=True))
-
-
-@app.command("owner-tool-prepare", hidden=True)
-def owner_tool_prepare(
-    sha: Annotated[str, typer.Option("--sha")],
-    receipt: Annotated[Path, typer.Option("--receipt")],
-    output: Annotated[Path, typer.Option("--output")],
-) -> None:
-    """Prepare the pinned installer payload as agent; never installs or activates it."""
-    import sys
-
-    from ..lib import service_owner_tool
-
-    try:
-        with contextlib.redirect_stdout(sys.stderr):
-            result = service_owner_tool.prepare(sha=sha, destination=output, receipt=receipt)
-    except (OSError, ValueError, KeyError, service_ops.ServiceError, service_release.ReleaseError) as exc:
-        output_error(str(exc))
-        raise typer.Exit(1) from None
-    print(json.dumps(result, sort_keys=True))

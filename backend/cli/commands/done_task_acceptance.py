@@ -27,10 +27,6 @@ from cli.lib import acceptance
 
 
 def _git(repo: Path, *args: str) -> str:
-    from app.utils.agent_execution import source_requires_agent
-
-    if source_requires_agent(repo):
-        raise acceptance.AcceptanceError("Source acceptance must run under the agent account")
     result = subprocess.run(
         # safe.directory on the command line: the agent user reads owner-owned checkouts, and global config is off here.
         ["git", "--no-replace-objects", "--no-optional-locks", "-c", "diff.autoRefreshIndex=false",
@@ -410,13 +406,6 @@ def accept_isolated_revision(repo: Path, *, sha: str, scope: tuple[str, ...], ta
                              coverage: str = "full", required_stages: Sequence[str] = ()) -> dict[str, Any]:
     """Run canonical acceptance over the committed tree, preserving WIP and never blocking edits."""
     repo = repo.resolve()
-    from app.utils.agent_execution import source_requires_agent
-
-    if source_requires_agent(repo):
-        from cli.lib.agent_acceptance import source_acceptance_job
-
-        return source_acceptance_job(repo, "isolated", sha=sha, scope=list(scope), task_id=task_id,
-                                     reuse=reuse, coverage=coverage, required_stages=list(required_stages))
 
     def capture() -> tuple[dict[str, Any], dict[str, Any], dict[str, Any] | None]:
         return _capture_isolated(repo, sha=sha, scope=scope, task_id=task_id, reuse=reuse,

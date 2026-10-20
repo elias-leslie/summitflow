@@ -10,8 +10,7 @@ from pathlib import Path
 from typing import BinaryIO
 
 from ..config import settings
-from ..utils import safe_subprocess  # noqa: F401  # retained patch surface
-from ..utils.agent_execution import run_source_git
+from ..utils import safe_subprocess
 from ..utils.shared_paths import get_workspaces_root
 
 MAX_FILE_SIZE = 1_048_576
@@ -340,7 +339,7 @@ def delete_path(root_path: str | Path, relative_path: str) -> dict[str, object]:
 
 def _git_toplevel(directory: Path) -> Path | None:
     try:
-        result = run_source_git(
+        result = safe_subprocess.run(
             ['git', '-C', str(directory), 'rev-parse', '--show-toplevel'],
             capture_output=True, text=True, check=True,
         )

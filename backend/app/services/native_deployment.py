@@ -25,7 +25,6 @@ from st_sdk.native_deployment import (
 )
 
 from app.utils import safe_subprocess
-from app.utils.agent_execution import run_source_git
 
 KIND = "native_deployment_observation.v1"
 
@@ -52,7 +51,7 @@ def deployment_evidence_family(project: str) -> str:
 
 
 def _git(root: Path, *args: str) -> bytes:
-    result = run_source_git(["git", "--no-replace-objects", *args], cwd=root, capture_output=True, check=False)
+    result = safe_subprocess.run(["git", "--no-replace-objects", *args], cwd=root, capture_output=True, check=False)
     if result.returncode:
         raise NativeDeploymentError("Native deployment source objects are unavailable")
     return result.stdout

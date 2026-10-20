@@ -14,14 +14,12 @@ import os
 import re
 import shutil
 import subprocess
-from contextlib import ExitStack
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
 from ..services.git.utils import network_repository_identity
 from ..utils import safe_subprocess
-from ..utils.agent_execution import run_source_git, source_requires_agent
 from ..utils.transient_scratch import scratch_subprocess_env
 
 _OID = re.compile(r"[0-9a-f]{40}|[0-9a-f]{64}")
@@ -46,7 +44,7 @@ class _AdmissionUnavailable(RuntimeError):
 def _git(project: Path, *arguments: str) -> subprocess.CompletedProcess[str]:
     environment = {key: value for key, value in scratch_subprocess_env().items() if not key.startswith("GIT_")}
     environment.update(GIT_OPTIONAL_LOCKS="0", GIT_NO_LAZY_FETCH="1", GIT_TERMINAL_PROMPT="0", GIT_NO_REPLACE_OBJECTS="1")
-    command = ["git", "--no-replace-objects", "-C", str(project), *arguments]
+    command = ["git", "-C", str(project), *arguments]
     network = arguments[0] in {"push", "fetch", "ls-remote"}
     if network:
         watchdog = shutil.which("timeout")
@@ -59,8 +57,7 @@ def _git(project: Path, *arguments: str) -> subprocess.CompletedProcess[str]:
         environment.update(GCM_INTERACTIVE="Never", GIT_SSH_COMMAND=ssh_command + " -o BatchMode=yes -o ConnectTimeout=15")
         command = [watchdog, "--signal=TERM", "--kill-after=5s", "300s", *command]
     try:
-        runner = safe_subprocess.run if network else run_source_git
-        return runner(
+        return safe_subprocess.run(
             command, capture_output=True,
             text=True, stdin=subprocess.DEVNULL, env=environment,
             timeout=310 if network else 30,
@@ -77,12 +74,6 @@ def _value(project: Path, *arguments: str) -> str:
     if result.returncode != 0:
         raise _InspectionFailed
     return result.stdout.strip()
-
-
-def _requires_independent_repository(project: Path) -> bool:
-    from ..services import tether
-
-    return source_requires_agent(project) and os.getuid() != tether._agent_uid()
 
 
 def _acceptance_for_head(project: Path, head: str) -> dict[str, Any]:
@@ -128,7 +119,7 @@ def _public_evidence(value: Any) -> Any:
 
 
 def _push(project: Path, head: str, branch: str, remote: str, remote_url: str,
-          authorized_workflows: tuple[str, ...], *, source_project: Path | None = None) -> dict[str, Any]:
+          authorized_workflows: tuple[str, ...]) -> dict[str, Any]:
     """Verify and fast-forward the remote branch to ``head``; never force."""
     from cli.lib.publication_effects import delivery_workflow_authority
 
@@ -150,8 +141,7 @@ def _push(project: Path, head: str, branch: str, remote: str, remote_url: str,
         return response
 
     destination = f"refs/heads/{branch}"
-    transport = remote_url if source_project is not None else remote
-    rows = network("ls-remote", "--refs", transport, destination).stdout.splitlines()
+    rows = network("ls-remote", "--refs", remote, destination).stdout.splitlines()
     if len(rows) > 1:
         raise _InspectionFailed
     fields = rows[0].split() if rows else []
@@ -159,7 +149,7 @@ def _push(project: Path, head: str, branch: str, remote: str, remote_url: str,
         raise _InspectionFailed
     old = fields[0] if fields else None
     if old and _git(project, "cat-file", "-e", f"{old}^{{commit}}").returncode:
-        network("fetch", "--no-tags", "--recurse-submodules=no", transport, destination)
+        network("fetch", "--no-tags", "--recurse-submodules=no", remote, destination)
     if old == head or (old and _git(project, "merge-base", "--is-ancestor", head, old).returncode == 0):
         return {"status": "SUCCESS", "reason": "already_on_remote", "pushed": False, "sha": head,
                 "publication_complete": True, "security": {"state": "not_run", "sha": head},
@@ -189,16 +179,7 @@ def _push(project: Path, head: str, branch: str, remote: str, remote_url: str,
                 "sha": head, "publication_complete": False, "security": security, "workflow_authority": authority,
                 "unauthorized_workflows": authority["unauthorized_workflows"],
                 "action": "Authorize the listed workflow effects explicitly for this source before publication"}
-    if source_project is not None:
-        from .publication_agent import source_job
-
-        hook = source_job(source_project, "hook", remote=remote, remote_url=remote_url,
-                          head=head, destination=destination, old=old or "0" * len(head))
-        if hook != {"returncode": 0}:
-            return {"status": "BLOCKED", "reason": "pre_push_hook_rejected", "pushed": False,
-                    "sha": head, "publication_complete": False, "security": security,
-                    "workflow_authority": authority}
-    pushed = network("push", "--porcelain", "--no-follow-tags", "--recurse-submodules=no", transport, f"{head}:{destination}")
+    pushed = network("push", "--porcelain", "--no-follow-tags", "--recurse-submodules=no", remote, f"{head}:{destination}")
     if pushed.returncode:
         rejected = any(line.startswith("!\t") and len(line.split("\t")) == 3 for line in pushed.stdout.splitlines())
         return {"status": "BLOCKED", "reason": "remote_push_rejected" if rejected else "pre_push_hook_rejected",
@@ -235,7 +216,6 @@ def publish_source(source: dict[str, Any], source_commit: str, *,
         return outcome("skipped", "unregistered_source")
     if source.get("enabled") is not True:
         return outcome("skipped", "disabled_source")
-    resources = ExitStack()
     try:
         project = Path(source["path"]).expanduser().resolve(strict=True)
         if not project.is_dir():
@@ -278,14 +258,8 @@ def publish_source(source: dict[str, Any], source_commit: str, *,
         if mirror.returncode == 0 and mirror.stdout.strip() == "true":
             return outcome("skipped", "mirror_remote")
         result.update(remote=remote, upstream_ref=upstream_ref)
-        publication_project = project
-        independent = _requires_independent_repository(project)
-        if independent:
-            from .publication_agent import independent_repository
-
-            publication_project = resources.enter_context(independent_repository(project, head))
         try:
-            repository = remote_repository(publication_project, identity)
+            repository = remote_repository(project, identity)
         except Exception as exc:
             from cli.lib.github_publish import GitHubError
 
@@ -309,15 +283,7 @@ def publish_source(source: dict[str, Any], source_commit: str, *,
             result["acceptance"] = {"state": "not_required", "reason": "private_repository", "source_commit": head}
         result["source_status"] = "accepted" if result["acceptance"]["state"] == "reused" else "committed"
         result["attempted"] = True
-        if independent:
-            delivered = _push(publication_project, head, branch, remote, push_urls[0], authorized_workflows,
-                              source_project=project)
-            if delivered["publication_complete"]:
-                from .publication_agent import source_job
-
-                source_job(project, "update_tracking", head=head, tracking_ref=tracking_ref)
-        else:
-            delivered = _push(project, head, branch, remote, push_urls[0], authorized_workflows)
+        delivered = _push(project, head, branch, remote, push_urls[0], authorized_workflows)
         result.update(delivered)
         result["remote_status"] = ("uploaded" if delivered["publication_complete"] else
                                    "pending" if delivered["status"] == "PENDING" else "blocked")
@@ -343,6 +309,4 @@ def publish_source(source: dict[str, Any], source_commit: str, *,
         return outcome("pending", "remote_transport_unavailable")
     except (ImportError, OSError, ValueError, TypeError, KeyError, RuntimeError, subprocess.SubprocessError):
         return outcome("failed", "publication_inspection_unavailable")
-    finally:
-        resources.close()
 

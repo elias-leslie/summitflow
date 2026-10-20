@@ -20,7 +20,6 @@ from typing import Any
 
 from dotenv.parser import parse_stream
 
-from app.utils.agent_execution import run_source_git
 from app.utils.env_files import project_env_files
 from cli.lib import ci_parity
 
@@ -247,7 +246,7 @@ def _outcome_local_inputs(repo: Path, commit: str, local_inputs: Mapping[str, An
 def _git(
     repo: Path, args: Sequence[str], *, text: bool = True, input: str | bytes | None = None
 ) -> subprocess.CompletedProcess[Any]:
-    return run_source_git(
+    return subprocess.run(
         ["git", "--no-replace-objects", "--no-optional-locks", "-c", "diff.autoRefreshIndex=false", *args], cwd=repo, text=text, input=input, capture_output=True, check=False,
         env={**{key: value for key, value in os.environ.items() if not key.startswith("GIT_")}, "GIT_OPTIONAL_LOCKS": "0", "GIT_NO_LAZY_FETCH": "1"},
     )
@@ -1120,13 +1119,6 @@ def receipt_for_commit(repo: Path, commit: str, coverage: str = "full", *,
     basis. Full proof also serves task coverage when it ran every required
     stage; task proof serves only the identical owned scope and stages.
     """
-    from app.utils.agent_execution import source_requires_agent
-
-    if source_requires_agent(repo):
-        from .agent_acceptance import source_acceptance_job
-
-        return source_acceptance_job(repo, "lookup", commit=commit, coverage=coverage,
-                                     scope=list(scope), required_stages=list(required_stages))["receipt"]
     directory = acceptance_artifact_directory(repo)
     candidates: list[Path] = []
     index = _commit_index_path(repo, commit)
@@ -1248,13 +1240,6 @@ def validate_acceptance_receipt(
 ) -> dict[str, Any]:
     """Validate a successful receipt and return its immutable source descriptor."""
     repo = repo.resolve()
-    from app.utils.agent_execution import source_requires_agent
-
-    if source_requires_agent(repo):
-        from .agent_acceptance import source_acceptance_job
-
-        return source_acceptance_job(repo, "validate", receipt=str(receipt) if isinstance(receipt, Path) else dict(receipt),
-                                     sha=sha, evidence_directory=str(evidence_directory) if evidence_directory else None)
     value, artifact = _load_receipt(receipt)
     acceptance_id = value.get("acceptance_id")
     if not isinstance(acceptance_id, str) or _receipt_digest(value) != acceptance_id:
@@ -1404,13 +1389,6 @@ def persist_validated_receipt(
     repository before any receipt becomes reusable here.
     """
     repo = repo.resolve()
-    from app.utils.agent_execution import source_requires_agent
-
-    if source_requires_agent(repo):
-        from .agent_acceptance import source_acceptance_job
-
-        return source_acceptance_job(repo, "persist", receipt=str(receipt) if isinstance(receipt, Path) else dict(receipt),
-                                     sha=sha, evidence_directory=str(evidence_directory) if evidence_directory else None)
     validated = validate_acceptance_receipt(repo, receipt, sha=sha, evidence_directory=evidence_directory)
     value, _ = _load_receipt(validated)
     if evidence_directory is not None:
@@ -1460,14 +1438,6 @@ def accept_revision(repo: Path, **kwargs: Any) -> dict[str, Any]:
     shared-checkout edits cannot invalidate it: it takes neither the guard nor
     the edit-freezing op lease. Its outer caller holds ``acceptance_slot``.
     """
-    from app.utils.agent_execution import source_requires_agent
-
-    if source_requires_agent(repo):
-        from .agent_acceptance import source_acceptance_job
-
-        if kwargs.get("runner") is not None:
-            raise AcceptanceError("Cross-account acceptance requires the installed agent runner")
-        return source_acceptance_job(repo, "accept", **kwargs)
     if kwargs.get("execution_basis") == "isolated":
         return _accept_revision(repo, **kwargs)
     from .coord import CoordBlocked, guard, op_lease

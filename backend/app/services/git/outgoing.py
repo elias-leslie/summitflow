@@ -24,7 +24,6 @@ from typing import Any
 from urllib.parse import urlsplit
 
 from app.utils import safe_subprocess
-from app.utils.agent_execution import run_source_git
 from app.utils.heavy_work import HeavyWork, HeavyWorkError, heavy_work
 from app.utils.transient_scratch import current_scratch, scratch_subprocess_env
 
@@ -104,7 +103,7 @@ def _public_manifest_key(root: Path, finding: Any) -> bool:
 
 def _git(repo: Path, *args: str, timeout: int = 120) -> bytes:
     try:
-        result = run_source_git(
+        result = safe_subprocess.run(
             ["git", "--no-replace-objects", "-C", str(repo), *args],
             capture_output=True, check=False, timeout=timeout,
             env={key: value for key, value in os.environ.items() if not key.startswith("GIT_")},
@@ -351,7 +350,7 @@ def _only_public_manifest_keys(root: Path, report: Path) -> bool:
 
 def _is_ancestor(root: Path, base: str, oid: str) -> bool:
     try:
-        result = run_source_git(["git", "--no-replace-objects", "-C", str(root), "merge-base", "--is-ancestor", base, oid],
+        result = safe_subprocess.run(["git", "--no-replace-objects", "-C", str(root), "merge-base", "--is-ancestor", base, oid],
                                 capture_output=True, timeout=120,
                                 env={key: value for key, value in os.environ.items() if not key.startswith("GIT_")})
     except (OSError, subprocess.TimeoutExpired) as exc:

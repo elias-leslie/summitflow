@@ -5,8 +5,7 @@ from __future__ import annotations
 from pathlib import Path
 
 from ...logging_config import get_logger
-from ...utils import safe_subprocess  # noqa: F401  # retained patch surface
-from ...utils.agent_execution import run_source_git
+from ...utils import safe_subprocess
 
 logger = get_logger(__name__)
 
@@ -22,7 +21,7 @@ def get_current_branch(project_path: str | Path) -> str:
     """
     project_path = Path(project_path)
 
-    result = run_source_git(
+    result = safe_subprocess.run(
         ["git", "-C", str(project_path), "rev-parse", "--abbrev-ref", "HEAD"],
         capture_output=True,
         text=True,

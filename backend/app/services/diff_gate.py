@@ -9,8 +9,7 @@ import contextlib
 from dataclasses import dataclass
 
 from ..logging_config import get_logger
-from ..utils import safe_subprocess  # noqa: F401  # retained patch surface
-from ..utils.agent_execution import run_source_git
+from ..utils import safe_subprocess
 from ..utils.git_base import normalize_base_branch
 
 logger = get_logger(__name__)
@@ -93,7 +92,7 @@ def check_diff_gate(
 
 def _get_merge_base(project_path: str, head_ref: str = "HEAD", base_ref: str = "main") -> str | None:
     """Get the merge-base between a head ref and base ref."""
-    result = run_source_git(
+    result = safe_subprocess.run(
         ["git", "merge-base", head_ref, base_ref],
         cwd=project_path,
         capture_output=True,
@@ -111,7 +110,7 @@ def _get_diff_stats(
     head_ref: str = "HEAD",
 ) -> tuple[int, int, int] | None:
     """Get (files_changed, insertions, deletions) from git diff --numstat."""
-    result = run_source_git(
+    result = safe_subprocess.run(
         ["git", "diff", "--numstat", merge_base, head_ref],
         cwd=project_path,
         capture_output=True,

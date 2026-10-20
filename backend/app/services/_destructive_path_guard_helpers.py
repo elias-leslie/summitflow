@@ -8,8 +8,7 @@ import subprocess
 from collections.abc import Sequence
 from pathlib import Path
 
-from ..utils import safe_subprocess  # noqa: F401  # retained patch surface
-from ..utils.agent_execution import run_source_git
+from ..utils import safe_subprocess
 
 _ENV_SESSION_ID_KEYS = (
     "ST_SESSION_ID",
@@ -79,7 +78,7 @@ def resolve_project_id(repo_root: Path) -> str | None:
 def current_branch(repo_root: Path) -> str | None:
     """Return the current git branch for repo_root."""
     try:
-        result = run_source_git(
+        result = safe_subprocess.run(
             ["git", "-C", str(repo_root), "rev-parse", "--abbrev-ref", "HEAD"],
             capture_output=True, text=True, check=True,
         )

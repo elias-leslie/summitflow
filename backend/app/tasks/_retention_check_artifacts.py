@@ -10,12 +10,11 @@
 from __future__ import annotations
 
 import re
-import subprocess  # noqa: F401  # retained patch surface
+import subprocess
 from collections.abc import Iterable
 from datetime import datetime
 from pathlib import Path
 
-from ..utils.agent_execution import run_source_git
 from ._retention_fs import CleanupResult, age_hours, delete_path
 
 DETAIL_FILE = re.compile(r"[a-z0-9-]+-[0-9a-f]{12,20}-\d+-[0-9a-f]{8}-details\.(?:txt|xml)|pytest-[0-9a-f]{32}-details\.xml")
@@ -23,7 +22,7 @@ DIGEST = re.compile(rb"[0-9a-f]{64}")
 
 
 def _common_dir(root: Path) -> Path | None:
-    result = run_source_git(["git", "rev-parse", "--path-format=absolute", "--git-common-dir"],
+    result = subprocess.run(["git", "rev-parse", "--path-format=absolute", "--git-common-dir"],
                             cwd=root, capture_output=True, text=True, check=False)
     return Path(result.stdout.strip()) if result.returncode == 0 and result.stdout.strip() else None
 

@@ -42,7 +42,7 @@ from .monitor_store_migration import (
 )
 
 HOST_MONITOR_HELPER = Path("/usr/local/sbin/summitflow-host-monitor-deploy")
-RUNTIME_USERS = frozenset({"", "svc", "broker", "agent", "owner"})
+RUNTIME_USERS = frozenset({"", "svc", "broker", "agent"})
 # Shared infrastructure a deploy checks first; runtime.infra in project.identity.json narrows it.
 INFRA = ("postgres", "hatchet")
 
@@ -151,7 +151,7 @@ def _project_from_identity(identity: Mapping[str, Any], project_id: str, root: P
         raise ServiceError("runtime.release_install must be a path inside the project")
     runtime_user = runtime.get("runtime_user") or ""
     if runtime_user not in RUNTIME_USERS:
-        raise ServiceError("runtime.runtime_user must be svc, broker, agent or owner")
+        raise ServiceError("runtime.runtime_user must be svc, broker or agent")
     infra = runtime.get("infra", list(INFRA))
     if not isinstance(infra, list) or any(item not in INFRA for item in infra):
         raise ServiceError(f"runtime.infra must list only {', '.join(INFRA)}")
@@ -521,8 +521,6 @@ def credstore_root(project: ProjectServices) -> Path:
 
 def credstore_units(text: str, project: ProjectServices) -> str:
     """Point a unit at the root-owned credential dir instead of the owner's home secrets."""
-    if project.runtime_user == "owner":
-        return text
     store = credstore_root(project)
     text = text.replace("%h/.config/credstore/", f"{store}/")
     lines: list[str] = []
@@ -659,13 +657,6 @@ def _service_main_pid(service: str) -> int:
 def _runtime_uid(project: ProjectServices) -> int:
     try:
         user = project.runtime_user
-        if user == "owner":
-            from .service_owner_runtime import SITE, _trusted_json
-
-            owner = _trusted_json(SITE).get("owner")
-            user = owner.get("user") if isinstance(owner, dict) else None
-            if not isinstance(user, str) or not user:
-                raise ServiceError("installed owner login is unavailable")
         uid = pwd.getpwnam(user).pw_uid if user else os.getuid()
     except (KeyError, OSError, ValueError) as exc:
         raise ServiceError("runtime user is unavailable") from exc

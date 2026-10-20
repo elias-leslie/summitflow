@@ -20,9 +20,9 @@ from typing import Any
 class _LazySafeSubprocess:
     @staticmethod
     def run(*args: Any, **kwargs: Any) -> subprocess.CompletedProcess[Any]:
-        from ..utils.agent_execution import run_source_git
+        from ..utils import safe_subprocess as module
 
-        return run_source_git(*args, **kwargs)
+        return module.run(*args, **kwargs)
 
 
 safe_subprocess = _LazySafeSubprocess()
