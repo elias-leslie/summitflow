@@ -220,6 +220,26 @@ def _index_content(content: str) -> Any:
     return value
 
 
+def _exclude_generated_index(index_path: Path) -> None:
+    """Keep generated metadata local; Git still reports intentionally tracked indexes."""
+    result = safe_subprocess.run(
+        ["git", "rev-parse", "--path-format=absolute", "--show-toplevel", "--git-path", "info/exclude"],
+        cwd=index_path.parent, capture_output=True, text=True, timeout=5, check=False,
+    )
+    if result.returncode != 0:
+        return  # Non-Git projects retain the same index generation contract.
+    root, exclude_path = result.stdout.splitlines()
+    relative_path = (index_path.parent.resolve() / index_path.name).relative_to(root).as_posix()
+    # Paths in Git ignore files are patterns, even when the filename is literal.
+    rule = "/" + "".join("\\" + char if char in "\\*?[] " else char for char in relative_path)
+    exclude = Path(exclude_path)
+    previous = exclude.read_text() if exclude.exists() else ""
+    if rule not in previous.splitlines():
+        exclude.parent.mkdir(parents=True, exist_ok=True)
+        with exclude.open("a") as stream:
+            stream.write(("\n" if previous and not previous.endswith("\n") else "") + rule + "\n")
+
+
 def write_index_file(project_id: str) -> str | None:
     """Generate and write .index.yaml to project root."""
     root_path = get_project_root(project_id)
@@ -229,6 +249,7 @@ def write_index_file(project_id: str) -> str | None:
     index_path = Path(root_path) / ".index.yaml"
     tmp_path = index_path.with_name(f"{index_path.name}.tmp")
     try:
+        _exclude_generated_index(index_path)
         generated = generate_index(project_id)
         if index_path.exists():
             previous = index_path.read_text()
@@ -240,7 +261,7 @@ def write_index_file(project_id: str) -> str | None:
         tmp_path.rename(index_path)
         logger.info("Wrote index file: %s", index_path)
         return str(index_path)
-    except OSError as e:
+    except (OSError, subprocess.TimeoutExpired) as e:
         logger.error("Failed to write index file %s: %s", index_path, e)
         return None
 

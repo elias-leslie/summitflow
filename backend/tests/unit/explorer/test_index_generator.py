@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import subprocess
 from pathlib import Path
 from typing import Any
 from unittest.mock import patch
@@ -314,6 +315,55 @@ class TestWriteIndexFile:
         parsed = yaml.safe_load(content)
         assert parsed["project"] == "test-project"
         assert "backend" in parsed["folders"]
+
+
+def _git(root: Path, *args: str) -> str:
+    return subprocess.run(
+        ["git", "-C", str(root), *args], check=True, capture_output=True, text=True,
+    ).stdout.strip()
+
+
+def test_generated_index_keeps_checkout_clean_including_existing_residue(tmp_path, monkeypatch):
+    _git(tmp_path, "init", "-q")
+    index = tmp_path / ".index.yaml"
+    content = "project: test\n"
+    monkeypatch.setattr("app.services.explorer.index_generator.get_project_root", lambda _: str(tmp_path))
+    monkeypatch.setattr("app.services.explorer.index_generator.generate_index", lambda _: content)
+    exclude = tmp_path / ".git/info/exclude"
+    exclude.write_text("# existing local rule\n/local-scratch")
+
+    # Reproduce residue from a previous scan. Even a semantic no-op must fix it.
+    index.write_text(content)
+    assert _git(tmp_path, "status", "--porcelain") == "?? .index.yaml"
+    assert write_index_file("test") == str(index)
+    assert _git(tmp_path, "status", "--porcelain") == ""
+    assert index.read_text() == content
+    assert exclude.read_text().startswith("# existing local rule\n/local-scratch\n")
+
+    # Future generation is also clean, and exclusion is idempotent and root-only.
+    index.unlink()
+    write_index_file("test")
+    assert _git(tmp_path, "status", "--porcelain") == ""
+    assert exclude.read_text().splitlines().count("/.index.yaml") == 1
+    nested = tmp_path / "nested"
+    nested.mkdir()
+    (nested / ".index.yaml").write_text("handwritten: true\n")
+    assert _git(tmp_path, "status", "--porcelain", "--untracked-files=all") == "?? nested/.index.yaml"
+
+
+def test_generated_index_preserves_tracked_changes(tmp_path, monkeypatch):
+    _git(tmp_path, "init", "-q")
+    index = tmp_path / ".index.yaml"
+    index.write_text("project: original\n")
+    _git(tmp_path, "add", ".index.yaml")
+    monkeypatch.setattr("app.services.explorer.index_generator.get_project_root", lambda _: str(tmp_path))
+    monkeypatch.setattr("app.services.explorer.index_generator.generate_index", lambda _: "project: updated\n")
+
+    write_index_file("test")
+
+    assert index.read_text() == "project: updated\n"
+    assert _git(tmp_path, "diff", "--name-only") == ".index.yaml"
+    assert _git(tmp_path, "ls-files") == ".index.yaml"
 
 
 class TestGetNetworkInfo:
