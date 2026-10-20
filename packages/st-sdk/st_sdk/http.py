@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 from typing import TYPE_CHECKING, Any, cast
 
 from .identity import token_headers
@@ -56,7 +57,7 @@ class BaseHTTPClient:
             try:
                 data = response.json()
                 detail = data.get("detail", data) if isinstance(data, dict) else data
-            except Exception:
+            except (json.JSONDecodeError, UnicodeDecodeError):
                 detail = response.text
             raise APIError(response.status_code, detail)
         return cast(dict[str, Any], response.json())

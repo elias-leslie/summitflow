@@ -189,19 +189,18 @@ def _fetch_projects_with_retry(api_base: str, max_retries: int) -> list[object] 
     for attempt in range(max_retries):
         try:
             response = httpx.get(f"{api_base}/projects", headers=token_headers(), timeout=5.0)
-        except httpx.TimeoutException as exc:
+        except httpx.TimeoutException:
             logger.warning(
-                "Project detection timeout (attempt %d/%d): %s", attempt + 1, max_retries, exc
+                "Project detection timeout (attempt %d/%d)", attempt + 1, max_retries
             )
-        except httpx.RequestError as exc:
+        except httpx.RequestError:
             logger.warning(
-                "Project detection network error (attempt %d/%d): %s",
+                "Project detection network error (attempt %d/%d)",
                 attempt + 1,
                 max_retries,
-                exc,
             )
-        except Exception as exc:
-            logger.error("Project detection unexpected error: %s", exc)
+        except (httpx.InvalidURL, OSError) as exc:
+            logger.warning("Project detection unavailable (%s)", type(exc).__name__)
             return None
         else:
             result = _parse_projects_response(response)
@@ -306,8 +305,11 @@ def _fetch_project(api_base: str, project_id: str) -> dict[str, Any] | None:
         if isinstance(data, dict) and data.get("id") == project_id:
             return cast(dict[str, Any], data)
     for project in _fetch_projects_with_retry(api_base, max_retries=2) or []:
-        if isinstance(project, dict) and project.get("id") == project_id:
-            return cast(dict[str, Any], project)
+        if not isinstance(project, dict):
+            continue
+        project_data = cast(dict[str, Any], project)
+        if project_data.get("id") == project_id:
+            return project_data
     return None
 
 
@@ -315,11 +317,3 @@ def get_project_root_path(project_id: str) -> str | None:
     project = _fetch_project(_api_base(), project_id)
     root_path = (project or {}).get("root_path")
     return str(root_path) if root_path else None
-    for project in projects:
-        if not isinstance(project, dict):
-            continue
-        project_data = cast(dict[str, Any], project)
-        if project_data.get("id") == project_id:
-            root_path = project_data.get("root_path")
-            return str(root_path) if root_path else None
-    return None

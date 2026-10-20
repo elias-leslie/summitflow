@@ -21,7 +21,7 @@ def token_headers() -> dict[str, str]:
         path = os.environ.get(env_name, "").strip() or str(Path.home() / default_path)
         try:
             token = Path(path).read_text(encoding="utf-8").strip()
-        except (OSError, ValueError):
+        except (OSError, UnicodeDecodeError):
             continue
         if token:
             return {header: token}

@@ -1990,7 +1990,7 @@ provides-extras = ["dev"]
 
 [[package]]
 name = "summitflow-st-sdk"
-version = "0.1.3"
+version = "0.1.4"
 source = { directory = "../packages/st-sdk" }
 dependencies = [
     { name = "httpx" },
