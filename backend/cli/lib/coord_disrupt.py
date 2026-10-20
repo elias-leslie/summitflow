@@ -54,8 +54,8 @@ def live_agents(sessions: Iterable[dict[str, Any]] | None, host: str) -> list[di
     """Live registered identities, merged with active Agent Hub sessions on this host.
 
     A marked main thread represents its live anchor's workers and predecessors;
-    the latest main registration is the current parent after a context reset.
-    Only that verified parent carries ``pid`` (int) and ``pid_start`` (kernel
+    the latest main registration is the registered main-family representative.
+    Only that verified representative carries ``pid`` (int) and ``pid_start`` (kernel
     start tick string). Unmarked families and unregistered Hub evidence remain
     separate, without a process claim.
     """
