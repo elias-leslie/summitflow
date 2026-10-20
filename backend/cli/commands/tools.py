@@ -31,8 +31,10 @@ from .tools_cost import (
     result_diagnostics_query,
     result_hotspots_query,
 )
+from .tools_run import run
 
 app = typer.Typer(help="Operator tool catalog and Agent Hub usage metrics")
+app.command("run")(run)
 
 from .tools_dependencies import app as dependencies_app  # noqa: E402
 
