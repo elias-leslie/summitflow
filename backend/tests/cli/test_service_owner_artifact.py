@@ -287,7 +287,17 @@ def owner_store(runtime, monkeypatch):
     monkeypatch.setattr(tether, "_agent_uid", lambda: agent_uid)
     monkeypatch.setattr(owner, "_trusted_json", lambda _: {
         "owner_uid": owner_uid, "projects": {"example": {"units": ["example.service"]}}})
-    return owner_uid
+    run = artifact.safe_subprocess.run
+
+    def mapped_acl(argv, **kwargs):
+        # Isolated acceptance maps only the current UID. Keep production's
+        # distinct-owner check, then exercise real ACLs with that mapped UID.
+        assert argv[1:3] == ["--modify", f"u:{owner_uid}:r-x,d:u:{owner_uid}:r-x"]
+        argv = [*argv[:2], f"u:{agent_uid}:r-x,d:u:{agent_uid}:r-x", *argv[3:]]
+        return run(argv, **kwargs)
+
+    monkeypatch.setattr(artifact.safe_subprocess, "run", mapped_acl)
+    return agent_uid
 
 
 def test_owner_store_inherits_read_access_under_umask_077(owner_store):
