@@ -266,6 +266,7 @@ def test_activation_and_verified_previous_runtime_restore(runtime, tmp_path, mon
     monkeypatch.setattr(service_ops, "run_migrations", lambda _: 0)
     monkeypatch.setattr(service_ops, "sync_seeds", lambda _: 0)
     monkeypatch.setattr(service_ops, "run", lambda _: 0)
+    monkeypatch.setattr(service_ops, "service_state", lambda _: "active")
     def sync(project):
         (owner._units_dir() / "example.service").write_text(str(project.root))
         return 0
