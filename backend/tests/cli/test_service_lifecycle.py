@@ -2,6 +2,7 @@
 
 import json
 import subprocess
+import sys
 from contextlib import contextmanager, nullcontext
 from dataclasses import replace
 from pathlib import Path
@@ -536,6 +537,41 @@ def test_configured_migrations_require_alembic(project):
     project.backend_dir.mkdir()
     (project.backend_dir / "alembic.ini").touch()
     assert service_ops.run_migrations(project) == 1
+
+
+@pytest.mark.parametrize("runtime_user", ["", "owner"])
+def test_migrations_load_registered_home_credentials_without_shell_secrets(project, monkeypatch, tmp_path,
+                                                                          runtime_user):
+    home = tmp_path / "home"
+    credentials = home / ".config" / "credstore" / "neri" / "env"
+    credentials.parent.mkdir(parents=True)
+    credentials.write_text(
+        "NERI_DB_URL=postgresql://registered-fixture\n"
+        "PORTFOLIO_DB_URL=postgresql://other-project\n"
+        "INTERNAL_SERVICE_SECRET=unrelated-fixture\n"
+    )
+    monkeypatch.setattr(service_ops.Path, "home", lambda: home)
+    monkeypatch.delenv("NERI_DB_URL", raising=False)
+    monkeypatch.setenv("PORTFOLIO_DB_URL", "postgresql://shell-fixture")
+    monkeypatch.setenv("INTERNAL_SERVICE_SECRET", "shell-fixture")
+    backend = tmp_path / "accepted" / "backend"
+    executable = backend / ".venv" / "bin" / "alembic"
+    executable.parent.mkdir(parents=True)
+    (backend / "alembic.ini").touch()
+    executable.write_text(
+        f"#!{sys.executable}\n"
+        "import os\n"
+        "if not os.environ.get('NERI_DB_URL'):\n"
+        "    raise RuntimeError('NERI_DB_URL is not configured')\n"
+        "assert os.environ['NERI_DB_URL'] == 'postgresql://registered-fixture'\n"
+        "assert 'PORTFOLIO_DB_URL' not in os.environ\n"
+        "assert 'INTERNAL_SERVICE_SECRET' not in os.environ\n"
+    )
+    executable.chmod(0o700)
+    deployed = replace(project, project_id="neri", root=backend.parent, backend_dir=backend,
+                       host_config_root=tmp_path / "host", runtime_user=runtime_user)
+
+    assert service_ops.run_migrations(deployed) == 0
 
 
 @pytest.mark.parametrize("project_id, wanted, other, files", [

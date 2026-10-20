@@ -404,7 +404,7 @@ def release_references_for_services(releases_root: Path) -> set[Path] | None:
 
 
 def credstore_root(project: ProjectServices) -> Path:
-    if project.runtime_user == "owner":
+    if project.runtime_user in {"", "owner"}:
         return Path.home() / ".config" / "credstore"
     return Path(f"/etc/credstore.{project.runtime_user}")
 
@@ -1057,7 +1057,7 @@ def run_migrations(project: ProjectServices) -> int:
     # Alembic runs from immutable accepted source, which deliberately excludes
     # project env files. Supply only the keys SummitFlow's migration table
     # grants this project, from the host configuration its service uses.
-    credstore = credstore_root(project) / project.project_id / "env" if project.runtime_user else None
+    credstore = credstore_root(project) / project.project_id / "env"
     env = migration_env.migration_env(project.project_id, project.host_config_root or project.root, credstore=credstore)
     print("[service] running migrations")
     return run([str(alembic), "upgrade", "head"], cwd=project.backend_dir, env=env, quiet_success=True)
