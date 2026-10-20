@@ -22,7 +22,8 @@ from .proxmox import ProxmoxConfig, ProxmoxError
 
 
 def _runtime() -> Path:
-    base = Path(os.environ.get("XDG_RUNTIME_DIR") or tempfile.gettempdir())
+    user_runtime = Path(f"/run/user/{os.getuid()}")
+    base = Path(os.environ.get("XDG_RUNTIME_DIR") or (str(user_runtime) if user_runtime.is_dir() else tempfile.gettempdir()))
     root = base / f"st-vm-forward-{os.getuid()}"
     root.mkdir(mode=0o700, parents=True, exist_ok=True)
     st = root.lstat()
