@@ -348,6 +348,7 @@ def lifecycle(monkeypatch, project):
         calls[name] = Mock(return_value=0)
         monkeypatch.setattr(service_ops, name, calls[name])
     monkeypatch.setattr(service_ops, "service_state", lambda name: "inactive" if name == "stopped.service" else "active")
+    monkeypatch.setattr(service_ops, "service_exists", lambda _: True)
     release = service_release.PreparedRelease(
         project_id=project.project_id,
         build_id="b" * 32,
@@ -1307,6 +1308,7 @@ def test_activation_unit_start_enables_and_stop_stops_both(activated, monkeypatc
 @pytest.mark.parametrize(("paired_state", "code"), [("inactive", 0), ("active", 0), ("failed", 1)])
 def test_activation_unit_status_reports_paired_service(activated, monkeypatch, paired_state, code):
     monkeypatch.setattr(service, "_load", lambda _: activated)
+    monkeypatch.setattr(service_ops, "service_exists", lambda _: True)
     monkeypatch.setattr(service_ops, "service_state",
                         lambda name: paired_state if name.endswith(".service") else "active")
     result = CliRunner().invoke(service.app, ["status", "example"])

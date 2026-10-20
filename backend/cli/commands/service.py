@@ -223,13 +223,14 @@ def status(
         if user := service_deploy_client.delegated_user(services.runtime_user):
             errors += _deploy_via_socket(services, user, "status", None) != 0
             continue
+        states = service_ops.observed_service_states(services)
         parts = []
         for svc in services.all_services:
-            state = service_ops.service_state(svc)
+            state = states[svc]
             errors += state != "active" and not (svc in services.optional_workers and state == "inactive")
             if paired := service_ops.activated_service(svc):
                 # The activated service is idle between activations; only failure is an error.
-                paired_state = service_ops.service_state(paired)
+                paired_state = states[paired]
                 errors += paired_state == "failed"
                 state = f"{state}({paired}:{paired_state})"
             parts.append(f"{svc}:{state}")

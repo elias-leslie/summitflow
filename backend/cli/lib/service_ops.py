@@ -372,6 +372,51 @@ def service_exists(service: str) -> bool:
     return _manager(service)("cat", service).returncode == 0
 
 
+def observed_service_states(project: ProjectServices) -> dict[str, str]:
+    """Observe legacy units missing from this manager through the runtime API.
+
+    An absent caller unit does not prove the runtime is stopped. Installed local
+    units and explicit runtime targets keep their existing observation path.
+    """
+    units = dict.fromkeys(unit for service in project.all_services
+                          for unit in (service, activated_service(service)) if unit)
+    states = {unit: service_state(unit) for unit in units}
+    if project.runtime_user:
+        return states
+    missing = [unit for unit, state in states.items()
+               if state not in {"active", "failed"} and not service_exists(unit)]
+    if not missing:
+        return states
+    states.update(dict.fromkeys(missing, "unknown"))
+    try:
+        with STClient(require_project=False, timeout=10.0) as client:
+            rows = client.get(client._global_url("/docker/status"))
+        if not isinstance(rows, list) or not all(isinstance(row, dict) for row in rows):
+            return states
+    except (APIError, httpx.HTTPError, ValueError, OSError):
+        return states
+    for unit in missing:
+        matches = [row for row in rows
+                   if row.get("manager") == "systemd" and row.get("name") == canonical_unit(unit)]
+        if len(matches) != 1:
+            continue
+        row = matches[0]
+        state = row.get("state")
+        if not isinstance(state, str):
+            continue
+        if state == "stopped":
+            status = row.get("status")
+            if isinstance(status, str) and status.startswith("systemd "):
+                observed = status.removeprefix("systemd ").partition(" ")[0]
+                states[unit] = observed if observed in {"inactive", "failed", "deactivating"} else "unknown"
+        elif state == "running" and row.get("health") == "unhealthy":
+            states[unit] = "unhealthy"
+        else:
+            states[unit] = {"running": "active", "starting": "activating",
+                            "failed": "failed"}.get(state, "unknown")
+    return states
+
+
 def _release_references_for_manager(
     releases_root: Path,
     manager: Callable[..., subprocess.CompletedProcess[str]],
