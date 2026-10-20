@@ -1,6 +1,7 @@
 """Regression coverage for managed lifecycle selection and failure reporting."""
 
 import json
+import os
 import subprocess
 import sys
 from contextlib import contextmanager, nullcontext
@@ -51,6 +52,149 @@ def project(tmp_path: Path) -> service_ops.ProjectServices:
         frontend_port=3001, backend_dir=tmp_path / "backend", frontend_dir=tmp_path / "frontend",
         health_endpoint="/health",
     )
+
+
+@pytest.fixture
+def runtime(project, tmp_path, monkeypatch):
+    """An expected main PID and a child listener in one user-manager unit."""
+    source = tmp_path / "release" / "source"
+    project = replace(project, root=source, backend_dir=source / "backend", frontend_dir=source / "frontend")
+    proc = tmp_path / "proc"
+    project.backend_dir.mkdir(parents=True)
+    uid = os.getuid()
+    cgroup = f"/user.slice/user-{uid}.slice/user@{uid}.service/app.slice/backend.service"
+    properties = {"Id": project.backend_service, "LoadState": "loaded", "ActiveState": "active",
+                  "MainPID": "11", "ControlGroup": cgroup, "WorkingDirectory": str(project.backend_dir)}
+    for pid in (11, 12):
+        process = proc / str(pid)
+        process.mkdir(parents=True)
+        (process / "cwd").symlink_to(project.backend_dir, target_is_directory=True)
+        (process / "status").write_text(f"Uid:\t{uid}\t{uid}\t{uid}\t{uid}\n")
+        (process / "cgroup").write_text(f"0::{cgroup}\n")
+    monkeypatch.setattr(service_ops, "_PROC_ROOT", proc, raising=False)
+    monkeypatch.setattr(service_ops, "systemctl", lambda *args: subprocess.CompletedProcess(
+        args, 0, "\n".join(f"{key}={value}" for key, value in properties.items()), ""))
+    listeners = Mock(return_value=subprocess.CompletedProcess([], 0, 'LISTEN users:(("python",pid=12,fd=4))\n', ""))
+    monkeypatch.setattr(service_ops, "capture", listeners)
+    monkeypatch.setattr(service_ops.time, "sleep", lambda _: None)
+    http = Mock(return_value=SimpleNamespace(status_code=200))
+    monkeypatch.setattr(service_ops.httpx, "get", http)
+    return replace(project, frontend_service=""), proc, properties, listeners, http
+
+
+def test_health_accepts_a_listener_child_of_the_expected_release_unit(runtime):
+    project, _proc, _properties, _listeners, http = runtime
+    assert service_ops.verify_health(project) == 0
+    http.assert_called_once()
+
+
+@pytest.mark.parametrize("mismatch", ["foreign_listener", "foreign_uid", "old_release", "main_release",
+                                      "manager_uid", "inactive", "missing_pid", "unreadable_listener",
+                                      "hidden_listener", "missing_cgroup", "working_directory", "ss_unavailable"])
+def test_http_success_cannot_accept_an_unattested_runtime(runtime, tmp_path, mismatch):
+    project, proc, properties, listeners, http = runtime
+    if mismatch == "foreign_listener":
+        (proc / "12/cgroup").write_text("0::/foreign.service\n")
+    elif mismatch == "foreign_uid":
+        (proc / "12/status").write_text("Uid:\t99999\t99999\t99999\t99999\n")
+    elif mismatch in {"old_release", "main_release"}:
+        old = tmp_path / "previous-release"
+        old.mkdir()
+        cwd = proc / ("11/cwd" if mismatch == "main_release" else "12/cwd")
+        cwd.unlink()
+        cwd.symlink_to(old, target_is_directory=True)
+    elif mismatch == "manager_uid":
+        properties["ControlGroup"] = "/user.slice/user-99999.slice/user@99999.service/app.slice/backend.service"
+    elif mismatch == "inactive":
+        properties["ActiveState"] = "failed"
+    elif mismatch == "missing_pid":
+        properties["MainPID"] = "0"
+    elif mismatch == "hidden_listener":
+        listeners.return_value.stdout += "LISTEN 0 128 127.0.0.1:8001 *:*\n"
+    elif mismatch == "missing_cgroup":
+        (proc / "11/cgroup").unlink()
+    elif mismatch == "working_directory":
+        properties["WorkingDirectory"] = str(tmp_path)
+    elif mismatch == "ss_unavailable":
+        listeners.side_effect = FileNotFoundError("ss")
+    else:
+        listeners.return_value = subprocess.CompletedProcess([], 0, "LISTEN 0 128 127.0.0.1:8001 *:*\n", "")
+    assert service_ops.verify_health(project) == 1
+    http.assert_not_called()
+
+
+def test_health_requires_the_routed_manager_uid(runtime, monkeypatch):
+    project, _proc, _properties, _listeners, http = runtime
+    monkeypatch.setattr(service_ops.pwd, "getpwnam", lambda _: SimpleNamespace(pw_uid=os.getuid() + 1))
+    assert service_ops.verify_health(replace(project, runtime_user="svc")) == 1
+    http.assert_not_called()
+
+
+def test_health_attests_frontend_processes_too(runtime):
+    project, proc, _properties, _listeners, http = runtime
+    frontend = replace(project, frontend_service=project.backend_service, frontend_port=project.backend_port,
+                       backend_service="")
+    (proc / "12/cgroup").write_text("0::/foreign.service\n")
+    assert service_ops.verify_health(frontend) == 1
+    http.assert_not_called()
+
+
+@pytest.mark.parametrize("port_matches", [True, False])
+def test_socket_health_attests_the_paired_release_and_shared_manager(runtime, tmp_path, monkeypatch, port_matches):
+    project, proc, properties, listeners, _http = runtime
+    manager_group = properties["ControlGroup"].rsplit("/app.slice/", 1)[0]
+    manager = proc / "13"
+    manager.mkdir()
+    (manager / "status").write_text((proc / "12/status").read_text())
+    (manager / "cgroup").write_text(f"0::{manager_group}\n")
+    executable = tmp_path / "systemd"
+    executable.touch()
+    (manager / "exe").symlink_to(executable)
+    listeners.return_value.stdout = 'LISTEN users:(("app",pid=12,fd=4),("systemd",pid=13,fd=5))\n'
+    monkeypatch.setattr(service_ops, "_systemctl_value", lambda *_: f"127.0.0.1:{8001 if port_matches else 9999} (Stream)")
+    monkeypatch.setattr(service_ops, "service_state", lambda _: "active")
+    assert service_ops.verify_health(replace(project, backend_service="backend.socket")) == int(not port_matches)
+
+
+def test_health_rechecks_listener_identity_after_the_response(runtime):
+    project, proc, _properties, _listeners, http = runtime
+
+    def changed_listener(*_args, **_kwargs):
+        (proc / "12/cgroup").write_text("0::/foreign.service\n")
+        return SimpleNamespace(status_code=200)
+
+    http.side_effect = changed_listener
+    assert service_ops.verify_health(project) == 1
+
+
+def test_restart_refuses_a_foreign_listener_before_service_mutation(runtime, monkeypatch):
+    project, proc, _properties, _listeners, _http = runtime
+    (proc / "12/cgroup").write_text("0::/foreign.service\n")
+    monkeypatch.setattr(service_ops, "service_exists", lambda _: True)
+    monkeypatch.setattr(service_ops, "_port_open", lambda _: True)
+    run = Mock(return_value=0)
+    monkeypatch.setattr(service_ops, "run", run)
+    assert service_ops.restart_service(project.backend_service, port=project.backend_port, project=project) == 1
+    run.assert_not_called()
+
+
+def test_restart_rejects_a_successful_start_from_the_previous_release(runtime, tmp_path, monkeypatch):
+    project, proc, _properties, _listeners, _http = runtime
+    previous = tmp_path / "previous"
+    previous.mkdir()
+    (proc / "11/cwd").unlink()
+    (proc / "11/cwd").symlink_to(previous, target_is_directory=True)
+    monkeypatch.setattr(service_ops, "service_exists", lambda _: True)
+    monkeypatch.setattr(service_ops, "_service_main_pid", lambda _: 11)
+    monkeypatch.setattr(service_ops, "_port_open", lambda _: False)
+    monkeypatch.setattr(service_ops, "_pid_alive", lambda _: False)
+    monkeypatch.setattr(service_ops, "_wait_service_inactive", lambda _: True)
+    monkeypatch.setattr(service_ops, "_wait_service_active", lambda _: True)
+    monkeypatch.delenv("INVOCATION_ID", raising=False)
+    run = Mock(return_value=0)
+    monkeypatch.setattr(service_ops, "run", run)
+    assert service_ops.restart_service(project.backend_service, port=project.backend_port, project=project) == 1
+    assert run.call_args.args[0][-2:] == ["start", project.backend_service]
 
 
 @pytest.fixture

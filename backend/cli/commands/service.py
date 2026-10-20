@@ -386,7 +386,7 @@ def _restart_services(
     if restart_backend and services.backend_service:
         assert_backup_restart_owned()
         errors += service_ops.restart_service(
-            services.backend_service, port=services.backend_port
+            services.backend_service, port=services.backend_port, project=services
         ) != 0
         restarted.append(services.backend_service)
     for name in workers:
@@ -399,7 +399,7 @@ def _restart_services(
     if frontend and services.frontend_service:
         assert_backup_restart_owned()
         errors += service_ops.restart_service(
-            services.frontend_service, port=services.frontend_port
+            services.frontend_service, port=services.frontend_port, project=services
         ) != 0
         restarted.append(services.frontend_service)
     service_release.mark_phase(

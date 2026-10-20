@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import os
+import pwd
 import re
 import socket
 import subprocess
@@ -127,6 +128,11 @@ def load_project(project_id: str) -> ProjectServices:
     root_raw = get_project_identity_root(project_id)
     if not identity or not root_raw:
         raise ServiceError(f"Unknown project: {project_id}")
+    return _project_from_identity(identity, project_id, Path(root_raw))
+
+
+def _project_from_identity(identity: Mapping[str, Any], project_id: str, root: Path) -> ProjectServices:
+    """Parse runtime metadata independently of mutable workspace discovery."""
     project = _dict_value(identity.get("project"))
     runtime = _dict_value(identity.get("runtime"))
     services = _dict_value(identity.get("services"))
@@ -143,7 +149,6 @@ def load_project(project_id: str) -> ProjectServices:
     if not isinstance(infra, list) or any(item not in INFRA for item in infra):
         raise ServiceError(f"runtime.infra must list only {', '.join(INFRA)}")
     canonical_id = str(project.get("id") or project_id)
-    root = Path(root_raw)
     backend_dir, frontend_dir = runtime_source_dirs(runtime, root)
     return ProjectServices(
         project_id=canonical_id,
@@ -164,6 +169,44 @@ def load_project(project_id: str) -> ProjectServices:
         runtime_user=runtime_user,
         infra=tuple(infra),
     )
+
+
+def _pinned_project(project: ProjectServices, identity: Any) -> ProjectServices:
+    """Bind the candidate identity to the project admitted by the deploy gate."""
+    if not isinstance(identity, dict) or not all(isinstance(identity.get(key), dict)
+                                               for key in ("project", "runtime", "services")):
+        raise ServiceError("Pinned project identity requires project, runtime and services objects")
+    runtime, services = identity["runtime"], identity["services"]
+    if identity["project"].get("id") != project.project_id:
+        raise ServiceError("Pinned project identity does not match the requested canonical project id")
+    if runtime.get("runtime_user") not in ("svc", "broker", "agent") or runtime["runtime_user"] != project.runtime_user:
+        raise ServiceError("Pinned project identity runtime user does not match the admitted deploy gate")
+    for key in ("backend_port", "frontend_port"):
+        port = runtime.get(key, 0)
+        if type(port) is not int or not 0 <= port <= 65535 or port != getattr(project, key):
+            raise ServiceError(f"Pinned project identity {key} does not match the admitted port")
+    for key, expected in (("backend", project.backend_service), ("frontend", project.frontend_service),
+                          ("default_workers", project.default_workers), ("optional_workers", project.optional_workers)):
+        actual = services.get(key, [] if isinstance(expected, tuple) else "")
+        if isinstance(expected, tuple):
+            if not isinstance(actual, list) or any(not isinstance(item, str) or not item for item in actual):
+                raise ServiceError(f"Pinned project identity services.{key} must list unit names")
+            actual = tuple(actual)
+        if actual != expected:
+            raise ServiceError(f"Pinned project identity services.{key} does not match the admitted units")
+    for key in ("backend_dir", "frontend_dir"):
+        directory = runtime.get(key, key.removesuffix("_dir"))
+        if not isinstance(directory, str) or not directory or Path(directory).is_absolute() or ".." in Path(directory).parts:
+            raise ServiceError(f"Pinned project identity runtime.{key} must stay inside the source")
+    endpoint = runtime.get("health_endpoint", "/health")
+    if not isinstance(endpoint, str) or not endpoint.startswith("/"):
+        raise ServiceError("Pinned project identity health endpoint must be an absolute URL path")
+    try:
+        candidate = _project_from_identity(identity, project.project_id, project.root)
+    except (ServiceError, TypeError, ValueError) as exc:
+        raise ServiceError(f"Invalid pinned project identity: {exc}") from exc
+    return replace(candidate, host_config_root=project.host_config_root or project.root,
+                   durable_data_root=project.durable_data_root or project.root / "data")
 
 
 def use_source_repo(project: ProjectServices, mirror: Path, sha: str) -> ProjectServices:
@@ -187,7 +230,17 @@ def use_source_repo(project: ProjectServices, mirror: Path, sha: str) -> Project
         result = subprocess.run(step, capture_output=True, text=True, check=False)
         if result.returncode != 0:
             raise ServiceError(f"could not check out {sha[:12]} from {mirror}: {result.stderr.strip()}")
-    return replace(project, source_repo=clone, source_sha=sha)
+    # Read the Git object itself: an identity symlink or an ignored file left in
+    # the reusable checkout must never supply runtime metadata.
+    result = subprocess.run([*git, "show", f"{sha}:project.identity.json"],
+                            capture_output=True, text=True, check=False)
+    if result.returncode != 0:
+        raise ServiceError("Pinned project identity is missing from the requested commit")
+    try:
+        identity = json.loads(result.stdout)
+    except ValueError as exc:
+        raise ServiceError("Pinned project identity is not valid JSON") from exc
+    return replace(_pinned_project(project, identity), source_repo=clone, source_sha=sha)
 
 
 def install_clone_dependencies(project: ProjectServices) -> int:
@@ -487,6 +540,7 @@ def _port_open(port: int) -> bool:
 
 
 _SS_PID_RE = re.compile(r"pid=(\d+)")
+_PROC_ROOT = Path("/proc")
 
 
 def _port_listener_pids(port: int) -> set[int]:
@@ -542,6 +596,99 @@ def _service_main_pid(service: str) -> int:
         return int(raw)
     except ValueError:
         return 0
+
+
+def _runtime_uid(project: ProjectServices) -> int:
+    try:
+        uid = pwd.getpwnam(project.runtime_user).pw_uid if project.runtime_user else os.getuid()
+    except KeyError as exc:
+        raise ServiceError("runtime user is unavailable") from exc
+    if os.getuid() != uid:
+        raise ServiceError("caller does not own the expected user service manager")
+    return uid
+
+
+def _attest_process(pid: int, uid: int, cgroup: str, source_root: Path | None) -> None:
+    """Check kernel process identity; a systemd property alone is not evidence."""
+    process = _PROC_ROOT / str(pid)
+    try:
+        status = dict(line.split(":", 1) for line in (process / "status").read_text().splitlines() if ":" in line)
+        groups = (process / "cgroup").read_text().splitlines()
+        actual_group = next((line[3:] for line in groups if line.startswith("0::")), "")
+        if status.get("Uid", "").split() != [str(uid)] * 4:
+            raise ServiceError(f"PID {pid} does not belong to the runtime user")
+        if actual_group != cgroup and not actual_group.startswith(cgroup + "/"):
+            raise ServiceError(f"PID {pid} is outside the expected unit cgroup")
+        if source_root is not None and not (process / "cwd").resolve(strict=True).is_relative_to(source_root.resolve(strict=True)):
+            raise ServiceError(f"PID {pid} is outside the expected release source")
+    except OSError as exc:
+        raise ServiceError(f"cannot attest runtime PID {pid}") from exc
+
+
+def _unit_runtime(project: ProjectServices, service: str, *, require_source: bool) -> tuple[int, int, str]:
+    uid = _runtime_uid(project)
+    try:
+        result = systemctl("show", service, "--property=Id,LoadState,ActiveState,MainPID,ControlGroup,WorkingDirectory")
+    except OSError as exc:
+        raise ServiceError("user service manager is unavailable") from exc
+    properties = dict(line.split("=", 1) for line in result.stdout.splitlines() if "=" in line)
+    pid = properties.get("MainPID", "")
+    cgroup = properties.get("ControlGroup", "")
+    manager_group = f"/user.slice/user-{uid}.slice/user@{uid}.service/"
+    if (result.returncode or properties.get("Id") != service or properties.get("LoadState") != "loaded"
+            or properties.get("ActiveState") != "active" or not pid.isdecimal() or int(pid) <= 0
+            or not cgroup.startswith(manager_group) or ".." in Path(cgroup).parts):
+        raise ServiceError(f"{service} is not active in the expected user manager")
+    source = project.root if require_source else None
+    if source is not None:
+        try:
+            working = Path(properties.get("WorkingDirectory", ""))
+            if not working.is_absolute() or not working.resolve(strict=True).is_relative_to(source.resolve(strict=True)):
+                raise ServiceError(f"{service} working directory is outside the expected release source")
+        except OSError as exc:
+            raise ServiceError(f"cannot attest {service} release directory") from exc
+    _attest_process(int(pid), uid, cgroup, source)
+    return int(pid), uid, cgroup
+
+
+def _attested_listener_pids(port: int) -> set[int]:
+    try:
+        result = capture(["ss", "-H", "-ltnp", f"( sport = :{port} )"])
+    except OSError as exc:
+        raise ServiceError(f"port {port} listener ownership is unavailable") from exc
+    listeners = [set(map(int, _SS_PID_RE.findall(line))) for line in result.stdout.splitlines() if line.strip()]
+    if result.returncode or not listeners or any(not pids for pids in listeners):
+        raise ServiceError(f"port {port} listener ownership is unavailable")
+    return set().union(*listeners)
+
+
+def attest_service_runtime(project: ProjectServices, service: str, *, port: int = 0,
+                           require_source: bool = True) -> tuple[int, int, str]:
+    """Bind an active unit and every listener to its manager and accepted source."""
+    paired = activated_service(service)
+    identity = _unit_runtime(project, paired or service, require_source=require_source)
+    _pid, uid, cgroup = identity
+    for pid in _attested_listener_pids(port) if port else ():
+        try:
+            _attest_process(pid, uid, cgroup, project.root if require_source else None)
+        except ServiceError:
+            # A socket-activated service shares its listening FD with its user
+            # manager. Admit that one process only for this socket's Listen.
+            if not service.endswith(".socket"):
+                raise
+            listen = _systemctl_value(service, "Listen")
+            if service_state(service) != "active" or not re.search(rf":{port} \(Stream\)(?:\s|$)", listen):
+                raise
+            manager_group = f"/user.slice/user-{uid}.slice/user@{uid}.service"
+            _attest_process(pid, uid, manager_group, None)
+            try:
+                actual_group = (_PROC_ROOT / str(pid) / "cgroup").read_text().strip()
+                executable = (_PROC_ROOT / str(pid) / "exe").resolve(strict=True)
+            except OSError as exc:
+                raise ServiceError("cannot attest socket manager listener") from exc
+            if actual_group != f"0::{manager_group}" or executable.name != "systemd":
+                raise ServiceError("socket listener is outside the expected user manager") from None
+    return identity
 
 
 def _backend_process_release_root(pid: int, *, proc_root: Path = Path("/proc")) -> Path:
@@ -607,12 +754,21 @@ def _restart_activation_unit(unit: str, paired: str) -> int:
     return result
 
 
-def restart_service(service: str, *, port: int = 0) -> int:
+def restart_service(service: str, *, port: int = 0, project: ProjectServices | None = None) -> int:
     if not service:
         return 0
     if not service_exists(service):
         print(f"[service] {service} FAIL: configured service not found")
         return 1
+    if project is not None:
+        try:
+            _runtime_uid(project)
+            if not activated_service(service) and (_service_main_pid(service) or (port and _port_open(port))):
+                attest_service_runtime(project, service, port=port if port and _port_open(port) else 0,
+                                       require_source=False)
+        except ServiceError as exc:
+            print(f"[service] {service} FAIL: {exc}")
+            return 1
     if paired := activated_service(service):
         return _restart_activation_unit(service, paired)
     current_invocation = os.environ.get("INVOCATION_ID", "")
@@ -631,13 +787,21 @@ def restart_service(service: str, *, port: int = 0) -> int:
     if old_pid and _pid_alive(old_pid):
         capture(["kill", "-9", str(old_pid)])  # Every managed service, the collector included, runs as the owner.
         time.sleep(0.25)
-    if port and not _kill_port(port):
+    if port and (_port_open(port) if project is not None else not _kill_port(port)):
         print(f"[service] {service} FAIL: port {port} still in use")
         return 1
     if old_pid and _pid_alive(old_pid):
         print(f"[service] {service} FAIL: old PID {old_pid} still alive")
         return 1
     result = run(_service_command(service, "start"))
+    if result == 0 and project is not None:
+        try:
+            if not _wait_service_active(service):
+                raise ServiceError("unit did not become active")
+            attest_service_runtime(project, service)
+        except ServiceError as exc:
+            print(f"[service] {service} FAIL: {exc}")
+            return 1
     print(f"[service] {service} {'OK' if result == 0 else 'FAIL'}")
     return result
 
@@ -1104,31 +1268,29 @@ def wait_for_summitflow_api(seconds: float = API_WAIT_SECONDS) -> bool:
 
 def verify_health(project: ProjectServices) -> int:
     errors = 0
-    if project.backend_service and project.backend_port > 0:
+    for component, service, port, endpoint, attempts in (
+        ("backend", project.backend_service, project.backend_port, project.health_endpoint, 15),
+        ("frontend", project.frontend_service, project.frontend_port, "/", 30),
+    ):
+        if not service or port <= 0:
+            continue
         ok = False
-        for _ in range(15):
+        reason = "HTTP health did not succeed"
+        for _ in range(attempts):
             try:
-                response = httpx.get(f"http://localhost:{project.backend_port}{project.health_endpoint}", timeout=3.0)
-                ok = response.status_code < 400
-            except httpx.HTTPError:
+                # Socket activation needs a request before its paired service
+                # can be attested. Its response still requires full attestation.
+                before = None if activated_service(service) else attest_service_runtime(project, service, port=port)
+                response = httpx.get(f"http://127.0.0.1:{port}{endpoint}", timeout=3.0)
+                after = attest_service_runtime(project, service, port=port)
+                ok = 200 <= response.status_code < 400 and (before is None or before == after)
+            except (httpx.HTTPError, ServiceError) as exc:
+                reason = str(exc)
                 ok = False
             if ok:
                 break
             time.sleep(1)
-        print(f"[service] backend {'OK' if ok else 'FAIL'}")
-        errors += not ok
-    if project.frontend_service and project.frontend_port > 0:
-        ok = False
-        for _ in range(30):
-            try:
-                response = httpx.get(f"http://localhost:{project.frontend_port}/", timeout=3.0)
-                ok = 200 <= response.status_code < 400
-            except httpx.HTTPError:
-                ok = False
-            if ok:
-                break
-            time.sleep(1)
-        print(f"[service] frontend {'OK' if ok else 'FAIL'}")
+        print(f"[service] {component} {'OK' if ok else 'FAIL: ' + reason}")
         errors += not ok
     return int(errors)
 
@@ -1151,6 +1313,8 @@ def _acceptance_candidate(
     try:
         sha = acceptance._git_value(project.git_root, ["rev-parse", "--verify", "HEAD^{commit}"],
                                     "Could not identify current source for local acceptance")
+        if (requested_sha := getattr(project, "source_sha", "")) and sha != requested_sha:
+            raise acceptance.AcceptanceError("Pinned source checkout no longer matches the requested commit")
         status = acceptance._git(project.git_root, ["status", "--porcelain=v1", "--untracked-files=all"])
         if status.returncode:
             raise acceptance.AcceptanceError("Could not inspect the checkout for local acceptance")
