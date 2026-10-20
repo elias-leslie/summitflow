@@ -15,6 +15,13 @@ from app.utils.heavy_work import HeavyWork
 from cli.commands import check_dispatch, check_security
 
 
+@pytest.fixture(autouse=True)
+def private_scanner_scratch(tmp_path, monkeypatch):
+    scratch = tmp_path / "scanner-scratch"
+    scratch.mkdir(mode=0o700)
+    monkeypatch.setenv("ST_NATIVE_TMP_HOST_ROOT", str(scratch))
+
+
 def test_scanner_runs_from_managed_tool_path_with_minimal_caller_environment(tmp_path, monkeypatch, capsys):
     tools = tmp_path / "tools"
     tools.mkdir()
