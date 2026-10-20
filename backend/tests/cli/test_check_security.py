@@ -15,6 +15,18 @@ from app.utils.heavy_work import HeavyWork
 from cli.commands import check_dispatch, check_security
 
 
+def test_scanner_runs_from_managed_tool_path_with_minimal_caller_environment(tmp_path, monkeypatch, capsys):
+    tools = tmp_path / "tools"
+    tools.mkdir()
+    scanner = tools / "gitleaks"
+    scanner.write_text("#!/bin/sh\nprintf 'managed checker ran\\n'\n")
+    scanner.chmod(0o755)
+    monkeypatch.setattr(check_security, "canonical_tool_path", lambda: str(tools))
+    assert check_security._run(["gitleaks"], root=tmp_path, name="gitleaks",
+                               environment={"PATH": "/usr/bin:/bin"}, work_class="light") == 0
+    assert "managed checker ran" in capsys.readouterr().out
+
+
 def test_security_admits_before_materializing_candidates(tmp_path, monkeypatch) -> None:
     from app.utils import heavy_work as guard
 

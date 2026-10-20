@@ -12,6 +12,7 @@ from app.utils.heavy_work import heavy_work
 from app.utils.transient_scratch import managed_temp_parent
 
 from ..details import display_path, summary_hint
+from ..lib.ci_parity import canonical_tool_path
 from .check_artifacts import write_check_details
 
 _EXCLUDED_PARTS = {
@@ -101,6 +102,9 @@ def _emit_result(root: Path, name: str, result: subprocess.CompletedProcess[str]
 
 def _run(command: list[str], *, root: Path, name: str, environment: dict[str, str] | None = None,
          work_class: str = "heavy") -> int:
+    # Use the same installed tools that acceptance plans resolve, including
+    # when Nightshift launches an owner command with a minimal system PATH.
+    environment = {**(os.environ if environment is None else environment), "PATH": canonical_tool_path()}
     try:
         with heavy_work(f"local scan {name}", work_class=work_class) as work:
             result = work.run(
