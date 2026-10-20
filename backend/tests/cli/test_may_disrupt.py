@@ -2,9 +2,10 @@
 
 from __future__ import annotations
 
+import os
 from datetime import UTC, datetime, timedelta
 
-from cli.lib import coord, coord_disrupt, leases
+from cli.lib import coord, coord_disrupt, coord_lineage, leases
 
 
 def _as(monkeypatch, harness: str, sid: str) -> None:
@@ -92,6 +93,63 @@ def test_agent_hub_sessions_merge_by_handshake_identity(monkeypatch):
     assert row["project"] == "agent-hub" and row["source"] == "agent_hub"
     assert "codex:00d00d" in out["unasked"]
     assert not any(a["session"] == "elsewhere-1" for a in out["agents"])
+
+
+def test_live_family_uses_latest_main_registration_not_worker_activity():
+    pid = os.getpid()
+    start = leases._process_start(pid)
+    anchor = f"{pid}:{start}"
+    identities = {
+        "codex:000001": {"session": "0199aaaa-0000-7000-8000-000000000001", "main": True, "first": "2026-10-19T10:00:00+00:00",
+                         "last": "2026-10-20T15:00:00+00:00"},
+        "codex:000002": {"session": "0199aaaa-0000-7000-8000-000000000002", "main": True, "first": "2026-10-20T10:00:00+00:00",
+                         "last": "2026-10-20T10:00:00+00:00"},
+        "codex:000003": {"session": "0199aaaa-0000-7000-8000-000000000003", "first": "2026-10-20T11:00:00+00:00",
+                         "last": "2026-10-20T16:00:00+00:00"},
+    }
+    for row in identities.values():
+        row.update(anchor=anchor, provider="codex")
+    coord_lineage.save_doc({"identities": identities})
+    sessions = [{"id": row["session"], "provider": "codex", "status": "active", "project_id": "summitflow"}
+                for row in identities.values()]
+    out = coord_disrupt.snapshot(sessions=lambda: sessions, run=_quiet)
+    assert out["agents"] == [{
+        "agent": "codex:000002", "provider": "codex", "session": "0199aaaa-0000-7000-8000-000000000002", "project": "summitflow",
+        "source": "coordination+agent_hub", "last_seen": "2026-10-20T10:00:00+00:00",
+        "pid": pid, "pid_start": start,
+    }]
+    assert out["unasked"] == ["codex:000002"]
+
+
+def test_unmarked_live_family_and_unregistered_sessions_remain_separate():
+    anchor = f"{os.getpid()}:{leases._process_start(os.getpid())}"
+    coord_lineage.save_doc({"identities": {
+        aid: {"anchor": anchor, "provider": "codex", "session": f"session-{suffix}"}
+        for aid, suffix in (("codex:000011", "000011"), ("codex:000012", "000012"))
+    }})
+    sessions = [{"id": "0199aaaa-0000-7000-8000-000000000013", "provider": "codex", "status": "active"}]
+    agents = coord_disrupt.live_agents(sessions, "this-host")
+    assert [row["agent"] for row in agents] == ["codex:000011", "codex:000012", "codex:000013"]
+    assert all("pid" not in row and "pid_start" not in row for row in agents)
+
+
+def test_dead_and_reused_anchors_cannot_supply_parent_process_metadata(monkeypatch):
+    pid = os.getpid()
+    start = leases._process_start(pid)
+    real_start = leases._process_start
+    dead_pid = pid + 1
+    monkeypatch.setattr(leases, "_process_start", lambda candidate: None if candidate == dead_pid else real_start(candidate))
+    coord_lineage.save_doc({"identities": {
+        "codex:000021": {"anchor": f"{pid}:0", "provider": "codex", "session": "0199aaaa-0000-7000-8000-000000000021", "main": True},
+        "codex:000022": {"anchor": f"{dead_pid}:{start}", "provider": "codex", "session": "0199aaaa-0000-7000-8000-000000000022", "main": True},
+    }})
+    assert coord_disrupt.live_agents([], "this-host") == []
+    # Active Hub evidence survives, but it cannot inherit a stale registry's process claim.
+    sessions = [{"id": "0199aaaa-0000-7000-8000-000000000021", "provider": "codex", "status": "active"}]
+    assert coord_disrupt.live_agents(sessions, "this-host") == [{
+        "agent": "codex:000021", "provider": "codex", "session": "0199aaaa-0000-7000-8000-000000000021", "project": None,
+        "source": "agent_hub", "last_seen": None,
+    }]
 
 
 def test_everyone_lists_open_requests_from_any_sender(monkeypatch):

@@ -51,19 +51,48 @@ def agent_id_for(provider: str, session_id: str) -> str:
 
 
 def live_agents(sessions: Iterable[dict[str, Any]] | None, host: str) -> list[dict[str, Any]]:
-    """Registered identities with a live harness, merged with active Agent Hub sessions on this host."""
+    """Live registered identities, merged with active Agent Hub sessions on this host.
+
+    A marked main thread represents its live anchor's workers and predecessors;
+    the latest main registration is the current parent after a context reset.
+    Only that verified parent carries ``pid`` (int) and ``pid_start`` (kernel
+    start tick string). Unmarked families and unregistered Hub evidence remain
+    separate, without a process claim.
+    """
     out: dict[str, dict[str, Any]] = {}
     identities = coord_lineage.load_doc().get("identities") or {}
+    families: dict[str, dict[str, dict[str, Any]]] = {}
+    alive: dict[str, bool] = {}
     for aid, row in identities.items():
-        if isinstance(row, dict) and coord_lineage.anchor_alive(row.get("anchor")):
+        if not isinstance(row, dict):
+            continue
+        anchor = row.get("anchor")
+        if anchor not in alive:
+            alive[anchor] = coord_lineage.anchor_alive(anchor)
+        if alive[anchor]:
+            families.setdefault(anchor, {})[aid] = row
+
+    parents: dict[str, str] = {}
+    for anchor, family in families.items():
+        mains = [aid for aid, row in family.items() if row.get("main") is True]
+        parent = max(mains, key=lambda aid: (family[aid].get("first") or "", aid)) if mains else None
+        for aid, row in family.items():
+            if parent:
+                parents[aid] = parent
+                if aid != parent:
+                    continue
             out[aid] = {"agent": aid, "provider": row.get("provider"), "session": row.get("session"),
                         "project": None, "source": "coordination", "last_seen": row.get("last")}
+            if parent:
+                pid, _, start = anchor.partition(":")
+                out[aid].update(pid=int(pid), pid_start=start)
     for s in sessions or ():
         if s.get("status") != "active" or s.get("host") not in (None, "", host):
             continue
         aid = agent_id_for(str(s.get("provider") or s.get("session_type") or ""), str(s.get("id") or ""))
         if not aid:
             continue
+        aid = parents.get(aid, aid)
         row = out.setdefault(aid, {"agent": aid, "provider": s.get("provider"), "session": s.get("id"),
                                    "project": None, "source": "agent_hub", "last_seen": None})
         row["project"] = s.get("project_id") or row["project"]
