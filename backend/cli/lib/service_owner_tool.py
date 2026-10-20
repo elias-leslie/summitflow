@@ -23,10 +23,13 @@ from app.utils.heavy_work import HeavyWork, heavy_work
 
 from . import acceptance, service_ops
 from . import service_release as releases
+from .workspace_paths import get_workspaces_root
 
 PYTHON_RELPATH = "python/bin/python3.13"
 LAUNCHER_RELPATH = "launch.py"
 LAUNCHER = '''"""Installed capsule adapter: preserve the caller's HOME and identity."""
+import json
+import os
 import sys
 from pathlib import Path
 
@@ -36,6 +39,10 @@ sys.path[:] = [str(root / path) for path in (
     "source/backend", "source/packages/st-sdk", "site-packages",
     "python/lib/python3.13", "python/lib/python3.13/lib-dynload",
 )]
+workspace_root = json.loads((root / "runtime.json").read_text())["workspace_root"]
+if not isinstance(workspace_root, str) or not Path(workspace_root).is_absolute() or not Path(workspace_root).is_dir():
+    raise ValueError("Pinned capsule workspace root must be an available absolute directory")
+os.environ["ST_WORKSPACES_ROOT"] = workspace_root
 
 if __name__ == "__main__":
     from cli.main import app
@@ -46,6 +53,16 @@ if __name__ == "__main__":
 def tool_argv(root: Path) -> list[str]:
     """The same argv is used by agent preparation and owner activation."""
     return [str(root / PYTHON_RELPATH), "-I", "-S", str(root / LAUNCHER_RELPATH)]
+
+
+def _runtime_config(project: service_ops.ProjectServices) -> dict[str, str]:
+    workspace_root = get_workspaces_root()
+    if not workspace_root.is_absolute() or not workspace_root.is_dir():
+        raise ValueError("Capsule workspace root must be an available absolute directory")
+    workspace_root = workspace_root.resolve(strict=True)
+    if not project.root.resolve(strict=True).is_relative_to(workspace_root / "projects"):
+        raise ValueError("Capsule workspace root must contain the registered SummitFlow checkout")
+    return {"workspace_root": str(workspace_root)}
 
 
 def _python_prefix() -> Path:
@@ -121,6 +138,7 @@ def prepare(*, sha: str, destination: Path, receipt: Path) -> dict[str, Any]:
     if destination.exists():
         raise ValueError("Owner tool output already exists")
     project = service_ops.load_project("summitflow")
+    runtime_config = _runtime_config(project)
     destination.parent.mkdir(parents=True, exist_ok=True)
     with (heavy_work("accepted owner tool capsule", project="summitflow") as work,
           tempfile.TemporaryDirectory(prefix=".owner-tool-", dir=destination.parent) as directory):
@@ -144,6 +162,7 @@ def prepare(*, sha: str, destination: Path, receipt: Path) -> dict[str, Any]:
         capsule = temporary / "capsule"
         capsule.mkdir()
         _copy_payload(release.source_root, prefix, capsule)
+        (capsule / "runtime.json").write_text(json.dumps(runtime_config) + "\n")
         # Move before execution so absolute build paths cannot supply imports.
         relocated = temporary / "relocated"
         capsule.rename(relocated)

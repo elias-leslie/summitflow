@@ -9,6 +9,7 @@ import subprocess
 import sys
 import tarfile
 from contextlib import contextmanager
+from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import Mock
 
@@ -27,6 +28,10 @@ def build(tmp_path, monkeypatch):
     backend = source / "backend"
     backend.mkdir(parents=True)
     project = SimpleNamespace(git_root=tmp_path / "repo")
+    workspace_root = tmp_path / "workspaces"
+    project.root = workspace_root / "projects/summitflow"
+    project.root.mkdir(parents=True)
+    monkeypatch.setattr(tool, "get_workspaces_root", lambda: workspace_root)
     monkeypatch.setattr(tool.os, "getuid", lambda: 1000)
     monkeypatch.setattr(tool.os, "geteuid", lambda: 1000)
     monkeypatch.setattr(tool, "_agent_uid", lambda: 1000)
@@ -58,7 +63,8 @@ def build(tmp_path, monkeypatch):
     smoke = Mock()
     monkeypatch.setattr(tool, "_smoke", smoke)
     return SimpleNamespace(source=source, prefix=prefix, validate=validate, materialize=materialize,
-                           work=work, smoke=smoke, output=tmp_path / "output", receipt=tmp_path / "receipt.json")
+                           work=work, smoke=smoke, output=tmp_path / "output", receipt=tmp_path / "receipt.json",
+                           workspace_root=workspace_root)
 
 
 def prepare(build):
@@ -83,6 +89,7 @@ def test_frozen_capsule_manifest_and_payload(build, tmp_path):
         archive.extractall(relocated, filter="data")
     assert (relocated / tool.PYTHON_RELPATH).read_bytes() == b"\x7fELFfixture"
     assert (relocated / "site-packages/dependency.py").is_file()
+    assert json.loads((relocated / "runtime.json").read_text()) == {"workspace_root": str(build.workspace_root)}
     assert not (relocated / "source/backend/.venv").exists()
     assert tool.tool_argv(relocated) == [str(relocated / "python/bin/python3.13"), "-I", "-S",
                                         str(relocated / "launch.py")]
@@ -140,6 +147,17 @@ def test_abbreviated_sha_cannot_select_tool_source(build):
     build.validate.assert_not_called()
 
 
+@pytest.mark.parametrize("root_kind", ["relative", "missing", "outside"])
+def test_invalid_workspace_root_refused_before_build(build, monkeypatch, root_kind):
+    root = {"relative": Path("relative"), "missing": build.output / "absent",
+            "outside": build.source}[root_kind]
+    monkeypatch.setattr(tool, "get_workspaces_root", lambda: root)
+    with pytest.raises(ValueError, match="workspace root"):
+        prepare(build)
+    build.validate.assert_not_called()
+    build.work.run.assert_not_called()
+
+
 @pytest.mark.parametrize("kind", ["editable", "symlink", "absolute_internal_symlink"])
 def test_nonportable_payload_is_refused(build, kind):
     original = build.work.run.side_effect
@@ -193,6 +211,7 @@ def test_real_python_relocation_ignores_ambient_imports_and_preserves_home(tmp_p
     initial = tmp_path / "initial"
     initial.mkdir()
     tool._copy_payload(source, prefix, initial)
+    (initial / "runtime.json").write_text(json.dumps({"workspace_root": str(tmp_path)}))
     relocated = tmp_path / "relocated"
     initial.rename(relocated)
     shutil.rmtree(source)
@@ -211,3 +230,40 @@ def test_real_python_relocation_ignores_ambient_imports_and_preserves_home(tmp_p
                    "--", *tool.tool_argv(relocated)]
         isolated = subprocess.run(command, cwd=home, capture_output=True, text=True, check=True)
         assert json.loads(isolated.stdout) == json.loads(result.stdout)
+
+
+@pytest.mark.parametrize("caller_root", [None, "/incorrect-caller-workspaces"])
+def test_pinned_workspace_data_drives_clean_environment_project_discovery(tmp_path, caller_root):
+    """Import real CLI discovery after the adapter, with no caller configuration."""
+    workspace = tmp_path / "configured-workspaces"
+    project_root = workspace / "projects/capsule-discovery"
+    project_root.mkdir(parents=True)
+    (project_root / "project.identity.json").write_text(json.dumps({
+        "project": {"id": "capsule-discovery"}, "runtime": {"runtime_user": "owner"}}))
+    capsule = tmp_path / "capsule"
+    (capsule / "source").mkdir(parents=True)
+    backend = Path(__file__).resolve().parents[2]
+    (capsule / "source/backend").symlink_to(backend, target_is_directory=True)
+    (capsule / "site-packages").symlink_to(backend / ".venv/lib/python3.13/site-packages", target_is_directory=True)
+    (capsule / "python").symlink_to(sys.base_prefix, target_is_directory=True)
+    (capsule / "launch.py").write_text(tool.LAUNCHER)
+    (capsule / "runtime.json").write_text(json.dumps({"workspace_root": str(workspace)}))
+    home = tmp_path / "private-caller-home"
+    home.mkdir()
+    env = {"HOME": str(home), "PATH": os.defpath,
+           "DATABASE_URL": "postgresql://127.0.0.1:1/summitflow_test"}
+    if caller_root is not None:
+        env["ST_WORKSPACES_ROOT"] = caller_root
+    probe = (
+        "import json,os,runpy,sys\n"
+        "runpy.run_path(sys.argv[1], run_name='capsule_probe')\n"
+        "from cli.lib.service_ops import load_project\n"
+        "from cli.lib.workspace_paths import get_workspaces_root,workspaces_root_available\n"
+        "assert workspaces_root_available()\n"
+        "print(json.dumps({'project_root':str(load_project('capsule-discovery').root),"
+        "'workspace_root':str(get_workspaces_root()),'home':os.environ['HOME']}))\n"
+    )
+    result = subprocess.run([sys.executable, "-I", "-S", "-c", probe, str(capsule / "launch.py")],
+                            cwd=home, env=env, capture_output=True, text=True, check=True)
+    assert json.loads(result.stdout) == {"project_root": str(project_root), "workspace_root": str(workspace),
+                                         "home": str(home)}
