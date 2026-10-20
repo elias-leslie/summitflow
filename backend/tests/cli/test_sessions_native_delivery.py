@@ -170,7 +170,7 @@ for line in sys.stdin:
 """)
     server.chmod(0o700)
     monkeypatch.setattr(native, "transcript_library", lambda: None)
-    monkeypatch.setattr(native, "import_module", lambda _name: SimpleNamespace(codex_binary=lambda: str(server)))
+    monkeypatch.setenv("PATH", str(tmp_path))
     monkeypatch.setattr(native, "RPC_TIMEOUT_SECONDS", 0.3 if case in {"stalled", "flood"} else 5)
     if case == "success":
         assert native.queue_native_thread(THREAD, "Pause", "client-id", str(tmp_path)) == {"thread_id": THREAD, "queue_id": QUEUE, "client_user_message_id": "client-id"}
@@ -179,6 +179,21 @@ for line in sys.stdin:
             native.queue_native_thread(THREAD, "Pause", "client-id", str(tmp_path))
         assert error.value.uncertain
         assert "private" not in str(error.value)
+
+
+@pytest.mark.parametrize("executable", ["missing", "not_executable", "invalid"])
+def test_unavailable_native_server_never_dispatches(tmp_path, monkeypatch, executable):
+    server = tmp_path / "codex"
+    if executable != "missing":
+        server.write_text("invalid executable")
+        server.chmod(0o700 if executable == "invalid" else 0o600)
+    monkeypatch.setenv("PATH", str(tmp_path))
+    with pytest.raises(native.NativeQueueError, match=r"^native_server_unavailable$") as error:
+        native.queue_native_thread(THREAD, "Pause", "client-id", str(tmp_path))
+    assert error.value.uncertain is False
+    result = native.inspect_native_delivery(THREAD, CLIENT, QUEUE, str(tmp_path))
+    assert result["delivery"] == "unknown" and result["reason"] == "native_server_unavailable"
+    assert result["observed"] is False
 
 
 def test_cli_native_requires_key_and_fleet_default_preserved(monkeypatch):
@@ -421,7 +436,7 @@ for line in sys.stdin:
 """)
     server.chmod(0o700)
     monkeypatch.setattr(native, "transcript_library", lambda: None)
-    monkeypatch.setattr(native, "import_module", lambda _name: SimpleNamespace(codex_binary=lambda: str(server)))
+    monkeypatch.setenv("PATH", str(tmp_path))
     result = native.inspect_native_delivery(THREAD, CLIENT, QUEUE, str(tmp_path), timeout=.1)
     assert result["delivery"] == "unknown" and result["reason"] == expected
     assert result["observed"] is False

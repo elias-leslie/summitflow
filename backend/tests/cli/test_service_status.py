@@ -45,15 +45,16 @@ def test_missing_caller_units_use_runtime_observation_and_preserve_disabled_time
     client.get.assert_called_once_with("/docker/status")
 
 
-def test_summitflow_paused_timer_is_optional_and_excluded_from_normal_rebuild(monkeypatch):
+def test_summitflow_rebuild_keeps_current_workers():
     root = Path(__file__).resolve().parents[3]
     project = service_ops._project_from_identity(
         json.loads((root / "project.identity.json").read_text()), "summitflow", root)
     timer = "summitflow-codex-managed-drain.timer"
-    monkeypatch.setattr(service_ops, "service_state", lambda _: "inactive")
-    assert timer in project.optional_workers
-    assert timer not in service._selected_workers(
-        project, backend=True, include_all_workers=False, requested_workers=())
+    assert timer not in project.optional_workers
+    assert set(service._selected_workers(
+        project, backend=True, include_all_workers=False, requested_workers=())) == {
+            "summitflow-hatchet-worker.service", "summitflow-host-monitor.service",
+        }
 
 
 @pytest.mark.parametrize("state", ["inactive", "failed"])

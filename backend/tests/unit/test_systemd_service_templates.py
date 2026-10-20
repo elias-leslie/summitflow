@@ -13,7 +13,6 @@ SUMMITFLOW_ROOT_RENDERED_UNITS = [
     "summitflow-backend.service",
     "summitflow-frontend.service",
     "summitflow-hatchet-worker.service",
-    "summitflow-codex-managed-drain.service",
 ]
 def _kill_mode_for(service_name: str) -> str | None:
     text = (SYSTEMD_DIR / service_name).read_text()
@@ -57,7 +56,6 @@ def test_backend_and_worker_use_configurable_durable_data_placeholder() -> None:
 def test_user_timers_arm_after_reboot() -> None:
     """OnUnitActiveSec has no base after boot, and an elapsed OnBootSec is not re-armed."""
     for name in (
-        "summitflow-codex-managed-drain.timer",
         "btrfs-autosnapshot.timer",
     ):
         text = (SYSTEMD_DIR / name).read_text()

@@ -19,7 +19,6 @@ from .access_log import AccessLogMiddleware, configure_access_log
 from .api import (
     activity,
     agent_hub,
-    agent_sessions,
     auth,
     backups,
     checkpoints,
@@ -133,8 +132,6 @@ app.add_middleware(cast(Any, AccessLogMiddleware))
 # Include routers
 app.include_router(auth.router, prefix="/api/auth", tags=["auth"])
 app.include_router(monitor.router)
-# Register the static managed owner route before the generic project detail route.
-app.include_router(agent_sessions.router, prefix="/api/projects", tags=["agent-sessions"])
 app.include_router(projects.router, prefix="/api/projects", tags=["projects"])
 app.include_router(explorer.router, prefix="/api/projects", tags=["explorer"])
 app.include_router(dependency_management.router, prefix="/api/projects", tags=["dependencies"])

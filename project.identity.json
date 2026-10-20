@@ -34,8 +34,7 @@
     "default_workers": [
       "summitflow-hatchet-worker.service",
       "summitflow-host-monitor.service"
-    ],
-    "optional_workers": ["summitflow-codex-managed-drain.timer"]
+    ]
   },
   "hosts": {
     "production_frontend": "localhost:3001",

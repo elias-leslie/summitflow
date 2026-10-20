@@ -74,18 +74,16 @@ Codex session sync and the inactive-session closer belong to Agent Hub
 Agent Hub session close settings (Sessions page, Closing). See Agent Hub's
 `scripts/codex-session-sync.py`.
 
-SummitFlow keeps only its managed Codex outbox drain:
-`summitflow-codex-managed-drain.timer` runs `scripts/codex-managed-drain.py`
-every 2 minutes and is a default worker, so `st service rebuild summitflow`
-installs and enables it. Change its cadence in the template, not in a drop-in.
+The optional SummitFlow managed Codex recorder and outbox drain are retired.
+They are no longer installed by `st service rebuild summitflow`. Retain existing
+outboxes, private staged runtimes and history until the owner has checked pending
+delivery and preserved any undelivered evidence. See
+[the retirement boundary](architecture/managed-codex-sessions.md).
+
 A monotonic `OnUnitActiveSec=` has no base until the service runs in the current
-boot, so these timers use `OnCalendar=`.
+boot, so host timers use `OnCalendar=`.
 `btrfs-autosnapshot.timer` uses `OnCalendar=*:0/30` with `Persistent=true`
 for the same reason.
-
-```bash
-journalctl --user -u summitflow-codex-managed-drain.service --since '10 days ago'
-```
 
 ```bash
 systemctl list-timers 'summitflow-*'

@@ -8,10 +8,10 @@ import math
 import re
 import select
 import selectors
+import shutil
 import subprocess
 import time
 from contextlib import suppress
-from importlib import import_module
 from pathlib import Path
 from typing import Any
 from uuid import UUID
@@ -21,16 +21,6 @@ from .agent_hub_codex import collector_module
 
 RPC_TIMEOUT_SECONDS = 30  # Existing fleet host RPC timeout.
 MAX_RECEIPT_BYTES = 16384  # Existing fleet compact-event payload quota.
-
-
-def _managed_capture():
-    """SummitFlow's own managed Codex capture module (scripts/lib)."""
-    import sys
-
-    library = str(Path(__file__).resolve().parents[3] / "scripts" / "lib")
-    if library not in sys.path:
-        sys.path.insert(0, library)
-    return import_module("codex_managed_capture")
 
 
 class NativeQueueError(ValueError):
@@ -90,7 +80,9 @@ class NativeRPC:
     """The existing local stdio transport, with one deadline and bounded receipts."""
 
     def __init__(self, project_root: str, timeout: float):
-        binary = _managed_capture().codex_binary()
+        binary = shutil.which("codex")
+        if not binary:
+            raise NativeQueueError("native_server_unavailable", uncertain=False)
         try:
             self.proc = subprocess.Popen(
                 [binary, "app-server", "--listen", "stdio://"], cwd=project_root,

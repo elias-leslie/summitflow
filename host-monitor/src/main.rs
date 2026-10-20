@@ -1434,7 +1434,9 @@ mod tests {
             .join("project.identity.json");
         let (names, _, _) = service_names(&identity).unwrap();
         assert!(names.contains(&"summitflow-backend.service".to_owned()));
-        assert!(names.contains(&"summitflow-codex-managed-drain.timer".to_owned()));
+        assert!(names.contains(&"summitflow-hatchet-worker.service".to_owned()));
+        assert!(names.contains(&"summitflow-host-monitor.service".to_owned()));
+        assert!(!names.contains(&"summitflow-codex-managed-drain.timer".to_owned()));
     }
 
     #[test]

@@ -10,7 +10,6 @@ import { HealthBar } from '@/components/runtime/HealthBar'
 import { HostDisruptionCard } from '@/components/runtime/HostDisruptionCard'
 import { HostMonitor } from '@/components/runtime/HostMonitor'
 import { MaintenanceStatusCard } from '@/components/runtime/MaintenanceStatusCard'
-import { ManagedCodexCapture } from '@/components/runtime/ManagedCodexCapture'
 import { ProxmoxStatusCard } from '@/components/runtime/ProxmoxStatusCard'
 import { RuntimeDependencies } from '@/components/runtime/RuntimeDependencies'
 import { RuntimeModeBanner } from '@/components/runtime/RuntimeModeBanner'
@@ -137,8 +136,6 @@ export default function RuntimePage() {
 
           {/* May this host be restarted now: agents, replies, holds, backups */}
           <HostDisruptionCard />
-
-          <ManagedCodexCapture />
 
           {/* Service grid with list/grid toggle */}
           <ServiceGrid />
