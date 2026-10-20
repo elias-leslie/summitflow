@@ -2,10 +2,12 @@
 from __future__ import annotations
 
 import hashlib
+import json
 import os
 import re
 import shutil
 import stat
+import sys
 import tarfile
 import tempfile
 import time
@@ -15,6 +17,7 @@ from pathlib import Path
 from typing import Any
 
 from app.utils import safe_subprocess
+from app.utils.heavy_work import heavy_work
 
 from . import acceptance, service_ops
 from . import service_release as releases
@@ -57,7 +60,16 @@ def initialize_owner_store(project_id: str) -> None:
 
 
 def portable(project: service_ops.ProjectServices) -> None:
-    """Python virtual environments embed build paths and cannot be relocated."""
+    """Require a locked Python backend or the existing portable Node runtime."""
+    python = _python_backend(project)
+    if not python and not (project.frontend_dir / "package.json").is_file():
+        raise ValueError("Owner artifact import requires a portable Node project or locked Python backend")
+    if project.release_install:
+        raise ValueError("Owner artifact import does not support release installers")
+
+
+def _python_backend(project: service_ops.ProjectServices) -> bool:
+    python = False
     for directory in {project.root, project.backend_dir}:
         manifest = directory / "pyproject.toml"
         test_only = False
@@ -68,11 +80,106 @@ def portable(project: service_ops.ProjectServices) -> None:
         if (any((directory / name).exists() for name in ("requirements.txt", "alembic.ini"))
                 or (manifest.exists() and not test_only)
                 or ((directory / ".venv").exists() and not test_only)):
-            raise ValueError("Owner artifact import does not support Python environment relocation")
-    if not (project.frontend_dir / "package.json").is_file():
-        raise ValueError("Owner artifact import requires a portable Node project")
-    if project.release_install:
-        raise ValueError("Owner artifact import does not support release installers")
+            if directory != project.backend_dir or not manifest.is_file() or not (directory / "uv.lock").is_file():
+                raise ValueError("Owner Python artifacts require pyproject.toml and uv.lock in the configured backend")
+            python = True
+    return python
+
+
+def _internal_links(root: Path, *, original: Path | None = None) -> None:
+    """Rebase interpreter links; reject payload links the tar data filter cannot retain."""
+    root = root.resolve(strict=True)
+    paths = list(root.rglob("*"))
+    # Rebase the whole prefix before resolving chains of interpreter links.
+    if original is not None:
+        for path in paths:
+            if path.is_symlink():
+                target = Path(os.readlink(path))
+                if target.is_absolute() and target.is_relative_to(original):
+                    path.unlink()
+                    path.symlink_to(os.path.relpath(root / target.relative_to(original), path.parent))
+    for path in paths:
+        mode = path.lstat().st_mode
+        if stat.S_ISLNK(mode):
+            if Path(os.readlink(path)).is_absolute() or not path.resolve(strict=True).is_relative_to(root):
+                raise ValueError(f"Python artifact has an external symlink: {path.relative_to(root)}")
+        elif not (stat.S_ISREG(mode) or stat.S_ISDIR(mode)):
+            raise ValueError(f"Python artifact has an unsupported file: {path.relative_to(root)}")
+
+
+def _prepare_python(project: service_ops.ProjectServices) -> int:
+    """Build with uv's relocatable launchers and an unchanged, private Python prefix."""
+    with heavy_work("accepted Python artifact", project=project.project_id):
+        return _build_python(project)
+
+
+def _build_python(project: service_ops.ProjectServices) -> int:
+    declared = service_ops.backend_optional_dependencies(project.backend_dir)
+    if declared is None or set(project.backend_extras) - set(declared):
+        raise ValueError("Owner Python artifact backend extras must be declared in its locked manifest")
+    prefix = Path(sys.base_prefix).resolve(strict=True)
+    version = f"python{sys.version_info.major}.{sys.version_info.minor}"
+    executable = prefix / "bin" / version
+    if not executable.is_file() or executable.is_symlink():
+        raise ValueError("Owner Python artifact requires a complete standalone ELF Python interpreter")
+    with executable.open("rb") as stream:
+        if stream.read(4) != b"\x7fELF":
+            raise ValueError("Owner Python artifact requires a complete standalone ELF Python interpreter")
+    if (not (prefix / "lib" / version / "encodings/__init__.py").is_file()
+            or not (prefix / "lib" / f"lib{version}.so.1.0").is_file()):
+        raise ValueError("Owner Python artifact requires a complete standalone Python prefix")
+    bundled = project.backend_dir / ".python"
+    environment = project.backend_dir / ".venv"
+    if bundled.exists() or bundled.is_symlink() or environment.exists() or environment.is_symlink():
+        raise ValueError("Owner Python artifact build must start without .python or .venv")
+    shutil.copytree(prefix, bundled, symlinks=True)
+    _internal_links(bundled, original=prefix)
+    interpreter = bundled / "bin" / version
+    env = dict(os.environ, UV_PROJECT_ENVIRONMENT=str(environment), UV_PYTHON_DOWNLOADS="never",
+               UV_PYTHON=str(interpreter), UV_LINK_MODE="copy", UV_VENV_RELOCATABLE="true")
+    commands = [["uv", "venv", "--relocatable", "--no-python-downloads", "--python", str(interpreter), str(environment)],
+                [*service_ops.locked_backend_sync_command(declared, project.backend_extras),
+                 "--no-editable", "--link-mode", "copy", "--python", str(interpreter)]]
+    for command in commands:
+        code = service_ops.run(command, cwd=project.backend_dir, env=env, quiet_success=True, _heavy=True)
+        if code:
+            return code
+    # uv creates absolute interpreter links even with --relocatable. Keep their
+    # unchanged targets in the bundle using relative links accepted by tar's data filter.
+    for path in (environment / "bin").iterdir():
+        if path.is_symlink() and Path(os.readlink(path)).is_absolute():
+            target = path.resolve(strict=True)
+            if not target.is_relative_to(bundled):
+                raise ValueError("Python environment interpreter is outside its bundled prefix")
+            path.unlink()
+            path.symlink_to(os.path.relpath(target, path.parent))
+    _internal_links(project.backend_dir)
+    site = environment / "lib" / version / "site-packages"
+    for direct_url in site.glob("*.dist-info/direct_url.json"):
+        if json.loads(direct_url.read_text()).get("dir_info", {}).get("editable"):
+            raise ValueError("Python artifact contains an editable install")
+    if any("editable" in path.name.lower() for path in site.glob("*.pth")):
+        raise ValueError("Python artifact contains an editable install")
+    with tempfile.TemporaryDirectory(prefix=".python-relocation-", dir=project.root.parent) as directory:
+        temporary = Path(directory)
+        relocated = temporary / "source"
+        home = temporary / "home"
+        home.mkdir()
+        backend = project.backend_dir.relative_to(project.root)
+        project.root.rename(relocated)
+        try:
+            # Assert the moved copy supplies the interpreter and standard library,
+            # even while the original tool/cached interpreter is still installed.
+            return service_ops.run([str(relocated / backend / ".venv/bin/python"), "-I", "-c",
+                "import pathlib, ssl, sqlite3, sys, sysconfig; "
+                "root = pathlib.Path(sys.argv[1]).resolve(); "
+                "assert pathlib.Path(sys.base_prefix).resolve() == root; "
+                "assert pathlib.Path(sysconfig.get_path('stdlib')).resolve().is_relative_to(root)",
+                str(relocated / backend / ".python")], cwd=home,
+                env={"HOME": str(home), "PATH": os.defpath, "LANG": "C.UTF-8"},
+                quiet_success=True, _heavy=True)
+        finally:
+            relocated.rename(project.root)
 
 
 def prepare(project_id: str, *, sha: str, build_id: str, tool_revision: str) -> dict[str, Any]:
@@ -86,8 +193,15 @@ def prepare(project_id: str, *, sha: str, build_id: str, tool_revision: str) -> 
             raise ValueError("Accepted artifact source does not match requested commit")
         portable(built)
         tracked_names = set(acceptance._source_tree_entries(project.git_root, sha))
-        for name, work in (("backend_dependencies", service_ops.sync_backend), ("frontend_build", service_ops.build_frontend)):
-            if work(built) != 0:
+        python = _python_backend(built)
+        for name, work in (("backend_dependencies", _prepare_python if python else service_ops.sync_backend),
+                           ("frontend_build", service_ops.build_frontend)):
+            try:
+                code = work(built)
+            except Exception:
+                releases.fail_release(release, name)
+                raise
+            if code != 0:
                 releases.fail_release(release, name)
                 raise ValueError(f"Agent artifact preparation failed: {name}")
             releases.mark_phase(release, name, status="succeeded")
@@ -100,7 +214,10 @@ def prepare(project_id: str, *, sha: str, build_id: str, tool_revision: str) -> 
         with tarfile.open(archive_path, "w") as archive:
             def portable_member(member: tarfile.TarInfo) -> tarfile.TarInfo | None:
                 parts = Path(member.name).parts
-                if any(part in {".venv", ".git", "__pycache__", ".env"} for part in parts):
+                if any(part in {".git", "__pycache__", ".env"} for part in parts):
+                    return None
+                if ".venv" in parts and (not python or not Path(member.name).is_relative_to(
+                        Path("source") / built.backend_dir.relative_to(built.root) / ".venv")):
                     return None
                 if any(part.startswith(".env.") for part in parts) and member.name.removeprefix("source/") not in tracked_names:
                     return None
