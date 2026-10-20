@@ -159,6 +159,7 @@ timeout_seconds = 2220
 # HEAD 2026-10-16).
 [acceptance]
 basis = "isolated"
+pass_env = ["ST_SCRATCH_ROOT"]
 
 # Full-suite runs use one database per xdist worker (tests/conftest.py).
 [pytest]
