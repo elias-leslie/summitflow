@@ -797,6 +797,15 @@ def _project_acceptance_plan(repo: Path, *, commit: str | None = None,
             key: {"sha256": hashlib.sha256(value.encode()).hexdigest()}
             for key, value in native["environment"].items()
         }}
+    if commit is not None:
+        # These source files are consumed from the isolated revision. Bind its
+        # projected modes, which can differ from a foreign-owned shared tree.
+        modes = projected_source_modes(repo, commit)
+        source_files = [*(native["locks"] if native is not None else []),
+                        *plan.get("security_configuration", {}).values()]
+        for item in source_files:
+            if item.get("state") == "present" and item.get("path") in modes:
+                item["mode"] = modes[item["path"]]
     plan.pop("fingerprint", None)
     plan["fingerprint"] = hashlib.sha256(
         json.dumps(plan, sort_keys=True, separators=(",", ":")).encode()

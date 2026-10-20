@@ -612,6 +612,38 @@ def test_isolated_plan_uses_selected_native_declaration(repo: Path) -> None:
     assert acceptance._project_acceptance_plan(repo, commit=sha)["native"]["stages"] == expected["stages"]
 
 
+def test_isolated_plan_binds_projected_foreign_source_modes(repo: Path, monkeypatch) -> None:
+    (repo / ".st-check.toml").write_text(
+        '[native]\nschema_version=1\nlocks=["pyproject.toml"]\nlegacy_tools=["security"]\n'
+        '[[native.stages]]\nid="selected"\nargv=["app.py"]\ncoverage="full"\n'
+    )
+    rules = repo / ".semgrep.yml"
+    rules.write_text("rules: []\n")
+    git(repo, "add", ".st-check.toml", ".semgrep.yml")
+    git(repo, "commit", "-qm", "native source permissions")
+    sha = git(repo, "rev-parse", "HEAD")
+    selected = {repo / "pyproject.toml", rules}
+    for path in selected:
+        path.chmod(0o664)
+    uid = os.getuid()
+    original_lstat = Path.lstat
+
+    def foreign_owner(path: Path, *args, **kwargs):
+        info = original_lstat(path, *args, **kwargs)
+        return os.stat_result((*info[:4], uid + 1, *info[5:])) if path in selected else info
+
+    monkeypatch.setattr(Path, "lstat", foreign_owner)
+    isolated = acceptance._project_acceptance_plan(repo, commit=sha)
+    actual = acceptance._project_acceptance_plan(repo)
+    assert isolated["native"]["locks"][0]["mode"] == 0o644
+    assert isolated["security_configuration"]["semgrep"]["mode"] == 0o644
+    assert actual["native"]["locks"][0]["mode"] == 0o664
+    assert actual["security_configuration"]["semgrep"]["mode"] == 0o664
+    assert all(path.stat().st_mode & 0o777 == 0o664 for path in selected)
+    rules.write_text("rules: []\n# changed rules\n")
+    assert acceptance._project_acceptance_plan(repo, commit=sha)["fingerprint"] != isolated["fingerprint"]
+
+
 def test_accept_revision_detects_shared_plan_mutation_during_checks(repo: Path, monkeypatch) -> None:
     scanner = repo.parent / "shared-scanner"
     scanner.write_text("original scanner")
