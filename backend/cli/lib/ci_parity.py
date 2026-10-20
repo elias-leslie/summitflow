@@ -100,10 +100,18 @@ def container_cli() -> tuple[list[str], bool] | None:
     if docker and ("DOCKER_HOST" in os.environ or os.access("/var/run/docker.sock", os.R_OK | os.W_OK)):
         return [docker], False
     podman, runtime = which("podman"), os.environ.get("XDG_RUNTIME_DIR")
+    if runtime is None:
+        own_runtime = Path(f"/run/user/{os.getuid()}")
+        if own_runtime.is_dir():
+            runtime = str(own_runtime)
     if podman and runtime:
         sock = Path(runtime) / "podman" / "podman.sock"
         # idempotent; a socket file alone may be left over from a stopped unit
-        started = subprocess.run([which("systemctl") or "systemctl", "--user", "start", "podman.socket"], capture_output=True, timeout=60, check=False)
+        # Keep manager lookup on the selected runtime, including when the caller
+        # drops XDG_RUNTIME_DIR or inherits another session's bus address.
+        manager_env = {**os.environ, "XDG_RUNTIME_DIR": runtime, "DBUS_SESSION_BUS_ADDRESS": f"unix:path={runtime}/bus"}
+        started = subprocess.run([which("systemctl") or "systemctl", "--user", "--no-ask-password", "start", "podman.socket"],
+                                 env=manager_env, capture_output=True, timeout=60, check=False)
         if started.returncode == 0 and sock.exists():
             return [podman, "--remote", "--url", f"unix://{sock}"], True
     return ([docker], False) if docker else None

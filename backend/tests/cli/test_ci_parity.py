@@ -200,9 +200,35 @@ def test_a_user_without_docker_runs_ci_services_in_its_own_podman(monkeypatch: p
     monkeypatch.setattr(ci_parity.subprocess, "run", run)
     remote = ["/usr/bin/podman", "--remote", "--url", f"unix://{tmp_path}/podman/podman.sock"]
     with ci_parity.services(job, {}):
-        assert commands[0] == ["/usr/bin/systemctl", "--user", "start", "podman.socket"]
+        assert commands[0] == ["/usr/bin/systemctl", "--user", "--no-ask-password", "start", "podman.socket"]
         assert commands[1][:5] == [*remote, "run"] and commands[1][-1] == "docker.io/library/postgres:16"
     assert commands[-1][:6] == [*remote, "rm", "-f"]
+
+
+def test_podman_discovery_derives_own_runtime_without_changing_the_environment(monkeypatch: pytest.MonkeyPatch) -> None:
+    runtime = Path("/run/user/12345")
+    sock = runtime / "podman" / "podman.sock"
+    monkeypatch.delenv("DOCKER_HOST", raising=False)
+    monkeypatch.delenv("XDG_RUNTIME_DIR", raising=False)
+    monkeypatch.setenv("DBUS_SESSION_BUS_ADDRESS", "unix:path=/run/user/99999/bus")
+    monkeypatch.setattr(ci_parity.os, "getuid", lambda: 12345)
+    monkeypatch.setattr(ci_parity.os, "access", lambda *_: False)
+    monkeypatch.setattr(ci_parity, "which", lambda name: f"/usr/bin/{name}")
+    monkeypatch.setattr(ci_parity.Path, "is_dir", lambda path: path == runtime)
+    monkeypatch.setattr(ci_parity.Path, "exists", lambda path: path == sock)
+    calls = []
+
+    def run(argv, **kwargs):
+        calls.append(argv)
+        assert kwargs["env"]["XDG_RUNTIME_DIR"] == str(runtime)
+        assert kwargs["env"]["DBUS_SESSION_BUS_ADDRESS"] == f"unix:path={runtime}/bus"
+        return subprocess.CompletedProcess(argv, 0)
+
+    monkeypatch.setattr(ci_parity.subprocess, "run", run)
+    assert ci_parity.container_cli() == (["/usr/bin/podman", "--remote", "--url", f"unix://{sock}"], True)
+    assert calls == [["/usr/bin/systemctl", "--user", "--no-ask-password", "start", "podman.socket"]]
+    assert "XDG_RUNTIME_DIR" not in os.environ
+    assert os.environ["DBUS_SESSION_BUS_ADDRESS"] == "unix:path=/run/user/99999/bus"
 
 
 @pytest.mark.parametrize("image,full", [("postgres:16", "docker.io/library/postgres:16"),
