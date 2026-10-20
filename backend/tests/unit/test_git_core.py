@@ -3,8 +3,10 @@ from __future__ import annotations
 import subprocess
 from pathlib import Path
 
+import pytest
+
 from app.api.models.git_models import RepoWorkspaceSummary
-from app.utils import _git_core
+from app.utils import _git_core, _git_repo_sources
 
 
 def test_run_git_uses_posix_spawn_friendly_command(mocker, tmp_path: Path) -> None:
@@ -60,6 +62,41 @@ def test_get_managed_repos_skips_shadowed_project_entries_from_fallback(mocker, 
     repos = _git_core.get_managed_repos()
 
     assert repos == [canonical_a_term, config_repo]
+
+
+@pytest.mark.parametrize("source", ["project", "extra", "fallback"])
+@pytest.mark.parametrize("denied_entry", ["repo", ".git"])
+def test_get_managed_repos_skips_inaccessible_entries(
+    mocker, tmp_path: Path, source: str, denied_entry: str
+) -> None:
+    project, extra, fallback, blocked = (
+        tmp_path / name for name in ("project", "extra", "fallback", "blocked")
+    )
+    for repo in (project, extra, fallback, blocked):
+        (repo / ".git").mkdir(parents=True)
+    roots = [str(project)] + ([str(blocked)] if source == "project" else [])
+    extras = [("extra", str(extra))]
+    if source == "extra":
+        extras.append(("blocked", str(blocked)))
+    config = tmp_path / "managed-repos.txt"
+    config_repos = [fallback] + ([blocked] if source == "fallback" else [])
+    config.write_text("\n".join(str(repo) for repo in config_repos))
+    mocker.patch.object(_git_repo_sources, "_query_db_root_paths", return_value=roots)
+    mocker.patch.object(
+        _git_repo_sources, "_query_db_project_roots", return_value=[(Path(p).name, p) for p in roots]
+    )
+    mocker.patch.object(_git_repo_sources, "_query_db_extra_repos", return_value=extras)
+    mocker.patch.object(_git_core, "FALLBACK_FILE", config)
+    exists = Path.exists
+
+    def checked_exists(path: Path) -> bool:
+        if path == (blocked if denied_entry == "repo" else blocked / ".git"):
+            raise PermissionError("repository entry unavailable")
+        return exists(path)
+
+    mocker.patch.object(Path, "exists", checked_exists)
+
+    assert _git_core.get_managed_repos() == [project, extra, fallback]
 
 
 def test_detached_status_uses_actual_git_head(mocker, tmp_path: Path) -> None:

@@ -26,8 +26,11 @@ _SQL_SELECT_EXTRA_REPOS = (
 
 
 def is_valid_git_repo(path: Path) -> bool:
-    """Return True if path exists and has a .git directory."""
-    return path.exists() and (path / ".git").exists()
+    """Return True if the repository and its .git entry are accessible."""
+    try:
+        return path.exists() and (path / ".git").exists()
+    except OSError:
+        return False
 
 
 def _translate_path(raw: str) -> Path:
