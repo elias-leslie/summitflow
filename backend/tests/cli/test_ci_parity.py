@@ -185,9 +185,17 @@ def test_service_urls_point_at_the_fresh_container(monkeypatch: pytest.MonkeyPat
 def test_a_user_without_docker_runs_ci_services_in_its_own_podman(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
     job = ci_parity.CiJob("ci.yml", "backend", ".", {}, {"postgres": {"image": "postgres:16"}}, [], [["pytest"]])
     commands: list[list[str]] = []
+    client_runtimes: list[Path] = []
 
-    def run(argv, **_):
+    def run(argv, **kwargs):
         commands.append(argv)
+        if argv[0] == "/usr/bin/podman":
+            runtime = Path(kwargs["env"]["XDG_RUNTIME_DIR"])
+            assert runtime != tmp_path
+            (runtime / "libpod").mkdir()  # the remote client writes here even with an explicit socket URL
+            client_runtimes.append(runtime)
+        else:
+            assert kwargs["env"]["XDG_RUNTIME_DIR"] == str(tmp_path)  # manager discovery retains its real runtime
         return subprocess.CompletedProcess(argv, 0, "container\n", "")
 
     (tmp_path / "podman").mkdir()
@@ -203,6 +211,9 @@ def test_a_user_without_docker_runs_ci_services_in_its_own_podman(monkeypatch: p
         assert commands[0] == ["/usr/bin/systemctl", "--user", "--no-ask-password", "start", "podman.socket"]
         assert commands[1][:5] == [*remote, "run"] and commands[1][-1] == "docker.io/library/postgres:16"
     assert commands[-1][:6] == [*remote, "rm", "-f"]
+    assert len(client_runtimes) == 3  # run, readiness exec, cleanup
+    assert all(not runtime.exists() for runtime in client_runtimes)
+    assert os.environ["XDG_RUNTIME_DIR"] == str(tmp_path)
 
 
 def test_podman_discovery_derives_own_runtime_without_changing_the_environment(monkeypatch: pytest.MonkeyPatch) -> None:

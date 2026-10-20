@@ -337,6 +337,16 @@ def _free_port() -> int:
         return int(probe.getsockname()[1])
 
 
+def _run_service_container(engine: tuple[list[str], bool], arguments: list[str], **kwargs: Any) -> subprocess.CompletedProcess[Any]:
+    cli, rootless = engine
+    if not rootless:
+        return subprocess.run([*cli, *arguments], **kwargs)
+    # The remote client still writes libpod state locally. The service's real
+    # runtime is read-only in isolated acceptance; the socket URL stays explicit.
+    with tempfile.TemporaryDirectory(prefix="st-ci-client-", dir="/tmp") as runtime:
+        return subprocess.run([*cli, *arguments], env={**os.environ, "XDG_RUNTIME_DIR": runtime}, **kwargs)
+
+
 @contextlib.contextmanager
 def services(job: CiJob | None, env: dict[str, str]) -> Iterator[list[str]]:
     """Start the job's service containers fresh; rewrite env to their ports."""
@@ -352,13 +362,13 @@ def services(job: CiJob | None, env: dict[str, str]) -> Iterator[list[str]]:
             engine = container_cli()
             if engine is None:
                 raise CiParityError("docker or podman is required to provide the CI service database")
-            cli, qualify = engine
+            _, qualify = engine
             host_port = _free_port()
             container = f"st-ci-{name}-{secrets.token_hex(4)}"
             service_env = [item for key, value in (spec.get("env") or {}).items()
                            for item in ("-e", f"{key}={value}")]
-            result = subprocess.run(
-                [*cli, "run", "-d", "--rm", "--name", container, "-p", f"127.0.0.1:{host_port}:{port}",
+            result = _run_service_container(
+                engine, ["run", "-d", "--rm", "--name", container, "-p", f"127.0.0.1:{host_port}:{port}",
                  "--tmpfs", "/var/lib/postgresql/data", *service_env,
                  qualified_image(str(spec["image"])) if qualify else str(spec["image"])],
                 capture_output=True, text=True, timeout=600, check=False)
@@ -371,8 +381,8 @@ def services(job: CiJob | None, env: dict[str, str]) -> Iterator[list[str]]:
             deadline = time.monotonic() + 60
             # pg_isready inside the container passes on the init server too;
             # a TCP query through the mapped port only answers once it is final.
-            while subprocess.run([*cli, "exec", container, "psql", "-h", "127.0.0.1", "-U", user, "-d", database,
-                                  "-tAc", "select 1"], capture_output=True, check=False).returncode:
+            while _run_service_container(engine, ["exec", container, "psql", "-h", "127.0.0.1", "-U", user, "-d", database,
+                                                  "-tAc", "select 1"], capture_output=True, check=False).returncode:
                 if time.monotonic() > deadline:
                     raise CiParityError(f"CI service {name} did not become ready")
                 time.sleep(0.5)
@@ -385,7 +395,7 @@ def services(job: CiJob | None, env: dict[str, str]) -> Iterator[list[str]]:
         engine = container_cli()
         for container in started:
             if engine:
-                subprocess.run([*engine[0], "rm", "-f", container], capture_output=True, timeout=60, check=False)
+                _run_service_container(engine, ["rm", "-f", container], capture_output=True, timeout=60, check=False)
 
 
 def randomly_installed(argv: list[str]) -> bool:
