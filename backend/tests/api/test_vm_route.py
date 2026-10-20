@@ -191,3 +191,22 @@ def test_lab_api_never_uses_admin_environment_token(monkeypatch, tmp_path, op):
     }
     assert TestClient(app).post("/api/vm/op", json=body).status_code == 200
     assert seen == ["PVEAPIToken=fixture@pve!scoped=scoped-fixture"]
+
+
+def test_header_elevated_client_cannot_be_reused_for_lab_operations(real_client):
+    client = vm_api.request_client(ADMIN)
+    for operation in (lambda: client.observe(["120"], "local-lvm"), lambda: client.reset("120", name="lab-120", snapshot="clean")):
+        with pytest.raises(ProxmoxError, match="unelevated"):
+            operation()
+    assert real_client == []
+
+
+@pytest.mark.parametrize("error", [AttributeError("programming defect"), TypeError("programming defect"), ValueError("programming defect")])
+def test_lab_api_programming_errors_surface(api, monkeypatch, error):
+    def fail(**_):
+        raise error
+
+    monkeypatch.setattr(vm_api.ProxmoxClient, "for_lab", lambda: type("Broken", (), {"observe": staticmethod(fail)})())
+    with pytest.raises(type(error)) as exc:
+        api.post("/api/vm/op", json={"op": "observe", "args": {"vmids": ["120"], "storage": "local-lvm"}})
+    assert exc.value is error

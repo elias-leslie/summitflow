@@ -13,7 +13,6 @@ from fastapi import APIRouter, Depends, Header, HTTPException
 from pydantic import BaseModel, Field
 
 from cli.lib.proxmox import (
-    LAB_OPERATION_ERRORS,
     ProxmoxClient,
     ProxmoxError,
     parse_admin_token,
@@ -104,16 +103,14 @@ def vm_op(body: VmOp, x_proxmox_admin_token: Annotated[str | None, Header()] = N
     try:
         try:
             client = ProxmoxClient.for_lab() if lab_op else request_client(x_proxmox_admin_token)
-        except LAB_OPERATION_ERRORS:
+        except ProxmoxError:
             if lab_op:
                 raise ProxmoxError("Proxmox client unavailable; check configured API access") from None
             raise
         return {"result": run_vm_op(client, body)}
     except KeyError as exc:
+        if lab_op:
+            raise
         raise HTTPException(status_code=400, detail=f"Missing argument: {exc}") from exc
     except ProxmoxError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
-    except LAB_OPERATION_ERRORS:
-        if lab_op:
-            raise HTTPException(status_code=400, detail="Proxmox lab operation unavailable; no complete result") from None
-        raise

@@ -8,7 +8,7 @@ from typing import Any
 from ..client import APIError, STClient
 from .proxmox import (
     ADMIN_TOKEN_ENV,
-    LAB_OPERATION_ERRORS,
+    LAB_TRANSPORT_ERRORS,
     ProxmoxError,
     declare_if_lab,
     validate_lab_observation,
@@ -19,6 +19,7 @@ from .proxmox import (
 # Clone/provision/boot can take minutes; the route returns once the guest is ready
 _TIMEOUT_SECONDS = 900.0
 ADMIN_TOKEN_HEADER = "X-Proxmox-Admin-Token"
+_LAB_SCOPE = object()
 
 
 class RemoteProxmoxClient:
@@ -26,19 +27,25 @@ class RemoteProxmoxClient:
 
     def __init__(self, http: Any = None, *, allow_admin_token: bool = True) -> None:
         self._http = http or STClient(require_project=False, timeout=_TIMEOUT_SECONDS)
-        self._lab_scoped = not allow_admin_token
+        self.__lab_scope: object | None = None
         if not allow_admin_token and (http_client := getattr(self._http, "_client", None)) is not None:
             http_client.headers.pop(ADMIN_TOKEN_HEADER, None)
         if allow_admin_token and (admin_token := os.environ.get(ADMIN_TOKEN_ENV, "").strip()):
             self._http._client.headers[ADMIN_TOKEN_HEADER] = admin_token
 
+    @property
+    def _lab_scoped(self) -> bool:
+        return self.__lab_scope is _LAB_SCOPE
+
     @classmethod
     def for_lab(cls, http: Any = None) -> RemoteProxmoxClient:
         """Construct a backend route client without forwarding owner elevation."""
         try:
-            return cls(http, allow_admin_token=False)
-        except LAB_OPERATION_ERRORS:
+            client = cls(http, allow_admin_token=False)
+        except (ProxmoxError, *LAB_TRANSPORT_ERRORS):
             raise ProxmoxError("Proxmox backend route unavailable; no complete result") from None
+        client.__lab_scope = _LAB_SCOPE
+        return client
 
     def _call(self, op: str, vmid: str | None = None, *, _safe_errors: bool = False, **args: Any) -> Any:
         if op in {"observe", "reset"} and not self._lab_scoped:
@@ -50,8 +57,10 @@ class RemoteProxmoxClient:
                 raise ProxmoxError(f"Proxmox {op} refused or incomplete; no complete result") from None
             detail = exc.detail.get("message") if isinstance(exc.detail, dict) else exc.detail  # the app's error envelope
             raise ProxmoxError(str(detail)) from exc
-        except Exception as exc:  # backend unreachable
+        except Exception as exc:  # legacy calls retain their broad backend error contract
             if _safe_errors:
+                if not isinstance(exc, LAB_TRANSPORT_ERRORS):
+                    raise
                 raise ProxmoxError("Proxmox backend route unavailable; no complete result") from None
             raise ProxmoxError(f"Proxmox backend route failed: {exc}") from exc
         if _safe_errors and not isinstance(response, dict):

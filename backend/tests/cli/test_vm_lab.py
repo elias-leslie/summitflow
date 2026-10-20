@@ -29,7 +29,9 @@ class Lab:
         self.permissions = {"/nodes/node": {"Sys.Audit": 0}}
         self.tasks: dict[str, Any] = {"qmstart": [{"id": "120", "type": "qmstart", "starttime": 10}], "qmrollback": []}
         self.overrides = {}
-        self.client = ProxmoxClient(ProxmoxConfig("https://fixture", "id", "private-secret", "node"))
+        with monkeypatch.context() as construction:
+            construction.setattr(proxmox, "load_proxmox_config", lambda **_: ProxmoxConfig("https://fixture", "id", "private-secret", "node"))
+            self.client = ProxmoxClient.for_lab()
         monkeypatch.setattr(proxmox, "reserved_lab_asset", lambda vmid: "lab" if vmid in {"120", "121"} else None)
         monkeypatch.setattr(self.client, "request", self.request)
         monkeypatch.setattr(self.client, "wait_task", lambda upid, **kw: self.waited.append((upid, kw)))
@@ -273,7 +275,7 @@ def test_cli_invalid_input_never_constructs_client_and_failure_has_no_partial_js
     assert '"vms"' not in result.output
 
 
-@pytest.mark.parametrize("error", [RuntimeError("private-secret https://config"), APIError(400, {"message": "private-secret"})])
+@pytest.mark.parametrize("error", [httpx.ConnectError("private-secret https://config"), APIError(400, {"message": "private-secret"})])
 def test_remote_redacts_transport_and_api_errors(error):
     class Http:
         def _global_url(self, path):
@@ -419,9 +421,55 @@ def test_direct_lab_cli_transport_and_tls_errors_have_no_traceback(local_pve, mo
 
 
 def test_default_clients_cannot_reuse_owner_elevation_for_lab_operations(local_pve):
-    for client in (ProxmoxClient(), RemoteProxmoxClient(SimpleNamespace(_client=SimpleNamespace(headers={})))):
+    for client in (ProxmoxClient(), RemoteProxmoxClient(SimpleNamespace(_client=SimpleNamespace(headers={}))),
+                   RemoteProxmoxClient(SimpleNamespace(_client=SimpleNamespace(headers={})), allow_admin_token=False)):
         for operation in (lambda client=client: client.observe(["120"], "local-lvm"),
                           lambda client=client: client.reset("120", name="lab-120", snapshot="clean")):
             with pytest.raises(ProxmoxError, match="unelevated"):
                 operation()
     assert local_pve[1] == []
+
+
+@pytest.mark.parametrize("token", ["fixture@pve!automation", "fixture@pve!admin"])
+def test_supplied_configuration_does_not_grant_lab_scope(monkeypatch, token):
+    calls = []
+    client = ProxmoxClient(ProxmoxConfig("https://fixture", token, "synthetic-secret", "node"))
+    with pytest.raises(AttributeError):
+        object.__setattr__(client, "_lab_scoped", True)
+    monkeypatch.setattr(proxmox, "reserved_lab_asset", lambda _: "lab")
+    monkeypatch.setattr(client, "request", lambda *_, **__: calls.append(True))
+    for operation in (lambda: client.observe(["120"], "local-lvm"), lambda: client.reset("120", name="lab-120", snapshot="clean")):
+        with pytest.raises(ProxmoxError, match="unelevated"):
+            operation()
+    assert calls == []
+
+
+@pytest.mark.parametrize("error", [AttributeError("programming defect"), TypeError("programming defect"), ValueError("programming defect")])
+@pytest.mark.parametrize("boundary", ["configuration", "request", "wait", "cli", "remote", "remote_configuration"])
+def test_lab_programming_errors_surface(monkeypatch, error, boundary):
+    def fail(*_, **__):
+        raise error
+
+    if boundary == "configuration":
+        monkeypatch.setattr(proxmox, "load_proxmox_config", fail)
+        operation = ProxmoxClient.for_lab
+    elif boundary == "cli":
+        monkeypatch.setattr(ProxmoxClient, "for_lab", lambda: SimpleNamespace(observe=fail))
+        result = CliRunner().invoke(vm.app, ["observe", "120", "--storage", "local-lvm"])
+        assert result.exception is error and '"error"' not in result.output
+        return
+    elif boundary == "remote":
+        http = SimpleNamespace(_global_url=lambda _: "/vm/op", post=fail)
+
+        def operation():
+            return RemoteProxmoxClient.for_lab(http).observe(["120"], "local-lvm")
+    elif boundary == "remote_configuration":
+        monkeypatch.setattr("cli.lib.proxmox_remote.STClient", fail)
+        operation = RemoteProxmoxClient.for_lab
+    else:
+        lab = Lab(monkeypatch, running=True)
+        monkeypatch.setattr(lab.client, "request" if boundary == "request" else "wait_task", fail)
+        operation = lab.reset
+    with pytest.raises(type(error)) as exc:
+        operation()
+    assert exc.value is error

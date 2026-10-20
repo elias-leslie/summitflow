@@ -15,7 +15,6 @@ import typer
 
 from ..lib.confirm_token import confirm_gate
 from ..lib.proxmox import (
-    LAB_OPERATION_ERRORS,
     ProxmoxClient,
     ProxmoxError,
     ProxmoxTokenMissing,
@@ -108,15 +107,12 @@ def _run_lab_json(action) -> None:
             client = ProxmoxClient.for_lab()
         except ProxmoxTokenMissing:
             client = RemoteProxmoxClient.for_lab()
-        except LAB_OPERATION_ERRORS:
+        except ProxmoxError:
             raise ProxmoxError("Proxmox client unavailable; check configured API access") from None
         result = action(client)
         print(json.dumps(result))
     except ProxmoxError as exc:
         output_error(str(exc))
-        raise typer.Exit(1) from None
-    except LAB_OPERATION_ERRORS:
-        output_error("Proxmox lab operation unavailable; no complete result")
         raise typer.Exit(1) from None
 
 
