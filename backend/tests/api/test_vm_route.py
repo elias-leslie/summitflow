@@ -18,6 +18,9 @@ AGENT = access_control.AccessPrincipal(email="agent@summitflow.local", role="age
 class FakeClient:
     calls: ClassVar[list] = []
 
+    @classmethod
+    def for_lab(cls):
+        return cls()
 
     def status(self, vmid, **kwargs):
         self.calls.append(("status", vmid, kwargs))
@@ -89,10 +92,10 @@ def test_route_rejects_malformed_lab_operations_before_client_calls(api, body):
 
 
 def test_lab_route_does_not_echo_failed_client_configuration(api, monkeypatch):
-    def fail(_):
+    def fail():
         raise ProxmoxError("private-secret https://private-config")
 
-    monkeypatch.setattr(vm_api, "request_client", fail)
+    monkeypatch.setattr(vm_api.ProxmoxClient, "for_lab", fail)
     response = api.post("/api/vm/op", json={"op": "observe", "args": {"vmids": ["120"], "storage": "local-lvm"}})
     assert response.status_code == 400
     assert "private" not in response.text
@@ -144,3 +147,47 @@ def test_malformed_admin_header_is_refused_without_echo(real_client):
     assert response.status_code == 400
     assert "nosplit-secret" not in response.text
     assert real_client == []
+
+
+@pytest.mark.parametrize("op", ["observe", "reset"])
+def test_lab_api_rejects_admin_header_before_constructing_client(api, monkeypatch, op):
+    constructed = []
+    monkeypatch.setattr(vm_api, "ProxmoxClient", lambda: constructed.append(True) or FakeClient())
+    body = {"op": op, "args": {"vmids": ["120"], "storage": "local-lvm"}} if op == "observe" else {
+        "op": op, "vmid": "120", "args": {"name": "lab-120", "snapshot": "clean"},
+    }
+    response = api.post("/api/vm/op", json=body, headers={"X-Proxmox-Admin-Token": ADMIN})
+    assert response.status_code == 400
+    assert constructed == [] and FakeClient.calls == []
+    assert ADMIN not in response.text
+
+
+@pytest.mark.parametrize("op", ["observe", "reset"])
+def test_lab_api_never_uses_admin_environment_token(monkeypatch, tmp_path, op):
+    from cli.lib import proxmox
+
+    ca, seen = tmp_path / "ca.pem", []
+    ca.write_text("fixture")
+    monkeypatch.setattr(proxmox, "_read_env_file", lambda _: {})
+    monkeypatch.setattr(proxmox, "_tls_context", lambda _: None)
+    for key, value in {
+        "PROXMOX_API_URL": "https://fixture", "PROXMOX_NODE": "node", "PROXMOX_TOKEN_ID": "fixture@pve!scoped",
+        "PROXMOX_TOKEN_SECRET": "scoped-fixture", "PROXMOX_CA_BUNDLE": str(ca), "PROXMOX_ADMIN_TOKEN": ADMIN,
+    }.items():
+        monkeypatch.setenv(key, value)
+
+    def request(*_, headers, **__):
+        seen.append(headers["Authorization"])
+        return proxmox.httpx.Response(200, json={"data": {}})
+
+    def lab_op(client, *_, **__):
+        return client.request("GET", "/nodes/node/qemu/120/status/current")
+
+    monkeypatch.setattr(proxmox.httpx, "request", request)
+    monkeypatch.setattr(proxmox.ProxmoxClient, op, lab_op)
+    monkeypatch.setattr(access_control, "resolve_principal", lambda request: AGENT)
+    body = {"op": op, "args": {"vmids": ["120"], "storage": "local-lvm"}} if op == "observe" else {
+        "op": op, "vmid": "120", "args": {"name": "lab-120", "snapshot": "clean"},
+    }
+    assert TestClient(app).post("/api/vm/op", json=body).status_code == 200
+    assert seen == ["PVEAPIToken=fixture@pve!scoped=scoped-fixture"]

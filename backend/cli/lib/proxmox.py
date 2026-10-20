@@ -37,6 +37,10 @@ class ProxmoxTaskError(ProxmoxError):
         super().__init__(f"Clone task {upid} failed or timed out; inspect the task and destination before retrying")
 
 
+# Lab operations expose bounded failures, including errors raised before HTTP or during task polling.
+LAB_OPERATION_ERRORS = (ProxmoxError, httpx.HTTPError, httpx.InvalidURL, OSError, ValueError, TypeError, AttributeError)
+
+
 @dataclass(frozen=True)
 class ProxmoxConfig:
     host: str
@@ -175,7 +179,7 @@ def parse_admin_token(value: str) -> tuple[str, str]:
     return token_id, secret
 
 
-def load_proxmox_config() -> ProxmoxConfig:
+def load_proxmox_config(*, allow_admin_token: bool = True) -> ProxmoxConfig:
     # ~/.env.local is the host secret source the backend service already uses;
     # agent shells do not export PROXMOX_* themselves.
     file_values = _read_env_file(Path.home() / ".env.local")
@@ -187,7 +191,7 @@ def load_proxmox_config() -> ProxmoxConfig:
     host = value("PROXMOX_API_URL")
     token_id = value("PROXMOX_TOKEN_ID")
     secret = value("PROXMOX_TOKEN_SECRET")
-    if admin_token := os.environ.get(ADMIN_TOKEN_ENV, "").strip():  # elevated, owner-tapped; env only, never a file
+    if allow_admin_token and (admin_token := os.environ.get(ADMIN_TOKEN_ENV, "").strip()):  # legacy elevation; env only
         token_id, secret = parse_admin_token(admin_token)
     node = value("PROXMOX_NODE")
     missing = [
@@ -228,7 +232,18 @@ def _tls_context(ca_bundle: str) -> ssl.SSLContext:
 
 class ProxmoxClient:
     def __init__(self, config: ProxmoxConfig | None = None) -> None:
+        self._lab_scoped = config is not None
         self.config = config or load_proxmox_config()
+
+    @classmethod
+    def for_lab(cls) -> ProxmoxClient:
+        """Use only the configured automation token, regardless of owner elevation in this process."""
+        try:
+            return cls(load_proxmox_config(allow_admin_token=False))
+        except ProxmoxTokenMissing:
+            raise  # tokenless shells use the unelevated backend route
+        except LAB_OPERATION_ERRORS:
+            raise ProxmoxError("Proxmox client unavailable; check configured API access") from None
 
     @property
     def _headers(self) -> dict[str, str]:
@@ -296,11 +311,12 @@ class ProxmoxClient:
         # These machine-readable operations never include transport/config values or raw API bodies in errors.
         try:
             return self.request(method, path, data=data)
-        except (ProxmoxError, ValueError, TypeError):
+        except LAB_OPERATION_ERRORS:
             raise ProxmoxError(f"Proxmox {component} unavailable; no complete result") from None
 
-    @staticmethod
-    def _require_lab_assets(vmids: list[str]) -> None:
+    def _require_lab_assets(self, vmids: list[str]) -> None:
+        if not self._lab_scoped:
+            raise ProxmoxError("Lab operations require an unelevated ProxmoxClient.for_lab()")
         if any(reserved_lab_asset(vmid) is None for vmid in vmids):
             raise ProxmoxError("Every VM must be a registered Nightshift lab or parked asset")
 
@@ -388,7 +404,7 @@ class ProxmoxClient:
                 raise ProxmoxError(f"VM {vmid} reset {operation} returned no task identity; inspect before retrying")
             try:
                 self.wait_task(upid, timeout_seconds=120)
-            except ProxmoxError:
+            except LAB_OPERATION_ERRORS:
                 raise ProxmoxError(f"VM {vmid} reset {operation} failed; inspect before retrying") from None
             result = self._lab_request("GET", f"/nodes/{self.config.node}/tasks/{quote(upid, safe='')}/status", f"VM {vmid} reset task result")
             if not isinstance(result, dict) or result.get("status") != "stopped" or result.get("exitstatus") != "OK":

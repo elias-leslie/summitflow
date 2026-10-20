@@ -1,9 +1,12 @@
 """Bounded lab observations and identity-guarded resets use only scoped PVE API calls."""
 
 import json
+import ssl
+from types import SimpleNamespace
 from typing import Any
 from urllib.parse import parse_qs, urlsplit
 
+import httpx
 import pytest
 from typer.testing import CliRunner
 
@@ -249,7 +252,7 @@ def test_public_cli_json_and_remote_dispatch(monkeypatch):
                 "storage": {"name": "local-lvm", "total": 100, "used": 40, "available": 60},
             } if json["op"] == "observe" else {"vmid": 120, "name": "lab-120", "snapshot": "clean", "status": "stopped"}}
 
-    monkeypatch.setattr(vm, "ProxmoxClient", lambda: RemoteProxmoxClient(Http()))
+    monkeypatch.setattr(vm.ProxmoxClient, "for_lab", lambda: RemoteProxmoxClient.for_lab(Http()))
     runner = CliRunner()
     for command in (["observe", "120", "121", "--storage", "local-lvm"],
                     ["reset", "120", "--name", "lab-120", "--snapshot", "clean"]):
@@ -280,7 +283,7 @@ def test_remote_redacts_transport_and_api_errors(error):
             raise error
 
     with pytest.raises(ProxmoxError) as exc:
-        RemoteProxmoxClient(Http()).observe(["120"], "local-lvm")
+        RemoteProxmoxClient.for_lab(Http()).observe(["120"], "local-lvm")
     assert "private" not in str(exc.value)
 
 
@@ -293,7 +296,7 @@ def test_remote_refuses_missing_success_result(op, result):
         def post(self, *_, **__):
             return {"result": result}
 
-    remote = RemoteProxmoxClient(Http())
+    remote = RemoteProxmoxClient.for_lab(Http())
     with pytest.raises(ProxmoxError):
         remote.observe(["120"], "local-lvm") if op == "observe" else remote.reset("120", name="lab-120", snapshot="clean")
 
@@ -302,6 +305,123 @@ def test_cli_configuration_error_is_redacted(monkeypatch):
     def fail():
         raise ProxmoxError("private-secret https://private-config")
 
-    monkeypatch.setattr(vm, "ProxmoxClient", fail)
+    monkeypatch.setattr(vm.ProxmoxClient, "for_lab", fail)
     result = CliRunner().invoke(vm.app, ["observe", "120", "--storage", "local-lvm"])
     assert result.exit_code == 1 and "private" not in result.output
+
+
+@pytest.fixture()
+def local_pve(monkeypatch, tmp_path):
+    """Real CLI construction and PVE HTTP seam; all credentials are synthetic."""
+    lab, authorizations = Lab(monkeypatch), []
+    ca = tmp_path / "ca.pem"
+    ca.write_text("fixture")
+    for key, value in {
+        "PROXMOX_API_URL": "https://fixture", "PROXMOX_NODE": "node", "PROXMOX_TOKEN_ID": "fixture@pve!scoped",
+        "PROXMOX_TOKEN_SECRET": "scoped-fixture", "PROXMOX_CA_BUNDLE": str(ca),
+        "PROXMOX_ADMIN_TOKEN": "fixture@pve!admin=admin-fixture",
+    }.items():
+        monkeypatch.setenv(key, value)
+    monkeypatch.setattr(proxmox, "_read_env_file", lambda _: {})
+    monkeypatch.setattr(proxmox, "_tls_context", lambda _: None)
+
+    def request(method, url, headers, **kwargs):
+        authorizations.append(headers["Authorization"])
+        return httpx.Response(200, json={"data": lab.request(method, url.split("/api2/json", 1)[1], **kwargs)})
+
+    monkeypatch.setattr(proxmox.httpx, "request", request)
+    return lab, authorizations
+
+
+LAB_COMMANDS = [["observe", "120", "--storage", "local-lvm"], ["reset", "120", "--name", "lab-120", "--snapshot", "clean"]]
+
+
+@pytest.mark.parametrize("command", LAB_COMMANDS)
+def test_direct_lab_cli_never_uses_admin_environment_token(local_pve, command):
+    _, authorizations = local_pve
+    result = CliRunner().invoke(vm.app, command)
+    assert result.exit_code == 0, result.output
+    assert authorizations and set(authorizations) == {"PVEAPIToken=fixture@pve!scoped=scoped-fixture"}
+
+
+@pytest.mark.parametrize("command", LAB_COMMANDS)
+def test_remote_lab_cli_never_sends_admin_environment_header(monkeypatch, command):
+    lab, seen = Lab(monkeypatch), []
+    monkeypatch.setattr(proxmox, "_read_env_file", lambda _: {})
+    for key in ("PROXMOX_API_URL", "PROXMOX_NODE", "PROXMOX_TOKEN_ID", "PROXMOX_TOKEN_SECRET", "PROXMOX_CA_BUNDLE"):
+        monkeypatch.delenv(key, raising=False)
+    monkeypatch.setenv("PROXMOX_ADMIN_TOKEN", "fixture@pve!admin=admin-fixture")
+
+    class Http:
+        _client = SimpleNamespace(headers={})
+
+        def _global_url(self, path):
+            return path
+
+        def post(self, _, json):
+            seen.append(dict(self._client.headers))
+            return {"result": lab.client.observe(**json["args"]) if json["op"] == "observe" else lab.reset()}
+
+    monkeypatch.setattr("cli.lib.proxmox_remote.STClient", lambda **_: Http())
+    result = CliRunner().invoke(vm.app, command)
+    assert result.exit_code == 0, result.output
+    assert seen == [{}]
+
+
+@pytest.mark.parametrize("error", [httpx.InvalidURL("private-secret https://private-config"), OSError("private-secret"),
+    ssl.SSLError("private-secret"), json.JSONDecodeError("private-secret", "private-config", 0)])
+@pytest.mark.parametrize("phase", ["request", "wait", "task-result"])
+def test_lab_expected_failures_are_bounded_proxmox_errors(monkeypatch, error, phase):
+    lab = Lab(monkeypatch, running=True)
+    if phase == "request":
+        lab.overrides["/nodes/node/qemu/120/config"] = error
+    elif phase == "wait":
+        def fail(*_, **__):
+            raise error
+
+        monkeypatch.setattr(lab.client, "wait_task", fail)
+    else:
+        original = lab.request
+
+        def request(method, path, **kwargs):
+            if "/tasks/" in path:
+                raise error
+            return original(method, path, **kwargs)
+
+        monkeypatch.setattr(lab.client, "request", request)
+    with pytest.raises(ProxmoxError) as exc:
+        lab.reset()
+    assert len(str(exc.value)) < 180 and "private" not in str(exc.value) and exc.value.__suppress_context__
+
+
+@pytest.mark.parametrize("error", [OSError("private-secret https://private-config"), ssl.SSLError("private-secret"),
+    json.JSONDecodeError("private-secret", "private-config", 0)])
+def test_lab_configuration_loading_errors_are_redacted(monkeypatch, error):
+    def fail(_):
+        raise error
+
+    monkeypatch.setattr(proxmox, "_read_env_file", fail)
+    with pytest.raises(ProxmoxError) as exc:
+        ProxmoxClient.for_lab()
+    assert len(str(exc.value)) < 180 and "private" not in str(exc.value) and exc.value.__suppress_context__
+
+
+@pytest.mark.parametrize("command", LAB_COMMANDS)
+@pytest.mark.parametrize("seam", ["http", "tls"])
+def test_direct_lab_cli_transport_and_tls_errors_have_no_traceback(local_pve, monkeypatch, command, seam):
+    def fail(*_, **__):
+        raise httpx.InvalidURL("private-secret https://private-config")
+
+    monkeypatch.setattr(proxmox.httpx if seam == "http" else proxmox, "request" if seam == "http" else "_tls_context", fail)
+    result = CliRunner().invoke(vm.app, command)
+    assert result.exit_code == 1 and "private" not in result.output and "Traceback" not in result.output
+    assert isinstance(result.exception, SystemExit)
+
+
+def test_default_clients_cannot_reuse_owner_elevation_for_lab_operations(local_pve):
+    for client in (ProxmoxClient(), RemoteProxmoxClient(SimpleNamespace(_client=SimpleNamespace(headers={})))):
+        for operation in (lambda client=client: client.observe(["120"], "local-lvm"),
+                          lambda client=client: client.reset("120", name="lab-120", snapshot="clean")):
+            with pytest.raises(ProxmoxError, match="unelevated"):
+                operation()
+    assert local_pve[1] == []
