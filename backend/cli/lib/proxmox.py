@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import ssl
 import subprocess
 import sys
@@ -53,6 +54,57 @@ class ProxmoxConfig:
 OPS_POOL = "summitflow-ops"
 # PVE pool whose members the token may only start/stop/reset (role SummitFlowPower: VM.PowerMgmt)
 POWER_POOL = "summitflow-power"
+
+LAB_OBSERVE_MAX_VMS = 32
+LAB_TASK_LIMIT = 1000
+
+
+def validate_lab_vmids(vmids: object) -> None:
+    """Canonical PVE IDs only; bound the work before any client or API access."""
+    if not isinstance(vmids, list) or not 1 <= len(vmids) <= LAB_OBSERVE_MAX_VMS:
+        raise ProxmoxError(f"Pass 1 to {LAB_OBSERVE_MAX_VMS} explicit VM IDs")
+    if any(not isinstance(vmid, str) or not re.fullmatch(r"[1-9][0-9]{2,8}", vmid) for vmid in vmids):
+        raise ProxmoxError("VM IDs must be canonical decimal strings from 100 to 999999999")
+    if len(set(vmids)) != len(vmids):
+        raise ProxmoxError("VM IDs must be unique")
+
+
+def validate_lab_observe(vmids: object, storage: object) -> None:
+    validate_lab_vmids(vmids)
+    if not isinstance(storage, str) or not re.fullmatch(r"[A-Za-z][A-Za-z0-9_.-]{0,62}[A-Za-z0-9]", storage):
+        raise ProxmoxError("Storage must be a configured PVE storage ID of 2 to 64 characters")
+
+
+def validate_lab_reset(vmid: object, name: object, snapshot: object) -> None:
+    validate_lab_vmids([vmid])
+    if not isinstance(name, str) or len(name) > 253 or not all(
+        re.fullmatch(r"[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?", label) for label in name.split(".")
+    ):
+        raise ProxmoxError("Name must be an exact PVE guest hostname")
+    if not isinstance(snapshot, str) or not re.fullmatch(r"[A-Za-z][A-Za-z0-9_-]{1,39}", snapshot) or snapshot == "current":
+        raise ProxmoxError("Snapshot must be an exact PVE snapshot name (2 to 40 characters), excluding current")
+
+
+def validate_lab_observation(result: Any, vmids: list[str], storage: str) -> None:
+    """Refuse incomplete remote evidence and unexpected fields rather than printing a partial success."""
+    row_keys = {"vmid", "name", "status", "uptime", "lock", "snapshots", "latest_tasks"}
+    if not isinstance(result, dict) or set(result) != {"vms", "storage"} or not isinstance(result["vms"], list):
+        raise ProxmoxError("Proxmox observe returned no complete result")
+    rows, capacity = result["vms"], result["storage"]
+    if len(rows) != len(vmids) or any(
+        not isinstance(row, dict) or set(row) != row_keys or type(row["vmid"]) is not int or str(row["vmid"]) != vmid
+        or not isinstance(row["name"], str) or not row["name"] or row["status"] not in ("running", "stopped")
+        or type(row["uptime"]) is not int or row["uptime"] < 0 or (row["lock"] is not None and not isinstance(row["lock"], str))
+        or not isinstance(row["snapshots"], list) or any(not isinstance(name, str) or not name for name in row["snapshots"])
+        or not isinstance(row["latest_tasks"], dict) or set(row["latest_tasks"]) != {"qmstart", "qmrollback"}
+        or any(value is not None and (type(value) is not int or value <= 0) for value in row["latest_tasks"].values())
+        for row, vmid in zip(rows, vmids, strict=True)
+    ) or (
+        not isinstance(capacity, dict) or set(capacity) != {"name", "total", "used", "available"} or capacity["name"] != storage
+        or any(type(capacity[key]) is not int or capacity[key] < 0 for key in ("total", "used", "available"))
+        or capacity["total"] <= 0 or capacity["used"] > capacity["total"] or capacity["available"] > capacity["total"]
+    ):
+        raise ProxmoxError("Proxmox observe returned no complete result")
 
 
 # Nightshift's world-readable registry finding: which PVE guests are parked or lab assets
@@ -239,6 +291,128 @@ class ProxmoxClient:
         if not isinstance(data, dict):
             raise ProxmoxError(f"Missing status for VM {vmid}")
         return data
+
+    def _lab_request(self, method: str, path: str, component: str, *, data: dict[str, Any] | None = None) -> Any:
+        # These machine-readable operations never include transport/config values or raw API bodies in errors.
+        try:
+            return self.request(method, path, data=data)
+        except (ProxmoxError, ValueError, TypeError):
+            raise ProxmoxError(f"Proxmox {component} unavailable; no complete result") from None
+
+    @staticmethod
+    def _require_lab_assets(vmids: list[str]) -> None:
+        if any(reserved_lab_asset(vmid) is None for vmid in vmids):
+            raise ProxmoxError("Every VM must be a registered Nightshift lab or parked asset")
+
+    def _lab_state(self, vmid: str) -> tuple[dict[str, Any], dict[str, Any]]:
+        base = f"/nodes/{self.config.node}/qemu/{vmid}"
+        status = self._lab_request("GET", f"{base}/status/current", f"VM {vmid} status")
+        config = self._lab_request("GET", f"{base}/config", f"VM {vmid} config")
+        if (
+            not isinstance(status, dict) or not isinstance(config, dict)
+            or str(status.get("vmid")) != vmid or status.get("status") not in ("running", "stopped")
+            or not isinstance(status.get("name"), str) or not status["name"] or config.get("name") != status["name"]
+            or type(status.get("uptime")) is not int or status["uptime"] < 0
+            or ("lock" in config and (not isinstance(config["lock"], str) or not config["lock"]))
+        ):
+            raise ProxmoxError(f"Incomplete or inconsistent state for VM {vmid}")
+        return status, config
+
+    def _lab_snapshots(self, vmid: str) -> dict[str, dict[str, Any]]:
+        rows = self._lab_request("GET", f"/nodes/{self.config.node}/qemu/{vmid}/snapshot", f"VM {vmid} snapshots")
+        if not isinstance(rows, list) or any(
+            not isinstance(row, dict) or not isinstance(row.get("name"), str)
+            or not re.fullmatch(r"[A-Za-z][A-Za-z0-9_-]{1,39}", row["name"])
+            or row.get("snapstate") for row in rows
+        ):
+            raise ProxmoxError(f"Incomplete snapshots for VM {vmid}")
+        snapshots = {row["name"]: row for row in rows}
+        if "current" not in snapshots or len(snapshots) != len(rows):
+            raise ProxmoxError(f"Incomplete snapshots for VM {vmid}")
+        return snapshots
+
+    def observe(self, vmids: list[str], storage: str) -> dict[str, Any]:
+        """Atomic, bounded evidence for registered labs; timestamps cover PVE's retained task history."""
+        validate_lab_observe(vmids, storage)
+        self._require_lab_assets(vmids)
+        node_path = f"/nodes/{self.config.node}"
+        permissions = self._lab_request("GET", f"/access/permissions?path={quote(node_path, safe='')}", "task permissions")
+        node_permissions = permissions.get(node_path) if isinstance(permissions, dict) else None
+        # PVE otherwise silently hides other users' tasks, making empty/latest evidence misleading.
+        if not isinstance(node_permissions, dict) or node_permissions.get("Sys.Audit") not in (0, 1):
+            raise ProxmoxError("Complete task evidence requires Sys.Audit on the configured PVE node")
+        vms = []
+        for vmid in vmids:
+            status, config = self._lab_state(vmid)
+            snapshots = self._lab_snapshots(vmid)
+            latest: dict[str, int | None] = {}
+            for task_type in ("qmstart", "qmrollback"):
+                tasks = self._lab_request(
+                    "GET", f"{node_path}/tasks?vmid={vmid}&typefilter={task_type}&source=all&limit={LAB_TASK_LIMIT}",
+                    f"VM {vmid} {task_type} history",
+                )
+                if not isinstance(tasks, list) or len(tasks) >= LAB_TASK_LIMIT or any(
+                    not isinstance(task, dict) or str(task.get("id")) != vmid or task.get("type") != task_type
+                    or type(task.get("starttime")) is not int or task["starttime"] <= 0 for task in tasks
+                ):
+                    raise ProxmoxError(f"Incomplete or excessive {task_type} history for VM {vmid}")
+                latest[task_type] = max((task["starttime"] for task in tasks), default=None)
+            vms.append({
+                "vmid": int(vmid), "name": status["name"], "status": status["status"], "uptime": status["uptime"],
+                "lock": config.get("lock"), "snapshots": sorted(set(snapshots) - {"current"}), "latest_tasks": latest,
+            })
+        capacity = self._lab_request("GET", f"{node_path}/storage/{storage}/status", "storage status")
+        if (
+            not isinstance(capacity, dict) or capacity.get("active") != 1 or capacity.get("enabled") != 1
+            or any(type(capacity.get(key)) is not int or capacity[key] < 0 for key in ("total", "used", "avail"))
+            or capacity["total"] <= 0 or capacity["used"] > capacity["total"] or capacity["avail"] > capacity["total"]
+        ):
+            raise ProxmoxError("Incomplete or inactive storage capacity")
+        return {"vms": vms, "storage": {"name": storage, "total": capacity["total"], "used": capacity["used"], "available": capacity["avail"]}}
+
+    def reset(self, vmid: str, *, name: str, snapshot: str) -> dict[str, Any]:
+        """Guard identity, stop, roll back, and prove a stopped guest at the selected snapshot."""
+        validate_lab_reset(vmid, name, snapshot)
+        self._require_lab_assets([vmid])
+        base = f"/nodes/{self.config.node}/qemu/{vmid}"
+
+        def guarded_state() -> dict[str, Any]:
+            status, config = self._lab_state(vmid)
+            if status["name"] != name or config.get("template") or config.get("lock"):
+                raise ProxmoxError(f"VM {vmid} name guard, template or lock check failed")
+            return status
+
+        def task(path: str, operation: str, data: dict[str, Any] | None = None) -> None:
+            upid = self._lab_request("POST", path, f"VM {vmid} reset {operation}", data=data)
+            if not isinstance(upid, str) or not upid.startswith("UPID:"):
+                raise ProxmoxError(f"VM {vmid} reset {operation} returned no task identity; inspect before retrying")
+            try:
+                self.wait_task(upid, timeout_seconds=120)
+            except ProxmoxError:
+                raise ProxmoxError(f"VM {vmid} reset {operation} failed; inspect before retrying") from None
+            result = self._lab_request("GET", f"/nodes/{self.config.node}/tasks/{quote(upid, safe='')}/status", f"VM {vmid} reset task result")
+            if not isinstance(result, dict) or result.get("status") != "stopped" or result.get("exitstatus") != "OK":
+                raise ProxmoxError(f"VM {vmid} reset {operation} has no successful task result; inspect before retrying")
+
+        status = guarded_state()
+        if snapshot not in self._lab_snapshots(vmid):
+            raise ProxmoxError(f"VM {vmid} exact snapshot is missing")
+        snapshot_config = self._lab_request("GET", f"{base}/snapshot/{snapshot}/config", f"VM {vmid} snapshot config")
+        if not isinstance(snapshot_config, dict) or snapshot_config.get("name") != name:
+            raise ProxmoxError(f"VM {vmid} snapshot name guard failed")
+        if status["status"] == "running":
+            task(f"{base}/status/stop", "stop")
+        if guarded_state()["status"] != "stopped" or snapshot not in self._lab_snapshots(vmid):
+            raise ProxmoxError(f"VM {vmid} reset pre-verification failed")
+        task(f"{base}/snapshot/{snapshot}/rollback", "rollback", {"start": 0})
+        # PVE automatically resumes snapshots with RAM, even when start=0.
+        if guarded_state()["status"] == "running":
+            task(f"{base}/status/stop", "final stop")
+        final = guarded_state()
+        snapshots = self._lab_snapshots(vmid)
+        if final["status"] != "stopped" or snapshot not in snapshots or snapshots["current"].get("parent") != snapshot:
+            raise ProxmoxError(f"VM {vmid} reset post-verification failed")
+        return {"vmid": int(vmid), "name": name, "snapshot": snapshot, "status": "stopped"}
 
     def snapshots(self, vmid: str) -> list[dict[str, Any]]:
         data = self.request("GET", f"/nodes/{self.config.node}/qemu/{vmid}/snapshot")

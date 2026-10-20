@@ -12,7 +12,13 @@ from typing import Annotated, Any
 from fastapi import APIRouter, Depends, Header, HTTPException
 from pydantic import BaseModel, Field
 
-from cli.lib.proxmox import ProxmoxClient, ProxmoxError, parse_admin_token
+from cli.lib.proxmox import (
+    ProxmoxClient,
+    ProxmoxError,
+    parse_admin_token,
+    validate_lab_observe,
+    validate_lab_reset,
+)
 from cli.lib.vm_clone import run_clone
 
 from ..access_control import require_authenticated
@@ -47,6 +53,16 @@ class VmOp(BaseModel):
 
 
 def run_vm_op(client: ProxmoxClient, body: VmOp) -> Any:
+    if body.op == "observe":
+        if body.vmid is not None or set(body.args) != {"vmids", "storage"}:
+            raise HTTPException(status_code=400, detail="Observe requires only explicit vmids and storage")
+        validate_lab_observe(body.args["vmids"], body.args["storage"])
+        return client.observe(**body.args)
+    if body.op == "reset":
+        if not body.vmid or set(body.args) != {"name", "snapshot"}:
+            raise HTTPException(status_code=400, detail="Reset requires only exact name and snapshot")
+        validate_lab_reset(body.vmid, body.args["name"], body.args["snapshot"])
+        return client.reset(body.vmid, **body.args)
     if body.op == "list_vms":
         return client.list_vms()
     if body.op == "clone":
@@ -82,7 +98,13 @@ def request_client(admin_token: str | None) -> ProxmoxClient:
 @router.post("/vm/op")
 def vm_op(body: VmOp, x_proxmox_admin_token: Annotated[str | None, Header()] = None) -> dict[str, Any]:
     try:
-        return {"result": run_vm_op(request_client(x_proxmox_admin_token), body)}
+        try:
+            client = request_client(x_proxmox_admin_token)
+        except ProxmoxError:
+            if body.op in {"observe", "reset"}:
+                raise ProxmoxError("Proxmox client unavailable; check configured API access") from None
+            raise
+        return {"result": run_vm_op(client, body)}
     except KeyError as exc:
         raise HTTPException(status_code=400, detail=f"Missing argument: {exc}") from exc
     except ProxmoxError as exc:

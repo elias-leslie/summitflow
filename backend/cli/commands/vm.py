@@ -14,7 +14,14 @@ from typing import Annotated
 import typer
 
 from ..lib.confirm_token import confirm_gate
-from ..lib.proxmox import ProxmoxClient, ProxmoxError, ProxmoxTokenMissing, snapshot_name_default
+from ..lib.proxmox import (
+    ProxmoxClient,
+    ProxmoxError,
+    ProxmoxTokenMissing,
+    snapshot_name_default,
+    validate_lab_observe,
+    validate_lab_reset,
+)
 from ..lib.proxmox_remote import RemoteProxmoxClient
 from ..lib.usage import usage
 from ..lib.vm_clone import run_clone
@@ -92,6 +99,68 @@ def _run(action) -> None:
     except ProxmoxError as exc:
         output_error(str(exc))
         raise typer.Exit(1) from None
+
+
+def _run_lab_json(action) -> None:
+    try:
+        try:
+            client = ProxmoxClient()
+        except ProxmoxTokenMissing:
+            client = RemoteProxmoxClient()
+        except ProxmoxError:
+            raise ProxmoxError("Proxmox client unavailable; check configured API access") from None
+        result = action(client)
+        print(json.dumps(result))
+    except ProxmoxError as exc:
+        output_error(str(exc))
+        raise typer.Exit(1) from None
+
+
+@app.command()
+@usage(
+    surface="st.vm.observe",
+    cmd="st vm observe <id>... --storage <configured-storage>",
+    when="read complete JSON state, snapshots, task times and storage bytes for 1 to 32 registered lab or parked VMs",
+    precautions=("explicit unique IDs only; fails on incomplete evidence or filtered task access",),
+    task_types=("vm-repair", "vm-admin"),
+    on_demand="VM repair",
+    tier="reference",
+)
+def observe(
+    vmids: Annotated[list[str], typer.Argument(help="1 to 32 unique registered lab or parked VM IDs")],
+    storage: Annotated[str, typer.Option("--storage", help="Configured PVE storage ID; capacity in bytes")],
+) -> None:
+    """JSON only. Latest qmstart/qmrollback start times are Unix seconds; null means no retained task."""
+    try:
+        validate_lab_observe(vmids, storage)
+    except ProxmoxError as exc:
+        output_error(str(exc))
+        raise typer.Exit(1) from None
+    _run_lab_json(lambda client: client.observe(vmids, storage))
+
+
+@app.command()
+@usage(
+    surface="st.vm.reset",
+    cmd="st vm reset <id> --name <exact-name> --snapshot <exact-snapshot>",
+    when="stop and roll back a registered lab or parked VM, leaving it stopped with identity and snapshot verified",
+    precautions=("destructive rollback; exact VM name and snapshot are required; PVE pool ACLs authorize changes",),
+    task_types=("vm-repair", "vm-admin"),
+    on_demand="VM repair",
+    tier="reference",
+)
+def reset(
+    vmid: Annotated[str, typer.Argument(help="Registered lab or parked VM ID")],
+    name: Annotated[str, typer.Option("--name", help="Exact current and snapshot VM name")],
+    snapshot: Annotated[str, typer.Option("--snapshot", help="Exact snapshot to restore")],
+) -> None:
+    """JSON only. Guard identity, stop if running, roll back, and verify stopped at the snapshot."""
+    try:
+        validate_lab_reset(vmid, name, snapshot)
+    except ProxmoxError as exc:
+        output_error(str(exc))
+        raise typer.Exit(1) from None
+    _run_lab_json(lambda client: client.reset(vmid, name=name, snapshot=snapshot))
 
 
 def _mb(value: object) -> str:

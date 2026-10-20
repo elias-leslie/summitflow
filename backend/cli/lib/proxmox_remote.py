@@ -6,7 +6,14 @@ import os
 from typing import Any
 
 from ..client import APIError, STClient
-from .proxmox import ADMIN_TOKEN_ENV, ProxmoxError, declare_if_lab
+from .proxmox import (
+    ADMIN_TOKEN_ENV,
+    ProxmoxError,
+    declare_if_lab,
+    validate_lab_observation,
+    validate_lab_observe,
+    validate_lab_reset,
+)
 
 # Clone/provision/boot can take minutes; the route returns once the guest is ready
 _TIMEOUT_SECONDS = 900.0
@@ -21,15 +28,34 @@ class RemoteProxmoxClient:
         if admin_token := os.environ.get(ADMIN_TOKEN_ENV, "").strip():  # the route swaps it in for this caller's calls
             self._http._client.headers[ADMIN_TOKEN_HEADER] = admin_token
 
-    def _call(self, op: str, vmid: str | None = None, **args: Any) -> Any:
+    def _call(self, op: str, vmid: str | None = None, *, _safe_errors: bool = False, **args: Any) -> Any:
         try:
             response = self._http.post(self._http._global_url("/vm/op"), json={"op": op, "vmid": vmid, "args": args})
         except APIError as exc:
+            if _safe_errors:
+                raise ProxmoxError(f"Proxmox {op} refused or incomplete; no complete result") from None
             detail = exc.detail.get("message") if isinstance(exc.detail, dict) else exc.detail  # the app's error envelope
             raise ProxmoxError(str(detail)) from exc
         except Exception as exc:  # backend unreachable
+            if _safe_errors:
+                raise ProxmoxError("Proxmox backend route unavailable; no complete result") from None
             raise ProxmoxError(f"Proxmox backend route failed: {exc}") from exc
+        if _safe_errors and not isinstance(response, dict):
+            raise ProxmoxError("Proxmox backend route returned no complete result")
         return response.get("result")
+
+    def observe(self, vmids: list[str], storage: str) -> dict[str, Any]:
+        validate_lab_observe(vmids, storage)
+        result = self._call("observe", vmids=vmids, storage=storage, _safe_errors=True)
+        validate_lab_observation(result, vmids, storage)
+        return result
+
+    def reset(self, vmid: str, *, name: str, snapshot: str) -> dict[str, Any]:
+        validate_lab_reset(vmid, name, snapshot)
+        result = self._call("reset", vmid, name=name, snapshot=snapshot, _safe_errors=True)
+        if result != {"vmid": int(vmid), "name": name, "snapshot": snapshot, "status": "stopped"}:
+            raise ProxmoxError("Proxmox reset returned no verified result; inspect before retrying")
+        return result
 
     def list_vms(self) -> list[dict[str, Any]]:
         return self._call("list_vms")

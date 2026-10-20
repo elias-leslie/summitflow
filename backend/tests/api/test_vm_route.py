@@ -27,6 +27,14 @@ class FakeClient:
         self.calls.append(("start", vmid, kwargs))
         raise ProxmoxError('Proxmox API error 403: {"message":"Permission check failed (/vms/140, VM.PowerMgmt)"}')
 
+    def observe(self, **kwargs):
+        self.calls.append(("observe", None, kwargs))
+        return {"vms": [], "storage": {}}
+
+    def reset(self, vmid, **kwargs):
+        self.calls.append(("reset", vmid, kwargs))
+        return {"vmid": int(vmid), "status": "stopped"}
+
 
 @pytest.fixture()
 def api(monkeypatch):
@@ -54,6 +62,40 @@ def test_route_refuses_methods_outside_the_list(api):
     for body in ({"op": "request", "vmid": "191"}, {"op": "status", "vmid": "191", "args": {"x": 1}}):
         assert api.post("/api/vm/op", json=body).status_code == 400
     assert FakeClient.calls == []
+
+
+def test_route_forwards_only_explicit_lab_operation_arguments(api):
+    observe = {"op": "observe", "args": {"vmids": ["120"], "storage": "local-lvm"}}
+    reset = {"op": "reset", "vmid": "120", "args": {"name": "lab-120", "snapshot": "clean"}}
+    assert api.post("/api/vm/op", json=observe).json() == {"result": {"vms": [], "storage": {}}}
+    assert api.post("/api/vm/op", json=reset).json() == {"result": {"vmid": 120, "status": "stopped"}}
+    assert FakeClient.calls == [("observe", None, observe["args"]), ("reset", "120", reset["args"])]
+
+
+@pytest.mark.parametrize("body", [
+    {"op": "observe", "args": {"vmids": ["120"]}},
+    {"op": "observe", "vmid": "120", "args": {"vmids": ["120"], "storage": "local-lvm"}},
+    {"op": "observe", "args": {"vmids": ["120", "120"], "storage": "local-lvm"}},
+    {"op": "observe", "args": {"vmids": "120", "storage": "local-lvm"}},
+    {"op": "observe", "args": {"vmids": ["120"], "storage": "../other"}},
+    {"op": "reset", "args": {"name": "lab-120", "snapshot": "clean"}},
+    {"op": "reset", "vmid": "120", "args": {"name": "lab-120", "snapshot": "clean", "start": True}},
+    {"op": "reset", "vmid": "120/stop", "args": {"name": "lab-120", "snapshot": "clean"}},
+    {"op": "reset", "vmid": "120", "args": {"name": "lab-120", "snapshot": "current"}},
+])
+def test_route_rejects_malformed_lab_operations_before_client_calls(api, body):
+    assert api.post("/api/vm/op", json=body).status_code == 400
+    assert FakeClient.calls == []
+
+
+def test_lab_route_does_not_echo_failed_client_configuration(api, monkeypatch):
+    def fail(_):
+        raise ProxmoxError("private-secret https://private-config")
+
+    monkeypatch.setattr(vm_api, "request_client", fail)
+    response = api.post("/api/vm/op", json={"op": "observe", "args": {"vmids": ["120"], "storage": "local-lvm"}})
+    assert response.status_code == 400
+    assert "private" not in response.text
 
 
 def test_unauthenticated_call_is_refused(monkeypatch):
