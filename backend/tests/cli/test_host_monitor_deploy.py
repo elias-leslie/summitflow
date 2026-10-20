@@ -195,26 +195,38 @@ def test_first_install_and_failed_activation_preserve_owner_store(tmp_path, monk
         assert db.execute("SELECT id FROM samples").fetchone() == (123,)
 
 
-@pytest.mark.parametrize("reader_restarts", [True, False])
-def test_rollback_restores_reader_before_retiring_system_collector(monkeypatch, reader_restarts):
+@pytest.mark.parametrize("failure", ["", "reader", "collector"])
+def test_rollback_restores_reader_before_retiring_system_collector(monkeypatch, tmp_path, failure):
     calls = []
-    project = SimpleNamespace(backend_service="backend.service", backend_port=8001)
+    project = service_ops.ProjectServices("example", tmp_path / "candidate", "backend.service", "", (), (),
+                                          8001, 0, tmp_path / "candidate/backend", tmp_path / "candidate/frontend", "/health")
     release = SimpleNamespace(build_id="candidate")
     monkeypatch.setattr(service, "_restore_previous_units", lambda *args: calls.append("restore units") or True)
-    monkeypatch.setattr(service_ops, "restart_service", lambda *args, **kwargs:
-                        calls.append("restart backend") or (0 if reader_restarts else 1))
+    monkeypatch.setattr(service.service_release, "previous_source_root", lambda _: tmp_path / "previous")
+    restarted = []
+    def restart(unit, *, port, project):
+        assert unit == "backend.service" and port == 8001
+        restarted.append(project.root)
+        calls.append("restart backend")
+        return int(failure == "reader")
+    monkeypatch.setattr(service_ops, "restart_service", restart)
     monkeypatch.setattr(service_ops, "sync_systemd_units", lambda *args: calls.append("restore candidate units") or 0)
     monkeypatch.setattr(service_ops, "host_monitor_deployment", lambda *args:
-                        calls.append("rollback collector") or 0)
+                        calls.append("rollback collector") or int(failure == "collector"))
     monkeypatch.setattr(service.service_release, "mark_phase", lambda *args, **kwargs: None)
     assert service._rollback_monitor_and_reader(
-        cast(service_ops.ProjectServices, project), cast(service_ops.ProjectServices, project),
+        project, project,
         cast(service.service_release.PreparedRelease, release), True,
-    ) is reader_restarts
-    if reader_restarts:
+    ) is (not failure)
+    assert restarted[0] == tmp_path / "previous"
+    if not failure:
         assert calls == ["restore units", "restart backend", "rollback collector"]
-    else:
+    elif failure == "reader":
         assert calls == ["restore units", "restart backend", "restore candidate units", "restart backend"]
+    else:
+        assert calls == ["restore units", "restart backend", "rollback collector", "restore candidate units", "restart backend"]
+    if failure:
+        assert restarted[-1] == project.root
 
 
 def _receipts(tmp_path, monkeypatch):

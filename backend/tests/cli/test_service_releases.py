@@ -469,6 +469,33 @@ def test_service_preparation_consumes_canonical_acceptance_receipt(
     assert deployed.root != repo
 
 
+@pytest.mark.parametrize("boundary", ["prepare", "resolve"])
+@pytest.mark.parametrize("as_path", [False, True])
+def test_explicit_receipt_cannot_replace_the_requested_source(
+    accepted_repo, tmp_path, monkeypatch, local_gate_tools, boundary, as_path,
+):
+    from cli.lib import acceptance, service_ops
+
+    repo, source = accepted_repo
+    descriptor = acceptance.accept_revision(
+        repo, sha=source.source_commit,
+        runner=lambda command, cwd: subprocess.CompletedProcess(command, 0, "accepted", ""),
+    )
+    (repo / "backend/app.py").write_text("LATER = True\n")
+    _git(repo, "commit", "-qam", "requested source B")
+    requested_sha = _git(repo, "rev-parse", "HEAD")
+    project = service_ops.ProjectServices(
+        "example", repo, "api.service", "", (), (), 8001, 0,
+        repo / "backend", repo / "frontend", "/health", source_sha=requested_sha,
+    )
+    monkeypatch.setenv("SUMMITFLOW_SERVICE_STATE_ROOT", str(tmp_path / "service-state"))
+    receipt = Path(descriptor["acceptance_artifact"]) if as_path else descriptor
+    operation = service_ops.prepare_accepted_release if boundary == "prepare" else service_ops.resolve_accepted_source
+    with pytest.raises((service_ops.ServiceError, service_release.ReleaseError), match="different source commit"):
+        operation(project, receipt)
+    assert not (service_release.service_state_root() / "projects/example/releases").exists()
+
+
 @pytest.mark.parametrize("coverage", ["task", "full"])
 @pytest.mark.parametrize("as_path", [False, True])
 @pytest.mark.parametrize("boundary", ["prepare", "resolve"])

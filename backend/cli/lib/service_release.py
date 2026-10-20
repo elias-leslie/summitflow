@@ -349,12 +349,13 @@ def prepare_release(
     *,
     state_root: Path | None = None,
     rollback: bool = False,
+    sha: str | None = None,
 ) -> PreparedRelease:
     """Validate a receipt and materialize its commit/tree under the shared repo lock."""
     from . import acceptance
 
     with acceptance.repo_lock(repo, purpose="deployment", wait_seconds=acceptance.REPO_LOCK_WAIT_SECONDS):
-        descriptor = acceptance.validate_acceptance_receipt(repo, source)
+        descriptor = acceptance.validate_acceptance_receipt(repo, source, sha=sha)
         AcceptedSource.from_descriptor(descriptor, require_full=True)
         require_forward_deploy(project_id, repo, str(descriptor["source_commit"]), rollback=rollback,
                                state_root=state_root)

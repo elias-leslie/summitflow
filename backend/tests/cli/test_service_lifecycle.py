@@ -88,6 +88,50 @@ def test_health_accepts_a_listener_child_of_the_expected_release_unit(runtime):
     http.assert_called_once()
 
 
+def test_owner_runtime_health_resolves_the_installed_owner_login(runtime, monkeypatch):
+    from cli.lib import service_owner_runtime
+
+    project, _proc, _properties, _listeners, http = runtime
+    monkeypatch.setattr(service_owner_runtime, "_trusted_json", lambda _path: {"owner": {"user": "actual-login"}})
+    lookup = Mock(side_effect=lambda login: SimpleNamespace(pw_uid=os.getuid()) if login == "actual-login" else
+                  (_ for _ in ()).throw(KeyError(login)))
+    monkeypatch.setattr(service_ops.pwd, "getpwnam", lookup)
+    assert service_ops.verify_health(replace(project, runtime_user="owner")) == 0
+    assert lookup.call_args.args == ("actual-login",)
+    http.assert_called_once()
+
+
+def test_suffixless_unit_attestation_uses_the_canonical_systemd_id(runtime):
+    project, _proc, _properties, _listeners, http = runtime
+    assert service_ops.verify_health(replace(project, backend_service="backend")) == 0
+    http.assert_called_once()
+
+
+@pytest.mark.parametrize("mismatch", ["", "old_commit", "missing_commit", "foreign_uid", "foreign_listener"])
+def test_installer_runtime_attests_the_launched_commit_outside_materialized_source(runtime, tmp_path, mismatch):
+    project, proc, properties, _listeners, http = runtime
+    project = replace(project, backend_service="backend", release_install="deploy/systemd/install.sh", source_sha="a" * 40)
+    # Nightshift's installed unit has no WorkingDirectory and starts an
+    # interpreter in current-venv through its stable bin/nightshift launcher.
+    home = tmp_path / "home"
+    home.mkdir()
+    properties["WorkingDirectory"] = ""
+    for pid in (11, 12):
+        (proc / str(pid) / "cwd").unlink()
+        (proc / str(pid) / "cwd").symlink_to(home, target_is_directory=True)
+        (proc / str(pid) / "environ").write_bytes(b"SUMMITFLOW_SOURCE_SHA=" + b"a" * 40 + b"\0")
+    if mismatch == "old_commit":
+        (proc / "11/environ").write_bytes(b"SUMMITFLOW_SOURCE_SHA=" + b"b" * 40 + b"\0")
+    elif mismatch == "missing_commit":
+        (proc / "11/environ").write_bytes(b"PATH=/fixture/bin\0")
+    elif mismatch == "foreign_uid":
+        (proc / "11/status").write_text("Uid:\t99999\t99999\t99999\t99999\n")
+    elif mismatch == "foreign_listener":
+        (proc / "12/cgroup").write_text("0::/foreign.service\n")
+    assert service_ops.verify_health(project) == int(bool(mismatch))
+    assert http.called is (not mismatch)
+
+
 @pytest.mark.parametrize("mismatch", ["foreign_listener", "foreign_uid", "old_release", "main_release",
                                       "manager_uid", "inactive", "missing_pid", "unreadable_listener",
                                       "hidden_listener", "missing_cgroup", "working_directory", "ss_unavailable"])
@@ -197,6 +241,102 @@ def test_restart_rejects_a_successful_start_from_the_previous_release(runtime, t
     assert run.call_args.args[0][-2:] == ["start", project.backend_service]
 
 
+def test_worker_restart_rejects_an_active_previous_release(runtime, tmp_path, monkeypatch):
+    project, proc, _properties, _listeners, _http = runtime
+    previous = tmp_path / "previous"
+    previous.mkdir()
+    (proc / "11/cwd").unlink()
+    (proc / "11/cwd").symlink_to(previous, target_is_directory=True)
+    monkeypatch.setattr(service_ops, "service_exists", lambda _: True)
+    monkeypatch.setattr(service_ops, "_service_main_pid", lambda _: 11)
+    monkeypatch.setattr(service_ops, "_pid_alive", lambda _: False)
+    monkeypatch.setattr(service_ops, "_wait_service_inactive", lambda _: True)
+    monkeypatch.setattr(service_ops, "_wait_service_active", lambda _: True)
+    monkeypatch.setattr(service_ops, "run", Mock(return_value=0))
+    mark_phase = Mock()
+    monkeypatch.setattr(service_release, "mark_phase", mark_phase)
+    monkeypatch.delenv("INVOCATION_ID", raising=False)
+    assert service._restart_services(
+        project, Mock(), (project.backend_service,), restart_backend=False, frontend=False,
+        monitor_activated=False, assert_backup_restart_owned=lambda: None,
+    ) == 1
+    assert mark_phase.call_args.kwargs["status"] == "failed"
+
+
+def test_monitor_reader_rollback_preserves_a_foreign_listener(runtime, tmp_path, monkeypatch):
+    project, proc, _properties, listeners, _http = runtime
+    (proc / "12/cgroup").write_text("0::/foreign.service\n")
+    monkeypatch.setattr(service, "_restore_previous_units", lambda *_: True)
+    monkeypatch.setattr(service_release, "previous_source_root", lambda _: tmp_path / "previous")
+    monkeypatch.setattr(service_ops, "service_exists", lambda _: True)
+    monkeypatch.setattr(service_ops, "_service_main_pid", lambda _: 11)
+    monkeypatch.setattr(service_ops, "_port_open", lambda _: True)
+    monkeypatch.setattr(service_ops, "sync_systemd_units", lambda _: 0)
+    run = Mock(return_value=0)
+    monkeypatch.setattr(service_ops, "run", run)
+    assert service._rollback_monitor_and_reader(project, project, Mock(), True) is False
+    run.assert_not_called()
+    assert all(call.args[0][0] == "ss" for call in listeners.call_args_list)
+
+
+@pytest.mark.parametrize("foreign_listener", [False, True])
+def test_owner_activation_and_restore_use_actual_login_and_runtime_attestation(runtime, tmp_path, monkeypatch, foreign_listener):
+    from cli.lib import service_owner_runtime as owner
+
+    project, proc, properties, listeners, _http = runtime
+    project = replace(project, runtime_user="owner", default_workers=(), optional_workers=())
+    monkeypatch.setattr(owner, "_trusted_json", lambda _: {"owner": {"user": "actual-login"}})
+    def lookup(login):
+        assert login == "actual-login"
+        return SimpleNamespace(pw_uid=os.getuid())
+    monkeypatch.setattr(service_ops.pwd, "getpwnam", lookup)
+    for name in ("run_migrations", "sync_systemd_units", "sync_seeds"):
+        monkeypatch.setattr(service_ops, name, lambda _: 0)
+    monkeypatch.setattr(service_ops, "service_exists", lambda _: True)
+    monkeypatch.setattr(service_ops, "_service_main_pid", lambda _: 11)
+    monkeypatch.setattr(service_ops, "_port_open", lambda _: False)
+    monkeypatch.setattr(service_ops, "_pid_alive", lambda _: False)
+    monkeypatch.setattr(service_ops, "_wait_service_inactive", lambda _: True)
+    monkeypatch.setattr(service_ops, "_wait_service_active", lambda _: True)
+    monkeypatch.setattr(service_release, "mark_phase", Mock())
+    monkeypatch.delenv("INVOCATION_ID", raising=False)
+    target = [project.backend_dir]
+    def run(argv):
+        if "start" in argv:
+            properties["WorkingDirectory"] = str(target[0])
+            for pid in (11, 12):
+                (proc / str(pid) / "cwd").unlink()
+                (proc / str(pid) / "cwd").symlink_to(target[0], target_is_directory=True)
+        return 0
+    mutation = Mock(side_effect=run)
+    monkeypatch.setattr(service_ops, "run", mutation)
+    release = service_release.PreparedRelease(
+        project.project_id, "a" * 32,
+        service_release.AcceptedSource("accepted", "a" * 40, "c" * 40),
+        project.root.parent, project.root, tmp_path / "deployment.json",
+    )
+    if foreign_listener:
+        monkeypatch.setattr(service_ops, "_port_open", lambda _: True)
+        (proc / "12/cgroup").write_text("0::/foreign.service\n")
+        with pytest.raises(ValueError, match="restart"):
+            owner._activate(project, release)
+        mutation.assert_not_called()
+        assert all(call.args[0][0] == "ss" for call in listeners.call_args_list)
+        return
+    owner._activate(project, release)
+    previous = tmp_path / "old/source"
+    target[0] = previous / "backend"
+    target[0].mkdir(parents=True)
+    monkeypatch.setattr(owner, "_pointer", lambda *_: "applied")
+    monkeypatch.setattr(owner, "_retained", lambda *_: SimpleNamespace(
+        source_root=previous, source=SimpleNamespace(source_commit="b" * 40)))
+    state = tmp_path / "owner-state"
+    state.mkdir()
+    monkeypatch.setattr(service_release, "_project_state", lambda _: state)
+    assert owner._restore(project, {"current": "prior", "previous": None, "units": {}, "optional": []}, "applied")
+    assert properties["WorkingDirectory"] == str(previous / "backend")
+
+
 @pytest.fixture
 def lifecycle(monkeypatch, project):
     monkeypatch.setattr(service, "_load", lambda _: project)
@@ -256,6 +396,7 @@ def test_full_rebuild_preserves_optional_worker_intent(lifecycle):
     assert result.exit_code == 0, result.output
     restarted = [call.args[0] for call in lifecycle["restart_service"].call_args_list]
     assert restarted == ["backend.service", "required.service", "active.service", "frontend.service"]
+    assert all(call.kwargs.get("project") is not None for call in lifecycle["restart_service"].call_args_list)
 
 
 def test_rebuild_runs_preflight_once_before_lifecycle_work(lifecycle, unit_service_preflight):

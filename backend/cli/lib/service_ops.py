@@ -103,6 +103,13 @@ def activated_service(unit: str) -> str:
     return f"{stem}.service" if dot and stem and kind in {"socket", "timer"} else ""
 
 
+def canonical_unit(unit: str) -> str:
+    """Apply systemd's implicit service suffix at unit identity boundaries."""
+    suffixes = (".service", ".socket", ".device", ".mount", ".automount", ".swap",
+                ".target", ".path", ".timer", ".slice", ".scope")
+    return f"{unit}.service" if unit and not unit.endswith(suffixes) else unit
+
+
 def _as_str_list(value: Any) -> tuple[str, ...]:
     if not isinstance(value, list):
         return ()
@@ -179,7 +186,8 @@ def _pinned_project(project: ProjectServices, identity: Any) -> ProjectServices:
     runtime, services = identity["runtime"], identity["services"]
     if identity["project"].get("id") != project.project_id:
         raise ServiceError("Pinned project identity does not match the requested canonical project id")
-    if runtime.get("runtime_user") not in ("svc", "broker", "agent") or runtime["runtime_user"] != project.runtime_user:
+    user = runtime.get("runtime_user", "")
+    if not isinstance(user, str) or user not in RUNTIME_USERS or user != project.runtime_user:
         raise ServiceError("Pinned project identity runtime user does not match the admitted deploy gate")
     for key in ("backend_port", "frontend_port"):
         port = runtime.get(key, 0)
@@ -191,12 +199,15 @@ def _pinned_project(project: ProjectServices, identity: Any) -> ProjectServices:
         if isinstance(expected, tuple):
             if not isinstance(actual, list) or any(not isinstance(item, str) or not item for item in actual):
                 raise ServiceError(f"Pinned project identity services.{key} must list unit names")
-            actual = tuple(actual)
+            actual = tuple(canonical_unit(unit) for unit in actual)
+            expected = tuple(canonical_unit(unit) for unit in expected)
+        elif isinstance(actual, str):
+            actual, expected = canonical_unit(actual), canonical_unit(expected)
         if actual != expected:
             raise ServiceError(f"Pinned project identity services.{key} does not match the admitted units")
     for key in ("backend_dir", "frontend_dir"):
         directory = runtime.get(key, key.removesuffix("_dir"))
-        if not isinstance(directory, str) or not directory or Path(directory).is_absolute() or ".." in Path(directory).parts:
+        if not isinstance(directory, str) or Path(directory).is_absolute() or ".." in Path(directory).parts:
             raise ServiceError(f"Pinned project identity runtime.{key} must stay inside the source")
     endpoint = runtime.get("health_endpoint", "/health")
     if not isinstance(endpoint, str) or not endpoint.startswith("/"):
@@ -340,10 +351,11 @@ def system_systemctl(*args: str) -> subprocess.CompletedProcess[str]:
 
 
 def _manager(service: str):
-    return system_systemctl if service == host_monitor_deploy.UNIT else systemctl
+    return system_systemctl if canonical_unit(service) == host_monitor_deploy.UNIT else systemctl
 
 
 def _service_command(service: str, *args: str) -> list[str]:
+    service = canonical_unit(service)
     if service == host_monitor_deploy.UNIT:
         return ["sudo", "-n", "/usr/bin/systemctl", *args, service]
     return ["systemctl", "--user", *args, service]
@@ -484,10 +496,11 @@ def sync_systemd_units(project: ProjectServices) -> int:
     summitflow_root = str(project.root if project.project_id == "summitflow" else get_repo_root())
     durable_data_root = project.durable_data_root or project.root / "data"
     host_config_root = project.host_config_root or project.root
-    units = dict.fromkeys(name for unit in project.all_services for name in (unit, activated_service(unit)) if name)
+    units = dict.fromkeys(canonical_unit(name) for unit in project.all_services
+                          for name in (unit, activated_service(unit)) if name)
     # Required services must come back after a host reboot; optional workers
     # keep whatever enablement the owner chose.
-    required = {project.backend_service, project.frontend_service, *project.default_workers}
+    required = {canonical_unit(unit) for unit in (project.backend_service, project.frontend_service, *project.default_workers)}
     boot: list[str] = []
     for service in units:
         if service == host_monitor_deploy.UNIT:
@@ -600,15 +613,23 @@ def _service_main_pid(service: str) -> int:
 
 def _runtime_uid(project: ProjectServices) -> int:
     try:
-        uid = pwd.getpwnam(project.runtime_user).pw_uid if project.runtime_user else os.getuid()
-    except KeyError as exc:
+        user = project.runtime_user
+        if user == "owner":
+            from .service_owner_runtime import SITE, _trusted_json
+
+            owner = _trusted_json(SITE).get("owner")
+            user = owner.get("user") if isinstance(owner, dict) else None
+            if not isinstance(user, str) or not user:
+                raise ServiceError("installed owner login is unavailable")
+        uid = pwd.getpwnam(user).pw_uid if user else os.getuid()
+    except (KeyError, OSError, ValueError) as exc:
         raise ServiceError("runtime user is unavailable") from exc
     if os.getuid() != uid:
         raise ServiceError("caller does not own the expected user service manager")
     return uid
 
 
-def _attest_process(pid: int, uid: int, cgroup: str, source_root: Path | None) -> None:
+def _attest_process(pid: int, uid: int, cgroup: str, source_root: Path | None, *, source_sha: str = "") -> None:
     """Check kernel process identity; a systemd property alone is not evidence."""
     process = _PROC_ROOT / str(pid)
     try:
@@ -621,11 +642,19 @@ def _attest_process(pid: int, uid: int, cgroup: str, source_root: Path | None) -
             raise ServiceError(f"PID {pid} is outside the expected unit cgroup")
         if source_root is not None and not (process / "cwd").resolve(strict=True).is_relative_to(source_root.resolve(strict=True)):
             raise ServiceError(f"PID {pid} is outside the expected release source")
+        if source_sha:
+            # Inspect only this protocol field; process environment values are
+            # never included in errors or deployment evidence.
+            commits = [item for item in (process / "environ").read_bytes().split(b"\0")
+                       if item.startswith(b"SUMMITFLOW_SOURCE_SHA=")]
+            if commits != [f"SUMMITFLOW_SOURCE_SHA={source_sha}".encode()]:
+                raise ServiceError(f"PID {pid} is outside the expected installed release")
     except OSError as exc:
         raise ServiceError(f"cannot attest runtime PID {pid}") from exc
 
 
 def _unit_runtime(project: ProjectServices, service: str, *, require_source: bool) -> tuple[int, int, str]:
+    service = canonical_unit(service)
     uid = _runtime_uid(project)
     try:
         result = systemctl("show", service, "--property=Id,LoadState,ActiveState,MainPID,ControlGroup,WorkingDirectory")
@@ -639,7 +668,10 @@ def _unit_runtime(project: ProjectServices, service: str, *, require_source: boo
             or properties.get("ActiveState") != "active" or not pid.isdecimal() or int(pid) <= 0
             or not cgroup.startswith(manager_group) or ".." in Path(cgroup).parts):
         raise ServiceError(f"{service} is not active in the expected user manager")
-    source = project.root if require_source else None
+    source = project.root if require_source and not project.release_install else None
+    source_sha = project.source_sha if require_source and project.release_install else ""
+    if require_source and project.release_install and not re.fullmatch(r"[0-9a-f]{40}", source_sha):
+        raise ServiceError("accepted installed release commit is unavailable")
     if source is not None:
         try:
             working = Path(properties.get("WorkingDirectory", ""))
@@ -647,7 +679,7 @@ def _unit_runtime(project: ProjectServices, service: str, *, require_source: boo
                 raise ServiceError(f"{service} working directory is outside the expected release source")
         except OSError as exc:
             raise ServiceError(f"cannot attest {service} release directory") from exc
-    _attest_process(int(pid), uid, cgroup, source)
+    _attest_process(int(pid), uid, cgroup, source, source_sha=source_sha)
     return int(pid), uid, cgroup
 
 
@@ -670,7 +702,9 @@ def attest_service_runtime(project: ProjectServices, service: str, *, port: int 
     _pid, uid, cgroup = identity
     for pid in _attested_listener_pids(port) if port else ():
         try:
-            _attest_process(pid, uid, cgroup, project.root if require_source else None)
+            _attest_process(pid, uid, cgroup,
+                            project.root if require_source and not project.release_install else None,
+                            source_sha=project.source_sha if require_source and project.release_install else "")
         except ServiceError:
             # A socket-activated service shares its listening FD with its user
             # manager. Admit that one process only for this socket's Listen.
@@ -755,6 +789,7 @@ def _restart_activation_unit(unit: str, paired: str) -> int:
 
 
 def restart_service(service: str, *, port: int = 0, project: ProjectServices | None = None) -> int:
+    service = canonical_unit(service)
     if not service:
         return 0
     if not service_exists(service):
@@ -1343,7 +1378,8 @@ def resolve_accepted_source(
     candidate = _acceptance_candidate(project, receipt)
     try:
         with acceptance.repo_lock(project.git_root, purpose="deployment", wait_seconds=acceptance.REPO_LOCK_WAIT_SECONDS):
-            descriptor = acceptance.validate_acceptance_receipt(project.git_root, candidate)
+            descriptor = acceptance.validate_acceptance_receipt(
+                project.git_root, candidate, sha=getattr(project, "source_sha", "") or None)
             service_release.require_forward_deploy(project.project_id, project.git_root,
                                                    str(descriptor["source_commit"]), rollback=rollback)
     except Exception as exc:
@@ -1371,15 +1407,16 @@ def prepare_accepted_release(
     """Validate and materialize accepted source while holding the repo mutation lock."""
     candidate = _acceptance_candidate(project, receipt)
     try:
-        release = service_release.prepare_release(project.project_id, project.git_root, candidate, rollback=rollback)
+        release = service_release.prepare_release(project.project_id, project.git_root, candidate, rollback=rollback,
+                                                  sha=project.source_sha or None)
     except Exception as exc:
         if isinstance(exc, (ServiceError, service_release.ReleaseError)):
             raise
         raise ServiceError(f"Accepted source preparation failed: {exc}") from exc
-    return release, project_at_source(project, release.source_root)
+    return release, project_at_source(project, release.source_root, source_sha=release.source.source_commit)
 
 
-def project_at_source(project: ProjectServices, source_root: Path) -> ProjectServices:
+def project_at_source(project: ProjectServices, source_root: Path, *, source_sha: str | None = None) -> ProjectServices:
     """Retarget one managed service layout without changing services or ports."""
     try:
         backend_relative = project.backend_dir.relative_to(project.root)
@@ -1393,6 +1430,7 @@ def project_at_source(project: ProjectServices, source_root: Path) -> ProjectSer
         frontend_dir=source_root / frontend_relative,
         host_config_root=project.host_config_root or project.root,
         durable_data_root=project.durable_data_root or project.root / "data",
+        source_sha=project.source_sha if source_sha is None else source_sha,
     )
 
 

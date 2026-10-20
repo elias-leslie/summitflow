@@ -151,6 +151,8 @@ def test_activation_and_verified_previous_runtime_restore(runtime, tmp_path, mon
         assert owner.handle("verify", request)["ok"] is True
         assert owner.handle("rollback", request)["result"]["restored"] is True
         assert owner._pointer("example", "current") == old.build_id
+    assert all(call.kwargs.get("project") is not None for call in restarts.call_args_list)
+    assert restarts.call_args.kwargs["project"].root == old.source_root
 
 
 def test_rollback_preserves_later_pointer(runtime, tmp_path, monkeypatch):

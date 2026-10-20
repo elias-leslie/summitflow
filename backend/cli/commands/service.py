@@ -144,17 +144,23 @@ def _rollback_monitor_and_reader(
     if not _restore_previous_units(development, release):
         print("[service] prior reader unit unavailable; retaining system collector for recovery")
         return False
+    previous_root = service_release.previous_source_root(release)
+    if previous_root is None:
+        return False
+    previous = service_ops.project_at_source(development, previous_root)
     if backend_restart_attempted and service_ops.restart_service(
-        candidate.backend_service, port=candidate.backend_port
+        previous.backend_service, port=previous.backend_port, project=previous
     ) != 0:
         # The old reader could not resume. Keep the candidate pair recoverable.
         restored = service_ops.sync_systemd_units(candidate) == 0
-        restarted = restored and service_ops.restart_service(candidate.backend_service, port=candidate.backend_port) == 0
+        restarted = restored and service_ops.restart_service(
+            candidate.backend_service, port=candidate.backend_port, project=candidate) == 0
         print(f"[service] previous reader failed; system collector retained, candidate reader restart {'succeeded' if restarted else 'requires recovery'}")
         return False
     if service_ops.host_monitor_deployment(candidate, release.build_id, "rollback") != 0:
         restored = service_ops.sync_systemd_units(candidate) == 0
-        restarted = restored and service_ops.restart_service(candidate.backend_service, port=candidate.backend_port) == 0
+        restarted = restored and service_ops.restart_service(
+            candidate.backend_service, port=candidate.backend_port, project=candidate) == 0
         print(f"[service] monitor rollback failed; candidate reader restart {'succeeded' if restarted else 'failed'}, deployment receipt requires recovery")
         return False
     service_release.mark_phase(release, "host_monitor_rollback", status="succeeded",
@@ -390,11 +396,14 @@ def _restart_services(
         ) != 0
         restarted.append(services.backend_service)
     for name in workers:
-        if monitor_activated and name == "summitflow-host-monitor.service":
+        is_monitor = service_ops.canonical_unit(name) == service_ops.host_monitor_deploy.UNIT
+        if monitor_activated and is_monitor:
             restarted.append(name)
             continue
         assert_backup_restart_owned()
-        errors += service_ops.restart_service(name) != 0
+        errors += service_ops.restart_service(
+            name, project=None if is_monitor else services
+        ) != 0
         restarted.append(name)
     if frontend and services.frontend_service:
         assert_backup_restart_owned()

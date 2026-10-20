@@ -129,7 +129,8 @@ def handle(phase: str, request: dict[str, Any]) -> dict[str, Any]:
                     "health": "verified", "deployment_id": releases._read_receipt(release)["deployment_id"]}}
             elif phase == "verify":
                 release = _retained(project_id, before["build_id"])
-                if _pointer(project_id, "current") != release.build_id or service_ops.verify_health(service_ops.project_at_source(project, release.source_root)):
+                if _pointer(project_id, "current") != release.build_id or service_ops.verify_health(
+                        service_ops.project_at_source(project, release.source_root, source_sha=release.source.source_commit)):
                     raise ValueError("Owner deployed release verification failed")
                 result = {"result": {"build_id": release.build_id, "health": "verified"}}
             else:
@@ -181,7 +182,7 @@ def _units_dir() -> Path:
 def _unit_contents(project: service_ops.ProjectServices) -> dict[str, str | None]:
     # Match the complete set rendered by sync_systemd_units, including the
     # services activated by timer/socket units.
-    units = dict.fromkeys(name for unit in project.all_services
+    units = dict.fromkeys(service_ops.canonical_unit(name) for unit in project.all_services
                           for name in (unit, service_ops.activated_service(unit)) if name)
     return {unit: ((_units_dir() / unit).read_text() if (_units_dir() / unit).exists() else None)
             for unit in units}
@@ -244,7 +245,7 @@ def _precheck(project: service_ops.ProjectServices, request: dict[str, Any], ope
 
 
 def _activate(project: service_ops.ProjectServices, release: releases.PreparedRelease) -> None:
-    services = service_ops.project_at_source(project, release.source_root)
+    services = service_ops.project_at_source(project, release.source_root, source_sha=release.source.source_commit)
     # Deliberately no dependency, source-build or project installer call here.
     for name, work in (("migrations", service_ops.run_migrations), ("systemd_units", service_ops.sync_systemd_units)):
         code = work(services)
@@ -254,7 +255,7 @@ def _activate(project: service_ops.ProjectServices, release: releases.PreparedRe
     workers = (*services.default_workers, *(unit for unit in services.optional_workers if service_ops.service_state(unit) == "active"))
     for unit, port in ((services.backend_service, services.backend_port),
                        *((unit, 0) for unit in workers), (services.frontend_service, services.frontend_port)):
-        if unit and service_ops.restart_service(unit, port=port):
+        if unit and service_ops.restart_service(unit, port=port, project=services):
             raise ValueError("Owner activation failed: restart")
     releases.mark_phase(release, "restart", status="succeeded")
     if service_ops.verify_health(services):
@@ -291,9 +292,11 @@ def _restore(project: service_ops.ProjectServices, frozen: dict[str, Any], appli
         if service_ops.stop_services(project):
             raise ValueError("Failed initial owner runtime could not be stopped")
         raise ValueError("Owner unit configuration restored; no previous accepted runtime exists to restart")
-    services = service_ops.project_at_source(project, prior.source_root)
-    for unit in (services.backend_service, *services.default_workers, *frozen["optional"], services.frontend_service):
-        if unit and service_ops.restart_service(unit):
+    services = service_ops.project_at_source(project, prior.source_root, source_sha=prior.source.source_commit)
+    for unit, port in ((services.backend_service, services.backend_port),
+                       *((unit, 0) for unit in (*services.default_workers, *frozen["optional"])),
+                       (services.frontend_service, services.frontend_port)):
+        if unit and service_ops.restart_service(unit, port=port, project=services):
             raise ValueError("Previous owner runtime restart failed")
     if service_ops.verify_health(services):
         raise ValueError("Previous owner runtime health verification failed")

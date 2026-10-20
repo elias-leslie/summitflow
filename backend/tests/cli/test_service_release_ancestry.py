@@ -135,7 +135,7 @@ def test_detached_rebuild_refuses_a_backward_deploy_before_it_queues(history, mo
     monkeypatch.setattr(service_release, "service_state_root", lambda: state)
     monkeypatch.setattr(service_ops, "_acceptance_candidate", lambda *_a: {"source_commit": commits[0]})
     monkeypatch.setattr(acceptance, "repo_lock", lambda *_a, **_k: nullcontext())
-    monkeypatch.setattr(acceptance, "validate_acceptance_receipt", lambda _root, candidate: dict(candidate))
+    monkeypatch.setattr(acceptance, "validate_acceptance_receipt", lambda _root, candidate, **_kwargs: dict(candidate))
     project = cast(service_ops.ProjectServices, SimpleNamespace(project_id="example", root=repo, git_root=repo))
     with pytest.raises(service_release.ReleaseError, match="deploy_not_forward"):
         service_ops.resolve_accepted_source(project)

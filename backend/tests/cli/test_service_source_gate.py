@@ -121,12 +121,36 @@ def test_source_repo_requires_a_committed_identity(project, tmp_path, monkeypatc
         service_ops.use_source_repo(project, repo, _git("rev-parse", "HEAD", cwd=repo))
 
 
-@pytest.mark.parametrize("user", ["svc", "broker", "agent"])
+@pytest.mark.parametrize("user", ["svc", "broker", "agent", "owner", ""])
 def test_source_repo_preserves_each_admitted_service_user(project, tmp_path, monkeypatch, user):
     monkeypatch.setenv("SUMMITFLOW_SERVICE_STATE_ROOT", str(tmp_path / "state"))
     admitted = replace(project, runtime_user=user)
     repo, sha = _source_repo(tmp_path, _identity(admitted))
     assert service_ops.use_source_repo(admitted, repo, sha).runtime_user == user
+
+
+def test_source_repo_accepts_canonical_spellings_of_admitted_units(project, tmp_path, monkeypatch):
+    monkeypatch.setenv("SUMMITFLOW_SERVICE_STATE_ROOT", str(tmp_path / "state"))
+    admitted = replace(project, backend_service="backend", default_workers=("required",))
+    identity = _identity(admitted)
+    identity["services"].update(backend="backend.service", default_workers=["required.service"])
+    repo, sha = _source_repo(tmp_path, identity)
+    assert service_ops.use_source_repo(admitted, repo, sha).backend_service == "backend.service"
+
+
+def test_source_repo_accepts_the_installer_identity_layout(project, tmp_path, monkeypatch):
+    monkeypatch.setenv("SUMMITFLOW_SERVICE_STATE_ROOT", str(tmp_path / "state"))
+    admitted = replace(project, runtime_user="", backend_service="nightshift-web", frontend_service="",
+                       default_workers=(), optional_workers=(), backend_port=3020, frontend_port=0,
+                       release_install="deploy/systemd/install.sh")
+    identity = _identity(admitted)
+    identity["runtime"].pop("runtime_user")
+    identity["runtime"].update(backend_dir="", frontend_dir="", release_install=admitted.release_install)
+    repo, sha = _source_repo(tmp_path, identity)
+    pinned = service_ops.use_source_repo(admitted, repo, sha)
+    assert pinned.release_install == admitted.release_install
+    assert pinned.backend_service == "nightshift-web"
+    assert pinned.backend_dir == admitted.root / "backend"
 
 
 def test_identity_mismatch_stops_before_dependency_install(project, tmp_path, monkeypatch):
