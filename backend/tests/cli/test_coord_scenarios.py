@@ -647,6 +647,52 @@ def test_codex_subagent_thread_is_self_without_peer_notice(repos, monkeypatch, h
     assert all("context reset" not in line for line in coord.notices())
 
 
+@pytest.mark.parametrize("use_session_prefix", [False, True])
+def test_codex_parent_and_worker_receive_only_their_own_requests(
+    repos, tmp_path, monkeypatch, harness_procs, use_session_prefix,
+):
+    monkeypatch.setattr(leases, "LEASES_DIR", tmp_path / "hook-leases")
+    codex = ("codex", "CODEX_THREAD_ID", "codex")
+    anchor, _ = harness_procs()
+    peer_anchor, _ = harness_procs()
+    parent_sid, child_sid = "parent-thread-123456", "worker-thread-123456"
+    parent = become(monkeypatch, codex, parent_sid, anchor)
+    coord.session_start({"session_id": parent_sid, "source": "startup"})
+    child = become(monkeypatch, codex, child_sid, anchor)
+    coord_lineage.observe(subagent=True)
+    _peer(monkeypatch, peer_anchor)
+    parent_request = coord.send(parent_sid[:15] if use_session_prefix else parent, "parent available?")
+    child_request = coord.send(child_sid[:15] if use_session_prefix else child, "worker available?")
+
+    become(monkeypatch, codex, child_sid, anchor)
+    assert [row["id"] for row in coord.inbox()] == [child_request["id"]]
+    hook_env = {"ST_COORD_ANCHOR": anchor, "ST_COORD_HARNESS": "codex"}
+    # Codex worker hooks identify the parent session and the worker separately.
+    hook = _inbox({"session_id": parent_sid, "agent_id": child_sid, "hook_event_name": "PostToolUse"},
+                  tmp_path, "turn", "codex", **hook_env)
+    assert hook.returncode == 0 and "worker available?" in hook.stdout and "parent available?" not in hook.stdout
+    with pytest.raises(ValueError, match="not addressed"):
+        coord.ack(parent_request["id"], "yes")
+    coord.ack(child_request["id"], "yes")
+
+    become(monkeypatch, codex, parent_sid, anchor)
+    # A new main thread inherits the old parent's request, never the worker's.
+    successor_sid = "reset0-thread-123456"
+    successor = become(monkeypatch, codex, successor_sid, anchor)
+    coord.session_start({"session_id": successor_sid, "source": "clear"})
+    assert [row["id"] for row in coord.inbox()] == [parent_request["id"]]
+    hook = _inbox({"session_id": successor_sid, "hook_event_name": "PostToolUse"}, tmp_path, "turn", "codex", **hook_env)
+    assert hook.returncode == 0 and "parent available?" in hook.stdout and "worker available?" not in hook.stdout
+    with pytest.raises(ValueError, match="not addressed"):
+        coord.ack(child_request["id"], "yes")
+    coord.ack(parent_request["id"], "yes")
+    _peer(monkeypatch, peer_anchor)
+    assert {row["acked_by"] for row in coord.inbox()} == {successor, child}
+    coord.confirm(parent_request["id"])
+    coord.confirm(child_request["id"])
+    assert coord.inbox() == []
+
+
 def test_inherited_session_variable_of_another_harness_is_ignored(repos, monkeypatch, harness_procs):
     """Codex launched from a Claude shell inherits CLAUDE_CODE_SESSION_ID; it is still codex."""
     anchor, _ = harness_procs()

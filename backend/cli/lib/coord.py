@@ -277,7 +277,7 @@ _IDENTITY_ENV = ("CLAUDE_SESSION_ID", "CLAUDE_CODE_SESSION_ID", "CODEX_SESSION_I
 
 
 def adopt_hook_identity(payload: dict[str, Any]) -> None:
-    """Key the hook on the event's session id: after a reset it is newer than any inherited env."""
+    """Use the event's native identity: Codex worker agent_id, otherwise session_id."""
     sid = str(payload.get("session_id") or payload.get("conversationId") or "")
     st_sid = os.environ.get("ST_SESSION_ID") or ""
     if not sid or (st_sid and not st_sid.startswith(leases.ROOT_HANDLE_PREFIX)):
@@ -286,6 +286,9 @@ def adopt_hook_identity(payload: dict[str, Any]) -> None:
     if provider is None:
         codex = payload.get("tool_name") == "apply_patch" or "/.codex/" in str(payload.get("transcript_path") or "")
         provider = "codex" if codex else "claude_code"
+    # Codex worker events carry the parent's session_id and their own native agent_id.
+    if provider == "codex" and payload.get("agent_id"):
+        sid = str(payload["agent_id"])
     for key in _IDENTITY_ENV:
         os.environ.pop(key, None)
     os.environ[coord_lineage.session_env_for(provider) or "CLAUDE_CODE_SESSION_ID"] = sid
@@ -390,13 +393,13 @@ def _clean_text(text: str, limit: int = MAX_TEXT) -> str:
 
 
 def _addresses(to: str, agent_id: str, session_id: str) -> bool:
-    """Addressed to me: my id, a prefix of my session id, or any identity of my live harness process."""
+    """My identity or main-thread predecessors; workers keep their own inboxes."""
     if not to:
         return False
     # Session prefixes need 13+ chars: UUIDv7 ids share their first 12 (a millisecond timestamp).
     if to == agent_id or (len(to) >= 13 and session_id.startswith(to)):
         return True
-    family = coord_lineage.family_ids()
+    family = leases.self_ids()
     if to in family:
         return True
     if len(to) < 13 or not family:

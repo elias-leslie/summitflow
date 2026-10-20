@@ -146,7 +146,8 @@ def start(
     surface="st.sessions.send",
     cmd="st sessions send AGENT_OR_WINDOW 'question' | st sessions ack ID yes|no 'reason'|eta:MIN | st sessions confirm ID [--withdraw]",
     when="ask another agent a question (<=500 chars; a brief file only for long material): it acks, you confirm",
-    precautions=("don't-touch is an enforced repo hold (st lease --hold), not a message; fleet roots and native threads: --help",),
+    precautions=("address the coordinating parent; workers answer only their own requests; "
+                 "don't-touch: st lease --hold; fleet roots/native threads: --help",),
     tier="reference",
 )
 def send(
@@ -165,6 +166,10 @@ def send(
     --source-key returns the existing request instead of sending again; st
     sessions inbox shows open/seen, open/unseen or acked. This is the one
     channel: never also type the same text into the window.
+
+    Address the coordinating parent's agent id for shared work. Workers receive
+    and ack only their own requests; a parent keeps its requests across chat resets.
+    A sent receipt means recorded, open/seen means shown, and acked means answered.
 
     A label (Agent Hub session name/persona/tmux session, identity short id, or
     lease holder slug) must name exactly one live agent; it prints ``→ <id>``.

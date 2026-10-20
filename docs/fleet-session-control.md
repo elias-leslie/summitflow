@@ -251,3 +251,14 @@ most 100000, width at least 360 and height at least 240. Content goes only to th
 owner's existing session metadata. Receipts and errors contain no label, and ST
 adds no fleet event or duplicate session record. Existing retained-root commands
 continue addressing their exact request IDs.
+
+## Coordination between running agents
+
+Use `st sessions send AGENT_ID "question"` for another coordinating parent,
+then answer incoming requests with `st sessions ack ID yes|no 'reason'|eta:MIN`.
+The sender closes an answered exchange with `st sessions confirm ID`.
+Keep messages short: agent, repo, coarse paths and ETA. Workers answer only
+requests addressed to themselves; parent requests survive chat resets.
+`st sessions inbox` distinguishes recorded (`open/unseen`), shown (`open/seen`)
+and answered (`acked`). A send receipt alone does not prove a reply.
+Use one channel; do not also type the message into the other terminal.
