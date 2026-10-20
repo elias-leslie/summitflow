@@ -114,6 +114,9 @@ class RemoteProxmoxClient:
     def resize(self, vmid: str, *, cores: int | None = None, memory_mb: int | None = None, balloon_mb: int | None = None) -> bool:
         return bool(self._call("resize", vmid, cores=cores, memory_mb=memory_mb, balloon_mb=balloon_mb))
 
+    def grow_disk(self, vmid: str, *, disk: str, add_gib: int) -> None:
+        self._call("grow_disk", vmid, disk=disk, add_gib=add_gib)
+
     def destroy(self, vmid: str) -> None:
         self._call("destroy", vmid)
 

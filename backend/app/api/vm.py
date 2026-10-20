@@ -37,6 +37,7 @@ _VMID_OPS: dict[str, tuple[str, ...]] = {
     "shutdown": ("timeout_seconds",),
     "reboot": (),
     "resize": ("cores", "memory_mb", "balloon_mb"),
+    "grow_disk": ("disk", "add_gib"),
     "destroy": (),
     "monitor": ("command",),
     "sendkey": ("keys",),
@@ -79,6 +80,10 @@ def run_vm_op(client: ProxmoxClient, body: VmOp) -> Any:
     allowed = _VMID_OPS.get(body.op)
     if allowed is None or not body.vmid or set(body.args) - set(allowed):
         raise HTTPException(status_code=400, detail=f"Unsupported VM operation: {body.op}")
+    if body.op == "grow_disk":
+        if set(body.args) != set(allowed):
+            raise HTTPException(status_code=400, detail="Disk growth requires disk and add_gib")
+        return client.grow_disk(body.vmid, **body.args)
     kwargs = {key: value for key, value in body.args.items() if value is not None}
     if body.op == "start":
         kwargs["declare_lab"] = False  # the caller declares its own Nightshift lab use

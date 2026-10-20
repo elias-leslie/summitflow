@@ -541,14 +541,10 @@ def grow_disk(
     add_gib: Annotated[int, typer.Argument(min=1, help="GiB to add; shrinking is not supported")],
 ) -> None:
     """Add capacity to an existing VM disk. Guest filesystem growth is separate."""
-    def action(client: ProxmoxClient) -> None:
+    def action(client: ProxmoxClient | RemoteProxmoxClient) -> None:
         if not re.fullmatch(r"(?:scsi|sata|virtio|ide)[0-9]+", disk):
             raise typer.BadParameter("Use a configured disk slot")
-        cfg = client.config_get(vmid)
-        value = str(cfg.get(disk, ""))
-        if not value or "media=cdrom" in value or "cloudinit" in value:
-            raise ProxmoxError("Selected slot is not a data disk")
-        client.request("PUT", f"/nodes/{client.config.node}/qemu/{vmid}/resize", data={"disk": disk, "size": f"+{add_gib}G"})
+        client.grow_disk(vmid, disk=disk, add_gib=add_gib)
         print(f"Added {add_gib} GiB to VM {vmid} {disk}; grow the guest partition and filesystem next")
 
     _run(action)

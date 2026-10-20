@@ -517,6 +517,17 @@ class ProxmoxClient:
         self.request("PUT", f"/nodes/{self.config.node}/{kind}/{vmid}/config", data=data)
         return kind == "qemu" and self.status(vmid).get("status") == "running"
 
+    def grow_disk(self, vmid: str, *, disk: str, add_gib: int) -> None:
+        """Add whole GiB to a configured data disk; guest filesystem growth is separate."""
+        if not isinstance(disk, str) or not re.fullmatch(r"(?:scsi|sata|virtio|ide)[0-9]+", disk):
+            raise ProxmoxError("Use a configured disk slot")
+        if type(add_gib) is not int or add_gib < 1:
+            raise ProxmoxError("Disk growth requires a positive whole number of GiB")
+        value = str(self.config_get(vmid).get(disk, ""))
+        if not value or "media=cdrom" in value or "cloudinit" in value:
+            raise ProxmoxError("Selected slot is not a data disk")
+        self.request("PUT", f"/nodes/{self.config.node}/qemu/{vmid}/resize", data={"disk": disk, "size": f"+{add_gib}G"})
+
     def destroy(self, vmid: str) -> None:
         if vmid == "9000" or self.config_get(vmid).get("template"):
             raise ProxmoxError(f"Cannot destroy template VM {vmid}")

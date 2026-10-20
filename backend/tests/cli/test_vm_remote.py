@@ -56,6 +56,38 @@ def test_cli_keeps_the_direct_path_with_a_token(monkeypatch):
     assert vm._client() == "direct"
 
 
+def test_cli_grow_disk_uses_the_remote_operation_without_a_local_token(monkeypatch, tmp_path):
+    _no_token(monkeypatch, tmp_path)
+    http = FakeHttp({"result": {"scsi0": "local-lvm:vm-180-disk-0,size=12G"}})
+    monkeypatch.setattr("cli.lib.proxmox_remote.STClient", lambda **_: http)
+    result = CliRunner().invoke(vm.app, ["grow-disk", "180", "scsi0", "52"])
+    assert result.exit_code == 0, repr(result.exception)
+    assert "Added 52 GiB" in result.output
+    assert http.posted == [("http://api/vm/op", {
+        "op": "grow_disk", "vmid": "180", "args": {"disk": "scsi0", "add_gib": 52},
+    })]
+
+
+@pytest.mark.parametrize("disk,size", [("scsi0", "0"), ("scsi0", "-1"), ("scsi0", "1.5"), ("../scsi0", "52")])
+def test_cli_grow_disk_invalid_arguments_do_not_reach_the_backend(monkeypatch, disk, size):
+    http = FakeHttp()
+    monkeypatch.setattr(vm, "_client", lambda: RemoteProxmoxClient(http))
+    result = CliRunner().invoke(vm.app, ["grow-disk", "180", disk, size])
+    assert result.exit_code != 0
+    assert http.posted == []
+
+
+def test_cli_grow_disk_reports_backend_permission_failure_without_success(monkeypatch):
+    from cli.client import APIError
+
+    http = FakeHttp(error=APIError(400, {"message": "Proxmox API error 403: Permission check failed"}))
+    monkeypatch.setattr(vm, "_client", lambda: RemoteProxmoxClient(http))
+    result = CliRunner().invoke(vm.app, ["grow-disk", "180", "scsi0", "52"])
+    assert result.exit_code == 1
+    assert "Permission check failed" in result.output
+    assert "Added" not in result.output
+
+
 def test_route_error_surfaces_as_a_proxmox_error():
     from cli.client import APIError
 

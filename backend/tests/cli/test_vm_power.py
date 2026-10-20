@@ -19,6 +19,22 @@ def client() -> ProxmoxClient:
     return ProxmoxClient(ProxmoxConfig("https://fixture", "id", "secret", "node"))
 
 
+@pytest.mark.parametrize("disk", ["scsi0", "sata1", "virtio2", "ide3"])
+def test_grow_disk_preserves_the_direct_resize_request(monkeypatch, disk):
+    pve, calls = client(), []
+
+    def request(method, path, **kwargs):
+        calls.append((method, path, kwargs))
+        return {disk: "local-lvm:vm-180-disk-0,size=12G"} if method == "GET" else None
+
+    monkeypatch.setattr(pve, "request", request)
+    pve.grow_disk("180", disk=disk, add_gib=52)
+    assert calls == [
+        ("GET", "/nodes/node/qemu/180/config", {}),
+        ("PUT", "/nodes/node/qemu/180/resize", {"data": {"disk": disk, "size": "+52G"}}),
+    ]
+
+
 @pytest.mark.parametrize("action", ["start", "stop"])
 def test_power_waits_for_the_task_and_surfaces_its_failure(monkeypatch, action):
     # PVE accepts a start of a running VM and fails only its task; "starting" was printed regardless.

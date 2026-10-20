@@ -10,7 +10,7 @@ from fastapi.testclient import TestClient
 from app import access_control
 from app.api import vm as vm_api
 from app.main import app
-from cli.lib.proxmox import ProxmoxError
+from cli.lib.proxmox import ProxmoxClient, ProxmoxConfig, ProxmoxError
 
 AGENT = access_control.AccessPrincipal(email="agent@summitflow.local", role="agent", is_active=True)
 
@@ -65,6 +65,64 @@ def test_route_refuses_methods_outside_the_list(api):
     for body in ({"op": "request", "vmid": "191"}, {"op": "status", "vmid": "191", "args": {"x": 1}}):
         assert api.post("/api/vm/op", json=body).status_code == 400
     assert FakeClient.calls == []
+
+
+@pytest.fixture()
+def disk_api(api, monkeypatch):
+    client = ProxmoxClient(ProxmoxConfig("https://fixture", "id", "fixture-secret", "node"))
+    calls = []
+    state = {"disk": "local-lvm:vm-180-disk-0,size=12G"}
+
+    def request(method, path, **kwargs):
+        calls.append((method, path, kwargs))
+        if method == "GET":
+            return {"scsi0": state["disk"]}
+        if state.get("denied"):
+            raise ProxmoxError("Proxmox API error 403: Permission check failed")
+        return None
+
+    monkeypatch.setattr(client, "request", request)
+    monkeypatch.setattr(vm_api, "request_client", lambda _: client)
+    return api, calls, state
+
+
+def test_route_grow_disk_uses_the_guarded_client_operation(disk_api):
+    api, calls, _ = disk_api
+    response = api.post("/api/vm/op", json={"op": "grow_disk", "vmid": "180", "args": {"disk": "scsi0", "add_gib": 52}})
+    assert response.status_code == 200 and response.json() == {"result": None}
+    assert calls == [
+        ("GET", "/nodes/node/qemu/180/config", {}),
+        ("PUT", "/nodes/node/qemu/180/resize", {"data": {"disk": "scsi0", "size": "+52G"}}),
+    ]
+
+
+@pytest.mark.parametrize("args", [
+    {}, {"disk": "scsi0"}, {"add_gib": 52},
+    {"disk": "scsi0", "add_gib": 52, "size": "+52G"},
+    {"disk": "../scsi0", "add_gib": 52}, {"disk": None, "add_gib": 52},
+    *({"disk": "scsi0", "add_gib": size} for size in (0, -1, 1.5, "52", True, None)),
+])
+def test_route_grow_disk_rejects_invalid_arguments_before_proxmox_calls(disk_api, args):
+    api, calls, _ = disk_api
+    response = api.post("/api/vm/op", json={"op": "grow_disk", "vmid": "180", "args": args})
+    assert response.status_code == 400
+    assert calls == []
+
+
+@pytest.mark.parametrize("value", ["", "none,media=cdrom", "local-lvm:vm-180-cloudinit,media=cdrom"])
+def test_route_grow_disk_rejects_non_data_slots_without_resize(disk_api, value):
+    api, calls, state = disk_api
+    state["disk"] = value
+    response = api.post("/api/vm/op", json={"op": "grow_disk", "vmid": "180", "args": {"disk": "scsi0", "add_gib": 52}})
+    assert response.status_code == 400 and "not a data disk" in response.json()["message"]
+    assert calls == [("GET", "/nodes/node/qemu/180/config", {})]
+
+
+def test_route_grow_disk_preserves_proxmox_permission_failure(disk_api):
+    api, _, state = disk_api
+    state["denied"] = True
+    response = api.post("/api/vm/op", json={"op": "grow_disk", "vmid": "180", "args": {"disk": "scsi0", "add_gib": 52}})
+    assert response.status_code == 400 and "Permission check failed" in response.json()["message"]
 
 
 def test_route_forwards_only_explicit_lab_operation_arguments(api):
