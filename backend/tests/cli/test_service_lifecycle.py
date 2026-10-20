@@ -88,6 +88,51 @@ def test_health_accepts_a_listener_child_of_the_expected_release_unit(runtime):
     http.assert_called_once()
 
 
+@pytest.mark.parametrize("mismatch", ["", "scope_pid", "inactive", "persistent", "scope_group",
+                                      "membership", "invocation", "listener", "source", "uid"])
+def test_desktop_main_pid_can_move_to_its_verified_gnome_application_scope(runtime, tmp_path, monkeypatch, mismatch):
+    project, proc, properties, _listeners, http = runtime
+    uid = os.getuid()
+    scope = "app-example-11.scope"
+    group = f"/user.slice/user-{uid}.slice/user@{uid}.service/app.slice/{scope}"
+    for pid in (11, 12):
+        (proc / str(pid) / "cgroup").write_text(f"0::{group}\n")
+    cgroups = tmp_path / "cgroups"
+    directory = cgroups / group.lstrip("/")
+    directory.mkdir(parents=True)
+    (directory / "cgroup.procs").write_text("11\n12\n")
+    scope_properties = {"Id": scope, "LoadState": "loaded", "ActiveState": "active",
+                        "ControlGroup": group, "Transient": "yes", "InvocationID": "a" * 32}
+    if mismatch == "scope_pid":
+        (proc / "11/cgroup").write_text(f"0::{group.replace('-11.scope', '-99.scope')}\n")
+    elif mismatch == "inactive":
+        scope_properties["ActiveState"] = "inactive"
+    elif mismatch == "persistent":
+        scope_properties["Transient"] = "no"
+    elif mismatch == "scope_group":
+        scope_properties["ControlGroup"] = properties["ControlGroup"]
+    elif mismatch == "membership":
+        (directory / "cgroup.procs").write_text("12\n")
+    elif mismatch == "invocation":
+        scope_properties["InvocationID"] = ""
+    elif mismatch == "listener":
+        (proc / "12/cgroup").write_text("0::/foreign.service\n")
+    elif mismatch == "source":
+        (proc / "11/cwd").unlink()
+        (proc / "11/cwd").symlink_to(tmp_path, target_is_directory=True)
+    elif mismatch == "uid":
+        (proc / "11/status").write_text("Uid:\t99999\t99999\t99999\t99999\n")
+    monkeypatch.setattr(service_ops, "_CGROUP_ROOT", cgroups, raising=False)
+
+    def systemctl(*args):
+        values = scope_properties if args[1] == scope else properties
+        return subprocess.CompletedProcess(args, 0, "\n".join(f"{key}={value}" for key, value in values.items()), "")
+
+    monkeypatch.setattr(service_ops, "systemctl", systemctl)
+    assert service_ops.verify_health(project) == int(bool(mismatch))
+    assert http.called is (not mismatch)
+
+
 def test_named_runtime_health_resolves_the_configured_login(runtime, monkeypatch):
     project, _proc, _properties, _listeners, http = runtime
     lookup = Mock(side_effect=lambda login: SimpleNamespace(pw_uid=os.getuid()) if login == "actual-login" else
@@ -901,6 +946,8 @@ def test_portfolio_migrations_get_their_secret_key_from_host_env(project, monkey
     (tmp_path / "host").mkdir()
     (tmp_path / "host" / ".env.local").write_text("PORTFOLIO_SECRET_KEY=approved-key\n")
     monkeypatch.setenv("PORTFOLIO_SECRET_KEY", "stale-shell-key")
+    # A workstation's real credential store must never override this fixture.
+    monkeypatch.setattr(service_ops, "credstore_root", lambda _: tmp_path / "credstore")
     run = Mock(return_value=0)
     monkeypatch.setattr(service_ops, "run", run)
 

@@ -597,6 +597,7 @@ def _port_open(port: int) -> bool:
 
 _SS_PID_RE = re.compile(r"pid=(\d+)")
 _PROC_ROOT = Path("/proc")
+_CGROUP_ROOT = Path("/sys/fs/cgroup")
 
 
 def _port_listener_pids(port: int) -> set[int]:
@@ -689,6 +690,33 @@ def _attest_process(pid: int, uid: int, cgroup: str, source_root: Path | None, *
         raise ServiceError(f"cannot attest runtime PID {pid}") from exc
 
 
+def _desktop_application_cgroup(pid: int, uid: int) -> str:
+    """Corroborate GNOME's PID-named scope for a service's reclassified MainPID.
+
+    Electron can move its window owner out of the service cgroup. Admit only
+    that PID's active transient application scope in the same user manager;
+    release, UID and listener checks still run against its actual cgroup.
+    """
+    try:
+        groups = (_PROC_ROOT / str(pid) / "cgroup").read_text().splitlines()
+        group = next((line[3:] for line in groups if line.startswith("0::")), "")
+        parent = f"/user.slice/user-{uid}.slice/user@{uid}.service/app.slice/"
+        scope = group.removeprefix(parent)
+        if not group.startswith(parent) or not re.fullmatch(rf"app-[^/]+-{pid}\.scope", scope):
+            raise ServiceError(f"PID {pid} is outside the expected unit cgroup")
+        result = systemctl("show", scope, "--property=Id,LoadState,ActiveState,ControlGroup,Transient,InvocationID")
+        properties = dict(line.split("=", 1) for line in result.stdout.splitlines() if "=" in line)
+        members = (_CGROUP_ROOT / group.lstrip("/") / "cgroup.procs").read_text().splitlines()
+        if (result.returncode or properties.get("Id") != scope or properties.get("LoadState") != "loaded"
+                or properties.get("ActiveState") != "active" or properties.get("ControlGroup") != group
+                or properties.get("Transient") != "yes"
+                or not re.fullmatch(r"[0-9a-f]{32}", properties.get("InvocationID", "")) or str(pid) not in members):
+            raise ServiceError(f"cannot attest application scope for PID {pid}")
+        return group
+    except OSError as exc:
+        raise ServiceError(f"cannot attest application scope for PID {pid}") from exc
+
+
 def _unit_runtime(project: ProjectServices, service: str, *, require_source: bool) -> tuple[int, int, str]:
     service = canonical_unit(service)
     uid = _runtime_uid(project)
@@ -715,6 +743,16 @@ def _unit_runtime(project: ProjectServices, service: str, *, require_source: boo
                 raise ServiceError(f"{service} working directory is outside the expected release source")
         except OSError as exc:
             raise ServiceError(f"cannot attest {service} release directory") from exc
+    # GNOME reclassifies some desktop MainPIDs into app-<name>-<PID>.scope.
+    # Retain the canonical unit's MainPID binding and verify the exact scope
+    # before using it for this process and all of the service's listeners.
+    try:
+        groups = (_PROC_ROOT / pid / "cgroup").read_text().splitlines()
+    except OSError as exc:
+        raise ServiceError(f"cannot attest runtime PID {pid}") from exc
+    actual_group = next((line[3:] for line in groups if line.startswith("0::")), "")
+    if actual_group != cgroup and not actual_group.startswith(cgroup + "/"):
+        cgroup = _desktop_application_cgroup(int(pid), uid)
     _attest_process(int(pid), uid, cgroup, source, source_sha=source_sha)
     return int(pid), uid, cgroup
 
