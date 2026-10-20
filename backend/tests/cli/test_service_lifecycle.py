@@ -323,7 +323,62 @@ def _probe_infra(monkeypatch, *, pg_ok: bool, hatchet_status: int | None):
     monkeypatch.setattr(service_ops, "capture", capture)
     monkeypatch.setattr(service_ops, "run", run)
     monkeypatch.setattr(service_ops.httpx, "get", get)
+    _infra_status_api(monkeypatch, [
+        {"service": name, "state": "running" if up else "stopped", "health": "healthy" if up else ""}
+        for name, up in (("postgres", pg_ok), ("hatchet", hatchet_status is not None and hatchet_status < 400))
+    ])
     return run
+
+
+def _infra_status_api(monkeypatch, rows):
+    client = Mock()
+    client._global_url.return_value = "/docker/status"
+    client.get.return_value = rows
+    factory = Mock(return_value=nullcontext(client))
+    monkeypatch.setattr(service_ops, "STClient", factory, raising=False)
+    return client, factory
+
+
+def test_infrastructure_uses_reachable_status_when_direct_probes_are_blocked(project, monkeypatch, capsys):
+    run = _probe_infra(monkeypatch, pg_ok=False, hatchet_status=None)
+    client, _ = _infra_status_api(monkeypatch, [
+        {"service": name, "state": "running", "health": "healthy"} for name in ("postgres", "hatchet")
+    ])
+
+    assert service_ops.ensure_infra(project) == 0
+    client.get.assert_called_once_with("/docker/status")
+    assert "restart" not in capsys.readouterr().out
+    run.assert_not_called()
+
+
+@pytest.mark.parametrize("pg_code,hatchet_status,down", [(0, 503, "hatchet"), (1, 200, "postgres")])
+def test_infrastructure_readiness_failure_is_not_overridden_by_open_ports(
+    project, monkeypatch, capsys, pg_code, hatchet_status, down,
+):
+    _probe_infra(monkeypatch, pg_ok=True, hatchet_status=hatchet_status)
+    monkeypatch.setattr(service_ops, "capture", lambda command: subprocess.CompletedProcess(command, pg_code, "", ""))
+    _, factory = _infra_status_api(monkeypatch, [
+        {"service": name, "state": "running", "health": "healthy"} for name in ("postgres", "hatchet")
+    ])
+
+    assert service_ops.ensure_infra(project) == 1
+    out = capsys.readouterr().out
+    assert f"infrastructure is down ({down})" in out
+    assert service_ops.INFRA_RESTART_HINT in out
+    factory.assert_not_called()
+
+
+def test_infrastructure_probe_configuration_error_is_not_service_downtime(project, monkeypatch, capsys):
+    _probe_infra(monkeypatch, pg_ok=True, hatchet_status=200)
+    monkeypatch.setattr(service_ops, "capture", lambda command: subprocess.CompletedProcess(command, 3, "", ""))
+    _, factory = _infra_status_api(monkeypatch, [{"service": "postgres", "state": "running", "health": "healthy"}])
+
+    assert service_ops.ensure_infra(project) == 1
+    out = capsys.readouterr().out
+    assert "pg_isready exited 3" in out
+    assert "status unavailable" in out
+    assert "unit.restart" not in out
+    factory.assert_not_called()
 
 
 def test_infrastructure_is_a_port_probe_that_never_starts_anything(project, monkeypatch):
@@ -338,10 +393,56 @@ def test_infrastructure_down_points_at_the_nightshift_restart(project, monkeypat
 
     assert service_ops.ensure_infra(project) == 1
     out = capsys.readouterr().out
-    assert "hatchet :8888" in out
+    assert "hatchet" in out
     assert "postgres" not in out
     assert "nightshift request unit.restart unit=summitflow-stack.service" in out
     run.assert_not_called()
+
+
+@pytest.mark.parametrize("rows", [
+    [], None, {}, [{"service": "hatchet", "state": "unknown", "health": ""}],
+    [{"service": "hatchet", "state": "running", "health": ""}],
+])
+def test_infrastructure_unknown_does_not_recommend_restart(project, monkeypatch, capsys, rows):
+    _probe_infra(monkeypatch, pg_ok=True, hatchet_status=None)
+    _infra_status_api(monkeypatch, rows)
+
+    assert service_ops.ensure_infra(project) == 1
+    out = capsys.readouterr().out
+    assert "status unavailable" in out
+    assert "infrastructure is down" not in out
+    assert "unit.restart" not in out
+
+
+@pytest.mark.parametrize("error", [
+    service_ops.httpx.ConnectError("blocked"), service_ops.httpx.ReadTimeout("timeout"),
+    service_ops.APIError(503, "unavailable"), ValueError("invalid JSON"),
+])
+def test_infrastructure_api_unreachable_does_not_recommend_restart(project, monkeypatch, capsys, error):
+    _probe_infra(monkeypatch, pg_ok=True, hatchet_status=None)
+    client, _ = _infra_status_api(monkeypatch, [])
+    client.get.side_effect = error
+
+    assert service_ops.ensure_infra(project) == 1
+    out = capsys.readouterr().out
+    assert "status unavailable" in out
+    assert "unit.restart" not in out
+
+
+def test_infrastructure_reports_authoritative_unhealthy_status(project, monkeypatch, capsys):
+    _probe_infra(monkeypatch, pg_ok=True, hatchet_status=None)
+    _infra_status_api(monkeypatch, [{"service": "hatchet", "state": "running", "health": "unhealthy"}])
+
+    assert service_ops.ensure_infra(project) == 1
+    assert service_ops.INFRA_RESTART_HINT in capsys.readouterr().out
+
+
+def test_infrastructure_direct_success_and_empty_declaration_skip_api(project, monkeypatch):
+    _probe_infra(monkeypatch, pg_ok=True, hatchet_status=200)
+    _, factory = _infra_status_api(monkeypatch, [])
+    assert service_ops.ensure_infra(project) == 0
+    assert service_ops.ensure_infra(replace(project, infra=())) == 0
+    factory.assert_not_called()
 
 
 def test_release_reference_discovery_includes_inactive_service_units(

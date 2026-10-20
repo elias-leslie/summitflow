@@ -28,6 +28,7 @@ from app.project_identity import (
 from app.utils.heavy_work import heavy_work
 from app.utils.shared_paths import get_repo_root
 
+from ..client import APIError, STClient
 from ..details import display_path, emit_result_or_details, summary_hint, write_details
 from . import host_monitor_deploy, migration_env, service_release
 from .monitor_store_migration import (
@@ -699,18 +700,48 @@ INFRA_RESTART_HINT = (
 
 
 def ensure_infra(project: ProjectServices | None = None) -> int:
-    """Check the shared Postgres and Hatchet answer; the root stack unit owns starting them."""
+    """Check readiness, verifying inconclusive connections from the backend's context."""
     needs = INFRA if project is None else project.infra
-    pg = "postgres" not in needs or capture(["pg_isready", "-h", "localhost", "-p", "5432", "-U", "admin"]).returncode == 0
+    pg_code = capture(["pg_isready", "-h", "localhost", "-p", "5432", "-U", "admin"]).returncode if "postgres" in needs else 0
+    pg = pg_code == 0
+    down = ["postgres"] if pg_code == 1 else []  # 1 = answering but rejecting; 2 = no response.
     try:
         hatchet = "hatchet" not in needs or httpx.get("http://localhost:8888/ready", timeout=2.0).status_code < 400
+        if not hatchet:
+            down.append("hatchet")
     except httpx.HTTPError:
         hatchet = False
+    if down:
+        print(f"[service] infrastructure is down ({', '.join(down)}); {INFRA_RESTART_HINT}")
+        return 1
+    if pg_code not in (0, 2):
+        print(f"[service] infrastructure status unavailable (postgres); pg_isready exited {pg_code}")
+        return 1
     if pg and hatchet:
         return 0
-    down = [name for name, up in (("postgres :5432", pg), ("hatchet :8888", hatchet)) if not up]
-    print(f"[service] infrastructure is down ({', '.join(down)}); {INFRA_RESTART_HINT}")
-    return 1
+    # Agent network policy can block these ports while the stack is healthy.
+    # A failed caller-side connection alone is not evidence to restart it.
+    failed = [name for name, up in (("postgres", pg), ("hatchet", hatchet)) if not up]
+    try:
+        with STClient(require_project=False, timeout=10.0) as client:
+            rows = client.get(client._global_url("/docker/status"))
+        if not isinstance(rows, list) or not all(isinstance(row, dict) for row in rows):
+            raise ValueError("expected runtime status rows")
+    except (APIError, httpx.HTTPError, ValueError):
+        print(f"[service] infrastructure status unavailable ({', '.join(failed)}); could not verify via the runtime status API")
+        return 1
+    unknown = []
+    for name in failed:
+        row = next((row for row in rows if row.get("service") == name), {})
+        if row.get("health") == "unhealthy" or row.get("state") in {"stopped", "failed", "exited", "dead"}:
+            down.append(name)
+        elif row.get("state") != "running" or row.get("health") != "healthy":
+            unknown.append(name)
+    if unknown:
+        print(f"[service] infrastructure status unavailable ({', '.join(unknown)}); runtime status API did not confirm health")
+    if down:
+        print(f"[service] infrastructure is down ({', '.join(down)}); {INFRA_RESTART_HINT}")
+    return int(bool(down or unknown))
 
 
 def backend_optional_dependencies(backend_dir: Path) -> dict[str, Any] | None:
