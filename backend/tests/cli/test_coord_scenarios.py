@@ -363,6 +363,20 @@ def test_duplicate_and_replayed_messages(repos, monkeypatch):
         coord.send("cc:x", "x" * 501)
 
 
+@pytest.mark.parametrize("intent", ["yes", "no", "eta:10"])
+def test_ack_reason_has_no_separate_character_cap(repos, monkeypatch, intent):
+    as_claude(monkeypatch, "asker-000001")
+    request = coord.send("codex:abcdef", "Can you own the host recovery?")
+    as_codex(monkeypatch, "abcdef-thread")
+    reason = (
+        "I own runtime diagnosis and recovery. Return to project work; "
+        "I will verify actual managers and managed routes before changes. "
+    ) * 6
+    result = coord.ack(request["id"], intent, reason)
+    assert result["note"] == " ".join(reason.split())
+    assert coord._load_ledger()[0]["note"] == result["note"]
+
+
 def test_send_flags_targets_the_ledger_can_never_match(repos, monkeypatch):
     """A label such as a session title is stored verbatim and never addressed; send must say so."""
     as_claude(monkeypatch, "label-sender-01")

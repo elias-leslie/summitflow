@@ -37,7 +37,6 @@ ACK_VALID_FOR = timedelta(hours=2)
 LEDGER_TTL = timedelta(hours=24)
 MAX_TEXT = 500
 # An ack reason stays one short line so the whole ACK notice fits a typed wake line (coord_wake.TYPE_MAX).
-ACK_NOTE_MAX = 160
 # Owner/fleet instructions to a live Codex thread ride the ledger; same bound as sanitized_instruction.
 NATIVE_MAX_TEXT = 2000
 INTENTS = ("yes", "no")
@@ -383,11 +382,11 @@ def _save_ledger(rows: list[dict[str, Any]]) -> None:
     coord_lineage.save_doc(doc)
 
 
-def _clean_text(text: str, limit: int = MAX_TEXT) -> str:
+def _clean_text(text: str, limit: int | None = MAX_TEXT) -> str:
     flat = " ".join(text.split())
     if not flat:
         raise ValueError("message text is empty")
-    if len(flat) > limit:
+    if limit is not None and len(flat) > limit:
         raise ValueError(f"message text exceeds {limit} chars; put long material in a brief file and send its path")
     return flat
 
@@ -472,7 +471,7 @@ def ack(message_id: str, intent: str, note: str | None = None) -> dict[str, Any]
             raise ValueError(f"request {message_id} is already closed")
         row.update(
             state="acked", intent="eta" if eta else intent, eta_min=int(eta.group(1)) if eta else None,
-            note=_clean_text(note, ACK_NOTE_MAX) if note else None, acked_at=datetime.now(UTC).isoformat(),
+            note=_clean_text(note, None) if note else None, acked_at=datetime.now(UTC).isoformat(),
             acked_by=agent_id, ack_seen=False,
         )
         _save_ledger(rows)

@@ -115,17 +115,16 @@ def test_claude_watcher_wakes_the_sender_for_an_ack_without_typing_into_its_pane
     assert "ab12:ack:t1" in json.loads(coord_wake.seen_path("cc:sender").read_text())
 
 
-def test_ack_reason_stays_one_short_line_so_a_wake_line_carries_it(monkeypatch, inbox_module):
+def test_ack_reason_is_normalized_and_reaches_the_sender_wake(monkeypatch, inbox_module):
     _as(monkeypatch, "claude", "note-sender-01")
     sent = coord.send("codex:abcdef", "may I rebuild summitflow?")
     _as(monkeypatch, "codex", "abcdef-thread")
-    with pytest.raises(ValueError, match="160 chars"):
-        coord.ack(sent["id"], "no", "x" * 161)
-    coord.ack(sent["id"], "no", "y" * 160)
+    reason = "This service is in use. " * 8
+    coord.ack(sent["id"], "no", "\n" + reason)
     _as(monkeypatch, "claude", "note-sender-01")
     _agent, items = inbox_module.pending()
     line = coord_wake.pane_line(inbox_module.render([i for i in items if i[0].startswith(sent["id"])]), 0)
-    assert "y" * 160 in line  # the reason itself, not the generic inbox pointer
+    assert reason.strip() in line  # the reason itself, not the generic inbox pointer
 
 
 def test_claude_watcher_still_wakes_the_receiver_for_a_request(monkeypatch, capsys, inbox_module):
