@@ -18,7 +18,7 @@
       "owner": "tether",
       "namespace": "tether",
       "manifest": "extensions/tether.json",
-      "executable": "bin/tether",
+      "executable": "scripts/st-tether",
       "grant": {
         "enabled": true,
         "effects": ["read-local", "write-local", "process"]
@@ -103,12 +103,10 @@
       "grant": {
         "enabled": true,
         "effects": [
-          "network",
-          "read-remote",
-          "credentials"
+          "read-local"
         ]
       },
-      "environment": ["AGENT_HUB_CONTEXT_PREINJECTED_CONTRACT", "CLAUDECODE", "CODEX_THREAD_ID"]
+      "environment": ["AGENT_HUB_CONTEXT_PREINJECTED_CONTRACT"]
     },
     {
       "id": "agent-hub.memory",

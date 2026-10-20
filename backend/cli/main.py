@@ -101,7 +101,6 @@ LAZY_COMMANDS: dict[str, tuple[str, str, str, str, bool]] = {
     "backup": ("backup", "group", "", "Backup management commands", False),
     "service": ("service", "group", "", "Project service lifecycle through st.", False),
     "runtime": ("runtime", "group", "", "Runtime observability.", False),
-    "health": ("health", "group", "", "Quality gate health and status", False),
     "logs": ("logs", "group", "", "View and tail service logs", False),
     "monitor": ("monitor", "group", "", "System and project troubleshooting: bounded JSON with coverage, freshness, and cursors.", False),
     "agent": ("agent", "group", "", "Run Agent Hub agents with tools", False),

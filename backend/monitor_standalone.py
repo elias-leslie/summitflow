@@ -19,7 +19,7 @@ from monitor_control import (
     monitor_state_dir,
     observe_request,
 )
-from monitor_extended import export_capture, run_benchmark
+from monitor_extended import export_capture, query_disk_space, run_benchmark
 from monitor_observe import (
     ObserveQueryError,
     query_apps,
@@ -262,10 +262,8 @@ def main(argv: list[str] | None = None) -> int:
         elif command == "system-info":
             result = query_system_info(max_bytes=max_bytes)
         elif command == "disk-space":
-            result = observe_request("disk_space", {"path": args.path, "max_entries": args.max_entries,
-                                                    "max_depth": args.max_depth,
-                                                    "timeout_seconds": args.timeout_seconds},
-                                     limit=args.limit, max_bytes=max_bytes)
+            result = query_disk_space(args.path, max_entries=args.max_entries, max_depth=args.max_depth,
+                                      timeout_seconds=args.timeout_seconds, limit=args.limit, max_bytes=max_bytes)
         elif command == "mounts":
             result = MonitorReader(monitor_state_dir()).mounts(at=_time(args.at), cursor=args.cursor, limit=args.limit,
                                                                max_bytes=max_bytes)

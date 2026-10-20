@@ -109,11 +109,10 @@ def test_installed_monitor_prefers_accepted_release_source(installed, tmp_path: 
     result = _run(link, env, "monitor", "status")
     assert result.returncode == 0
     assert json.loads(result.stdout)["schema"] == 1
-    with _observations(state, 1) as received:
-        disk = _run(link, env, "monitor", "disk-space", str(root), "--limit", "5")
+    disk = _run(link, env, "monitor", "disk-space", str(root), "--limit", "5")
     assert disk.returncode == 0, disk.stderr or disk.stdout
     assert json.loads(disk.stdout)["coverage"]["scope"] == "mount"
-    assert received[0]["params"]["path"] == str(root)
+    assert json.loads(disk.stdout)["coverage"]["measure"] == "regular_file_apparent_bytes"
 
 
 def _store(state: Path) -> None:
@@ -294,16 +293,15 @@ def test_extended_commands_use_standalone_dispatch(installed, tmp_path: Path):
     (scan / "visible.txt").write_bytes(b"12345")
     (scan / ".hidden").write_bytes(b"hidden")
 
-    with _observations(state, 1) as received:
-        disk = _run(link, env, "monitor", "disk-space", str(scan), "--max-depth", "1",
-                    "--max-entries", "20")
+    disk = _run(link, env, "monitor", "disk-space", str(scan), "--max-depth", "1",
+                "--max-entries", "20")
     assert disk.returncode == 0, disk.stderr or disk.stdout
     disk_payload = json.loads(disk.stdout)
     assert disk_payload["requested"]["kind"] == "disk_space"
-    assert disk_payload["items"][0]["value"]["name"] == "visible.txt"
-    assert disk_payload["coverage"]["complete"] is False
+    assert {row["value"]["name"] for row in disk_payload["items"]} == {"visible.txt", ".hidden"}
+    assert disk_payload["coverage"]["complete"] is True
+    assert disk_payload["coverage"]["bytes_observed"] == 11
     assert len(disk.stdout.encode()) <= 4097
-    assert received[0]["params"]["path"] == str(scan)
 
     cpu = _run(link, env, "monitor", "benchmark", "cpu", "--duration-seconds", "0.01")
     assert cpu.returncode == 0, cpu.stderr or cpu.stdout
@@ -344,7 +342,7 @@ def test_extended_commands_use_standalone_dispatch(installed, tmp_path: Path):
 def test_extended_command_failures_are_structured(installed, tmp_path: Path):
     _, link, _state, env = installed
     outside = tmp_path / "outside"
-    outside.mkdir()
+    outside.symlink_to(tmp_path, target_is_directory=True)
     denied = _run(link, env, "monitor", "disk-space", str(outside))
     assert denied.returncode == 1
     assert json.loads(denied.stdout)["errors"][0]["code"] == "query_error"

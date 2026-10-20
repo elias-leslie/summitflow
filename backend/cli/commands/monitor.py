@@ -17,7 +17,7 @@ from monitor_control import (
     monitor_state_dir,
     observe_request,
 )
-from monitor_extended import export_capture, run_benchmark
+from monitor_extended import export_capture, query_disk_space, run_benchmark
 from monitor_observe import (
     ObserveQueryError,
     query_apps,
@@ -490,7 +490,7 @@ def drivers(limit: Annotated[int, typer.Option("--limit", min=1, max=100)] = 10,
     cmd='st monitor disk-space <directory>',
     when='attribute disk use within a selected mounted filesystem without reading file contents',
     precautions=(
-        'collector is required; discover mounts first and choose the affected directory',
+        'runs locally without a collector; choose the affected directory on a mounted filesystem',
         'entry, depth, time, and filesystem boundaries remain bounded; reported partial totals are observed lower bounds',
         'no symlink traversal; use coverage and errors to distinguish denied, skipped, and truncated paths',
     ),
@@ -510,7 +510,7 @@ def disk_space(
     max_bytes: Annotated[int, typer.Option("--max-bytes", min=512, max=65536)] = 4096,
 ) -> None:
     """Metadata-only disk attribution with explicit scan coverage."""
-    _privileged("disk_space", max_bytes, path=str(path), max_entries=max_entries,
+    _observe(query_disk_space, max_bytes, path=str(path), max_entries=max_entries,
                 max_depth=max_depth, timeout_seconds=timeout_seconds, limit=limit)
 
 

@@ -53,7 +53,6 @@ UI (~23 pages), and ~33 Hatchet workflows. Output is compact JSON by default, wi
 - `st check` wraps ruff, types, pytest, biome, tsc, vitest, sqlfluff, squawk, and
   GitHub **CodeQL** alert checks, plus an isolated `cleanroom` run — with
   `--quick` / `--changed-only` / `--frontend-only` profiles.
-- `st health` (project and service health).
 - `st graph` (Graphify topology + Fallow JS/TS audits) and `st search` (precision
   code search over symbols/endpoints/tables).
 

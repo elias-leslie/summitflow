@@ -553,3 +553,20 @@ def test_owner_release_manifest_overrides_bundled_metadata_but_not_the_grant(tmp
     (release / "st" / "manifest.json").write_text("{")
     fallback = load_extensions(set(), registry_path=registry).records[0].manifest
     assert fallback is not None and fallback.version == "1.0.0"
+
+
+def test_saved_mandates_and_installed_tether_bindings():
+    root = Path(__file__).resolve().parents[3]
+    bindings = json.loads((root / "scripts/lib/tool-registry.json").read_text())["extensions"]
+    mandates = next(binding for binding in bindings if binding["id"] == "agent-hub.mandates")
+    metadata = json.loads((root / "scripts/lib" / mandates["manifest"]).read_text())
+    assert mandates["grant"]["effects"] == metadata["effects"] == ["read-local"]
+    assert mandates["environment"] == ["AGENT_HUB_CONTEXT_PREINJECTED_CONTRACT"]
+    assert "--surface" not in metadata["help"][""]
+    tether = next(binding for binding in bindings if binding["id"] == "tether.cli")
+    assert tether["executable"] == "scripts/st-tether"
+    metadata = json.loads((root / "scripts/lib" / tether["manifest"]).read_text())
+    help_text = metadata["help"][""]
+    for command in ("sessions create", "sessions show", "reboot prepare", "recovery resume", "--print"):
+        assert command in help_text
+    assert "legacy [" not in help_text

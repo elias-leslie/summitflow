@@ -58,3 +58,17 @@ class TestCLIReferenceCompact:
         assert result.exit_code == 0
         assert "live schema" in result.output
 
+
+
+def test_removed_health_is_absent_from_discovery_and_dispatch():
+    from cli.lib.usage import collect_usage_specs
+
+    root = get_command(app)
+    assert isinstance(root, TyperGroup)
+    ctx = typer.Context(root)
+    assert "health" not in root.list_commands(ctx)
+    assert root.get_command(ctx, "health") is None
+    assert not any(spec.surface.startswith("st.health") for spec in collect_usage_specs(app))
+    result = runner.invoke(app, ["health"])
+    assert result.exit_code == 2
+    assert "No such command" in result.output
