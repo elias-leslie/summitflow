@@ -12,7 +12,7 @@ from unittest.mock import Mock
 import pytest
 
 from app.utils import nightshift_stack
-from cli.lib import service_deploy_client, service_ops
+from cli.lib import service_deploy_client, service_ops, service_owner_artifact
 
 
 @pytest.fixture
@@ -225,11 +225,19 @@ def test_clone_dependencies_install_in_the_pinned_clone_not_the_checkout(project
     assert service_ops.install_clone_dependencies(pinned) == 3
 
 
-def test_owner_route_uses_typed_nightshift_action_and_requires_completion(monkeypatch):
+@pytest.fixture
+def owner_storage(monkeypatch):
+    initialize = Mock()
+    monkeypatch.setattr(service_owner_artifact, "initialize_owner_store", initialize)
+    return initialize
+
+
+def test_owner_route_uses_typed_nightshift_action_and_requires_completion(monkeypatch, owner_storage):
     monkeypatch.setattr(service_deploy_client.shutil, "which", lambda _: "/usr/bin/nightshift")
     run = Mock(return_value=subprocess.CompletedProcess([], 0, '{"outcome":"applied"}', ""))
     monkeypatch.setattr(service_deploy_client.safe_subprocess, "run", run)
     assert service_deploy_client.send("owner", "example", "a" * 40, "deploy") == 0
+    owner_storage.assert_called_once_with("example")
     assert run.call_args.args[0][:6] == [
         "/usr/bin/nightshift", "request", "owner.deploy", "project=example", "sha=" + "a" * 40, "operation=deploy",
     ]
@@ -309,11 +317,12 @@ def test_owner_migration_uses_existing_home_credentials(project, tmp_path, monke
     ("status", "owner.status", ["project=example"]),
     ("stop", "owner.service", ["project=example", "operation=stop"]),
 ])
-def test_owner_verb_mapping(monkeypatch, verb, action, params):
+def test_owner_verb_mapping(monkeypatch, owner_storage, verb, action, params):
     monkeypatch.setattr(service_deploy_client.shutil, "which", lambda _: "/usr/bin/nightshift")
     run = Mock(return_value=subprocess.CompletedProcess([], 0, '{"outcome":"noop"}', ""))
     monkeypatch.setattr(service_deploy_client.safe_subprocess, "run", run)
     assert service_deploy_client.send("owner", "example", "a" * 40, verb) == 0
+    owner_storage.assert_not_called()
     assert run.call_args.args[0][:3 + len(params)] == ["/usr/bin/nightshift", "request", action, *params]
 
 

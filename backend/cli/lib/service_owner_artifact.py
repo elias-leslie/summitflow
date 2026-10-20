@@ -5,12 +5,16 @@ import hashlib
 import os
 import re
 import shutil
+import stat
 import tarfile
 import tempfile
 import time
 import tomllib
+from contextlib import suppress
 from pathlib import Path
 from typing import Any
+
+from app.utils import safe_subprocess
 
 from . import acceptance, service_ops
 from . import service_release as releases
@@ -19,6 +23,37 @@ from .workspace_paths import get_workspaces_root
 
 def exchange_root() -> Path:
     return get_workspaces_root() / "exchange" / "agent" / "service-artifacts"
+
+
+def initialize_owner_store(project_id: str) -> None:
+    """Let the configured owner import future agent exports, including umask 077."""
+    from app.services.tether import _agent_uid
+
+    from .service_owner_runtime import CONFIG, _trusted_json
+
+    agent_uid = _agent_uid()
+    if os.getuid() != agent_uid:
+        return
+    config = _trusted_json(CONFIG)
+    owner_uid = config.get("owner_uid")
+    if project_id not in config.get("projects", {}) or not re.fullmatch(r"[a-z0-9][a-z0-9_-]*", project_id):
+        raise ValueError("Project is not registered for owner actions")
+    if type(owner_uid) is not int or owner_uid <= 0 or owner_uid == agent_uid:
+        raise ValueError("Installed owner artifact identity is invalid")
+    executable = shutil.which("setfacl")
+    if not executable:
+        raise OSError("Owner artifact sharing requires the installed setfacl tool")
+    root = exchange_root()
+    for directory in (root, root / project_id):
+        with suppress(FileExistsError):
+            directory.mkdir(mode=0o700)
+        info = directory.lstat()
+        if not stat.S_ISDIR(info.st_mode) or info.st_uid != agent_uid:
+            raise ValueError(f"Owner artifact store must be an agent-owned directory without symlinks: {directory}")
+        result = safe_subprocess.run([executable, "--modify", f"u:{owner_uid}:r-x,d:u:{owner_uid}:r-x", str(directory)],
+                                     capture_output=True, text=True, check=False)
+        if result.returncode:
+            raise OSError(f"Could not grant owner read access to artifact store: {directory}")
 
 
 def portable(project: service_ops.ProjectServices) -> None:

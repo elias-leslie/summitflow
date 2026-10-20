@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import os
 import shutil
 import subprocess
 import tarfile
@@ -274,3 +275,87 @@ def test_rollback_restores_activated_companion_and_preserves_later_edits(runtime
         assert companion.read_text() == "previous companion"
         assert (owner._units_dir() / "example.service").read_text() == "original"
         assert health.call_args.args[0].root == old.source_root
+
+
+
+@pytest.fixture
+def owner_store(runtime, monkeypatch):
+    from app.services import tether
+
+    agent_uid = os.getuid()
+    owner_uid = agent_uid + 1
+    monkeypatch.setattr(tether, "_agent_uid", lambda: agent_uid)
+    monkeypatch.setattr(owner, "_trusted_json", lambda _: {
+        "owner_uid": owner_uid, "projects": {"example": {"units": ["example.service"]}}})
+    return owner_uid
+
+
+def test_owner_store_inherits_read_access_under_umask_077(owner_store):
+    if not shutil.which("setfacl") or not shutil.which("getfacl"):
+        pytest.skip("ACL host tools are unavailable")
+    previous_umask = os.umask(0o077)
+    try:
+        artifact.initialize_owner_store("example")
+        build = artifact.exchange_root() / "example" / ("a" * 32)
+        build.mkdir()
+        archive = build / "runtime.tar"
+        archive.write_bytes(b"disposable artifact")
+    finally:
+        os.umask(previous_umask)
+    for path, expected in ((artifact.exchange_root(), "r-x"), (build.parent, "r-x"),
+                           (build, "r-x"), (archive, "r--")):
+        acl = subprocess.run(["getfacl", "--omit-header", "--numeric", str(path)],
+                             capture_output=True, text=True, check=True).stdout
+        entry = next(line for line in acl.splitlines() if line.startswith(f"user:{owner_store}:"))
+        assert "w" not in entry
+        assert (f"effective:{expected}" in entry or entry == f"user:{owner_store}:{expected}")
+        assert "other::---" in acl
+        assert "group::---" in acl
+
+
+def test_owner_store_does_not_run_for_owner_callers(runtime, monkeypatch):
+    from app.services import tether
+
+    monkeypatch.setattr(tether, "_agent_uid", lambda: os.getuid() + 1)
+    monkeypatch.setattr(owner, "_trusted_json", Mock(side_effect=AssertionError("owner caller must skip storage initialization")))
+    artifact.initialize_owner_store("example")
+    assert not artifact.exchange_root().exists()
+
+
+@pytest.mark.parametrize("location", ["root", "project"])
+@pytest.mark.parametrize("target_kind", ["directory", "file"])
+def test_owner_store_refuses_symlink_directories(owner_store, tmp_path, location, target_kind):
+    target = tmp_path / "unrelated"
+    if target_kind == "directory":
+        target.mkdir()
+    else:
+        target.write_text("unrelated data")
+    path = artifact.exchange_root()
+    if location == "project":
+        path.mkdir()
+        path = path / "example"
+    path.symlink_to(target, target_is_directory=True)
+    with pytest.raises(ValueError, match="without symlinks"):
+        artifact.initialize_owner_store("example")
+    if target_kind == "directory":
+        assert not list(target.iterdir())
+    else:
+        assert target.read_text() == "unrelated data"
+
+
+def test_owner_store_refuses_foreign_owned_directory(owner_store, monkeypatch):
+    from types import SimpleNamespace
+
+    root = artifact.exchange_root()
+    root.mkdir()
+    original_lstat = type(root).lstat
+    monkeypatch.setattr(type(root), "lstat", lambda path: (
+        SimpleNamespace(st_mode=0o40700, st_uid=os.getuid() + 2) if path == root else original_lstat(path)))
+    with pytest.raises(ValueError, match="agent-owned directory"):
+        artifact.initialize_owner_store("example")
+
+
+def test_owner_store_refuses_unregistered_project_before_creating_dirs(owner_store):
+    with pytest.raises(ValueError, match="not registered"):
+        artifact.initialize_owner_store("unregistered")
+    assert not artifact.exchange_root().exists()

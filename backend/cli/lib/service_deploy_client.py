@@ -72,6 +72,10 @@ def send_owner(project: str, sha: str, verb: str) -> int:
     if verb in {"deploy", "rollback"}:
         if not re.fullmatch(r"[0-9a-f]{40}", sha):
             raise ValueError("owner deployment requires a full commit id")
+        if verb == "deploy":
+            from .service_owner_artifact import initialize_owner_store
+
+            initialize_owner_store(project)
         action = "owner.deploy"
         params = [f"project={project}", f"sha={sha}", f"operation={verb}"]
     elif verb == "status":
