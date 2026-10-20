@@ -306,6 +306,8 @@ def test_backup_dump_uses_docker_only_before_the_stack_unit_exists(tmp_path, mon
         return 0, b""
 
     monkeypatch.setattr(infra, "_run_plain_stream", stream)
+    monkeypatch.setenv("PGUSER", "fixture-backup")
+    monkeypatch.setenv("PGPASSWORD", "synthetic-fixture")
     monkeypatch.delenv("POSTGRES_CONTAINER", raising=False)
     monkeypatch.setattr(infra, "_find_compose_container", lambda _service: "stack-postgres-1")
     infra._dump_infra_database(tmp_path / "a.sql")
