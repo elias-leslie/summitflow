@@ -1,5 +1,6 @@
-"""SummitFlow API routers."""
+"""SummitFlow API package; the web app imports its routers explicitly.
 
-from . import explorer, git, projects
+Keep model imports usable without initializing router workflow dependencies.
+"""
 
 __all__ = ["explorer", "git", "projects"]

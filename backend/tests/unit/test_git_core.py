@@ -1,12 +1,36 @@
 from __future__ import annotations
 
+import os
 import subprocess
+import sys
 from pathlib import Path
 
 import pytest
 
 from app.api.models.git_models import RepoWorkspaceSummary
 from app.utils import _git_core, _git_repo_sources
+
+
+def test_repo_status_does_not_initialize_api_routers_or_workflows(tmp_path: Path) -> None:
+    result = subprocess.run(
+        [sys.executable, "-c", """
+import sys
+from pathlib import Path
+from app.utils._git_core import get_repo_status
+
+assert get_repo_status(Path(sys.argv[1])) is None
+assert 'app.api.projects' not in sys.modules
+assert 'app.api.git' not in sys.modules
+assert 'app.workflows.utility' not in sys.modules
+""", str(tmp_path)],
+        cwd=Path(__file__).resolve().parents[2],
+        env={"PATH": os.defpath, "PYTHON_DOTENV_DISABLED": "1"},
+        capture_output=True,
+        text=True,
+        timeout=20,
+    )
+
+    assert result.returncode == 0, result.stdout + result.stderr
 
 
 def test_run_git_uses_posix_spawn_friendly_command(mocker, tmp_path: Path) -> None:
