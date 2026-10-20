@@ -104,6 +104,26 @@ def test_gate_client_sends_one_json_line_and_returns_the_exit_line(tmp_path, mon
     assert seen == [b'{"project": "example", "sha": "' + b"a" * 40 + b'", "verb": "deploy"}\n']
 
 
+def test_owner_prepare_emits_only_descriptor_on_stdout(monkeypatch):
+    import json
+
+    from typer.testing import CliRunner
+
+    from cli.commands import service
+    from cli.lib import service_owner_runtime
+
+    def prepare(project, **kwargs):
+        print("dependency build output")
+        return {"project": project, **kwargs}
+
+    monkeypatch.setattr(service_owner_runtime, "prepare", prepare)
+    result = CliRunner().invoke(service.app, ["owner-prepare", "example", "--sha", "a" * 40,
+                                            "--build-id", "b" * 32, "--tool-revision", "c" * 40])
+    assert result.exit_code == 0
+    assert json.loads(result.stdout)["project"] == "example"
+    assert "dependency build output" in result.stderr
+
+
 def test_gate_client_refuses_unknown_verbs():
     with pytest.raises(ValueError):
         service_deploy_client.send("svc", "example", "a" * 40, "destroy")
@@ -203,3 +223,108 @@ def test_clone_dependencies_install_in_the_pinned_clone_not_the_checkout(project
     assert service_ops.install_clone_dependencies(project) == 0  # no pinned source: nothing to install
     monkeypatch.setattr(service_ops, "sync_backend", lambda p: 3)
     assert service_ops.install_clone_dependencies(pinned) == 3
+
+
+def test_owner_route_uses_typed_nightshift_action_and_requires_completion(monkeypatch):
+    monkeypatch.setattr(service_deploy_client.shutil, "which", lambda _: "/usr/bin/nightshift")
+    run = Mock(return_value=subprocess.CompletedProcess([], 0, '{"outcome":"applied"}', ""))
+    monkeypatch.setattr(service_deploy_client.safe_subprocess, "run", run)
+    assert service_deploy_client.send("owner", "example", "a" * 40, "deploy") == 0
+    assert run.call_args.args[0][:6] == [
+        "/usr/bin/nightshift", "request", "owner.deploy", "project=example", "sha=" + "a" * 40, "operation=deploy",
+    ]
+    run.return_value = subprocess.CompletedProcess([], 0, '{"outcome":"pending"}', "")
+    assert service_deploy_client.send("owner", "example", "a" * 40, "deploy") == 1
+    run.return_value = subprocess.CompletedProcess([], 1, '{"outcome":"applied"}', "")
+    assert service_deploy_client.send("owner", "example", "a" * 40, "deploy") == 1
+
+
+def test_owner_route_missing_never_uses_socket_or_caller_manager(monkeypatch):
+    monkeypatch.setattr(service_deploy_client.shutil, "which", lambda _: None)
+    monkeypatch.setattr(service_deploy_client.socket, "socket", Mock(side_effect=AssertionError("owner socket")))
+    with pytest.raises(OSError, match="not installed"):
+        service_deploy_client.send("owner", "example", "a" * 40, "deploy")
+    monkeypatch.setattr(service_deploy_client.getpass, "getuser", lambda: "owner")
+    assert service_deploy_client.delegated_user("owner") == "owner"
+
+
+def test_owner_credentials_keep_existing_home_paths(project, tmp_path, monkeypatch):
+    owner = replace(project, runtime_user="owner")
+    unit = "[Service]\nEnvironmentFile=-%h/.env.local\nEnvironmentFile=%h/.config/credstore/example/env\n"
+    assert service_ops.credstore_units(unit, owner) == unit
+    monkeypatch.setattr(service_ops.Path, "home", lambda: tmp_path)
+    assert service_ops.credstore_root(owner) == tmp_path / ".config/credstore"
+
+
+def test_owner_source_override_cannot_bypass_nightshift(project, monkeypatch):
+    from typer.testing import CliRunner
+
+    from cli.commands import service
+    monkeypatch.setattr(service, "_load", lambda _: replace(project, runtime_user="owner"))
+    local = Mock(side_effect=AssertionError("local source deployment"))
+    monkeypatch.setattr(service_ops, "use_source_repo", local)
+    result = CliRunner().invoke(service.app, ["rebuild", "example", "--source-repo", "/tmp/source", "--sha", "a" * 40])
+    assert result.exit_code == 1
+    assert "Nightshift" in result.output
+    local.assert_not_called()
+
+
+def test_owner_status_does_not_require_checkout_git(project, monkeypatch):
+    from typer.testing import CliRunner
+
+    from cli.commands import service
+    monkeypatch.setattr(service, "_load", lambda _: replace(project, runtime_user="owner"))
+    monkeypatch.setattr(service_deploy_client, "main_sha", Mock(side_effect=AssertionError("unnecessary source lookup")))
+    send = Mock(return_value=0)
+    monkeypatch.setattr(service_deploy_client, "send", send)
+    result = CliRunner().invoke(service.app, ["status", "example"])
+    assert result.exit_code == 0
+    send.assert_called_once_with("owner", "example", "", "status")
+
+
+def test_owner_main_validation_always_uses_agent_job(monkeypatch):
+    runner = Mock(return_value=subprocess.CompletedProcess([], 0, "a" * 40 + "\n", ""))
+    monkeypatch.setattr(service_deploy_client, "run_as_agent", runner)
+    monkeypatch.setattr(service_deploy_client, "run_source_git", Mock(side_effect=AssertionError("owner Git")))
+    assert service_deploy_client.main_sha(Path("/checkout"), as_agent=True) == "a" * 40
+    assert runner.call_args.args[0][-1] == "refs/heads/main^{commit}"
+
+
+def test_owner_migration_uses_existing_home_credentials(project, tmp_path, monkeypatch):
+    backend = tmp_path / "backend"
+    (backend / ".venv/bin").mkdir(parents=True)
+    (backend / "alembic.ini").touch()
+    (backend / ".venv/bin/alembic").touch()
+    monkeypatch.setattr(service_ops.Path, "home", lambda: tmp_path / "owner-home")
+    migration = Mock(return_value={})
+    monkeypatch.setattr(service_ops.migration_env, "migration_env", migration)
+    monkeypatch.setattr(service_ops, "run", Mock(return_value=0))
+    owner = replace(project, backend_dir=backend, runtime_user="owner")
+    assert service_ops.run_migrations(owner) == 0
+    assert migration.call_args.kwargs["credstore"] == tmp_path / "owner-home/.config/credstore/example/env"
+
+
+@pytest.mark.parametrize(("verb", "action", "params"), [
+    ("rollback", "owner.deploy", ["project=example", "sha=" + "a" * 40, "operation=rollback"]),
+    ("status", "owner.status", ["project=example"]),
+    ("stop", "owner.service", ["project=example", "operation=stop"]),
+])
+def test_owner_verb_mapping(monkeypatch, verb, action, params):
+    monkeypatch.setattr(service_deploy_client.shutil, "which", lambda _: "/usr/bin/nightshift")
+    run = Mock(return_value=subprocess.CompletedProcess([], 0, '{"outcome":"noop"}', ""))
+    monkeypatch.setattr(service_deploy_client.safe_subprocess, "run", run)
+    assert service_deploy_client.send("owner", "example", "a" * 40, verb) == 0
+    assert run.call_args.args[0][:3 + len(params)] == ["/usr/bin/nightshift", "request", action, *params]
+
+
+@pytest.mark.parametrize(("outcome", "returncode", "expected"), [
+    ("no-op", 0, 0),
+    ("noop", 0, 0),
+    ("no-op", 1, 1),
+    ("pending", 0, 1),
+])
+def test_owner_action_response_accepts_completed_no_op(monkeypatch, outcome, returncode, expected):
+    monkeypatch.setattr(service_deploy_client.shutil, "which", lambda _: "/usr/bin/nightshift")
+    completed = subprocess.CompletedProcess([], returncode, '{"outcome":"' + outcome + '"}', "")
+    monkeypatch.setattr(service_deploy_client.safe_subprocess, "run", Mock(return_value=completed))
+    assert service_deploy_client.send("owner", "example", "", "status") == expected

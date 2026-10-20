@@ -41,7 +41,7 @@ from .monitor_store_migration import (
 )
 
 HOST_MONITOR_HELPER = Path("/usr/local/sbin/summitflow-host-monitor-deploy")
-RUNTIME_USERS = frozenset({"", "svc", "broker", "agent"})
+RUNTIME_USERS = frozenset({"", "svc", "broker", "agent", "owner"})
 # Shared infrastructure a deploy checks first; runtime.infra in project.identity.json narrows it.
 INFRA = ("postgres", "hatchet")
 
@@ -138,7 +138,7 @@ def load_project(project_id: str) -> ProjectServices:
         raise ServiceError("runtime.release_install must be a path inside the project")
     runtime_user = runtime.get("runtime_user") or ""
     if runtime_user not in RUNTIME_USERS:
-        raise ServiceError("runtime.runtime_user must be svc, broker or agent")
+        raise ServiceError("runtime.runtime_user must be svc, broker, agent or owner")
     infra = runtime.get("infra", list(INFRA))
     if not isinstance(infra, list) or any(item not in INFRA for item in infra):
         raise ServiceError(f"runtime.infra must list only {', '.join(INFRA)}")
@@ -404,11 +404,15 @@ def release_references_for_services(releases_root: Path) -> set[Path] | None:
 
 
 def credstore_root(project: ProjectServices) -> Path:
+    if project.runtime_user == "owner":
+        return Path.home() / ".config" / "credstore"
     return Path(f"/etc/credstore.{project.runtime_user}")
 
 
 def credstore_units(text: str, project: ProjectServices) -> str:
     """Point a unit at the root-owned credential dir instead of the owner's home secrets."""
+    if project.runtime_user == "owner":
+        return text
     store = credstore_root(project)
     text = text.replace("%h/.config/credstore/", f"{store}/")
     lines: list[str] = []
