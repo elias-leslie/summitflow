@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import re
 import shlex
 import subprocess
@@ -32,6 +33,42 @@ app = typer.Typer(
         "in and out with git or scp over that ssh; destroy the clone when done."
     ),
 )
+
+
+@app.command("forward")
+def forward_port(
+    vmid: Annotated[str, typer.Argument(help="Running isolated lab VM ID")],
+    port: Annotated[int, typer.Argument(min=1, max=65535, help="Guest service TCP port")],
+    to_vm: Annotated[str | None, typer.Option("--to-vm", help="Also expose on this managed VM's loopback")] = None,
+    as_json: Annotated[bool, typer.Option("--json")] = False,
+) -> None:
+    """Start or reuse scoped SSH forwarding; endpoints bind to loopback only."""
+    from ..lib.vm_forward import forward
+
+    def action(client):
+        try:
+            result = forward(client, vmid, port, to_vm)
+        except (OSError, ValueError, subprocess.SubprocessError) as exc:
+            raise ProxmoxError(f"VM forwarding failed: {exc}") from exc
+        print(json.dumps(result) if as_json else f"{result['id']}: {result['local_url']}" + (f"; VM {to_vm}: {result['destination_url']}" if to_vm else ""))
+
+    _run(action)
+
+
+@app.command("forward-close")
+def forward_close(
+    identity: Annotated[str, typer.Argument(help="Transport id returned by forward")],
+    as_json: Annotated[bool, typer.Option("--json")] = False,
+) -> None:
+    """Close only this user's recorded SSH processes for the transport."""
+    from ..lib.vm_forward import close
+
+    try:
+        result = close(identity)
+        print(json.dumps(result) if as_json else f"{identity}: {'closed' if result['closed'] else 'already closed'}")
+    except (ProxmoxError, OSError, ValueError) as exc:
+        output_error(str(exc))
+        raise typer.Exit(1) from None
 
 
 def _confirm(command_key: str, confirm: str | None, command_hint: str, preview_lines: list[str]) -> None:
