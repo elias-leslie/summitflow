@@ -142,7 +142,7 @@ def ready_all(
     surface="st.context",
     cmd="st context <task-id>",
     when="read task brief, plan, history",
-    precautions=("claim before implementation; read-only inspection needs no claim", "--subtask X.Y"),
+    precautions=("claim before implementing the assigned task; read-only inspection needs no claim", "--subtask X.Y"),
     tier="mandate",
 )
 def context(
