@@ -1297,7 +1297,9 @@ def validate_acceptance_receipt(
         if not isinstance(mode_entries, dict):
             raise AcceptanceError("Legacy isolated receipt lacks immutable source permission entries; fresh proof required")
         # The selected clone's ordinary permissions are immutable evidence.
-        # Recheck owned permissions, not unrelated WIP bytes or projections.
+        # Foreign-owned checkout files use the same safe projection as isolation;
+        # keep checking this user's raw modes even when WIP bytes have changed.
+        projected_modes = None
         owned = value.get("scope", [])
         for name, mode in mode_entries.items():
             if any(name == path or name.startswith(path.rstrip("/") + "/") for path in owned):
@@ -1305,8 +1307,14 @@ def validate_acceptance_receipt(
                     info = (repo / name).lstat()
                 except OSError as exc:
                     raise AcceptanceError("Owned source permission inputs are unavailable") from exc
-                if (not stat.S_ISREG(info.st_mode) or info.st_uid != os.getuid() or info.st_nlink != 1
-                        or stat.S_IMODE(info.st_mode) & 0o777 != mode):
+                if not stat.S_ISREG(info.st_mode) or info.st_nlink != 1:
+                    raise AcceptanceError("Owned source permission inputs no longer match")
+                current_mode = stat.S_IMODE(info.st_mode) & 0o777
+                if info.st_uid != os.getuid():
+                    if projected_modes is None:
+                        projected_modes = projected_source_modes(repo, commit)
+                    current_mode = projected_modes.get(name)
+                if current_mode != mode:
                     raise AcceptanceError("Owned source permission inputs no longer match")
     basis = recorded_execution["basis"]
     # Isolated bindings derive from Git and the recorded modes alone. An

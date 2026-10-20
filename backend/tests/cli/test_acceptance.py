@@ -518,6 +518,47 @@ def test_projected_permission_modes_use_old_blob_defaults_and_actual_equivalent_
     assert modes['pyproject.toml'] == (repo / 'pyproject.toml').stat().st_mode & 0o777
 
 
+def test_isolated_receipt_accepts_projected_foreign_owned_source(repo: Path, monkeypatch) -> None:
+    selected = repo / "app.py"
+    selected.chmod(0o644)
+    receipt = acceptance.accept_revision(
+        repo, sha="HEAD", scope=("app.py",), execution_basis="isolated", runner=successful_runner([])
+    )
+    # The private clone consumed Git's safe mode; the shared checkout belongs
+    # to the owner account after migration and keeps its original permissions.
+    selected.chmod(0o664)
+    uid = os.getuid()
+    original_lstat = Path.lstat
+
+    def foreign_owner(path: Path, *args, **kwargs):
+        info = original_lstat(path, *args, **kwargs)
+        return os.stat_result((*info[:4], uid + 1, *info[5:])) if path == selected else info
+
+    monkeypatch.setattr(Path, "lstat", foreign_owner)
+    assert acceptance.validate_acceptance_receipt(repo, receipt)["state"] == "success"
+    assert selected.stat().st_mode & 0o777 == 0o664
+
+
+@pytest.mark.parametrize("change", ["mode", "mode_and_content", "hardlink", "symlink"])
+def test_isolated_receipt_still_rejects_owned_source_permission_drift(repo: Path, change: str) -> None:
+    selected = repo / "app.py"
+    selected.chmod(0o644)
+    receipt = acceptance.accept_revision(
+        repo, sha="HEAD", scope=("app.py",), execution_basis="isolated", runner=successful_runner([])
+    )
+    if change.startswith("mode"):
+        selected.chmod(0o664)
+        if change == "mode_and_content":
+            selected.write_text("other agent work\n")
+    elif change == "hardlink":
+        os.link(selected, repo / "linked.py")
+    else:
+        selected.rename(repo / "target.py")
+        selected.symlink_to("target.py")
+    with pytest.raises(acceptance.AcceptanceError, match="Owned source permission inputs no longer match"):
+        acceptance.validate_acceptance_receipt(repo, receipt)
+
+
 @pytest.mark.parametrize(('actual', 'expected'), [(0o600, 0o644), (0o700, 0o755)])
 def test_projected_modes_use_git_defaults_for_equivalent_foreign_owned_files(repo: Path, monkeypatch, actual: int, expected: int) -> None:
     selected = repo / 'app.py'
