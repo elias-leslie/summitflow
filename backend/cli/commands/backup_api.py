@@ -6,7 +6,7 @@ from typing import Any, cast
 
 import httpx
 
-from ..client import APIError
+from ..client import APIError, token_headers
 
 _DEFAULT_TIMEOUT = 30.0
 
@@ -33,7 +33,7 @@ class BackupProjectAPI:
         url = f"{self.base_url}/projects/{self.project_id}/backups?limit={limit}"
         if status:
             url += f"&status={status}"
-        response = httpx.get(url, timeout=self.timeout)
+        response = httpx.get(url, timeout=self.timeout, headers=token_headers())
         if response.status_code >= 400:
             raise _make_api_error(response)
         return cast(dict[str, Any], response.json())
@@ -46,7 +46,7 @@ class BackupProjectAPI:
             data["storage_backend_id"] = storage_backend_id
         if local_only:
             data["local_only"] = True
-        response = httpx.post(url, json=data, timeout=self.timeout)
+        response = httpx.post(url, json=data, timeout=self.timeout, headers=token_headers())
         if response.status_code >= 400:
             raise _make_api_error(response)
         return cast(dict[str, Any], response.json())
@@ -54,7 +54,7 @@ class BackupProjectAPI:
     def get_backup(self, backup_id: str) -> dict[str, Any]:
         """Get backup details."""
         url = f"{self.base_url}/projects/{self.project_id}/backups/{backup_id}"
-        response = httpx.get(url, timeout=self.timeout)
+        response = httpx.get(url, timeout=self.timeout, headers=token_headers())
         if response.status_code >= 400:
             raise _make_api_error(response)
         return cast(dict[str, Any], response.json())
@@ -62,7 +62,7 @@ class BackupProjectAPI:
     def restore_backup(self, backup_id: str, dry_run: bool = False) -> dict[str, Any]:
         """Restore from a backup."""
         url = f"{self.base_url}/projects/{self.project_id}/backups/{backup_id}/restore"
-        response = httpx.post(url, json={"dry_run": dry_run}, timeout=self.timeout)
+        response = httpx.post(url, json={"dry_run": dry_run}, timeout=self.timeout, headers=token_headers())
         if response.status_code >= 400:
             raise _make_api_error(response)
         return cast(dict[str, Any], response.json())
@@ -70,7 +70,7 @@ class BackupProjectAPI:
     def delete_backup(self, backup_id: str) -> dict[str, Any]:
         """Delete a backup."""
         url = f"{self.base_url}/projects/{self.project_id}/backups/{backup_id}"
-        response = httpx.delete(url, timeout=self.timeout)
+        response = httpx.delete(url, timeout=self.timeout, headers=token_headers())
         if response.status_code >= 400:
             raise _make_api_error(response)
         return cast(dict[str, Any], response.json())
@@ -88,7 +88,7 @@ class BackupSourceAPI:
         url = f"{self.base_url}/backup-sources"
         if source_type:
             url += f"?source_type={source_type}"
-        response = httpx.get(url, timeout=self.timeout)
+        response = httpx.get(url, timeout=self.timeout, headers=token_headers())
         if response.status_code >= 400:
             raise _make_api_error(response)
         return cast(list[dict[str, Any]], response.json())
@@ -96,7 +96,7 @@ class BackupSourceAPI:
     def get_source(self, source_id: str) -> dict[str, Any]:
         """Get a backup source by ID."""
         url = f"{self.base_url}/backup-sources/{source_id}"
-        response = httpx.get(url, timeout=self.timeout)
+        response = httpx.get(url, timeout=self.timeout, headers=token_headers())
         if response.status_code >= 400:
             raise _make_api_error(response)
         return cast(dict[str, Any], response.json())
@@ -117,7 +117,7 @@ class BackupSourceAPI:
         if retention_days is not None:
             data["retention_days"] = retention_days
         url = f"{self.base_url}/backup-sources/{source_id}"
-        response = httpx.put(url, json=data, timeout=self.timeout)
+        response = httpx.put(url, json=data, timeout=self.timeout, headers=token_headers())
         if response.status_code >= 400:
             raise _make_api_error(response)
         return cast(dict[str, Any], response.json())
@@ -134,7 +134,7 @@ class BackupSourceAPI:
             data["storage_backend_id"] = storage_backend_id
         if local_only:
             data["local_only"] = True
-        response = httpx.post(url, json=data, timeout=self.timeout)
+        response = httpx.post(url, json=data, timeout=self.timeout, headers=token_headers())
         if response.status_code >= 400:
             raise _make_api_error(response)
         return cast(dict[str, Any], response.json())
@@ -147,7 +147,7 @@ class BackupSourceAPI:
         data = {"id": source_id, "name": name, "path": path, "source_type": source_type}
         if project_id is not None:
             data["project_id"] = project_id
-        response = httpx.post(f"{self.base_url}/backup-sources", json=data, timeout=self.timeout)
+        response = httpx.post(f"{self.base_url}/backup-sources", json=data, timeout=self.timeout, headers=token_headers())
         if response.status_code >= 400:
             raise _make_api_error(response)
         return cast(dict[str, Any], response.json())
@@ -157,7 +157,7 @@ class BackupSourceAPI:
     ) -> dict[str, Any]:
         """Restore a backup via source endpoint."""
         url = f"{self.base_url}/backup-sources/{source_id}/backups/{backup_id}/restore"
-        response = httpx.post(url, json={"dry_run": dry_run}, timeout=self.timeout)
+        response = httpx.post(url, json={"dry_run": dry_run}, timeout=self.timeout, headers=token_headers())
         if response.status_code >= 400:
             raise _make_api_error(response)
         return cast(dict[str, Any], response.json())
@@ -169,7 +169,7 @@ class BackupSourceAPI:
         url = f"{self.base_url}/backup-sources/{source_id}/backups?limit={limit}"
         if status:
             url += f"&status={status}"
-        response = httpx.get(url, timeout=self.timeout)
+        response = httpx.get(url, timeout=self.timeout, headers=token_headers())
         if response.status_code >= 400:
             raise _make_api_error(response)
         return cast(dict[str, Any], response.json())
@@ -177,7 +177,7 @@ class BackupSourceAPI:
     def sync_backup_offsite(self, source_id: str, backup_id: str) -> dict[str, Any]:
         """Retry offsite replication without recapturing the source."""
         url = f"{self.base_url}/backup-sources/{source_id}/backups/{backup_id}/sync-offsite"
-        response = httpx.post(url, timeout=self.timeout)
+        response = httpx.post(url, timeout=self.timeout, headers=token_headers())
         if response.status_code >= 400:
             raise _make_api_error(response)
         return cast(dict[str, Any], response.json())
@@ -196,21 +196,21 @@ class BackupSystemImageAPI:
 
     def status(self) -> dict[str, Any]:
         """Return Veeam system-image backup status."""
-        response = httpx.get(f"{self.base_url}/backups/system-image", timeout=self.timeout)
+        response = httpx.get(f"{self.base_url}/backups/system-image", timeout=self.timeout, headers=token_headers())
         if response.status_code >= 400:
             raise _make_api_error(response)
         return cast(dict[str, Any], response.json())
 
     def start(self) -> dict[str, Any]:
         """Start the configured Veeam system-image backup job."""
-        response = httpx.post(f"{self.base_url}/backups/system-image/start", timeout=self.timeout)
+        response = httpx.post(f"{self.base_url}/backups/system-image/start", timeout=self.timeout, headers=token_headers())
         if response.status_code >= 400:
             raise _make_api_error(response)
         return cast(dict[str, Any], response.json())
 
     def stop(self) -> dict[str, Any]:
         """Stop the active Veeam system-image backup session."""
-        response = httpx.post(f"{self.base_url}/backups/system-image/stop", timeout=self.timeout)
+        response = httpx.post(f"{self.base_url}/backups/system-image/stop", timeout=self.timeout, headers=token_headers())
         if response.status_code >= 400:
             raise _make_api_error(response)
         return cast(dict[str, Any], response.json())

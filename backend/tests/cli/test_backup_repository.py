@@ -13,6 +13,43 @@ from typer.testing import CliRunner
 runner = CliRunner()
 
 
+@pytest.fixture(autouse=True)
+def backup_identity(monkeypatch):
+    monkeypatch.setattr("cli.commands.backup_api.token_headers", lambda: {"X-ST-Identity": "fixture"})
+
+
+@pytest.mark.parametrize("api_name,method,arguments,verb", [
+    ("BackupProjectAPI", "list_backups", (), "get"),
+    ("BackupProjectAPI", "create_backup", (), "post"),
+    ("BackupProjectAPI", "get_backup", ("backup",), "get"),
+    ("BackupProjectAPI", "restore_backup", ("backup",), "post"),
+    ("BackupProjectAPI", "delete_backup", ("backup",), "delete"),
+    ("BackupSourceAPI", "list_sources", (), "get"),
+    ("BackupSourceAPI", "get_source", ("source",), "get"),
+    ("BackupSourceAPI", "update_source", ("source",), "put"),
+    ("BackupSourceAPI", "create_source_backup", ("source",), "post"),
+    ("BackupSourceAPI", "restore_source_backup", ("source", "backup"), "post"),
+    ("BackupSourceAPI", "list_source_backups", ("source",), "get"),
+    ("BackupSourceAPI", "sync_backup_offsite", ("source", "backup"), "post"),
+    ("BackupSystemImageAPI", "status", (), "get"),
+    ("BackupSystemImageAPI", "start", (), "post"),
+    ("BackupSystemImageAPI", "stop", (), "post"),
+])
+def test_backup_requests_use_the_current_caller_identity(monkeypatch, api_name, method, arguments, verb):
+    from cli.commands import backup_api
+
+    response = MagicMock(status_code=200)
+    response.json.return_value = {"ok": True}
+    request = MagicMock(return_value=response)
+    monkeypatch.setattr(backup_api.httpx, verb, request)
+    constructor = getattr(backup_api, api_name)
+    api = constructor("https://fixture.invalid/api", "project") if api_name == "BackupProjectAPI" else constructor("https://fixture.invalid/api")
+    for identity in ("first-caller", "second-caller"):
+        monkeypatch.setattr(backup_api, "token_headers", lambda identity=identity: {"X-ST-Identity": identity})
+        assert getattr(api, method)(*arguments) == {"ok": True}
+        assert request.call_args.kwargs["headers"] == {"X-ST-Identity": identity}
+
+
 @pytest.mark.parametrize("args,source", [
     (["backup", "create"], None),
     (["backup", "create", "--source", "source"], "source"),
@@ -88,7 +125,7 @@ def test_register_source_client_uses_existing_post(monkeypatch):
     )
     post.assert_called_once_with("https://fixture.invalid/api/backup-sources", json={
         "id": "claude-json", "name": "Claude config", "path": "/fixture/.claude.json", "source_type": "config",
-    }, timeout=30.0)
+    }, timeout=30.0, headers={"X-ST-Identity": "fixture"})
 
 
 def test_restic_storage_add_is_nondefault_and_only_passes_references(monkeypatch):
