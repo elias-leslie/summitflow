@@ -167,10 +167,17 @@
         "effects": [
           "network",
           "read-remote",
+          "write-remote",
+          "process",
           "credentials"
         ]
       },
-      "environment": []
+      "environment": [
+        "ST_MODELS_REGISTRY",
+        "ST_MODELS_OLLAMA_HOST",
+        "ST_WORKSPACES_ROOT",
+        "ST_SCRATCH_ROOT"
+      ]
     },
     {
       "id": "agent-hub.native-sessions",
