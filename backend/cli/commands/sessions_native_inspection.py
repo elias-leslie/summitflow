@@ -21,8 +21,10 @@ def transcript_library() -> ModuleType:
 
 def native_inspection_receipt(info: Any) -> dict[str, object]:
     """Keep the own thread, transcript runtime alias and spawned parent separate."""
-    evidence = dict(info.model_evidence)
-    scan = info.model_scan
+    # Current collectors expose ownership only; Agent Hub interprets model data.
+    # Older collectors may still provide evidence. Never infer delivery from model.
+    evidence = dict(getattr(info, "model_evidence", {}))
+    scan = getattr(info, "identity_scan", None) or getattr(info, "model_scan", {})
     return {
         "schema_version": "native-session-inspection.v1",
         "thread_id": info.session_id,

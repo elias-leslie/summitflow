@@ -58,3 +58,21 @@ def test_inspect_current_rejects_unverified_environment_without_api():
         result = CliRunner().invoke(app, ["sessions", "inspect", "current", "--json"])
     assert result.exit_code == 1
     api.assert_not_called()
+
+
+def test_inspect_identity_only_collector_keeps_model_delivery_unknown(tmp_path):
+    info = _info(tmp_path / "child.jsonl")
+    del info.model_evidence
+    del info.model_scan
+    info.identity_scan = {"offset": 42, "source_generation": "identity-generation"}
+    with patch.object(inspection, "transcript_library", return_value=SimpleNamespace(resolve_current_transcript=lambda: info)):
+        result = CliRunner().invoke(app, ["sessions", "inspect", "current", "--json"])
+    assert result.exit_code == 0
+    receipt = json.loads(result.output)
+    assert receipt["thread_id"] == "child-thread"
+    assert receipt["source_generation"] == "identity-generation"
+    assert receipt["scanned_byte_offset"] == 42
+    assert receipt["requested_model"] is None
+    assert receipt["requested_reasoning_effort"] is None
+    assert receipt["observed_model"] is None
+    assert receipt["model_evidence"] == {}
