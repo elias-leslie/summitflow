@@ -101,6 +101,11 @@ export function ServiceCard({
               :{p}
             </span>
           ))}
+          {container.location && (
+            <span className="rounded bg-slate-700/50 px-1.5 py-0.5 text-[10px] text-slate-300">
+              {container.location}
+            </span>
+          )}
         </div>
 
         {/* Metrics */}

@@ -21,9 +21,10 @@ class RuntimeServiceStatus(BaseModel):
     # systemd auto-start (UnitFileState): True=enabled, False=disabled,
     # None=not togglable (docker infra, or static/masked units).
     auto_start: bool | None = None
-    # False for system-manager units (host monitor): the dashboard cannot start/stop them.
+    # Status explains unavailable controls (local system unit, stopped/unreachable guest).
     controllable: bool = True
     log_streaming: bool = True
+    location: str | None = None
 
 
 class RuntimeServiceMetrics(BaseModel):

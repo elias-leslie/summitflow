@@ -15,6 +15,7 @@ export interface RuntimeServiceStatus {
   // false when the dashboard cannot control this unit; status explains why.
   controllable?: boolean
   log_streaming?: boolean
+  location?: string | null
 }
 
 export interface RuntimeServiceMetrics {

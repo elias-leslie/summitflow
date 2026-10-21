@@ -184,6 +184,7 @@ class TestDockerRuntime:
         assert set(units) == {"moved.service", "jobs.service"}
         assert rows[0].state == "running"
         assert "VM 456" in rows[0].status
+        assert rows[0].location == "pve-example / VM 456"
         assert rows[1].state == "stopped"
 
     @pytest.mark.asyncio

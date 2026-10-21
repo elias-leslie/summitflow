@@ -169,6 +169,9 @@ export function ServiceListView({
                         {healthLabel(s.state, s.health)}
                       </span>
                     </div>
+                    {s.location && (
+                      <p className="text-xs text-slate-400">{s.location}</p>
+                    )}
                   </TableCell>
                   <TableCell className="hidden sm:table-cell">
                     <span className="text-xs text-slate-400">

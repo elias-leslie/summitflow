@@ -172,6 +172,7 @@ async def _systemd_status(svc: dict[str, Any], unit_state: dict[str, str] | None
         auto_start=None if system_unit else _auto_start_from_unit_file_state(unit_state.get("UnitFileState", "")),
         controllable=not system_unit and (not deployment or (load_state == "loaded" and not unit_state.get("Error"))),
         log_streaming=not deployment,
+        location=deployment.label if deployment else None,
     )
 
 

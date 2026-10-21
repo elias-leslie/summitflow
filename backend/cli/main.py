@@ -105,7 +105,7 @@ LAZY_COMMANDS: dict[str, tuple[str, str, str, str, bool]] = {
     "agent": ("agent", "group", "", "Run Agent Hub agents with tools", False),
     "tools": ("tools", "group", "", "Operator tool catalog and Agent Hub usage metrics", False),
     "cleanup": ("cleanup", "group", "", "Clean up git/checkpoint residue plus managed workspace leftovers.", False),
-    "docker": ("docker", "group", "", "Docker stack control for the SummitFlow ecosystem (through Nightshift).", False),
+    "docker": ("docker", "group", "", "Docker stack control for the SummitFlow ecosystem.", False),
     "setup": ("setup", "group", "", "Host, service, tooling, and test database setup through st.", False),
     "vm": ("vm", "group", "", "Proxmox VM lifecycle through st: status, IPs, snapshots, start/stop/shutdown/reboot, resize, rollback, clone.", False),
     "checkpoints": ("checkpoints", "group", "", "Checkpoint management - show active checkpoints, cleanup stale artifacts", False),

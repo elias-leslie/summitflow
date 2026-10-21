@@ -54,8 +54,9 @@ class ProxmoxConfig:
     pool: str = "summitflow"
 
 
-# PVE pool of production guests the token may start/stop/reboot and resize (role SummitFlowOps: VM.PowerMgmt,
-# VM.Config.CPU, VM.Config.Memory); never destroy, snapshot, roll back, or change disks/network
+# PVE pool of production guests the token may start/stop/reboot, resize, and configure startup options
+# (role SummitFlowOps: VM.PowerMgmt, VM.Config.CPU, VM.Config.Memory, VM.Config.Options);
+# never destroy, snapshot, roll back, or change disks/network
 OPS_POOL = "summitflow-ops"
 # PVE pool whose members the token may only start/stop/reset (role SummitFlowPower: VM.PowerMgmt)
 POWER_POOL = "summitflow-power"

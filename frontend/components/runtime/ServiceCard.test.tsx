@@ -39,6 +39,7 @@ describe('ServiceCard', () => {
           status: 'Up 10 minutes (healthy)',
           ports: ['8000'],
           auto_start: true,
+          location: 'example-pve / VM 456',
         }}
         metric={{
           name: 'summitflow-backend.service',
@@ -54,6 +55,7 @@ describe('ServiceCard', () => {
 
     expect(screen.getByText('CPU')).toBeInTheDocument()
     expect(screen.getByText('3.5%')).toBeInTheDocument()
+    expect(screen.getByText('example-pve / VM 456')).toBeInTheDocument()
     expect(screen.getByText('Mem')).toBeInTheDocument()
     expect(screen.getByText('120MiB / 2GiB')).toBeInTheDocument()
     expect(screen.getByText('Mem%')).toBeInTheDocument()

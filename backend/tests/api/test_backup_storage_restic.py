@@ -237,8 +237,10 @@ async def test_restic_probe_checks_readiness_without_age_or_initialization(monke
 
 @pytest.fixture
 def repository_runtime(monkeypatch, backend):
+    from app.access_control import settings
     from app.api.backups import storage_endpoints as endpoints
 
+    monkeypatch.setattr(settings, "summitflow_loopback_is_owner", True)
     runtime = SimpleNamespace(
         initialize_repository=MagicMock(return_value={"status": "initialized"}),
         repository_status=MagicMock(return_value={"status": "ready"}),
