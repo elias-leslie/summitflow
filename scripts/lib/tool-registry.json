@@ -313,6 +313,27 @@
       "owner_help": true
     },
     {
+      "id": "bugout.deployment",
+      "owner": "bugout",
+      "namespace": "bugout-deployment",
+      "manifest": "extensions/bugout-observer.json",
+      "owner_manifest": "operators/recon/st-observer-extension.json",
+      "executable": "operators/recon/observe_deployment",
+      "execution_source": "checkout",
+      "grant": {
+        "enabled": true,
+        "effects": [
+          "network",
+          "read-remote",
+          "read-local",
+          "credentials",
+          "process"
+        ]
+      },
+      "arguments": [],
+      "environment": []
+    },
+    {
       "id": "neri.neri",
       "owner": "neri",
       "namespace": "neri",
