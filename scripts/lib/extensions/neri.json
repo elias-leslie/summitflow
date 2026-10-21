@@ -1,7 +1,7 @@
 {
   "id": "neri.neri",
   "owner": "neri",
-  "version": "0.1.2",
+  "version": "0.1.3",
   "st_contract_versions": [
     1
   ],
@@ -133,7 +133,8 @@
     "storage register": "Usage: neri storage register [OPTIONS] {file}\n\n  Register an existing literal path from a JSON storage record.\n\nArguments:\n  file  [required]\n\nOptions:\n  --help  Show this message and exit.",
     "storage show": "Usage: neri storage show [OPTIONS]\n\n  Read totals by program and storage class.\n\nOptions:\n  --help  Show this message and exit.",
     "storage sweep": "Usage: neri storage sweep [OPTIONS]\n\n  Run local storage registration, measurement and eligible expiry.\n\nOptions:\n  --help  Show this message and exit.",
-    "recon-bind": "Usage: neri recon-bind [OPTIONS] {investigation_id}\n\nArguments:\n  investigation_id  [required]\n\nOptions:\n  --file <path>  [required]\n  --help         Show this message and exit."
+    "recon-bind": "Usage: neri recon-bind [OPTIONS] {investigation_id}\n\nArguments:\n  investigation_id  [required]\n\nOptions:\n  --file <path>  [required]\n  --help         Show this message and exit.",
+    "recon-action": "Usage: neri recon-action [OPTIONS] {investigation_id} {event_seq}\n\nArguments:\n  investigation_id  [required]\n  event_seq         [required]\n\nOptions:\n  --file <path>  [required]\n  --help         Show this message and exit."
   },
   "usage": [
     {
@@ -1390,6 +1391,19 @@
       "precautions": [
         "owner-authenticated trust decision; exact run, plan digest, actors and expiry",
         "a reset uses a new runner run and investigation"
+      ],
+      "task_types": [
+        "neri"
+      ]
+    },
+    {
+      "surface": "st.neri.recon.action",
+      "tier": "reference",
+      "cmd": "st neri recon-action INVESTIGATION EVENT --file ACTION",
+      "when": "mark, note, or open and update a follow-up on one Recon Stream row",
+      "precautions": [
+        "append-only attributed action; use a UUID id for safe replay",
+        "references must resolve to rows in the same stream; this does not create a finding"
       ],
       "task_types": [
         "neri"
