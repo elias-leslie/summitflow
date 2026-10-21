@@ -15,8 +15,7 @@ from cli.lib.usage import collect_usage_specs, render_inject, select_specs_for_d
 
 ROOT = Path(__file__).resolve().parents[3]
 CAPABILITY_LINE = (
-    "- st bugout recon --help — bounded manifest-driven recon: "
-    "validate, run, status, events, control"
+    "- st bugout recon --help — bounded recon: validate, run, inspect, deliver, control"
 )
 
 
@@ -41,7 +40,8 @@ def test_binding_keeps_owner_metadata_and_exact_checkout_entrypoint():
 
 
 @pytest.mark.parametrize("route", [(), ("recon",), ("recon", "validate"), ("recon", "run"),
-                                   ("recon", "status"), ("recon", "events"), ("recon", "control")])
+                                   ("recon", "status"), ("recon", "events"), ("recon", "deliver"),
+                                   ("recon", "control")])
 def test_actual_help_from_an_unrelated_project_is_passive(tmp_path, monkeypatch, route):
     from cli.main import app
 
