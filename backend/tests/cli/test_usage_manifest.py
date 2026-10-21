@@ -560,3 +560,21 @@ def test_committed_registry_keeps_the_implementation_floor() -> None:
     floor, core, threshold = _usage_tiers()
     assert {"st.search", "st.context", "st.check", "st.commit", "st.claim", "st.done"} <= floor
     assert "st.check" in core and threshold > 0
+
+
+def test_preview_is_always_injected_and_has_compact_passive_help(monkeypatch) -> None:
+    # Exercise bundled metadata even when this host still runs the prior accepted release.
+    from cli import extensions
+    monkeypatch.setattr(extensions, "_owner_manifest", lambda binding: None)
+    from cli.main import app
+    for density in ("core", "adaptive"):
+        result = runner.invoke(app, ["tools", "manifest", "--density", density, "--format", "inject", "--profile", "agent_startup"])
+        assert result.exit_code == 0, result.output
+        line = next(line for line in result.output.splitlines() if "st browser preview" in line)
+        assert "<file-or-url> [--session NAME]" in line
+        assert "leave it open" in line and "printed session" in line
+        assert len(line) < 350
+    help_result = runner.invoke(app, ["browser", "preview", "--help"])
+    assert help_result.exit_code == 0, help_result.output
+    assert "st browser preview <file-or-url> [--session NAME]" in help_result.output
+    assert len(help_result.output) < 700

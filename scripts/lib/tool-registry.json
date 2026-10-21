@@ -724,7 +724,8 @@
       "st.create",
       "st.claim",
       "st.done",
-      "st.ui.inspect"
+      "st.ui.inspect",
+      "st.browser.preview"
     ],
     "core": ["st.search", "st.check", "st.db", "st.service.rebuild", "st.tools.status", "st.tools.adoption", "st.tools.audit", "st.tools.cost", "st.feedback.report", "st.agents.preview"],
     "adaptive_score_threshold": 15.0
