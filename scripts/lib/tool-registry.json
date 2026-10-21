@@ -714,7 +714,18 @@
   ],
   "usage_tiers": {
     "description": "Startup tool-surface tiers for st tools manifest. floor: always shown for compact and adaptive density. core: shown at core density unless on demand. adaptive_score_threshold: normalized usage score (0-100) at or above which adaptive density also shows a non-floor surface.",
-    "floor": ["st.search", "st.context", "st.check", "st.db", "st.service.rebuild", "st.commit", "st.create", "st.claim", "st.done"],
+    "floor": [
+      "st.search",
+      "st.context",
+      "st.check",
+      "st.db",
+      "st.service.rebuild",
+      "st.commit",
+      "st.create",
+      "st.claim",
+      "st.done",
+      "st.ui.inspect"
+    ],
     "core": ["st.search", "st.check", "st.db", "st.service.rebuild", "st.tools.status", "st.tools.adoption", "st.tools.audit", "st.tools.cost", "st.feedback.report", "st.agents.preview"],
     "adaptive_score_threshold": 15.0
   },
@@ -1029,10 +1040,13 @@
         "xclip",
         "compare"
       ],
-      "summary": "Desktop UI control on X11: list windows, screenshot, OCR, image diff, window move/resize/activate/close, click/type/key, and clipboard. TOON-compact output. Use to self-verify GUI changes.",
+      "summary": "Desktop windows and accessible controls on Wayland/X11. Inspect IDs, batch known actions with run, and observe once. Pixel capture and geometry remain X11-only.",
       "safety": "mutating",
       "commands": [
         "windows",
+        "inspect",
+        "act",
+        "run",
         "shot",
         "ocr",
         "diff",
@@ -1047,9 +1061,9 @@
       ],
       "examples": [
         "st ui windows",
-        "st ui shot -w summitflow -o /tmp/summitflow.png",
-        "st ui ocr summitflow",
-        "st ui diff a.png b.png"
+        "st ui inspect <ax:id>",
+        "st ui run '@actions.json'",
+        "st ui type -w <ax:id> hello"
       ],
       "verify": [
         "st ui windows"

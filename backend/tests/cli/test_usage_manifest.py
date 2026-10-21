@@ -24,6 +24,19 @@ runner = CliRunner()
 
 
 @pytest.mark.parametrize("density", ["core", "adaptive"])
+def test_desktop_startup_hint_is_compact_and_batch_details_are_on_demand(density):
+    result = runner.invoke(tools_app, ["manifest", "--density", density, "--profile", "agent_startup", "--format", "json"])
+    assert result.exit_code == 0, result.output
+    specs = {row["surface"]: row for row in json.loads(result.output)["tools"]}
+    assert "st.ui.inspect" in specs
+    assert "run batches" in specs["st.ui.inspect"]["when"]
+    assert "st.ui.run" not in specs
+    detail = runner.invoke(tools_app, ["manifest", "--surface", "st.ui.run", "--format", "json"])
+    assert detail.exit_code == 0, detail.output
+    assert json.loads(detail.output)["tools"][0]["on_demand"] == "desktop UI"
+
+
+@pytest.mark.parametrize("density", ["core", "adaptive"])
 def test_memory_guidance_is_deferred_from_startup_even_with_history(density, tmp_path):
     scores = tmp_path / "scores.json"
     scores.write_text(json.dumps({f"memory {command}": 100 for command in ("search", "save", "update")}))
