@@ -82,7 +82,7 @@ describe('ServiceCard', () => {
     expect(screen.queryByRole('button', { name: 'Stop' })).toBeNull()
     expect(screen.queryByRole('button', { name: 'Restart' })).toBeNull()
     expect(
-      screen.getByText('System unit · control with st service'),
+      screen.getByText('systemd running (system unit)'),
     ).toBeInTheDocument()
   })
 })

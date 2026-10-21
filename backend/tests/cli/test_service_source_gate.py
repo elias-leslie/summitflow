@@ -97,6 +97,8 @@ def test_source_repo_is_checked_out_at_the_pinned_commit(project, tmp_path, monk
     ("runtime", "runtime_user", ""), ("runtime", "backend_port", 9999),
     ("runtime", "runtime_user", []), ("runtime", "backend_port", True),
     ("runtime", "frontend_port", "3001"), ("runtime", "backend_dir", "../outside"),
+    ("runtime", "deployment", {}), ("runtime", "deployment", {"kind": "unknown"}),
+    ("runtime", "deployment", {"kind": "proxmox", "ssh_host": "example-pve", "vmid": 456, "manager": "system"}),
     ("runtime", "frontend_dir", "/outside"), ("services", "backend", "foreign.service"),
     ("services", "frontend", "foreign.service"),
     ("services", "default_workers", ["foreign.service"]),
@@ -253,46 +255,36 @@ def test_gate_is_used_only_for_another_runtime_user(monkeypatch):
     assert service_deploy_client.delegated_user("broker") == "broker"
 
 
-def _nightshift_says(monkeypatch, stdout: str, pending: str = "[]") -> Mock:
-    def run(args, _timeout):
-        done = subprocess.CompletedProcess(args, 0, pending if args[0] == "pending" else stdout, "")
-        return done
-
-    mock = Mock(side_effect=run)
-    monkeypatch.setattr(nightshift_stack, "_run", mock)
-    return mock
-
-
 def test_stack_request_applied(monkeypatch):
-    mock = _nightshift_says(monkeypatch, '{"outcome": "applied"}')
+    mock = Mock(return_value=subprocess.CompletedProcess([], 0, "", ""))
+    monkeypatch.setattr(nightshift_stack.safe_subprocess, "run", mock)
 
     result = nightshift_stack.request_stack("restart")
 
     assert result.success and not result.pending
-    sent = mock.call_args_list[0].args[0]
-    assert sent[:3] == ["request", "unit.restart", "unit=summitflow-stack.service"]
+    assert mock.call_args.args[0] == ["sudo", "-n", "systemctl", "--no-ask-password", "restart", nightshift_stack.STACK_UNIT]
 
 
-def test_stack_request_waiting_for_a_tap_returns_the_approve_link(monkeypatch):
-    _nightshift_says(
-        monkeypatch, '{"outcome": "pending"}',
-        '[{"title": "Restart summitflow-stack.service", "url": "https://example.test/n/1"}]',
-    )
+def test_stack_control_failure_does_not_create_an_owner_tap(monkeypatch):
+    mock = Mock(return_value=subprocess.CompletedProcess([], 1, "", "unit unavailable"))
+    monkeypatch.setattr(nightshift_stack.safe_subprocess, "run", mock)
 
     result = nightshift_stack.request_stack("stop")
 
-    assert result.success and result.pending
-    assert result.approve_url == "https://example.test/n/1"
-    assert "https://example.test/n/1" in result.message
+    assert not result.success and not result.pending
+    assert result.approve_url is None
+    assert "unit unavailable" in result.message
+    assert mock.call_count == 1
 
 
 def test_stack_request_refused_is_a_failure(monkeypatch):
-    _nightshift_says(monkeypatch, '{"outcome": "refused", "error": "not allowed"}')
+    mock = Mock(side_effect=subprocess.TimeoutExpired("systemctl", 30))
+    monkeypatch.setattr(nightshift_stack.safe_subprocess, "run", mock)
 
     result = nightshift_stack.request_stack("start")
 
     assert not result.success and not result.pending
-    assert "not allowed" in result.message
+    assert "timed out" in result.message
 
 
 def test_backup_dump_uses_docker_only_before_the_stack_unit_exists(tmp_path, monkeypatch):

@@ -2,7 +2,8 @@
 
 from __future__ import annotations
 
-from unittest.mock import MagicMock, patch
+from types import SimpleNamespace
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 from typer.testing import CliRunner
@@ -19,13 +20,16 @@ def stack_unit_installed(monkeypatch: pytest.MonkeyPatch) -> None:
 
 
 class TestDockerStatus:
-    @patch("cli.commands.docker._port_open", return_value=True)
-    def test_status_lists_infra_ports(self, _port: MagicMock) -> None:
+    @patch("cli.commands.docker._infra_status", new_callable=AsyncMock)
+    def test_status_lists_observed_container_states(self, observed: AsyncMock) -> None:
+        observed.side_effect = [SimpleNamespace(state=state) for state in ("stopped", "unknown", "running")]
         result = runner.invoke(app, ["status"])
 
         assert result.exit_code == 0
         assert "DOCKER:STATUS" in result.stdout
         assert "running" in result.stdout
+        assert "postgres:stopped" in result.stdout
+        assert "redis:unknown" in result.stdout
 
 
 class TestDockerStackActions:

@@ -23,6 +23,7 @@ class RuntimeServiceStatus(BaseModel):
     auto_start: bool | None = None
     # False for system-manager units (host monitor): the dashboard cannot start/stop them.
     controllable: bool = True
+    log_streaming: bool = True
 
 
 class RuntimeServiceMetrics(BaseModel):

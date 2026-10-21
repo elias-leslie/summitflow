@@ -157,6 +157,7 @@ async def _systemd_service_metric(svc: dict[str, Any]) -> RuntimeServiceMetrics 
 async def _runtime_metrics() -> list[RuntimeServiceMetrics]:
     """Metrics for systemd services; docker stack containers are not inspected."""
     systemd_metrics = await asyncio.gather(
-        *[_systemd_service_metric(svc) for svc in runtime_service_definitions() if svc["manager"] == "systemd"]
+        *[_systemd_service_metric(svc) for svc in runtime_service_definitions()
+          if svc["manager"] == "systemd" and not svc.get("deployment")]
     )
     return [m for m in systemd_metrics if m is not None]

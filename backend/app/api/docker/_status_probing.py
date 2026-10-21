@@ -1,4 +1,4 @@
-"""Health and status probing for the docker stack (port probes) and systemd services."""
+"""Health and status probing for actual Docker containers and systemd units."""
 
 from __future__ import annotations
 
@@ -6,6 +6,8 @@ import asyncio
 from typing import Any
 from urllib import error as urllib_error
 from urllib import request as urllib_request
+
+from ... import runtime_deployment
 
 # Late-bound access to helpers — ensures mocks at helpers.* take effect at runtime.
 from . import _process_execution as _pe
@@ -109,25 +111,40 @@ async def _port_open(port: str) -> bool:
 
 
 async def _infra_status(svc: dict[str, Any]) -> RuntimeServiceStatus:
-    """Status of a docker stack service from its published ports; docker itself is not asked."""
-    up = await asyncio.gather(*[_port_open(port) for port in svc["ports"]])
-    running = bool(up) and all(up)
+    """Published ports can be bridges; require the actual local container state."""
+    container = _h._find_container_name(svc["container_service"])
+    stdout, _stderr, rc = await _h._run_command(
+        "sudo", "-n", "docker", "inspect", "--format",
+        "{{.State.Status}}|{{if .State.Health}}{{.State.Health.Status}}{{end}}", container,
+    )
+    state, _, health = stdout.strip().partition("|")
+    known = rc == 0 and state in {"running", "restarting", "created", "exited", "dead", "paused", "removing"}
+    running = known and state == "running"
+    if running and not health:
+        up = await asyncio.gather(*[_port_open(port) for port in svc["ports"]])
+        health = "healthy" if up and all(up) else "unhealthy"
     return RuntimeServiceStatus(
-        name=_h._find_container_name(svc["container_service"]),
+        name=container,
         service=svc["service"],
         display_name=svc["display_name"],
         manager="docker",
         category=svc["category"],
-        state="running" if running else "stopped",
-        health="healthy" if running else "",
-        status="Listening on " + ", ".join(svc["ports"]) if running else "Docker infra not running",
+        state="unknown" if not known else "running" if running else "starting" if state == "restarting" else "stopped",
+        health=health if running else "",
+        status=f"Docker {state}" if known else "Docker container state unavailable",
         ports=list(svc["ports"]),
     )
 
 
-async def _systemd_status(svc: dict[str, Any]) -> RuntimeServiceStatus:
+async def _systemd_status(svc: dict[str, Any], unit_state: dict[str, str] | None = None) -> RuntimeServiceStatus:
     """Build status for a systemd-managed service."""
-    unit_state = await _h._systemd_unit_state(svc["unit"])
+    deployment = runtime_deployment.parse_deployment(svc.get("deployment"))
+    if unit_state is None:
+        if deployment:
+            rows = await _remote_unit_states(deployment, [svc["unit"]])
+            unit_state = rows.get(svc["unit"], {})
+        else:
+            unit_state = await _h._systemd_unit_state(svc["unit"])
     active_state = unit_state.get("ActiveState", "unknown")
     sub_state = unit_state.get("SubState", "unknown")
     load_state = unit_state.get("LoadState", "unknown")
@@ -136,8 +153,12 @@ async def _systemd_status(svc: dict[str, Any]) -> RuntimeServiceStatus:
     state, health, status = _classify_systemd_state(
         active_state, sub_state, load_state, probe_ok, probe_status, svc["category"],
     )
+    if deployment:
+        if load_state == "not-found":
+            status = "Unit not installed in guest"
+        status = f"{deployment.label}: {unit_state.get('Error') or status}"
 
-    system_unit = _pe._is_system_unit(svc["unit"])
+    system_unit = not deployment and _pe._is_system_unit(svc["unit"])
     return RuntimeServiceStatus(
         name=svc["unit"],
         service=svc["service"],
@@ -149,7 +170,8 @@ async def _systemd_status(svc: dict[str, Any]) -> RuntimeServiceStatus:
         status=f"{status} (system unit)" if system_unit else status,
         ports=list(svc["ports"]),
         auto_start=None if system_unit else _auto_start_from_unit_file_state(unit_state.get("UnitFileState", "")),
-        controllable=not system_unit,
+        controllable=not system_unit and (not deployment or (load_state == "loaded" and not unit_state.get("Error"))),
+        log_streaming=not deployment,
     )
 
 
@@ -162,7 +184,7 @@ def _classify_systemd_state(
     category: str,
 ) -> tuple[str, str, str]:
     """Return (state, health, status) for a systemd unit."""
-    if probe_ok:
+    if probe_ok and active_state == "active" and load_state == "loaded":
         return "running", "healthy", f"Serving HTTP {probe_status}"
     if load_state == "not-found":
         return "unknown", "", "Unit not installed locally; remote runtime is not inspected"
@@ -185,4 +207,23 @@ async def _runtime_service_status(svc: dict[str, Any]) -> RuntimeServiceStatus:
 
 
 async def _runtime_service_statuses() -> list[RuntimeServiceStatus]:
-    return list(await asyncio.gather(*[_runtime_service_status(svc) for svc in runtime_service_definitions()]))
+    definitions = runtime_service_definitions()
+    groups: dict[runtime_deployment.ProxmoxDeployment, list[str]] = {}
+    for svc in definitions:
+        if deployment := runtime_deployment.parse_deployment(svc.get("deployment")):
+            groups.setdefault(deployment, []).append(svc["unit"])
+    remote = dict(zip(groups, await asyncio.gather(*[
+        _remote_unit_states(target, units) for target, units in groups.items()
+    ]), strict=True))
+    return list(await asyncio.gather(*[
+        _systemd_status(svc, remote[target].get(svc["unit"], {}))
+        if (target := runtime_deployment.parse_deployment(svc.get("deployment")))
+        else _runtime_service_status(svc) for svc in definitions
+    ]))
+
+
+async def _remote_unit_states(target: runtime_deployment.ProxmoxDeployment, units: list[str]) -> dict[str, dict[str, str]]:
+    try:
+        return await asyncio.to_thread(runtime_deployment.unit_states, target, units)
+    except runtime_deployment.DeploymentError as exc:
+        return {unit: {"Error": str(exc)} for unit in units}

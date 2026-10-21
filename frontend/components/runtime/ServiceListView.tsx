@@ -31,10 +31,12 @@ function ActionCell({
   service,
   isRunning,
   controllable,
+  status,
 }: {
   service: string
   isRunning: boolean
   controllable: boolean
+  status: string
 }) {
   const [note, setNote] = useState<RuntimeActionResult | null>(null)
   const restartMut = useServiceAction(service, 'restart', setNote)
@@ -42,7 +44,7 @@ function ActionCell({
   const startMut = useServiceAction(service, 'start', setNote)
 
   if (!controllable) {
-    return <span className="text-2xs text-slate-500">System unit</span>
+    return <span className="text-2xs text-slate-500">{status}</span>
   }
 
   return (
@@ -199,6 +201,7 @@ export function ServiceListView({
                   <TableCell>
                     <div className="flex items-center gap-1">
                       <ActionCell
+                        status={s.status}
                         service={s.service}
                         isRunning={isRunning}
                         controllable={s.controllable !== false}
@@ -224,7 +227,14 @@ export function ServiceListView({
       </div>
 
       {logService && (
-        <LogViewer service={logService} onClose={() => setLogService(null)} />
+        <LogViewer
+          service={logService}
+          canStream={
+            services.find((s) => s.service === logService)?.log_streaming !==
+            false
+          }
+          onClose={() => setLogService(null)}
+        />
       )}
     </>
   )

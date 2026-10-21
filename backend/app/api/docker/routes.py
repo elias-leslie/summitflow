@@ -10,6 +10,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 
+from ... import runtime_deployment
 from ...config import POSTGRES_PORT
 from ...services.runtime_metrics_sampler import clamp_window_minutes
 from ...storage import runtime_metrics as runtime_metric_store
@@ -163,6 +164,9 @@ async def get_logs(
     """Get service logs. If follow=true, streams via SSE."""
     svc = _service_definition(service)
 
+    if follow and svc.get("deployment"):
+        raise HTTPException(status_code=400, detail="Live streaming is unavailable for guest units; fetch recent logs instead")
+
     if follow:
         return StreamingResponse(
             _stream_logs(svc, tail),
@@ -211,6 +215,12 @@ async def _stream_logs(svc: dict, tail: int):
 async def _fetch_logs(svc: dict, service: str, tail: int) -> dict[str, str]:
     """Fetch a fixed number of log lines from a service."""
     if svc["manager"] == "systemd":
+        if target := runtime_deployment.parse_deployment(svc.get("deployment")):
+            try:
+                logs = await asyncio.to_thread(runtime_deployment.recent_logs, target, svc["unit"], tail)
+            except runtime_deployment.DeploymentError as exc:
+                raise HTTPException(status_code=503, detail=str(exc)) from exc
+            return {"logs": logs}
         journal_args = ("-u", svc["unit"], "-n", str(tail), "--output=short-iso", "--no-pager")
         if _is_system_unit(svc["unit"]):
             stdout, stderr, rc = await _run_command("journalctl", *journal_args)

@@ -73,6 +73,7 @@ _RUNTIME_SERVICE_MAP = {svc["service"]: svc for svc in _RUNTIME_SERVICE_DEFS}
 def runtime_service_definitions() -> tuple[dict[str, Any], ...]:
     """Infra containers plus the services each active project declares in its identity."""
     from ...project_identity import get_project_lifecycles, list_project_identities
+    from ...runtime_deployment import parse_deployment
 
     identities = [
         identity for identity in list_project_identities()
@@ -88,6 +89,7 @@ def runtime_service_definitions() -> tuple[dict[str, Any], ...]:
             continue
         services = identity.get("services") or {}
         runtime = identity.get("runtime") or {}
+        deployment = parse_deployment(runtime.get("deployment"))
         roles = [
             (services.get("backend"), "api", runtime.get("backend_port"), runtime.get("health_endpoint", "/health")),
             (services.get("frontend"), "web", runtime.get("frontend_port"), "/"),
@@ -108,5 +110,7 @@ def runtime_service_definitions() -> tuple[dict[str, Any], ...]:
             }
             if port and health_path:
                 definition["probe_url"] = f"http://localhost:{port}{health_path}"
+            if deployment:
+                definition["deployment"] = deployment.as_dict()
             definitions[service] = definition
     return tuple(definitions.values())

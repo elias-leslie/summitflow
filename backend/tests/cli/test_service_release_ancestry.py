@@ -150,7 +150,7 @@ def test_rebuild_rollback_flag_reaches_validation_and_the_queue(monkeypatch) -> 
     from cli.lib import coord
 
     monkeypatch.setattr(coord, "guard", Mock())
-    monkeypatch.setattr(service, "_load", lambda _p: Mock(root=Path("/x"), git_root=Path("/x"), runtime_user="", backend_dir=Path("/x/b"),
+    monkeypatch.setattr(service, "_load", lambda _p: Mock(root=Path("/x"), git_root=Path("/x"), runtime_user="", deployment=None, backend_dir=Path("/x/b"),
                                                           frontend_dir=Path("/x/f"), project_id="example",
                                                           workers=lambda **_: ()))
     monkeypatch.setattr(service, "require_pulse_gate", lambda _p: None)

@@ -128,3 +128,60 @@ def test_explicit_delegated_status_keeps_existing_route(observed, monkeypatch, u
     assert CliRunner().invoke(service.app, ["status", "example"]).exit_code == 0
     assert delegated.call_args.args[1:] == (user, "status", None)
     factory.assert_not_called()
+
+
+@pytest.mark.parametrize("args", [["rebuild", "example"], ["rebuild", "example", "--detach"],
+                                  ["restart", "example"], ["stop-unit", "example", "example-test.scope"]])
+def test_remote_project_never_enters_local_deploy_path(observed, monkeypatch, args):
+    from app.runtime_deployment import parse_deployment
+
+    project, _, _ = observed
+    target = parse_deployment({"kind": "proxmox", "ssh_host": "pve-example", "vmid": 456,
+                               "user": "appuser", "uid": 1234})
+    monkeypatch.setattr(service, "_load", lambda _: replace(project, deployment=target, runtime_user="svc"))
+    install = Mock(side_effect=AssertionError("must not install local units"))
+    monkeypatch.setattr(service_ops, "sync_systemd_units", install)
+    result = CliRunner().invoke(service.app, args)
+    assert result.exit_code == 1, result.output
+    assert "VM 456" in result.output
+    install.assert_not_called()
+
+
+def test_remote_status_does_not_delegate_to_an_old_local_runtime_user(observed, monkeypatch):
+    from app.runtime_deployment import parse_deployment
+
+    project, _, _ = observed
+    target = parse_deployment({"kind": "proxmox", "ssh_host": "pve-example", "vmid": 456,
+                               "user": "appuser", "uid": 1234})
+    monkeypatch.setattr(service, "_load", lambda _: replace(project, deployment=target, runtime_user="svc"))
+    monkeypatch.setattr(service.service_deploy_client, "delegated_user", lambda _: "svc")
+    delegated = Mock(side_effect=AssertionError("remote units must not use the old local deploy gate"))
+    monkeypatch.setattr(service, "_deploy_via_socket", delegated)
+    remote = Mock(return_value={"backend.service": {"ActiveState": "active"},
+                               "drain.timer": {"ActiveState": "inactive"}, "drain.service": {"ActiveState": "inactive"}})
+    monkeypatch.setattr(service_ops.runtime_deployment, "unit_states", remote)
+    result = CliRunner().invoke(service.app, ["status", "example"])
+    assert result.exit_code == 0, result.output
+    assert "VM 456" in result.output
+    delegated.assert_not_called()
+
+
+@pytest.mark.parametrize("action", ["start", "stop"])
+def test_remote_cli_controls_never_touch_local_units_or_ports(observed, monkeypatch, action):
+    from app.runtime_deployment import parse_deployment
+
+    project, _, _ = observed
+    target = parse_deployment({"kind": "proxmox", "ssh_host": "pve-example", "vmid": 456,
+                               "user": "appuser", "uid": 1234})
+    monkeypatch.setattr(service, "_load", lambda _: replace(project, deployment=target))
+    monkeypatch.setattr(service, "confirm_gate", lambda *args: None)
+    remote = Mock()
+    monkeypatch.setattr(service_ops.runtime_deployment, "control_units", remote)
+    local = Mock(side_effect=AssertionError("must not touch local units"))
+    monkeypatch.setattr(service_ops, "systemctl", local)
+    result = CliRunner().invoke(service.app, [action, "example"])
+    assert result.exit_code == 0, result.output
+    assert remote.call_args.args[0:2] == (target, action)
+    expected = {"backend.service", "drain.timer"} | ({"drain.service"} if action == "stop" else set())
+    assert set(remote.call_args.args[2]) == expected
+    local.assert_not_called()

@@ -1,14 +1,8 @@
-"""Docker stack commands for the SummitFlow ecosystem.
-
-The stack is the root unit ``summitflow-stack.service``; SummitFlow has no docker
-rights, so start/stop/restart go through Nightshift's typed unit actions and
-status is a port probe. Until that unit is installed, up/down/restart/logs keep
-using docker compose as before.
-"""
+"""Docker stack commands through the existing system unit and container observations."""
 
 from __future__ import annotations
 
-import socket
+import asyncio
 import subprocess
 from typing import Annotated
 
@@ -16,32 +10,25 @@ import typer
 from typer.main import get_command
 
 from app.api.docker.constants import COMPOSE_PROJECT, runtime_service_definitions
+from app.api.docker.helpers import _infra_status
 from app.utils import nightshift_stack
 
 from ..runtime import compose_cmd, compose_cmd_for_mode, compose_env, read_docker_mode
 
 app = typer.Typer(
     name="docker",
-    help="Docker stack control for the SummitFlow ecosystem (through Nightshift).",
+    help="Docker stack control for the SummitFlow ecosystem.",
     no_args_is_help=True,
 )
 
 
-def _port_open(port: str) -> bool:
-    try:
-        with socket.create_connection(("127.0.0.1", int(port)), timeout=0.75):
-            return True
-    except (OSError, ValueError):
-        return False
-
-
 @app.command()
 def status() -> None:
-    """Show which stack services answer on their ports."""
+    """Show actual container state using the same observations as Runtime."""
     typer.echo("DOCKER:STATUS")
     for svc in (svc for svc in runtime_service_definitions() if svc["manager"] == "docker"):
-        up = all(_port_open(port) for port in svc["ports"])
-        typer.echo(f"  {svc['service']}:{'running' if up else 'stopped'}:{','.join(svc['ports'])}")
+        row = asyncio.run(_infra_status(svc))
+        typer.echo(f"  {svc['service']}:{row.state}:{','.join(svc['ports'])}")
 
 
 def _compose(*args: str) -> None:
@@ -55,20 +42,20 @@ def _stack_action(action: str, service: str | None = None) -> None:
         _compose(*(compose_cmd("down") if action == "stop" else compose_cmd("restart", *([service] if service else []))))
     result = nightshift_stack.request_stack(action)  # type: ignore[arg-type]
     if service:
-        typer.echo(f"Nightshift has one action for the whole stack, so {service} is not handled alone.")
+        typer.echo(f"This controls the whole stack, including {service}.")
     typer.echo(result.message)
     raise typer.Exit(0 if result.success else 1)
 
 
 @app.command()
 def up() -> None:
-    """Start the docker stack (Nightshift unit.start)."""
+    """Start the docker stack system unit."""
     _stack_action("start")
 
 
 @app.command()
 def down() -> None:
-    """Stop the docker stack (Nightshift unit.stop)."""
+    """Stop the docker stack system unit."""
     _stack_action("stop")
 
 
@@ -76,7 +63,7 @@ def down() -> None:
 def restart(
     service: Annotated[str | None, typer.Argument(help="Ignored: the whole stack restarts")] = None,
 ) -> None:
-    """Restart the docker stack (Nightshift unit.restart)."""
+    """Restart the docker stack system unit."""
     _stack_action("restart", service)
 
 

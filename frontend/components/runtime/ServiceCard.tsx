@@ -37,7 +37,7 @@ function MetricStat({ label, value }: { label: string; value: string }) {
 }
 
 interface ServiceCardProps {
-  // controllable=false marks system-manager units (host monitor) the dashboard cannot start/stop.
+  // Status explains why controls are unavailable.
   container: RuntimeServiceStatus
   metric?: RuntimeServiceMetrics
   metricSeries?: RuntimeMetricSeries
@@ -167,7 +167,7 @@ export function ServiceCard({
         <div className="flex gap-1.5">
           {!controllable ? (
             <span className="self-center text-2xs text-slate-500">
-              System unit · control with st service
+              {container.status}
             </span>
           ) : isRunning ? (
             <>
@@ -212,6 +212,7 @@ export function ServiceCard({
       {showLogs && (
         <LogViewer
           service={container.service}
+          canStream={container.log_streaming !== false}
           onClose={() => setShowLogs(false)}
         />
       )}

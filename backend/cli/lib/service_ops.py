@@ -20,6 +20,7 @@ from typing import Any
 import httpx
 import psycopg
 
+from app import runtime_deployment
 from app.project_identity import (
     get_project_identity,
     get_project_identity_root,
@@ -72,6 +73,7 @@ class ProjectServices:
     infra: tuple[str, ...] = INFRA
     source_repo: Path | None = None
     source_sha: str = ""
+    deployment: runtime_deployment.ProxmoxDeployment | None = None
 
     @property
     def git_root(self) -> Path:
@@ -142,6 +144,10 @@ def _project_from_identity(identity: Mapping[str, Any], project_id: str, root: P
     """Parse runtime metadata independently of mutable workspace discovery."""
     project = _dict_value(identity.get("project"))
     runtime = _dict_value(identity.get("runtime"))
+    try:
+        deployment = runtime_deployment.parse_deployment(runtime.get("deployment"))
+    except runtime_deployment.DeploymentError as exc:
+        raise ServiceError(str(exc)) from exc
     services = _dict_value(identity.get("services"))
     extras = runtime.get("backend_extras", [])
     if not isinstance(extras, list) or any(not isinstance(extra, str) or not extra.strip() for extra in extras):
@@ -175,6 +181,7 @@ def _project_from_identity(identity: Mapping[str, Any], project_id: str, root: P
         release_install=release_install,
         runtime_user=runtime_user,
         infra=tuple(infra),
+        deployment=deployment,
     )
 
 
@@ -184,6 +191,12 @@ def _pinned_project(project: ProjectServices, identity: Any) -> ProjectServices:
                                                for key in ("project", "runtime", "services")):
         raise ServiceError("Pinned project identity requires project, runtime and services objects")
     runtime, services = identity["runtime"], identity["services"]
+    try:
+        deployment = runtime_deployment.parse_deployment(runtime.get("deployment"))
+    except runtime_deployment.DeploymentError as exc:
+        raise ServiceError(f"Invalid pinned project identity: {exc}") from exc
+    if deployment != project.deployment:
+        raise ServiceError("Pinned project identity deployment does not match the catalog target")
     if identity["project"].get("id") != project.project_id:
         raise ServiceError("Pinned project identity does not match the requested canonical project id")
     user = runtime.get("runtime_user", "")
@@ -380,6 +393,12 @@ def observed_service_states(project: ProjectServices) -> dict[str, str]:
     """
     units = dict.fromkeys(unit for service in project.all_services
                           for unit in (service, activated_service(service)) if unit)
+    if project.deployment:
+        try:
+            rows = runtime_deployment.unit_states(project.deployment, list(units))
+        except runtime_deployment.DeploymentError:
+            rows = {}
+        return {unit: rows.get(unit, {}).get("ActiveState", "unknown") for unit in units}
     states = {unit: service_state(unit) for unit in units}
     if project.runtime_user:
         return states
@@ -533,6 +552,9 @@ def credstore_units(text: str, project: ProjectServices) -> str:
 
 
 def sync_systemd_units(project: ProjectServices) -> int:
+    if project.deployment:
+        print(f"[service] refusing local unit installation for {project.deployment.label}")
+        return 1
     systemd_dir = Path(os.environ.get("XDG_CONFIG_HOME", str(Path.home() / ".config"))) / "systemd" / "user"
     systemd_dir.mkdir(parents=True, exist_ok=True)
     synced = False
@@ -916,6 +938,8 @@ def restart_service(service: str, *, port: int = 0, project: ProjectServices | N
 
 
 def start_services(project: ProjectServices) -> int:
+    if project.deployment:
+        return _remote_service_action(project, "start", list(project.all_services))
     errors = 0
     try:
         managed_root = service_release.current_source_root(project.project_id)
@@ -935,12 +959,27 @@ def start_services(project: ProjectServices) -> int:
 
 
 def stop_services(project: ProjectServices) -> int:
+    if project.deployment:
+        units = list(dict.fromkeys(unit for service in reversed(project.all_services)
+                                   for unit in (service, activated_service(service)) if unit))
+        return _remote_service_action(project, "stop", units)
     errors = 0
     for service in reversed(project.all_services):
         for unit in (service, activated_service(service)):
             if unit and service_exists(unit):
                 errors += run(_service_command(unit, "stop")) != 0
     return errors
+
+
+def _remote_service_action(project: ProjectServices, action: str, units: list[str]) -> int:
+    assert project.deployment is not None
+    try:
+        runtime_deployment.control_units(project.deployment, action, units)
+    except runtime_deployment.DeploymentError as exc:
+        print(f"[service] {exc}")
+        return 1
+    print(f"[service] {action} on {project.deployment.label}: {', '.join(units)}")
+    return 0
 
 
 _TRANSIENT_UNIT = re.compile(r"[A-Za-z0-9][A-Za-z0-9_.@-]{0,200}\.(?:service|scope)")

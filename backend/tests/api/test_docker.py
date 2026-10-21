@@ -31,6 +31,7 @@ client = TestClient(app)
 @pytest.fixture(autouse=True)
 def stack_unit_installed(mocker: MockerFixture) -> None:
     mocker.patch("app.utils.nightshift_stack.stack_installed", return_value=True)
+    mocker.patch("app.access_control.settings.summitflow_loopback_is_owner", True)
 
 
 def _status(
@@ -69,6 +70,138 @@ class TestDockerRuntime:
         assert state == "unknown"
         assert health == ""
         assert "not installed locally" in status
+
+    @pytest.mark.parametrize("active,load,expected", [
+        ("inactive", "loaded", "stopped"), ("failed", "loaded", "stopped"),
+        ("inactive", "not-found", "unknown"),
+    ])
+    def test_forwarded_http_cannot_prove_local_unit_is_running(self, active, load, expected):
+        from app.api.docker._status_probing import _classify_systemd_state
+
+        state, health, _ = _classify_systemd_state(active, "dead", load, True, 200, "app")
+        assert state == expected
+        assert health != "healthy"
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize("container_state,rc,expected", [("exited|", 0, "stopped"), ("", 1, "unknown"),
+                                                           ("running|healthy", 0, "running")])
+    async def test_forwarded_ports_cannot_prove_a_docker_container_is_running(self, mocker, container_state, rc, expected):
+        from app.api.docker import _status_probing, helpers
+
+        mocker.patch.object(_status_probing, "_port_open", new=mocker.AsyncMock(return_value=True))
+        inspect = mocker.patch.object(helpers, "_run_command", new=mocker.AsyncMock(return_value=(container_state, "", rc)))
+        svc = {"service": "db", "display_name": "db", "container_service": "db", "category": "infra", "ports": ["8123"]}
+        row = await _status_probing._infra_status(svc)
+        assert row.state == expected
+        assert (row.health == "healthy") == (expected == "running")
+        assert "inspect" in inspect.call_args.args
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize("rows,expected", [
+        ({"api.service": {"ActiveState": "inactive", "SubState": "guest-stopped", "Error": "Guest is stopped"}}, "stopped"),
+        ({"api.service": {"Error": "Could not reach guest"}}, "unknown"),
+        ({"api.service": {"LoadState": "not-found", "ActiveState": "inactive"}}, "unknown"),
+    ])
+    async def test_unavailable_guest_is_truthful_even_when_bridge_answers(self, mocker, rows, expected):
+        from app.api.docker import _status_probing, helpers
+
+        svc = {"service": "moved-api", "display_name": "moved-api", "manager": "systemd", "category": "app",
+               "unit": "api.service", "ports": ["8123"], "deployment": {
+                   "kind": "proxmox", "ssh_host": "pve-example", "vmid": 456, "manager": "system"}}
+        mocker.patch("app.runtime_deployment.unit_states", return_value=rows)
+        mocker.patch.object(helpers, "_probe_http", new=mocker.AsyncMock(return_value=(True, 200)))
+        row = await _status_probing._systemd_status(svc)
+        assert row.state == expected
+        assert row.health != "healthy"
+        assert not row.controllable
+        assert not row.log_streaming
+        assert row.auto_start is None
+        assert "not installed locally" not in row.status
+
+    @pytest.mark.asyncio
+    async def test_remote_api_stop_includes_paired_timer_and_socket_services(self, mocker):
+        from app.api.docker import _runtime_control
+
+        target = {"kind": "proxmox", "ssh_host": "pve-example", "vmid": 456, "user": "appuser", "uid": 1234}
+        api = {"service": "moved-api", "manager": "systemd", "project_id": "moved", "unit": "api.service", "deployment": target}
+        definitions = [api, *[{**api, "service": unit, "unit": unit} for unit in ["jobs.timer", "queue.socket"]]]
+        mocker.patch.object(_runtime_control, "runtime_service_definitions", return_value=definitions)
+        remote = mocker.patch("app.runtime_deployment.control_units")
+        assert (await _runtime_control._systemd_service_action(api, "stop")).success
+        assert remote.call_args.args[1] == "stop"
+        assert set(remote.call_args.args[2]) == {"api.service", "jobs.timer", "jobs.service", "queue.socket", "queue.service"}
+
+    @pytest.mark.asyncio
+    async def test_guest_logs_and_streaming_use_remote_capabilities(self, mocker):
+        from app.api.docker import routes
+
+        svc = {"manager": "systemd", "unit": "api.service", "deployment": {
+            "kind": "proxmox", "ssh_host": "pve-example", "vmid": 456, "user": "appuser", "uid": 1234}}
+        mocker.patch.object(routes, "_service_definition", return_value=svc)
+        recent = mocker.patch("app.runtime_deployment.recent_logs", return_value="test log")
+        local = mocker.patch.object(routes, "_run_journalctl_user", new=mocker.AsyncMock())
+        assert await routes.get_logs("moved-api", tail=7, follow=False) == {"logs": "test log"}
+        assert recent.call_args.args[1:] == ("api.service", 7)
+        local.assert_not_called()
+        with pytest.raises(HTTPException, match="Live streaming"):
+            await routes.get_logs("moved-api", tail=7, follow=True)
+
+    @pytest.mark.asyncio
+    async def test_guest_metrics_never_inspect_workstation_pids(self, mocker):
+        from app.api.docker import _metrics_collection
+
+        mocker.patch.object(_metrics_collection, "runtime_service_definitions", return_value=[
+            {"manager": "systemd", "deployment": {"kind": "proxmox"}, "unit": "api.service"},
+        ])
+        local = mocker.patch.object(_metrics_collection, "_systemd_service_metric", new=mocker.AsyncMock())
+        assert await _metrics_collection._runtime_metrics() == []
+        local.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_remote_units_use_catalog_target_and_never_local_systemctl(self, mocker):
+        from app import project_identity
+        from app.api.docker import _status_probing, helpers
+
+        identity = {"project": {"id": "moved"}, "runtime": {
+            "backend_port": 8123,
+            "deployment": {"kind": "proxmox", "ssh_host": "pve-example", "vmid": 456,
+                           "user": "appuser", "uid": 1234},
+        }, "services": {"backend": "moved.service", "default_workers": ["jobs.service"]}}
+        mocker.patch.object(project_identity, "list_project_identities", return_value=[identity])
+        mocker.patch.object(project_identity, "get_project_lifecycles", return_value={"moved": "active"})
+        local = mocker.patch.object(helpers, "_systemd_unit_state", new=mocker.AsyncMock())
+        remote = mocker.patch("app.runtime_deployment.unit_states", return_value={
+            "moved.service": {"ActiveState": "active", "SubState": "running", "LoadState": "loaded", "UnitFileState": "enabled"},
+            "jobs.service": {"ActiveState": "failed", "SubState": "failed", "LoadState": "loaded"},
+        })
+        mocker.patch.object(helpers, "_probe_http", new=mocker.AsyncMock(return_value=(True, 200)))
+        mocker.patch.object(_status_probing, "_infra_status", new=mocker.AsyncMock(return_value=None))
+        rows = [r for r in await _status_probing._runtime_service_statuses() if r is not None]
+        local.assert_not_called()
+        remote.assert_called_once()
+        target, units = remote.call_args.args
+        assert (target.ssh_host, target.vmid, target.user, target.uid) == ("pve-example", 456, "appuser", 1234)
+        assert set(units) == {"moved.service", "jobs.service"}
+        assert rows[0].state == "running"
+        assert "VM 456" in rows[0].status
+        assert rows[1].state == "stopped"
+
+    @pytest.mark.asyncio
+    async def test_remote_action_never_clears_workstation_ports(self, mocker):
+        from app.api.docker import _runtime_control, helpers
+
+        target = {"kind": "proxmox", "ssh_host": "pve-example", "vmid": 456, "user": "appuser", "uid": 1234}
+        svc = {"service": "moved-api", "manager": "systemd", "unit": "moved.service",
+               "ports": ["8123"], "deployment": target}
+        mocker.patch.object(helpers, "_service_definition", return_value=svc)
+        local = mocker.patch.object(helpers, "_run_systemctl_user", new=mocker.AsyncMock())
+        clear = mocker.patch.object(helpers, "_clear_service_ports", new=mocker.AsyncMock())
+        remote = mocker.patch("app.runtime_deployment.control_units")
+        result = await _runtime_control._service_action("moved-api", "restart")
+        assert result.success
+        assert remote.call_args.args[1:] == ("restart", ["moved.service"])
+        local.assert_not_called()
+        clear.assert_not_called()
 
     @pytest.mark.asyncio
     async def test_runtime_discovers_new_project_without_restart(self, mocker: MockerFixture) -> None:
@@ -373,7 +506,7 @@ class TestDockerRuntime:
             "Error": "Timed out after 0.75s",
         }
 
-    def test_runtime_service_status_uses_http_probe_when_systemctl_is_unavailable(
+    def test_runtime_service_status_keeps_unit_unknown_when_only_http_is_available(
         self,
         mocker: MockerFixture,
     ) -> None:
@@ -411,9 +544,9 @@ class TestDockerRuntime:
             display_name="summitflow-api",
             manager="systemd",
             category="app",
-            state="running",
-            health="healthy",
-            status="Serving HTTP 200",
+            state="unknown",
+            health="",
+            status="systemd timed-out",
             ports=["8001"],
         )
 

@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 from typing import Any, Literal, cast
 
+from ... import runtime_deployment
 from ...utils import nightshift_stack
 
 # Late-bound access to helpers — ensures mocks at helpers.* take effect at runtime.
@@ -107,7 +108,7 @@ async def _service_action(service: str, action: Literal["start", "stop", "restar
             return ActionResult(success=False, message=(stderr or f"Failed to {action} {service}").strip())
         return ActionResult(success=True, message=f"{_h._past_tense(action)} {service}")
 
-    # Nightshift has one action per unit, so a container action acts on the whole stack.
+    # The installed stack is one system unit, so a container action affects the whole stack.
     result = await asyncio.to_thread(nightshift_stack.request_stack, action)
     return ActionResult(
         success=result.success, message=f"{result.message} (acts on the whole stack, not only {service})",
@@ -160,10 +161,12 @@ async def _set_service_autostart(service: str, enabled: bool) -> ActionResult:
             message=f"{service} is Docker infra; auto-start is governed by the compose stack",
         )
 
-    if _is_system_unit(svc["unit"]):
+    if not svc.get("deployment") and _is_system_unit(svc["unit"]):
         return _system_unit_refusal(service)
 
     verb = "enable" if enabled else "disable"
+    if svc.get("deployment"):
+        return await _remote_action(svc, verb, [svc["unit"]])
     _stdout, stderr, rc = await _h._run_systemctl_user(
         verb, svc["unit"], timeout=_COMMAND_TIMEOUT_SECONDS,
     )
@@ -180,6 +183,15 @@ async def _systemd_service_action(svc: dict[str, Any], action: Literal["start", 
     """Execute a start/stop/restart action on a systemd service."""
     service = svc["service"]
     unit = svc["unit"]
+
+    if svc.get("deployment"):
+        stop_services = _systemd_stop_service_defs(svc) if action == "stop" else [svc]
+        units = list(dict.fromkeys(
+            unit for candidate in stop_services
+            for unit in (candidate["unit"], _activated_service(candidate["unit"]) if action == "stop" else "")
+            if unit
+        ))
+        return await _remote_action(svc, action, units)
 
     if _is_system_unit(unit):
         return _system_unit_refusal(service)
@@ -206,3 +218,18 @@ async def _systemd_service_action(svc: dict[str, Any], action: Literal["start", 
     if rc != 0:
         return ActionResult(success=False, message=(stderr or f"Failed to {action} {service}").strip())
     return ActionResult(success=True, message=f"{_h._past_tense(action)} {service}")
+
+
+def _activated_service(unit: str) -> str:
+    stem, _, suffix = unit.rpartition(".")
+    return f"{stem}.service" if suffix in {"timer", "socket"} else ""
+
+
+async def _remote_action(svc: dict[str, Any], action: str, units: list[str]) -> ActionResult:
+    target = runtime_deployment.parse_deployment(svc["deployment"])
+    assert target is not None
+    try:
+        await asyncio.to_thread(runtime_deployment.control_units, target, action, units)
+    except runtime_deployment.DeploymentError as exc:
+        return ActionResult(success=False, message=str(exc))
+    return ActionResult(success=True, message=f"{action.capitalize()} {svc['service']} on {target.label}")

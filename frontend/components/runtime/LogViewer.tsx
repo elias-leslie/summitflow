@@ -16,16 +16,25 @@ import { runtimeApi } from '@/lib/api/runtime'
 
 interface LogViewerProps {
   service: string
+  canStream?: boolean
   onClose: () => void
 }
 
-export function LogViewer({ service, onClose }: LogViewerProps) {
+export function LogViewer({
+  service,
+  canStream = true,
+  onClose,
+}: LogViewerProps) {
   const [streaming, setStreaming] = useState(false)
   const [streamLines, setStreamLines] = useState<string[]>([])
   const scrollRef = useRef<HTMLDivElement>(null)
   const eventSourceRef = useRef<EventSource | null>(null)
 
-  const { data: initialLogs } = useQuery({
+  const {
+    data: initialLogs,
+    isPending,
+    error,
+  } = useQuery({
     queryKey: ['runtime', 'logs', service],
     queryFn: () => runtimeApi.getLogs(service, 200),
     enabled: !streaming,
@@ -40,7 +49,7 @@ export function LogViewer({ service, onClose }: LogViewerProps) {
 
   // SSE streaming
   useEffect(() => {
-    if (!streaming) return
+    if (!streaming || !canStream) return
 
     const es = new EventSource(runtimeApi.logStreamUrl(service, 50))
     eventSourceRef.current = es
@@ -58,7 +67,7 @@ export function LogViewer({ service, onClose }: LogViewerProps) {
       es.close()
       eventSourceRef.current = null
     }
-  }, [streaming, service])
+  }, [streaming, service, canStream])
 
   const toggleStream = () => {
     if (streaming) {
@@ -84,17 +93,24 @@ export function LogViewer({ service, onClose }: LogViewerProps) {
           <SheetDescription>Service logs</SheetDescription>
           <SheetClose />
           <div className="flex gap-2 mt-2">
-            <button
-              onClick={toggleStream}
-              className={clsx(
-                'text-xs px-2.5 py-1 rounded transition-colors',
-                streaming
-                  ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30'
-                  : 'bg-slate-800 text-slate-300 border border-slate-700 hover:bg-slate-700',
-              )}
-            >
-              {streaming ? 'Stop streaming' : 'Stream live'}
-            </button>
+            {canStream ? (
+              <button
+                onClick={toggleStream}
+                className={clsx(
+                  'text-xs px-2.5 py-1 rounded transition-colors',
+                  streaming
+                    ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30'
+                    : 'bg-slate-800 text-slate-300 border border-slate-700 hover:bg-slate-700',
+                )}
+              >
+                {streaming ? 'Stop streaming' : 'Stream live'}
+              </button>
+            ) : (
+              <p className="text-xs text-slate-400">
+                Recent logs only. Live streaming is unavailable for guest
+                services.
+              </p>
+            )}
           </div>
         </SheetHeader>
 
@@ -103,7 +119,13 @@ export function LogViewer({ service, onClose }: LogViewerProps) {
             ref={scrollRef}
             className="h-full overflow-auto px-4 py-3 font-mono text-xs leading-5 text-slate-300"
           >
-            {lines.length === 0 ? (
+            {!streaming && error ? (
+              <p className="text-red-400">
+                Could not load logs: {error.message}
+              </p>
+            ) : !streaming && isPending ? (
+              <p className="text-slate-500">Loading logs...</p>
+            ) : lines.length === 0 ? (
               <p className="text-slate-500">No logs available</p>
             ) : (
               <pre className="whitespace-pre-wrap break-all">

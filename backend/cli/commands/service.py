@@ -81,6 +81,13 @@ def _load(project: str) -> service_ops.ProjectServices:
         raise typer.Exit(1) from None
 
 
+def _require_local_build(services: service_ops.ProjectServices) -> None:
+    if services.deployment:
+        output_error(f"{services.project_id} runs on {services.deployment.label}; local rebuild/install is unavailable. "
+                     "Update its native remote deployment using the recorded cutover procedure.")
+        raise typer.Exit(1)
+
+
 def _deploy_via_socket(services: service_ops.ProjectServices, user: str, verb: str, sha: str | None) -> int:
     """Hand the verb to the project's deploy gate and stream its answer."""
     try:
@@ -219,7 +226,7 @@ def status(
     errors = 0
     for project_id in projects:
         services = _load(project_id)
-        if user := service_deploy_client.delegated_user(services.runtime_user):
+        if not services.deployment and (user := service_deploy_client.delegated_user(services.runtime_user)):
             errors += _deploy_via_socket(services, user, "status", None) != 0
             continue
         states = service_ops.observed_service_states(services)
@@ -233,7 +240,8 @@ def status(
                 errors += paired_state == "failed"
                 state = f"{state}({paired}:{paired_state})"
             parts.append(f"{svc}:{state}")
-        print(f"{services.project_id:<15} {' '.join(parts)}")
+        location = f" [{services.deployment.label}]" if services.deployment else ""
+        print(f"{services.project_id:<15}{location} {' '.join(parts)}")
     raise typer.Exit(1 if errors else 0)
 
 
@@ -510,6 +518,7 @@ def rebuild(
 ) -> None:
     """Build, migrate, restart, and health-check a project."""
     services = _load(project)
+    _require_local_build(services)
     from ..lib import coord
 
     if source_repo is not None:
@@ -834,7 +843,9 @@ def stop_unit(
 
     Refuses persistent units, managed services and names outside the project prefix.
     """
-    code, state = service_ops.stop_transient_unit(_load(project), unit)
+    services = _load(project)
+    _require_local_build(services)
+    code, state = service_ops.stop_transient_unit(services, unit)
     typer.echo(f"STOP-UNIT:{project}|unit={unit}|state={state}")
     raise typer.Exit(code)
 
@@ -846,14 +857,14 @@ def stop(
 ) -> None:
     """Stop a managed project's service set. Two-pass confirmation required."""
     services = _load(project)
-    if user := service_deploy_client.delegated_user(services.runtime_user):
+    if not services.deployment and (user := service_deploy_client.delegated_user(services.runtime_user)):
         raise typer.Exit(_deploy_via_socket(services, user, "stop", None))
     confirm_gate(
         f"service-stop-{services.project_id}",
         confirm,
         [
             f"STOP SERVICES: {services.project_id}",
-            "This interrupts active local sessions for that project.",
+            f"This interrupts services on {services.deployment.label if services.deployment else 'this workstation'}.",
             "Services: " + ", ".join(services.all_services),
         ],
         f"st service stop {services.project_id}",

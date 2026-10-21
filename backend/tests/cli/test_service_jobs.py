@@ -296,7 +296,7 @@ def test_detached_rebuild_cli_passes_with_ack(monkeypatch):
     queue = Mock(return_value=0)
     guard = Mock()
     monkeypatch.setattr(coord, "guard", guard)
-    monkeypatch.setattr(service, "_load", lambda _project: Mock(root=Path("/x"), git_root=Path("/x"), runtime_user="", backend_dir=Path("/x/b"), frontend_dir=Path("/x/f"), project_id="example", workers=lambda **_: ()))
+    monkeypatch.setattr(service, "_load", lambda _project: Mock(root=Path("/x"), git_root=Path("/x"), runtime_user="", deployment=None, backend_dir=Path("/x/b"), frontend_dir=Path("/x/f"), project_id="example", workers=lambda **_: ()))
     monkeypatch.setattr(service, "require_pulse_gate", lambda _project: None)
     monkeypatch.setattr(service_ops, "preflight_host_monitor", lambda _services: 0)
     monkeypatch.setattr(service_ops, "resolve_accepted_source", lambda *_args, **_kwargs: None)
