@@ -60,12 +60,23 @@ def test_actual_help_from_an_unrelated_project_is_passive(tmp_path, monkeypatch,
         assert f"Usage: st bugout {' '.join(route)}" in result.output
 
 
-@pytest.mark.parametrize("density", ["core", "adaptive", "task", "full"])
-def test_managed_capabilities_include_one_compact_actionable_line(monkeypatch, density):
+@pytest.mark.parametrize("density", ["core", "adaptive", "task"])
+def test_unrelated_capabilities_omit_bugout_guidance(monkeypatch, density):
     from cli.main import app
 
     monkeypatch.setattr(subprocess, "Popen", lambda *a, **k: pytest.fail("discovery executed owner"))
-    specs = select_specs_for_density(collect_usage_specs(app), density=density, task_type="backend")
+    specs = select_specs_for_density(collect_usage_specs(app), density=density, task_type="backend", scores={})
+    rendered = render_inject(specs)
+    assert "st bugout " not in rendered
+    assert "bounded manifest-driven recon" not in rendered
+
+
+@pytest.mark.parametrize("density", ["adaptive", "task", "full"])
+def test_neri_capabilities_include_one_compact_actionable_line(monkeypatch, density):
+    from cli.main import app
+
+    monkeypatch.setattr(subprocess, "Popen", lambda *a, **k: pytest.fail("discovery executed owner"))
+    specs = select_specs_for_density(collect_usage_specs(app), density=density, task_type="neri", scores={})
     lines = [line for line in render_inject(specs).splitlines() if "st bugout " in line]
     assert lines == [CAPABILITY_LINE]
     assert len(lines[0]) <= 100

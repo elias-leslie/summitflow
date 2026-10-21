@@ -26,7 +26,10 @@
     {
       "surface": "st.bugout.recon",
       "cmd": "st bugout recon --help",
-      "when": "bounded manifest-driven recon: validate, run, status, events, control"
+      "when": "bounded manifest-driven recon: validate, run, status, events, control",
+      "task_types": [
+        "neri"
+      ]
     }
   ]
 }
