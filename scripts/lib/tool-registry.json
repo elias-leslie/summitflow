@@ -292,6 +292,27 @@
       ]
     },
     {
+      "id": "bugout.recon",
+      "owner": "bugout",
+      "namespace": "bugout",
+      "manifest": "extensions/bugout-recon.json",
+      "owner_manifest": "operators/recon/st-extension.json",
+      "executable": "operators/recon/bugout",
+      "execution_source": "checkout",
+      "grant": {
+        "enabled": true,
+        "effects": [
+          "read-local",
+          "write-local",
+          "network",
+          "process"
+        ]
+      },
+      "arguments": [],
+      "environment": [],
+      "owner_help": true
+    },
+    {
       "id": "neri.neri",
       "owner": "neri",
       "namespace": "neri",
@@ -725,7 +746,8 @@
       "st.claim",
       "st.done",
       "st.ui.inspect",
-      "st.browser.preview"
+      "st.browser.preview",
+      "st.bugout.recon"
     ],
     "core": ["st.search", "st.check", "st.db", "st.service.rebuild", "st.tools.status", "st.tools.adoption", "st.tools.audit", "st.tools.cost", "st.feedback.report", "st.agents.preview"],
     "adaptive_score_threshold": 15.0

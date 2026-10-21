@@ -1,0 +1,32 @@
+{
+  "id": "bugout.recon",
+  "owner": "bugout",
+  "namespace": "bugout",
+  "version": "0.1.0",
+  "st_contract_versions": [
+    1
+  ],
+  "summary": "Bugout deterministic bounded recon runner.",
+  "effects": [
+    "read-local",
+    "write-local",
+    "network",
+    "process"
+  ],
+  "help": {
+    "": "Usage: st bugout recon {validate,run,status,events,control} --help",
+    "recon": "Usage: st bugout recon {validate,run,status,events,control}\nFrozen manifests, compact journal facts, and review leads only.",
+    "recon validate": "Usage: st bugout recon validate --manifest FILE\nValidate without target access.",
+    "recon run": "Usage: st bugout recon run --manifest FILE --journal FILE\nRun or resume the exact immutable plan.",
+    "recon status": "Usage: st bugout recon status --journal FILE\nAt most 1 KiB; no raw logs.",
+    "recon events": "Usage: st bugout recon events --journal FILE [--cursor N]\nAt most 8 KiB with a continuation cursor.",
+    "recon control": "Usage: st bugout recon control {pause,resume,cancel,feedback,rules} --journal FILE --revision N [--file FILE]\nRevision-bound controls and durable hunter dispositions."
+  },
+  "usage": [
+    {
+      "surface": "st.bugout.recon",
+      "cmd": "st bugout recon --help",
+      "when": "bounded manifest-driven recon: validate, run, status, events, control"
+    }
+  ]
+}
