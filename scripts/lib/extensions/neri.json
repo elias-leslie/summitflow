@@ -16,12 +16,7 @@
   ],
   "namespace": "neri",
   "help": {
-    "": "Usage: neri [OPTIONS] COMMAND [ARGS]...\n\n  Read and maintain Neri targets, investigations, notes, reports and\n  disclosure programs\n\nOptions:\n  --install-completion  Install completion for the current shell.\n  --show-completion     Show completion for the current shell, to copy it or\n                        customize the installation.\n  --help                Show this message and exit.\n\nCommands:\n  recon\n  recon-bind\n  recon-ingest\n  recon-delivery\n  recon-detail\n  investigations\n  create          Create an explicit saved attempt; incomplete JSON is...\n  show\n  activity\n  timeline\n  owner-request\n  owner-resolve\n  context\n  capabilities\n  reports\n  evidence        Import evidence and inspect retained artifacts\n  notes           Save contextual notes and direction\n  report          Read exact report and review revisions, save reports...\n  target          Inspect and maintain registered target metadata\n  group           Read and organize passive investigations containing...\n  program         Maintain passive disclosure programs and exact policy...\n  closeout        Inspect authoritative investigation closeout\n  hunt            Begin, inspect, hand off, or exceptionally continue a...\n  surface         Read saved attack-surface state and submit observations\n  portfolio       Join admitted local work and retain exact root...\n  workspace       Manage ten stable workspace paths.\n  storage         Register target storage and read measured space\n  submission      Ask the owner to approve submitting one exact ready...",
-    "recon": "Usage: neri recon [OPTIONS] {investigation_id}\n\nArguments:\n  investigation_id  [required]\n\nOptions:\n  --cursor <str>\n  --actions-after <int range>  [default: 0; x>=0]\n  --limit <int range>          [default: 30; 1<=x<=100]\n  --help                       Show this message and exit.",
-    "recon-bind": "Usage: neri recon-bind [OPTIONS] {investigation_id}\n\nArguments:\n  investigation_id  [required]\n\nOptions:\n  --file <path>  [required]\n  --help         Show this message and exit.",
-    "recon-ingest": "Usage: neri recon-ingest [OPTIONS] {investigation_id}\n\nArguments:\n  investigation_id  [required]\n\nOptions:\n  --file <path>  [required]\n  --help         Show this message and exit.",
-    "recon-delivery": "Usage: neri recon-delivery [OPTIONS] {investigation_id}\n\nArguments:\n  investigation_id  [required]\n\nOptions:\n  --help  Show this message and exit.",
-    "recon-detail": "Usage: neri recon-detail [OPTIONS] {investigation_id} {event_seq}\n\nArguments:\n  investigation_id  [required]\n  event_seq         [required]\n\nOptions:\n  --help  Show this message and exit.",
+    "": "Usage: neri [OPTIONS] COMMAND [ARGS]...\n\n  Read and maintain Neri targets, investigations, notes, reports and\n  disclosure programs\n\nOptions:\n  --install-completion  Install completion for the current shell.\n  --show-completion     Show completion for the current shell, to copy it or\n                        customize the installation.\n  --help                Show this message and exit.\n\nCommands:\n  investigations\n  create          Create an explicit saved attempt; incomplete JSON is...\n  show\n  activity\n  timeline\n  owner-request\n  owner-resolve\n  context\n  capabilities\n  reports\n  evidence        Import evidence and inspect retained artifacts\n  notes           Save contextual notes and direction\n  report          Read exact report and review revisions, save reports...\n  target          Inspect and maintain registered target metadata\n  group           Read and organize passive investigations containing...\n  program         Maintain passive disclosure programs and exact policy...\n  closeout        Inspect authoritative investigation closeout\n  hunt            Begin, inspect, hand off, or exceptionally continue a...\n  surface         Read saved attack-surface state and submit observations\n  portfolio       Join admitted local work and retain exact root...\n  workspace       Manage ten stable workspace paths.\n  storage         Register target storage and read measured space",
     "investigations": "Usage: neri investigations [OPTIONS]\n\nOptions:\n  --limit <int range>  [default: 20; 1<=x<=100]\n  --cursor <str>\n  --full / --no-full   [default: no-full]\n  --help               Show this message and exit.",
     "create": "Usage: neri create [OPTIONS]\n\n  Create an explicit saved attempt; incomplete JSON is rejected before any\n  write.\n\n  Input JSON requires nonempty target_id, title, and objective. --file - reads\n  stdin. Replace the sample values with the exact current investigation facts.\n  Example: {\"target_id\":\"documents\",\"title\":\"Document review\",\n  \"objective\":\"Review the retained documents.\"}\n\nOptions:\n  --file <path>  [required]\n  --id <uuid>\n  --help         Show this message and exit.",
     "show": "Usage: neri show [OPTIONS] {investigation_id}\n\nArguments:\n  investigation_id  [required]\n\nOptions:\n  --help  Show this message and exit.",
@@ -45,7 +40,7 @@
     "report": "Usage: neri report [OPTIONS] COMMAND [ARGS]...\n\n  Read exact report and review revisions, save reports and download drafts\n\nOptions:\n  --help  Show this message and exit.\n\nCommands:\n  show\n  readiness\n  revision                  Read one exact report revision without...\n  review-packet             Read exact report evidence without...\n  review-revision           Read one exact review revision without...\n  impact-checks\n  impact-check\n  record-impact-check\n  decide-impact-check\n  duplicate-dossiers\n  duplicate-dossier\n  record-duplicate-dossier\n  classifications\n  root-causes\n  classify\n  save\n  download\n  severity                  Read and save immutable severity assessments...",
     "report show": "Usage: neri report show [OPTIONS] {investigation_id}\n\nArguments:\n  investigation_id  [required]\n\nOptions:\n  --full / --no-full  [default: no-full]\n  --help              Show this message and exit.",
     "report readiness": "Usage: neri report readiness [OPTIONS] {investigation_id} [report_revision_id]\n                             [program_binding_revision_id]\n\nArguments:\n  investigation_id             [required]\n  report_revision_id\n  program_binding_revision_id\n\nOptions:\n  --help  Show this message and exit.",
-    "report revision": "Usage: neri report revision [OPTIONS] {investigation_id} {revision_id}\n\n  Read one exact report revision without loading report history.\n\nArguments:\n  investigation_id  [required]\n  revision_id       [required]\n\nOptions:\n  --review <uuid>\n  --program-binding-revision-id <uuid>\n  --severity-through-sequence <int range>\n                                  [x>=0]\n  --output <file>\n  --help                          Show this message and exit.",
+    "report revision": "Usage: neri report revision [OPTIONS] {investigation_id} {revision_id}\n\n  Read one exact report revision without loading report history.\n\nArguments:\n  investigation_id  [required]\n  revision_id       [required]\n\nOptions:\n  --help  Show this message and exit.",
     "report review-packet": "Usage: neri report review-packet [OPTIONS] {investigation_id} {revision_id}\n\n  Read exact report evidence without contaminating a reviewer with prior\n  verdicts.\n\nArguments:\n  investigation_id  [required]\n  revision_id       [required]\n\nOptions:\n  --program-binding-revision-id <uuid>\n  --help                          Show this message and exit.",
     "report review-revision": "Usage: neri report review-revision [OPTIONS] {investigation_id} {revision_id}\n\n  Read one exact review revision without loading report history.\n\nArguments:\n  investigation_id  [required]\n  revision_id       [required]\n\nOptions:\n  --help  Show this message and exit.",
     "report impact-checks": "Usage: neri report impact-checks [OPTIONS] {investigation_id}\n\nArguments:\n  investigation_id  [required]\n\nOptions:\n  --status <str>\n  --effect-class <str>\n  --offset <int range>  [default: 0; x>=0]\n  --limit <int range>   [default: 40; 1<=x<=100]\n  --help                Show this message and exit.",
@@ -58,7 +53,7 @@
     "report classifications": "Usage: neri report classifications [OPTIONS] {investigation_id}\n\nArguments:\n  investigation_id  [required]\n\nOptions:\n  --report-revision-id <uuid>\n  --finding-id <str>\n  --current-only\n  --help                       Show this message and exit.",
     "report root-causes": "Usage: neri report root-causes [OPTIONS]\n\nOptions:\n  --target <str>\n  --q <str>\n  --limit <int range>  [1<=x<=200]\n  --help               Show this message and exit.",
     "report classify": "Usage: neri report classify [OPTIONS] {investigation_id}\n\nArguments:\n  investigation_id  [required]\n\nOptions:\n  --file <path>  [required]\n  --id <uuid>\n  --help         Show this message and exit.",
-    "report save": "Usage: neri report save [OPTIONS] {investigation_id}\n\nArguments:\n  investigation_id  [required]\n\nOptions:\n  --file <path>       [required]\n  --id <uuid>\n  --full / --no-full  [default: no-full]\n  --help              Show this message and exit.",
+    "report save": "Usage: neri report save [OPTIONS] {investigation_id}\n\nArguments:\n  investigation_id  [required]\n\nOptions:\n  --file <path>  [required]\n  --id <uuid>\n  --help         Show this message and exit.",
     "report download": "Usage: neri report download [OPTIONS] {investigation_id}\n\nArguments:\n  investigation_id  [required]\n\nOptions:\n  --output <path>                 [required]\n  --revision <uuid>               Download this exact report revision\n  --review <uuid>                 Bind this exact review revision and its\n                                  report\n  --program-binding-revision-id <uuid>\n                                  Use this exact program binding revision\n  --severity-through-sequence <int range>\n                                  Freeze severity at this saved activity\n                                  sequence  [x>=0]\n  --help                          Show this message and exit.",
     "report severity": "Usage: neri report severity [OPTIONS] COMMAND [ARGS]...\n\n  Read and save immutable severity assessments for an exact report revision\n\nOptions:\n  --help  Show this message and exit.\n\nCommands:\n  list\n  show\n  save",
     "report severity list": "Usage: neri report severity list [OPTIONS] {investigation_id} {revision_id}\n\nArguments:\n  investigation_id  [required]\n  revision_id       [required]\n\nOptions:\n  --limit <int range>      [default: 40; 1<=x<=100]\n  --before-sequence <int>  Continue from the returned next_before_sequence\n  --help                   Show this message and exit.",
@@ -109,10 +104,9 @@
     "program access show": "Usage: neri program access show [OPTIONS] {program_id} {observation_id}\n\nArguments:\n  program_id      [required]\n  observation_id  [required]\n\nOptions:\n  --help  Show this message and exit.",
     "closeout": "Usage: neri closeout [OPTIONS] COMMAND [ARGS]...\n\n  Inspect authoritative investigation closeout\n\nOptions:\n  --help  Show this message and exit.\n\nCommands:\n  readiness",
     "closeout readiness": "Usage: neri closeout readiness [OPTIONS] {investigation_id}\n\nArguments:\n  investigation_id  [required]\n\nOptions:\n  --help  Show this message and exit.",
-    "hunt": "Usage: neri hunt [OPTIONS] COMMAND [ARGS]...\n\n  Begin, inspect, hand off, or exceptionally continue a direct native hunt\n\nOptions:\n  --help  Show this message and exit.\n\nCommands:\n  begin\n  status\n  context   Append context read by hunt status/resume, the timeline and...\n  process\n  result\n  review\n  handoff\n  continue",
+    "hunt": "Usage: neri hunt [OPTIONS] COMMAND [ARGS]...\n\n  Begin, inspect, hand off, or exceptionally continue a direct native hunt\n\nOptions:\n  --help  Show this message and exit.\n\nCommands:\n  begin\n  status\n  process\n  result\n  review\n  handoff\n  continue",
     "hunt begin": "Usage: neri hunt begin [OPTIONS] {target_id}\n\nArguments:\n  target_id  [required]\n\nOptions:\n  --question <str>                [required]\n  --id <uuid>\n  --group-id <uuid>\n  --role <primary|retry|verification|supporting>\n                                  [default: primary]\n  --predecessor-run-id <uuid>\n  --verifies-report-event-id <uuid>\n  --help                          Show this message and exit.",
     "hunt status": "Usage: neri hunt status [OPTIONS] {investigation_id}\n\nArguments:\n  investigation_id  [required]\n\nOptions:\n  --full / --no-full  [default: no-full]\n  --help              Show this message and exit.",
-    "hunt context": "Usage: neri hunt context [OPTIONS] {investigation_id}\n\n  Append context read by hunt status/resume, the timeline and the attempt UI.\n\n  --file - reads stdin. Kinds: workflow, boundary, surface, hypothesis,\n  negative, exhausted. Supply next_question when a concrete question remains.\n\nArguments:\n  investigation_id  [required]\n\nOptions:\n  --file <path>  [required]\n  --id <uuid>\n  --help         Show this message and exit.",
     "hunt process": "Usage: neri hunt process [OPTIONS] {investigation_id}\n\nArguments:\n  investigation_id  [required]\n\nOptions:\n  --file, --output <file>  Save the exact JSON response to a new file without\n                           printing it.\n  --help                   Show this message and exit.",
     "hunt result": "Usage: neri hunt result [OPTIONS] {investigation_id}\n\nArguments:\n  investigation_id  [required]\n\nOptions:\n  --file <path>  [required]\n  --help         Show this message and exit.",
     "hunt review": "Usage: neri hunt review [OPTIONS] {investigation_id}\n\nArguments:\n  investigation_id  [required]\n\nOptions:\n  --packet <path>  [required]\n  --help           Show this message and exit.",
@@ -135,142 +129,13 @@
     "workspace preserve": "Usage: neri workspace preserve [OPTIONS] {root}\n\n  Preserve source diff, history and untracked files in backed-up storage.\n\nArguments:\n  root  [required]\n\nOptions:\n  --owner <str>             [required]\n  --stopped / --no-stopped  [default: no-stopped]\n  --source <path>           [default: /srv/workspaces/projects/neri]\n  --help                    Show this message and exit.",
     "workspace inspect": "Usage: neri workspace inspect [OPTIONS] {root}\n\n  Read exact workspace identity and local Git state.\n\nArguments:\n  root  [required]\n\nOptions:\n  --owner <str>    [required]\n  --source <path>  [default: /srv/workspaces/projects/neri]\n  --help           Show this message and exit.",
     "workspace retire": "Usage: neri workspace retire [OPTIONS] {root}\n\n  Retain run records and release a clean stopped slot; optionally adopt a\n  legacy path.\n\nArguments:\n  root  [required]\n\nOptions:\n  --owner <str>             [required]\n  --source <path>           [default: /srv/workspaces/projects/neri]\n  --stopped / --no-stopped  [default: no-stopped]\n  --clean / --no-clean      [default: no-clean]\n  --slot <str>              Adopt this retired legacy path as a stable slot\n  --help                    Show this message and exit.",
-    "storage": "Usage: neri storage [OPTIONS] COMMAND [ARGS]...\n\n  Register target storage and read measured space\n\nOptions:\n  --help  Show this message and exit.\n\nCommands:\n  register  Register an existing literal path from a JSON storage record.\n  show      Read totals by program and storage class.\n  list      List exact registered paths with optional attribution and...\n  sweep     Run local storage registration, measurement and eligible expiry.",
+    "storage": "Usage: neri storage [OPTIONS] COMMAND [ARGS]...\n\n  Register target storage and read measured space\n\nOptions:\n  --help  Show this message and exit.\n\nCommands:\n  register  Register an existing literal path from a JSON storage record.\n  show      Read totals by program and storage class.\n  sweep     Run local storage registration, measurement and eligible expiry.",
     "storage register": "Usage: neri storage register [OPTIONS] {file}\n\n  Register an existing literal path from a JSON storage record.\n\nArguments:\n  file  [required]\n\nOptions:\n  --help  Show this message and exit.",
     "storage show": "Usage: neri storage show [OPTIONS]\n\n  Read totals by program and storage class.\n\nOptions:\n  --help  Show this message and exit.",
-    "storage list": "Usage: neri storage list [OPTIONS]\n\n  List exact registered paths with optional attribution and class filters.\n\nOptions:\n  --limit <int range>             [default: 100; 1<=x<=200]\n  --offset <int range>            [default: 0; x>=0]\n  --unattributed / --no-unattributed\n                                  [default: no-unattributed]\n  --storage-class <evidence|scratch|unknown>\n  --help                          Show this message and exit.",
     "storage sweep": "Usage: neri storage sweep [OPTIONS]\n\n  Run local storage registration, measurement and eligible expiry.\n\nOptions:\n  --help  Show this message and exit.",
-    "submission": "Usage: neri submission [OPTIONS] COMMAND [ARGS]...\n\n  Ask the owner to approve submitting one exact ready report, and wait for the\n  decision\n\nOptions:\n  --help  Show this message and exit.\n\nCommands:\n  request\n  show\n  list\n  wait",
-    "submission request": "Usage: neri submission request [OPTIONS] {investigation_id}\n\nArguments:\n  investigation_id  [required]\n\nOptions:\n  --report <uuid>   Exact ready report revision ID  [required]\n  --binding <uuid>  Exact program binding revision ID  [required]\n  --note <str>      What the owner should know; after a denial, what changed\n  --id <uuid>\n  --help            Show this message and exit.",
-    "submission show": "Usage: neri submission show [OPTIONS] {request_id}\n\nArguments:\n  request_id  [required]\n\nOptions:\n  --help  Show this message and exit.",
-    "submission list": "Usage: neri submission list [OPTIONS] {investigation_id}\n\nArguments:\n  investigation_id  [required]\n\nOptions:\n  --help  Show this message and exit.",
-    "submission wait": "Usage: neri submission wait [OPTIONS] {request_id}\n\nArguments:\n  request_id  [required]\n\nOptions:\n  --timeout <float range>   Seconds before exit 4  [default: 3600;\n                            0<=x<=86400]\n  --interval <float range>  Seconds between checks  [default: 15; 2<=x<=600]\n  --help                    Show this message and exit."
-  },
-  "help_options": {
-    "": {
-      "--install-completion": 0,
-      "--show-completion": 0,
-      "--help": 0
-    },
-    "evidence": {
-      "--help": 0
-    },
-    "notes": {
-      "--help": 0
-    },
-    "report": {
-      "--help": 0
-    },
-    "report severity": {
-      "--help": 0
-    },
-    "target": {
-      "--help": 0
-    },
-    "target notes": {
-      "--help": 0
-    },
-    "target programs": {
-      "--help": 0
-    },
-    "group": {
-      "--help": 0
-    },
-    "group notes": {
-      "--help": 0
-    },
-    "program": {
-      "--help": 0
-    },
-    "program access": {
-      "--help": 0
-    },
-    "closeout": {
-      "--help": 0
-    },
-    "hunt": {
-      "--help": 0
-    },
-    "surface": {
-      "--help": 0
-    },
-    "portfolio": {
-      "--help": 0
-    },
-    "workspace": {
-      "--help": 0
-    },
-    "storage": {
-      "--help": 0
-    },
-    "submission": {
-      "--help": 0
-    }
+    "recon-bind": "Usage: neri recon-bind [OPTIONS] {investigation_id}\n\nArguments:\n  investigation_id  [required]\n\nOptions:\n  --file <path>  [required]\n  --help         Show this message and exit."
   },
   "usage": [
-    {
-      "surface": "st.neri.recon",
-      "tier": "reference",
-      "cmd": "st neri recon RUN [--cursor TOKEN --actions-after N --limit 30]",
-      "when": "read compact Bugout facts, deterministic flags and attributed actions for one bound run",
-      "precautions": [
-        "bounded sync-on-read; no capture bodies or target requests; exact source run and actor lanes only",
-        "resume_cursor reads newer events; actions_cursor resumes append-only notes and follow-ups"
-      ],
-      "task_types": [
-        "neri"
-      ]
-    },
-    {
-      "surface": "st.neri.recon.bind",
-      "tier": "reference",
-      "cmd": "st neri recon-bind RUN --file BINDING",
-      "when": "bind one immutable Bugout runner journal to the exact saved investigation",
-      "precautions": [
-        "owner-authenticated trust decision; exact run, plan digest, actors and expiry",
-        "a reset uses a new runner run and investigation"
-      ],
-      "task_types": [
-        "neri"
-      ]
-    },
-    {
-      "surface": "st.neri.recon.ingest",
-      "tier": "reference",
-      "cmd": "st neri recon-ingest RUN --file PAGE",
-      "when": "deliver one bounded atomic page of exact bugout-recon/1 envelopes",
-      "precautions": [
-        "configured source UUID/generation required; exact replay is safe; no target requests",
-        "keep receipts and reconcile with recon-delivery after uncertain transport"
-      ],
-      "task_types": [
-        "neri"
-      ]
-    },
-    {
-      "surface": "st.neri.recon.delivery",
-      "tier": "reference",
-      "cmd": "st neri recon-delivery RUN",
-      "when": "reconcile the durable runner delivery cursor and exact last acknowledgement",
-      "precautions": [
-        "read-only; no Bugout or target traffic"
-      ],
-      "task_types": [
-        "neri"
-      ]
-    },
-    {
-      "surface": "st.neri.recon.detail",
-      "tier": "reference",
-      "cmd": "st neri recon-detail RUN EVENT_SEQ",
-      "when": "read one exact compact runner event and acknowledgement identity",
-      "precautions": [
-        "read-only; Neri stream sequence, not the runner sequence; no raw captures"
-      ],
-      "task_types": [
-        "neri"
-      ]
-    },
     {
       "surface": "st.neri.investigations",
       "tier": "reference",
@@ -538,11 +403,10 @@
     {
       "surface": "st.neri.report.revision",
       "tier": "reference",
-      "cmd": "st neri report revision <investigation-id> <revision-id> [--review UUID --program-binding-revision-id UUID --severity-through-sequence N --output PATH]",
-      "when": "read or export one exact report revision",
+      "cmd": "st neri report revision <investigation-id> <revision-id>",
+      "when": "read one immutable report revision",
       "precautions": [
-        "read-only; no fallback to another report or review",
-        "--output saves the full JSON response to a new file and prints a receipt; selectors pin review, program binding and severity"
+        "read-only; fetches only the cited revision; retain caveats and evidence references"
       ],
       "task_types": [
         "neri"
@@ -702,14 +566,13 @@
     {
       "surface": "st.neri.report.save",
       "tier": "reference",
-      "cmd": "st neri report save <investigation-id> --file report.json [--id UUID --full]",
+      "cmd": "st neri report save <investigation-id> --file report.json [--id UUID]",
       "when": "save a report revision based on retained evidence",
       "precautions": [
         "invalid input is rejected before any write and returns a complete validator-backed JSON example",
         "no-finding shape example (replace values): {\"id\":\"00000000-0000-4000-8000-000000000000\",\"status\":\"no_finding\",\"title\":\"Bounded no-finding result\",\"summary\":\"The tested boundary did not produce a supported finding.\",\"findings\":[],\"uncertainties\":[\"Untested surfaces remain outside this result.\"]}",
         "the example is only an input shape; retained evidence and closeout readiness remain authoritative",
-        "UUID is retained or generated and printed; saving does not submit reports externally",
-        "prints a receipt with technical readiness; --full prints the exact API response"
+        "UUID is retained or generated and printed; saving does not submit reports externally"
       ],
       "task_types": [
         "neri"
@@ -783,7 +646,7 @@
       "when": "read a target manifest or its compact workspace context",
       "precautions": [
         "read-only; read --workspace context before exact attempts",
-        "--workspace: zero counts are omitted, and execution_target_ids when it is just [target_id]; versions omit execution_target_id and environment equal to the target's, and artifact_identity equal to the preceding version's (only when every version has one, so an absent value means the same as the row before); scope entries that match share one entry listing their manifest_ids; current_work rows follow group list; investigation_progress omits fields equal to its current_work row (as_current_work lists them; match by group_id); reviewed findings omit target_id, class_label and finding impact (group show <target> <group-id> has them), tested_context.environment equal to the target's environment, finding_count when it equals the number of listed findings, and a finding title equal to the row title; notes keep identity, state and a body clipped to 160 characters (target notes show/history have context, actor and timestamps); program bindings keep binding identity, program name (omitted when equal to the preceding binding's, under the same rule), pinned report revision and both statuses (target programs show <target> <binding-id> has the program id, environment, run, finding, rationale, policy and verified facts); lab_authority rows keep execution_target_id, in_effect and, when not in effect, reason (target lab-authority <target> has the grant id, revision, decision and manifest digests); severities keep id, authority, scheme, native label/code, display_band and score; report severity show <run> <report-revision> <id> has the exact assessment; --full prints the exact view"
+        "--workspace: zero counts are omitted, and execution_target_ids when it is just [target_id]; versions omit execution_target_id and environment equal to the target's, and artifact_identity equal to the preceding version's (only when every version has one, so an absent value means the same as the row before); scope entries that match share one entry listing their manifest_ids; current_work rows follow group list; reviewed findings omit target_id, class_label and finding impact (group show <target> <group-id> has them), tested_context.environment equal to the target's environment, finding_count when it equals the number of listed findings, and a finding title equal to the row title; notes keep identity, state, context and a body clipped to 160 characters, and omit updated_at equal to created_at (target notes show/history have the rest); program bindings keep binding identity, program name (omitted when equal to the preceding binding's, under the same rule), pinned report revision and both statuses (target programs show <target> <binding-id> has the program id, environment, run, finding, rationale, policy and verified facts); lab_authority rows keep execution_target_id, in_effect and, when not in effect, reason (target lab-authority <target> has the grant id, revision, decision and manifest digests); severities keep id, authority, scheme, native label/code, display_band and score; report severity show <run> <report-revision> <id> has the exact assessment; --full prints the exact view"
       ],
       "task_types": [
         "neri"
@@ -1246,20 +1109,6 @@
       ]
     },
     {
-      "surface": "st.neri.hunt.context",
-      "tier": "reference",
-      "cmd": "st neri hunt context <investigation-id> --file context.json [--id UUID]",
-      "when": "retain material workflow, boundary, surface, hypothesis or negative/exhausted context",
-      "precautions": [
-        "pin the run manifest/digest and current applicable program-binding revision",
-        "JSON object or stdin; retain request_id for reconciliation; --id must match it",
-        "sanitized facts and exact evidence IDs only; next_question is a field, not a kind"
-      ],
-      "task_types": [
-        "neri"
-      ]
-    },
-    {
       "surface": "st.neri.hunt.process",
       "tier": "reference",
       "cmd": "st neri hunt process <investigation-id> [--file PATH]",
@@ -1525,15 +1374,6 @@
       ]
     },
     {
-      "surface": "st.neri.storage.list",
-      "tier": "reference",
-      "cmd": "st neri storage list [--unattributed]",
-      "when": "inspect exact registered paths, especially unattributed storage that needs resolution",
-      "task_types": [
-        "neri"
-      ]
-    },
-    {
       "surface": "st.neri.storage.sweep",
       "tier": "reference",
       "cmd": "st neri storage sweep",
@@ -1543,59 +1383,75 @@
       ]
     },
     {
-      "surface": "st.neri.submission.request",
+      "surface": "st.neri.recon.bind",
       "tier": "reference",
-      "cmd": "st neri submission request <investigation-id> --report <report-revision-id> --binding <program-binding-revision-id> [--note TEXT] [--id UUID]",
-      "when": "report readiness is ready_for_owner_decision and you want to submit it",
+      "cmd": "st neri recon-bind RUN --file BINDING",
+      "when": "bind one immutable Bugout runner journal to the exact saved investigation",
       "precautions": [
-        "owner sees it in the Inbox (Nightshift pushes it to the phone); else 409 report_not_ready",
-        "binds the exact report and its records; any change invalidates it",
-        "after a denial, fix what the reason asks, retry with --note; the same packet reuses its request",
-        "then st neri submission wait"
-      ],
-      "task_types": [
-        "neri"
-      ]
-    },
-    {
-      "surface": "st.neri.submission.show",
-      "tier": "reference",
-      "cmd": "st neri submission show <request-id>",
-      "when": "read one approval request: outcome, owner reason, current packet check and history",
-      "precautions": [
-        "read-only",
-        "outcome: approved = submit exactly this packet; denied = fix what decision.reason asks, request again; invalidated = records changed, request again; superseded = a newer request replaced it"
-      ],
-      "task_types": [
-        "neri"
-      ]
-    },
-    {
-      "surface": "st.neri.submission.list",
-      "tier": "reference",
-      "cmd": "st neri submission list <investigation-id>",
-      "when": "list every approval request for an investigation, newest first",
-      "precautions": [
-        "read-only",
-        "outcome: approved = submit exactly this packet; denied = fix what decision.reason asks, request again; invalidated = records changed, request again; superseded = a newer request replaced it"
-      ],
-      "task_types": [
-        "neri"
-      ]
-    },
-    {
-      "surface": "st.neri.submission.wait",
-      "tier": "reference",
-      "cmd": "st neri submission wait <request-id> [--timeout SECONDS] [--interval SECONDS]",
-      "when": "block until the owner approves or denies a submission request",
-      "precautions": [
-        "exit 0 approved (submit exactly this packet), 3 denied (read decision.reason), 4 timed out (wait again), 5 invalidated or superseded (request again)",
-        "prints the final request JSON once; read-only",
-        "change nothing between approval and submission, or the approval stops counting"
+        "owner-authenticated trust decision; exact run, plan digest, actors and expiry",
+        "a reset uses a new runner run and investigation"
       ],
       "task_types": [
         "neri"
       ]
     }
-  ]
+  ],
+  "help_options": {
+    "": {
+      "--install-completion": 0,
+      "--show-completion": 0,
+      "--help": 0
+    },
+    "evidence": {
+      "--help": 0
+    },
+    "notes": {
+      "--help": 0
+    },
+    "report": {
+      "--help": 0
+    },
+    "report severity": {
+      "--help": 0
+    },
+    "target": {
+      "--help": 0
+    },
+    "target notes": {
+      "--help": 0
+    },
+    "target programs": {
+      "--help": 0
+    },
+    "group": {
+      "--help": 0
+    },
+    "group notes": {
+      "--help": 0
+    },
+    "program": {
+      "--help": 0
+    },
+    "program access": {
+      "--help": 0
+    },
+    "closeout": {
+      "--help": 0
+    },
+    "hunt": {
+      "--help": 0
+    },
+    "surface": {
+      "--help": 0
+    },
+    "portfolio": {
+      "--help": 0
+    },
+    "workspace": {
+      "--help": 0
+    },
+    "storage": {
+      "--help": 0
+    }
+  }
 }
