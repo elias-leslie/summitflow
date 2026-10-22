@@ -555,6 +555,15 @@ def test_owner_release_manifest_overrides_bundled_metadata_but_not_the_grant(tmp
     assert fallback is not None and fallback.version == "1.0.0"
 
 
+def test_agent_commands_use_their_accepted_owner_help_and_executable():
+    root = Path(__file__).resolve().parents[3]
+    bindings = json.loads((root / "scripts/lib/tool-registry.json").read_text())["extensions"]
+    agents = next(binding for binding in bindings if binding["id"] == "agent-hub.agents")
+    assert agents["execution_source"] == "accepted_runtime"
+    assert agents["owner_manifest"] == "st-extensions/agents.json"
+    assert agents["executable"] == "backend/.venv/bin/agent-hub-st"
+
+
 def test_saved_mandates_and_installed_tether_bindings():
     root = Path(__file__).resolve().parents[3]
     bindings = json.loads((root / "scripts/lib/tool-registry.json").read_text())["extensions"]

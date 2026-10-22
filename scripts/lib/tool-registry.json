@@ -45,7 +45,9 @@
           "credentials"
         ]
       },
-      "environment": []
+      "environment": [],
+      "execution_source": "accepted_runtime",
+      "owner_manifest": "st-extensions/agents.json"
     },
     {
       "id": "agent-hub.complete",
