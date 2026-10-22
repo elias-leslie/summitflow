@@ -85,7 +85,7 @@ def test_aico_create_help_names_tools_without_routing_policy():
     text = " ".join(pages).lower()
     for phrase in ("routing", "by default", "neri", "delegated work", "only codex"):
         assert phrase not in text, phrase
-    assert "claude-code, codex or pi" in record.manifest.help["create"]
+    assert "claude-code, codex, pi or opencode" in record.manifest.help["create"]
     assert "unsupported_tool" in record.manifest.help["create"]
     assert all("claude code" in page.lower() for page in (record.manifest.help[""], when))
 
