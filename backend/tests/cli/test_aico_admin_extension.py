@@ -85,6 +85,28 @@ def test_aico_create_help_names_tools_without_routing_policy():
     text = " ".join(pages).lower()
     for phrase in ("routing", "by default", "neri", "delegated work", "only codex"):
         assert phrase not in text, phrase
-    assert "claude-code or codex" in record.manifest.help["create"]
+    assert "claude-code, codex or pi" in record.manifest.help["create"]
     assert "unsupported_tool" in record.manifest.help["create"]
     assert all("claude code" in page.lower() for page in (record.manifest.help[""], when))
+
+
+def test_aico_sessions_inventory_help_is_passive_and_dispatch_preserves_socket(monkeypatch):
+    registry = Path(__file__).resolve().parents[3] / "scripts/lib/tool-registry.json"
+    app = typer.Typer()
+
+    @app.callback()
+    def root():
+        pass
+
+    register_extensions(app, registry_path=registry)
+    observed = []
+    monkeypatch.setattr("cli.extensions.extension_context", lambda _: {})
+    monkeypatch.setattr("cli.extensions.dispatch_extension", lambda record, argv, **kwargs: observed.append(argv) or 0)
+    help_result = CliRunner().invoke(app, ["aico", "sessions", "--owner-socket", "/fixture/control.sock", "--help"])
+    assert help_result.exit_code == 0
+    assert "ordinary/unlinked Pi and Codex" in help_result.output
+    assert "exact widget ID" in help_result.output
+    assert observed == []
+    args = ["sessions", "--owner-socket", "/fixture/control.sock"]
+    assert CliRunner().invoke(app, ["aico", *args]).exit_code == 0
+    assert observed == [args]
