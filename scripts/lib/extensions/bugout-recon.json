@@ -16,7 +16,7 @@
   "help": {
     "": "Usage: st bugout recon {validate,run,status,events,deliver,control} --help",
     "recon": "Usage: st bugout recon {validate,run,status,events,deliver,control}\nFrozen manifests, compact journal facts, and review leads only.",
-    "recon validate": "Usage: st bugout recon validate --manifest FILE\nValidate without target access.",
+    "recon validate": "Usage: st bugout recon validate --manifest FILE [--neri-binding]\nValidate without target access; optional output is the exact Neri binding input.",
     "recon run": "Usage: st bugout recon run --manifest FILE --journal FILE\nRun or resume the exact immutable plan.",
     "recon status": "Usage: st bugout recon status --journal FILE\nAt most 1 KiB; no raw logs.",
     "recon events": "Usage: st bugout recon events --journal FILE [--cursor N]\nAt most 8 KiB with a continuation cursor.",
