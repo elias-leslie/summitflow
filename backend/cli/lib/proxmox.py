@@ -419,16 +419,17 @@ class ProxmoxClient:
             if not isinstance(result, dict) or result.get("status") != "stopped" or result.get("exitstatus") != "OK":
                 raise ProxmoxError(f"VM {vmid} reset {operation} has no successful task result; inspect before retrying")
 
-        status = guarded_state()
+        guarded_state()
         if snapshot not in self._lab_snapshots(vmid):
             raise ProxmoxError(f"VM {vmid} exact snapshot is missing")
         snapshot_config = self._lab_request("GET", f"{base}/snapshot/{snapshot}/config", f"VM {vmid} snapshot config")
         if not isinstance(snapshot_config, dict) or snapshot_config.get("name") != name:
             raise ProxmoxError(f"VM {vmid} snapshot name guard failed")
-        if status["status"] == "running":
-            task(f"{base}/status/stop", "stop")
-        if guarded_state()["status"] != "stopped" or snapshot not in self._lab_snapshots(vmid):
+        guarded_state()
+        if snapshot not in self._lab_snapshots(vmid):
             raise ProxmoxError(f"VM {vmid} reset pre-verification failed")
+        # PVE checks rollback feasibility before stopping the guest itself. A separate stop
+        # would leave a running VM down even when rollback submission or preparation is refused.
         task(f"{base}/snapshot/{snapshot}/rollback", "rollback", {"start": 0})
         # PVE automatically resumes snapshots with RAM, even when start=0.
         if guarded_state()["status"] == "running":

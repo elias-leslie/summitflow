@@ -155,7 +155,7 @@ def test_observe_refuses_truncated_history(monkeypatch):
         lab.client.observe(["120"], "local-lvm")
 
 
-@pytest.mark.parametrize("running,ram,stops", [(False, False, 0), (True, False, 1), (True, True, 2)])
+@pytest.mark.parametrize("running,ram,stops", [(False, False, 0), (True, False, 0), (True, True, 1)])
 def test_reset_waits_for_tasks_and_verifies_snapshot_and_stopped_state(monkeypatch, running, ram, stops):
     lab = Lab(monkeypatch, running=running, ram=ram)
     assert lab.reset() == {"vmid": 120, "name": "lab-120", "snapshot": "clean", "status": "stopped"}
@@ -192,17 +192,19 @@ def test_reset_rejects_invalid_guards_without_requests(monkeypatch, name, snapsh
     assert lab.calls == []
 
 
-def test_reset_stops_on_failed_task_without_rollback_or_secret_echo(monkeypatch):
+def test_reset_reports_failed_rollback_without_stop_or_secret_echo(monkeypatch):
     lab = Lab(monkeypatch, running=True)
 
     def failed(*_, **__):
         raise ProxmoxError("private-secret https://private-config")
 
     monkeypatch.setattr(lab.client, "wait_task", failed)
-    with pytest.raises(ProxmoxError, match="reset stop failed") as exc:
+    with pytest.raises(ProxmoxError, match="reset rollback failed") as exc:
         lab.reset()
     assert "private" not in str(exc.value)
-    assert not any(path.endswith("/rollback") for _, path, _ in lab.calls)
+    assert [(path, data) for method, path, data in lab.calls if method == "POST"] == [
+        ("/nodes/node/qemu/120/snapshot/clean/rollback", {"start": 0}),
+    ]
 
 
 @pytest.mark.parametrize("fault", ["parent", "running", "name", "task-result"])
@@ -336,6 +338,61 @@ def local_pve(monkeypatch, tmp_path):
 
 
 LAB_COMMANDS = [["observe", "120", "--storage", "local-lvm"], ["reset", "120", "--name", "lab-120", "--snapshot", "clean"]]
+
+
+@pytest.mark.parametrize("remote", [False, True], ids=["direct", "backend-route"])
+@pytest.mark.parametrize("rollback_status", [200, 403, 501, "preparation-failed"])
+def test_reset_cli_does_not_stop_before_rollback_is_accepted(local_pve, monkeypatch, rollback_status, remote):
+    lab, _ = local_pve
+    lab.running = True
+    transport = proxmox.httpx.request
+    rollback_requests = []
+
+    def request(method, url, **kwargs):
+        if method == "POST" and url.endswith("/rollback"):
+            rollback_requests.append(kwargs.get("data"))
+            if rollback_status == "preparation-failed":
+                return httpx.Response(200, json={"data": "UPID:preparation-failed"})
+            if rollback_status != 200:
+                return httpx.Response(rollback_status, json={"message": "private-secret rollback unavailable"})
+        if "/tasks/UPID%3Apreparation-failed/status" in url:
+            return httpx.Response(200, json={"data": {"status": "stopped", "exitstatus": "private-secret rollback not possible"}})
+        return transport(method, url, **kwargs)
+
+    monkeypatch.setattr(proxmox.httpx, "request", request)
+    if remote:
+        from fastapi import HTTPException
+
+        from app.api.vm import VmOp, vm_op
+
+        class Backend:
+            def _global_url(self, path):
+                return path
+
+            def post(self, url, json):
+                assert url == "/vm/op"
+                try:
+                    return vm_op(VmOp(**json))
+                except HTTPException as exc:
+                    raise APIError(exc.status_code, {"message": exc.detail}) from None
+
+        monkeypatch.setattr(vm, "ProxmoxClient", SimpleNamespace(for_lab=lambda: RemoteProxmoxClient.for_lab(Backend())))
+    result = CliRunner().invoke(vm.app, LAB_COMMANDS[1])
+    assert rollback_requests == [{"start": 0}]
+    if rollback_status == 200:
+        assert result.exit_code == 0, result.output
+        assert json.loads(result.output) == {"vmid": 120, "name": "lab-120", "snapshot": "clean", "status": "stopped"}
+        assert not lab.running and lab.parent == "clean"
+    else:
+        assert result.exit_code == 1
+        failure = "reset refused or incomplete" if remote else (
+            "reset rollback failed" if rollback_status == "preparation-failed" else "reset rollback unavailable"
+        )
+        assert failure in result.output
+        assert "private" not in result.output and '"status": "stopped"' not in result.output
+        assert lab.running and lab.parent == "other", "rollback was refused, but ST already stopped the VM"
+        assert not any(path.endswith("/rollback") for _, path, _ in lab.calls)
+        assert not any(method == "POST" for method, _, _ in lab.calls)
 
 
 @pytest.mark.parametrize("command", LAB_COMMANDS)
