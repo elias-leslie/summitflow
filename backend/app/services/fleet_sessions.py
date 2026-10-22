@@ -162,6 +162,7 @@ def _host_start(
     root: str, project_id: str, project_root: str, tool: str, prompt: str,
     *, role: str, lead_root: str | None, facet: str | None, surface: RootSurface = "aico",
     resume_session: str | None = None,
+    work_role: str | None = None, work_role_name: str | None = None,
 ) -> dict[str, Any]:
     """The owner's root protocol (Aico, Tether or A-Term); acknowledgment is not model/queue evidence."""
     body: dict[str, Any] = {
@@ -169,6 +170,8 @@ def _host_start(
         "projectRoot": project_root, "initialPrompt": prompt,
         "role": role, "leadRootReference": lead_root, "facetCapsuleRef": facet,
     }
+    if work_role is not None:
+        body.update(workRole=work_role, workRoleDisplayName=work_role_name)
     if resume_session is not None:
         # The owner's resume adapter validates the exact native ID; fresh
         # launches keep the original body and digest.
@@ -177,6 +180,8 @@ def _host_start(
     if (descriptor.get("owner") != _SURFACE_OWNER[surface]
             or not descriptor.get("logicalSessionId") or not descriptor.get("hostIdentity")
             or not descriptor.get("surfaceLocator")
+            or (work_role is not None and (descriptor.get("workRole") != work_role
+                or descriptor.get("workRoleDisplayName") != work_role_name))
             or (not descriptor.get("generation") and descriptor.get("status") not in {"pending", "uncertain", "ended"})):
         raise ValueError("Host returned no verified root descriptor")
     # Keep only the protocol descriptor; never retain unrelated host output.
@@ -196,7 +201,10 @@ def reconcile_root(root: str) -> dict[str, Any]:
         return state
     if (observed.get("owner") != _SURFACE_OWNER.get(state["surface"]) or observed.get("requestId") != root
             or observed.get("role") != state["role"] or observed.get("leadRootReference") != state["lead_root"]
-            or observed.get("facetCapsuleRef") != state["facet"] or not observed.get("hostIdentity")
+            or observed.get("facetCapsuleRef") != state["facet"]
+            or (state.get("work_role") is not None and (observed.get("workRole") != state["work_role"]
+                or observed.get("workRoleDisplayName") != state.get("work_role_name")))
+            or not observed.get("hostIdentity")
             or not observed.get("logicalSessionId") or not observed.get("surfaceLocator")):
         return state
     prior = state["host"]
@@ -258,6 +266,7 @@ def start_root(
     facet: str | None = None, root: str | None = None,
     surface: RootSurface = "aico", resume_session: str | None = None,
     execution_root: str | None = None,
+    work_role: str | None = None, work_role_name: str | None = None,
 ) -> dict[str, Any]:
     """Register one immutable root capsule before an idempotent Aico launch request.
 
@@ -272,6 +281,11 @@ def start_root(
         raise ValueError("Unsupported root surface")
     if role not in {"portfolio-root", "neri-target-root", "neri-support-root"}:
         raise ValueError("Unknown fleet root role")
+    if work_role is not None and (not _KEY.fullmatch(work_role) or work_role == "unknown"):
+        raise ValueError("Unknown fixed work role")
+    if work_role_name is not None and (work_role is None or not work_role_name.strip()
+            or len(work_role_name) > 128 or any(ord(c) < 32 or ord(c) == 127 for c in work_role_name)):
+        raise ValueError("Work role name requires a declaration and 1-128 single-line characters")
     execution_root = _execution_directory(project_id, project_root, execution_root)
     prompt = sanitized_instruction(instruction)
     if len(scope) > 32 or not all(len(k) <= 128 and len(v) <= 512 for k, v in scope.items()):
@@ -307,6 +321,8 @@ def start_root(
         "support_only": role == "neri-support-root",
         "offline": role == "neri-support-root",
     }
+    if work_role is not None:
+        capsule.update(work_role=work_role, work_role_name=work_role_name)
     if resume_session is not None:
         # Retain no native thread binding; the digest makes a changed retry conflict.
         capsule["resume_session_digest"] = hashlib.sha256(resume_session.encode()).hexdigest()
@@ -324,7 +340,8 @@ def start_root(
                                    facet=facet, cursor=event["sequence"])
         descriptor = _host_start(root, project_id, execution_root, tool, host_prompt,
                                  role=role, lead_root=lead_root, facet=facet, surface=surface,
-                                 resume_session=resume_session)
+                                 resume_session=resume_session,
+                                 **({"work_role": work_role, "work_role_name": work_role_name} if work_role is not None else {}))
     except (httpx.HTTPError, ValueError, OSError):
         append_fleet_event(project_id, root, source_key="root:host", event_type="root.host-unavailable", attributes={
             "capability": "unavailable", "request_id": root, "delivery": "unknown",

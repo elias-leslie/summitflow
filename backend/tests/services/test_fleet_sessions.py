@@ -556,3 +556,31 @@ def test_tether_end_tries_the_other_instance_on_404_but_start_does_not(monkeypat
     with pytest.raises(ValueError):
         service._host_start("root-fixture", "fixture", "/fixture", "codex", "Exact capsule", role="portfolio-root", lead_root=None, facet=None, surface="tether")
     assert [call.kwargs["uds"] for call in transport.call_args_list] == [active]
+
+
+@pytest.mark.parametrize("surface", ["aico", "tether", "a-term"])
+def test_explicit_work_role_is_owner_metadata_without_prompt_changes(monkeypatch, surface):
+    seen = []
+    def request(actual_surface, path, body):
+        seen.append((actual_surface, body))
+        return {"owner": "a-term" if surface == "a-term" else "aico",
+                "logicalSessionId": "fixture", "hostIdentity": "aabbccdd", "generation": "a" * 64,
+                "surfaceLocator": "fixture", "workRole": body["workRole"],
+                "workRoleDisplayName": body["workRoleDisplayName"]}
+    monkeypatch.setattr(service, "_host_request", request)
+    service._host_start("root-fixture", "fixture", "/fixture", "codex", "Exact prompt",
+        role="portfolio-root", lead_root=None, facet=None, surface=surface,
+        work_role="implementation", work_role_name="Builder")
+    assert seen[0][0] == surface
+    assert seen[0][1]["workRole"] == "implementation"
+    assert seen[0][1]["workRoleDisplayName"] == "Builder"
+    assert seen[0][1]["initialPrompt"] == "Exact prompt"
+
+
+def test_fleet_work_role_is_immutable_capsule_metadata(roots):
+    state = roots(scope={}, work_role="implementation", work_role_name="Builder")
+    assert state["work_role"] == "implementation"
+    assert state["work_role_name"] == "Builder"
+    with pytest.raises(fleet.SourceKeyConflict):
+        service.start_root(state["project_id"], "/fixture/project", root=state["root"], tool="codex",
+            instruction="Review exact source refs.", scope={}, work_role="research", work_role_name="Builder")

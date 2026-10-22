@@ -118,6 +118,8 @@ def start(
     surface: Annotated[str, typer.Option(help="Owner surface: aico, tether or a-term. aico goes through Tether when it is running, else Aico's sockets")] = "aico",
     scope: Annotated[str, typer.Option(help="Exact scope/source references as JSON")] = "{}",
     role: Annotated[str, typer.Option(help="portfolio-root, neri-target-root, or neri-support-root")] = "portfolio-root",
+    work_role: Annotated[str | None, typer.Option(help="Fixed native-session work role; required for new roots, separate from --role")] = None,
+    work_role_name: Annotated[str | None, typer.Option(help="Optional work-role display name (1-128 characters)")] = None,
     lead_root: Annotated[str | None, typer.Option(help="Opaque target lead root for a support allocation")] = None,
     facet: Annotated[str | None, typer.Option(help="Disjoint bounded support facet or capsule reference")] = None,
     request_id: Annotated[str | None, typer.Option(help="Retained opaque root handle for an idempotent retry")] = None,
@@ -135,6 +137,10 @@ def start(
                                "tool": tool, "surface": surface, "instruction": instruction,
                                "scope": _scope(scope), "role": role, "lead_root": lead_root, "facet": facet,
                                "root": request_id or "root-" + uuid.uuid4().hex}
+    if work_role is not None:
+        capsule["work_role"] = work_role
+    if work_role_name is not None:
+        capsule["work_role_name"] = work_role_name
     if resume_session is not None:
         capsule["resume_session"] = resume_session
     if execution_root is not None:

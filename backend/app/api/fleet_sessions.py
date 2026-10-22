@@ -49,6 +49,8 @@ class StartRoot(BaseModel):
     instruction: str = Field(min_length=1, max_length=4000)
     scope: dict[str, str] = Field(default_factory=dict)
     role: service.RootRole = "portfolio-root"
+    work_role: str | None = Field(default=None, min_length=1, max_length=128)
+    work_role_name: str | None = Field(default=None, min_length=1, max_length=128)
     lead_root: str | None = None
     facet: str | None = Field(default=None, min_length=1, max_length=128)
     root: str | None = None

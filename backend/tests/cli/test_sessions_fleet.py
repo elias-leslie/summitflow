@@ -98,6 +98,7 @@ def test_emit_returns_compact_delta_through_public_sdk(monkeypatch):
 
 @pytest.mark.parametrize("extra,forwarded", [
     ([], {}),
+    (["--work-role", "implementation", "--work-role-name", "Builder"], {"work_role": "implementation", "work_role_name": "Builder"}),
     (["--resume-session", "00000000-0000-4000-8000-000000000001"],
      {"resume_session": "00000000-0000-4000-8000-000000000001"}),
     (["--execution-root", "/workspace/fixture"], {"execution_root": "/workspace/fixture"}),

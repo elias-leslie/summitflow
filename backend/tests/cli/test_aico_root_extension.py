@@ -59,3 +59,18 @@ def test_root_dispatch_preserves_exact_argv(monkeypatch):
     arguments = ["root", "position", "root-1", "-20", "0", "960", "720", "--root-socket", "/fixture/gui.sock"]
     result = CliRunner().invoke(app(), ["aico", *arguments])
     assert result.exit_code == 0 and observed == [arguments]
+
+
+def test_create_help_exposes_fixed_work_roles_and_current_pi_launch_contract(monkeypatch):
+    monkeypatch.setattr("cli.extensions.dispatch_extension", lambda *a, **k: pytest.fail("dispatched"))
+    result = CliRunner().invoke(app(), ["aico", "create", "--help"])
+    assert result.exit_code == 0
+    assert "--work-role ID" in result.output
+    assert "--work-role-name" in result.output
+    assert "--agent-hub-context" in result.output
+    assert "--approve" in result.output
+    assert "Codex-only" not in result.output
+    manifest = aico_record().manifest
+    assert manifest is not None
+    assert manifest.help_options["create"]["--work-role"] == 1
+    assert manifest.help_options["create"]["--work-role-name"] == 1

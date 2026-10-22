@@ -262,3 +262,19 @@ requests addressed to themselves; parent requests survive chat resets.
 `st sessions inbox` distinguishes recorded (`open/unseen`), shown (`open/seen`)
 and answered (`acked`). A send receipt alone does not prove a reply.
 Use one channel; do not also type the message into the other terminal.
+
+
+New roots declare their fixed native-session work role with
+`st sessions start 'Short instruction' --work-role implementation` (or
+`st aico create ... --work-role implementation`). `--work-role-name Builder`
+adds an optional human name. The fixed IDs are coordinator, implementation,
+research, review, recon, hunting, operations and other. This declaration is
+separate from fleet `--role` and is not inherited from the coordinator.
+
+Fleet retains the explicit fields in its immutable creation capsule and passes
+`workRole`/`workRoleDisplayName` through the existing owner request. Legacy
+capsules and their original retry identity remain unchanged. Tether requires
+the field for new roots and exports the creation provenance to native hooks;
+Agent Hub binds it to the actual native UUID. Resume keeps that UUID's first
+work role. Changing roles requires a new native session or a fitting existing
+one. Neither launch path adds work-role text to the initial prompt.
