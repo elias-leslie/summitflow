@@ -8,6 +8,7 @@
  *   tool_call edit/write   -> edit mode   (auto-lease; a foreign lease WARNING is added to the tool
  *                                          result; blocks with one line only under a live acceptance/deploy)
  *   tool_call/result bash  -> bash-pre / bash-post (one warning line on a foreign-leased shell write)
+ *   idle/agent_end         -> surface new ST inbox requests as Pi user turns, so peers can coordinate
  * Silent when nothing overlaps; every failure allows the tool.
  */
 
@@ -16,12 +17,18 @@ import { spawn } from "node:child_process";
 import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
 
 const HOOK = `${process.env.HOME}/.claude/hooks/lease-check.sh`;
+const INBOX = `${process.env.HOME}/.claude/hooks/coord-inbox.sh`;
 
 type HookResult = { code: number; stdout: string; stderr: string };
 
-function runHook(mode: string | null, payload: Record<string, unknown>): Promise<HookResult> {
+function runHook(
+	mode: string | null,
+	payload: Record<string, unknown>,
+	script = HOOK,
+	extraArgs: string[] = [],
+): Promise<HookResult> {
 	return new Promise((resolve) => {
-		const child = spawn("bash", mode ? [HOOK, mode] : [HOOK], { stdio: ["pipe", "pipe", "pipe"] });
+		const child = spawn("bash", mode ? [script, mode, ...extraArgs] : [script], { stdio: ["pipe", "pipe", "pipe"] });
 		const out: Buffer[] = [];
 		const err: Buffer[] = [];
 		const timer = setTimeout(() => child.kill("SIGKILL"), 5000);
@@ -53,14 +60,37 @@ function additionalContext(result: HookResult): string | undefined {
 
 export default function (pi: ExtensionAPI) {
 	let notice: string | undefined;
+	let inboxTimer: NodeJS.Timeout | undefined;
+	let inboxBusy = false;
+	let sessionGeneration = 0;
 	const editWarnings = new Map<string, string>();
 
 	const base = (ctx: ExtensionContext) => ({
 		session_id: ctx.sessionManager.getSessionId(),
 		cwd: ctx.sessionManager.getCwd(),
 	});
+	const checkInbox = async (ctx: ExtensionContext, generation: number) => {
+		if (inboxBusy || !ctx.isIdle() || generation !== sessionGeneration) return;
+		inboxBusy = true;
+		try {
+			const result = await runHook("turn", {
+				...base(ctx),
+				hook_event_name: "PiIdle",
+			}, INBOX, ["pi"]);
+			const message = additionalContext(result);
+			if (message && generation === sessionGeneration) {
+				pi.sendUserMessage(message, { deliverAs: "followUp" });
+			}
+		} catch {
+			// A coordination check must never interrupt the current Pi turn.
+		} finally {
+			inboxBusy = false;
+		}
+	};
 
 	pi.on("session_start", async (event, ctx) => {
+		if (inboxTimer) clearInterval(inboxTimer);
+		sessionGeneration += 1;
 		process.env.PI_SESSION_ID = ctx.sessionManager.getSessionId();
 		const result = await runHook("session", {
 			...base(ctx),
@@ -68,6 +98,19 @@ export default function (pi: ExtensionAPI) {
 			source: event.reason === "new" ? "clear" : event.reason,
 		});
 		notice = additionalContext(result);
+		const generation = sessionGeneration;
+		inboxTimer = setInterval(() => { void checkInbox(ctx, generation); }, 15_000);
+		inboxTimer.unref();
+		void checkInbox(ctx, generation);
+	});
+
+	pi.on("agent_end", async (_event, ctx) => {
+		await checkInbox(ctx, sessionGeneration);
+	});
+
+	pi.on("session_shutdown", () => {
+		if (inboxTimer) clearInterval(inboxTimer);
+		inboxTimer = undefined;
 	});
 
 	pi.on("before_agent_start", async (event) => {
