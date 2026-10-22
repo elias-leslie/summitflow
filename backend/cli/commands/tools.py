@@ -735,19 +735,26 @@ def _native_usage_query() -> sql.SQL:
             sum((usage->>'input_tokens')::bigint) FILTER (WHERE event_type = 'usage') AS input_tokens,
             sum((usage->>'output_tokens')::bigint) FILTER (WHERE event_type = 'usage') AS output_tokens,
             sum((usage->>'cached_input_tokens')::bigint) FILTER (WHERE event_type = 'usage') AS cached_input_tokens,
-            sum((usage->>'cache_write_input_tokens')::bigint) FILTER (WHERE event_type = 'usage') AS cache_write_input_tokens,
+            sum((COALESCE(usage->>'cache_write_input_tokens', usage->>'cache_write_tokens'))::bigint)
+                FILTER (WHERE event_type = 'usage') AS cache_write_input_tokens,
             sum((usage->>'reasoning_output_tokens')::bigint) FILTER (WHERE event_type = 'usage') AS reasoning_output_tokens,
             count(usage->>'input_tokens') FILTER (WHERE event_type = 'usage')::int AS input_samples,
             count(usage->>'output_tokens') FILTER (WHERE event_type = 'usage')::int AS output_samples,
             count(usage->>'cached_input_tokens') FILTER (WHERE event_type = 'usage')::int AS cached_samples,
-            count(usage->>'cache_write_input_tokens') FILTER (WHERE event_type = 'usage')::int AS cache_write_samples,
+            count(COALESCE(usage->>'cache_write_input_tokens', usage->>'cache_write_tokens'))
+                FILTER (WHERE event_type = 'usage')::int AS cache_write_samples,
             count(usage->>'reasoning_output_tokens') FILTER (WHERE event_type = 'usage')::int AS reasoning_samples,
             COALESCE(model_used, 'unknown') AS model,
-            sum((usage->>'input_tokens')::bigint - (usage->>'cached_input_tokens')::bigint)
+            sum((usage->>'input_tokens')::bigint - (usage->>'cached_input_tokens')::bigint
+                - COALESCE((COALESCE(usage->>'cache_write_input_tokens', usage->>'cache_write_tokens'))::bigint, 0))
                 FILTER (WHERE event_type = 'usage' AND usage->>'scope' = 'response'
-                    AND (usage->>'cached_input_tokens')::bigint BETWEEN 0 AND (usage->>'input_tokens')::bigint) AS uncached_input_tokens,
+                    AND (usage->>'cached_input_tokens')::bigint BETWEEN 0 AND (usage->>'input_tokens')::bigint
+                    AND COALESCE((COALESCE(usage->>'cache_write_input_tokens', usage->>'cache_write_tokens'))::bigint, 0)
+                        BETWEEN 0 AND (usage->>'input_tokens')::bigint - (usage->>'cached_input_tokens')::bigint) AS uncached_input_tokens,
             count(*) FILTER (WHERE event_type = 'usage' AND usage->>'scope' = 'response'
-                AND (usage->>'cached_input_tokens')::bigint BETWEEN 0 AND (usage->>'input_tokens')::bigint)::int AS uncached_samples
+                AND (usage->>'cached_input_tokens')::bigint BETWEEN 0 AND (usage->>'input_tokens')::bigint
+                AND COALESCE((COALESCE(usage->>'cache_write_input_tokens', usage->>'cache_write_tokens'))::bigint, 0)
+                    BETWEEN 0 AND (usage->>'input_tokens')::bigint - (usage->>'cached_input_tokens')::bigint)::int AS uncached_samples
         FROM session_events
         WHERE event_type IN ('usage', 'usage_counter')
           AND usage IS NOT NULL

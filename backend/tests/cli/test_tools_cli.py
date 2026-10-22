@@ -67,7 +67,7 @@ def test_native_usage_query_separates_response_and_cumulative_evidence(test_db_u
     fixtures = sql.SQL("""
         WITH payloads(session_id, event_type, usage, source_timestamp, created_at) AS (
           VALUES
-            ('sess-1', 'usage', '{"scope":"response","source":"native","input_tokens":10,"output_tokens":0,"cached_input_tokens":4}'::json, now(), now()),
+            ('sess-1', 'usage', '{"scope":"response","source":"native","input_tokens":10,"output_tokens":0,"cached_input_tokens":4,"cache_write_tokens":2}'::json, now(), now()),
             ('sess-1', 'usage', '{"scope":"response","source":"native","input_tokens":5}'::json, now(), now()),
             ('sess-1', 'usage_counter', '{"scope":"thread","source":"counter","input_tokens":100}'::json, now(), now()),
             ('sess-2', 'usage', '{"scope":"response","source":"native","input_tokens":999}'::json, now(), now()),
@@ -81,9 +81,9 @@ def test_native_usage_query_separates_response_and_cumulative_evidence(test_db_u
     response = next(row for row in rows if row[0] == "response")
     counter = next(row for row in rows if row[0] == "thread")
     assert response[2] == 2
-    assert response[3:8] == (15, 0, 4, None, None)
-    assert response[8:13] == (2, 1, 1, 0, 0)
-    assert response[13:] == ("codex-model", 6, 1)
+    assert response[3:8] == (15, 0, 4, 2, None)
+    assert response[8:13] == (2, 1, 1, 1, 0)
+    assert response[13:] == ("codex-model", 4, 1)
     assert counter[2] == 1
     assert counter[3:8] == (None,) * 5
     assert counter[8:13] == (0,) * 5
