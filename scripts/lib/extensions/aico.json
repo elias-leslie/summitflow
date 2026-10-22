@@ -42,7 +42,7 @@
     "root end": {"--surface": 1, "--root-socket": 1, "--root-url": 1, "--owner-socket": 1}
   },
   "usage": [
-    {"surface": "st.aico.sessions", "cmd": "st aico sessions [--owner-socket PATH]", "when": "list all current Aico/Tether catalog sessions, including ordinary widgets omitted by roots", "precautions": ["Read-only catalog metadata; includes exact widget IDs, ownership/coordinator, tool, project/title, workload status and agent state. No terminal text, input or focus changes.", "Current Tether instance only; includes retained sessions with no visible window and omits ended sessions. Failure or an oversized response is reported, never a partial inventory."], "tier": "reference"},
+    {"surface": "st.aico.sessions", "cmd": "st aico sessions [--owner-socket PATH]", "when": "list Aico/Tether sessions, including ordinary widgets omitted by roots", "precautions": ["Read-only catalog metadata; includes widget IDs, ownership/coordinator, tool, project/title, workload and agent state. No terminal text, input or focus changes.", "Current Tether instance only; includes retained sessions with no visible window and omits ended sessions. Failure or an oversized response is reported, never a partial inventory."], "tier": "reference"},
     {
       "surface": "st.aico.create",
       "cmd": "st aico create REQUEST_ID [PROMPT] --tool claude-code|codex|pi --project PROJECT --project-root PATH [--resume-session SESSION_ID] [--surface aico|a-term] [--model MODEL] [--reasoning-effort EFFORT] [--daybreak on|off]",
