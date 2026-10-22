@@ -204,23 +204,37 @@ def _fetch_adoption_metrics(hours: int, limit: int, session: str | None = None) 
     # recorded as Bash rows), plus Codex exec wrapper scripts that have no
     # correlated nested rows, so each command is counted once.
     tool_cmds_cte = """
-        WITH tool_cmds AS (
-            SELECT CASE WHEN e.tool_name = 'exec' THEN e.tool_input->>'raw'
-                        ELSE COALESCE(e.tool_input->>'cmd', e.tool_input->>'command') END AS command
+        WITH recent AS MATERIALIZED (
+            SELECT e.session_id, e.tool_name,
+                   COALESCE(e.tool_input->>'cmd', e.tool_input->>'command') AS shell_command,
+                   e.tool_input->>'raw' AS raw,
+                   e.tool_input->>'call_id' AS wrapper_call_id
             FROM session_events e
             WHERE e.created_at >= now() - (%s * interval '1 hour')
               AND (%s::text IS NULL OR e.session_id = %s)
               AND e.event_type = 'tool_use'
-              AND (
-                (e.tool_name IN ('Bash', 'bash', 'exec_command')
-                 AND COALESCE(e.tool_input->>'cmd', e.tool_input->>'command') IS NOT NULL)
-                OR (e.tool_name = 'exec' AND e.tool_input->>'raw' ~ 'exec_command'
-                    AND NOT EXISTS (
-                        SELECT 1 FROM session_events n
-                        WHERE n.session_id = e.session_id
-                          AND n.tool_input->>'wrapper_candidate_call_id' = e.tool_input->>'call_id'
-                    ))
-              )
+              AND e.tool_name IN ('Bash', 'bash', 'exec_command', 'exec')
+        ), wrapper_sessions AS MATERIALIZED (
+            SELECT DISTINCT session_id FROM recent
+            WHERE tool_name = 'exec' AND raw ~ 'exec_command'
+        ), linked AS MATERIALIZED (
+            SELECT DISTINCT n.session_id,
+                   n.tool_input->>'wrapper_candidate_call_id' AS wrapper_id
+            FROM session_events n
+            JOIN wrapper_sessions s ON s.session_id = n.session_id
+            WHERE n.tool_input->>'wrapper_candidate_call_id' IS NOT NULL
+        ), tool_cmds AS (
+            SELECT CASE WHEN e.tool_name = 'exec' THEN e.raw
+                        ELSE e.shell_command END AS command
+            FROM recent e
+            WHERE (e.tool_name IN ('Bash', 'bash', 'exec_command')
+                   AND e.shell_command IS NOT NULL)
+               OR (e.tool_name = 'exec' AND e.raw ~ 'exec_command'
+                   AND NOT EXISTS (
+                       SELECT 1 FROM linked n
+                       WHERE n.session_id = e.session_id
+                         AND n.wrapper_id = e.wrapper_call_id
+                   ))
         )
     """
     summary_sql = tool_cmds_cte + """
