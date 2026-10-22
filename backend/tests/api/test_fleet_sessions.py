@@ -111,11 +111,12 @@ def execution_fleet(ensure_test_project, tmp_path, monkeypatch):
             raise httpx.ConnectError("Fixture owner has no read endpoint")
         launches.append(body)
         return {"owner": surface, "hostIdentity": "aabbccdd", "generation": "a" * 64,
-                "logicalSessionId": "fixture-root", "surfaceLocator": "aico://widget/aabbccdd", "status": "running"}
+                "logicalSessionId": "fixture-root", "surfaceLocator": "aico://widget/aabbccdd", "status": "running",
+                "workRole": body.get("workRole"), "workRoleDisplayName": body.get("workRoleDisplayName")}
 
     monkeypatch.setattr(api.service, "_host_request", owner)
     root = "root-" + uuid.uuid4().hex
-    capsule = {"project_id": ensure_test_project, "instruction": "Review source.", "root": root}
+    capsule = {"project_id": ensure_test_project, "instruction": "Review source.", "root": root, "work_role": "implementation"}
     try:
         with _client() as api_client:
             def dispatch(request):
@@ -218,6 +219,7 @@ def test_sdk_start_rejects_invalid_execution_before_registering_or_launching(exe
 
 def test_sdk_legacy_root_retry_preserves_immutable_capsule(execution_fleet):
     sdk, capsule, canonical, _, launches = execution_fleet
+    capsule = {key: value for key, value in capsule.items() if key != "work_role"}
     # Seed a retained pre-feature lifecycle row, as encountered after upgrade.
     fleet_events.append_fleet_event(capsule["project_id"], capsule["root"], source_key="root:start",
                                    event_type="root.started", attributes={

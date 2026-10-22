@@ -65,6 +65,7 @@ def roots(ensure_test_project, monkeypatch):
     def start(**kwargs):
         root = "root-" + uuid.uuid4().hex
         handles.append(root)
+        kwargs.setdefault("work_role", "implementation")
         return service.start_root(ensure_test_project, "/fixture/project", root=root, tool="codex", instruction="Review exact source refs.", **kwargs)
 
     yield start
@@ -95,7 +96,7 @@ def test_unavailable_host_and_send_are_honest_and_idempotent(roots, monkeypatch)
 def test_same_root_retry_does_not_recreate_uncertain_host(roots, monkeypatch):
     monkeypatch.setattr(service, "_host_start", MagicMock(side_effect=httpx.ConnectError("fixture unavailable")))
     first = roots(scope={})
-    retry = service.start_root(first["project_id"], "/fixture/project", root=first["root"], tool="codex", instruction="Review exact source refs.", scope={})
+    retry = service.start_root(first["project_id"], "/fixture/project", root=first["root"], tool="codex", instruction="Review exact source refs.", scope={}, work_role="implementation")
     assert retry["root"] == first["root"]
     cast(MagicMock, service._host_start).assert_called_once()
 
@@ -113,10 +114,10 @@ def test_resume_passes_exact_id_to_owner_and_retains_only_its_digest(roots):
     assert events[0]["attributes"]["resume_session_digest"] == hashlib.sha256(RESUME.encode()).hexdigest()
     with pytest.raises(fleet.SourceKeyConflict):
         service.start_root(state["project_id"], "/fixture/project", root=state["root"], tool="codex",
-                           instruction="Review exact source refs.", scope={},
+                           instruction="Review exact source refs.", scope={}, work_role="implementation",
                            resume_session="00000000-0000-4000-8000-000000000002")
     assert service.start_root(state["project_id"], "/fixture/project", root=state["root"], tool="codex",
-                              instruction="Review exact source refs.", scope={},
+                              instruction="Review exact source refs.", scope={}, work_role="implementation",
                               resume_session=RESUME)["root"] == state["root"]
     host_start.assert_called_once()
 
@@ -430,7 +431,7 @@ def test_uncertain_root_reconciliation_uses_get_and_pins_identity(roots, monkeyp
     state = roots(scope={})
     descriptor = {
         "owner": "aico", "requestId": state["root"], "role": "portfolio-root", "leadRootReference": None,
-        "facetCapsuleRef": None, "hostIdentity": "aabbccdd", "generation": "a" * 64,
+        "facetCapsuleRef": None, "workRole": "implementation", "workRoleDisplayName": None, "hostIdentity": "aabbccdd", "generation": "a" * 64,
         "logicalSessionId": "aico-root-fixture", "surfaceLocator": "aico://widget/aabbccdd", "status": "running",
     }
     request = MagicMock(return_value=descriptor)
@@ -463,7 +464,7 @@ def test_matching_provider_tombstone_confirms_close_without_end_retry(roots, mon
     state = roots(scope={})
     descriptor = {
         "owner": "aico", "requestId": state["root"], "role": "portfolio-root", "leadRootReference": None,
-        "facetCapsuleRef": None, "hostIdentity": "aabbccdd", "generation": None,
+        "facetCapsuleRef": None, "workRole": "implementation", "workRoleDisplayName": None, "hostIdentity": "aabbccdd", "generation": None,
         "logicalSessionId": "aico-root-fixture", "surfaceLocator": "aico://widget/aabbccdd", "status": "ended",
     }
     monkeypatch.setattr(service, "_host_request", MagicMock(return_value=descriptor))
@@ -584,3 +585,43 @@ def test_fleet_work_role_is_immutable_capsule_metadata(roots):
     with pytest.raises(fleet.SourceKeyConflict):
         service.start_root(state["project_id"], "/fixture/project", root=state["root"], tool="codex",
             instruction="Review exact source refs.", scope={}, work_role="research", work_role_name="Builder")
+
+
+def test_new_fleet_root_without_work_role_fails_before_any_capsule_or_host_write(monkeypatch):
+    monkeypatch.setattr(service, "fleet_root_events", lambda _: [])
+    append = MagicMock()
+    host = MagicMock()
+    monkeypatch.setattr(service, "append_fleet_event", append)
+    monkeypatch.setattr(service, "_host_start", host)
+    with pytest.raises(ValueError, match="New fleet roots require --work-role"):
+        service.start_root("fixture", "/fixture/project", root="root-" + "0" * 32,
+            tool="codex", instruction="Review exact source refs.", scope={})
+    append.assert_not_called()
+    host.assert_not_called()
+
+
+def test_legacy_fleet_retry_keeps_its_original_capsule_without_declaration(ensure_test_project, monkeypatch):
+    root = "root-" + uuid.uuid4().hex
+    monkeypatch.setattr(fleet, "get_redis", lambda: MagicMock())
+    attributes = {"tool": "codex", "surface": "aico", "project_root": "/fixture/project",
+        "execution_root": "/fixture/project", "scope": {}, "role": "portfolio-root",
+        "lead_root": None, "facet": None, "support_only": False, "offline": False,
+        "instruction_digest": hashlib.sha256(b"Review exact source refs.").hexdigest()}
+    try:
+        original = fleet.append_fleet_event(ensure_test_project, root, source_key="root:start",
+            event_type="root.started", attributes=attributes)
+        fleet.append_fleet_event(ensure_test_project, root, source_key="root:host",
+            event_type="root.host-unavailable", attributes={"capability": "unavailable"})
+        host = MagicMock()
+        monkeypatch.setattr(service, "_host_start", host)
+        state = service.start_root(ensure_test_project, "/fixture/project", root=root,
+            tool="codex", instruction="Review exact source refs.", scope={})
+        assert "work_role" not in state
+        retained = fleet.read_fleet_page(ensure_test_project, root)[0]
+        assert retained["digest"] == original["digest"]
+        assert retained["attributes"] == attributes
+        host.assert_not_called()
+    finally:
+        with get_connection() as conn:
+            conn.execute("DELETE FROM events WHERE trace_id = %s", (root,))
+            conn.commit()

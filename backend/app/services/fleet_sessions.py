@@ -327,6 +327,8 @@ def start_root(
         # Retain no native thread binding; the digest makes a changed retry conflict.
         capsule["resume_session_digest"] = hashlib.sha256(resume_session.encode()).hexdigest()
     prior = fleet_root_events(root)
+    if work_role is None and (not prior or prior[0]["event_type"] != "root.started"):
+        raise ValueError("New fleet roots require --work-role; resume keeps the native session's original role")
     if (prior and prior[0]["event_type"] == "root.started"
             and "execution_root" not in prior[0]["attributes"] and execution_root == project_root):
         # Do not change a retained pre-feature root:start digest on retry.
