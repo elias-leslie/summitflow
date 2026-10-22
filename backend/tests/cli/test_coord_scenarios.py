@@ -472,7 +472,8 @@ def _hook(payload: dict, tmp: Path, *args: str, **env: str) -> subprocess.Comple
         "CLAUDE_CODE_SESSION_ID", "CODEX_THREAD_ID", "CLAUDE_SESSION_ID", "TMUX_PANE", "ST_SESSION_ID",
         "CODEX_SESSION_ID", "ST_COORD_SENSITIVE", "PI_SESSION_ID"}}
     # Exercise this checkout's coord code, not the deployed release.
-    clean.update({"ST_LEASES_DIR": str(tmp / "hook-leases"), "ST_DEV_CHECKOUT": "1", "ST_COORD_ANCHOR": "", **env})
+    clean.update({"ST_LEASES_DIR": str(tmp / "hook-leases"), "XDG_RUNTIME_DIR": str(tmp),
+                  "ST_DEV_CHECKOUT": "1", "ST_COORD_ANCHOR": "", **env})
     # Harnesses run hooks with the user's PATH; the native gate's allowlist lacks coreutils.
     clean["PATH"] = f"{clean.get('PATH', '')}:/usr/bin:/bin"
     return subprocess.run(["bash", str(HOOK), *args], input=json.dumps(payload), capture_output=True,
@@ -740,11 +741,17 @@ def test_real_hook_session_start_and_shell_write_overlap(repos, tmp_path, harnes
     shell = {"hook_event_name": "PreToolUse", "session_id": "cccc33-other", "tool_name": "Bash",
              "tool_use_id": "toolu_1", "cwd": str(repo), "tool_input": {"command": "sed -i s/1/2/ backend/a.py"}}
     other = {"ST_COORD_ANCHOR": other_anchor, "ST_COORD_HARNESS": "claude_code"}
-    assert _hook(shell, tmp_path, "bash-pre", **other).returncode == 0
+    # Same-size writes in the same second must still be detected.
+    timestamp = 1_700_000_000_000_000_000
+    (repo / "backend" / "a.py").write_text("a = 2\n")
+    os.utime(repo / "backend" / "a.py", ns=(timestamp, timestamp))
+    pre = _hook(shell, tmp_path, "bash-pre", **other)
+    assert pre.returncode == 0
     (repo / "backend" / "a.py").write_text("a = 7\n")
+    os.utime(repo / "backend" / "a.py", ns=(timestamp + 1, timestamp + 1))
     (repo / "backend" / "new.py").write_text("n = 1\n")
     post = _hook({**shell, "hook_event_name": "PostToolUse"}, tmp_path, "bash-post", **other)
-    assert post.returncode == 2
+    assert post.returncode == 2, pre.stderr + post.stderr
     lines = post.stderr.strip().splitlines()
     assert len(lines) == 1 and lines[0].startswith("OVERLAP: this shell command wrote hostrepo: backend/a.py leased by cc:aaaa11")
     # A read-only command is silent and costs no Python start.
@@ -978,6 +985,27 @@ def test_long_native_instruction_rides_the_ledger_and_wakes_with_a_pointer(repos
     line = coord_wake.pane_line(f"st coordination:\nREQUEST {row['id']} from cc:x: {row['text']}", 1)
     assert len(line) <= coord_wake.TYPE_MAX and "st sessions inbox" in line and row["text"] not in line
     assert coord_wake.pane_line("head\nREQUEST ab12 from cc:x: hi", 1) == "head ; REQUEST ab12 from cc:x: hi"
+
+
+def test_delivery_status_correlates_sender_recipient_project_and_source(repos, monkeypatch):
+    as_claude(monkeypatch, "receipt-sender-01")
+    row = coord.send("codex:target", "private instruction", project="fixture", source_key="r1")
+    pins = {"to": "codex:target", "project": "fixture", "source_key": "r1"}
+    assert coord.delivery_status(row["id"], **pins)["delivery"] == "queued"
+    for key in pins:
+        with pytest.raises(ValueError, match="identity"):
+            coord.delivery_status(row["id"], **{**pins, key: "other"})
+    as_codex(monkeypatch, "receipt-other-01")
+    with pytest.raises(ValueError, match="identity"):
+        coord.delivery_status(row["id"], **pins)
+    assert coord.delivery_status("absent", **pins)["delivery"] == "unknown"
+    as_claude(monkeypatch, "receipt-sender-01")
+    with leases._lock("_coord"):
+        rows = coord._load_ledger()
+        rows[0].update(state="acked", intent="yes", acked_at=datetime.now(UTC).isoformat(), note="private response")
+        coord._save_ledger(rows)
+    result = coord.delivery_status(row["id"], **pins)
+    assert result == {"delivery": "acked", "observed": True, "intent": "yes", "withdrawn": False}
 
 
 def test_sender_withdraws_unacked_request_to_unmatchable_label(repos, monkeypatch):

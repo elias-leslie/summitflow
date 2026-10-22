@@ -529,6 +529,21 @@ def surfaced(row: dict[str, Any]) -> bool:
     return f"{row['id']}:req" in coord_wake.load_seen(str(row["to"]))
 
 
+def delivery_status(message_id: str, *, to: str, project: str, source_key: str) -> dict[str, Any]:
+    """Read one sender-owned inbox receipt without exposing message or reply text."""
+    with leases._lock("_coord"):
+        rows = _load_ledger()
+    row = next((row for row in rows if row["id"] == message_id), None)
+    if row is None:
+        return {"delivery": "unknown", "observed": False, "reason": "coordination_receipt_unavailable"}
+    if (row["from"] not in leases.self_ids() or row["to"] != to
+            or row.get("project") != project or row.get("source_key") != source_key):
+        raise ValueError("Coordination receipt identity does not match the retained native request")
+    observed = bool(row.get("acked_at")) or surfaced(row)
+    return {"delivery": row["state"] if row["state"] != "open" else "seen" if observed else "queued",
+            "observed": observed, "intent": row.get("intent"), "withdrawn": bool(row.get("withdrawn"))}
+
+
 def inbox() -> list[dict[str, Any]]:
     """Requests awaiting my ack, and acks awaiting my confirm."""
     agent_id, _, session_id, _ = leases.identify_agent()

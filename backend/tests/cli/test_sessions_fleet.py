@@ -246,7 +246,19 @@ def test_native_thread_to_a_live_tui_wakes_through_the_ledger_not_the_queue(monk
     monkeypatch.setattr(coord_wake, "STATE", tmp_path)
     monkeypatch.setattr(native, "get_project_root_path", lambda project: str(tmp_path))
     monkeypatch.setattr(native, "verify_thread_binding", lambda *a: {"thread_id": thread})
-    monkeypatch.setattr(native, "append_fleet_event", lambda *a, **k: pytest.fail("live threads are not queued"))
+    records = []
+
+    def append(*args, source_key, attributes, event_type, **kwargs):
+        old = next((row for row in records if row["source_key"] == source_key), None)
+        if old:
+            return {**old, "created": False}
+        row = {"id": len(records) + 1, "source_key": source_key, "attributes": attributes, "event_type": event_type}
+        records.append(row)
+        return {**row, "created": True}
+
+    monkeypatch.setattr(native, "append_fleet_event", append)
+    monkeypatch.setattr(native, "read_fleet_page", lambda *a, **k: records)
+    monkeypatch.setattr(native, "queue_native_thread", lambda *a, **k: pytest.fail("live threads are not queued offline"))
     monkeypatch.setattr(native, "WAKE_CONFIRM_SECONDS", 0.3)
 
     # Busy (no armed idle watcher): recorded and left queued for its next turn hook.
@@ -258,10 +270,13 @@ def test_native_thread_to_a_live_tui_wakes_through_the_ledger_not_the_queue(monk
     import json
 
     monkeypatch.setattr(coord_wake, "codex_watch_pid", lambda agent: 4242)
-    row_id = coord._load_ledger()[0]["id"]
+    row_id = busy["coordination_request_id"]
     coord_wake.seen_path("codex:8af197").write_text(json.dumps({f"{row_id}:req": 1.0}))
     woken = native.send_native_instruction(thread, "Review the plan", project="p", source_key="r:1")
-    assert woken["delivery"] == "woken" and woken["observed"] and woken["request_id"] == row_id
+    assert woken == busy  # retry reconciles the retained send; verify reads current state
+    status = native.verify_native_instruction(thread, project="p", source_key="r:1")
+    assert status["delivery"] == "seen" and status["observed"]
+    assert status["coordination_request_id"] == row_id
     assert len(coord._load_ledger()) == 1  # identical open request is not duplicated
 
 

@@ -38,6 +38,8 @@ def test_aico_create_manifest_exposes_exact_resume_without_fleet_retention():
                    "same REQUEST_ID", "No prompt retention", "already running owner"):
         assert phrase in text
     options = record.manifest.help_options["create"]
+    for flag in ("--model", "--reasoning-effort", "--daybreak"):
+        assert options[flag] == 1 and flag in text
     assert all(options[name] == 1 for name in ("--resume-session", "--surface", "--project", "--project-root"))
     assert options["--stdin"] == 0
     assert "st.aico.create" in {row["surface"] for row in record.manifest.usage}

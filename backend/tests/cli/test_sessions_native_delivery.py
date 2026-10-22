@@ -102,6 +102,24 @@ def test_invalid_instruction_or_key_never_reserves(store, instruction, key):
     assert not store
 
 
+def test_verify_live_ledger_request_reports_ack_without_native_queue(store, monkeypatch):
+    monkeypatch.setattr(delivery, "_deliver_live", lambda *_, **__: {
+        "transport": "coordination-ledger", "request_id": "abc123", "agent_id": "codex:target",
+        "delivery": "queued", "observed": False,
+    })
+    delivery.send_native_instruction(THREAD, "Pause", project="fixture", source_key="revision:1")
+    monkeypatch.setattr(delivery.coord, "delivery_status", lambda *_, **__: {
+        "delivery": "acked", "observed": True, "intent": "yes",
+    }, raising=False)
+    monkeypatch.setattr(delivery, "inspect_native_delivery", lambda *_, **__: pytest.fail("offline RPC"))
+    result = delivery.verify_native_instruction(THREAD, project="fixture", source_key="revision:1")
+    assert result["transport"] == "coordination-ledger"
+    assert result["coordination_request_id"] == "abc123"
+    assert result["delivery"] == "acked" and result["observed"] is True
+    assert result["execution"] == "not_observed"
+    assert "text" not in result and "note" not in result
+
+
 @pytest.fixture
 def identity(tmp_path, monkeypatch):
     path = tmp_path / f"rollout-{THREAD}.jsonl"

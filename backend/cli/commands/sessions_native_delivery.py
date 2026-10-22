@@ -29,9 +29,6 @@ def send_native_instruction(thread: str, instruction: str, *, project: str, sour
     prompt = sanitized_instruction(instruction)
     if not source_key or len(source_key) > 256:
         raise ValueError("Native delivery requires a stable source key of 1-256 characters")
-    live = _deliver_live(thread, prompt, project=project, source_key=source_key)
-    if live is not None:
-        return live
     # A separate trace in the same events table bounds reconciliation to this
     # exact source revision; no provider replay or second queue is introduced.
     address = f"{project}:{thread}:{source_key}"
@@ -51,8 +48,15 @@ def send_native_instruction(thread: str, instruction: str, *, project: str, sour
         result = next((event for event in events if event["event_type"] == "native.delivery.result"), None)
         return {**base, **(result["attributes"] if result else {"delivery": "pending-or-uncertain"}), "replayed": False}
     try:
-        receipt = queue_native_thread(thread, prompt, client_id, project_root)
-        result = {**receipt, "delivery": "queued", "observed": False}
+        live = _deliver_live(thread, prompt, project=project, source_key=source_key)
+        if live is not None:
+            # Keep the native reservation identity separate from the inbox's
+            # handshake key. Verification follows the same retained transport.
+            result = {**live, "coordination_request_id": live["request_id"]}
+            result.pop("request_id")
+        else:
+            receipt = queue_native_thread(thread, prompt, client_id, project_root)
+            result = {**receipt, "delivery": "queued", "observed": False}
     except NativeQueueError as exc:
         result = {"delivery": "uncertain" if exc.uncertain else "failed", "reason": str(exc), "observed": False}
     append_fleet_event(project, trace, source_key="result", event_type="native.delivery.result", attributes=result)
@@ -128,6 +132,14 @@ def verify_native_instruction(thread: str, *, project: str, source_key: str,
             "thread_id": thread, "source_key": source_key, "request_id": request["id"],
             "queue_id": selected_queue, "client_user_message_id": expected_client,
             "generation_fenced": False, "resent": False}
+    if retained.get("transport") == "coordination-ledger":
+        if queue_id is not None:
+            raise ValueError("Live coordination delivery has no native queue identity")
+        status = coord.delivery_status(retained["coordination_request_id"],
+                                       to=retained["agent_id"], project=project, source_key=source_key)
+        return {**base, "transport": "coordination-ledger",
+                "coordination_request_id": retained["coordination_request_id"],
+                "execution": "not_observed", "thread_state": "live_at_send", **status}
     if retained.get("delivery") == "failed":
         return {**base, "delivery": "failed", "execution": "not_observed", "observed": False,
                 "thread_state": "unknown", "reason": "retained_send_failed"}

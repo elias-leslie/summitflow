@@ -49,7 +49,9 @@ snapshot() {  # "<mtime_ns> <abs path>" per dirty file of repo $1, "D <abs path>
         [ -n "$rec" ] || continue
         if [ -e "$top/$rec" ] || [ -L "$top/$rec" ]; then present+=("$top/$rec"); else printf 'D %s\n' "$top/$rec"; fi
     done < <(git -C "$top" status --porcelain=v1 -z --untracked-files=all 2>/dev/null)
-    [ ${#present[@]} -eq 0 ] || printf '%s\0' "${present[@]}" | xargs -0 -r stat -c '%.9Y %n' 2>/dev/null
+    # %Y has only whole seconds, even with a precision. Preserve %y's nanoseconds
+    # and remove timestamp spaces so equal-size writes within one second differ.
+    [ ${#present[@]} -eq 0 ] || printf '%s\0' "${present[@]}" | xargs -0 -r stat -c '%y %n' 2>/dev/null | sed 's/ /T/;s/ //'
 }
 field() {  # top-level JSON string value of key $1 (pure shell); exit 1 when absent or escaped
     local re="\"$1\"[[:space:]]*:[[:space:]]*\"([^\"]*)\""

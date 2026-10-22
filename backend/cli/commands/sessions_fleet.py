@@ -311,7 +311,7 @@ def register(app: typer.Typer) -> None:
     precautions=(
         "Read-only and bounded (>0, <=30 seconds); never resends, resumes, starts turns, or changes native queues. Timeout/unsupported protocol returns unknown.",
         "Only a correlated user-message clientId proves consumption. Queue absence is deleted-or-unknown; unrelated active turns do not prove this brief started.",
-        "Reports queue, consumption with turn/item IDs, correlated execution status and offline/unloaded state without content. Queue/history reads are separate observations, not an atomic snapshot.",
+        "Live sends report the exact coordination inbox request as queued, seen, acked or closed; an ack is not execution proof. Offline sends report native queue, correlated consumption and turn execution. Expired inbox receipts are unknown.",
         "Native-thread send remains <=2000 sanitized UTF-8 bytes and source-key idempotent; generation-fenced send and /clear remain owner-side gaps.",
     ),
     tier="reference",
@@ -326,9 +326,11 @@ def verify(
 ) -> None:
     """Verify prior native delivery without message or terminal text; never resend.
 
-    Queue absence means deleted-or-unknown. Only an exact correlated user-message
-    clientId proves consumption; execution status belongs to that turn. Offline,
-    timeout and unsupported protocol stay explicit. No generation fence or /clear.
+    Live sends read their exact coordination inbox receipt: queued, seen, acked
+    or closed. An ack proves a reply, not task execution. Offline sends inspect
+    native queue/history; only the correlated clientId proves consumption and
+    execution belongs to that turn. Expired receipts and timeouts stay unknown.
+    No generation fence or /clear.
     """
     from .sessions_native_delivery import verify_native_instruction
 
