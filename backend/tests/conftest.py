@@ -29,6 +29,10 @@ _env_file = Path.home() / ".env.local"
 if _env_file.exists():
     load_dotenv(_env_file, override=True)
 
+# API tests exercise the default local-owner mode regardless of the host's
+# runtime setting. Explicit flag-off cases patch settings within their tests.
+os.environ["SUMMITFLOW_LOOPBACK_IS_OWNER"] = "true"
+
 # CLI assertions inspect text, not terminal styling. Keep Rich/Typer output
 # stable under GitHub Actions and developer terminals before CLI imports.
 os.environ["NO_COLOR"] = "1"
