@@ -127,18 +127,19 @@ def result_diagnostics_query() -> sql.Composed:
         SELECT report FROM (
             {ctes}, delivered AS (
                 SELECT * FROM measured WHERE NOT nested_with_measured_wrapper
+            ), nested_commands AS (
+                SELECT session_id, call_input->>'wrapper_candidate_call_id' AS wrapper_id,
+                       CASE WHEN count(*) = 1 THEN max(COALESCE(call_input->>'cmd', call_input->>'command')) END AS command
+                FROM measured
+                WHERE nested_with_measured_wrapper
+                GROUP BY session_id, call_input->>'wrapper_candidate_call_id'
             ), retrievals AS (
                 SELECT d.*, NULLIF(s.agent_slug, '') AS agent_role,
                        CASE WHEN s.external_id LIKE 'task-%%' THEN s.external_id END AS task_identity,
                        COALESCE(d.call_input->>'cmd', d.call_input->>'command', nested.command) AS command
                 FROM delivered d LEFT JOIN sessions s ON s.id = d.session_id
-                LEFT JOIN LATERAL (
-                    SELECT CASE WHEN count(*) = 1 THEN max(COALESCE(n.call_input->>'cmd', n.call_input->>'command')) END AS command
-                    FROM measured n
-                    WHERE d.call_kind = 'wrapper' AND n.nested_with_measured_wrapper
-                      AND n.session_id = d.session_id
-                      AND n.call_input->>'wrapper_candidate_call_id' = d.call_identity
-                ) nested ON true
+                LEFT JOIN nested_commands nested ON d.call_kind = 'wrapper'
+                    AND nested.session_id = d.session_id AND nested.wrapper_id = d.call_identity
             ), repeats AS (
                 SELECT resolved_tool AS tool_name, agent_role, task_identity,
                        md5(command) AS input_digest, md5(output_text) AS output_digest,

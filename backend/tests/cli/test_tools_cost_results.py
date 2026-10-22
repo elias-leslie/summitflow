@@ -175,6 +175,29 @@ def test_repeated_single_nested_retrieval_is_counted_once_per_wrapper(test_db_ur
     assert "--surface <surface>" in render_cost_advisory(data)
 
 
+def test_multiple_nested_commands_do_not_assign_one_command_to_wrapper(test_db_url: str) -> None:
+    events = []
+    for index in range(2):
+        wrapper = f"wrapper-{index}"
+        events.extend([
+            {"event_type": "tool_use", "call_id": wrapper, "tool_name": "exec", "tool_input": {"raw": "multiple commands"}},
+            {"call_id": wrapper, "content": "x" * 40000},
+        ])
+        for part in range(2):
+            nested = f"nested-{index}-{part}"
+            events.extend([
+                {"event_type": "tool_use", "call_id": nested, "tool_name": "Bash", "tool_input": {
+                    "command": "st tools manifest --density full", "wrapper_candidate_call_id": wrapper,
+                    "wrapper_correlation": "nested_command_digest",
+                }},
+                {"call_id": nested, "content": "x" * 40000},
+            ])
+    diagnostics = _diagnostics(test_db_url, events)["result_diagnostics"]
+    assert diagnostics["summary"]["results"] == 2
+    assert diagnostics["nested_results_excluded"] == 4
+    assert diagnostics["repeated_retrievals"] == []
+
+
 def test_result_identity_is_scoped_to_its_session_and_payload_call_id(test_db_url: str) -> None:
     events = [
         {"event_type": "tool_use", "session_id": "sess-1", "call_id": "same", "tool_name": "first"},
