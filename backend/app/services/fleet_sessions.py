@@ -30,7 +30,7 @@ from .pubsub import fleet_wake_subscription
 RootRole = Literal["portfolio-root", "neri-target-root", "neri-support-root"]
 RootSurface = Literal["aico", "a-term", "tether"]
 # Root descriptors name their owner. Tether keeps Aico's owner name for its
-# roots; A-Term's /v1/roots (a Tether proxy after the cutover) presents "a-term".
+# roots; Aico's web backend (/v1/roots, a Tether proxy) still presents "a-term".
 _SURFACE_OWNER = {"aico": "aico", "tether": "aico", "a-term": "a-term"}
 _KEY = re.compile(r"[A-Za-z0-9][A-Za-z0-9._:-]{0,127}")
 # Owners bound a resumed launch prompt to 2000 UTF-8 bytes of tab/newline-only text.
@@ -120,9 +120,9 @@ def _owner_socket(surface: str, *, owner_control: bool) -> str:
 def _a_term_default_url() -> str:
     from ..project_identity import get_runtime_port
 
-    port = get_runtime_port("a-term", "backend_port")
+    port = get_runtime_port("aico", "backend_port")
     if port is None:
-        raise ValueError("A-Term root control needs A-Term's backend port in its project identity")
+        raise ValueError("A-Term root control needs Aico's web backend port in its project identity")
     return f"http://127.0.0.1:{port}"
 
 

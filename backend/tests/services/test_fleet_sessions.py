@@ -346,7 +346,7 @@ def test_a_term_default_route_comes_from_a_term_identity(monkeypatch):
 
     monkeypatch.delenv("A_TERM_ROOT_CONTROL_URL", raising=False)
     monkeypatch.setattr(project_identity, "get_project_identity",
-                        lambda project_id, root_path=None: {"runtime": {"backend_port": 8102}} if project_id == "a-term" else None)
+                        lambda project_id, root_path=None: {"runtime": {"backend_port": 8102}} if project_id == "aico" else None)
     assert service._a_term_default_url() == "http://127.0.0.1:8102"
     monkeypatch.setattr(project_identity, "get_project_identity", lambda project_id, root_path=None: None)
     with pytest.raises(ValueError, match="backend port"):

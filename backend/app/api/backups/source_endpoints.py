@@ -88,7 +88,7 @@ async def update_backup_source(
     request: BackupSourceUpdate,
     project_id: str | None = None,
 ) -> BackupSourceResponse:
-    """Update a backup source (name, schedule config)."""
+    """Update a backup source (name, schedule config, owning project)."""
     existing = backup_store.get_source(source_id)
     if not existing:
         raise HTTPException(status_code=404, detail=f"Source {source_id} not found")

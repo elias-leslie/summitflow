@@ -93,8 +93,11 @@ def create_source(
 
 
 def update_source(source_id: str, **fields: Any) -> dict[str, Any] | None:
-    """Update a backup source. Accepts: name, enabled, frequency, retention_days, path."""
-    allowed = {"name", "enabled", "frequency", "retention_days", "path"}
+    """Update a backup source. Accepts: name, enabled, frequency, retention_days, path, project_id.
+
+    Moving a source to another project keeps its id, so its backup history stays attached.
+    """
+    allowed = {"name", "enabled", "frequency", "retention_days", "path", "project_id"}
     updates = []
     params: list[Any] = []
 

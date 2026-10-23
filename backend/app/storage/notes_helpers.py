@@ -9,7 +9,9 @@ from psycopg.rows import TupleRow
 NoteType = Literal["note", "prompt"]
 
 _CANONICAL_SCOPE_ALIASES = {
-    "terminal": "a-term",
+    "a-term": "aico",
+    "terminal": "aico",
+    "tether": "aico",
 }
 
 

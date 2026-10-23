@@ -1,10 +1,10 @@
 {
   "id": "tether.cli",
-  "owner": "tether",
+  "owner": "aico",
   "namespace": "tether",
   "version": "0.1.0",
   "st_contract_versions": [1],
-  "summary": "Inspect and operate Tether, the per-user session daemon that owns Aico and A-Term tmux sessions.",
+  "summary": "Inspect and operate Tether, Aico's per-user session daemon that owns its desktop and web tmux sessions.",
   "effects": ["read-local", "write-local", "process"],
   "help": {
     "": "Usage: st tether [--instance NAME] [--json] <command>\n\nCommands:\n  serve                         run the daemon (used by tether@<instance>.service)\n  doctor                        check host prerequisites and the running daemon\n  version                       print the CLI and daemon versions\n  sessions [list | get <id>]    session catalog\n  sessions create [--tool T] [--project P] [--name N] [--show]   (alias: new)\n  sessions show <id>            open or focus the session's Aico window\n  reboot prepare [--timeout SEC] [--no-notify]   ask agents to checkpoint; exit 0 ready, 3 not\n  reboot status                 restore results since the last boot\n  recovery status               crash recoveries: waiting, recovered or held\n  recovery resume <id>          try a held session's recovery again now\n  sessions end <id>             retire one session (reads its generation first)\n  sessions attach <id> [--print]\n                                attach this terminal (exec tmux); --print shows\n                                the argv. Inside another tmux server the client\n                                nests with TMUX unset; inside the same server\n                                it switches the current client.\n  sessions diagnostics <id>\n  roots [list | show <requestId>]\n  import-aico --from PATH [--apply]\n                                copy a pre-Tether Aico catalog (an archived\n                                aico.db; dry-run unless --apply; opened\n                                read-only; stop the daemon first)\n  tools [list]                  merged agent-tool registry\n  tools get <slug>\n  tools add <slug> <name> -- <argv...>\n  tools default|enable|disable <slug>\n  tools rm <slug>\n  projects [--refresh]          project list (SummitFlow, else local)\n\nThe instance defaults to $TETHER_INSTANCE or \"default\".\n\nForwards to the installed $HOME/.local/lib/tether/bin/tether. Fleet roots: prefer st sessions start/close so the fleet ledger records them. Daemon administration uses explicit serve/import-aico commands."
@@ -19,7 +19,7 @@
       "when": "inspect Tether sessions, roots, tools and daemon health; end an exact session",
       "precautions": [
         "Ending a session is an exact generation-fenced retirement; an ended session is never resurrected. Fleet roots: use st sessions close.",
-        "tools add/default/enable/disable/rm change launches in both Aico and A-Term.",
+        "tools add/default/enable/disable/rm change launches in both the Aico desktop and web app.",
         "Diagnostics never start the daemon; serve/import-aico are explicit admin commands."
       ],
       "tier": "reference"

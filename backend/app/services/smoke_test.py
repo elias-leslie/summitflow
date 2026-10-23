@@ -76,7 +76,7 @@ def check_tether_health() -> dict[str, Any] | None:
     data = tether.health(timeout=5)
     ok = data is not None
     return {
-        "project": "tether",
+        "project": "aico",
         "url": f"unix:{tether.socket_path()}/v1/health",
         "ok": ok,
         "status": "healthy" if ok else "error: socket present but /v1/health did not answer ok",

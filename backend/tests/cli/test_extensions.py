@@ -573,7 +573,7 @@ def test_saved_mandates_and_installed_tether_bindings():
     assert mandates["environment"] == ["AGENT_HUB_CONTEXT_PREINJECTED_CONTRACT"]
     assert "--surface" not in metadata["help"][""]
     tether = next(binding for binding in bindings if binding["id"] == "tether.cli")
-    assert tether["executable"] == "scripts/st-tether"
+    assert (tether["owner"], tether["executable"]) == ("aico", "tether/scripts/st-tether")
     metadata = json.loads((root / "scripts/lib" / tether["manifest"]).read_text())
     help_text = metadata["help"][""]
     for command in ("sessions create", "sessions show", "reboot prepare", "recovery resume", "--print"):

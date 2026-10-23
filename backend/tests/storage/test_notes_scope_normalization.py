@@ -3,12 +3,12 @@
 from app.storage.notes_helpers import normalize_project_scope
 
 
-def test_normalize_project_scope_maps_terminal_alias() -> None:
-    assert normalize_project_scope("terminal") == "a-term"
+def test_normalize_project_scope_maps_merged_aico_aliases() -> None:
+    assert [normalize_project_scope(s) for s in ("terminal", "a-term", "Tether")] == ["aico"] * 3
 
 
 def test_normalize_project_scope_keeps_canonical_values() -> None:
-    assert normalize_project_scope("a-term") == "a-term"
+    assert normalize_project_scope("aico") == "aico"
     assert normalize_project_scope("summitflow") == "summitflow"
 
 

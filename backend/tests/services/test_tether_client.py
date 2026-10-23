@@ -46,36 +46,23 @@ def test_available_requires_ok_health_and_serving_lifecycle(monkeypatch) -> None
         assert tether.available() is expected
 
 
-def _fake_stat(monkeypatch, *, uid, gid, mode, agent_uid=986, groups=(1000,)):
-    info = type("S", (), {"st_mode": stat.S_IFSOCK | mode, "st_uid": uid, "st_gid": gid})()
+def _fake_stat(monkeypatch, *, uid, mode=0o600):
+    info = type("S", (), {"st_mode": stat.S_IFSOCK | mode, "st_uid": uid, "st_gid": 1000})()
     monkeypatch.setattr(tether.os, "lstat", lambda _p: info)
     monkeypatch.setattr(tether.os, "getuid", lambda: 1000)
-    monkeypatch.setattr(tether.os, "getgid", lambda: 1000)
-    monkeypatch.setattr(tether.os, "getgroups", lambda: list(groups))
-    monkeypatch.setattr(tether, "_agent_uid", lambda: agent_uid)
 
 
-def test_agent_socket_shared_to_caller_group_is_present(monkeypatch) -> None:
-    _fake_stat(monkeypatch, uid=986, gid=1000, mode=0o660)
-    assert tether.socket_present("/run/tether/agent/default/control.sock")
-    _fake_stat(monkeypatch, uid=986, gid=1000, mode=0o666)
-    assert not tether.socket_present("/x")  # wider than the shared mode
-    _fake_stat(monkeypatch, uid=986, gid=977, mode=0o660)
-    assert not tether.socket_present("/x")  # not the caller's group
-    _fake_stat(monkeypatch, uid=1234, gid=1000, mode=0o660)
-    assert not tether.socket_present("/x")  # a stranger's socket
-    _fake_stat(monkeypatch, uid=986, gid=1000, mode=0o660, agent_uid=None)
-    assert not tether.socket_present("/x")  # no agent user on this host
+def test_only_sockets_the_caller_owns_are_present(monkeypatch) -> None:
+    _fake_stat(monkeypatch, uid=1000)
+    assert tether.socket_present("/x")
+    _fake_stat(monkeypatch, uid=986, mode=0o660)
+    assert not tether.socket_present("/x")  # the retired agent user's shared socket
 
 
-def test_instances_are_active_first_and_pinned_path_is_exclusive(monkeypatch) -> None:
+def test_active_instance_only(monkeypatch) -> None:
     monkeypatch.setenv("XDG_RUNTIME_DIR", "/run/user/7")
-    monkeypatch.setenv("TETHER_AGENT_SOCKET", "/run/tether/agent/default/control.sock")
     monkeypatch.delenv("TETHER_SOCKET", raising=False)
-    owner, agent = "/run/user/7/tether/default/control.sock", "/run/tether/agent/default/control.sock"
-    assert tether.sockets() == [owner, agent]
-    monkeypatch.setenv("TETHER_SOCKET", agent)
-    assert tether.sockets() == [agent, owner]
+    assert tether.sockets() == ["/run/user/7/tether/default/control.sock"]
     monkeypatch.setenv("TETHER_SOCKET", "/fixture/t.sock")
     assert tether.sockets() == ["/fixture/t.sock"]
 

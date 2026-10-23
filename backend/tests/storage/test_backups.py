@@ -254,6 +254,13 @@ class TestSourceCRUD:
         assert updated["frequency"] == "weekly"
         assert updated["retention_days"] == 10
 
+    def test_update_source_moves_project(self, cleanup_project: str) -> None:
+        """A source moves between projects under the same id."""
+        moved = backups.update_source(cleanup_project, project_id=None)
+        assert moved is not None and moved["id"] == cleanup_project and moved["project_id"] is None
+        restored = backups.update_source(cleanup_project, project_id=cleanup_project)
+        assert restored is not None and restored["project_id"] == cleanup_project
+
     def test_update_source_last_run(self, cleanup_project: str) -> None:
         """Update source last run updates timestamps."""
         from datetime import datetime, timedelta

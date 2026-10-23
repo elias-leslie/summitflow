@@ -96,6 +96,7 @@ class BackupSourceUpdate(BaseModel):
     frequency: Frequency | None = None
     retention_days: int | None = None
     path: str | None = None
+    project_id: str | None = None
 
 
 class BackupSourceResponse(BaseModel):

@@ -46,14 +46,10 @@ POSTGRES_PORT = 5432
 REDIS_PORT = 6379
 HATCHET_GRPC_PORT = 7070
 HATCHET_HEALTH_PORT = 8888
-# Tether (per-user session daemon for Aico and A-Term) has no TCP port: it serves
+# Tether (Aico's per-user session daemon) has no TCP port: it serves
 # its API on $XDG_RUNTIME_DIR/tether/<instance>/control.sock under
 # tether@<instance>.service. TETHER_SOCKET overrides the socket path.
 TETHER_DEFAULT_INSTANCE = "default"
-# The agent user's Tether instance (system-run; shared to the owner's group).
-# TETHER_AGENT_SOCKET / TETHER_AGENT_USER override these.
-TETHER_AGENT_SOCKET_DEFAULT = "/run/tether/agent/default/control.sock"
-TETHER_AGENT_USER_DEFAULT = "agent"
 
 
 def _env_or_default(name: str, default: str) -> str:

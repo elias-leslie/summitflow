@@ -38,7 +38,7 @@ def test_tether_socket_that_does_not_answer_fails(monkeypatch) -> None:
     monkeypatch.setattr(smoke_test.tether, "socket_present", lambda *_: True)
     monkeypatch.setattr(smoke_test.tether, "health", lambda **_: None)
     result = smoke_test.check_tether_health()
-    assert result is not None and result["project"] == "tether" and result["ok"] is False
+    assert result is not None and result["project"] == "aico" and result["ok"] is False
     monkeypatch.setattr(smoke_test.tether, "health", lambda **_: {"status": "ok"})
     healthy = smoke_test.check_tether_health()
     assert healthy is not None and healthy["ok"] is True
