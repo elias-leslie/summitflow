@@ -360,6 +360,30 @@ def test_closeout_validation_binds_project_checkout_and_source_commit(
         )
 
 
+@pytest.mark.parametrize("scope", ["manual", "full"])
+def test_only_a_manual_worker_receipt_may_skip_seeds(
+    accepted_repo: tuple[Path, service_release.AcceptedSource],
+    tmp_path: Path,
+    scope: str,
+) -> None:
+    repo, source = accepted_repo
+    release = service_release._materialize_release(
+        "example", repo, source, state_root=tmp_path / "state"
+    )
+    service_release.mark_phase(release, "deployment_scope", status="selected", scope=scope)
+    service_release.mark_phase(release, "migrations", status="not_applicable")
+    for phase in ("backend_dependencies", "frontend_build", "systemd_units", "restart", "health"):
+        service_release.mark_phase(release, phase, status="succeeded")
+    service_release.mark_phase(release, "seeds", status="not_applicable")
+    service_release.complete_release(release)
+
+    if scope == "manual":
+        assert service_release.validate_deployment_receipt(release.receipt_path)["state"] == "succeeded"
+    else:
+        with pytest.raises(service_release.ReleaseError, match="lifecycle evidence"):
+            service_release.validate_deployment_receipt(release.receipt_path)
+
+
 def test_release_systemd_unit_points_only_at_stable_source(
     accepted_repo: tuple[Path, service_release.AcceptedSource],
     tmp_path: Path,

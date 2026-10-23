@@ -602,10 +602,21 @@ def validate_deployment_receipt(
             "seeds",
             "completed",
         }
+        manual = any(
+            isinstance(event, dict)
+            and event.get("phase") == "deployment_scope"
+            and event.get("scope") == "manual"
+            for event in events
+        )
         succeeded = {
             event.get("phase")
             for event in events
-            if isinstance(event, dict) and event.get("status") == "succeeded"
+            if isinstance(event, dict)
+            and (
+                event.get("status") == "succeeded"
+                # A manual-worker rebuild syncs no seeds.
+                or (manual and event.get("phase") == "seeds" and event.get("status") == "not_applicable")
+            )
         }
         failed = {
             event.get("phase")

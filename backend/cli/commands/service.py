@@ -452,11 +452,18 @@ def _verify_and_seed(
                        frontend_service=services.frontend_service if frontend else "")
     if backend or frontend:
         errors += _timed_phase(release, "health", lambda: service_ops.verify_health(selected))
+    worker_errors = 0
     for name in workers:
         state = service_ops.service_state(name)
         print(f"[service] worker {name}: {state}")
-        errors += state != "active"
-    if errors == 0 and (backend or frontend):
+        worker_errors += state != "active"
+    errors += worker_errors
+    if not (backend or frontend):
+        # The active-worker check is a manual rebuild's health evidence; it syncs no seeds.
+        service_release.mark_phase(release, "health", status="failed" if worker_errors else "succeeded",
+                                   reason="manual_worker_scope")
+        service_release.mark_phase(release, "seeds", status="not_applicable", reason="manual_worker_scope")
+    elif errors == 0:
         errors += _timed_phase(release, "seeds", lambda: service_ops.sync_seeds(services)) != 0
     return errors
 

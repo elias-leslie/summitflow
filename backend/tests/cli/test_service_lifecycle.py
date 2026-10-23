@@ -1594,6 +1594,7 @@ def test_named_manual_worker_rebuilds_only_its_unit(manual_lifecycle, project, m
         ("deployment_scope", "selected"), ("migrations", "not_applicable"),
         ("infrastructure", "succeeded"), ("backend_dependencies", "succeeded"),
         ("frontend_build", "succeeded"), ("systemd_units", "succeeded"), ("restart", "succeeded"),
+        ("health", "succeeded"), ("seeds", "not_applicable"),
     ]
     assert _mock(service_release.mark_phase).call_args_list[0].kwargs["scope"] == "manual"
     _mock(service_release.complete_release).assert_called_once()
