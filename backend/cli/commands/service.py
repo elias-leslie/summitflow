@@ -100,6 +100,7 @@ def _deploy_via_socket(services: service_ops.ProjectServices, user: str, verb: s
 def _restore_previous_units(
     project: service_ops.ProjectServices,
     release: service_release.PreparedRelease,
+    manual: tuple[str, ...] = (),
 ) -> bool:
     """Keep the next restart recoverable after candidate activation fails."""
     try:
@@ -119,7 +120,7 @@ def _restore_previous_units(
         )
         if added_monitor:
             service_ops.run(["systemctl", "--user", "disable", "--now", "summitflow-host-monitor.service"])
-        restored = service_ops.sync_systemd_units(previous) == 0
+        restored = service_ops.sync_systemd_units(previous, manual=manual) == 0
         service_release.mark_phase(
             release,
             "rollback",
@@ -240,6 +241,9 @@ def status(
                 errors += paired_state == "failed"
                 state = f"{state}({paired}:{paired_state})"
             parts.append(f"{svc}:{state}")
+        if services.manual_workers and not services.deployment:
+            parts.append("manual: " + " ".join(f"{svc}:{service_ops.service_state(svc)}"
+                                               for svc in services.manual_workers))
         location = f" [{services.deployment.label}]" if services.deployment else ""
         print(f"{services.project_id:<15}{location} {' '.join(parts)}")
     raise typer.Exit(1 if errors else 0)
@@ -333,8 +337,9 @@ def _release_steps(
     *,
     backend: bool,
     development_root: Path,
+    manual: tuple[str, ...] = (),
 ) -> list[ReleaseStep]:
-    """List the pre-restart release steps; frontend scope records migrations as not applicable."""
+    """List the pre-restart release steps; frontend and manual scopes record migrations as not applicable."""
     steps: list[ReleaseStep] = [("infrastructure", lambda: service_ops.ensure_infra(services))]
     steps.append(("backend_dependencies", lambda: service_ops.sync_backend(services)))
     if backend:
@@ -347,9 +352,9 @@ def _release_steps(
             release,
             "migrations",
             status="not_applicable",
-            reason="frontend_restart_scope",
+            reason="manual_worker_scope" if manual else "frontend_restart_scope",
         )
-    steps.append(("systemd_units", lambda: service_ops.sync_systemd_units(services)))
+    steps.append(("systemd_units", lambda: service_ops.sync_systemd_units(services, manual=manual)))
     if backend and services.release_install:
         steps.append(("release_install", lambda: service_ops.run_release_install(
             services, development_root=development_root, source_commit=release.source.source_commit)))
@@ -363,13 +368,14 @@ def _run_release_steps(
     release: service_release.PreparedRelease,
     development_services: service_ops.ProjectServices,
     assert_backup_restart_owned: Callable[[], None],
+    manual: tuple[str, ...] = (),
 ) -> None:
     """Run each step in order; the first failure fails the release before any restart."""
     for name, step in steps:
         assert_backup_restart_owned()
         if _timed_phase(release, name, step) != 0:
             if name == "systemd_units":
-                _restore_previous_units(development_services, release)
+                _restore_previous_units(development_services, release, manual)
             service_release.fail_release(release, name)
             print(
                 f"[service] rebuild stopped: {name.replace('_', ' ')} failed; "
@@ -438,15 +444,19 @@ def _verify_and_seed(
     backend: bool,
     frontend: bool,
 ) -> int:
-    """Check selected services and workers, then sync seeds when nothing failed."""
+    """Check selected services and workers, then sync seeds when nothing failed.
+
+    A manual-worker rebuild (neither component) checks only its workers.
+    """
     selected = replace(services, backend_service=services.backend_service if backend else "",
                        frontend_service=services.frontend_service if frontend else "")
-    errors += _timed_phase(release, "health", lambda: service_ops.verify_health(selected))
+    if backend or frontend:
+        errors += _timed_phase(release, "health", lambda: service_ops.verify_health(selected))
     for name in workers:
         state = service_ops.service_state(name)
         print(f"[service] worker {name}: {state}")
         errors += state != "active"
-    if errors == 0:
+    if errors == 0 and (backend or frontend):
         errors += _timed_phase(release, "seeds", lambda: service_ops.sync_seeds(services)) != 0
     return errors
 
@@ -486,7 +496,8 @@ def rebuild(
     ] = RebuildScope.full,
     worker: Annotated[
         list[str] | None,
-        typer.Option("--worker", help="Also restart this declared worker, including inactive optional workers. Repeatable."),
+        typer.Option("--worker", help="Also restart this declared worker, including inactive optional workers. "
+                     "A manual worker is rebuilt alone: only its unit is rendered and restarted. Repeatable."),
     ] = None,
     acceptance: Annotated[
         Path | None,
@@ -551,10 +562,18 @@ def rebuild(
     if migrate_monitor_store and (project != "summitflow" or scope == RebuildScope.frontend):
         output_error("--migrate-monitor-store requires a SummitFlow backend or full rebuild.")
         raise typer.Exit(1)
-    requested_workers = tuple(worker or ())
-    unknown = set(requested_workers) - set(services.workers(include_all=True))
+    declared = {service_ops.canonical_unit(name): name
+                for name in (*services.workers(include_all=True), *services.manual_workers)}
+    requested_workers = tuple(declared.get(service_ops.canonical_unit(name), name) for name in worker or ())
+    unknown = set(requested_workers) - set(declared.values())
     if unknown or (scope == RebuildScope.frontend and (requested_workers or include_all_workers)):
         output_error("Unknown worker or frontend-only scope combined with worker selection.")
+        raise typer.Exit(1)
+    manual = tuple(name for name in requested_workers if name in services.manual_workers)
+    if manual and (len(manual) != len(requested_workers) or include_all_workers
+                   or scope != RebuildScope.full or migrate_monitor_store):
+        output_error("A manual worker rebuilds alone: drop other workers, --scope, --include-all-workers "
+                     "and --migrate-monitor-store.")
         raise typer.Exit(1)
     wait_for_summitflow_api()
     require_pulse_gate(services.project_id)
@@ -566,9 +585,12 @@ def rebuild(
     if scope != RebuildScope.full and overlapping_components:
         print("[service] shared component directory; using full rebuild")
         scope = RebuildScope.full
-    if scope != RebuildScope.frontend and service_ops.preflight_host_monitor(services) != 0:
+    # Manual-worker rebuilds restart nothing else, so the backend-restart gates do not apply.
+    backend = scope != RebuildScope.frontend and not manual
+    frontend = scope in (RebuildScope.full, RebuildScope.frontend) and not manual
+    if backend and service_ops.preflight_host_monitor(services) != 0:
         raise typer.Exit(1)
-    if services.project_id == "summitflow" and scope != RebuildScope.frontend:
+    if services.project_id == "summitflow" and backend:
         _backup_restart_preflight(detach=detach)
     if detach:
         try:
@@ -590,16 +612,17 @@ def rebuild(
         except (service_ops.ServiceError, service_release.ReleaseError) as exc:
             output_error(str(exc))
             raise typer.Exit(1) from None
-    backend = scope != RebuildScope.frontend
-    frontend = scope in (RebuildScope.full, RebuildScope.frontend)
-    if scope != RebuildScope.full:
+    if manual:
+        print("[service] manual worker rebuild: restarting only " + " ".join(manual))
+    elif scope != RebuildScope.full:
         print(
             "[service] stable releases build the full accepted source; "
             f"restart scope remains {scope.value}"
         )
-    workers = _selected_workers(
+    workers = manual or _selected_workers(
         services, backend=backend, include_all_workers=include_all_workers, requested_workers=requested_workers
     )
+    scope_label = "manual" if manual else scope.value
     start_time = time.time()
     release: service_release.PreparedRelease | None = None
     monitor_activated = False
@@ -619,19 +642,20 @@ def rebuild(
                 release,
                 "deployment_scope",
                 status="selected",
-                scope=scope.value,
+                scope=scope_label,
                 release_scope="full",
                 workers=list(workers),
             )
             print(
-                f"Rebuilding {services.project_id} (scope: {scope.value}, "
+                f"Rebuilding {services.project_id} (scope: {scope_label}, "
                 f"source: {release.source.source_commit}, build: {release.build_id})"
             )
             _run_release_steps(
-                _release_steps(services, release, backend=backend, development_root=development_root),
+                _release_steps(services, release, backend=backend, development_root=development_root, manual=manual),
                 release,
                 development_services,
                 assert_backup_restart_owned,
+                manual,
             )
             if migrate_monitor_store:
                 assert_backup_restart_owned()
@@ -658,7 +682,7 @@ def rebuild(
                 if service_ops.verify_host_monitor(services) != 0:
                     raise service_ops.ServiceError("root collector activation failed verification")
             skipped = [name for name in services.optional_workers if name not in workers]
-            if skipped:
+            if skipped and not manual:
                 print("[service] leaving optional workers unchanged: " + " ".join(skipped))
             restart_backend = bool(backend and services.backend_service)
             if restart_backend:
@@ -678,7 +702,7 @@ def rebuild(
                     _rollback_monitor_and_reader(services, development_services, release, backend_restart_attempted)
                     monitor_activated = False
                 else:
-                    _restore_previous_units(development_services, release)
+                    _restore_previous_units(development_services, release, manual)
                 service_release.fail_release(
                     release,
                     "restart_health",
@@ -699,6 +723,11 @@ def rebuild(
             service_references = service_ops.release_references_for_services(
                 release.release_root.parent
             )
+            manual_references = service_ops.manual_worker_release_references(
+                services, release.release_root.parent
+            )
+            service_references = (None if service_references is None or manual_references is None
+                                  else service_references | manual_references)
             service_release.complete_release(
                 release, service_references=service_references
             )

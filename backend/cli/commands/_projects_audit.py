@@ -118,7 +118,7 @@ def _runtime(identity: dict[str, Any] | None, statuses: list[dict[str, Any]] | N
         unit = declarations.get(key)
         if isinstance(unit, str) and unit:
             units.append(unit)
-    for key in ("default_workers", "optional_workers"):
+    for key in ("default_workers", "optional_workers", "manual_workers"):
         workers = declarations.get(key)
         if isinstance(workers, list):
             units.extend(unit for unit in workers if isinstance(unit, str) and unit)

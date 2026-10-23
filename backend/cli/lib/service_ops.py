@@ -65,6 +65,9 @@ class ProjectServices:
     backend_dir: Path
     frontend_dir: Path
     health_endpoint: str
+    # Long-lived units the project owns but a normal rebuild never touches;
+    # only `--worker <unit>` renders and restarts one.
+    manual_workers: tuple[str, ...] = ()
     backend_extras: tuple[str, ...] = ()
     host_config_root: Path | None = None
     durable_data_root: Path | None = None
@@ -163,6 +166,12 @@ def _project_from_identity(identity: Mapping[str, Any], project_id: str, root: P
         raise ServiceError(f"runtime.infra must list only {', '.join(INFRA)}")
     canonical_id = str(project.get("id") or project_id)
     backend_dir, frontend_dir = runtime_source_dirs(runtime, root)
+    manual_workers = _as_str_list(services.get("manual_workers"))
+    managed = {canonical_unit(unit) for unit in (
+        str(services.get("backend") or ""), str(services.get("frontend") or ""),
+        *_as_str_list(services.get("default_workers")), *_as_str_list(services.get("optional_workers"))) if unit}
+    if any(canonical_unit(unit) in managed for unit in manual_workers):
+        raise ServiceError("services.manual_workers must not repeat a backend, frontend or rebuild-managed worker")
     return ProjectServices(
         project_id=canonical_id,
         root=root,
@@ -170,6 +179,7 @@ def _project_from_identity(identity: Mapping[str, Any], project_id: str, root: P
         frontend_service=str(services.get("frontend") or ""),
         default_workers=_as_str_list(services.get("default_workers")),
         optional_workers=_as_str_list(services.get("optional_workers")),
+        manual_workers=manual_workers,
         backend_port=int(runtime.get("backend_port") or 0),
         frontend_port=int(runtime.get("frontend_port") or 0),
         backend_dir=backend_dir,
@@ -207,7 +217,8 @@ def _pinned_project(project: ProjectServices, identity: Any) -> ProjectServices:
         if type(port) is not int or not 0 <= port <= 65535 or port != getattr(project, key):
             raise ServiceError(f"Pinned project identity {key} does not match the admitted port")
     for key, expected in (("backend", project.backend_service), ("frontend", project.frontend_service),
-                          ("default_workers", project.default_workers), ("optional_workers", project.optional_workers)):
+                          ("default_workers", project.default_workers), ("optional_workers", project.optional_workers),
+                          ("manual_workers", project.manual_workers)):
         actual = services.get(key, [] if isinstance(expected, tuple) else "")
         if isinstance(expected, tuple):
             if not isinstance(actual, list) or any(not isinstance(item, str) or not item for item in actual):
@@ -523,6 +534,31 @@ def _release_references_for_manager(
     return references
 
 
+def manual_worker_release_references(project: ProjectServices, releases_root: Path) -> set[Path] | None:
+    """Releases running manual workers started from, which may predate ``current``.
+
+    Read from each main process's working directory, since a re-rendered unit
+    file no longer names the release its process runs from. ``None`` fails closed.
+    """
+    references: set[Path] = set()
+    if not project.manual_workers:
+        return references
+    try:
+        prefix = releases_root.resolve(strict=True)
+    except OSError:
+        return None
+    for unit in project.manual_workers:
+        if not (pid := _service_main_pid(unit)):
+            continue
+        try:
+            cwd = (_PROC_ROOT / str(pid) / "cwd").resolve(strict=True)
+        except OSError:
+            return None
+        if cwd.is_relative_to(prefix) and cwd != prefix:
+            references.add(releases_root / cwd.relative_to(prefix).parts[0])
+    return references
+
+
 def release_references_for_services(releases_root: Path) -> set[Path] | None:
     """Return references from both user and system services, or fail closed."""
     user_references = _release_references_for_manager(releases_root, systemctl)
@@ -551,7 +587,8 @@ def credstore_units(text: str, project: ProjectServices) -> str:
     return "".join(lines)
 
 
-def sync_systemd_units(project: ProjectServices) -> int:
+def sync_systemd_units(project: ProjectServices, *, manual: Sequence[str] = ()) -> int:
+    """Render the project's rebuild-managed units, or only the named ``manual`` workers."""
     if project.deployment:
         print(f"[service] refusing local unit installation for {project.deployment.label}")
         return 1
@@ -561,11 +598,12 @@ def sync_systemd_units(project: ProjectServices) -> int:
     summitflow_root = str(project.root if project.project_id == "summitflow" else get_repo_root())
     durable_data_root = project.durable_data_root or project.root / "data"
     host_config_root = project.host_config_root or project.root
-    units = dict.fromkeys(canonical_unit(name) for unit in project.all_services
+    units = dict.fromkeys(canonical_unit(name) for unit in (manual or project.all_services)
                           for name in (unit, activated_service(unit)) if name)
-    # Required services must come back after a host reboot; optional workers
-    # keep whatever enablement the owner chose.
-    required = {canonical_unit(unit) for unit in (project.backend_service, project.frontend_service, *project.default_workers)}
+    # Required services and manual daemons must come back after a host reboot;
+    # optional workers keep whatever enablement the owner chose.
+    required = {canonical_unit(unit) for unit in
+                manual or (project.backend_service, project.frontend_service, *project.default_workers)}
     boot: list[str] = []
     for service in units:
         if service == host_monitor_deploy.UNIT:

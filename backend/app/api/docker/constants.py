@@ -95,6 +95,7 @@ def runtime_service_definitions() -> tuple[dict[str, Any], ...]:
             (services.get("frontend"), "web", runtime.get("frontend_port"), "/"),
             *((unit, "worker", None, None) for unit in (
                 *services.get("default_workers", []), *services.get("optional_workers", []),
+                *services.get("manual_workers", []),
             )),
         ]
         seen: set[str] = set()

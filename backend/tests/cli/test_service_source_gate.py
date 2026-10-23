@@ -103,6 +103,7 @@ def test_source_repo_is_checked_out_at_the_pinned_commit(project, tmp_path, monk
     ("services", "frontend", "foreign.service"),
     ("services", "default_workers", ["foreign.service"]),
     ("services", "optional_workers", ["foreign.service"]),
+    ("services", "manual_workers", ["foreign.service"]),
 ])
 def test_source_repo_rejects_identity_outside_the_admitted_request(project, tmp_path, monkeypatch,
                                                                  section, field, value):

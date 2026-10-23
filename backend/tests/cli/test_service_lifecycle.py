@@ -1307,7 +1307,7 @@ def test_release_installer_runs_after_units_and_before_restart(lifecycle, monkey
     order: list[str] = []
     installing = replace(project, release_install="deploy/install.sh")
     monkeypatch.setattr(service, "_load", lambda _: installing)
-    lifecycle["sync_systemd_units"].side_effect = lambda _p: order.append("units") or 0
+    lifecycle["sync_systemd_units"].side_effect = lambda _p, **_k: order.append("units") or 0
     lifecycle["restart_service"].side_effect = lambda *_a, **_k: order.append("restart") or 0
     install = Mock(side_effect=lambda *_a, **_k: order.append("install") or 0)
     monkeypatch.setattr(service_ops, "run_release_install", install)
@@ -1539,3 +1539,142 @@ def test_infrastructure_checks_only_what_the_project_declares(project, monkeypat
     assert service_ops.ensure_infra(replace(project, infra=())) == 0
     assert service_ops.ensure_infra(replace(project, infra=("hatchet",))) == 1
     run.assert_not_called()
+
+
+MANUAL = "daemon@default.service"
+
+
+@pytest.fixture
+def manual_lifecycle(lifecycle, project, monkeypatch):
+    managed = replace(project, manual_workers=(MANUAL,))
+    monkeypatch.setattr(service, "_load", lambda _: managed)
+    monkeypatch.setattr(service_ops, "manual_worker_release_references", Mock(return_value=set()))
+    return lifecycle
+
+
+def _restarted(calls) -> list[str]:
+    return [call.args[0] for call in calls["restart_service"].call_args_list]
+
+
+def test_identity_accepts_manual_workers_but_not_a_unit_in_two_roles(tmp_path):
+    identity = {"project": {"id": "example"}, "runtime": {},
+                "services": {"backend": "web.service", "manual_workers": [MANUAL]}}
+    parsed = service_ops._project_from_identity(identity, "example", tmp_path)
+    assert parsed.manual_workers == (MANUAL,)
+    assert MANUAL not in parsed.all_services
+    assert MANUAL not in parsed.workers(include_all=True)
+    identity["services"]["optional_workers"] = ["daemon@default"]
+    with pytest.raises(service_ops.ServiceError, match="manual_workers"):
+        service_ops._project_from_identity(identity, "example", tmp_path)
+
+
+@pytest.mark.parametrize("args", [[], ["--scope", "backend"], ["--scope", "worker"]])
+def test_normal_rebuild_never_renders_or_restarts_a_manual_worker(manual_lifecycle, project, monkeypatch, args):
+    # Overlapping component dirs force full scope; the manual worker still stays out.
+    monkeypatch.setattr(service, "_load", lambda _: replace(
+        project, frontend_dir=project.root, backend_dir=project.root, manual_workers=(MANUAL,)))
+    result = CliRunner().invoke(service.app, ["rebuild", "example", *args])
+    assert result.exit_code == 0, result.output
+    assert MANUAL not in _restarted(manual_lifecycle)
+    assert "backend.service" in _restarted(manual_lifecycle)
+    assert manual_lifecycle["sync_systemd_units"].call_args.kwargs == {"manual": ()}
+
+
+def test_named_manual_worker_rebuilds_only_its_unit(manual_lifecycle, project, monkeypatch):
+    monkeypatch.setattr(service, "_load", lambda _: replace(
+        project, frontend_dir=project.root, backend_dir=project.root, manual_workers=(MANUAL,)))
+    result = CliRunner().invoke(service.app, ["rebuild", "example", "--worker", "daemon@default"])
+    assert result.exit_code == 0, result.output
+    assert _restarted(manual_lifecycle) == [MANUAL]
+    assert manual_lifecycle["sync_systemd_units"].call_args.kwargs == {"manual": (MANUAL,)}
+    for skipped in ("run_migrations", "verify_health", "sync_seeds"):
+        manual_lifecycle[skipped].assert_not_called()
+    assert "using full rebuild" not in result.output
+    assert _phases() == [
+        ("deployment_scope", "selected"), ("migrations", "not_applicable"),
+        ("infrastructure", "succeeded"), ("backend_dependencies", "succeeded"),
+        ("frontend_build", "succeeded"), ("systemd_units", "succeeded"), ("restart", "succeeded"),
+    ]
+    assert _mock(service_release.mark_phase).call_args_list[0].kwargs["scope"] == "manual"
+    _mock(service_release.complete_release).assert_called_once()
+
+
+@pytest.mark.parametrize("extra", [["--worker", "required.service"], ["--include-all-workers"],
+                                   ["--scope", "worker"]])
+def test_manual_worker_rebuild_refuses_other_selection(manual_lifecycle, extra):
+    result = CliRunner().invoke(service.app, ["rebuild", "example", "--worker", MANUAL, *extra])
+    assert result.exit_code == 1
+    assert "manual worker rebuilds alone" in result.output
+    manual_lifecycle["ensure_infra"].assert_not_called()
+
+
+def test_failed_manual_worker_restores_only_its_unit(manual_lifecycle, monkeypatch, tmp_path):
+    previous = tmp_path / "previous" / "source"
+    monkeypatch.setattr(service_release, "previous_source_root", lambda _release: previous)
+    monkeypatch.setattr(service_ops, "service_state", lambda _: "failed")
+    result = CliRunner().invoke(service.app, ["rebuild", "example", "--worker", MANUAL])
+    assert result.exit_code == 1, result.output
+    restore = manual_lifecycle["sync_systemd_units"].call_args
+    assert restore.args[0].root == previous
+    assert restore.kwargs == {"manual": (MANUAL,)}
+
+
+def test_release_cleanup_keeps_the_release_a_manual_worker_runs_from(manual_lifecycle, monkeypatch):
+    old = Path("/releases") / ("a" * 32)
+    monkeypatch.setattr(service_ops, "release_references_for_services", Mock(return_value={Path("/releases/x")}))
+    monkeypatch.setattr(service_ops, "manual_worker_release_references", Mock(return_value={old}))
+    assert CliRunner().invoke(service.app, ["rebuild", "example"]).exit_code == 0
+    references = _mock(service_release.complete_release).call_args.kwargs["service_references"]
+    assert references == {Path("/releases/x"), old}
+    monkeypatch.setattr(service_ops, "manual_worker_release_references", Mock(return_value=None))
+    assert CliRunner().invoke(service.app, ["rebuild", "example"]).exit_code == 0
+    assert _mock(service_release.complete_release).call_args.kwargs["service_references"] is None
+
+
+def test_manual_worker_release_reference_reads_the_running_process(project, monkeypatch, tmp_path):
+    releases = tmp_path / "releases"
+    source = releases / ("a" * 32) / "source"
+    source.mkdir(parents=True)
+    proc = tmp_path / "proc" / "41"
+    proc.mkdir(parents=True)
+    (proc / "cwd").symlink_to(source, target_is_directory=True)
+    monkeypatch.setattr(service_ops, "_PROC_ROOT", tmp_path / "proc")
+    monkeypatch.setattr(service_ops, "_service_main_pid", lambda unit: 41 if unit == MANUAL else 0)
+    managed = replace(project, manual_workers=(MANUAL, "idle.service"))
+    assert service_ops.manual_worker_release_references(managed, releases) == {releases / ("a" * 32)}
+    (proc / "cwd").unlink()
+    assert service_ops.manual_worker_release_references(managed, releases) is None
+    assert service_ops.manual_worker_release_references(project, tmp_path / "missing") == set()
+
+
+def test_unit_sync_start_and_stop_leave_manual_workers_alone(project, monkeypatch, tmp_path):
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "config"))
+    managed = replace(project, backend_service="web.service", frontend_service="", default_workers=(),
+                      optional_workers=(), manual_workers=(MANUAL,))
+    templates = managed.root / "scripts" / "systemd"
+    templates.mkdir(parents=True)
+    for name in ("web.service", MANUAL):
+        (templates / name).write_text("WorkingDirectory=__PROJECT_ROOT__\n[Install]\n")
+    commands: list[list[str]] = []
+    monkeypatch.setattr(service_ops, "run", lambda command, **_: commands.append(command[2:]) or 0)
+    units = tmp_path / "config" / "systemd" / "user"
+    assert service_ops.sync_systemd_units(managed) == 0
+    assert [path.name for path in units.iterdir()] == ["web.service"]
+    assert commands[-1] == ["enable", "web.service"]
+    assert service_ops.sync_systemd_units(managed, manual=(MANUAL,)) == 0
+    assert sorted(path.name for path in units.iterdir()) == [MANUAL, "web.service"]
+    assert commands[-1] == ["enable", MANUAL]
+    commands.clear()
+    monkeypatch.setattr(service_ops.service_release, "current_source_root", lambda _: None)
+    monkeypatch.setattr(service_ops, "service_exists", lambda _: True)
+    assert service_ops.start_services(managed) == 0
+    assert service_ops.stop_services(managed) == 0
+    assert not any(MANUAL in command for command in commands)
+
+
+def test_status_lists_manual_workers_read_only(manual_lifecycle, monkeypatch):
+    monkeypatch.setattr(service_ops, "service_state",
+                        lambda name: "inactive" if name in {"stopped.service", MANUAL} else "active")
+    result = CliRunner().invoke(service.app, ["status", "example"])
+    assert result.exit_code == 0, result.output
+    assert f"manual: {MANUAL}:inactive" in result.output

@@ -29,7 +29,8 @@ def _identity_user_services() -> dict[str, str]:
             continue
         backend, frontend = declared.get("backend") or "", declared.get("frontend") or ""
         default_workers = [unit for unit in declared.get("default_workers") or [] if isinstance(unit, str) and unit]
-        workers = [*default_workers, *(u for u in declared.get("optional_workers") or [] if isinstance(u, str) and u)]
+        workers = [*default_workers, *(u for key in ("optional_workers", "manual_workers")
+                                       for u in declared.get(key) or [] if isinstance(u, str) and u)]
         names = {project_id: backend or frontend}
         if frontend:
             names[f"{project_id}-web"] = frontend
