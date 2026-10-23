@@ -76,24 +76,16 @@ def test_create_help_exposes_fixed_work_roles_and_current_pi_launch_contract(mon
     assert manifest.help_options["create"]["--work-role-name"] == 1
 
 
-def test_create_help_exposes_opencode_model_selection_and_native_resume(monkeypatch):
+def test_create_help_names_only_the_supported_root_tools(monkeypatch):
     monkeypatch.setattr("cli.extensions.dispatch_extension", lambda *a, **k: pytest.fail("dispatched"))
     result = CliRunner().invoke(app(), ["aico", "create", "--help"])
     assert result.exit_code == 0
-    for slug in ("claude-code", "codex", "pi", "opencode"):
+    for slug in ("claude-code", "codex", "pi"):
         assert slug in result.output
-    assert "--tool opencode" in result.output
-    assert "--model PROVIDER/MODEL" in result.output
-    assert "--resume-session ses_..." in result.output
-    assert "native --session" in result.output
-    assert "native CLI, which validates availability" in result.output
-    assert "Omit --model to use native OpenCode defaults or its model selector, including on resume" in result.output
-    assert "Omit --reasoning-effort, --daybreak and --agent-hub-context" in result.output
-    assert "advisory terminal-state watching remains unsupported" in result.output
-    assert "opencode-deepseek-free" not in result.output
-    assert "opencode-glm-free" not in result.output
+    assert "opencode" not in result.output.lower()
     manifest = aico_record().manifest
     assert manifest is not None
     usage = next(row for row in manifest.usage if row["surface"] == "st.aico.create")
-    assert "|opencode" in manifest.help[""] and "|opencode" in usage["cmd"]
-    assert "ses_... IDs for OpenCode" in " ".join(usage["precautions"])
+    assert "--tool claude-code|codex|pi " in manifest.help[""]
+    assert "--tool claude-code|codex|pi " in usage["cmd"]
+    assert "opencode" not in " ".join(map(str, usage["precautions"])).lower()
