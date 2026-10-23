@@ -17,12 +17,12 @@ from .. import extensions
 from ..lib.usage import usage
 from ..output import output_error
 
-RootSurface = Literal["aico", "a-term", "tether"]
+RootSurface = Literal["aico", "tether"]
 
 
 @usage(
     surface="st.sessions.title",
-    cmd='st sessions title ROOT "Project · Focus" [--surface aico|tether|a-term]',
+    cmd='st sessions title ROOT "Project · Focus" [--surface aico|tether]',
     when="compatibility alias of st aico root title for one exact retained owner root",
     precautions=("Supply a non-secret control-free single-line label of at most 160 UTF-8 bytes. Only the owner's existing session metadata retains it; output contains no label.",),
     tier="reference",
@@ -39,11 +39,11 @@ def title(
         output_error("Aico owner extension unavailable")
         raise typer.Exit(1)
     # `--` keeps a label that begins with '-' positional in the owner parser.
-    route = ["--surface", surface]
+    route: list[str] = []
     if surface == "tether" or (surface == "aico" and not os.environ.get("AICO_GUI_CONTROL_SOCKET")
                                and tether.available()):
         # Tether's roots keep owner "aico", so the Aico extension qualifies them unchanged.
-        route = ["--surface", "aico", "--root-socket", tether.socket_path()]
+        route = ["--root-socket", tether.socket_path()]
     raise typer.Exit(extensions.dispatch_extension(
         record, ["root", "title", *route, "--", root, label],
         context=extensions.extension_context()))

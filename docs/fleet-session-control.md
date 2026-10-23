@@ -162,7 +162,7 @@ unavailable or unconfirmed. Use `--surface aico` or `--surface tether` instead.
 Owner operations for one exact retained root live under `st aico root`:
 
 ```sh
-st aico root status REQUEST_ID [--surface aico|a-term]
+st aico root status REQUEST_ID
 st aico root show REQUEST_ID
 st aico root title REQUEST_ID "Project · Focus"
 st aico root position REQUEST_ID X Y WIDTH HEIGHT
@@ -183,9 +183,11 @@ mutation. A root without a generation cannot authorize End. For fleet roots
 prefer `st sessions close`, which records the outcome in the fleet ledger; a
 direct end leaves fleet state to reconcile on the next close.
 
-`st sessions title REQUEST_ID "Project · Focus" [--surface aico|tether|a-term]` remains a
+`st sessions title REQUEST_ID "Project · Focus" [--surface aico|tether]` remains a
 compatibility alias that forwards to `st aico root title`. For `aico` (when Tether
-is running) and `tether` it passes `--root-socket` with Tether's socket. The owner extension
+is running) and `tether` it passes `--root-socket` with Tether's socket. `st aico` has
+no `--surface` or `--root-url`; stored roots with owner `a-term` are still read and
+titled through Tether. The owner extension
 performs all validation and reports the receipt. Labels require 1-160 UTF-8 bytes
 of control-free single-line Unicode after ECMAScript whitespace trimming. The
 owner's `contracts/view-mutation-vectors.json` pins label and bounds rules for

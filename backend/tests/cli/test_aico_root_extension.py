@@ -36,13 +36,14 @@ def test_root_manifest_exposes_owner_controls_and_alias():
         assert f"st.aico.root.{operation}" in {row["surface"] for row in manifest.usage}
     assert manifest.help_options["root end"]["--owner-socket"] == 1
     assert "compatibility alias" in manifest.help["root title"]
-    assert "A-Term positioning is unavailable" in manifest.help["root position"]
+    assert "A-Term" not in manifest.help["root position"]
+    assert all("--root-url" not in text and "--surface" not in text for text in manifest.help.values())
     assert "applied:null" in manifest.help["root end"]
 
 
 @pytest.mark.parametrize("arguments, expected", [
     (["root", "--help"], "Control one exact retained owner root"),
-    (["root", "end", "root-1", "--surface", "a-term", "--help"], "End the exact root"),
+    (["root", "end", "root-1", "--help"], "End the exact root"),
     (["root", "title", "root-1", "Name", "--help"], "Rename the exact running root"),
 ])
 def test_root_help_is_passive(monkeypatch, arguments, expected):

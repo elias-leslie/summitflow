@@ -34,13 +34,15 @@ def test_aico_create_manifest_exposes_exact_resume_without_fleet_retention():
     assert record.manifest is not None
     assert "st aico create" in record.manifest.help[""]
     text = record.manifest.help["create"]
-    for phrase in ("--resume-session", "--surface a-term", "--project-root", "--stdin",
+    for phrase in ("--resume-session", "--root-socket", "--project-root", "--stdin",
                    "same REQUEST_ID", "No prompt retention", "already running owner"):
         assert phrase in text
     options = record.manifest.help_options["create"]
     for flag in ("--model", "--reasoning-effort", "--daybreak"):
         assert options[flag] == 1 and flag in text
-    assert all(options[name] == 1 for name in ("--resume-session", "--surface", "--project", "--project-root"))
+    assert all(options[name] == 1 for name in ("--resume-session", "--project", "--project-root"))
+    assert "--surface" not in options and "--root-url" not in options
+    assert "A-Term" not in text and "--surface" not in text
     assert options["--stdin"] == 0
     assert "st.aico.create" in {row["surface"] for row in record.manifest.usage}
 
@@ -59,7 +61,7 @@ def test_aico_create_cli_preserves_exact_owner_argv_and_help(monkeypatch):
     monkeypatch.setattr("cli.extensions.dispatch_extension", lambda record, argv, **kwargs: observed.append(argv) or 0)
     args = ["create", "recovery-1", "Reconcile after crash.", "--project", "neri",
             "--project-root", "/fixture/project", "--resume-session", "00000000-0000-4000-8000-000000000001",
-            "--surface", "a-term"]
+            "--root-socket", "/fixture/gui.sock"]
     result = CliRunner().invoke(app, ["aico", *args])
     assert result.exit_code == 0
     assert observed == [args]
