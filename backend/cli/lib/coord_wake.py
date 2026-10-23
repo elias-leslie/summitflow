@@ -17,7 +17,22 @@ import subprocess
 import time
 from pathlib import Path
 
-STATE = Path(os.environ.get("XDG_RUNTIME_DIR") or "/tmp") / "st-coord-inbox"
+
+def _state_dir() -> Path:
+    """Share Pi's user runtime even when a caller shell omits XDG_RUNTIME_DIR."""
+    runtime = os.environ.get("XDG_RUNTIME_DIR")
+    if runtime:
+        return Path(runtime) / "st-coord-inbox"
+    user_runtime = Path(f"/run/user/{os.getuid()}")
+    try:
+        if user_runtime.is_dir() and user_runtime.stat().st_uid == os.getuid():
+            return user_runtime / "st-coord-inbox"
+    except OSError:
+        pass
+    return Path("/tmp") / "st-coord-inbox"
+
+
+STATE = _state_dir()
 # Longer wake text is not typed: the pane gets a short pointer and the body stays on the ledger.
 TYPE_MAX = 400
 # What a TUI composer line may hold before the cursor when it is empty.

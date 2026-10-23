@@ -15,6 +15,26 @@ from cli.lib import coord
 ROOT = Path(__file__).resolve().parents[3]
 
 
+@pytest.mark.parametrize("configured,user_runtime_exists", [(True, True), (False, True), (False, False)])
+def test_pi_seen_state_uses_the_user_runtime_when_xdg_is_absent(monkeypatch, tmp_path, configured, user_runtime_exists):
+    from cli.lib import coord_wake
+
+    user_runtime, fallback, explicit = (tmp_path / name for name in ("user-runtime", "fallback", "explicit"))
+    if user_runtime_exists:
+        user_runtime.mkdir()
+    monkeypatch.delenv("XDG_RUNTIME_DIR", raising=False)
+    if configured:
+        monkeypatch.setenv("XDG_RUNTIME_DIR", str(explicit))
+    roots = {f"/run/user/{os.getuid()}": user_runtime, "/tmp": fallback}
+    monkeypatch.setattr(coord_wake, "Path", lambda value: roots.get(str(value), Path(value)))
+    expected = (explicit if configured else user_runtime if user_runtime_exists else fallback) / "st-coord-inbox"
+    monkeypatch.setattr(coord_wake, "STATE", coord_wake._state_dir())
+    assert expected == coord_wake.STATE
+    expected.mkdir(parents=True, exist_ok=True)
+    coord_wake.seen_path("pi:fixture").write_text(json.dumps({"fixture:req": 1}))
+    assert coord.surfaced({"id": "fixture", "to": "pi:fixture"})
+
+
 @pytest.mark.parametrize("tool", ["read", "edit", "write", "bash"])
 def test_busy_pi_receives_a_request_once_in_tool_results(monkeypatch, tmp_path, tool):
     node = shutil.which("node")
