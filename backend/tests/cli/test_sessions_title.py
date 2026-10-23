@@ -15,11 +15,11 @@ def _no_live_tether(monkeypatch):
     monkeypatch.delenv("AICO_GUI_CONTROL_SOCKET", raising=False)
 
 
-@pytest.mark.parametrize("arguments,surface", [
-    (["root-fixture", "  Project · Focus 🐾  "], "aico"),
-    (["root-fixture", "Focus · Next", "--surface", "a-term"], "a-term"),
+@pytest.mark.parametrize("arguments", [
+    ["root-fixture", "  Project · Focus 🐾  "],
+    ["root-fixture", "Focus · Next", "--surface", "aico"],
 ])
-def test_alias_forwards_exact_argv_to_owner_root_title(monkeypatch, arguments, surface):
+def test_alias_forwards_exact_argv_to_owner_root_title(monkeypatch, arguments):
     observed = []
 
     def dispatch(record, argv, **kwargs):
@@ -30,7 +30,7 @@ def test_alias_forwards_exact_argv_to_owner_root_title(monkeypatch, arguments, s
     monkeypatch.setattr("cli.extensions.dispatch_extension", dispatch)
     result = CliRunner().invoke(app, ["sessions", "title", *arguments])
     assert result.exit_code == 0, result.output
-    assert observed == [("aico", ["root", "title", "--surface", surface, "--", arguments[0], arguments[1]])]
+    assert observed == [("aico", ["root", "title", "--", arguments[0], arguments[1]])]
     assert result.output == ""
 
 
@@ -43,9 +43,10 @@ def test_alias_propagates_owner_failure_without_echoing_label(monkeypatch, code)
     assert "secret-fixture" not in result.output
 
 
-def test_alias_rejects_unknown_surface_before_dispatch(monkeypatch):
+@pytest.mark.parametrize("surface", ["remote", "a-term"])
+def test_alias_rejects_unknown_surface_before_dispatch(monkeypatch, surface):
     monkeypatch.setattr("cli.extensions.dispatch_extension", lambda *args, **kwargs: pytest.fail("dispatched"))
-    result = CliRunner().invoke(app, ["sessions", "title", "root-fixture", "Focus", "--surface", "remote"])
+    result = CliRunner().invoke(app, ["sessions", "title", "root-fixture", "Focus", "--surface", surface])
     assert result.exit_code == 2
 
 
@@ -53,14 +54,14 @@ def test_help_advertises_alias_surface_and_byte_bound():
     result = CliRunner().invoke(app, ["sessions", "title", "--help"])
     assert result.exit_code == 0
     assert "160 UTF-8 bytes" in result.output
-    assert "aico" in result.output and "a-term" in result.output
+    assert "aico" in result.output and "a-term" not in result.output
     assert "st aico root title" in result.output
 
 
 @pytest.mark.parametrize("surface,available,route", [
-    ("aico", True, ["--surface", "aico", "--root-socket", "/fixture/tether.sock"]),
-    ("tether", False, ["--surface", "aico", "--root-socket", "/fixture/tether.sock"]),
-    ("a-term", True, ["--surface", "a-term"]),
+    ("aico", True, ["--root-socket", "/fixture/tether.sock"]),
+    ("tether", False, ["--root-socket", "/fixture/tether.sock"]),
+    ("aico", False, []),
 ])
 def test_alias_routes_aico_roots_through_running_tether(monkeypatch, surface, available, route):
     observed = []

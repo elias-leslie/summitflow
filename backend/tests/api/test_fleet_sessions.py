@@ -132,9 +132,8 @@ def execution_fleet(ensure_test_project, tmp_path, monkeypatch):
             conn.commit()
 
 
-@pytest.mark.parametrize("surface", ["aico", "a-term"])
 @pytest.mark.parametrize("location", ["worktrees", "projects", "canonical", "nested"])
-def test_sdk_start_retains_canonical_root_and_launches_in_execution_directory(execution_fleet, surface, location):
+def test_sdk_start_retains_canonical_root_and_launches_in_execution_directory(execution_fleet, location):
     sdk, capsule, canonical, execution, launches = execution_fleet
     if location == "canonical":
         execution = canonical
@@ -144,7 +143,7 @@ def test_sdk_start_retains_canonical_root_and_launches_in_execution_directory(ex
         destination.parent.mkdir(parents=True, exist_ok=True)
         execution.rename(destination)
         execution = destination
-    state = sdk.start(**capsule, surface=surface, execution_root=str(execution))
+    state = sdk.start(**capsule, surface="aico", execution_root=str(execution))
     assert state["project_root"] == str(canonical)
     assert state["execution_root"] == str(execution)
     assert state["capabilities"]["launch"] == "host-acknowledged"

@@ -21,9 +21,9 @@ for a retained request ID conflicts; retry with the same complete capsule.
 Older retained capsules without this field expose the registered root as their
 execution root and keep their original create digest on a default retry.
 
-Use `--surface a-term` for the existing local A-Term owner HTTP route, or
-`--surface tether` to address Tether (the per-user session daemon that owns Aico
-and A-Term sessions) directly; unknown surfaces are unsupported. The same
+Use `--surface tether` to address Tether (the per-user session daemon that owns
+Aico sessions) directly; unknown surfaces are unsupported. `--surface a-term` is
+retired: new roots are refused (see the cutover note below). The same
 role/lead/facet capsule goes to every owner. Tether keeps Aico's root contract
 and reports `owner: "aico"` on its root descriptors.
 The returned host descriptor is an owner acknowledgment; it does not attest a
@@ -96,7 +96,7 @@ Existing `show` and `close` accept opaque root handles, and `list --fleet` lists
 fleet roots. Other session readers continue using their existing Agent Hub path.
 `st sessions activate ROOT` uses the exact stored generation to show or reattach
 the root. `st sessions position ROOT X Y WIDTH HEIGHT` arranges Aico roots with
-validated bounds; A-Term positioning reports unsupported.
+validated bounds; positioning a retained `a-term` root reports unsupported.
 Close requests native End through Aico's existing private owner socket with the
 stored exact widget identity and generation fence. An acknowledged End or an exact
 matching provider-owned ended tombstone closes the allocation and releases its
@@ -150,19 +150,19 @@ No new dependency,
 queue, scheduler, session store, or mandatory Agent Hub telemetry is introduced.
 The schema migration and SDK wheel must be installed through the existing release
 workflow before these commands are available in an accepted runtime.
-A-Term defaults to `http://127.0.0.1:8002` and supports the local
-`A_TERM_ROOT_CONTROL_URL` override. Existing password/proxy mode rejection is
-reported as unavailable; the adapter does not supply or invent credentials.
-The `a-term` surface keeps using A-Term's route after the cutover: A-Term's
-`/v1/roots` forwards to Tether and presents `owner: "a-term"`, so its auth and its
-view behavior (show opens an A-Term pane) are preserved. There is no alternate
-route around A-Term's authentication.
+The `a-term` surface is retired. Aico's web server (`aico-web.service`) no longer
+serves `/v1/roots`, and port 8002 is gone, so there is no A-Term root route and
+`A_TERM_ROOT_CONTROL_URL` is ignored. The value stays valid in stored fleet
+events (it is a wire value, not renamed): `st sessions show` still reads those
+roots, but starting one is refused, and activate, position and End on one report
+unavailable or unconfirmed. Use `--surface aico` or `--surface tether` instead.
+
 # Direct exact-thread recovery
 
 Owner operations for one exact retained root live under `st aico root`:
 
 ```sh
-st aico root status REQUEST_ID [--surface aico|a-term]
+st aico root status REQUEST_ID
 st aico root show REQUEST_ID
 st aico root title REQUEST_ID "Project · Focus"
 st aico root position REQUEST_ID X Y WIDTH HEIGHT
@@ -177,15 +177,17 @@ ended, pending, uncertain or stale roots cannot authorize those view updates.
 unknown and must be reconciled with `st aico root status`, never blindly retried.
 End pins the exact descriptor's generation and may contain a pending or uncertain
 root without requiring a running workload. It uses Aico's headless
-generation-fenced containment contract (or A-Term's root end route). An exact
+generation-fenced containment contract. An exact
 ended tombstone is idempotent: End returns `applied: false` without another owner
 mutation. A root without a generation cannot authorize End. For fleet roots
 prefer `st sessions close`, which records the outcome in the fleet ledger; a
 direct end leaves fleet state to reconcile on the next close.
 
-`st sessions title REQUEST_ID "Project · Focus" [--surface aico|tether|a-term]` remains a
+`st sessions title REQUEST_ID "Project · Focus" [--surface aico|tether]` remains a
 compatibility alias that forwards to `st aico root title`. For `aico` (when Tether
-is running) and `tether` it passes `--root-socket` with Tether's socket. The owner extension
+is running) and `tether` it passes `--root-socket` with Tether's socket. `st aico` has
+no `--surface` or `--root-url`; stored roots with owner `a-term` are still read and
+titled through Tether. The owner extension
 performs all validation and reports the receipt. Labels require 1-160 UTF-8 bytes
 of control-free single-line Unicode after ECMAScript whitespace trimming. The
 owner's `contracts/view-mutation-vectors.json` pins label and bounds rules for
@@ -197,7 +199,7 @@ identity/status metadata. Configured owner authentication applies. Owner source
 changes require their normal managed release before live use.
 
 `st aico create REQUEST_ID [PROMPT] --tool claude-code|codex --project PROJECT
---project-root PATH --resume-session SESSION_ID [--surface aico|a-term]` forwards
+--project-root PATH --resume-session SESSION_ID [--surface aico]` forwards
 directly to the existing owner create contract. `--tool` has no default and the
 client keeps no tool list: it sends the tool as given, and Tether refuses one
 without a resume adapter with `unsupported_tool` naming the tools it accepts
@@ -205,9 +207,8 @@ without a resume adapter with `unsupported_tool` naming the tools it accepts
 orchestration text. The public ID is TUI-agnostic; the Claude Code and Codex resume
 adapters each require a canonical lowercase UUID. Tether's `docs/root-control.md`
 is the contract.
-The default surface is Aico; A-Term uses its established loopback HTTP route and
-enforces configured authentication. Aico shows the allocated root; A-Term creates
-a detached pane. Neither command starts the owner service.
+The default surface is Aico, which shows the allocated root. The command does
+not start the owner service.
 
 The optional prompt is sanitized and limited to 2000 UTF-8 bytes; `--stdin`
 supplies the same bounded input. Without a prompt, resume uses a fixed instruction
