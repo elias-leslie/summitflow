@@ -8,6 +8,7 @@
  *   tool_call edit/write   -> edit mode   (auto-lease; a foreign lease WARNING is added to the tool
  *                                          result; blocks with one line only under a live acceptance/deploy)
  *   tool_call/result bash  -> bash-pre / bash-post (one warning line on a foreign-leased shell write)
+ *   tool_result           -> inbox context (shared once-per-request delivery and reminders)
  *   idle/agent_end         -> surface new ST inbox requests as Pi user turns, so peers can coordinate
  * Silent when nothing overlaps; every failure allows the tool.
  */
@@ -34,6 +35,7 @@ function runHook(
 		const timer = setTimeout(() => child.kill("SIGKILL"), 5000);
 		child.stdout.on("data", (chunk: Buffer) => out.push(chunk));
 		child.stderr.on("data", (chunk: Buffer) => err.push(chunk));
+		child.stdin.on("error", () => {}); // A missing/early-exiting hook must fail open, including EPIPE.
 		child.on("error", () => {
 			clearTimeout(timer);
 			resolve({ code: 0, stdout: "", stderr: "" });
@@ -143,20 +145,29 @@ export default function (pi: ExtensionAPI) {
 	});
 
 	pi.on("tool_result", async (event, ctx) => {
+		const context: string[] = [];
 		const warning = editWarnings.get(event.toolCallId);
 		if (warning !== undefined) {
 			editWarnings.delete(event.toolCallId);
-			return { content: [...event.content, { type: "text", text: warning }] };
+			context.push(warning);
 		}
-		if (event.toolName !== "bash") return;
-		const result = await runHook("bash-post", {
+		if (event.toolName === "bash") {
+			const result = await runHook("bash-post", {
+				...base(ctx),
+				hook_event_name: "PostToolUse",
+				tool_name: "Bash",
+				tool_use_id: event.toolCallId,
+			});
+			if (result.code === 2 && result.stderr) context.push(result.stderr);
+		}
+		const inbox = await runHook("turn", {
 			...base(ctx),
 			hook_event_name: "PostToolUse",
-			tool_name: "Bash",
-			tool_use_id: event.toolCallId,
-		});
-		if (result.code === 2 && result.stderr) {
-			return { content: [...event.content, { type: "text", text: result.stderr }] };
+		}, INBOX, ["pi"]);
+		const message = additionalContext(inbox);
+		if (message) context.push(message);
+		if (context.length) {
+			return { content: [...event.content, ...context.map((text) => ({ type: "text" as const, text }))] };
 		}
 	});
 }

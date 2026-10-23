@@ -49,10 +49,10 @@ def _agent_hub_sessions() -> list[dict[str, Any]]:
 
 
 def _tether_aliases(target: str) -> list[str]:
-    """tmux session names of Aico/Tether windows the target names exactly (case-insensitive).
+    """Widget ids and tmux names of Aico/Tether windows named exactly (case-insensitive).
 
     A window answers to its widget id, its st aico create request id, or its
-    title; the tmux session name then resolves through Agent Hub to one live agent.
+    title; its live harness can resolve without an Agent Hub session record.
     """
     from app.services import tether
 
@@ -63,25 +63,31 @@ def _tether_aliases(target: str) -> list[str]:
     want = target.strip().casefold()
     out: list[str] = []
     for item in items:
-        if not isinstance(item, dict) or not isinstance(item.get("tmux"), dict):
+        if not isinstance(item, dict):
             continue
         names = {str(item.get(k) or "").casefold() for k in ("id", "ownershipId", "rootRequestId", "name", "label", "displayTitle")}
-        tmux_name = item["tmux"].get("sessionName")
-        if want and want in names and isinstance(tmux_name, str) and tmux_name:
-            out.append(tmux_name)
+        tmux = item.get("tmux")
+        tmux_name = tmux.get("sessionName") if isinstance(tmux, dict) else None
+        if isinstance(tmux_name, str):
+            names.add(tmux_name.casefold())
+        if want and want in names:
+            out.extend(value for value in (item.get("id"), tmux_name) if isinstance(value, str) and value)
     return out
 
 
 def _resolve_agent(target: str) -> str:
     """An agent id, a known session prefix, or a label naming exactly one live agent; else exit 2."""
-    from ..lib import coord, coord_route
+    from ..lib import coord, coord_route, coordinators
 
     if coord_route.AGENT_ID.fullmatch(target) or coord.known_target(target):
         return target
     sessions = _agent_hub_sessions()
     found, unreachable = coord_route.resolve_label(target, sessions)
     if not found:
-        for alias in _tether_aliases(target):
+        for alias in dict.fromkeys([target.strip().casefold(), *_tether_aliases(target)]):
+            agent = coordinators.agent_for_widget(alias)
+            if agent:
+                found.setdefault(agent, f"aico widget {alias}")
             for aid, how in coord_route.resolve_label(alias, sessions)[0].items():
                 found.setdefault(aid, f"aico window {alias}, {how}")
     if len(found) == 1:
@@ -177,8 +183,11 @@ def send(
     and ack only their own requests; a parent keeps its requests across chat resets.
     A sent receipt means recorded, open/seen means shown, and acked means answered.
 
-    A label (Agent Hub session name/persona/tmux session, identity short id, or
-    lease holder slug) must name exactly one live agent; it prints ``→ <id>``.
+    Discover widget ids with ``st aico sessions``. An Aico widget id, create
+    request id, title or tmux name resolves to its live harness, including Pi
+    without an Agent Hub session record. Pi receives requests after tool results
+    and while idle. Other labels (Agent Hub session name/persona, identity short
+    id, or lease holder slug) must name exactly one live agent; it prints ``→ <id>``.
     root-* handles and UUIDs default to passive fleet-stream retention consumed
     through wait. Native-thread requires an exact bound UUID, stable
     --source-key revision, and <=2000 sanitized UTF-8 bytes; to a live Codex TUI

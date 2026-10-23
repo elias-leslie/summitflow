@@ -139,7 +139,44 @@ def _capture_handshake(monkeypatch) -> list[tuple[str, str]]:
 @pytest.fixture(autouse=True)
 def _no_live_tether(monkeypatch):
     """Label resolution never reads the developer's live Aico windows."""
+    from cli.lib import coordinators
+
     monkeypatch.setattr(sessions_fleet, "_tether_aliases", lambda target: [])
+    monkeypatch.setattr(coordinators, "agent_for_widget", lambda widget: None)
+
+
+@pytest.mark.parametrize("target", ["4488dbc0", "aico-4488dbc0", "pi-fixture-request", "Pi fixture"])
+def test_send_reaches_a_pi_widget_without_an_agent_hub_session(monkeypatch, target):
+    from app.services import tether
+    from cli.lib import coordinators
+
+    monkeypatch.undo()
+    sent = _capture_handshake(monkeypatch)
+    monkeypatch.setattr(sessions_fleet, "_agent_hub_sessions", lambda: [])
+    monkeypatch.setattr(coordinators, "agent_for_widget", lambda widget: "pi:560933" if widget == "4488dbc0" else None)
+    item = {"id": "4488dbc0", "rootRequestId": "pi-fixture-request", "displayTitle": "Pi fixture",
+            "tmux": {"sessionName": "aico-4488dbc0"}, "tool": "pi"}
+    monkeypatch.setattr(tether, "request_all", lambda path: [(200, {"items": [item]})])
+    result = runner.invoke(app, ["sessions", "send", target, "Read the brief"])
+    assert result.exit_code == 0, result.output
+    assert "→ pi:560933" in result.output
+    assert sent == [("pi:560933", "Read the brief")]
+
+
+def test_send_refuses_a_title_naming_multiple_unrecorded_pi_widgets(monkeypatch):
+    from app.services import tether
+    from cli.lib import coordinators
+
+    monkeypatch.undo()
+    sent = _capture_handshake(monkeypatch)
+    monkeypatch.setattr(sessions_fleet, "_agent_hub_sessions", lambda: [])
+    monkeypatch.setattr(coordinators, "agent_for_widget", {"a0000001": "pi:111111", "a0000002": "pi:222222"}.get)
+    items = [{"id": wid, "displayTitle": "Twin", "tmux": {"sessionName": f"aico-{wid}"}}
+             for wid in ("a0000001", "a0000002")]
+    monkeypatch.setattr(tether, "request_all", lambda path: [(200, {"items": items})])
+    result = runner.invoke(app, ["sessions", "send", "Twin", "Read the brief"])
+    assert result.exit_code == 2 and "names 2 live agents" in result.output
+    assert sent == []
 
 
 def test_send_reaches_an_aico_window_by_widget_request_id_or_title(monkeypatch):
@@ -169,8 +206,8 @@ def test_tether_aliases_match_exact_window_names_only(monkeypatch):
     monkeypatch.undo()  # drop the autouse stub so the real parser runs
     monkeypatch.setattr(tether, "present_sockets", lambda: ["/fixture/owner.sock"])
     monkeypatch.setattr(tether, "request", lambda method, path, *a, **k: (200, {"items": [item, {"id": "x", "tmux": None}]}))
-    assert sessions_fleet._tether_aliases("COORDINATION TEST") == ["aico-9ef2ce53"]
-    assert sessions_fleet._tether_aliases("ns-coordtest-1") == ["aico-9ef2ce53"]
+    assert sessions_fleet._tether_aliases("COORDINATION TEST") == ["9ef2ce53", "aico-9ef2ce53"]
+    assert sessions_fleet._tether_aliases("ns-coordtest-1") == ["9ef2ce53", "aico-9ef2ce53"]
     assert sessions_fleet._tether_aliases("Coordination") == []
     assert sessions_fleet._tether_aliases("") == []
 
