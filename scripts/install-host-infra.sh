@@ -64,7 +64,7 @@ cat >"$USER_SYSTEMD_DIR/summitflow-infra-reconcile.service" <<'EOF'
 [Unit]
 Description=Reconcile SummitFlow shared Docker infrastructure directly from Compose
 After=basic.target
-Before=agent-hub-backend.service agent-hub-hatchet-agent-worker.service agent-hub-hatchet-ops-worker.service summitflow-backend.service summitflow-hatchet-worker.service portfolio-backend.service portfolio-hatchet-worker.service a-term-backend.service
+Before=agent-hub-backend.service agent-hub-hatchet-agent-worker.service agent-hub-hatchet-ops-worker.service summitflow-backend.service summitflow-hatchet-worker.service portfolio-backend.service portfolio-hatchet-worker.service aico-web.service
 
 [Service]
 Type=oneshot

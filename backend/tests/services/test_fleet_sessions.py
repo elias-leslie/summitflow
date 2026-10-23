@@ -321,46 +321,18 @@ def test_initial_prompt_is_transient_and_surface_is_explicit(roots):
     assert len(event["attributes"]["instruction_digest"]) == 64
 
 
-def test_a_term_start_activate_and_end_use_exact_owner_route(monkeypatch):
+def test_a_term_surface_is_retired_but_retained_roots_stay_readable(monkeypatch):
     descriptor = {"owner": "a-term", "hostIdentity": "session-uuid", "generation": "exact-generation", "logicalSessionId": "a-term-root-1", "surfaceLocator": "a-term://pane/session-uuid"}
-    request = MagicMock()
-    request.post.return_value.json.return_value = descriptor
-    manager = MagicMock()
-    manager.__enter__.return_value = request
-    monkeypatch.setattr(service.httpx, "Client", lambda **kwargs: manager)
-    monkeypatch.setenv("A_TERM_ROOT_CONTROL_URL", "http://127.0.0.1:8002")
-    assert service._host_start("root-fixture", "fixture", "/fixture", "claude-code", "Source refs", role="portfolio-root", lead_root=None, facet=None, surface="a-term") == {**descriptor, "status": None}
-    assert request.post.call_args.args == ("http://127.0.0.1:8002/v1/roots",)
+    client = MagicMock()
+    monkeypatch.setattr(service.httpx, "Client", client)
+    with pytest.raises(ValueError, match="a-term root route is gone"):
+        service.start_root("fixture", "/fixture/project", root="root-" + "0" * 32, tool="codex",
+            instruction="Review exact source refs.", scope={}, surface="a-term", work_role="implementation")
     monkeypatch.setattr(service, "reconcile_root", lambda root: {"status": "registered", "surface": "a-term", "host": descriptor})
-    assert service.arrange_root("root-fixture")["applied"]
-    assert request.post.call_args.args == ("http://127.0.0.1:8002/v1/roots/root-fixture/show",)
+    assert service.arrange_root("root-fixture") == {"root": "root-fixture", "capability": "unavailable", "applied": False}
     assert service.arrange_root("root-fixture", bounds={"x": 0, "y": 0, "width": 400, "height": 300})["capability"] == "unsupported"
-    request.post.return_value.json.return_value = {**descriptor, "requestId": "root-fixture", "status": "ended", "generation": None}
-    assert service._host_end(descriptor, root="root-fixture")
-    assert request.post.call_args.args == ("http://127.0.0.1:8002/v1/roots/root-fixture/end",)
-    assert request.post.call_args.kwargs["json"] == {"generation": "exact-generation"}
-
-
-def test_a_term_default_route_comes_from_a_term_identity(monkeypatch):
-    from app import project_identity
-
-    monkeypatch.delenv("A_TERM_ROOT_CONTROL_URL", raising=False)
-    monkeypatch.setattr(project_identity, "get_project_identity",
-                        lambda project_id, root_path=None: {"runtime": {"backend_port": 8102}} if project_id == "aico" else None)
-    assert service._a_term_default_url() == "http://127.0.0.1:8102"
-    monkeypatch.setattr(project_identity, "get_project_identity", lambda project_id, root_path=None: None)
-    with pytest.raises(ValueError, match="backend port"):
-        service._a_term_default_url()
-
-
-def test_a_term_auth_failure_is_unavailable_without_alternate_route(monkeypatch):
-    state = {"status": "registered", "surface": "a-term", "host": {"generation": "generation", "owner": "a-term", "hostIdentity": "session"}}
-    monkeypatch.setattr(service, "reconcile_root", lambda root: state)
-    request = MagicMock(side_effect=httpx.HTTPStatusError("owner auth required", request=httpx.Request("POST", "http://127.0.0.1:8002"), response=httpx.Response(401)))
-    monkeypatch.setattr(service, "_host_request", request)
-    result = service.arrange_root("root-fixture")
-    assert result == {"root": "root-fixture", "capability": "unavailable", "applied": False}
-    assert request.call_count == 1
+    assert not service._host_end(descriptor, root="root-fixture")
+    client.assert_not_called()
 
 
 def test_position_validates_bounds_and_checks_exact_generation(monkeypatch):

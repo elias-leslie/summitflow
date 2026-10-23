@@ -11,7 +11,7 @@ import time
 import uuid
 from pathlib import Path
 from typing import Any, Literal
-from urllib.parse import quote, urlsplit
+from urllib.parse import quote
 
 import httpx
 import redis
@@ -30,8 +30,11 @@ from .pubsub import fleet_wake_subscription
 RootRole = Literal["portfolio-root", "neri-target-root", "neri-support-root"]
 RootSurface = Literal["aico", "a-term", "tether"]
 # Root descriptors name their owner. Tether keeps Aico's owner name for its
-# roots; Aico's web backend (/v1/roots, a Tether proxy) still presents "a-term".
+# roots. "a-term" is a retired surface: roots retained under it stay readable
+# (the value is in stored fleet events), but the web backend's /v1/roots route
+# on port 8002 is gone, so nothing new starts or acts through it.
 _SURFACE_OWNER = {"aico": "aico", "tether": "aico", "a-term": "a-term"}
+_A_TERM_RETIRED = "The a-term root route is gone; use the aico or tether surface"
 _KEY = re.compile(r"[A-Za-z0-9][A-Za-z0-9._:-]{0,127}")
 # Owners bound a resumed launch prompt to 2000 UTF-8 bytes of tab/newline-only text.
 _RESUME_PROMPT_BYTES = 2000
@@ -117,15 +120,6 @@ def _owner_socket(surface: str, *, owner_control: bool) -> str:
     return f"/run/user/{os.getuid()}/aico/{filename}"
 
 
-def _a_term_default_url() -> str:
-    from ..project_identity import get_runtime_port
-
-    port = get_runtime_port("aico", "backend_port")
-    if port is None:
-        raise ValueError("A-Term root control needs Aico's web backend port in its project identity")
-    return f"http://127.0.0.1:{port}"
-
-
 def _host_request(surface: str, path: str, payload: dict[str, Any], *, owner_control: bool = False, method: str = "POST") -> dict[str, Any]:
     if surface in {"aico", "tether"}:
         socket = _owner_socket(surface, owner_control=owner_control)
@@ -141,14 +135,7 @@ def _host_request(surface: str, path: str, payload: dict[str, Any], *, owner_con
             if response.status_code != 404:
                 break
     elif surface == "a-term":
-        base = (os.environ.get("A_TERM_ROOT_CONTROL_URL") or _a_term_default_url()).rstrip("/")
-        parsed = urlsplit(base)
-        if parsed.scheme != "http" or parsed.hostname not in {"127.0.0.1", "localhost", "::1"} or parsed.username or parsed.password:
-            raise ValueError("A-Term root control requires the existing local owner route")
-        # Existing password/proxy mode rejection remains provider-unavailable;
-        # this adapter never invents credentials or bypasses owner auth.
-        with httpx.Client(timeout=30, trust_env=False) as client:
-            response = client.get(base + path) if method == "GET" else client.post(base + path, json=payload)
+        raise ValueError(_A_TERM_RETIRED)
     else:
         raise ValueError("Unsupported root surface")
     response.raise_for_status()
@@ -164,7 +151,7 @@ def _host_start(
     resume_session: str | None = None,
     work_role: str | None = None, work_role_name: str | None = None,
 ) -> dict[str, Any]:
-    """The owner's root protocol (Aico, Tether or A-Term); acknowledgment is not model/queue evidence."""
+    """The owner's root protocol (Aico or Tether); acknowledgment is not model/queue evidence."""
     body: dict[str, Any] = {
         "requestId": root, "tool": tool, "projectId": project_id,
         "projectRoot": project_root, "initialPrompt": prompt,
@@ -233,11 +220,6 @@ def _host_end(descriptor: dict[str, Any], *, root: str | None = None, surface: s
         if not isinstance(widget, str) or not re.fullmatch(r"[0-9a-f]{8}", widget) or not re.fullmatch(r"[0-9a-f]{64}", generation):
             return False
         result = _host_request(surface, f"/v1/sessions/{widget}/end", {"generation": generation}, owner_control=True)
-    elif surface == "a-term" and root:
-        result = _host_request(surface, f"/v1/roots/{quote(root, safe='')}/end", {"generation": generation})
-        return (result.get("status") == "ended" and result.get("owner") == surface
-                and result.get("requestId") == root and result.get("hostIdentity") == widget
-                and result.get("logicalSessionId") == descriptor.get("logicalSessionId"))
     else:
         return False
     return result == {"status": "ended"}
@@ -279,6 +261,8 @@ def start_root(
         raise ValueError("Host tool must be codex or claude-code")
     if surface not in _SURFACE_OWNER:
         raise ValueError("Unsupported root surface")
+    if surface == "a-term":
+        raise ValueError(_A_TERM_RETIRED)
     if role not in {"portfolio-root", "neri-target-root", "neri-support-root"}:
         raise ValueError("Unknown fleet root role")
     if work_role is not None and (not _KEY.fullmatch(work_role) or work_role == "unknown"):

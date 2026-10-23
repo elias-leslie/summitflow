@@ -216,8 +216,7 @@ timeout 45s systemctl --user stop \
     agent-hub-hatchet-ops-worker.service \
     portfolio-ai-backend.service \
     portfolio-ai-frontend.service \
-    a-term-backend.service \
-    a-term-frontend.service \
+    aico-web.service \
     monkey-fight.service \
     >/dev/null 2>&1 || true
 
