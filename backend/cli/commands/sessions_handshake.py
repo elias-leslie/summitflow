@@ -78,12 +78,15 @@ def inbox() -> None:
     """List open coordination requests to and from you; silent when empty.
 
     A request you sent reads open/seen once the recipient was shown it,
-    open/unseen before that, then acked; close it with st sessions confirm ID.
+    open/unseen before that, then acked with its reply note; close it with
+    st sessions confirm ID.
     """
     for row in coord.inbox():
         detail = row["intent"] or "-"
         if row.get("eta_min"):
             detail += f" {row['eta_min']}m"
+        if row.get("note"):
+            detail += f" ({row['note']})"
         state = row["state"]
         if state == "open" and row["from"] in leases.self_ids():
             state += "/seen" if coord.surfaced(row) else "/unseen"

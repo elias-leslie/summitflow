@@ -88,6 +88,23 @@ def _tokens(text: str) -> int:
 
 # ------------------------------------------------------------ edits
 
+
+@pytest.mark.parametrize("intent", ["yes", "no", "eta:3"])
+def test_explicit_inbox_shows_the_acknowledgment_note(repos, monkeypatch, capsys, intent):
+    from cli.commands import sessions_handshake
+
+    as_codex(monkeypatch, "fixture-sender")
+    request = coord.send("pi:fixtur", "Synthetic coordination question")
+    as_pi(monkeypatch, "fixture-recipient")
+    coord.ack(request["id"], intent, "Synthetic reply with useful context")
+    monkeypatch.delenv("PI_SESSION_ID")
+    as_codex(monkeypatch, "fixture-sender")
+    sessions_handshake.inbox()
+    output = capsys.readouterr().out
+    assert request["id"] in output
+    assert "Synthetic reply with useful context" in output
+    assert coord._load_ledger()[0]["state"] == "acked"  # reading leaves confirm to the sender
+
 def test_concurrent_edit_same_file_warns_then_take_and_commit_release(repos, monkeypatch):
     repo = repos["hostrepo"]
     target = str(repo / "backend" / "a.py")

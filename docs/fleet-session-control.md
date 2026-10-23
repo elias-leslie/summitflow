@@ -260,8 +260,31 @@ The sender closes an answered exchange with `st sessions confirm ID`.
 Keep messages short: agent, repo, coarse paths and ETA. Workers answer only
 requests addressed to themselves; parent requests survive chat resets.
 `st sessions inbox` distinguishes recorded (`open/unseen`), shown (`open/seen`)
-and answered (`acked`). A send receipt alone does not prove a reply.
+and answered (`acked`), including the acknowledgment's reply note. A send receipt
+alone does not prove a reply.
 Use one channel; do not also type the message into the other terminal.
+
+For a quick exchange, discover the peer's widget with `st aico sessions`, send
+`st sessions send WIDGET_ID "question" --source-key STABLE_REVISION`, and read
+`st sessions inbox` in each agent's own session. The receiver runs
+`st sessions ack ID yes "short reply"` (or `no "reason"` / `eta:MIN`); the sender
+reads the reply in its inbox and runs `st sessions confirm ID`. An explicit
+inbox read works without waiting for an automatic notice. Pi's adapter delivers
+new requests after tool results, immediately when a run settles, or within its
+15-second idle poll. A request arriving during a provider response waits for
+the next supported native boundary; `open/seen` is separate from an actual ack.
+
+Installed extension updates apply to newly launched or reloaded Pi processes.
+A running process keeps its loaded adapter even when the installed symlink
+changes. At the agent's next clean idle seam, native `/reload` loads the current
+adapter; typing it during active work does not prove that it executed. There is
+no atomic ST remote slash-command submission. For activation entirely through
+ST, agree a stopped seam, retain the exact Pi native UUID and original project
+root, end that exact retained root with `st aico root end REQUEST_ID`, then use
+a new `st aico create NEW_REQUEST_ID ... --tool pi --model PROVIDER/MODEL
+--project PROJECT --project-root ORIGINAL_ROOT --work-role ROLE
+--resume-session EXACT_UUID`. Read the new root receipt and use its widget ID.
+Do not end an active peer merely to refresh its extension.
 
 
 New roots declare their fixed native-session work role with

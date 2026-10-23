@@ -9,7 +9,7 @@
  *                                          result; blocks with one line only under a live acceptance/deploy)
  *   tool_call/result bash  -> bash-pre / bash-post (one warning line on a foreign-leased shell write)
  *   tool_result           -> inbox context (shared once-per-request delivery and reminders)
- *   idle/agent_end         -> surface new ST inbox requests as Pi user turns, so peers can coordinate
+ *   idle/agent_settled     -> surface new ST inbox requests as Pi user turns, so peers can coordinate
  * Silent when nothing overlaps; every failure allows the tool.
  */
 
@@ -107,6 +107,12 @@ export default function (pi: ExtensionAPI) {
 	});
 
 	pi.on("agent_end", async (_event, ctx) => {
+		await checkInbox(ctx, sessionGeneration);
+	});
+
+	// Pi 1.4 keeps isIdle() false at agent_end through retries and queued work.
+	// Check again at the actual idle seam instead of waiting for the polling timer.
+	pi.on("agent_settled", async (_event, ctx) => {
 		await checkInbox(ctx, sessionGeneration);
 	});
 

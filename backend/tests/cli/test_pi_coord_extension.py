@@ -86,3 +86,44 @@ console.log(JSON.stringify({first, second, missing}));
     assert f"REQUEST {row['id']}" not in json.dumps(outputs.get("second"))
     assert "missing" not in outputs  # a failed hook leaves the original result alone
     assert coord._load_ledger()[0]["state"] == "open"  # delivery does not ack or confirm
+
+
+def test_pi_checks_inbox_when_the_run_has_settled(monkeypatch, tmp_path):
+    node = shutil.which("node")
+    if not node:
+        pytest.skip("Node is required for the Pi extension fixture")
+    monkeypatch.setenv("CLAUDE_CODE_SESSION_ID", "fixture-sender")
+    row = coord.send("pi:560933", "Read the settled fixture brief", source_key="fixture:settled")
+    monkeypatch.delenv("CLAUDE_CODE_SESSION_ID")
+    hooks = tmp_path / ".claude" / "hooks"
+    hooks.mkdir(parents=True)
+    (hooks / "coord-inbox.sh").symlink_to(ROOT / "scripts/lib/coord-inbox")
+    (hooks / "lease-check.sh").write_text("#!/bin/bash\nexit 0\n")
+    script = tmp_path / "settled.mjs"
+    script.write_text("""
+import adapter from '""" + (ROOT / "scripts/lib/pi-coord-extension.ts").as_uri() + """';
+const handlers = {}, messages = [];
+adapter({on: (name, handler) => handlers[name] = handler,
+         sendUserMessage: (message, options) => messages.push({message, options})});
+let idle = false;
+const ctx = {isIdle: () => idle, sessionManager: {
+  getSessionId: () => '56093300-0000-4000-8000-000000000000', getCwd: () => process.cwd()}};
+await handlers.session_start({reason: 'startup'}, ctx);
+await handlers.agent_end({}, ctx);  // Pi 1.4 still reports busy at agent_end.
+const beforeSettled = messages.length;
+idle = true;
+await handlers.agent_settled({aborted: false}, ctx);
+await handlers.agent_settled({aborted: false}, ctx);
+handlers.session_shutdown();
+console.log(JSON.stringify({beforeSettled, messages}));
+""")
+    env = {**os.environ, "HOME": str(tmp_path), "XDG_RUNTIME_DIR": str(tmp_path / "run"),
+           "ST_COORD_INBOX": "1", "ST_COORD_HARNESS": "pi"}
+    result = subprocess.run([node, str(script)], env=env, capture_output=True, text=True, timeout=20, check=False)
+    assert result.returncode == 0, result.stderr
+    outputs = json.loads(result.stdout)
+    assert outputs["beforeSettled"] == 0
+    assert len(outputs["messages"]) == 1
+    assert f"REQUEST {row['id']}" in outputs["messages"][0]["message"]
+    assert outputs["messages"][0]["options"] == {"deliverAs": "followUp"}
+    assert coord._load_ledger()[0]["state"] == "open"
