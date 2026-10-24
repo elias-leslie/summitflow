@@ -39,6 +39,12 @@ def init_repo(root: Path) -> None:
     git(root, "commit", "--allow-empty", "-m", "fixture")
 
 
+@pytest.fixture(autouse=True)
+def _no_settle(monkeypatch):
+    # The real pause sleeps and waits on host I/O pressure; tests must not.
+    monkeypatch.setattr(auto, "_settle", lambda: None)
+
+
 @pytest.fixture
 def workspace(tmp_path, monkeypatch):
     home = tmp_path / "home"
