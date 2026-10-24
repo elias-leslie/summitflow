@@ -350,11 +350,6 @@ export function offsiteStatus(
     failing,
     facts: [
       {
-        label: 'Sources',
-        value: `${enabled.length - failing.length} healthy, ${failing.length} failing`,
-        tone: failingTone,
-      },
-      {
         label: 'On Drive',
         value: `${driveVerified} of ${enabled.length} latest copies verified`,
         tone: driveTone,

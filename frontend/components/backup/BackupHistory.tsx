@@ -264,7 +264,7 @@ export function BackupHistory({
           return (
             <Link
               href={`/backups/${backup.source_id}`}
-              className="text-sm text-phosphor-400 hover:text-phosphor-300 inline-flex items-center gap-2"
+              className="text-sm text-phosphor-400 hover:text-phosphor-300 inline-flex flex-wrap items-center gap-x-2 gap-y-1"
               onClick={(e) => e.stopPropagation()}
             >
               {source?.name ?? backup.source_id}
