@@ -365,7 +365,11 @@ export function SourceCard({
                   Next Run
                 </div>
                 <div className="truncate text-xs text-slate-200">
-                  {source.next_run_at ? formatTimeAgo(source.next_run_at) : '-'}
+                  {!source.enabled
+                    ? 'Off'
+                    : source.next_run_at
+                      ? formatTimeAgo(source.next_run_at)
+                      : '-'}
                 </div>
               </div>
             </div>
