@@ -444,6 +444,10 @@ def isolated_host_state(_private_host_state: Path) -> Generator[None]:
         patch.setattr(heavy_work, "_LOCK_DIRECTORY", lane)
         patch.setattr(confirm_token, "_TOKENS_DIR", _private_host_state / "confirm-tokens")
         patch.setenv("SUMMITFLOW_SERVICE_STATE_ROOT", str(_private_host_state / "services"))
+        # SessionStart cases must not read live Nightshift findings or spend the agents' brief ledger.
+        brief_off = _private_host_state / "startup-brief-off.json"
+        brief_off.write_text('{"enabled": false}')
+        patch.setenv("ST_STARTUP_BRIEF_CONFIG", str(brief_off))
         yield
 
 

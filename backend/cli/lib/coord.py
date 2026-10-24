@@ -302,6 +302,9 @@ def session_start(payload: dict[str, Any]) -> str | None:
     if not payload.get("agent_id"):
         with suppress(Exception):
             _mark_main_thread()
+    from .startup_brief import hook_lines
+
+    lines += hook_lines(payload)  # what is already broken, once per window to the agents it concerns
     return "\n".join(lines) or None
 
 

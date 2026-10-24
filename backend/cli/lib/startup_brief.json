@@ -1,0 +1,26 @@
+{
+  "_comment": "Startup system brief policy (cli/lib/startup_brief.py). Host overrides: ~/.config/summitflow/startup-brief.json (or ST_STARTUP_BRIEF_CONFIG), merged key by key over this file.",
+  "enabled": true,
+  "reshow_hours": 24,
+  "stuck_after_hours": 24,
+  "budget_seconds": 1.0,
+  "max_lines": 15,
+  "max_item_chars": 170,
+  "severities": ["critical", "warning"],
+  "lane_severities": ["critical"],
+  "nightshift_status": "/var/lib/nightshift/ui/status.json",
+  "nightshift_status_max_age_minutes": 60,
+  "ledger": "~/.local/state/summitflow/startup-brief/ledger.json",
+  "host_wide_owners": ["nightshift", "owner"],
+  "owner_call_owners": ["owner"],
+  "owner_projects": {"omninull": "ominull"},
+  "skip_projects": ["a-loom", "learn-o-tron"],
+  "acceptance_failed_after_minutes": 60,
+  "publication_stale_hours": 48,
+  "roles": {
+    "coordinator": {"host": true, "projects": "all", "host_first": true},
+    "agent": {"host": true, "projects": "own", "host_first": false},
+    "lane": {"host": false, "projects": "own", "blocking_only": true},
+    "subagent": {"host": false, "projects": "none"}
+  }
+}

@@ -162,10 +162,19 @@ def pulse(
         bool,
         typer.Option("--details", help="Show diagnostic task, ownership, and session rows."),
     ] = False,
+    brief: Annotated[
+        bool,
+        typer.Option("--brief", help="Show this session's startup system brief again (open problems, not deduplicated)."),
+    ] = False,
 ) -> None:
     """Show the canonical live coordination pulse and optional preflight gate."""
     if project_id and all_projects:
         raise typer.BadParameter("Use either --project or --all, not both.")
+    if brief:
+        from ..lib.startup_brief import brief as startup_brief
+
+        typer.echo("\n".join(startup_brief({}, record=False)) or "System brief: all clear.")
+        return
 
     refresh_agent_observability()
     client = STClient(require_project=False)

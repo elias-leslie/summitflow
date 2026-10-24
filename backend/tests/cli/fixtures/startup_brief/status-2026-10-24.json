@@ -1,0 +1,95 @@
+{
+ "counts": {},
+ "findings": [
+  {
+   "check": "backups",
+   "code": "backups.sources.failing",
+   "details": {
+    "cause": "other",
+    "next": "backup sources without a success in twice their schedule: a SummitFlow repair task at once (a disk-space cause runs Nightshift's space guard)",
+    "owner": "SummitFlow (backups)",
+    "path": "/home/kasadis/.local/state/summitflow/backup-freshness/sources.json",
+    "routed": true,
+    "sources": [
+     {
+      "error": "[Errno 13] Permission denied: '/srv/workspaces/target-labs/neri-evidence/<fixture>.json'",
+      "frequency": "four_hourly",
+      "hours_since_success": 61.6,
+      "id": "neri-evidence",
+      "last_success_at": "2026-10-22T00:42:52.153443+00:00"
+     }
+    ],
+    "tier_step": {
+     "asset": "davion-sidarli",
+     "class": "data",
+     "from": "critical",
+     "tier": "critical"
+    }
+   },
+   "first_seen": "2026-10-22T09:16:03.782330+00:00",
+   "host": "davion-sidarli",
+   "key": "davion-sidarli:backups:backups.sources.failing",
+   "message": "Backups: 1 sources without a success in twice their schedule: neri-evidence. SummitFlow (backups): backup sources without a success in twice their schedule: a SummitFlow repair task at once (a disk-space cause runs Nightshift's space guard)",
+   "observed_at": "2026-10-24T14:20:19.730422+00:00",
+   "severity": "critical",
+   "source": "backups",
+   "stale": false
+  },
+  {
+   "check": "workstation",
+   "code": "ws.reboot.required",
+   "details": {
+    "next": "reboots off-hours once agents checkpoint, Tether snapshots sessions, the owner is idle and the boot kernel has its NVIDIA module; post-boot check confirms sessions came back",
+    "owner": "Nightshift",
+    "packages": [
+     "gnome-shell"
+    ],
+    "routed": true,
+    "tier_step": {
+     "asset": "davion-sidarli",
+     "class": "health",
+     "from": "warning",
+     "tier": "critical"
+    }
+   },
+   "first_seen": "2026-10-22T22:00:57.049411+00:00",
+   "host": "davion-sidarli",
+   "key": "davion-sidarli:workstation:ws.reboot.required",
+   "message": "Reboot required. Nightshift: reboots off-hours once agents checkpoint, Tether snapshots sessions, the owner is idle and the boot kernel has its NVIDIA module; post-boot check confirms sessions came back",
+   "observed_at": "2026-10-24T14:20:15.886276+00:00",
+   "severity": "warning",
+   "source": "workstation",
+   "stale": false
+  },
+  {
+   "check": "backups",
+   "code": "backups.autosnap.stale",
+   "details": {
+    "next": "a SummitFlow repair task at once",
+    "owner": "SummitFlow (snapshots)",
+    "routed": true
+   },
+   "first_seen": "2026-10-20T01:00:00+00:00",
+   "host": "davion-sidarli",
+   "key": "davion-sidarli:backups:backups.autosnap.stale",
+   "message": "Snapshots: newest project autosnap point is 4d13h old; every sweep since Oct 19 23:00 skipped all projects (Cannot inventory Btrfs boundaries: Permission denied). SummitFlow (snapshots): a SummitFlow repair task at once",
+   "observed_at": "2026-10-24T14:15:41+00:00",
+   "severity": "critical",
+   "source": "backups",
+   "stale": false
+  },
+  {
+   "check": "workstation",
+   "code": "ws.ok",
+   "details": {},
+   "first_seen": "2026-10-24T00:00:00+00:00",
+   "host": "davion-sidarli",
+   "key": "davion-sidarli:workstation:ws.ok",
+   "message": "Workstation healthy.",
+   "severity": "ok",
+   "stale": false
+  }
+ ],
+ "generated_at": "2026-10-24T14:15:45.654168+00:00",
+ "window_hours": 24
+}
