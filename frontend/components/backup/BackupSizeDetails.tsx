@@ -19,11 +19,13 @@ export function BackupSizeDetails({
       measuredBytes(backup.size_bytes))
     : measuredBytes(backup.size_bytes)
   const added = restic ? measuredBytes(verification.stored_bytes) : null
+  // Legacy archive rows carry a measured size but no restic format.
+  const archive = !restic && contents != null
   return (
     <div className="space-y-1 text-xs text-slate-300">
       <div>
         <span className="text-slate-400">
-          {restic ? 'Contents' : 'Archive'}:{' '}
+          {archive ? 'Archive' : 'Contents'}:{' '}
         </span>
         <span className="font-mono whitespace-nowrap">
           {contents == null
@@ -51,8 +53,8 @@ export function BackupSizeExplanation() {
   return (
     <p className="text-xs text-slate-400">
       Contents is the full data in a backup. New storage is compressed data
-      added after reusing unchanged data, before pruning. Older backups show
-      archive size. These values are not total disk usage.
+      added after reusing unchanged data, before pruning. These values are not
+      total disk usage.
     </p>
   )
 }

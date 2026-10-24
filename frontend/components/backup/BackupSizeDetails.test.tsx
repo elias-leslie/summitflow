@@ -71,6 +71,16 @@ describe('BackupSizeDetails', () => {
     expect(screen.getByText('Not recorded')).toBeInTheDocument()
   })
 
+  it('does not call a failed run with no size an archive', () => {
+    render(
+      <BackupSizeDetails
+        backup={{ size_bytes: null, verification_json: null }}
+      />,
+    )
+    expect(screen.getByText('Contents:')).toBeInTheDocument()
+    expect(screen.queryByText('Archive:')).not.toBeInTheDocument()
+  })
+
   it('explains the basis and limits without presenting it as disk usage', () => {
     render(<BackupSizeExplanation />)
     expect(screen.getByText(/before pruning/)).toHaveTextContent(
