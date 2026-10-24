@@ -1205,6 +1205,37 @@ def retire_repository_source(env: dict[str, str], source_id: str, *, dry_run: bo
         return results
 
 
+def retire_disabled_sources(env: dict[str, str], backend_id: str, *, now: datetime | None = None) -> dict[str, Any]:
+    """Retire each disabled source whose newest capture here is older than the configured age.
+
+    Enabled sources capture daily, so a disabled source with no capture for
+    that long has been disabled at least that long. Sources with no capture in
+    this repository are left alone.
+    """
+    from ..config import get_settings
+
+    days = get_settings().backup_retire_disabled_after_days
+    if days <= 0:
+        return {}
+    cutoff = (now or datetime.now(UTC)) - timedelta(days=days)
+    results: dict[str, Any] = {}
+    for source in backup_store.list_sources():
+        if source.get("enabled"):
+            continue
+        rows, _ = backup_store.list_backups(source_id=str(source["id"]), limit=500)
+        captures = [datetime.fromisoformat(row["created_at"]) for row in rows
+                    if row.get("created_at") and is_repository_backup(row) and row.get("storage_backend_id") == backend_id]
+        newest = max(captures, default=None)
+        if newest is None or newest > cutoff:
+            continue
+        try:
+            results[str(source["id"])] = retire_repository_source(env, str(source["id"]), dry_run=False)
+        except Exception as exc:
+            logger.exception("disabled_source_retirement_failed", source_id=source["id"])
+            results[str(source["id"])] = {"status": "failed", "error": str(exc)}
+    return results
+
+
 def _without_journals(value: Any) -> Any:
     if isinstance(value, Mapping):
         return {key: _without_journals(child) for key, child in value.items() if key != "state"}
@@ -1408,7 +1439,9 @@ def run_repository_maintenance() -> dict[str, Any]:
             continue  # Retired pilot points remain readable without recurring scans.
         try:
             env = storage_config_env({**config, "__backend_type": backend["backend_type"], "__backend_id": backend["id"]})
-            results[str(backend["id"])] = maintain_repository(env, dry_run=env.get("RESTIC_OFFSITE_PRUNE_QUALIFIED") != "true")
+            result = results[str(backend["id"])] = maintain_repository(env, dry_run=env.get("RESTIC_OFFSITE_PRUNE_QUALIFIED") != "true")
+            if result.get("dry_run") is False and not repository_maintenance_failed(result):
+                result["retired_sources"] = retire_disabled_sources(env, str(backend["id"]))
         except Exception as exc:
             results[str(backend["id"])] = {"status": "failed", "error": str(exc)}
     return results

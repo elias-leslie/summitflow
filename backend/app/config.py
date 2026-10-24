@@ -116,6 +116,10 @@ class Settings(BaseSettings):
 
     backup_btrbk_enabled: bool = False
 
+    # A disabled backup source with no repository capture for this many days has its restic points forgotten and
+    # pruned by scheduled maintenance (only when that maintenance is prune-qualified and healthy). 0 turns it off.
+    backup_retire_disabled_after_days: int = 30
+
     # Optional window for the existing scheduled backup workflow, in the shared maintenance-window format
     # (app/utils/maintenance_window.py): "02:00-06:00", up to 4 comma-joined ranges, a trailing Z for UTC. Otherwise it
     # reads in backup_schedule_timezone. Unset preserves unrestricted scheduling; manual backups are separate.
