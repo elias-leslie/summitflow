@@ -15,7 +15,7 @@
     "write-local"
   ],
   "help": {
-    "": "Usage: elevate [-h] {request,status,revoke,run} ...\n\npositional arguments:\n  {request,status,revoke,run}\n    request             ask the owner (push) for time-limited elevated access\n    status              recent requests: pending (with approve link), open,\n                        ended\n    revoke              end open grants of a kind now\n    run                 run a command with the credential in its env: run KIND\n                        -- cmd ...\n\noptions:\n  -h, --help            show this help message and exit",
+    "": "Usage: elevate [-h] {request,status,revoke,run} ...\n\npositional arguments:\n  {request,status,revoke,run}\n    request             ask the owner (push, one passkey tap) for time-limited\n                        GitHub admin\n    status              recent requests: pending (with approve link), open,\n                        ended\n    revoke              end open grants of a kind now\n    run                 run a command with the credential in its env: run KIND\n                        -- cmd ...\n\noptions:\n  -h, --help            show this help message and exit",
     "request": "Usage: elevate request [-h] --reason REASON [--minutes MINUTES]\n                        [--requester REQUESTER] [--wait]\n                        kind\n\npositional arguments:\n  kind\n\noptions:\n  -h, --help            show this help message and exit\n  --reason REASON       what you will do with it, in owner words\n  --minutes MINUTES\n  --requester REQUESTER\n                        agent/session label shown to the owner\n  --wait                block until approved/denied (max 15 min)",
     "status": "Usage: elevate status [-h]\n\noptions:\n  -h, --help  show this help message and exit",
     "revoke": "Usage: elevate revoke [-h] kind\n\npositional arguments:\n  kind\n\noptions:\n  -h, --help  show this help message and exit",
@@ -29,6 +29,7 @@
       "when": "gh 403 'Resource not accessible by personal access token' on repo settings, deploy keys, Actions secrets/variables, profile; also status, revoke github-admin",
       "precautions": [
         "never print the credential",
+        "check-runs 403 under the fine-grained PAT is expected: never elevate",
         "reason in owner words; owner taps once per 30-min grant",
         "use instead of asking the owner to make the change by hand",
         "revoke when done"
