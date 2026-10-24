@@ -17,6 +17,63 @@ import { backupDisplayStatus, StatusBadge } from './StatusBadge'
 
 type ViewMode = 'list' | 'grid'
 const STORAGE_KEY = 'backups-view-mode'
+export const HISTORY_PREVIEW = 10
+
+/**
+ * The runs shown before "Show all": a source whose latest run failed comes
+ * first, then the most recent runs, up to `limit` rows. `backups` is newest first.
+ */
+export function previewBackups(backups: Backup[], limit = HISTORY_PREVIEW) {
+  const seen = new Set<string>()
+  const failing: Backup[] = []
+  for (const backup of backups) {
+    if (seen.has(backup.source_id)) continue
+    seen.add(backup.source_id)
+    if (backup.status === 'failed') failing.push(backup)
+  }
+  const pinned = new Set(failing.map((backup) => backup.id))
+  return [
+    ...failing,
+    ...backups.filter((backup) => !pinned.has(backup.id)),
+  ].slice(0, limit)
+}
+
+// ─── Compact row (phone) ─────────────────────────────────────────
+
+function BackupCompactRow({
+  backup,
+  source,
+}: {
+  backup: Backup
+  source: BackupSource | undefined
+}) {
+  return (
+    <li className="flex items-center gap-2 px-3 py-2 text-xs">
+      <StatusBadge
+        status={backup.status}
+        activity={backup.verification_json?.activity}
+      />
+      <Link
+        href={`/backups/${backup.source_id}`}
+        className="min-w-0 flex-1 truncate text-phosphor-400 hover:text-phosphor-300"
+      >
+        {source?.name ?? backup.source_id}
+      </Link>
+      <span className="shrink-0 text-slate-500">
+        {formatTimeAgo(backup.created_at)}
+      </span>
+      {backup.status === 'completed' && (
+        <Link
+          href={`/backups/${backup.source_id}/restore/${backup.id}`}
+          className="shrink-0 p-1 text-slate-500 hover:text-amber-400"
+          aria-label={`Restore ${source?.name ?? backup.source_id}`}
+        >
+          <RotateCcw className="w-3.5 h-3.5" />
+        </Link>
+      )}
+    </li>
+  )
+}
 
 // ─── Backup Grid Card ────────────────────────────────────────────
 
@@ -229,6 +286,7 @@ export function BackupHistory({
 }: BackupHistoryProps) {
   const [expandedId, setExpandedId] = useState<string | null>(null)
   const [viewRaw, setViewRaw] = useState<ViewMode>('list')
+  const [showAll, setShowAll] = useState(false)
 
   useEffect(() => {
     try {
@@ -253,6 +311,12 @@ export function BackupHistory({
     for (const s of sources) map[s.id] = s
     return map
   }, [sources])
+
+  const shown = useMemo(
+    () => (showAll ? backups : previewBackups(backups)),
+    [backups, showAll],
+  )
+  const hidden = backups.length - shown.length
 
   const columns = useMemo<BackupColumn[]>(
     () => [
@@ -314,7 +378,9 @@ export function BackupHistory({
             History
           </h2>
           <p className="mt-0.5 text-xs text-slate-500">
-            Most recent backups across all sources
+            {showAll
+              ? 'Recent backups across all sources, newest first'
+              : 'Latest runs, failing sources first'}
           </p>
         </div>
         <div className="flex items-center gap-3">
@@ -341,7 +407,7 @@ export function BackupHistory({
         <>
           <BackupSizeExplanation />
           <div className="grid grid-cols-1 gap-3 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
-            {backups.map((backup) => (
+            {shown.map((backup) => (
               <BackupGridCard
                 key={backup.id}
                 backup={backup}
@@ -351,53 +417,88 @@ export function BackupHistory({
           </div>
         </>
       ) : (
-        <BackupHistoryTable
-          backups={backups}
-          isLoading={backupsLoading}
-          hasError={Boolean(backupsError)}
-          onRetry={onRetry}
-          emptyState={
-            <div className="text-center py-20 text-slate-600">
-              <Archive className="w-8 h-8 mx-auto mb-3 opacity-40" />
-              <p className="text-sm">
-                {statusFilter
-                  ? `No backups with status "${statusFilter}"`
-                  : 'No backups yet'}
-              </p>
-            </div>
-          }
-          expandedId={expandedId}
-          onToggleExpanded={setExpandedId}
-          columns={columns}
-          renderActions={(backup) => (
-            <>
-              <Link
-                href={`/backups/${backup.source_id}`}
-                className="p-1 text-slate-500 hover:text-phosphor-400 transition-colors"
-                title="View source"
-                aria-label="View source"
-              >
-                <Eye className="w-3.5 h-3.5" />
-              </Link>
-              {backup.status === 'completed' && (
-                <Link
-                  href={`/backups/${backup.source_id}/restore/${backup.id}`}
-                  className="p-1 text-slate-500 hover:text-amber-400 transition-colors"
-                  title="Restore"
-                  aria-label="Restore"
-                >
-                  <RotateCcw className="w-3.5 h-3.5" />
-                </Link>
-              )}
-            </>
+        <>
+          {!backupsLoading && !backupsError && shown.length > 0 && (
+            <ul
+              aria-label="Backup runs"
+              className="divide-y divide-slate-700/50 rounded-lg border border-slate-700 bg-slate-800/50 sm:hidden"
+            >
+              {shown.map((backup) => (
+                <BackupCompactRow
+                  key={backup.id}
+                  backup={backup}
+                  source={sourceMap[backup.source_id]}
+                />
+              ))}
+            </ul>
           )}
-          getExpandedSourceName={(backup) =>
-            sourceMap[backup.source_id]?.name ?? backup.source_id
-          }
-          getExpandedSourceType={(backup) =>
-            sourceMap[backup.source_id]?.source_type
-          }
-        />
+          <div
+            className={clsx(
+              !backupsLoading &&
+                !backupsError &&
+                shown.length > 0 &&
+                'hidden sm:block',
+            )}
+          >
+            <BackupHistoryTable
+              backups={shown}
+              isLoading={backupsLoading}
+              hasError={Boolean(backupsError)}
+              onRetry={onRetry}
+              emptyState={
+                <div className="text-center py-20 text-slate-600">
+                  <Archive className="w-8 h-8 mx-auto mb-3 opacity-40" />
+                  <p className="text-sm">
+                    {statusFilter
+                      ? `No backups with status "${statusFilter}"`
+                      : 'No backups yet'}
+                  </p>
+                </div>
+              }
+              expandedId={expandedId}
+              onToggleExpanded={setExpandedId}
+              columns={columns}
+              renderActions={(backup) => (
+                <>
+                  <Link
+                    href={`/backups/${backup.source_id}`}
+                    className="p-1 text-slate-500 hover:text-phosphor-400 transition-colors"
+                    title="View source"
+                    aria-label="View source"
+                  >
+                    <Eye className="w-3.5 h-3.5" />
+                  </Link>
+                  {backup.status === 'completed' && (
+                    <Link
+                      href={`/backups/${backup.source_id}/restore/${backup.id}`}
+                      className="p-1 text-slate-500 hover:text-amber-400 transition-colors"
+                      title="Restore"
+                      aria-label="Restore"
+                    >
+                      <RotateCcw className="w-3.5 h-3.5" />
+                    </Link>
+                  )}
+                </>
+              )}
+              getExpandedSourceName={(backup) =>
+                sourceMap[backup.source_id]?.name ?? backup.source_id
+              }
+              getExpandedSourceType={(backup) =>
+                sourceMap[backup.source_id]?.source_type
+              }
+            />
+          </div>
+        </>
+      )}
+
+      {!backupsLoading && !backupsError && (hidden > 0 || showAll) && (
+        <button
+          type="button"
+          onClick={() => setShowAll((value) => !value)}
+          className="text-xs text-phosphor-400 hover:text-phosphor-300 focus-visible:outline focus-visible:outline-2 focus-visible:outline-phosphor-400"
+        >
+          {showAll ? 'Show fewer' : `Show all ${backups.length} recent runs`}
+        </button>
       )}
     </section>
   )
