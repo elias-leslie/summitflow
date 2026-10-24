@@ -1,6 +1,27 @@
 # Backup optimization rollout and inventory
 
-## Current direction — 2026-10-05
+## Current state — 2026-10-24
+
+- Every enabled backup source uses the restic repositories: the local repository
+  on the T7 (`/media/kasadis/Backups/davion-gem/restic`) plus its Google Drive
+  copy, with the append-only Proxmox copy behind them. Scheduled maintenance
+  checks, expires and prunes them; a disabled source with no capture for
+  `backup_retire_disabled_after_days` (default 30) has its points retired.
+- Linux host recovery is btrbk to the T7 native partition, with a monthly real
+  restore test that sets `restore_verified` (see `HOST_MAINTENANCE.md`). Veeam
+  is not installed on this host.
+- The age/rclone archive pipeline is retired. No archive was made after
+  2026-10-06. On 2026-10-24, with the owner's approval, all 383 T7 archives
+  under `davion-gem/project-backups` (154 GB) and their catalogue rows were
+  deleted. The Google Drive copies that still existed (175, under
+  `SummitFlow-Archives`) were kept (owner's call); the inventory is in
+  `~/.local/state/summitflow/retired-archives/`. The pending-drain job, its API
+  and `st backup drain-pending` are gone; the infrastructure restore drill
+  restores only restic points.
+
+The sections below are history.
+
+## Historical direction — 2026-10-05
 
 The owner approved Btrfs/btrbk for Linux host recovery, Veeam for Windows, and
 the existing Restic/Google Drive repositories for incremental portable backups

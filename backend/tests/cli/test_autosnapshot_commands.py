@@ -53,7 +53,8 @@ def test_sweep_result_names_real_failures_only() -> None:
     from cli.lib.autosnapshot import sweep_result
 
     benign = [{"project_id": "a", "status": "skip", "reason": "interval not elapsed"},
-              {"project_id": "b", "status": "skip", "reason": "Deferred: shared physical snapshot operation in progress"}]
+              {"project_id": "b", "status": "skip", "reason": "Deferred: shared physical snapshot operation in progress"},
+              {"project_id": "wt", "status": "skip", "reason": "Deferred: external Git metadata is not inside the captured tree"}]
     assert sweep_result(benign) == "ok"
     failed = [*benign, {"project_id": "c", "status": "skip", "reason": "Cannot inventory Btrfs boundaries: denied"}]
-    assert sweep_result(failed) == "1 of 3 projects failed: c: Cannot inventory Btrfs boundaries: denied"
+    assert sweep_result(failed) == "1 of 4 projects failed: c: Cannot inventory Btrfs boundaries: denied"

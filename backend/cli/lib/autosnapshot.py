@@ -407,9 +407,12 @@ def sweep_periodic(*, policy: AutosnapshotPolicy = DEFAULT_POLICY) -> list[Quick
 # page and Nightshift's stale-snapshot alert (a timer that runs is not proof).
 STATE_PATH = Path.home() / ".local" / "share" / "st" / "snaps" / "autosnap-state.json"
 # Expected or retry-next-sweep skips; any other reason is a failed project.
+# Expected skips. Git worktrees (.git is a file) are never captured on their own;
+# their files are in the whole-@workspaces point and their history in the main repo.
 _SWEEP_OK_REASONS = ("interval not elapsed", "saved source unchanged", "Skipped: saved source unchanged",
                      "Deferred: Git index/HEAD/ref transaction", "Deferred: snapshot operation already",
-                     "Deferred: latest shared boundary", "Deferred: shared ")
+                     "Deferred: latest shared boundary", "Deferred: shared ",
+                     "Deferred: external Git metadata is not inside the captured tree")
 
 
 def sweep_result(report: list[dict[str, str]]) -> str:
