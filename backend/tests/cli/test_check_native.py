@@ -866,6 +866,31 @@ def test_selected_plan_omits_unmounted_workspace_dist_but_binds_package_dependen
     assert acceptance._project_acceptance_plan(native_repo, commit=selected) != before
 
 
+@pytest.mark.parametrize("selected", [False, True])
+def test_workspace_link_caches_rewritten_by_the_gate_keep_the_plan_stable(native_repo: Path, selected: bool) -> None:
+    # node_modules/tether -> ../tether: the gate's own ruff and pytest runs
+    # rewrite tether's ignored caches mid-acceptance; the plan must not drift.
+    workspace = native_repo / "tether"
+    (workspace / "scripts").mkdir(parents=True)
+    script = workspace / "scripts/watch.py"
+    script.write_text("value = 1\n")
+    (native_repo / "node_modules").mkdir()
+    (native_repo / "node_modules/tether").symlink_to("../tether")
+    (native_repo / ".gitignore").write_text(".dev-tools/\nnode_modules/\n__pycache__/\n.ruff_cache/\n")
+    config = native_repo / ".st-check.toml"
+    config.write_text(config.read_text().replace('paths = [".tools"]', 'paths = [".tools"]\nenvironment_inputs=["node_modules"]'))
+    _committed(native_repo)
+    commit = _git(native_repo, "rev-parse", "HEAD") if selected else None
+    before = acceptance._project_acceptance_plan(native_repo, commit=commit)
+    for cache in ("scripts/__pycache__/watch.cpython-313.pyc", ".ruff_cache/0.15.6/123"):
+        (workspace / cache).parent.mkdir(parents=True)
+        (workspace / cache).write_text("rewritten by the gate\n")
+    assert acceptance._project_acceptance_plan(native_repo, commit=commit) == before
+    if not selected:
+        script.write_text("value = 2\n")
+        assert acceptance._project_acceptance_plan(native_repo, commit=commit) != before
+
+
 def test_unselected_environment_identity_does_not_resolve_source_projections(tmp_path: Path, monkeypatch) -> None:
     from cli.commands.check_native import _environment_identity
 

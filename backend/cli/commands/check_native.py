@@ -211,6 +211,38 @@ def _python_environment_manifest(root: Path, path: Path) -> list[dict[str, Any]]
     return entries
 
 
+def _workspace_source_identity(root: Path, target: Path, *, commit: str | None) -> dict[str, Any]:
+    """Bind an in-repo workspace package by the source Git sees.
+
+    Its ignored build output and tool caches (.ruff_cache, __pycache__, dist)
+    are not dependency inputs, and the gate itself rewrites them mid-run, so
+    binding them changes the acceptance plan during acceptance. Its own
+    node_modules is bound separately as a prepared environment.
+    """
+    from cli.lib.acceptance import _git, _source_tree_entries
+
+    relative = target.relative_to(root.resolve()).as_posix()
+    prefix = f"{relative}/"
+    entries: list[dict[str, Any]] = []
+    if commit is not None:
+        for name, (mode, oid) in sorted(_source_tree_entries(root, commit).items()):
+            if name.startswith(prefix) and "node_modules" not in Path(name).parts:
+                entries.append({"path": name.removeprefix(prefix), "mode": mode, "oid": oid})
+    else:
+        listed = _git(root, ["ls-files", "-z", "--cached", "--others", "--exclude-standard", "--", relative])
+        if listed.returncode:
+            return {"path": relative, "state": "unavailable"}
+        for name in sorted(set(filter(None, listed.stdout.split("\0")))):
+            candidate = root.resolve() / name
+            if "node_modules" in Path(name).parts:
+                continue
+            if candidate.is_symlink():
+                entries.append({"path": name.removeprefix(prefix), "link_target": os.readlink(candidate)})
+            elif candidate.is_file():
+                entries.append(identity(target, candidate))
+    return {"path": relative, "state": "present", "file_count": len(entries), "sha256": _digest(entries)}
+
+
 def _node_modules_manifest(root: Path, path: Path, *, commit: str | None) -> list[dict[str, Any]]:
     """Bind node_modules by package links/versions and the installer's lock.
 
@@ -229,8 +261,7 @@ def _node_modules_manifest(root: Path, path: Path, *, commit: str | None) -> lis
                 store = Path(*target.parts[:target.parts.index("node_modules") + 1])
                 stores.add(store)
             elif target.is_relative_to(resolved_root):
-                entries.append({"workspace": name, **_environment_identity(root, candidate, commit=commit,
-                                                                         prune=frozenset({"node_modules"}))})
+                entries.append({"workspace": name, **_workspace_source_identity(root, target, commit=commit)})
                 nested = target / "node_modules"
                 if nested.is_dir():
                     entries.append({"workspace_modules": name, "entries": _node_modules_manifest(root, nested, commit=commit)})
