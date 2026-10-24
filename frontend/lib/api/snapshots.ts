@@ -57,6 +57,8 @@ export interface BtrfsPolicy {
   manual_keep_per_scope: number
   max_deletes_per_run: number
   delete_batch: number
+  /** Hours after which the newest point counts as stale. */
+  stale_after_hours?: number
 }
 
 export interface BtrfsSummary {
@@ -71,6 +73,10 @@ export interface BtrfsSummary {
   archived_scope_count: number
   policy: BtrfsPolicy
   autosnap_timer_active: boolean
+  newest_point_at?: string | null
+  last_sweep_at?: string | null
+  /** 'ok', or a short failure text from the last sweep. */
+  last_sweep_result?: string | null
 }
 
 // ─── API Functions ──────────────────────────────────────────────

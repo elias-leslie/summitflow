@@ -7,10 +7,10 @@ import type {
   BtrfsSnapshot,
   BtrfsSummary,
 } from '@/lib/api/snapshots'
+import { ProjectSnapshotsCard } from './ProjectSnapshotsCard'
 import { SavedWorkEvidence } from './SavedWorkEvidence'
 import { ScopeList } from './ScopeList'
 import { SnapshotRow } from './SnapshotRow'
-import { SnapshotSummaryCard } from './SnapshotSummaryCard'
 
 const api = vi.hoisted(() => ({
   fetchSnapshots: vi.fn(),
@@ -19,6 +19,8 @@ const api = vi.hoisted(() => ({
   previewSnapshotRecovery: vi.fn(),
   createSnapshot: vi.fn(),
   pruneSnapshots: vi.fn(),
+  fetchSnapshotSummary: vi.fn(),
+  fetchScopes: vi.fn(),
 }))
 vi.mock('@/lib/api/snapshots', () => api)
 
@@ -286,49 +288,54 @@ describe('Saved-work recovery', () => {
   })
 })
 
-describe('Saved-work summary', () => {
-  it('preserves unknown size and reports the current short retention policy', () => {
-    render(
-      <SnapshotSummaryCard
-        summary={summary}
-        isLoading={false}
-        onMutated={() => {}}
-      />,
-    )
-    expect(screen.getByText('Unavailable')).toBeInTheDocument()
-    expect(
-      screen.getByText(
-        /every 5 min; keep every capture for 6h, one per hour to 24h, one per day to 3 days/,
-      ),
-    ).toBeInTheDocument()
-    expect(
-      screen.getByText(
-        /Deleted projects: newest capture kept 14 days\. Low disk: only the newest 3 kept\./,
-      ),
-    ).toBeInTheDocument()
+describe('Project snapshots card', () => {
+  beforeEach(() => {
+    api.fetchSnapshotSummary.mockResolvedValue(summary)
+    api.fetchScopes.mockResolvedValue([scope])
+    api.fetchSnapshots.mockResolvedValue([snapshot])
   })
 
-  it('preserves measured zero and partial prune failure details', async () => {
+  function openDetails() {
+    fireEvent.click(screen.getByText(/Projects \(1 active, 0 archived\)/))
+  }
+
+  it('keeps unknown size apart from zero and states the retention policy', async () => {
+    const view = renderQuery(<ProjectSnapshotsCard />)
+    await screen.findByText(/Projects \(1 active/)
+    openDetails()
+    expect(screen.getByText('Not measured')).toBeInTheDocument()
+    expect(
+      screen.getByText(
+        /Keeps every snapshot for 6 h, one an hour to 24 h, then one a day for 3 days\. Retired projects keep their newest snapshot for 14 days\. When the disk is low, only the newest 3 are kept\./,
+      ),
+    ).toBeInTheDocument()
+    expect(screen.getByText('Every 5 min')).toBeInTheDocument()
+    view.unmount()
+
+    api.fetchSnapshotSummary.mockResolvedValue({
+      ...summary,
+      total_usage_bytes: 0,
+    })
+    renderQuery(<ProjectSnapshotsCard />)
+    await screen.findByText(/Projects \(1 active/)
+    openDetails()
+    expect(screen.getByText('0 B')).toBeInTheDocument()
+  })
+
+  it('reports a partial prune failure and refreshes snapshot status', async () => {
     api.pruneSnapshots.mockResolvedValue({
       ok: false,
       pruned: 2,
       error: 'Pinned capture skipped',
     })
-    const refreshed = vi.fn()
-    render(
-      <SnapshotSummaryCard
-        summary={{ ...summary, total_usage_bytes: 0 }}
-        isLoading={false}
-        onMutated={refreshed}
-      />,
-    )
-    expect(screen.getByText('0 B')).toBeInTheDocument()
-    fireEvent.click(screen.getByRole('button', { name: 'Prune' }))
+    const { invalidate } = renderQuery(<ProjectSnapshotsCard />)
+    await screen.findByText(/Projects \(1 active/)
+    fireEvent.click(screen.getByRole('button', { name: 'Prune now' }))
     expect(await screen.findByRole('alert')).toHaveTextContent(
-      '2 snapshot(s) pruned; Pinned capture skipped',
+      '2 pruned; Pinned capture skipped',
     )
     expect(api.pruneSnapshots).toHaveBeenCalledWith(false)
-    expect(refreshed).toHaveBeenCalledOnce()
+    expect(invalidate).toHaveBeenCalledWith({ queryKey: ['snapshot-summary'] })
   })
 
   it('handles failed prune payloads without a deletion count', async () => {
@@ -336,43 +343,28 @@ describe('Saved-work summary', () => {
       ok: false,
       error: 'Storage unavailable',
     })
-    render(
-      <SnapshotSummaryCard
-        summary={summary}
-        isLoading={false}
-        onMutated={() => {}}
-      />,
-    )
-    fireEvent.click(screen.getByRole('button', { name: 'Prune' }))
+    renderQuery(<ProjectSnapshotsCard />)
+    await screen.findByText(/Projects \(1 active/)
+    fireEvent.click(screen.getByRole('button', { name: 'Prune now' }))
     await waitFor(() =>
       expect(screen.getByRole('alert')).toHaveTextContent(
         'Storage unavailable',
       ),
     )
-    expect(screen.queryByText(/undefined snapshot/)).not.toBeInTheDocument()
+    expect(screen.queryByText(/undefined/)).not.toBeInTheDocument()
   })
 
-  it('shows loading and failed status instead of removing the protection card', () => {
-    const view = render(
-      <SnapshotSummaryCard
-        summary={undefined}
-        isLoading
-        onMutated={() => {}}
-      />,
+  it('shows loading, then the failure, instead of hiding the card', async () => {
+    let fail: (error: Error) => void = () => {}
+    api.fetchSnapshotSummary.mockReturnValue(
+      new Promise((_, reject) => {
+        fail = reject
+      }),
     )
-    expect(screen.getByRole('status')).toHaveTextContent(
-      'Loading saved-work protection',
-    )
-    view.rerender(
-      <SnapshotSummaryCard
-        summary={undefined}
-        isLoading={false}
-        error={new Error('Offline')}
-        onMutated={() => {}}
-      />,
-    )
-    expect(screen.getByRole('alert')).toHaveTextContent(
-      'Saved-work protection unavailable: Offline',
-    )
+    renderQuery(<ProjectSnapshotsCard />)
+    expect(screen.getByText('Loading…')).toHaveAttribute('role', 'status')
+    act(() => fail(new Error('Offline')))
+    expect(await screen.findByRole('alert')).toHaveTextContent('Offline')
+    expect(screen.getByText('Status unavailable')).toBeInTheDocument()
   })
 })

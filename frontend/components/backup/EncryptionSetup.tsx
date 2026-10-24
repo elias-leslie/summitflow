@@ -102,13 +102,11 @@ export function EncryptionSetup() {
 
   return (
     <section
-      aria-label="Backup encryption"
+      aria-label="Recovery key settings"
       className="space-y-3 rounded-lg border border-slate-700/60 bg-slate-800/40 p-4"
     >
       <div className="flex flex-wrap items-center justify-between gap-2">
-        <h2 className="text-sm font-semibold text-slate-200">
-          Backup encryption
-        </h2>
+        <h2 className="text-sm font-semibold text-slate-200">Recovery key</h2>
         <span
           className={
             status?.ready
@@ -124,9 +122,9 @@ export function EncryptionSetup() {
         </span>
       </div>
       <p className="text-xs text-slate-400">
-        New source backups are encrypted locally. Google Drive receives the same
-        encrypted archive. Existing backups and system-image encryption are
-        tracked separately.
+        This key decrypts the older encrypted archives. The restic repositories
+        use their own passwords, kept in the same protected key folder on this
+        machine.
       </p>
       {loadError && (
         <p role="alert" className="text-xs text-red-400">

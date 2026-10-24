@@ -15,11 +15,6 @@ const LABELS: Record<string, { label: string; unit: string; hint: string }> = {
     unit: 'hours',
     hint: 'go-build and other build leftovers in /tmp',
   },
-  container_max_age_hours: {
-    label: 'Stopped containers',
-    unit: 'hours',
-    hint: 'Docker containers stopped longer than this',
-  },
   go_cache_max_gb: {
     label: 'Go build cache',
     unit: 'GB',

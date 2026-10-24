@@ -7,7 +7,6 @@ import {
   FolderOpen,
   Loader2,
   Play,
-  Save,
 } from 'lucide-react'
 import Link from 'next/link'
 import { useCallback, useEffect, useState } from 'react'
@@ -18,12 +17,12 @@ import {
   type CoverageResponse,
   fetchInfraCoverage,
   runRestoreDrill,
-  updateBackupSource,
 } from '@/lib/api/backups'
 import { formatBytes, formatDate, formatTimeAgo } from '@/lib/format'
 import { backupActivityLabel, OffsiteStatus } from './OffsiteStatus'
 import { SourceTypeBadge } from './SourceTypeBadge'
 import { StatusBadge } from './StatusBadge'
+import { frequencyLabel, retentionLabel } from './schedule-options'
 
 // ─── Constants ──────────────────────────────────────────────────
 
@@ -45,22 +44,6 @@ const HEALTH_DOT: Record<string, string> = {
   yellow: 'bg-amber-500',
   red: 'bg-red-500',
 }
-
-const FREQUENCY_OPTIONS = [
-  { value: 'hourly', label: 'Hourly' },
-  { value: 'four_hourly', label: 'Every 4 hours' },
-  { value: 'daily', label: 'Daily' },
-  { value: 'weekly', label: 'Weekly' },
-  { value: 'monthly', label: 'Monthly' },
-]
-
-const RETENTION_OPTIONS = [
-  { value: 7, label: '7 days' },
-  { value: 14, label: '14 days' },
-  { value: 30, label: '30 days' },
-  { value: 60, label: '60 days' },
-  { value: 90, label: '90 days' },
-]
 
 // ─── Confidence Badge ───────────────────────────────────────────
 
@@ -173,18 +156,11 @@ export function SourceCard({
   onSaved,
 }: SourceCardProps) {
   const [expanded, setExpanded] = useState(false)
-  const [frequency, setFrequency] = useState<string>(source.frequency)
-  const [retention, setRetention] = useState(source.retention_days)
-  const [enabled, setEnabled] = useState(source.enabled)
-  const [saving, setSaving] = useState(false)
-  const [saved, setSaved] = useState(false)
   const [drilling, setDrilling] = useState(false)
   const [coverage, setCoverage] = useState<CoverageResponse | null>(null)
 
   const isInfra = source.source_type === 'infrastructure'
-  const frequencyLabel =
-    FREQUENCY_OPTIONS.find((option) => option.value === source.frequency)
-      ?.label ?? source.frequency
+  const schedule = frequencyLabel(source.frequency)
   const activity = health?.backup_activity
   const backupActive = isBackingUp || activity?.active === true
 
@@ -209,28 +185,6 @@ export function SourceCard({
   const healthStatus = health?.health_status ?? ''
   const accentClass = HEALTH_ACCENT[healthStatus] ?? 'border-l-slate-600'
   const dotClass = HEALTH_DOT[healthStatus] ?? 'bg-slate-600'
-
-  const hasChanges =
-    frequency !== source.frequency ||
-    retention !== source.retention_days ||
-    enabled !== source.enabled
-
-  const handleSave = async () => {
-    setSaving(true)
-    try {
-      await updateBackupSource(source.id, {
-        frequency,
-        retention_days: retention,
-        enabled,
-      })
-      onSaved()
-      setSaved(true)
-      setTimeout(() => setSaved(false), 2000)
-    } catch {
-      /* parent will refetch */
-    }
-    setSaving(false)
-  }
 
   return (
     <div
@@ -280,7 +234,7 @@ export function SourceCard({
           {source.enabled ? (
             <>
               <span className="rounded bg-slate-700/70 px-1.5 py-0.5 text-[10px] uppercase tracking-[0.14em] text-slate-400">
-                {frequencyLabel}
+                {schedule}
               </span>
               {health?.last_success_at && (
                 <span>{formatTimeAgo(health.last_success_at)}</span>
@@ -385,7 +339,7 @@ export function SourceCard({
                   Frequency
                 </div>
                 <div className="truncate text-xs text-slate-200">
-                  {frequencyLabel}
+                  {source.enabled ? schedule : 'Off'}
                 </div>
               </div>
               <div className="min-w-0 rounded bg-slate-950/50 px-2 py-1.5">
@@ -393,7 +347,7 @@ export function SourceCard({
                   Retention
                 </div>
                 <div className="truncate text-xs text-slate-200">
-                  {source.retention_days}d
+                  {retentionLabel(source.retention_days)}
                 </div>
               </div>
               <div className="min-w-0 rounded bg-slate-950/50 px-2 py-1.5">
@@ -416,63 +370,12 @@ export function SourceCard({
               </div>
             </div>
 
-            {/* Schedule Editor */}
-            <div className="flex flex-wrap items-center gap-2">
-              <select
-                value={frequency}
-                onChange={(e) => setFrequency(e.target.value)}
-                aria-label="Backup frequency"
-                className="px-2 py-1 bg-slate-900/60 border border-slate-700/60 rounded text-xs text-slate-200 focus-visible:outline-none focus-visible:border-phosphor-500/50 focus-visible:ring-1 focus-visible:ring-phosphor-500/20 transition-colors"
-              >
-                {FREQUENCY_OPTIONS.map((o) => (
-                  <option key={o.value} value={o.value}>
-                    {o.label}
-                  </option>
-                ))}
-              </select>
-              <select
-                value={retention}
-                onChange={(e) => setRetention(Number(e.target.value))}
-                aria-label="Retention period"
-                className="px-2 py-1 bg-slate-900/60 border border-slate-700/60 rounded text-xs text-slate-200 focus-visible:outline-none focus-visible:border-phosphor-500/50 focus-visible:ring-1 focus-visible:ring-phosphor-500/20 transition-colors"
-              >
-                {RETENTION_OPTIONS.map((o) => (
-                  <option key={o.value} value={o.value}>
-                    {o.label}
-                  </option>
-                ))}
-              </select>
-              <button
-                type="button"
-                onClick={() => setEnabled(!enabled)}
-                className={clsx(
-                  'text-2xs px-2 py-1 rounded border transition-colors',
-                  enabled
-                    ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20 hover:bg-emerald-500/20'
-                    : 'bg-slate-700/50 text-slate-500 border-slate-600/50 hover:text-slate-400',
-                )}
-              >
-                {enabled ? 'Enabled' : 'Disabled'}
-              </button>
-              {hasChanges && (
-                <button
-                  type="button"
-                  onClick={handleSave}
-                  disabled={saving}
-                  className="flex items-center gap-1 text-2xs px-2 py-1 rounded bg-phosphor-500/10 text-phosphor-400 hover:bg-phosphor-500/20 disabled:opacity-40 transition-colors"
-                >
-                  {saving ? (
-                    <Loader2 className="w-3 h-3 animate-spin" />
-                  ) : (
-                    <Save className="w-3 h-3" />
-                  )}
-                  Save
-                </button>
-              )}
-              {saved && (
-                <span className="text-2xs text-emerald-400">Saved</span>
-              )}
-            </div>
+            <Link
+              href={`/backups/${encodeURIComponent(source.id)}`}
+              className="inline-block text-2xs text-phosphor-400 hover:text-phosphor-300 transition-colors"
+            >
+              Change schedule or retention &rarr;
+            </Link>
 
             {/* Recent Backups */}
             {recentBackups.length > 0 && (
@@ -499,12 +402,6 @@ export function SourceCard({
                     )}
                   </div>
                 ))}
-                <Link
-                  href={`/backups/${recentBackups[0].source_id}`}
-                  className="inline-block text-2xs text-phosphor-400 hover:text-phosphor-300 transition-colors mt-1"
-                >
-                  View all &rarr;
-                </Link>
               </div>
             )}
           </div>

@@ -65,16 +65,11 @@ export function WeeklyRestoreStatus({
   const sourceName = (id: string) =>
     health?.sources.find((source) => source.source_id === id)?.source_name ?? id
   return (
-    <div className="rounded-lg border border-slate-700/60 bg-slate-900/30 p-4 space-y-3">
-      <div>
-        <h3 className="text-sm font-medium text-slate-100">
-          Weekly critical restore
-        </h3>
-        <p className="mt-0.5 text-xs text-slate-400">
-          Combined offsite configuration and infrastructure restore. Host boot
-          recovery is a separate check.
-        </p>
-      </div>
+    <div className="space-y-3">
+      <p className="text-xs text-slate-400">
+        Each week the critical configuration and infrastructure sources are
+        restored together from Google Drive.
+      </p>
       {error && (
         <div className="space-y-2">
           <p role="alert" className="text-xs text-rose-300">
@@ -114,10 +109,7 @@ export function WeeklyRestoreStatus({
             const attempt = restore.latest_attempt
             const message = qualification(restore)
             return (
-              <li
-                key={repository.backend_id}
-                className="border-t border-slate-800/60 pt-3 space-y-1.5 text-xs"
-              >
+              <li key={repository.backend_id} className="space-y-1.5 text-xs">
                 <div className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1">
                   <span className="min-w-0 break-words font-medium text-slate-200">
                     {repository.backend_name}

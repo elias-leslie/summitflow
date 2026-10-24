@@ -16,13 +16,6 @@ export interface StorageBackend {
   updated_at: string | null
 }
 
-export interface StorageStatus {
-  configured: boolean
-  backend_count: number
-  default_backend_id: string | null
-  default_backend_name: string | null
-}
-
 export interface BackupActivity {
   backup_id: string
   run_id: string | null
@@ -118,23 +111,20 @@ export function fetchStorageBackends(): Promise<StorageBackend[]> {
   })
 }
 
-export function fetchStorageStatus(): Promise<StorageStatus> {
-  return fetchWithErrorHandling<StorageStatus>('/api/backup-storage/status', {
-    errorMessage: 'Failed to fetch storage status',
+export function updateStorageBackend(
+  id: string,
+  data: {
+    name?: string
+    config?: Record<string, unknown>
+    enabled?: boolean
+  },
+): Promise<StorageBackend> {
+  return fetchWithErrorHandling<StorageBackend>(`/api/backup-storage/${id}`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(data),
+    errorMessage: 'Could not save storage settings',
   })
-}
-
-export function createStorageBackend(data: {
-  name: string
-  backend_type?: string
-  config?: Record<string, unknown>
-  is_default?: boolean
-}): Promise<StorageBackend> {
-  return postJson<StorageBackend>(
-    '/api/backup-storage',
-    data,
-    'Failed to create storage backend',
-  )
 }
 
 export function testStorageBackend(
@@ -283,76 +273,6 @@ export function runRestoreDrill(): Promise<RestoreDrillResult> {
   )
 }
 
-// ─── System Image / Veeam ──────────────────────────────────────
-
-export interface SystemImageSession {
-  id: string
-  job_name: string
-  session_type: string
-  state: string
-  created_at: string | null
-  started_at: string | null
-  finished_at: string | null
-}
-
-export interface SystemImageBackupStatus {
-  installed: boolean
-  version: string | null
-  service_active: boolean
-  secure_boot_enabled: boolean
-  mok_enrolled: boolean
-  mok_enrollment_pending: boolean
-  module_loaded: boolean
-  module_signer: string | null
-  repository_name: string
-  repository_path: string
-  repository_accessible: boolean
-  job_name: string
-  job_configured: boolean
-  job_id: string | null
-  schedule_summary: string | null
-  protected_objects: string[]
-  last_session: SystemImageSession | null
-  active_session: SystemImageSession | null
-  can_start: boolean
-  blocked_reason: string | null
-  next_action: string
-}
-
-export interface SystemImageActionResponse {
-  status: string
-  message: string
-  session_id: string | null
-  output: string | null
-}
-
-export function fetchSystemImageBackupStatus(): Promise<SystemImageBackupStatus> {
-  return fetchWithErrorHandling<SystemImageBackupStatus>(
-    '/api/backups/system-image',
-    { errorMessage: 'Failed to fetch system-image backup status' },
-  )
-}
-
-export function startSystemImageBackup(): Promise<SystemImageActionResponse> {
-  return fetchWithErrorHandling<SystemImageActionResponse>(
-    '/api/backups/system-image/start',
-    {
-      method: 'POST',
-      errorMessage: 'Failed to start system-image backup',
-    },
-  )
-}
-
-export function stopSystemImageBackup(): Promise<SystemImageActionResponse> {
-  return fetchWithErrorHandling<SystemImageActionResponse>(
-    '/api/backups/system-image/stop',
-    {
-      method: 'POST',
-      errorMessage: 'Failed to stop system-image backup',
-    },
-  )
-}
-
 export interface NativeHostBackupStatus {
   engine: 'btrbk'
   enabled: boolean
@@ -360,7 +280,13 @@ export interface NativeHostBackupStatus {
   configured: boolean
   ready: boolean
   retention: string
-  windows_method: 'Veeam'
+  /** True only after a monthly restore test from the T7 passed. */
+  restore_verified: boolean
+  restore_tested_at?: string | null
+  restore_test_result?: 'verified' | 'failed' | null
+  restore_test_error?: string | null
+  /** Fewest points kept on the T7 across the configured subvolumes. */
+  points_kept?: number | null
   blocked_reason?: string | null
   sources?: string[]
   target?: string
@@ -388,6 +314,11 @@ export interface NativeHostBackupStatus {
     remaining_capacity_bytes?: number
     reclaimed_bytes?: number
     boot_path?: string | null
+  } | null
+  last_good_result?: {
+    status: string
+    started_at?: string | null
+    finished_at?: string | null
   } | null
 }
 
@@ -437,13 +368,18 @@ export async function fetchNativeHostBackupStatus(): Promise<NativeHostBackupSta
     configured: 'boolean',
     ready: 'boolean',
     retention: 'string',
+    restore_verified: 'boolean',
+    restore_tested_at: 'optionalString',
+    restore_test_result: 'optionalString',
+    restore_test_error: 'optionalString',
     blocked_reason: 'optionalString',
     target: 'optionalString',
   })
   if (
     row.engine !== 'btrbk' ||
-    row.windows_method !== 'Veeam' ||
     row.target === null ||
+    (row.points_kept != null &&
+      (typeof row.points_kept !== 'number' || row.points_kept < 0)) ||
     (row.sources !== undefined &&
       (!Array.isArray(row.sources) ||
         row.sources.some((source) => typeof source !== 'string')))
@@ -474,8 +410,9 @@ export async function fetchNativeHostBackupStatus(): Promise<NativeHostBackupSta
       })
     }
   }
-  if (row.last_result !== undefined && row.last_result !== null) {
-    validateNativeHostFields(nativeHostObject(row.last_result), {
+  for (const key of ['last_result', 'last_good_result'] as const) {
+    if (row[key] === undefined || row[key] === null) continue
+    validateNativeHostFields(nativeHostObject(row[key]), {
       status: 'string',
       started_at: 'optionalString',
       finished_at: 'optionalString',
@@ -510,4 +447,35 @@ export function fetchExternalBackups(): Promise<{
   return fetchWithErrorHandling('/api/backups/external', {
     errorMessage: 'Failed to load backups other projects run',
   })
+}
+
+// ─── Offsite destinations ──────────────────────────────────────
+
+export interface RepositoryCheck {
+  checked_at: string | null
+  status: string | null
+}
+
+export interface BackupDestinations {
+  /** Nightly window as HH:MM-HH:MM in schedule_timezone, or null when unrestricted. */
+  schedule_window: string | null
+  schedule_timezone: string
+  local_check: RepositoryCheck | null
+  drive_check: RepositoryCheck | null
+  check_alerts: string[]
+  proxmox: {
+    last_copy_at: string | null
+    last_attempt_at: string | null
+    error: string | null
+    checked_at: string | null
+    check_status: string | null
+    alerts: string[]
+  } | null
+}
+
+export function fetchBackupDestinations(): Promise<BackupDestinations> {
+  return fetchWithErrorHandling<BackupDestinations>(
+    '/api/backups/destinations',
+    { errorMessage: 'Could not load offsite copy status' },
+  )
 }

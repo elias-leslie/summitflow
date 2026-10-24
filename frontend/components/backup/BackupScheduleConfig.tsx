@@ -16,21 +16,15 @@ import { fetchBackupSource, updateBackupSource } from '@/lib/api/backups'
 import { formatDate } from '@/lib/format'
 import { FEEDBACK_TIMEOUT } from '@/lib/polling'
 import { getErrorMessage } from '@/lib/utils'
+import {
+  FREQUENCY_OPTIONS,
+  retentionChoices,
+  retentionLabel,
+} from './schedule-options'
 
 interface BackupScheduleConfigProps {
   sourceId: string
 }
-
-const FREQUENCY_OPTIONS = [
-  {
-    value: 'four_hourly',
-    label: 'Every 4 hours',
-    description: 'Runs throughout the day',
-  },
-  { value: 'daily', label: 'Daily', description: 'Backup every day' },
-  { value: 'weekly', label: 'Weekly', description: 'Backup once a week' },
-  { value: 'monthly', label: 'Monthly', description: 'Backup once a month' },
-]
 
 export function BackupScheduleConfig({ sourceId }: BackupScheduleConfigProps) {
   const queryClient = useQueryClient()
@@ -101,11 +95,11 @@ export function BackupScheduleConfig({ sourceId }: BackupScheduleConfigProps) {
     <div className="p-6 bg-slate-800/50 rounded-lg border border-slate-700">
       <h3 className="text-lg font-medium text-slate-100 mb-1 flex items-center gap-2">
         <Calendar className="w-5 h-5 text-phosphor-400" />
-        Backup Schedule
+        Schedule and retention
       </h3>
       <p className="text-sm text-slate-400 mb-6">
-        Configure automatic backups for this source. Manual backups can still be
-        created anytime.
+        The only place this source's schedule is set. You can still back it up
+        by hand at any time.
       </p>
 
       <div className="space-y-6">
@@ -118,12 +112,12 @@ export function BackupScheduleConfig({ sourceId }: BackupScheduleConfigProps) {
             )}
             <div>
               <p className="text-sm font-medium text-slate-200">
-                Scheduled Backups
+                Scheduled backups
               </p>
               <p className="text-xs text-slate-400">
                 {enabled
-                  ? 'Automatic runs follow this source schedule'
-                  : 'Automatic backups are disabled'}
+                  ? 'Runs on the schedule below'
+                  : 'Off: only manual backups run'}
               </p>
             </div>
           </div>
@@ -148,9 +142,9 @@ export function BackupScheduleConfig({ sourceId }: BackupScheduleConfigProps) {
 
         <div className={clsx(!enabled && 'opacity-50 pointer-events-none')}>
           <label className="block text-sm font-medium text-slate-300 mb-3">
-            Backup Frequency
+            How often
           </label>
-          <div className="grid grid-cols-3 gap-3">
+          <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
             {FREQUENCY_OPTIONS.map((option) => (
               <button
                 type="button"
@@ -167,9 +161,6 @@ export function BackupScheduleConfig({ sourceId }: BackupScheduleConfigProps) {
                 <p className="text-sm font-medium text-slate-200">
                   {option.label}
                 </p>
-                <p className="text-xs text-slate-400 mt-0.5">
-                  {option.description}
-                </p>
               </button>
             ))}
           </div>
@@ -180,7 +171,7 @@ export function BackupScheduleConfig({ sourceId }: BackupScheduleConfigProps) {
             htmlFor="retention-days"
             className="block text-sm font-medium text-slate-300 mb-2"
           >
-            Retention Period (Days)
+            Keep backups for
           </label>
           <select
             id="retention-days"
@@ -190,14 +181,16 @@ export function BackupScheduleConfig({ sourceId }: BackupScheduleConfigProps) {
             className="w-full px-3 py-2 bg-slate-900/80 border border-slate-700 rounded-md
                        text-slate-200 focus-visible:outline-none focus-visible:border-phosphor-500/50 focus-visible:ring-1 focus-visible:ring-phosphor-500/20 transition-all"
           >
-            {[7, 14, 21, 30, 60, 90].map((num) => (
-              <option key={num} value={num}>
-                {num} days
-              </option>
-            ))}
+            {retentionChoices(source?.retention_days ?? retentionDays).map(
+              (days) => (
+                <option key={days} value={days}>
+                  {retentionLabel(days)}
+                </option>
+              ),
+            )}
           </select>
           <p className="text-xs text-slate-400 mt-1">
-            Backups older than this will be automatically deleted.
+            Older backup points are expired automatically.
           </p>
         </div>
 
@@ -206,7 +199,7 @@ export function BackupScheduleConfig({ sourceId }: BackupScheduleConfigProps) {
             <div className="flex items-center justify-between text-sm">
               <span className="text-slate-400 flex items-center gap-2">
                 <Clock className="w-4 h-4" />
-                Last Backup
+                Last backup
               </span>
               <span className="text-slate-200">
                 {source.last_run_at ? formatDate(source.last_run_at) : 'Never'}
@@ -216,7 +209,7 @@ export function BackupScheduleConfig({ sourceId }: BackupScheduleConfigProps) {
               <div className="flex items-center justify-between text-sm">
                 <span className="text-slate-400 flex items-center gap-2">
                   <Calendar className="w-4 h-4" />
-                  Next Backup
+                  Next backup
                 </span>
                 <span className="text-phosphor-400">
                   {formatDate(source.next_run_at)}
@@ -256,7 +249,7 @@ export function BackupScheduleConfig({ sourceId }: BackupScheduleConfigProps) {
                 Saving...
               </>
             ) : (
-              'Save Changes'
+              'Save'
             )}
           </button>
         </div>

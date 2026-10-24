@@ -106,7 +106,7 @@ describe('WeeklyRestoreStatus', () => {
       screen.getByText('Last passed sources:').nextElementSibling,
     ).toHaveTextContent('configuration, infrastructure')
     expect(
-      screen.getByText(/Host boot recovery is a separate check/),
+      screen.getByText(/restored together from Google Drive/),
     ).toBeInTheDocument()
   })
 

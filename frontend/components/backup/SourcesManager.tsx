@@ -132,7 +132,7 @@ export function SourcesManager({
       {showHeader && (
         <div>
           <h2 className="text-sm font-semibold uppercase tracking-[0.16em] text-slate-300">
-            Sources & Schedules
+            Sources
           </h2>
           <p className="mt-0.5 text-xs text-slate-500">
             What gets backed up and when
