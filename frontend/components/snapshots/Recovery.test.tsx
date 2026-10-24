@@ -296,12 +296,12 @@ describe('Project snapshots card', () => {
   })
 
   function openDetails() {
-    fireEvent.click(screen.getByText(/Projects \(1 active, 0 archived\)/))
+    fireEvent.click(screen.getByText('Space used and retention'))
   }
 
   it('keeps unknown size apart from zero and states the retention policy', async () => {
     const view = renderQuery(<ProjectSnapshotsCard />)
-    await screen.findByText(/Projects \(1 active/)
+    await screen.findByText('Every 5 min')
     openDetails()
     expect(screen.getByText('Not measured')).toBeInTheDocument()
     expect(
@@ -317,7 +317,7 @@ describe('Project snapshots card', () => {
       total_usage_bytes: 0,
     })
     renderQuery(<ProjectSnapshotsCard />)
-    await screen.findByText(/Projects \(1 active/)
+    await screen.findByText('Every 5 min')
     openDetails()
     expect(screen.getByText('0 B')).toBeInTheDocument()
   })
@@ -329,7 +329,7 @@ describe('Project snapshots card', () => {
       error: 'Pinned capture skipped',
     })
     const { invalidate } = renderQuery(<ProjectSnapshotsCard />)
-    await screen.findByText(/Projects \(1 active/)
+    await screen.findByText('Every 5 min')
     fireEvent.click(screen.getByRole('button', { name: 'Prune now' }))
     expect(await screen.findByRole('alert')).toHaveTextContent(
       '2 pruned; Pinned capture skipped',
@@ -344,7 +344,7 @@ describe('Project snapshots card', () => {
       error: 'Storage unavailable',
     })
     renderQuery(<ProjectSnapshotsCard />)
-    await screen.findByText(/Projects \(1 active/)
+    await screen.findByText('Every 5 min')
     fireEvent.click(screen.getByRole('button', { name: 'Prune now' }))
     await waitFor(() =>
       expect(screen.getByRole('alert')).toHaveTextContent(

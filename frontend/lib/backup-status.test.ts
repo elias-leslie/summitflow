@@ -101,7 +101,7 @@ describe('countPoints', () => {
 
 describe('machineBackupStatus', () => {
   it('says "Not yet tested" and stays amber until a restore test passes', () => {
-    const status = machineBackupStatus(host(), '02:00-06:00', now)
+    const status = machineBackupStatus(host(), { window: '02:00-06:00' }, now)
     expect(status.tone).toBe('warn')
     expect(status.facts).toContainEqual({
       label: 'Restore test',
@@ -117,7 +117,7 @@ describe('machineBackupStatus', () => {
         restore_test_result: 'verified',
         restore_tested_at: hoursAgo(48),
       }),
-      '02:00-06:00',
+      { window: '02:00-06:00' },
       now,
     )
     expect(status.tone).toBe('ok')
@@ -128,7 +128,7 @@ describe('machineBackupStatus', () => {
     const old = { status: 'completed', finished_at: hoursAgo(50) }
     const status = machineBackupStatus(
       host({ last_result: old, last_good_result: old, restore_verified: true }),
-      null,
+      undefined,
       now,
     )
     expect(status.tone).toBe('bad')
@@ -141,7 +141,7 @@ describe('machineBackupStatus', () => {
         last_result: { status: 'failed', started_at: hoursAgo(1) },
         restore_verified: true,
       }),
-      null,
+      undefined,
       now,
     )
     expect(status).toMatchObject({ tone: 'bad', headline: 'Last run failed' })
@@ -150,14 +150,14 @@ describe('machineBackupStatus', () => {
   it('turns red on a failed restore test', () => {
     const status = machineBackupStatus(
       host({ restore_test_result: 'failed', restore_tested_at: hoursAgo(2) }),
-      null,
+      undefined,
       now,
     )
     expect(status.tone).toBe('bad')
   })
 
   it('reports points kept from the T7', () => {
-    const status = machineBackupStatus(host(), null, now)
+    const status = machineBackupStatus(host(), undefined, now)
     expect(status.facts).toContainEqual({
       label: 'Kept',
       value: '7 nightly points',
@@ -167,8 +167,17 @@ describe('machineBackupStatus', () => {
 
 describe('scheduleLabel', () => {
   it('names the start of the nightly window', () => {
-    expect(scheduleLabel('02:00-06:00')).toBe('Nightly from 02:00')
-    expect(scheduleLabel(null)).toBe('Nightly')
+    expect(scheduleLabel({ window: '02:00-06:00' })).toBe('Nightly from 02:00')
+    expect(scheduleLabel(undefined)).toBe('Nightly')
+  })
+
+  it('names the last start in the schedule timezone when no window is set', () => {
+    expect(
+      scheduleLabel(
+        { window: null, timezone: 'America/New_York' },
+        '2026-10-24T06:30:00Z',
+      ),
+    ).toBe('Nightly, last at 02:30')
   })
 })
 

@@ -2,13 +2,13 @@
 
 import { useMemo } from 'react'
 import type { NativeHostBackupStatus } from '@/lib/api/backups-infra'
-import { machineBackupStatus } from '@/lib/backup-status'
+import { type BackupSchedule, machineBackupStatus } from '@/lib/backup-status'
 import { formatBytes, formatDate } from '@/lib/format'
 import { DetailValue, StatusBlock } from './StatusBlock'
 
 interface MachineBackupCardProps {
   status: NativeHostBackupStatus | undefined
-  scheduleWindow: string | null | undefined
+  schedule: BackupSchedule | undefined
   isLoading: boolean
   error?: Error | null
   onRefresh: () => void
@@ -28,14 +28,14 @@ function blockerText(value: string) {
 /** Nightly btrbk backup of the whole Linux machine to the T7. */
 export function MachineBackupCard({
   status,
-  scheduleWindow,
+  schedule,
   isLoading,
   error,
   onRefresh,
 }: MachineBackupCardProps) {
   const block = useMemo(
-    () => machineBackupStatus(status, scheduleWindow),
-    [status, scheduleWindow],
+    () => machineBackupStatus(status, schedule),
+    [status, schedule],
   )
   const latest = status?.last_result
   const capacity = status?.capacity

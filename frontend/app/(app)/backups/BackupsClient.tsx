@@ -13,7 +13,10 @@ import { MachineBackupCard } from '@/components/backup/MachineBackupCard'
 import { OffsiteCard } from '@/components/backup/OffsiteCard'
 import { SourcesManager } from '@/components/backup/SourcesManager'
 import { StorageSettings } from '@/components/backup/StorageSettings'
-import { ProjectSnapshotsCard } from '@/components/snapshots/ProjectSnapshotsCard'
+import {
+  ProjectSnapshotsCard,
+  ProjectSnapshotsList,
+} from '@/components/snapshots/ProjectSnapshotsCard'
 import {
   type Backup,
   fetchAllBackups,
@@ -141,7 +144,12 @@ export function BackupsClient() {
         <ProjectSnapshotsCard />
         <MachineBackupCard
           status={nativeHostStatus}
-          scheduleWindow={destinations?.schedule_window}
+          schedule={
+            destinations && {
+              window: destinations.schedule_window,
+              timezone: destinations.schedule_timezone,
+            }
+          }
           isLoading={nativeHostLoading}
           error={nativeHostError}
           onRefresh={() => {
@@ -159,6 +167,8 @@ export function BackupsClient() {
           }}
         />
       </div>
+
+      <ProjectSnapshotsList />
 
       <CollapsibleSection
         title="Sources"

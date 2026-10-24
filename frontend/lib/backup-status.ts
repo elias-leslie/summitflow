@@ -147,16 +147,39 @@ export function projectSnapshotsStatus(
 
 // ─── Machine backup (btrbk to the T7) ───────────────────────────
 
-/** "02:00-06:00" → "Nightly from 02:00"; null means it can run any hour. */
-export function scheduleLabel(window: string | null | undefined): string {
-  if (!window) return 'Nightly'
-  const start = window.split(',')[0]?.split('-')[0]?.trim()
-  return start ? `Nightly from ${start}` : 'Nightly'
+export interface BackupSchedule {
+  window?: string | null
+  timezone?: string | null
+}
+
+/**
+ * "02:00-06:00" → "Nightly from 02:00". Without a window the scheduler starts
+ * it on its first nightly tick, so name the time the last good run started.
+ */
+export function scheduleLabel(
+  schedule: BackupSchedule | undefined,
+  lastStartedAt?: string | null,
+): string {
+  const start = schedule?.window?.split(',')[0]?.split('-')[0]?.trim()
+  if (start) return `Nightly from ${start}`
+  if (!lastStartedAt) return 'Nightly'
+  const at = new Date(lastStartedAt)
+  if (Number.isNaN(at.getTime())) return 'Nightly'
+  try {
+    const time = new Intl.DateTimeFormat('en-GB', {
+      hour: '2-digit',
+      minute: '2-digit',
+      timeZone: schedule?.timezone ?? undefined,
+    }).format(at)
+    return `Nightly, last at ${time}`
+  } catch {
+    return 'Nightly'
+  }
 }
 
 export function machineBackupStatus(
   status: NativeHostBackupStatus | undefined,
-  scheduleWindow: string | null | undefined,
+  schedule: BackupSchedule | undefined,
   now: Date = new Date(),
 ): BlockStatus {
   if (!status)
@@ -208,7 +231,10 @@ export function machineBackupStatus(
     headline,
     facts: [
       { label: 'Last good', value: ago(lastGoodAt), tone: goodTone },
-      { label: 'Schedule', value: scheduleLabel(scheduleWindow) },
+      {
+        label: 'Schedule',
+        value: scheduleLabel(schedule, good?.started_at),
+      },
       {
         label: 'Kept',
         value:

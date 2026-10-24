@@ -3,6 +3,7 @@
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { Camera, Loader2, Scissors } from 'lucide-react'
 import { useMemo, useState } from 'react'
+import { CollapsibleSection } from '@/components/backup/CollapsibleSection'
 import { DetailValue, StatusBlock } from '@/components/backup/StatusBlock'
 import {
   createSnapshot,
@@ -41,8 +42,6 @@ export function ProjectSnapshotsCard() {
     () => projectSnapshotsStatus(summary, scopes, pointsQuery.data),
     [summary, scopes, pointsQuery.data],
   )
-  const active = scopes.filter((scope) => scope.scope_state === 'active')
-  const archived = scopes.filter((scope) => scope.scope_state === 'archived')
 
   const [busy, setBusy] = useState<'snap' | 'prune' | null>(null)
   const [feedback, setFeedback] = useState<{
@@ -105,7 +104,7 @@ export function ProjectSnapshotsCard() {
       isLoading={summaryQuery.isLoading}
       error={summaryQuery.error ?? scopesQuery.error}
       testId="project-snapshots"
-      detailsLabel={`Projects (${active.length} active, ${archived.length} archived) and retention`}
+      detailsLabel="Space used and retention"
       details={
         <>
           {summary && (
@@ -130,19 +129,6 @@ export function ProjectSnapshotsCard() {
               {policy.archived_keep_days} days. When the disk is low, only the
               newest {policy.pressure_keep_points} are kept.
             </p>
-          )}
-          {scopesQuery.isLoading ? (
-            <p role="status" className="text-slate-400">
-              Loading projects…
-            </p>
-          ) : (
-            <ScopeList scopes={active} />
-          )}
-          {archived.length > 0 && (
-            <div className="space-y-1.5">
-              <p className="text-slate-500">Retired projects</p>
-              <ScopeList scopes={archived} />
-            </div>
           )}
         </>
       }
@@ -188,5 +174,39 @@ export function ProjectSnapshotsCard() {
         )}
       </div>
     </StatusBlock>
+  )
+}
+
+/** Per-project snapshot list: browse points and recover saved work. */
+export function ProjectSnapshotsList() {
+  const scopesQuery = useQuery({
+    queryKey: ['snapshot-scopes'],
+    queryFn: () => fetchScopes(undefined, true),
+    staleTime: STALE_GIT,
+  })
+  const scopes = scopesQuery.data ?? []
+  const active = scopes.filter((scope) => scope.scope_state === 'active')
+  const archived = scopes.filter((scope) => scope.scope_state === 'archived')
+  return (
+    <CollapsibleSection
+      title="Project snapshot list"
+      summary={
+        scopesQuery.isLoading
+          ? 'Loading projects…'
+          : scopesQuery.error
+            ? `Projects unavailable: ${scopesQuery.error.message}`
+            : `${active.length} projects, ${archived.length} retired; open one to browse or recover saved work`
+      }
+    >
+      <div className="space-y-3">
+        <ScopeList scopes={active} />
+        {archived.length > 0 && (
+          <div className="space-y-1.5">
+            <p className="text-xs text-slate-500">Retired projects</p>
+            <ScopeList scopes={archived} />
+          </div>
+        )}
+      </div>
+    </CollapsibleSection>
   )
 }

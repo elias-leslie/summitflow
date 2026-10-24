@@ -24,7 +24,7 @@ describe('MachineBackupCard', () => {
     render(
       <MachineBackupCard
         status={host()}
-        scheduleWindow="02:00-06:00"
+        schedule={{ window: '02:00-06:00' }}
         isLoading={false}
         onRefresh={() => {}}
       />,
@@ -48,7 +48,7 @@ describe('MachineBackupCard', () => {
             finished_at: hoursAgo(49.9),
           },
         })}
-        scheduleWindow="02:00-06:00"
+        schedule={{ window: '02:00-06:00' }}
         isLoading={false}
         onRefresh={() => {}}
       />,
