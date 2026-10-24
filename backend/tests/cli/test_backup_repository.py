@@ -31,9 +31,6 @@ def backup_identity(monkeypatch):
     ("BackupSourceAPI", "restore_source_backup", ("source", "backup"), "post"),
     ("BackupSourceAPI", "list_source_backups", ("source",), "get"),
     ("BackupSourceAPI", "sync_backup_offsite", ("source", "backup"), "post"),
-    ("BackupSystemImageAPI", "status", (), "get"),
-    ("BackupSystemImageAPI", "start", (), "post"),
-    ("BackupSystemImageAPI", "stop", (), "post"),
 ])
 def test_backup_requests_use_the_current_caller_identity(monkeypatch, api_name, method, arguments, verb):
     from cli.commands import backup_api

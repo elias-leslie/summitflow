@@ -15,7 +15,6 @@ SETTINGS_PATH = Path(os.environ.get("SF_HOST_RETENTION_SETTINGS") or Path.home()
 EDITABLE: dict[str, tuple[float, float]] = {
     "agent_tmp_max_age_hours": (6, 24 * 30),
     "build_tmp_max_age_hours": (6, 24 * 30),
-    "container_max_age_hours": (1, 24 * 90),
     "go_cache_max_gb": (1, 200),
 }
 
@@ -81,18 +80,12 @@ class HostRetentionPolicy:
 
     pressure_disk_percent: float = 75.0
     pressure_min_free_gb: float = 25.0
-    builder_cache_target_gb: int = 2
-    builder_cache_pressure_target_gb: int = 1
-    image_max_age_hours: int = 0
-    image_pressure_max_age_hours: int = 0
-    anonymous_volume_max_age_hours: int = 2 * 24
     npx_max_age_hours: int = 7 * 24
     playwright_max_age_hours: int = 14 * 24
     tmp_backup_max_age_hours: int = 2 * 24
     hermes_checkpoint_tmp_max_age_hours: int = 2 * 24
     hermes_checkpoint_internal_max_age_hours: int = 3 * 24
     legacy_report_max_age_hours: int = 3 * 24
-    veeam_snapshot_max_age_hours: int = 6
     scratch_review_max_age_hours: int = 7 * 24
     # Scratch age when its filesystem is under pressure. It matches the weekly
     # age: pressure runs retention now, it does not shorten the window, so idle
@@ -102,13 +95,12 @@ class HostRetentionPolicy:
     check_details_max_age_hours: int = 7 * 24
     check_stages_max_age_hours: int = 14 * 24
     check_observations_max_age_hours: int = 3 * 24
-    check_observations_keep: int = 20
+    # One failed run is enough to diagnose; each run is ~700MB.
+    check_observations_keep: int = 3
     # Agent temp in /tmp: an agent session dir (/tmp/claude-*/<project>/<session>) or a top-level build temp entry
     # goes once nothing in it changed for this long and no process holds it.
     agent_tmp_max_age_hours: int = 3 * 24
     build_tmp_max_age_hours: int = 2 * 24
-    # Stopped Docker containers older than this go (daily and in an emergency reclaim).
-    container_max_age_hours: int = 7 * 24
     # Go's build cache is cleared daily once it is larger than this; an emergency reclaim always clears it.
     go_cache_max_gb: float = 4.0
 
@@ -133,17 +125,6 @@ class HostRetentionPolicy:
         return cls(
             pressure_disk_percent=_float_env("SF_HOST_RETENTION_PRESSURE_DISK_PERCENT", 75.0),
             pressure_min_free_gb=_float_env("SF_HOST_RETENTION_PRESSURE_MIN_FREE_GB", 25.0),
-            builder_cache_target_gb=_int_env("SF_HOST_RETENTION_BUILDER_CACHE_TARGET_GB", 2),
-            builder_cache_pressure_target_gb=_int_env(
-                "SF_HOST_RETENTION_BUILDER_CACHE_PRESSURE_TARGET_GB", 1
-            ),
-            image_max_age_hours=_int_env("SF_HOST_RETENTION_IMAGE_MAX_AGE_HOURS", 0),
-            image_pressure_max_age_hours=_int_env(
-                "SF_HOST_RETENTION_IMAGE_PRESSURE_MAX_AGE_HOURS", 0
-            ),
-            anonymous_volume_max_age_hours=_int_env(
-                "SF_HOST_RETENTION_ANON_VOLUME_MAX_AGE_HOURS", 2 * 24
-            ),
             npx_max_age_hours=_int_env("SF_HOST_RETENTION_NPX_MAX_AGE_HOURS", 7 * 24),
             playwright_max_age_hours=_int_env(
                 "SF_HOST_RETENTION_PLAYWRIGHT_MAX_AGE_HOURS", 14 * 24
@@ -160,9 +141,6 @@ class HostRetentionPolicy:
             legacy_report_max_age_hours=_int_env(
                 "SF_HOST_RETENTION_LEGACY_REPORT_MAX_AGE_HOURS", 3 * 24
             ),
-            veeam_snapshot_max_age_hours=_int_env(
-                "SF_HOST_RETENTION_VEEAM_SNAPSHOT_MAX_AGE_HOURS", 6
-            ),
             scratch_review_max_age_hours=_int_env(
                 "SF_HOST_RETENTION_SCRATCH_REVIEW_MAX_AGE_HOURS", 7 * 24
             ),
@@ -171,7 +149,6 @@ class HostRetentionPolicy:
             ),
             agent_tmp_max_age_hours=_int_env("SF_HOST_RETENTION_AGENT_TMP_MAX_AGE_HOURS", 3 * 24),
             build_tmp_max_age_hours=_int_env("SF_HOST_RETENTION_BUILD_TMP_MAX_AGE_HOURS", 2 * 24),
-            container_max_age_hours=_int_env("SF_HOST_RETENTION_CONTAINER_MAX_AGE_HOURS", 7 * 24),
             go_cache_max_gb=_float_env("SF_HOST_RETENTION_GO_CACHE_MAX_GB", 4.0),
         )
 

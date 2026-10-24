@@ -16,8 +16,8 @@ infrastructure without `st` or API dependencies.
 SummitFlow remains responsible for application-aware concerns:
 
 - backup source schedules and retention with minimum restore-point safeguards;
-- Veeam job policy and restore-point reporting;
-- verified infrastructure/project archives and restore drills;
+- the nightly btrbk host backup to the T7 and its monthly real restore test;
+- restic project/config backups and their restore drills;
 - PostgreSQL bloat analysis and targeted `VACUUM ANALYZE`;
 - application health, runtime hygiene, dashboards, and notification records.
 
@@ -28,24 +28,27 @@ query SummitFlow's database or call its API.
 
 | Control | Schedule |
 |---|---|
-| Veeam system image | daily at 02:00 |
+| btrbk host backup to the T7 | first hourly tick in the 02:00-06:00 window (about 02:30) |
+| Project autosnapshots | every 30 minutes |
 | SummitFlow daily maintenance | daily at 04:00 |
-| Managed restore tests | Sunday at 06:00 |
+| Managed restore tests (monthly host restore included) | Sunday at 06:00 |
 
 ## Capacity and retention policy
 
-- `SummitFlowSystemImage` keeps 7 Veeam restore points. The 1.9 TB backup target
-  is shared with managed project archives, and recent system-image increments
-  are large enough that the former 14-point target did not leave safe headroom.
-- Veeam chain files are retired only by Veeam's supported retention pass. A
-  policy change may spend hours merging a forward-incremental chain even after
-  `df` shows that old chains have already been reclaimed.
-- SummitFlow's daily maintenance removes Btrfs `.veeam_snapshots` only after 6
-  hours and skips the cleanup while a Veeam session is active. These temporary
-  snapshots can pin otherwise-deleted root filesystem blocks.
-- Unreferenced anonymous Docker volumes retain a 48-hour grace period. Do not
-  bypass it during active agent work merely because a volume currently appears
-  dangling.
+- btrbk keeps the latest point on each source and 7 daily points on the T7
+  (`/etc/btrbk/summitflow.conf`). The monthly restore test receives the latest
+  `workspaces` and `home` points into `/mnt/summitflow-native/restore-test`
+  (scratch cannot hold a full copy), compares file counts and sampled SHA-256
+  with the source's retained snapshot and with unchanged live files, checks the
+  boot files, then deletes the copies. Only a pass sets `restore_verified`
+  (good for 35 days); the receipt is
+  `~/.local/state/summitflow/host-recovery/restore-test.json`.
+- Veeam is not installed. Its old chain on the T7 (`VeeamBackup/`) is the
+  owner's to keep or delete; nothing reads or prunes it.
+- Docker pruning is Nightshift's weekly stack prune (stopped containers older
+  than 48 hours, build cache older than 7 days, dangling images). SummitFlow
+  does not prune Docker and has no Docker retention settings. Named and
+  anonymous volumes are never pruned automatically.
 - Project autosnapshots are whole-`@workspaces` points, so retention is per
   point: every point from the last 6 hours, one per hour to 24 hours, one per
   day to 3 days (btrbk keeps the off-machine dailies). Pins, active recovery
@@ -54,6 +57,12 @@ query SummitFlow's database or call its API.
   oldest first, pausing between batches of 5, and exits 1 when any deletion is
   deferred. `--pressure` keeps only the newest 3 points; `--max-deletes N`
   changes the cap. It also reaps old unrecorded read-only points in the store.
+  A directory the sweep cannot read is skipped unless it is the project, inside
+  it or above it; then only that project fails. Each sweep writes
+  `~/.local/share/st/snaps/autosnap-state.json` (`last_sweep_at`,
+  `last_sweep_result`, `newest_point_at`, per-project newest point,
+  `stale_after_hours`), which the Backups page and Nightshift's stale-snapshot
+  alert read.
 - Host maintenance checks pressure on `/` and on the scratch filesystem. When
   scratch is under pressure it runs `st cleanup reclaim` steps at once: `uv
   cache prune`, `pnpm store prune`, Hugging Face repos unchanged for 30 days,
@@ -87,8 +96,8 @@ for the same reason.
 
 ```bash
 systemctl list-timers 'summitflow-*'
-st backup veeam status
-st backup veeam start --wait
+st backup host status
+st autosnap sweep
 ```
 
 Do not manually delete Veeam chain files, named Docker volumes, PostgreSQL data,

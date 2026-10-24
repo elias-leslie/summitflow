@@ -6,7 +6,7 @@ import shutil
 import subprocess
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import Any, TypedDict
+from typing import Any
 
 from ..logging_config import get_logger
 from ._retention_agent_tmp import age_agent_tmp
@@ -32,15 +32,6 @@ from ._retention_scratch import SCRATCH_ROOT, weekly_scratch_retention
 logger = get_logger(__name__)
 
 _BYTES_PER_GB = 1024**3
-
-
-class VeeamSnapshotResult(TypedDict, total=False):
-    status: str
-    deleted: list[str]
-    skipped: list[str]
-    max_age_hours: int
-    reason: str
-    error: str
 
 
 def _run_command(
@@ -82,18 +73,6 @@ def _is_pressure_mode(snapshot: dict[str, float | int | str], policy: HostRetent
     percent_used = float(snapshot.get("percent_used", 0.0))
     free_gb = float(snapshot.get("free_gb", 0.0))
     return percent_used >= policy.pressure_disk_percent or free_gb <= policy.pressure_min_free_gb
-
-
-def cleanup_stale_veeam_snapshots(
-    *, policy: HostRetentionPolicy, now: datetime, run: Any = None,
-    mount_point: Path | None = None,
-) -> VeeamSnapshotResult:
-    """Vendor snapshots can be incremental parents; age is not abandonment proof.
-
-    Keep this existing maintenance result, but leave removal to supported Veeam
-    tooling. A quiet session list does not establish that a parent is disposable.
-    """
-    return {"status": "skipped", "reason": "vendor-managed-incremental-parents", "deleted": [], "skipped": []}
 
 
 def _go_cache_over_limit(policy: HostRetentionPolicy) -> dict[str, object]:
@@ -252,7 +231,6 @@ def cleanup_host_artifacts(
         logger.warning("scratch_retention_failed", error=str(exc))
         scratch_result = {"status": "error", "error": str(exc)}
     check_artifacts = _prune_project_check_artifacts(project_roots, effective_policy, effective_now)
-    veeam_snapshots = cleanup_stale_veeam_snapshots(policy=effective_policy, now=effective_now)
 
     after = _disk_snapshot("/")
     bytes_reclaimed = max(int(after["free_bytes"]) - int(before["free_bytes"]), 0)
@@ -294,7 +272,6 @@ def cleanup_host_artifacts(
         "scratch": scratch_result,
         "check_artifacts": check_artifacts,
         "hermes_checkpoints": hermes_checkpoints_result,
-        "veeam_snapshots": veeam_snapshots,
         "review_candidates": review_candidates,
         "errors": errors,
     }

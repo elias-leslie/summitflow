@@ -9,11 +9,11 @@ from app.tasks.backup_btrbk import native_host_status, run_native_host_backup
 from ..lib.usage import usage
 from ..output import output_json
 
-app = typer.Typer(help="Linux native Btrfs host recovery; Windows uses Veeam")
+app = typer.Typer(help="Linux native Btrfs host recovery (btrbk to the T7)")
 
 
 @app.command("status")
-@usage(surface="st.backup.host", cmd="st backup host status", when="inspect Linux native host recovery coverage, capacity and evidence", precautions=("Windows backups remain Veeam-managed", "unconfigured or unverified coverage is not a recoverable host backup"), tier="reference")
+@usage(surface="st.backup.host", cmd="st backup host status", when="inspect Linux native host recovery coverage, capacity and evidence", precautions=("Windows has no backup", "unconfigured or unverified coverage is not a recoverable host backup"), tier="reference")
 def status() -> None:
     """Inspect the actual host configuration and latest recovery receipt."""
     output_json(native_host_status())

@@ -30,15 +30,11 @@ from .models import (
     StorageBackendResponse,
     StorageBackendUpdate,
     StorageSummaryResponse,
-    SystemImageActionResponse,
-    SystemImageBackupStatus,
-    SystemImageSession,
 )
 from .native_host_endpoints import router as native_host_router
 from .project_endpoints import router as project_router
 from .source_endpoints import router as source_router
 from .storage_endpoints import router as storage_router
-from .system_image_endpoints import router as system_image_router
 
 # Main router that combines all sub-routers
 router = APIRouter()
@@ -47,7 +43,6 @@ router = APIRouter()
 router.include_router(storage_router)
 router.include_router(health_router)
 router.include_router(key_router)
-router.include_router(system_image_router)
 router.include_router(native_host_router)
 router.include_router(destinations_router)
 router.include_router(source_router)
@@ -69,8 +64,5 @@ __all__ = [
     "StorageBackendResponse",
     "StorageBackendUpdate",
     "StorageSummaryResponse",
-    "SystemImageActionResponse",
-    "SystemImageBackupStatus",
-    "SystemImageSession",
     "router",
 ]

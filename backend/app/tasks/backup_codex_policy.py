@@ -1,4 +1,4 @@
-"""Owner-selected portable Codex inputs; Veeam owns full-profile recovery."""
+"""Owner-selected portable Codex inputs; the btrbk host backup owns full-profile recovery."""
 
 from __future__ import annotations
 

@@ -19,17 +19,6 @@ def _isolate_scratch(mocker) -> Any:
                         return_value={"status": "skipped", "reason": "weekly-cadence"})
 
 
-def test_host_retention_policy_defaults_keep_docker_cache_minimal() -> None:
-    from app.tasks.host_retention import HostRetentionPolicy
-
-    policy = HostRetentionPolicy()
-
-    assert policy.builder_cache_target_gb == 2
-    assert policy.builder_cache_pressure_target_gb == 1
-    assert policy.image_max_age_hours == 0
-    assert policy.image_pressure_max_age_hours == 0
-
-
 def test_scratch_pressure_runs_retention_now_without_shortening_its_age(monkeypatch) -> None:
     """Pressure must not delete idle owner work in scratch sooner than the weekly pass would."""
     from app.tasks.host_retention import HostRetentionPolicy
@@ -241,21 +230,6 @@ def test_cleanup_host_artifacts_prunes_stale_tmp_backups_and_hermes_checkpoints(
     assert not tmp_checkpoint.exists()
     assert not internal_checkpoint.exists()
     assert keep_checkpoint.exists()
-
-
-def test_veeam_retention_preserves_old_incremental_parents(mocker, tmp_path: Path) -> None:
-    from app.tasks.host_retention import HostRetentionPolicy, cleanup_stale_veeam_snapshots
-
-    parent = tmp_path / ".veeam_snapshots" / "old-parent"
-    parent.mkdir(parents=True)
-    command = mocker.patch("app.tasks.host_retention._run_command")
-    result = cleanup_stale_veeam_snapshots(
-        policy=HostRetentionPolicy(), now=datetime.now(UTC), mount_point=tmp_path,
-    )
-    assert result["reason"] == "vendor-managed-incremental-parents"
-    assert result["deleted"] == []
-    assert parent.is_dir()
-    command.assert_not_called()
 
 
 def test_scratch_filesystem_pressure_reclaims_now_while_root_stays_normal(mocker, tmp_path: Path) -> None:
