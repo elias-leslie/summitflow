@@ -1,17 +1,13 @@
 """Compatibility alias: `st sessions title` forwards to the owner's `st aico root title`.
 
-Aico roots go through Tether's socket when Tether is running (it serves the same
-root contract); otherwise the Aico extension uses its legacy GUI socket.
+The Aico extension reaches roots through Tether's socket.
 """
 
 from __future__ import annotations
 
-import os
 from typing import Annotated, Literal
 
 import typer
-
-from app.services import tether
 
 from .. import extensions
 from ..lib.usage import usage
@@ -38,12 +34,8 @@ def title(
     if record is None or record.status != "unverified":
         output_error("Aico owner extension unavailable")
         raise typer.Exit(1)
+    # Both surfaces are Tether roots, which the extension reaches on its own;
     # `--` keeps a label that begins with '-' positional in the owner parser.
-    route: list[str] = []
-    if surface == "tether" or (surface == "aico" and not os.environ.get("AICO_GUI_CONTROL_SOCKET")
-                               and tether.available()):
-        # Tether's roots keep owner "aico", so the Aico extension qualifies them unchanged.
-        route = ["--root-socket", tether.socket_path()]
     raise typer.Exit(extensions.dispatch_extension(
-        record, ["root", "title", *route, "--", root, label],
+        record, ["root", "title", "--", root, label],
         context=extensions.extension_context()))

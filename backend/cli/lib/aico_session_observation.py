@@ -1,19 +1,14 @@
 """Optional local Aico owner observations for session monitor; never persisted.
 
-Tether (the session daemon that took over Aico's lifecycle) is asked first when
-its socket exists; otherwise, or when it cannot answer, Aico's legacy owner
-socket is used exactly as before.
+Tether, the session daemon that owns Aico's sessions, answers them; without it
+there is no observation.
 """
 
 from __future__ import annotations
 
 import http.client
-import json
 import os
 import re
-import socket
-import stat
-from pathlib import Path
 from typing import Any, cast
 from uuid import UUID
 
@@ -21,48 +16,9 @@ from app.services import tether
 
 from ..commands.sessions_native_inspection import transcript_library
 
-OWNER_TIMEOUT_SECONDS = 0.25
-# Tether live-verifies the session before answering, so allow it a little longer.
+# Tether live-verifies the session before answering.
 TETHER_TIMEOUT_SECONDS = 1.0
 MAX_OWNER_RESPONSE_BYTES = 4096
-
-
-def _owner_socket() -> str:
-    root = os.environ.get("XDG_RUNTIME_DIR") or f"/run/user/{os.getuid()}"
-    path = os.environ.get("AICO_CONTROL_SOCKET", str(Path(root) / "aico/control.sock"))
-    if (not path.startswith("/") or "\0" in path or len(os.fsencode(path)) > 107
-            or any(part in {"", ".", ".."} for part in path.split("/")[1:])):
-        raise ValueError("invalid owner socket")
-    info = os.lstat(path)
-    if not stat.S_ISSOCK(info.st_mode) or info.st_uid != os.getuid():
-        raise ValueError("unavailable local owner socket")
-    return path
-
-
-class _OwnerConnection(http.client.HTTPConnection):
-    def __init__(self, path: str) -> None:
-        super().__init__("localhost", timeout=OWNER_TIMEOUT_SECONDS)
-        self.path = path
-
-    def connect(self) -> None:
-        self.sock = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
-        self.sock.settimeout(OWNER_TIMEOUT_SECONDS)
-        self.sock.connect(self.path)
-
-
-def _query_owner(path: str, widget: str) -> object:
-    connection = _OwnerConnection(path)
-    try:
-        connection.request("GET", f"/v1/sessions/{widget}")
-        response = connection.getresponse()
-        if response.status != 200:
-            return None
-        body = response.read(MAX_OWNER_RESPONSE_BYTES + 1)
-        if len(body) > MAX_OWNER_RESPONSE_BYTES:
-            return None
-        return json.loads(body)
-    finally:
-        connection.close()
 
 
 def _query_tether(widget: str) -> object:
@@ -74,18 +30,6 @@ def _query_tether(widget: str) -> object:
     return {"owner": "aico", "widgetId": data.get("id"), "sessionId": data.get("ownershipId"),
             "generation": data.get("generation"), "tmuxSessionId": data["tmux"].get("sessionId"),
             "paneId": data["tmux"].get("paneId")}
-
-
-def _query_session(widget: str) -> object:
-    """Prefer Tether; fall back to the legacy owner socket when Tether cannot answer."""
-    if tether.present_sockets():
-        try:
-            wire = _query_tether(widget)
-        except (OSError, ValueError, http.client.HTTPException):
-            wire = None
-        if wire is not None:
-            return wire
-    return _query_owner(_owner_socket(), widget)
 
 
 def _eligible_identity(session: dict[str, Any]) -> dict[str, Any] | None:
@@ -124,7 +68,7 @@ def _observation(session: dict[str, Any], external: dict[str, Any], infos: list[
             or owner.aico_session_id != external.get("aico_session_id")
             or re.fullmatch(r"[0-9a-f]{8}", owner.aico_widget_id) is None):
         return None
-    wire = _query_session(owner.aico_widget_id)
+    wire = _query_tether(owner.aico_widget_id)
     if not isinstance(wire, dict):
         return None
     wire = cast(dict[str, Any], wire)
@@ -152,7 +96,7 @@ def observe_aico_owners(sessions: list[dict[str, Any]]) -> list[dict[str, Any]]:
         if not eligible:
             return projected
         if not tether.present_sockets():
-            _owner_socket()  # no owner at all: skip transcript discovery
+            return projected  # no owner at all: skip transcript discovery
         library = transcript_library()
         snapshot = library.discover_open_transcripts()
         threads = {session["id"] for session, _ in eligible}

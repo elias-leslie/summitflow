@@ -20,10 +20,8 @@ from app.storage.connection import get_connection
 
 @pytest.fixture(autouse=True)
 def _no_live_tether(monkeypatch, tmp_path):
-    """Pre-cutover baseline: no Tether socket, whatever runs on this host."""
+    """No Tether socket, whatever runs on this host."""
     monkeypatch.setenv("TETHER_SOCKET", str(tmp_path / "absent-tether.sock"))
-    monkeypatch.delenv("AICO_GUI_CONTROL_SOCKET", raising=False)
-    monkeypatch.delenv("AICO_CONTROL_SOCKET", raising=False)
 
 
 def test_native_reservation_has_one_concurrent_winner_and_retains_receipts(ensure_test_project, monkeypatch):
@@ -219,18 +217,18 @@ async def test_wait_timeout_and_cancellation_emit_nothing(monkeypatch):
     append.assert_not_called()
 
 
-def test_aico_protocol_uses_private_socket_and_verified_descriptor(monkeypatch):
+def test_aico_protocol_uses_tether_socket_and_verified_descriptor(monkeypatch):
     descriptor = {"owner": "aico", "hostIdentity": "widget:1", "generation": "end:1", "logicalSessionId": "aico-root-1", "surfaceLocator": "aico://widget/1"}
     request = MagicMock()
     request.post.return_value.json.return_value = descriptor
     manager = MagicMock()
     manager.__enter__.return_value = request
-    monkeypatch.setenv("AICO_GUI_CONTROL_SOCKET", "/fixture/private.sock")
+    monkeypatch.setenv("TETHER_SOCKET", "/fixture/tether.sock")
     transport = MagicMock()
     monkeypatch.setattr(service.httpx, "HTTPTransport", transport)
     monkeypatch.setattr(service.httpx, "Client", lambda **kwargs: manager)
     assert service._host_start("root-fixture", "fixture", "/fixture", "codex", "Exact capsule", role="neri-support-root", lead_root="root-lead", facet="source:module-a") == {**descriptor, "status": None}
-    transport.assert_called_once_with(uds="/fixture/private.sock")
+    transport.assert_called_once_with(uds="/fixture/tether.sock")
     assert request.post.call_args.kwargs["json"]["requestId"] == "root-fixture"
     assert request.post.call_args.kwargs["json"]["role"] == "neri-support-root"
     assert request.post.call_args.kwargs["json"]["leadRootReference"] == "root-lead"
@@ -311,6 +309,11 @@ def test_end_uses_exact_generation_fence(monkeypatch):
     assert service._host_end({"owner": "aico", "hostIdentity": "aabbccdd", "generation": "b" * 64})
     request.post.assert_called_once_with("http://aico/v1/sessions/aabbccdd/end", json={"generation": "b" * 64})
     assert not service._host_end({"owner": "aico", "hostIdentity": "wrong", "generation": "b" * 64})
+    # Tether may add accounting fields to the ended receipt; anything else is not ended.
+    request.post.return_value.json.return_value = {"status": "ended", "contextFinalization": "completed"}
+    assert service._host_end({"owner": "aico", "hostIdentity": "aabbccdd", "generation": "b" * 64})
+    request.post.return_value.json.return_value = {"error": "blocked"}
+    assert not service._host_end({"owner": "aico", "hostIdentity": "aabbccdd", "generation": "b" * 64})
 
 
 def test_initial_prompt_is_transient_and_surface_is_explicit(roots):
@@ -461,18 +464,8 @@ AICO_DESCRIPTOR = {"owner": "aico", "hostIdentity": "aabbccdd", "generation": "c
                    "logicalSessionId": "aico-root-1", "surfaceLocator": "aico://widget/aabbccdd"}
 
 
-def test_aico_surface_uses_legacy_sockets_without_tether(monkeypatch):
-    request, transport = _socket_client(monkeypatch, AICO_DESCRIPTOR)
-    service._host_start("root-fixture", "fixture", "/fixture", "codex", "Exact capsule", role="portfolio-root", lead_root=None, facet=None)
-    transport.assert_called_once_with(uds=f"/run/user/{service.os.getuid()}/aico/gui-control.sock")
-    request.post.return_value.json.return_value = {"status": "ended"}
-    assert service._host_end(AICO_DESCRIPTOR)
-    assert transport.call_args.kwargs == {"uds": f"/run/user/{service.os.getuid()}/aico/control.sock"}
-
-
-def test_aico_surface_prefers_running_tether(monkeypatch):
+def test_aico_surface_uses_tether_for_start_and_end(monkeypatch):
     monkeypatch.setenv("TETHER_SOCKET", "/fixture/tether.sock")
-    monkeypatch.setattr(service.tether, "available", lambda *_: True)
     request, transport = _socket_client(monkeypatch, AICO_DESCRIPTOR)
     assert service._host_start("root-fixture", "fixture", "/fixture", "codex", "Exact capsule", role="portfolio-root", lead_root=None, facet=None)["owner"] == "aico"
     transport.assert_called_once_with(uds="/fixture/tether.sock")
@@ -480,16 +473,6 @@ def test_aico_surface_prefers_running_tether(monkeypatch):
     assert service._host_end(AICO_DESCRIPTOR)
     request.post.assert_called_with("http://aico/v1/sessions/aabbccdd/end", json={"generation": "c" * 64})
     assert transport.call_args.kwargs == {"uds": "/fixture/tether.sock"}
-
-
-def test_explicit_aico_socket_pin_wins_over_tether(monkeypatch):
-    monkeypatch.setenv("AICO_GUI_CONTROL_SOCKET", "/fixture/pinned.sock")
-    available = MagicMock(return_value=True)
-    monkeypatch.setattr(service.tether, "available", available)
-    _request, transport = _socket_client(monkeypatch, AICO_DESCRIPTOR)
-    service._host_start("root-fixture", "fixture", "/fixture", "codex", "Exact capsule", role="portfolio-root", lead_root=None, facet=None)
-    transport.assert_called_once_with(uds="/fixture/pinned.sock")
-    available.assert_not_called()
 
 
 def test_tether_surface_accepts_aico_owner_and_ends_through_tether(monkeypatch):

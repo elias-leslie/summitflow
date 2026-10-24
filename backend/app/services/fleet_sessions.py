@@ -5,7 +5,6 @@ from __future__ import annotations
 import asyncio
 import hashlib
 import json
-import os
 import re
 import time
 import uuid
@@ -103,26 +102,10 @@ def root_state(root: str) -> dict[str, Any]:
     return state
 
 
-def _owner_socket(surface: str, *, owner_control: bool) -> str:
-    """Tether serves Aico's root and owner routes unchanged, so prefer it when running.
-
-    An explicit AICO_* socket pin wins for the aico surface; without Tether the
-    legacy Aico sockets are used exactly as before the cutover.
-    """
-    if surface == "tether":
-        return tether.socket_path()
-    name = "AICO_CONTROL_SOCKET" if owner_control else "AICO_GUI_CONTROL_SOCKET"
-    if pinned := os.environ.get(name):
-        return pinned
-    if tether.available():
-        return tether.socket_path()
-    filename = "control.sock" if owner_control else "gui-control.sock"
-    return f"/run/user/{os.getuid()}/aico/{filename}"
-
-
-def _host_request(surface: str, path: str, payload: dict[str, Any], *, owner_control: bool = False, method: str = "POST") -> dict[str, Any]:
+def _host_request(surface: str, path: str, payload: dict[str, Any], *, method: str = "POST") -> dict[str, Any]:
     if surface in {"aico", "tether"}:
-        socket = _owner_socket(surface, owner_control=owner_control)
+        # Tether serves the root and session routes for both surfaces.
+        socket = tether.socket_path()
         # New roots start on the active Tether. A root already started lives on
         # whichever instance made it, so lookups and ends also try the other one.
         creating = method == "POST" and path == "/v1/roots"
@@ -219,10 +202,11 @@ def _host_end(descriptor: dict[str, Any], *, root: str | None = None, surface: s
     if surface in {"aico", "tether"}:
         if not isinstance(widget, str) or not re.fullmatch(r"[0-9a-f]{8}", widget) or not re.fullmatch(r"[0-9a-f]{64}", generation):
             return False
-        result = _host_request(surface, f"/v1/sessions/{widget}/end", {"generation": generation}, owner_control=True)
+        result = _host_request(surface, f"/v1/sessions/{widget}/end", {"generation": generation})
     else:
         return False
-    return result == {"status": "ended"}
+    # Tether may add accounting fields (contextFinalization) to the ended receipt.
+    return result.get("status") == "ended"
 
 
 def _host_prompt(prompt: str, root: str, *, role: str, scope: dict[str, str],

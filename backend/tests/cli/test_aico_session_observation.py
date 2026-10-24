@@ -1,4 +1,4 @@
-"""Monitor observations require local native evidence and the read-only owner."""
+"""Monitor observations require local native evidence and Tether's read-only session descriptor."""
 
 from __future__ import annotations
 
@@ -13,6 +13,8 @@ from unittest.mock import MagicMock
 import pytest
 
 from cli.lib import aico_session_observation as observation
+
+QUERY_TETHER = observation._query_tether
 
 THREAD = "019f62d8-881c-7393-8c19-ae9b2b21e570"
 WIDGET = "0123abcd"
@@ -44,11 +46,9 @@ def local_owner(monkeypatch: pytest.MonkeyPatch) -> SimpleNamespace:
     library.discover_open_transcripts.return_value = SimpleNamespace(paths={path})
     library.read_transcript_info.return_value = info
     query = MagicMock(return_value=deepcopy(RECEIPT))
-    monkeypatch.setattr(observation, "_owner_socket", lambda: "/local/control.sock")
-    # Pre-cutover baseline: no Tether socket, so the legacy owner answers.
-    monkeypatch.setattr(observation.tether, "socket_present", lambda *_: False)
+    monkeypatch.setattr(observation.tether, "present_sockets", lambda: ["/local/tether.sock"])
     monkeypatch.setattr(observation, "transcript_library", lambda: library)
-    monkeypatch.setattr(observation, "_query_owner", query)
+    monkeypatch.setattr(observation, "_query_tether", query)
     return SimpleNamespace(session=session, info=info, library=library, query=query)
 
 
@@ -58,7 +58,7 @@ def test_exact_fresh_root_projects_owner_without_mutating_session(local_owner):
     assert result["tmux_pane_id"] == "%21"
     assert result["aico_owner_observation"] == RECEIPT
     assert local_owner.session == original
-    local_owner.query.assert_called_once_with("/local/control.sock", WIDGET)
+    local_owner.query.assert_called_once_with(WIDGET)
 
 
 @pytest.mark.parametrize("field,value", [
@@ -132,9 +132,7 @@ def test_owner_failure_keeps_monitor_available(local_owner, error):
 
 
 def test_absent_socket_keeps_monitor_available(local_owner, monkeypatch):
-    def absent():
-        raise FileNotFoundError
-    monkeypatch.setattr(observation, "_owner_socket", absent)
+    monkeypatch.setattr(observation.tether, "present_sockets", lambda: [])
     assert observation.observe_aico_owners([local_owner.session])[0]["aico_owner_observation"] is None
     local_owner.query.assert_not_called()
 
@@ -143,31 +141,6 @@ def test_mixed_session_identities_do_not_suppress_valid_observation(local_owner)
     result = observation.observe_aico_owners([{"id": "invalid"}, local_owner.session])
     assert result[0]["aico_owner_observation"] is None
     assert result[1]["aico_owner_observation"] == RECEIPT
-
-
-@pytest.mark.parametrize("status,body,expected", [
-    (200, json.dumps(RECEIPT).encode(), RECEIPT), (404, b"{}", None),
-    (503, b"{}", None), (200, b"x" * 4097, None),
-])
-def test_transport_only_gets_exact_widget_and_closes(monkeypatch, status, body, expected):
-    connection = MagicMock()
-    response = connection.getresponse.return_value
-    response.status = status
-    response.read.return_value = body
-    monkeypatch.setattr(observation, "_OwnerConnection", lambda path: connection)
-    assert observation._query_owner("/local/control.sock", WIDGET) == expected
-    connection.request.assert_called_once_with("GET", f"/v1/sessions/{WIDGET}")
-    connection.close.assert_called_once()
-
-
-def test_malformed_json_closes_connection(monkeypatch):
-    connection = MagicMock()
-    connection.getresponse.return_value.status = 200
-    connection.getresponse.return_value.read.return_value = b"not json"
-    monkeypatch.setattr(observation, "_OwnerConnection", lambda path: connection)
-    with pytest.raises(ValueError):
-        observation._query_owner("/local/control.sock", WIDGET)
-    connection.close.assert_called_once()
 
 
 def test_overview_projects_owner(local_owner):
@@ -200,23 +173,19 @@ TETHER_DESCRIPTOR = {
 }
 
 
-def test_tether_is_preferred_and_mapped_to_owner_receipt(local_owner, monkeypatch):
-    monkeypatch.setattr(observation.tether, "socket_present", lambda *_: True)
-    monkeypatch.setattr(observation.tether, "present_sockets", lambda: ["/fixture/owner.sock"])
+def test_tether_descriptor_is_mapped_to_owner_receipt(local_owner, monkeypatch):
+    monkeypatch.setattr(observation, "_query_tether", QUERY_TETHER)
     request = MagicMock(return_value=(200, deepcopy(TETHER_DESCRIPTOR)))
     monkeypatch.setattr(observation.tether, "request", request)
     result = observation.observe_aico_owners([local_owner.session])[0]
     assert result["aico_owner_observation"] == RECEIPT
     assert result["tmux_pane_id"] == "%21"
     assert request.call_args.args[:2] == ("GET", f"/v1/sessions/{WIDGET}")
-    local_owner.query.assert_not_called()
 
 
 @pytest.mark.parametrize("outcome", [(404, {"error": "not_found"}), OSError(), (200, {"id": WIDGET})])
-def test_unanswered_tether_falls_back_to_legacy_owner(local_owner, monkeypatch, outcome):
-    monkeypatch.setattr(observation.tether, "socket_present", lambda *_: True)
-    monkeypatch.setattr(observation.tether, "present_sockets", lambda: ["/fixture/owner.sock"])
+def test_unanswered_tether_gives_no_observation(local_owner, monkeypatch, outcome):
+    monkeypatch.setattr(observation, "_query_tether", QUERY_TETHER)
     request = MagicMock(side_effect=outcome) if isinstance(outcome, Exception) else MagicMock(return_value=outcome)
     monkeypatch.setattr(observation.tether, "request", request)
-    assert observation.observe_aico_owners([local_owner.session])[0]["aico_owner_observation"] == RECEIPT
-    local_owner.query.assert_called_once_with("/local/control.sock", WIDGET)
+    assert observation.observe_aico_owners([local_owner.session])[0]["aico_owner_observation"] is None

@@ -11,7 +11,7 @@
         "enabled": true,
         "effects": ["read-local", "process", "network"]
       },
-      "environment": ["XDG_RUNTIME_DIR", "AICO_GUI_CONTROL_SOCKET", "AICO_CONTROL_SOCKET", "AICO_WIDGET_ID", "TETHER_SOCKET", "TETHER_INSTANCE"]
+      "environment": ["XDG_RUNTIME_DIR", "AICO_WIDGET_ID", "TETHER_SOCKET", "TETHER_INSTANCE"]
     },
     {
       "id": "tether.cli",
