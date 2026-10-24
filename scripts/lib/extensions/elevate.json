@@ -29,7 +29,6 @@
       "when": "gh 403 'Resource not accessible by personal access token' on repo settings, deploy keys, Actions secrets/variables, profile; also status, revoke github-admin",
       "precautions": [
         "never print the credential",
-        "check-runs 403 under the fine-grained PAT is expected: never elevate",
         "reason in owner words; owner taps once per 30-min grant",
         "use instead of asking the owner to make the change by hand",
         "revoke when done"
