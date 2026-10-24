@@ -159,22 +159,14 @@ function ResticBackend({
 }
 
 function ArchiveBackend({ backend }: { backend: StorageBackend }) {
-  const config = backend.config
-  const folder = [text(config, 'root_path'), text(config, 'path')]
-    .filter(Boolean)
-    .join('/')
   return (
-    <div className="space-y-3">
-      <dl className="grid gap-3 sm:grid-cols-2">
-        <DetailValue label="T7 folder" value={folder || 'Not set'} mono />
-        <DetailValue
-          label="Google Drive folder"
-          value={text(config, 'offsite_rclone_remote') ?? 'Not set'}
-          mono
-        />
-      </dl>
-      <BackendTest backend={backend} />
-    </div>
+    <dl>
+      <DetailValue
+        label="Google Drive folder"
+        value={text(backend.config, 'offsite_rclone_remote') ?? 'Not set'}
+        mono
+      />
+    </dl>
   )
 }
 
@@ -232,8 +224,8 @@ export function StorageSettings({
             </header>
             {!restic && (
               <p className="text-slate-400">
-                Encrypted archives from before restic, kept until their backups
-                expire.
+                Encrypted archives from before restic, on Google Drive only.
+                Nothing expires them; they stay until you remove them.
               </p>
             )}
             {restic ? (

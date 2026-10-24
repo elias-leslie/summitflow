@@ -122,9 +122,9 @@ export function EncryptionSetup() {
         </span>
       </div>
       <p className="text-xs text-slate-400">
-        This key decrypts the older encrypted archives. The restic repositories
-        use their own passwords, kept in the same protected key folder on this
-        machine.
+        This key decrypts the older encrypted archives on Google Drive. The
+        restic repositories use their own passwords, kept in the same protected
+        key folder on this machine.
       </p>
       {loadError && (
         <p role="alert" className="text-xs text-red-400">
