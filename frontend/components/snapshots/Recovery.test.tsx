@@ -57,6 +57,7 @@ const summary: BtrfsSummary = {
   active_scope_count: 1,
   archived_scope_count: 0,
   autosnap_timer_active: true,
+  autosnap_interval_minutes: 5,
   policy: {
     interval_minutes: 5,
     baseline_stale_minutes: 15,

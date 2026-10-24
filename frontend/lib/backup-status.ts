@@ -127,9 +127,11 @@ export function projectSnapshotsStatus(
       },
       {
         label: 'Schedule',
-        value: summary.autosnap_timer_active
-          ? `Every ${summary.policy.interval_minutes} min`
-          : 'Timer off',
+        value: !summary.autosnap_timer_active
+          ? 'Timer off'
+          : summary.autosnap_interval_minutes
+            ? `Every ${summary.autosnap_interval_minutes} min`
+            : 'On',
         tone: timerTone,
       },
       {

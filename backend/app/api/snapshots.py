@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
+from datetime import datetime
 from typing import Annotated, Any
 
 from fastapi import APIRouter, Body, HTTPException
@@ -84,6 +85,8 @@ class SnapshotSummaryResponse(BaseModel):
     archived_scope_count: int
     policy: PolicyResponse
     autosnap_timer_active: bool
+    # Minutes between the timer's scheduled runs (its OnCalendar), or None when unreadable.
+    autosnap_interval_minutes: int | None = None
     # From the sweep state file; the page turns red when the newest point is
     # older than policy.stale_after_hours or the last sweep was not "ok".
     newest_point_at: str | None = None
@@ -141,6 +144,28 @@ def _is_timer_active() -> bool:
         return result.stdout.strip() == "active"
     except Exception:
         return False
+
+
+def _timer_interval_minutes() -> int | None:
+    """Minutes between the next two scheduled runs of btrfs-autosnapshot.timer."""
+    try:
+        shown = safe_subprocess.run(
+            ["systemctl", "--user", "show", "btrfs-autosnapshot.timer", "-p", "TimersCalendar", "--value"],
+            capture_output=True, text=True, timeout=5,
+        ).stdout
+        calendar = shown.split("OnCalendar=", 1)[1].split(" ;", 1)[0].strip()
+        analysed = safe_subprocess.run(
+            ["systemd-analyze", "calendar", "--iterations=2", calendar],
+            capture_output=True, text=True, timeout=5,
+        ).stdout
+        times = [
+            datetime.strptime(line.split("(in UTC):", 1)[1].strip(), "%a %Y-%m-%d %H:%M:%S UTC")
+            for line in analysed.splitlines()
+            if "(in UTC):" in line
+        ]
+        return round((times[1] - times[0]).total_seconds() / 60)
+    except Exception:
+        return None
 
 
 def _get_cli_libs() -> tuple[Any, ...]:
@@ -201,6 +226,7 @@ async def snapshot_summary(project_id: str | None = None) -> SnapshotSummaryResp
         archived_scope_count=sum(1 for _, _, state in scopes if state == "archived"),
         policy=PolicyResponse(**DEFAULT_POLICY.to_dict()),
         autosnap_timer_active=_is_timer_active(),
+        autosnap_interval_minutes=_timer_interval_minutes(),
         newest_point_at=(state.get("projects") or {}).get(project_id) if project_id else state.get("newest_point_at"),
         last_sweep_at=state.get("last_sweep_at"),
         last_sweep_result=state.get("last_sweep_result"),

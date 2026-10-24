@@ -37,6 +37,7 @@ export const summary = (
     stale_after_hours: 2,
   },
   autosnap_timer_active: true,
+  autosnap_interval_minutes: 30,
   newest_point_at: hoursAgo(0.25),
   last_sweep_at: hoursAgo(0.25),
   last_sweep_result: 'ok',

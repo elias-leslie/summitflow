@@ -32,6 +32,18 @@ describe('projectSnapshotsStatus', () => {
     expect(status.headline).toBe('Newest snapshot 15m ago')
   })
 
+  it("shows the timer's own interval, not the capture policy's", () => {
+    const schedule = (interval: number | null) =>
+      projectSnapshotsStatus(
+        summary({ autosnap_interval_minutes: interval }),
+        [],
+        undefined,
+        now,
+      ).facts.find((fact) => fact.label === 'Schedule')?.value
+    expect(schedule(30)).toBe('Every 30 min')
+    expect(schedule(null)).toBe('On')
+  })
+
   it('turns red once the newest point is older than the threshold, even with the timer active', () => {
     const status = projectSnapshotsStatus(
       summary({ newest_point_at: hoursAgo(4 * 24) }),

@@ -73,6 +73,8 @@ export interface BtrfsSummary {
   archived_scope_count: number
   policy: BtrfsPolicy
   autosnap_timer_active: boolean
+  /** Minutes between the timer's scheduled runs; null when unreadable. */
+  autosnap_interval_minutes?: number | null
   newest_point_at?: string | null
   last_sweep_at?: string | null
   /** 'ok', or a short failure text from the last sweep. */

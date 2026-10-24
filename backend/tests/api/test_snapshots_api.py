@@ -77,6 +77,7 @@ def _patch_snapshot_libs(monkeypatch) -> None:
         return scopes
 
     monkeypatch.setattr("app.api.snapshots._is_timer_active", lambda: False)
+    monkeypatch.setattr("app.api.snapshots._timer_interval_minutes", lambda: 30)
     monkeypatch.setattr(
         "app.api.snapshots._get_cli_libs",
         lambda: (None, None, None, fake_load_manifest, _FakePolicy(), fake_enumerate_snapshot_scopes, None),
@@ -196,6 +197,41 @@ def test_summary_reports_last_sweep_and_newest_point(monkeypatch) -> None:
     assert body["policy"]["stale_after_hours"] == 2
     scoped = client.get("/api/snapshots/summary", params={"project_id": "summitflow"}).json()
     assert scoped["newest_point_at"] == "2026-10-24T09:00:00+00:00"
+
+
+def test_summary_reports_the_timer_interval(monkeypatch) -> None:
+    _patch_snapshot_libs(monkeypatch)
+
+    assert client.get("/api/snapshots/summary").json()["autosnap_interval_minutes"] == 30
+
+
+def test_timer_interval_reads_the_timer_calendar(monkeypatch) -> None:
+    from types import SimpleNamespace
+
+    from app.api import snapshots
+
+    outputs = {
+        "systemctl": "{ OnCalendar=*-*-* *:00/30:00 ; next_elapse=Sat 2026-10-24 12:00:00 EDT }",
+        "systemd-analyze": (
+            "    Next elapse: Sat 2026-10-24 12:30:00 EDT\n"
+            "       (in UTC): Sat 2026-10-24 16:30:00 UTC\n"
+            "   Iteration #2: Sat 2026-10-24 13:00:00 EDT\n"
+            "       (in UTC): Sat 2026-10-24 17:00:00 UTC\n"
+        ),
+    }
+    calls = []
+
+    def fake_run(cmd, **_kwargs):
+        calls.append(cmd)
+        return SimpleNamespace(stdout=outputs[cmd[0]])
+
+    monkeypatch.setattr(snapshots.safe_subprocess, "run", fake_run)
+
+    assert snapshots._timer_interval_minutes() == 30
+    assert calls[1][-1] == "*-*-* *:00/30:00"
+
+    monkeypatch.setattr(snapshots.safe_subprocess, "run", lambda cmd, **_kwargs: SimpleNamespace(stdout=""))
+    assert snapshots._timer_interval_minutes() is None
 
 
 def test_summary_usage_is_unknown_instead_of_zero(monkeypatch) -> None:
