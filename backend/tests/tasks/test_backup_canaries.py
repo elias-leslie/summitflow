@@ -82,6 +82,9 @@ def test_chrome_profile_capture_survives_a_running_browser(tmp_path: Path, monke
     original = recovery.copy_inventory_snapshot
 
     def copy_while_chrome_runs(*args: Any, **kwargs: Any) -> None:
+        # Chrome replaces Preferences between the inventory and the copy, and again after it.
+        _write(profile, "Default/Preferences.tmp", '{"a": 3}')
+        os.replace(profile / "Default/Preferences.tmp", profile / "Default/Preferences")
         original(*args, **kwargs)
         with (profile / "Default/Extension State/000526.log").open("a") as log:
             log.write("record2")
@@ -99,4 +102,4 @@ def test_chrome_profile_capture_survives_a_running_browser(tmp_path: Path, monke
     snapshot = payload["snapshot_dir"]
     assert payload["recovery"]["consistent"] is True
     assert (snapshot / "Default/Extension State/000526.log").read_text() == "record1"
-    assert (snapshot / "Default/Preferences").read_text() == '{"a": 1}'
+    assert (snapshot / "Default/Preferences").read_text() == '{"a": 3}'

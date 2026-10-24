@@ -12,7 +12,7 @@ import stat
 import subprocess
 import time
 from contextlib import suppress
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from pathlib import Path, PurePosixPath
 from typing import Any, cast
 from urllib.parse import urlsplit, urlunsplit
@@ -350,7 +350,12 @@ def copy_inventory_snapshot(
         else:
             descriptor = os.open(source, os.O_RDONLY | os.O_NOFOLLOW)
             with os.fdopen(descriptor, "rb") as input_file, target.open("xb") as output_file:
-                if not _regular_identity_matches(os.fstat(input_file.fileno()), entry):
+                opened = os.fstat(input_file.fileno())
+                if entry.point_in_time_json and stat.S_ISREG(opened.st_mode) and stat.S_IMODE(opened.st_mode) == entry.mode:
+                    # Replaced atomically since the inventory: whichever complete
+                    # document was opened is the point in time, if it holds still.
+                    entry = replace(entry, size=opened.st_size, mtime_ns=opened.st_mtime_ns, inode=opened.st_ino)
+                if not _regular_identity_matches(opened, entry):
                     raise RuntimeError(f"Backup source changed during capture: {rel}")
                 while True:
                     check_backup_cancelled()
