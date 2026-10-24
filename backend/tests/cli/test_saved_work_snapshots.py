@@ -811,11 +811,11 @@ def test_inventory_inspects_disposable_ancestor_of_tracked_nested_fixture(worksp
     ("/srv/workspaces", "/srv/workspaces/.btrbk", "/srv/workspaces/.btrbk", False),
     ("/srv/workspaces", "/srv/workspaces/.btrbk", "/srv/workspaces", False),
     ("/srv/workspaces", "/srv/workspaces/projects/fixture/.btrbk", "/srv/workspaces/projects/fixture", False),
-    ("/other/workspaces", "/other/workspaces/.btrbk", "/other/workspaces/projects/fixture", False),
-    ("/srv/workspaces", "/srv/workspaces/private-sibling", "/srv/workspaces/projects/fixture", False),
+    ("/other/workspaces", "/other/workspaces/.btrbk", "/other/workspaces/projects/fixture", True),
+    ("/srv/workspaces", "/srv/workspaces/private-sibling", "/srv/workspaces/projects/fixture", True),
     ("/srv/workspaces", "/srv/workspaces/.btrbk", None, False),
 ])
-def test_inventory_keeps_only_canonical_private_backup_sibling_opaque(monkeypatch, boundary_path, private_path, project_path, opaque):
+def test_inventory_skips_unreadable_dirs_only_off_the_project_path(monkeypatch, boundary_path, private_path, project_path, opaque):
     from cli.lib.snapshots import _physical
 
     boundary, private = Path(boundary_path), Path(private_path)
@@ -840,6 +840,27 @@ def test_inventory_keeps_only_canonical_private_backup_sibling_opaque(monkeypatc
     else:
         with pytest.raises(SnapshotError, match="Cannot inventory Btrfs boundaries"):
             _physical.inventory_nested(boundary, project=project)
+
+
+@pytest.mark.skipif(os.geteuid() == 0, reason="root reads every directory")
+def test_unreadable_sibling_directory_does_not_block_other_projects(workspace):
+    from cli.lib.snapshots import _physical
+
+    private = workspace.root / "target-labs" / "root-only-fixture"
+    private.mkdir(parents=True)
+    (private / "hidden").mkdir()
+    private.chmod(0)
+    try:
+        nested = _physical.inventory_nested(workspace.root, project=workspace.project)
+        _physical.require_complete_project(workspace.root, workspace.project, nested)
+        inside = workspace.project / "root-only"
+        inside.mkdir()
+        inside.chmod(0)
+        with pytest.raises(SnapshotError, match="Cannot inventory Btrfs boundaries"):
+            _physical.inventory_nested(workspace.root, project=workspace.project)
+        inside.chmod(0o700)
+    finally:
+        private.chmod(0o700)
 
 
 def test_interrupted_capture_keeps_reserved_physical_point_bounded(workspace, monkeypatch):

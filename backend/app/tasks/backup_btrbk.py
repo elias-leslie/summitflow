@@ -612,7 +612,9 @@ def _capacity(rows: list[dict[str, str]], last: dict[str, Any] | None) -> dict[s
 
 def native_host_status() -> dict[str, Any]:
     last_good = _state_root() / "last-good.json"
-    result: dict[str, Any] = {"engine": "btrbk", "enabled": _enabled(), "installed": shutil.which("btrbk") is not None, "configured": CONFIG_PATH.is_file(), "ready": False, "restore_verified": False, "retention": "7 daily destination points; required source incremental parents", "windows_method": "Veeam", "last_result": _receipt(), "last_good_result": json.loads(last_good.read_text()) if last_good.is_file() else None}
+    from .backup_btrbk_restore_test import host_restore_status
+
+    result: dict[str, Any] = {"engine": "btrbk", "enabled": _enabled(), "installed": shutil.which("btrbk") is not None, "configured": CONFIG_PATH.is_file(), "ready": False, **host_restore_status(), "points_kept": None, "retention": "7 daily destination points; required source incremental parents", "last_result": _receipt(), "last_good_result": json.loads(last_good.read_text()) if last_good.is_file() else None}
     if not result["installed"]:
         result["blocked_reason"] = "btrbk is not installed"
         return result
@@ -624,6 +626,9 @@ def native_host_status() -> dict[str, Any]:
         _validate_nested_coverage(rows)
         _qualify_target_directory(Path(rows[0]["target_path"]).parent)
         result.update(sources=sorted({row["source_url"] for row in rows}), target=rows[0]["target_path"], capacity=_capacity(rows, result["last_result"]))
+        if Path(rows[0]["target_path"]) == NATIVE_TARGET:
+            names = [Path(path).name.split(".", 1)[0] for path in _native_listing(NATIVE_TARGET, "target")]
+            result["points_kept"] = min((names.count(row["snapshot_name"]) for row in rows), default=0)
         dry = _run(["sudo", "-n", "btrbk", "-c", str(CONFIG_PATH), "--dry-run", "--format", "raw", "run"])
         result["ready"] = dry.returncode == 0 and result["capacity"]["admitted"]
         result["blocked_reason"] = None if result["ready"] else result["capacity"]["reason"] or "btrbk coverage/destination preflight failed"

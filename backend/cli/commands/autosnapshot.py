@@ -15,6 +15,8 @@ from ..lib.autosnapshot import (
     ensure_baseline,
     prune_all,
     sweep_periodic,
+    sweep_result,
+    write_sweep_state,
 )
 from ..lib.quick_snapshots import SnapshotError
 
@@ -62,9 +64,12 @@ def sweep_command() -> None:
     try:
         created = sweep_periodic()
     except SnapshotError as exc:
+        if not str(exc).startswith("Deferred:"):
+            write_sweep_state(str(exc))
         _deferred(exc, "sweep")
         return
-    print(f"SWEEP[{len(created)}]")
+    state = write_sweep_state(sweep_result(LAST_SWEEP_REPORT))
+    print(f"SWEEP[{len(created)}]|result:{state['last_sweep_result']}|newest:{state['newest_point_at'] or '-'}")
     for record in LAST_SWEEP_REPORT:
         print(f"  {record['project_id']}|{record['status']}|reason:{record['reason']}")
     for snap in created:

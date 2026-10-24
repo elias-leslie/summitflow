@@ -12,6 +12,7 @@ Provides the automation backbone for Btrfs-backed project snapshots:
 
 from __future__ import annotations
 
+import json
 import logging
 import os
 import shutil
@@ -96,6 +97,7 @@ class AutosnapshotPolicy:
     manual_keep_per_scope: int = 20
     max_deletes_per_run: int = 15
     delete_batch: int = 5  # deletes between waits for the Btrfs cleaner
+    stale_after_hours: int = 2  # newest point older than this: the page and Nightshift alert
 
     def to_dict(self) -> dict[str, int]:
         return asdict(self)
@@ -399,6 +401,66 @@ def sweep_periodic(*, policy: AutosnapshotPolicy = DEFAULT_POLICY) -> list[Quick
         except Exception as exc:
             LAST_SWEEP_REPORT.append({"project_id": project_id, "status": "cleanup deferred", "reason": str(exc)})
     return created
+
+
+# Outcome of the last sweep and the newest point per project, for the Backups
+# page and Nightshift's stale-snapshot alert (a timer that runs is not proof).
+STATE_PATH = Path.home() / ".local" / "share" / "st" / "snaps" / "autosnap-state.json"
+# Expected or retry-next-sweep skips; any other reason is a failed project.
+_SWEEP_OK_REASONS = ("interval not elapsed", "saved source unchanged", "Skipped: saved source unchanged",
+                     "Deferred: Git index/HEAD/ref transaction", "Deferred: snapshot operation already",
+                     "Deferred: latest shared boundary", "Deferred: shared ")
+
+
+def sweep_result(report: list[dict[str, str]]) -> str:
+    """``ok``, or how many projects failed and the first reason."""
+    failed = [r for r in report if r["status"] in {"skip", "cleanup deferred"}
+              and not r["reason"].startswith(_SWEEP_OK_REASONS)]
+    if not failed:
+        return "ok"
+    return f"{len(failed)} of {len({r['project_id'] for r in report})} projects failed: {failed[0]['project_id']}: {failed[0]['reason']}"
+
+
+def newest_points() -> dict[str, str]:
+    """Newest recorded point per project (ISO time)."""
+    newest: dict[str, str] = {}
+    for entry in all_entries():
+        if _discardable(entry) or entry.source == "auto-incomplete":
+            continue
+        stamp = _created(entry).isoformat()
+        if stamp > newest.get(entry.project_id, ""):
+            newest[entry.project_id] = stamp
+    return newest
+
+
+def write_sweep_state(result: str, *, path: Path | None = None) -> dict[str, Any]:
+    """Record this sweep; a failure to read points is itself the sweep result."""
+    try:
+        projects = newest_points()
+    except SnapshotError as exc:
+        projects, result = {}, result if result != "ok" else str(exc)
+    state = {
+        "last_sweep_at": datetime.now(UTC).isoformat(),
+        "last_sweep_result": result,
+        "newest_point_at": max(projects.values(), default=None),
+        "projects": projects,
+        "stale_after_hours": DEFAULT_POLICY.stale_after_hours,
+    }
+    target = path or STATE_PATH
+    target.parent.mkdir(parents=True, exist_ok=True)
+    tmp = target.with_suffix(".tmp")
+    tmp.write_text(json.dumps(state, indent=2, sort_keys=True))
+    tmp.replace(target)
+    return state
+
+
+def read_sweep_state(path: Path | None = None) -> dict[str, Any]:
+    """Last recorded sweep; empty before the first one or when unreadable."""
+    try:
+        data = json.loads((path or STATE_PATH).read_text())
+    except (OSError, ValueError):
+        return {}
+    return data if isinstance(data, dict) else {}
 
 
 def _held(entry: QuickSnapshot, now: datetime) -> bool:

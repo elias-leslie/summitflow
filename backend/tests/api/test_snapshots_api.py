@@ -184,6 +184,20 @@ def test_prune_runs_off_the_event_loop(monkeypatch) -> None:
     assert loops == [None]
 
 
+def test_summary_reports_last_sweep_and_newest_point(monkeypatch) -> None:
+    _patch_snapshot_libs(monkeypatch)
+    state = {"last_sweep_at": "2026-10-24T12:00:00+00:00", "last_sweep_result": "1 of 2 projects failed: x: denied",
+             "newest_point_at": "2026-10-24T11:30:00+00:00", "projects": {"summitflow": "2026-10-24T09:00:00+00:00"}}
+    monkeypatch.setattr("cli.lib.autosnapshot.read_sweep_state", lambda: state)
+    body = client.get("/api/snapshots/summary").json()
+    assert body["newest_point_at"] == "2026-10-24T11:30:00+00:00"
+    assert body["last_sweep_at"] == "2026-10-24T12:00:00+00:00"
+    assert body["last_sweep_result"].startswith("1 of 2 projects failed")
+    assert body["policy"]["stale_after_hours"] == 2
+    scoped = client.get("/api/snapshots/summary", params={"project_id": "summitflow"}).json()
+    assert scoped["newest_point_at"] == "2026-10-24T09:00:00+00:00"
+
+
 def test_summary_usage_is_unknown_instead_of_zero(monkeypatch) -> None:
     _patch_snapshot_libs(monkeypatch)
     response = client.get("/api/snapshots/summary")

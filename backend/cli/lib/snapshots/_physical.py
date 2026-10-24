@@ -4,6 +4,7 @@ from __future__ import annotations
 import contextlib
 import fcntl
 import json
+import logging
 import os
 from collections.abc import Iterator
 from datetime import UTC, datetime
@@ -60,6 +61,14 @@ def inventory_nested(boundary: Path, *, project: Path | None = None) -> list[str
     device = boundary.stat().st_dev
     tracked = _git(project, ["ls-files", "-z"]).stdout.split("\0") if project else []
     def denied(error):
+        # A directory this account cannot list is still inside the captured
+        # subvolume; only nested subvolumes below it stay unknown, and those
+        # only matter on the project's own path.
+        unreadable = Path(error.filename) if getattr(error, "filename", None) else None
+        if (project is not None and unreadable is not None and boundary in unreadable.parents
+                and unreadable != project and unreadable not in project.parents and project not in unreadable.parents):
+            logging.getLogger(__name__).info("boundary inventory skipped unreadable %s: %s", unreadable, error)
+            return
         raise SnapshotError(f"Cannot inventory Btrfs boundaries: {error}") from error
     for current, dirs, _ in os.walk(boundary, followlinks=False, onerror=denied):
         current_path = Path(current)

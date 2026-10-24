@@ -69,6 +69,7 @@ class PolicyResponse(BaseModel):
     manual_keep_per_scope: int
     max_deletes_per_run: int
     delete_batch: int
+    stale_after_hours: int
 
 
 class SnapshotSummaryResponse(BaseModel):
@@ -83,6 +84,11 @@ class SnapshotSummaryResponse(BaseModel):
     archived_scope_count: int
     policy: PolicyResponse
     autosnap_timer_active: bool
+    # From the sweep state file; the page turns red when the newest point is
+    # older than policy.stale_after_hours or the last sweep was not "ok".
+    newest_point_at: str | None = None
+    last_sweep_at: str | None = None
+    last_sweep_result: str | None = None
 
 
 class SnapshotRequest(BaseModel):
@@ -158,6 +164,9 @@ def _get_cli_libs() -> tuple[Any, ...]:
 async def snapshot_summary(project_id: str | None = None) -> SnapshotSummaryResponse:
     """Aggregate snapshot summary with policy and timer status."""
     _, _, _, load_manifest, DEFAULT_POLICY, enumerate_snapshot_scopes, _ = _get_cli_libs()
+    from cli.lib.autosnapshot import read_sweep_state
+
+    state = read_sweep_state()
 
     scopes = list(enumerate_snapshot_scopes(include_archived=True))
     if project_id:
@@ -192,6 +201,9 @@ async def snapshot_summary(project_id: str | None = None) -> SnapshotSummaryResp
         archived_scope_count=sum(1 for _, _, state in scopes if state == "archived"),
         policy=PolicyResponse(**DEFAULT_POLICY.to_dict()),
         autosnap_timer_active=_is_timer_active(),
+        newest_point_at=(state.get("projects") or {}).get(project_id) if project_id else state.get("newest_point_at"),
+        last_sweep_at=state.get("last_sweep_at"),
+        last_sweep_result=state.get("last_sweep_result"),
     )
 
 

@@ -556,6 +556,7 @@ def test_readiness_never_claims_restore_verified(monkeypatch: pytest.MonkeyPatch
     result = host.native_host_status()
     assert result["ready"] is ready
     assert result["restore_verified"] is False
+    assert "windows_method" not in result
 
 
 def test_boot_layout_uses_observed_device_ancestry(monkeypatch: pytest.MonkeyPatch) -> None:

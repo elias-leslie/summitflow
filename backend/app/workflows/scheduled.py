@@ -339,9 +339,9 @@ async def pending_drain_wf(input: EmptyInput, ctx: Context) -> dict[str, Any]:
 @hatchet.task(
     name="summitflow-restore-tests",
     input_validator=EmptyInput,
-    # Weekly readbacks, the monthly rotation (database loads up to 30 min each) and the pinned hub-state drill
-    # (stream 45 min + two quick_checks up to 20 min each).
-    execution_timeout="10800s",
+    # Weekly readbacks, the monthly rotation (database loads up to 30 min each), the pinned hub-state drill
+    # (stream 45 min + two quick_checks up to 20 min each) and the monthly host restore from the T7.
+    execution_timeout="14400s",
     retries=1,
     on_crons=[schedule_cron("restore_tests")],
     concurrency=ConcurrencyExpression(
@@ -362,6 +362,9 @@ async def restore_tests_wf(input: EmptyInput, ctx: Context) -> dict[str, Any]:
     # The weekly tick also owns the monthly offsite restore; it skips itself
     # inside the cadence and retries next week after a failure.
     result["offsite_restore"] = await asyncio.to_thread(run_monthly_offsite_restore_test)
+    from ..tasks.backup_btrbk_restore_test import run_host_restore_test
+
+    result["host_restore"] = await asyncio.to_thread(run_host_restore_test)
     return result
 
 

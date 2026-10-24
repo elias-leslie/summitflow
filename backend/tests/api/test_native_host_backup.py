@@ -9,7 +9,7 @@ def test_native_host_route_preserves_pending_qualification(monkeypatch):
         "engine": "btrbk", "installed": True, "configured": False,
         "enabled": False, "ready": False, "last_result": None,
         "blocked_reason": "Native destination awaits storage cutover",
-        "windows_method": "Veeam",
+        "restore_verified": False, "restore_tested_at": None, "points_kept": None,
     }
     monkeypatch.setattr(endpoint, "native_host_status", lambda: payload)
     response = TestClient(app).get("/api/backups/native-host")
