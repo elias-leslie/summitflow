@@ -172,8 +172,10 @@ def pulse(
         raise typer.BadParameter("Use either --project or --all, not both.")
     if brief:
         from ..lib.startup_brief import brief as startup_brief
+        from ..lib.startup_brief import session_role
 
-        typer.echo("\n".join(startup_brief({}, record=False)) or "System brief: all clear.")
+        typer.echo("\n".join(startup_brief({}, record=False))
+                   or f"System brief: nothing open for this session ({session_role({})} view).")
         return
 
     refresh_agent_observability()
