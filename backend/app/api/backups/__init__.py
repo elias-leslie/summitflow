@@ -11,6 +11,7 @@ This module provides REST API endpoints for:
 
 from fastapi import APIRouter
 
+from .destinations_endpoints import router as destinations_router
 from .global_endpoints import router as global_router
 from .health_endpoints import router as health_router
 from .key_endpoints import router as key_router
@@ -48,6 +49,7 @@ router.include_router(health_router)
 router.include_router(key_router)
 router.include_router(system_image_router)
 router.include_router(native_host_router)
+router.include_router(destinations_router)
 router.include_router(source_router)
 router.include_router(project_router)
 router.include_router(global_router)
