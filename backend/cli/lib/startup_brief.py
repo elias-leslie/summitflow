@@ -153,9 +153,20 @@ def _newest_json(directory: Path) -> dict[str, Any] | None:
         return None
 
 
+def deploys_remotely(project: str) -> bool:
+    """A project placed in a Proxmox guest ships through its own release path, so ST receipts say nothing."""
+    from app.project_identity import get_project_identity
+
+    with suppress(Exception):
+        return bool(((get_project_identity(project) or {}).get("runtime") or {}).get("deployment"))
+    return False
+
+
 def deploy_item(project: str, now: datetime) -> Item | None:
     receipt = _newest_json(_state_root() / "projects" / project / "receipts")
     if not receipt or not (receipt.get("failed_phase") or receipt.get("state") == "failed"):
+        return None
+    if deploys_remotely(project):
         return None
     when = datetime.fromtimestamp(float(receipt.get("completed_at") or 0), UTC)
     serving = "" if receipt.get("previous_usable_release") else "; no earlier usable release"

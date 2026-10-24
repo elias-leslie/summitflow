@@ -38,6 +38,7 @@ def host(tmp_path, monkeypatch):
     configure()
     monkeypatch.setenv("ST_STARTUP_BRIEF_CONFIG", str(config))
     monkeypatch.setattr(startup_brief, "publication_item", lambda project, cfg, now: None)
+    monkeypatch.setattr(startup_brief, "deploys_remotely", lambda project: False)
     return {"repo": repo, "state": state, "status": status, "configure": configure}
 
 
@@ -99,6 +100,14 @@ def test_coordinator_sees_host_items_first_and_every_project(host, monkeypatch):
     assert any(line.startswith("- CRIT ominull: last deploy failed at restart_health 1h ago") for line in lines)
     # Coordinator views do not use up a project's first-entry brief.
     assert len(_start("agent", monkeypatch)) == 4
+
+
+def test_failed_local_receipt_is_silent_for_a_project_deployed_in_a_guest(host, monkeypatch):
+    (host["state"] / "projects/ominull/receipts/b1.json").write_text(json.dumps(
+        {"build_id": "b1", "completed_at": NOW.timestamp() - 3600, "failed_phase": "restart_health",
+         "previous_usable_release": None, "state": "failed"}))
+    monkeypatch.setattr(startup_brief, "deploys_remotely", lambda project: project == "ominull")
+    assert not any("last deploy failed" in line for line in _start("coordinator", monkeypatch))
 
 
 def test_lane_gets_only_its_projects_blocking_items(host, monkeypatch):
