@@ -110,6 +110,24 @@ def test_tool_lookup_ignores_the_callers_path(tmp_path: Path, monkeypatch: pytes
     assert check._resolve_command("pytest", tmp_path, tmp_path, [])[0] == str(leaked / "pytest")
 
 
+def test_declared_tool_path_wins_over_a_host_install(tmp_path: Path) -> None:
+    # aico declares tether/scripts/.venv/bin (CI's locked ruff); an older
+    # ~/.local/bin/ruff on the lookup path must not stand in for it.
+    host, declared = tmp_path / "host-bin", tmp_path / "tether/scripts/.venv/bin"
+    for directory in (host, declared):
+        directory.mkdir(parents=True)
+        for binary in ("ruff", "ty"):
+            (directory / binary).write_text("#!/bin/sh\n")
+            (directory / binary).chmod(0o755)
+    (tmp_path / ".st-check.toml").write_text('[paths]\nruff = "tether/scripts/.venv/bin"\ntypes = "tether/scripts/.venv/bin"\n')
+    for search_path in (str(host), None):
+        assert check._resolve_command("ruff", tmp_path, tmp_path, ["check"], search_path=search_path, name="ruff") == [
+            str(declared / "ruff"), "check"]
+    assert check._resolve_command("ty", tmp_path, tmp_path, [], search_path=str(host), name="types")[0] == str(declared / "ty")
+    (tmp_path / ".st-check.toml").write_text("")
+    assert check._resolve_command("ruff", tmp_path, tmp_path, [], search_path=str(host), name="ruff")[0] == str(host / "ruff")
+
+
 def test_seed_pins_order_only_where_ci_randomizes(project: Path) -> None:
     pytest_bin = str(project / "backend" / ".venv" / "bin" / "pytest")
     assert ci_parity.seeded([pytest_bin, "-q"], 7) == [pytest_bin, "-q"]

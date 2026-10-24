@@ -761,7 +761,7 @@ def _project_acceptance_plan(repo: Path, *, commit: str | None = None,
         if config.get("internal_adapter"):
             continue
         command = _resolve_command(str(config.get("binary") or name), repo, _workdir(repo, config), shlex.split(str(config.get("args") or "")),
-                                   search_path=ci_parity.canonical_tool_path())
+                                   search_path=ci_parity.canonical_tool_path(), name=name)
         plan["legacy_tools"][name] = _file_identity(Path(command[0]), name=name)
         parts = Path(command[0]).parts
         for marker in (".venv", "venv", "node_modules"):

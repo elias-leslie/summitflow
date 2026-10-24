@@ -100,7 +100,7 @@ app = typer.Typer(
 
 
 def _resolve_command(binary: str, root: Path, cwd: Path, base_args: list[str], *,
-                     search_path: str | None = None) -> list[str]:
+                     search_path: str | None = None, name: str | None = None) -> list[str]:
     """Project-local tools first, then PATH (or the acceptance gate's fixed lookup path)."""
     # npx foo -> search node_modules for foo, not for npx itself.
     if binary == "npx" and base_args:
@@ -120,6 +120,11 @@ def _resolve_command(binary: str, root: Path, cwd: Path, base_args: list[str], *
         npx = shutil.which("npx", path=search_path)
         return [npx or "npx", "--no-install", *base_args]
 
+    # A [paths] declaration names the env CI installs (e.g. a nested uv venv);
+    # a host-wide install of another version must not win over it.
+    declared = read_tool_paths(root).get(name or binary)
+    if declared is not None and (root / declared / binary).exists():
+        return [str(root / declared / binary), *base_args]
     for search_root in (cwd, root / "frontend", root):
         for candidate in (
             search_root / "node_modules" / ".bin" / binary,
@@ -368,7 +373,7 @@ def _run_tool(name: str, config: dict[str, object], extra_args: list[str]) -> in
     base_args, extra_args = adjusted_tool_args(name, base_args, extra_args, root)
     # Acceptance resolves gate binaries on a fixed path so its receipt names
     # the same tools whichever shell or worker validates it later.
-    resolved_command = _resolve_command(binary, root, cwd, base_args,
+    resolved_command = _resolve_command(binary, root, cwd, base_args, name=name,
                                         search_path=ci_parity.canonical_tool_path() if ci_parity.active() else None)
     command = [*resolved_command, *extra_args]
     label = str(config.get("label") or name.upper())
