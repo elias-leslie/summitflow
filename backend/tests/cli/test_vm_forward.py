@@ -19,6 +19,7 @@ class Guests:
             {"vmid": 100, "name": "browser", "type": "qemu", "status": "running", "pool": "summitflow"},
         ]
         self.cfg: dict[str, object] = {"name": "workbench", "net0": "virtio=AA:BB:CC:DD:EE:FF,bridge=labnet,firewall=1"}
+        self.config: SimpleNamespace | None = None
 
     def list_vms(self):
         return self.rows
@@ -33,10 +34,6 @@ class Guests:
 @pytest.fixture
 def runtime(monkeypatch, tmp_path):
     monkeypatch.setenv("XDG_RUNTIME_DIR", str(tmp_path))
-    config = tmp_path / "nightshift/deploy/boundary-net/net.json"
-    config.parent.mkdir(parents=True)
-    config.write_text(json.dumps({"labnet": {"cidrs": ["10.20.0.0/24"]}}))
-    monkeypatch.setattr(vf, "get_host_config_root", lambda: tmp_path / "summitflow")
     return tmp_path
 
 
@@ -53,6 +50,17 @@ def test_refuses_non_lab_or_non_running_sources(runtime, monkeypatch, change):
         monkeypatch.setattr(guests, "ip_addresses", lambda _: ["192.168.86.1"])
     monkeypatch.setattr(vf, "_start", lambda *a, **k: pytest.fail("must refuse before opening SSH"))
     with pytest.raises(ProxmoxError):
+        vf.forward(guests, "125", 8080)
+
+
+def test_lab_subnets_come_from_the_proxmox_config(runtime, monkeypatch):
+    guests = Guests()
+    guests.config = SimpleNamespace(pool="summitflow", lab_cidrs="10.30.0.0/24")
+    monkeypatch.setattr(vf, "_start", lambda *a, **k: pytest.fail("must refuse before opening SSH"))
+    with pytest.raises(ProxmoxError, match="no usable labnet"):
+        vf.forward(guests, "125", 8080)
+    guests.config = SimpleNamespace(pool="summitflow", lab_cidrs="not-a-subnet")
+    with pytest.raises(ProxmoxError, match="PROXMOX_LAB_CIDRS"):
         vf.forward(guests, "125", 8080)
 
 

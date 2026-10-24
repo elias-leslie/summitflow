@@ -16,8 +16,6 @@ import time
 from contextlib import contextmanager, suppress
 from pathlib import Path
 
-from app.utils.shared_paths import get_host_config_root
-
 from .proxmox import ProxmoxConfig, ProxmoxError
 
 
@@ -40,12 +38,12 @@ def _locked():
         yield root
 
 
-def _lab_networks():
-    path = get_host_config_root().parent / "nightshift/deploy/boundary-net/net.json"
+def _lab_networks(client):
+    cidrs = getattr(getattr(client, "config", None), "lab_cidrs", None) or ProxmoxConfig.lab_cidrs
     try:
-        return [ipaddress.IPv4Network(c) for c in json.loads(path.read_text())["labnet"]["cidrs"]]
-    except (OSError, ValueError, KeyError, TypeError) as exc:
-        raise ProxmoxError("Cannot load the existing Nightshift labnet CIDRs") from exc
+        return [ipaddress.IPv4Network(c.strip()) for c in cidrs.split(",")]
+    except ValueError as exc:
+        raise ProxmoxError(f"PROXMOX_LAB_CIDRS is not a list of IPv4 subnets: {cidrs}") from exc
 
 
 def _guest(client, vmid: str, *, lab: bool) -> tuple[str, dict]:
@@ -60,7 +58,7 @@ def _guest(client, vmid: str, *, lab: bool) -> tuple[str, dict]:
         pool = getattr(getattr(client, "config", None), "pool", None) or ProxmoxConfig.pool
         if row.get("pool") != pool:
             raise ProxmoxError(f"VM {vmid} must belong to the managed lab pool")
-        networks = _lab_networks()
+        networks = _lab_networks(client)
         addresses = [a for a in addresses if any(a in n for n in networks)]
     addresses = [a for a in addresses if not (a.is_loopback or a.is_unspecified or a.is_link_local or a.is_multicast)]
     if not addresses:

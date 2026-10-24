@@ -52,6 +52,8 @@ class ProxmoxConfig:
     ca_bundle: str = ""
     # The token may only allocate VMs in this pool (PROXMOX_POOL; empty: no pool, PVE checks /vms/<newid>)
     pool: str = "summitflow"
+    # The labnet subnets lab guests get their addresses from (PROXMOX_LAB_CIDRS, comma-separated)
+    lab_cidrs: str = "10.20.0.0/24"
 
 
 # PVE pool of production guests the token may start/stop/reboot, resize, and configure startup options
@@ -220,6 +222,7 @@ def load_proxmox_config(*, allow_admin_token: bool = True) -> ProxmoxConfig:
         node=node,
         ca_bundle=ca_bundle,
         pool=value("PROXMOX_POOL", "summitflow"),
+        lab_cidrs=value("PROXMOX_LAB_CIDRS", ProxmoxConfig.lab_cidrs),
     )
 
 
