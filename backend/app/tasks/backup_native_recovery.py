@@ -39,6 +39,11 @@ ST_METADATA_DIR_NAME = "st-metadata"
 ST_METADATA_ROOTS = ("st/acceptance", "st/native-stages", "st/publication", "st-publication")
 SQLITE_TRANSIENT_SUFFIXES = ("-wal", "-shm", "-journal")
 JJ_GIT_IMPORT_EXPORT_LOCK = ".jj/repo/git_import_export.lock"
+# A running Chrome appends to its LevelDB logs and atomically replaces its
+# preference documents. A LevelDB log prefix is what Chrome itself recovers from
+# after a crash, and each replaced document is complete on its own.
+CHROME_PROFILE_DIR = "google-chrome"
+CHROME_POINT_IN_TIME_JSON = frozenset({"Local State", "Preferences", "Secure Preferences"})
 
 
 @dataclass(frozen=True)
@@ -97,6 +102,7 @@ def inventory_project_tree(
     def walk_error(error: OSError) -> None:
         raise error
 
+    chrome = project_dir.name == CHROME_PROFILE_DIR
     for root, dirs, files in os.walk(project_dir, followlinks=False, onerror=walk_error):
         check_backup_cancelled()
         root_path = Path(root)
@@ -160,14 +166,16 @@ def inventory_project_tree(
                     mtime_ns=0 if sqlite_database else metadata.st_mtime_ns,
                     inode=metadata.st_ino,
                     sqlite_database=sqlite_database,
-                    append_only_jsonl=not sqlite_database and path.suffix.lower() == ".jsonl",
+                    append_only_jsonl=not sqlite_database and (
+                        path.suffix.lower() == ".jsonl" or (chrome and (path.suffix == ".log" or filename.startswith("MANIFEST-")))
+                    ),
                     # Desktop bookkeeping changes independently of conversation
                     # payloads. Keep a stable, validated copy rather than
                     # requiring it to remain untouched throughout a long tree
                     # capture. No general JSON or source-edit exception.
-                    point_in_time_json=project_dir.name == ".codex" and rel in {
+                    point_in_time_json=(project_dir.name == ".codex" and rel in {
                         ".codex-global-state.json", ".codex-global-state.json.bak",
-                    },
+                    }) or (chrome and filename in CHROME_POINT_IN_TIME_JSON),
                 )
     return inventory
 

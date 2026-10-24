@@ -97,10 +97,11 @@ AUDITED_PROJECT_EXCLUDES: dict[str, tuple[str, ...]] = {
     ),
     # Owner's Chrome profile: logins, cookies, history, bookmarks and site
     # storage stay; caches, downloaded models, store-installed extension code
-    # and process locks are rebuilt by Chrome.
+    # and process locks are rebuilt by Chrome; extensions re-register their
+    # network rules, which Chrome recompiles into DNR Extension Rules.
     "google-chrome": (
         "*Cache", "Cache", "Code Cache", "GPUCache", "CacheStorage", "ScriptCache", "Dawn*Cache",
-        "Service Worker", "Shared Dictionary", "HistoryEmbeddings", "Extensions",
+        "Service Worker", "Shared Dictionary", "HistoryEmbeddings", "Extensions", "DNR Extension Rules",
         "./optimization_guide_model_store", "./OptGuideOnDeviceModel", "./OptGuideOnDeviceClassifierModel",
         "./component_crx_cache", "./extensions_crx_cache", "./Crashpad", "Safe Browsing", "BrowserMetrics*",
         "Singleton*",
