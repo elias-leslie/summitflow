@@ -24,7 +24,6 @@ from app.storage.task_spirit import (
     get_task_spirit,
     update_task_spirit,
 )
-from app.tasks.backup_drain import drain_pending_backups
 from app.tasks.backup_executor import create_backup
 from app.tasks.host_retention import cleanup_host_artifacts
 from app.tasks.subtask_builder import create_single_subtask_with_steps
@@ -80,7 +79,6 @@ _PATCH_SURFACE = (
     get_task_spirit,
     update_task_spirit,
     create_single_subtask_with_steps,
-    drain_pending_backups,
     create_backup,
     cleanup_host_artifacts,
     _coerce_datetime,

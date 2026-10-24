@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import subprocess
+import sys
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any
@@ -95,3 +96,12 @@ def test_counts_or_sample_mismatch_fails_the_subvolume(monkeypatch: pytest.Monke
     digests["restored"]["b"] = [2, 5, "y"]
     counts["restored"] = {"files": 2, "links": 0, "dirs": 1, "sample": ["a", "b"]}
     assert "counts differ" in restore._compare("home", row, Path("/t7/restore/run"), "seed")["error"]
+
+
+def test_probe_counts_a_tree(tmp_path: Path) -> None:
+    (tmp_path / "d" / "e").mkdir(parents=True)
+    (tmp_path / "d" / "f").write_text("x")
+    (tmp_path / "l").symlink_to("d")
+    run = subprocess.run([sys.executable, "-I", "-c", restore._PROBE, "count", str(tmp_path), "5", "seed", "100"],
+                         capture_output=True, text=True, check=True)
+    assert json.loads(run.stdout) == {"files": 1, "links": 1, "dirs": 2, "sample": ["d/f"]}

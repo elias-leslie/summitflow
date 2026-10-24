@@ -21,7 +21,6 @@ from .backup_native_archive import (
 )
 from .backup_native_infra import INFRA_BACKUP_TIMEOUT, run_infra_backup
 from .backup_native_offsite import encrypt_completed_archive, replicate_completed_archive
-from .backup_native_pending import drain_pending_archives_from_dir
 from .backup_native_restore import (
     archive_age_days,
     locate_archive,
@@ -55,7 +54,6 @@ __all__ = [
     "INFRA_BACKUP_TIMEOUT",
     "SmbUploadResult",
     "archive_age_days",
-    "drain_pending_archives",
     "locate_archive",
     "preview_restore_archive",
     "restore_archive",
@@ -231,9 +229,3 @@ def run_project_backup(
             stored["offsite"] = offsite
             update_backup_index(source_id, stored, "ok", str(stored.get("location") or replica_source), retention)
         return stored
-
-
-def drain_pending_archives(*, dry_run: bool = False) -> dict[str, Any]:
-    """Upload pending archives to their recorded SMB target."""
-    pending_dir = Path.home() / ".local" / "share" / "backup-pending"
-    return drain_pending_archives_from_dir(pending_dir, dry_run=dry_run, uploader=_smb_upload)

@@ -4,12 +4,10 @@ import gzip
 import io
 import json
 import os
-import shlex
 import shutil
 import stat
 import subprocess
 import tarfile
-from contextlib import nullcontext
 from pathlib import Path
 from unittest.mock import MagicMock
 
@@ -148,43 +146,21 @@ def test_drill_script_keeps_restore_strict_but_skips_bootstrap_postgres_role() -
     assert "umask 077" in script
 
 
-def test_drill_materializes_encrypted_archive_before_script(monkeypatch) -> None:
+def test_drill_refuses_a_non_repository_backup(monkeypatch) -> None:
     from app.tasks import backup_restore_drill
 
-    encrypted = Path("/tmp/infrastructure.tar.gz.age")
-    plaintext = Path("/tmp/infrastructure.tar.gz")
-    run_script = MagicMock(return_value={"ok": True, "components": [], "duration_ms": 1})
-    monkeypatch.setattr(
-        backup_restore_drill,
-        "_find_infra_source",
-        lambda: {"id": "infrastructure"},
-    )
-    monkeypatch.setattr(
-        backup_restore_drill.backup_store,
-        "get_latest_backup",
-        lambda **_kwargs: {
-            "id": "backup-1",
-            "location": str(encrypted),
-            "name": encrypted.name,
-        },
-    )
-    monkeypatch.setattr(
-        backup_restore_drill,
-        "_locate_drill_archive",
-        lambda *_args: str(encrypted),
-    )
-    monkeypatch.setattr(
-        backup_restore_drill,
-        "materialize_plaintext_archive",
-        lambda _path: nullcontext(plaintext),
-    )
+    run_script = MagicMock(side_effect=AssertionError("Old archives are no longer drilled"))
+    record = MagicMock()
+    monkeypatch.setattr(backup_restore_drill, "_find_infra_source", lambda: {"id": "infrastructure"})
+    monkeypatch.setattr(backup_restore_drill.backup_store, "get_latest_backup",
+                        lambda **_kwargs: {"id": "backup-1", "location": "/tmp/infrastructure.tar.gz.age", "verification_json": {}})
     monkeypatch.setattr(backup_restore_drill, "_run_drill_script", run_script)
-    monkeypatch.setattr(backup_restore_drill, "_record_drill_result", MagicMock())
-    monkeypatch.setattr(backup_restore_drill, "_cleanup_temp", MagicMock())
+    monkeypatch.setattr(backup_restore_drill, "_record_drill_result", record)
     monkeypatch.setattr(backup_restore_drill.nightshift_stack, "stack_installed", lambda: False)
 
-    assert backup_restore_drill.run_infra_drill()["ok"] is True
-    run_script.assert_called_once_with(str(plaintext), "backup-1")
+    result = backup_restore_drill.run_infra_drill()
+    assert result["ok"] is False and "not a restic repository point" in result["error"]
+    assert record.call_args.kwargs["ok"] is False
 
 
 def test_drill_is_marked_unsupported_without_a_container_runtime(monkeypatch) -> None:
@@ -313,39 +289,6 @@ def test_failed_container_removal_verifies_exact_attempt_and_reports_unknown(mon
             drill._remove_drill_containers(names)
     assert calls[0] == ["docker", "rm", "-fv", *names]
     assert calls[1][3:5] == ["--filter", "name=^/(sf-drill-pg-fixture|sf-drill-redis-fixture)$"]
-
-
-@pytest.mark.parametrize("failure", [False, True])
-def test_smb_download_uses_owned_scratch_and_cleans_success_or_timeout(
-    monkeypatch, synthetic_restore_mount, failure,
-):
-    from app.tasks import backup_restore_drill as drill
-
-    jobs = []
-
-    def download(command, **kwargs):
-        destination = Path(shlex.split(command[-1].split("; ")[-1])[-1])
-        jobs.append(destination.parent)
-        assert destination.parent.parent.parent == synthetic_restore_mount
-        assert kwargs["timeout"] == drill.SMB_DOWNLOAD_TIMEOUT
-        assert Path(kwargs["env"]["TMPDIR"]).is_relative_to(destination.parent)
-        kwargs["capacity_check"]()
-        destination.write_bytes(b"fixture archive")
-        if failure:
-            raise subprocess.TimeoutExpired(command, kwargs["timeout"])
-        return subprocess.CompletedProcess(command, 0, stdout="", stderr="")
-
-    monkeypatch.setattr(drill, "run_bulk_process", download)
-    downloaded = drill._download_from_smb("//fixture/share/backups/archive.tar.gz")
-    if failure:
-        assert downloaded is None
-    else:
-        assert downloaded is not None
-        assert stat.S_IMODE(Path(downloaded).stat().st_mode) == 0o600
-        # Downloads inferred from SMB configuration also clean up when the
-        # original location was empty rather than an explicit // reference.
-        drill._cleanup_temp(downloaded, "")
-    assert not jobs[0].exists()
 
 
 @pytest.mark.parametrize("init_completes", [True, False])

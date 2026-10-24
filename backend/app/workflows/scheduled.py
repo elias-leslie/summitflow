@@ -312,31 +312,6 @@ async def health_monitor_wf(input: EmptyInput, ctx: Context) -> dict[str, Any]:
 
 
 @hatchet.task(
-    name="summitflow-pending-drain",
-    input_validator=EmptyInput,
-    # A retained all-source Drive backlog can exceed the former ten-minute
-    # SMB-only envelope. Each verified archive persists its own checkpoint.
-    execution_timeout="7200s",
-    retries=2,
-    backoff_factor=2.0,
-    on_crons=[schedule_cron("pending_drain")],
-    concurrency=ConcurrencyExpression(
-        expression="'summitflow-pending-drain'",
-        max_runs=1,
-        limit_strategy=ConcurrencyLimitStrategy.CANCEL_NEWEST,
-    ),
-)
-async def pending_drain_wf(input: EmptyInput, ctx: Context) -> dict[str, Any]:
-    from ..tasks.backup_drain import drain_pending_backups
-
-    if not _system_schedule_enabled("pending_drain"):
-        return _disabled_schedule_result("pending_drain")
-
-    return await asyncio.to_thread(drain_pending_backups)
-
-
-
-@hatchet.task(
     name="summitflow-restore-tests",
     input_validator=EmptyInput,
     # Weekly readbacks, the monthly rotation (database loads up to 30 min each), the pinned hub-state drill

@@ -210,21 +210,6 @@ def backup_schedule_command(ctx, source_api, source_id: str, enable: bool | None
         handle_api_error(e)
 
 
-def drain_pending_command(ctx, *, dry_run: bool) -> None:
-    """Upload pending backups to SMB and reconcile DB records."""
-    from app.tasks.backup_drain import drain_pending_backups
-
-    try:
-        result = drain_pending_backups(dry_run=dry_run)
-        if ctx.obj.is_compact:
-            _print_compact_drain(result)
-        else:
-            output_json(result)
-    except Exception as e:
-        typer.echo(f"Error: {e}", err=True)
-        raise typer.Exit(1) from None
-
-
 def cleanup_local_command(ctx, *, apply: bool) -> None:
     """Prune expired local backup archive files no longer referenced in DB."""
     from app.tasks.backup_local_cleanup import cleanup_local_backup_archives
@@ -298,23 +283,6 @@ def _output_restore_result(
         project_id=None if source else project_id,
         dry_run=dry_run,
     )
-
-
-def _print_compact_drain(result: dict) -> None:
-    status = result.get("status", "unknown")
-    uploaded = result.get("uploaded", 0)
-    failed = result.get("failed", 0)
-    promoted = result.get("promoted", 0)
-    remaining = result.get("remaining", 0)
-    db_remaining = result.get("db_remaining", remaining)
-    file_remaining = result.get("file_remaining", remaining)
-    print(
-        f"DRAIN {status}|uploaded:{uploaded}|failed:{failed}|promoted:{promoted}|"
-        f"remaining:{remaining}|db_remaining:{db_remaining}|file_remaining:{file_remaining}"
-    )
-    detail = str(result.get("script_output") or "").strip()
-    if detail:
-        print(f"DETAIL {detail.splitlines()[0]}")
 
 
 def _print_compact_cleanup(result: dict) -> None:

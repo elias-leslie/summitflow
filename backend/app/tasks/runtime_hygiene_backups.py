@@ -98,8 +98,6 @@ def ensure_backup_fresh(
 ) -> dict[str, Any]:
     state = backup_state(backup_rows.get(source_id), now=now, source_type="project", deps=deps)
     fingerprint = f"backup:{source_id}"
-    if state["pending_upload_count"] > 0 and state["is_fresh"]:
-        state = _drain_pending_uploads(project_id, source_id, backup_rows, latest_runtime_hygiene, actions_taken, now, deps)
     if state["is_fresh"] and state["last_backup_status"] == "completed":
         return state
     if deps._recent_action_succeeded(latest_runtime_hygiene, action_type="backup_catchup", fingerprint=fingerprint, now=now):
@@ -175,31 +173,6 @@ def _restore_ok(
         and restore_age is not None
         and restore_age <= RESTORE_TEST_STALE_HOURS
     )
-
-
-def _drain_pending_uploads(
-    project_id: str,
-    source_id: str,
-    backup_rows: dict[str, dict[str, Any]],
-    latest_runtime_hygiene: dict[str, Any] | None,
-    actions_taken: list[dict[str, Any]],
-    now: datetime,
-    deps: Any,
-) -> dict[str, Any]:
-    fingerprint = f"backup:{source_id}"
-    if not deps._recent_action_succeeded(latest_runtime_hygiene, action_type="pending_drain", fingerprint=fingerprint, now=now):
-        drain_result = deps.drain_pending_backups(dry_run=False)
-        record_action(
-            actions_taken,
-            action_type="pending_drain",
-            scope=project_id,
-            fingerprint=fingerprint,
-            status=normalize_action_status(drain_result.get("status")),
-            detail=str(drain_result.get("message") or "pending drain run"),
-            result=drain_result,
-        )
-    backup_rows.update(deps._backup_rows_by_source())
-    return backup_state(backup_rows.get(source_id), now=now, source_type="project", deps=deps)
 
 
 def _run_project_backup_catchup(

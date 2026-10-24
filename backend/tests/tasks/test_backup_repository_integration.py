@@ -490,8 +490,6 @@ def test_infrastructure_drill_uses_repository_materialization_and_records_actual
     monkeypatch.setattr(drill, "_run_drill_script", run)
     record = MagicMock()
     monkeypatch.setattr(drill, "_record_drill_result", record)
-    legacy = MagicMock(side_effect=AssertionError("Repository drill must not use archive/SMB lookup"))
-    monkeypatch.setattr(drill, "_locate_drill_archive", legacy)
 
     result = drill.run_infra_drill()
 
@@ -499,7 +497,6 @@ def test_infrastructure_drill_uses_repository_materialization_and_records_actual
     materialize.assert_called_once_with(backup)
     run.assert_called_once_with(str(archive), "infrastructure-point")
     assert record.call_args.kwargs["ok"] is ok
-    legacy.assert_not_called()
 
 
 @pytest.mark.parametrize("config,delegated", [

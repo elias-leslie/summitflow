@@ -62,10 +62,13 @@ if mode == "count":
         with os.scandir(current) as entries:
             for entry in entries:
                 info = entry.stat(follow_symlinks=False)
+                # Inode 2 is a nested subvolume's empty stub inside a snapshot; another
+                # device is a nested subvolume or mount. btrfs send carries neither.
+                if stat.S_ISDIR(info.st_mode) and (info.st_ino == 2 or info.st_dev != device):
+                    continue
                 if stat.S_ISDIR(info.st_mode):
                     counts["dirs"] += 1
-                    if info.st_dev == device:
-                        stack.append(entry.path)
+                    stack.append(entry.path)
                 elif stat.S_ISLNK(info.st_mode):
                     counts["links"] += 1
                 elif stat.S_ISREG(info.st_mode):

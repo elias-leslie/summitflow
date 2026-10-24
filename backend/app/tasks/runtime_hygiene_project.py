@@ -114,7 +114,7 @@ def _backup_issues(project_id: str, source_id: str, state: dict[str, Any], deps:
         )
     elif state["pending_upload_count"] > 0:
         issues.append(
-            deps.project_issue(project_id, "backup", source_id, "warning", f"{project_id} backup is still pending upload after drain attempt", {"backup": state})
+            deps.project_issue(project_id, "backup", source_id, "warning", f"{project_id} backup is still pending upload", {"backup": state})
         )
     if not state["restore_validation_ok"]:
         issues.append(

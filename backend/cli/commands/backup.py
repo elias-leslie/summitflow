@@ -35,7 +35,6 @@ from .backup_runtime import (
     backup_all_command,
     backup_schedule_command,
     cleanup_local_command,
-    drain_pending_command,
     list_sources_command,
     reject_backup_all_args,
     restore_backup_id_command,
@@ -593,15 +592,6 @@ def delete_backup(
         output_deleted(ctx.obj, backup_id)
     except APIError as e:
         handle_api_error(e)
-
-
-@app.command("drain-pending")
-def drain_pending(
-    ctx: typer.Context,
-    dry_run: Annotated[bool, typer.Option("--dry-run", help="Show pending without uploading")] = False,
-) -> None:
-    """Upload pending backups to SMB and reconcile DB records."""
-    drain_pending_command(ctx, dry_run=dry_run)
 
 
 @app.command("sync-offsite")

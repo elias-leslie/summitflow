@@ -247,14 +247,6 @@ async def restore_test_offsite(source_id: str | None = None, force: bool = False
     return await asyncio.to_thread(run_monthly_offsite_restore_test, source_id=source_id, force=force)
 
 
-@router.post("/backups/drain-pending")
-async def drain_pending(dry_run: bool = False) -> dict:
-    """Drain pending backup uploads to SMB."""
-    from ...tasks.backup_drain import drain_pending_backups
-
-    return drain_pending_backups(dry_run=dry_run)
-
-
 @router.get("/backups/external")
 async def external_backups() -> dict[str, Any]:
     """Backups other projects run (Blackbox archive pull, Portfolio-AI artifacts) and whether each is fresh."""

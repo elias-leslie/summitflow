@@ -47,7 +47,6 @@ MAX_VACUUM_TABLES_PER_DB = 3
 
 ACTION_COOLDOWN_HOURS = {
     "backup_catchup": 12.0,
-    "pending_drain": 6.0,
     "vacuum_analyze": 24.0,
 }
 

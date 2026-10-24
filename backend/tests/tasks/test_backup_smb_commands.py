@@ -8,7 +8,7 @@ import pytest
 from fastapi import HTTPException
 
 from app.tasks import backup_native_smb as native
-from app.tasks import backup_restore_drill, backup_restore_test
+from app.tasks import backup_restore_test
 from app.utils.smb_commands import (
     SmbCommandError,
     smb_archive_location,
@@ -54,7 +54,7 @@ def test_upload_refuses_invalid_configuration_before_any_subprocess(tmp_path, mo
     assert value not in result.error
 
 
-@pytest.mark.parametrize("module,name", [(backup_restore_test, "_download_smb_archive"), (backup_restore_drill, "_download_from_smb")])
+@pytest.mark.parametrize("module,name", [(backup_restore_test, "_download_smb_archive")])
 @pytest.mark.parametrize("location", ["//host/share/backups;separator/archive.age", "//host/share/backups/..", "//host/share/backups/file*", "not-smb", "//host/share/backups/file\nline"])
 def test_restore_rejects_invalid_locations_before_temp_creation(module, name, location, monkeypatch):
     import tempfile
@@ -63,7 +63,7 @@ def test_restore_rejects_invalid_locations_before_temp_creation(module, name, lo
     assert getattr(module, name)(location) is None
 
 
-@pytest.mark.parametrize("module,name", [(backup_restore_test, "_download_smb_archive"), (backup_restore_drill, "_download_from_smb")])
+@pytest.mark.parametrize("module,name", [(backup_restore_test, "_download_smb_archive")])
 @pytest.mark.parametrize("success", [True, False])
 def test_restore_preserves_spaces_and_cleans_failed_download(module, name, success, monkeypatch, tmp_path, backup_job_scratch):
     import tempfile

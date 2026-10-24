@@ -998,7 +998,7 @@
         "backup-all.sh",
         "backup-pending-upload.sh"
       ],
-      "summary": "Project/source backup creation, restore preview, schedules, pending drain, and infra backups.",
+      "summary": "Project/source backup creation, restore preview, schedules and infra backups.",
       "safety": "destructive-with-confirmation",
       "commands": [
         "list",
@@ -1008,7 +1008,6 @@
         "all",
         "status",
         "delete",
-        "drain-pending",
         "infra",
         "storage",
         "testbed"

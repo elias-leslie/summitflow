@@ -106,14 +106,6 @@ SCHEDULE_DEFINITIONS: tuple[ScheduleDefinition, ...] = (
         scope="system",
     ),
     ScheduleDefinition(
-        schedule_id="pending_drain",
-        config_key="pending_drain_enabled",
-        label="Pending backup drain",
-        description="Drains pending backup work that could not complete inline.",
-        cron="*/30 * * * *",
-        scope="system",
-    ),
-    ScheduleDefinition(
         schedule_id="restore_tests",
         config_key="restore_tests_enabled",
         label="Restore verification",
