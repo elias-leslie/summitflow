@@ -123,10 +123,13 @@ setting), not against a hostile root user.
   backups continue (btrbk runs with `--preserve-backups`), and a SummitFlow
   notification is raised. Prune is skipped when snapshots disappeared outside
   retention, keeping their data recoverable. Fix the retention settings so the
-  next run stays within normal retention. Oversized runs stay blocked until
-  Nightshift can approve them with the owner's passkey;
-  `st backup storage approve-deletion <kind> --target <target> --reason "..."`
-  only records and announces the request (agent shells are denied it).
+  next run stays within normal retention. An oversized run stays blocked until
+  the owner approves it in chat; the agent then runs
+  `st backup storage approve-deletion <kind> --target <target> --owner-approved "<owner's words, date>"`,
+  which lets the next run of that kind and target through once (no bigger than
+  the refused plan, within 48 hours). The approval is spent on use and recorded
+  in the safety status (`approval_log`) and in a notification. No Nightshift
+  step is involved.
 - **Drive deletes go to trash.** Offsite restic prune and native Drive expiry
   use the Drive trash (30 days) instead of permanent deletion.
 - **Append-only PVE copy.** CT 160 on davion-gem holds a third copy of the

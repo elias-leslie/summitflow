@@ -451,13 +451,13 @@ def safety_status() -> None:
 def approve_deletion(
     kind: Annotated[str, typer.Argument(help="Breaker kind from `st backup storage safety`, e.g. restic-retention or btrbk-target")],
     target: Annotated[str, typer.Option("--target", help="Target of the refused run, from `st backup storage safety`")],
-    reason: Annotated[str, typer.Option("--reason", help="Why this oversized deletion is expected")],
+    owner_approved: Annotated[str, typer.Option("--owner-approved", help="The owner's approval from chat, in their words, with the date (recorded in the safety status and audit log)")],
 ) -> None:
-    """Record a request to allow one refused oversized deletion; the breaker stays on until Nightshift passkey approval exists."""
+    """Allow the next run of one refused oversized deletion, once, after the owner approved it in chat. Ask the owner first."""
     from app.tasks.backup_safety import approve_deletion as approve
 
     try:
-        output_json(approve(kind, target=target, reason=reason))
+        output_json(approve(kind, target=target, owner_approved=owner_approved))
     except ValueError as exc:
         typer.echo(f"Error: {exc}", err=True)
         raise typer.Exit(1) from exc

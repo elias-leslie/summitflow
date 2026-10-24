@@ -75,27 +75,9 @@ function ActionCell({
           {startMut.isPending ? '...' : 'Start'}
         </button>
       )}
-      {note && (note.pending || !note.success) && (
-        <span
-          className={clsx(
-            'text-2xs self-center',
-            note.success ? 'text-amber-400' : 'text-red-400',
-          )}
-        >
+      {note && !note.success && (
+        <span className="text-2xs self-center text-red-400">
           {note.message}
-          {note.approve_url && (
-            <>
-              {' '}
-              <a
-                href={note.approve_url}
-                target="_blank"
-                rel="noreferrer"
-                className="underline"
-              >
-                Approve
-              </a>
-            </>
-          )}
         </span>
       )}
     </div>

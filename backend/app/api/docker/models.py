@@ -73,9 +73,6 @@ class HealthSummary(BaseModel):
 class ActionResult(BaseModel):
     success: bool
     message: str
-    # True while Nightshift waits for the owner's tap; approve_url is where to give it.
-    pending: bool = False
-    approve_url: str | None = None
 
 
 class RuntimeModeStatus(BaseModel):

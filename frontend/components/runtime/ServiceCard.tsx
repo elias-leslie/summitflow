@@ -144,28 +144,8 @@ export function ServiceCard({
           </div>
         )}
 
-        {note && (note.pending || !note.success) && (
-          <p
-            className={clsx(
-              'mb-2.5 text-2xs',
-              note.success ? 'text-amber-400' : 'text-red-400',
-            )}
-          >
-            {note.message}
-            {note.approve_url && (
-              <>
-                {' '}
-                <a
-                  href={note.approve_url}
-                  target="_blank"
-                  rel="noreferrer"
-                  className="underline"
-                >
-                  Approve
-                </a>
-              </>
-            )}
-          </p>
+        {note && !note.success && (
+          <p className="mb-2.5 text-2xs text-red-400">{note.message}</p>
         )}
 
         {/* Actions */}

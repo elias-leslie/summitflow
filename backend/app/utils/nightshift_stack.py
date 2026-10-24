@@ -17,8 +17,6 @@ WAIT_SECONDS = 30
 class StackResult:
     success: bool
     message: str
-    pending: bool = False
-    approve_url: str | None = None
 
 
 def stack_installed() -> bool:

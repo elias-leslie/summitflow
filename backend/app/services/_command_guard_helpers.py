@@ -866,22 +866,9 @@ def _proxmox_decision(name: str, tokens: Sequence[str]) -> CommandGuardDecision 
     return None
 
 
-def _st_decision(tokens: Sequence[str]) -> CommandGuardDecision | None:
-    words = _positionals(tokens[1:], frozenset({"-P", "--project", "--project-id"}))
-    if words[:3] == ["backup", "storage", "approve-deletion"]:
-        return _system_blocked(
-            "st backup storage approve-deletion",
-            "Requests for oversized backup deletions are the owner's to file, from the owner's own terminal; "
-            "check retention settings with 'st backup storage safety' instead.",
-            tokens,
-        )
-    return None
-
-
 def irreversible_system_decision(tokens: Sequence[str], cwd: str) -> CommandGuardDecision | None:
     """Deny host-level irreversible commands: protected-root rm/find, disk and LUKS
-    destruction, snapshot and backup deletion (and agent backup-deletion approval
-    requests), and Proxmox guest/storage destroys."""
+    destruction, snapshot and backup deletion, and Proxmox guest/storage destroys."""
     if not tokens:
         return None
     name = Path(tokens[0]).name
@@ -899,8 +886,6 @@ def irreversible_system_decision(tokens: Sequence[str], cwd: str) -> CommandGuar
         return _btrbk_decision(tokens)
     if name == "dmsetup":
         return _dmsetup_decision(tokens)
-    if name == "st":
-        return _st_decision(tokens)
     return _disk_decision(name, tokens) or _proxmox_decision(name, tokens)
 
 

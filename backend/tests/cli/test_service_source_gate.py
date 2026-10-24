@@ -262,7 +262,7 @@ def test_stack_request_applied(monkeypatch):
 
     result = nightshift_stack.request_stack("restart")
 
-    assert result.success and not result.pending
+    assert result.success
     assert mock.call_args.args[0] == ["sudo", "-n", "systemctl", "--no-ask-password", "restart", nightshift_stack.STACK_UNIT]
 
 
@@ -272,8 +272,7 @@ def test_stack_control_failure_does_not_create_an_owner_tap(monkeypatch):
 
     result = nightshift_stack.request_stack("stop")
 
-    assert not result.success and not result.pending
-    assert result.approve_url is None
+    assert not result.success
     assert "unit unavailable" in result.message
     assert mock.call_count == 1
 
@@ -284,7 +283,7 @@ def test_stack_request_refused_is_a_failure(monkeypatch):
 
     result = nightshift_stack.request_stack("start")
 
-    assert not result.success and not result.pending
+    assert not result.success
     assert "timed out" in result.message
 
 

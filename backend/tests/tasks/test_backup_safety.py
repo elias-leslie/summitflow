@@ -44,64 +44,85 @@ def test_trip_is_recorded_alerted_once_and_kept_until_retention_is_normal(notifi
     assert status["alerts"][0]["kind"] == "deletion-breaker"
     assert "Refused restic-retention deletion on local" in status["alerts"][0]["message"]
     assert len(notifications) == 1 and notifications[0]["severity"] == "error"
-    # The breaker message names the target, never a kind-wide approval.
-    assert "approve-deletion restic-retention --target local" in notifications[0]["message"]
+    # The breaker message names the target, never a kind-wide approval, and tells the agent to ask the owner in chat first.
+    assert "approve-deletion restic-retention --target local --owner-approved" in notifications[0]["message"]
+    assert "ask them in chat" in notifications[0]["message"] and "passkey" not in notifications[0]["message"]
     # A normal run clears the breaker.
     assert safety.guard_deletion("restic-retention", "local", delete=5, total=100) is True
     assert safety.read_status()["status"] == "ok"
 
 
-def test_approve_deletion_records_and_announces_but_never_lifts_the_breaker(notifications):
+def test_owner_approval_lifts_the_breaker_for_exactly_one_run(notifications):
     assert safety.guard_deletion("restic-retention", "local", delete=80, total=100) is False
-    request = safety.approve_deletion("restic-retention", target="local", reason="retention lowered on purpose")
-    assert request["lifts_breaker"] is False and request["planned_delete"] == 80
-    assert notifications[-1]["title"] == "Backup deletion approval requested"
-    assert "local" in notifications[-1]["message"] and notifications[-1]["severity"] == "warning"
-    assert safety.read_status()["approval_requests"]["restic-retention:local"]["reason"] == "retention lowered on purpose"
-    # The oversized run stays blocked, on every later attempt.
-    assert safety.guard_deletion("restic-retention", "local", delete=80, total=100) is False
+    approval = safety.approve_deletion("restic-retention", target="local", owner_approved="owner said go, 2026-10-24")
+    assert approval["planned_delete"] == 80 and approval["owner_approved"] == "owner said go, 2026-10-24"
+    assert notifications[-1]["title"] == "Backup deletion approved by the owner"
+    assert "owner said go" in notifications[-1]["message"] and notifications[-1]["severity"] == "warning"
+    assert safety.read_status()["approvals"]["restic-retention:local"]["owner_approved"] == "owner said go, 2026-10-24"
+    # Approving changes nothing by itself: the breaker stays tripped until the run comes round.
+    assert safety.read_status()["status"] == "alert"
+    # The next run goes ahead, is recorded and announced, and spends the approval.
+    assert safety.guard_deletion("restic-retention", "local", delete=80, total=100) is True
+    status = safety.read_status()
+    assert status["status"] == "ok" and status["approvals"] == {}
+    assert status["approval_log"][-1]["owner_approved"] == "owner said go, 2026-10-24" and status["approval_log"][-1]["used_planned_delete"] == 80
+    assert notifications[-1]["title"] == "Backup deletion allowed once"
+    # The run after that is refused again, and alerts again.
     assert safety.guard_deletion("restic-retention", "local", delete=80, total=100) is False
     assert safety.read_status()["status"] == "alert"
-    # Once retention is back to normal, the request is cleared with the breaker.
+    assert notifications[-1]["title"] == "Backup deletion refused"
+
+
+def test_owner_approval_does_not_cover_a_bigger_plan_or_other_targets(notifications):
+    assert safety.guard_deletion("restic-retention", "local", delete=80, total=100) is False
+    assert safety.guard_deletion("restic-retention", "offsite", delete=80, total=100) is False
+    safety.approve_deletion("restic-retention", target="local", owner_approved="owner said go, 2026-10-24")
+    assert safety.guard_deletion("restic-retention", "offsite", delete=80, total=100) is False  # Other target.
+    assert safety.guard_deletion("restic-retention", "local", delete=90, total=100) is False  # Plan grew.
+    assert safety.read_status()["approvals"] == {}  # The stale approval is dropped, not kept for later.
+    assert safety.guard_deletion("restic-retention", "local", delete=80, total=100) is False
+
+
+def test_owner_approval_expires_and_is_cleared_when_retention_is_normal_again(notifications, monkeypatch):
+    assert safety.guard_deletion("restic-retention", "local", delete=80, total=100) is False
+    safety.approve_deletion("restic-retention", target="local", owner_approved="owner said go, 2026-10-24")
     assert safety.guard_deletion("restic-retention", "local", delete=5, total=100) is True
-    assert safety.read_status()["approval_requests"] == {}
+    assert safety.read_status()["approvals"] == {}
+    assert safety.guard_deletion("restic-retention", "local", delete=80, total=100) is False
+    safety.approve_deletion("restic-retention", target="local", owner_approved="owner said go, 2026-10-24")
+    later = datetime.now(UTC) + safety.APPROVAL_TTL + timedelta(minutes=1)
+    monkeypatch.setattr(safety, "_now", lambda: later)
+    assert safety.guard_deletion("restic-retention", "local", delete=80, total=100) is False
 
 
-def test_approve_deletion_needs_a_refused_run_on_that_target(notifications):
+def test_approve_deletion_needs_a_refused_run_on_that_target_and_the_owner_words(notifications):
     with pytest.raises(ValueError, match="No refused restic-retention deletion on local"):
-        safety.approve_deletion("restic-retention", target="local", reason="pre-approve")
+        safety.approve_deletion("restic-retention", target="local", owner_approved="pre-approved by me")
     assert safety.guard_deletion("restic-retention", "offsite", delete=80, total=100) is False
     with pytest.raises(ValueError):
-        safety.approve_deletion("restic-retention", target="local", reason="wrong target")
-    assert safety.read_status()["approval_requests"] == {}
+        safety.approve_deletion("restic-retention", target="local", owner_approved="wrong target entirely")
+    with pytest.raises(ValueError, match="quote the owner's approval"):
+        safety.approve_deletion("restic-retention", target="offsite", owner_approved="  ok ")
+    assert safety.read_status()["approvals"] == {}
 
 
-@pytest.mark.parametrize("approval_key", ["btrbk-target", "btrbk-target:/t"])
-def test_hand_written_approvals_in_the_status_file_are_ignored(notifications, approval_key):
-    """Bypass attempt: an agent writes a kind-wide or target approval straight into the 0644 status file."""
-    path = safety.status_path()
-    path.parent.mkdir(parents=True, exist_ok=True)
-    forged = {"reason": "x", "approved_at": datetime.now(UTC).isoformat(), "expires_at": (datetime.now(UTC) + timedelta(hours=24)).isoformat()}
-    path.write_text(json.dumps({"approvals": {approval_key: forged},
-                                "approval_requests": {"btrbk-target:/t": {"reason": "x"}}}))
-    assert safety.guard_deletion("btrbk-target", "/t", delete=30, total=36) is False
-    status = safety.read_status()
-    assert "approvals" not in status and status["breakers"]["btrbk-target:/t"]["tripped"] is True
-
-
-def test_cli_approve_deletion_requires_target_and_reports_refusal(notifications):
+def test_cli_approve_deletion_requires_target_and_owner_approval(notifications):
     from typer.testing import CliRunner
 
     from cli.main import app
 
     runner = CliRunner()
-    missing_target = runner.invoke(app, ["backup", "storage", "approve-deletion", "restic-retention", "--reason", "x"])
+    missing_target = runner.invoke(app, ["backup", "storage", "approve-deletion", "restic-retention", "--owner-approved", "owner said go, 2026-10-24"])
     assert missing_target.exit_code != 0 and "--target" in missing_target.output
-    no_breaker = runner.invoke(app, ["backup", "storage", "approve-deletion", "restic-retention", "--target", "local", "--reason", "x"])
+    missing_approval = runner.invoke(app, ["backup", "storage", "approve-deletion", "restic-retention", "--target", "local"])
+    assert missing_approval.exit_code != 0 and "--owner-approved" in missing_approval.output
+    args = ["backup", "storage", "approve-deletion", "restic-retention", "--target", "local", "--owner-approved", "owner said go, 2026-10-24"]
+    no_breaker = runner.invoke(app, args)
     assert no_breaker.exit_code == 1 and "No refused restic-retention deletion on local" in no_breaker.output
     assert safety.guard_deletion("restic-retention", "local", delete=80, total=100) is False
-    recorded = runner.invoke(app, ["backup", "storage", "approve-deletion", "restic-retention", "--target", "local", "--reason", "x"])
-    assert recorded.exit_code == 0 and '"lifts_breaker": false' in recorded.output
+    recorded = runner.invoke(app, args)
+    assert recorded.exit_code == 0 and '"owner_approved": "owner said go, 2026-10-24"' in recorded.output
+    assert safety.guard_deletion("restic-retention", "local", delete=80, total=100) is True
     assert safety.guard_deletion("restic-retention", "local", delete=80, total=100) is False
 
 

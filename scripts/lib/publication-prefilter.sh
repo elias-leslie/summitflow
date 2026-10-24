@@ -21,7 +21,7 @@
 # command they run is still text inside the same string.
 
 _PF_WORDS='git|jj|gh|curl|wget|https?|xhs?|ssh|rm|find|btrfs|btrbk|restic|rclone|dmsetup|dd|wipefs|blkdiscard|mke2fs|mkswap|mkdosfs|mkntfs|mkexfatfs|parted|sgdisk|fdisk|sfdisk|gdisk|cfdisk|cryptsetup|qm|pct|pvesm|pvesh|zfs|zpool|lvremove|vgremove|pvremove|eval|base64'
-_PF_TRIGGER="(^|[^a-z0-9_])(${_PF_WORDS})([^a-z0-9_]|\$)|(^|[^a-z0-9_])mkfs|hook|no-verify|sf_command_guard_disable|git_allow_secret|secretguard_disable|approve-deletion|api\\.github\\.com"
+_PF_TRIGGER="(^|[^a-z0-9_])(${_PF_WORDS})([^a-z0-9_]|\$)|(^|[^a-z0-9_])mkfs|hook|no-verify|sf_command_guard_disable|git_allow_secret|secretguard_disable|api\\.github\\.com"
 
 # Bash's regex engine backtracks superlinearly on long escape-heavy payloads;
 # anything larger goes straight to Python so the hook never nears its timeout.

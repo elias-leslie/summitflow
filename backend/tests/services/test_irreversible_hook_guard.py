@@ -180,23 +180,6 @@ SYSTEM_DENIED = {
     ],
     "irreversible_rclone_move": ["rclone move ./out summitflow-drive:x"],
     "rm_protected_root": ["ssh proxmox-gem rm -rf /var/lib/vz", "ssh proxmox-gem 'sudo rm -rf /etc/pve/qemu-server'"],
-    "irreversible_st_backup_storage_approve_deletion": [
-        "st backup storage approve-deletion restic-retention --target local --reason x",
-        "st -P summitflow backup storage approve-deletion btrbk-target --target /t --reason x",
-        "/home/kasadis/.local/bin/st --json backup storage approve-deletion restic-retention --target local --reason x",
-        "bash -lc 'st backup storage approve-deletion restic-retention --target local --reason x'",
-        "env FOO=1 st backup storage approve-deletion restic-retention --target local --reason x",
-        "echo $(st backup storage approve-deletion restic-retention --target local --reason x)",
-        "exec st backup storage approve-deletion restic-retention --target local --reason x",
-        "exec -cl st backup storage approve-deletion restic-retention --target local --reason x",
-        "eval 'st backup storage approve-deletion restic-retention --target local --reason x'",
-        "eval st backup storage approve-deletion restic-retention --target local --reason x",
-        "uv run st backup storage approve-deletion restic-retention --target local --reason x",
-        "uv run --project backend --with httpx -- st backup storage approve-deletion r --target local --reason x",
-        "uv --directory /tmp run st backup storage approve-deletion r --target local --reason x",
-        "uvx --from summitflow st backup storage approve-deletion r --target local --reason x",
-        "bash -c 'exec uv run st backup storage approve-deletion r --target local --reason x'",
-    ],
 }
 SYSTEM_ALLOWED = [
     "restic snapshots", "restic -r /mnt/x check", "restic forget --dry-run --keep-last 3",
@@ -216,7 +199,7 @@ SYSTEM_ALLOWED = [
     "rclone sync /a /b", "rclone sync summitflow-drive:archive /srv/scratch/restore",
     "rclone move summitflow-drive:x ./local", "rclone sync /data gdrive:backup --dry-run", "rclone copy /data gdrive:x",
     "st backup storage safety", "st backup storage list",
-    "st commit -m 'st backup storage approve-deletion is denied'",
+    "st backup storage approve-deletion restic-retention --target local --owner-approved 'ok'",
     "exec st backup storage safety", "eval 'st backup storage list'", "uv run st backup storage safety",
     "uv run pytest", "uv sync", "uv pip install restic", "uvx ruff check .", "eval \"$(ssh-agent -s)\"",
     "eval 'echo restic forget'",
@@ -243,14 +226,6 @@ def test_hook_denies_proxmox_destroy_over_ssh(monkeypatch, capsys) -> None:
     output = _run_hook(payload, monkeypatch, capsys)["hookSpecificOutput"]
     assert output["permissionDecision"] == "deny"
     assert "qm list" in output["permissionDecisionReason"]
-
-
-def test_hook_denies_agent_backup_deletion_approval(monkeypatch, capsys) -> None:
-    command = "st backup storage approve-deletion restic-retention --target local --reason retention-changed"
-    payload = {"tool_name": "Bash", "tool_input": {"command": command}, "cwd": SHARED}
-    output = _run_hook(payload, monkeypatch, capsys)["hookSpecificOutput"]
-    assert output["permissionDecision"] == "deny"
-    assert "owner's own terminal" in output["permissionDecisionReason"]
 
 
 def test_publication_guard_sees_through_exec_eval_and_uv() -> None:

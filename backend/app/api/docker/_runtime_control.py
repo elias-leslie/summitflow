@@ -110,10 +110,7 @@ async def _service_action(service: str, action: Literal["start", "stop", "restar
 
     # The installed stack is one system unit, so a container action affects the whole stack.
     result = await asyncio.to_thread(nightshift_stack.request_stack, action)
-    return ActionResult(
-        success=result.success, message=f"{result.message} (acts on the whole stack, not only {service})",
-        pending=result.pending, approve_url=result.approve_url,
-    )
+    return ActionResult(success=result.success, message=f"{result.message} (acts on the whole stack, not only {service})")
 
 
 def _systemd_stop_service_defs(svc: dict[str, Any]) -> list[dict[str, Any]]:

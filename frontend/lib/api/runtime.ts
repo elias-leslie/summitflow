@@ -64,9 +64,6 @@ export interface HealthSummary {
 export interface RuntimeActionResult {
   success: boolean
   message: string
-  // Nightshift is waiting for the owner's tap; approve_url is where to give it.
-  pending?: boolean
-  approve_url?: string | null
 }
 
 export interface GpuProcess {

@@ -308,13 +308,12 @@ class TestDockerRuntime:
         )
         mocker.patch(
             "app.utils.nightshift_stack.request_stack",
-            return_value=StackResult(True, "waiting", pending=True, approve_url="https://example.test/n/1"),
+            return_value=StackResult(True, "applied"),
         )
 
         result = await _runtime_control._service_action("redis", "restart")
 
-        assert result.pending is True
-        assert result.approve_url == "https://example.test/n/1"
+        assert result.success is True
         assert "whole stack" in result.message
 
     def test_runtime_services_come_from_identity_plus_infra(self, mocker: MockerFixture) -> None:
@@ -412,8 +411,6 @@ class TestDockerRuntime:
         assert response.json() == {
             "success": True,
             "message": "Saved Docker parity preference: prod. Live services remain native apps with Docker infra.",
-            "pending": False,
-            "approve_url": None,
         }
         write_mode.assert_called_once_with("prod")
 

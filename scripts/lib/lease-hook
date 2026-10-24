@@ -29,7 +29,7 @@ from cli.lib.coord import github_pat_denied_event
 event = github_pat_denied_event(json.loads(sys.stdin.read() or "{}"))
 print(event or "")
 sys.exit(0 if event in ("PostToolUse", "PostToolUseFailure") else 1)' "$sf/backend" <<<"$input" 2>/dev/null); then
-            hint="GitHub 403 (gh PAT lacks admin scope): get an owner-approved 30-min grant with nightshift elevate request github-admin --reason '<what, in owner words>' --wait, then nightshift elevate run github-admin -- gh ...; never print the credential."
+            hint="GitHub 403 (gh PAT lacks admin scope): get a 30-min grant (the owner taps once) with nightshift elevate request github-admin --reason '<what, in owner words>' --wait, then nightshift elevate run github-admin -- gh ...; never print the credential."
             printf '{"hookSpecificOutput":{"hookEventName":"%s","additionalContext":"%s"}}\n' "$event" "$hint"
         fi ;;
     esac

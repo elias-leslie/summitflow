@@ -4,12 +4,12 @@ Every automatic removal of backup points (local and offsite restic retention,
 native archive expiry, btrbk target expiry) asks ``guard_deletion`` first. A
 plan that removes more than normal retention would (a large share of all
 points, or of one source) is refused, recorded, and alerted; the caller keeps
-the points and carries on backing up. Nothing in this file lifts the breaker:
-the status file is writable by every process of the backup user, so an
-oversized run stays blocked until a Nightshift passkey approval bound to that
-kind, target and plan exists (not built yet). ``st backup storage
-approve-deletion`` only records and announces the owner's request for one
-refused run.
+the points and carries on backing up. An oversized run stays blocked until the owner approves it in chat and the
+agent runs ``st backup storage approve-deletion <kind> --target <target>
+--owner-approved "<owner's words, date>"``. That lifts the breaker for exactly
+one later run of that kind and target whose plan removes no more points than
+the refused one, within ``APPROVAL_TTL``; the approval is spent when used,
+recorded in the status file (``approval_log``) and announced as a notification.
 
 ``STATUS_PATH`` is a stable JSON contract read by Nightshift and other
 watchers: top-level ``status`` is ``ok`` or ``alert`` and ``alerts`` lists
@@ -23,7 +23,7 @@ import fcntl
 import json
 import os
 from collections.abc import Iterator, Mapping
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
@@ -39,6 +39,8 @@ TOTAL_TRIP_FRACTION = 0.25
 TOTAL_TRIP_MIN = 10
 GROUP_TRIP_FRACTION = 0.5
 GROUP_TRIP_MIN = 6
+APPROVAL_TTL = timedelta(hours=48)
+APPROVAL_LOG_KEEP = 20
 
 
 def status_path() -> Path:
@@ -66,8 +68,9 @@ def _locked_status() -> Iterator[dict[str, Any]]:
         except (OSError, ValueError):
             status = {}
         status.setdefault("breakers", {})
-        status.pop("approvals", None)  # Former file-based approvals; never honoured.
-        status.setdefault("approval_requests", {})
+        status.pop("approval_requests", None)  # Former request-only records.
+        status.setdefault("approvals", {})
+        status.setdefault("approval_log", [])
         status.setdefault("sections", {})
         yield status
         status["version"] = STATUS_VERSION
@@ -120,20 +123,34 @@ def guard_deletion(kind: str, target: str, *, delete: int, total: int, groups: M
     reasons = evaluate_deletion(delete=delete, total=total, groups=groups, **limits)
     key = f"{kind}:{target}"
     now = _now()
+    lifted: dict[str, Any] | None = None
     try:
         with _locked_status() as status:
             previous = status["breakers"].get(key) or {}
             entry: dict[str, Any] = {"kind": kind, "target": target, "checked_at": now.isoformat(), "planned_delete": delete,
                      "total": total, "reasons": reasons, "tripped": bool(reasons)}
             if entry["tripped"]:
-                entry["first_tripped_at"] = previous.get("first_tripped_at") or now.isoformat()
+                lifted = _spend_approval(status, key, entry, now)
+                if lifted:
+                    entry.update(tripped=False, reasons=[], lifted_at=now.isoformat())
+                else:
+                    entry["first_tripped_at"] = previous.get("first_tripped_at") or now.isoformat()
             else:
-                status["approval_requests"].pop(key, None)
+                status["approvals"].pop(key, None)
             status["breakers"][key] = entry
     except OSError:
         logger.exception("backup_safety_status_write_failed", kind=kind, target=target)
         entry = {"tripped": bool(reasons), "reasons": reasons}
         previous = {}
+        lifted = None
+    if lifted:
+        logger.warning("backup_deletion_breaker_lifted_once", kind=kind, target=target, owner_approved=lifted["owner_approved"])
+        _send(title="Backup deletion allowed once",
+              message=(f"A {kind} run on {target} removes {delete} backup points, more than normal retention, on the owner's approval: "
+                       f"{lifted['owner_approved']}. That approval is now used up; the next oversized run is refused again."),
+              severity="warning", metadata={"backup_breaker": kind, "target": target, "approval": lifted},
+              dedupe_key=f"backup-breaker-lifted:{key}:{lifted['approved_at']}")
+        return True
     if entry["tripped"]:
         logger.warning("backup_deletion_breaker_tripped", kind=kind, target=target, reasons=reasons)
         if not previous.get("tripped"):
@@ -142,24 +159,48 @@ def guard_deletion(kind: str, target: str, *, delete: int, total: int, groups: M
     return True
 
 
-def approve_deletion(kind: str, *, target: str, reason: str) -> dict[str, Any]:
-    """Record and announce the owner's request to allow one refused run; the breaker stays on."""
+def _spend_approval(status: dict[str, Any], key: str, entry: Mapping[str, Any], now: datetime) -> dict[str, Any] | None:
+    """Consume the owner approval for this refused run, if one fits; log the use."""
+    approval = status["approvals"].get(key)
+    if not approval:
+        return None
+    try:
+        expired = now > datetime.fromisoformat(str(approval.get("expires_at")))
+    except ValueError:
+        expired = True
+    too_big = (entry.get("planned_delete") or 0) > (approval.get("planned_delete") or 0)
+    if expired or too_big:
+        status["approvals"].pop(key, None)  # Stale or the plan grew: the owner has not approved this run.
+        return None
+    status["approvals"].pop(key, None)
+    spent = {**approval, "used_at": now.isoformat(), "used_planned_delete": entry.get("planned_delete")}
+    status["approval_log"] = [*status["approval_log"], spent][-APPROVAL_LOG_KEEP:]
+    return spent
+
+
+def approve_deletion(kind: str, *, target: str, owner_approved: str) -> dict[str, Any]:
+    """Lift the breaker for the next run of this refused deletion, once, on the owner's recorded approval."""
+    owner_approved = " ".join(owner_approved.split())
+    if len(owner_approved) < 8:
+        raise ValueError("--owner-approved must quote the owner's approval from chat, with the date")
     key = f"{kind}:{target}"
     with _locked_status() as status:
         breaker = status["breakers"].get(key) or {}
         if not breaker.get("tripped"):
             raise ValueError(f"No refused {kind} deletion on {target}; see st backup storage safety")
-        request = {"kind": kind, "target": target, "reason": reason, "requested_at": _now().isoformat(),
-                   "planned_delete": breaker.get("planned_delete"), "total": breaker.get("total"), "reasons": breaker.get("reasons") or []}
-        status["approval_requests"][key] = request
-    logger.warning("backup_deletion_approval_requested", kind=kind, target=target, reason=reason)
-    _send(title="Backup deletion approval requested",
-          message=(f"approve-deletion was run for the refused {kind} run on {target} ({breaker.get('planned_delete')} points). "
-                   f"Reason given: {reason}. Nothing changes: oversized deletions stay blocked until Nightshift can approve them "
-                   "with your passkey. If you did not run this, an agent did."),
-          severity="warning", metadata={"backup_breaker": kind, "target": target, "approval_request": request},
-          dedupe_key=f"backup-breaker-request:{key}:{request['requested_at']}")
-    return {"approval_request": key, "lifts_breaker": False, **request}
+        now = _now()
+        approval = {"kind": kind, "target": target, "owner_approved": owner_approved, "approved_at": now.isoformat(),
+                    "expires_at": (now + APPROVAL_TTL).isoformat(), "planned_delete": breaker.get("planned_delete"),
+                    "total": breaker.get("total"), "reasons": breaker.get("reasons") or []}
+        status["approvals"][key] = approval
+    logger.warning("backup_deletion_owner_approved", kind=kind, target=target, owner_approved=owner_approved)
+    _send(title="Backup deletion approved by the owner",
+          message=(f"The refused {kind} run on {target} ({breaker.get('planned_delete')} points) will be allowed once, "
+                   f"on the owner's approval: {owner_approved}. It applies to the next run only, within "
+                   f"{int(APPROVAL_TTL.total_seconds() // 3600)} hours, and only if that run removes no more points."),
+          severity="warning", metadata={"backup_breaker": kind, "target": target, "approval": approval},
+          dedupe_key=f"backup-breaker-approved:{key}:{approval['approved_at']}")
+    return {"approval": key, "lifts_breaker": "once, on the next run", **approval}
 
 
 def record_section(name: str, payload: Mapping[str, Any]) -> None:
@@ -174,9 +215,9 @@ def record_section(name: str, payload: Mapping[str, Any]) -> None:
 def _notify(kind: str, target: str, reasons: list[str]) -> None:
     _send(title="Backup deletion refused",
           message=(f"A {kind} run on {target} would remove more backup points than normal retention, so nothing was removed. "
-                   f"{'; '.join(reasons)}. Check the retention settings. Runs this large stay blocked until Nightshift can "
-                   f"approve them with your passkey; st backup storage approve-deletion {kind} --target {target} --reason \"...\" "
-                   "records your request."),
+                   f"{'; '.join(reasons)}. Check the retention settings. If the owner wants this run to go ahead, ask them "
+                   f"in chat first; once they agree, run: st backup storage approve-deletion {kind} --target {target} "
+                   "--owner-approved \"<owner's words, date>\". That allows the next run once."),
           severity="error", metadata={"backup_breaker": kind, "target": target, "reasons": reasons},
           dedupe_key=f"backup-breaker:{kind}:{target}:{_now().date().isoformat()}")
 

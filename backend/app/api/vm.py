@@ -1,6 +1,6 @@
 """Proxmox VM operations for `st vm` callers that hold no Proxmox token (agents); the backend's token does the work.
 
-A pass-through (an `X-Proxmox-Admin-Token` header swaps in the elevated token for that request): the token's own PVE rights decide what is allowed (lab pool full, ops pool power + cores/memory,
+A pass-through (an optional `X-Proxmox-Admin-Token` header, sent from the caller's `PROXMOX_ADMIN_TOKEN`, swaps in that token for the request; nothing issues one now, root SSH to the Proxmox host replaces it): the token's own PVE rights decide what is allowed (lab pool full, ops pool power + cores/memory,
 power pool power, everything else read-only), and PVE errors come back unchanged.
 """
 
@@ -91,7 +91,7 @@ def run_vm_op(client: ProxmoxClient, body: VmOp) -> Any:
 
 
 def request_client(admin_token: str | None) -> ProxmoxClient:
-    """The backend's client; with an elevated token header (Nightshift's proxmox-admin) its token is swapped in for
+    """The backend's client; with an admin token header its token is swapped in for
     this request only."""
     client = ProxmoxClient()
     if admin_token and admin_token.strip():

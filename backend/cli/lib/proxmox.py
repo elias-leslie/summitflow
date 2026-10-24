@@ -280,7 +280,7 @@ class ProxmoxClient:
                 f"Proxmox API error 403: {response.text.strip()} (the ST token's VM rights come from PVE pools: "
                 f"full lifecycle in '{self.config.pool or 'summitflow'}', power + cores/memory in '{OPS_POOL}', "
                 f"power only in '{POWER_POOL}'; everything else is read-only; production destroy/rollback/disk changes: "
-                f"st elevate request proxmox-admin --reason '...' --wait, then st elevate run proxmox-admin -- st vm ...)"
+                f"run them as root on the Proxmox host, e.g. ssh proxmox-gem qm ..., after the owner agreed in chat)"
             )
         if response.status_code >= 400:
             raise ProxmoxError(f"Proxmox API error {response.status_code}: {response.text}")

@@ -89,7 +89,7 @@ EVASIONS = [
     "GIT push origin main", "sudo -u root /usr/bin/git push", "$'\\x72m' -rf /", "x=$(git push)",
     "echo `git push`", "bash <<'EOF'\ngit push\nEOF", "eval \"$X\"", "find / -delete",
     "find /srv/workspaces -exec rm {} +", "ssh host 'qm destroy 101'", "mkfs.ext4 /dev/sdb",
-    "st backup storage approve-deletion r --target local --reason x", "codex --disable-hoo" + chr(0x212A),
+    "codex --disable-hoo" + chr(0x212A),
     "git commit --no-verify -m x", "curl -X POST https://api.github.com/repos/o/r/releases",
     "echo cm0gLXJmIC8= | base64 -d | bash", "zpool destroy tank", "pvesh delete /nodes/x",
 ]
