@@ -15,6 +15,7 @@ from ..output import handle_api_error, output_error, output_json
 from .pulse_formatters import (
     _payload_for_allowed_task,
     _preflight_reasons,
+    _record_session_id,
     print_compact_payload,
     resolution_hint,
 )
@@ -52,8 +53,36 @@ def _resolve_project_ids(
     ]
 
 
-def preflight_reasons_for_payload(payload: dict[str, Any], *, allow_task_id: str | None = None) -> list[str]:
-    filtered = _payload_for_allowed_task(payload, allow_task_id)
+def _without_own_session(payload: dict[str, Any], session_id: str | None) -> dict[str, Any]:
+    """The caller's own writes never block the caller (a taskless solo change
+    claiming its task, say); other sessions still count."""
+    if not session_id:
+        return payload
+    trimmed = dict(payload)
+    for key in ("active_sessions", "active_readers"):
+        records = payload.get(key)
+        if isinstance(records, list):
+            trimmed[key] = [record for record in records
+                            if not (isinstance(record, dict) and _record_session_id(record) == session_id)]
+    return trimmed
+
+
+def _caller_session_id() -> str | None:
+    try:
+        from ..lib.leases import identify_agent
+
+        return identify_agent()[2] or None
+    except Exception:  # an unidentified caller is simply not excluded
+        return None
+
+
+def preflight_reasons_for_payload(
+    payload: dict[str, Any],
+    *,
+    allow_task_id: str | None = None,
+    own_session_id: str | None = None,
+) -> list[str]:
+    filtered = _without_own_session(_payload_for_allowed_task(payload, allow_task_id), own_session_id)
     summary = filtered.get("summary", {})
     cleanup = filtered.get("cleanup", {})
     return _preflight_reasons(summary, cleanup, filtered)
@@ -100,7 +129,8 @@ def require_pulse_gate(project_id: str | None, *, allow_task_id: str | None = No
     except APIError as exc:
         output_error(f"Pulse gate unavailable: {exc.detail}")
         raise typer.Exit(2) from None
-    reasons = preflight_reasons_for_payload(payload, allow_task_id=allow_task_id)
+    reasons = preflight_reasons_for_payload(
+        payload, allow_task_id=allow_task_id, own_session_id=_caller_session_id())
     if not reasons:
         return
     hint_lines: list[str] = []

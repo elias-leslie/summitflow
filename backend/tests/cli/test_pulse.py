@@ -915,3 +915,27 @@ def test_done_task_runs_pulse_gate_before_completion() -> None:
     assert mock_gate.call_args_list[0].args == ("task-1", "summitflow")
     assert mock_gate.call_args_list[0].kwargs == {"op": "done"}
     mock_complete.assert_called_once()
+
+
+def test_require_pulse_gate_ignores_the_callers_own_writes() -> None:
+    from cli.commands import pulse
+
+    payload = {
+        "project_id": "aico",
+        "summary": {"running_tasks": 0, "active_owners": 0, "active_readers": 0,
+                    "active_specialists": 0, "active_sessions": 1, "stranded_tasks": 0},
+        "cleanup": {"active_checkpoints": 0, "dirty_checkpoints": 0, "dirty_main_repo": True,
+                    "needs_cleanup": True, "checkpoint_task_ids": []},
+        "running_tasks": [],
+        "active_owners": [],
+        "active_readers": [],
+        "active_specialists": [],
+        "active_sessions": [{"id": "sess-me", "observed_write_paths": ["tether/src/http.ts"]}],
+        "stranded_tasks": [],
+    }
+
+    assert pulse.preflight_reasons_for_payload(payload, own_session_id="sess-me") == []
+    assert pulse.preflight_reasons_for_payload(payload, own_session_id="sess-other") == [
+        "active_nonwriter_write_session"
+    ]
+
