@@ -488,9 +488,10 @@ def run_repository_backup(
                         result["verification"].update(remote_snapshot_id=synced["remote_snapshot_id"], remote_repository_id=synced["remote_repository_id"])
                 record_local_archive(result)
                 return result
+            staged_bytes = tree_bytes(staging)
             admission = _capacity_admission(
                 config, state, source_id, staging_directory=staging,
-                staged_bytes=tree_bytes(staging), payload_bytes=int(payload.get("total_bytes") or 0),
+                staged_bytes=staged_bytes, payload_bytes=int(payload.get("total_bytes") or 0),
             )
             if not admission["admitted"]:
                 raise ResticError("Capture blocked after staging: insufficient host-policy headroom")
@@ -508,7 +509,9 @@ def run_repository_backup(
             return _complete_capture(
                 adapter, directory, state, source_id, env, result, local_only=local_only, batch=batch,
                 recovery=payload.get("recovery", {}), fingerprint=fingerprint, full_history=full_history,
-                capacity={"staging_peak_bytes": admission["staging_peak_bytes"], "growth_peak_bytes": max(admission["growth_peak_bytes"], int(result.get("stored_bytes") or 0))},
+                # This run's measurements, not the admitted maxima: a one-off
+                # large capture must not raise every later reservation.
+                capacity={"staging_peak_bytes": staged_bytes, "growth_peak_bytes": int(result.get("stored_bytes") or 0)},
             )
         finally:
             shutil.rmtree(staging)
@@ -557,7 +560,7 @@ def run_repository_stream(
         result["verification"]["storage_backend_id"] = env.get("BACKUP_STORAGE_BACKEND_ID")
         return _complete_capture(
             adapter, directory, state, source_id, env, result, local_only=local_only, batch=batch, recovery={}, fingerprint=None,
-            capacity={"staging_peak_bytes": 0, "growth_peak_bytes": max(admission["growth_peak_bytes"], int(result.get("stored_bytes") or 0))},
+            capacity={"staging_peak_bytes": 0, "growth_peak_bytes": int(result.get("stored_bytes") or 0)},
         )
 
 

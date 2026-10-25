@@ -1096,6 +1096,25 @@ def test_previous_capture_bundle_stays_on_scratch_and_counts_toward_staging_peak
         assert state["sources"]["fixture"]["capacity"]["staging_peak_bytes"] >= 16384
 
 
+def test_one_large_capture_does_not_raise_later_reservations(repository_env, tmp_path, monkeypatch):
+    source = tmp_path / "source"
+    source.mkdir()
+    (source / "work.txt").write_text("unsaved work")
+    config = ResticConfig.from_env(repository_env)
+    with runtime._checkpoint(config) as (directory, state):
+        state["sources"]["fixture"] = {"capacity": {"staging_peak_bytes": 1024**2, "growth_peak_bytes": 1024**2}}
+        runtime._save_json(directory / "state.json", state)
+    monkeypatch.setattr(runtime, "canonical_backup_source_roots", lambda: {})
+    monkeypatch.setattr(runtime, "record_local_archive", lambda _: None)
+    saved = {"snapshot_id": "a" * 64, "repository_id": "b" * 64, "location": "restic-v1:fixture", "stored_bytes": 10, "verification": {"verified": True, "capture": {}}}
+    monkeypatch.setattr(ResticAdapter, "save_payload", lambda *_, **__: saved)
+    runtime.run_repository_backup(project_dir=str(source), source_id="fixture", env=repository_env, local_only=True)
+    with runtime._checkpoint(config) as (_, state):
+        capacity = state["sources"]["fixture"]["capacity"]
+    assert 0 < capacity["staging_peak_bytes"] < 1024**2
+    assert capacity["growth_peak_bytes"] == 10
+
+
 def test_sql_failure_leaves_durable_local_reference_and_no_plaintext(repository_env: dict[str, str], tmp_path: Path) -> None:
     source = tmp_path / "source"
     source.mkdir()
