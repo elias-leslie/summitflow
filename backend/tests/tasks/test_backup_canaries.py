@@ -77,6 +77,7 @@ def test_chrome_profile_capture_survives_a_running_browser(tmp_path: Path, monke
     monkeypatch.setattr(backup_canaries, "_registry", lambda: [])
     profile = tmp_path / "google-chrome"
     for relative, value in (("Local State", "{}"), ("Default/Preferences", '{"a": 1}'), ("Default/Bookmarks", "{}"),
+                            ("Default/Network Persistent State", '{"n": 1}'),
                             ("Default/Extension State/000526.log", "record1"), ("Default/Extension State/MANIFEST-000001", "m1")):
         _write(profile, relative, value)
     original = recovery.copy_inventory_snapshot
@@ -86,6 +87,8 @@ def test_chrome_profile_capture_survives_a_running_browser(tmp_path: Path, monke
         _write(profile, "Default/Preferences.tmp", '{"a": 3}')
         os.replace(profile / "Default/Preferences.tmp", profile / "Default/Preferences")
         original(*args, **kwargs)
+        _write(profile, "Default/Network Persistent State.tmp", '{"n": 2}')
+        os.replace(profile / "Default/Network Persistent State.tmp", profile / "Default/Network Persistent State")
         with (profile / "Default/Extension State/000526.log").open("a") as log:
             log.write("record2")
         _write(profile, "Default/Preferences.tmp", '{"a": 2}')
@@ -103,3 +106,4 @@ def test_chrome_profile_capture_survives_a_running_browser(tmp_path: Path, monke
     assert payload["recovery"]["consistent"] is True
     assert (snapshot / "Default/Extension State/000526.log").read_text() == "record1"
     assert (snapshot / "Default/Preferences").read_text() == '{"a": 3}'
+    assert (snapshot / "Default/Network Persistent State").read_text() == '{"n": 1}'

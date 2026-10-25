@@ -43,7 +43,9 @@ JJ_GIT_IMPORT_EXPORT_LOCK = ".jj/repo/git_import_export.lock"
 # preference documents. A LevelDB log prefix is what Chrome itself recovers from
 # after a crash, and each replaced document is complete on its own.
 CHROME_PROFILE_DIR = "google-chrome"
-CHROME_POINT_IN_TIME_JSON = frozenset({"Local State", "Preferences", "Secure Preferences"})
+CHROME_POINT_IN_TIME_JSON = frozenset({
+    "Local State", "Preferences", "Secure Preferences", "Network Persistent State", "TransportSecurity",
+})
 
 
 @dataclass(frozen=True)
