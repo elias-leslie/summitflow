@@ -1084,7 +1084,7 @@
         "xclip",
         "compare"
       ],
-      "summary": "Desktop windows and accessible controls on Wayland/X11. Inspect IDs, batch known actions with run, and observe once. Pixel capture and geometry remain X11-only.",
+      "summary": "Desktop windows and accessible controls on Wayland/X11. Inspect IDs, batch known actions with run, and observe once. Capture, clicks and window geometry use the desktop bridge extension on Wayland.",
       "safety": "mutating",
       "commands": [
         "windows",
