@@ -1,13 +1,15 @@
 """Freshness of backups other projects run (external_backup_sources): read-only probes, no backup is started here.
 
 - ``systemd_unit``: the unit's last run (system manager first, then the owner's user manager); success when systemd
-  recorded Result=success with exit status 0.
+  recorded Result=success with exit status 0. systemd forgets a run on reboot, so a unit with no run since boot is
+  judged by its last finished start job in the journal.
 - ``artifact_glob``: the newest matching file's modification time; a file counts once it is non-empty.
 """
 
 from __future__ import annotations
 
 import glob
+import json
 import os
 import subprocess
 from collections.abc import Callable
@@ -36,7 +38,7 @@ def _run(argv: list[str]) -> tuple[int, str]:
     return proc.returncode, proc.stdout
 
 
-def _systemd_props(unit: str, run: Runner) -> dict[str, str] | None:
+def _systemd_props(unit: str, run: Runner) -> tuple[dict[str, str], list[str]] | None:
     props = "LoadState,Result,ExecMainStatus,ExecMainExitTimestamp,ActiveState"
     for scope in ([], ["--user"]):
         rc, out = run(["systemctl", *scope, "show", unit, f"--property={props}"])
@@ -44,8 +46,23 @@ def _systemd_props(unit: str, run: Runner) -> dict[str, str] | None:
             continue
         values = dict(line.split("=", 1) for line in out.splitlines() if "=" in line)
         if values.get("LoadState") == "loaded":
-            return values
+            return values, scope
     return None
+
+
+def _journal_last_job(unit: str, scope: list[str], run: Runner) -> tuple[datetime, bool] | None:
+    """When the unit's newest finished start job ended, and whether it succeeded."""
+    rc, out = run(["journalctl", *scope, "-u", unit, "JOB_TYPE=start", "JOB_RESULT=done", "JOB_RESULT=failed",
+                   "-n", "1", "-o", "json", "--no-pager"])
+    lines = out.strip().splitlines() if rc == 0 else []
+    if not lines:
+        return None
+    try:
+        entry = json.loads(lines[-1])
+        finished = datetime.fromtimestamp(int(entry["__REALTIME_TIMESTAMP"]) / 1_000_000, UTC)
+    except (ValueError, KeyError, TypeError):
+        return None
+    return finished, entry.get("JOB_RESULT") == "done"
 
 
 def _parse_systemd_time(value: str) -> datetime | None:
@@ -65,15 +82,21 @@ def probe(source: dict[str, Any], *, run: Runner = _run) -> dict[str, Any]:
     """{last_success_at, last_status, last_error} for one external source."""
     target = str(source.get("target") or "")
     if source.get("kind") == "systemd_unit":
-        props = _systemd_props(target, run)
-        if props is None:
+        loaded = _systemd_props(target, run)
+        if loaded is None:
             return {"last_success_at": None, "last_status": "unknown", "last_error": f"{target} is not installed"}
+        props, scope = loaded
         finished = _parse_systemd_time(props.get("ExecMainExitTimestamp", ""))
         if props.get("ActiveState") in {"activating", "active"} and props.get("Result") == "success" and not finished:
             return {"last_success_at": None, "last_status": "running", "last_error": None}
         ok = props.get("Result") == "success" and props.get("ExecMainStatus", "0") == "0"
         if finished is None:
-            return {"last_success_at": None, "last_status": "never", "last_error": None}
+            last = _journal_last_job(target, scope, run)
+            if last is None:
+                return {"last_success_at": None, "last_status": "never", "last_error": None}
+            finished, ok = last
+            if not ok:
+                return {"last_success_at": None, "last_status": "failed", "last_error": "last run before this boot failed"}
         if ok:
             return {"last_success_at": finished.astimezone(UTC).isoformat(), "last_status": "completed", "last_error": None}
         return {"last_success_at": None, "last_status": "failed",

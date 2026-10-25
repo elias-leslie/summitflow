@@ -35,6 +35,27 @@ def test_systemd_unit_success_failure_and_missing():
     assert missing["last_error"] == "gone.service is not installed"
 
 
+def test_systemd_unit_without_a_run_since_boot_reads_the_journal():
+    def run_with(job_result: str | None):
+        def run(argv: list[str]) -> tuple[int, str]:
+            if argv[0] == "journalctl":
+                assert "--user" in argv and "JOB_TYPE=start" in argv
+                if job_result is None:
+                    return 0, ""
+                return 0, f'{{"JOB_RESULT": "{job_result}", "__REALTIME_TIMESTAMP": "1792912891389205"}}\n'
+            if "--user" in argv:
+                return 0, "LoadState=loaded\nResult=success\nActiveState=inactive\nExecMainExitTimestamp=\n"
+            return 0, "LoadState=not-found\n"
+        return run
+
+    unit = {"kind": "systemd_unit", "target": "blackbox-archive.service"}
+    done = backup_external.probe(unit, run=run_with("done"))
+    assert done["last_status"] == "completed" and done["last_success_at"].startswith("2026-10-25T07:21")
+    failed = backup_external.probe(unit, run=run_with("failed"))
+    assert failed["last_status"] == "failed" and failed["last_success_at"] is None
+    assert backup_external.probe(unit, run=run_with(None))["last_status"] == "never"
+
+
 def test_artifact_glob_uses_newest_non_empty_file(tmp_path: Path):
     old, new, empty = tmp_path / "a_1.tar.gz", tmp_path / "a_2.tar.gz", tmp_path / "a_3.tar.gz"
     old.write_text("x")
