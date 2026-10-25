@@ -133,7 +133,8 @@ def get_project_publication_health(project_id: str, *, now: datetime | None = No
     unresolved = sorted(key for key, finding in findings.items()
                         if isinstance(finding, dict) and finding_actionable(finding))
     if unresolved:
-        observation.update(state="blocked", reason="actionable_repair_findings")
+        observation.update(state="blocked", reason="actionable_repair_findings",
+                           observed_reason=observation["reason"])
     return {"project_id": project_id, **observation, "repair_task_id": (repair or {}).get("id"),
             "unresolved_categories": unresolved, "findings": findings,
             "evidence": evidence_path, "backup_id": None if evidence_path else (record or {}).get("id")}

@@ -180,6 +180,16 @@ def test_porcelain_ref_rejection_is_a_finding_and_transport_failure_is_pending(s
     assert result["status"] == "pending" and result["reason"] == "remote_transport_unavailable"
     assert result["remote_status"] == "unknown" and "fixture-secret" not in json.dumps(result)
 
+    def logged_out(repo, *args):
+        if args[0] == "ls-remote":
+            return subprocess.CompletedProcess(args, 128, "", "fatal: could not read Username for 'https://github.com'")
+        return routed(repo, *args)
+
+    monkeypatch.setattr(publish, "_git", logged_out)
+    result = publish.publish_source(source, _head(source))
+    assert result["status"] == "pending" and result["reason"] == "remote_authentication_unavailable"
+    assert "could not read" not in json.dumps(result)
+
 
 def test_network_timeout_is_typed_but_local_inspection_remains_actionable(tmp_path, monkeypatch):
     original = publish._git

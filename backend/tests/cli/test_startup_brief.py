@@ -184,3 +184,14 @@ def test_role_from_tether_descriptor(monkeypatch):
     monkeypatch.delenv("AICO_WIDGET_ID")
     assert roles == {"c1": "coordinator", "l1": "lane", "s1": "agent"}
     assert startup_brief.session_role({}) == "agent"
+
+
+def test_broken_github_login_is_one_host_line_even_behind_repair_findings(monkeypatch):
+    from app.services import publication_health
+
+    health = {"state": "blocked", "reason": "actionable_repair_findings",
+              "observed_reason": "remote_authentication_unavailable", "observed_at": NOW.isoformat()}
+    monkeypatch.setattr(publication_health, "get_project_publication_health", lambda project: health)
+    item = startup_brief.publication_item("aico", startup_brief.load_config(), NOW)
+    assert item is not None and (item.scope, item.key) == ("host", "github-login")
+    assert "gh auth login" in item.text

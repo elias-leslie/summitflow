@@ -23,6 +23,8 @@ from ..utils import safe_subprocess
 from ..utils.transient_scratch import scratch_subprocess_env
 
 _OID = re.compile(r"[0-9a-f]{40}|[0-9a-f]{64}")
+# Git's own wording when the credential helper has no (valid) GitHub login.
+_AUTH_FAILURE = re.compile(r"could not read Username|Authentication failed|Invalid username or token", re.I)
 
 
 class _InspectionFailed(RuntimeError):
@@ -31,6 +33,10 @@ class _InspectionFailed(RuntimeError):
 
 class _TransportUnavailable(_InspectionFailed):
     """Remote transport cannot establish evidence; not a source repair finding."""
+
+
+class _AuthenticationUnavailable(_TransportUnavailable):
+    """The remote refused or never got credentials: the host's GitHub login needs repair."""
 
 
 class _OutgoingFailed(RuntimeError):
@@ -137,6 +143,8 @@ def _push(project: Path, head: str, branch: str, remote: str, remote_url: str,
         # Transport failures exit 128 (or the watchdog's code) and prove no
         # project defect.
         if response.returncode and not (arguments[0] == "push" and response.returncode == 1):
+            if _AUTH_FAILURE.search(response.stderr or ""):
+                raise _AuthenticationUnavailable
             raise _TransportUnavailable
         return response
 
@@ -304,6 +312,9 @@ def publish_source(source: dict[str, Any], source_commit: str, *,
             result["security"]["reason"] = str(exc.__cause__)
         result["action"] = "Inspect st vcs doctor and repair outgoing scanner, policy, history or secret findings before retry"
         return outcome("failed", "outgoing_verification_failed")
+    except _AuthenticationUnavailable:
+        result["remote_status"] = "unknown"
+        return outcome("pending", "remote_authentication_unavailable")
     except _TransportUnavailable:
         result["remote_status"] = "unknown"
         return outcome("pending", "remote_transport_unavailable")

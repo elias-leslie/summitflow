@@ -193,6 +193,10 @@ def publication_item(project: str, cfg: dict[str, Any], now: datetime) -> Item |
 
     health = get_project_publication_health(project)
     observed = _parse(health.get("observed_at"))
+    if "remote_authentication_unavailable" in {health.get("reason"), health.get("observed_reason")}:
+        return Item("host", "github-login", str(health.get("observed_at") or ""), "warning",
+                    "GitHub login on this host is broken, so no repo publishes: run `gh auth login --web` and "
+                    "approve it in the signed-in Chrome (the owner only confirms GitHub's phone prompt)")
     stale = observed is not None and now - observed > timedelta(hours=cfg["publication_stale_hours"])
     if health.get("state") != "blocked" and not stale:
         return None
