@@ -384,23 +384,14 @@ def test_full_rebuild_preserves_optional_worker_intent(lifecycle):
     assert all(call.kwargs.get("project") is not None for call in lifecycle["restart_service"].call_args_list)
 
 
-def test_rebuild_runs_preflight_once_before_lifecycle_work(lifecycle, unit_service_preflight):
+def test_rebuild_ignores_other_sessions_and_tasks(lifecycle, monkeypatch):
+    """A rebuild deploys committed, accepted source, so the pulse's session and
+    task state cannot change what ships and never blocks it."""
+    from cli.commands import pulse
+
+    monkeypatch.setattr(pulse, "fetch_pulse_payload", Mock(side_effect=AssertionError("rebuild read the pulse")))
     result = CliRunner().invoke(service.app, ["rebuild", "example"])
     assert result.exit_code == 0, result.output
-    unit_service_preflight.assert_called_once_with("example")
-
-
-def test_rebuild_preflight_block_preserves_source_and_services(lifecycle, unit_service_preflight, monkeypatch):
-    import typer
-
-    unit_service_preflight.side_effect = typer.Exit(2)
-    acceptance = Mock()
-    monkeypatch.setattr(service_ops, "prepare_accepted_release", acceptance)
-    result = CliRunner().invoke(service.app, ["rebuild", "example"])
-
-    assert result.exit_code == 2
-    acceptance.assert_not_called()
-    assert all(not operation.called for operation in lifecycle.values())
 
 
 @pytest.mark.parametrize("scope", ["full", "backend", "worker"])

@@ -27,7 +27,6 @@ from ..lib.confirm_token import confirm_gate
 from ..lib.service_ops import wait_for_summitflow_api
 from ..lib.usage import usage
 from ..output import output_error
-from .pulse import require_pulse_gate
 
 app = typer.Typer(
     help=(
@@ -583,7 +582,6 @@ def rebuild(
                      "and --migrate-monitor-store.")
         raise typer.Exit(1)
     wait_for_summitflow_api()
-    require_pulse_gate(services.project_id)
     overlapping_components = (
         services.backend_service and services.frontend_service
         and (services.backend_dir.is_relative_to(services.frontend_dir)

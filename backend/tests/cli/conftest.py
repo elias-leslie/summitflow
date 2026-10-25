@@ -1,20 +1,16 @@
 """CLI tests must not escape in-process mocks into installed owner programs."""
 
 from pathlib import Path
-from unittest.mock import Mock
 
 import pytest
 
 
 @pytest.fixture(autouse=True)
 def unit_service_preflight(monkeypatch):
-    """Lifecycle unit fixtures use an in-process gate rather than the operator API."""
+    """Lifecycle unit fixtures never wait on the operator API."""
     from cli.commands import service
 
-    gate = Mock()
-    monkeypatch.setattr(service, "require_pulse_gate", gate)
     monkeypatch.setattr(service, "wait_for_summitflow_api", lambda: True)
-    return gate
 
 
 @pytest.fixture(autouse=True)
