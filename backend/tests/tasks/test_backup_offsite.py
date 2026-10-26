@@ -220,3 +220,15 @@ def test_the_spot_restore_picks_small_top_level_files_of_a_project() -> None:
     repo = FakeRepo(offsite.Result(0, {}, "\n".join(json.dumps(line) for line in lines)))
     assert offsite._small_files(repo, "snap", "/w/p") == ["/w/p/a.md"]  # type: ignore[arg-type]
     assert repo.calls[0][:2] == ("ls", "--json")
+
+
+def test_a_leftover_runtime_config_never_stops_the_next_run(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("XDG_RUNTIME_DIR", str(tmp_path / "run"))
+    monkeypatch.setenv("ST_SCRATCH_ROOT", str(tmp_path / "scratch"))
+    source = tmp_path / "rclone.conf"
+    source.write_text("[summitflow-drive]\n")
+    target = offsite.Target("b", "rclone:summitflow-drive:r", tmp_path / "pw", source, tmp_path, "host", True)
+    first = offsite.prepare_runtime(target)
+    first.rclone.chmod(0o400)  # as a root-run rclone leaves it: not writable by the next run
+    again = offsite.prepare_runtime(target)
+    assert again.rclone.read_text() == "[summitflow-drive]\n" and again.excludes.is_file()

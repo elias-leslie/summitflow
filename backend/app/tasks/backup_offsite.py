@@ -203,8 +203,11 @@ def prepare_runtime(target: Target) -> Runtime:
     runtime = Runtime(root, _cache_directory())
     for directory in (runtime.cache, runtime.root_cache, runtime.tmp):
         directory.mkdir(mode=0o700, parents=True, exist_ok=True)
+    # The last run's root-run rclone left its config root-owned (it rewrites it when it refreshes a token); replace
+    # the files rather than write into them, so a leftover never stops the next run. The owner's own file stays put.
+    for leftover in (runtime.excludes, runtime.rclone):
+        leftover.unlink(missing_ok=True)
     shutil.copyfile(EXCLUDES, runtime.excludes)
-    # A root-run rclone rewrites its config when it refreshes a token; give it a copy so the owner's file keeps its owner.
     if target.rclone_config is not None:
         shutil.copyfile(target.rclone_config, runtime.rclone)
         runtime.rclone.chmod(0o600)
