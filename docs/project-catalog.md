@@ -29,7 +29,7 @@ without deleting its history or Git repository.
 
 `st projects audit` inspects every registered project, including hidden testing
 fixtures and retired entries. Its JSON reports checkout/Git identity, effective
-and declared lifecycle, default-list visibility, backup source state, and
+and declared lifecycle, default-list visibility, and
 declared runtime services. It marks unavailable evidence as `unknown`; picker
 rendering remains a separate UI check. `st check --quick --changed-only` also
 checks the current checkout's identity and compares it with the live registry
