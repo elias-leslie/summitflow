@@ -1,317 +1,293 @@
-import type { BackupActivity } from './backups-infra'
-import {
-  buildQueryString,
-  fetchWithErrorHandling,
-  postJson,
-  putJson,
-} from './utils'
+import { fetchWithErrorHandling, postJson } from './utils'
 
-// Re-export infra types and functions so existing imports from this module keep working
+// Recovery key and the backups other projects run live in their own module.
 export * from './backups-infra'
 
-export function backupDriveFolderUrl(location: string | null): string | null {
-  if (!location) return null
-  try {
-    const uri = new URL(location)
-    const ids = uri.pathname.split('/').slice(1)
-    // Native backup receipts contain resolved provider IDs, not display names.
-    // The final object is an archive or parts manifest; its parent holds the set.
-    if (
-      uri.protocol !== 'google-drive:' ||
-      !uri.hostname ||
-      uri.password ||
-      uri.port ||
-      uri.search ||
-      uri.hash ||
-      ids.length < 3 ||
-      ids.some((id) => !/^[A-Za-z0-9_-]+$/.test(id))
-    )
-      return null
-    return `https://drive.google.com/drive/folders/${ids[ids.length - 2]}`
-  } catch {
-    return null
-  }
-}
-
-export function syncBackupOffsite(
-  sourceId: string,
-  backupId: string,
-): Promise<TaskResponse> {
-  return postJson<TaskResponse>(
-    `/api/backup-sources/${encodeURIComponent(sourceId)}/backups/${encodeURIComponent(backupId)}/sync-offsite`,
-    {},
-    'Could not sync the retained backup to Google Drive',
-  )
-}
-
-export function cancelBackup(
-  sourceId: string,
-  backupId: string,
-  runId: string,
-): Promise<TaskResponse> {
-  return postJson<TaskResponse>(
-    `/api/backup-sources/${encodeURIComponent(sourceId)}/backups/${encodeURIComponent(backupId)}/cancel`,
-    { run_id: runId },
-    'Could not cancel the backup operation',
-  )
-}
-
-export interface BackupVerification {
-  format?: string
-  logical_bytes?: number | null
-  stored_bytes?: number | null
-  activity?: BackupActivity | null
-  verified: boolean
-  verified_at: string
-  errors: string[]
-  tree: Record<string, { count: number }>
-  total_files: number
-  checksum: string
-  has_db?: boolean
-  expects_db?: boolean
-}
-
-export interface Backup {
-  id: string
-  project_id: string
-  name: string
-  backup_type: 'manual' | 'scheduled'
-  status:
-    | 'pending'
-    | 'running'
-    | 'completed'
-    | 'failed'
-    | 'completed_pending_upload'
-  size_bytes: number | null
-  db_size_bytes: number | null
-  files_size_bytes: number | null
-  location: string | null
-  note: string | null
-  created_at: string | null
-  started_at: string | null
-  completed_at: string | null
-  error_message: string | null
-  verified: boolean | null
-  verified_at: string | null
-  checksum: string | null
-  total_files: number | null
-  verification_json: BackupVerification | null
-  source_id: string
-}
-
-export interface BackupListResponse {
-  backups: Backup[]
-  total: number
-}
-export interface BackupSource {
-  id: string
-  name: string
-  path: string
-  source_type: 'project' | 'config' | 'workspace' | 'infrastructure'
-  project_id: string | null
-  enabled: boolean
-  frequency: 'daily' | 'weekly' | 'monthly' | 'hourly'
-  retention_days: number
-  last_run_at: string | null
-  next_run_at: string | null
-  created_at: string | null
-  updated_at: string | null
-}
-
-interface TaskResponse {
-  task_id: string
-  status: string
+export interface BackupProblem {
+  key: string
+  title: string
   message: string
 }
-export type BackupCreateResponse = TaskResponse
-export type RestoreResponse = TaskResponse
 
-export interface StorageSummary {
-  total_count: number
-  total_bytes: number
-  by_status: Record<string, number>
+export interface LocalRun {
+  status: string | null
+  started_at: string | null
+  finished_at: string | null
+  error: string | null
 }
 
-export function backupHasDatabase(backup: Backup): boolean {
-  if (typeof backup.verification_json?.has_db === 'boolean') {
-    return backup.verification_json.has_db
+export interface LocalBackups {
+  enabled: boolean
+  schedule: string
+  keeps: string
+  retention: string | null
+  last_run: LocalRun | null
+  last_good_at: string | null
+  next_run_at: string | null
+  target: {
+    path: string
+    free_bytes: number
+    used_bytes: number
+    total_bytes: number
+  } | null
+  /** Recovery points per subvolume; null when the drive could not be listed. */
+  points: Record<string, number> | null
+}
+
+export interface DriveJob {
+  status: string | null
+  snapshot_id: string | null
+  time: string | null
+  bytes: number | null
+  added_bytes: number | null
+  files: number | null
+  error: string | null
+}
+
+export interface DriveCheck {
+  status: string | null
+  /** The slice of the repository read back last, such as "3/30". */
+  bucket: string | null
+  /** How many slices of the repository have been read back so far. */
+  covered: number | null
+  checked_at: string | null
+  last_ok_at: string | null
+  failures: number
+  error: string | null
+}
+
+export interface DriveTestRestore {
+  at: string | null
+  status: string | null
+  error: string | null
+}
+
+export interface DriveCleanup {
+  ran_at: string | null
+  pruned_at: string | null
+  snapshots: number | null
+  prune_error: string | null
+}
+
+export interface DriveRun {
+  started_at: string | null
+  finished_at: string | null
+  status: string | null
+  error: string | null
+}
+
+export interface DriveBackups {
+  schedule: string
+  repository: string | null
+  last_attempt_at: string | null
+  last_success_at: string | null
+  status: string | null
+  error: string | null
+  running: { started_at: string | null } | null
+  jobs: Record<string, DriveJob>
+  check: DriveCheck | null
+  spot_restore: DriveTestRestore | null
+  maintenance: DriveCleanup | null
+  runs: DriveRun[]
+}
+
+export interface OldBackups {
+  local_repository: { path: string | null; bytes: number | null }
+  drive_snapshots: { count: number | null; ages_out_after_days: number }
+  retired_sources: number
+}
+
+export interface BackupOverview {
+  generated_at: string
+  ok: boolean
+  problems: BackupProblem[]
+  local: LocalBackups
+  offsite: DriveBackups
+  legacy: OldBackups
+}
+
+export interface BackupRunResponse {
+  started: boolean
+  unit: string | null
+  offsite: boolean
+  error?: string | null
+}
+
+type Raw = Record<string, unknown>
+
+const obj = (value: unknown): Raw | null =>
+  value && typeof value === 'object' && !Array.isArray(value)
+    ? (value as Raw)
+    : null
+const str = (value: unknown): string | null =>
+  typeof value === 'string' && value ? value : null
+const num = (value: unknown): number | null =>
+  typeof value === 'number' && Number.isFinite(value) ? value : null
+
+function record<T>(value: unknown, read: (item: Raw) => T): Record<string, T> {
+  const out: Record<string, T> = {}
+  for (const [key, item] of Object.entries(obj(value) ?? {})) {
+    const row = obj(item)
+    if (row) out[key] = read(row)
   }
-  return (backup.db_size_bytes ?? 0) > 0
+  return out
 }
 
-type RestoreOptions = {
-  dry_run?: boolean
-  db_only?: boolean
-  files_only?: boolean
+function counts(value: unknown): Record<string, number> | null {
+  const row = obj(value)
+  if (!row) return null
+  return record(
+    Object.fromEntries(
+      Object.entries(row).map(([key, count]) => [key, { count }]),
+    ),
+    (item) => num(item.count) ?? 0,
+  )
 }
-type BackupListOptions = { limit?: number; offset?: number; status?: string }
 
-function restoreBody(opts?: RestoreOptions) {
+function covered(value: unknown): number | null {
+  const row = obj(value)
+  return row ? Object.keys(row).length : num(value)
+}
+
+function readRun(value: unknown): LocalRun | null {
+  const row = obj(value)
+  return row
+    ? {
+        status: str(row.status),
+        started_at: str(row.started_at),
+        finished_at: str(row.finished_at),
+        error: str(row.error),
+      }
+    : null
+}
+
+function readLocal(row: Raw): LocalBackups {
+  const target = obj(row.target)
   return {
-    dry_run: opts?.dry_run ?? false,
-    db_only: opts?.db_only ?? false,
-    files_only: opts?.files_only ?? false,
+    enabled: row.enabled !== false,
+    schedule: str(row.schedule) ?? 'every 4 hours',
+    keeps: str(row.keeps) ?? '7 days',
+    retention: str(row.retention),
+    last_run: readRun(row.last_run),
+    last_good_at: str(row.last_good_at),
+    next_run_at: str(row.next_run_at),
+    target:
+      target && num(target.total_bytes) !== null
+        ? {
+            path: str(target.path) ?? '',
+            free_bytes: num(target.free_bytes) ?? 0,
+            used_bytes: num(target.used_bytes) ?? 0,
+            total_bytes: num(target.total_bytes) ?? 0,
+          }
+        : null,
+    points: counts(row.points),
   }
 }
 
-function backupListQuery(options?: BackupListOptions & { source_id?: string }) {
-  return buildQueryString({
-    limit: options?.limit ?? 50,
-    offset: options?.offset,
-    status: options?.status,
-    source_id: options?.source_id,
-  })
+function readDrive(row: Raw): DriveBackups {
+  const check = obj(row.check)
+  const spot = obj(row.spot_restore)
+  const upkeep = obj(row.maintenance)
+  const running = obj(row.running)
+  return {
+    schedule: str(row.schedule) ?? 'daily',
+    repository: str(row.repository),
+    last_attempt_at: str(row.last_attempt_at),
+    last_success_at: str(row.last_success_at),
+    status: str(row.status),
+    error: str(row.error),
+    running: running ? { started_at: str(running.started_at) } : null,
+    jobs: record(row.jobs, (job) => ({
+      status: str(job.status),
+      snapshot_id: str(job.snapshot_id),
+      time: str(job.time),
+      bytes: num(job.bytes),
+      added_bytes: num(job.added_bytes),
+      files: num(job.files),
+      error: str(job.error),
+    })),
+    check: check && {
+      status: str(check.status),
+      bucket: str(check.bucket),
+      covered: covered(check.coverage),
+      checked_at: str(check.checked_at),
+      last_ok_at: str(check.last_ok_at),
+      failures: num(check.failures) ?? 0,
+      error: str(check.error),
+    },
+    spot_restore: spot && {
+      at: str(spot.at),
+      status: str(spot.status),
+      error: str(spot.error),
+    },
+    maintenance: upkeep && {
+      ran_at: str(upkeep.ran_at),
+      pruned_at: str(upkeep.pruned_at),
+      snapshots: num(upkeep.snapshots),
+      prune_error: str(upkeep.prune_error),
+    },
+    runs: (Array.isArray(row.runs) ? row.runs : []).flatMap((item) => {
+      const run = readRun(item)
+      return run ? [run] : []
+    }),
+  }
 }
 
-function createBackupPost(
-  url: string,
-  options?: { note?: string; keep_local?: boolean },
-): Promise<BackupCreateResponse> {
-  return postJson<BackupCreateResponse>(
-    url,
-    { note: options?.note ?? null, keep_local: options?.keep_local ?? false },
-    'Failed to create backup',
+/** Reads the overview defensively: fields are null before the first Drive run. */
+export function parseBackupOverview(value: unknown): BackupOverview {
+  const row = obj(value)
+  const local = obj(row?.local)
+  const drive = obj(row?.offsite)
+  if (!row || !local || !drive) throw new Error('Unexpected backup status')
+  const legacy = obj(row.legacy) ?? {}
+  const repository = obj(legacy.local_repository) ?? {}
+  const snapshots = obj(legacy.drive_snapshots) ?? {}
+  return {
+    generated_at: str(row.generated_at) ?? new Date().toISOString(),
+    ok: row.ok === true,
+    problems: (Array.isArray(row.problems) ? row.problems : []).flatMap(
+      (item) => {
+        const problem = obj(item)
+        return problem
+          ? [
+              {
+                key: str(problem.key) ?? str(problem.title) ?? 'problem',
+                title: str(problem.title) ?? 'Backup problem',
+                message: str(problem.message) ?? '',
+              },
+            ]
+          : []
+      },
+    ),
+    local: readLocal(local),
+    offsite: readDrive(drive),
+    legacy: {
+      local_repository: {
+        path: str(repository.path),
+        bytes: num(repository.bytes),
+      },
+      drive_snapshots: {
+        count: num(snapshots.count),
+        ages_out_after_days: num(snapshots.ages_out_after_days) ?? 30,
+      },
+      retired_sources: num(legacy.retired_sources) ?? 0,
+    },
+  }
+}
+
+export async function fetchBackupOverview(): Promise<BackupOverview> {
+  const value = await fetchWithErrorHandling<unknown>(
+    '/api/backups/overview?points=true',
+    { errorMessage: 'Could not load backup status', cache: 'no-store' },
   )
+  return parseBackupOverview(value)
 }
 
-export function fetchBackups(
-  projectId: string,
-  options?: BackupListOptions,
-): Promise<BackupListResponse> {
-  return fetchWithErrorHandling<BackupListResponse>(
-    `/api/projects/${projectId}/backups${backupListQuery(options)}`,
-    { errorMessage: 'Failed to fetch backups' },
-  )
-}
-
-export function fetchBackup(
-  projectId: string,
-  backupId: string,
-): Promise<Backup> {
-  return fetchWithErrorHandling<Backup>(
-    `/api/projects/${projectId}/backups/${backupId}`,
-    { errorMessage: 'Failed to fetch backup' },
-  )
-}
-
-export function createBackup(
-  projectId: string,
-  options?: { note?: string; keep_local?: boolean },
-): Promise<BackupCreateResponse> {
-  return createBackupPost(`/api/projects/${projectId}/backups`, options)
-}
-
-export function restoreBackup(
-  projectId: string,
-  backupId: string,
-  options?: RestoreOptions,
-): Promise<RestoreResponse> {
-  return postJson<RestoreResponse>(
-    `/api/projects/${projectId}/backups/${backupId}/restore`,
-    restoreBody(options),
-    'Failed to restore backup',
-  )
-}
-
-export function restoreSourceBackup(
-  sourceId: string,
-  backupId: string,
-  options?: RestoreOptions,
-): Promise<RestoreResponse> {
-  return postJson<RestoreResponse>(
-    `/api/backup-sources/${sourceId}/backups/${backupId}/restore`,
-    restoreBody(options),
-    'Failed to restore backup',
-  )
-}
-
-export function deleteBackup(
-  projectId: string,
-  backupId: string,
-): Promise<{ deleted: boolean; backup_id: string }> {
-  return fetchWithErrorHandling(
-    `/api/projects/${projectId}/backups/${backupId}`,
-    { method: 'DELETE', errorMessage: 'Failed to delete backup' },
-  )
-}
-
-export function fetchStorageSummary(
-  sourceId?: string,
-): Promise<StorageSummary> {
-  return fetchWithErrorHandling<StorageSummary>(
-    `/api/backups/storage${buildQueryString({ source_id: sourceId })}`,
-    { errorMessage: 'Failed to fetch storage summary' },
-  )
-}
-
-export function fetchAllBackups(
-  options?: BackupListOptions & { source_id?: string },
-): Promise<BackupListResponse> {
-  return fetchWithErrorHandling<BackupListResponse>(
-    `/api/backups${backupListQuery(options)}`,
-    { errorMessage: 'Failed to fetch backups' },
-  )
-}
-
-export function createBackupSource(data: {
-  id: string
-  name: string
-  path: string
-  source_type?: string
-  project_id?: string
-}): Promise<BackupSource> {
-  return postJson<BackupSource>(
-    '/api/backup-sources',
-    data,
-    'Failed to create backup source',
-  )
-}
-
-export function fetchBackupSources(
-  sourceType?: string,
-): Promise<BackupSource[]> {
-  return fetchWithErrorHandling<BackupSource[]>(
-    `/api/backup-sources${buildQueryString({ source_type: sourceType })}`,
-    { errorMessage: 'Failed to fetch backup sources' },
-  )
-}
-
-export function fetchBackupSource(sourceId: string): Promise<BackupSource> {
-  return fetchWithErrorHandling<BackupSource>(
-    `/api/backup-sources/${sourceId}`,
-    { errorMessage: 'Failed to fetch backup source' },
-  )
-}
-
-export function updateBackupSource(
-  sourceId: string,
-  data: {
-    name?: string
-    enabled?: boolean
-    frequency?: string
-    retention_days?: number
-  },
-): Promise<BackupSource> {
-  return putJson<BackupSource>(
-    `/api/backup-sources/${sourceId}`,
-    data,
-    'Failed to update backup source',
-  )
-}
-
-export function createSourceBackup(
-  sourceId: string,
-  options?: { note?: string; keep_local?: boolean },
-): Promise<BackupCreateResponse> {
-  return createBackupPost(`/api/backup-sources/${sourceId}/backups`, options)
-}
-
-export function fetchSourceBackups(
-  sourceId: string,
-  options?: BackupListOptions,
-): Promise<BackupListResponse> {
-  return fetchWithErrorHandling<BackupListResponse>(
-    `/api/backup-sources/${sourceId}/backups${backupListQuery(options)}`,
-    { errorMessage: 'Failed to fetch source backups' },
+/** Start a local backup now; `offsite` also makes today's Google Drive copy. */
+export function runBackupNow(offsite: boolean): Promise<BackupRunResponse> {
+  return postJson<BackupRunResponse>(
+    `/api/backups/run?offsite=${offsite}`,
+    {},
+    'Could not start the backup',
   )
 }

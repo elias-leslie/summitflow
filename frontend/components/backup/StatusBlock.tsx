@@ -14,6 +14,8 @@ interface StatusBlockProps {
   /** One line naming what this mechanism protects and where it writes. */
   subtitle: string
   status: BlockStatus
+  /** Replaces the tone's default word, such as "Waiting" before a first run. */
+  toneLabel?: string
   isLoading?: boolean
   error?: Error | null
   /** Shown between the facts and the details: actions or a short list. */
@@ -24,11 +26,12 @@ interface StatusBlockProps {
   testId?: string
 }
 
-/** One of the three status blocks at the top of the Backups page. */
+/** A status card on the Backups page: tone, headline, facts, then optional content and details. */
 export function StatusBlock({
   title,
   subtitle,
   status,
+  toneLabel,
   isLoading = false,
   error,
   children,
@@ -54,7 +57,7 @@ export function StatusBlock({
               {title}
             </h2>
             <span className={clsx('text-2xs font-medium', TONE_TEXT[tone])}>
-              {isLoading ? 'Loading' : TONE_LABEL[tone]}
+              {isLoading ? 'Loading' : (toneLabel ?? TONE_LABEL[tone])}
             </span>
           </div>
           <p className="mt-0.5 text-2xs text-slate-500">{subtitle}</p>

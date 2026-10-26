@@ -1,11 +1,6 @@
-import type {
-  BackupHealthItem,
-  BackupHealthResponse,
-  NativeHostBackupStatus,
-} from '@/lib/api/backups'
 import type { BtrfsSummary } from '@/lib/api/snapshots'
 
-// Shared by the status-logic and status-card tests. Tests pin the clock to `now`.
+// Shared by the status-logic tests. Tests pin the clock to `now`.
 export const now = new Date('2026-10-24T14:00:00Z')
 
 export const hoursAgo = (hours: number) =>
@@ -43,84 +38,3 @@ export const summary = (
   last_sweep_result: 'ok',
   ...overrides,
 })
-
-export const host = (
-  overrides: Partial<NativeHostBackupStatus> = {},
-): NativeHostBackupStatus => ({
-  engine: 'btrbk',
-  enabled: true,
-  installed: true,
-  configured: true,
-  ready: true,
-  retention: '7 daily destination points',
-  restore_verified: false,
-  restore_tested_at: null,
-  restore_test_result: null,
-  points_kept: 7,
-  last_result: {
-    status: 'completed',
-    started_at: hoursAgo(8),
-    finished_at: hoursAgo(7.9),
-  },
-  last_good_result: {
-    status: 'completed',
-    started_at: hoursAgo(8),
-    finished_at: hoursAgo(7.9),
-  },
-  ...overrides,
-})
-
-export const item = (
-  overrides: Partial<BackupHealthItem>,
-): BackupHealthItem => ({
-  source_id: 'agent-hub',
-  source_name: 'Agent Hub',
-  source_type: 'project',
-  enabled: true,
-  health_status: 'green',
-  last_success_at: hoursAgo(1),
-  next_run_at: null,
-  failure_count_7d: 0,
-  pending_upload_count: 0,
-  last_restore_tested_at: null,
-  last_restore_test_ok: null,
-  latest_backup_age_hours: 1,
-  latest_restore_test_age_hours: null,
-  restore_test_backup_id: null,
-  coverage_complete: null,
-  pitr_supported: false,
-  restore_confidence: null,
-  last_drill_at: null,
-  last_drill_ok: null,
-  last_drill_backup_id: null,
-  latest_backup_id: null,
-  offsite_status: 'verified',
-  last_offsite_verified_at: hoursAgo(1),
-  offsite_location: null,
-  offsite_checksum: null,
-  offsite_error: null,
-  last_isolated_restore_at: null,
-  last_isolated_restore_ok: null,
-  ...overrides,
-})
-
-export const health = (sources: BackupHealthItem[]): BackupHealthResponse => ({
-  sources,
-  pending_upload_count: 0,
-  repositories: [
-    {
-      backend_id: 'restic',
-      backend_name: 'Restic',
-      critical_restore: {
-        status: 'verified',
-        last_success_at: hoursAgo(30),
-        latest_attempt: null,
-        required_source_ids: [],
-        verified_source_ids: [],
-        missing_source_ids: [],
-      },
-    },
-  ],
-})
-
-export const checked = { checked_at: hoursAgo(5), status: 'verified' }

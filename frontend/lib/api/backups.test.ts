@@ -1,80 +1,69 @@
-import { afterEach, describe, expect, it, vi } from 'vitest'
-import { backupDriveFolderUrl, cancelBackup } from './backups'
+import { describe, expect, it } from 'vitest'
+import { parseBackupOverview } from './backups'
 
-describe('backupDriveFolderUrl', () => {
-  it('opens the source folder containing the archive or complete parts set', () => {
-    expect(
-      backupDriveFolderUrl(
-        'google-drive://owner@example.com/root-id/backup-root/source_folder-1/archive-id',
-      ),
-    ).toBe('https://drive.google.com/drive/folders/source_folder-1')
-    expect(
-      backupDriveFolderUrl(
-        'google-drive://owner@example.com/root-id/backup-root/source_folder-1/manifest-id',
-      ),
-    ).toBe('https://drive.google.com/drive/folders/source_folder-1')
-  })
-
-  it.each([
-    null,
-    '',
-    'not a URL',
-    'https://other.example/root/folder/file',
-    'google-drive://owner@example.com/root-id/folder-id',
-    'google-drive://owner@example.com/root-id/folder-id/archive.tar.gz.age',
-    'google-drive://owner@example.com/root-id/folder-id/file-id?share=yes',
-    'google-drive://owner@example.com/root-id/folder-id/file-id#fragment',
-    'google-drive://owner@example.com/root-id/folder%2fid/file-id',
-    'google-drive://owner@example.com/root-id/folder-id/file-id/',
-  ])(
-    'does not invent a link for ambiguous or unsupported metadata: %s',
-    (location) => {
-      expect(backupDriveFolderUrl(location)).toBeNull()
+const firstRun = {
+  generated_at: '2026-10-26T12:47:15+00:00',
+  ok: true,
+  problems: [],
+  local: {
+    enabled: true,
+    schedule: 'every 4 hours',
+    keeps: '7 days',
+    last_run: {
+      status: 'completed',
+      started_at: '2026-10-26T06:30:00+00:00',
+      finished_at: '2026-10-26T06:33:14+00:00',
+      error: null,
     },
-  )
-})
+    last_good_at: '2026-10-26T06:33:14+00:00',
+    next_run_at: null,
+    target: { path: '/t7', free_bytes: 6, used_bytes: 4, total_bytes: 10 },
+    points: { workspaces: 8, var_log: 8 },
+  },
+  offsite: {
+    schedule: 'daily',
+    repository: null,
+    last_success_at: null,
+    jobs: {},
+    check: null,
+    spot_restore: null,
+    maintenance: null,
+    runs: [],
+  },
+  legacy: {
+    local_repository: { path: null, bytes: null },
+    drive_snapshots: { count: null, ages_out_after_days: 30 },
+    retired_sources: 12,
+  },
+}
 
-describe('cancelBackup', () => {
-  afterEach(() => vi.restoreAllMocks())
-
-  it('binds cancellation to the exact observed run and encodes resource IDs', async () => {
-    const fetchMock = vi.spyOn(globalThis, 'fetch').mockResolvedValue(
-      new Response(
-        JSON.stringify({
-          task_id: 'run-1',
-          status: 'cancelling',
-          message: 'Cancellation requested',
-        }),
-        { status: 200, headers: { 'Content-Type': 'application/json' } },
-      ),
-    )
-    await expect(
-      cancelBackup('source/name', 'backup/name', 'run-1'),
-    ).resolves.toMatchObject({ status: 'cancelling' })
-    expect(fetchMock).toHaveBeenCalledTimes(1)
-    expect(fetchMock.mock.calls[0][0]).toContain(
-      '/api/backup-sources/source%2Fname/backups/backup%2Fname/cancel',
-    )
-    expect(fetchMock.mock.calls[0][1]).toMatchObject({
-      method: 'POST',
-      body: JSON.stringify({ run_id: 'run-1' }),
-    })
+describe('parseBackupOverview', () => {
+  it('keeps nulls before the first Drive run instead of inventing values', () => {
+    const overview = parseBackupOverview(firstRun)
+    expect(overview.offsite.last_success_at).toBeNull()
+    expect(overview.offsite.check).toBeNull()
+    expect(overview.offsite.running).toBeNull()
+    expect(overview.local.next_run_at).toBeNull()
+    expect(overview.local.points).toEqual({ workspaces: 8, var_log: 8 })
+    expect(overview.legacy.drive_snapshots.count).toBeNull()
   })
 
-  it('does not retry a rejected stale cancellation against a newer run', async () => {
-    const fetchMock = vi.spyOn(globalThis, 'fetch').mockResolvedValue(
-      new Response(
-        JSON.stringify({
-          error: 'http_error',
-          message: 'Backup run changed',
-          details: [],
-        }),
-        { status: 409, headers: { 'Content-Type': 'application/json' } },
-      ),
-    )
-    await expect(cancelBackup('source', 'backup', 'old-run')).rejects.toThrow(
-      'Backup run changed',
-    )
-    expect(fetchMock).toHaveBeenCalledTimes(1)
+  it('reads the Drive check slices whether coverage is a map or missing', () => {
+    const drive = {
+      ...firstRun.offsite,
+      check: {
+        status: 'ok',
+        bucket: '3/30',
+        coverage: { '1': 'a', '2': 'b', '3': 'c' },
+        failures: 0,
+      },
+    }
+    const overview = parseBackupOverview({ ...firstRun, offsite: drive })
+    expect(overview.offsite.check?.covered).toBe(3)
+    expect(overview.offsite.check?.bucket).toBe('3/30')
+  })
+
+  it('rejects a body that is not an overview', () => {
+    expect(() => parseBackupOverview({ detail: 'nope' })).toThrow()
   })
 })

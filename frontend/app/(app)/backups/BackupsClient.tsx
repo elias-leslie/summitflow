@@ -1,217 +1,110 @@
 'use client'
 
-import { useQuery, useQueryClient } from '@tanstack/react-query'
-import { Archive, Plus } from 'lucide-react'
-import { useRef, useState } from 'react'
-import { BackupHistory } from '@/components/backup/BackupHistory'
-import { useBackupHistoryRefresh } from '@/components/backup/backupPolling'
+import { useQuery } from '@tanstack/react-query'
+import { Archive } from 'lucide-react'
+import { BackUpNow } from '@/components/backup/BackUpNow'
 import { CollapsibleSection } from '@/components/backup/CollapsibleSection'
-import { CreateBackupModal } from '@/components/backup/CreateBackupModal'
+import { DriveCard } from '@/components/backup/DriveCard'
 import { EncryptionSetup } from '@/components/backup/EncryptionSetup'
 import { ExternalBackups } from '@/components/backup/ExternalBackups'
-import { MachineBackupCard } from '@/components/backup/MachineBackupCard'
-import { OffsiteCard } from '@/components/backup/OffsiteCard'
-import { SourcesManager } from '@/components/backup/SourcesManager'
-import { StorageSettings } from '@/components/backup/StorageSettings'
+import { HealthBanner } from '@/components/backup/HealthBanner'
+import { LocalPointsCard } from '@/components/backup/LocalPointsCard'
+import { OldBackups } from '@/components/backup/OldBackups'
 import {
   ProjectSnapshotsCard,
   ProjectSnapshotsList,
 } from '@/components/snapshots/ProjectSnapshotsCard'
-import {
-  type Backup,
-  fetchAllBackups,
-  fetchBackupDestinations,
-  fetchBackupHealth,
-  fetchBackupSources,
-  fetchNativeHostBackupStatus,
-} from '@/lib/api/backups'
-import { POLL_NOTIFICATIONS, STALE_GIT } from '@/lib/polling'
+import { fetchBackupOverview } from '@/lib/api/backups'
+import { isRunning } from '@/lib/backup-overview'
+import { POLL_FAST, POLL_NOTIFICATIONS } from '@/lib/polling'
 
 export function BackupsClient() {
-  const queryClient = useQueryClient()
-  const [statusFilter, setStatusFilter] = useState('')
-  const [showCreateModal, setShowCreateModal] = useState(false)
-  const dispatchedAtRef = useRef(0)
-
-  const { data: sources = [] } = useQuery({
-    queryKey: ['backup-sources'],
-    queryFn: () => fetchBackupSources(),
-  })
-
   const {
-    data: backupsData,
-    isLoading: backupsLoading,
-    error: backupsError,
-    refetch: refetchBackups,
+    data: overview,
+    isLoading,
+    error,
+    refetch,
   } = useQuery({
-    queryKey: ['all-backups', statusFilter],
-    queryFn: () =>
-      fetchAllBackups({ limit: 100, status: statusFilter || undefined }),
+    queryKey: ['backup-overview'],
+    queryFn: fetchBackupOverview,
     refetchInterval: (query) => {
-      const backups = query.state.data?.backups
-      if (!backups) return 10000
-      const hasActive = backups.some(
-        (b: Backup) => b.status === 'pending' || b.status === 'running',
-      )
-      return hasActive || Date.now() - dispatchedAtRef.current < 30_000
-        ? 3000
-        : false
+      const data = query.state.data
+      const running =
+        data?.offsite.running || isRunning(data?.local.last_run?.status)
+      return running ? POLL_FAST : POLL_NOTIFICATIONS
     },
   })
 
-  const {
-    data: healthData,
-    isLoading: healthLoading,
-    error: healthError,
-    refetch: refetchHealth,
-  } = useQuery({
-    queryKey: ['backup-health'],
-    queryFn: fetchBackupHealth,
-    refetchInterval: POLL_NOTIFICATIONS,
-  })
-  useBackupHistoryRefresh(healthData?.sources)
-
-  const {
-    data: destinations,
-    isLoading: destinationsLoading,
-    error: destinationsError,
-    refetch: refetchDestinations,
-  } = useQuery({
-    queryKey: ['backup-destinations'],
-    queryFn: fetchBackupDestinations,
-    staleTime: STALE_GIT,
-  })
-
-  const {
-    data: nativeHostStatus,
-    isLoading: nativeHostLoading,
-    error: nativeHostError,
-    refetch: refetchNativeHost,
-  } = useQuery({
-    queryKey: ['native-host-backup'],
-    queryFn: fetchNativeHostBackupStatus,
-    staleTime: STALE_GIT,
-  })
-
-  const backups = backupsData?.backups ?? []
-  const scheduledCount = sources.filter((source) => source.enabled).length
-
-  const invalidateAll = async () => {
-    dispatchedAtRef.current = Date.now()
-    await Promise.all([
-      queryClient.invalidateQueries({ queryKey: ['all-backups'] }),
-      queryClient.invalidateQueries({ queryKey: ['backup-health'] }),
-      queryClient.invalidateQueries({ queryKey: ['backup-sources'] }),
-    ])
-  }
-
-  const refreshSources = () => {
-    queryClient.invalidateQueries({ queryKey: ['backup-sources'] })
-    queryClient.invalidateQueries({ queryKey: ['backup-health'] })
-  }
+  const running = !!overview?.offsite.running
 
   return (
-    <div className="p-4 sm:p-6 space-y-6 max-w-7xl mx-auto">
-      {showCreateModal && (
-        <CreateBackupModal
-          sources={sources}
-          onClose={() => setShowCreateModal(false)}
-          onCreated={invalidateAll}
-        />
+    <div className="mx-auto max-w-7xl space-y-6 p-4 sm:p-6">
+      <div className="flex items-center gap-3">
+        <div className="rounded-md border border-indigo-500/20 bg-indigo-500/10 p-1.5">
+          <Archive className="h-5 w-5 text-indigo-400" />
+        </div>
+        <h1 className="display text-2xl font-bold leading-none tracking-tight text-slate-100">
+          Backups
+        </h1>
+      </div>
+
+      {isLoading && (
+        <div
+          role="status"
+          className="h-16 animate-pulse rounded-lg bg-slate-800/40"
+        >
+          <span className="sr-only">Loading backup status</span>
+        </div>
       )}
 
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <div className="flex items-center gap-3">
-          <div className="p-1.5 rounded-md bg-indigo-500/10 border border-indigo-500/20">
-            <Archive className="w-5 h-5 text-indigo-400" />
-          </div>
-          <h1 className="text-2xl font-bold text-slate-100 display tracking-tight leading-none">
-            Backups
-          </h1>
-        </div>
-        <button
-          type="button"
-          onClick={() => setShowCreateModal(true)}
-          className="flex items-center gap-1.5 text-2xs px-3 py-1.5 rounded-md bg-phosphor-500/12 text-phosphor-400 border border-phosphor-500/20 hover:bg-phosphor-500/20 hover:border-phosphor-500/40 transition-all font-medium focus-visible:outline focus-visible:outline-2 focus-visible:outline-phosphor-400"
-          data-testid="backup-manual-trigger"
+      {error && (
+        <div
+          role="alert"
+          className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-slate-700/60 bg-slate-900/40 px-4 py-3 text-sm"
         >
-          <Plus className="w-3.5 h-3.5" />
-          Back up a source now
-        </button>
-      </div>
+          <p className="text-slate-300">
+            {overview
+              ? `Couldn't refresh. Showing the last status. ${error.message}`
+              : `Couldn't load backup status. ${error.message}`}
+          </p>
+          <button
+            type="button"
+            onClick={() => void refetch()}
+            className="rounded-md border border-slate-600 px-3 py-1 text-xs text-slate-200 hover:bg-slate-800 focus-visible:outline focus-visible:outline-2 focus-visible:outline-phosphor-400"
+          >
+            Try again
+          </button>
+        </div>
+      )}
 
-      <div className="grid gap-4 lg:grid-cols-3">
-        <ProjectSnapshotsCard />
-        <MachineBackupCard
-          status={nativeHostStatus}
-          schedule={
-            destinations && {
-              window: destinations.schedule_window,
-              timezone: destinations.schedule_timezone,
-            }
-          }
-          isLoading={nativeHostLoading}
-          error={nativeHostError}
-          onRefresh={() => {
-            void refetchNativeHost()
-          }}
-        />
-        <OffsiteCard
-          health={healthData}
-          destinations={destinations}
-          isLoading={healthLoading || destinationsLoading}
-          error={healthError ?? destinationsError}
-          onRefresh={() => {
-            void refetchHealth()
-            void refetchDestinations()
-          }}
-        />
-      </div>
+      {overview && (
+        <>
+          <HealthBanner overview={overview} />
+          <div className="grid gap-4 lg:grid-cols-2">
+            <LocalPointsCard overview={overview} />
+            <DriveCard overview={overview} />
+          </div>
+          <BackUpNow running={running} />
+        </>
+      )}
 
-      <ProjectSnapshotsList />
+      <ExternalBackups />
+
+      <section aria-label="Project snapshots" className="space-y-4">
+        <div className="grid gap-4 lg:grid-cols-2">
+          <ProjectSnapshotsCard />
+        </div>
+        <ProjectSnapshotsList />
+      </section>
 
       <CollapsibleSection
-        title="Sources"
-        summary={
-          sources.length === 0
-            ? 'No sources set up yet.'
-            : `${sources.length} sources copied offsite, ${scheduledCount} on a schedule`
-        }
+        title="Recovery key"
+        summary="The key that unlocks older encrypted copies on Google Drive"
       >
-        <SourcesManager
-          sources={sources}
-          healthItems={healthData?.sources ?? []}
-          recentBackups={backups}
-          onSourceChanged={refreshSources}
-          onBackupTriggered={invalidateAll}
-          showHeader={false}
-        />
-        <div className="mt-4">
-          <ExternalBackups />
-        </div>
+        <EncryptionSetup />
       </CollapsibleSection>
 
-      <CollapsibleSection
-        title="Storage and recovery key"
-        summary="Where offsite copies are kept, repository maintenance, and the key that unlocks them"
-      >
-        <div className="space-y-4">
-          <StorageSettings proxmoxConfigured={destinations?.proxmox != null} />
-          <EncryptionSetup />
-        </div>
-      </CollapsibleSection>
-
-      <BackupHistory
-        backups={backups}
-        sources={sources}
-        isLoading={backupsLoading}
-        error={backupsError}
-        onRetry={() => {
-          void refetchBackups()
-        }}
-        statusFilter={statusFilter}
-        onStatusFilterChange={setStatusFilter}
-      />
+      {overview && <OldBackups legacy={overview.legacy} />}
     </div>
   )
 }
