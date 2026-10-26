@@ -44,7 +44,7 @@ def test_widget_manifest_exposes_exact_current_pane_owner_controls():
     assert "1-160" in manifest.help["widget title"]
     assert "100000" in manifest.help["widget position"]
     assert "Output contains" in manifest.help["widget"]
-    assert "No prompt retention or fleet ledger" in manifest.help["create"]
+    assert "No catalog prompt retention or fleet ledger" in manifest.help["create"]
 
 
 @pytest.mark.parametrize("arguments, expected", [
