@@ -153,6 +153,14 @@ def test_health_waits_two_days_before_calling_a_first_run_missing(tmp_path: Path
     assert overview.health_problems(NOW) == []
 
 
+def test_the_sources_receipt_does_not_call_a_first_seed_failing_until_its_window_passes(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(overview, "local_summary", lambda **_: {"enabled": True, "last_good_at": NOW.isoformat(), "last_run": {"status": "completed"}})
+    _state(tmp_path, monkeypatch, last_status="running", first_attempt_at=(NOW - timedelta(hours=10)).isoformat())
+    assert overview.freshness_sources(NOW)["offsite-restic"]["ok"] is True
+    _state(tmp_path, monkeypatch, last_status="failed", first_attempt_at=(NOW - timedelta(hours=60)).isoformat())
+    assert overview.freshness_sources(NOW)["offsite-restic"]["ok"] is False
+
+
 def test_stale_run_marker_is_cleared_at_the_start_of_the_next_run(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     _state(tmp_path, monkeypatch, last_status="running", current_run={"started_at": "x"})
     state = offsite.recover_state()

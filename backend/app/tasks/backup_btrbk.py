@@ -540,7 +540,7 @@ def _capture(now: datetime) -> dict[str, Any]:
             after = shutil.disk_usage(target)
             if _filesystem(str(target))["uuid"] != before["target_filesystem_uuid"]:
                 raise RuntimeError("Native destination mount identity changed during capture")
-            payload.update(capture_complete=True, points=points, package_digest=package_digest, target_filesystem_uuid=before["target_filesystem_uuid"], finished_at=datetime.now(UTC).isoformat(),
+            payload.update(capture_complete=True, artifacts_complete=True, points=points, package_digest=package_digest, target_filesystem_uuid=before["target_filesystem_uuid"], finished_at=datetime.now(UTC).isoformat(),
                            growth_bytes=max(0, after.used - before["used_bytes"]), remaining_capacity_bytes=after.free)
             _write_receipt(payload)
             payload["metadata_cleanup"] = _cleanup_superseded(target, stamp)

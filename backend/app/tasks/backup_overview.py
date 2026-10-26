@@ -163,8 +163,10 @@ def freshness_sources(now: datetime) -> dict[str, dict[str, Any]]:
         "last_error": last_run.get("error") if last_run.get("status") not in (None, "completed") else None,
     }
     success = _parse(state.get("last_success_at"))
+    # Same rule as health_problems: the very first copy gets a full window to land before it counts as missing.
+    reference = success or _parse(state.get("first_attempt_at"))
     sources["offsite-restic"] = {
-        "ok": bool(success and now - success <= OFFSITE_MISSING_AFTER), "frequency": "daily", "stale_after_hours": OFFSITE_MISSING_AFTER.total_seconds() / 3600,
+        "ok": reference is None or now - reference <= OFFSITE_MISSING_AFTER, "frequency": "daily", "stale_after_hours": OFFSITE_MISSING_AFTER.total_seconds() / 3600,
         "last_success_at": success.isoformat() if success else None, "last_status": state.get("last_status"), "offline_since": None,
         "last_error": state.get("last_error"),
     }
