@@ -242,3 +242,14 @@ def test_the_timer_waits_only_when_memory_pressure_is_really_high(tmp_path: Path
     pressure = tmp_path / "memory"
     pressure.write_text(f"some avg10=1.00 avg60={some} avg300=0.00 total=1\nfull avg10=1.00 avg60={full} avg300=0.00 total=1\n")
     assert (subprocess.run(["awk", program, str(pressure)], check=False).returncode == 0) is starts  # numeric, not string, comparison
+
+
+def test_only_backups_and_listings_use_the_persistent_cache() -> None:
+    target = offsite.Target("b", "rclone:summitflow-drive:r", Path("/pw"), None, Path("/k"), "host", True)
+    runtime = offsite.Runtime(Path("/run/x"), Path("/scratch/x"))
+    for command in ("check", "prune", "restore", "dump"):
+        arguments = offsite._restic_args(target, runtime, command, "--json")
+        assert "--no-cache" in arguments and "--cache-dir" not in arguments
+    for command in ("backup", "snapshots", "forget", "ls"):
+        arguments = offsite._restic_args(target, runtime, command)
+        assert arguments[arguments.index("--cache-dir") + 1] == str(runtime.cache) and "--no-cache" not in arguments

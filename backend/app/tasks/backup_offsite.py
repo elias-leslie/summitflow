@@ -50,6 +50,7 @@ TAG = "offsite"
 EXCLUDES = Path(__file__).with_name("backup_offsite.excludes")
 JOB_TIMEOUT_SECONDS = 10 * 3600
 SHORT_TIMEOUT_SECONDS = 900
+UNCACHED_COMMANDS = frozenset({"check", "prune", "restore", "dump"})
 CACHE_CAP_BYTES = 1024**3  # restic's metadata caches for the Drive repository measure ~0.2 GB; past this they are dropped and rebuilt
 CHECK_BUCKETS = 30
 PRUNE_INTERVAL = timedelta(days=7)
@@ -247,8 +248,11 @@ def _env(target: Target, runtime: Runtime, *, root: bool, extra: Mapping[str, st
 
 
 def _restic_args(target: Target, runtime: Runtime, *args: str, permanent_delete: bool = False, root: bool = False) -> list[str]:
+    # Check, prune and restore would cache gigabytes of data and tree packs on the NVMe for one use; they read the
+    # index and snapshots again instead. Backups keep the small persistent metadata cache, which makes them fast.
+    cache = ["--no-cache"] if args and args[0] in UNCACHED_COMMANDS else ["--cache-dir", str(runtime.root_cache if root else runtime.cache)]
     command = [shutil.which("restic") or "restic", "--repo", target.repository, "--password-file", str(target.password_file),
-               "--compression", "auto", "--cache-dir", str(runtime.root_cache if root else runtime.cache), "--json"]
+               "--compression", "auto", *cache, "--json"]
     if permanent_delete and target.repository.startswith("rclone:"):
         if not target.prune_qualified:
             raise OffsiteError("Off-site permanent prune has not been qualified")
