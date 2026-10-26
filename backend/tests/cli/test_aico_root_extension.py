@@ -83,10 +83,13 @@ def test_create_help_names_only_the_supported_root_tools(monkeypatch):
     assert result.exit_code == 0
     for slug in ("claude-code", "codex", "pi"):
         assert slug in result.output
+    assert "--blank-slate" in result.output
     assert "opencode" not in result.output.lower()
     manifest = aico_record().manifest
     assert manifest is not None
     usage = next(row for row in manifest.usage if row["surface"] == "st.aico.create")
     assert "--tool claude-code|codex|pi " in manifest.help[""]
     assert "--tool claude-code|codex|pi " in usage["cmd"]
+    assert "--blank-slate" in usage["cmd"]
+    assert manifest.help_options["create"]["--blank-slate"] == 0
     assert "opencode" not in " ".join(map(str, usage["precautions"])).lower()
