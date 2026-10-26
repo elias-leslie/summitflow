@@ -6,6 +6,7 @@ import argparse
 import json
 import os
 import shutil
+import stat
 import subprocess
 import sys
 import tempfile
@@ -316,6 +317,32 @@ def collect_artifacts(snapshot_root: Path, patterns: Sequence[str], destination:
     return copied, empty
 
 
+def _make_dirs_writable(root: Path) -> None:
+    """Add owner rwx to every real directory under root (Go module caches and test
+    fixtures leave read-only directories that block unlinking their contents)."""
+    pending = [root]
+    while pending:
+        directory = pending.pop()
+        try:
+            mode = directory.lstat().st_mode
+            if not stat.S_ISDIR(mode):
+                continue
+            if mode & 0o700 != 0o700:
+                directory.chmod(stat.S_IMODE(mode) | 0o700)
+            pending.extend(entry for entry in directory.iterdir() if entry.is_dir() and not entry.is_symlink())
+        except OSError:
+            continue
+
+
+def remove_tree(path: Path) -> None:
+    """shutil.rmtree that also removes read-only directories it owns; never follows symlinks."""
+    try:
+        shutil.rmtree(path)
+    except PermissionError:
+        _make_dirs_writable(path)
+        shutil.rmtree(path)
+
+
 def prune_hint(project_root: Path) -> str:
     return f"st cleanup cleanrooms --project {project_root.name} --older-than 24h"
 
@@ -418,7 +445,11 @@ def run_cleanroom(
             return returncode
         finally:
             if clean_up:
-                shutil.rmtree(temp_dir, ignore_errors=True)
+                try:
+                    remove_tree(Path(temp_dir))
+                except OSError as exc:
+                    print(f"CLEANROOM:cleanup-failed:{temp_dir}:{exc.strerror}", file=sys.stderr)
+                    print(f"CLEANROOM:prune:{prune_hint(project_root)}", file=sys.stderr)
             else:
                 print(f"CLEANROOM:kept:{temp_dir}", file=sys.stderr)
                 print(f"CLEANROOM:prune:{prune_hint(project_root)}", file=sys.stderr)

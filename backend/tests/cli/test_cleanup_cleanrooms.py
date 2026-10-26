@@ -126,3 +126,17 @@ def test_command_dry_run_then_delete_reports_freed_bytes(
 def test_command_rejects_bad_duration() -> None:
     result = CliRunner().invoke(cleanup.app, ["cleanrooms", "--older-than", "soon"])
     assert result.exit_code == 2
+
+
+def test_removes_read_only_directories(parent: Path) -> None:
+    # Go's module cache and some test fixtures leave read-only directories behind.
+    job = _job(parent, "ominull-cleanroom-kvcjow_f", age=2 * DAY)
+    locked = job / "home" / "go" / "pkg" / "mod" / "memory@v1"
+    locked.mkdir(parents=True)
+    (locked / "file.go").write_text("package memory")
+    locked.chmod(0o500)
+    locked.parent.chmod(0o500)
+    later = time.time() + 2 * DAY
+    [found] = cleanroom_prune.find_cleanroom_jobs(parent, older_than=DAY, now=later, cwds=())
+    cleanroom_prune.remove_job(found)
+    assert not job.exists()

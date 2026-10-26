@@ -5,7 +5,6 @@ from __future__ import annotations
 import contextlib
 import os
 import re
-import shutil
 import stat
 import tempfile
 import time
@@ -141,7 +140,7 @@ def remove_job(job: CleanroomJob) -> None:
         raise ValueError(f"refusing to remove {job.path}: {job.skip_reason}")
     if job.path.is_symlink() or not job.path.is_dir():
         raise ValueError(f"refusing to remove non-directory or symlink {job.path}")
-    shutil.rmtree(job.path)
+    cleanroom.remove_tree(job.path)
 
 
 def format_bytes(value: int) -> str:
