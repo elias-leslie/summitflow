@@ -189,3 +189,12 @@ def test_freshness_marks_the_drive_job_and_the_host_layer(tmp_path: Path, monkey
     assert sources["host-btrbk"]["ok"] and sources["offsite-restic"]["ok"] and sources["offsite-restic"]["frequency"] == "daily"
     assert sources["pve-host-files"]["ok"] is False and "workspaces" not in sources
     assert overview.offsite_runs({"repository": "rclone:summitflow-drive:SummitFlow-Restic"})["remote"] == "summitflow-drive"
+
+
+def test_the_redis_dump_goes_through_a_temporary_file_because_a_pipe_fails_redis_cli(monkeypatch: pytest.MonkeyPatch) -> None:
+    from app.tasks.backup_database import redis_dump_invocation
+
+    monkeypatch.setenv("REDIS_PASSWORD", "fixture-secret")
+    command, env = redis_dump_invocation()
+    assert command[:2] == ["sh", "-c"] and "/dev/stdout" not in " ".join(command) and "fixture-secret" not in " ".join(command)
+    assert env["REDISCLI_AUTH"] == "fixture-secret"

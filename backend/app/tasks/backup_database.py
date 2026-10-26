@@ -82,5 +82,8 @@ def redis_dump_invocation() -> tuple[list[str], dict[str, str]]:
     password = env.get("REDIS_PASSWORD") or _read_env_file(get_compose_env_file()).get("REDIS_PASSWORD")
     if password:
         env["REDISCLI_AUTH"] = password  # through the environment, never argv
-    command = ["redis-cli", "-h", env.get("REDIS_HOST", "localhost"), "-p", env.get("REDIS_PORT", "6379"), "--rdb", "/dev/stdout"]
+    # redis-cli calls ftruncate/fsync on its output, which a pipe rejects (exit 1 after a complete transfer), so it
+    # writes a small temporary file that is then streamed.
+    script = 'f=$(mktemp) || exit 1; redis-cli -h "$1" -p "$2" --rdb "$f" >&2 && cat "$f"; rc=$?; rm -f "$f"; exit $rc'
+    command = ["sh", "-c", script, "redis-dump", env.get("REDIS_HOST", "localhost"), env.get("REDIS_PORT", "6379")]
     return command, env
