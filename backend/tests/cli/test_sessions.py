@@ -767,6 +767,27 @@ class TestRequireProjectFalse:
                 "tool_output": "ERROR ValueError No image model resolved; configure the image-gen agent.",
             }
         )
+        events.extend(
+            [
+                {
+                    "id": "successful-source-read",
+                    "event_type": "tool_result",
+                    "tool_name": "bash",
+                    "tool_output": '{"isError": false, "text": "The exception handler returns an error value."}',
+                },
+                {
+                    "id": "ordinary-reasoning",
+                    "event_type": "thinking",
+                    "content": "I am reading the error handling path before changing it.",
+                },
+                {
+                    "id": "structured-failure",
+                    "event_type": "tool_result",
+                    "tool_name": "bash",
+                    "tool_output": '{"isError": true, "text": "The command did not complete."}',
+                },
+            ]
+        )
 
         with patch("cli.commands.sessions.STClient", return_value=mock_client), patch(
             "cli.commands.sessions.get_session_events",
@@ -778,9 +799,12 @@ class TestRequireProjectFalse:
             )
 
         assert result.exit_code == 0, result.output
-        assert "DIAG session=sess-dia events_sampled=10 errors=2 repeats=2" in result.output
+        assert "DIAG session=sess-dia events_sampled=13 errors=3 repeats=2" in result.output
         assert "ERR x4|type=tool_result|tool=bash|Use 'st check pytest [args]'" in result.output
         assert "ERR x1|type=tool_result|tool=bash|ERROR ValueError No image model resolved" in result.output
+        assert "ERR x1|type=tool_result|tool=bash|{\"isError\": true" in result.output
+        assert "ERR x1|type=tool_result|tool=bash|{\"isError\": false" not in result.output
+        assert "ERR x1|type=thinking" not in result.output
         assert "REPEAT x5|type=tool_result|tool=bash|chain ['cloudflare/flux-2-dev'" in result.output
 
 

@@ -3,18 +3,14 @@
 from __future__ import annotations
 
 import json
+import re
 from collections import Counter
+from contextlib import suppress
 from typing import Any
 
-_ERROR_TEXT_MARKERS = (
-    "traceback",
-    "error",
-    "exception",
-    "failed",
-    "test:fail",
-    "valueerror",
-    "typeerror",
-    "use 'st check",
+_ERROR_LINE = re.compile(
+    r"(?i)^\s*(?:traceback\b|error\b|fatal\b|exception\b|"
+    r"[a-z_][\w.]*error:|failed\b|test:fail\b|use ['\"]st check\b)"
 )
 
 
@@ -45,11 +41,23 @@ def event_signature(event: dict[str, Any]) -> str:
 
 
 def is_error_like(event: dict[str, Any], signature: str) -> bool:
-    """Return True if the event looks like an error."""
+    """Recognize failure events and failure lines in tool results."""
     if str(event.get("event_type") or "").lower() == "error":
         return True
-    lower = signature.lower()
-    return any(marker in lower for marker in _ERROR_TEXT_MARKERS)
+    if event.get("error"):
+        return True
+    if event.get("event_type") != "tool_result":
+        return False
+    result = event.get("tool_output") or event.get("content") or event.get("message")
+    if isinstance(result, str):
+        with suppress(ValueError):
+            result = json.loads(result)
+    if isinstance(result, dict):
+        if result.get("isError") is True:
+            return True
+        result = result.get("text", "")
+    body = result if isinstance(result, str) else signature
+    return any(_ERROR_LINE.match(line) for line in body.splitlines())
 
 
 def diagnostic_rows(
