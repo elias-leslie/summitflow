@@ -973,24 +973,21 @@
         "backup-all.sh",
         "backup-pending-upload.sh"
       ],
-      "summary": "Project/source backup creation, restore preview, schedules and infra backups.",
-      "safety": "destructive-with-confirmation",
+      "summary": "Backup health, Google Drive snapshots, run-now and restore. btrbk keeps the T7 points; one daily restic job copies them to Google Drive.",
+      "safety": "read-mostly",
       "commands": [
-        "list",
-        "create",
-        "restore",
-        "archives",
-        "all",
         "status",
-        "delete",
-        "infra",
-        "storage",
-        "testbed"
+        "list",
+        "show",
+        "run",
+        "restore",
+        "old",
+        "host"
       ],
       "examples": [
         "st backup status",
-        "st backup archives",
-        "st backup restore bkp-123 --dry-run"
+        "st backup list aico",
+        "st backup restore aico --to /srv/scratch/aico-back --dry-run"
       ],
       "verify": [
         "st backup status"
@@ -1295,7 +1292,7 @@
   "docker_redirects": [
     {
       "pattern": "docker\\s+compose\\b",
-      "message": "Use 'st docker' for the shared docker stack, which Nightshift runs as summitflow-stack.service. Commands: st docker status (port probes), st docker up/down/restart (whole stack, applied directly), st docker logs <service>, st docker backup/restore.",
+      "message": "Use 'st docker' for the shared docker stack, which Nightshift runs as summitflow-stack.service. Commands: st docker status (port probes), st docker up/down/restart (whole stack, applied directly), st docker logs <service>.",
       "component_id": "sf.docker"
     }
   ],
@@ -1322,7 +1319,7 @@
     },
     {
       "pattern": "(backup|backup-all|backup-pending-upload|restore)\\.sh\\b",
-      "message": "Use 'st backup' commands instead of legacy backup scripts. Start with 'st backup --help'.",
+      "message": "Backups run on their own (btrbk to the T7, one daily copy to Google Drive). Use 'st backup status' to check them and 'st backup restore' to get data back; start with 'st backup --help'.",
       "component_id": "sf.backup"
     },
     {

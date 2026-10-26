@@ -98,7 +98,7 @@ LAZY_COMMANDS: dict[str, tuple[str, str, str, str, bool]] = {
     "projects": ("projects", "group", "", "Project management commands", False),
     "git": ("git", "group", "", "Low-level Git inspection and residue repair.", False),
     "vcs": ("vcs", "group", "", "Canonical VCS hygiene and exact-source publication.", False),
-    "backup": ("backup", "group", "", "Backup management commands", False),
+    "backup": ("backup", "group", "", "Backup health, Google Drive snapshots, run-now and restore.", False),
     "service": ("service", "group", "", "Project service lifecycle through st.", False),
     "runtime": ("runtime", "group", "", "Runtime observability.", False),
     "logs": ("logs", "group", "", "View and tail service logs", False),

@@ -7,7 +7,6 @@ import subprocess
 from typing import Annotated
 
 import typer
-from typer.main import get_command
 
 from app.api.docker.constants import COMPOSE_PROJECT, runtime_service_definitions
 from app.api.docker.helpers import _infra_status
@@ -80,41 +79,3 @@ def logs(
     if follow:
         args.append("-f")
     raise typer.Exit(subprocess.run(args, check=False).returncode)
-
-
-@app.command()
-def backup(
-    note: Annotated[str, typer.Option("--note", help="Backup note/description")] = "",
-) -> None:
-    """Create an infrastructure backup via the unified backup system.
-
-    Equivalent to: st backup infra create
-    """
-    typer.echo("Delegating to unified backup system...")
-    typer.echo("Tip: Use 'st backup infra create' directly for full options.\n")
-
-    from ..output_context import OutputContext
-    from .backup_infra import create_infra_backup as _create
-
-    ctx = typer.Context(get_command(app), obj=OutputContext())
-    _create(ctx, note=note or None, keep_local=False)
-
-
-@app.command()
-def restore(
-    backup_id: Annotated[
-        str, typer.Argument(help="Backup ID to restore (from 'st backup infra list')"),
-    ],
-) -> None:
-    """Restore from an infrastructure backup.
-
-    Equivalent to: st backup restore <id> --source infrastructure
-    """
-    typer.echo("Delegating to unified backup system...")
-    typer.echo("Tip: Use 'st backup restore <id> --source infrastructure' directly.\n")
-
-    from ..output_context import OutputContext
-    from .backup import restore_backup as _restore
-
-    ctx = typer.Context(get_command(app), obj=OutputContext())
-    _restore(ctx, backup_id=backup_id, dry_run=False, source="infrastructure")

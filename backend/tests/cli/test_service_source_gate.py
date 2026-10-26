@@ -287,35 +287,27 @@ def test_stack_request_refused_is_a_failure(monkeypatch):
     assert "timed out" in result.message
 
 
-def test_backup_dump_uses_docker_only_before_the_stack_unit_exists(tmp_path, monkeypatch):
-    from app.tasks import backup_native_infra as infra
+def test_backup_dump_uses_docker_only_before_the_stack_unit_exists(monkeypatch):
+    from app.tasks import backup_database as database
 
-    seen: list[list[str]] = []
-
-    def stream(command, destination, **_kwargs):
-        seen.append(command)
-        destination.write_text("dump")
-        return 0, b""
-
-    monkeypatch.setattr(infra, "_run_plain_stream", stream)
     monkeypatch.setenv("PGUSER", "fixture-backup")
     monkeypatch.setenv("PGPASSWORD", "synthetic-fixture")
     monkeypatch.delenv("POSTGRES_CONTAINER", raising=False)
-    monkeypatch.setattr(infra, "_find_compose_container", lambda _service: "stack-postgres-1")
-    infra._dump_infra_database(tmp_path / "a.sql")
-    monkeypatch.setattr(infra, "_find_compose_container", lambda _service: None)
-    infra._dump_infra_database(tmp_path / "b.sql")
+    monkeypatch.setattr(database, "_compose_container", lambda _service: "stack-postgres-1")
+    docker_command, _env = database.postgres_dump_invocation()
+    monkeypatch.setattr(database, "_compose_container", lambda _service: None)
+    host_command, _env = database.postgres_dump_invocation()
 
-    assert seen[0][:3] == ["docker", "exec", "stack-postgres-1"]
-    assert seen[1][0] == "pg_dumpall" and "-h" in seen[1]
+    assert docker_command[:3] == ["docker", "exec", "stack-postgres-1"]
+    assert Path(host_command[0]).name == "pg_dumpall" and "-h" in host_command
 
 
 def test_compose_container_lookup_is_skipped_once_the_stack_unit_exists(monkeypatch):
-    from app.tasks import backup_native_infra as infra
+    from app.tasks import backup_database as database
 
-    monkeypatch.setattr(infra.nightshift_stack, "stack_installed", lambda: True)
+    monkeypatch.setattr(database.nightshift_stack, "stack_installed", lambda: True)
 
-    assert infra._find_compose_container("postgres") is None
+    assert database._compose_container("postgres") is None
 
 
 def test_clone_dependencies_install_in_the_pinned_clone_not_the_checkout(project, tmp_path, monkeypatch):
