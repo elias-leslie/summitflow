@@ -436,12 +436,57 @@ def test_point_shared_by_views_is_kept_when_any_view_qualifies(workspace):
 def test_project_whose_root_is_gone_keeps_its_newest_point_for_a_bounded_time(workspace):
     gone = workspace.root / "projects/gone"
     newest = point_at(workspace, "newest", timedelta(minutes=1))
-    recent_gone = point_at(workspace, "gone-recent", timedelta(days=5), project_id="gone", scope_name="gone", scope_path=str(gone))
-    older_gone = point_at(workspace, "gone-older", timedelta(days=6), project_id="gone", scope_name="gone", scope_path=str(gone))
-    assert _plan_ids([newest, recent_gone, older_gone]) == {"gone-older"}
-    recent_gone.created_at = (datetime.now(UTC) - timedelta(days=20)).isoformat()
-    older_gone.created_at = (datetime.now(UTC) - timedelta(days=21)).isoformat()
-    assert _plan_ids([newest, recent_gone, older_gone]) == {"gone-recent", "gone-older"}
+    day = (datetime.now(UTC) - timedelta(days=2)).replace(hour=12, minute=0, second=0, microsecond=0)
+    first = point_at(workspace, "day-first", timedelta(0), created_at=day.isoformat(), unfinished=False)
+    # The second point of a day normally leaves; the one that is a vanished project's newest stays while it is that recent.
+    second = point_at(workspace, "gone-second", timedelta(0), created_at=(day - timedelta(hours=2)).isoformat(),
+                      project_id="gone", scope_name="gone", scope_path=str(gone), unfinished=False)
+    assert _plan_ids([newest, first, second]) == set()
+    assert _plan_ids([newest, first, second], released=frozenset({"gone"})) == {"gone-second"}
+    old = point_at(workspace, "gone-old", timedelta(days=auto.DEFAULT_POLICY.archived_keep_days + 3),
+                   project_id="gone", scope_name="gone", scope_path=str(gone), unfinished=False)
+    assert _plan_ids([newest, old]) == {"gone-old"}
+
+
+def test_uncommitted_work_point_is_held_for_a_day_not_the_daily_window(workspace):
+    newest = point_at(workspace, "newest", timedelta(minutes=1))
+    now = datetime.now(UTC)
+    hour = (now - timedelta(hours=12)).replace(minute=30, second=0, microsecond=0)
+    day = (now - timedelta(days=2)).replace(hour=12, minute=0, second=0, microsecond=0)
+
+    def pair(kind, when, unfinished):
+        first = point_at(workspace, f"{kind}-first", timedelta(0), created_at=when.isoformat(), unfinished=False)
+        second = point_at(workspace, f"{kind}-second", timedelta(0), created_at=(when - timedelta(minutes=1 if kind == "hour" else 120)).isoformat(),
+                          project_id=f"{kind}-work", scope_name=f"{kind}-work", unfinished=unfinished)
+        return [first, second]
+
+    held = [newest, *pair("hour", hour, True), *pair("day", day, True)]
+    # Under a day old the uncommitted-work point stays; at two days the daily bucket alone decides.
+    assert _plan_ids(held) == {"day-second"}
+    clean = [newest, *pair("hour", hour, False)]
+    assert _plan_ids(clean) == {"hour-second"}
+
+
+def test_retired_projects_hold_no_point_but_pins_still_do(workspace):
+    now = datetime.now(UTC)
+    hour = (now - timedelta(hours=12)).replace(minute=30, second=0, microsecond=0)
+    newest = point_at(workspace, "newest", timedelta(minutes=1))
+    first = point_at(workspace, "first", timedelta(0), created_at=hour.isoformat(), unfinished=False)
+    unfinished = point_at(workspace, "unfinished", timedelta(0), created_at=(hour - timedelta(minutes=1)).isoformat(),
+                          project_id="retired", scope_name="retired", unfinished=True)
+    pinned = point_at(workspace, "pinned", timedelta(days=9), project_id="retired", scope_name="retired",
+                      pin_reason="review", pin_until=(now + timedelta(days=1)).isoformat())
+    entries = [newest, first, unfinished, pinned]
+    assert _plan_ids(entries, released=frozenset({"retired"})) == {"unfinished"}
+    assert _plan_ids(entries) == set()
+
+
+def test_released_projects_are_only_those_with_manifests_and_no_active_scope():
+    scope = snap.SnapshotScope("project", "x", Path("/x"))
+    scopes = [("live", scope, "active"), ("retired", scope, "archived")]
+    assert auto.released_project_ids(scopes) == {"retired"}
+    # An unmounted workspace finds no active project: nothing is released.
+    assert auto.released_project_ids([("retired", scope, "archived")]) == frozenset()
 
 
 def test_rejected_and_missing_points_leave_without_holding_buckets(workspace):

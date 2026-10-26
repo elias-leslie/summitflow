@@ -273,7 +273,7 @@ def prune_command(
                 f"PRUNE[0]|action:{action}|interval:{policy['interval_minutes']}|"
                 f"baseline_stale:{policy['baseline_stale_minutes']}|"
                 f"keep:all {policy['recent_hours']}h,hourly {policy['hourly_hours']}h,daily {policy['daily_days']}d|"
-                f"archived_keep:{policy['archived_keep_days']}d|"
+                f"archived_keep:{policy['archived_keep_days']}d|unfinished_keep:{policy['unfinished_keep_days']}d|"
                 f"manual_keep:{policy['manual_keep_per_scope']}"
             )
         else:
@@ -287,7 +287,7 @@ def prune_command(
             f"PRUNE[{total}]|action:{action}|interval:{policy['interval_minutes']}|"
             f"baseline_stale:{policy['baseline_stale_minutes']}|"
             f"keep:all {policy['recent_hours']}h,hourly {policy['hourly_hours']}h,daily {policy['daily_days']}d|"
-            f"archived_keep:{policy['archived_keep_days']}d|"
+            f"archived_keep:{policy['archived_keep_days']}d|unfinished_keep:{policy['unfinished_keep_days']}d|"
             f"manual_keep:{policy['manual_keep_per_scope']}"
         )
         for scope_key, entries in results.items():

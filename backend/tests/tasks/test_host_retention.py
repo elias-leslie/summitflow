@@ -15,8 +15,10 @@ def _isolate_scratch(mocker) -> Any:
     """Host retention must never touch the live /srv/scratch or its stamp in tests."""
     mocker.patch("app.tasks.host_retention.SCRATCH_ROOT", Path("/nonexistent-test-scratch"))
     mocker.patch("app.tasks.host_retention.UV_CACHE", Path("/nonexistent-test-scratch/cache/uv"))
-    return mocker.patch("app.tasks.host_retention.weekly_scratch_retention",
-                        return_value={"status": "skipped", "reason": "weekly-cadence"})
+    mocker.patch("app.tasks.host_retention.HF_HUB", Path("/nonexistent-test-scratch/cache/huggingface-hub"))
+    mocker.patch("app.tasks.host_retention._pnpm_store_prune", return_value={"status": "skipped", "reason": "test"})
+    return mocker.patch("app.tasks.host_retention.daily_scratch_retention",
+                        return_value={"status": "skipped", "reason": "daily-cadence"})
 
 
 def test_scratch_pressure_runs_retention_now_without_shortening_its_age(monkeypatch) -> None:
@@ -102,6 +104,81 @@ def test_daily_retention_prunes_the_uv_cache_in_the_owner_cache_dir(mocker, tmp_
 
     assert host_retention._uv_cache_prune() == {"status": "success"}
     assert seen == {"args": ["uv", "cache", "prune"], "env": {"UV_CACHE_DIR": str(cache)}}
+
+
+def _sized_cache(tmp_path: Path, name: str, size: int) -> Path:
+    cache = tmp_path / name
+    cache.mkdir()
+    (cache / "blob").write_bytes(b"x" * size)
+    return cache
+
+
+def test_cache_over_its_cap_is_cleared_and_one_under_it_is_kept(mocker, tmp_path: Path) -> None:
+    from app.tasks import host_retention
+
+    cache = _sized_cache(tmp_path, "cache", 4096)
+    calls: list[list[str]] = []
+
+    def fake_run(args: list[str], *, timeout: int = 0, cwd: str | None = None):
+        calls.append(args)
+        return type("Proc", (), {"returncode": 0, "stdout": "", "stderr": ""})()
+
+    mocker.patch.object(host_retention, "_run_command", side_effect=fake_run)
+    gb = 4096 / host_retention._BYTES_PER_GB
+    assert host_retention._clear_when_over("cache", cache, gb * 2, ["clear"])["status"] == "kept"
+    cleared = host_retention._clear_when_over("cache", cache, gb / 2, ["clear"])
+    assert cleared["status"] == "success" and cleared["size_bytes"] == 4096 + cache.stat().st_size
+    assert calls == [["clear"]]
+    assert host_retention._clear_when_over("cache", tmp_path / "none", 1, ["clear"])["status"] == "skipped"
+
+
+def test_a_cache_behind_a_symlink_is_measured_at_its_target(mocker, tmp_path: Path) -> None:
+    """Regression: the Go cache cap measured the 40-byte home symlink, so it never fired."""
+    from app.tasks import host_retention
+
+    link = tmp_path / "link"
+    link.symlink_to(_sized_cache(tmp_path, "real", 8192))
+    assert (host_retention._cache_bytes(link) or 0) >= 8192
+
+
+def test_uv_cache_over_its_cap_is_cleared_after_the_prune(mocker, tmp_path: Path) -> None:
+    from app.tasks import host_retention
+
+    cache = _sized_cache(tmp_path, "uv", 4096)
+    mocker.patch.object(host_retention, "UV_CACHE", cache)
+    mocker.patch("app.tasks._retention_reclaim.shutil.which", return_value="/usr/bin/uv")
+    seen: list[list[str]] = []
+
+    def fake_run(args: list[str], *, env: dict[str, str] | None = None):
+        seen.append(args)
+        return type("Proc", (), {"returncode": 0, "stdout": "", "stderr": ""})()
+
+    mocker.patch.object(host_retention, "_run", fake_run)
+    mocker.patch.object(host_retention, "_run_command", side_effect=lambda args, **_: type("Proc", (), {"returncode": 0, "stdout": "", "stderr": ""})() if seen.append(args) is None else None)
+    tiny = host_retention.HostRetentionPolicy(uv_cache_max_gb=1e-9)
+    result = host_retention._uv_cache_bounded(tiny)
+    assert result["status"] == "success" and result["pruned"] is True
+    assert seen == [["uv", "cache", "prune"], ["uv", "cache", "clean", "--cache-dir", str(cache)]]
+    seen.clear()
+    assert host_retention._uv_cache_bounded(host_retention.HostRetentionPolicy())["status"] == "kept"
+    assert seen == [["uv", "cache", "prune"]]
+
+
+def test_daily_retention_also_runs_the_pnpm_hf_and_npm_bounds(mocker, tmp_path: Path) -> None:
+    from app.tasks import host_retention
+
+    (tmp_path / "home" / ".npm").mkdir(parents=True)
+    _sized_cache(tmp_path / "home" / ".npm", "_cacache", 4096)
+    mocker.patch.object(host_retention, "_run_command", return_value=type("Proc", (), {"returncode": 0, "stdout": "", "stderr": ""})())
+    pnpm = mocker.patch.object(host_retention, "_pnpm_store_prune", return_value={"status": "success"})
+    hf = mocker.patch.object(host_retention, "prune_unused_hf_repos", return_value={"step": "hf_hub", "status": "success", "deleted_paths": ["m"], "bytes": 5, "kept": []})
+    policy = host_retention.HostRetentionPolicy(npm_cache_max_gb=1e-9)
+    result = cast(dict[str, Any], host_retention.cleanup_host_artifacts(
+        home_dir=tmp_path / "home", tmp_dir=tmp_path, project_roots=[], policy=policy))
+    assert result["npm_cache"]["status"] == "success"
+    assert pnpm.called and result["pnpm_store"] == {"status": "success"}
+    assert hf.call_args.kwargs["hub"] == host_retention.HF_HUB
+    assert result["hf_hub"] == {"status": "success", "deleted_paths": ["m"], "bytes": 5}
 
 
 def test_playwright_retention_keeps_builds_pinned_by_installed_packages(tmp_path: Path) -> None:
@@ -245,7 +322,7 @@ def test_scratch_filesystem_pressure_reclaims_now_while_root_stays_normal(mocker
     reclaim = mocker.patch.object(host_retention, "reclaim_filesystem", return_value={"steps": [
         {"step": "uv_cache", "status": "success"},
         {"step": "scratch", "status": "success", "deleted_paths": ["/srv/scratch/old"], "bytes": 5}]})
-    weekly = host_retention.weekly_scratch_retention
+    weekly = host_retention.daily_scratch_retention
 
     result = cast(dict[str, Any], host_retention.cleanup_host_artifacts(
         home_dir=tmp_path / "home", tmp_dir=tmp_path, project_roots=[]))

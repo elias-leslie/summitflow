@@ -66,6 +66,7 @@ class PolicyResponse(BaseModel):
     hourly_hours: int
     daily_days: int
     archived_keep_days: int
+    unfinished_keep_days: int
     pressure_keep_points: int
     manual_keep_per_scope: int
     max_deletes_per_run: int

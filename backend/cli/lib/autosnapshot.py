@@ -85,6 +85,12 @@ class AutosnapshotPolicy:
     day to ``daily_days`` (btrbk keeps the off-machine dailies). Under disk
     pressure only the newest ``pressure_keep_points`` survive. Pins, active
     recovery copies and unclassified state always hold their point.
+
+    Every point is a whole-workspace snapshot, so each extra hold pins all the
+    data deleted since. The holds are therefore short: a scope's newest point
+    with uncommitted work lives ``unfinished_keep_days``, the newest point of a
+    project whose root is gone ``archived_keep_days`` (btrbk keeps the
+    off-machine copies), and retired or unregistered projects hold nothing.
     """
 
     interval_minutes: int = 15
@@ -92,7 +98,8 @@ class AutosnapshotPolicy:
     recent_hours: int = 6
     hourly_hours: int = 24
     daily_days: int = 3
-    archived_keep_days: int = 14  # newest point of a project whose root is gone
+    archived_keep_days: int = 3  # newest point of a project whose root is gone
+    unfinished_keep_days: int = 1  # newest point of a scope that captured uncommitted work
     pressure_keep_points: int = 3
     manual_keep_per_scope: int = 20
     max_deletes_per_run: int = 15
@@ -274,6 +281,17 @@ def enumerate_prunable_scopes() -> list[tuple[str, SnapshotScope]]:
         (project_id, scope)
         for project_id, scope, _ in enumerate_snapshot_scopes(include_archived=True)
     ]
+
+
+def released_project_ids(scopes: list[tuple[str, SnapshotScope, str]]) -> frozenset[str]:
+    """Projects that only have retained manifests (retired, deleted or never registered) and so hold no point.
+
+    Empty when no active project is found at all: an unmounted workspace root must not release everything.
+    """
+    if not any(state == "active" for _, _, state in scopes):
+        return frozenset()
+    active = {project_id for project_id, _, state in scopes if state == "active"}
+    return frozenset(project_id for project_id, _, state in scopes if state == "archived" and project_id not in active)
 
 
 def _point_key(path: str | Path) -> str:
@@ -500,12 +518,16 @@ def _root_gone(entry: QuickSnapshot) -> bool:
 
 
 def plan_retention(entries: list[QuickSnapshot], policy: AutosnapshotPolicy = DEFAULT_POLICY, *,
-                   pressure: bool = False, now: datetime | None = None) -> list[str]:
+                   pressure: bool = False, now: datetime | None = None,
+                   released: frozenset[str] | set[str] = frozenset()) -> list[str]:
     """Physical points (keys) that retention would delete, oldest first.
 
     ``entries`` are every manifest's entries; one point is kept when any view
     of it qualifies. Active projects whose last point ages out get a fresh
     baseline from ``prune_all`` instead of pinning an old whole-workspace point.
+    ``released`` are retired or unregistered project ids: their views hold no
+    point (manual, uncommitted-work and gone-root holds), only pins, recovery
+    copies and unclassified state still do.
     """
     now = now or datetime.now(UTC)
     points: dict[str, list[QuickSnapshot]] = {}
@@ -534,13 +556,14 @@ def plan_retention(entries: list[QuickSnapshot], policy: AutosnapshotPolicy = DE
         scopes: dict[tuple[str, str, str], list[QuickSnapshot]] = {}
         for views in points.values():
             for entry in views:
-                scopes.setdefault((entry.project_id, entry.scope_type, entry.scope_name), []).append(entry)
+                if entry.project_id not in released:
+                    scopes.setdefault((entry.project_id, entry.scope_type, entry.scope_name), []).append(entry)
         for views in scopes.values():
             views.sort(key=_created, reverse=True)
             manual = [entry for entry in views if not entry.source.startswith(_AUTO_SOURCE_PREFIX)]
             kept.update(_point_key(entry.snapshot_path) for entry in manual[:policy.manual_keep_per_scope])
             unfinished = next((entry for entry in views if entry.unfinished), None)
-            if unfinished and now - _created(unfinished) <= timedelta(days=policy.daily_days):
+            if unfinished and now - _created(unfinished) <= timedelta(days=policy.unfinished_keep_days):
                 kept.add(_point_key(unfinished.snapshot_path))
             if _root_gone(views[0]) and now - _created(views[0]) <= timedelta(days=policy.archived_keep_days):
                 kept.add(_point_key(views[0].snapshot_path))
@@ -684,10 +707,11 @@ def prune_all(
     LAST_PRUNE_REPORT.clear()
     _reset_summary(pressure=pressure, batch=policy.delete_batch)
     cap = policy.max_deletes_per_run if max_deletes is None else max(0, max_deletes)
-    prunable = plan_retention(all_entries(), policy, pressure=pressure)
+    scopes = enumerate_snapshot_scopes(include_archived=True)
+    prunable = plan_retention(all_entries(), policy, pressure=pressure, released=released_project_ids(scopes))
     allowed = set(prunable[:cap])
     LAST_PRUNE_SUMMARY.update(selected=len(allowed), remaining=len(prunable) - len(allowed))
-    for project_id, scope, scope_state in enumerate_snapshot_scopes(include_archived=True):
+    for project_id, scope, scope_state in scopes:
         # A capture holding the shared lock skips this scope, not the whole run:
         # its views stay and the points they hold wait for a later run.
         pruned = _unless_busy(partial(prune_scope, project_id=project_id, scope=scope, policy=policy,

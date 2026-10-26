@@ -20,14 +20,16 @@ from ._retention_fs import (
 )
 from ._retention_policy import HostRetentionPolicy
 from ._retention_reclaim import (
+    HF_HUB,
     UV_CACHE,
     _run,
     _tool,
     filesystem_source,
     go_cache_dir,
+    prune_unused_hf_repos,
     reclaim_filesystem,
 )
-from ._retention_scratch import SCRATCH_ROOT, weekly_scratch_retention
+from ._retention_scratch import SCRATCH_ROOT, daily_scratch_retention
 
 logger = get_logger(__name__)
 
@@ -75,6 +77,37 @@ def _is_pressure_mode(snapshot: dict[str, float | int | str], policy: HostRetent
     return percent_used >= policy.pressure_disk_percent or free_gb <= policy.pressure_min_free_gb
 
 
+def _cache_bytes(path: Path) -> int | None:
+    """Size of a cache tree with a symlinked root followed (the caches live in /srv/scratch behind home links).
+
+    None when it cannot be measured; a tree of another device or past the walk cap is never reported as small.
+    """
+    from ._retention_scratch import _tree_stats
+
+    try:
+        stats = _tree_stats(path.resolve(), max_entries=5_000_000)
+    except OSError:
+        return None
+    return stats[1] if stats else None
+
+
+def _clear_when_over(name: str, path: Path | None, max_gb: float, clear: list[str], *, timeout: int = 600) -> dict[str, object]:
+    """Run ``clear`` once the cache at ``path`` is larger than ``max_gb``; a cache that cannot be measured is cleared too."""
+    if path is None or not path.exists():
+        return {"status": "skipped", "reason": f"no {name}"}
+    size = _cache_bytes(path)
+    limit = int(max_gb * _BYTES_PER_GB)
+    if size is not None and size <= limit:
+        return {"status": "kept", "size_bytes": size, "limit_bytes": limit}
+    try:
+        proc = _run_command(clear, timeout=timeout)
+    except (OSError, subprocess.TimeoutExpired) as exc:
+        return {"status": "error", "error": str(exc)}
+    if proc.returncode != 0:
+        return {"status": "error", "error": (proc.stderr or proc.stdout).strip()[-400:]}
+    return {"status": "success", "size_bytes": size, "limit_bytes": limit}
+
+
 def _go_cache_over_limit(policy: HostRetentionPolicy) -> dict[str, object]:
     """Clear Go's build cache once it is larger than the policy limit."""
     def run(args: list[str], *, timeout: int = 600, env: dict[str, str] | None = None) -> subprocess.CompletedProcess[str]:
@@ -83,20 +116,7 @@ def _go_cache_over_limit(policy: HostRetentionPolicy) -> dict[str, object]:
     cache = go_cache_dir(run)
     if cache is None or not cache.is_dir():
         return {"status": "skipped", "reason": "no go build cache"}
-    try:
-        from ._retention_scratch import _tree_stats
-
-        stats = _tree_stats(cache, max_entries=2_000_000)
-    except OSError as exc:
-        return {"status": "error", "error": str(exc)}
-    size = stats[1] if stats else None
-    limit = int(policy.go_cache_max_gb * _BYTES_PER_GB)
-    if size is not None and size <= limit:
-        return {"status": "kept", "size_bytes": size, "limit_bytes": limit}
-    proc = run(["go", "clean", "-cache"])
-    if proc.returncode != 0:
-        return {"status": "error", "error": (proc.stderr or proc.stdout).strip()[-400:]}
-    return {"status": "success", "size_bytes": size, "limit_bytes": limit}
+    return _clear_when_over("go build cache", cache, policy.go_cache_max_gb, ["go", "clean", "-cache"])
 
 
 def _uv_cache_prune() -> dict[str, object]:
@@ -105,6 +125,32 @@ def _uv_cache_prune() -> dict[str, object]:
         return {"status": "skipped", "reason": "no uv cache"}
     result = _tool("uv_cache", ["uv", "cache", "prune"], run=_run, env={"UV_CACHE_DIR": str(UV_CACHE)})
     return {key: value for key, value in result.items() if key != "step"}
+
+
+def _uv_cache_bounded(policy: HostRetentionPolicy) -> dict[str, object]:
+    """Prune unused uv entries, then clear the whole cache when it is still over its cap (every wheel is re-downloadable)."""
+    pruned = _uv_cache_prune()
+    if pruned.get("status") != "success":
+        return pruned
+    cleared = _clear_when_over("uv cache", UV_CACHE, policy.uv_cache_max_gb, ["uv", "cache", "clean", "--cache-dir", str(UV_CACHE)])
+    return {**cleared, "pruned": True}
+
+
+def _npm_cache_bounded(home: Path, policy: HostRetentionPolicy) -> dict[str, object]:
+    """Clear npm's content cache once it is over its cap; `_npx` has its own age-out."""
+    return _clear_when_over("npm cache", home / ".npm" / "_cacache", policy.npm_cache_max_gb, ["npm", "cache", "clean", "--force"])
+
+
+def _pnpm_store_prune() -> dict[str, object]:
+    """Daily `pnpm store prune`: packages no project references any more."""
+    result = _tool("pnpm_store", ["pnpm", "store", "prune"], run=_run)
+    return {key: value for key, value in result.items() if key != "step"}
+
+
+def _hf_hub_prune(now: datetime) -> dict[str, object]:
+    """Daily removal of Hugging Face repos unused for the policy's days (never one a process holds open)."""
+    result = prune_unused_hf_repos(hub=HF_HUB, now=now)
+    return {key: value for key, value in result.items() if key not in {"step", "kept"}}
 
 
 def _prune_project_check_artifacts(
@@ -195,7 +241,10 @@ def cleanup_host_artifacts(
         logger.warning("agent_tmp_retention_failed", error=str(exc))
         agent_tmp_result = {"status": "error", "error": str(exc), "deleted_paths": [], "bytes": 0}
     go_cache_result = _go_cache_over_limit(effective_policy)
-    uv_cache_result = _uv_cache_prune()
+    uv_cache_result = _uv_cache_bounded(effective_policy)
+    npm_cache_result = _npm_cache_bounded(effective_home, effective_policy)
+    pnpm_store_result = _pnpm_store_prune()
+    hf_hub_result = _hf_hub_prune(effective_now)
     agent_tmp_removed: list[str] = list(agent_tmp_result.get("deleted_paths") or [])
     agent_tmp_bytes = int(agent_tmp_result.get("bytes") or 0)
     tool_cache_deleted = (
@@ -216,7 +265,7 @@ def cleanup_host_artifacts(
     reclaim: dict[str, Any] | None = None
     try:
         if scratch_pressure:
-            # Do not wait for the weekly cadence: owner-tool cache prunes, then
+            # Do not wait for the daily cadence: owner-tool cache prunes, then
             # scratch retention at the pressure age, on the scratch filesystem.
             reclaim = reclaim_filesystem(SCRATCH_ROOT, policy=effective_policy, now=effective_now)
             step = next((item for item in reclaim["steps"] if item["step"] == "scratch"), {})
@@ -224,7 +273,7 @@ def cleanup_host_artifacts(
                                               "deleted_paths": step.get("deleted_paths") or [],
                                               "bytes_reclaimed": step.get("bytes", 0), **({"error": step["error"]} if step.get("error") else {})}
         else:
-            scratch_result = weekly_scratch_retention(
+            scratch_result = daily_scratch_retention(
                 max_age_hours=effective_policy.scratch_review_max_age_hours, now=effective_now,
             )
     except Exception as exc:  # one step must not abort host retention
@@ -242,7 +291,8 @@ def cleanup_host_artifacts(
 
     errors = [
         entry["error"]
-        for entry in (scratch_result, check_artifacts, agent_tmp_result, go_cache_result, uv_cache_result)
+        for entry in (scratch_result, check_artifacts, agent_tmp_result, go_cache_result, uv_cache_result,
+                      npm_cache_result, pnpm_store_result, hf_hub_result)
         if isinstance(entry, dict) and entry.get("status") == "error" and entry.get("error")
     ]
     status = "partial" if errors else "success"
@@ -268,6 +318,9 @@ def cleanup_host_artifacts(
         "agent_tmp": agent_tmp_result,
         "go_cache": go_cache_result,
         "uv_cache": uv_cache_result,
+        "npm_cache": npm_cache_result,
+        "pnpm_store": pnpm_store_result,
+        "hf_hub": hf_hub_result,
         "temp_backups": tmp_backups_result,
         "scratch": scratch_result,
         "check_artifacts": check_artifacts,

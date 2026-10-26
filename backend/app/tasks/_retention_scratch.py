@@ -1,12 +1,13 @@
-"""Age review and weekly cleanup of disposable ``/srv/scratch`` entries.
+"""Age review and daily cleanup of disposable ``/srv/scratch`` entries.
 
 Each direct child of the scratch root is reviewed as one unit and is a
 candidate only when it is old, not a symlink target, not open by a visible
 process, holds no mount point (bind mounts included) or other filesystem, is
 not the source of a bind mount elsewhere and is not a protected root.
 ``collect_scratch_review`` never deletes; ``apply_scratch_retention`` re-verifies each candidate and removes it, and the
-host-retention maintenance step runs it at most weekly. Scratch is excluded
-from backups and holds only replaceable data.
+host-retention maintenance step runs it daily, so an idle entry lives at most
+the idle age plus a day. Scratch is excluded from backups and holds only
+replaceable data.
 """
 
 from __future__ import annotations
@@ -24,12 +25,13 @@ from typing import Any, TypedDict
 
 SCRATCH_ROOT = Path("/srv/scratch")
 # Long-lived caches/models and namespaces whose owners already run retention
-# (cleanrooms, restores, backups, acceptance) are never review candidates.
+# (cleanrooms, restores, backups, acceptance) are never review candidates. The
+# prefix names those owner directories only: a loose ``st-*`` file is residue.
 PROTECTED_NAMES = frozenset({"cache", "models", ".dev-tools"})
 PROTECTED_PREFIXES = ("st-",)
 DEFAULT_SYMLINK_DEPTH = 4
-DEFAULT_MAX_ENTRIES = 200_000
-APPLY_INTERVAL_HOURS = 7 * 24
+DEFAULT_MAX_ENTRIES = 2_000_000  # a larger tree is kept unverified, so this must cover the biggest scratch checkout
+APPLY_INTERVAL_HOURS = 24
 DEFAULT_STAMP = Path.home() / ".local/state/summitflow/scratch-retention.json"
 MOUNTINFO = Path("/proc/self/mountinfo")
 _DIR_FLAGS = os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW | os.O_CLOEXEC
@@ -345,7 +347,7 @@ def collect_scratch_review(
         name = child.name
         if child.is_symlink():
             continue
-        if name in PROTECTED_NAMES or name.startswith(PROTECTED_PREFIXES):
+        if name in PROTECTED_NAMES or (name.startswith(PROTECTED_PREFIXES) and child.is_dir()):
             review["protected"].append(ScratchSkip(path=str(child), reason="protected root"))
             continue
         link = next((link for link, target in references
@@ -477,15 +479,15 @@ def _write_stamp(stamp: Path, at: datetime, result: ScratchApply) -> None:
     os.replace(temporary, stamp)
 
 
-def weekly_scratch_retention(
+def daily_scratch_retention(
     *, max_age_hours: int, now: datetime | None = None, stamp: Path = DEFAULT_STAMP, **kwargs: Any,
 ) -> dict[str, Any]:
-    """Run ``apply_scratch_retention`` when the last apply is a week old (daily caller)."""
+    """Run ``apply_scratch_retention`` when the last apply is a day old (a daily caller)."""
     effective_now = now or datetime.now(UTC)
     last = _read_stamp(stamp)
-    # A few hours of slack keeps a daily caller from drifting to an eight-day cadence.
+    # A few hours of slack keeps a daily caller from drifting to a two-day cadence.
     if last is not None and effective_now - last < timedelta(hours=APPLY_INTERVAL_HOURS - 6):
-        return {"status": "skipped", "reason": "weekly-cadence", "last_applied_at": last.isoformat()}
+        return {"status": "skipped", "reason": "daily-cadence", "last_applied_at": last.isoformat()}
     result = apply_scratch_retention(max_age_hours=max_age_hours, now=effective_now, **kwargs)
     if result["status"] != "skipped":
         _write_stamp(stamp, effective_now, result)

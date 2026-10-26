@@ -66,7 +66,8 @@ app = typer.Typer(
         "Clean up git/checkpoint residue plus managed workspace leftovers.\n"
         "Read-only: status, checkpoints, inspect-orphans.\n"
         "Cleanup: checkpoints --auto, checkpoints --force, snapshots, cleanrooms.\n"
-        "Scratch: reports old /srv/scratch entries; --apply deletes them (weekly in host maintenance).\n"
+        "Scratch: reports old /srv/scratch entries; --apply deletes them (daily in host maintenance).\n"
+        "Host: runs the daily host retention (temp, caches over their caps, scratch) now; --if-stale skips a fresh one.\n"
         "Reclaim: frees one filesystem now (owner caches, then pressure scratch retention) up to a free-space target.\n"
         "Path cleanup removes literal paths only. Globs are rejected and directories require --recursive."
     )
@@ -353,8 +354,8 @@ def cleanup_scratch(
 ) -> None:
     """Report /srv/scratch entries idle past the retention age; --apply deletes them.
 
-    Host maintenance applies this weekly. Protected: cache/models/.dev-tools and
-    st-* namespaces, symlink targets from ~ and project trees (depth 4, same
+    Host maintenance applies this daily. Protected: cache/models/.dev-tools and
+    st-* directories, symlink targets from ~ and project trees (depth 4, same
     filesystem), and paths open by any visible process. Age is the newest file
     mtime/ctime/atime or directory mtime/ctime in the entry.
     """
@@ -386,7 +387,7 @@ def cleanup_scratch(
     if not compact:
         output_json(review)
         return
-    typer.echo(f"REPORT ONLY - nothing deleted (host maintenance applies weekly; --apply now). Root: {review['root']} (idle >= {review['max_age_hours']}h)")
+    typer.echo(f"REPORT ONLY - nothing deleted (host maintenance applies daily; --apply now). Root: {review['root']} (idle >= {review['max_age_hours']}h)")
     for item in review["candidates"]:
         typer.echo(f"  review {item['path']} ({cleanroom_prune.format_bytes(item['size_bytes'])}, idle {item['age_hours']}h)")
     for skip in review["protected"]:
@@ -397,6 +398,55 @@ def cleanup_scratch(
         f"{len(review['candidates'])} review candidate(s), {cleanroom_prune.format_bytes(total)}; "
         f"{len(review['protected'])} protected, {review['recent']} recent{visibility}"
     )
+
+
+@app.command("host")
+def cleanup_host(
+    if_stale_hours: Annotated[float | None, typer.Option(
+        "--if-stale", min=0, help="Do nothing when daily maintenance or this command ran within this many hours.")] = None,
+) -> None:
+    """Run the daily host retention now: agent/build temp, caches over their caps, unused Hugging Face repos, scratch.
+
+    The same bounds the 04:00 daily maintenance applies (ages and caps: host retention policy). Nightshift's daily
+    housekeeping calls this with --if-stale as a backstop for a stopped worker. Prints a JSON summary and records the run;
+    exits 1 when a step failed.
+    """
+    from datetime import UTC, datetime, timedelta
+
+    from app.tasks.host_retention import cleanup_host_artifacts
+
+    started = datetime.now(UTC)
+    if if_stale_hours is not None:
+        try:
+            from app.storage import maintenance_runs
+
+            recent = [run for name in ("daily_maintenance", "host_retention")
+                      for run in maintenance_runs.list_maintenance_runs(limit=1, workflow_name=name)]
+        except Exception as exc:
+            typer.echo(f"note: last run unknown ({type(exc).__name__}); running", err=True)
+            recent = []
+        if any(run["started_at"] >= started - timedelta(hours=if_stale_hours) for run in recent):
+            output_json({"status": "skipped", "reason": "fresh", "if_stale_hours": if_stale_hours})
+            return
+    summary = cleanup_host_artifacts()
+    _record_host_run(summary, started)
+    output_json(summary)
+    if summary.get("status") != "success":
+        raise typer.Exit(1)
+
+
+def _record_host_run(summary: dict, started) -> None:
+    """Record the run for the Runtime page; a full disk or a stopped database never fails the cleanup itself."""
+    try:
+        from app.storage import maintenance_runs
+
+        maintenance_runs.record_maintenance_run(
+            "host_retention", str(summary.get("status", "partial")), started_at=started,
+            rows_cleaned=int(summary.get("items_deleted") or 0), summary=summary,
+            error_message="; ".join(str(e) for e in summary.get("errors") or [])[:500] or None,
+        )
+    except Exception as exc:
+        typer.echo(f"note: host retention run not recorded ({type(exc).__name__})", err=True)
 
 
 @app.command("reclaim")

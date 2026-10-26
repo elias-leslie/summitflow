@@ -103,6 +103,10 @@ class HostRetentionPolicy:
     build_tmp_max_age_hours: int = 2 * 24
     # Go's build cache is cleared daily once it is larger than this; an emergency reclaim always clears it.
     go_cache_max_gb: float = 4.0
+    # Regenerable tool caches cleared daily once over their cap (uv and npm only drop unused entries by themselves, so
+    # a busy host's cache just grows). pnpm's store and unused Hugging Face repos are pruned daily without a cap.
+    uv_cache_max_gb: float = 8.0
+    npm_cache_max_gb: float = 2.0
 
     @classmethod
     def from_env(cls) -> HostRetentionPolicy:
@@ -150,6 +154,8 @@ class HostRetentionPolicy:
             agent_tmp_max_age_hours=_int_env("SF_HOST_RETENTION_AGENT_TMP_MAX_AGE_HOURS", 3 * 24),
             build_tmp_max_age_hours=_int_env("SF_HOST_RETENTION_BUILD_TMP_MAX_AGE_HOURS", 2 * 24),
             go_cache_max_gb=_float_env("SF_HOST_RETENTION_GO_CACHE_MAX_GB", 4.0),
+            uv_cache_max_gb=_float_env("SF_HOST_RETENTION_UV_CACHE_MAX_GB", 8.0),
+            npm_cache_max_gb=_float_env("SF_HOST_RETENTION_NPM_CACHE_MAX_GB", 2.0),
         )
 
     def defaults_for(self) -> dict[str, float]:
