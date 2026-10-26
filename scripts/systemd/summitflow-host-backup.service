@@ -13,7 +13,7 @@ Environment="PYTHONUNBUFFERED=1"
 EnvironmentFile=-%h/.env.local
 EnvironmentFile=-%h/.config/summitflow/backup-schedule.env
 # Not while the machine is thrashing: the next scheduled run does the work. A skipped run is not a failure.
-ExecCondition=/bin/sh -c 'awk '\''$1=="some"{s=substr($3,7)} $1=="full"{f=substr($3,7)} END{exit !(s<25 && f<10)}'\'' /proc/pressure/memory'
+ExecCondition=/bin/sh -c 'awk '\''$1=="some"{s=substr($3,7)} $1=="full"{f=substr($3,7)} END{exit !(s+0<25 && f+0<10)}'\'' /proc/pressure/memory'
 ExecStart=%h/.summitflow/services/projects/summitflow/current/source/backend/.venv/bin/python -m app.tasks.backup_run
 # The desktop always wins: lowest CPU and disk priority, bounded memory (restic's pack spool lives in the user
 # tmpfs and counts here; its metadata cache is on /srv/scratch, capped), and a hard stop so a hung run is

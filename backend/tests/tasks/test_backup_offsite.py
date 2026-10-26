@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import subprocess
 import sys
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
@@ -232,3 +233,12 @@ def test_a_leftover_runtime_config_never_stops_the_next_run(tmp_path: Path, monk
     first.rclone.chmod(0o400)  # as a root-run rclone leaves it: not writable by the next run
     again = offsite.prepare_runtime(target)
     assert again.rclone.read_text() == "[summitflow-drive]\n" and again.excludes.is_file()
+
+
+@pytest.mark.parametrize(("some", "full", "starts"), [("2.37", "2.33", True), ("0.10", "0.10", True), ("30.00", "1.00", False), ("5.00", "12.00", False)])
+def test_the_timer_waits_only_when_memory_pressure_is_really_high(tmp_path: Path, some: str, full: str, starts: bool) -> None:
+    unit = (Path(__file__).resolve().parents[3] / "scripts/systemd/summitflow-host-backup.service").read_text()
+    program = next(line for line in unit.splitlines() if line.startswith("ExecCondition=")).split("'\\''")[1]
+    pressure = tmp_path / "memory"
+    pressure.write_text(f"some avg10=1.00 avg60={some} avg300=0.00 total=1\nfull avg10=1.00 avg60={full} avg300=0.00 total=1\n")
+    assert (subprocess.run(["awk", program, str(pressure)], check=False).returncode == 0) is starts  # numeric, not string, comparison
