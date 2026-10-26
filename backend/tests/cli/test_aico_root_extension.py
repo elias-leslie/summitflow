@@ -93,3 +93,16 @@ def test_create_help_names_only_the_supported_root_tools(monkeypatch):
     assert "--blank-slate" in usage["cmd"]
     assert manifest.help_options["create"]["--blank-slate"] == 0
     assert "opencode" not in " ".join(map(str, usage["precautions"])).lower()
+
+
+def test_wake_is_an_on_demand_surface_with_short_help(monkeypatch):
+    manifest = aico_record().manifest
+    assert manifest is not None
+    usage = next(row for row in manifest.usage if row["surface"] == "st.aico.wake")
+    assert usage["on_demand"] and usage["tier"] == "reference"
+    assert manifest.help_options["wake"]["--widget-id"] == 1
+    monkeypatch.setattr("cli.extensions.dispatch_extension", lambda *a, **k: pytest.fail("dispatched"))
+    result = CliRunner().invoke(app(), ["aico", "wake", "--help"])
+    assert result.exit_code == 0
+    assert 'Example: st aico wake +1h "check the lane reports"' in result.output
+    assert len(result.output) < 1000
