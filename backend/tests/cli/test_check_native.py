@@ -28,9 +28,6 @@ def _plan(root: Path) -> dict[str, Any]:
 def native_repo(tmp_path: Path, tmp_path_factory: pytest.TempPathFactory, monkeypatch: pytest.MonkeyPatch) -> Path:
     # Private heavy-work lane: the host lane is shared with live agents' checks.
     monkeypatch.setattr(heavy_work_guard, "_LOCK_DIRECTORY", tmp_path_factory.mktemp("heavy-lane"))
-    # pytest's tmp_path can sit on a small tmpfs /tmp; the scratch reserve is not what these tests exercise.
-    real_usage = shutil.disk_usage
-    monkeypatch.setattr(shutil, "disk_usage", lambda path: real_usage(path)._replace(free=100 * 1024**3))
     (tmp_path / ".tools").mkdir()
     (tmp_path / ".tools/python").symlink_to(sys.executable)
     (tmp_path / ".tools/suite.py").write_text(

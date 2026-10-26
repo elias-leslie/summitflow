@@ -18,6 +18,7 @@ from ..config import settings
 from ..logging_config import get_logger
 from ..storage import maintenance_runs as maintenance_store
 from ..utils import safe_subprocess
+from ..utils.pg_client import pg_client
 
 logger = get_logger(__name__)
 
@@ -133,15 +134,20 @@ def create_hatchet_retention_backup(
     backup_path = target_dir / f"hatchet-retention-{timestamp}.dump"
 
     try:
+        pg_env = _hatchet_pg_env(resolved_conninfo)
+        client = pg_client(
+            "pg_dump", host=pg_env.get("PGHOST", "localhost"), port=pg_env.get("PGPORT", "5432"),
+            user=pg_env.get("PGUSER", ""), password=pg_env.get("PGPASSWORD", ""), dbname=pg_env.get("PGDATABASE", "postgres"),
+        )
         completed = safe_subprocess.run(
             [
-                "pg_dump",
+                client,
                 "--format=custom",
                 "--no-password",
                 "--file",
                 str(backup_path),
             ],
-            env=_hatchet_pg_env(resolved_conninfo),
+            env=pg_env,
             capture_output=True,
             text=True,
             check=False,

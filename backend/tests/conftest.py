@@ -24,6 +24,12 @@ from pathlib import Path
 
 from dotenv import load_dotenv
 
+# pytest's tmp_path defaults to the system temp directory, which is a small tmpfs on Ubuntu 26.04
+# (15 GB, under the 25 GB scratch reserve several tests exercise for real). Keep it on disk unless
+# the caller chose a temp directory.
+if "TMPDIR" not in os.environ:
+    os.environ.setdefault("PYTEST_DEBUG_TEMPROOT", "/var/tmp")
+
 # Load env vars FIRST
 _env_file = Path.home() / ".env.local"
 if _env_file.exists():

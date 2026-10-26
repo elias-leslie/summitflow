@@ -18,6 +18,7 @@ from urllib.parse import unquote, urlsplit
 
 from ..project_identity import get_project_identity
 from ..services import db_workbench_targets
+from ..utils.pg_client import pg_client
 from ..utils.transient_scratch import ensure_scratch_capacity, scratch_subprocess_env
 from .backup_activity import BackupCancelled, backup_phase, check_backup_cancelled, run_bulk_process
 from .backup_canaries import canary_excludes
@@ -363,7 +364,8 @@ def _dump_database(project_name: str, destination: Path, env: dict[str, str]) ->
     if not password:
         raise RuntimeError("Configured database credentials are unavailable; capture refused")
     run_env["PGPASSWORD"] = password
-    command = ["pg_dump", "-U", user, "-h", db["host"], "-p", db["port"], db["name"]]
+    client = pg_client("pg_dump", host=db["host"], port=db["port"], user=user, password=password, dbname=db["name"])
+    command = [client, "-U", user, "-h", db["host"], "-p", db["port"], db["name"]]
     stream = _run_gzip_stream if destination.suffix == ".gz" else _run_plain_stream
     returncode, stderr = stream(command, destination, env=run_env, timeout=BACKUP_TIMEOUT)
     if returncode != 0:

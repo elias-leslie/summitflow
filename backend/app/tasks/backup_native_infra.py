@@ -22,6 +22,7 @@ import yaml
 from ..logging_config import get_logger
 from ..services.backup_keys import backup_key_directory
 from ..utils import nightshift_stack
+from ..utils.pg_client import pg_client
 from ..utils.shared_paths import get_compose_env_file, get_host_config_root, get_repo_root
 from ..utils.transient_scratch import (
     disposable_scratch,
@@ -114,7 +115,8 @@ def _dump_infra_database(destination: Path) -> int:
         if not password:
             raise RuntimeError("Configured infrastructure database credentials are unavailable; capture refused")
         env["PGPASSWORD"] = password
-        command = ["pg_dumpall", "-U", pg_user, "-h", pg_host, "-p", pg_port]
+        client = pg_client("pg_dumpall", host=pg_host, port=pg_port, user=pg_user, password=password)
+        command = [client, "-U", pg_user, "-h", pg_host, "-p", pg_port]
         env = scratch_subprocess_env(env)
         returncode, stderr = stream(command, destination, env=env, timeout=INFRA_BACKUP_TIMEOUT)
     if returncode != 0:
