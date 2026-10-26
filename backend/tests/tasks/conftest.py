@@ -3,19 +3,8 @@
 import pytest
 
 from tests.backup_scratch_fixture import backup_job_scratch  # noqa: F401
-from tests.restic_fast_kdf import fast_restic_kdf  # noqa: F401
 
-_SCRATCH_TEST_MODULES = {
-    "test_backup.py", "test_backup_native_archive.py", "test_backup_native_archive_safety.py",
-    "test_backup_native_infra_state.py", "test_backup_native_recovery.py", "test_backup_capture_payload.py",
-    "test_backup_lean_git_recovery.py", "test_backup_offsite_parts.py", "test_backup_offsite_rclone.py",
-    "test_backup_publish.py", "test_backup_smb_commands.py", "test_backup_independent_review.py",
-    "test_backup_disposable_scratch.py",
-    "test_backup_activity.py", "test_backup_native_restore_safety.py", "test_backup_capture_activity.py",
-    "test_backup_restic_fixtures.py",
-    "test_backup_codex_essentials.py", "test_backup_git_index_states.py", "test_backup_portable_lifecycle.py",
-    "test_backup_jsonl_capture.py", "test_backup_self_healing.py", "test_backup_offsite_restore_test.py",
-}
+_SCRATCH_TEST_MODULES = {"test_backup_publish.py"}
 
 
 @pytest.fixture(autouse=True)

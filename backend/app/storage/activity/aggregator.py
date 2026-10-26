@@ -1,7 +1,7 @@
 """Activity Aggregator - Combines events from multiple sources.
 
 This module provides the main aggregation function that combines and sorts
-activity events from all sources (tasks, sessions, backups, git).
+activity events from all sources (tasks, sessions, git).
 """
 
 from __future__ import annotations
@@ -9,7 +9,6 @@ from __future__ import annotations
 from datetime import datetime
 
 from .sources import (
-    get_recent_backup_events,
     get_recent_git_events,
     get_recent_task_events,
 )
@@ -50,12 +49,12 @@ def get_aggregated_activity(
         project_id: Filter by project (None for all)
         limit: Max events per page
         offset: Pagination offset
-        event_types: Filter by event types (task, backup, git)
+        event_types: Filter by event types (task, git)
 
     Returns:
         Tuple of (events, total_count_estimate)
     """
-    types_to_fetch = event_types or ["task", "backup", "git"]
+    types_to_fetch = event_types or ["task", "git"]
 
     # Fetch more than needed to account for merging/sorting
     fetch_limit = limit + offset + 20
@@ -64,9 +63,6 @@ def get_aggregated_activity(
 
     if "task" in types_to_fetch:
         all_events.extend(get_recent_task_events(project_id, fetch_limit))
-
-    if "backup" in types_to_fetch:
-        all_events.extend(get_recent_backup_events(project_id, fetch_limit))
 
     if "git" in types_to_fetch:
         all_events.extend(get_recent_git_events(project_id, fetch_limit))

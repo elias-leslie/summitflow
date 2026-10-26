@@ -10,18 +10,14 @@ from ._model_constants import (
     DEFAULT_BACKUP_TYPE,
     DEFAULT_PROJECT_ID,
 )
-from ._models_backup import BackupInput, OffsiteSyncInput, RestoreInput
 from ._models_core import EmptyInput, ProjectInput
 from ._models_maintenance import ScanInput, StaleCleanupInput
 
 __all__ = [
     "DEFAULT_BACKUP_TYPE",
     "DEFAULT_PROJECT_ID",
-    "BackupInput",
     "EmptyInput",
-    "OffsiteSyncInput",
     "ProjectInput",
-    "RestoreInput",
     "ScanInput",
     "StaleCleanupInput",
 ]

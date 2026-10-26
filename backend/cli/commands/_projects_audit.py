@@ -83,30 +83,6 @@ def _checkout(project: dict[str, Any]) -> tuple[dict[str, Any], dict[str, Any] |
         return {"path": root, "exists": None, "git": None, "manifest": None, "error": str(exc), **location}, candidate_identity
 
 
-def _backup(project: dict[str, Any], sources: list[dict[str, Any]] | None) -> dict[str, Any]:
-    expected_enabled = False if project.get("category") == "testing" else None
-    if sources is None:
-        return {"status": "unknown", "expected_enabled": expected_enabled, "sources": []}
-    project_id = project["id"]
-    matches = [source for source in sources if source.get("project_id") == project_id]
-    if not matches:
-        return {"status": "not_configured" if expected_enabled is False else "missing", "expected_enabled": expected_enabled, "sources": []}
-    root = project.get("root_path")
-    result = []
-    for source in matches:
-        source_path = source.get("path")
-        result.append({
-            "id": source.get("id"),
-            "source_type": source.get("source_type"),
-            "path": source_path,
-            "enabled": source.get("enabled"),
-            "path_matches_checkout": (source_path == root) if root else None,
-        })
-    mismatch = any(item["path_matches_checkout"] is False for item in result)
-    disabled = any(item["enabled"] is False for item in result)
-    return {"status": "path_mismatch" if mismatch else "disabled" if disabled else "present", "expected_enabled": expected_enabled, "sources": result}
-
-
 def _runtime(identity: dict[str, Any] | None, statuses: list[dict[str, Any]] | None) -> dict[str, Any]:
     if identity is None:
         return {"declaration": "unknown", "services": []}
@@ -148,7 +124,6 @@ def run_audit(project_id: str | None = None) -> None:
             output_error(f"Project '{project_id}' is not registered")
             raise typer.Exit(1)
     defaults, default_error = _get_list("/projects")
-    sources, backup_error = _get_list("/backup-sources")
     statuses, runtime_error = _get_list("/docker/status")
     default_ids = {row.get("id") for row in defaults or []}
     records = []
@@ -177,14 +152,12 @@ def run_audit(project_id: str | None = None) -> None:
                 "observed_default_listing": project.get("id") in default_ids if defaults is not None else None,
                 "observed_picker": None,
             },
-            "backup": _backup(project, sources),
             "runtime": _runtime(identity, statuses),
         })
     output_json({
         "projects": records,
         "evidence_errors": {
             "default_listing": default_error,
-            "backups": backup_error,
             "runtime": runtime_error,
         },
     })

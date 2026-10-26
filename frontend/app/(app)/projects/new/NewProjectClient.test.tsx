@@ -97,12 +97,7 @@ describe('NewProjectClient', () => {
         execution_start_hour: 0,
         execution_end_hour: 24,
       },
-      onboarding: {
-        enable_backup_schedule: true,
-        backup_frequency: 'daily',
-        backup_retention_days: 30,
-        queue_initial_backup: true,
-      },
+      onboarding: {},
     })
   })
 
@@ -131,12 +126,7 @@ describe('NewProjectClient', () => {
         execution_start_hour: 0,
         execution_end_hour: 24,
       },
-      onboarding: {
-        enable_backup_schedule: true,
-        backup_frequency: 'daily',
-        backup_retention_days: 30,
-        queue_initial_backup: true,
-      },
+      onboarding: {},
     })
   })
 
@@ -181,12 +171,7 @@ describe('NewProjectClient', () => {
       category: 'dev',
       summitflow_hosted: true,
       agent_hub_permission: undefined,
-      onboarding: {
-        enable_backup_schedule: true,
-        backup_frequency: 'daily',
-        backup_retention_days: 30,
-        queue_initial_backup: true,
-      },
+      onboarding: {},
     })
   })
 
@@ -206,12 +191,7 @@ describe('NewProjectClient', () => {
       id: 'testing-project',
       category: 'testing',
       summitflow_hosted: true,
-      onboarding: {
-        enable_backup_schedule: true,
-        backup_frequency: 'daily',
-        backup_retention_days: 30,
-        queue_initial_backup: true,
-      },
+      onboarding: {},
     })
   })
 })

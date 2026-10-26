@@ -12,7 +12,7 @@ import pytest
 
 from app.services.git import utils as git_utils
 from app.tasks import backup_publish as publish
-from tests.tasks.test_backup_native_recovery import _git
+from tests.tasks.git_helpers import _git
 
 _acceptance_lookup = publish._acceptance_for_head
 _URL = "https://github.com/fixture/project.git"

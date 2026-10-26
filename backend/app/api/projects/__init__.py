@@ -203,11 +203,6 @@ async def retire_project(project_id: str, decision: ProjectRetirementRequest, re
                VALUES (%s, 'retired', %s, %s)""",
             (project_id, owner.email, decision.reason),
         )
-        # Stop scheduled captures; existing archives and snapshots are kept.
-        cur.execute(
-            "UPDATE backup_sources SET enabled = FALSE, updated_at = NOW() WHERE project_id = %s AND enabled",
-            (project_id,),
-        )
         conn.commit()
     _set_publication_mode(project_id, "manual")
     from ...storage.notifications_write import dismiss_all_for_project
@@ -237,12 +232,6 @@ async def reactivate_project(project_id: str, request: Request) -> ProjectRespon
             """INSERT INTO project_lifecycle_events (project_id, action, owner_email)
                VALUES (%s, 'reactivated', %s)""",
             (project_id, owner.email),
-        )
-        # Resume the standard project capture; publication stays manual until chosen.
-        cur.execute(
-            """UPDATE backup_sources SET enabled = TRUE, updated_at = NOW()
-               WHERE project_id = %s AND source_type = 'project' AND NOT enabled""",
-            (project_id,),
         )
         conn.commit()
     return get_project_from_db(project_id)

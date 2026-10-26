@@ -180,7 +180,11 @@ def thin_pool_percent(host: str) -> float | None:
 
 
 def _has_completed_backup(source_id: str) -> bool:
-    rows, _ = backup_store.list_backups(source_id=source_id, limit=50)
+    from .backup_offsite import read_state
+
+    if source_id in (read_state().get("jobs") or {}):
+        return True
+    rows, _ = backup_store.list_backups(source_id=source_id, limit=50)  # copies made before the daily Drive job
     return any(row.get("status") in {"completed", "completed_pending_upload"} for row in rows)
 
 
@@ -232,18 +236,6 @@ def _plan_files(source_id: str, target: ProxmoxTarget, path: str) -> dict[str, A
     return {"target": target, "estimated_bytes": FILES_ESTIMATED_BYTES, "command": command, "capture": capture}
 
 
-def run_proxmox_backup(*, source_id: str, project_dir: str, env: dict[str, str], local_only: bool = False) -> dict[str, Any]:
-    if env.get("BACKUP_ENGINE") != "restic":
-        raise RuntimeError("Proxmox backups stream into the repository engine only")
-    plan = plan_capture(source_id, project_dir)
-    from .backup_repository_runtime import run_repository_stream
-
-    return run_repository_stream(
-        source_id=source_id, env=env, command=plan["command"], filename=plan["target"].filename,
-        capture=plan["capture"], estimated_bytes=plan["estimated_bytes"], local_only=local_only,
-    )
-
-
 def dispatcher_entry(path: str) -> dict[str, Any] | None:
     """What the Proxmox dispatcher captures for one source path, or None when it is not a valid Proxmox path."""
     target = parse_target(path)
@@ -289,62 +281,6 @@ def restore_instructions(backup: dict[str, Any]) -> str:
     return f"restic dump {snapshot} {path} | ssh {host} {tool}"
 
 
-def verify_stream_backup(backup: dict[str, Any]) -> dict[str, Any]:
-    """Read back the stored stream's size and format header from the local repository."""
-    from .backup_repository_runtime import _backup_environment
-    from .backup_restic import ResticAdapter, ResticConfig
-
-    verification = backup.get("verification_json") or {}
-    capture = verification.get("capture") or {}
-    snapshot, path = str(verification.get("snapshot_id") or ""), str(verification.get("payload_path") or "")
-    check = _HEADERS.get(str(capture.get("kind")))
-    if not snapshot or not path or check is None:
-        raise RuntimeError("Backup is not a recorded Proxmox stream capture")
-    adapter = ResticAdapter(ResticConfig.from_env(_backup_environment(backup)))
-    listing = adapter._run(adapter._command("ls", snapshot, path), phase="verification")
-    nodes = [json.loads(line) for line in listing.stdout.splitlines() if line.strip().startswith("{")]
-    node = next((item for item in nodes if item.get("path") == path and item.get("type") == "file"), None)
-    expected = int(capture.get("stream_bytes") or 0)
-    if node is None or int(node.get("size") or -1) != expected:
-        raise RuntimeError(f"Stored stream size differs from the captured {expected} bytes")
-    proc = subprocess.Popen(adapter._command("dump", snapshot, path), stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, env=adapter._env())
-    try:
-        assert proc.stdout is not None
-        head = proc.stdout.read(4096)
-    finally:
-        proc.kill()
-        proc.wait()
-    if not check(head):
-        raise RuntimeError("Stored stream does not start with the expected dump format header")
-    return {"ok": True, "snapshot_id": snapshot, "path": path, "size_bytes": expected, "header": capture.get("kind")}
-
-
-def restore_stream_isolated(backup: dict[str, Any], destination: Path, *, remote: bool = False) -> dict[str, Any]:
-    """Restore a Proxmox stream capture as its original dump file and prove size and format."""
-    from .backup_repository_runtime import _backup_environment
-    from .backup_restic import ResticAdapter, ResticConfig
-
-    verification = backup.get("verification_json") or {}
-    capture = verification.get("capture") or {}
-    check = _HEADERS.get(str(capture.get("kind")))
-    snapshot = str(verification.get("remote_snapshot_id") if remote else verification.get("snapshot_id") or "")
-    if not snapshot or check is None:
-        raise RuntimeError("Backup is not a recorded Proxmox stream capture")
-    adapter = ResticAdapter(ResticConfig.from_env(_backup_environment(backup)))
-    restored = adapter.restore(snapshot, destination, remote=remote)
-    payload = Path(str(restored.get("payload_file") or ""))
-    if not payload.is_file():
-        raise RuntimeError("Restore did not produce the captured stream file")
-    expected = int(capture.get("stream_bytes") or 0)
-    if payload.stat().st_size != expected:
-        raise RuntimeError(f"Restored stream has {payload.stat().st_size} bytes, captured {expected}")
-    with payload.open("rb") as stream:
-        if not check(stream.read(4096)):
-            raise RuntimeError("Restored stream does not start with the expected dump format header")
-    return {"status": "completed", "snapshot_id": snapshot, "payload_file": str(payload), "size_bytes": expected,
-            "format": capture.get("kind"), "next_step": restore_instructions(backup)}
-
-
 # The coverage contract: what is unique on each important guest, and the source that
 # protects it. Guest configuration for every VM and container lives in the cluster
 # database. Neri guests such as VM 120 are disposable by owner
@@ -382,11 +318,15 @@ def _aware(value: Any) -> datetime:
 
 
 def freshness_receipt(now: datetime | None = None) -> dict[str, Any]:
-    """Whether every covered guest and the cluster config has an offsite-verified backup newer than the limit."""
-    from .backup_alerts import source_offline_since
-    from .backup_offsite_restore_test import restore_verified
+    """Whether every covered guest and the cluster config has a Google Drive copy newer than the limit."""
+    from .backup_offsite import read_state
 
     current = now or datetime.now(UTC)
+    state = read_state()
+    jobs, last_jobs = state.get("jobs") or {}, (state.get("last_run") or {}).get("jobs") or {}
+    spot = state.get("spot_restore") or {}
+    spot_at = spot.get("at") and _aware(spot["at"])
+    restore_ok = (spot.get("status") == "ok") if spot_at and (current - spot_at).days <= 35 else (False if spot.get("status") == "failed" else None)
     sources = backup_store.list_sources()
     targets: list[dict[str, Any]] = []
     for label, matcher in REQUIRED_TARGETS.items():
@@ -395,17 +335,13 @@ def freshness_receipt(now: datetime | None = None) -> dict[str, Any]:
         if source is None:
             targets.append({**entry, "status": "missing", "fresh": False})
             continue
-        rows, _ = backup_store.list_backups(source_id=str(source["id"]), limit=50)
-        verified = next((row for row in rows if row.get("status") == "completed" and ((row.get("verification_json") or {}).get("offsite") or {}).get("status") == "verified"), None)
-        if verified is None:
+        job = jobs.get(str(source["id"]))
+        if job is None:
             targets.append({**entry, "status": "never-verified", "fresh": False})
             continue
-        verification = verified.get("verification_json") or {}
-        when = _aware(verified.get("completed_at") or verified.get("created_at"))
-        offsite_at = verification["offsite"].get("verified_at")
-        offsite_when = _aware(offsite_at) if offsite_at else when
+        when = _aware(job["time"])
         age = (current - when).total_seconds() / 3600
-        offline = source_offline_since(str(source["id"]))
+        offline = (last_jobs.get(str(source["id"])) or {}).get("status") == "offline"
         status, reason = "fresh", None
         if age > FRESHNESS_HOURS:
             if offline and age <= OFFLINE_FRESHNESS_DAYS * 24:
@@ -415,13 +351,10 @@ def freshness_receipt(now: datetime | None = None) -> dict[str, Any]:
             else:
                 status = "stale"
         targets.append({**entry, "status": status, "fresh": status != "stale", **({"reason": reason} if reason else {}),
-                        "backup_id": verified["id"], "snapshot_id": verification.get("snapshot_id"),
-                        "captured_at": when.isoformat(), "verified_at": offsite_when.isoformat(), "age_hours": round(age, 1), "offsite": "verified",
-                        "restore_test_ok": source.get("last_restore_test_ok"),
-                        # A real restore (monthly test), as opposed to the weekly readback above.
-                        "restore_drill_ok": source.get("last_drill_ok"),
-                        "restore_verified": restore_verified(source, now=current),  # passed within 35 days
-                        "restore_drill_at": _aware(source["last_drill_at"]).isoformat() if source.get("last_drill_at") else None})
+                        "snapshot_id": job.get("snapshot_id"), "captured_at": when.isoformat(), "verified_at": when.isoformat(),
+                        "age_hours": round(age, 1), "offsite": "verified",
+                        "restore_test_ok": restore_ok, "restore_drill_ok": restore_ok, "restore_verified": bool(restore_ok),
+                        "restore_drill_at": spot_at.isoformat() if spot_at else None})
     return {"schema_version": 1, "generated_at": current.isoformat(), "max_age_hours": FRESHNESS_HOURS, "offline_max_age_days": OFFLINE_FRESHNESS_DAYS,
             "ok": all(item["fresh"] for item in targets), "targets": targets}
 

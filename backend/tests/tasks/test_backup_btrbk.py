@@ -6,17 +6,16 @@ import hashlib
 import json
 import shutil
 import subprocess
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, datetime
 from pathlib import Path
 from types import SimpleNamespace
 from typing import Any
 from unittest.mock import Mock
 
 import pytest
-from psycopg import OperationalError
 
 from app.tasks import backup_btrbk as host
-from app.tasks.backup_activity import BackupCancelled
+from app.tasks.backup_proc import Result
 
 NOW = datetime(2026, 10, 5, 12, tzinfo=UTC)
 
@@ -82,20 +81,19 @@ def capture(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> dict[str, Any]:
     monkeypatch.setattr(host, "NATIVE_TARGET", target)
     monkeypatch.setenv("BACKUP_BTRBK_ENABLED", "true")
     rows = [{"source_url": "/", "target_path": str(target), "snapshot_path": "/snapshots"}]
-    capacity = {"admitted": True, "used_bytes": 100, "free_bytes": 900, "expected_growth_bytes": 100, "target_filesystem_uuid": "independent-uuid"}
+    state = {"target_filesystem_uuid": "independent-uuid", "free_bytes": 900, "used_bytes": 100, "total_bytes": 1000}
     monkeypatch.setattr(host, "native_host_status", lambda: {"ready": True, "last_result": host._receipt()})
     monkeypatch.setattr(host, "_configuration", lambda: rows)
     monkeypatch.setattr(host, "_validate_nested_coverage", lambda _: None)
-    monkeypatch.setattr(host, "_capacity", lambda *_: capacity)
+    monkeypatch.setattr(host, "_target_state", lambda _: state)
     monkeypatch.setattr(host, "_filesystem", lambda path: {"uuid": "source-fs" if path == "/" else "independent-uuid"})
-    monkeypatch.setattr(host, "_boot_layout", lambda: {"disks": [{"device": "/dev/observed", "partition_layout": "fixture"}], "restore_verified": False})
-    monkeypatch.setattr(host, "_database_manifests", lambda *_: {"status": "qualified", "manifests": [], "missing": []})
+    monkeypatch.setattr(host, "_boot_layout", lambda: {"disks": [{"device": "/dev/observed", "partition_layout": "fixture"}]})
     point = {"source": "/", "snapshot": "/snapshots/current", "target": str(target / "current"), "source_uuid": "source-uuid", "received_uuid": "source-uuid"}
     Path(point["target"]).mkdir()
     monkeypatch.setattr(host, "_verified_points", lambda *_: [point])
     monkeypatch.setattr(host, "_target_deletions_refused", lambda _: False)
-    bulk = Mock(return_value=subprocess.CompletedProcess([], 0, "format=raw type=snapshot status=success source_url=/ target_url=/snapshots/current\n", ""))
-    monkeypatch.setattr(host, "run_bulk_process", bulk)
+    bulk = Mock(return_value=Result(0, stdout="format=raw type=snapshot status=success source_url=/ target_url=/snapshots/current\n"))
+    monkeypatch.setattr(host, "run_process", bulk)
     monkeypatch.setattr(host.shutil, "disk_usage", lambda _: SimpleNamespace(total=1000, used=110, free=890))
     calls: list[list[str]] = []
     fail = {"artifact": None, "delete": False}
@@ -196,19 +194,18 @@ def test_completion_published_only_after_every_independent_artifact(capture: dic
         if payload["status"] == "completed":
             directory = Path(payload["boot_path"]).parent
             assert json.loads((directory / "capture.json").read_text())["status"] == "completed"
-            assert all((directory / name).is_file() for name in ("journal.log", "layout.json", "database-manifests.json"))
+            assert all((directory / name).is_file() for name in ("journal.log", "layout.json"))
             assert (directory / "boot" / "kernel").is_file()
         write(payload)
     monkeypatch.setattr(host, "_write_receipt", observe)
     result = host.run_native_host_backup(now=NOW)
     assert result["status"] == "completed"
     assert statuses == ["running", "running", "completed"]
-    assert result["restore_verified"] is False
     assert json.loads((capture["root"] / "last-good.json").read_text())["run_id"] == result["run_id"]
     assert (capture["root"] / "receipts" / f"{result['run_id']}.json").is_file()
 
 
-@pytest.mark.parametrize("artifact", ["journal.log", "layout.json", "database-manifests.json", "capture.json"])
+@pytest.mark.parametrize("artifact", ["journal.log", "layout.json", "capture.json"])
 def test_failed_target_metadata_never_publishes_local_completed_or_erases_last_good(capture: dict[str, Any], monkeypatch: pytest.MonkeyPatch, artifact: str) -> None:
     host._write_receipt({"status": "completed", "evidence": "previous successful recovery"})
     capture["fail"]["artifact"] = artifact
@@ -224,54 +221,6 @@ def test_failed_target_metadata_never_publishes_local_completed_or_erases_last_g
     assert Path(result["evidence"]).is_file()
     assert Path(result["boot_path"]).exists()
     assert json.loads((capture["root"] / "receipts" / f"{result['run_id']}.json").read_text())["status"] == "failed"
-
-
-def test_interrupted_capture_keeps_local_and_independent_failure_evidence(capture: dict[str, Any]) -> None:
-    capture["bulk"].side_effect = BackupCancelled("fixture interruption")
-    result = host.run_native_host_backup(now=NOW)
-    assert result["status"] == "cancelled"
-    assert "fixture interruption" in Path(result["evidence"]).read_text()
-    assert json.loads((Path(result["boot_path"]).parent / "capture.json").read_text())["status"] == "cancelled"
-    assert not (capture["root"] / "last-good.json").exists()
-
-
-def test_catalogue_outage_keeps_failed_local_and_independent_capture_receipts(capture: dict[str, Any], monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setattr(host, "_database_manifests", Mock(side_effect=OperationalError("fixture catalogue outage")))
-    result = host.run_native_host_backup(now=NOW)
-    assert result["status"] == "failed"
-    assert result["capture_complete"] is True
-    assert host._receipt() == result
-    assert json.loads((Path(result["boot_path"]).parent / "capture.json").read_text())["status"] == "failed"
-    assert "fixture catalogue outage" in Path(result["evidence"]).read_text()
-    assert not (capture["root"] / "last-good.json").exists()
-
-
-def test_partial_database_association_finishes_without_another_host_capture(capture: dict[str, Any], monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setattr(host, "_database_manifests", lambda *_: {"status": "partial", "missing": [{"project_id": "nested-db"}]})
-    partial = host.run_native_host_backup(now=NOW)
-    assert partial["status"] == "partial"
-    assert partial["reason"] == "database-recovery-incomplete"
-    assert not (capture["root"] / "last-good.json").exists()
-    monkeypatch.setattr(host, "_database_manifests", lambda *_: {"status": "qualified", "manifests": [{"project_id": "nested-db", "has_db": True}], "missing": []})
-    # Association can finish outside the heavyweight host capture window.
-    monkeypatch.setattr(host, "get_settings", lambda: SimpleNamespace(backup_schedule_timezone="UTC", backup_schedule_window="02:00-06:00"))
-    result = host.run_scheduled_host_backup(NOW + timedelta(hours=1))
-    assert result["status"] == "completed"
-    assert result["run_id"] == partial["run_id"]
-    capture["bulk"].assert_called_once()
-    assert sum("copy-boot" in command for command in capture["calls"]) == 1
-    assert len(list((capture["root"] / "receipts").glob("*.json"))) == 1
-
-
-def test_disabled_and_daily_incomplete_never_start_capture(capture: dict[str, Any], monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setenv("BACKUP_BTRBK_ENABLED", "false")
-    assert host.run_scheduled_host_backup(NOW) == {"status": "skipped", "reason": "host-backup-disabled"}
-    capture["bulk"].assert_not_called()
-    monkeypatch.setenv("BACKUP_BTRBK_ENABLED", "true")
-    monkeypatch.setattr(host, "get_settings", lambda: SimpleNamespace(backup_schedule_timezone="UTC", backup_schedule_window=None))
-    host._write_receipt({"status": "failed", "started_at": NOW.isoformat(), "evidence": "retained partial operation"})
-    assert host.run_scheduled_host_backup(NOW)["reason"] == "daily-host-backup-incomplete"
-    capture["bulk"].assert_not_called()
 
 
 @pytest.mark.parametrize("fault", [None, "missing-source", "missing-transfer", "uuid", "writable"])
@@ -399,150 +348,8 @@ def test_metadata_cleanup_reports_a_receiptless_capture_directory_without_blocki
         assert result["uncatalogued"] == [run_id]
 
 
-@pytest.mark.parametrize("fault", [None, "has_db", "unverified", "row-unverified", "pending-check", "stale", "batch-jitter", "wrong-project", "wrong-source", "no-offsite", "missing-identity"])
-def test_declared_nested_database_requires_fresh_matching_independent_manifest(monkeypatch: pytest.MonkeyPatch, fault: str | None) -> None:
-    monkeypatch.setattr(host, "testing_project_ids", lambda: set())
-    project = {"id": "canonical-project", "root_path": "/srv/workspaces/nested/project"}
-    source = {"id": "source-alias", "project_id": "legacy-project", "source_type": "project", "frequency": "four_hourly"}
-    verification = {"verified": True, "has_db": True, "verified_at": NOW.isoformat(), "format": "restic-v1", "repository_id": "local", "snapshot_id": "point", "remote_repository_id": "independent", "remote_snapshot_id": "remote-point", "offsite": {"status": "verified"}}
-    record: dict[str, Any] = {"id": "db-recovery", "source_id": "source-alias", "project_id": "legacy-project", "status": "completed", "verified": True, "location": "restic:point", "started_at": (NOW - timedelta(hours=1)).isoformat(), "verification_json": verification}
-    if fault == "has_db":
-        verification["has_db"] = False
-    elif fault == "unverified":
-        verification["verified"] = False
-    elif fault == "row-unverified":
-        record["verified"] = False
-    elif fault == "pending-check":
-        verification["structural_check_pending"] = True
-    elif fault == "stale":
-        record["started_at"] = (NOW - timedelta(hours=5)).isoformat()
-    elif fault == "batch-jitter":
-        # The previous scheduled batch, a few minutes past cadence, still qualifies.
-        record["started_at"] = (NOW - timedelta(hours=4, minutes=5)).isoformat()
-        fault = None
-    elif fault == "wrong-project":
-        record["project_id"] = "other-project"
-    elif fault == "wrong-source":
-        record["source_id"] = "other-source"
-    elif fault == "no-offsite":
-        verification["offsite"] = {"status": "pending"}
-    elif fault == "missing-identity":
-        verification.pop("remote_snapshot_id")
-    monkeypatch.setattr(host, "list_projects", lambda: [project])
-    monkeypatch.setattr(host.backup_store, "list_sources", lambda: [source])
-    monkeypatch.setattr(host, "get_project_identity", lambda *_: {"project": {"id": "canonical-project"}, "database": {"shared_with": "canonical-db"}})
-    monkeypatch.setattr(host, "_load_db_config", lambda *_: {"configured": "true", "host": "localhost", "port": "5432", "name": "canonical_db"})
-    monkeypatch.setattr(host, "get_project_aliases", lambda *_: ("canonical-project", "legacy-project"))
-    monkeypatch.setattr(host.backup_store, "list_backups", lambda **_: ([record], 1))
-    result = host._database_manifests([{"source_url": "/srv/workspaces"}], NOW)
-    assert result["status"] == ("partial" if fault else "qualified")
-    if fault:
-        assert result["missing"][0]["project_id"] == "canonical-project"
-        assert not result["manifests"]
-        if fault == "stale":
-            # An out-of-window point never qualifies; the receipt names it.
-            assert result["missing"][0]["reason"] == "verified-database-point-stale"
-            assert result["missing"][0]["latest_verified_captured_at"] == (NOW - timedelta(hours=5)).astimezone(UTC).isoformat()
-            assert result["missing"][0]["freshness_window_seconds"] == 4 * 3600 + 30 * 60
-        else:
-            assert result["missing"][0]["reason"] == "fresh-independent-verified-database-point-unavailable"
-    else:
-        assert result["manifests"][0]["backup_id"] == "db-recovery"
-        assert result["manifests"][0]["restore_verified"] is False
-
-
-@pytest.mark.parametrize("configuration", ["true", "false", "unresolved"])
-def test_database_coverage_uses_capture_resolver_without_requiring_manifest_declaration(monkeypatch: pytest.MonkeyPatch, configuration: str) -> None:
-    monkeypatch.setattr(host, "testing_project_ids", lambda: set())
-    monkeypatch.setattr(host, "list_projects", lambda: [{"id": "legacy-project", "root_path": "/srv/workspaces/projects/canonical-project"}])
-    monkeypatch.setattr(host.backup_store, "list_sources", lambda: [])
-    monkeypatch.setattr(host, "get_project_identity", lambda *_: {"project": {"id": "canonical-project"}})
-    monkeypatch.setattr(host, "get_project_aliases", lambda *_: ("canonical-project", "legacy-project"))
-
-    def resolve(name: str, env: dict[str, str]) -> dict[str, str]:
-        assert name == "canonical-project" and env == {"BACKUP_PROJECT_ID": "canonical-project"}
-        if configuration == "unresolved":
-            raise RuntimeError("Private resolver detail must not enter the receipt")
-        return {"configured": configuration, "host": "localhost", "port": "5432", "name": "canonical_db", "password": "private-test-value"}
-
-    monkeypatch.setattr(host, "_load_db_config", resolve)
-    result = host._database_manifests([{"source_url": "/srv/workspaces"}], NOW)
-    assert result["status"] == ("qualified" if configuration == "false" else "partial")
-    assert not result["manifests"]
-    if configuration != "false":
-        assert result["missing"] == [{"project_id": "canonical-project", "reason": "database-configuration-unresolved" if configuration == "unresolved" else "fresh-independent-verified-database-point-unavailable", "source_ids": []}]
-    assert "private" not in json.dumps(result).lower()
-
-
-@pytest.mark.parametrize("category,enabled", [("testing", False), ("testing", None), ("testing", True), ("testing", "no-source"), ("prod", False), ("prod", None), ("prod", "no-source"), (None, False)])
-def test_only_explicitly_disabled_or_sourceless_testing_database_policies_are_excluded(monkeypatch: pytest.MonkeyPatch, category: str | None, enabled: bool | str | None) -> None:
-    # Production list_projects() deliberately omits category; use its canonical
-    # testing registry query rather than inventing a field in the fixture.
-    monkeypatch.setattr(host, "list_projects", lambda: [{"id": "project", "root_path": "/srv/workspaces/project"}])
-    monkeypatch.setattr(host, "testing_project_ids", lambda: {"project"} if category == "testing" else set())
-    source = {"id": "source", "project_id": "project", "source_type": "project", "enabled": enabled}
-    monkeypatch.setattr(host.backup_store, "list_sources", lambda: [] if enabled == "no-source" else [source])
-    monkeypatch.setattr(host, "get_project_identity", lambda *_: {})
-    monkeypatch.setattr(host, "get_project_aliases", lambda *_: ("project",))
-    monkeypatch.setattr(host, "_load_db_config", lambda *_: {"configured": "true", "host": "localhost", "port": "5432", "name": "project"})
-    monkeypatch.setattr(host.backup_store, "list_backups", lambda **_: ([], 0))
-    result = host._database_manifests([{"source_url": "/srv/workspaces"}], NOW)
-    # Testing projects (test1, test3) with no source and owner-disabled sources
-    # (portfolio) carry no portable obligation; an unsourced production project does.
-    excluded = enabled is False or (category == "testing" and enabled == "no-source")
-    assert result["status"] == ("qualified" if excluded else "partial")
-    assert bool(result["excluded"]) is excluded
-    assert bool(result["missing"]) is not excluded
-    if excluded:
-        assert result["excluded"][0]["portable_database_recovery_covered"] is False
-        assert result["excluded"][0]["reason"] == ("disabled-testing-portable-policy" if category == "testing" else "backup-source-disabled")
-
-
-def test_association_retry_judges_freshness_at_capture_time_not_retry_time(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setattr(host, "testing_project_ids", lambda: set())
-    monkeypatch.setattr(host, "list_projects", lambda: [{"id": "project", "root_path": "/srv/workspaces/project"}])
-    monkeypatch.setattr(host.backup_store, "list_sources", lambda: [{"id": "project", "project_id": "project", "source_type": "project", "frequency": "four_hourly", "enabled": True}])
-    monkeypatch.setattr(host, "get_project_identity", lambda *_: {})
-    monkeypatch.setattr(host, "get_project_aliases", lambda *_: ("project",))
-    monkeypatch.setattr(host, "_load_db_config", lambda *_: {"configured": "true", "host": "localhost", "port": "5432", "name": "project"})
-    verification = {"verified": True, "has_db": True, "verified_at": (NOW + timedelta(hours=1)).isoformat(), "format": "restic-v1", "repository_id": "l", "snapshot_id": "s", "remote_repository_id": "r", "remote_snapshot_id": "rs", "offsite": {"status": "verified"}}
-    record = {"id": "point", "source_id": "project", "project_id": "project", "status": "completed", "verified": True, "location": "restic:s", "started_at": (NOW - timedelta(hours=1)).isoformat(), "verification_json": verification}
-    monkeypatch.setattr(host.backup_store, "list_backups", lambda **_: ([record], 1))
-    later = NOW + timedelta(hours=12)
-    assert host._database_manifests([{"source_url": "/srv/workspaces"}], later)["status"] == "partial"
-    assert host._database_manifests([{"source_url": "/srv/workspaces"}], later, NOW)["status"] == "qualified"
-
-
-@pytest.mark.parametrize("fault", [None, "host", "port", "name", "dump", "stale"])
-def test_shared_database_association_requires_exact_endpoint_and_qualified_full_dump(monkeypatch: pytest.MonkeyPatch, fault: str | None) -> None:
-    monkeypatch.setattr(host, "testing_project_ids", lambda: set())
-    projects = [{"id": name, "root_path": f"/srv/workspaces/{name}"} for name in ("supplier", "legacy")]
-    sources = [{"id": name, "project_id": name, "source_type": "project", "frequency": "daily" if name == "supplier" else "four_hourly"} for name in ("supplier", "legacy")]
-    verification = {"verified": True, "has_db": True, "verified_at": NOW.isoformat(), "format": "restic-v1", "repository_id": "local", "snapshot_id": "point", "remote_repository_id": "remote", "remote_snapshot_id": "remote-point", "offsite": {"status": "verified"}, "capture": {"db_dump_name": "partial.sql" if fault == "dump" else ".summitflow-recovery/database.sql"}}
-    record = {"id": "db-point", "source_id": "supplier", "project_id": "supplier", "status": "completed", "verified": True, "location": "restic:point", "started_at": (NOW - timedelta(hours=5 if fault == "stale" else 1)).isoformat(), "verification_json": verification}
-    monkeypatch.setattr(host, "list_projects", lambda: projects)
-    monkeypatch.setattr(host.backup_store, "list_sources", lambda: sources)
-    monkeypatch.setattr(host, "get_project_identity", lambda *_: {})
-    monkeypatch.setattr(host, "get_project_aliases", lambda project, *_: (project,))
-    def resolve(name: str, _: dict[str, str]) -> dict[str, str]:
-        config = {"configured": "true", "host": "localhost" if name == "supplier" else "127.0.0.1", "port": "5432", "name": "shared"}
-        if name == "legacy" and fault in {"host", "port", "name"}:
-            config[fault] = "different"
-        return config
-    monkeypatch.setattr(host, "_load_db_config", resolve)
-    monkeypatch.setattr(host.backup_store, "list_backups", lambda source_id, **_: ([record], 1) if source_id == "supplier" else ([], 0))
-    result = host._database_manifests([{"source_url": "/srv/workspaces"}], NOW)
-    assert result["status"] == ("partial" if fault else "qualified")
-    if fault:
-        assert result["missing"][0]["project_id"] == "legacy"
-    else:
-        association = next(item for item in result["manifests"] if item["project_id"] == "legacy")
-        assert association["database_point_project_id"] == "supplier" and association["backup_id"] == "db-point"
-        assert association["restore_verified"] is False
-
-
 @pytest.mark.parametrize("ready", [False, True])
-def test_readiness_never_claims_restore_verified(monkeypatch: pytest.MonkeyPatch, tmp_path: Path, ready: bool) -> None:
+def test_readiness_follows_the_install_and_a_clean_btrbk_dry_run(monkeypatch: pytest.MonkeyPatch, tmp_path: Path, ready: bool) -> None:
     monkeypatch.setattr(host, "_state_root", lambda: tmp_path)
     config = tmp_path / "qualified-config"
     config.write_text("fixture")
@@ -551,12 +358,10 @@ def test_readiness_never_claims_restore_verified(monkeypatch: pytest.MonkeyPatch
     monkeypatch.setattr(host, "_configuration", lambda: [{"source_url": "/", "target_path": "/independent/points"}])
     monkeypatch.setattr(host, "_validate_nested_coverage", lambda _: None)
     monkeypatch.setattr(host, "_qualify_target_directory", lambda _: None)
-    monkeypatch.setattr(host, "_capacity", lambda *_: {"admitted": True, "reason": None})
+    monkeypatch.setattr(host, "_target_state", lambda _: {"target_filesystem_uuid": "u", "free_bytes": 1, "used_bytes": 1, "total_bytes": 2})
     monkeypatch.setattr(host, "_run", lambda _: subprocess.CompletedProcess([], 0))
     result = host.native_host_status()
     assert result["ready"] is ready
-    assert result["restore_verified"] is False
-    assert "windows_method" not in result
 
 
 def test_boot_layout_uses_observed_device_ancestry(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -570,120 +375,6 @@ def test_boot_layout_uses_observed_device_ancestry(monkeypatch: pytest.MonkeyPat
     assert result["disks"] == [{"device": "/dev/sdz", "partition_layout": "label: gpt\n"}]
     assert all("/dev/nvme0n1" not in command for command in calls)
     assert all("--raw" in command for command in calls if command[0] == "lsblk")
-    assert result["restore_verified"] is False
-
-
-def test_capacity_keeps_full_filesystem_bound_even_with_small_previous_increment(monkeypatch: pytest.MonkeyPatch) -> None:
-    rows = [{"source_url": "/source", "target_path": "/independent"}]
-    monkeypatch.setenv("SF_HOST_RETENTION_PRESSURE_MIN_FREE_GB", "0")
-    monkeypatch.setattr(host, "_filesystem", lambda path: {"uuid": "source" if path in {"/source", "/boot", "/boot/efi"} else "target", "fstype": "btrfs", "options": "compress=zstd"})
-    monkeypatch.setattr(Path, "stat", lambda *_args, **_kwargs: SimpleNamespace(st_ino=256))
-    monkeypatch.setattr(host.shutil, "disk_usage", lambda path: SimpleNamespace(total=1000, used=600, free=400) if path == "/source" else SimpleNamespace(total=1000, used=500, free=500))
-    monkeypatch.setattr(host, "_allocation_headroom", lambda *_: {"available": True, "admitted": True, "missing": 0})
-    result = host._capacity(rows, {"growth_peak_bytes": 1})
-    assert result["expected_growth_bytes"] == 600
-    assert result["admitted"] is False
-
-
-def _sysfs_devices(root: Path, uuid: str, *missing: int) -> None:
-    for devid, state in enumerate(missing, 1):
-        (root / uuid / "devinfo" / str(devid)).mkdir(parents=True)
-        (root / uuid / "devinfo" / str(devid) / "missing").write_text(f"{state}\n")
-
-
-@pytest.mark.parametrize("fault", [None, "source-exhausted", "target-exhausted", "unreadable", "invalid", "unparsable", "device-missing", "device-state-unknown"])
-def test_capacity_requires_measured_allocation_headroom_on_each_unique_filesystem(monkeypatch: pytest.MonkeyPatch, tmp_path: Path, fault: str | None) -> None:
-    gib = 1024**3
-    for uuid in ("source", "workspace", "target"):
-        if not (fault == "device-state-unknown" and uuid == "source"):
-            _sysfs_devices(tmp_path, uuid, 0, int(fault == "device-missing" and uuid == "source"))
-    monkeypatch.setattr(host, "SYSFS_BTRFS", tmp_path)
-    monkeypatch.setattr(host, "_readable", lambda _: True)
-    rows = [{"source_url": path, "target_path": "/independent/points"} for path in ("/source", "/source/nested", "/workspace")]
-    monkeypatch.setenv("SF_HOST_RETENTION_PRESSURE_MIN_FREE_GB", "25")
-    def filesystem(path: str) -> dict[str, str]:
-        uuid = "target" if path.startswith("/independent") else "workspace" if path == "/workspace" else "source"
-        return {"uuid": uuid, "fstype": "btrfs", "options": "rw,compress=zstd:1"}
-    monkeypatch.setattr(host, "_filesystem", filesystem)
-    monkeypatch.setattr(Path, "stat", lambda *_args, **_kwargs: SimpleNamespace(st_ino=256))
-    monkeypatch.setattr(host.shutil, "disk_usage", lambda path: SimpleNamespace(total=100 * gib, used=70 * gib, free=30 * gib) if path.startswith("/source") else SimpleNamespace(total=1000 * gib, used=100 * gib, free=900 * gib))
-    calls = []
-    paths = {"/source": "source", "/workspace": "workspace", "/independent/points": "target"}
-    def guard(args: list[str]) -> subprocess.CompletedProcess[str]:
-        if args[0] == "findmnt":
-            return subprocess.CompletedProcess(args, 0, "", "")
-        # Unprivileged: the overall figures need no root and no sudo rule.
-        assert args[:-1] == ["btrfs", "filesystem", "usage", "-b"]
-        path = args[-1]
-        uuid = paths[path]
-        calls.append((path, uuid))
-        if fault == "unreadable" and uuid == "source":
-            return subprocess.CompletedProcess(args, 1, "", "ERROR: cannot access")
-        if fault == "unparsable" and uuid == "source":
-            return subprocess.CompletedProcess(args, 0, "Overall:\n", "")
-        usage = {"size": 1000 * gib, "free": 30 * gib, "missing": 0, "unallocated": 20 * gib, "metadata_size": 2 * gib, "metadata_used": gib}
-        if (fault == "source-exhausted" and uuid == "source") or (fault == "target-exhausted" and uuid == "target"):
-            usage.update(unallocated=1024**2, metadata_used=int(usage["metadata_size"] * 0.9146))
-        if fault == "invalid" and uuid == "source":
-            usage["metadata_used"] = usage["metadata_size"] + 1
-        report = (f"Overall:\n    Device size:\t\t{usage['size']}\n    Device unallocated:\t\t{usage['unallocated']}\n"
-                  f"    Device missing:\t\t{usage['missing']}\n    Free (statfs, df):\t\t{usage['free']}\n\n"
-                  f"Data,single: Size:{usage['size'] // 2}, Used:1 (0.00%)\n"
-                  f"Metadata,DUP: Size:{usage['metadata_size']}, Used:{usage['metadata_used']} (50.00%)\n")
-        return subprocess.CompletedProcess(args, 0, report, "")
-    monkeypatch.setattr(host, "_run", guard)
-    result = host._capacity(rows, None)
-    assert calls == [("/source", "source"), ("/workspace", "workspace"), ("/independent/points", "target")]
-    assert result["expected_growth_bytes"] == 170 * gib
-    assert result["admitted"] is (fault is None)
-    assert result["reason"] == (None if fault is None else "insufficient-btrfs-allocation-headroom" if "exhausted" in fault
-                                else "btrfs-device-missing" if fault == "device-missing" else "btrfs-allocation-headroom-unavailable")
-    assert result["reserve_bytes"] == 25 * gib
-    if fault is None or "exhausted" in fault:
-        allocation = result["target_allocation"] if fault == "target-exhausted" else result["source_filesystems"][0]["allocation"]
-        assert allocation["trigger_bytes"] == 8 * gib and allocation["target_bytes"] == 12 * gib
-        assert allocation["unallocated"] == (1024**2 if fault else 20 * gib)
-        assert allocation["metadata_used_percent"] == pytest.approx(91.46 if fault else 50)
-
-
-@pytest.mark.parametrize("fault", ["missing-layout", "relocated-metadata", "changed-target-uuid"])
-def test_association_retry_fails_closed_on_lost_artifact_or_identity(capture: dict[str, Any], monkeypatch: pytest.MonkeyPatch, fault: str) -> None:
-    result = host.run_native_host_backup(now=NOW)
-    assert result["status"] == "completed"
-    previous = (capture["root"] / "last-good.json").read_bytes()
-    result["status"] = "partial"
-    if fault == "missing-layout":
-        (capture["root"] / "operations" / result["run_id"] / "layout.json").unlink()
-    elif fault == "relocated-metadata":
-        result["boot_path"] = "/etc/unrelated/boot"
-    else:
-        monkeypatch.setattr(host, "_filesystem", lambda _: {"uuid": "changed"})
-    resumed = host._resume_association(result, NOW)
-    assert resumed["status"] == "failed"
-    assert (capture["root"] / "last-good.json").read_bytes() == previous
-    capture["bulk"].assert_called_once()
-
-
-@pytest.mark.parametrize("fault", ["same-uuid", "metadata-on-source"])
-def test_capacity_rejects_dependent_target_or_metadata_parent(monkeypatch: pytest.MonkeyPatch, fault: str) -> None:
-    rows = [{"source_url": "/source", "target_path": "/independent/points"}]
-    def filesystem(path: str) -> dict[str, str]:
-        source = path == "/source" or (fault == "metadata-on-source" and path == "/independent")
-        return {"uuid": "same" if fault == "same-uuid" else "source" if source else "target", "fstype": "btrfs", "options": "compress=zstd"}
-    monkeypatch.setattr(host, "_filesystem", filesystem)
-    with pytest.raises(RuntimeError, match="independent"):
-        host._capacity(rows, None)
-
-
-def test_empty_project_registry_never_qualifies_database_recovery(monkeypatch: pytest.MonkeyPatch) -> None:
-    # A catalogue with no projects (for example a test database) once wrote a
-    # vacuous "qualified" association with zero manifests over a live receipt.
-    monkeypatch.setattr(host, "testing_project_ids", lambda: set())
-    monkeypatch.setattr(host, "list_projects", lambda: [])
-    monkeypatch.setattr(host.backup_store, "list_sources", lambda: [])
-    result = host._database_manifests([{"source_url": "/"}], NOW)
-    assert result["status"] == "partial"
-    assert result["missing"] == [{"project_id": None, "reason": "project-registry-empty", "source_ids": []}]
 
 
 def test_tests_never_reach_live_native_host_state() -> None:
@@ -723,21 +414,15 @@ def test_target_deletion_preview_trips_on_mass_expiry(monkeypatch: pytest.Monkey
     assert host._target_deletions_refused(tmp_path) is False
 
 
-def test_allocation_headroom_measures_a_root_only_path_through_a_readable_mount(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
-    _sysfs_devices(tmp_path, "rootfs", 0)
-    monkeypatch.setattr(host, "SYSFS_BTRFS", tmp_path)
-    monkeypatch.setattr(host, "_filesystem", lambda _: {"uuid": "rootfs", "target": "/var/lib/docker"})
-    monkeypatch.setattr(host, "_readable", lambda path: path == "/")
-    measured = []
-    def checked(args: list[str]) -> str:
-        if args[0] == "findmnt":
-            return "other /mnt/other\nrootfs /var/lib/docker\nrootfs /\n"
-        measured.append(args)
-        return ("Overall:\n    Device size:\t\t1000\n    Device unallocated:\t\t900\n    Device missing:\t\t0\n"
-                "    Free (statfs, df):\t\t500\n\nMetadata,DUP: Size:100, Used:10 (10.00%)\n")
-    monkeypatch.setattr(host, "_checked", checked)
-    result = host._allocation_headroom("/var/lib/docker")
-    assert measured == [["btrfs", "filesystem", "usage", "-b", "/"]]
-    assert result["available"] is True and result["unallocated"] == 900
-    monkeypatch.setattr(host, "_readable", lambda _: False)
-    assert host._allocation_headroom("/var/lib/docker")["available"] is False
+
+
+def test_a_second_run_skips_while_one_is_active(capture: dict[str, Any]) -> None:
+    with host.host_run_lock():
+        assert host.run_native_host_backup(now=NOW) == {"status": "skipped", "reason": "host-backup-active"}
+    capture["bulk"].assert_not_called()
+
+
+def test_a_disabled_host_backup_starts_nothing(capture: dict[str, Any], monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("BACKUP_BTRBK_ENABLED", "false")
+    assert host.run_native_host_backup(now=NOW) == {"status": "skipped", "reason": "host-backup-disabled"}
+    capture["bulk"].assert_not_called()

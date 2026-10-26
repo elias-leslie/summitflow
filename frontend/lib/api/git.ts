@@ -225,7 +225,6 @@ export interface DevelopmentEvidence {
     reason?: string | null
     observed_at?: string | null
   } | null
-  backup_count?: number
   optional_cloud?: string | null
   /** Canonical publication verdict: verified, published (no CI), blocked, pending or unknown. */
   verdict?: string

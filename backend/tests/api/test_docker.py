@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import asyncio
-from pathlib import Path
 from typing import Literal
 
 import pytest
@@ -247,31 +246,6 @@ class TestDockerRuntime:
         with pytest.raises(HTTPException, match="Unknown service"):
             helpers._service_definition("new-project-api")
 
-    @pytest.mark.asyncio
-    async def test_backup_fallback_confines_note_to_safe_filename(
-        self,
-        mocker: MockerFixture,
-        tmp_path: Path,
-    ) -> None:
-        from app.api.docker import routes
-
-        mocker.patch.object(routes, "BACKUP_DIR", tmp_path)
-        mocker.patch.object(
-            routes,
-            "_run_command",
-            new=mocker.AsyncMock(return_value=("database dump", "", 0)),
-        )
-
-        result = await routes._backup_fallback(
-            "../../escape; touch owned",
-            RuntimeError("workflow unavailable"),
-        )
-
-        assert result.success is True
-        created = list(tmp_path.glob("*.sql"))
-        assert len(created) == 1
-        assert created[0].parent == tmp_path
-        assert created[0].name.endswith("-escape--touch-owned.sql")
 
     @pytest.mark.asyncio
     async def test_container_action_uses_docker_until_the_stack_unit_is_installed(

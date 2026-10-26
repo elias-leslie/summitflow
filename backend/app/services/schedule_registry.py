@@ -68,8 +68,8 @@ SCHEDULE_DEFINITIONS: tuple[ScheduleDefinition, ...] = (
     ScheduleDefinition(
         schedule_id="scheduled_backups",
         config_key="scheduled_backups_enabled",
-        label="Scheduled backups",
-        description="Creates backup snapshots on the configured cadence.",
+        label="Backup health check",
+        description="Checks that both backup layers are current and tidies old records. The backups themselves run from systemd every 4 hours.",
         cron="30 * * * *",
         scope="system",
     ),
@@ -103,14 +103,6 @@ SCHEDULE_DEFINITIONS: tuple[ScheduleDefinition, ...] = (
         label="Health monitor",
         description="Performs frequent health checks and notifications.",
         cron="*/5 * * * *",
-        scope="system",
-    ),
-    ScheduleDefinition(
-        schedule_id="restore_tests",
-        config_key="restore_tests_enabled",
-        label="Restore verification",
-        description="Runs weekly restore tests against backup artifacts.",
-        cron="0 6 * * 0",
         scope="system",
     ),
     ScheduleDefinition(

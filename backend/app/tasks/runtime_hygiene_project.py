@@ -5,7 +5,7 @@ from __future__ import annotations
 from datetime import datetime
 from typing import Any
 
-from .runtime_hygiene_backups import backup_state
+from .runtime_hygiene_backups import HOST_ROW, backup_state
 from .runtime_hygiene_common import (
     JOURNAL_LOOKBACK,
     JOURNAL_PATTERNS,
@@ -78,8 +78,8 @@ def _freshened_backup(
     now: datetime,
     deps: Any,
 ) -> dict[str, Any]:
-    state = backup_state(backup_rows.get(source_id), now=now, source_type="project", deps=deps)
-    if not state["is_fresh"] or state["pending_upload_count"] > 0:
+    state = backup_state(backup_rows.get(HOST_ROW), now=now, source_type="project", deps=deps)
+    if not state["is_fresh"]:
         return deps._ensure_backup_fresh(
             project_id=project_id,
             source_id=source_id,
@@ -111,10 +111,6 @@ def _backup_issues(project_id: str, source_id: str, state: dict[str, Any], deps:
     if not state["is_fresh"]:
         issues.append(
             deps.project_issue(project_id, "backup", source_id, "critical", f"{project_id} backup protection is stale or unavailable", {"backup": state})
-        )
-    elif state["pending_upload_count"] > 0:
-        issues.append(
-            deps.project_issue(project_id, "backup", source_id, "warning", f"{project_id} backup is still pending upload", {"backup": state})
         )
     if not state["restore_validation_ok"]:
         issues.append(

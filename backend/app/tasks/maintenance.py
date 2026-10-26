@@ -14,7 +14,6 @@ from ..storage import notifications as notification_store
 from ..storage import quality_check_results as qcr_store
 from ..storage import scan_history
 from ..storage.tasks import purge_terminal_tasks
-from .backup_lock import has_active_backup_lease
 from .host_retention import cleanup_host_artifacts
 from .stale_generated_tasks import cleanup_stale_tasks
 
@@ -101,7 +100,7 @@ def run_daily_maintenance(
             "stale_running_backups",
             backup_store.fail_stale_running_backups,
             max_age_minutes=30,
-            is_source_active=has_active_backup_lease,
+            is_source_active=lambda _source_id: False,  # nothing holds a backup lease any more
         )
         stale_backups_deleted = _run_step(
             "stale_backups",

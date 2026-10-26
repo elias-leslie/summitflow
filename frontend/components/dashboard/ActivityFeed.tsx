@@ -4,7 +4,6 @@ import { useInfiniteQuery } from '@tanstack/react-query'
 import clsx from 'clsx'
 import {
   Activity,
-  Archive,
   CheckCircle2,
   ChevronDown,
   GitCommit,
@@ -44,14 +43,6 @@ const eventConfig: Record<
       bg: 'bg-green-500/10',
     },
     label: 'Task',
-  },
-  backup: {
-    icon: Archive,
-    color: {
-      text: 'text-blue-400',
-      bg: 'bg-blue-500/10',
-    },
-    label: 'Backup',
   },
   git: {
     icon: GitCommit,
@@ -152,7 +143,6 @@ const TYPE_FILTERS: {
   { value: 'all', label: 'All', icon: Activity },
   { value: 'task', label: 'Tasks', icon: CheckCircle2 },
   { value: 'git', label: 'Git', icon: GitCommit },
-  { value: 'backup', label: 'Backups', icon: Archive },
 ]
 
 interface ActivityFeedProps {

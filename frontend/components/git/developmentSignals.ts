@@ -317,17 +317,17 @@ function backupCell(dev: DevelopmentProjection): Cell {
       detail: age,
       title: hint(capture),
     }
-  if (offsite.state === 'verified')
+  if (offsite.state === 'verified' || offsite.state === 'completed')
     return {
       tone: 'ok',
       label: age ?? 'done',
-      detail: 'offsite',
-      title: `Captured ${age ?? ''} and copied offsite`.trim(),
+      detail: 'Drive',
+      title: `Captured ${age ?? ''} and copied to Google Drive`.trim(),
     }
   if (offsite.state === 'failed' || offsite.state === 'error')
     return {
       tone: 'bad',
-      label: 'offsite failed',
+      label: 'Drive copy failed',
       detail: age,
       title: hint(offsite),
     }
@@ -335,7 +335,7 @@ function backupCell(dev: DevelopmentProjection): Cell {
     tone: 'warn',
     label: age ?? 'local',
     detail: 'local only',
-    title: hint(offsite, 'No verified offsite copy for the latest capture'),
+    title: hint(offsite, 'No Google Drive copy yet'),
   }
 }
 

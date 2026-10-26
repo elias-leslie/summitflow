@@ -18,31 +18,6 @@ from .models import ProjectCategory, ProjectResponse, ProjectStats, ProjectUpdat
 from .public_urls import build_project_urls, resolve_project_public_url
 
 
-def sync_project_backup_source(
-    cur: psycopg.Cursor[Any],
-    project_id: str,
-    name: str,
-    root_path: str | None,
-) -> None:
-    """Ensure a project-scoped backup source exists and reflects the project root."""
-    if not root_path:
-        return
-    backup_name = canonicalize_project_name(project_id, name, root_path)
-
-    cur.execute(
-        """
-        INSERT INTO backup_sources (id, name, path, source_type, project_id)
-        VALUES (%s, %s, %s, 'project', %s)
-        ON CONFLICT (id) DO UPDATE
-        SET name = EXCLUDED.name,
-            path = EXCLUDED.path,
-            project_id = EXCLUDED.project_id,
-            updated_at = NOW()
-        """,
-        (project_id, backup_name, root_path, project_id),
-    )
-
-
 def get_project_from_db(project_id: str) -> ProjectResponse:
     """Fetch a project from the database by ID."""
     with get_cursor() as cur:
@@ -226,7 +201,6 @@ def create_project_in_db(
             ),
         )
         row = cur.fetchone()
-        sync_project_backup_source(cur, project_id, canonical_name, root_path)
         conn.commit()
 
     if not row:
@@ -252,7 +226,7 @@ def create_project_in_db(
 
 
 def delete_project_in_db(project_id: str) -> None:
-    """Delete a project plus its matching backup source."""
+    """Delete a project plus any old backup source row it had."""
     with get_connection() as conn, conn.cursor() as cur:
         cur.execute("DELETE FROM backup_sources WHERE id = %s", (project_id,))
         cur.execute("DELETE FROM projects WHERE id = %s", (project_id,))
@@ -343,8 +317,6 @@ def update_project_in_db(project_id: str, update: ProjectUpdate) -> ProjectRespo
         ).format(updates=sql.SQL(", ").join(updates))
         cur.execute(query, params)
         row = cur.fetchone()
-        if row:
-            sync_project_backup_source(cur, row[0], row[1], row[5])
         conn.commit()
 
     if not row:

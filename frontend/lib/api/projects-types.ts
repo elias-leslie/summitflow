@@ -42,12 +42,8 @@ export interface ProjectPermissionBootstrap {
   budget_alert_threshold?: number
 }
 
-export interface ProjectOnboardingRequest {
-  enable_backup_schedule?: boolean
-  backup_frequency?: 'daily' | 'weekly' | 'monthly' | 'hourly' | 'four_hourly'
-  backup_retention_days?: number
-  queue_initial_backup?: boolean
-}
+// Onboarding runs a code scan and task sync; it takes no options.
+export type ProjectOnboardingRequest = Record<string, never>
 
 export interface ProjectCreate {
   id: string

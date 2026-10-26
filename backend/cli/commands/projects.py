@@ -84,7 +84,7 @@ def list_projects(
 def audit_projects(
     project_id: Annotated[str | None, typer.Argument(help="Optional project ID to inspect")] = None,
 ) -> None:
-    """Audit registered projects across checkout, listing, backups, and runtime.
+    """Audit registered projects across checkout, listing, and runtime.
 
     Emits JSON; observations marked unknown have insufficient evidence.
     This command only reads registry APIs and local project files.
@@ -227,21 +227,9 @@ def create_project(
         bool | None,
         typer.Option(
             "--onboard/--no-onboard",
-            help="Queue standard SummitFlow onboarding (backups, scan, post-scan task sync). Defaults to on for --summitflow-hosted.",
+            help="Queue standard SummitFlow onboarding (code scan, post-scan task sync). Defaults to on for --summitflow-hosted.",
         ),
     ] = None,
-    backup_frequency: Annotated[
-        str,
-        typer.Option("--backup-frequency", help="Onboarding backup frequency"),
-    ] = "daily",
-    backup_retention_days: Annotated[
-        int,
-        typer.Option("--backup-retention-days", min=1, help="Onboarding backup retention in days"),
-    ] = 30,
-    initial_backup: Annotated[
-        bool,
-        typer.Option("--initial-backup/--no-initial-backup", help="Queue an initial baseline backup during onboarding"),
-    ] = True,
     native: Annotated[
         bool,
         typer.Option("--native/--no-native", help="Register a native/standalone project without a web runtime URL"),
@@ -278,9 +266,6 @@ def create_project(
         native=native,
         permission_tier=permission_tier,
         onboarding=effective_onboard,
-        backup_frequency=backup_frequency,
-        backup_retention_days=backup_retention_days,
-        queue_initial_backup=initial_backup,
     )
 
 
@@ -308,31 +293,13 @@ def update_project(
 @app.command("onboard")
 def onboard_project(
     project_id: Annotated[str, typer.Argument(help="Project ID to onboard")],
-    backup_frequency: Annotated[
-        str,
-        typer.Option("--backup-frequency", help="Standard backup frequency"),
-    ] = "daily",
-    backup_retention_days: Annotated[
-        int,
-        typer.Option("--backup-retention-days", min=1, help="Backup retention in days"),
-    ] = 30,
-    initial_backup: Annotated[
-        bool,
-        typer.Option("--initial-backup/--no-initial-backup", help="Queue an initial baseline backup when none exist"),
-    ] = True,
 ) -> None:
     """Queue standard SummitFlow onboarding for an existing project.
 
     Examples:
         st projects onboard vantage
-        st projects onboard test2 --no-initial-backup
     """
-    run_onboard(
-        project_id,
-        backup_frequency=backup_frequency,
-        backup_retention_days=backup_retention_days,
-        queue_initial_backup=initial_backup,
-    )
+    run_onboard(project_id)
 
 
 @app.command("delete")
@@ -360,8 +327,7 @@ def retire_project(
     """Retire (archive) a project. Owner only; reversible with `reactivate`.
 
     Hides it from routine project lists, services, the Development page and nightly
-    publication, turns off scheduled backups (existing archives are kept) and sets
-    publication to manual. The repository and its data stay on disk.
+    publication, and sets publication to manual. The repository and its data stay on disk.
 
     Examples:
         st projects retire vantage --reason "Concept no longer in use"
@@ -373,7 +339,7 @@ def retire_project(
 def reactivate_project(
     project_id: Annotated[str, typer.Argument(help="Retired project ID")],
 ) -> None:
-    """Reverse a retirement: routine discovery and the project backup schedule resume.
+    """Reverse a retirement: routine discovery resumes.
 
     Examples:
         st projects reactivate vantage

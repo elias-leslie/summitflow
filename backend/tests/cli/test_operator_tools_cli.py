@@ -161,8 +161,6 @@ def test_service_rebuild_uses_native_steps() -> None:
     project = _project()
     release = _prepared_release()
     with (
-        patch.object(service, "backup_worker_restart_guard", return_value=nullcontext(lambda: None)),
-        patch.object(service, "backup_restart_blockers", return_value=[]),
         patch("cli.commands.service._load", return_value=project),
         patch(
             "cli.commands.service.service_ops.prepare_accepted_release",
@@ -1119,7 +1117,6 @@ def test_rebuild_failure_never_restarts_services(failed_step):
         patch.object(service_ops, "run_migrations", return_value=int(failed_step == "run_migrations")),
         patch.object(service_ops, "restart_service") as restart,
         patch.object(service_ops, "sync_systemd_units") as sync,
-        patch.object(service, "backup_restart_blockers", return_value=[]),
     ):
         result = runner.invoke(service.app, ["rebuild", "summitflow"])
     assert result.exit_code == 1
@@ -1153,8 +1150,6 @@ def test_rebuild_fails_when_restarted_worker_is_not_active():
     project = _project()
     release = _prepared_release()
     with (
-        patch.object(service, "backup_worker_restart_guard", return_value=nullcontext(lambda: None)),
-        patch.object(service, "backup_restart_blockers", return_value=[]),
         patch("cli.commands.service._load", return_value=project),
         patch.object(service_ops, "prepare_accepted_release", return_value=(release, project)),
         patch.object(service_release, "deployment_lock", return_value=nullcontext()),

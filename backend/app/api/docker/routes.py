@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import asyncio
-from datetime import datetime
 from typing import Any, Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Query
@@ -11,7 +10,6 @@ from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 
 from ... import runtime_deployment
-from ...config import POSTGRES_PORT
 from ...services.runtime_metrics_sampler import clamp_window_minutes
 from ...storage import runtime_metrics as runtime_metric_store
 from ...utils import nightshift_stack, safe_subprocess
@@ -20,7 +18,6 @@ from .._runtime_proxmox import control_proxmox_guest as _control_proxmox_guest
 from .._runtime_proxmox import get_proxmox_status as _get_proxmox_status
 from .._runtime_proxmox import set_proxmox_guest_autostart as _set_proxmox_guest_autostart
 from ._process_execution import _is_system_unit, _run_command, _run_docker
-from .constants import BACKUP_DIR
 from .helpers import (
     _find_container_name,
     _get_runtime_status,
@@ -28,7 +25,6 @@ from .helpers import (
     _run_journalctl_user,
     _runtime_metrics,
     _runtime_service_statuses,
-    _sanitize_note,
     _service_action,
     _service_definition,
     _set_service_autostart,
@@ -270,78 +266,6 @@ async def enable_service(service: str) -> ActionResult:
 async def disable_service(service: str) -> ActionResult:
     """Disable boot auto-start for a managed service (does not stop it now)."""
     return await _set_service_autostart(service, False)
-
-
-@router.post("/backup", response_model=ActionResult, dependencies=[Depends(_require_auth)])
-async def create_backup(note: str = "") -> ActionResult:
-    """Create an infrastructure backup via the unified backup system."""
-    note = _sanitize_note(note)
-
-    try:
-        return await _backup_via_workflow(note)
-    except Exception as e:
-        return await _backup_fallback(note, e)
-
-
-async def _backup_via_workflow(note: str) -> ActionResult:
-    """Attempt backup via the Hatchet workflow system."""
-    from ...storage import backups as backup_store
-
-    source = backup_store.get_source("infrastructure")
-    if not source:
-        backup_store.create_source(
-            source_id="infrastructure",
-            name="Infrastructure",
-            path="/",
-            source_type="infrastructure",
-        )
-
-    from ...workflows.models import BackupInput
-    from ...workflows.utility import backup_create_wf
-
-    await backup_create_wf.aio_run_no_wait(
-        BackupInput(
-            project_id="infrastructure",
-            source_id="infrastructure",
-            note=note or None,
-            backup_type="manual",
-            keep_local=False,
-        )
-    )
-    return ActionResult(
-        success=True,
-        message="Infrastructure backup queued. Track progress at /backups?source=infrastructure",
-    )
-
-
-async def _backup_fallback(note: str, error: Exception) -> ActionResult:
-    """Fallback to direct pg_dumpall when workflow system is unavailable."""
-    BACKUP_DIR.mkdir(parents=True, exist_ok=True)
-    timestamp = datetime.now().strftime("%Y%m%d-%H%M%S")
-    note_slug = "".join(
-        character if character.isalnum() or character in {"-", "_"} else "-"
-        for character in note
-    ).strip("-")[:80]
-    suffix = f"-{note_slug}" if note_slug else ""
-    filename = f"docker-pgdump-{timestamp}{suffix}.sql"
-    filepath = BACKUP_DIR / filename
-
-    if nightshift_stack.stack_installed():
-        stdout, stderr, rc = await _run_command(
-            "pg_dumpall", "-h", "localhost", "-p", str(POSTGRES_PORT), "-U", "admin", timeout=None
-        )
-    else:
-        stdout, stderr, rc = await _run_docker(
-            "docker", "exec", _find_container_name("postgres"), "pg_dumpall", "-U", "admin"
-        )
-    if rc != 0:
-        return ActionResult(success=False, message=f"Backup failed: {stderr}")
-
-    filepath.write_text(stdout)
-    size_mb = filepath.stat().st_size / (1024 * 1024)
-    return ActionResult(
-        success=True, message=f"Backup created: {filename} ({size_mb:.1f} MB) [fallback: {error}]"
-    )
 
 
 @router.get("/health", response_model=HealthSummary)

@@ -24,7 +24,6 @@ from ..services.schedule_registry import (
     is_schedule_enabled,
     schedule_cron,
 )
-from .backup_progress import make_backup_progress_callback
 from .models import (
     EmptyInput,
     StaleCleanupInput,
@@ -179,28 +178,23 @@ async def refresh_graphify_graphs_wf(input: EmptyInput, ctx: Context) -> dict[st
 @hatchet.task(
     name="summitflow-scheduled-backups",
     input_validator=EmptyInput,
-    # A full sweep performs verified archives sequentially and routinely takes
-    # longer than five minutes.  Hatchet retries a timed-out step from the
-    # beginning, which duplicated large archives and exhausted the backup disk.
-    execution_timeout="7200s",
-    retries=3,
-    backoff_factor=2.0,
+    # The backups run from systemd; this hourly tick only checks their health and tidies old records.
+    execution_timeout="900s",
+    retries=1,
     on_crons=[schedule_cron("scheduled_backups")],
     concurrency=ConcurrencyExpression(
         expression="'summitflow-scheduled-backups'",
         max_runs=1,
-        # Skip the next hourly trigger rather than cancel a healthy long sweep
-        # or accumulate overlapping scheduled work.
         limit_strategy=ConcurrencyLimitStrategy.CANCEL_NEWEST,
     ),
 )
 async def scheduled_backups_wf(input: EmptyInput, ctx: Context) -> dict[str, Any]:
-    from ..tasks.backup import run_scheduled_backups
+    from ..tasks.backup_scheduler import run_scheduled_backups
 
     if not _system_schedule_enabled("scheduled_backups"):
         return _disabled_schedule_result("scheduled_backups")
 
-    return await asyncio.to_thread(run_scheduled_backups, on_progress=make_backup_progress_callback(ctx))
+    return await asyncio.to_thread(run_scheduled_backups)
 
 
 @hatchet.task(
@@ -309,38 +303,6 @@ async def health_monitor_wf(input: EmptyInput, ctx: Context) -> dict[str, Any]:
         return _disabled_schedule_result("health_monitor")
 
     return await asyncio.to_thread(check_and_notify)
-
-
-@hatchet.task(
-    name="summitflow-restore-tests",
-    input_validator=EmptyInput,
-    # Weekly readbacks, the monthly rotation (database loads up to 30 min each), the pinned hub-state drill
-    # (stream 45 min + two quick_checks up to 20 min each) and the monthly host restore from the T7.
-    execution_timeout="14400s",
-    retries=1,
-    on_crons=[schedule_cron("restore_tests")],
-    concurrency=ConcurrencyExpression(
-        expression="'summitflow-restore-tests'",
-        max_runs=1,
-        limit_strategy=ConcurrencyLimitStrategy.CANCEL_IN_PROGRESS,
-    ),
-)
-async def restore_tests_wf(input: EmptyInput, ctx: Context) -> dict[str, Any]:
-    from ..tasks.backup_restore_test import run_restore_tests
-
-    if not _system_schedule_enabled("restore_tests"):
-        return _disabled_schedule_result("restore_tests")
-
-    from ..tasks.backup_offsite_restore_test import run_monthly_offsite_restore_test
-
-    result = await asyncio.to_thread(run_restore_tests)
-    # The weekly tick also owns the monthly offsite restore; it skips itself
-    # inside the cadence and retries next week after a failure.
-    result["offsite_restore"] = await asyncio.to_thread(run_monthly_offsite_restore_test)
-    from ..tasks.backup_btrbk_restore_test import run_host_restore_test
-
-    result["host_restore"] = await asyncio.to_thread(run_host_restore_test)
-    return result
 
 
 @hatchet.task(

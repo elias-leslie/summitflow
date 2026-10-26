@@ -5,7 +5,7 @@ native archive expiry, btrbk target expiry) asks ``guard_deletion`` first. A
 plan that removes more than normal retention would (a large share of all
 points, or of one source) is refused, recorded, and alerted; the caller keeps
 the points and carries on backing up. An oversized run stays blocked until the owner approves it in chat and the
-agent runs ``st backup storage approve-deletion <kind> --target <target>
+agent runs ``st backup approve-deletion <kind> --target <target>
 --owner-approved "<owner's words, date>"``. That lifts the breaker for exactly
 one later run of that kind and target whose plan removes no more points than
 the refused one, within ``APPROVAL_TTL``; the approval is spent when used,
@@ -187,7 +187,7 @@ def approve_deletion(kind: str, *, target: str, owner_approved: str) -> dict[str
     with _locked_status() as status:
         breaker = status["breakers"].get(key) or {}
         if not breaker.get("tripped"):
-            raise ValueError(f"No refused {kind} deletion on {target}; see st backup storage safety")
+            raise ValueError(f"No refused {kind} deletion on {target}; see st backup safety")
         now = _now()
         approval = {"kind": kind, "target": target, "owner_approved": owner_approved, "approved_at": now.isoformat(),
                     "expires_at": (now + APPROVAL_TTL).isoformat(), "planned_delete": breaker.get("planned_delete"),
@@ -216,7 +216,7 @@ def _notify(kind: str, target: str, reasons: list[str]) -> None:
     _send(title="Backup deletion refused",
           message=(f"A {kind} run on {target} would remove more backup points than normal retention, so nothing was removed. "
                    f"{'; '.join(reasons)}. Check the retention settings. If the owner wants this run to go ahead, ask them "
-                   f"in chat first; once they agree, run: st backup storage approve-deletion {kind} --target {target} "
+                   f"in chat first; once they agree, run: st backup approve-deletion {kind} --target {target} "
                    "--owner-approved \"<owner's words, date>\". That allows the next run once."),
           severity="error", metadata={"backup_breaker": kind, "target": target, "reasons": reasons},
           dedupe_key=f"backup-breaker:{kind}:{target}:{_now().date().isoformat()}")

@@ -28,11 +28,6 @@ def test_retirement_requires_owner_and_persists_decision(client) -> None:
             "INSERT INTO projects (id, name, base_url) VALUES (%s, %s, %s)",
             (project_id, "Retirement test", ""),
         )
-        cur.execute(
-            "INSERT INTO backup_sources (id, name, path, source_type, project_id, enabled) "
-            "VALUES (%s, %s, %s, 'project', %s, TRUE)",
-            (project_id, "Retirement test", f"/tmp/{project_id}", project_id),
-        )
         conn.commit()
     from app.storage.notifications import create_notification
     from app.storage.notifications_query import get_notification
@@ -61,9 +56,6 @@ def test_retirement_requires_owner_and_persists_decision(client) -> None:
         assert publication_mode(project_id) == "manual"
         assert (get_notification(stale["id"]) or {}).get("status") == "dismissed"
         with get_connection() as conn, conn.cursor() as cur:
-            cur.execute("SELECT enabled FROM backup_sources WHERE id = %s", (project_id,))
-            assert cur.fetchone() == (False,)
-        with get_connection() as conn, conn.cursor() as cur:
             cur.execute(
                 "SELECT owner_email, reason, approved_at FROM project_retirement_decisions WHERE project_id = %s",
                 (project_id,),
@@ -81,8 +73,6 @@ def test_retirement_requires_owner_and_persists_decision(client) -> None:
         assert response.status_code == 200
         assert response.json()["lifecycle"] == "active"
         with get_connection() as conn, conn.cursor() as cur:
-            cur.execute("SELECT enabled FROM backup_sources WHERE id = %s", (project_id,))
-            assert cur.fetchone() == (True,)
             cur.execute(
                 "SELECT action, owner_email, reason, recorded_at FROM project_lifecycle_events "
                 "WHERE project_id = %s ORDER BY id",
@@ -105,7 +95,7 @@ def test_retirement_requires_owner_and_persists_decision(client) -> None:
             conn.commit()
 
 
-def test_project_root_update_rejects_release_without_changing_backup(client, tmp_path: Path, monkeypatch) -> None:
+def test_project_root_update_rejects_release_without_changing_root(client, tmp_path: Path, monkeypatch) -> None:
     project_id = f"root-guard-{uuid4().hex[:8]}"
     checkout = tmp_path / project_id
     checkout.mkdir()
@@ -119,11 +109,6 @@ def test_project_root_update_rejects_release_without_changing_backup(client, tmp
             "INSERT INTO projects (id, name, base_url, root_path) VALUES (%s, %s, %s, %s)",
             (project_id, "Root guard", "", str(checkout)),
         )
-        cur.execute(
-            """INSERT INTO backup_sources (id, name, path, source_type, project_id, enabled, frequency)
-               VALUES (%s, %s, %s, 'project', %s, TRUE, 'weekly')""",
-            (project_id, "Root guard", str(checkout), project_id),
-        )
         conn.commit()
     try:
         response = client.patch(
@@ -133,12 +118,7 @@ def test_project_root_update_rejects_release_without_changing_backup(client, tmp
         with get_connection() as conn, conn.cursor() as cur:
             cur.execute("SELECT root_path FROM projects WHERE id = %s", (project_id,))
             project_root = cur.fetchone()
-            cur.execute(
-                "SELECT path, enabled, frequency FROM backup_sources WHERE id = %s", (project_id,)
-            )
-            backup = cur.fetchone()
         assert project_root == (str(checkout),)
-        assert backup == (str(checkout), True, "weekly")
     finally:
         with get_connection() as conn, conn.cursor() as cur:
             cur.execute("DELETE FROM backup_sources WHERE id = %s", (project_id,))
@@ -211,8 +191,8 @@ def test_root_patch_requires_manifest_or_matching_legacy_git_checkout(client, tm
             conn.commit()
 
 
-def test_create_project_creates_backup_source(client, monkeypatch) -> None:
-    """POST /api/projects should seed a matching project backup source."""
+def test_create_project_does_not_add_a_backup_source(client, monkeypatch) -> None:
+    """Backups cover every project under /srv/workspaces; creating one adds no per-project backup row."""
     project_id = f"create-{uuid4().hex[:8]}"
     root_path = f"{Path.home()}/.local/share/summitflow/workspaces/projects/{project_id}"
     monkeypatch.setattr("app.api.projects.explorer.run_scan_job", lambda *args, **kwargs: None)
@@ -243,7 +223,7 @@ def test_create_project_creates_backup_source(client, monkeypatch) -> None:
             )
             project_row = cur.fetchone()
 
-        assert row == (project_id, "Create Project", root_path, "project", project_id)
+        assert row is None
         assert project_row == ("dev", None)
     finally:
         with get_connection() as conn, conn.cursor() as cur:
@@ -372,11 +352,7 @@ def test_create_project_queues_standard_onboarding_when_requested(client, monkey
                 "base_url": "https://onboard.example",
                 "health_endpoint": "/health",
                 "root_path": root_path,
-                "onboarding": {
-                    "backup_frequency": "daily",
-                    "backup_retention_days": 30,
-                    "queue_initial_backup": True,
-                },
+                "onboarding": {},
             },
         )
 
@@ -384,9 +360,6 @@ def test_create_project_queues_standard_onboarding_when_requested(client, monkey
         assert len(onboarding_calls) == 1
         args, kwargs = onboarding_calls[0]
         assert args[0] == project_id
-        request = args[1]
-        assert request.backup_frequency == "daily"
-        assert request.backup_retention_days == 30
         assert kwargs["triggered_by"] == "project_create"
     finally:
         with get_connection() as conn, conn.cursor() as cur:
@@ -430,11 +403,8 @@ def test_create_project_prefers_manifest_display_name(client, monkeypatch, tmp_p
         with get_connection() as conn, conn.cursor() as cur:
             cur.execute("SELECT name FROM projects WHERE id = %s", (project_id,))
             project_name = cur.fetchone()
-            cur.execute("SELECT name FROM backup_sources WHERE id = %s", (project_id,))
-            backup_name = cur.fetchone()
 
         assert project_name == ("A-Term Preview",)
-        assert backup_name == ("A-Term Preview",)
     finally:
         with get_connection() as conn, conn.cursor() as cur:
             cur.execute("DELETE FROM backup_sources WHERE id = %s", (project_id,))
@@ -534,13 +504,6 @@ def test_onboard_project_queues_standard_onboarding(client, monkeypatch) -> None
             """,
             (project_id, "Manual Onboard", "https://manual.example", "/health", root_path),
         )
-        cur.execute(
-            """
-            INSERT INTO backup_sources (id, name, path, source_type, project_id)
-            VALUES (%s, %s, %s, 'project', %s)
-            """,
-            (project_id, "Manual Onboard", root_path, project_id),
-        )
         conn.commit()
 
     monkeypatch.setattr(
@@ -551,28 +514,14 @@ def test_onboard_project_queues_standard_onboarding(client, monkeypatch) -> None
     try:
         response = client.post(
             f"/api/projects/{project_id}/onboard",
-            json={
-                "backup_frequency": "daily",
-                "backup_retention_days": 30,
-                "queue_initial_backup": True,
-            },
+            json={},
         )
 
         assert response.status_code == 200
-        assert response.json() == {
-            "status": "queued",
-            "project_id": project_id,
-            "backup_schedule_enabled": True,
-            "backup_frequency": "daily",
-            "backup_retention_days": 30,
-            "queue_initial_backup": True,
-        }
+        assert response.json() == {"status": "queued", "project_id": project_id}
         assert len(onboarding_calls) == 1
         args, kwargs = onboarding_calls[0]
         assert args[0] == project_id
-        request = args[1]
-        assert request.backup_frequency == "daily"
-        assert request.backup_retention_days == 30
         assert kwargs["triggered_by"] == "project_onboard"
     finally:
         with get_connection() as conn, conn.cursor() as cur:
@@ -581,111 +530,27 @@ def test_onboard_project_queues_standard_onboarding(client, monkeypatch) -> None
             conn.commit()
 
 
-def test_run_project_onboarding_seeds_backup_schedule_anchor(monkeypatch) -> None:
-    """Onboarding should seed the first scheduled run after queuing a baseline backup."""
+def test_run_project_onboarding_scans_and_syncs_tasks(monkeypatch) -> None:
+    """Onboarding scans the checkout and dispatches the post-scan task sync; it touches no backup settings."""
     from app.api.projects.models import ProjectOnboardingRequest
     from app.api.projects.onboarding import run_project_onboarding
 
-    update_source_last_run = MagicMock()
-
+    dispatched = MagicMock()
     monkeypatch.setattr(
         "app.api.projects.onboarding.get_project_root_path",
         lambda _project_id: "/srv/workspaces/projects/vantage",
     )
     monkeypatch.setattr(
-        "app.api.projects.onboarding.backup_store.get_source",
-        lambda _project_id: {"id": "vantage", "last_run_at": None},
-    )
-    monkeypatch.setattr(
-        "app.api.projects.onboarding.backup_store.update_source",
-        lambda *_args, **_kwargs: None,
-    )
-    monkeypatch.setattr(
-        "app.api.projects.onboarding.backup_store.list_backups",
-        lambda **_kwargs: ([], 0),
-    )
-    monkeypatch.setattr(
-        "app.api.projects.onboarding.backup_store.get_latest_backup",
-        lambda **_kwargs: None,
-    )
-    monkeypatch.setattr(
-        "app.api.projects.onboarding._queue_initial_backup",
-        lambda _project_id: None,
-    )
-    monkeypatch.setattr(
-        "app.api.projects.onboarding.backup_store.update_source_last_run",
-        update_source_last_run,
-    )
-    monkeypatch.setattr(
         "app.api.projects.onboarding.explorer.run_scan_job",
         lambda *_args, **_kwargs: {"scan_id": 7},
     )
-    monkeypatch.setattr(
-        "app.api.projects.onboarding.dispatch_post_scan_tasks",
-        lambda *_args, **_kwargs: None,
-    )
-    monkeypatch.setattr(
-        "app.api.projects.onboarding.make_post_scan_dispatch",
-        lambda: None,
-    )
+    monkeypatch.setattr("app.api.projects.onboarding.dispatch_post_scan_tasks", dispatched)
+    monkeypatch.setattr("app.api.projects.onboarding.make_post_scan_dispatch", lambda: None)
 
-    run_project_onboarding(
-        "vantage",
-        ProjectOnboardingRequest(),
-        triggered_by="project_onboard",
-    )
+    run_project_onboarding("vantage", ProjectOnboardingRequest(), triggered_by="project_onboard")
 
-    update_source_last_run.assert_called_once()
-    args = update_source_last_run.call_args.args
-    assert args[0] == "vantage"
-    assert args[1] is not None
-
-
-def test_update_project_syncs_backup_source(client, tmp_path: Path) -> None:
-    """PATCH /api/projects should keep the matching backup source in sync."""
-    project_id = f"update-{uuid4().hex[:8]}"
-    new_root = tmp_path / project_id
-    new_root.mkdir()
-    (new_root / "project.identity.json").write_text(json.dumps({"project": {"id": project_id}}))
-
-    with get_connection() as conn, conn.cursor() as cur:
-        cur.execute(
-            """
-            INSERT INTO projects (id, name, base_url, health_endpoint, root_path)
-            VALUES (%s, %s, %s, %s, %s)
-            """,
-            (project_id, "Old Name", "http://old.example", "/health", "/old/root"),
-        )
-        cur.execute(
-            """
-            INSERT INTO backup_sources (id, name, path, source_type, project_id)
-            VALUES (%s, %s, %s, 'project', %s)
-            """,
-            (project_id, "Old Name", "/old/root", project_id),
-        )
-        conn.commit()
-
-    try:
-        response = client.patch(
-            f"/api/projects/{project_id}",
-            json={"name": "New Name", "root_path": str(new_root)},
-        )
-
-        assert response.status_code == 200
-
-        with get_connection() as conn, conn.cursor() as cur:
-            cur.execute(
-                "SELECT name, path, project_id FROM backup_sources WHERE id = %s",
-                (project_id,),
-            )
-            row = cur.fetchone()
-
-        assert row == ("New Name", str(new_root), project_id)
-    finally:
-        with get_connection() as conn, conn.cursor() as cur:
-            cur.execute("DELETE FROM backup_sources WHERE id = %s", (project_id,))
-            cur.execute("DELETE FROM projects WHERE id = %s", (project_id,))
-            conn.commit()
+    dispatched.assert_called_once()
+    assert dispatched.call_args.args[1] == "vantage"
 
 
 def test_update_project_clears_stale_public_url_when_hosting_is_removed(client, tmp_path: Path) -> None:

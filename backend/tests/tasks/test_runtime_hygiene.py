@@ -4,23 +4,14 @@ from __future__ import annotations
 from datetime import UTC, datetime, timedelta
 
 
-def _backup_row(*, source_id: str, hours_ago: float, status: str = "completed") -> dict[str, object]:
+def _backup_row(*, hours_ago: float, status: str = "completed") -> dict[str, object]:
+    """The single host row runtime hygiene reads: Drive success time plus health flags."""
     now = datetime.now(UTC)
     return {
-        "source_id": source_id,
-        "source_name": source_id,
-        "source_type": "project",
-        "enabled": True,
-        "next_run_at": None,
+        "source_id": "host",
         "last_success_at": (now - timedelta(hours=hours_ago)).isoformat(),
-        "failure_count_7d": 0,
-        "last_backup_status": status,
-        "pending_upload_count": 0,
-        "last_restore_tested_at": (now - timedelta(days=1)).isoformat(),
-        "last_restore_test_ok": True,
-        "last_drill_at": None,
-        "last_drill_ok": None,
-        "last_drill_backup_id": None,
+        "stale": status == "failed",
+        "unverified": False,
     }
 
 
@@ -58,7 +49,7 @@ def test_query_bloat_candidates_returns_unavailable_when_db_url_missing(mocker) 
 def test_project_target_vacuums_when_backup_is_fresh(mocker) -> None:
     from app.tasks.runtime_hygiene import _project_target
 
-    backup_rows = {"summitflow": _backup_row(source_id="summitflow", hours_ago=2)}
+    backup_rows = {"host": _backup_row(hours_ago=2)}
     mocker.patch(
         "app.tasks.runtime_hygiene._journal_findings",
         return_value={"status": "ok", "pattern": "summitflow-*", "issue_count": 0, "created_task_ids": [], "errors": []},
@@ -97,7 +88,7 @@ def test_project_target_vacuums_when_backup_is_fresh(mocker) -> None:
 def test_project_target_creates_issues_when_backup_stays_stale(mocker) -> None:
     from app.tasks.runtime_hygiene import _project_target
 
-    backup_rows = {"agent-hub": _backup_row(source_id="agent-hub", hours_ago=80, status="failed")}
+    backup_rows = {"host": _backup_row(hours_ago=80, status="failed")}
     mocker.patch(
         "app.tasks.runtime_hygiene._journal_findings",
         return_value={"status": "ok", "pattern": "agent-hub-*", "issue_count": 0, "created_task_ids": [], "errors": []},

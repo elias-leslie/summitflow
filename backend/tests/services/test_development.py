@@ -10,8 +10,8 @@ from app.services import development as service
 def _stores(mocker, tmp_path):
     mocker.patch.object(service.tasks, "list_tasks", return_value=[])
     mocker.patch.object(service.tasks, "list_blocked_tasks", return_value=[])
-    mocker.patch.object(service.backups, "list_backups", return_value=([], 0))
-    mocker.patch.object(service.backups, "list_sources", return_value=[])
+    mocker.patch("app.tasks.backup_offsite.read_state", return_value={})
+    mocker.patch("app.tasks.backup_overview.local_summary", return_value={"enabled": False})
     mocker.patch.object(service, "current_source_root", return_value=None)
     mocker.patch("app.services.native_deployment._store_root", return_value=tmp_path / "native")
 
@@ -25,10 +25,9 @@ def test_projection_preserves_neutral_work_and_independent_recovery(tmp_path, mo
         ("rev-parse", "--verify", "@{upstream}"): "b" * 40,
         ("rev-list", "--count", "@{upstream}..HEAD"): "2",
     }[args])
-    mocker.patch.object(service.backups, "list_backups", return_value=([{
-        "id": "bkp-1", "status": "completed", "completed_at": "2026-10-03T20:00:00Z",
-        "verification_json": {"snapshot_id": "snap-1", "offsite": {"status": "failed", "error": "Destination unavailable"}},
-    }], 1))
+    mocker.patch("app.tasks.backup_overview.local_summary", return_value={"enabled": True, "last_good_at": "2026-10-03T20:00:00Z"})
+    mocker.patch("app.tasks.backup_offsite.read_state", return_value={
+        "last_status": "failed", "last_error": "Destination unavailable", "jobs": {"workspaces": {"snapshot_id": "snap-1", "time": "2026-10-03T02:00:00Z"}}})
     result = service.build_development_projection("alpha", tmp_path)
     assert result["version"] == "development.v1"
     assert result["working_tree"]["uncommitted"] == 2
@@ -77,7 +76,7 @@ def test_missing_stores_do_not_become_zero_or_success(tmp_path, mocker):
     _stores(mocker, tmp_path)
     mocker.patch.object(service, "_git", side_effect=ValueError("Git unavailable"))
     mocker.patch.object(service.tasks, "list_tasks", side_effect=RuntimeError("Store unavailable"))
-    mocker.patch.object(service.backups, "list_backups", side_effect=RuntimeError("Store unavailable"))
+    mocker.patch("app.tasks.backup_offsite.read_state", side_effect=RuntimeError("Store unavailable"))
     result = service.build_development_projection("alpha", tmp_path)
     assert result["working_tree"]["state"] == "error"
     assert "uncommitted" not in result["working_tree"]

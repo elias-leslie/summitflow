@@ -47,7 +47,6 @@ class AgentConfig(TypedDict, total=False):
     self_healing_enabled: bool  # Enable scheduled self-healing orchestrator
     prod_smoke_test_enabled: bool  # Enable scheduled production smoke tests
     health_monitor_enabled: bool  # Enable scheduled health monitor checks
-    restore_tests_enabled: bool  # Enable scheduled restore verification
     runtime_hygiene_enabled: bool  # Enable scheduled runtime hygiene audit
     nightly_publication_enabled: bool  # Enable the overnight publication sweep (system kill switch)
     nightly_deep_lane_enabled: bool  # Enable the nightly deep lane (system kill switch)
@@ -96,7 +95,6 @@ DEFAULT_AGENT_CONFIG: AgentConfig = {
     "self_healing_enabled": False,
     "prod_smoke_test_enabled": True,
     "health_monitor_enabled": True,
-    "restore_tests_enabled": True,
     "runtime_hygiene_enabled": False,
     "nightly_publication_enabled": True,
     "nightly_deep_lane_enabled": True,

@@ -7,7 +7,6 @@ from typing import Any
 
 from fastapi import BackgroundTasks, HTTPException
 
-from ...storage import backups as backup_store
 from .models import ProjectCreate, ProjectOnboardingRequest
 from .public_urls import build_project_urls
 
@@ -15,7 +14,6 @@ TRIGGER_PROJECT_CREATE = "project_create"
 TRIGGER_PROJECT_ONBOARD = "project_onboard"
 
 ERR_ONBOARDING_REQUIRES_ROOT = "Project onboarding requires root_path"
-ERR_ONBOARDING_REQUIRES_BACKUP = "Project onboarding requires a backup source"
 ERR_BASE_URL_REQUIRED = (
     "Project base URL is required unless SummitFlow-hosted defaults are configured"
 )
@@ -65,8 +63,6 @@ def queue_project_create_work(
 def validate_existing_project_onboarding(project_id: str, root_path: str | None) -> None:
     if not root_path:
         raise HTTPException(status_code=400, detail=ERR_ONBOARDING_REQUIRES_ROOT)
-    if not backup_store.get_source(project_id):
-        raise HTTPException(status_code=400, detail=ERR_ONBOARDING_REQUIRES_BACKUP)
 
 
 def queue_existing_project_onboarding(

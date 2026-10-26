@@ -14,7 +14,7 @@ import pytest
 from app.tasks import backup_publish
 from app.tasks import nightly_deep_lane as deep_lane
 from app.tasks import nightly_publication as nightly
-from tests.tasks.test_backup_native_recovery import _git
+from tests.tasks.git_helpers import _git
 
 DAY = datetime(2026, 10, 10, 15, 5, tzinfo=UTC)  # 11:05 EDT
 NIGHT = datetime(2026, 10, 10, 7, 5, tzinfo=UTC)  # 03:05 EDT, the containment hour

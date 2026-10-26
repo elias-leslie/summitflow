@@ -150,14 +150,14 @@ class TestActivityFeed:
         mock_get_activity = mocker.patch("app.storage.activity.get_aggregated_activity")
         mock_get_activity.return_value = ([], 0)
 
-        response = client.get("/api/activity?types=task,invalid,backup")
+        response = client.get("/api/activity?types=task,invalid,git")
         assert response.status_code == 200
 
         mock_get_activity.assert_called_once_with(
             project_id=None,
             limit=50,
             offset=0,
-            event_types=["task", "backup"],
+            event_types=["task", "git"],
         )
 
     def test_activity_feed_has_more_flag(self, mocker: MockerFixture) -> None:
@@ -166,11 +166,11 @@ class TestActivityFeed:
         mock_get_activity.return_value = (
             [
                 {
-                    "type": "backup",
-                    "message": "Manual backup completed",
+                    "type": "task",
+                    "message": "Task completed",
                     "timestamp": "2026-01-17T10:00:00+00:00",
                     "project_id": "proj-123",
-                    "metadata": {"backup_id": "bkp-xyz"},
+                    "metadata": {"task_id": "task-xyz"},
                 }
             ],
             10,  # Total is more than returned
@@ -214,34 +214,6 @@ class TestActivityEventTypes:
         assert event["metadata"]["task_id"] == "task-abc"
         assert event["metadata"]["status"] == "blocked"
 
-    def test_backup_event_format(self, mocker: MockerFixture) -> None:
-        """Test backup event has correct format."""
-        mock_get_activity = mocker.patch("app.storage.activity.get_aggregated_activity")
-        mock_get_activity.return_value = (
-            [
-                {
-                    "type": "backup",
-                    "message": "Scheduled backup completed (15.2 MB)",
-                    "timestamp": "2026-01-17T12:00:00+00:00",
-                    "project_id": "proj-789",
-                    "metadata": {
-                        "backup_id": "bkp-123",
-                        "backup_type": "scheduled",
-                        "status": "completed",
-                        "size_bytes": 15937024,
-                    },
-                }
-            ],
-            1,
-        )
-
-        response = client.get("/api/activity")
-        assert response.status_code == 200
-        event = response.json()["items"][0]
-
-        assert event["type"] == "backup"
-        assert event["metadata"]["backup_type"] == "scheduled"
-        assert event["metadata"]["size_bytes"] == 15937024
 
     def test_git_event_format(self, mocker: MockerFixture) -> None:
         """Test git event has correct format."""

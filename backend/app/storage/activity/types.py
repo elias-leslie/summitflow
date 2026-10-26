@@ -17,15 +17,6 @@ class TaskMetadata(TypedDict):
     action: str
 
 
-class BackupMetadata(TypedDict):
-    """Metadata for backup activity events."""
-
-    backup_id: str
-    backup_type: str
-    status: str
-    size_bytes: int
-
-
 class GitMetadata(TypedDict):
     """Metadata for git commit activity events."""
 
@@ -37,7 +28,7 @@ class GitMetadata(TypedDict):
     deletions: int
 
 
-EventType = Literal["task", "backup", "git"]
+EventType = Literal["task", "git"]
 
 
 class ActivityEvent(TypedDict):

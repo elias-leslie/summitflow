@@ -15,7 +15,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
-from app.storage import backups, tasks
+from app.storage import tasks
 from app.utils import safe_subprocess
 from cli.lib.acceptance import (
     AcceptanceError,
@@ -198,33 +198,25 @@ def _running(project_id: str, root: Path, accepted: dict[str, Any]) -> dict[str,
 
 
 def _recovery(project_id: str) -> dict[str, dict[str, Any]]:
+    """Host-level recovery evidence: every project is inside the 4-hourly local points and the daily Google Drive copy."""
     result = {key: evidence() for key in ("capture", "offsite", "snapshot", "restore")}
     try:
-        records, total = backups.list_backups(project_id=project_id, limit=50)
-        sources = [source for source in backups.list_sources() if source.get("project_id") == project_id]
-        if records:
-            row = records[0]
-            verification = row.get("verification_json") or {}
-            if isinstance(verification, str):
-                verification = json.loads(verification)
-            recovery = verification.get("recovery") or {}
-            git = recovery.get("git") or {}
-            common = {"source_commit": git.get("head"), "observed_at": row.get("completed_at") or row.get("created_at"), "artifact": row["id"]}
-            result["capture"] = evidence(str(row["status"]), reason="Latest backup capture", backup_count=total, **common)
-            offsite = verification.get("offsite") or {}
-            result["offsite"] = evidence(str(offsite.get("status") or "unavailable"),
-                                          reason=str(offsite.get("error") or "Offsite copy evidence"), **common)
-            snapshot = next((item for item in records if isinstance(item.get("verification_json"), dict) and item["verification_json"].get("snapshot_id")), None)
-            snapshot_id = snapshot["verification_json"]["snapshot_id"] if snapshot else None
-            result["snapshot"] = evidence("recorded" if snapshot_id else "unavailable",
-                                           reason="Latest retained repository snapshot" if snapshot_id else "No repository snapshot recorded in recent backups",
-                                           snapshot_id=snapshot_id, observed_at=snapshot.get("completed_at") if snapshot else None,
-                                           artifact=str(snapshot["id"]) if snapshot else None)
-        drills = [source for source in sources if source.get("last_drill_at")]
-        if drills:
-            drill = max(drills, key=lambda item: str(item["last_drill_at"]))
-            result["restore"] = evidence("verified" if drill.get("last_drill_ok") is True else "failed" if drill.get("last_drill_ok") is False else "unknown",
-                                          observed_at=drill["last_drill_at"], artifact=drill.get("last_drill_backup_id"), reason="Recorded restore drill")
+        from app.tasks import backup_offsite, backup_overview
+
+        local = backup_overview.local_summary()
+        if local.get("enabled") and local.get("last_good_at"):
+            result["capture"] = evidence("completed", observed_at=local["last_good_at"], reason="Latest local backup point (every 4 hours)")
+        state = backup_offsite.read_state()
+        job = (state.get("jobs") or {}).get("workspaces") or {}
+        if job.get("snapshot_id"):
+            result["offsite"] = evidence("completed" if state.get("last_status") == "ok" else str(state.get("last_status") or "unknown"),
+                                         observed_at=job.get("time"), reason=str(state.get("last_error") or "Google Drive copy (daily)"))
+            result["snapshot"] = evidence("recorded", observed_at=job.get("time"), snapshot_id=job["snapshot_id"],
+                                          reason="Latest Google Drive snapshot of all projects")
+        spot = state.get("spot_restore") or {}
+        if spot.get("status"):
+            result["restore"] = evidence("verified" if spot["status"] == "ok" else "failed", observed_at=spot.get("at"),
+                                         reason=str(spot.get("error") or "Weekly test restore from Google Drive"))
     except (OSError, ValueError, RuntimeError):
         return {key: evidence("error", reason="Backup evidence unavailable") for key in result}
     return result

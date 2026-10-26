@@ -108,16 +108,8 @@ export function RowDetails({
         aria-label="Recovery"
         className="flex flex-wrap gap-x-5 gap-y-1 text-xs"
       >
-        <RecoveryFact
-          label="Capture"
-          value={development.recovery.capture}
-          extra={
-            development.recovery.capture.backup_count
-              ? `${development.recovery.capture.backup_count} kept`
-              : undefined
-          }
-        />
-        <RecoveryFact label="Offsite" value={development.recovery.offsite} />
+        <RecoveryFact label="Local" value={development.recovery.capture} />
+        <RecoveryFact label="Drive" value={development.recovery.offsite} />
         <RecoveryFact
           label="Repo snapshot"
           value={development.recovery.snapshot}
@@ -182,11 +174,9 @@ export function RowDetails({
 function RecoveryFact({
   label,
   value,
-  extra,
 }: {
   label: string
   value: DevelopmentProjection['publication']
-  extra?: string
 }) {
   const failed = ['failed', 'error'].includes(value.state)
   const missing = value.state === 'unavailable'
@@ -210,7 +200,6 @@ function RecoveryFact({
           {evidenceAge(value.observed_at)}
         </span>
       )}
-      {extra && <span className="text-slate-500"> · {extra}</span>}
     </span>
   )
 }

@@ -9,7 +9,6 @@ from agent_hub.exceptions import ServerError
 from starlette.concurrency import run_in_threadpool
 
 from app.services._agent_hub_config import get_async_client, resolve_agent_hub_request_source
-from app.storage import backups as backup_store
 from cli.lib import coord_disrupt
 
 _TIMEOUT = 10.0
@@ -35,10 +34,6 @@ async def host_disruption(target: str = coord_disrupt.HOST_TARGET) -> dict[str, 
             raise failure
         return sessions or []
 
-    def _running() -> list[dict[str, Any]]:
-        rows, _ = backup_store.list_backups(status="running", limit=50)
-        return rows
-
     return await run_in_threadpool(
-        coord_disrupt.snapshot, target, everyone=True, sessions=_sessions, running_backups=_running
+        coord_disrupt.snapshot, target, everyone=True, sessions=_sessions
     )

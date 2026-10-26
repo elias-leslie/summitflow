@@ -265,10 +265,6 @@ def test_agent_reaches_the_api_but_not_owner_decisions(monkeypatch) -> None:
     monkeypatch.setattr(access_control, "resolve_principal", lambda _request: agent)
     client = TestClient(app)
     assert client.get("/api/viewer/projects").status_code == 404  # past the gate
-    assert client.post("/api/backup-storage/x/initialize").status_code == 403
-    assert client.put("/api/backup-storage/x", json={}).status_code == 403
-    assert client.delete("/api/backup-storage/x").status_code == 403
-    assert client.post("/api/backup-storage", json={"name": "n", "backend_type": "local"}).status_code == 403
     assert client.post("/api/agent-hub/sessions/x/close").status_code == 403
     assert client.get("/api/auth/me").json()["is_owner"] is False
 

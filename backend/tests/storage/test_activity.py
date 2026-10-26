@@ -9,7 +9,6 @@ import pytest
 from pytest_mock import MockerFixture
 
 from app.storage.activity.sources import git as git_source
-from app.storage.activity.sources.backups import get_recent_backup_events
 from app.storage.activity.sources.git import get_recent_git_events
 from app.storage.activity.sources.tasks import get_recent_task_events
 
@@ -197,21 +196,6 @@ def test_git_events_skip_testing_projects(mocker: MockerFixture) -> None:
 
     assert {event["project_id"] for event in events} == {"summitflow"}
     assert commits.call_count == 1
-
-
-def test_backup_events_include_pending_upload_and_exclude_testing(mocker: MockerFixture) -> None:
-    cursor = _mock_cursor(
-        mocker, "backups",
-        [("bk-1", "summitflow", "project", "completed_pending_upload", 2 * 1024 * 1024, _dt(12), _dt(11))],
-    )
-
-    events = get_recent_backup_events(limit=5)
-
-    sql = str(cursor.execute.call_args.args[0])
-    assert "completed_pending_upload" in sql
-    assert "category = 'testing'" in sql
-    assert events[0]["message"] == "Project backup completed (upload pending) (2.0 MB)"
-    assert events[0]["metadata"]["status"] == "completed_pending_upload"
 
 
 def test_global_task_events_exclude_testing_projects(mocker: MockerFixture) -> None:

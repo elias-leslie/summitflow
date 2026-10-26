@@ -647,10 +647,10 @@ class TestFailStaleRunningBackups:
         assert fresh_row is not None
         assert fresh_row["status"] == "running"
 
-    def test_scheduler_reaps_a_dead_holders_stuck_running_row_through_the_real_sql(
-        self, conn: Any, cleanup_project: str, monkeypatch: pytest.MonkeyPatch,
+    def test_scheduler_fails_old_running_rows_of_retired_backups_through_the_real_sql(
+        self, conn: Any, cleanup_project: str,
     ) -> None:
-        """Both scheduler passes run the real cleanup SQL: a dead holder's row fails after a minute."""
+        """Nothing holds a lease any more, so a row left running past the age limit fails; a fresh one stays."""
         from app.tasks import backup_scheduler as scheduler
 
         stuck = backups.create_backup_record(cleanup_project)
@@ -658,15 +658,11 @@ class TestFailStaleRunningBackups:
         for row in (stuck, just_started):
             backups.update_backup_status(row["id"], "running")
         with conn.cursor() as cur:
-            cur.execute("UPDATE backups SET started_at = NOW() - INTERVAL '5 minutes' WHERE id = %s", (stuck["id"],))
+            cur.execute("UPDATE backups SET started_at = NOW() - INTERVAL '2 hours' WHERE id = %s", (stuck["id"],))
             conn.commit()
-        # The lease key still exists (so the 30-minute pass keeps it), but its holder process is gone.
-        monkeypatch.setattr(scheduler, "has_active_backup_lease", lambda _source_id: True)
-        monkeypatch.setattr(scheduler, "backup_lease_holder_dead", lambda source_id: source_id == cleanup_project)
         assert scheduler._fail_stale_running_records() == 1
         row = backups.get_backup(stuck["id"])
         assert row is not None and row["status"] == "failed" and row["completed_at"] is not None
-        assert "restart or kill" in (row["error_message"] or "")
         fresh = backups.get_backup(just_started["id"])
         assert fresh is not None and fresh["status"] == "running"
 

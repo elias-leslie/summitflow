@@ -1,0 +1,12 @@
+[Unit]
+Description=Run the SummitFlow host backup every 4 hours
+
+[Timer]
+# Wall-clock slots (the 02:30 daily slot is kept). Persistent catches up a slot missed while the machine was off.
+OnCalendar=*-*-* 02/4:30:00
+Persistent=true
+AccuracySec=1min
+Unit=summitflow-host-backup.service
+
+[Install]
+WantedBy=timers.target

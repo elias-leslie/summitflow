@@ -26,7 +26,7 @@ router = APIRouter()
 class ActivityEvent(BaseModel):
     """A single activity event."""
 
-    type: Literal["task", "backup", "git"]
+    type: Literal["task", "git"]
     message: str
     timestamp: str | None
     project_id: str
@@ -47,7 +47,7 @@ class ActivityFeedResponse(BaseModel):
 # Helpers
 # ============================================================================
 
-_VALID_TYPES = {"task", "backup", "git"}
+_VALID_TYPES = {"task", "git"}
 
 
 def _parse_event_types(types: str | None) -> list[str] | None:
@@ -82,14 +82,13 @@ async def get_activity_feed(
     offset: int = Query(default=0, ge=0, description="Pagination offset"),
     types: str | None = Query(
         default=None,
-        description="Comma-separated event types: task,backup,git",
+        description="Comma-separated event types: task,git",
     ),
 ) -> ActivityFeedResponse:
     """Get unified activity feed from all sources.
 
     Aggregates:
     - Task changes (created, updated, completed, blocked, cancelled)
-    - Backup events (completed/failed backups)
     - Git commits (read from repository history)
 
     Results are sorted by timestamp (newest first) and paginated.

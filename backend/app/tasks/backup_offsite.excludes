@@ -1,0 +1,78 @@
+# What the daily off-site restic job leaves out of the btrbk snapshots: regenerable
+# dependencies, build output and caches. Everything else is backed up, so a new
+# project or a new file in a managed folder is covered with no list to extend.
+# restic syntax: a name without a leading slash matches at any depth; a leading
+# slash anchors at the filesystem root (the snapshot is mounted at its real path).
+
+# dependencies and virtual environments
+node_modules
+.venv
+venv
+.pnpm-store
+.npm
+.yarn/cache
+.tox
+.gradle
+.m2/repository
+site-packages
+
+# build output and tool caches
+__pycache__
+*.pyc
+.next
+.nuxt
+.svelte-kit
+.turbo
+.parcel-cache
+.output
+.pytest_cache
+.mypy_cache
+.ruff_cache
+.hypothesis
+.nyc_output
+htmlcov
+storybook-static
+target/debug
+target/release
+.cache
+
+# btrbk and st work-recovery snapshots are separate Btrfs subvolumes
+/srv/workspaces/.snapshots
+/srv/workspaces/.btrbk
+/home/.btrbk
+/.btrbk
+
+# machine-local caches and toolchains (all re-downloadable)
+/srv/workspaces/cache
+/srv/workspaces/toolchains
+/home/*/.summitflow/services
+/home/*/.rustup
+/home/*/.cargo/registry
+/home/*/.cargo/git
+/home/*/.local/lib
+/home/*/.local/share/uv
+/home/*/.local/share/pnpm
+/home/*/.local/share/containers
+/home/*/.local/share/Trash
+/home/*/.local/share/godot
+/home/*/.android
+/home/*/.local/opt
+/home/*/.local/src
+/home/*/.local/share/claude/versions
+/home/*/.agent-browser/browsers
+/home/*/.u2net
+/home/*/.codex/packages
+/home/*/Android
+/home/*/snap
+/home/*/.wine/drive_c/windows
+/home/*/.config/google-chrome/*/Cache
+/home/*/.config/google-chrome/*/Code Cache
+/home/*/.config/google-chrome/*/GPUCache
+/home/*/.config/google-chrome/*/Service Worker/CacheStorage
+/home/*/.config/google-chrome/*/DawnGraphiteCache
+/home/*/.config/google-chrome/*/DawnWebGPUCache
+/home/*/.config/google-chrome/GrShaderCache
+/home/*/.config/google-chrome/ShaderCache
+/home/*/.config/google-chrome/Crashpad
+/home/*/.config/Code/Cache
+/home/*/.config/Code/CachedData

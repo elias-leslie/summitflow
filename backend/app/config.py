@@ -116,6 +116,13 @@ class Settings(BaseSettings):
 
     backup_btrbk_enabled: bool = False
 
+    # The daily Google Drive copy (app/tasks/backup_offsite.py): restic retention for its snapshots, and how long the
+    # per-source snapshots from before that job (no "offsite" tag) are kept while they age out.
+    backup_offsite_keep_daily: int = 7
+    backup_offsite_keep_weekly: int = 4
+    backup_offsite_keep_monthly: int = 3
+    backup_offsite_legacy_days: int = 30
+
     # A disabled backup source with no repository capture for this many days has its restic points forgotten and
     # pruned by scheduled maintenance (only when that maintenance is prune-qualified and healthy). 0 turns it off.
     backup_retire_disabled_after_days: int = 30

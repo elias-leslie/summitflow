@@ -40,9 +40,9 @@ def test_hatchet_retention_schedule_is_registry_managed() -> None:
     assert definition.default_enabled is True
 
 
-def test_scheduled_backups_timeout_covers_a_full_source_sweep() -> None:
-    """Do not retry a partially completed sweep and duplicate large archives."""
-    assert scheduled_backups_wf._task.execution_timeout == "7200s"
+def test_scheduled_backups_is_a_short_health_check() -> None:
+    """The hourly task only checks backup health; the backup itself runs from the systemd timer."""
+    assert scheduled_backups_wf._task.execution_timeout == "900s"
 
 
 def test_scheduled_backups_skip_overlapping_cron_instead_of_killing_active_sweep() -> None:

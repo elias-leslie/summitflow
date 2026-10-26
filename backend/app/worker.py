@@ -23,16 +23,12 @@ from app.workflows.scheduled import (
     refresh_graphify_graphs_wf,
     refresh_precision_indexes_wf,
     reset_claims_wf,
-    restore_tests_wf,
     runtime_hygiene_wf,
     scan_projects_wf,
     scheduled_backups_wf,
     stale_cleanup_wf,
 )
 from app.workflows.utility import (
-    backup_create_wf,
-    backup_offsite_sync_wf,
-    backup_restore_wf,
     check_resolved_wf,
     page_health_wf,
 )
@@ -55,15 +51,11 @@ def _registered_workflows() -> list[Any]:
         hatchet_retention_wf,
         prod_smoke_test_wf,
         health_monitor_wf,
-        restore_tests_wf,
-        runtime_hygiene_wf,
+            runtime_hygiene_wf,
         nightly_publication_wf,
         nightly_deep_lane_wf,
         # Utility
-        backup_create_wf,
-        backup_offsite_sync_wf,
-        backup_restore_wf,
-        check_resolved_wf,
+                    check_resolved_wf,
         page_health_wf,
     ]
 

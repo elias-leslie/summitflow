@@ -35,21 +35,6 @@ UPDATE_FIELDS_MSG = (
 )
 
 
-def _build_onboarding_payload(
-    *,
-    backup_frequency: str,
-    backup_retention_days: int,
-    queue_initial_backup: bool,
-) -> dict[str, Any]:
-    """Build the standard project onboarding payload."""
-    return {
-        "enable_backup_schedule": True,
-        "backup_frequency": backup_frequency,
-        "backup_retention_days": backup_retention_days,
-        "queue_initial_backup": queue_initial_backup,
-    }
-
-
 def _project_path(path: str = "") -> str:
     return f"{PROJECTS_BASE_PATH}{path}"
 
@@ -97,9 +82,6 @@ def _create_project_body(
     native: bool = False,
     permission_tier: str | None,
     onboarding: bool,
-    backup_frequency: str,
-    backup_retention_days: int,
-    queue_initial_backup: bool,
 ) -> dict[str, Any]:
     effective_root_path = root_path
     if summitflow_hosted:
@@ -129,11 +111,7 @@ def _create_project_body(
     if permission_payload:
         body["agent_hub_permission"] = permission_payload
     if onboarding:
-        body["onboarding"] = _build_onboarding_payload(
-            backup_frequency=backup_frequency,
-            backup_retention_days=backup_retention_days,
-            queue_initial_backup=queue_initial_backup,
-        )
+        body["onboarding"] = {}
     return body
 
 
@@ -276,9 +254,6 @@ def run_create(
     native: bool = False,
     permission_tier: str | None = None,
     onboarding: bool = False,
-    backup_frequency: str = "daily",
-    backup_retention_days: int = 30,
-    queue_initial_backup: bool = True,
 ) -> None:
     """Implementation for `projects create`."""
     if not base_url and not summitflow_hosted and not native:
@@ -295,9 +270,6 @@ def run_create(
         native=native,
         permission_tier=permission_tier,
         onboarding=onboarding,
-        backup_frequency=backup_frequency,
-        backup_retention_days=backup_retention_days,
-        queue_initial_backup=queue_initial_backup,
     )
     result = projects_api("POST", json=body)
     output_success(f"Created project '{project_id}'")
@@ -328,20 +300,9 @@ def run_update(
     output_json(result)
 
 
-def run_onboard(
-    project_id: str,
-    *,
-    backup_frequency: str = "daily",
-    backup_retention_days: int = 30,
-    queue_initial_backup: bool = True,
-) -> None:
+def run_onboard(project_id: str) -> None:
     """Implementation for `projects onboard`."""
-    payload = _build_onboarding_payload(
-        backup_frequency=backup_frequency,
-        backup_retention_days=backup_retention_days,
-        queue_initial_backup=queue_initial_backup,
-    )
-    result = projects_api("POST", f"/{project_id}/onboard", json=payload)
+    result = projects_api("POST", f"/{project_id}/onboard", json={})
     output_success(f"Queued onboarding for project '{project_id}'")
     output_json(result)
 
@@ -375,7 +336,7 @@ def run_retire(project_id: str, *, reason: str) -> None:
     projects_api("POST", f"/{project_id}/retirement", json={"reason": reason})
     output_success(
         f"Retired '{project_id}': hidden from routine lists, Development and nightly publication; "
-        "scheduled backups off (archives kept); publication manual. Repository left in place. "
+        "publication manual. Repository left in place. "
         f"Undo: st projects reactivate {project_id}"
     )
 
@@ -384,6 +345,6 @@ def run_reactivate(project_id: str) -> None:
     """Implementation for `projects reactivate`."""
     projects_api("DELETE", f"/{project_id}/retirement")
     output_success(
-        f"Reactivated '{project_id}': listed again with its project backup schedule on. "
+        f"Reactivated '{project_id}': listed again. "
         f"Publication stays manual; change with st -P {project_id} vcs publication --mode nightly."
     )

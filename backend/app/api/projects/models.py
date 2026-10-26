@@ -42,12 +42,7 @@ class ProjectPermissionBootstrap(BaseModel):
 
 
 class ProjectOnboardingRequest(BaseModel):
-    """Standard SummitFlow onboarding settings for a project."""
-
-    enable_backup_schedule: bool = True
-    backup_frequency: Literal["daily", "weekly", "monthly", "hourly", "four_hourly"] = "daily"
-    backup_retention_days: int = Field(default=30, ge=1)
-    queue_initial_backup: bool = True
+    """Standard SummitFlow onboarding for a project: a code scan and task sync. Backups cover every project on their own."""
 
 
 class ProjectOnboardingResponse(BaseModel):
@@ -55,10 +50,6 @@ class ProjectOnboardingResponse(BaseModel):
 
     status: str
     project_id: str
-    backup_schedule_enabled: bool
-    backup_frequency: str
-    backup_retention_days: int
-    queue_initial_backup: bool
 
 
 class ProjectCreate(BaseModel):

@@ -1,6 +1,6 @@
 """Utility (on-demand) workflows for SummitFlow.
 
-Backup create/restore/offsite sync and post-scan explorer follow-ups.
+Post-scan explorer follow-ups and resolved-check workflows.
 """
 
 from __future__ import annotations
@@ -9,125 +9,10 @@ import asyncio
 from collections.abc import Callable
 from typing import Any
 
-from hatchet_sdk import ConcurrencyExpression, ConcurrencyLimitStrategy, Context
+from hatchet_sdk import Context
 
 from ..hatchet_app import hatchet
-from .backup_progress import make_backup_progress_callback
-from .models import (
-    BackupInput,
-    OffsiteSyncInput,
-    ProjectInput,
-    RestoreInput,
-)
-
-
-@hatchet.task(
-    name="summitflow-backup-create",
-    input_validator=BackupInput,
-    execution_timeout="900s",
-    retries=2,
-    backoff_factor=2.0,
-    concurrency=[
-        ConcurrencyExpression(
-            expression="input.source_id",
-            max_runs=1,
-            limit_strategy=ConcurrencyLimitStrategy.GROUP_ROUND_ROBIN,
-        ),
-        ConcurrencyExpression(
-            expression="'backup-smb'",
-            max_runs=2,
-            limit_strategy=ConcurrencyLimitStrategy.GROUP_ROUND_ROBIN,
-        ),
-    ],
-)
-async def backup_create_wf(input: BackupInput, ctx: Context) -> dict[str, Any]:
-    from ..tasks.backup import create_backup
-
-    options: dict[str, Any] = {}
-    if input.local_only:
-        options["local_only"] = True
-    if input.storage_backend_id is not None:
-        options["storage_backend_id"] = input.storage_backend_id
-    return await asyncio.to_thread(
-        create_backup,
-        project_id=input.project_id,
-        note=input.note,
-        backup_type=input.backup_type,
-        keep_local=input.keep_local,
-        retention_days=input.retention_days,
-        source_id=input.source_id,
-        on_progress=make_backup_progress_callback(ctx),
-        **options,
-    )
-
-
-@hatchet.task(
-    name="summitflow-backup-restore",
-    input_validator=RestoreInput,
-    execution_timeout="2100s",
-    retries=2,
-    backoff_factor=2.0,
-    concurrency=[
-        ConcurrencyExpression(
-            expression="input.project_id",
-            max_runs=1,
-            limit_strategy=ConcurrencyLimitStrategy.CANCEL_IN_PROGRESS,
-        ),
-    ],
-)
-async def backup_restore_wf(input: RestoreInput, ctx: Context) -> dict[str, Any]:
-    from ..tasks.backup import restore_backup
-
-    return await asyncio.to_thread(
-        restore_backup,
-        input.project_id,
-        input.backup_id,
-        input.backup_file,
-        input.dry_run,
-        input.db_only,
-        input.files_only,
-        input.source_id,
-    )
-
-
-@hatchet.task(
-    name="summitflow-backup-offsite-sync",
-    input_validator=OffsiteSyncInput,
-    execution_timeout="900s",
-    retries=2,
-    backoff_factor=2.0,
-    concurrency=[
-        ConcurrencyExpression(
-            expression="input.source_id",
-            max_runs=1,
-            limit_strategy=ConcurrencyLimitStrategy.GROUP_ROUND_ROBIN,
-        ),
-    ],
-)
-async def backup_offsite_sync_wf(input: OffsiteSyncInput, ctx: Context) -> dict[str, Any]:
-    """Retry Drive replication without capturing a new local archive."""
-    from ..storage import backups as backup_store
-    from ..tasks.backup_executor import sync_backup_offsite
-    from ..tasks.backup_lock import release_backup_lock
-
-    try:
-        return await asyncio.to_thread(
-            sync_backup_offsite, input.backup_id, on_progress=make_backup_progress_callback(ctx, input.attempt_id),
-            owner_token=input.owner_token,
-        )
-    except Exception as exc:
-        failure = {
-            "activity": {"active": False, "phase": "failed", "attention": True},
-            "offsite": {"status": "failed", "error": str(exc)},
-        }
-        try:
-            backup_store.merge_backup_verification_json(
-                input.backup_id, failure, expected_activity_run_id=input.attempt_id or str(ctx.workflow_run_id),
-            )
-        finally:
-            if input.owner_token:
-                release_backup_lock(input.source_id, input.owner_token)
-        return {"status": "failed", "backup_id": input.backup_id, "error": str(exc)}
+from .models import ProjectInput
 
 
 @hatchet.task(

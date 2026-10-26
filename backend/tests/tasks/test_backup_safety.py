@@ -1,4 +1,4 @@
-"""Deletion circuit breaker, safety status contract, write window, PVE copy and weekly health."""
+"""Deletion circuit breaker, safety status contract and write window."""
 
 from __future__ import annotations
 
@@ -112,11 +112,11 @@ def test_cli_approve_deletion_requires_target_and_owner_approval(notifications):
     from cli.main import app
 
     runner = CliRunner()
-    missing_target = runner.invoke(app, ["backup", "storage", "approve-deletion", "restic-retention", "--owner-approved", "owner said go, 2026-10-24"])
+    missing_target = runner.invoke(app, ["backup", "approve-deletion", "restic-retention", "--owner-approved", "owner said go, 2026-10-24"])
     assert missing_target.exit_code != 0 and "--target" in missing_target.output
-    missing_approval = runner.invoke(app, ["backup", "storage", "approve-deletion", "restic-retention", "--target", "local"])
+    missing_approval = runner.invoke(app, ["backup", "approve-deletion", "restic-retention", "--target", "local"])
     assert missing_approval.exit_code != 0 and "--owner-approved" in missing_approval.output
-    args = ["backup", "storage", "approve-deletion", "restic-retention", "--target", "local", "--owner-approved", "owner said go, 2026-10-24"]
+    args = ["backup", "approve-deletion", "restic-retention", "--target", "local", "--owner-approved", "owner said go, 2026-10-24"]
     no_breaker = runner.invoke(app, args)
     assert no_breaker.exit_code == 1 and "No refused restic-retention deletion on local" in no_breaker.output
     assert safety.guard_deletion("restic-retention", "local", delete=80, total=100) is False
@@ -138,46 +138,6 @@ def test_section_alerts_raise_top_level_status():
 def test_status_file_is_world_readable_for_nightshift():
     safety.record_section("health", {"alerts": []})
     assert safety.status_path().stat().st_mode & 0o044 == 0o044
-
-
-def test_restic_retention_refuses_oversized_forget(tmp_path, notifications, monkeypatch):
-    from app.tasks import backup_restic as engine
-    from app.utils import transient_scratch
-    from tests.tasks.test_backup_restic import FakeProcess
-
-    scratch = tmp_path / "scratch"  # CI runners have no /srv/scratch.
-    scratch.mkdir(mode=0o700)
-    monkeypatch.setattr(transient_scratch, "SCRATCH_ROOT", scratch)
-    real_is_mount = Path.is_mount
-    monkeypatch.setattr(Path, "is_mount", lambda path: path == scratch or real_is_mount(path))
-
-    keys = tmp_path / "keys"
-    keys.mkdir(mode=0o700)
-    (keys / "local-password").write_bytes(b"fixture")
-    (keys / "local-password").chmod(0o600)
-    config = engine.ResticConfig(local_repository=tmp_path / "repo", local_password_file=keys / "local-password",
-                                 key_directory=keys, lock_directory=tmp_path / "locks", hostname="fixture-host")
-    process = FakeProcess(tmp_path)
-    now = datetime.now(UTC)
-    # A one-day window on a source with 30 days of 4-hourly points: almost all would go.
-    process.local_snapshots = [{"id": f"{number:064x}", "tags": ["source:fixture"], "time": (now - timedelta(hours=4 * number)).isoformat()} for number in range(1, 181)]
-    adapter = engine.ResticAdapter(config, runner=process)
-    result = adapter.retention({"fixture": 1}, state={}, dry_run=False)
-    assert result["status"] == "refused" and result["delete"] == [] and len(result["refused_delete"]) > 100
-    assert not any("forget" in command for command in process.commands)
-    normal = adapter.retention({"fixture": 29}, state={}, dry_run=False)
-    assert normal["status"] == "completed" and len(normal["delete"]) in {6, 7}  # Window edge point.
-
-
-def test_prune_guard_detects_snapshots_lost_outside_retention(notifications):
-    from app.tasks.backup_repository_runtime import _snapshot_count_explained
-
-    previous: dict[str, Any] = {}
-    assert _snapshot_count_explained(previous, {"keep": ["a"] * 100, "delete": ["b"] * 4}, "local") is True
-    assert previous["snapshot_count"] == 100
-    assert _snapshot_count_explained(previous, {"keep": ["a"] * 98, "delete": []}, "local") is True
-    assert _snapshot_count_explained(previous, {"keep": ["a"] * 40, "delete": []}, "local") is False
-    assert previous["snapshot_count"] == 98  # Baseline kept so the condition stays visible.
 
 
 def test_btrbk_expiry_beyond_daily_retention_preserves_backups(monkeypatch, notifications):
@@ -228,48 +188,6 @@ def test_write_window_without_helper_is_noop(monkeypatch):
     monkeypatch.setattr(window.subprocess, "run", lambda *a, **k: pytest.fail("helper must not run"))
     with window.write_window("t7"):
         pass
-
-
-def test_pve_copy_assessment_and_append_only_command(tmp_path):
-    from app.tasks import backup_pve_copy as pve
-    from app.tasks.backup_restic import ResticConfig
-
-    now = datetime(2026, 10, 11, 12, tzinfo=UTC)
-    fresh = {"last_success_at": (now - timedelta(hours=2)).isoformat()}
-    assert pve.assess(fresh, {}, now=now, max_age_hours=26) == []
-    stale = pve.assess({"last_success_at": (now - timedelta(hours=40)).isoformat(), "error": "ssh refused"}, {}, now=now, max_age_hours=26)
-    assert stale[0]["kind"] == "stale" and "ssh refused" in stale[0]["message"]
-    remote = {"finished_at": (now - timedelta(days=12)).isoformat(), "alerts": [{"kind": "deletion-breaker", "message": "plan too big"}]}
-    kinds = [alert["kind"] for alert in pve.assess(fresh, remote, now=now, max_age_hours=26)]
-    assert kinds == ["pve-maintenance-stale", "pve-deletion-breaker"]
-    config = ResticConfig(local_repository=tmp_path / "repo", local_password_file=tmp_path / "keys/pw", key_directory=tmp_path / "keys")
-    command = pve.restic_command(config, {"host": "192.0.2.1", "key": "pve.key"}, "copy")
-    assert command[:6] == ["nice", "-n", "15", "ionice", "-c", "3"]
-    assert "rclone.program=ssh" in command and command[-1] == "copy"
-    assert any(part.startswith("rclone.args=-F /dev/null -i ") and part.endswith("root@192.0.2.1") for part in command)
-
-
-def test_pve_copy_is_skipped_until_configured(tmp_path):
-    from app.tasks import backup_pve_copy as pve
-
-    keys = tmp_path / "keys"
-    keys.mkdir(mode=0o700)
-    (keys / "pw").write_bytes(b"x")
-    result = pve.sync_pve_copy({"RESTIC_LOCAL_PASSWORD_FILE": str(keys / "pw"), "RESTIC_LOCAL_REPOSITORY": str(tmp_path / "repo")})
-    assert result == {"status": "skipped", "reason": "pve-copy-not-configured"}
-
-
-def test_weekly_health_drop_and_check_detection():
-    from app.tasks.backup_weekly_health import check_alerts, drops
-
-    assert drops({}, 100, 10) == []
-    assert drops({"snapshot_count": 1000, "repository_bytes": 100}, 980, 90) == []
-    assert [alert["kind"] for alert in drops({"snapshot_count": 1000, "repository_bytes": 100}, 700, 50)] == ["snapshot-count-drop", "repository-size-drop"]
-    now = datetime(2026, 10, 11, tzinfo=UTC)
-    summary, alerts = check_alerts({"local": {"monthly_result": {"status": "verified", "checked_at": (now - timedelta(days=1)).isoformat()}},
-                                    "remote": {"monthly_result": {"status": "failed", "verified": False, "error": "pack mismatch"}}}, now)
-    assert summary["local"]["status"] == "verified"
-    assert [alert["kind"] for alert in alerts] == ["remote-check-failed"]
 
 
 def _maintain_module():
@@ -354,15 +272,3 @@ def test_pve_serve_wrapper_only_serves_or_reports_status():
     assert json.dumps("SSH_ORIGINAL_COMMAND")[1:-1] in wrapper
 
 
-def test_check_status_refreshes_every_tick_and_clears(monkeypatch: pytest.MonkeyPatch) -> None:
-    from app.tasks import backup_repository_runtime, backup_weekly_health
-
-    now = datetime.now(UTC)
-    journal = {"maintenance": {"local": {"monthly_result": {"status": "failed", "verified": False, "error": "lock"}},
-                               "remote": {"monthly_result": {"status": "verified", "checked_at": now.isoformat()}}}}
-    monkeypatch.setattr(backup_repository_runtime, "repository_journal", lambda _env: journal)
-    assert backup_weekly_health.refresh_check_status({}, now=now)["status"] == "alert"
-    assert safety.read_status()["status"] == "alert"
-    journal["maintenance"]["local"]["monthly_result"] = {"status": "verified", "checked_at": now.isoformat()}
-    assert backup_weekly_health.refresh_check_status({}, now=now)["status"] == "ok"
-    assert safety.read_status()["sections"]["restic_checks"]["alerts"] == []

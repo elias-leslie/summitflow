@@ -2,7 +2,7 @@
 
 Collects, from SummitFlow's own stores: live agents (registered coordination identities whose harness is alive, plus
 active Agent Hub sessions on this host), the handshake replies to the caller's requests (objections and ETAs), repo
-holds and op marks (acceptance/deploy), file leases, and running backups (SummitFlow backup rows, backup units and
+holds and op marks (acceptance/deploy), file leases, and running backups (backup units and
 backup processes on this host). The verdict is advisory and conservative: a part that could not be read is reported
 in ``unknown`` and keeps ``clear`` false. Nightshift's coordination precheck calls it as ``st sessions may-disrupt``.
 """

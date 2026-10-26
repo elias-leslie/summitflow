@@ -12,7 +12,6 @@ All symbols are re-exported below for backward compatibility.
 from __future__ import annotations
 
 import hmac
-import re
 from typing import Any, Literal
 
 from fastapi import Header, HTTPException
@@ -32,11 +31,6 @@ async def _require_auth(x_internal_secret: str = Header(default="")) -> None:
         return  # Auth not configured -- allow (dev mode)
     if not hmac.compare_digest(x_internal_secret.encode(), _INTERNAL_SECRET.encode()):
         raise HTTPException(status_code=403, detail="Forbidden")
-
-
-def _sanitize_note(note: str) -> str:
-    """Whitelist note parameter to safe characters."""
-    return re.sub(r"[^a-zA-Z0-9_ -]", "", note)[:100]
 
 
 # ─── Parsing / formatting ────────────────────────────────────────

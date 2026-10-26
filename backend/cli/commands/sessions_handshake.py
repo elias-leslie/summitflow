@@ -126,7 +126,7 @@ def may_disrupt(
     requests: Annotated[str | None, typer.Option("--requests", help="Comma-separated handshake ids to report; "
                                                  "defaults to every request you sent")] = None,
 ) -> None:
-    """One JSON answer to "may I disrupt TARGET now?": agents, handshake replies, holds, leases, running backups."""
+    """One JSON answer to "may I disrupt TARGET now?": agents, handshake replies, holds, leases, running backup units."""
     import json
 
     from ..client import STClient
@@ -142,12 +142,8 @@ def may_disrupt(
     def _sessions() -> list[dict]:
         return _client().list_sessions(status="active", limit=100)
 
-    def _backups() -> list[dict]:
-        body = _client().get(_client()._global_url("/backups?status=running&limit=50"))
-        return list(body.get("backups") or []) if isinstance(body, dict) else []
-
     ids = [r.strip() for r in (requests or "").split(",") if r.strip()]
-    payload = coord_disrupt.snapshot(target, request_ids=ids, sessions=_sessions, running_backups=_backups)
+    payload = coord_disrupt.snapshot(target, request_ids=ids, sessions=_sessions)
     typer.echo(json.dumps(payload, indent=2, default=str))
 
 

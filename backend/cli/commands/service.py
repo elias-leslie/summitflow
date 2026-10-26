@@ -7,20 +7,13 @@ import json
 import os
 import time
 from collections.abc import Callable, Mapping
-from contextlib import nullcontext, suppress
+from contextlib import suppress
 from dataclasses import replace
 from enum import StrEnum
 from pathlib import Path
 from typing import Annotated, Any
 
 import typer
-
-from app.tasks.backup_lock import (
-    BackupLockLeaseError,
-    backup_restart_blockers,
-    backup_worker_restart_guard,
-    wait_for_backup_restart_window,
-)
 
 from ..lib import service_deploy_client, service_ops, service_release
 from ..lib.confirm_token import confirm_gate
@@ -257,39 +250,6 @@ def _acceptance_line(source: Mapping[str, Any] | None, *, supplied: bool) -> str
     return f"[service] acceptance={how} id={str(source.get('acceptance_id') or '?')[:12]}{detail}"
 
 
-# Set by the detached job runner: a queued rebuild waits out backups instead
-# of being refused after its acceptance already ran.
-WAIT_FOR_BACKUPS_ENV = "ST_REBUILD_WAIT_FOR_BACKUPS"
-
-
-def _backup_restart_preflight(*, detach: bool) -> None:
-    """Judge the backup restart guard before acceptance spends minutes.
-
-    Backups run in the SummitFlow worker this rebuild restarts. The guard
-    itself still reserves and rechecks before any restart.
-    """
-    if os.environ.get(WAIT_FOR_BACKUPS_ENV) == "1":
-        try:
-            wait_for_backup_restart_window()
-        except BackupLockLeaseError as exc:
-            output_error(str(exc))
-            raise typer.Exit(1) from None
-        return
-    try:
-        blockers = backup_restart_blockers()
-    except Exception:
-        output_error("Cannot verify backup ownership; rebuild refused. Restore Redis access, then retry.")
-        raise typer.Exit(1) from None
-    if not blockers:
-        return
-    if detach:
-        print("[service] backups active (" + ", ".join(blockers) + "); the detached job will wait for them, up to 2h")
-        return
-    output_error("Backups active: " + ", ".join(blockers)
-                 + ". Wait for completion or explicitly cancel in Backups, then retry the rebuild (or use --detach to queue it).")
-    raise typer.Exit(1)
-
-
 ReleaseStep = tuple[str, Callable[[], int]]
 
 
@@ -366,12 +326,10 @@ def _run_release_steps(
     steps: list[ReleaseStep],
     release: service_release.PreparedRelease,
     development_services: service_ops.ProjectServices,
-    assert_backup_restart_owned: Callable[[], None],
     manual: tuple[str, ...] = (),
 ) -> None:
     """Run each step in order; the first failure fails the release before any restart."""
     for name, step in steps:
-        assert_backup_restart_owned()
         if _timed_phase(release, name, step) != 0:
             if name == "systemd_units":
                 _restore_previous_units(development_services, release, manual)
@@ -391,7 +349,6 @@ def _restart_services(
     restart_backend: bool,
     frontend: bool,
     monitor_activated: bool,
-    assert_backup_restart_owned: Callable[[], None],
 ) -> int:
     """Restart backend, workers, then frontend; return the restart error count.
 
@@ -403,7 +360,6 @@ def _restart_services(
     restarted: list[str] = []
     restart_started = time.monotonic()
     if restart_backend and services.backend_service:
-        assert_backup_restart_owned()
         errors += service_ops.restart_service(
             services.backend_service, port=services.backend_port, project=services
         ) != 0
@@ -413,13 +369,11 @@ def _restart_services(
         if monitor_activated and is_monitor:
             restarted.append(name)
             continue
-        assert_backup_restart_owned()
         errors += service_ops.restart_service(
             name, project=None if is_monitor else services
         ) != 0
         restarted.append(name)
     if frontend and services.frontend_service:
-        assert_backup_restart_owned()
         errors += service_ops.restart_service(
             services.frontend_service, port=services.frontend_port, project=services
         ) != 0
@@ -595,8 +549,6 @@ def rebuild(
     frontend = scope in (RebuildScope.full, RebuildScope.frontend) and not manual
     if backend and service_ops.preflight_host_monitor(services) != 0:
         raise typer.Exit(1)
-    if services.project_id == "summitflow" and backend:
-        _backup_restart_preflight(detach=detach)
     if detach:
         try:
             with coord.acked(with_ack):
@@ -635,11 +587,7 @@ def rebuild(
     development_services = services
     development_root = services.git_root
     try:
-        with (
-            service_release.deployment_lock(services.project_id),
-            (backup_worker_restart_guard() if services.project_id == "summitflow" and backend
-             else nullcontext(lambda: None)) as assert_backup_restart_owned,
-        ):
+        with service_release.deployment_lock(services.project_id):
             with coord.acked(with_ack):
                 release, services = service_ops.prepare_accepted_release(services, acceptance, rollback=rollback)
             print(_acceptance_line(vars(release.source), supplied=acceptance is not None))
@@ -659,11 +607,9 @@ def rebuild(
                 _release_steps(services, release, backend=backend, development_root=development_root, manual=manual),
                 release,
                 development_services,
-                assert_backup_restart_owned,
                 manual,
             )
             if migrate_monitor_store:
-                assert_backup_restart_owned()
                 try:
                     migration = service_ops.migrate_host_monitor_store(services)
                 except service_ops.ServiceError:
@@ -699,7 +645,6 @@ def rebuild(
                 restart_backend=restart_backend,
                 frontend=frontend,
                 monitor_activated=monitor_activated,
-                assert_backup_restart_owned=assert_backup_restart_owned,
             )
             errors = _verify_and_seed(services, release, workers, errors, backend=backend, frontend=frontend)
             if errors:
@@ -747,7 +692,7 @@ def rebuild(
                 print("[service] release is live; st monitor launcher needs installation")
                 raise typer.Exit(1)
             print(f"[service] rebuild complete ({int(time.time() - start_time)}s)")
-    except (service_ops.ServiceError, service_release.ReleaseError, BackupLockLeaseError) as exc:
+    except (service_ops.ServiceError, service_release.ReleaseError) as exc:
         if monitor_activated and release is not None:
             _rollback_monitor_and_reader(services, development_services, release, backend_restart_attempted)
         if release is not None:

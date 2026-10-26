@@ -151,12 +151,7 @@ def test_projects_create_derives_hosted_defaults() -> None:
             "health_endpoint": "/health",
             "root_path": str(PUBLIC_PROJECTS_ROOT / "test3"),
             "summitflow_hosted": True,
-            "onboarding": {
-                "enable_backup_schedule": True,
-                "backup_frequency": "daily",
-                "backup_retention_days": 30,
-                "queue_initial_backup": True,
-            },
+            "onboarding": {},
         },
     )
 
@@ -214,12 +209,7 @@ def test_projects_create_marks_hosted_alias_projects_without_baking_domains() ->
             "health_endpoint": "/health",
             "root_path": str(PUBLIC_PROJECTS_ROOT / "monkey-fight"),
             "summitflow_hosted": True,
-            "onboarding": {
-                "enable_backup_schedule": True,
-                "backup_frequency": "daily",
-                "backup_retention_days": 30,
-                "queue_initial_backup": True,
-            },
+            "onboarding": {},
         },
     )
 
@@ -229,18 +219,13 @@ def test_projects_onboard_queues_standard_payload() -> None:
         "cli.commands._projects_helpers.projects_api",
         return_value={"status": "queued", "project_id": "vantage"},
     ) as mock_projects_api:
-        result = runner.invoke(app, ["onboard", "vantage", "--no-initial-backup"])
+        result = runner.invoke(app, ["onboard", "vantage"])
 
     assert result.exit_code == 0
     mock_projects_api.assert_called_once_with(
         "POST",
         "/vantage/onboard",
-        json={
-            "enable_backup_schedule": True,
-            "backup_frequency": "daily",
-            "backup_retention_days": 30,
-            "queue_initial_backup": False,
-        },
+        json={},
     )
 
 
@@ -278,7 +263,6 @@ def test_projects_audit_reports_complete_inventory_and_representation(tmp_path: 
         return {
             "/projects?include_inactive=true": (projects, None),
             "/projects": (projects[:1], None),
-            "/backup-sources": ([{"id": "aico", "project_id": "aico", "path": "/stale", "enabled": False, "source_type": "project"}], None),
             "/docker/status": ([{"service": "aico-shell", "state": "running", "health": "healthy"}], None),
         }[path]
     with patch("cli.commands._projects_audit._get_list", side_effect=api):
@@ -289,12 +273,8 @@ def test_projects_audit_reports_complete_inventory_and_representation(tmp_path: 
     assert rows[0]["checkout"]["git"] is True
     assert rows[0]["lifecycle_conflict"] is True
     assert rows[0]["visibility"]["observed_default_listing"] is True
-    assert rows[0]["backup"]["status"] == "path_mismatch"
-    assert rows[0]["backup"]["sources"][0]["enabled"] is False
     assert rows[0]["runtime"]["services"][0]["state"] == "running"
     assert rows[1]["visibility"]["expected_default_listing_and_picker"] is False
-    assert rows[1]["backup"]["expected_enabled"] is False
-    assert rows[1]["backup"]["status"] == "not_configured"
     assert rows[1]["runtime"]["declaration"] == "unknown"
 
 
@@ -310,7 +290,6 @@ def test_projects_audit_marks_unavailable_evidence_unknown(tmp_path: Path, monke
     assert result.exit_code == 0, result.output
     row = json.loads(result.output)["projects"][0]
     assert row["visibility"]["observed_default_listing"] is None
-    assert row["backup"]["status"] == "unknown"
     assert row["runtime"]["declaration"] == "unknown"
 
 
@@ -329,7 +308,6 @@ def test_projects_audit_detects_registry_checkout_drift_and_optional_runtime(tmp
         return {
             "/projects?include_inactive=true": (projects, None),
             "/projects": (projects, None),
-            "/backup-sources": ([], None),
             "/docker/status": ([], None),
         }[path]
     with patch("cli.commands._projects_audit._get_list", side_effect=api):
@@ -356,7 +334,6 @@ def test_projects_audit_does_not_attribute_foreign_manifest(tmp_path: Path, monk
         return {
             "/projects?include_inactive=true": (projects, None),
             "/projects": (projects, None),
-            "/backup-sources": ([], None),
             "/docker/status": ([{"service": "other", "state": "running"}], None),
         }[path]
     with patch("cli.commands._projects_audit._get_list", side_effect=api):
@@ -382,7 +359,6 @@ def test_projects_audit_ignores_foreign_conventional_checkout(tmp_path: Path, mo
         return {
             "/projects?include_inactive=true": (projects, None),
             "/projects": (projects, None),
-            "/backup-sources": ([], None),
             "/docker/status": ([], None),
         }[path]
     with patch("cli.commands._projects_audit._get_list", side_effect=api):
