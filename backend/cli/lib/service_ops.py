@@ -1140,9 +1140,9 @@ def _cargo() -> str:
     return str(rustup_cargo) if os.access(rustup_cargo, os.X_OK) else "cargo"
 
 
-def _seed_host_monitor_target(project: ProjectServices, source: Path) -> bool:
-    """Reflink the live release's cargo target into a new release; True when seeded."""
-    target = source / "target"
+def _seed_from_live_release(project: ProjectServices, relative: Path) -> bool:
+    """Reflink a build cache from the live release into this new release; True when seeded."""
+    target = project.root / relative
     if target.exists():
         return False
     try:
@@ -1151,9 +1151,10 @@ def _seed_host_monitor_target(project: ProjectServices, source: Path) -> bool:
         return False
     if live is None or live.resolve() == project.root.resolve():
         return False
-    prior = live / "host-monitor" / "target"
+    prior = live / relative
     if prior.is_symlink() or not prior.is_dir():
         return False
+    target.parent.mkdir(parents=True, exist_ok=True)
     copied = subprocess.run(["cp", "-a", "--reflink=auto", str(prior), str(target)], check=False)
     if copied.returncode != 0:
         subprocess.run(["rm", "-rf", "--", str(target)], check=False)
@@ -1169,7 +1170,7 @@ def build_host_monitor(project: ProjectServices) -> int:
     if not (source / "Cargo.toml").is_file() or not (source / "Cargo.lock").is_file():
         print("[service] host monitor requires Cargo.toml and Cargo.lock in accepted source")
         return 1
-    if _seed_host_monitor_target(project, source):
+    if _seed_from_live_release(project, Path("host-monitor/target")):
         # Release files carry commit mtimes, so a rollback could look fresh against a newer
         # binary: reuse only the dependency crates and always recompile the collector itself.
         package = tomllib.loads((source / "Cargo.toml").read_text())["package"]["name"]
@@ -1404,6 +1405,9 @@ def build_frontend(project: ProjectServices) -> int:
     plan = frontend_install_plan(project.frontend_dir, project.root)
     if plan is None:
         return 0
+    # Next's build cache is content-addressed; seeding it only skips recompiling unchanged modules.
+    if project.frontend_dir.is_relative_to(project.root):
+        _seed_from_live_release(project, project.frontend_dir.relative_to(project.root) / ".next" / "cache")
     print("[service] building frontend")
     install = run(list(plan.command), cwd=plan.cwd, quiet_success=True, _heavy=True)
     if install != 0:

@@ -1566,3 +1566,19 @@ def test_host_monitor_build_reuses_live_crates_but_recompiles_the_collector(proj
         ["clean", "--release", "-p", "summitflow-host-monitor"],
         ["build", "--locked", "--release"],
     ]
+
+
+def test_frontend_build_seeds_the_next_cache_from_the_live_release(project, monkeypatch, tmp_path):
+    release = tmp_path / "new" / "source"
+    live = tmp_path / "live" / "source"
+    (live / "frontend" / ".next" / "cache" / "webpack").mkdir(parents=True)
+    (live / "frontend" / ".next" / "cache" / "webpack" / "pack").write_text("cached")
+    monkeypatch.setattr(service_release, "current_source_root", lambda _project_id: live)
+    monkeypatch.setattr(service_ops, "frontend_install_plan", lambda *_args: service_ops.FrontendInstall(
+        "npm", ("npm", "ci"), release / "frontend"))
+    monkeypatch.setattr(service_ops, "run", lambda _command, **_kwargs: 0)
+    frontend = replace(project, root=release, frontend_dir=release / "frontend")
+
+    assert service_ops.build_frontend(frontend) == 0
+
+    assert (release / "frontend" / ".next" / "cache" / "webpack" / "pack").read_text() == "cached"
