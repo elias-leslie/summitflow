@@ -55,6 +55,8 @@ def is_error_like(event: dict[str, Any], signature: str) -> bool:
     if isinstance(result, dict):
         if result.get("isError") is True:
             return True
+        if result.get("isError") is False:
+            return False
         result = result.get("text", "")
     body = result if isinstance(result, str) else signature
     return any(_ERROR_LINE.match(line) for line in body.splitlines())

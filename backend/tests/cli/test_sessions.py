@@ -773,7 +773,7 @@ class TestRequireProjectFalse:
                     "id": "successful-source-read",
                     "event_type": "tool_result",
                     "tool_name": "bash",
-                    "tool_output": '{"isError": false, "text": "The exception handler returns an error value."}',
+                    "tool_output": '{"isError": false, "text": "ERROR: source describes a failure mode."}',
                 },
                 {
                     "id": "ordinary-reasoning",
