@@ -82,7 +82,7 @@ def test_a_failed_attempt_is_not_retried_in_a_storm(monkeypatch: pytest.MonkeyPa
 
 
 def test_run_process_stops_a_hung_command_at_the_deadline() -> None:
-    result = run_process([sys.executable, "-c", "import time; time.sleep(60)"], env=None, timeout=0.5)
+    result = run_process([sys.executable, "-c", "import signal, time; signal.signal(signal.SIGINT, signal.SIG_DFL); time.sleep(60)"], env=None, timeout=0.5)
     assert result.returncode == 124 and "timed out" in result.stderr
 
 
