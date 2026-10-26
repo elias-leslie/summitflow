@@ -1140,6 +1140,27 @@ def _cargo() -> str:
     return str(rustup_cargo) if os.access(rustup_cargo, os.X_OK) else "cargo"
 
 
+def _seed_host_monitor_target(project: ProjectServices, source: Path) -> bool:
+    """Reflink the live release's cargo target into a new release; True when seeded."""
+    target = source / "target"
+    if target.exists():
+        return False
+    try:
+        live = service_release.current_source_root(project.project_id)
+    except service_release.ReleaseError:
+        return False
+    if live is None or live.resolve() == project.root.resolve():
+        return False
+    prior = live / "host-monitor" / "target"
+    if prior.is_symlink() or not prior.is_dir():
+        return False
+    copied = subprocess.run(["cp", "-a", "--reflink=auto", str(prior), str(target)], check=False)
+    if copied.returncode != 0:
+        subprocess.run(["rm", "-rf", "--", str(target)], check=False)
+        return False
+    return True
+
+
 def build_host_monitor(project: ProjectServices) -> int:
     """Build the independent host collector in the accepted SummitFlow release."""
     if project.project_id != "summitflow" or "summitflow-host-monitor.service" not in project.default_workers:
@@ -1148,6 +1169,12 @@ def build_host_monitor(project: ProjectServices) -> int:
     if not (source / "Cargo.toml").is_file() or not (source / "Cargo.lock").is_file():
         print("[service] host monitor requires Cargo.toml and Cargo.lock in accepted source")
         return 1
+    if _seed_host_monitor_target(project, source):
+        # Release files carry commit mtimes, so a rollback could look fresh against a newer
+        # binary: reuse only the dependency crates and always recompile the collector itself.
+        package = tomllib.loads((source / "Cargo.toml").read_text())["package"]["name"]
+        if run([_cargo(), "clean", "--release", "-p", package], cwd=source, quiet_success=True) != 0:
+            return 1
     print("[service] building locked host monitor")
     code = run([_cargo(), "build", "--locked", "--release"], cwd=source, quiet_success=True, _heavy=True)
     if code == 0:

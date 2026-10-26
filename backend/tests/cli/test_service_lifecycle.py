@@ -1542,3 +1542,27 @@ def test_status_lists_manual_workers_read_only(manual_lifecycle, monkeypatch):
     result = CliRunner().invoke(service.app, ["status", "example"])
     assert result.exit_code == 0, result.output
     assert f"manual: {MANUAL}:inactive" in result.output
+
+
+def test_host_monitor_build_reuses_live_crates_but_recompiles_the_collector(project, monkeypatch, tmp_path):
+    release = tmp_path / "new" / "source"
+    (release / "host-monitor").mkdir(parents=True)
+    (release / "host-monitor" / "Cargo.toml").write_text('[package]\nname = "summitflow-host-monitor"\n')
+    (release / "host-monitor" / "Cargo.lock").write_text("")
+    live = tmp_path / "live" / "source"
+    (live / "host-monitor" / "target" / "release" / "deps").mkdir(parents=True)
+    (live / "host-monitor" / "target" / "release" / "deps" / "libdep.rlib").write_text("compiled")
+    monkeypatch.setattr(service_release, "current_source_root", lambda _project_id: live)
+    commands: list[list[str]] = []
+    monkeypatch.setattr(service_ops, "run", lambda command, **_kwargs: commands.append(command) or 0)
+    monkeypatch.setattr(service_ops.host_monitor_deploy, "build_helper", lambda _root: None)
+    monitor = replace(project, project_id="summitflow", root=release,
+                      default_workers=("summitflow-host-monitor.service",))
+
+    assert service_ops.build_host_monitor(monitor) == 0
+
+    assert (release / "host-monitor" / "target" / "release" / "deps" / "libdep.rlib").read_text() == "compiled"
+    assert [command[1:] for command in commands] == [
+        ["clean", "--release", "-p", "summitflow-host-monitor"],
+        ["build", "--locked", "--release"],
+    ]
