@@ -684,21 +684,6 @@ EOF
     echo "$manifest_json" > "$manifest_file"
 }
 
-# Pre-backup checkpoint hook for use by other commands
-backup_checkpoint() {
-    local description="${1:-pre-operation}"
-
-    log_info "Creating backup checkpoint: $description"
-
-    if st backup create --source "$PROJECT_NAME" --note "$description" 2>&1 | tail -5; then
-        log_success "Checkpoint created"
-        return 0
-    else
-        log_warn "Checkpoint failed, continuing anyway"
-        return 1
-    fi
-}
-
 # Validate that index file is valid JSON with expected structure
 validate_index() {
     local index_file="${1:-$BACKUP_INDEX}"
@@ -926,7 +911,7 @@ export -f ensure_smb_credentials test_smb_connection test_smb_connection_quiet
 export -f smb_upload smb_download smb_delete smb_list_backups
 export -f upload_with_retry save_to_pending upload_pending_backups
 export -f update_backup_index get_backup_count remove_oldest_from_index
-export -f apply_retention backup_checkpoint
+export -f apply_retention
 export -f build_backup_manifest verify_backup
 export -f ensure_backup_state_dir validate_index migrate_legacy_backup_index sync_index_from_smb
 
