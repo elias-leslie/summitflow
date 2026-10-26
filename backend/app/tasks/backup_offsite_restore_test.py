@@ -173,7 +173,7 @@ def _dump_roles(dump: Path) -> list[str]:
 
 def _docker(arguments: list[str], *, timeout: float = 120, scratch: Path | None = None) -> subprocess.CompletedProcess[Any]:
     return run_bulk_process(
-        ["docker", *arguments], phase="restore", object_name="disposable restore database",
+        [*nightshift_stack.docker_cli(), *arguments], phase="restore", object_name="disposable restore database",
         timeout=timeout, capacity_check=(lambda: ensure_scratch_capacity(scratch, 0)) if scratch else None,
     )
 
@@ -184,7 +184,7 @@ def _first_error(stderr: object) -> str:
 
 def verify_database_dump(dump: Path, scratch: Path) -> dict[str, Any]:
     """Load a plain project dump into a disposable PostgreSQL and compare row counts."""
-    if nightshift_stack.stack_installed():
+    if not nightshift_stack.docker_runtime_available():
         return {"skipped": True, "reason": "unsupported: no container runtime for the disposable restore database"}
     if dump.suffix == ".gz":
         plain = scratch / "database.sql"
@@ -210,7 +210,7 @@ def verify_database_dump(dump: Path, scratch: Path) -> dict[str, Any]:
             raise RuntimeError("Disposable PostgreSQL could not start")
         deadline = time.monotonic() + POSTGRES_READY_SECONDS
         while True:
-            logs = subprocess.run(["docker", "logs", name], capture_output=True, text=True, timeout=30, check=False)
+            logs = subprocess.run([*nightshift_stack.docker_cli(), "logs", name], capture_output=True, text=True, timeout=30, check=False)
             if "PostgreSQL init process complete" in logs.stdout + logs.stderr and _docker(["exec", name, "pg_isready", "-U", "postgres"]).returncode == 0:
                 break
             if time.monotonic() > deadline:
@@ -239,8 +239,8 @@ def verify_database_dump(dump: Path, scratch: Path) -> dict[str, Any]:
             raise RuntimeError("Restored row counts could not be read")
         restored = {table: int(count) for table, count in (line.split("\t") for line in str(counted.stdout).splitlines() if "\t" in line)}
     finally:
-        removed = subprocess.run(["docker", "rm", "-fv", name], capture_output=True, text=True, timeout=120, check=False)
-        if removed.returncode and name in subprocess.run(["docker", "ps", "-aq", "--filter", f"name=^/{name}$", "--format", "{{.Names}}"], capture_output=True, text=True, timeout=60, check=False).stdout:
+        removed = subprocess.run([*nightshift_stack.docker_cli(), "rm", "-fv", name], capture_output=True, text=True, timeout=120, check=False)
+        if removed.returncode and name in subprocess.run([*nightshift_stack.docker_cli(), "ps", "-aq", "--filter", f"name=^/{name}$", "--format", "{{.Names}}"], capture_output=True, text=True, timeout=60, check=False).stdout:
             logger.warning("restore_test_container_cleanup_failed", container=name)
     mismatches = {table: {"expected": rows, "restored": restored.get(table)} for table, rows in expected.items() if restored.get(table) != rows}
     largest = sorted(expected.items(), key=lambda item: item[1], reverse=True)[:10]

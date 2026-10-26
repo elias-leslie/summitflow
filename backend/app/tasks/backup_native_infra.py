@@ -661,7 +661,12 @@ def _capture_recovery_state(
 def _collect_redis_dump(destination: Path) -> None:
     redis_cli = shutil.which("redis-cli")
     if redis_cli:
-        result = run_bulk_process([redis_cli, "-h", os.environ.get("REDIS_HOST", "localhost"), "-p", os.environ.get("REDIS_PORT", "6379"), "--rdb", str(destination)], env=scratch_subprocess_env(), phase="capture", object_name="Redis snapshot", capacity_check=lambda: ensure_scratch_capacity(destination.parent, 0))
+        # The shared stack's Redis requires its password; hand it over through the environment, never argv.
+        env = scratch_subprocess_env()
+        password = os.environ.get("REDIS_PASSWORD") or _read_env_file(get_compose_env_file()).get("REDIS_PASSWORD")
+        if password:
+            env["REDISCLI_AUTH"] = password
+        result = run_bulk_process([redis_cli, "-h", os.environ.get("REDIS_HOST", "localhost"), "-p", os.environ.get("REDIS_PORT", "6379"), "--rdb", str(destination)], env=env, phase="capture", object_name="Redis snapshot", capacity_check=lambda: ensure_scratch_capacity(destination.parent, 0))
         if result.returncode == 0 and destination.exists() and destination.stat().st_size > 0:
             return
     container = _find_compose_container("redis")

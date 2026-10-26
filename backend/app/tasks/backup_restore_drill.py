@@ -20,13 +20,12 @@ logger = get_logger(__name__)
 
 DRILL_SCRIPT = Path(__file__).resolve().parents[3] / "scripts" / "infra-restore-drill.sh"
 DRILL_TIMEOUT = 600  # 10 minutes
-# The drill script drives the docker CLI. Once the Nightshift stack unit is installed SummitFlow
-# loses docker access; rootless podman holds no images, so the drill is then unsupported.
-DRILL_UNSUPPORTED = "Restore drill unsupported: no container runtime (docker access removed, podman has no images)"
+# The drill script drives the docker CLI; the stack's socket is root-only, so it goes through routine sudo.
+DRILL_UNSUPPORTED = "Restore drill unsupported: no docker CLI on this host"
 
 
 def drill_runtime_available() -> bool:
-    return not nightshift_stack.stack_installed()
+    return nightshift_stack.docker_runtime_available()
 
 # Source types
 SOURCE_TYPE_INFRASTRUCTURE = "infrastructure"
@@ -112,6 +111,7 @@ def _run_drill_script(archive_path: str, backup_id: str) -> dict[str, Any]:
         environment = {
             **os.environ, "TMPDIR": str(scratch),
             "ST_RESTORE_DRILL_ROOT": str(scratch), "ST_RESTORE_DRILL_ID": identifier,
+            "ST_DOCKER_PREFIX": " ".join(nightshift_stack.docker_prefix()),
         }
         failure: BaseException | None = None
         try:
@@ -145,13 +145,13 @@ def _run_drill_script(archive_path: str, backup_id: str) -> dict[str, Any]:
 
 def _remove_drill_containers(names: list[str]) -> None:
     removed = subprocess.run(
-        ["docker", "rm", "-fv", *names], capture_output=True, text=True,
+        [*nightshift_stack.docker_cli(), "rm", "-fv", *names], capture_output=True, text=True,
         timeout=DRILL_TIMEOUT, check=False,
     )
     if removed.returncode:
         # The script's normal EXIT cleanup may have removed them already.
         remaining = subprocess.run(
-            ["docker", "ps", "-a", "--filter", f"name=^/({'|'.join(names)})$", "--format", "{{.Names}}"],
+            [*nightshift_stack.docker_cli(), "ps", "-a", "--filter", f"name=^/({'|'.join(names)})$", "--format", "{{.Names}}"],
             capture_output=True, text=True, timeout=DRILL_TIMEOUT, check=False,
         )
         if remaining.returncode:

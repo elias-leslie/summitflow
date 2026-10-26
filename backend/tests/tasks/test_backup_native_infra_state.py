@@ -671,3 +671,27 @@ def test_infrastructure_copy_rejects_concurrent_regular_file_change(
     with pytest.raises(RuntimeError, match="source changed during capture"):
         infra._copy_regular_path(source, destination)
     assert not destination.exists()
+
+
+def test_redis_snapshot_authenticates_through_the_environment(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    roots = _configure_recovery_roots(tmp_path, monkeypatch)
+    credentials = roots["home"] / ".config" / "credstore" / "summitflow" / "compose.env"
+    credentials.parent.mkdir(parents=True)
+    credentials.write_text('POSTGRES_PASSWORD=x\nREDIS_PASSWORD="stack-redis-secret"\n')
+    monkeypatch.delenv("REDIS_PASSWORD", raising=False)
+    monkeypatch.setattr(infra.shutil, "which", lambda _name: "/usr/bin/redis-cli")
+    seen: dict[str, object] = {}
+
+    def fake_bulk(command: list[str], **kwargs: object) -> object:
+        seen.update(command=command, env=kwargs["env"])
+        Path(command[-1]).write_bytes(b"REDIS0012")
+        return type("Result", (), {"returncode": 0})()
+
+    monkeypatch.setattr(infra, "run_bulk_process", fake_bulk)
+    destination = tmp_path / "redis-dump.rdb"
+
+    infra._collect_redis_dump(destination)
+
+    assert destination.read_bytes().startswith(b"REDIS")
+    assert cast(dict[str, str], seen["env"])["REDISCLI_AUTH"] == "stack-redis-secret"
+    assert "stack-redis-secret" not in " ".join(cast(list[str], seen["command"]))

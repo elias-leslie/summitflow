@@ -27,6 +27,8 @@ if [[ "$DRILL_DIR" != /* || -L "$DRILL_DIR" || ! -d "$DRILL_DIR" ]] \
     echo '{"ok":false,"components":[{"key":"scratch","ok":false,"error":"Drill requires a private owned scratch directory"}],"duration_ms":0}'
     exit 1
 fi
+# The stack's docker socket is root-only; SummitFlow passes "sudo -n" here when this user cannot open it.
+docker() { command $ST_DOCKER_PREFIX docker "$@"; }
 DRILL_PG_CONTAINER="sf-drill-pg-$DRILL_ID"
 DRILL_REDIS_CONTAINER="sf-drill-redis-$DRILL_ID"
 START_TIME=$(date +%s%3N 2>/dev/null || echo "0")

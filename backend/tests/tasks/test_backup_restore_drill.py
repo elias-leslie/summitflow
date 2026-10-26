@@ -17,6 +17,13 @@ from app.utils import transient_scratch
 
 
 @pytest.fixture(autouse=True)
+def direct_docker(monkeypatch):
+    from app.utils import nightshift_stack
+
+    monkeypatch.setattr(nightshift_stack, "docker_prefix", lambda: [])
+
+
+@pytest.fixture(autouse=True)
 def synthetic_restore_mount(tmp_path, monkeypatch):
     root = tmp_path / "scratch"
     root.mkdir(mode=0o700)
@@ -156,7 +163,7 @@ def test_drill_refuses_a_non_repository_backup(monkeypatch) -> None:
                         lambda **_kwargs: {"id": "backup-1", "location": "/tmp/infrastructure.tar.gz.age", "verification_json": {}})
     monkeypatch.setattr(backup_restore_drill, "_run_drill_script", run_script)
     monkeypatch.setattr(backup_restore_drill, "_record_drill_result", record)
-    monkeypatch.setattr(backup_restore_drill.nightshift_stack, "stack_installed", lambda: False)
+    monkeypatch.setattr(backup_restore_drill.nightshift_stack, "docker_runtime_available", lambda: True)
 
     result = backup_restore_drill.run_infra_drill()
     assert result["ok"] is False and "not a restic repository point" in result["error"]
@@ -166,7 +173,7 @@ def test_drill_refuses_a_non_repository_backup(monkeypatch) -> None:
 def test_drill_is_marked_unsupported_without_a_container_runtime(monkeypatch) -> None:
     from app.tasks import backup_restore_drill
 
-    monkeypatch.setattr(backup_restore_drill.nightshift_stack, "stack_installed", lambda: True)
+    monkeypatch.setattr(backup_restore_drill.nightshift_stack, "docker_runtime_available", lambda: False)
 
     result = backup_restore_drill.run_infra_drill()
 
@@ -353,3 +360,13 @@ exit 99
         assert component["ok"] is False
         assert component["error"].startswith("Disposable PostgreSQL did not become ready")
         assert loads == []
+
+
+def test_docker_goes_through_sudo_only_when_the_socket_is_closed(monkeypatch) -> None:
+    from app.utils import nightshift_stack
+
+    monkeypatch.undo()
+    monkeypatch.setattr(nightshift_stack.os, "access", lambda _path, _mode: False)
+    assert nightshift_stack.docker_cli() == ["sudo", "-n", "docker"]
+    monkeypatch.setattr(nightshift_stack.os, "access", lambda _path, _mode: True)
+    assert nightshift_stack.docker_cli() == ["docker"]
