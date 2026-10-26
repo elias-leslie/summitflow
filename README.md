@@ -32,16 +32,18 @@ the shared command classification used by `st` and the tests.
 
 ### Backup and disaster recovery
 
-- Encrypted offsite copies: project, configuration and workspace archives are
-  encrypted with `age` before upload to Google Drive, and Restic repositories
-  hold incremental backups locally and offsite.
-- Btrfs snapshots through btrbk for host-level recovery.
-- An append-only Restic copy on a Proxmox host, reached through an SSH key whose
-  forced command can add snapshots but never delete them.
-- A monthly offsite restore test, plus backup windows that keep backup targets
-  read-only outside scheduled jobs.
+- btrbk is the only local backup: six Btrfs subvolumes go to the T7 every 4
+  hours and 7 days are kept.
+- One daily restic job reads those snapshots at their real paths into a Google
+  Drive repository, with the PostgreSQL and Redis dumps and a few Proxmox
+  sources. It checks itself, prunes itself and retries on the next run. A systemd
+  user timer (`summitflow-host-backup.timer`) drives all of it; nothing is
+  scheduled per project.
+- `st backup status` says whether backups are current. `st backup restore
+  PROJECT --to DIR` brings a project back from Drive into a new directory.
+- Backup storage on the T7 is read-only outside scheduled runs.
 - Runbooks: [hard-loss recovery](docs/disaster-recovery.md) and
-  [native host recovery](docs/native-host-recovery.md).
+  [host recovery](docs/native-host-recovery.md).
 
 ### Host and fleet operations
 
@@ -68,7 +70,7 @@ library those executables use for project context, HTTP calls and output. See
 
 The FastAPI backend, Next.js operator interface, CLI, and workflow workers are
 implemented for a self-hosted development environment. Browser evidence, routed
-AI completions, push notifications, and remote backups depend on their configured
+AI completions, push notifications, and offsite backups depend on their configured
 integrations. A passing check or successful screenshot records the observed
 behavior; it does not establish that every project feature works.
 
@@ -98,10 +100,10 @@ the backend. `project.identity.json` declares both services, the Hatchet worker,
 the host monitor, and the optional Codex session-sync worker.
 
 PostgreSQL stores project and task state, schedules, and evidence records. Redis
-supports caching and coordination; Hatchet dispatches workflows. Backup sources
-and artifact storage have their own configuration and history. Agent Hub owns
+supports caching and coordination; Hatchet dispatches workflows. Artifact storage
+has its own configuration and history. Agent Hub owns
 shared agent prompts, routed completions, and memory; those records remain in
-Agent Hub. Browser runtimes, SMB backup targets, and push delivery are additional
+Agent Hub. Browser runtimes and push delivery are additional
 configured capabilities.
 
 ## Development and verification

@@ -1,79 +1,76 @@
-# Linux recovery and portable project backups
+# Linux host recovery
 
-The approved Linux host recovery setup uses native Btrfs points replicated by
-btrbk. The permanent plain Btrfs T7 destination is prepared; capture, application
-coverage and restore qualification are tracked separately in its receipts.
-Verified temporary native material protects the migration. Windows retains its
-separate Veeam backup. Portable project/configuration backups will use the existing
-Restic repositories and Google Drive; enable the four-hour cadence for each source
-with its qualified Restic backend. Schema migration preserves existing schedules
-so unqualified archive sources cannot start frequent full captures. Git checkpoints and local saved-work snapshots serve code
-recovery between host backups.
+btrbk is the only local backup. It snapshots six Btrfs subvolumes (`/`, `/home`,
+`/srv/workspaces`, `/var/lib/docker`, `/srv/models`, `/var/log`) and sends them to
+the plain Btrfs T7 every 4 hours. Seven daily points are kept, plus the newest.
+The daily Google Drive copy reads those same snapshots; see the
+[hard-loss runbook](disaster-recovery.md) and [cold recovery from
+Drive](local-first-recovery.md). Windows keeps its own Veeam backup. Linux Veeam
+is off: it cannot capture this host's compressed Btrfs layout. Git checkpoints
+and `st snaps` cover code between host backups.
 
-Existing daily age sources remain active until their individual Restic cutovers
-pass. Retained archive recovery remains available through the
-[hard-loss runbook](disaster-recovery.md) and [local-first runbook](local-first-recovery.md).
-Linux Veeam is disabled because the installed version cannot capture this host's
-compressed Btrfs layout. Neither installation nor schema migration activates a
-replacement backup policy.
+## What runs
 
-## Current qualification
+`summitflow-host-backup.timer` (a systemd user timer, 02:30 and every 4 hours
+after) starts `summitflow-host-backup.service`. One run takes the host backup
+lock, runs btrbk, and, once a day, lets restic read the new snapshots into Drive.
+`st backup run` starts the same unit now. The run stands down while the machine
+is under memory pressure; the next slot does the work.
 
-`st backup host status` reports installation, explicit coverage, admission,
-latest capture and its evidence. **Ready to capture** does not establish a tested
-restore. `st backup host run --dry-run` performs preflight without capturing.
-The adapter stays disabled until `BACKUP_BTRBK_ENABLED=true` is deliberately
-configured after the storage cutover and recovery checks.
+`st backup status` says whether the points are current. `st backup host status`
+reports installation, coverage, admission, the latest capture and its evidence.
+**Ready to capture** does not establish a tested restore. `st backup host run
+--dry-run` does the preflight without capturing. The adapter runs only when
+`BACKUP_BTRBK_ENABLED=true`.
 
-The reviewed root-owned nonsecret configuration belongs at
-`/etc/btrbk/summitflow.conf`, readable by the service user with mode `0644`.
-Start from `scripts/systemd/btrbk.conf.example`. Keep the package's standalone
-timer disabled: SummitFlow's existing backup orchestration runs the daily host
-capture. The destination must be an independently mounted Btrfs
-filesystem with compression enabled. Snapshot directories must already exist.
-Validate the configured source/target relations and a dry run before enablement.
+The reviewed root-owned nonsecret configuration is `/etc/btrbk/summitflow.conf`,
+readable by the service user with mode `0644`; start from
+`scripts/systemd/btrbk.conf.example`. Keep the package's own btrbk timer
+disabled: the SummitFlow timer is the only schedule. The destination must be an
+independently mounted Btrfs filesystem with compression enabled, and the
+snapshot directories must already exist. Validate the source/target relations
+and a dry run before enabling.
 
-Explicit host coverage includes `/`, `/home`, `/srv/workspaces`, `/var/lib/docker`,
-`/srv/models` and `/var/log`. Every additional durable nested subvolume requires
-its own section because Btrfs snapshots are not recursive. Managed work points
-are excluded as nested snapshot boundaries. External PostgreSQL remains external;
-application recovery uses associated verified portable database dumps.
+## Coverage
 
-Database obligations use the same configured-endpoint resolver as portable
-capture, including projects without a `database` manifest declaration. Only
-registered testing projects whose project backup policies are all explicitly
-disabled are excluded from portable coverage. Receipts list those fixtures
-separately: their host filesystem state is crash-consistent and does not establish
-portable database recovery. Production, unclassified and missing-source
-obligations fail closed. A verified full-database point may also cover a project
-resolving to the exact same endpoint and database, subject to that project's
-freshness requirement; the receipt names the supplying project and point.
+Every durable nested subvolume needs its own section because Btrfs snapshots are
+not recursive. Managed work points are excluded as nested snapshot boundaries.
+A snapshot of PostgreSQL's data files is not a database backup: the daily Drive
+job streams a `pg_dumpall` of the shared stack straight into the repository
+(`st backup show postgres`).
 
-The configuration keeps seven daily destination points and necessary source
-incremental parents. Each capture carries matching boot/EFI files, observed disk
-layout and a receipt. Retirement of matching boot files follows the native points,
-not an unrelated folder age. Failed deletion retains its receipt and error.
-Admission uses the existing host pressure policy and measured physical capacity;
-an unqualified target or insufficient headroom prevents capture. Admission also
-measures Btrfs device allocation read-only (`btrfs filesystem usage`) on every
-source and the target: ordinary free space can conceal exhausted metadata
-allocation, so a filesystem with under 8 GiB unallocated or a missing device
-blocks capture. Reclaiming allocation is Nightshift's host maintenance, not part
-of the backup job.
+Drive reads only `/srv/workspaces`, `/home` and the system folders of `/` (`/etc`,
+`/root`, `/opt`, `/usr/local`, `/var/spool`). Docker images, `/srv/models` and
+`/var/log` stay on the T7 only.
 
-Initial admission conservatively reserves a full source-filesystem footprint,
-matching boot allocation and the existing 25 GiB reserve for every run. This is
-full-reseed headroom, not a measured incremental-growth forecast. Before final
-sustainability acceptance, qualify actual incremental peak growth on the final
-destination, keep full and incremental measurements separate and revalidate
-incremental parents under the operation lock. Missing parents require full
-admission or refusal. Independently previewed native expiry must remain available
-when a capture cannot fit. Do not weaken this guard using a small fixture result.
+## Capacity
 
-Ubuntu Noble's packaged btrbk 0.32.5 uses the standard send protocol; destination
-compression and native incremental sharing still apply. Its behavior must be
-qualified on the installed kernel/tools. A later compressed-stream configuration
-requires a separately verified btrbk version supporting those options.
+The configuration keeps seven daily destination points and the incremental
+parents each source needs. Each capture carries matching boot/EFI files, the
+observed disk layout and a receipt. Matching boot files are retired together with
+their native points, not by folder age. A failed deletion keeps its receipt and
+error.
+
+Admission uses the host pressure policy and measured capacity. An unqualified
+target or too little headroom prevents a capture. It also reads Btrfs device
+allocation (`btrfs filesystem usage`) on every source and the target: free space
+can hide exhausted metadata allocation, so a filesystem with under 8 GiB
+unallocated, or a missing device, blocks the capture. Reclaiming allocation is
+Nightshift's host maintenance, not the backup's.
+
+Initial admission reserves a full source-filesystem footprint, the matching boot
+allocation and the existing 25 GiB reserve for every run. That is full-reseed
+headroom, not a forecast of incremental growth. Measure real incremental growth
+on the final destination before relying on it, keep full and incremental
+measurements apart, and revalidate incremental parents under the operation lock.
+A missing parent needs full admission or a refusal. Previewed native expiry must
+stay possible when a capture does not fit. Do not weaken this guard with a small
+fixture result.
+
+Ubuntu Noble's btrbk 0.32.5 uses the standard send protocol; destination
+compression and native incremental sharing still apply. A compressed-stream
+configuration needs a btrbk version that supports those options, verified on the
+installed kernel and tools.
 
 ## Selective recovery
 

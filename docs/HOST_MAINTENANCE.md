@@ -7,7 +7,7 @@ retention. See the Nightshift project for their units, schedules, and alerts.
 
 `scripts/install-host-infra.sh` installs only SummitFlow-specific host pieces:
 the backup storage write window (`summitflow-backup-window` and its guard
-timer), btrbk log rotation, Docker container log limits, and the
+timer), the host backup timer (`summitflow-host-backup.timer`), btrbk log rotation, Docker container log limits, and the
 `summitflow-infra-reconcile` user unit that brings up shared Compose
 infrastructure without `st` or API dependencies.
 
@@ -15,9 +15,11 @@ infrastructure without `st` or API dependencies.
 
 SummitFlow remains responsible for application-aware concerns:
 
-- backup source schedules and retention with minimum restore-point safeguards;
-- the nightly btrbk host backup to the T7 and its monthly real restore test;
-- restic project/config backups and their restore drills;
+- the host backup: btrbk points on the T7 every 4 hours and one daily restic copy
+  of those snapshots into Google Drive, both started by
+  `summitflow-host-backup.timer` (see [host recovery](native-host-recovery.md));
+- the hourly backup health check that raises an alert only for a recovery point
+  that is really missing or a failed Drive check;
 - PostgreSQL bloat analysis and targeted `VACUUM ANALYZE`;
 - application health, runtime hygiene, dashboards, and notification records.
 
@@ -28,21 +30,19 @@ query SummitFlow's database or call its API.
 
 | Control | Schedule |
 |---|---|
-| btrbk host backup to the T7 | first hourly tick in the 02:00-06:00 window (about 02:30) |
+| Host backup: btrbk to the T7 | `summitflow-host-backup.timer`, 02:30 and every 4 hours after |
+| Google Drive copy (restic) | once a day, in one of those runs; a missed day is made up at the next run |
+| Backup health check | hourly, at :30 |
 | Project autosnapshots | every 30 minutes |
 | SummitFlow daily maintenance | daily at 04:00 |
-| Managed restore tests (monthly host restore included) | Sunday at 06:00 |
 
 ## Capacity and retention policy
 
 - btrbk keeps the latest point on each source and 7 daily points on the T7
-  (`/etc/btrbk/summitflow.conf`). The monthly restore test receives the latest
-  `workspaces` and `home` points into `/mnt/summitflow-native/restore-test`
-  (scratch cannot hold a full copy), compares file counts and sampled SHA-256
-  with the source's retained snapshot and with unchanged live files, checks the
-  boot files, then deletes the copies. Only a pass sets `restore_verified`
-  (good for 35 days); the receipt is
-  `~/.local/state/summitflow/host-recovery/restore-test.json`.
+  (`/etc/btrbk/summitflow.conf`). The Drive repository keeps 7 daily, 4 weekly
+  and 3 monthly snapshots per job and prunes itself weekly. Every Drive run checks
+  one thirtieth of the stored data, and a weekly test restore loads the newest
+  PostgreSQL dump and a few project files from Drive and compares them.
 - Veeam is not installed. Its old chain on the T7 (`VeeamBackup/`) is the
   owner's to keep or delete; nothing reads or prunes it.
 - Docker pruning is Nightshift's weekly stack prune (stopped containers older
@@ -72,8 +72,9 @@ query SummitFlow's database or call its API.
   `/srv/scratch/cache` stay. `st cleanup reclaim --filesystem /srv/scratch
   --target-free-gib N` runs the same steps on demand and stops at the target.
 - Backups publish `~/.local/state/summitflow/backup-freshness/sources.json`
-  after each scheduler pass: active alert conditions, whether capture is
-  refused for disk space (and since when), and per-source freshness.
+  after each backup run and health check: active alert conditions, whether
+  capture is refused for disk space (and since when), and the freshness of the
+  btrbk layer, the Drive layer and each Proxmox job.
 
 ## Operator commands
 
@@ -96,6 +97,7 @@ for the same reason.
 
 ```bash
 systemctl list-timers 'summitflow-*'
+st backup status
 st backup host status
 st autosnap sweep
 ```
@@ -108,42 +110,43 @@ or Btrfs snapshots. Use the owning retention/recovery workflow.
 These guard against mistakes (an agent's stray command or a bad retention
 setting), not against a hostile root user.
 
-- **T7 read-only outside backup windows.** `/media/kasadis/Backups/davion-gem`
-  (restic repository, native archives) and `/mnt/summitflow-native` (btrbk
-  target) are read-only except while a backup job writes. Jobs open the window
+- **T7 read-only outside backup windows.** `/mnt/summitflow-native` (btrbk
+  target) and the old restic repository under `/media/kasadis/Backups/davion-gem`
+  are read-only except while a backup job writes. The host backup opens the window
   through the root-owned `/usr/local/sbin/summitflow-backup-window`
   (`open|close NAME PID`, `run NAME -- CMD`, `status`, `guard`);
   `summitflow-backup-window-guard.timer` returns storage to read-only every five
   minutes once no live holder remains, so a crashed job cannot leave it
   writable. Only the per-mount flag changes; the filesystems stay mounted.
-- **Deletion circuit breaker.** Local and offsite restic retention, native
-  archive cleanup, native Drive retention and btrbk target expiry refuse any
-  run that removes more than normal retention (by default more than 25% of all
-  points or 50% of one source; btrbk: more than a third). The points are kept,
-  backups continue (btrbk runs with `--preserve-backups`), and a SummitFlow
-  notification is raised. Prune is skipped when snapshots disappeared outside
-  retention, keeping their data recoverable. Fix the retention settings so the
-  next run stays within normal retention. An oversized run stays blocked until
-  the owner approves it in chat; the agent then runs
-  `st backup storage approve-deletion <kind> --target <target> --owner-approved "<owner's words, date>"`,
-  which lets the next run of that kind and target through once (no bigger than
-  the refused plan, within 48 hours). The approval is spent on use and recorded
-  in the safety status (`approval_log`) and in a notification. No Nightshift
-  step is involved.
-- **Drive deletes go to trash.** Offsite restic prune and native Drive expiry
-  use the Drive trash (30 days) instead of permanent deletion.
-- **Append-only PVE copy.** CT 160 on davion-gem holds a third copy of the
-  local restic repository; the workstation key can add snapshots but not
-  delete them, and retention runs only on PVE. It is the first thing to remove
+- **Deletion circuit breaker.** btrbk target expiry refuses any run that removes
+  more than normal retention (more than a third of the points, by default). The
+  points are kept, backups continue (btrbk runs with `--preserve-backups`), and
+  a SummitFlow notification is raised. Fix the retention setting so the next run
+  stays within normal retention. An oversized run stays blocked until the owner
+  approves it in chat; the agent then runs
+  `st backup approve-deletion <kind> --target <target> --owner-approved "<owner's words, date>"`
+  (kind and target from `st backup safety`), which lets the next run of that kind
+  and target through once (no bigger than the refused plan, within 48 hours). The
+  approval is spent on use and recorded in the safety status (`approval_log`) and
+  in a notification. No Nightshift step is involved.
+- **Drive deletes go to trash.** The Drive job's forget and prune use the Drive
+  trash (30 days) instead of permanent deletion. Its retention is fixed in code
+  (7 daily, 4 weekly, 3 monthly).
+- **Old backups.** The restic repository on the T7 and the per-project snapshots in
+  Drive from before the daily job are no longer written to. The Drive ones age
+  out after 30 days once the daily job has run well for a few days; the T7
+  repository is the owner's to delete (`st backup old list --where local` shows
+  its path and size). CT 160 on davion-gem still holds the append-only copy of
+  that old repository; nothing new goes into it. It is the first thing to remove
   when davion-gem needs space: see `scripts/pve-restic-append/README.txt`.
 - **Proxmox captures use their own key.** The `proxmox://` sources (cluster
-  config, guest files, host files) reach davion-gem only with
-  `pve-backup.ed25519` in the backup key directory, bound to the fixed
-  dispatcher `/usr/local/sbin/summitflow-pve-backup` (verbs `guests`,
-  `thinpool`, `sources`, `capture SOURCE DIGEST`). What each source captures
-  is the list root installs on PVE, so adding or changing a `proxmox://`
-  source needs `sudo scripts/pve-backup/install.sh` before it runs. The
-  installer shows the committed dispatcher's sha256 and the list against the
+  config, guest files, host files) are jobs of the daily Drive run. They reach
+  davion-gem only with `pve-backup.ed25519` in the backup key directory, bound
+  to the fixed dispatcher `/usr/local/sbin/summitflow-pve-backup` (verbs
+  `guests`, `thinpool`, `sources`, `capture SOURCE DIGEST`). What each source
+  captures is the list root installs on PVE, so adding or changing a
+  `proxmox://` source needs `sudo scripts/pve-backup/install.sh` before it runs.
+  The installer shows the committed dispatcher's sha256 and the list against the
   installed one, and installs nothing until confirmed: `y` at a terminal, or,
   with no terminal, a re-run with `--yes DIGEST`, where DIGEST is the
   `Approval digest` the first run printed for exactly that dispatcher and
@@ -158,15 +161,16 @@ setting), not against a hostile root user.
   never captures CT 150 (OmniNull) or CT 160 (append-only restic). Guest
   files are read only through the dispatcher (`via=pct` or `via=agent`),
   never over an ssh alias.
-- **Health.** Every scheduler tick re-reads the daily rotating
-  `restic check --read-data-subset` results (failed or older than three days
-  raises an alert). Weekly: snapshot-count and repository-size drops and a test
-  restore from the PVE copy.
+- **Health.** The hourly check raises an alert for a missing local point (none
+  in 26 hours), a missing Drive copy (none in 48 hours), three failed data checks
+  in a row, a failed weekly test restore, or a Drive cleanup that has failed for
+  three weeks. A slow or retried run is not an alert. `st backup status` shows
+  the same list.
 - **T7 stays mounted.** The read-only overlay on `davion-gem` keeps the NTFS
   partition busy, so its automount no longer idle-unmounts after ten minutes.
 
 Status for watchers (Nightshift): `~/.local/state/summitflow/backup-safety/status.json`
-(`st backup storage safety`). Top-level `status` is `ok` or `alert`; `alerts`
+(`st backup safety`). Top-level `status` is `ok` or `alert`; `alerts`
 lists each active condition with `key`, `kind`, `message` and `since`.
 
 `/srv/workspaces` and `/srv/scratch` share one Btrfs filesystem and no longer

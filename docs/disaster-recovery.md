@@ -1,22 +1,12 @@
 # SummitFlow hard-loss recovery
 
 Use this runbook when the original computer and its disks are unavailable. It
-recovers SummitFlow from the encrypted archives in the `SummitFlow-Archives`
-Google Drive folder plus the recovery key that the owner saved separately.
-
-During the October 2026 migration, existing daily age archives remain active
-until each source passes its replacement recovery and offsite checks. Their
-offsite is an identical ciphertext copy. This runbook remains the recovery path
-for those retained archives. Retained Restic points use the
-[repository recovery procedure](local-first-recovery.md#repository-payload-recovery)
-and their recorded inventory.
-
-The approved replacement is [native Linux host recovery](native-host-recovery.md)
-with Btrfs/btrbk, four-hour incremental Restic project/configuration offsites to
-Google Drive, and a separate Windows Veeam backup. The permanent Linux destination
-and per-source offsite cutover remain pending qualification. Linux Veeam cannot
-capture this host's compressed Btrfs layout; do not rely on it for a new Linux
-recovery point. Verified temporary native recovery material protects the migration.
+recovers SummitFlow from the daily restic repository in Google Drive, using the
+repository password and rclone configuration the owner holds separately. The T7
+btrbk points are local only; they are gone with the host, and the
+[host recovery guide](native-host-recovery.md) covers them. Getting individual
+files back without a replacement host is in [cold recovery from
+Drive](local-first-recovery.md).
 
 This is not an operating-system image. It does not recreate Linux packages,
 users, groups, device configuration, Google Online Accounts, package caches, or
@@ -26,372 +16,145 @@ Docker volume.
 
 ## What must still exist
 
-Keep these in `SummitFlow-Archives`:
+- The restic repository locator (`rclone:<remote>:<folder>`), the repository
+  password file and the dedicated rclone configuration, in the owner's offline
+  custody. A copy inside the backup is encrypted with the same password and
+  cannot open it.
+- The Google account behind the Drive remote, with its OAuth client. If Google
+  rejects the saved authorization, run `scripts/authorize-backup-drive.sh` and
+  complete consent privately. Desktop Online Accounts sign-in is not used.
+- A compatible Linux host with `restic` 0.19.1, `rclone` 1.75.1, Git, Python 3.13
+  or newer, `uv`, Docker Engine with Compose v2, and Node/corepack/pnpm for
+  application rebuilds; plus private disk space for the restored trees and
+  database volumes.
 
-- this runbook as `START-HERE.md`;
-- the source-only companion runbook as `OFFLINE-RESTORE.md`;
-- `recovery-bootstrap.py`;
-- the dated `recovery-inventory.json` and `SHA256SUMS`;
-- retained encrypted infrastructure, project, config, and workspace archives
-  in their source folders, including the SummitFlow source archive. A large
-  archive may be stored as an ordered `.parts.json` manifest and all of its
-  `.partNNNNNN` siblings instead of one `.tar.gz.age` object.
+The restored source needs no GitHub account. Rebuilding still needs the public
+Linux, Python, npm, and container registries named by the lockfiles and Compose
+configuration unless their artifacts are already cached.
 
-The inventory is a dated, verified recovery point and source-folder map, not a
-permanent `latest` pointer. Normal retention can expire an archive it names.
-Use the selection procedure below when that happens; do not depend on an old
-filename remaining forever. Retain downloaded ciphertext after making a working
-copy.
+## 1. Open the repository and choose snapshots
 
-The age private key must **not** be in Google Drive beside the archives. Obtain
-the separately saved file containing the `AGE-SECRET-KEY-...` identity. A
-checksum stored in the same Drive folder detects transfer errors; a separately
-saved copy of the dated inventory provides stronger evidence that the selected
-objects are the ones previously recorded.
-
-Prepare a compatible Linux host with:
-
-- Python 3.12 or newer for `recovery-bootstrap.py`, Python 3.13 or newer for
-  the recovered SummitFlow backend, `age`, Git, gzip, sed, and a SHA-256 tool;
-- Docker Engine and Docker Compose v2;
-- `uv`, and Node/corepack/pnpm for local application rebuilds; and
-- enough private disk space for the ciphertext, plaintext archives, extracted
-  trees, builds, and database volumes.
-
-The restored source removes any requirement for a GitHub account. Rebuilding
-still needs the public Linux, Python, npm, and container registries referenced by
-the lockfiles and Compose configuration unless their artifacts are already
-cached. This kit is not an offline package mirror.
-
-## 1. Preserve and verify the recovery point
-
-Download the whole kit and select one archive per required source. Prefer the
-dated inventory's verified archives when still available. A browser is enough;
-the replacement host does not yet have to be signed into Google Online Accounts.
-Work on a private local disk:
+Work on a private local disk, with credentials only as file references:
 
 ```bash
 umask 077
-mkdir -p /srv/recovery/summitflow-drive-original /srv/recovery/work
+mkdir -p /srv/recovery/restored /srv/recovery/dumps
+export RESTIC_REPOSITORY='rclone:<remote>:<folder>'
+export RESTIC_PASSWORD_FILE=/secure/offline/restic-drive.password
+export RCLONE_CONFIG=/secure/offline/restic-rclone.conf
+restic snapshots --tag offsite
+restic check
 ```
 
-Put the downloaded files in `summitflow-drive-original`, then verify the provided
-checksums from that directory:
+Pick the newest snapshot of each job you need: `workspaces`, `home`, `root`,
+`postgres`, `redis`, and any `pve-*` job. Record each full ID, time and the
+`btrbk:` tag. A job whose newest snapshot is old is a recovery limitation to
+write down, not to ignore. The tags and the 7 daily, 4 weekly and 3 monthly
+retention are described in [cold recovery](local-first-recovery.md). Do not edit
+or delete anything in the repository during recovery.
+
+## 2. Restore the trees into staging
+
+Restore into new directories, never over a live path. The snapshot keeps real
+paths, so each tree appears under its original path inside the staging directory:
 
 ```bash
-cd /srv/recovery/summitflow-drive-original
-sha256sum --check SHA256SUMS
+restic restore <workspaces-snapshot-id> --target /srv/recovery/restored \
+  --include /srv/workspaces/projects/summitflow --verify
+restic restore <root-snapshot-id> --target /srv/recovery/restored-root --include /etc --verify
+restic restore <home-snapshot-id> --target /srv/recovery/restored-home --verify \
+  --include /home/<user>/.env.local --include /home/<user>/.config \
+  --include /home/<user>/.local/state
+RECOVERY_ROOT=/srv/recovery/restored-root
+RECOVERY_HOME=/srv/recovery/restored-home/home/<user>
 ```
 
-`SHA256SUMS` covers the four static kit files, not expiring backup archives,
-parts, or part manifests. Stop if a kit file is absent or has a different
-checksum. The inventory's `artifacts` array records the object name, size, and
-SHA-256 for a raw archive, or for the `.parts.json` manifest and every part of a
-segmented archive. Compare every downloaded object with that record. Do not edit
-the downloaded files. Copy or assemble selected ciphertext in
-`/srv/recovery/work` and retain the originals until the replacement system has
-completed a new, independently verified backup cycle.
-
-Review the inventory before continuing. It must identify each raw archive or
-complete segmented artifact set, including the full ciphertext SHA-256, for at
-least:
-
-1. the SummitFlow source archive;
-2. the infrastructure archive; and
-3. one archive for every project/config/workspace source required by the old
-   host.
-
-It should also record the key ID and the infrastructure capture coverage. A
-missing or incomplete component is a recovery limitation to resolve, not a
-warning to ignore.
-
-### If a dated archive has expired, or a newer recovery point is needed
-
-Use the same source folder identified by the inventory. Select either its newest
-timestamped `.tar.gz.age` object or its newest `.tar.gz.age.parts.json` manifest.
-For a manifest, download the manifest and **all** sibling part names it lists
-from that same source folder; an isolated part or incomplete set is not a backup.
-If both a raw archive and a complete parts set share the same archive name,
-prefer the parts set. An earlier failed whole-file upload can leave a raw object
-beside the later verified parts. A matching timestamp or filename does not prove
-that the raw object is complete. Verify the manifest, every part, and the
-assembled ciphertext before decryption.
-Record every downloaded object's filename, size, and local SHA-256, plus the
-manifest's full ciphertext checksum, in your recovery notes. Check all source
-folders for projects added after the inventory was written; later compare them
-with the recovered backup-source registry. Do not silently omit new projects,
-mix parts from different manifests, or substitute an archive from another source
-folder.
-
-An independent matching checksum or offsite verification record is preferable.
-If none survived, say so in the recovery notes: a newly computed checksum proves
-subsequent copies match, not that this was a previously verified backup. Omit the
-optional expected-checksum argument only in that case. The age authentication
-check, safe archive validation and restore checks remain mandatory. Encryption
-authentication detects damaged ciphertext; it does not independently establish
-who created a file in a writable Drive account.
-
-### Assemble a segmented ciphertext
-
-Raw `.tar.gz.age` objects need no assembly. For a `.parts.json` recovery point,
-keep its parts beside the manifest and let the bootstrap utility stream and
-verify them; do not concatenate them manually:
+Use the whole `home` job instead of the three includes if you want the entire
+home directory. Move the SummitFlow checkout to its final path and inspect it:
 
 ```bash
-python3 recovery-bootstrap.py \
-  --assemble-parts /srv/recovery/summitflow-drive-original/<archive>.parts.json \
-  --output-file /srv/recovery/work/<archive>
-```
-
-The output filename must be the manifest's exact `archive_name`. The utility
-requires the version-1 `summitflow-age-parts` contract, consecutive safe part
-names, regular non-linked files, exact sizes, each part checksum, and the final
-ciphertext checksum. It refuses to overwrite an output and removes an incomplete
-temporary output on failure. Assembly does not use the age key and manifest
-checksums are not independent authentication: successful age decryption of the
-reassembled ciphertext remains mandatory.
-
-For project/config archives, complete the isolated restore and verify Git history
-and saved index where present. For infrastructure, inspect its capture manifest
-for every required component and complete the disposable database/Redis restore
-checks below before using it. If the newest retained archive fails, preserve the
-failure evidence and try the next newest in that same source folder. Do not
-replace a failed restore with a success claim based only on decryption.
-
-## 2. Recover SummitFlow source without a running service
-
-Choose an absent or empty output directory. Use the raw downloaded archive or
-the verified archive produced by the assembly step. The bootstrap script only
-decrypts, validates, and extracts the SummitFlow source. It does not install
-packages, contact the API, load a database, create a key, or start a service.
-
-```bash
-python3 recovery-bootstrap.py \
-  summitflow-YYYYMMDD-HHMMSS.tar.gz.age \
-  --identity-file /secure/offline/backup-identity.agekey \
-  --output-dir /srv/recovery/source \
-  --expected-sha256 sha256:<ciphertext-sha256-from-the-dated-inventory>
-```
-
-On success the bootstrap source is `/srv/recovery/source/summitflow`. It includes
-the recovery payload, but it is not yet a reconstructed Git checkout: there is
-no `.git` directory and the saved refs/index have not been applied. Use this
-copy only to install the offline CLI.
-
-The recovered `docker/workspace-packages` directory supplies the local wheels
-and tarballs referenced by `backend/pyproject.toml` and `pnpm-lock.yaml`. Verify
-those files are present, then bootstrap the CLI:
-
-```bash
-cd /srv/recovery/source/summitflow/backend
-uv sync --frozen
-uv run --frozen st --help
-```
-
-Now use that CLI to restore the original SummitFlow ciphertext into the absent
-or empty final checkout. This is the operation that verifies the recovery
-manifest, recreates Git refs/HEAD/index, and restores WIP:
-
-```bash
-uv run --frozen st backup restore \
-  --file /srv/recovery/work/summitflow-YYYYMMDD-HHMMSS.tar.gz.age \
-  --into /srv/workspaces/projects/summitflow \
-  --identity-file /secure/offline/backup-identity.agekey \
-  --expected-checksum sha256:<ciphertext-sha256-from-the-dated-inventory>
-```
-
-Inspect the real recovered checkout:
-
-```bash
+mkdir -p /srv/workspaces/projects
+mv /srv/recovery/restored/srv/workspaces/projects/summitflow /srv/workspaces/projects/summitflow
 git -C /srv/workspaces/projects/summitflow fsck --full
 git -C /srv/workspaces/projects/summitflow status --short --branch
 ```
 
-The archive contains committed history, unpublished refs, the exact staged
-index, working files, and durable data including
-`data/design-studio/mockups`. Preserve that state. Do not clean, reset, or look
-for obsolete `/tmp/summitflow/mockups` state.
-
-If the replacement user or path differs from the original host, decide the final
-layout now. Later, update host-specific paths in recovered environment files,
-service units, and database project/source records before enabling automation.
-
-Create the final checkout's own backend environment rather than reusing the
-temporary bootstrap venv:
+The tree is a consistent btrbk snapshot taken at the recorded time. It holds
+committed history, unpublished refs, the staged index, working files, and the
+durable data under the project including `data/design-studio/mockups`. Preserve
+that state. Do not clean, reset, or look for obsolete `/tmp/summitflow/mockups`
+state. `docker/workspace-packages` supplies the local wheels and tarballs named by
+`backend/pyproject.toml` and `pnpm-lock.yaml`; check they are present. Then build
+the backend environment:
 
 ```bash
 cd /srv/workspaces/projects/summitflow/backend
 uv sync --frozen
-uv run --frozen st --help
+ST_DEV_CHECKOUT=1 st --help
 ```
 
-Restore every other archive named by the dated inventory into a new empty
-destination using the offline restore command. Use its own recorded checksum and
-the same separately saved identity:
+Restore every other project the same way (add one `--include` per project, or
+`--include /srv/workspaces/projects`), then compare the folders with the
+database after step 5. If the replacement user or paths differ, decide the final
+layout now and correct host-specific paths in the recovered environment files,
+service units, and project records before enabling automation.
+
+## 3. Get the database dumps
 
 ```bash
-uv run --frozen st backup restore \
-  --file /srv/recovery/work/<source-archive>.tar.gz.age \
-  --into /srv/recovery/restored/<source-id> \
-  --identity-file /secure/offline/backup-identity.agekey \
-  --expected-checksum sha256:<that-archive-ciphertext-sha256>
+restic dump <postgres-snapshot-id> /postgres-dumpall.sql > /srv/recovery/dumps/postgres-dumpall.sql
+restic dump <redis-snapshot-id> /redis-dump.rdb > /srv/recovery/dumps/redis-dump.rdb
+RECOVERY_DUMPS=/srv/recovery/dumps
+tail -n 3 "$RECOVERY_DUMPS/postgres-dumpall.sql"   # must end with the cluster dump complete line
+test "$(head -c 5 "$RECOVERY_DUMPS/redis-dump.rdb")" = REDIS
 ```
 
-Inspect each Git recovery result and then place it at its intended stable path.
-The database contains old absolute project and backup-source paths; reconcile
-those paths after the database is restored and before backup or maintenance
-schedules are resumed.
-
-## 3. Materialize and inspect the infrastructure archive
-
-Decrypt the infrastructure ciphertext into private temporary storage. Never put
-the identity itself on the command line:
-
-```bash
-age --decrypt \
-  --identity /secure/offline/backup-identity.agekey \
-  --output /srv/recovery/work/infrastructure.tar.gz \
-  /srv/recovery/work/infrastructure-YYYYMMDD-HHMMSS.tar.gz.age
-chmod 600 /srv/recovery/work/infrastructure.tar.gz
-```
-
-Before touching durable volumes, run the disposable restore drill from the
-recovered SummitFlow checkout:
-
-```bash
-cd /srv/workspaces/projects/summitflow
-./scripts/infra-restore-drill.sh /srv/recovery/work/infrastructure.tar.gz
-```
-
-The drill pulls `pgvector/pgvector:pg16` and Redis if those images are not
-cached. Require an `ok: true` result. The drill proves that the dump and RDB can
-be loaded into disposable containers; it does not restore the production
-volumes.
-
-Extract only regular files and directories to a private staging directory:
-
-```bash
-mkdir -p /srv/recovery/infra
-python3 - /srv/recovery/work/infrastructure.tar.gz /srv/recovery/infra <<'PY'
-from pathlib import Path, PurePosixPath
-import sys
-import tarfile
-
-archive_path = Path(sys.argv[1])
-destination = Path(sys.argv[2])
-if any(destination.iterdir()):
-    raise SystemExit("infrastructure destination must be empty")
-with tarfile.open(archive_path, "r:gz") as archive:
-    members = archive.getmembers()
-    roots = {
-        PurePosixPath(member.name).parts[0]
-        for member in members
-        if PurePosixPath(member.name).parts
-    }
-    if roots != {"infrastructure"}:
-        raise SystemExit(f"unexpected archive root: {sorted(roots)}")
-    if any(not (member.isdir() or member.isreg()) for member in members):
-        raise SystemExit("infrastructure archive has an unsupported member type")
-    archive.extractall(destination, members=members, filter="data")
-PY
-```
-
-Set this shorthand for the remaining commands:
-
-```bash
-RECOVERY_INFRA=/srv/recovery/infra/infrastructure
-RECOVERY_COMPOSE=/srv/workspaces/projects/summitflow/docker/compose
-test -f "$RECOVERY_INFRA/pgdumpall.sql.gz"
-test -f "$RECOVERY_INFRA/configs/redis-dump.rdb"
-test "$(head -c 5 "$RECOVERY_INFRA/configs/redis-dump.rdb")" = REDIS
-```
-
-Review `state/capture-manifest.json` and each nested manifest. In particular,
-require the expected config, Hatchet, ingress, user-systemd, Agent Hub, and
-managed-service components to say `captured`. Nonzero skipped links or special
-files are explicit limitations that need operator review.
+A dump without its trailer, or an empty one, is a failed restore.
 
 ## 4. Put configuration in place while services are stopped
 
 Do **not** run `docker/install.sh`: it generates new passwords and starts a
 normally initialized database, both of which conflict with this restore.
 
-Install the recovered files before starting Compose:
-
-- `configs/compose-env` to `$RECOVERY_COMPOSE/.env`, mode `0600`;
-- `configs/hatchet-config/` to `$RECOVERY_COMPOSE/hatchet-config/`;
-- `configs/env.local` to the service owner's `~/.env.local`, mode `0600`;
-- `configs/smbcredentials` to `~/.smbcredentials`, mode `0600`, only if SMB is
-  still used; and
-- `state/agent-hub/files/` to `~/.local/state/agent-hub/`, preserving modes.
-
-The restored Compose environment contains the database and application secrets
-that match the dump. Do not replace those secrets during recovery. Review and
-update only host-specific values such as `HOST_HOME_PATH`, `DOCKER_GID`, device
-paths, and obsolete SMB locations. Hatchet configuration must be present before
-`hatchet-setup-config` runs; its Compose command is intentionally
-`--overwrite=false`.
-
-Before any SummitFlow Hatchet worker can start, import the saved identity into
-the fresh host by calling the same backup-key service used by the owner UI. Run
-this as the operating-system account that will run SummitFlow, after restoring
-`~/.env.local`. The snippet reads only the configured key-directory setting from
-that file so it uses the same key store as the future service. It reads the
-secret from a file, never places it in an argument, and prints only the
-non-secret key ID:
-
 ```bash
-cd /srv/workspaces/projects/summitflow/backend
-RECOVERY_KEY_FILE=/secure/offline/backup-identity.agekey
-uv run --frozen python - "$RECOVERY_KEY_FILE" <<'PY'
-from pathlib import Path
-import os
-import sys
-
-from dotenv import dotenv_values
-
-configured = dotenv_values(Path.home() / ".env.local").get(
-    "SUMMITFLOW_BACKUP_KEY_DIR"
-)
-if configured:
-    os.environ["SUMMITFLOW_BACKUP_KEY_DIR"] = configured
-
-from app.services.backup_keys import import_backup_recovery_key
-
-key_text = Path(sys.argv[1]).read_text(encoding="utf-8")
-status = import_backup_recovery_key(key_text)
-key_text = ""
-if not status.get("ready") or not status.get("key_id"):
-    raise SystemExit("saved backup key was not imported and verified")
-print(f"BACKUP_KEY_READY {status['key_id']}")
-PY
-unset RECOVERY_KEY_FILE
+RECOVERY_COMPOSE=/srv/workspaces/projects/summitflow/docker/compose
+RECOVERY_COMPOSE_ENV="$HOME/.config/credstore/summitflow/compose.env"
 ```
 
-This import is allowed only while the key store is unconfigured and performs a
-real age encrypt/decrypt round trip. Compare the printed key ID to the dated
-inventory. Stop on `backup_key_already_configured` or a mismatch; never replace
-key material to make an old archive pass. Keep the saved identity in its
-separate custody location after import.
+Install the recovered files before starting Compose:
+
+- `$RECOVERY_HOME/.config/credstore/summitflow/compose.env` to
+  `~/.config/credstore/summitflow/compose.env`, mode `0600`. It holds the
+  database and application secrets that match the dump; do not replace them.
+  Review and update only host-specific values such as `HOST_HOME_PATH`,
+  `DOCKER_GID`, device paths and obsolete SMB locations.
+- Hatchet configuration is already in the restored checkout, at
+  `docker/compose/hatchet-config/`. It must be present before
+  `hatchet-setup-config` runs; its Compose command is intentionally
+  `--overwrite=false`.
+- `$RECOVERY_HOME/.env.local` to `~/.env.local`, mode `0600`, and
+  `$RECOVERY_HOME/.local/state/agent-hub/` to `~/.local/state/agent-hub/`,
+  preserving modes.
+- `$RECOVERY_HOME/.local/state/summitflow/backup-keys/` to the same path, plus the
+  restic password file and rclone configuration from custody (section 9).
+- `$RECOVERY_ROOT/etc/btrbk/summitflow.conf` to `/etc/btrbk/summitflow.conf`,
+  once the new T7 target exists (see the host recovery guide).
 
 Keep user services disabled. Copy the regular unit files from
-`state/systemd-user/files/` to `~/.config/systemd/user/`, but review their
-absolute paths first. The enablement entries in
-`state/systemd-user/manifest.json` record which units were enabled. Re-enable
-those unit names through `systemctl --user enable <unit>` only after their
-executables and working directories exist. Do not blindly recreate arbitrary
-symlink targets.
+`$RECOVERY_HOME/.config/systemd/user/` to `~/.config/systemd/user/`, but review
+their absolute paths first, and note which units were enabled (the `*.wants`
+links in the same tree). Re-enable those unit names through `systemctl --user
+enable <unit>` only after their executables and working directories exist. Do not
+blindly recreate arbitrary symlink targets.
 
-Managed-service state under `state/managed-services/` contains receipts, job
-records, and the names of the old `current` and `previous` builds. It deliberately
-does not contain the old release source trees. Restore receipts as audit evidence
-and retain job records without resubmitting them. Old build IDs are not runnable
-releases and old transient `sf-rebuild-*` jobs must not be recreated. New releases
-are built from the recovered project sources in step 7.
+Old managed-release build trees are not backup contents. Release receipts and job
+records under `~/.local/state` are audit evidence only: retain them without
+resubmitting jobs, and do not recreate old transient `sf-rebuild-*` jobs. New
+releases are built from the recovered project sources in step 7.
 
 ## 5. Restore PostgreSQL into a provably new PG16 volume
 
-The production dump is a full `pg_dumpall`: it contains roles and databases.
+The production dump (`postgres-dumpall.sql`) is a full `pg_dumpall`: it contains roles and databases.
 Normal first startup of this repository's Compose service also creates the
 `admin` role and application databases through `init-db.sh`, so restoring the
 dump after normal startup would collide with them.
@@ -437,13 +200,13 @@ unset POSTGRES_PASSWORD
 ```
 
 Wait until `docker exec "$RECOVERY_PG_CONTAINER" pg_isready -U postgres`
-succeeds. Review the dump source path one last time, then restore with pipeline
-failure propagation enabled:
+succeeds. Check the dump ends with its trailer line (section 3), then restore with pipeline failure
+propagation enabled:
 
 ```bash
 set -o pipefail
-gzip --decompress --stdout "$RECOVERY_INFRA/pgdumpall.sql.gz" \
-  | sed -e '/^CREATE ROLE postgres;$/d' -e '/^ALTER ROLE postgres /d' \
+sed -e '/^CREATE ROLE postgres;$/d' -e '/^ALTER ROLE postgres /d' \
+      "$RECOVERY_DUMPS/postgres-dumpall.sql" \
   | docker exec --interactive "$RECOVERY_PG_CONTAINER" \
       psql -v ON_ERROR_STOP=1 -U postgres -d postgres
 ```
@@ -492,11 +255,11 @@ if docker volume inspect "$RECOVERY_REDIS_VOLUME" >/dev/null 2>&1; then
   echo "REFUSING: $RECOVERY_REDIS_VOLUME already exists" >&2
   exit 1
 fi
-test "$(head -c 5 "$RECOVERY_INFRA/configs/redis-dump.rdb")" = REDIS
+test "$(head -c 5 "$RECOVERY_DUMPS/redis-dump.rdb")" = REDIS
 docker volume create --label summitflow.recovery=fresh "$RECOVERY_REDIS_VOLUME"
 docker run --rm --user 0 \
   --volume "$RECOVERY_REDIS_VOLUME:/data" \
-  --volume "$RECOVERY_INFRA/configs/redis-dump.rdb:/recovery/dump.rdb:ro" \
+  --volume "$RECOVERY_DUMPS/redis-dump.rdb:/recovery/dump.rdb:ro" \
   redis:7-bookworm sh -euc '
     test -z "$(find /data -mindepth 1 -maxdepth 1 -print -quit)"
     cp /recovery/dump.rdb /data/dump.rdb
@@ -575,28 +338,29 @@ proxy first:
 
 ```bash
 cd "$RECOVERY_COMPOSE"
-docker compose --profile infra up -d postgres redis docker-socket-proxy
-docker compose ps
+docker compose --env-file "$RECOVERY_COMPOSE_ENV" --profile infra up -d postgres redis docker-socket-proxy
+docker compose --env-file "$RECOVERY_COMPOSE_ENV" ps
 ```
 
 Verify PostgreSQL and authenticated Redis health. Then start Hatchet. Because
 both its database and configuration were restored, do not regenerate either:
 
 ```bash
-docker compose --profile infra up -d hatchet-migrate hatchet-setup-config hatchet
-docker compose ps
+docker compose --env-file "$RECOVERY_COMPOSE_ENV" --profile infra up -d hatchet-migrate hatchet-setup-config hatchet
+docker compose --env-file "$RECOVERY_COMPOSE_ENV" ps
 ```
 
 Review Hatchet migration output and require its ready endpoint before starting
 workers. A mismatched or unavailable `HATCHET_TAG` is a registry/version problem,
 not permission to regenerate Hatchet state.
 
-Before a SummitFlow worker starts, query `projects.root_path` and
-`backup_sources.path` in the restored `summitflow` database. Correct each stale
-old-host path to the corresponding recovered stable source. Confirm that the
-saved backup key already reports `ready` with the inventory key ID. Also review
-the recovered per-project `agent_configs` and leave scheduled actions disabled until final validation. Do not start a worker merely
-to use the UI to repair these prerequisites.
+Before a SummitFlow worker starts, query `projects.root_path` in the restored
+`summitflow` database and correct each stale old-host path to the corresponding
+recovered checkout. Put the restic password file and rclone configuration where
+the restored `storage_backends` row names them (section 9). Also review the
+recovered per-project `agent_configs` and leave scheduled actions disabled until
+final validation. Do not start a worker merely to use the UI to repair these
+prerequisites.
 
 For each restored managed project, preserve its WIP and first identify the
 commit that should run. A managed release accepts a clean Git commit; it does not
@@ -613,8 +377,8 @@ Repeat for SummitFlow, Agent Hub, and each application/worker required on this
 host. This creates new release trees and new `current` pointers. Do not point at
 the old build IDs from the infrastructure manifest: those source trees were not
 backup contents. A full SummitFlow rebuild starts its declared default Hatchet
-worker; therefore it must not run until the source-path reconciliation, cold key
-import/verification, and automation review above are complete.
+worker; therefore it must not run until the source-path reconciliation, the
+backup key files and the automation review above are complete.
 
 After builds and local health checks succeed, reload the reviewed user units,
 enable only the units recorded as enabled, and start them in dependency order:
@@ -626,33 +390,33 @@ systemctl --user start <reviewed-unit-name>
 ```
 
 The checked-in `scripts/install-host-infra.sh` can recreate SummitFlow's
-backup write-window units, btrbk log rotation, Docker log limits, and the
-infrastructure reconcile unit. Host checks and maintenance are restored with
-Nightshift. Review its hard-coded paths and effects before running it with
-sudo; it is not archive restoration.
+backup write-window units, the host backup timer, btrbk log rotation, Docker log
+limits, and the infrastructure reconcile unit. Host checks and maintenance are
+restored with Nightshift. Review its hard-coded paths and effects before running
+it with sudo; it is not a restore.
 
 ## 8. Restore ingress last
 
 Do not expose services until their local health checks and owner flows work.
 Install Caddy and cloudflared from their normal public package sources, but keep
-their services stopped. From the infrastructure staging tree:
+their services stopped. The `root` job holds `/etc`, so their configuration and
+secret files are in the snapshot you restored into `$RECOVERY_ROOT` (section 2):
 
-- install `state/host-ingress/caddy/Caddyfile` as
-  `/etc/caddy/Caddyfile`;
-- install `state/host-ingress/cloudflared/config.yml` as
-  `/etc/cloudflared/config.yml`; and
-- re-issue the two host secrets, which the archive does not carry.
-  `state/host-ingress/manifest.json` lists each under `secrets` with its path,
-  owner, mode, size and mtime at capture time. For the tunnel credential, run
-  `sudo cloudflared tunnel token --cred-file <path from the manifest> <tunnel>`
-  after `cloudflared tunnel login`
-  (or create a new tunnel and point `config.yml` at it). For `/etc/caddy/env`,
-  create a Cloudflare API token limited to Zone DNS edit on the served zone and
-  write it as `CLOUDFLARE_API_TOKEN=<token>`. Both files are root-owned,
-  mode 600, with no ACLs for other users.
+- install `$RECOVERY_ROOT/etc/caddy/Caddyfile` as `/etc/caddy/Caddyfile` and
+  `$RECOVERY_ROOT/etc/cloudflared/config.yml` as `/etc/cloudflared/config.yml`;
+- install the two host secrets, `/etc/caddy/env` and the tunnel credential file
+  that `config.yml` names, from the same tree, root-owned, mode 600, with no ACLs
+  for other users; and
+- if either secret is not in the snapshot, re-issue it. For the tunnel
+  credential, run
+  `sudo cloudflared tunnel token --cred-file <path named in config.yml> <tunnel>`
+  after `cloudflared tunnel login` (or create a new tunnel and point
+  `config.yml` at it). For `/etc/caddy/env`, create a Cloudflare API token
+  limited to Zone DNS edit on the served zone and write it as
+  `CLOUDFLARE_API_TOKEN=<token>`.
 
 POSIX ACLs, xattrs, numeric ownership policy, and system-level unit enablement
-are not fully reconstructed by the archive.
+are not fully reconstructed by a restore.
 
 Validate configurations before starting either service:
 
@@ -665,46 +429,38 @@ Start Caddy and cloudflared only after local API and UI checks pass. The remote
 Cloudflare tunnel, DNS, and Access policy must still exist in the provider
 control plane.
 
-## 9. Re-establish owner key and Drive access
+## 9. Reconnect the Drive repository
 
 Open the restored SummitFlow UI through the existing Cloudflare Access route and
-authenticate with the Gmail owner account. In Backup encryption, confirm the
-same key ID and the verified/ready state established by the cold import. The
-normal fresh-host UI path is **Use an existing recovery key** and performs the
-same real age challenge, but it is unnecessary after the cold import and must
-not be used to replace configured material. Do not generate a replacement key:
-existing Drive archives are encrypted to the saved one. Local bypass sessions
-are intentionally not allowed to import or reveal recovery keys.
+authenticate with the Gmail owner account. Do not generate a replacement key or
+repository: the existing Drive snapshots are encrypted to the saved password.
 
-Recover the dedicated rclone configuration from the owner's password manager,
-not from a backup archive. Restore it as a user-owned mode-600 regular file in
-the private mode-700 backup-key directory. Reuse the existing production OAuth
-client and authorization; if Google rejects the saved authorization, run
-`scripts/authorize-backup-drive.sh` and complete consent privately. Never paste
-credentials or tokens into chat. Desktop GOA/GVfs sign-in is not required for
-the current offsite path.
-
-Configure the existing native storage backend through the restored CLI:
+The restored database names the repository: the enabled restic row of
+`storage_backends` holds the locator, the password file, the rclone configuration
+and the key directory (paths only, no secrets). List it, then put the owner's
+password file and rclone configuration at exactly those paths, as user-owned
+mode-600 regular files in the private mode-700 key directory:
 
 ```bash
-st backup storage update <native-backend-id> \
-  --offsite-transport rclone \
-  --offsite-rclone-remote summitflow-drive:SummitFlow-Archives \
-  --offsite-rclone-config <absolute-private-rclone-config-path> \
-  --offsite-rclone-root-id <approved-folder-id-from-inventory> \
-  --offsite-permanent-expiry
-st backup storage test <native-backend-id>
+st db query -t "SELECT name, config FROM storage_backends WHERE enabled"
 ```
 
-Use the backend ID from the recovered registry and the exact folder/remote name
-from the recovery inventory; do not create a replacement folder silently.
-The owner-approved permanent expiry is bounded to that pinned folder and retains
-the configured windows, minimum-three points and pending uploads; it never empties
-account-wide trash. If intentionally changing the destination, leave permanent
-expiry disabled with `--offsite-trash-expiry` until the new folder is approved.
-Initial recovery may use browser downloads. Routine offsite verification uses
-the fresh provider checksum, not a full archive download. Interrupted uploads
-retry the retained ciphertext; failed publication does not block the backup.
+If the new host needs other paths, correct that row's `config` before the first
+run; there is no per-source or storage setup left in `st backup`. Never paste
+credentials or tokens into chat.
+
+Check the connection without writing anything:
+
+```bash
+st backup list
+st backup status
+```
+
+Both read the repository, and `status` leads with whether anything is missing.
+Then take the first copy of the new host: set up the T7 target and
+`/etc/btrbk/summitflow.conf` per the [host recovery guide](native-host-recovery.md),
+install the timer with `scripts/install-host-infra.sh`, and run `st backup run
+--offsite`. btrbk starts with a full seed on the empty T7.
 
 ## 10. Validate before resuming automation
 
@@ -714,19 +470,21 @@ Require all of the following:
 - Redis responds with the recovered password and expected logical databases;
 - Hatchet is ready and workers reconnect without regenerating config;
 - each local API/UI/worker is healthy from its new managed release;
-- recovered Git refs, index, WIP, config/workspace sources, and local package
-  artifacts are present;
-- Agent Hub and systemd capture manifests have no unexplained skipped state;
+- recovered Git refs, index, WIP and local package artifacts are present;
 - Cloudflare Access reaches the owner UI and still enforces the existing policy;
-- the imported age key reports the same key ID as the dated inventory; and
-- a new capture produces one encrypted `.tar.gz.age`, the same ciphertext is
-  verified in Drive, and an isolated restore test passes.
+- `st backup list` shows the recovered snapshots, and
+  `st backup restore summitflow --to <new empty dir> --dry-run` picks the one you
+  restored from; and
+- after `st backup run --offsite`, `st backup status` says "All backups current"
+  with a new local point and a new Drive snapshot per job, and its test restore
+  passes.
 
-Only then re-enable backup schedules, recurring jobs, and maintenance timers. Keep the downloaded ciphertext and saved key until the new
-host has more than one independently verified recovery point.
+Only then re-enable recurring jobs and maintenance timers. Keep the custody copy
+of the password and rclone configuration, and keep the Drive repository
+untouched, until the new host has more than one verified Drive snapshot of its
+own.
 
-After recovery evidence is retained, remove plaintext archives and extracted
-temporary staging from `/srv/recovery` with an explicit, reviewed target. Deleting
-files on an SSD is not guaranteed secure erasure; use encrypted temporary
-storage when that property matters. Never remove the separately saved key or the
-original Drive ciphertext as part of plaintext cleanup.
+After recovery evidence is retained, remove the staging trees and dumps in
+`/srv/recovery` with an explicit, reviewed target. Deleting files on an SSD is
+not guaranteed secure erasure; use encrypted temporary storage when that property
+matters. Never remove the custody copies as part of plaintext cleanup.

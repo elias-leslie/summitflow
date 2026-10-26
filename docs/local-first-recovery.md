@@ -1,340 +1,123 @@
-# Local-first cold recovery
+# Cold recovery from Google Drive
 
-This runbook covers recovery when the SummitFlow API/task database and GitHub are
-unavailable. It does not overwrite a production checkout or restore a production
-database.
+Use this when the SummitFlow API and database, GitHub and the original host are
+all unavailable and you need files back from the Drive backup. It needs only
+`restic` and `rclone`; nothing here calls SummitFlow. It never restores over a
+live path. For a whole replacement host, continue with the
+[hard-loss runbook](disaster-recovery.md). When SummitFlow is running, `st backup
+restore PROJECT --to DIR` does the same restore in one command.
 
-Existing daily age sources stay active during the October 2026 migration. Use
-the archive procedure below for retained age points, or
-[repository payload recovery](#repository-payload-recovery) for a recorded Restic
-point. The approved host and portable backup direction is described in
-[Linux recovery and portable project backups](native-host-recovery.md); permanent
-native capture and four-hour Restic sources require separate cutover qualification.
+## What the Drive repository holds
+
+One restic repository, written once a day. Every snapshot has the tag `offsite`
+and a `job:` tag:
+
+| Job | What it holds | Paths in the snapshot |
+| --- | --- | --- |
+| `workspaces` | `/srv/workspaces`, also tagged `project:<name>` for every folder under `projects/` | real paths, like `/srv/workspaces/projects/aico` |
+| `home` | `/home` | real paths |
+| `root` | `/etc`, `/root`, `/opt`, `/usr/local`, `/var/spool` | real paths |
+| `postgres` | a full `pg_dumpall` | one file, `/postgres-dumpall.sql` |
+| `redis` | the Redis RDB | one file, `/redis-dump.rdb` |
+| `pve-*` and similar | Proxmox guests and files | named by the job |
+
+The subvolume jobs also carry `btrbk:<run>`, the btrbk run whose snapshots were
+read. Dependencies, build output and caches are left out (see
+`backend/app/tasks/backup_offsite.excludes`). Snapshots older than the
+7 daily, 4 weekly and 3 monthly ones are removed. A project comes back by its
+real path, and a restored project is the folder as it was on that day, `.git`
+included.
 
 ## Required material
 
-- The downloaded native SummitFlow project archive. New archives are named
-  `summitflow-YYYYMMDD-HHMMSS.tar.gz.age`. A large archive may instead be a
-  `.parts.json` manifest plus all of its `.partNNNNNN` files from the same
-  source folder for legacy mounted-Drive points. New rclone offsites copy the
-  same whole `.tar.gz.age` file as the local point, even above 512 MiB.
-- The separately saved age identity exported by SummitFlow. Keep the file private;
-  it contains one `AGE-SECRET-KEY-...` line.
-- Linux with `age`, Git, Python 3.13+, and `uv`. The standalone source bootstrap
-  alone supports Python 3.12+; installing the recovered backend requires 3.13+.
-- Enough private temporary disk space for one plaintext archive and extracted tree.
+- The repository locator, like `rclone:<remote>:<folder>`. While SummitFlow runs,
+  `st backup status --json` shows it as `offsite.repository`; keep a copy with
+  the other recovery material.
+- The restic repository password file and the dedicated rclone configuration.
+  Take them from the owner's offline custody. A copy inside the backup does not
+  help: it is encrypted with that same password. Both must be regular files owned by the recovery user, mode
+  `0600`, at absolute paths without symlinks. Put file paths on the command
+  line, never their contents.
+- Linux with `restic` 0.19.1 and `rclone` 1.75.1, verified against the published
+  checksums and signatures. Git, only to inspect a recovered project.
+- A private, empty destination with room for what you restore.
 
-GitHub credentials and a GitHub account are not required. The archive contains its
-own Git bundle, required refs, HEAD, exact index, working files, and recovery manifest.
-Current lean captures preserve unpublished commits and stashes but may be shallow
-at published boundaries. Older published history can be fetched later; it is not
-required to restore the current tree or unpublished work. Legacy full bundles remain
-readable. If a shared Git index is recorded, its recovery blob is included too.
+Drive sign-in through the desktop (GOA/GVfs) does not work here. If Google
+rejects the saved rclone authorization, run `scripts/authorize-backup-drive.sh`
+and complete consent privately.
 
-Dependency caches are intentionally not backup contents. Rebuilding the backend
-requires the package sources or registries referenced by `backend/uv.lock`. Building
-the frontend likewise requires the pnpm registry and any local workspace package
-artifacts referenced by `pnpm-lock.yaml`. A containerized infrastructure drill also
-requires the configured container registry unless those images already exist locally.
-
-## Native project archive layout
-
-After decryption, a project archive has exactly one top-level directory. For the
-SummitFlow source backup it is `summitflow/`:
-
-```text
-summitflow/
-├── ... captured source and working files
-├── database.sql.gz                         # when the source has a database
-└── .summitflow-recovery/
-    ├── manifest.json                       # HEAD, refs and payload checksums
-    ├── git.bundle                          # committed and unpublished Git history
-    └── git-index                           # exact staged state
+```bash
+export RESTIC_REPOSITORY='rclone:<remote>:<folder>'
+export RESTIC_PASSWORD_FILE=/secure/offline/restic-drive.password
+export RCLONE_CONFIG=/secure/offline/restic-rclone.conf
 ```
 
-Infrastructure archives instead use `infrastructure/` and contain
-`pgdumpall.sql.gz`, `configs/`, and `state/` capture manifests.
-The non-secret nightly/catch-up settings are saved as
-`configs/backup-schedule.env`. On a replacement host, restore that file to the
-service user's `~/.config/summitflow/backup-schedule.env` with mode 600 before
-rebuilding the managed worker. It does not contain Drive credentials or recovery
-keys; those remain separately held private files.
+## Pick a snapshot
 
-## Bootstrap the offline CLI
+```bash
+restic snapshots --tag offsite,job:workspaces
+restic snapshots --tag offsite,job:workspaces,project:aico
+restic snapshots --tag offsite,job:postgres
+```
 
-Work only in a new private directory. Replace the angle-bracket placeholders with
-actual paths; do not put the recovery-key contents on the command line.
+Take the newest snapshot of the job unless you need an older day, and write down
+its full ID, time and paths. Snapshots from before the daily job (tag
+`source:<name>`, no `offsite`) are old per-project backups that age out on their
+own; leave them unless you need data only they hold (`st backup old list`).
 
-Download `recovery-bootstrap.py` from the Drive recovery kit (the repository copy
-is `scripts/recovery-bootstrap.py`). Verify the kit with its `SHA256SUMS` file.
-Use the archive checksum in the dated recovery inventory when it matches your
-chosen archive; omit that argument if the archive is newer than the inventory.
-When choosing without a matching inventory record, prefer a complete parts set
-over a same-named raw archive. A failed older whole-file upload may coexist with
-the later verified parts; its filename alone does not establish completeness.
-Create the private workspace before copying or assembling recovery material:
+A structure check does not read every pack:
+
+```bash
+restic check
+restic check --read-data-subset 1/30
+```
+
+The daily job already reads one thirtieth of the data every run, so all of it
+is read back over a month. A full `restic check --read-data` downloads everything;
+run it only when you must.
+
+## Restore a project or path
+
+Restore into a new empty directory. Restic rebuilds the snapshot's real paths
+below it, so `--include` takes the original path:
 
 ```bash
 umask 077
-recovery_workspace=$(mktemp -d)
+mkdir -m 700 -p /srv/recovery/aico
+restic restore <snapshot-id> --target /srv/recovery/aico \
+  --include /srv/workspaces/projects/aico --verify
 ```
 
-If the selected recovery point is segmented, download its `.parts.json` manifest
-and every part it names into one private directory. The inventory's `artifacts`
-array records those individual objects; the kit's `SHA256SUMS` covers only its
-four static files. Assemble with the utility rather than `cat`:
+The project is then at `/srv/recovery/aico/srv/workspaces/projects/aico`.
+`--verify` reads the restored files back. Inspect before using them:
 
 ```bash
-python3 recovery-bootstrap.py \
-  --assemble-parts <downloaded-archive.tar.gz.age.parts.json> \
-  --output-file "$recovery_workspace/downloaded-archive.tar.gz.age"
+git -C /srv/recovery/aico/srv/workspaces/projects/aico fsck --full
+git -C /srv/recovery/aico/srv/workspaces/projects/aico status --short --branch
 ```
 
-Assembly needs no key. It streams the parts in their required order and verifies
-their safe names, regular non-linked file type, sizes, individual checksums, and
-the final ciphertext checksum before publishing a mode-`0600` output. It refuses
-to overwrite an existing output and removes incomplete temporary output on
-failure. The manifest and its checksums are not independent authentication;
-successful age decryption is still mandatory. Use the assembled output as the
-archive in the commands below. Its basename must exactly match the manifest's
-`archive_name`.
+The snapshot was taken from a frozen btrbk snapshot, so the tree is consistent
+as of that moment, including unpublished commits, staged changes and untracked
+work. Nothing here resets, cleans or commits it.
+
+## Restore the databases
 
 ```bash
-python3 recovery-bootstrap.py <downloaded-summitflow.tar.gz.age> \
-  --identity-file <saved-recovery-key-file> \
-  --output-dir "$recovery_workspace/bootstrap" \
-  --expected-sha256 sha256:<ciphertext-sha256>
+restic dump <postgres-snapshot-id> /postgres-dumpall.sql > /srv/recovery/postgres-dumpall.sql
+restic dump <redis-snapshot-id> /redis-dump.rdb > /srv/recovery/redis-dump.rdb
+tail -n 3 /srv/recovery/postgres-dumpall.sql   # ends with "PostgreSQL database cluster dump complete"
+head -c 5 /srv/recovery/redis-dump.rdb          # REDIS
 ```
 
-This stages and hashes one stable ciphertext copy, decrypts privately, rejects
-unsafe archive paths/member types, and publishes the source only after extraction
-succeeds. It does not install dependencies, restore databases or start services.
-Temporary plaintext archives are removed on exit; the extracted source remains
-private and may contain sensitive configuration. Retain the original ciphertext.
+A dump without its trailer is a failed restore, not a smaller one. Loading either
+dump into a fresh volume is in sections 5 and 6 of the
+[hard-loss runbook](disaster-recovery.md#5-restore-postgresql-into-a-provably-new-pg16-volume);
+the commands above only get the files back.
 
-Install the recovered backend CLI from the extracted source:
+## Record what you did
 
-```bash
-cd "$recovery_workspace/bootstrap/summitflow/backend"
-uv sync --frozen
-```
-
-If `uv sync` reports a missing local wheel, recover the archive for that package's
-owning project or restore the retained `docker/workspace-packages` artifact. GitHub is
-not the required source for those packages, but their package registry or local build
-inputs must be available.
-
-## Perform the isolated restore
-
-Choose a destination that is absent or empty. The optional checksum is the ciphertext
-`encrypted_checksum` from a retained local `offsite-manifest.json` or backup record.
-It uses the exact `sha256:<64 lowercase hex characters>` form.
-
-```bash
-uv run --frozen st backup restore \
-  --file <downloaded-summitflow.tar.gz.age> \
-  --into <empty-destination> \
-  --identity-file <saved-recovery-key-file> \
-  --expected-checksum sha256:<ciphertext-sha256>
-```
-
-Omit `--expected-checksum` only when that independent record is unavailable. Age still
-authenticates the encrypted payload and fails on a wrong key or modified ciphertext;
-the restore additionally verifies the Git bundle and saved-index checksums. Without an
-external checksum, it does not independently prove that the downloaded object is the
-specific archive previously recorded by SummitFlow.
-
-The command never contacts the SummitFlow API and never reads or writes the task or
-backup database. It decrypts in a private temporary directory, validates the archive
-layout, restores files into the empty destination, recreates Git refs/HEAD/index, and
-copies any database dump to `.summitflow-recovery/`. It does not load that dump.
-
-Inspect the result before making it a runtime checkout:
-
-```bash
-git -C <empty-destination> fsck --full
-git -C <empty-destination> status --short --branch
-```
-
-For an infrastructure archive, decrypt it into private temporary storage and validate
-it only against disposable services:
-
-```bash
-./scripts/infra-restore-drill.sh <plaintext-infrastructure.tar.gz>
-```
-
-That drill does not authorize restoring `pgdumpall.sql.gz` into production. Database
-promotion, service activation, secret placement, and cleanup of plaintext recovery
-material remain explicit operator actions.
-
-For the complete replacement-host sequence, including fresh database/Redis
-volumes, durable state and ingress, use `START-HERE.md` in Drive (repository:
-`docs/disaster-recovery.md`). Do not substitute the fresh-install secret-generation
-steps from the application README for restoring existing credentials.
-
-## Repository payload recovery
-
-Use this procedure only for a retained recorded Restic snapshot. Native age
-archives remain the default. The local and Google Drive repositories are
-independent encrypted repositories. The Drive recovery procedure must work when
-the local repository, SummitFlow database/API and original host are unavailable.
-
-Keep `scripts/backup-repository-recover.sh`, this runbook, the pinned tool
-checksums, and a dated repository/source inventory in the recovery kit. Verify
-the kit against its independently saved checksums before running it. The Restic
-kit is additional recovery material, not the current automated backup path.
-Native recovery uses the archive kit and separately saved age identity. Keep
-each repository's original locator/password; disabling automatic maintenance
-does not convert or delete its snapshots.
-
-Prepare Linux with Bash, Python 3.12+, restic 0.19.1 and rclone 1.75.1. Verify
-the tool releases with their published checksums and signatures. Git is needed
-only when reconstructing a captured repository. No SummitFlow dependencies,
-task database, API, GitHub account or running database service are needed to
-list/check/restore payloads with the standalone script.
-
-Obtain the offsite repository password and the dedicated rclone configuration
-from separate offline custody. They must be regular files owned by the recovery
-user with mode `0600`, at absolute paths without symlinks. Keep the offsite
-password separately from the Drive repository, and preserve the independent
-local repository password and native age identity. Put file references on the
-command line, never their contents. The script does not read shell env files or
-create OAuth credentials. GOA/GVfs desktop sign-in is not its authentication
-path. Dedicated Drive OAuth must be provisioned and its recorded bounded remote
-tested before recovery; the desktop Drive mount is not a substitute.
-
-### Select a recovery point from Drive
-
-Use the exact repository locator in the dated inventory. This example names a
-bounded retained folder; replace the remote/folder with the recorded values:
-
-```bash
-bash scripts/backup-repository-recover.sh snapshots \
-  --repository 'rclone:summitflow-drive:SummitFlow-Restic' \
-  --password-file /secure/offline/restic-drive.password \
-  --rclone-config /secure/offline/restic-rclone.conf \
-  --source summitflow
-```
-
-Record the full 64-character snapshot ID, source tag, timestamp and captured
-paths from the JSON result. Choose a separately verified point for every
-required source. `latest` alone is ambiguous in a shared repository. Remote
-snapshot IDs can differ from local IDs after native `restic copy`; use the
-remote ID from the inventory or the remote listing.
-
-Check repository structure before restoring:
-
-```bash
-bash scripts/backup-repository-recover.sh check \
-  --repository 'rclone:summitflow-drive:SummitFlow-Restic' \
-  --password-file /secure/offline/restic-drive.password \
-  --rclone-config /secure/offline/restic-rclone.conf
-```
-
-A structure check does not read every payload pack. For the recorded monthly
-payload coverage, add `--read-data-subset 1/30`, then advance only after a
-successful check through all 30 parts. Interrupted checks do not count as
-completed coverage. Retain the month's repository inventory and completion
-records, and reconcile inventory changes or interrupted scope through the
-managed verifier. The standalone script does not maintain durable coverage
-state. Random percentages do not establish full coverage. A full
-`restic check --read-data` is an explicit operator operation when required;
-it downloads all packs and must be included in traffic evidence.
-[Restic documents structure and payload checks separately](https://restic.readthedocs.io/en/stable/045_working_with_repos.html#checking-integrity-and-consistency).
-
-### Restore into private isolated storage
-
-Create an empty private destination on encrypted local storage with enough
-space for the selected source. Keep credentials outside the destination:
-
-```bash
-umask 077
-mkdir -m 700 -p /srv/recovery/restic/summitflow
-bash scripts/backup-repository-recover.sh restore \
-  --repository 'rclone:summitflow-drive:SummitFlow-Restic' \
-  --password-file /secure/offline/restic-drive.password \
-  --rclone-config /secure/offline/restic-rclone.conf \
-  --snapshot <full-remote-snapshot-id> \
-  --into /srv/recovery/restic/summitflow \
-  --verify
-```
-
-The script requires an empty absolute private directory, refuses root symlinks
-and path traversal, and runs `restic restore --verify`. Restic reconstructs the
-paths stored in the selected snapshot beneath this destination. Use the recorded
-capture path to locate the materialized project tree; do not assume it is the
-destination's root. `--verify` checks restored file contents.
-[The pinned Restic command defines this verification](https://github.com/restic/restic/blob/v0.19.1/cmd/restic/cmd_restore.go).
-
-For a local recovery point, use the same commands with the absolute local
-repository path and its own password-file reference, omitting `--rclone-config`.
-That local test does not qualify recovery from Drive alone. Any command failure
-is a failed step. Preserve its evidence and any partial destination; retry into
-a different empty directory. The script does not delete partial restores or
-remove repository locks.
-
-### Recover Git and registered configuration links
-
-For a project with `.summitflow-recovery/manifest.json`, repeat the restore into
-a fresh empty destination and add `--git-root <relative-materialized-project-path>`.
-For example, if the inventory records a capture at
-`/srv/private-capture/summitflow/project-snapshot`, the relative argument is
-`srv/private-capture/summitflow/project-snapshot`. Use the actual recorded path.
-
-The script checks bundle/index SHA-256 against the recovery manifest, reconstructs
-refs and HEAD with standard Git, installs the saved index, and runs `git fsck
---full`. It supports SHA-1 and SHA-256 repositories and refuses an existing
-`.git`. Working files remain as restored, including staged changes, unstaged
-changes and untracked WIP. Inspect `git status --short --branch` before deciding
-what to deploy. Nothing in this step resets, cleans or commits recovered work.
-
-Restore canonical `codex-config`, `claude-config`, `claude-user-config` and
-`agent-skills` sources before rebuilding registered links. An explicit
-`.claude.json` source restores as that named regular file inside its payload.
-External source links are versioned `mapped_links` metadata, not host links in
-the payload. Their target source IDs and relative paths must map to explicit
-restored destinations inside one isolated recovery root.
-
-Once the recovered backend dependencies are installed, the existing
-`app.tasks.backup_native_recovery.restore_mapped_links` helper can apply that
-explicit destination map. It does not access the task database. Call it only
-after every required target exists, pass the encompassing `isolated_root`, and
-keep the map pointed at isolated restored trees. The standalone shell script
-leaves mappings unapplied. Never reconstruct the captured absolute host targets,
-follow arbitrary links to gather missing files, or point the recovery map into
-the live home directory.
-
-### Validate state before activation
-
-Project database payloads are plain `database.sql`; if an original source file
-already used that path, the generated dump is
-`.summitflow-recovery/database.sql`. Infrastructure payloads contain plain
-`pgdumpall.sql`, `configs/`, `state/`, and the existing capture-component
-manifests. They carry recovery data, not permission to load it. Require the
-expected component statuses and preserve missing/error evidence.
-
-The infrastructure capture must include the stable host's Compose environment
-and Hatchet configuration, not just files in an immutable application release.
-A verified encrypted snapshot with missing required configuration is not a
-successful infrastructure recovery point. To validate SummitFlow functions,
-also select a verified SummitFlow source snapshot; configuration snapshots alone
-cannot bootstrap the application on a fresh OS.
-
-Use the existing [hard-loss runbook](disaster-recovery.md) for reviewed fresh
-database volumes, Redis recovery, credential placement and managed rebuilds.
-Its native archive examples use `.sql.gz`; make a private gzip working copy of
-the restored plain SQL when adapting those steps, retaining the original plain
-dump. The standalone repository script does not load SQL, start services, change
-accounts, place host secrets or activate recovered state.
-
-Record selected IDs and sources, repository check results, restored byte counts,
-Git/ref/index checks, conversation/WIP/original-asset coverage, infrastructure
-component results, missing prerequisites, and elapsed time. Under the
-owner-approved lean rollout (2026-09-30), validate project/Git and configuration
-recovery plus actual PostgreSQL and Redis loads on the fresh VM. File extraction
-alone, local-only recovery or an already-configured host does not satisfy that
-gate. That September rollout is historical. The October host recovery plan uses
-Btrfs/btrbk for Linux and Veeam for Windows; see the
-[current host recovery guide](native-host-recovery.md). A full application rebuild
-within four hours was not required for the September rollout. Keep production activation
-and plaintext cleanup as separately reviewed operations.
+Note the snapshot IDs and times, the `restic check` result, restored byte counts,
+and the Git checks. File extraction alone does not prove that an application
+recovers: that needs the PostgreSQL and Redis loads and the rebuild in the
+hard-loss runbook. Leave plaintext cleanup (`/srv/recovery`) for after a new
+backup cycle has run on the replacement.

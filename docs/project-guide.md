@@ -114,9 +114,10 @@ UI (~23 pages), and ~33 Hatchet workflows. Output is compact JSON by default, wi
 **Backups, snapshots, and recovery**
 
 - `st snap` / `snaps` / `recover` / `rollback` (Btrfs per-project snapshots;
-  `recover` clones into a sibling project), and `st backup` (native archive engine
-  with SMB and Veeam targets, `pg_dumpall` infra backups, scheduling, and
-  restore-drill testing).
+  `recover` clones into a sibling project), and `st backup` (backup health,
+  Google Drive snapshots by project, run-now and restore into a new directory;
+  btrbk points on the T7 and one daily Drive copy run from a systemd timer, with
+  no per-project setup).
 
 **Knowledge and coordination**
 
@@ -281,7 +282,6 @@ Optional values enable integrations:
   `SUMMITFLOW_REQUEST_SOURCE` connect SummitFlow to Agent Hub.
 - `HATCHET_CLIENT_TOKEN`, `HATCHET_CLIENT_HOST_PORT`, and
   `HATCHET_CLIENT_TLS_STRATEGY` enable Hatchet workers.
-- `SMB_*` values enable the optional SMB backup target.
 - Browser-runtime variables are optional; if absent, browser evidence features
   should fail clearly instead of crashing the core app.
 
@@ -395,7 +395,7 @@ curl -fsS http://localhost:3001/ >/dev/null
 ## Optional and degraded behavior
 
 SummitFlow can boot without provider API keys. Features that need Agent Hub,
-Hatchet, SMB backups, Docker socket access, or a browser runtime should
+Hatchet, Docker socket access, or a browser runtime should
 show missing-configuration behavior instead of exposing credentials or crashing
 unrelated pages.
 
