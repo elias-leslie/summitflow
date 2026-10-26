@@ -60,6 +60,8 @@ def test_session_record_maps_to_its_tether_session():
     assert coordinators.widget_for_session({"tmux_session_name": "aico-afd26802"}) == "afd26802"
     assert coordinators.widget_for_session({"external_identity": {"aico_widget_id": "12345678"}}) == "12345678"
     assert coordinators.widget_for_session({"tmux_session_name": "main"}) is None
+    assert coordinators.widget_for_session({"external_identity": {"aico_session_id": "aico-widget-cfa6ffb1"}}) == "cfa6ffb1"
+    assert coordinators.widget_for_session({"external_identity": {"aico_session_id": "other"}}) is None
 
 
 def test_tether_root_handle_yields_to_the_harness_identity(monkeypatch):

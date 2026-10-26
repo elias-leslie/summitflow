@@ -101,11 +101,20 @@ def lease_widget(lease: leases.Lease) -> str | None:
 
 
 def widget_for_session(session: dict[str, Any]) -> str | None:
-    """Tether session of a SummitFlow agent session record (Tether names tmux sessions ``aico-<id>``)."""
+    """Tether session of a SummitFlow agent session record (Tether names tmux sessions ``aico-<id>``).
+
+    Pi rows carry only ``aico_session_id`` (``aico-widget-<id>``), with no widget id or tmux name.
+    """
     identity = session.get("external_identity")
-    widget = identity.get("aico_widget_id") if isinstance(identity, dict) else None
+    identity = identity if isinstance(identity, dict) else {}
+    widget = identity.get("aico_widget_id")
+    if widget:
+        return str(widget)
     name = str(session.get("tmux_session_name") or "")
-    return str(widget) if widget else (name.removeprefix("aico-") if name.startswith("aico-") else None)
+    if name.startswith("aico-"):
+        return name.removeprefix("aico-")
+    aico_session = str(identity.get("aico_session_id") or "")
+    return aico_session.removeprefix("aico-widget-") if aico_session.startswith("aico-widget-") else None
 
 
 # ---------------------------------------------------------------- lines
