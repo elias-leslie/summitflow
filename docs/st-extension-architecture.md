@@ -97,7 +97,7 @@ Owner executables remain independently maintained and versioned.
 | Cancellation | Propagate signals to the executable/process group and reap it. Test actual SIGINT/SIGTERM. No invented retries/timeouts. |
 | Artifacts | Preserve established paths and formats; artifact writes are declared effects, distinct from telemetry. |
 | Machine output | Preserve --json/--raw and owner envelopes. Structured registration/resolution diagnostics. |
-| Help | Static root/command help only, including unavailable extensions; no owner execution or service contact. |
+| Help | Static root/command help only, including unavailable extensions; no owner execution or service contact. Adding or changing an owner command means regenerating the owner's st-extension.json help/usage in the same commit: st commit's changed-only check may not select the drift test, so a stale catalogue first fails at st service rebuild acceptance. |
 | Errors | Missing dependency 127; executable permission/format failure 126; invalid/incompatible registration 2. Unrelated/core commands remain usable. |
 | Telemetry | Reuse invocation/help aggregation and host outcome observation. No added argv, stdin, stdout, reviewed-content or environment logs. |
 
