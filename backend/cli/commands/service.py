@@ -26,7 +26,7 @@ from ..lib import service_deploy_client, service_ops, service_release
 from ..lib.confirm_token import confirm_gate
 from ..lib.service_ops import wait_for_summitflow_api
 from ..lib.usage import usage
-from ..output import output_error
+from ..output import is_compact, output_error
 
 app = typer.Typer(
     help=(
@@ -821,6 +821,31 @@ def _compact_job(record: dict) -> dict:
     return compact
 
 
+def _print_job(record: dict) -> None:
+    """One summary line (plus a failure log tail); st --no-compact prints the full JSON record."""
+    compact = _compact_job(record)
+    if not is_compact():
+        print(json.dumps(compact))
+        return
+    source = compact.get("source")
+    source = source if isinstance(source, dict) else {}
+    deployment = compact.get("deployment")
+    deployment = deployment if isinstance(deployment, dict) else {}
+    fields = [
+        f"JOB:{compact.get('job_id')}", str(compact.get("project", "")), str(compact.get("state")),
+        f"exit={compact.get('exit_code')}",
+    ]
+    if source.get("source_commit"):
+        fields.append(f"commit={str(source['source_commit'])[:12]}")
+    if deployment.get("state"):
+        fields.append(f"deploy={deployment['state']}")
+    if compact.get("state") == "failed" and compact.get("log_path"):
+        fields.append(f"log={compact['log_path']}")
+    print("|".join(fields))
+    for line in compact.get("log_tail", []):
+        print(f"  {line}")
+
+
 def _job_exit_code(record: dict) -> int:
     if record["state"] in {"succeeded", "failed"}:
         return record["exit_code"]
@@ -831,7 +856,7 @@ def _job_exit_code(record: dict) -> int:
 def job_result(job_id: Annotated[str, typer.Argument(help="Job id returned by --detach")]) -> None:
     """Read a durable detached rebuild result, including interrupted/unknown state."""
     record = _job_result(job_id)
-    print(json.dumps(_compact_job(record)))
+    _print_job(record)
     raise typer.Exit(_job_exit_code(record))
 
 
@@ -845,7 +870,7 @@ def wait_for_job(
     while True:
         record = _job_result(job_id)
         if record["state"] not in {"queued", "running"} or time.monotonic() >= deadline:
-            print(json.dumps(_compact_job(record)))
+            _print_job(record)
             raise typer.Exit(_job_exit_code(record))
         time.sleep(min(1, max(0, deadline - time.monotonic())))
 

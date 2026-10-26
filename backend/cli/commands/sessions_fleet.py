@@ -167,36 +167,16 @@ def send(
     instruction: Annotated[str, typer.Argument(help="Short non-secret instruction for the fleet root or exact native thread; no credentials/private target data")],
     scope: Annotated[str, typer.Option(help="Must exactly match the root scope JSON")] = "{}",
     source_key: Annotated[str | None, typer.Option(help="Stable instruction revision key; reuse on retry")] = None,
-    delivery: Annotated[Literal["fleet-stream", "native-thread", "handshake"] | None, typer.Option(help="Native mode addresses an exact bound Codex UUID, including offline resume; handshake records an agent request that needs ack and confirm (default except for root-* fleet handles and UUIDs; a label such as an Agent Hub session name resolves to one live agent id)")] = None,
+    delivery: Annotated[Literal["fleet-stream", "native-thread", "handshake"] | None, typer.Option(help="Default: handshake for agent ids/labels, fleet-stream for root-*/UUIDs")] = None,
 ) -> None:
-    """Agent ids and labels go to the handshake ledger; root-* handles and UUIDs to the fleet stream.
+    """Send to another agent: agent ids/labels -> handshake; root-* handles and UUIDs -> fleet stream.
 
-    Handshake: up to 500 chars (a brief file only for long material). The
-    recipient is interrupted until it acks yes, no 'reason' or eta:MIN; when an
-    eta runs out the request waits on it again. You get the ack as a notice and
-    close with st sessions confirm (or --withdraw an unacked one). Reusing
-    --source-key returns the existing request instead of sending again; st
-    sessions inbox shows open/seen, open/unseen or acked. This is the one
-    channel: never also type the same text into the window.
+    Handshake (<=500 chars, else a brief file): recipient acks yes, no 'reason' or eta:MIN; then
+    st sessions confirm (--withdraw if unacked). Only channel; never also type it in the window.
+    Labels (Aico widget/title/tmux, session name, short id) must match one live agent.
 
-    Address the coordinating parent's agent id for shared work. Workers receive
-    and ack only their own requests; a parent keeps its requests across chat resets.
-    A sent receipt means recorded, open/seen means shown, and acked means answered.
-
-    Discover widget ids with ``st aico sessions``. An Aico widget id, create
-    request id, title or tmux name resolves to its live harness, including Pi
-    without an Agent Hub session record. Pi receives requests after tool results
-    and while idle. Other labels (Agent Hub session name/persona, identity short
-    id, or lease holder slug) must name exactly one live agent; it prints ``→ <id>``.
-    root-* handles and UUIDs default to passive fleet-stream retention consumed
-    through wait. Native-thread requires an exact bound UUID, stable
-    --source-key revision, and <=2000 sanitized UTF-8 bytes; to a live Codex TUI
-    it records a ledger request and its idle watcher wakes it (delivery=woken),
-    else it waits for the next turn hook (delivery=queued). Queued/durable does
-    not mean working or observed consumption and is not generation-fenced;
-    offline input may run when that same thread resumes. Reuse the source key to
-    reconcile uncertain attempts, never a new key; sessions verify UUID
-    --source-key REVISION reports correlated status. No secrets or transcripts.
+    Native-thread: bound Codex UUID, stable --source-key, <=2000 bytes; woken if live, else queued.
+    Retry with the same --source-key; st sessions verify UUID --source-key REV. No secrets.
     """
     if delivery is None:
         # Coordination agent ids are never fleet roots; route them to the ledger.
@@ -322,12 +302,10 @@ def register(app: typer.Typer) -> None:
 @usage(
     surface="st.sessions.verify",
     cmd="st -P PROJECT sessions verify UUID --source-key REVISION [--timeout SECONDS]",
-    when="verify a prior native-thread delivery using its exact retained request/queue/client identity without message text",
+    when="check a prior native-thread send by its retained identity (no message text)",
     precautions=(
-        "Read-only and bounded (>0, <=30 seconds); never resends, resumes, starts turns, or changes native queues. Timeout/unsupported protocol returns unknown.",
-        "Only a correlated user-message clientId proves consumption. Queue absence is deleted-or-unknown; unrelated active turns do not prove this brief started.",
-        "Live sends report the exact coordination inbox request as queued, seen, acked or closed; an ack is not execution proof. Offline sends report native queue, correlated consumption and turn execution. Expired inbox receipts are unknown.",
-        "Native-thread send remains <=2000 sanitized UTF-8 bytes and source-key idempotent; generation-fenced send and /clear remain owner-side gaps.",
+        "read-only, <=30s; never resends or starts turns; timeout or unsupported protocol = unknown",
+        "only a correlated clientId proves consumption; an ack is not execution proof; expired receipts = unknown",
     ),
     tier="reference",
 )

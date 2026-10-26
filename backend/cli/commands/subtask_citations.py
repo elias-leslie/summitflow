@@ -64,23 +64,13 @@ def log_citations_cmd(
     task_id: Annotated[str | None, typer.Option("--task", "-t", help="Task ID")] = None,
     none: Annotated[bool, typer.Option("--none", help="Confirm no memories were needed")] = False,
 ) -> None:
-    """Log episode citations with suffix notation ratings.
+    """Log memory citations: M:<id>+ helpful, G:<id>- harmful, M:<id> used.
 
-    Citations use suffix notation for three-signal rating:
-    - M:abc12345+  -> mandate helpful (promotes episode)
-    - G:def67890-  -> guardrail harmful (demotes episode)
-    - M:xyz99999   -> used/neutral (no suffix)
+    --none only when no injected memory applied. Task defaults to the active context.
 
-    Use --none ONLY if you have honestly reflected and determined that none of
-    the injected memories in <memory-context> were applicable to this subtask.
-    If ANY memory helped guide your approach, cite it instead.
-
-    If no task_id is provided, uses the active context from 'st work'.
-
-    Examples:
-        st subtask citations M:abc12345+ G:def67890- --subtask 1.1
-        st subtask citations M:85bf4635+ -s 2.1
-        st subtask citations --none -s 1.1  # Only if truly no memories helped
+    \b
+    st subtask citations M:abc12345+ G:def67890- -s 1.1
+    st subtask citations --none -s 1.1
     """
     from ..context import require_task_id
 

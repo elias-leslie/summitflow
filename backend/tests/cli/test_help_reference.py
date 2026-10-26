@@ -72,3 +72,46 @@ def test_removed_health_is_absent_from_discovery_and_dispatch():
     result = runner.invoke(app, ["health"])
     assert result.exit_code == 2
     assert "No such command" in result.output
+
+
+# Agents read every help page into context. Caps keep prose terse; examples and options carry syntax.
+MAX_DESCRIPTION_CHARS = 600
+MAX_PARAMETER_HELP_CHARS = 220
+MAX_CHECK_HELP_CHARS = 1300
+
+
+def _help_offenders() -> list[str]:
+    from cli.extensions import ExtensionCommand
+
+    offenders: list[str] = []
+
+    def walk(command, path: list[str], parent) -> None:
+        ctx = typer.Context(command, info_name=path[-1] if path else "st", parent=parent)
+        name = " ".join(["st", *path])
+        if path and len(command.help or "") > MAX_DESCRIPTION_CHARS:
+            offenders.append(f"{name}: description {len(command.help)} chars")
+        for param in command.params:
+            if len(getattr(param, "help", None) or "") > MAX_PARAMETER_HELP_CHARS:
+                offenders.append(f"{name} {param.name}: help {len(param.help)} chars")
+        if hasattr(command, "list_commands"):
+            for child_name in command.list_commands(ctx):
+                child = command.get_command(ctx, child_name)
+                if child is not None and not child.hidden and not isinstance(child, ExtensionCommand):
+                    walk(child, [*path, child_name], ctx)
+
+    walk(get_command(app), [], None)
+    return offenders
+
+
+def test_every_help_page_stays_within_agent_budget() -> None:
+    offenders = _help_offenders()
+    assert not offenders, (
+        f"Help is agent context: keep descriptions <= {MAX_DESCRIPTION_CHARS} and option help <= "
+        f"{MAX_PARAMETER_HELP_CHARS} chars; state rules once, tersely, and drop narration. " + "; ".join(offenders)
+    )
+
+
+def test_check_help_stays_within_agent_budget() -> None:
+    from cli.commands.check_dispatch import help_text
+
+    assert len(help_text("a|b|c")) <= MAX_CHECK_HELP_CHARS

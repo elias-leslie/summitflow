@@ -52,21 +52,11 @@ def abandon_command(
 ) -> None:
     """Abandon a task or subtask and roll back tracked code changes.
 
-    For subtasks: Resets subtask status (single-pass).
-    For tasks: Two-pass confirmation required.
-
-    First run shows what will be destroyed and generates a confirm token.
-    Second run with --confirm TOKEN executes the abandon.
-
-    SAFE: Database is NOT restored. This uses append-only task metadata,
-    preventing data loss when other tasks were created after this task's
-    checkpoint was taken.
+    Database is not restored. Subtask: resets status. Task: first run previews and prints a token; rerun with --confirm TOKEN.
 
     \b
-    Examples:
-      st abandon 1.1 -t task-abc123              # Reset subtask status
-      st abandon task-abc123                     # Preview blast radius
-      st abandon task-abc123 --confirm a1b2c3d4  # Execute with preview token
+    st abandon 1.1 -t task-abc123
+    st abandon task-abc123 [--confirm TOKEN]
     """
     from ..context import require_task_id
 

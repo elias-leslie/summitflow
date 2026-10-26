@@ -290,37 +290,26 @@ def run_named_tool(
 
 def help_text(names: str) -> str:
     return (
-        """Quality checks through st
+        """st check: repo gates. Never run raw pytest/vitest/biome/tsc/ruff/sqlfluff/squawk.
 
-Required path:
-  Use st check for repo gates.
-  Never run raw pytest, Vitest, Biome, TSC, Ruff, SQLFluff, Squawk, or legacy dt first.
-
-Usage:
-  st check --check
+  st check --quick [--changed-only]      fast loop (st commit runs it)
+  st check --check                       full gate
+  st check --fix [--changed-only]        apply ruff/biome fixes
+  st check --frontend-only
   st check --native [--stage ID] [--no-reuse] [--json]
   st check --acceptance [--sha REV] [--task TASK] [--scope PATH] [--no-reuse] [--json]
-  st check --ci-repro [--seed N] [PYTEST_ARGS...]  # replay acceptance tests with CI env and order
-  st check --deep [--json]  # nightly: --check without reuse, then opted-in slow tests, then clean-env
-                            # (fresh clone, fresh deps, empty CI DB) in repos with migrations or
-                            # workspace packages and a CI pytest job
-  st check budget [--json]  # test/source LOC, gate median, slow tests vs budget
-  st check --changed-only
-  st check --quick [--changed-only]
-  st check --fix [--changed-only]  # apply Ruff and Biome fixes
-  st check --frontend-only
+  st check --ci-repro [--seed N] [PYTEST_ARGS...]   replay acceptance with CI env/order
+  st check --deep [--json]               nightly: no reuse, slow tests, clean env
+  st check budget [--json]               LOC, gate median, slow tests
   st check codeql [--ref refs/heads/main]
-  st check <gitleaks|semgrep|osv|security> [--changed-only]
   st check cleanroom -- <command>
+  st check <gitleaks|semgrep|osv|security> [--changed-only]
   st check <"""
         + names
         + "> [-- <tool args>]\n\n"
-        "Acceptance reuses a successful same-source receipt by default; --no-reuse reruns checks.\n"
-        "Acceptance runs tests like CI: workflow env only (.st-check.toml [acceptance] env/pass_env/host_tools),\n"
-        "fresh service DB, seeded order; a failure prints its st check --ci-repro --seed N.\n"
-        "Use --json for the full receipt instead of the compact acceptance summary.\n"
-        "Deep lane opt-in: @pytest.mark.slow (Python; the gate excludes it), //go:build slow (Go),\n"
-        "or [[deep.stages]] id/argv/cwd/timeout_seconds in .st-check.toml. Never live credentials.\n"
+        "Acceptance reuses a same-source receipt (--no-reuse reruns), runs like CI (workflow env from\n"
+        ".st-check.toml [acceptance], fresh DB, seeded order) and prints the --ci-repro seed on failure.\n"
+        "Deep opt-in: @pytest.mark.slow, //go:build slow, or [[deep.stages]] in .st-check.toml; never live credentials.\n"
     )
 
 

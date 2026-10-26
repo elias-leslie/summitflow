@@ -36,6 +36,7 @@ Task state: pause <id> | reopen <id> | cancel <id> | update <id>.
 Inspect: pulse | vcs doctor | service status | browser --help.
 Use `st <command> --help` for command-specific syntax. Global options precede the command; -P/--project also works after it."""
 
+HELP_WIDTH = 200
 SESSION_EVENTS_COMMAND = "session-events"
 PROGRESS_COMMAND = "progress"
 COMMAND_UNAVAILABLE_ERROR = "ERROR:st command '{command}' unavailable: {exc}"
@@ -107,7 +108,7 @@ LAZY_COMMANDS: dict[str, tuple[str, str, str, str, bool]] = {
     "cleanup": ("cleanup", "group", "", "Clean up git/checkpoint residue plus managed workspace leftovers.", False),
     "docker": ("docker", "group", "", "Docker stack control for the SummitFlow ecosystem.", False),
     "setup": ("setup", "group", "", "Host, service, tooling, and test database setup through st.", False),
-    "vm": ("vm", "group", "", "Proxmox VM lifecycle through st: status, IPs, snapshots, start/stop/shutdown/reboot, resize, rollback, clone.", False),
+    "vm": ("vm", "group", "", "Proxmox VMs: status, IPs, snapshots, power, resize, rollback, clone.", False),
     "checkpoints": ("checkpoints", "group", "", "Checkpoint management - show active checkpoints, cleanup stale artifacts", False),
     "autosnap": ("autosnapshot", "group", "", "Internal autosnapshot commands (systemd timer / hooks)", True),
 }
@@ -370,6 +371,8 @@ app = typer.Typer(
     help=CLI_REFERENCE,
     no_args_is_help=True,
     rich_markup_mode=None,
+    # Agents read help; wrapping at 80 columns only adds line breaks and indentation.
+    context_settings={"terminal_width": HELP_WIDTH, "max_content_width": HELP_WIDTH},
 )
 
 _register_lazy_placeholders()

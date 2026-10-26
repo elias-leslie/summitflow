@@ -29,15 +29,10 @@ from ..output import output_error
 
 app = typer.Typer(
     help=(
-        "Proxmox VM lifecycle through st: status, IPs, snapshots, start/stop/shutdown/reboot, "
-        "resize, rollback, clone. Lab-pool guests are fully managed; ops-pool (production) "
-        "guests start/stop/reboot and change cores/memory; power-pool guests start/stop/reboot "
-        "only; everything else is read-only (PVE enforces it). Destroy keeps a "
-        "two-pass confirmation. For browser work, st browser uses the default "
-        "browser VM; use st vm list/status/ip/start only when changing or repairing it. "
-        "Unreviewed code (unfamiliar repos, installers, targets) runs in a lab clone: st vm clone 9001 <ID free in "
-        "st vm list> <name>, then ssh <its 10.20.0.x IP> (lab key, no forwarding; internet only, no LAN); move code "
-        "in and out with git or scp over that ssh; destroy the clone when done."
+        "Proxmox VMs: status, IPs, snapshots, power, resize, rollback, clone. PVE enforces pools: lab = full; "
+        "ops (production) = power + cores/memory; power = power only; others read-only. Destroy is two-pass. "
+        "st browser picks its VM itself. Unreviewed code runs in a lab clone: st vm clone 9001 <free ID> <name>, "
+        "ssh <10.20.0.x IP> (lab key, no forwarding; internet only, no LAN), move code with git/scp, destroy when done."
     ),
 )
 

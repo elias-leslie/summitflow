@@ -151,6 +151,26 @@ def test_wait_omits_embedded_receipt_and_shows_failure_log_tail(monkeypatch, tmp
     assert payload["log_tail"] == [f"line {index}" for index in range(12, 20)]
 
 
+def test_wait_prints_one_summary_line_in_compact_mode(monkeypatch, tmp_path):
+    from cli.output import set_compact_output
+
+    log = tmp_path / "job.log"
+    log.write_text("ok\nboom")
+    record = {"job_id": "fixture", "project": "example", "state": "failed", "exit_code": 1, "log_path": str(log),
+              "source": {"source_commit": "abcdef1234567890", "checks": [{"detail": "x" * 10000}]},
+              "deployment": {"state": "failed"}}
+    monkeypatch.setattr(service_ops, "detached_result", lambda _: record)
+    set_compact_output(True)
+    try:
+        result = CliRunner().invoke(service.app, ["wait", "fixture"])
+    finally:
+        set_compact_output(False)
+    assert result.exit_code == 1
+    assert result.output.splitlines() == [
+        f"JOB:fixture|example|failed|exit=1|commit=abcdef123456|deploy=failed|log={log}", "  ok", "  boom",
+    ]
+
+
 def test_wait_timeout_does_not_claim_success(monkeypatch):
     monkeypatch.setattr(service_ops, "detached_result", lambda _: {"job_id": "fixture", "state": "running", "exit_code": None})
     result = CliRunner().invoke(service.app, ["wait", "fixture", "--timeout", "0"])

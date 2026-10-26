@@ -86,10 +86,11 @@ _RAW_QUALITY_RE = (
     r"npx\s+tsc|tsc|vitest|pnpm\s+(?:exec\s+)?vitest)\y"
 )
 _RAW_DB_RE = _CMD_START_RE + r"(?:psql|pgcli)\y"
+# Only state changes bypass st service; read-only systemctl/docker calls (status, list-timers, ps) do not.
 _RAW_SERVICE_RE = (
     _CMD_START_RE
-    + r"(?:systemctl|service|docker-compose|docker\s+(?:compose\s+)?"
-    r"(?:restart|reload|start|stop|build|up|down))\y"
+    + r"(?:systemctl(?:\s+--user)?|service\s+\S+|docker-compose|docker\s+(?:compose\s+)?)\s*"
+    r"(?:restart|reload|start|stop|build|up|down)\y"
 )
 _RAW_AUDIT_RULES = (
     {
@@ -1304,20 +1305,12 @@ def manifest(
         ),
     ] = None,
 ) -> None:
-    """Emit the registered tool-usage manifest for injection into agentic surfaces.
+    """Emit the @usage tool manifest for agent context (default: compact core slice).
 
-    Source of truth is the `@usage(...)` decorator on each Typer command.
-    Default output is a compact `core` discovery slice in the grouped inject form.
-    An explicit --task defaults to task density; --density full exports everything.
-    Examples:
-        st tools manifest                                 # compact generic context
-        st tools manifest --task devops                    # task-specific context
-        st tools manifest --density full                   # complete export
-        st tools manifest --task frontend --density task    # compact task context
-        st tools manifest --density adaptive --scores-file scores.json
-        st tools manifest --surface st.service.rebuild --format yaml
-        st tools manifest --discover service --format json
-        st tools manifest --profile claude-code --format json
+    \b
+    st tools manifest --surface <id> | --discover <family>   one surface or family
+    st tools manifest --task <type> [--density task|full|adaptive]
+    st tools manifest --profile claude-code --format json
     """
     from ..main import app as root_app
 

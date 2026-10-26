@@ -31,6 +31,9 @@ from ..output import output_error, output_success
 app = typer.Typer(help="File-level lease coordination across parallel agents")
 
 
+_ACTION_WORDS = frozenset({"list", "check", "take", "release", "release-all", "heartbeat", "hold", "all"})
+
+
 def _resolve_project() -> tuple[str, str | None]:
     """Project id plus the root relative paths resolve against: the current checkout of that project."""
     cfg = get_config_optional()
@@ -150,6 +153,11 @@ def lease_command(
         output_error(
             "Provide globs to acquire, or use --list / --check / --take / --release."
         )
+        raise typer.Exit(2)
+    # `st lease list` would otherwise lease a file named "list".
+    verbs = [glob for glob in globs if glob in _ACTION_WORDS and not (Path(project_root or ".") / glob).exists()]
+    if verbs:
+        output_error(f"st lease takes paths; for an action use --{verbs[0]} (e.g. st lease --list).")
         raise typer.Exit(2)
     lease = acquire(pid, list(globs), task_id=task_id, project_root=project_root)
     output_success(f"Acquired lease {lease.lease_id} on: {', '.join(lease.globs)}")

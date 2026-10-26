@@ -66,7 +66,9 @@ def verify_thread_binding(thread: str, project: str, project_root: str) -> dict[
     context, _, _, git_verified = runner._resolve_project_context(info, binding)
     if (context is None or context.get("project_id") != project
             or Path(str(context.get("repo_root") or "")).resolve() != root):
-        raise ValueError("Native transcript has no matching registered canonical project")
+        owner = (context or {}).get("project_id")
+        hint = f"; it belongs to {owner}: rerun with st -P {owner}" if owner and owner != project else ""
+        raise ValueError(f"Native transcript has no matching registered canonical project{hint}")
     mapping, _ = runner._project_mapping_state(info, context, explicitly_bound=binding is not None, transcript_git_verified=git_verified)
     if mapping not in {"matched", "explicit_binding", "git_only"}:
         raise ValueError("Native thread owner conflicts with registered project")

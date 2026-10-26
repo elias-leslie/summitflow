@@ -170,6 +170,18 @@ def test_relative_take_and_release_use_project_root(isolated_store, monkeypatch)
     assert leases.list_active("example") == []
 
 
+def test_action_word_is_not_leased_as_a_path(isolated_store, monkeypatch):
+    root = str(isolated_store / "example")
+    monkeypatch.setattr(lease_command, "_resolve_project", lambda: ("example", root))
+    monkeypatch.setenv("CLAUDE_SESSION_ID", "alice")
+
+    result = runner.invoke(lease_command.app, ["lease", "list"])
+
+    assert result.exit_code == 2
+    assert "--list" in result.output
+    assert leases.list_active("example") == []
+
+
 @pytest.mark.parametrize("project_id", ["../escape", "a/b", "", ".hidden"])
 def test_project_id_cannot_escape_lease_dir(isolated_store, project_id):
     with pytest.raises(ValueError, match="invalid project id"):

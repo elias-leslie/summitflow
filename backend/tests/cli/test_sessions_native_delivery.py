@@ -459,3 +459,11 @@ for line in sys.stdin:
     assert result["delivery"] == "unknown" and result["reason"] == expected
     assert result["observed"] is False
     assert "private" not in str(result)
+
+
+def test_thread_from_another_project_names_its_owner(identity):
+    root, _, _, modules, runner = identity
+    modules["codex_sync_bindings"].load_snapshot = lambda: {}
+    runner._resolve_project_context = lambda *args: ({"project_id": "other", "repo_root": "/elsewhere"}, root, "", True)
+    with pytest.raises(ValueError, match="belongs to other: rerun with st -P other"):
+        native.verify_thread_binding(THREAD, "fixture", str(root))
