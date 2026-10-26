@@ -79,14 +79,15 @@ TimeoutStartSec=10min
 WantedBy=default.target
 EOF
 
-# The host backup job: btrbk every 4 hours, one daily Google Drive copy. It runs from the current release.
-for unit in summitflow-host-backup.service summitflow-host-backup.timer; do
+# The host backup job: btrbk every 4 hours, one daily Google Drive copy; and the weekly, time-bounded read-back of that copy.
+# Both run from the current release.
+for unit in summitflow-host-backup.service summitflow-host-backup.timer summitflow-host-verify.service summitflow-host-verify.timer; do
   install -m 0644 "$SYSTEMD_DIR/$unit" "$USER_SYSTEMD_DIR/$unit"
 done
 
 sudo systemctl daemon-reload
 systemctl --user daemon-reload
-systemctl --user enable --now summitflow-host-backup.timer
+systemctl --user enable --now summitflow-host-backup.timer summitflow-host-verify.timer
 sudo systemctl enable --now summitflow-backup-window-guard.timer
 sudo systemctl enable summitflow-backup-window-guard.service
 systemctl --user enable summitflow-infra-reconcile.service

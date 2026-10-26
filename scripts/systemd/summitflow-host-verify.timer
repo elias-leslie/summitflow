@@ -1,0 +1,12 @@
+[Unit]
+Description=Read back a sample of the Google Drive backup once a week
+
+[Timer]
+# After the daily Drive copy (02:30 slot) is long done. Persistent catches up a week missed while the machine was off.
+OnCalendar=Sun *-*-* 05:00:00
+Persistent=true
+AccuracySec=5min
+Unit=summitflow-host-verify.service
+
+[Install]
+WantedBy=timers.target

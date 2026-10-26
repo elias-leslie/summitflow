@@ -80,7 +80,8 @@ def _offsite_section(offsite: Mapping[str, Any], now: datetime) -> list[str]:
                          f"{format_size(job.get('bytes'))} read, {format_size(job.get('stored_bytes'))} stored")
     check = offsite.get("check")
     if check:
-        text = f"{check.get('status')}, slice {check.get('bucket')} of the data, {ago(check.get('checked_at'), now)}"
+        text = f"{check.get('status')}, {check.get('sample') or '?'} of stored data read back, {ago(check.get('checked_at'), now)}"
+        text += " (ran out of time; reads another sample next week)" if check.get("status") == "partial" else ""
         lines.append(f"  Data check: {text}" + (f" - {check['error']}" if check.get("error") else ""))
     spot = offsite.get("spot_restore")
     if spot:

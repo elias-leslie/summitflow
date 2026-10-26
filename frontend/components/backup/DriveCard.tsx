@@ -6,28 +6,40 @@ import { DetailValue, StatusBlock } from './StatusBlock'
 
 function checkFact(drive: BackupOverview['offsite']): StatusFact {
   const check = drive.check
-  if (!check || (!check.last_ok_at && !check.error))
-    return { label: 'Data check', value: 'Runs after each copy' }
-  const failing = !isOk(check.status)
-  const slice = check.bucket
-    ? `, part ${check.bucket.replace('/', ' of ')}`
+  if (
+    !check ||
+    (!check.last_ok_at && !check.error && check.status !== 'partial')
+  )
+    return { label: 'Data check', value: 'Runs weekly' }
+  const sample = check.sample
+    ? `, ${check.sample.replace(/M$/, ' MB')} read`
     : ''
+  if (check.status === 'partial')
+    return {
+      label: 'Data check',
+      value: `Out of time ${relativeTime(check.checked_at, 'earlier')}; reads a new sample next week`,
+    }
+  const failing = !isOk(check.status)
   return failing
     ? {
         label: 'Data check',
         value: `Failed ${check.failures > 1 ? `${check.failures} times in a row` : 'last time'}${check.error ? `: ${check.error}` : ''}`,
-        tone: check.failures >= 3 ? 'bad' : 'warn',
+        tone: check.failures >= 2 ? 'bad' : 'warn',
       }
     : {
         label: 'Data check',
-        value: `Passed ${relativeTime(check.last_ok_at, 'earlier')}${slice}`,
+        value: `Passed ${relativeTime(check.last_ok_at, 'earlier')}${sample}`,
       }
 }
 
 function restoreFact(drive: BackupOverview['offsite']): StatusFact {
   const spot = drive.spot_restore
-  if (!spot?.at)
-    return { label: 'Test restore', value: 'Runs weekly after a copy' }
+  if (!spot?.at) return { label: 'Test restore', value: 'Runs weekly' }
+  if (spot.status === 'partial')
+    return {
+      label: 'Test restore',
+      value: `Out of time ${relativeTime(spot.at, 'earlier')}; tries again next week`,
+    }
   return isOk(spot.status)
     ? {
         label: 'Test restore',
@@ -43,7 +55,7 @@ function restoreFact(drive: BackupOverview['offsite']): StatusFact {
 function cleanupFact(drive: BackupOverview['offsite']): StatusFact {
   const upkeep = drive.maintenance
   const when = upkeep?.pruned_at ?? upkeep?.ran_at
-  if (!when) return { label: 'Cleanup', value: 'Runs weekly after a copy' }
+  if (!when) return { label: 'Cleanup', value: 'Runs weekly' }
   return {
     label: 'Cleanup',
     value: `Done ${relativeTime(when, 'earlier')}`,

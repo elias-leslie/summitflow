@@ -15,15 +15,16 @@ namespace and runs ``restic backup`` over them, so:
 PostgreSQL and Redis stream their dumps into restic; registered Proxmox and
 off-disk sources (see ``backup_sources``) stream or back up directly. The job
 holds the host-recovery lock, so btrbk cannot replace a snapshot it is reading.
+
+Reading the copy back (``backup_verify``) is a separate, weekly, time-bounded job: Drive's speed
+can never delay a backup.
 """
 
 from __future__ import annotations
 
-import contextlib
 import json
 import os
 import re
-import secrets
 import shutil
 import subprocess
 from collections.abc import Callable, Mapping, Sequence
@@ -50,12 +51,9 @@ TAG = "offsite"
 EXCLUDES = Path(__file__).with_name("backup_offsite.excludes")
 JOB_TIMEOUT_SECONDS = 10 * 3600
 SHORT_TIMEOUT_SECONDS = 900
-UNCACHED_COMMANDS = frozenset({"check", "prune", "restore", "dump"})
 CACHE_CAP_BYTES = 1024**3  # restic's metadata caches for the Drive repository measure ~0.2 GB; past this they are dropped and rebuilt
-CHECK_BUCKETS = 30
-PRUNE_INTERVAL = timedelta(days=7)
+LOCK_WAIT = "5m"  # a backup meeting the weekly prune waits for it instead of failing
 LEGACY_AFTER_GOOD_RUNS = 3
-SPOT_RESTORE_INTERVAL = timedelta(days=7)
 STATE_HISTORY = 30
 # restic needs only these from a root-owned environment; nothing else is inherited.
 _PASSTHROUGH = ("PATH", "LANG", "LC_ALL", "HOME", "USER")
@@ -127,20 +125,57 @@ def state_dir() -> Path:
     return Path.home() / ".local/state/summitflow/offsite"
 
 
-def read_state() -> dict[str, Any]:
+# What the weekly verify job writes (``verify.json``), shown as part of the one state: a field is replaced, a
+# section is merged. Keeping it in its own file means neither job can overwrite the other's record.
+VERIFY_FIELDS = ("check", "spot_restore", "verify_run")
+VERIFY_SECTIONS = {"maintenance": ("pruned_at", "prune_partial_at", "prune_error"), "legacy": ("local_repository_path", "local_repository_bytes")}
+
+
+def _read_json(path: Path) -> dict[str, Any]:
     try:
-        value = json.loads((state_dir() / "state.json").read_text())
+        value = json.loads(path.read_text())
     except (OSError, ValueError):
         return {}
     return value if isinstance(value, dict) else {}
 
 
+def _write_json(path: Path, value: Mapping[str, Any]) -> None:
+    path.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
+    temporary = path.parent / f".{path.name}-{os.getpid()}.tmp"
+    temporary.write_text(json.dumps(value, indent=1, default=str) + "\n")
+    os.replace(temporary, path)
+
+
+def read_verify() -> dict[str, Any]:
+    return _read_json(state_dir() / "verify.json")
+
+
+def update_verify(**parts: Any) -> None:
+    """Record verify results: fields replace, sections (maintenance, legacy) merge."""
+    current = read_verify()
+    for key, value in parts.items():
+        current[key] = {**(current.get(key) or {}), **value} if key in VERIFY_SECTIONS else value
+    _write_json(state_dir() / "verify.json", current)
+
+
+def read_state() -> dict[str, Any]:
+    state = _read_json(state_dir() / "state.json")
+    verify = read_verify()
+    for key in VERIFY_FIELDS:
+        if key in verify:
+            state[key] = verify[key]
+    for key in VERIFY_SECTIONS:
+        if verify.get(key):
+            state[key] = {**(state.get(key) or {}), **verify[key]}
+    return state
+
+
 def write_state(state: Mapping[str, Any]) -> None:
-    directory = state_dir()
-    directory.mkdir(mode=0o700, parents=True, exist_ok=True)
-    temporary = directory / f".state-{os.getpid()}.tmp"
-    temporary.write_text(json.dumps(state, indent=1, default=str) + "\n")
-    os.replace(temporary, directory / "state.json")
+    kept = {key: value for key, value in state.items() if key not in VERIFY_FIELDS}
+    for key, names in VERIFY_SECTIONS.items():
+        if isinstance(kept.get(key), dict):
+            kept[key] = {k: v for k, v in kept[key].items() if k not in names}
+    _write_json(state_dir() / "state.json", kept)
 
 
 def _now() -> datetime:
@@ -199,9 +234,10 @@ class Runtime:
         return self.root / "excludes"
 
 
-def prepare_runtime(target: Target) -> Runtime:
-    root = _runtime_directory()
-    runtime = Runtime(root, _cache_directory())
+def prepare_runtime(target: Target, lane: str = "") -> Runtime:
+    """The backup's working area, or the weekly verify job's own (``lane``) so neither job trims the other's cache."""
+    root = _runtime_directory() / lane
+    runtime = Runtime(root, _cache_directory() / lane)
     for directory in (runtime.cache, runtime.root_cache, runtime.tmp):
         directory.mkdir(mode=0o700, parents=True, exist_ok=True)
     # The last run's root-run rclone left its config root-owned (it rewrites it when it refreshes a token); replace
@@ -248,11 +284,9 @@ def _env(target: Target, runtime: Runtime, *, root: bool, extra: Mapping[str, st
 
 
 def _restic_args(target: Target, runtime: Runtime, *args: str, permanent_delete: bool = False, root: bool = False) -> list[str]:
-    # Check, prune and restore would cache gigabytes of data and tree packs on the NVMe for one use; they read the
-    # index and snapshots again instead. Backups keep the small persistent metadata cache, which makes them fast.
-    cache = ["--no-cache"] if args and args[0] in UNCACHED_COMMANDS else ["--cache-dir", str(runtime.root_cache if root else runtime.cache)]
+    # One persistent metadata cache on scratch, capped (``trim_runtime``): it is what keeps every Drive command fast.
     command = [shutil.which("restic") or "restic", "--repo", target.repository, "--password-file", str(target.password_file),
-               "--compression", "auto", *cache, "--json"]
+               "--compression", "auto", "--cache-dir", str(runtime.root_cache if root else runtime.cache), "--retry-lock", LOCK_WAIT, "--json"]
     if permanent_delete and target.repository.startswith("rclone:"):
         if not target.prune_qualified:
             raise OffsiteError("Off-site permanent prune has not been qualified")
@@ -432,94 +466,11 @@ def run_job(repo: Repo, job: Job) -> dict[str, Any]:
     return _job_record(job, result, started)
 
 
-# ---- checks, spot restore, retention ---------------------------------------------------------------------------
-
-def run_check(repo: Repo, state: dict[str, Any]) -> dict[str, Any]:
-    """Structural check plus one rotating 1/30 slice of the stored data: all of it is read back every 30 days."""
-    previous = state.get("check") or {}
-    bucket = int(previous.get("next_bucket") or 1)
-    if not 1 <= bucket <= CHECK_BUCKETS:
-        bucket = 1
-    started = _now()
-    result = repo.restic("check", f"--read-data-subset={bucket}/{CHECK_BUCKETS}", timeout=4 * 3600)
-    record = {"checked_at": started.isoformat(), "bucket": f"{bucket}/{CHECK_BUCKETS}", "duration_s": round((_now() - started).total_seconds(), 1)}
-    if result.returncode == 0:
-        coverage = dict(previous.get("coverage") or {})
-        coverage[str(bucket)] = started.isoformat()
-        return {**record, "status": "ok", "next_bucket": bucket % CHECK_BUCKETS + 1, "coverage": coverage, "last_ok_at": started.isoformat(),
-                "failures": 0}
-    # A check that could not run (network, lock) is retried on the next run; only repeated failures are a problem.
-    return {**record, "status": "failed", "error": _last_error(result), "next_bucket": bucket, "coverage": previous.get("coverage") or {},
-            "last_ok_at": previous.get("last_ok_at"), "failures": int(previous.get("failures") or 0) + 1}
-
+# ---- retention -------------------------------------------------------------------------------------------------
 
 def _snapshots(repo: Repo, *filters: str) -> list[dict[str, Any]]:
     value = repo.json("snapshots", *filters, timeout=3600)
     return value if isinstance(value, list) else []
-
-
-def spot_restore(repo: Repo, state: dict[str, Any], jobs: Mapping[str, Any]) -> dict[str, Any]:
-    """Restore the newest PostgreSQL dump and a few small project files into tmpfs, and compare them with what was stored."""
-    started = _now()
-    record: dict[str, Any] = {"at": started.isoformat()}
-    problems: list[str] = []
-    postgres = (jobs.get("postgres") or {}).get("snapshot_id")
-    if postgres:
-        dump = run_process(
-            [*_restic_args(repo.target, repo.runtime, "dump", postgres, "/" + POSTGRES_DUMP_NAME)], env=_env(repo.target, repo.runtime, root=False), timeout=1800,
-        )
-        # Stdout is bounded to its tail by run_process; the head and trailer prove a complete, loadable cluster dump.
-        trailer = "PostgreSQL database cluster dump complete" in dump.stdout
-        record["postgres"] = {"snapshot_id": postgres, "trailer": trailer}
-        if dump.returncode or not trailer:
-            problems.append("postgres dump did not restore completely")
-    workspaces = (jobs.get("workspaces") or {}).get("snapshot_id")
-    if workspaces:
-        record["project"] = _spot_project(repo, workspaces, problems)
-    record["status"] = "failed" if problems else "ok"
-    if problems:
-        record["error"] = "; ".join(problems)[:300]
-    return record
-
-
-def _small_files(repo: Repo, snapshot_id: str, base: str) -> list[str]:
-    listing = repo.restic("ls", "--json", snapshot_id, base, timeout=SHORT_TIMEOUT_SECONDS, capture=True)  # one level: restic ls is not recursive
-    files = []
-    for line in listing.stdout.splitlines():
-        try:
-            node = json.loads(line)
-        except ValueError:
-            continue
-        if node.get("type") == "file" and node.get("path", "").rsplit("/", 1)[0] == base and 0 < int(node.get("size") or 0) <= 262144:
-            files.append(node["path"])
-    return files[:12]
-
-
-def _spot_project(repo: Repo, snapshot_id: str, problems: list[str]) -> dict[str, Any]:
-    projects = [tag[8:] for tag in project_tags()]
-    if not projects:
-        return {"status": "skipped"}
-    start = _now().toordinal() % len(projects)
-    for step in range(len(projects)):  # the day's pick, or the next project that has small top-level files
-        project = projects[(start + step) % len(projects)]
-        base = f"{get_workspaces_root() / 'projects' / project}"
-        files = _small_files(repo, snapshot_id, base)
-        if files:
-            break
-    else:
-        return {"status": "skipped", "reason": "no project has small top-level files"}
-    target = repo.runtime.root / f"spot-{secrets.token_hex(4)}"
-    try:
-        target.mkdir(mode=0o700)
-        result = repo.restic("restore", snapshot_id, "--target", str(target), "--verify", *(a for path in files for a in ("--include", path)), timeout=900)
-        restored = [target / path.lstrip("/") for path in files]
-        missing = [path for path in restored if not path.is_file()]
-        if result.returncode or missing:
-            problems.append(f"project {project} did not restore")
-            return {"project": project, "status": "failed", "files": len(files), "missing": len(missing)}
-        return {"project": project, "status": "ok", "files": len(files), "snapshot_id": snapshot_id}
-    finally:
-        shutil.rmtree(target, ignore_errors=True)
 
 
 def retention_ids(snapshots: Sequence[Mapping[str, Any]], *, now: datetime, legacy_days: int) -> list[str]:
@@ -529,24 +480,17 @@ def retention_ids(snapshots: Sequence[Mapping[str, Any]], *, now: datetime, lega
     return sorted(str(item["id"]) for item in legacy if (_parse(item.get("time")) or now) < cutoff)
 
 
-def measure_legacy(target: Target, listing: Sequence[Mapping[str, Any]], previous: Mapping[str, Any] | None) -> dict[str, Any]:
-    """What the retired shape still holds: the old per-source snapshots in Drive and the old restic repository on the T7."""
+def measure_legacy(listing: Sequence[Mapping[str, Any]], previous: Mapping[str, Any] | None) -> dict[str, Any]:
+    """The old per-source snapshots still in Drive (the T7 repository's size is measured by the weekly verify job)."""
     old = sum(1 for item in listing if TAG not in (item.get("tags") or []) and any(str(t).startswith("source:") for t in item.get("tags") or []))
-    measured = dict(previous or {})
-    measured.update(drive_snapshots=old)
-    if target.local_repository is not None:
-        measured["local_repository_path"] = str(target.local_repository)
-        result = subprocess.run(["du", "-sb", "--", str(target.local_repository)], capture_output=True, text=True, check=False, timeout=600)
-        with contextlib.suppress(IndexError, ValueError):
-            measured["local_repository_bytes"] = int(result.stdout.split()[0])
-    return measured
+    return {**(previous or {}), "drive_snapshots": old}
 
 
-def maintain(repo: Repo, state: dict[str, Any], *, now: datetime) -> dict[str, Any]:
-    """Forget what the retention windows release and prune weekly, from the job itself."""
+def retain(repo: Repo, state: dict[str, Any], *, now: datetime) -> dict[str, Any]:
+    """Forget what the retention windows release. Space comes back at the weekly prune (``backup_verify``)."""
     settings = get_settings()
     maintenance = dict(state.get("maintenance") or {})
-    record: dict[str, Any] = {"ran_at": now.isoformat()}
+    record: dict[str, Any] = {"ran_at": now.isoformat(), "forget_error": None, "legacy_error": None}
     forget = repo.restic(
         "forget", "--tag", TAG, "--group-by", "host,paths",
         "--keep-daily", str(settings.backup_offsite_keep_daily), "--keep-weekly", str(settings.backup_offsite_keep_weekly),
@@ -564,15 +508,8 @@ def maintain(repo: Repo, state: dict[str, Any], *, now: datetime) -> dict[str, A
         if old.returncode:
             record["legacy_error"] = _last_error(old)
     record["snapshots"] = len(listing)
-    state["legacy"] = measure_legacy(repo.target, listing, state.get("legacy"))
-    last_prune = _parse(maintenance.get("pruned_at"))
-    if last_prune is None or now - last_prune >= PRUNE_INTERVAL:
-        prune = repo.restic("prune", "--max-unused", "10%", "--max-repack-size", "20G", timeout=6 * 3600, permanent_delete=True)
-        if prune.returncode:
-            record["prune_error"] = _last_error(prune)
-        else:
-            record["pruned_at"] = now.isoformat()
-    return {**maintenance, **{k: v for k, v in record.items() if v is not None}}
+    state["legacy"] = measure_legacy(listing, state.get("legacy"))
+    return {**maintenance, **record}
 
 
 # ---- the run ---------------------------------------------------------------------------------------------------
@@ -636,12 +573,7 @@ def run_offsite(points: Sequence[Mapping[str, Any]], run_id: str, *, now: dateti
         latest.update({name: record for name, record in run["jobs"].items() if record.get("status") == "ok"})
         state["jobs"] = latest
         if run["status"] == "ok":
-            state["check"] = run_check(repo, state)
-            run["check"] = {k: state["check"].get(k) for k in ("status", "bucket", "checked_at")}
-            last_spot = _parse((state.get("spot_restore") or {}).get("at"))
-            if last_spot is None or started - last_spot >= SPOT_RESTORE_INTERVAL:
-                state["spot_restore"] = spot_restore(repo, state, latest)
-            state["maintenance"] = maintain(repo, state, now=started)
+            state["maintenance"] = retain(repo, state, now=started)
     except Exception as exc:
         logger.exception("offsite_run_failed")
         run.update(status="failed", error=str(exc)[:300])

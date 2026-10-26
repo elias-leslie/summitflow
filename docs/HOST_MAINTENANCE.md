@@ -32,6 +32,7 @@ query SummitFlow's database or call its API.
 |---|---|
 | Host backup: btrbk to the T7 | `summitflow-host-backup.timer`, 02:30 and every 4 hours after |
 | Google Drive copy (restic) | once a day, in one of those runs; a missed day is made up at the next run |
+| Drive read-back (check, test restore, cleanup) | `summitflow-host-verify.timer`, Sundays 05:00, each step stopped at its own time limit |
 | Backup health check | hourly, at :30 |
 | Project autosnapshots | every 30 minutes |
 | SummitFlow daily maintenance | daily at 04:00 |
@@ -40,9 +41,12 @@ query SummitFlow's database or call its API.
 
 - btrbk keeps the latest point on each source and 7 daily points on the T7
   (`/etc/btrbk/summitflow.conf`). The Drive repository keeps 7 daily, 4 weekly
-  and 3 monthly snapshots per job and prunes itself weekly. Every Drive run checks
-  one thirtieth of the stored data, and a weekly test restore loads the newest
-  PostgreSQL dump and a few project files from Drive and compares them.
+  and 3 monthly snapshots per job. A separate weekly job
+  (`summitflow-host-verify.timer`, low priority, never inside the backup unit) reads
+  back a random 500 MB of the stored data, streams out the newest PostgreSQL dump,
+  restores a few project files, and prunes in small repacks. Each step stops at a
+  wall-clock limit (15, 20, 10 and 30 minutes) and records "partial" instead of
+  failing; the next week continues. Drive's speed therefore never delays a backup.
 - Veeam is not installed. Its old chain on the T7 (`VeeamBackup/`) is the
   owner's to keep or delete; nothing reads or prunes it.
 - Docker pruning is Nightshift's weekly stack prune (stopped containers older
@@ -162,9 +166,8 @@ setting), not against a hostile root user.
   files are read only through the dispatcher (`via=pct` or `via=agent`),
   never over an ssh alias.
 - **Health.** The hourly check raises an alert for a missing local point (none
-  in 26 hours), a missing Drive copy (none in 48 hours), three failed data checks
-  in a row, a failed weekly test restore, or a Drive cleanup that has failed for
-  three weeks. A slow or retried run is not an alert. `st backup status` shows
+  in 26 hours), a missing Drive copy (none in 48 hours), two failed weekly data checks
+  or test restores in a row, or a Drive cleanup that has failed for three weeks. A slow or retried run is not an alert. `st backup status` shows
   the same list.
 - **T7 stays mounted.** The read-only overlay on `davion-gem` keeps the NTFS
   partition busy, so its automount no longer idle-unmounts after ten minutes.

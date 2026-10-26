@@ -46,10 +46,8 @@ export interface DriveJob {
 
 export interface DriveCheck {
   status: string | null
-  /** The slice of the repository read back last, such as "3/30". */
-  bucket: string | null
-  /** How many slices of the repository have been read back so far. */
-  covered: number | null
+  /** How much stored data one weekly check reads back, such as "500M". */
+  sample: string | null
   checked_at: string | null
   last_ok_at: string | null
   failures: number
@@ -144,11 +142,6 @@ function counts(value: unknown): Record<string, number> | null {
   )
 }
 
-function covered(value: unknown): number | null {
-  const row = obj(value)
-  return row ? Object.keys(row).length : num(value)
-}
-
 function readRun(value: unknown): LocalRun | null {
   const row = obj(value)
   return row
@@ -208,8 +201,7 @@ function readDrive(row: Raw): DriveBackups {
     })),
     check: check && {
       status: str(check.status),
-      bucket: str(check.bucket),
-      covered: covered(check.coverage),
+      sample: str(check.sample),
       checked_at: str(check.checked_at),
       last_ok_at: str(check.last_ok_at),
       failures: num(check.failures) ?? 0,

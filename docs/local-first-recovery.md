@@ -69,11 +69,11 @@ A structure check does not read every pack:
 
 ```bash
 restic check
-restic check --read-data-subset 1/30
+restic check --read-data-subset 500M
 ```
 
-The daily job already reads one thirtieth of the data every run, so all of it
-is read back over a month. A full `restic check --read-data` downloads everything;
+The weekly verify job (`python -m app.tasks.backup_verify`) reads a random 500 MB
+sample each Sunday, within a time limit. A full `restic check --read-data` downloads everything;
 run it only when you must.
 
 ## Restore a project or path

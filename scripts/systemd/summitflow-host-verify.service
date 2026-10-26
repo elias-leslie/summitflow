@@ -1,0 +1,30 @@
+[Unit]
+Description=SummitFlow weekly read-back of the Google Drive backup (bounded, low priority)
+After=network-online.target
+Wants=network-online.target
+ConditionPathExists=%h/.summitflow/services/projects/summitflow/current/source/backend/.venv/bin/python
+
+[Service]
+Type=oneshot
+WorkingDirectory=%h/.summitflow/services/projects/summitflow/current/source/backend
+Environment="PATH=%h/.local/bin:%h/.summitflow/services/projects/summitflow/current/source/backend/.venv/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
+Environment="HOME=%h"
+Environment="PYTHONUNBUFFERED=1"
+EnvironmentFile=-%h/.env.local
+EnvironmentFile=-%h/.config/summitflow/backup-schedule.env
+# Never while a backup runs or the machine is thrashing; the next week reads back instead. A skipped run is not a failure.
+ExecCondition=/bin/sh -c '! systemctl --user is-active --quiet summitflow-host-backup.service'
+ExecCondition=/bin/sh -c 'awk '\''$1=="some"{s=substr($3,7)} $1=="full"{f=substr($3,7)} END{exit !(s+0<25 && f+0<10)}'\'' /proc/pressure/memory'
+ExecStart=%h/.summitflow/services/projects/summitflow/current/source/backend/.venv/bin/python -m app.tasks.backup_verify
+# Every step has its own wall-clock bound inside the job (about 75 minutes in all); this is the backstop.
+Nice=19
+CPUWeight=10
+MemoryHigh=2G
+MemoryMax=4G
+TimeoutStartSec=2h
+KillMode=control-group
+KillSignal=SIGINT
+TimeoutStopSec=90
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=summitflow-host-verify

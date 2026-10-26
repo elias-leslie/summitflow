@@ -29,7 +29,7 @@ def _overview(problems: list[dict[str, str]] | None = None) -> dict:
         "offsite": {
             "engine": "restic", "schedule": "daily", "running": None, "last_success_at": hours_ago, "status": "ok", "error": None,
             "jobs": {"workspaces": {"time": hours_ago, "snapshot_id": "abcdef123456", "bytes": 5 * 1024**3, "stored_bytes": 1024**3}},
-            "check": {"status": "ok", "bucket": "3/30", "checked_at": hours_ago},
+            "check": {"status": "ok", "sample": "500M", "checked_at": hours_ago},
             "spot_restore": {"status": "ok", "at": hours_ago}, "maintenance": {},
         },
         "legacy": {

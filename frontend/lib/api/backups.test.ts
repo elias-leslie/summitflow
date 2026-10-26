@@ -48,19 +48,14 @@ describe('parseBackupOverview', () => {
     expect(overview.legacy.drive_snapshots.count).toBeNull()
   })
 
-  it('reads the Drive check slices whether coverage is a map or missing', () => {
+  it('reads the weekly Drive check sample and a partial result', () => {
     const drive = {
       ...firstRun.offsite,
-      check: {
-        status: 'ok',
-        bucket: '3/30',
-        coverage: { '1': 'a', '2': 'b', '3': 'c' },
-        failures: 0,
-      },
+      check: { status: 'partial', sample: '500M', failures: 0 },
     }
     const overview = parseBackupOverview({ ...firstRun, offsite: drive })
-    expect(overview.offsite.check?.covered).toBe(3)
-    expect(overview.offsite.check?.bucket).toBe('3/30')
+    expect(overview.offsite.check?.sample).toBe('500M')
+    expect(overview.offsite.check?.status).toBe('partial')
   })
 
   it('rejects a body that is not an overview', () => {

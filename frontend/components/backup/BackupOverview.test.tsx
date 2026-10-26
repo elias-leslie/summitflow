@@ -53,7 +53,7 @@ function overview(patch: Record<string, unknown> = {}): BackupOverview {
         'pve-guest-100': { status: 'ok', time: ago(20), bytes: 5 },
         'disk-b': { status: 'ok', time: ago(15), bytes: 5 },
       },
-      check: { status: 'ok', bucket: '3/30', last_ok_at: ago(14), failures: 0 },
+      check: { status: 'ok', sample: '500M', last_ok_at: ago(14), failures: 0 },
       spot_restore: { at: ago(80), status: 'ok' },
       maintenance: { ran_at: ago(14), pruned_at: ago(100) },
       runs: [],
@@ -124,7 +124,7 @@ describe('DriveCard', () => {
   it('lists each job, groups the rest, and reports check, test restore and cleanup', () => {
     render(<DriveCard overview={overview()} />)
     expect(screen.getByText('Last good copy 14h ago')).toBeInTheDocument()
-    expect(screen.getByText('Passed 14h ago, part 3 of 30')).toBeInTheDocument()
+    expect(screen.getByText('Passed 14h ago, 500 MB read')).toBeInTheDocument()
     expect(screen.getByText('Passed 3d ago')).toBeInTheDocument()
     expect(screen.getByText('Proxmox and other disks')).toBeInTheDocument()
     expect(screen.getByText('rclone:gdrive:backups')).toBeInTheDocument()

@@ -31,7 +31,7 @@ LOCAL_INTERVAL = timedelta(hours=4)
 LOCAL_MISSING_AFTER = timedelta(hours=26)
 OFFSITE_MISSING_AFTER = timedelta(hours=48)
 PROXMOX_MISSING_AFTER = timedelta(hours=48)
-CHECK_FAILURES_BEFORE_PROBLEM = 3
+CHECK_FAILURES_BEFORE_PROBLEM = 2  # the read-back runs weekly: two in a row
 TIMER = "summitflow-host-backup.timer"
 
 
@@ -137,11 +137,11 @@ def health_problems(now: datetime | None = None) -> list[dict[str, str]]:
     check = state.get("check") or {}
     if int(check.get("failures") or 0) >= CHECK_FAILURES_BEFORE_PROBLEM:
         problems.append({"key": "offsite-check", "title": "Google Drive backup check is failing",
-                         "message": f"The data check of the Google Drive repository failed {check['failures']} runs in a row. Last error: {check.get('error')}"})
+                         "message": f"The data check of the Google Drive repository failed {check['failures']} weeks in a row. Last error: {check.get('error')}"})
     spot = state.get("spot_restore") or {}
-    if spot.get("status") == "failed":
+    if spot.get("status") == "failed" and int(spot.get("failures") or 0) >= CHECK_FAILURES_BEFORE_PROBLEM:
         problems.append({"key": "offsite-spot-restore", "title": "Test restore from Google Drive failed",
-                         "message": f"The weekly test restore did not match what was backed up: {spot.get('error')}"})
+                         "message": f"The weekly test restore did not match what was backed up {spot['failures']} weeks in a row: {spot.get('error')}"})
     maintenance = state.get("maintenance") or {}
     pruned = _parse(maintenance.get("pruned_at"))
     if pruned is not None and now - pruned > timedelta(days=21) and maintenance.get("prune_error"):

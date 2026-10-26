@@ -14,6 +14,7 @@ import pytest
 
 from app.tasks import backup_offsite as offsite
 from app.tasks import backup_overview as overview
+from app.tasks import backup_verify as verify
 from app.tasks.backup_proc import run_process
 
 NOW = datetime(2026, 10, 26, 3, 0, tzinfo=UTC)  # 23:00 the evening before, New York time
@@ -142,7 +143,7 @@ def test_health_is_quiet_while_both_layers_are_current(tmp_path: Path, monkeypat
 
 def test_health_reports_only_missing_recovery_points(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     _state(tmp_path, monkeypatch, last_success_at=(NOW - timedelta(hours=49)).isoformat(), last_error="Drive unreachable",
-           check={"failures": 3, "error": "boom"}, spot_restore={"status": "failed", "error": "mismatch"})
+           check={"failures": 2, "error": "boom"}, spot_restore={"status": "failed", "failures": 2, "error": "mismatch"})
     monkeypatch.setattr(overview, "local_summary", lambda **_: {"enabled": True, "last_good_at": (NOW - timedelta(hours=30)).isoformat(), "last_run": None})
     keys = {problem["key"] for problem in overview.health_problems(NOW)}
     assert keys == {"local-missing", "offsite-missing", "offsite-check", "offsite-spot-restore"}
@@ -219,7 +220,7 @@ def test_the_spot_restore_picks_small_top_level_files_of_a_project() -> None:
     lines = [{"type": "dir", "path": "/w/p"}, {"type": "file", "path": "/w/p/a.md", "size": 10}, {"type": "file", "path": "/w/p/big.bin", "size": 10**9},
              {"type": "file", "path": "/w/p/sub/b.md", "size": 10}, {"type": "file", "path": "/w/p/empty", "size": 0}]
     repo = FakeRepo(offsite.Result(0, {}, "\n".join(json.dumps(line) for line in lines)))
-    assert offsite._small_files(repo, "snap", "/w/p") == ["/w/p/a.md"]  # type: ignore[arg-type]
+    assert verify._small_files(repo, "snap", "/w/p") == ["/w/p/a.md"]  # type: ignore[arg-type]
     assert repo.calls[0][:2] == ("ls", "--json")
 
 
@@ -244,15 +245,21 @@ def test_the_timer_waits_only_when_memory_pressure_is_really_high(tmp_path: Path
     assert (subprocess.run(["awk", program, str(pressure)], check=False).returncode == 0) is starts  # numeric, not string, comparison
 
 
-def test_only_backups_and_listings_use_the_persistent_cache() -> None:
+def test_every_drive_command_uses_the_one_capped_cache_and_waits_for_a_lock() -> None:
     target = offsite.Target("b", "rclone:summitflow-drive:r", Path("/pw"), None, Path("/k"), "host", True)
     runtime = offsite.Runtime(Path("/run/x"), Path("/scratch/x"))
-    for command in ("check", "prune", "restore", "dump"):
-        arguments = offsite._restic_args(target, runtime, command, "--json")
-        assert "--no-cache" in arguments and "--cache-dir" not in arguments
-    for command in ("backup", "snapshots", "forget", "ls"):
+    for command in ("backup", "snapshots", "forget", "ls", "check", "prune", "restore", "dump"):
         arguments = offsite._restic_args(target, runtime, command)
         assert arguments[arguments.index("--cache-dir") + 1] == str(runtime.cache) and "--no-cache" not in arguments
+        assert arguments[arguments.index("--retry-lock") + 1] == offsite.LOCK_WAIT
+
+
+def test_the_weekly_verify_job_has_its_own_cache_and_spool(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("XDG_RUNTIME_DIR", str(tmp_path / "run"))
+    monkeypatch.setenv("ST_SCRATCH_ROOT", str(tmp_path / "scratch"))
+    target = offsite.Target("b", "rclone:summitflow-drive:r", tmp_path / "pw", None, tmp_path, "host", True)
+    backup, weekly = offsite.prepare_runtime(target), offsite.prepare_runtime(target, "verify")
+    assert weekly.cache.parent == backup.cache.parent / "verify" and weekly.tmp != backup.tmp  # trimming one never empties the other
 
 
 def test_a_project_restore_uses_the_path_the_snapshot_recorded(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
