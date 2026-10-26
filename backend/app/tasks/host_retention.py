@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import shutil
 import subprocess
+from collections.abc import Callable
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
@@ -91,14 +92,41 @@ def _cache_bytes(path: Path) -> int | None:
     return stats[1] if stats else None
 
 
-def _clear_when_over(name: str, path: Path | None, max_gb: float, clear: list[str], *, timeout: int = 600) -> dict[str, object]:
-    """Run ``clear`` once the cache at ``path`` is larger than ``max_gb``; a cache that cannot be measured is cleared too."""
+def _empty_cache_dir(path: Path) -> None:
+    """Remove everything inside ``path`` but keep the directory (it is a link target with its own mode and ACL)."""
+    root = path.resolve()
+    for child in root.iterdir():
+        if child.is_symlink() or not child.is_dir():
+            child.unlink()
+        else:
+            shutil.rmtree(child)
+
+
+def _clear_when_over(
+    name: str,
+    path: Path | None,
+    max_gb: float,
+    clear: list[str],
+    *,
+    timeout: int = 600,
+    clear_fn: Callable[[], None] | None = None,
+) -> dict[str, object]:
+    """Clear the cache at ``path`` once it is larger than ``max_gb``; a cache that cannot be measured is cleared too.
+
+    ``clear`` is the command; ``clear_fn`` replaces it for tools whose own clean removes the cache root.
+    """
     if path is None or not path.exists():
         return {"status": "skipped", "reason": f"no {name}"}
     size = _cache_bytes(path)
     limit = int(max_gb * _BYTES_PER_GB)
     if size is not None and size <= limit:
         return {"status": "kept", "size_bytes": size, "limit_bytes": limit}
+    if clear_fn is not None:
+        try:
+            clear_fn()
+        except OSError as exc:
+            return {"status": "error", "error": str(exc)}
+        return {"status": "success", "size_bytes": size, "limit_bytes": limit}
     try:
         proc = _run_command(clear, timeout=timeout)
     except (OSError, subprocess.TimeoutExpired) as exc:
@@ -132,7 +160,8 @@ def _uv_cache_bounded(policy: HostRetentionPolicy) -> dict[str, object]:
     pruned = _uv_cache_prune()
     if pruned.get("status") != "success":
         return pruned
-    cleared = _clear_when_over("uv cache", UV_CACHE, policy.uv_cache_max_gb, ["uv", "cache", "clean", "--cache-dir", str(UV_CACHE)])
+    # `uv cache clean` deletes the cache root itself, which dangles ~/.cache/uv; empty the directory instead.
+    cleared = _clear_when_over("uv cache", UV_CACHE, policy.uv_cache_max_gb, [], clear_fn=lambda: _empty_cache_dir(UV_CACHE))
     return {**cleared, "pruned": True}
 
 

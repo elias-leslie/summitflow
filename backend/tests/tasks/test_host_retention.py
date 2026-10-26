@@ -158,7 +158,8 @@ def test_uv_cache_over_its_cap_is_cleared_after_the_prune(mocker, tmp_path: Path
     tiny = host_retention.HostRetentionPolicy(uv_cache_max_gb=1e-9)
     result = host_retention._uv_cache_bounded(tiny)
     assert result["status"] == "success" and result["pruned"] is True
-    assert seen == [["uv", "cache", "prune"], ["uv", "cache", "clean", "--cache-dir", str(cache)]]
+    assert seen == [["uv", "cache", "prune"]]
+    assert cache.is_dir() and list(cache.iterdir()) == []  # emptied, never removed: ~/.cache/uv links to it
     seen.clear()
     assert host_retention._uv_cache_bounded(host_retention.HostRetentionPolicy())["status"] == "kept"
     assert seen == [["uv", "cache", "prune"]]
