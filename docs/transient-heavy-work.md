@@ -133,3 +133,33 @@ identity. These controls are advisory workstation scheduling, never security or
 publication authorization. Focused fixtures cover real cross-process CLI races,
 inherited siblings/threads, fork reentry, provenance, unsafe storage, owner exit,
 timeout cleanup, descriptor cleanup and child-only priority.
+
+## Long disk- and network-bound jobs
+
+The lane serializes short CPU/memory-heavy work. A job that runs for minutes
+mostly reading or writing disk (restore tests, bulk downloads, large copies)
+must not hold it: on 2026-10-24 one restore test held the heavy slot for 32
+minutes and accounted for most agent queue time that fortnight. Run such jobs
+outside admission, throttled, with output under `/srv/scratch`:
+
+```sh
+sudo systemd-run --no-ask-password --uid=1000 --gid=1000 --wait --pipe --collect \
+  -p Nice=19 -p MemoryHigh=4G -p "IOWriteBandwidthMax=/dev/nvme0n1 150M" -- <argv...>
+```
+
+The user manager has no delegated `io` controller and the NVMe scheduler is
+`none`, so `systemd-run --user` I/O limits and `IOSchedulingClass=idle` have no
+effect; the root-launched unit's `io.max` does. It caps buffered writes
+(measured: 45 MB/s under a 50M cap); btrfs `O_DIRECT` writes bypass it.
+
+Where agent installs and tool runs go (2026-10-26 review: installs were about
+1% of agent command time; queue waits, not installs, caused the delays):
+
+- Repo dependencies: that checkout's own environment from its lockfile; no lane.
+- One-off CLIs: `uvx`/`npx`; a tool used repeatedly joins the project's dev group.
+- Locked clean-install proof: `st check cleanroom --deps` (about 5 s warm, 9 s cold).
+- Tests, builds, deploys: `st check` / `st service rebuild`, which take admission.
+- Long disk/network jobs: the throttled unit above, never the lane.
+- Unreviewed code, another OS, or root/systemd/docker services: the project's
+  existing lab guests, else a disposable clone of the VM template.
+- Workstation `apt`/global installs only for tools the host should keep.

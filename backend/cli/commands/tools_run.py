@@ -16,7 +16,10 @@ from ..output import output_error
     surface="st.tools.run",
     cmd="st tools run --label TEXT -- <argv...>",
     when="run an external tool through shared heavy-work admission",
-    precautions=("Resource admission only; label is public, so omit secrets. Child argv runs without a shell and inherits admission.",),
+    precautions=(
+        "Resource admission only; label is public, so omit secrets. Child argv runs without a shell and inherits admission.",
+        "Not for long disk/network jobs (restores, bulk downloads): run them throttled outside the lane, see docs/transient-heavy-work.md.",
+    ),
 )
 def run(
     command: Annotated[list[str], typer.Argument(help="Executable and arguments; put -- before the executable.")],
