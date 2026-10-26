@@ -150,6 +150,31 @@ describe('DriveCard', () => {
     expect(screen.getByText('Waiting')).toBeInTheDocument()
   })
 
+  it('calls a read-back that ran out of time out of time, not failed', () => {
+    render(
+      <DriveCard
+        overview={overview({
+          offsite: {
+            check: {
+              status: 'partial',
+              sample: '500M',
+              checked_at: ago(20),
+              failures: 0,
+            },
+            spot_restore: { at: ago(20), status: 'partial' },
+          },
+        })}
+      />,
+    )
+    expect(
+      screen.getByText('Out of time 20h ago; reads a new sample next week'),
+    ).toBeInTheDocument()
+    expect(
+      screen.getByText('Out of time 20h ago; tries again next week'),
+    ).toBeInTheDocument()
+    expect(screen.queryByText(/Failed/)).not.toBeInTheDocument()
+  })
+
   it('says when a copy is running', () => {
     render(
       <DriveCard
