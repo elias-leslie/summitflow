@@ -262,21 +262,21 @@ class Repo:
         self.runtime = runtime
 
     def restic(self, *args: str, root: bool = False, binds: Sequence[tuple[str, str]] = (), timeout: float = SHORT_TIMEOUT_SECONDS,
-               permanent_delete: bool = False, extra_env: Mapping[str, str] | None = None) -> Result:
+               permanent_delete: bool = False, extra_env: Mapping[str, str] | None = None, capture: bool = False) -> Result:
         command = _restic_args(self.target, self.runtime, *args, permanent_delete=permanent_delete, root=root)
         env = _env(self.target, self.runtime, root=root, extra=extra_env)
         if root:
             command = _as_root(command, env, binds)
             env = {"PATH": env["PATH"]}
-        result = run_process(command, env=env, timeout=timeout)
+        result = run_process(command, env=env, timeout=timeout, capture=capture)
         if result.returncode == 11 and "unlock" not in args:
             # A killed run leaves a stale lock; unlock removes only stale ones (never a live holder's).
             self.restic("unlock", timeout=SHORT_TIMEOUT_SECONDS)
-            result = run_process(command, env=env, timeout=timeout)
+            result = run_process(command, env=env, timeout=timeout, capture=capture)
         return result
 
     def json(self, *args: str, timeout: float = SHORT_TIMEOUT_SECONDS) -> Any:
-        result = self.restic(*args, timeout=timeout)
+        result = self.restic(*args, timeout=timeout, capture=True)  # a snapshot listing is one long line the tail would cut
         if result.returncode:
             raise OffsiteError(f"restic {args[0]} failed (exit {result.returncode}): {_last_error(result)}")
         try:
@@ -475,13 +475,8 @@ def spot_restore(repo: Repo, state: dict[str, Any], jobs: Mapping[str, Any]) -> 
     return record
 
 
-def _spot_project(repo: Repo, snapshot_id: str, problems: list[str]) -> dict[str, Any]:
-    projects = [tag[8:] for tag in project_tags()]
-    if not projects:
-        return {"status": "skipped"}
-    project = projects[_now().toordinal() % len(projects)]
-    base = f"{get_workspaces_root() / 'projects' / project}"
-    listing = repo.restic("ls", "--long", snapshot_id, base, timeout=SHORT_TIMEOUT_SECONDS)
+def _small_files(repo: Repo, snapshot_id: str, base: str) -> list[str]:
+    listing = repo.restic("ls", "--json", snapshot_id, base, timeout=SHORT_TIMEOUT_SECONDS, capture=True)  # one level: restic ls is not recursive
     files = []
     for line in listing.stdout.splitlines():
         try:
@@ -490,9 +485,22 @@ def _spot_project(repo: Repo, snapshot_id: str, problems: list[str]) -> dict[str
             continue
         if node.get("type") == "file" and node.get("path", "").rsplit("/", 1)[0] == base and 0 < int(node.get("size") or 0) <= 262144:
             files.append(node["path"])
-    files = files[:12]
-    if not files:
-        return {"project": project, "status": "skipped", "reason": "no small top-level files"}
+    return files[:12]
+
+
+def _spot_project(repo: Repo, snapshot_id: str, problems: list[str]) -> dict[str, Any]:
+    projects = [tag[8:] for tag in project_tags()]
+    if not projects:
+        return {"status": "skipped"}
+    start = _now().toordinal() % len(projects)
+    for step in range(len(projects)):  # the day's pick, or the next project that has small top-level files
+        project = projects[(start + step) % len(projects)]
+        base = f"{get_workspaces_root() / 'projects' / project}"
+        files = _small_files(repo, snapshot_id, base)
+        if files:
+            break
+    else:
+        return {"status": "skipped", "reason": "no project has small top-level files"}
     target = repo.runtime.root / f"spot-{secrets.token_hex(4)}"
     try:
         target.mkdir(mode=0o700)

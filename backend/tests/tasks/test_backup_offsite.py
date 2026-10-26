@@ -198,3 +198,25 @@ def test_the_redis_dump_goes_through_a_temporary_file_because_a_pipe_fails_redis
     command, env = redis_dump_invocation()
     assert command[:2] == ["sh", "-c"] and "/dev/stdout" not in " ".join(command) and "fixture-secret" not in " ".join(command)
     assert env["REDISCLI_AUTH"] == "fixture-secret"
+
+
+def test_a_snapshot_listing_is_read_whole_not_as_a_tail(monkeypatch: pytest.MonkeyPatch) -> None:
+    seen: list[bool] = []
+
+    def fake_run(command: Any, *, env: Any, timeout: float, capture: bool = False, **_: Any) -> Any:
+        seen.append(capture)
+        return offsite.Result(0, {}, json.dumps([{"id": "x" * 5000}]))
+
+    monkeypatch.setattr(offsite, "run_process", fake_run)
+    monkeypatch.setattr(offsite, "_restic_args", lambda *a, **k: ["restic"])
+    monkeypatch.setattr(offsite, "_env", lambda *a, **k: {"PATH": "/usr/bin"})
+    assert offsite.Repo(SimpleNamespace(), SimpleNamespace()).json("snapshots")[0]["id"] == "x" * 5000  # type: ignore[arg-type]
+    assert seen == [True]
+
+
+def test_the_spot_restore_picks_small_top_level_files_of_a_project() -> None:
+    lines = [{"type": "dir", "path": "/w/p"}, {"type": "file", "path": "/w/p/a.md", "size": 10}, {"type": "file", "path": "/w/p/big.bin", "size": 10**9},
+             {"type": "file", "path": "/w/p/sub/b.md", "size": 10}, {"type": "file", "path": "/w/p/empty", "size": 0}]
+    repo = FakeRepo(offsite.Result(0, {}, "\n".join(json.dumps(line) for line in lines)))
+    assert offsite._small_files(repo, "snap", "/w/p") == ["/w/p/a.md"]  # type: ignore[arg-type]
+    assert repo.calls[0][:2] == ("ls", "--json")
