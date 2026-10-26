@@ -253,3 +253,13 @@ def test_only_backups_and_listings_use_the_persistent_cache() -> None:
     for command in ("backup", "snapshots", "forget", "ls"):
         arguments = offsite._restic_args(target, runtime, command)
         assert arguments[arguments.index("--cache-dir") + 1] == str(runtime.cache) and "--no-cache" not in arguments
+
+
+def test_a_project_restore_uses_the_path_the_snapshot_recorded(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    from app.tasks import backup_offsite_restore as restore
+
+    repo = FakeRepo(offsite.Result(0, {}))
+    monkeypatch.setattr(restore, "open_repo", lambda: repo)
+    monkeypatch.setattr(restore, "snapshots", lambda *_a, **_k: [{"id": "abc", "full_id": "abc" * 21 + "d", "time": "2026-10-26T00:00:00+00:00", "paths": ["/srv/workspaces"]}])
+    result = restore.restore("demo", tmp_path / "out", dry_run=True)
+    assert result["path"] == "/srv/workspaces/projects/demo"

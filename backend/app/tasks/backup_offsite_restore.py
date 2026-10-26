@@ -94,6 +94,9 @@ def restore(selector: str, target: Path, *, snapshot: str | None = None, at: dat
     repo = open_repo()
     wanted = resolve(selector)
     chosen = _pick(snapshots(selector, limit=1000, repo=repo), snapshot, at)
+    if wanted["kind"] == "project" and chosen.get("paths"):
+        # The snapshot knows where the workspaces were; the caller's environment may not (a shell without the service env).
+        wanted["path"] = f"{str(chosen['paths'][0]).rstrip('/')}/projects/{selector}"
     result: dict[str, Any] = {"selector": selector, "snapshot": chosen["id"], "snapshot_time": chosen["time"], "path": wanted["path"],
                               "target": str(target), "dry_run": dry_run}
     if dry_run:
