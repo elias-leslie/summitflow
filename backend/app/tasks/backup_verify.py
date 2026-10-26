@@ -53,6 +53,7 @@ DUMP_BOUND_SECONDS = 20 * 60
 PROJECT_BOUND_SECONDS = 10 * 60
 PRUNE_BOUND_SECONDS = 30 * 60
 PRUNE_REPACK_LIMIT = "2G"  # per run; a prune that stops at its bound resumes next week
+PRUNE_MIN_FREE_BYTES = 10 * 1024**3  # prune caches every snapshot's trees (~2.5 GB with 2.4k snapshots); it waits a week when scratch is this tight
 TIMED_OUT = 124  # run_process's exit status for a command stopped at its bound
 
 
@@ -140,6 +141,8 @@ def spot_restore(repo: Repo, jobs: Mapping[str, Any], previous: Mapping[str, Any
 
 def prune(repo: Repo, now_iso: str) -> dict[str, Any]:
     """Free the space forgotten snapshots held, in small repacks. Out of time is fine: the next week continues."""
+    if shutil.disk_usage(repo.runtime.cache).free < PRUNE_MIN_FREE_BYTES:
+        return {"prune_partial_at": now_iso, "prune_error": None}
     result = repo.restic("prune", "--max-unused", "10%", "--max-repack-size", PRUNE_REPACK_LIMIT, timeout=PRUNE_BOUND_SECONDS, permanent_delete=True)
     if result.returncode == 0:
         return {"pruned_at": now_iso, "prune_error": None}

@@ -20,7 +20,7 @@ class Repo:
     def __init__(self, *results: Any) -> None:
         self.results = list(results)
         self.calls: list[tuple[tuple[Any, ...], dict[str, Any]]] = []
-        self.runtime = SimpleNamespace(root=Path("/nonexistent"))
+        self.runtime = SimpleNamespace(root=Path("/nonexistent"), cache=Path("/tmp"))
 
     def restic(self, *args: str, **kwargs: Any) -> Any:
         self.calls.append((args, kwargs))
@@ -72,7 +72,8 @@ def test_the_dump_check_is_partial_when_it_runs_out_of_time_and_failed_without_i
     assert whole["status"] == "ok" and whole["failures"] == 0
 
 
-def test_prune_is_small_bounded_and_resumes_next_week() -> None:
+def test_prune_is_small_bounded_and_resumes_next_week(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(verify.shutil, "disk_usage", lambda _path: SimpleNamespace(free=10**12))
     repo = Repo(_result(124), _result(0), _result(1, stderr="lock"))
     assert verify.prune(repo, "t") == {"prune_partial_at": "t", "prune_error": None}  # type: ignore[arg-type]
     assert verify.prune(repo, "t") == {"pruned_at": "t", "prune_error": None}  # type: ignore[arg-type]
@@ -103,3 +104,9 @@ def test_the_weekly_unit_is_low_priority_bounded_and_waits_for_the_backup() -> N
     assert "Nice=19" in unit and "CPUWeight=10" in unit and "TimeoutStartSec=2h" in unit and "MemoryMax=" in unit
     assert "is-active --quiet summitflow-host-backup.service" in unit and "backup_verify" in unit
     assert "OnCalendar=Sun" in (UNITS / "summitflow-host-verify.timer").read_text()
+
+
+def test_prune_waits_a_week_instead_of_filling_a_tight_scratch(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(verify.shutil, "disk_usage", lambda _path: SimpleNamespace(free=verify.PRUNE_MIN_FREE_BYTES - 1))
+    repo = Repo()
+    assert verify.prune(repo, "t") == {"prune_partial_at": "t", "prune_error": None} and repo.calls == []  # type: ignore[arg-type]
