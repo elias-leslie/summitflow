@@ -225,31 +225,6 @@
       "environment": []
     },
     {
-      "id": "agent-hub.persona",
-      "owner": "agent-hub",
-      "namespace": "persona",
-      "manifest": "extensions/persona.json",
-      "executable": "backend/.venv/bin/agent-hub-st",
-      "arguments": [
-        "persona"
-      ],
-      "grant": {
-        "enabled": true,
-        "effects": [
-          "network",
-          "read-remote",
-          "write-remote",
-          "read-local",
-          "write-local",
-          "credentials",
-          "process"
-        ]
-      },
-      "environment": [
-        "EDITOR"
-      ]
-    },
-    {
       "id": "agent-hub.prompt",
       "owner": "agent-hub",
       "namespace": "prompt",

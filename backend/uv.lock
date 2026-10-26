@@ -45,8 +45,8 @@ provides-extras = ["dev"]
 
 [[package]]
 name = "agent-hub-st"
-version = "0.2.3"
-source = { path = "../docker/workspace-packages/agent_hub_st-0.2.3-py3-none-any.whl" }
+version = "0.3.0"
+source = { path = "../docker/workspace-packages/agent_hub_st-0.3.0-py3-none-any.whl" }
 dependencies = [
     { name = "agent-hub-client" },
     { name = "httpx" },
@@ -55,7 +55,7 @@ dependencies = [
     { name = "typer" },
 ]
 wheels = [
-    { filename = "agent_hub_st-0.2.3-py3-none-any.whl", hash = "sha256:e86fb90d51fa29d0e15ce5c19950aaa103c956b549c26ecc1f55768c6d349898" },
+    { filename = "agent_hub_st-0.3.0-py3-none-any.whl", hash = "sha256:be4c89825ceb2eff2d118eddd5e519dca753df29e73673bfcf99793d491d7b1f" },
 ]
 
 [package.metadata]
@@ -518,13 +518,13 @@ dependencies = [
     { name = "typer" },
 ]
 wheels = [
-    { filename = "design_tools-0.1.0-py3-none-any.whl", hash = "sha256:6e8023dff9cbbdce17c6cc42fbc14b5388e730af68ef7910f366def20e672370" },
+    { filename = "design_tools-0.1.0-py3-none-any.whl", hash = "sha256:686fcb31b26229c522f30c32804e1b568d3680219abc35ea98891b172e22e3ed" },
 ]
 
 [package.metadata]
 requires-dist = [
     { name = "agent-hub-client", specifier = "==0.7.0" },
-    { name = "agent-hub-st", specifier = "==0.2.3" },
+    { name = "agent-hub-st", specifier = "==0.3.0" },
     { name = "defusedxml", specifier = ">=0.7.1" },
     { name = "pillow", specifier = ">=11.3.0" },
     { name = "psycopg", extras = ["binary"], specifier = ">=3.2.0" },
@@ -1946,7 +1946,7 @@ dev = [
 [package.metadata]
 requires-dist = [
     { name = "agent-hub-client", path = "../docker/workspace-packages/agent_hub_client-0.7.0-py3-none-any.whl" },
-    { name = "agent-hub-st", path = "../docker/workspace-packages/agent_hub_st-0.2.3-py3-none-any.whl" },
+    { name = "agent-hub-st", path = "../docker/workspace-packages/agent_hub_st-0.3.0-py3-none-any.whl" },
     { name = "alembic", specifier = ">=1.13.0" },
     { name = "code-intelligence", path = "../docker/workspace-packages/code_intelligence-0.1.0-py3-none-any.whl" },
     { name = "croniter", specifier = ">=3.0.0" },

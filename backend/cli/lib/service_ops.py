@@ -1687,7 +1687,7 @@ def _caller_identity_env() -> list[tuple[str, str]]:
         return [("CLAUDE_SESSION_ID", session_id)]
     if provider == "codex_cli":
         return [("CODEX_SESSION_ID", session_id)]
-    if provider in ("agent_hub_persona", "agent_hub_specialist"):
+    if provider == "agent_hub_specialist":
         return [("AGENT_HUB_AGENT_SLUG", slug), ("AGENT_HUB_SESSION_ID", session_id)]
     if provider == "pi":
         return [("PI_SESSION_ID", session_id)]

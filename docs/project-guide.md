@@ -98,7 +98,7 @@ UI (~23 pages), and ~33 Hatchet workflows. Output is compact JSON by default, wi
 - `st agent` (real tool-loop sessions), `st agents` (agent definitions),
   `st complete` (completions with memory injection / thinking / streaming),
   `st claude` (Claude Code dispatch: task / batch / orchestrator), `st models`,
-  `st prompt` (CRUD + revisions + YAML import/export), `st persona` (manage "Jenny"),
+  `st prompt` (CRUD + revisions + YAML import/export),
   `st memory` (save/search/tier/export), `st sessions` + `st session-events`
   (cross-project agent observability and ownership lanes), `st tools` (operator
   tool catalog + cost/governance telemetry), `st lease` (file-level coordination

@@ -142,8 +142,7 @@ def identify_agent(*, native: bool = True) -> tuple[str, str, str, str]:
     ah_slug = os.environ.get("AGENT_HUB_AGENT_SLUG")
     ah_sid = session("AGENT_HUB_SESSION_ID")
     if ah_slug and re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._-]{0,127}", ah_slug) and ah_sid:
-        provider = "agent_hub_persona" if ah_slug == "jenny" else "agent_hub_specialist"
-        return f"{ah_slug}:{short(ah_sid)}", ah_slug, ah_sid, provider
+        return f"{ah_slug}:{short(ah_sid)}", ah_slug, ah_sid, "agent_hub_specialist"
     pi_sid = session("PI_SESSION_ID")
     if pi_sid:
         return f"pi:{short(pi_sid)}", "pi", pi_sid, "pi"

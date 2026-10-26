@@ -34,7 +34,7 @@ the overall migration.
 | 9 | wiki | vault-tools | new | Filesystem/search/lint/ingest engine; canonical vault data preserved. |
 | 10 | design | design-tools | new | CLI plus reusable generation/asset behavior; preserve project asset/storage contracts. |
 | 11 | pulsebrief | Retired with owner approval | legacy | Investigation found no engine, owning project, callers or schedules; remove the broken wrapper and stale discovery instead of fabricating a replacement. |
-| 12 | Agent Hub administration | agent-hub | existing | Models, complete, memory, prompt, persona, agents, feedback, note and mandates; ST agent task/session orchestration remains core. |
+| 12 | Agent Hub administration | agent-hub | existing | Models, complete, memory, prompt, agents, feedback, note and mandates; ST agent task/session orchestration remains core. |
 | 13 | skills | agent-hub | existing | Distribution and harness tooling; canonical instructions remain with Agent Hub. |
 
 ## Baseline evidence (before migration)
