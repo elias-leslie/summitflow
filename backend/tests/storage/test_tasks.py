@@ -604,6 +604,31 @@ class TestPurgeTerminalTasks:
         # Recently completed — should NOT be purged
         assert task_store.get_task(task["id"]) is not None
 
+    def test_purge_keeps_unresolved_repair_tasks_and_purges_the_rest(
+        self, project_id: str, cleanup_task: Callable[[str], None]
+    ) -> None:
+        from psycopg.types.json import Jsonb
+
+        repair = task_store.create_task(project_id, "Closed with an open finding")
+        other = task_store.create_task(project_id, "Plain cancelled")
+        cleanup_task(repair["id"])
+        for task in (repair, other):
+            task_store.update_task_status(task["id"], "cancelled")
+        with get_connection() as conn, conn.cursor() as cur:
+            cur.execute(
+                "UPDATE tasks SET labels = %s, verification_result = %s WHERE id = %s",
+                (["publication-repair"], Jsonb({"publication_repair": {"codeql": {"state": "open"}}}), repair["id"]),
+            )
+            conn.commit()
+
+        result = task_store.purge_terminal_tasks()
+
+        # One unresolved repair finding no longer fails the whole retention sweep
+        assert result["cancelled"] >= 1
+        assert task_store.get_task(other["id"]) is None
+        assert task_store.get_task(repair["id"]) is not None
+        assert task_store.get_deleted_task_context(repair["id"]) is None
+
 
 class TestShortTaskIdResolution:
     def test_get_task_accepts_short_suffix(self, project_id: str) -> None:

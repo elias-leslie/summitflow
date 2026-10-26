@@ -83,17 +83,23 @@ def archive_task_snapshots(
     *,
     deletion_source: str,
     deletion_reason: str | None = None,
+    skip_unresolved_repairs: bool = False,
 ) -> list[str]:
-    """Persist forensic task snapshots before rows are deleted."""
+    """Persist forensic task snapshots before rows are deleted; returns the ids archived (the ones to delete).
+    A task with unresolved repair findings refuses the deletion, or, for a retention sweep
+    (skip_unresolved_repairs), is left out and kept."""
     resolved_ids = [canonicalize_task_id(task_id) for task_id in task_ids]
     snapshots = _load_task_snapshots(cur, resolved_ids)
     if not snapshots:
         return []
 
+    archived: list[str] = []
     for task_id, snapshot in snapshots.items():
         task = snapshot["task"]
         from .publication_repair import unresolved_repair
         if unresolved_repair(task):
+            if skip_unresolved_repairs:
+                continue
             raise ValueError("Cannot delete unresolved repair findings; resolve them with evidence first")
         cur.execute(
             """
@@ -114,7 +120,8 @@ def archive_task_snapshots(
                 Jsonb(snapshot),
             ),
         )
-    return list(snapshots)
+        archived.append(task_id)
+    return archived
 
 
 def get_deleted_task_context(task_id: str) -> dict[str, Any] | None:
