@@ -110,57 +110,78 @@ def test_only_fixable_runtime_findings_are_reported(tmp_path: Path) -> None:
 
 
 @pytest.fixture
-def stored(monkeypatch: pytest.MonkeyPatch) -> dict[str, dict[str, Any]]:
-    configs: dict[str, dict[str, Any]] = {"summitflow": {}, "other": {}}
-    monkeypatch.setattr("app.storage.agent_configs.get_agent_config", lambda project_id: dict(configs[project_id]))
-    monkeypatch.setattr("app.storage.agent_configs.update_agent_config",
-                        lambda project_id, config: configs[project_id].update(config))
+def two_projects(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(alert, "_projects", lambda ids: [("summitflow", Path("/a")), ("other", Path("/b"))])
-    return configs
 
 
-def finding(package_name: str, advisory: str) -> dict[str, str]:
-    return {"package": package_name, "version": "1.0", "fixed": "1.1", "advisory": advisory, "lockfile": "uv.lock"}
+def finding(package_name: str, advisory: str, version: str = "1.0", fixed: str = "1.1") -> dict[str, str]:
+    return {"package": package_name, "version": version, "fixed": fixed, "advisory": advisory, "lockfile": "uv.lock"}
 
 
-def test_each_new_finding_is_pushed_once_and_a_cleared_one_can_return(
-        monkeypatch: pytest.MonkeyPatch, stored: dict[str, dict[str, Any]]) -> None:
-    scans = {"summitflow": [finding("jinja2", "A-1"), finding("flask", "A-2")], "other": [finding("jinja2", "A-1")]}
+def test_one_summary_push_covers_every_project(monkeypatch: pytest.MonkeyPatch, two_projects: None) -> None:
+    scans = {
+        Path("/a"): [finding("aiohttp", "A-1", "3.14.3", "3.14.4"), finding("aiohttp", "A-2", "3.14.3", "3.14.4"),
+                     finding("jinja2", "A-3", "2.10", "2.11.3"), finding("flask", "A-4")],
+        Path("/b"): [finding("lodash", "A-5", "4.17.15", "4.17.21")],
+    }
     pushed: list[tuple[str, str, str]] = []
-    monkeypatch.setattr(alert, "scan_project", lambda root: scans["summitflow" if root == Path("/a") else "other"])
-    monkeypatch.setattr(alert, "push_alert", lambda project, item: pushed.append((project, item["package"], item["advisory"])) or True)
+    monkeypatch.setattr(alert, "scan_project", lambda root: scans[root])
+    monkeypatch.setattr(alert, "push_summary",
+                        lambda title, message, *, night: pushed.append((title, message, night)) or True)
 
-    first = alert.run_nightly_security_alert()
-    assert first["alerts_sent"] == 3 and len(pushed) == 3  # the same advisory in two projects is two alerts
-    assert alert.run_nightly_security_alert()["alerts_sent"] == 0  # nothing new the next night
-
-    scans["summitflow"] = [finding("jinja2", "A-1")]  # flask fixed, then regresses
-    alert.run_nightly_security_alert()
-    assert stored["summitflow"]["security_alerts_seen"] == ["jinja2|A-1"]
-    scans["summitflow"] = [finding("jinja2", "A-1"), finding("flask", "A-2")]
-    assert alert.run_nightly_security_alert()["alerts_sent"] == 1
-
-
-def test_failed_push_is_retried_and_the_nightly_cap_defers_the_rest(
-        monkeypatch: pytest.MonkeyPatch, stored: dict[str, dict[str, Any]]) -> None:
-    scans = [finding("a", "1"), finding("b", "2"), finding("c", "3")]
-    monkeypatch.setattr(alert, "scan_project", lambda root: scans if root == Path("/a") else [])
-    outcomes = iter([False, True, True])
-    monkeypatch.setattr(alert, "push_alert", lambda project, item: next(outcomes))
-    stored["summitflow"]["security_alert_max_per_run"] = 2
-    assert alert.run_nightly_security_alert()["alerts_sent"] == 1  # the failed push spent budget; "c" waits for the next night
-    assert stored["summitflow"]["security_alerts_seen"] == ["b|2"]
-
-
-def test_a_failed_scan_changes_nothing(monkeypatch: pytest.MonkeyPatch, stored: dict[str, dict[str, Any]]) -> None:
-    stored["other"]["security_alerts_seen"] = ["x|1"]
-    monkeypatch.setattr(alert, "scan_project", lambda root: None)
     result = alert.run_nightly_security_alert()
-    assert [row["state"] for row in result["projects"]] == ["scan_failed", "scan_failed"]
-    assert stored["other"]["security_alerts_seen"] == ["x|1"]
+
+    assert len(pushed) == 1 and result["alerts_sent"] == 1
+    assert pushed[0][1].splitlines() == [
+        "5 fixable security advisories in 2 projects.",
+        "other: 1 package, lodash 4.17.15 -> 4.17.21",
+        "summitflow: 3 packages, aiohttp 3.14.3 -> 3.14.4, jinja2 2.10 -> 2.11.3, +1 more",
+    ]
+    assert result["summary"] == pushed[0][1]
+    assert len(pushed[0][1].splitlines()[0]) <= 180  # the lock-screen part of a Nightshift push
 
 
-def test_push_uses_nightshift_with_a_key_per_project_package_advisory(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_the_same_findings_are_summarized_again_the_next_night(monkeypatch: pytest.MonkeyPatch, two_projects: None) -> None:
+    pushed: list[str] = []
+    monkeypatch.setattr(alert, "scan_project", lambda root: [finding("jinja2", "A-1")] if root == Path("/a") else [])
+    monkeypatch.setattr(alert, "push_summary", lambda title, message, *, night: pushed.append(message) or True)
+    alert.run_nightly_security_alert()
+    alert.run_nightly_security_alert()
+    assert len(pushed) == 2 and pushed[0] == pushed[1]
+    assert pushed[0].startswith("1 fixable security advisory in 1 project.")
+
+
+def test_nothing_is_sent_when_every_project_is_clean(monkeypatch: pytest.MonkeyPatch, two_projects: None) -> None:
+    monkeypatch.setattr(alert, "scan_project", lambda root: [])
+    monkeypatch.setattr(alert, "push_summary", lambda *args, **kwargs: pytest.fail("clean night must not push"))
+    result = alert.run_nightly_security_alert()
+    assert result["alerts_sent"] == 0 and "summary" not in result
+    assert [row["state"] for row in result["projects"]] == ["scanned", "scanned"]
+
+
+def test_dry_run_builds_the_summary_without_pushing(monkeypatch: pytest.MonkeyPatch, two_projects: None) -> None:
+    monkeypatch.setattr(alert, "scan_project", lambda root: [finding("jinja2", "A-1")])
+    monkeypatch.setattr(alert, "push_summary", lambda *args, **kwargs: pytest.fail("dry run must not push"))
+    result = alert.run_nightly_security_alert(send=False)
+    assert result["alerts_sent"] == 0 and result["summary"].startswith("2 fixable security advisories in 2 projects.")
+
+
+def test_a_failed_scan_is_skipped_and_the_rest_still_summarized(monkeypatch: pytest.MonkeyPatch, two_projects: None) -> None:
+    pushed: list[str] = []
+    monkeypatch.setattr(alert, "scan_project", lambda root: None if root == Path("/a") else [finding("lodash", "A-1")])
+    monkeypatch.setattr(alert, "push_summary", lambda title, message, *, night: pushed.append(message) or True)
+    result = alert.run_nightly_security_alert()
+    assert [row["state"] for row in result["projects"]] == ["scan_failed", "scanned"]
+    assert len(pushed) == 1 and "other: 1 package" in pushed[0]
+
+
+def test_a_very_long_summary_stays_inside_the_nightshift_detail_limit() -> None:
+    many = {f"project-{n:03d}": [finding(f"package-{n}", f"A-{n}")] for n in range(400)}
+    _, message = alert.summarize(many) or ("", "")
+    assert len(message) <= 4000 and message.endswith("+ more projects")
+
+
+def test_push_is_one_nightshift_call_keyed_by_the_night(monkeypatch: pytest.MonkeyPatch) -> None:
     calls: list[list[str]] = []
 
     class Done:
@@ -168,9 +189,9 @@ def test_push_uses_nightshift_with_a_key_per_project_package_advisory(monkeypatc
 
     monkeypatch.setattr(alert, "_nightshift", lambda: "/bin/nightshift")
     monkeypatch.setattr(alert.subprocess, "run", lambda command, **_: calls.append(command) or Done())
-    assert alert.push_alert("summitflow", finding("jinja2", "A-1"))
+    assert alert.push_summary("Security fixes available", "summary text", night="2026-10-28")
+    assert len(calls) == 1
     command = calls[0]
-    assert command[:2] == ["/bin/nightshift", "push"]
-    assert command[command.index("--key") + 1] == "dependency-advisory:summitflow:jinja2:A-1"
-    for expected in ("summitflow", "jinja2", "1.0", "1.1", "A-1"):
-        assert expected in command[-1]
+    assert command[:2] == ["/bin/nightshift", "push"] and command[-1] == "summary text"
+    assert command[command.index("--key") + 1] == "dependency-advisory-summary:2026-10-28"
+    assert command[command.index("--severity") + 1] == "warning"

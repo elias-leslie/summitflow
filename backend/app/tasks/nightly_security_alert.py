@@ -1,13 +1,11 @@
-"""Nightly security alert: one Nightshift push per new fixable runtime-dependency advisory.
+"""Nightly security alert: one Nightshift summary push per night for fixable runtime-dependency advisories.
 
 Each night the committed lockfiles (uv.lock, pnpm-lock.yaml, package-lock.json) of every active project go through
-the same osv-scanner invocation ``st check security`` uses, under heavy-work admission. A finding is alerted only
-when the package is a runtime dependency and the advisory names a fixed version above the locked one. Alerts go to
-Nightshift's PWA Web Push (``nightshift push``) and nowhere else, one per project + package + advisory id.
-
-Alerted ids live in the project's agent config (``security_alerts_seen``) and are pruned once a finding clears, so a
-regression alerts again. A push that fails is retried the next night. ``security_alert_max_per_run`` on the control
-project caps one night's pushes so the first run over a backlog cannot flood the phone; the rest follow the next night.
+the same osv-scanner invocation ``st check security`` uses, under heavy-work admission. A finding counts only when the
+package is a runtime dependency and the advisory names a fixed version above the locked one. After every project is
+scanned, at most one push goes to Nightshift's PWA Web Push (``nightshift push``) and nowhere else: how many fixable
+advisories in how many projects, then one line per project. Nothing is sent on a clean night. An advisory that stays
+unfixed shows up in the next night's summary again; that is the point, so nothing is remembered between nights.
 """
 
 from __future__ import annotations
@@ -18,6 +16,7 @@ import re
 import subprocess
 import tempfile
 import tomllib
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
@@ -30,8 +29,9 @@ from .nightly_publication import _projects
 logger = get_logger(__name__)
 
 LOCK_NAMES = ("uv.lock", "pnpm-lock.yaml", "package-lock.json")
-DEFAULT_MAX_ALERTS_PER_RUN = 10
-DEFAULT_REPEAT_QUIET_SECONDS = 30 * 24 * 3600  # Nightshift's own repeat guard; the seen list is the real dedupe
+SUMMARY_QUIET_SECONDS = 20 * 3600  # a hand re-run the same night stays quiet; the key carries the date
+SUMMARY_PACKAGES_SHOWN = 2  # packages named per project line before "+N more"
+SUMMARY_MAX_CHARS = 3900  # Nightshift keeps 4000 characters for the detail page; the lock screen shows the first 180
 SCAN_TIMEOUT_SECONDS = 600
 PUSH_TIMEOUT_SECONDS = 60
 
@@ -207,18 +207,39 @@ def scan_project(root: Path) -> list[dict[str, str]] | None:
         return findings_from_osv(data, base)
 
 
-def push_alert(project_id: str, finding: dict[str, str], *, quiet_seconds: int = DEFAULT_REPEAT_QUIET_SECONDS) -> bool:
-    """Send one Nightshift Web Push; True when Nightshift accepted it."""
+def summarize(by_project: dict[str, list[dict[str, str]]]) -> tuple[str, str] | None:
+    """(title, message) for one night's fixable findings per project; None when there are none."""
+    by_project = {project: items for project, items in by_project.items() if items}
+    if not by_project:
+        return None
+    total = sum(len(items) for items in by_project.values())
+    count = len(by_project)
+    lines = [f"{total} fixable security {'advisory' if total == 1 else 'advisories'} in "
+             f"{count} {'project' if count == 1 else 'projects'}."]
+    for project, items in sorted(by_project.items()):
+        packages: dict[str, dict[str, str]] = {}
+        for item in items:
+            packages.setdefault(item["package"], item)
+        shown = [f"{item['package']} {item['version']} -> {item['fixed']}"
+                 for item in list(packages.values())[:SUMMARY_PACKAGES_SHOWN]]
+        more = len(packages) - len(shown)
+        noun = "package" if len(packages) == 1 else "packages"
+        lines.append(f"{project}: {len(packages)} {noun}, {', '.join(shown)}{f', +{more} more' if more else ''}")
+    while len("\n".join(lines)) > SUMMARY_MAX_CHARS and len(lines) > 2:
+        lines.pop()
+        lines[-1] = f"{lines[-1]}\n+ more projects"
+    return "Security fixes available", "\n".join(lines)
+
+
+def push_summary(title: str, message: str, *, night: str, quiet_seconds: int = SUMMARY_QUIET_SECONDS) -> bool:
+    """Send the one Nightshift Web Push; True when Nightshift accepted it."""
     binary = _nightshift()
     if binary is None:
         return False
-    message = (f"{project_id}: {finding['package']} {finding['version']} has advisory {finding['advisory']}. "
-               f"Fixed in {finding['fixed']} (found in {finding['lockfile']}).")
     try:
         result = subprocess.run(
-            [binary, "push", "--title", f"Security fix available: {project_id}", "--severity", "warning",
-             "--key", f"dependency-advisory:{project_id}:{finding['package']}:{finding['advisory']}",
-             "--cooldown", str(quiet_seconds), message],
+            [binary, "push", "--title", title, "--severity", "warning",
+             "--key", f"dependency-advisory-summary:{night}", "--cooldown", str(quiet_seconds), message],
             capture_output=True, text=True, timeout=PUSH_TIMEOUT_SECONDS, check=False,
         )
     except (OSError, subprocess.SubprocessError):
@@ -226,20 +247,10 @@ def push_alert(project_id: str, finding: dict[str, str], *, quiet_seconds: int =
     return result.returncode == 0
 
 
-def _max_alerts() -> int:
-    from ..services.schedule_registry import SUMMITFLOW_CONTROL_PROJECT_ID
-    from ..storage.agent_configs import get_agent_config
-
-    value = get_agent_config(SUMMITFLOW_CONTROL_PROJECT_ID).get("security_alert_max_per_run")
-    return value if isinstance(value, int) and value > 0 else DEFAULT_MAX_ALERTS_PER_RUN
-
-
 def run_nightly_security_alert(*, project_ids: list[str] | None = None, send: bool = True) -> dict[str, Any]:
-    """Scan each active project and push the findings not yet alerted; ``send=False`` only reports them."""
-    from ..storage.agent_configs import get_agent_config, update_agent_config
-
-    budget = _max_alerts()
+    """Scan each active project, then push one summary of the fixable findings; ``send=False`` only builds it."""
     rows: list[dict[str, Any]] = []
+    found: dict[str, list[dict[str, str]]] = {}
     for project_id, root in _projects(project_ids):
         try:
             findings = scan_project(root)
@@ -249,21 +260,11 @@ def run_nightly_security_alert(*, project_ids: list[str] | None = None, send: bo
         if findings is None:
             rows.append({"project_id": project_id, "state": "scan_failed"})
             continue
-        seen = set(get_agent_config(project_id).get("security_alerts_seen") or [])
-        current = {f"{item['package']}|{item['advisory']}" for item in findings}
-        new = [item for item in findings if f"{item['package']}|{item['advisory']}" not in seen]
-        sent = 0
-        alerted = seen & current
-        for item in new:
-            if not send or budget <= 0:
-                break
-            budget -= 1  # a failed push spends budget too, so a down Nightshift is not hammered
-            if push_alert(project_id, item):
-                alerted.add(f"{item['package']}|{item['advisory']}")
-                sent += 1
-        if send and alerted != set(get_agent_config(project_id).get("security_alerts_seen") or []):
-            update_agent_config(project_id, {"security_alerts_seen": sorted(alerted)})
-        rows.append({"project_id": project_id, "state": "scanned", "fixable_runtime": len(findings),
-                     "new": len(new), "sent": sent,
-                     **({"findings": new} if not send else {})})
-    return {"status": "completed", "alerts_sent": sum(row.get("sent", 0) for row in rows), "projects": rows}
+        found[project_id] = findings
+        rows.append({"project_id": project_id, "state": "scanned", "fixable_runtime": len(findings)})
+    summary = summarize(found)
+    sent = False
+    if summary and send:
+        sent = push_summary(*summary, night=datetime.now(UTC).date().isoformat())
+    return {"status": "completed", "alerts_sent": int(sent), "projects": rows,
+            **({"summary": summary[1]} if summary else {})}

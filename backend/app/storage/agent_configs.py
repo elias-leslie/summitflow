@@ -51,8 +51,6 @@ class AgentConfig(TypedDict, total=False):
     nightly_publication_enabled: bool  # Enable the overnight publication sweep (system kill switch)
     nightly_deep_lane_enabled: bool  # Enable the nightly deep lane (system kill switch)
     nightly_security_alert_enabled: bool  # Enable the nightly OSV security alert (system kill switch)
-    security_alert_max_per_run: int  # Control project: most Nightshift pushes one nightly security run sends
-    security_alerts_seen: list[str]  # Per project: "package|advisory" pairs already alerted
     publication_mode: str  # Per project: "nightly" (hourly push) or "manual" (default)
     publication_hold: dict[str, Any] | None  # {"through": OID | None, "reason", "set_at"}; keeps later commits local
     autonomous_max_tasks_per_day: int | None  # Max tasks per day
