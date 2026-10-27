@@ -14,11 +14,11 @@ from app.workflows.automation_dispatch import (
     automation_owner_run_wf,
 )
 from app.workflows.scheduled import (
-    dependency_reviews_wf,
     hatchet_retention_wf,
     health_monitor_wf,
     nightly_deep_lane_wf,
     nightly_publication_wf,
+    nightly_security_alert_wf,
     prod_smoke_test_wf,
     refresh_graphify_graphs_wf,
     refresh_precision_indexes_wf,
@@ -43,7 +43,6 @@ def _registered_workflows() -> list[Any]:
         # Scheduled
         reset_claims_wf,
         scan_projects_wf,
-        dependency_reviews_wf,
         refresh_precision_indexes_wf,
         refresh_graphify_graphs_wf,
         scheduled_backups_wf,
@@ -54,6 +53,7 @@ def _registered_workflows() -> list[Any]:
             runtime_hygiene_wf,
         nightly_publication_wf,
         nightly_deep_lane_wf,
+        nightly_security_alert_wf,
         # Utility
                     check_resolved_wf,
         page_health_wf,

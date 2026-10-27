@@ -153,6 +153,16 @@ def _lockfiles(root: Path, paths: list[str], changed_only: bool) -> list[Path]:
     return sorted(path for path in selected if path.is_file())
 
 
+def osv_command(lockfiles: list[Path]) -> list[str]:
+    """The one osv-scanner invocation, shared by `st check security` and the nightly security alert."""
+    command = ["osv-scanner", "scan", "source", "--format", "json", "--verbosity", "error"]
+    if os.environ.get("ST_OSV_OFFLINE", "").lower() in {"1", "true", "yes", "on"}:
+        command.extend(["--offline", "--offline-vulnerabilities"])
+    for lockfile in lockfiles:
+        command.extend(["--lockfile", str(lockfile)])
+    return command
+
+
 def run_local_security_check(
     name: str,
     root: Path,
@@ -194,20 +204,7 @@ def _run_local_security_check(
             if not lockfiles:
                 print("OSV:SKIP:osv:no_candidate_lockfiles")
                 continue
-            command = [
-                "osv-scanner",
-                "scan",
-                "source",
-                "--format",
-                "json",
-                "--verbosity",
-                "error",
-            ]
-            if os.environ.get("ST_OSV_OFFLINE", "").lower() in {"1", "true", "yes", "on"}:
-                command.extend(["--offline", "--offline-vulnerabilities"])
-            for lockfile in lockfiles:
-                command.extend(["--lockfile", str(lockfile)])
-            result = _run(command, root=root, name=scanner)
+            result = _run(osv_command(lockfiles), root=root, name=scanner)
             if result:
                 failures.append(result)
             continue

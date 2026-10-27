@@ -104,36 +104,6 @@ async def scan_projects_wf(input: EmptyInput, ctx: Context) -> dict[str, Any]:
 
 
 @hatchet.task(
-    name="summitflow-dependency-reviews",
-    input_validator=EmptyInput,
-    execution_timeout="1800s",
-    retries=1,
-    on_crons=[schedule_cron("dependency_reviews")],
-    concurrency=ConcurrencyExpression(
-        expression="'summitflow-dependency-reviews'",
-        max_runs=1,
-        limit_strategy=ConcurrencyLimitStrategy.CANCEL_NEWEST,
-    ),
-)
-async def dependency_reviews_wf(input: EmptyInput, ctx: Context) -> dict[str, Any]:
-    from ..services.dependency_management import review_due_dependencies
-    from ..storage.projects import list_projects, testing_project_ids
-
-    if not _system_schedule_enabled("dependency_reviews"):
-        return _disabled_schedule_result("dependency_reviews")
-    testing_ids = testing_project_ids()
-    totals = {"projects": 0, "due": 0, "new_evidence": 0, "unchanged": 0, "failed": 0}
-    for project in list_projects():
-        if project["id"] in testing_ids:
-            continue
-        outcome = await asyncio.to_thread(review_due_dependencies, project["id"])
-        totals["projects"] += 1
-        for key in ("due", "new_evidence", "unchanged", "failed"):
-            totals[key] += outcome[key]
-    return totals
-
-
-@hatchet.task(
     name="summitflow-refresh-precision-indexes",
     input_validator=EmptyInput,
     execution_timeout="1200s",
@@ -368,3 +338,23 @@ async def nightly_deep_lane_wf(input: EmptyInput, ctx: Context) -> dict[str, Any
     if not _system_schedule_enabled("nightly_deep_lane"):
         return _disabled_schedule_result("nightly_deep_lane")
     return await asyncio.to_thread(run_nightly_deep_lane)
+
+
+@hatchet.task(
+    name="summitflow-nightly-security-alert",
+    input_validator=EmptyInput,
+    execution_timeout="3600s",
+    retries=0,
+    on_crons=[schedule_cron("nightly_security_alert")],
+    concurrency=ConcurrencyExpression(
+        expression="'summitflow-nightly-security-alert'",
+        max_runs=1,
+        limit_strategy=ConcurrencyLimitStrategy.CANCEL_NEWEST,
+    ),
+)
+async def nightly_security_alert_wf(input: EmptyInput, ctx: Context) -> dict[str, Any]:
+    from ..tasks.nightly_security_alert import run_nightly_security_alert
+
+    if not _system_schedule_enabled("nightly_security_alert"):
+        return _disabled_schedule_result("nightly_security_alert")
+    return await asyncio.to_thread(run_nightly_security_alert)

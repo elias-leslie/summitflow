@@ -23,7 +23,6 @@ from .api import (
     backups,
     checkpoints,
     db_workbench,
-    dependency_management,
     design_standards,
     docker,
     events,
@@ -134,7 +133,6 @@ app.include_router(auth.router, prefix="/api/auth", tags=["auth"])
 app.include_router(monitor.router)
 app.include_router(projects.router, prefix="/api/projects", tags=["projects"])
 app.include_router(explorer.router, prefix="/api/projects", tags=["explorer"])
-app.include_router(dependency_management.router, prefix="/api/projects", tags=["dependencies"])
 app.include_router(files.project_router, prefix="/api/projects", tags=["files"])
 app.include_router(files.global_router, prefix="/api", tags=["files"])
 app.include_router(graphify.router, prefix="/api/projects", tags=["graphify"])

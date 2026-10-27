@@ -11,16 +11,13 @@ import { HostDisruptionCard } from '@/components/runtime/HostDisruptionCard'
 import { HostMonitor } from '@/components/runtime/HostMonitor'
 import { MaintenanceStatusCard } from '@/components/runtime/MaintenanceStatusCard'
 import { ProxmoxStatusCard } from '@/components/runtime/ProxmoxStatusCard'
-import { RuntimeDependencies } from '@/components/runtime/RuntimeDependencies'
 import { RuntimeModeBanner } from '@/components/runtime/RuntimeModeBanner'
 import { ServiceGrid } from '@/components/runtime/ServiceGrid'
 import { runtimeApi } from '@/lib/api/runtime'
 import { POLL_MONITOR } from '@/lib/polling'
 
 export default function RuntimePage() {
-  const [tab, setTab] = useState<'services' | 'monitor' | 'dependencies'>(
-    'services',
-  )
+  const [tab, setTab] = useState<'services' | 'monitor'>('services')
   const {
     data: health,
     isLoading: healthLoading,
@@ -86,7 +83,7 @@ export default function RuntimePage() {
         className="flex flex-wrap gap-2 border-b border-slate-700/60"
         aria-label="Runtime sections"
       >
-        {(['services', 'monitor', 'dependencies'] as const).map((section) => (
+        {(['services', 'monitor'] as const).map((section) => (
           <button
             key={section}
             className={`px-3 py-2 text-sm capitalize focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-400 ${tab === section ? 'border-b-2 border-cyan-400 text-cyan-300' : 'text-slate-400'}`}
@@ -106,9 +103,7 @@ export default function RuntimePage() {
           <ExternalLink className="h-3.5 w-3.5" aria-hidden="true" />
         </a>
       </nav>
-      {tab === 'dependencies' ? (
-        <RuntimeDependencies />
-      ) : tab === 'monitor' ? (
+      {tab === 'monitor' ? (
         <HostMonitor />
       ) : (
         <>

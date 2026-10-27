@@ -42,14 +42,6 @@ SCHEDULE_DEFINITIONS: tuple[ScheduleDefinition, ...] = (
         scope="system",
     ),
     ScheduleDefinition(
-        schedule_id="dependency_reviews",
-        config_key="dependency_reviews_enabled",
-        label="Dependency reviews",
-        description="Checks direct packages weekly and reviews newly observed advisories without installing updates.",
-        cron="45 */6 * * *",
-        scope="system",
-    ),
-    ScheduleDefinition(
         schedule_id="refresh_precision_indexes",
         config_key="refresh_precision_indexes_enabled",
         label="Precision index refresh",
@@ -119,6 +111,14 @@ SCHEDULE_DEFINITIONS: tuple[ScheduleDefinition, ...] = (
         label="Nightly deep lane",
         description="Runs st check --deep (full gate without reuse, opted-in slow tests, and for repos with migrations or workspace packages the gate in a fresh clone with fresh deps and an empty CI database) once a day per project between 01:00 and 07:00 New York time.",
         cron="35 5-11 * * *",
+        scope="system",
+    ),
+    ScheduleDefinition(
+        schedule_id="nightly_security_alert",
+        config_key="nightly_security_alert_enabled",
+        label="Nightly security alert",
+        description="Scans each project's committed lockfiles with OSV and sends one Nightshift push per new advisory on a runtime dependency that has a fixed version.",
+        cron="15 7 * * *",
         scope="system",
     ),
     ScheduleDefinition(

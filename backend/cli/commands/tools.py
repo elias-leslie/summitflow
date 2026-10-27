@@ -36,10 +36,6 @@ from .tools_run import run
 app = typer.Typer(help="Operator tool catalog and Agent Hub usage metrics")
 app.command("run")(run)
 
-from .tools_dependencies import app as dependencies_app  # noqa: E402
-
-app.add_typer(dependencies_app, name="dependencies")
-
 
 @app.command("extensions")
 @usage(
