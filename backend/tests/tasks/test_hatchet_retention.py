@@ -228,3 +228,16 @@ def test_reap_stale_workers_dry_run_only_counts(mocker) -> None:
     assert result["stale_worker_leases"] == 11
     assert result["workers_deactivated"] == 0
     assert result["leases_deleted"] == 0
+
+
+def test_existing_target_names_only_selects_plain_unpartitioned_tables(mocker) -> None:
+    from app.tasks import hatchet_retention
+
+    cur = mocker.MagicMock()
+    cur.fetchall.return_value = [("v1_lookup_table",)]
+
+    assert hatchet_retention._existing_target_names(cur) == {"v1_lookup_table"}
+
+    sql = cur.execute.call_args.args[0]
+    assert "relkind = 'r'" in sql
+    assert "NOT c.relispartition" in sql
