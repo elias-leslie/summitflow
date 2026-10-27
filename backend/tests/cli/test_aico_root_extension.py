@@ -30,8 +30,8 @@ def app():
 def test_root_manifest_exposes_owner_controls_and_alias():
     manifest = aico_record().manifest
     assert manifest is not None
-    assert "st aico root status|show|title|position|end" in manifest.help[""]
-    for operation in ("status", "show", "title", "position", "end"):
+    assert "st aico root status|show|title|position|end|send" in manifest.help[""]
+    for operation in ("status", "show", "title", "position", "end", "send"):
         assert f"st aico root {operation} REQUEST_ID" in manifest.help[f"root {operation}"]
         assert f"st.aico.root.{operation}" in {row["surface"] for row in manifest.usage}
     assert manifest.help_options["root end"]["--owner-socket"] == 1
@@ -39,12 +39,17 @@ def test_root_manifest_exposes_owner_controls_and_alias():
     assert "A-Term" not in manifest.help["root position"]
     assert all("--root-url" not in text and "--surface" not in text for text in manifest.help.values())
     assert "applied:null" in manifest.help["root end"]
+    assert manifest.help_options["root send"] == {"--generation": 1, "--stdin": 0, "--root-socket": 1,
+                                                  "--owner-socket": 1}
+    assert "--generation is required" in manifest.help["root send"]
+    assert "Pi has no atomic follow-up" not in manifest.help["create"]
 
 
 @pytest.mark.parametrize("arguments, expected", [
     (["root", "--help"], "Control one exact retained owner root"),
     (["root", "end", "root-1", "--help"], "End the exact root"),
     (["root", "title", "root-1", "Name", "--help"], "Rename the exact running root"),
+    (["root", "send", "root-1", "Follow up", "--generation", "a" * 64, "--help"], "Queue one follow-up"),
 ])
 def test_root_help_is_passive(monkeypatch, arguments, expected):
     monkeypatch.setattr("cli.extensions.dispatch_extension", lambda *a, **k: pytest.fail("dispatched"))
