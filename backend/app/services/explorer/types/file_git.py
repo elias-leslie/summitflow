@@ -134,6 +134,38 @@ def get_all_commit_counts_90d(root_path: Path) -> dict[str, int]:
         return {}
 
 
+def get_ignored_untracked_paths(root_path: Path) -> frozenset[str]:
+    """Get untracked paths that Git ignores, relative to root_path.
+
+    Ignored directories are reported once with a trailing slash. Tracked files
+    stay visible even when an ignore pattern matches them, and roots outside
+    Git return an empty set so their scans keep the plain filesystem contract.
+    """
+    try:
+        result = safe_subprocess.run(
+            ["git", "-C", str(root_path), "ls-files", "-z", "--others", "--ignored", "--exclude-standard", "--directory"],
+            capture_output=True,
+            text=True,
+            timeout=30,
+            check=False,
+        )
+    except (OSError, subprocess.TimeoutExpired) as e:
+        logger.warning("git ls-files for ignored paths failed: %s", e)
+        return frozenset()
+    if result.returncode != 0:
+        logger.debug("git ls-files for ignored paths unavailable: %s", result.stderr)
+        return frozenset()
+    return frozenset(path for path in result.stdout.split("\0") if path)
+
+
+def is_git_ignored(rel_path: str, ignored_paths: frozenset[str], *, is_dir: bool = False) -> bool:
+    """Whether a root-relative path is, or sits under, an ignored untracked path."""
+    parts = Path(rel_path).parts
+    if (rel_path + "/" if is_dir else rel_path) in ignored_paths:
+        return True
+    return any("/".join(parts[:depth]) + "/" in ignored_paths for depth in range(1, len(parts)))
+
+
 def apply_git_info_to_entry(
     entry_metadata: dict[str, Any],
     path: str,

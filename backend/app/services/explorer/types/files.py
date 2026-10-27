@@ -27,7 +27,13 @@ from ..models import ExplorerEntryCreate
 from .file_analysis import calculate_basic_metrics, calculate_bloat, read_file_content
 from .file_constants import SKIP_EXTENSIONS, SYMBOL_INDEX_EXTENSIONS
 from .file_detection import compute_health_flags, detect_compat_cruft, detect_magic_strings
-from .file_git import apply_git_info_to_entry, get_all_commit_counts_90d, get_all_last_commits
+from .file_git import (
+    apply_git_info_to_entry,
+    get_all_commit_counts_90d,
+    get_all_last_commits,
+    get_ignored_untracked_paths,
+    is_git_ignored,
+)
 from .file_scan_helpers import (
     build_file_metadata,
     compute_file_complexity,
@@ -48,6 +54,7 @@ class FileScanner(BaseScanner):
         self.root_path: Path | None = None
         self._symbol_snapshots: dict[str, list[SymbolRecord]] = {}
         self._indexed_symbol_paths: set[str] = set()
+        self._ignored_paths: frozenset[str] = frozenset()
 
     def scan(self) -> list[ExplorerEntryCreate]:
         """Scan codebase and return file entries."""
@@ -64,13 +71,17 @@ class FileScanner(BaseScanner):
         logger.info("File scan started for %s: %s", self.project_id, self.root_path)
         entries: list[ExplorerEntryCreate] = []
         dir_stats: dict[str, dict[str, int]] = {}
+        # Ignored material (local archives, raw captures) is not project source;
+        # ordinary untracked files remain part of the inventory.
+        self._ignored_paths = get_ignored_untracked_paths(self.root_path)
 
         for root_dir, dirnames, filenames in os.walk(self.root_path):
+            rel_root = Path(root_dir).relative_to(self.root_path)
+            dirnames[:] = [d for d in dirnames if not self._is_ignored(rel_root / d, is_dir=True)]
             for dirname in dirnames:
                 if dirname == "data":
                     self._collect_data_symbols(Path(root_dir) / dirname)
             dirnames[:] = [d for d in dirnames if d not in SKIP_DIRS]
-            rel_root = Path(root_dir).relative_to(self.root_path)
             self._scan_dir(root_dir, rel_root, filenames, entries, dir_stats)
 
         self._add_git_info_batch(entries)
@@ -97,13 +108,17 @@ class FileScanner(BaseScanner):
             return
         for file_path in _iter_checkout_files(root, allowed_suffixes=SYMBOL_INDEX_EXTENSIONS, start_root=data_root):
             rel_path = _normalize_rel_path(root, file_path)
-            if rel_path is None:
+            if rel_path is None or self._is_ignored(Path(rel_path)):
                 continue
             try:
                 self._extract_file_symbols(file_path, rel_path, file_path.suffix.lower())
             except Exception:
                 logger.debug("Failed to index data source: %s", rel_path, exc_info=True)
 
+
+    def _is_ignored(self, rel_path: Path, *, is_dir: bool = False) -> bool:
+        """Whether Git ignores this untracked root-relative path."""
+        return is_git_ignored(rel_path.as_posix(), self._ignored_paths, is_dir=is_dir)
 
     def _scan_dir(
         self,
@@ -118,7 +133,7 @@ class FileScanner(BaseScanner):
             file_path = Path(root_dir) / filename
             rel_path = str(rel_root / filename) if rel_root != Path(".") else filename
             ext = file_path.suffix.lower()
-            if ext in SKIP_EXTENSIONS:
+            if ext in SKIP_EXTENSIONS or self._is_ignored(rel_root / filename):
                 continue
             try:
                 entry = self._scan_file(file_path, rel_path, ext)

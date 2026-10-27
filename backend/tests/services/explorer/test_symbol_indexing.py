@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import subprocess
 from collections.abc import Generator
 from pathlib import Path
 
@@ -167,3 +168,42 @@ def test_full_symbol_scan_rejects_aliases_to_sensitive_and_artifact_targets(symb
         (root / f"public_{index}.py").symlink_to(file)
     assert FileScanner(project_id).run().success
     assert explorer_symbols.search_symbols_page(project_id, "synthetic_private_target")["count"] == 0
+
+
+def test_rescan_drops_git_ignored_material_but_keeps_untracked_source(symbol_project: tuple[str, Path]) -> None:
+    """Ignored case archives and raw captures stay out; a rescan clears rows indexed before the ignore rules."""
+    project_id, root = symbol_project
+    subprocess.run(["git", "init", "-q", str(root)], check=True)
+    for rel in (
+        "archive/export/module.py",
+        "archive/tracked.py",
+        "findings/case-1/raw/capture.py",
+        "findings/case-1/summary.py",
+        "data/raw/dump.py",
+        "data/source.py",
+        "draft.py",
+    ):
+        file = root / rel
+        file.parent.mkdir(parents=True, exist_ok=True)
+        file.write_text("def ignore_rule_target(): pass\n")
+    subprocess.run(["git", "-C", str(root), "add", "-f", "archive/tracked.py"], check=True)
+    assert FileScanner(project_id).run().success
+    assert explorer_entries.get_entry(project_id, "file", "archive/export/module.py") is not None
+    assert explorer_entries.get_entry(project_id, "file", "findings/case-1/raw") is not None
+
+    (root / ".gitignore").write_text("archive/\nfindings/*/raw/\ndata/raw/\n")
+    assert FileScanner(project_id).run().success
+
+    for rel in ("archive/export/module.py", "findings/case-1/raw/capture.py"):
+        assert explorer_entries.get_entry(project_id, "file", rel) is None
+    assert explorer_entries.get_entry(project_id, "file", "archive/export") is None
+    assert explorer_entries.get_entry(project_id, "file", "findings/case-1/raw") is None
+    for rel in ("archive/tracked.py", "findings/case-1/summary.py", "draft.py"):
+        assert explorer_entries.get_entry(project_id, "file", rel) is not None
+    indexed = explorer_symbols.search_symbols_page(project_id, "ignore_rule_target")["items"]
+    assert sorted(row["file_path"] for row in indexed) == [
+        "archive/tracked.py",
+        "data/source.py",
+        "draft.py",
+        "findings/case-1/summary.py",
+    ]
