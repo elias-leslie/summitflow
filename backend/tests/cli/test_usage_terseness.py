@@ -23,12 +23,7 @@ LEGACY_OVER_CAP = frozenset({
     "st.aico.root.status", "st.aico.root.title", "st.aico.roots", "st.aico.widget.position",
     "st.aico.widget.status", "st.aico.widget.title", "st.browser", "st.design",
     "st.jobs.record-posting-source", "st.jobs.search", "st.learn.work", "st.monitor.logs",
-    "st.monitor.status", "st.neri.capabilities", "st.neri.context", "st.neri.evidence.list",
-    "st.neri.group.list", "st.neri.group.show", "st.neri.group.timeline", "st.neri.hunt.continue",
-    "st.neri.owner.request", "st.neri.portfolio.join", "st.neri.report.readiness",
-    "st.neri.report.save", "st.neri.report.show", "st.neri.reports",
-    "st.neri.target.lab_authority_set", "st.neri.target.list", "st.neri.target.show",
-    "st.neri.timeline", "st.service.rebuild", "st.sessions.verify",
+    "st.monitor.status", "st.service.rebuild", "st.sessions.verify",
     "st.slopminer", "st.ui.gif", "st.web",
 })
 PADDING = re.compile(

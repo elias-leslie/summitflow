@@ -311,28 +311,6 @@
       "environment": []
     },
     {
-      "id": "neri.neri",
-      "owner": "neri",
-      "namespace": "neri",
-      "manifest": "extensions/neri.json",
-      "owner_manifest": "backend/app/st_cli/st-extension.json",
-      "executable": "backend/.venv/bin/neri-st",
-      "grant": {
-        "enabled": true,
-        "effects": [
-          "network",
-          "read-remote",
-          "write-remote",
-          "read-local",
-          "write-local",
-          "credentials"
-        ]
-      },
-      "environment": [
-        "ST_NERI_API_URL"
-      ]
-    },
-    {
       "id": "learn-o-tron.learn",
       "owner": "learn-o-tron",
       "namespace": "learn",
