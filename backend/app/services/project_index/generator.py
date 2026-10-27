@@ -156,12 +156,15 @@ def write_index_file(project_id: str) -> str | None:
 
 
 def write_all_index_files() -> dict[str, str | None]:
-    """Write `.index.yaml` for every registered non-testing project with a root."""
+    """Write `.index.yaml` for every registered, unretired, non-testing project with a root."""
     from ...storage.connection import get_cursor
     from ...storage.projects import testing_project_ids
 
     with get_cursor() as cur:
-        cur.execute("SELECT id FROM projects WHERE root_path IS NOT NULL ORDER BY id")
+        cur.execute(
+            "SELECT id FROM projects WHERE root_path IS NOT NULL "
+            "AND id NOT IN (SELECT project_id FROM project_retirement_decisions) ORDER BY id"
+        )
         rows = cur.fetchall()
     excluded = testing_project_ids()
     results: dict[str, str | None] = {}

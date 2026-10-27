@@ -174,6 +174,7 @@ def test_generated_index_preserves_tracked_changes(tmp_path: Path, monkeypatch: 
 class _Cursor:
     def __init__(self, rows: list[tuple[str]]) -> None:
         self.rows = rows
+        self.sql = ""
 
     def __enter__(self) -> _Cursor:
         return self
@@ -181,8 +182,8 @@ class _Cursor:
     def __exit__(self, *_exc: object) -> None:
         return None
 
-    def execute(self, *_args: object) -> None:
-        return None
+    def execute(self, sql: str, *_args: object) -> None:
+        self.sql = sql
 
     def fetchall(self) -> list[tuple[str]]:
         return self.rows
@@ -194,11 +195,14 @@ def test_write_all_index_files_skips_testing_projects_and_isolates_failures() ->
             raise RuntimeError("boom")
         return f"/{project_id}/.index.yaml"
 
+    cursor = _Cursor([("alpha",), ("broken",), ("fixture",)])
     with (
-        patch("app.storage.connection.get_cursor", return_value=_Cursor([("alpha",), ("broken",), ("fixture",)])),
+        patch("app.storage.connection.get_cursor", return_value=cursor),
         patch("app.storage.projects.testing_project_ids", return_value={"fixture"}),
         patch(f"{_MODULE}.write_index_file", side_effect=write),
     ):
         results = write_all_index_files()
 
     assert results == {"alpha": "/alpha/.index.yaml", "broken": None}
+    # Retired projects often have no checkout left, so they are never scheduled.
+    assert "project_retirement_decisions" in cursor.sql
