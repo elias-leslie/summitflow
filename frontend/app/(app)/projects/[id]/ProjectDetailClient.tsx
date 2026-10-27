@@ -11,8 +11,6 @@ import {
 } from 'next/navigation'
 import { useCallback, useEffect, useState } from 'react'
 import { toast } from 'sonner'
-import { ExplorerTab } from '@/components/explorer/ExplorerTab'
-import type { ExplorerType } from '@/components/explorer/types'
 import { TaskKanbanBoard } from '@/components/kanban/TaskKanbanBoard'
 import { ProjectHealthBadge } from '@/components/projects/ProjectHealthBadge'
 import { ProjectOverview } from '@/components/projects/ProjectOverview'
@@ -32,11 +30,7 @@ import {
   updateTaskStatus,
 } from '@/lib/api'
 import { STALE_GIT } from '@/lib/polling'
-import {
-  type ProjectTab,
-  parseExplorerType,
-  parseProjectTab,
-} from '@/lib/project-tabs'
+import { type ProjectTab, parseProjectTab } from '@/lib/project-tabs'
 import { buildUrlWithUpdatedSearchParams } from '@/lib/search-params'
 import { taskQueryKeys } from '@/lib/task-cache'
 import { useTaskMutationSync } from '@/lib/task-mutation-sync'
@@ -51,17 +45,12 @@ const SECTION_COPY: Record<
   overview: {
     label: 'Project overview',
     description:
-      'Start from the user-facing project summary, then branch into delivery, code exploration, files, and settings.',
+      'Start from the user-facing project summary, then branch into delivery, files, and settings.',
   },
   tasks: {
     label: 'Execution board',
     description:
       'Drive planning and delivery with board and table views that keep momentum visible.',
-  },
-  explorer: {
-    label: 'Code intelligence',
-    description:
-      'Inspect indexed code structure, scan coverage, and precision-search the project surface.',
   },
 }
 
@@ -82,9 +71,6 @@ export function ProjectDetailClient() {
   const activeTab =
     parsedTab ?? (urlTaskId || urlModal === 'create-task' ? 'tasks' : null)
   const activeSection: ProjectSection = activeTab ?? 'overview'
-  const explorerType = parseExplorerType(
-    searchParams.get('type'),
-  ) as ExplorerType
   const taskInitialFilters: Partial<TaskFilterValues> = {}
   if (
     urlTaskStatus &&
@@ -115,15 +101,13 @@ export function ProjectDetailClient() {
     [pathname, router, searchParams],
   )
 
+  // Unknown or retired tabs fall back to the overview; drop their sub-type
+  // param too so old bookmarked URLs end up clean.
   useEffect(() => {
     if (searchParams.get('tab') && !parsedTab) {
       updateUrlParams({ tab: null, type: null })
     }
   }, [parsedTab, searchParams, updateUrlParams])
-
-  const handleExplorerTypeChange = (type: ExplorerType) => {
-    updateUrlParams({ tab: 'explorer', type })
-  }
 
   // View mode (board | table) for unified tasks tab
   const { viewMode, setViewMode } = useViewMode(projectId)
@@ -336,15 +320,6 @@ export function ProjectDetailClient() {
               open={createTaskDialogOpen}
               onOpenChange={handleCreateDialogChange}
               projectId={projectId}
-            />
-          </div>
-        )}
-        {activeTab === 'explorer' && (
-          <div className="h-full overflow-auto p-3 sm:p-4">
-            <ExplorerTab
-              projectId={projectId}
-              initialType={explorerType}
-              onTypeChange={handleExplorerTypeChange}
             />
           </div>
         )}

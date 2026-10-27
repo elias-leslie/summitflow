@@ -170,12 +170,9 @@ describe('ProjectAccordionItem', () => {
     expect(screen.getByRole('link', { name: 'Settings' })).toBeInTheDocument()
   })
 
-  it('leaves the frozen Explorer and Graph pages out of the sidebar', () => {
+  it('leaves the frozen Graph page out of the sidebar', () => {
     renderItem({}, { isExpanded: true })
 
-    expect(
-      screen.queryByRole('link', { name: 'Explorer' }),
-    ).not.toBeInTheDocument()
     expect(
       screen.queryByRole('link', { name: 'Graph' }),
     ).not.toBeInTheDocument()

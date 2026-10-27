@@ -1,6 +1,6 @@
 """Agent Hub client wrapper providing LLMClient-compatible interface.
 
-Re-exports LLMResponse, LLMClient, AgentHubLLMClient, get_agent,
+Re-exports LLMResponse, LLMClient, AgentHubLLMClient,
 get_sync_client, get_async_client, and Agent Hub config constants."""
 
 from __future__ import annotations
@@ -122,10 +122,6 @@ class AgentHubLLMClient(LLMClient):
             self._client = None
 
 
-def get_agent(agent_slug: str) -> AgentHubLLMClient:
-    """Get a configured AgentHubLLMClient for the given agent slug."""
-    return AgentHubLLMClient(agent_slug=agent_slug)
-
 
 __all__ = [
     "AGENT_HUB_API_KEY",
@@ -133,7 +129,6 @@ __all__ = [
     "AgentHubLLMClient",
     "LLMClient",
     "LLMResponse",
-    "get_agent",
     "get_async_client",
     "get_sync_client",
 ]

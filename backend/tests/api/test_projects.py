@@ -195,7 +195,7 @@ def test_create_project_does_not_add_a_backup_source(client, monkeypatch) -> Non
     """Backups cover every project under /srv/workspaces; creating one adds no per-project backup row."""
     project_id = f"create-{uuid4().hex[:8]}"
     root_path = f"{Path.home()}/.local/share/summitflow/workspaces/projects/{project_id}"
-    monkeypatch.setattr("app.api.projects.explorer.run_scan_job", lambda *args, **kwargs: None)
+    monkeypatch.setattr("app.api.projects.project_index.write_index_file", lambda _project_id: None)
 
     try:
         response = client.post(
@@ -237,7 +237,7 @@ def test_create_project_syncs_agent_hub_permission_when_requested(client, monkey
     project_id = f"bootstrap-{uuid4().hex[:8]}"
     root_path = f"{Path.home()}/.local/share/summitflow/workspaces/projects/{project_id}"
     sync_mock = AsyncMock()
-    monkeypatch.setattr("app.api.projects.explorer.run_scan_job", lambda *args, **kwargs: None)
+    monkeypatch.setattr("app.api.projects.project_index.write_index_file", lambda _project_id: None)
     monkeypatch.setattr("app.api.projects.sync_agent_hub_project_permission", sync_mock)
 
     try:
@@ -339,8 +339,8 @@ def test_create_project_queues_standard_onboarding_when_requested(client, monkey
         lambda *args, **kwargs: onboarding_calls.append((args, kwargs)),
     )
     monkeypatch.setattr(
-        "app.api.projects.explorer.run_scan_job",
-        lambda *_args, **_kwargs: (_ for _ in ()).throw(AssertionError("raw scan should not be queued")),
+        "app.api.projects.project_index.write_index_file",
+        lambda _project_id: (_ for _ in ()).throw(AssertionError("onboarding owns the index write")),
     )
 
     try:
@@ -383,7 +383,7 @@ def test_create_project_prefers_manifest_display_name(client, monkeypatch, tmp_p
             }
         )
     )
-    monkeypatch.setattr("app.api.projects.explorer.run_scan_job", lambda *args, **kwargs: None)
+    monkeypatch.setattr("app.api.projects.project_index.write_index_file", lambda _project_id: None)
 
     try:
         response = client.post(
@@ -457,7 +457,7 @@ def test_create_project_rolls_back_when_agent_hub_sync_fails(client, monkeypatch
     async def _fail_sync(*_args, **_kwargs) -> None:
         raise HTTPException(status_code=502, detail="Agent Hub unavailable")
 
-    monkeypatch.setattr("app.api.projects.explorer.run_scan_job", lambda *args, **kwargs: None)
+    monkeypatch.setattr("app.api.projects.project_index.write_index_file", lambda _project_id: None)
     monkeypatch.setattr("app.api.projects.sync_agent_hub_project_permission", _fail_sync)
 
     response = client.post(
@@ -530,27 +530,67 @@ def test_onboard_project_queues_standard_onboarding(client, monkeypatch) -> None
             conn.commit()
 
 
-def test_run_project_onboarding_scans_and_syncs_tasks(monkeypatch) -> None:
-    """Onboarding scans the checkout and dispatches the post-scan task sync; it touches no backup settings."""
+def test_run_project_onboarding_writes_project_index(monkeypatch) -> None:
+    """Onboarding writes the checkout's .index.yaml; it touches no backup settings."""
     from app.api.projects.models import ProjectOnboardingRequest
     from app.api.projects.onboarding import run_project_onboarding
 
-    dispatched = MagicMock()
+    written = MagicMock(return_value="/srv/workspaces/projects/vantage/.index.yaml")
     monkeypatch.setattr(
         "app.api.projects.onboarding.get_project_root_path",
         lambda _project_id: "/srv/workspaces/projects/vantage",
     )
-    monkeypatch.setattr(
-        "app.api.projects.onboarding.explorer.run_scan_job",
-        lambda *_args, **_kwargs: {"scan_id": 7},
-    )
-    monkeypatch.setattr("app.api.projects.onboarding.dispatch_post_scan_tasks", dispatched)
-    monkeypatch.setattr("app.api.projects.onboarding.make_post_scan_dispatch", lambda: None)
+    monkeypatch.setattr("app.api.projects.onboarding.write_index_file", written)
 
     run_project_onboarding("vantage", ProjectOnboardingRequest(), triggered_by="project_onboard")
 
-    dispatched.assert_called_once()
-    assert dispatched.call_args.args[1] == "vantage"
+    written.assert_called_once_with("vantage")
+
+
+def test_run_project_onboarding_requires_root(monkeypatch) -> None:
+    from app.api.projects.models import ProjectOnboardingRequest
+    from app.api.projects.onboarding import run_project_onboarding
+
+    monkeypatch.setattr("app.api.projects.onboarding.get_project_root_path", lambda _project_id: None)
+
+    with pytest.raises(ValueError, match="no root_path"):
+        run_project_onboarding("vantage", ProjectOnboardingRequest(), triggered_by="project_onboard")
+
+
+def test_list_project_pages_returns_live_pages(client, monkeypatch) -> None:
+    """GET /api/projects/{id}/pages returns the discovered pages contract."""
+    project_id = f"pages-{uuid4().hex[:8]}"
+    pages = [{"path": "/settings", "name": "settings", "url": "http://localhost:3001/settings", "port": 3001}]
+    seen: list[str] = []
+
+    def discover(requested: str) -> list[dict[str, Any]]:
+        seen.append(requested)
+        return pages
+
+    with get_connection() as conn, conn.cursor() as cur:
+        cur.execute(
+            "INSERT INTO projects (id, name, base_url, health_endpoint) VALUES (%s, %s, %s, %s)",
+            (project_id, "Pages Project", "https://pages.example", "/health"),
+        )
+        conn.commit()
+    monkeypatch.setattr("app.api.projects.project_index.discover_pages", discover)
+
+    try:
+        response = client.get(f"/api/projects/{project_id}/pages")
+
+        assert response.status_code == 200
+        assert response.json() == {"items": pages}
+        assert seen == [project_id]
+    finally:
+        with get_connection() as conn, conn.cursor() as cur:
+            cur.execute("DELETE FROM projects WHERE id = %s", (project_id,))
+            conn.commit()
+
+
+def test_list_project_pages_unknown_project_is_404(client) -> None:
+    response = client.get(f"/api/projects/missing-{uuid4().hex[:8]}/pages")
+
+    assert response.status_code == 404
 
 
 def test_update_project_clears_stale_public_url_when_hosting_is_removed(client, tmp_path: Path) -> None:
@@ -676,7 +716,7 @@ def test_create_project_derives_hosted_urls_from_private_config(client, monkeypa
     root_path = f"{Path.home()}/.local/share/summitflow/workspaces/projects/{project_id}"
     monkeypatch.setenv("SUMMITFLOW_PROJECT_PUBLIC_BASE_DOMAIN", "example.test")
     monkeypatch.delenv("SUMMITFLOW_PROJECT_PUBLIC_HOST_ALIASES", raising=False)
-    monkeypatch.setattr("app.api.projects.explorer.run_scan_job", lambda *args, **kwargs: None)
+    monkeypatch.setattr("app.api.projects.project_index.write_index_file", lambda _project_id: None)
     clear_public_url_config_cache()
 
     try:
@@ -1101,7 +1141,7 @@ def test_create_native_project_without_runtime_url(client, monkeypatch) -> None:
     """POST /api/projects with native=True should succeed without a base_url and report unconfigured."""
     project_id = f"native-{uuid4().hex[:8]}"
     root_path = f"{Path.home()}/.local/share/summitflow/workspaces/projects/{project_id}"
-    monkeypatch.setattr("app.api.projects.explorer.run_scan_job", lambda *args, **kwargs: None)
+    monkeypatch.setattr("app.api.projects.project_index.write_index_file", lambda _project_id: None)
 
     try:
         response = client.post(

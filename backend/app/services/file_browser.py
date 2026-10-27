@@ -5,7 +5,6 @@ from __future__ import annotations
 import os
 import shutil
 import subprocess
-from functools import lru_cache
 from pathlib import Path
 from typing import BinaryIO
 
@@ -17,11 +16,51 @@ MAX_FILE_SIZE = 1_048_576
 UPLOAD_CHUNK_SIZE = 1_048_576
 
 
-@lru_cache(maxsize=1)
-def _load_explorer_constants() -> tuple[frozenset[str], dict[str, str]]:
-    from .explorer.constants import BINARY_EXTENSIONS, EXTENSION_TO_LANGUAGE
+# Extensions known to be binary
+BINARY_EXTENSIONS: frozenset[str] = frozenset(
+    {
+        ".pyc", ".pyo", ".so", ".dll", ".exe", ".bin",
+        ".png", ".jpg", ".jpeg", ".gif", ".ico", ".webp",
+        ".woff", ".woff2", ".ttf", ".eot",
+        ".mp3", ".mp4", ".wav", ".ogg", ".webm",
+        ".pdf", ".zip", ".tar", ".gz", ".bz2", ".xz", ".7z",
+        ".sqlite", ".db",
+    }
+)
 
-    return BINARY_EXTENSIONS, EXTENSION_TO_LANGUAGE
+# Map file extensions to CodeMirror language identifiers
+EXTENSION_TO_LANGUAGE: dict[str, str] = {
+    ".py": "python",
+    ".ts": "typescript",
+    ".tsx": "typescript",
+    ".js": "javascript",
+    ".jsx": "javascript",
+    ".json": "json",
+    ".html": "html",
+    ".htm": "html",
+    ".css": "css",
+    ".scss": "css",
+    ".md": "markdown",
+    ".mdx": "markdown",
+    ".yaml": "yaml",
+    ".yml": "yaml",
+    ".sql": "sql",
+    ".rs": "rust",
+    ".go": "go",
+    ".java": "java",
+    ".cpp": "cpp",
+    ".c": "cpp",
+    ".h": "cpp",
+    ".hpp": "cpp",
+    ".xml": "xml",
+    ".svg": "xml",
+    ".php": "php",
+    ".sh": "shell",
+    ".bash": "shell",
+    ".zsh": "shell",
+    ".toml": "toml",
+    ".dockerfile": "dockerfile",
+}
 
 
 def _root_prefix(root: str) -> str:
@@ -131,8 +170,7 @@ def list_directory(
 
 def _detect_language(name: str, extension: str) -> str | None:
     """Return CodeMirror language id for a filename."""
-    _, extension_to_language = _load_explorer_constants()
-    language = extension_to_language.get(extension)
+    language = EXTENSION_TO_LANGUAGE.get(extension)
     if not language and name.lower() in {'dockerfile', 'containerfile'}:
         return 'dockerfile'
     return language
@@ -183,8 +221,7 @@ def read_file(root_path: str | Path, relative_path: str) -> dict[str, object]:
 
 def _is_binary(path: Path, extension: str) -> bool:
     """Check if a file is binary using extension and content sampling."""
-    binary_extensions, _ = _load_explorer_constants()
-    if extension in binary_extensions:
+    if extension in BINARY_EXTENSIONS:
         return True
     try:
         with path.open('rb') as handle:

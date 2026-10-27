@@ -6,6 +6,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react'
 import { BulkActionBar } from '@/components/design/BulkActionBar'
 import { CreateMockupDialog } from '@/components/design/CreateMockupDialog'
 import { DesignHeader, type ViewMode } from '@/components/design/DesignHeader'
+import { DesignStandardsPanel } from '@/components/design/design-standards'
 import { GenerateMockupDialog } from '@/components/design/GenerateMockupDialog'
 import { MockupDetailModal } from '@/components/design/MockupDetailModal'
 import { MockupGrid } from '@/components/design/MockupGrid'
@@ -18,7 +19,6 @@ import {
   MockupStatsGrid,
   type StatusFilter,
 } from '@/components/design/MockupStatsGrid'
-import { DesignStandardsPanel } from '@/components/explorer/design-standards'
 import { ConfirmDeleteDialog } from '@/components/shared/ConfirmDeleteDialog'
 import { useClampedPagination } from '@/hooks/useClampedPagination'
 import {

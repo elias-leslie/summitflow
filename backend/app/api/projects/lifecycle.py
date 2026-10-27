@@ -42,7 +42,7 @@ def queue_project_create_work(
     background_tasks: BackgroundTasks,
     *,
     onboarding_runner: Callable[..., Any],
-    scan_runner: Callable[..., Any],
+    index_writer: Callable[[str], Any],
 ) -> None:
     if project.onboarding is not None:
         background_tasks.add_task(
@@ -52,12 +52,7 @@ def queue_project_create_work(
             triggered_by=TRIGGER_PROJECT_CREATE,
         )
         return
-    background_tasks.add_task(
-        scan_runner,
-        project.id,
-        None,
-        triggered_by=TRIGGER_PROJECT_CREATE,
-    )
+    background_tasks.add_task(index_writer, project.id)
 
 
 def validate_existing_project_onboarding(project_id: str, root_path: str | None) -> None:

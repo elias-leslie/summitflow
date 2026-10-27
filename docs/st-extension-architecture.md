@@ -30,7 +30,7 @@ the overall migration.
 | 5 | portfolio | portfolio-ai | existing | Domain CLI/client and tests. |
 | 6 | neri | neri | retired | `st neri` removed 2026-10-27 with the Neri app; bounty work is text-only in the bounty repo. |
 | 7 | learn | learn-o-tron | existing | CLI, PTY and transcripts; public ST task-promotion interface. |
-| 8 | graph/search | code-intelligence | new | Reusable intelligence with existing Explorer/index storage integration. |
+| 8 | graph/search | code-intelligence | new | Reusable intelligence; `st search` is local-only (live checkout parsing), with no hosted index. |
 | 9 | wiki | vault-tools | new | Filesystem/search/lint/ingest engine; canonical vault data preserved. |
 | 10 | design | design-tools | new | CLI plus reusable generation/asset behavior; preserve project asset/storage contracts. |
 | 11 | pulsebrief | Retired with owner approval | legacy | Investigation found no engine, owning project, callers or schedules; remove the broken wrapper and stale discovery instead of fabricating a replacement. |
@@ -51,8 +51,8 @@ the overall migration.
 - UI is about 821 lines; selection 175; wiki 387; skills 820.
 - Design has a 920-line CLI plus API/storage/generation code and 2,111 lines of
   domain tests. CLI relocation alone is not proof of engine extraction.
-- Graph/search use Explorer indexes, local symbol parsing and graphify_tools.
-  Preserve one canonical indexing/source pipeline.
+- Search parses the local checkout; graph uses graphify_tools. Neither reads a
+  hosted SummitFlow index (Explorer was deleted 2026-10-27).
 - Agent Hub memory/tool_capability_context.py invokes st tools manifest and
   runtime_context.py includes it in delivery; st_usage_memory.py counts
   invocations/help, not outcomes.

@@ -12,7 +12,6 @@ from ..storage import events as event_store
 from ..storage import maintenance_runs as maintenance_store
 from ..storage import notifications as notification_store
 from ..storage import quality_check_results as qcr_store
-from ..storage import scan_history
 from ..storage.tasks import purge_terminal_tasks
 from .host_retention import cleanup_host_artifacts
 from .stale_generated_tasks import cleanup_stale_tasks
@@ -69,16 +68,6 @@ def run_daily_maintenance(
             purge_terminal_tasks,
             completed_max_age_days=30,
         )
-        stale_scan_failures = _run_step(
-            "stale_running_scans",
-            scan_history.fail_stale_running_scans,
-            max_age_hours=6,
-        )
-        scan_history_deleted = _run_step(
-            "scan_history_retention",
-            scan_history.cleanup_old_scan_history,
-            max_age_days=90,
-        )
         notifications_deleted = _run_step(
             "notification_retention",
             notification_store.cleanup_old_notifications,
@@ -131,8 +120,6 @@ def run_daily_maintenance(
                     else task_cleanup
                 ),
                 _deleted_count(task_purge),
-                _deleted_count(stale_scan_failures),
-                _deleted_count(scan_history_deleted),
                 _deleted_count(notifications_deleted),
                 _deleted_count(qcr_deleted),
                 _deleted_count(events_deleted),
@@ -150,8 +137,6 @@ def run_daily_maintenance(
                 for step in (
                     task_cleanup,
                     task_purge,
-                    stale_scan_failures,
-                    scan_history_deleted,
                     notifications_deleted,
                     qcr_deleted,
                     events_deleted,
@@ -167,8 +152,6 @@ def run_daily_maintenance(
             "bytes_reclaimed": host_retention_reclaimed,
             "stale_tasks": task_cleanup,
             "purged_tasks": task_purge,
-            "stale_running_scans_failed": stale_scan_failures,
-            "scan_history_deleted": scan_history_deleted,
             "notifications_deleted": notifications_deleted,
             "quality_results_deleted": qcr_deleted,
             "events_deleted": events_deleted,
@@ -194,8 +177,6 @@ def run_daily_maintenance(
             rows_cleaned=rows_cleaned,
             stale_tasks=_deleted_count(task_cleanup.get("cancelled_count", 0) if isinstance(task_cleanup, dict) else task_cleanup),
             purged_tasks=_deleted_count(task_purge),
-            stale_running_scans_failed=_deleted_count(stale_scan_failures),
-            scan_history_deleted=_deleted_count(scan_history_deleted),
             notifications_deleted=_deleted_count(notifications_deleted),
             quality_results_deleted=_deleted_count(qcr_deleted),
             events_deleted=_deleted_count(events_deleted),

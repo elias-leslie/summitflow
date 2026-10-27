@@ -90,8 +90,6 @@ def test_storage_package_preserves_public_reexports() -> None:
     from app.storage import (
         agent_configs,
         events,
-        explorer,
-        explorer_symbols,
     )
     from app.storage.connection import get_connection
     from app.storage.events import (
@@ -103,8 +101,6 @@ def test_storage_package_preserves_public_reexports() -> None:
 
     assert storage.agent_configs is agent_configs
     assert storage.events is events
-    assert storage.explorer is explorer
-    assert storage.explorer_symbols is explorer_symbols
     assert storage.get_connection is get_connection
     assert storage.create_event is create_event
     assert storage.get_events_by_trace is get_events_by_trace

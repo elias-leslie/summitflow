@@ -21,7 +21,7 @@ from app.utils._git_core import get_repo_status
 assert get_repo_status(Path(sys.argv[1])) is None
 assert 'app.api.projects' not in sys.modules
 assert 'app.api.git' not in sys.modules
-assert 'app.workflows.utility' not in sys.modules
+assert 'app.workflows.scheduled' not in sys.modules
 """, str(tmp_path)],
         cwd=Path(__file__).resolve().parents[2],
         env={"PATH": os.defpath, "PYTHON_DOTENV_DISABLED": "1"},

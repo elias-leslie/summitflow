@@ -11,12 +11,6 @@ from design_tools.schemas.design_standards_models import (
     DesignStandardResponse as DesignStandardResponse,
 )
 from design_tools.schemas.design_standards_models import (
-    GenerateMockupRequest as GenerateMockupRequest,
-)
-from design_tools.schemas.design_standards_models import (
-    MockupResponse as MockupResponse,
-)
-from design_tools.schemas.design_standards_models import (
     RulesByCategoryResponse as RulesByCategoryResponse,
 )
 from design_tools.schemas.design_standards_models import (

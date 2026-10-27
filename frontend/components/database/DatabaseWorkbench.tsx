@@ -34,7 +34,7 @@ const queryKey = (projectId: string) => ['db-workbench', projectId] as const
 export function DatabaseWorkbench({
   projectId,
   title = projectId,
-  closeHref = `/projects/${projectId}?tab=explorer&type=database`,
+  closeHref = `/projects/${projectId}`,
   autoStart = true,
   stopOnUnmount = false,
   toolbarSlot,

@@ -12,14 +12,6 @@ def test_run_daily_maintenance_records_observable_summary(mocker) -> None:
         return_value={"cancelled_count": 2},
     )
     mocker.patch(
-        "app.tasks.maintenance.scan_history.fail_stale_running_scans",
-        return_value=1,
-    )
-    mocker.patch(
-        "app.tasks.maintenance.scan_history.cleanup_old_scan_history",
-        return_value=3,
-    )
-    mocker.patch(
         "app.tasks.maintenance.notification_store.cleanup_old_notifications",
         return_value={"read_deleted": 4, "dismissed_deleted": 1},
     )
@@ -61,7 +53,7 @@ def test_run_daily_maintenance_records_observable_summary(mocker) -> None:
     result = run_daily_maintenance()
 
     assert result["status"] == "success"
-    assert result["rows_cleaned"] == 49
+    assert result["rows_cleaned"] == 45
     assert result["bytes_reclaimed"] == 4096
     assert result["events_deleted"]["total_deleted"] == 8
     assert result["maintenance_runs_deleted"] == 9
@@ -69,7 +61,7 @@ def test_run_daily_maintenance_records_observable_summary(mocker) -> None:
     assert result["host_retention"]["items_deleted"] == 3
     record_run.assert_called_once()
     assert record_run.call_args.args[:2] == ("daily_maintenance", "success")
-    assert record_run.call_args.kwargs["rows_cleaned"] == 49
+    assert record_run.call_args.kwargs["rows_cleaned"] == 45
     assert record_run.call_args.kwargs["summary"]["events_deleted"]["user_deleted"] == 6
 
 
@@ -83,14 +75,6 @@ def test_run_daily_maintenance_becomes_partial_when_host_retention_reports_parti
         return_value={"cancelled_count": 0},
     )
     mocker.patch("app.tasks.maintenance.purge_terminal_tasks", return_value=0)
-    mocker.patch(
-        "app.tasks.maintenance.scan_history.fail_stale_running_scans",
-        return_value=0,
-    )
-    mocker.patch(
-        "app.tasks.maintenance.scan_history.cleanup_old_scan_history",
-        return_value=0,
-    )
     mocker.patch(
         "app.tasks.maintenance.notification_store.cleanup_old_notifications",
         return_value={},

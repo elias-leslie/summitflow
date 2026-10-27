@@ -10,8 +10,6 @@ from .design_standards_models import (
     CreateStandardRequest,
     DesignRuleResponse,
     DesignStandardResponse,
-    GenerateMockupRequest,
-    MockupResponse,
     RulesByCategoryResponse,
     ValidationRequest,
     ValidationResponse,
@@ -241,36 +239,3 @@ async def delete_rule(
     if not ds_storage.delete_rule(standard_id, rule_id):
         raise HTTPException(status_code=404, detail="Rule not found")
     return {"deleted": True, "rule_id": rule_id}
-
-
-@router.post(
-    "/projects/{project_id}/design-audit/generate-mockup",
-    response_model=MockupResponse,
-)
-async def generate_mockup_endpoint(
-    project_id: str, request: GenerateMockupRequest
-) -> MockupResponse:
-    """Generate a design mockup for an explorer entry (page)."""
-    from ..services.mockup_generator import generate_mockup
-
-    result = generate_mockup(
-        project_id=project_id,
-        explorer_entry_id=request.explorer_entry_id,
-        standards_id=request.standards_id,
-        design_direction=request.design_direction,
-    )
-    mockup_url = (
-        f"/api/projects/{project_id}/mockups/{result.mockup_id}"
-        if result.success and result.mockup_id
-        else None
-    )
-    return MockupResponse(
-        success=result.success,
-        mockup_id=result.mockup_id,
-        db_id=result.db_id,
-        image_path=result.image_path,
-        error=result.error,
-        generator=result.generator,
-        generation_time_ms=result.generation_time_ms,
-        mockup_url=mockup_url,
-    )

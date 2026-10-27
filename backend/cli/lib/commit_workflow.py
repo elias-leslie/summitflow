@@ -452,38 +452,6 @@ def commit_git_revision(
     return result
 
 
-def _refresh_symbols_after_publish(repo: Path, result: dict[str, Any]) -> dict[str, Any]:
-    """Queue a targeted symbol reindex of a successful local commit's files.
-
-    Bridges the bi-hourly sweep gap so fresh symbols are searchable
-    immediately. Best-effort: a completed commit must never fail on this.
-    """
-    if result.get("status") != "SUCCESS":
-        return result
-    sha = str(result.get("sha") or "").strip()
-    if not sha:
-        return result
-    try:
-        from app.services.explorer.types.file_constants import SYMBOL_INDEX_EXTENSIONS
-        from cli.client import STClient
-
-        from .execution_context import resolve_checkout_project_id
-
-        project_id = resolve_checkout_project_id(repo)
-        if not project_id:
-            return result
-        changed = run_git(repo, ["diff-tree", "-r", "--name-only", "--no-commit-id", sha]).stdout.splitlines()
-        paths = [p for p in changed if p and Path(p).suffix.lower() in SYMBOL_INDEX_EXTENSIONS]
-        if not paths:
-            return result
-        client = STClient(project_id=project_id)
-        client.post(client._url("/explorer/symbols/refresh"), json={"paths": paths})
-        result["symbol_refresh_queued"] = len(paths)
-    except Exception:
-        return result
-    return result
-
-
 def _record_task_commit(repo: Path, result: dict[str, Any], *, task_id: str) -> dict[str, Any]:
     """Associate a successful local checkpoint with its task immediately."""
     if not task_id or result.get("status") != "SUCCESS":
@@ -537,5 +505,4 @@ def commit_repo(
             )
     except AcceptanceError as exc:
         raise CommitError(str(exc)) from exc
-    result = _record_task_commit(repo, result, task_id=task_id)
-    return _refresh_symbols_after_publish(repo, result)
+    return _record_task_commit(repo, result, task_id=task_id)

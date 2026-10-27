@@ -471,10 +471,6 @@ def _create_misc_indexes(cur: psycopg.Cursor) -> None:
             " ON quality_check_results(project_id, check_type, created_at DESC)"
         )
         cur.execute(
-            "CREATE INDEX IF NOT EXISTS idx_qa_issues_project_status_detected"
-            " ON qa_issues(project_id, status, last_detected_at DESC)"
-        )
-        cur.execute(
             "CREATE INDEX IF NOT EXISTS idx_backups_project_event_time"
             " ON backups(project_id, COALESCE(completed_at, created_at) DESC)"
             " WHERE status IN ('completed', 'failed')"

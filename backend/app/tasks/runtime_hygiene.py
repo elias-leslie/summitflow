@@ -11,8 +11,8 @@ import psycopg
 from psycopg import sql
 
 from app.logging_config import get_logger
-from app.services.explorer.types.database_config import get_db_url_for_project
 from app.services.journal_monitor import SystemdMonitor
+from app.services.project_databases import get_db_url_for_project
 from app.services.resource_monitor import get_cpu_usage, get_disk_usages, get_memory_usage
 from app.storage import backups as backup_store
 from app.storage import maintenance_runs as maintenance_store

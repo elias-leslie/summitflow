@@ -42,7 +42,7 @@ class ProjectPermissionBootstrap(BaseModel):
 
 
 class ProjectOnboardingRequest(BaseModel):
-    """Standard SummitFlow onboarding for a project: a code scan and task sync. Backups cover every project on their own."""
+    """Standard SummitFlow onboarding for a project: write its `.index.yaml`. Backups cover every project on their own."""
 
 
 class ProjectOnboardingResponse(BaseModel):
@@ -60,7 +60,7 @@ class ProjectCreate(BaseModel):
     base_url: str | None = None
     public_url: str | None = None
     health_endpoint: str = "/health"
-    root_path: str | None = None  # Filesystem path for file scanning
+    root_path: str | None = None  # Filesystem checkout root
     frontend_port: int | None = None  # Canonical frontend port
     backend_port: int | None = None  # Canonical backend port
     category: ProjectCategory = "dev"
@@ -156,3 +156,18 @@ class ProjectsWithStatsResponse(BaseModel):
 
     projects: list[ProjectWithStats]
     total: int
+
+
+class ProjectPage(BaseModel):
+    """A frontend page discovered live from the project checkout."""
+
+    path: str
+    name: str
+    url: str | None = None
+    port: int | None = None
+
+
+class ProjectPagesResponse(BaseModel):
+    """Frontend pages of a project."""
+
+    items: list[ProjectPage]

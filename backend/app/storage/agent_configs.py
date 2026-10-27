@@ -39,8 +39,7 @@ class AgentConfig(TypedDict, total=False):
     work_pickup_enabled: bool  # Enable scheduled autonomous work pickup
     task_generation_enabled: bool  # Enable scheduled routine upkeep cron entrypoint
     reset_claims_enabled: bool  # Enable scheduled claim reset sweeps
-    scan_projects_enabled: bool  # Enable scheduled project scans
-    refresh_precision_indexes_enabled: bool  # Enable scheduled precision index refresh
+    refresh_project_indexes_enabled: bool  # Enable scheduled .index.yaml refresh
     refresh_graphify_graphs_enabled: bool  # Enable scheduled Graphify code graph refresh
     scheduled_backups_enabled: bool  # Enable scheduled backup creation
     stale_cleanup_enabled: bool  # Enable scheduled stale cleanup jobs
@@ -88,8 +87,7 @@ DEFAULT_AGENT_CONFIG: AgentConfig = {
     "work_pickup_enabled": False,
     "task_generation_enabled": True,
     "reset_claims_enabled": True,
-    "scan_projects_enabled": True,
-    "refresh_precision_indexes_enabled": True,
+    "refresh_project_indexes_enabled": True,
     "refresh_graphify_graphs_enabled": True,
     "scheduled_backups_enabled": True,
     "stale_cleanup_enabled": True,

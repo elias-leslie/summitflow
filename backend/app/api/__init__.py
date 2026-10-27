@@ -3,4 +3,4 @@
 Keep model imports usable without initializing router workflow dependencies.
 """
 
-__all__ = ["explorer", "git", "projects"]
+__all__ = ["git", "projects"]

@@ -56,7 +56,7 @@ export function NewProjectClient() {
               Create Project
             </h1>
             <p className="text-sm text-slate-400">
-              Register the app, then SummitFlow tracks health, scans, and work
+              Register the app, then SummitFlow tracks its health and work
             </p>
           </div>
         </div>

@@ -2,8 +2,8 @@ import { FolderOpen, ListTodo, Palette } from 'lucide-react'
 import type { NavItemConfig } from './types'
 
 // Project-specific navigation items (shown when project expanded).
-// Explorer and Graph are frozen: their routes stay reachable by URL, but they
-// are no longer offered in the sidebar.
+// Graph is frozen: its route stays reachable by URL, but it is no longer
+// offered in the sidebar.
 export const projectNavItems: NavItemConfig[] = [
   {
     id: 'tasks',

@@ -309,78 +309,6 @@ def test_git_run_checks_scopes_changed_files_for_selected_paths(
     assert run.call_args.args[0] == ["st", "check", mode, "--changed-only"]
 
 
-def _publish_result(**extra: object) -> dict[str, object]:
-    return {"repo": "repo", "path": "/repo", "status": "SUCCESS", "pushed": True, "sha": "abc1234", **extra}
-
-
-@patch("cli.lib.commit_workflow.run_git")
-def test_refresh_symbols_after_publish_posts_changed_symbol_paths(mock_run_git: MagicMock) -> None:
-    from cli.lib.commit_workflow import _refresh_symbols_after_publish
-
-    mock_run_git.return_value = MagicMock(stdout="backend/app/x.py\ndocs/readme.md\nfrontend/y.tsx\n")
-    mock_client = MagicMock()
-
-    with (
-        patch("cli.client.STClient", return_value=mock_client) as client_cls,
-        patch("cli.lib.execution_context.resolve_checkout_project_id", return_value="summitflow"),
-    ):
-        result = _refresh_symbols_after_publish(Path("/repo"), _publish_result())
-
-    assert result["symbol_refresh_queued"] == 2
-    client_cls.assert_called_once_with(project_id="summitflow")
-    diff_args = mock_run_git.call_args[0][1]
-    assert diff_args == ["diff-tree", "-r", "--name-only", "--no-commit-id", "abc1234"]
-    posted = mock_client.post.call_args.kwargs["json"]
-    assert posted == {"paths": ["backend/app/x.py", "frontend/y.tsx"]}
-
-
-def test_refresh_symbols_after_local_commit() -> None:
-    from cli.lib.commit_workflow import _refresh_symbols_after_publish
-
-    with (
-        patch("cli.lib.commit_workflow.run_git", return_value=MagicMock(stdout="backend/a.py\n")),
-        patch("cli.lib.execution_context.resolve_checkout_project_id", return_value="summitflow"),
-        patch("cli.client.STClient") as client_cls,
-    ):
-        result = _refresh_symbols_after_publish(Path("/repo"), _publish_result(pushed=False))
-
-    assert result["symbol_refresh_queued"] == 1
-    client_cls.assert_called_once()
-
-
-@patch("cli.lib.commit_workflow.run_git")
-def test_refresh_symbols_after_publish_skips_unregistered_repo(mock_run_git: MagicMock) -> None:
-    from cli.lib.commit_workflow import _refresh_symbols_after_publish
-
-    with (
-        patch("cli.client.STClient") as client_cls,
-        patch("cli.lib.execution_context.resolve_checkout_project_id", return_value=None),
-    ):
-        result = _refresh_symbols_after_publish(Path("/repo"), _publish_result())
-
-    assert "symbol_refresh_queued" not in result
-    client_cls.assert_not_called()
-    mock_run_git.assert_not_called()
-
-
-@patch("cli.lib.commit_workflow.run_git")
-def test_refresh_symbols_after_publish_swallows_api_errors(mock_run_git: MagicMock) -> None:
-    from cli.lib.commit_workflow import _refresh_symbols_after_publish
-
-    mock_run_git.return_value = MagicMock(stdout="backend/app/x.py\n")
-    mock_client = MagicMock()
-    mock_client.post.side_effect = RuntimeError("api down")
-
-    with (
-        patch("cli.client.STClient", return_value=mock_client),
-        patch("cli.lib.execution_context.resolve_checkout_project_id", return_value="summitflow"),
-    ):
-        result = _refresh_symbols_after_publish(Path("/repo"), _publish_result())
-
-    assert result["status"] == "SUCCESS"
-    assert "symbol_refresh_queued" not in result
-
-
 @pytest.mark.parametrize(
     ("full", "mode"),
     [(False, "--quick"), (True, "--check")],
@@ -648,7 +576,6 @@ def test_commit_waits_briefly_for_repo_mutation_lock(tmp_path: Path, monkeypatch
     handle = _hold_repo_lock(repo)
     monkeypatch.setattr(commit_workflow, "REPO_LOCK_POLL_SECONDS", 0.05)
     monkeypatch.setattr(commit_workflow, "run_checks", lambda *_a, **_k: (True, "ok"))
-    monkeypatch.setattr(commit_workflow, "_refresh_symbols_after_publish", lambda _repo, result: result)
     timer = threading.Timer(0.3, handle.close)
     timer.start()
     try:

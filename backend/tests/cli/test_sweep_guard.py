@@ -327,7 +327,6 @@ def test_commit_lock_wait_is_five_minutes_with_progress_lines(tmp_path, monkeypa
     fcntl.flock(handle.fileno(), fcntl.LOCK_EX)
     monkeypatch.setattr(commit_workflow, "REPO_LOCK_POLL_SECONDS", 0.02)
     monkeypatch.setattr(commit_workflow, "REPO_LOCK_PROGRESS_SECONDS", 0.1)
-    monkeypatch.setattr(commit_workflow, "_refresh_symbols_after_publish", lambda _repo, result: result)
     timer = threading.Timer(0.45, handle.close)
     timer.start()
     try:

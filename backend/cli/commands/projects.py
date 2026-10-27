@@ -227,7 +227,7 @@ def create_project(
         bool | None,
         typer.Option(
             "--onboard/--no-onboard",
-            help="Queue standard SummitFlow onboarding (code scan, post-scan task sync). Defaults to on for --summitflow-hosted.",
+            help="Queue standard SummitFlow onboarding (writes the project .index.yaml). Defaults to on for --summitflow-hosted.",
         ),
     ] = None,
     native: Annotated[

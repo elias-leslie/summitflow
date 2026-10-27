@@ -72,19 +72,13 @@ export function ProjectSelector({ onProjectChange }: ProjectSelectorProps) {
       localStorage.setItem(PROJECT_STORAGE_KEY, projectId)
       // Navigate to project page if not already there
       if (!pathname.startsWith(`/projects/${projectId}`)) {
-        // Preserve current tab and sub-context when switching projects
+        // Preserve the current tab when switching projects
         const currentTab = parseProjectTab(searchParams.get('tab'))
-        const currentType = searchParams.get('type') // Explorer type context
-
-        let targetUrl = `/projects/${projectId}`
-        if (currentTab) {
-          targetUrl += `?tab=${currentTab}`
-          // Preserve explorer type if on explorer tab
-          if (currentTab === 'explorer' && currentType) {
-            targetUrl += `&type=${currentType}`
-          }
-        }
-        router.push(targetUrl)
+        router.push(
+          currentTab
+            ? `/projects/${projectId}?tab=${currentTab}`
+            : `/projects/${projectId}`,
+        )
       }
     } else {
       localStorage.removeItem(PROJECT_STORAGE_KEY)

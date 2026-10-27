@@ -55,4 +55,5 @@ def test_search_help_is_static_and_never_executes(monkeypatch: Any) -> None:
 
     assert result.exit_code == 0, result.output
     assert "Usage: st search" in result.output
-    assert "--scope" in result.output
+    assert "--project" in result.output
+    assert "--scope" not in result.output

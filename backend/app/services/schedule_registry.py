@@ -34,19 +34,11 @@ SCHEDULE_DEFINITIONS: tuple[ScheduleDefinition, ...] = (
         scope="system",
     ),
     ScheduleDefinition(
-        schedule_id="scan_projects",
-        config_key="scan_projects_enabled",
-        label="Project scan",
-        description="Refreshes explorer scans across projects.",
+        schedule_id="refresh_project_indexes",
+        config_key="refresh_project_indexes_enabled",
+        label="Project index refresh",
+        description="Rewrites each project's .index.yaml runtime map (environment, ports, URLs, pages).",
         cron="0 */6 * * *",
-        scope="system",
-    ),
-    ScheduleDefinition(
-        schedule_id="refresh_precision_indexes",
-        config_key="refresh_precision_indexes_enabled",
-        label="Precision index refresh",
-        description="Rebuilds precision search indexes for symbol-first context retrieval.",
-        cron="10 3 * * *",
         scope="system",
     ),
     ScheduleDefinition(

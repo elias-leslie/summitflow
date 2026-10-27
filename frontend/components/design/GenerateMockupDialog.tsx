@@ -3,8 +3,12 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Sparkles, X } from 'lucide-react'
 import { useState } from 'react'
-import { type ExplorerEntry, fetchExplorerEntries } from '@/lib/api/explorer'
 import { type AnalyzePageResponse, analyzePage } from '@/lib/api/mockups'
+import {
+  buildPageUrl,
+  fetchProjectPages,
+  type ProjectPage,
+} from '@/lib/api/projects'
 import { AnalysisResult } from './mockup-dialog/AnalysisResult'
 import { PageDropdown } from './mockup-dialog/PageDropdown'
 import { SubmitButtons } from './mockup-dialog/SubmitButtons'
@@ -23,38 +27,25 @@ export function GenerateMockupDialog({
   defaultUrl = '',
 }: GenerateMockupDialogProps) {
   const [pageUrl, setPageUrl] = useState(defaultUrl)
-  const [selectedPage, setSelectedPage] = useState<ExplorerEntry | null>(null)
+  const [selectedPage, setSelectedPage] = useState<ProjectPage | null>(null)
   const [isDropdownOpen, setIsDropdownOpen] = useState(false)
   const [result, setResult] = useState<AnalyzePageResponse | null>(null)
   const queryClient = useQueryClient()
 
-  // Fetch pages from explorer
-  const { data: pagesData, isLoading: isPagesLoading } = useQuery({
-    queryKey: ['explorer-pages', projectId],
-    queryFn: () =>
-      fetchExplorerEntries(projectId, {
-        type: 'page',
-        sort: 'path',
-        dir: 'asc',
-      }),
+  // Pages are discovered live from the project's frontend routes
+  const {
+    data: pagesData,
+    isLoading: isPagesLoading,
+    isError: isPagesError,
+  } = useQuery({
+    queryKey: ['project-pages', projectId],
+    queryFn: () => fetchProjectPages(projectId),
     enabled: open,
   })
 
-  const pages = pagesData?.entries || []
+  const pages = pagesData ?? []
 
-  // Build full URL from page entry
-  const buildPageUrl = (page: ExplorerEntry): string => {
-    const scannedUrl = page.metadata.url
-    if (typeof scannedUrl === 'string' && scannedUrl.length > 0) {
-      return scannedUrl
-    }
-
-    const port = page.metadata.port
-    return port ? `http://localhost:${port}${page.path}` : page.path
-  }
-
-  // Handle page selection
-  const handlePageSelect = (page: ExplorerEntry) => {
+  const handlePageSelect = (page: ProjectPage) => {
     setSelectedPage(page)
     setPageUrl(buildPageUrl(page))
     setIsDropdownOpen(false)
@@ -134,6 +125,7 @@ export function GenerateMockupDialog({
                 selectedPage={selectedPage}
                 pages={pages}
                 isPagesLoading={isPagesLoading}
+                isPagesError={isPagesError}
                 isDropdownOpen={isDropdownOpen}
                 isDisabled={analyzeMutation.isPending || isPagesLoading}
                 onToggle={() => setIsDropdownOpen(!isDropdownOpen)}

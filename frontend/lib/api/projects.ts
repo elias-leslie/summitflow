@@ -1,7 +1,8 @@
 /**
  * Project API functions
  *
- * Handles project CRUD operations, health checks, and agent configuration.
+ * Handles project CRUD operations, health checks, page discovery, and agent
+ * configuration.
  * Re-exports type definitions for backward compatibility.
  */
 
@@ -9,6 +10,8 @@ import type {
   Project,
   ProjectCreate,
   ProjectHealth,
+  ProjectPage,
+  ProjectPagesResponse,
   ProjectReadme,
   ProjectsWithStatsResponse,
   ProjectUpdate,
@@ -81,4 +84,23 @@ export async function fetchProjectHealth(id: string): Promise<ProjectHealth> {
   return fetchWithErrorHandling(`/api/projects/${id}/health`, {
     errorMessage: 'Failed to check project health',
   })
+}
+
+// ============================================================================
+// Page Discovery
+// ============================================================================
+
+/** List the project's pages, discovered live from its frontend routes. */
+export async function fetchProjectPages(id: string): Promise<ProjectPage[]> {
+  const data = await fetchWithErrorHandling<ProjectPagesResponse>(
+    `/api/projects/${id}/pages`,
+    { errorMessage: 'Failed to fetch project pages' },
+  )
+  return data.items
+}
+
+/** Resolve a page to the URL to open: explicit url, else localhost:port + path. */
+export function buildPageUrl(page: ProjectPage): string {
+  if (page.url) return page.url
+  return page.port ? `http://localhost:${page.port}${page.path}` : page.path
 }

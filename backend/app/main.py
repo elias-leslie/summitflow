@@ -26,7 +26,6 @@ from .api import (
     design_standards,
     docker,
     events,
-    explorer,
     files,
     git,
     graphify,
@@ -132,7 +131,6 @@ app.add_middleware(cast(Any, AccessLogMiddleware))
 app.include_router(auth.router, prefix="/api/auth", tags=["auth"])
 app.include_router(monitor.router)
 app.include_router(projects.router, prefix="/api/projects", tags=["projects"])
-app.include_router(explorer.router, prefix="/api/projects", tags=["explorer"])
 app.include_router(files.project_router, prefix="/api/projects", tags=["files"])
 app.include_router(files.global_router, prefix="/api", tags=["files"])
 app.include_router(graphify.router, prefix="/api/projects", tags=["graphify"])

@@ -2,7 +2,6 @@
  * Events API Client
  *
  * API client for the unified events table endpoints.
- * Follows existing patterns from lib/api/explorer.ts.
  */
 
 import { buildQueryString, fetchWithErrorHandling } from './utils'

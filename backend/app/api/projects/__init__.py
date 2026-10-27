@@ -6,12 +6,13 @@ from fastapi import APIRouter, BackgroundTasks, HTTPException, Request
 
 from ...access_control import require_owner
 from ...project_identity import get_project_lifecycles, validate_project_root
-from ...services import explorer
+from ...services import project_index
 from ...storage.connection import get_connection
 from ...storage.project_identity_sync import (
     sync_project_identity as sync_registered_project_identity,
 )
 from ..checkpoint_helpers import get_active_checkpoint_map
+from ..dependencies import validate_project_exists
 from .agent_hub import (
     delete_agent_hub_project_permission,
     reconcile_agent_hub_project_identity,
@@ -42,6 +43,7 @@ from .models import (
     ProjectHealthResponse,
     ProjectOnboardingRequest,
     ProjectOnboardingResponse,
+    ProjectPagesResponse,
     ProjectResponse,
     ProjectRetirementRequest,
     ProjectsWithStatsResponse,
@@ -66,10 +68,7 @@ async def _resolve_project_health_statuses(projects):
 async def create_project(
     project: ProjectCreate, background_tasks: BackgroundTasks
 ) -> ProjectResponse:
-    """Register a new project.
-
-    Triggers an initial Explorer scan for all types in the background.
-    """
+    """Register a new project and write its `.index.yaml` in the background."""
     try:
         validate_project_root(project.id, project.root_path)
     except ValueError as exc:
@@ -100,7 +99,7 @@ async def create_project(
         project,
         background_tasks,
         onboarding_runner=run_project_onboarding,
-        scan_runner=explorer.run_scan_job,
+        index_writer=project_index.write_index_file,
     )
     return response
 
@@ -150,6 +149,14 @@ async def get_project(project_id: str) -> ProjectResponse:
         )
     ).get(project.id)
     return project
+
+
+@router.get("/{project_id}/pages", response_model=ProjectPagesResponse)
+async def list_project_pages(project_id: str) -> ProjectPagesResponse:
+    """List the project's frontend pages, discovered live from its checkout."""
+    validate_project_exists(project_id)
+    items = await asyncio.to_thread(project_index.discover_pages, project_id)
+    return ProjectPagesResponse.model_validate({"items": items})
 
 
 @router.post("/{project_id}/sync-identity", response_model=ProjectResponse)

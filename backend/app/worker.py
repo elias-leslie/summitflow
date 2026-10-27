@@ -21,16 +21,11 @@ from app.workflows.scheduled import (
     nightly_security_alert_wf,
     prod_smoke_test_wf,
     refresh_graphify_graphs_wf,
-    refresh_precision_indexes_wf,
+    refresh_project_indexes_wf,
     reset_claims_wf,
     runtime_hygiene_wf,
-    scan_projects_wf,
     scheduled_backups_wf,
     stale_cleanup_wf,
-)
-from app.workflows.utility import (
-    check_resolved_wf,
-    page_health_wf,
 )
 
 
@@ -42,21 +37,17 @@ def _registered_workflows() -> list[Any]:
         automation_outbox_reconcile_wf,
         # Scheduled
         reset_claims_wf,
-        scan_projects_wf,
-        refresh_precision_indexes_wf,
+        refresh_project_indexes_wf,
         refresh_graphify_graphs_wf,
         scheduled_backups_wf,
         stale_cleanup_wf,
         hatchet_retention_wf,
         prod_smoke_test_wf,
         health_monitor_wf,
-            runtime_hygiene_wf,
+        runtime_hygiene_wf,
         nightly_publication_wf,
         nightly_deep_lane_wf,
         nightly_security_alert_wf,
-        # Utility
-                    check_resolved_wf,
-        page_health_wf,
     ]
 
 

@@ -3,17 +3,12 @@
 from pathlib import Path
 
 
-def test_code_intelligence_is_shared_by_indexer_and_api():
-    from code_intelligence import analyzers, graphify_tools
-    from code_intelligence.precision import ranking
+def test_code_intelligence_graph_engine_is_shared_with_the_api():
+    from code_intelligence import graphify_tools
 
     from app.services import graphify_tools as legacy_graph
-    from app.services.context_gatherer import _precision_ranking
-    from app.services.explorer.types import files
 
     assert legacy_graph is graphify_tools
-    assert _precision_ranking is ranking
-    assert files.extract_symbols is analyzers.extract_symbols
 
 
 def test_design_api_and_workers_share_owner_and_durable_root():

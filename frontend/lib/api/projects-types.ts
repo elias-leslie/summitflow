@@ -42,7 +42,7 @@ export interface ProjectPermissionBootstrap {
   budget_alert_threshold?: number
 }
 
-// Onboarding runs a code scan and task sync; it takes no options.
+// Onboarding writes the project's .index.yaml; it takes no options.
 export type ProjectOnboardingRequest = Record<string, never>
 
 export interface ProjectCreate {
@@ -108,3 +108,15 @@ export interface ProjectHealth {
 export type ProjectReadme =
   | { project_id: string; status: 'available'; content: string }
   | { project_id: string; status: 'missing' | 'unavailable'; content: null }
+
+/** A page discovered live from the project's frontend routes. */
+export interface ProjectPage {
+  path: string
+  name: string
+  url: string | null
+  port: number | null
+}
+
+export interface ProjectPagesResponse {
+  items: ProjectPage[]
+}

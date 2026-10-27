@@ -340,7 +340,7 @@ dependencies = [
     { name = "tree-sitter-typescript" },
 ]
 wheels = [
-    { filename = "code_intelligence-0.1.0-py3-none-any.whl", hash = "sha256:2938d2ad36f1df70388f8c69304bba54a069ce61a8fc05972eb57358076edacd" },
+    { filename = "code_intelligence-0.1.0-py3-none-any.whl", hash = "sha256:66374718afaecf7eedf0202ef227cd051352f9968775cfe035169ce2c02436d5" },
 ]
 
 [package.metadata]
@@ -518,7 +518,7 @@ dependencies = [
     { name = "typer" },
 ]
 wheels = [
-    { filename = "design_tools-0.1.0-py3-none-any.whl", hash = "sha256:686fcb31b26229c522f30c32804e1b568d3680219abc35ea98891b172e22e3ed" },
+    { filename = "design_tools-0.1.0-py3-none-any.whl", hash = "sha256:d70cca96376ebc2c22f0e54c9bc8151eaa92e87089e59769201306e9f035be62" },
 ]
 
 [package.metadata]

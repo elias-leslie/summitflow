@@ -106,8 +106,8 @@ UI (~23 pages), and ~33 Hatchet workflows. Output is compact JSON by default, wi
 
 **Scheduled jobs**
 
-- Hatchet runs maintenance crons (stale-claim reset, explorer scans, precision and
-  Graphify index refresh, backups, retention, production smoke tests, runtime
+- Hatchet runs maintenance crons (stale-claim reset, per-project `.index.yaml`
+  and Graphify graph refresh, backups, retention, production smoke tests, runtime
   hygiene) and the Agent Hub automation dispatch/outbox workflows. Task execution
   is always claimed by an agent; SummitFlow does not pick up or generate work.
 

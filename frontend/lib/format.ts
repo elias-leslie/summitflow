@@ -1,12 +1,3 @@
-export function formatNumber(n: number | undefined | null): string {
-  return (n ?? 0).toLocaleString()
-}
-
-export function formatPercent(n: number | undefined | null): string {
-  if (n === undefined || n === null) return '-'
-  return `${Math.round(n)}%`
-}
-
 export function formatBytes(bytes: number | null | undefined): string {
   if (bytes === null || bytes === undefined || bytes === 0) return '-'
   const units = ['B', 'KB', 'MB', 'GB', 'TB']

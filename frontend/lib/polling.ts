@@ -15,10 +15,10 @@ export const POLL_FAST = 5_000
 /** Monitoring refresh for operational/runtime status pages. */
 export const POLL_MONITOR = 10_000
 
-/** Slow refresh for background/infrequent data (git status, file explorer). */
+/** Slow refresh for background/infrequent data (git status, file browser). */
 export const POLL_SLOW = 60_000
 
-/** Very slow refresh for rarely-changing data (design standards, scan diffs). */
+/** Very slow refresh for rarely-changing data (design standards). */
 export const POLL_RARE = 300_000
 
 /** Notification count polling interval. */
@@ -34,9 +34,6 @@ export const STALE_FAST = 4_000
 /** Git-level stale time. */
 export const STALE_GIT = 30_000
 
-/** Stale time for scan history and diff data. */
-export const STALE_SCAN = 120_000
-
 // --- UI feedback timeouts ---
 /** Duration to show copy-to-clipboard / save confirmation feedback. */
 export const FEEDBACK_TIMEOUT = 2_000
@@ -46,7 +43,3 @@ export const PUSH_NOTIFICATION_TIMEOUT = 10_000
 
 /** Duration to dismiss toast notifications. */
 export const TOAST_DISMISS_MS = 5_000
-
-// --- GC times ---
-/** Garbage-collection time for explorer queries (5 minutes). */
-export const GC_EXPLORER = 300_000

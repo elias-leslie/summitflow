@@ -1,12 +1,12 @@
 """Scheduled (cron) workflows for SummitFlow.
 
 System maintenance crons, each gated by a flag in app.services.schedule_registry.
-Most use ConcurrencyExpression with CANCEL_IN_PROGRESS; explorer maintenance shares
-CANCEL_NEWEST concurrency so scan/index jobs do not overlap.
+Most use ConcurrencyExpression with CANCEL_IN_PROGRESS; project maintenance (index files,
+Graphify graphs) shares CANCEL_NEWEST concurrency so those jobs do not overlap.
 
 Schedule philosophy (2026-03-16 tuning):
   - Health/smoke: */5 to */30 min — enough for alerting, not so frequent it drains CPU
-  - Explorer: full scan */6h plus a daily 03:10 file sweep; per-file analysis, not git, is the cost
+  - Project indexes: .index.yaml rewrite */6h; cheap filesystem reads, unchanged files stay untouched
   - Cleanup/maintenance: daily retention
   - Claims reset: */15 min — lightweight DB query, kept frequent for task flow
 """
@@ -45,11 +45,11 @@ def _disabled_schedule_result(
     return result
 
 
-def _explorer_schedule_concurrency() -> ConcurrencyExpression:
-    """Shared concurrency guard for memory-heavy explorer maintenance workflows."""
+def _project_maintenance_concurrency() -> ConcurrencyExpression:
+    """Shared concurrency guard for per-project maintenance workflows."""
 
     return ConcurrencyExpression(
-        expression="'summitflow-explorer-maintenance'",
+        expression="'summitflow-project-maintenance'",
         max_runs=1,
         limit_strategy=ConcurrencyLimitStrategy.CANCEL_NEWEST,
     )
@@ -79,52 +79,27 @@ async def reset_claims_wf(input: EmptyInput, ctx: Context) -> dict[str, Any]:
 
 
 @hatchet.task(
-    name="summitflow-scan-projects",
+    name="summitflow-refresh-project-indexes",
     input_validator=EmptyInput,
-    execution_timeout="1800s",
+    execution_timeout="600s",
     retries=3,
     backoff_factor=2.0,
-    on_crons=[schedule_cron("scan_projects")],
-    concurrency=_explorer_schedule_concurrency(),
+    on_crons=[schedule_cron("refresh_project_indexes")],
+    concurrency=_project_maintenance_concurrency(),
 )
-async def scan_projects_wf(input: EmptyInput, ctx: Context) -> dict[str, Any]:
-    from ..tasks.explorer_tasks import scan_all_projects
-    from .utility import make_post_scan_dispatch
+async def refresh_project_indexes_wf(input: EmptyInput, ctx: Context) -> dict[str, Any]:
+    from ..services.project_index import write_all_index_files
 
-    if not _system_schedule_enabled("scan_projects"):
-        return _disabled_schedule_result("scan_projects")
+    if not _system_schedule_enabled("refresh_project_indexes"):
+        return _disabled_schedule_result("refresh_project_indexes")
 
-    dispatch = make_post_scan_dispatch()
-    return await asyncio.to_thread(
-        scan_all_projects,
-        dry_run=False,
-        dispatch=dispatch,
-        isolate_process=True,
-    )
-
-
-@hatchet.task(
-    name="summitflow-refresh-precision-indexes",
-    input_validator=EmptyInput,
-    execution_timeout="1200s",
-    retries=3,
-    backoff_factor=2.0,
-    on_crons=[schedule_cron("refresh_precision_indexes")],
-    concurrency=_explorer_schedule_concurrency(),
-)
-async def refresh_precision_indexes_wf(input: EmptyInput, ctx: Context) -> dict[str, Any]:
-    from ..tasks.explorer_tasks import scan_all_projects
-
-    if not _system_schedule_enabled("refresh_precision_indexes"):
-        return _disabled_schedule_result("refresh_precision_indexes")
-
-    return await asyncio.to_thread(
-        scan_all_projects,
-        entry_type="file",
-        dry_run=False,
-        dispatch=None,
-        isolate_process=True,
-    )
+    results = await asyncio.to_thread(write_all_index_files)
+    failed = sorted(project_id for project_id, path in results.items() if path is None)
+    return {
+        "status": "partial" if failed else "success",
+        "written": len(results) - len(failed),
+        "failed": failed,
+    }
 
 
 @hatchet.task(
@@ -134,7 +109,7 @@ async def refresh_precision_indexes_wf(input: EmptyInput, ctx: Context) -> dict[
     retries=3,
     backoff_factor=2.0,
     on_crons=[schedule_cron("refresh_graphify_graphs")],
-    concurrency=_explorer_schedule_concurrency(),
+    concurrency=_project_maintenance_concurrency(),
 )
 async def refresh_graphify_graphs_wf(input: EmptyInput, ctx: Context) -> dict[str, Any]:
     from ..tasks.graphify_tasks import refresh_existing_graphify_graphs
