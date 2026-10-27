@@ -87,7 +87,7 @@ class TestMockupProjectScope:
         mock_client.complete.return_value = SimpleNamespace(content="**Issue**: Contrast")
         mock_get_client.return_value = mock_client
 
-        analyze_screenshot_with_vision("agent-hub", screenshot_path, [], "/home")
+        analyze_screenshot_with_vision("agent-hub", screenshot_path, "/home")
 
         assert mock_client.complete.call_args.kwargs["project_id"] == "agent-hub"
         assert mock_client.complete.call_args.kwargs["agent_slug"] == "designer"

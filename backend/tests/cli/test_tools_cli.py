@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import Any, cast
+from typing import cast
 from unittest.mock import MagicMock, patch
 
 import httpx
@@ -12,7 +12,6 @@ from typer.testing import CliRunner
 from cli.commands.tools import (
     _api_request,
     _build_internal_headers,
-    _emit_feedback_for_audit,
     _format_adoption_compact,
     _format_audit_compact,
     _format_cost_compact,
@@ -353,50 +352,39 @@ def test_audit_rules_do_not_classify_git_inspection_as_waste() -> None:
     assert not any(rule["finding_type"] == "raw_vcs_tool_bypass" for rule in _RAW_AUDIT_RULES)
 
 
-def test_audit_emit_feedback_groups_duplicate_finding_types(monkeypatch: pytest.MonkeyPatch) -> None:
-    calls: list[dict[str, Any]] = []
+def test_audit_reports_findings_without_filing_anything(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(
-        "cli.commands.tools._report_or_vote_feedback",
-        lambda *args, **kwargs: calls.append({"args": args, "kwargs": kwargs}),
-    )
-
-    _emit_feedback_for_audit(
-        {
-            "window_hours": 24,
+        "cli.commands.tools._fetch_audit_metrics",
+        lambda hours, limit, project, session: {
+            "window_hours": hours,
+            "summary": {"finding_groups": 1, "events": 2, "inspected_shell_events": 5},
             "findings": [
                 {
-                    "component": "sf.quality",
-                    "finding_type": "missing_quality_gate",
+                    "finding_type": "raw_quality_tool_bypass",
                     "expected_surface": "st.check",
-                    "severity": "medium",
+                    "severity": "high",
                     "count": 2,
-                    "project_id": "agent-hub",
-                    "agent_slug": "unknown",
-                    "examples": ["session-a"],
-                    "session_ids": ["session-a"],
-                },
-                {
-                    "component": "sf.quality",
-                    "finding_type": "missing_quality_gate",
-                    "expected_surface": "st.check",
-                    "severity": "medium",
-                    "count": 3,
                     "project_id": "summitflow",
                     "agent_slug": "worker",
-                    "examples": ["session-b"],
-                    "session_ids": ["session-b"],
-                },
+                    "examples": ["pytest backend/tests/foo.py"],
+                }
             ],
-        }
+        },
     )
 
-    assert len(calls) == 1
-    assert calls[0]["args"] == ("sf.quality", "Tool governance: missing quality gate")
-    kwargs = cast(dict[str, Any], calls[0]["kwargs"])
-    assert kwargs["project_id"] == "summitflow"
-    assert kwargs["session_id"] == "session-a"
-    assert "agent-hub:2" in kwargs["description"]
-    assert "summitflow:3" in kwargs["description"]
+    result = runner.invoke(app, ["audit"])
+
+    assert result.exit_code == 0
+    assert "raw_quality_tool_bypass|expected=st.check|count=2" in result.output
+    assert "feedback" not in result.output.casefold()
+
+
+@pytest.mark.parametrize("command", ["audit", "cost"])
+def test_tools_governance_commands_no_longer_accept_emit_feedback(command: str) -> None:
+    result = runner.invoke(app, [command, "--emit-feedback"])
+
+    assert result.exit_code != 0
+    assert "No such option" in result.output
 
 
 def test_cost_compact_shows_manifest_and_hotspots(capsys: pytest.CaptureFixture[str]) -> None:
@@ -433,136 +421,6 @@ def test_cost_compact_shows_manifest_and_hotspots(capsys: pytest.CaptureFixture[
     assert "manifest_core~100t task(verification)~160t full~400t" in out
     assert "sdk.complete|sdk reqs=2 in=300 out=50 http_success=100.0%" in out
     assert "Bash events=4 out~120t chars=480" in out
-
-
-def test_cost_emit_feedback_requires_session_id(monkeypatch: pytest.MonkeyPatch) -> None:
-    calls: list[dict[str, object]] = []
-
-    monkeypatch.setattr(
-        "cli.commands.tools._fetch_cost_metrics",
-        lambda hours, limit, task, session: {
-            "window_hours": hours,
-            "manifest_costs": [
-                {"density": "core", "task": None, "tokens_approx": 100},
-                {"density": "task", "task": task, "tokens_approx": 200},
-                {"density": "full", "task": None, "tokens_approx": 900},
-            ],
-            "request_hotspots": [],
-            "tool_output_hotspots": [],
-        },
-    )
-    monkeypatch.setattr(
-        "cli.commands.tools._report_or_vote_feedback",
-        lambda *args, **kwargs: calls.append({"args": args, "kwargs": kwargs}),
-    )
-
-    result = runner.invoke(app, ["cost", "--emit-feedback"])
-
-    assert result.exit_code == 0
-    assert not calls
-
-
-def test_cost_emit_feedback_does_not_treat_aggregate_tokens_as_waste(monkeypatch: pytest.MonkeyPatch) -> None:
-    calls: list[dict[str, object]] = []
-
-    monkeypatch.setattr(
-        "cli.commands.tools._fetch_cost_metrics",
-        lambda hours, limit, task, session: {
-            "window_hours": hours,
-            "feedback_session_id": "session-123",
-            "manifest_costs": [
-                {"density": "core", "task": None, "tokens_approx": 100},
-                {"density": "task", "task": task, "tokens_approx": 200},
-                {"density": "full", "task": None, "tokens_approx": 900},
-            ],
-            "request_hotspots": [
-                {
-                    "tool_name": "sdk.complete",
-                    "tool_type": "sdk",
-                    "requests": 50,
-                    "tokens_in": 15000,
-                    "tokens_out": 2000,
-                    "success_rate": 95.0,
-                }
-            ],
-            "tool_output_hotspots": [],
-        },
-    )
-    monkeypatch.setattr(
-        "cli.commands.tools._report_or_vote_feedback",
-        lambda *args, **kwargs: calls.append({"args": args, "kwargs": kwargs}),
-    )
-
-    result = runner.invoke(app, ["cost", "--emit-feedback"])
-
-    assert result.exit_code == 0
-    assert not calls
-    assert "No feedback emitted" in result.output
-
-
-@pytest.mark.parametrize("success_rate", [0.0, 30.0])
-def test_cost_emit_feedback_does_not_equate_http_failure_with_task_failure(monkeypatch: pytest.MonkeyPatch, success_rate: float) -> None:
-    calls: list[dict[str, object]] = []
-
-    monkeypatch.setattr(
-        "cli.commands.tools._fetch_cost_metrics",
-        lambda hours, limit, task, session: {
-            "window_hours": hours,
-            "feedback_session_id": "session-456",
-            "manifest_costs": [],
-            "request_hotspots": [
-                {
-                    "tool_name": "api.foo",
-                    "tool_type": "api",
-                    "requests": 10,
-                    "tokens_in": 100,
-                    "tokens_out": 50,
-                    "success_rate": success_rate,
-                }
-            ],
-            "tool_output_hotspots": [],
-        },
-    )
-    monkeypatch.setattr(
-        "cli.commands.tools._report_or_vote_feedback",
-        lambda *args, **kwargs: calls.append({"args": args, "kwargs": kwargs}),
-    )
-
-    result = runner.invoke(app, ["cost", "--emit-feedback"])
-
-    assert result.exit_code == 0
-    assert not calls
-
-
-def test_cost_emit_feedback_does_not_treat_aggregate_output_as_waste(monkeypatch: pytest.MonkeyPatch) -> None:
-    calls: list[dict[str, object]] = []
-
-    monkeypatch.setattr(
-        "cli.commands.tools._fetch_cost_metrics",
-        lambda hours, limit, task, session: {
-            "window_hours": hours,
-            "feedback_session_id": "session-789",
-            "manifest_costs": [],
-            "request_hotspots": [],
-            "tool_output_hotspots": [
-                {
-                    "tool_name": "Bash",
-                    "events": 100,
-                    "output_tokens_approx": 8000,
-                    "output_chars": 32000,
-                }
-            ],
-        },
-    )
-    monkeypatch.setattr(
-        "cli.commands.tools._report_or_vote_feedback",
-        lambda *args, **kwargs: calls.append({"args": args, "kwargs": kwargs}),
-    )
-
-    result = runner.invoke(app, ["cost", "--emit-feedback"])
-
-    assert result.exit_code == 0
-    assert not calls
 
 
 @pytest.mark.parametrize(

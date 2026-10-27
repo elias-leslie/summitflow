@@ -24,7 +24,7 @@ LEGACY_OVER_CAP = frozenset({
     "st.aico.widget.status", "st.aico.widget.title", "st.browser", "st.design",
     "st.jobs.record-posting-source", "st.jobs.search", "st.learn.work", "st.monitor.logs",
     "st.monitor.status", "st.service.rebuild", "st.sessions.verify",
-    "st.slopminer", "st.ui.gif", "st.web",
+    "st.uilint", "st.ui.gif", "st.web",
 })
 PADDING = re.compile(
     r"(?i)\b(please|it is (?:important|essential|crucial) (?:to|that)|make sure (?:to|that)|be sure to|"

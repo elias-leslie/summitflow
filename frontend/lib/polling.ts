@@ -18,7 +18,7 @@ export const POLL_MONITOR = 10_000
 /** Slow refresh for background/infrequent data (git status, file browser). */
 export const POLL_SLOW = 60_000
 
-/** Very slow refresh for rarely-changing data (design standards). */
+/** Very slow refresh for rarely-changing data (git merge and commit details). */
 export const POLL_RARE = 300_000
 
 /** Notification count polling interval. */

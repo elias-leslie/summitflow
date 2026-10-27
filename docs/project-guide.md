@@ -14,7 +14,7 @@ running their own agent tooling, not as a hosted SaaS.
 
 ![SummitFlow — task orchestration and evidence capture for AI-assisted development](../docs/images/summitflow-demo.gif)
 
-*One control plane for your projects and agent lanes: the project dashboard, the agent task pipeline, live runtime and GPU health, and a built-in feedback loop.*
+*One control plane for your projects and agent lanes: the project dashboard, the agent task pipeline, and live runtime and GPU health.*
 
 [![License](https://img.shields.io/badge/license-Apache%202.0-blue.svg)](../LICENSE)
 [![Python](https://img.shields.io/badge/python-3.13+-3776ab.svg)](https://python.org)
@@ -122,7 +122,7 @@ UI (~23 pages), and ~33 Hatchet workflows. Output is compact JSON by default, wi
 **Knowledge and coordination**
 
 - `st wiki` (markdown vault), `st skills` (harness-neutral agent skills via symlink
-  distribution), `st feedback` (agent feedback loop), `st projects`, and
+  distribution), `st projects`, and
   `st portfolio` (agent-facing analytics delegated to
   portfolio-ai).
 

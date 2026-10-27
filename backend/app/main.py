@@ -23,7 +23,6 @@ from .api import (
     backups,
     checkpoints,
     db_workbench,
-    design_standards,
     docker,
     events,
     files,
@@ -144,7 +143,6 @@ app.include_router(git.router, prefix="/api", tags=["git"])
 app.include_router(backups.router, prefix="/api", tags=["backups"])
 app.include_router(snapshots.router, prefix="/api", tags=["snapshots"])
 app.include_router(vm.router, prefix="/api", tags=["vm"])
-app.include_router(design_standards.router, prefix="/api", tags=["design-standards"])
 app.include_router(activity.router, prefix="/api", tags=["activity"])
 app.include_router(mockups.router, prefix="/api", tags=["mockups"])
 app.include_router(checkpoints.router, tags=["checkpoints"])

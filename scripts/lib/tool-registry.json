@@ -72,28 +72,6 @@
       "environment": []
     },
     {
-      "id": "agent-hub.feedback",
-      "owner": "agent-hub",
-      "namespace": "feedback",
-      "manifest": "extensions/feedback.json",
-      "executable": "backend/.venv/bin/agent-hub-st",
-      "arguments": [
-        "feedback"
-      ],
-      "grant": {
-        "enabled": true,
-        "effects": [
-          "network",
-          "read-remote",
-          "write-remote",
-          "read-local",
-          "write-local",
-          "credentials"
-        ]
-      },
-      "environment": []
-    },
-    {
       "id": "agent-hub.mandates",
       "owner": "agent-hub",
       "namespace": "mandates",
@@ -633,17 +611,16 @@
       }
     },
     {
-      "id": "slopminer.slopminer",
-      "owner": "slopminer",
-      "namespace": "slopminer",
-      "manifest": "extensions/slopminer.json",
-      "executable": "bin/slopminer",
+      "id": "uilint.uilint",
+      "owner": "uilint",
+      "namespace": "uilint",
+      "manifest": "extensions/uilint.json",
+      "executable": "bin/uilint",
       "environment": [],
       "grant": {
         "enabled": true,
         "effects": [
-          "read-local",
-          "network"
+          "read-local"
         ]
       }
     },
@@ -724,7 +701,7 @@
       "st.ui.inspect",
       "st.browser.preview"
     ],
-    "core": ["st.search", "st.check", "st.db", "st.service.rebuild", "st.tools.status", "st.tools.adoption", "st.tools.audit", "st.tools.cost", "st.feedback.report", "st.agents.preview"],
+    "core": ["st.search", "st.check", "st.db", "st.service.rebuild", "st.tools.status", "st.tools.adoption", "st.tools.audit", "st.tools.cost", "st.agents.preview"],
     "adaptive_score_threshold": 15.0
   },
   "description": "Centralized tool registry — single source of truth for operator tool discovery, redirects, and check-runner configuration.",

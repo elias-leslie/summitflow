@@ -20,9 +20,6 @@ _TYPE_ORDER = {
     "feature": 4,
 }
 
-_GENERIC_FEEDBACK_MARKER = "routine upkeep selected this active feedback item"
-
-
 def _int_value(value: object, default: int = 0) -> int:
     try:
         return int(value)  # type: ignore[arg-type]
@@ -46,24 +43,14 @@ def _created_sort_value(task: dict[str, Any]) -> str:
     return str(value or "")
 
 
-def _friction_penalty(task: dict[str, Any]) -> int:
-    title = str(task.get("title") or "").lower()
-    description = str(task.get("description") or "").lower()
-    if title.startswith("handle feedback:") and _GENERIC_FEEDBACK_MARKER in description:
-        return 1
-    return 0
-
-
-def ready_task_sort_key(task: dict[str, Any]) -> tuple[int, int, int, int, int, int, str, str]:
+def ready_task_sort_key(task: dict[str, Any]) -> tuple[int, int, int, int, int, str, str]:
     """Rank ready work for sequential pickup."""
     complexity = str(task.get("complexity") or "STANDARD").upper()
     task_type = str(task.get("task_type") or "task").lower()
-    friction = _friction_penalty(task)
-    effective_complexity = _COMPLEXITY_ORDER.get(complexity, _COMPLEXITY_ORDER["STANDARD"]) + friction
+    effective_complexity = _COMPLEXITY_ORDER.get(complexity, _COMPLEXITY_ORDER["STANDARD"])
     return (
         -_int_value(task.get("blocking_count")),
         effective_complexity,
-        friction,
         _int_value(task.get("priority"), 2),
         _TYPE_ORDER.get(task_type, _TYPE_ORDER["task"]),
         _remaining_subtasks(task),

@@ -616,9 +616,9 @@ the pending managed rollout and actual cancellation demonstration.
   vault-tools. Enable after encrypted runtime/key setup; preserve configured daily/14d
   retention. Leave test/fixture/deleted sources disabled.
 - Canonical prompt corrections retain scope/assignments: safety-directive global
-  enabled; persona-wake-guidance and feedback-audit non-global enabled. Measurements
-  (tool estimates, not billed tokens): wake prompt 635→664, feedback 189→196,
-  safety 913→932. Runtime preview coder 3984→4011 and persona 3942→3969 includes
+  enabled; persona-wake-guidance non-global enabled (a feedback-audit prompt corrected
+  at the same time was retired with agent feedback on 2026-10-27). Measurements
+  (tool estimates, not billed tokens): wake prompt 635→664, safety 913→932. Runtime preview coder 3984→4011 and persona 3942→3969 includes
   changed computed capability/task text; these are small increases, not token savings.
   Expected savings come from omitted workflow cycles, not pretending prompt edits shrink context.
 - Existing `st tools cost --hours 24 --limit 5` reports request token counts unknown

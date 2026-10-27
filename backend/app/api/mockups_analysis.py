@@ -19,7 +19,7 @@ async def analyze_page(
 
     This endpoint:
     1. Captures a screenshot of the specified URL
-    2. Analyzes it against the project's design standards
+    2. Analyzes it for design and UX issues
     3. Generates specific improvement recommendations
     4. Stores the result as a mockup record
 

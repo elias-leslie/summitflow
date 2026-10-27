@@ -56,7 +56,6 @@ def extensions(
 DEFAULT_LOOKBACK_HOURS = 24
 DEFAULT_LIMIT = 10
 DEFAULT_COST_TASK = "verification"
-DEFAULT_FEEDBACK_PROJECT = "summitflow"
 DEFAULT_MANIFEST_VERSION = 1
 INJECT_FORMAT = "inject"
 JSON_FORMAT = "json"
@@ -536,143 +535,6 @@ def _format_audit_compact(data: dict[str, Any]) -> None:
             print(f"    ex: {example}")
 
 
-def _find_exact_active_feedback(
-    *,
-    component_id: str,
-    feedback_type: str,
-    title: str,
-) -> dict[str, Any] | None:
-    from .feedback_api import feedback_request
-    from .feedback_helpers import FEEDBACK_API_PATH, build_filter_params
-
-    result = feedback_request(
-        "GET",
-        FEEDBACK_API_PATH,
-        params=build_filter_params(
-            "votes",
-            200,
-            component_id=component_id,
-            feedback_type=feedback_type,
-            status="active",
-        ),
-    )
-    for item in result.get("items", []):
-        if str(item.get("title") or "").casefold() == title.casefold():
-            return cast(dict[str, Any], item)
-    return None
-
-
-def _report_or_vote_feedback(
-    component_id: str,
-    title: str,
-    *,
-    feedback_type: str,
-    severity: str | None,
-    description: str,
-    project_id: str,
-    session_id: str | None,
-    agent_slug: str | None = None,
-) -> None:
-    from .feedback_api import feedback_request
-    from .feedback_commands import report_impl
-    from .feedback_formatters import output_feedback_deduped, output_feedback_existing
-    from .feedback_helpers import ALREADY_VOTED_MSG, FEEDBACK_API_PATH, build_vote_body
-
-    existing = _find_exact_active_feedback(
-        component_id=component_id,
-        feedback_type=feedback_type,
-        title=title,
-    )
-    if existing:
-        item_id = str(existing.get("id") or "")
-        if session_id and item_id:
-            vote = feedback_request(
-                "POST",
-                f"{FEEDBACK_API_PATH}/{item_id}/vote",
-                json=build_vote_body(
-                    session_id,
-                    comment=description,
-                    agent_slug=agent_slug,
-                    model_used=None,
-                ),
-            )
-            refreshed = feedback_request("GET", f"{FEEDBACK_API_PATH}/{item_id}")
-            if vote.get("message") == ALREADY_VOTED_MSG:
-                output_feedback_existing(refreshed)
-            else:
-                output_feedback_deduped(refreshed)
-            return
-        output_feedback_existing(existing)
-        return
-
-    report_impl(
-        component_id,
-        title,
-        feedback_type=feedback_type,
-        severity=severity,
-        description=description,
-        project_id=project_id,
-        session_id=session_id,
-        agent_slug=agent_slug,
-        vote_if_duplicate=True,
-    )
-
-
-def _emit_feedback_for_audit(data: dict[str, Any]) -> None:
-    hours = int(data.get("window_hours") or 24)
-    grouped: dict[tuple[str, str, str, str], dict[str, Any]] = {}
-    for item in data.get("findings", []):
-        key = (
-            str(item.get("component") or "xc.tool_registry"),
-            str(item.get("finding_type") or "missed_tool"),
-            str(item.get("expected_surface") or "?"),
-            str(item.get("severity") or "medium"),
-        )
-        bucket = grouped.setdefault(
-            key,
-            {
-                "count": 0,
-                "projects": {},
-                "examples": [],
-                "session_id": None,
-                "agent_slug": None,
-            },
-        )
-        bucket["count"] += int(item.get("count") or 0)
-        projects = cast(dict[str, int], bucket["projects"])
-        project_id = str(item.get("project_id") or "unknown")
-        projects[project_id] = projects.get(project_id, 0) + int(item.get("count") or 0)
-        examples = cast(list[str], bucket["examples"])
-        examples.extend(str(example) for example in item.get("examples", [])[:2])
-        if bucket["session_id"] is None:
-            bucket["session_id"] = (item.get("session_ids") or [None])[0]
-        agent_slug = str(item.get("agent_slug") or "")
-        if bucket["agent_slug"] is None and agent_slug and agent_slug != "unknown":
-            bucket["agent_slug"] = agent_slug
-
-    for (component, finding_type, expected_surface, severity), bucket in grouped.items():
-        projects = cast(dict[str, int], bucket["projects"])
-        examples = cast(list[str], bucket["examples"])
-        project_summary = ", ".join(f"{project}:{count}" for project, count in sorted(projects.items()))
-        example_summary = "; ".join(examples[:3])
-        description = (
-            f"{bucket.get('count', 0)} event(s) in {hours}h. "
-            f"Expected surface: {expected_surface}. "
-            f"Projects: {project_summary or 'none captured'}. "
-            f"Examples: {example_summary or 'none captured'}"
-        )
-        _report_or_vote_feedback(
-            component,
-            f"Tool governance: {finding_type.replace('_', ' ')}",
-            feedback_type="friction",
-            severity=severity,
-            description=description,
-            project_id=str(data.get("project") or "summitflow"),
-            session_id=cast(str | None, bucket.get("session_id")),
-            agent_slug=cast(str | None, bucket.get("agent_slug")),
-        )
-
-
 def _manifest_density_costs(task: str | None) -> list[dict[str, Any]]:
     from ..main import app as root_app
 
@@ -956,11 +818,6 @@ def _format_cost_compact(data: dict[str, Any]) -> None:
         print("  Native usage: unavailable in this window; missing data is not zero.")
 
 
-def _emit_feedback_for_cost(data: dict[str, Any]) -> None:
-    """Retain CLI compatibility without inferring waste from aggregate telemetry."""
-    print("  No feedback emitted: request HTTP status and aggregate output do not establish task waste.")
-
-
 def _format_catalog_compact(tools: list[dict[str, Any]]) -> None:
     """Format operator tools in compact TOON style."""
     print(f"TOOLS_CATALOG[{len(tools)}]:source={tool_registry_path()}")
@@ -1047,7 +904,7 @@ def adoption(
     surface="st.tools.audit",
     cmd="st tools audit",
     when="surface high-confidence missed st usage from persisted Agent Hub session telemetry",
-    precautions=("deterministic rules only; use --emit-feedback to file deduped feedback items",),
+    precautions=("deterministic rules only; read-only report of findings",),
     task_types=("tool-governance", "prompt-tuning",),
     on_demand="tool telemetry",
 )
@@ -1063,17 +920,11 @@ def audit(
         str | None,
         typer.Option("--session", help="Limit findings to one Agent Hub session ID"),
     ] = None,
-    emit_feedback: Annotated[
-        bool,
-        typer.Option("--emit-feedback", help="Create/vote feedback items for surfaced findings"),
-    ] = False,
 ) -> None:
     """Audit recent agent sessions for high-confidence missed st tool usage."""
     result = _fetch_audit_metrics(hours, limit, project, session)
     if ctx.obj.is_compact:
         _format_audit_compact(result)
-        if emit_feedback:
-            _emit_feedback_for_audit(result)
     else:
         output_json(result)
 
@@ -1099,10 +950,6 @@ def cost(
         str | None,
         typer.Option("--session", help="Limit recorded requests and events to one session ID"),
     ] = None,
-    emit_feedback: Annotated[
-        bool,
-        typer.Option("--emit-feedback", help="Explain why aggregate-cost feedback is disabled"),
-    ] = False,
     advisory: Annotated[
         bool,
         typer.Option("--advisory", "--gate", help="Bounded retrieval advice; always exits successfully, including unknown telemetry."),
@@ -1124,8 +971,6 @@ def cost(
     result = _fetch_cost_metrics(hours, limit, task, session)
     if ctx.obj.is_compact:
         _format_cost_compact(result)
-        if emit_feedback:
-            _emit_feedback_for_cost(result)
     else:
         output_json(result)
 

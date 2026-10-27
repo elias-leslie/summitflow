@@ -110,7 +110,7 @@ export function GenerateMockupDialog({
         {/* Content */}
         <div className="p-6">
           <p className="text-slate-400 mb-6">
-            Analyze a page against design standards and generate improvement
+            Analyze a page for design and UX issues and generate improvement
             recommendations. The page will be captured and analyzed using Claude
             vision.
           </p>

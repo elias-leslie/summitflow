@@ -6,7 +6,7 @@
   "st_contract_versions": [
     1
   ],
-  "summary": "Design standards, UI mockups and game-art critique through Design Tools.",
+  "summary": "UI mockups and game-art critique through Design Tools.",
   "effects": [
     "read-local",
     "write-local",

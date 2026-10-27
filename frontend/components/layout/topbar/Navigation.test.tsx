@@ -19,7 +19,7 @@ describe('Navigation', () => {
     const { container } = render(<Navigation compact />)
 
     expect(screen.getAllByText('Runtime')[0]).toHaveClass('hidden')
-    expect(screen.getAllByText('Feedback')[0]).toHaveClass('hidden')
+    expect(screen.getAllByText('Backups')[0]).toHaveClass('hidden')
     expect(container.querySelector('nav')).toHaveClass('justify-center')
   })
 
@@ -27,7 +27,7 @@ describe('Navigation', () => {
     const { container } = render(<Navigation dense />)
 
     expect(screen.getAllByText('Runtime')[0]).toHaveClass('inline')
-    expect(screen.getAllByText('Feedback')[0]).toHaveClass('inline')
+    expect(screen.getAllByText('Backups')[0]).toHaveClass('inline')
     expect(container.querySelector('nav')).toHaveClass('justify-start')
   })
 
@@ -49,7 +49,7 @@ describe('Navigation', () => {
     const { container } = render(<Navigation measure />)
 
     expect(screen.queryByRole('link')).not.toBeInTheDocument()
-    expect(container.querySelectorAll('nav > span')).toHaveLength(5)
+    expect(container.querySelectorAll('nav > span')).toHaveLength(4)
     expect(screen.getByText('Runtime')).toBeInTheDocument()
   })
 })

@@ -128,21 +128,6 @@ describe('ConfirmDeleteDialog', () => {
     expect(screen.getByText(/Hero Section/)).toBeInTheDocument()
   })
 
-  it('renders feedback delete dialog', () => {
-    render(
-      <ConfirmDeleteDialog
-        entityType="feedback"
-        entityName="Improve CLI UX"
-        isDeleting={false}
-        onConfirm={vi.fn()}
-        onCancel={vi.fn()}
-      />,
-    )
-
-    expect(screen.getByText('Delete Feedback')).toBeInTheDocument()
-    expect(screen.getByText(/Improve CLI UX/)).toBeInTheDocument()
-  })
-
   it('truncates bulk task IDs beyond 5', () => {
     const ids = new Set(['t1', 't2', 't3', 't4', 't5', 't6', 't7'])
     render(

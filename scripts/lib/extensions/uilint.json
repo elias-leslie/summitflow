@@ -1,0 +1,38 @@
+{
+  "id": "uilint.uilint",
+  "owner": "uilint",
+  "namespace": "uilint",
+  "version": "0.1.0",
+  "st_contract_versions": [
+    1
+  ],
+  "summary": "Mechanical checks of UI copy and visuals against a product's ui-spec.json; a pass is not a copy or design review.",
+  "effects": [
+    "read-local"
+  ],
+  "help": {
+    "": "usage: st uilint [-h] [--version] COMMAND ...\n\nMechanical checks of UI copy and visuals against a product's ui-spec.json. A\npass means only that the listed rules held; it is not a copy or design review.\n\npositional arguments:\n  COMMAND\n    spec            Validate a ui-spec.json\n    check-source    Scan UI source files for banned copy (offline)\n    capture-script  Print a read-only page extractor for the caller's browser\n                    eval (e.g. st browser eval --stdin)\n    check           Check a captured snapshot against the spec's copy and\n                    visual rules\n\noptions:\n  -h, --help        show this help message and exit\n  --version         show program's version number and exit",
+    "spec": "usage: st uilint spec [-h] ACTION ...\n\npositional arguments:\n  ACTION\n    validate  Validate a spec (default ./ui-spec.json)\n\noptions:\n  -h, --help  show this help message and exit",
+    "spec validate": "usage: st uilint spec validate [-h] [path]\n\npositional arguments:\n  path        Spec path (default ./ui-spec.json)\n\noptions:\n  -h, --help  show this help message and exit",
+    "check-source": "usage: st uilint check-source [-h] [--spec SPEC] [--root ROOT]\n                           [--format {text,json}]\n\noptions:\n  -h, --help            show this help message and exit\n  --spec SPEC           Spec path (default ./ui-spec.json)\n  --root ROOT           Directory the source globs are relative to (default:\n                        the spec's directory)\n  --format {text,json}",
+    "capture-script": "usage: st uilint capture-script [-h] [--state STATE]\n\noptions:\n  -h, --help     show this help message and exit\n  --state STATE  Optional label for the captured UI state, e.g. empty or error",
+    "check": "usage: st uilint check [-h] [--spec SPEC] [--format {text,json}] snapshot\n\npositional arguments:\n  snapshot              Snapshot JSON from capture-script, or - for stdin\n                        (also accepts st browser eval's\n                        BROWSER:OK|details:PATH summary line)\n\noptions:\n  -h, --help            show this help message and exit\n  --spec SPEC           Spec path (default ./ui-spec.json)\n  --format {text,json}"
+  },
+  "usage": [
+    {
+      "surface": "st.uilint",
+      "tier": "reference",
+      "cmd": "st uilint check-source | st uilint capture-script | st browser eval --stdin | st uilint check - ",
+      "when": "after changing product UI copy or styling in a repo with ui-spec.json",
+      "precautions": [
+        "exit 1 = violations to fix; a pass is mechanical-only, not approval",
+        "follow the project standard in context for judgment"
+      ],
+      "task_types": [
+        "frontend",
+        "ui-design"
+      ]
+    }
+  ],
+  "help_options": {}
+}
