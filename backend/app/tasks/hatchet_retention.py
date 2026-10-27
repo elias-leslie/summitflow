@@ -176,13 +176,19 @@ def create_hatchet_retention_backup(
 
 
 def _existing_target_names(cur: psycopg.Cursor[Any]) -> set[str]:
+    # Only plain tables: newer Hatchet engines (v0.114+) partition these tables and
+    # drop old partitions themselves; the ctid-based DELETE is unsafe on partitioned
+    # parents because ctids repeat across partitions.
     names = [target.name for target in RETENTION_TABLES]
     cur.execute(
         """
-        SELECT table_name
-        FROM information_schema.tables
-        WHERE table_schema = 'public'
-          AND table_name = ANY(%s)
+        SELECT c.relname
+        FROM pg_class c
+        JOIN pg_namespace n ON n.oid = c.relnamespace
+        WHERE n.nspname = 'public'
+          AND c.relname = ANY(%s)
+          AND c.relkind = 'r'
+          AND NOT c.relispartition
         """,
         (names,),
     )
