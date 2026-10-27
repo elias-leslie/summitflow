@@ -15,7 +15,7 @@ from cli.lib.usage import collect_usage_specs, render_inject, select_specs_for_d
 
 ROOT = Path(__file__).resolve().parents[3]
 CAPABILITY_LINE = (
-    "- st bugout recon --help — bounded recon: validate, run, inspect, deliver, control"
+    "- st bugout recon --help — bounded recon: validate, run, inspect, control"
 )
 
 
@@ -40,8 +40,7 @@ def test_binding_keeps_owner_metadata_and_exact_checkout_entrypoint():
 
 
 @pytest.mark.parametrize("route", [(), ("recon",), ("recon", "validate"), ("recon", "run"),
-                                   ("recon", "status"), ("recon", "events"), ("recon", "deliver"),
-                                   ("recon", "control")])
+                                   ("recon", "status"), ("recon", "events"), ("recon", "control")])
 def test_actual_help_from_an_unrelated_project_is_passive(tmp_path, monkeypatch, route):
     from cli.main import app
 
@@ -72,11 +71,11 @@ def test_unrelated_capabilities_omit_bugout_guidance(monkeypatch, density):
 
 
 @pytest.mark.parametrize("density", ["adaptive", "task", "full"])
-def test_neri_capabilities_include_one_compact_actionable_line(monkeypatch, density):
+def test_bounty_capabilities_include_one_compact_actionable_line(monkeypatch, density):
     from cli.main import app
 
     monkeypatch.setattr(subprocess, "Popen", lambda *a, **k: pytest.fail("discovery executed owner"))
-    specs = select_specs_for_density(collect_usage_specs(app), density=density, task_type="neri", scores={})
+    specs = select_specs_for_density(collect_usage_specs(app), density=density, task_type="bounty", scores={})
     lines = [line for line in render_inject(specs).splitlines() if "st bugout " in line]
     assert lines == [CAPABILITY_LINE]
     assert len(lines[0]) <= 100

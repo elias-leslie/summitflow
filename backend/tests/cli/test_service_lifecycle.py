@@ -697,15 +697,15 @@ def test_configured_migrations_require_alembic(project):
 def test_migrations_load_registered_home_credentials_without_shell_secrets(project, monkeypatch, tmp_path,
                                                                           runtime_user):
     home = tmp_path / "home"
-    credentials = home / ".config" / "credstore" / "neri" / "env"
+    credentials = home / ".config" / "credstore" / "jobinator-4000" / "env"
     credentials.parent.mkdir(parents=True)
     credentials.write_text(
-        "NERI_DB_URL=postgresql://registered-fixture\n"
+        "JOBINATOR_DB_URL=postgresql://registered-fixture\n"
         "PORTFOLIO_DB_URL=postgresql://other-project\n"
         "INTERNAL_SERVICE_SECRET=unrelated-fixture\n"
     )
     monkeypatch.setattr(service_ops.Path, "home", lambda: home)
-    monkeypatch.delenv("NERI_DB_URL", raising=False)
+    monkeypatch.delenv("JOBINATOR_DB_URL", raising=False)
     monkeypatch.setenv("PORTFOLIO_DB_URL", "postgresql://shell-fixture")
     monkeypatch.setenv("INTERNAL_SERVICE_SECRET", "shell-fixture")
     backend = tmp_path / "accepted" / "backend"
@@ -715,14 +715,14 @@ def test_migrations_load_registered_home_credentials_without_shell_secrets(proje
     executable.write_text(
         f"#!{sys.executable}\n"
         "import os\n"
-        "if not os.environ.get('NERI_DB_URL'):\n"
-        "    raise RuntimeError('NERI_DB_URL is not configured')\n"
-        "assert os.environ['NERI_DB_URL'] == 'postgresql://registered-fixture'\n"
+        "if not os.environ.get('JOBINATOR_DB_URL'):\n"
+        "    raise RuntimeError('JOBINATOR_DB_URL is not configured')\n"
+        "assert os.environ['JOBINATOR_DB_URL'] == 'postgresql://registered-fixture'\n"
         "assert 'PORTFOLIO_DB_URL' not in os.environ\n"
         "assert 'INTERNAL_SERVICE_SECRET' not in os.environ\n"
     )
     executable.chmod(0o700)
-    deployed = replace(project, project_id="neri", root=backend.parent, backend_dir=backend,
+    deployed = replace(project, project_id="jobinator-4000", root=backend.parent, backend_dir=backend,
                        host_config_root=tmp_path / "host", runtime_user=runtime_user)
 
     assert service_ops.run_migrations(deployed) == 0
@@ -734,9 +734,8 @@ def test_migrations_load_registered_home_credentials_without_shell_secrets(proje
         "source/.env": "PORTFOLIO_DB_URL=postgresql://source-stale\n",
         "host/.env": "PORTFOLIO_DB_URL=postgresql://host-base\n",
         "host/.env.local": "PORTFOLIO_DB_URL=postgresql://approved\n"}),
-    ("neri", "NERI_DB_URL", "PORTFOLIO_DB_URL", {"home/.env.local": "NERI_DB_URL=postgresql://approved\n"}),
-    ("learn-o-tron", "LEARN_DB_URL", "NERI_DB_URL", {"host/backend/.env": "LEARN_DB_URL=postgresql://approved\n"}),
-    ("jobinator-4000", "JOBINATOR_DB_URL", "NERI_DB_URL", {"home/.env.local": "JOBINATOR_DB_URL=postgresql://approved\n"}),
+    ("learn-o-tron", "LEARN_DB_URL", "PORTFOLIO_DB_URL", {"host/backend/.env": "LEARN_DB_URL=postgresql://approved\n"}),
+    ("jobinator-4000", "JOBINATOR_DB_URL", "PORTFOLIO_DB_URL", {"home/.env.local": "JOBINATOR_DB_URL=postgresql://approved\n"}),
 ])
 def test_migrations_get_only_the_approved_project_database_env(project, monkeypatch, tmp_path, project_id, wanted,
                                                               other, files):
@@ -818,7 +817,7 @@ def test_committed_migration_table_loads():
     from cli.lib import migration_env
 
     assert migration_env.grant_for("agent-hub").database_key == "AGENT_HUB_DB_URL"
-    assert migration_env.grant_for("neri").sources == ("shared", "project")
+    assert migration_env.grant_for("jobinator-4000").sources == ("shared", "project")
     assert {"PORTFOLIO_SECRET_KEY", "LEARN_DB_URL", "INTERNAL_SERVICE_SECRET"} <= migration_env.strip_keys()
 
 
@@ -835,7 +834,7 @@ def test_portfolio_migrations_get_their_secret_key_from_host_env(project, monkey
     run = Mock(return_value=0)
     monkeypatch.setattr(service_ops, "run", run)
 
-    for project_id, expected in (("portfolio-ai", "approved-key"), ("neri", None)):
+    for project_id, expected in (("portfolio-ai", "approved-key"), ("jobinator-4000", None)):
         deployed = replace(project, project_id=project_id, root=tmp_path / "source", backend_dir=backend_dir,
                            frontend_dir=tmp_path / "source" / "frontend", host_config_root=tmp_path / "host")
         assert service_ops.run_migrations(deployed) == 0

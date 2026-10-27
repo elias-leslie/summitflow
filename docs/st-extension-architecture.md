@@ -28,7 +28,7 @@ the overall migration.
 | 3 | ui, selection | desktop-automation | new | Platform operations and Aico protocol bridge; no active-desktop verification. |
 | 4 | jobs | jobinator-4000 | existing | Domain CLI/client and tests. |
 | 5 | portfolio | portfolio-ai | existing | Domain CLI/client and tests. |
-| 6 | neri | neri | existing | Domain CLI, explicit Agent Hub and ST control adapters. |
+| 6 | neri | neri | retired | `st neri` removed 2026-10-27 with the Neri app; bounty work is text-only in the bounty repo. |
 | 7 | learn | learn-o-tron | existing | CLI, PTY and transcripts; public ST task-promotion interface. |
 | 8 | graph/search | code-intelligence | new | Reusable intelligence with existing Explorer/index storage integration. |
 | 9 | wiki | vault-tools | new | Filesystem/search/lint/ingest engine; canonical vault data preserved. |

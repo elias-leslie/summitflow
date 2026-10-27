@@ -4,7 +4,6 @@
     "summitflow": {"database_key": "DATABASE_URL", "keys": ["DATABASE_URL"], "sources": ["project"]},
     "agent-hub": {"database_key": "AGENT_HUB_DB_URL", "keys": ["AGENT_HUB_DB_URL"], "sources": ["project"]},
     "portfolio-ai": {"database_key": "PORTFOLIO_DB_URL", "keys": ["PORTFOLIO_DB_URL", "PORTFOLIO_SECRET_KEY"], "sources": ["project"]},
-    "neri": {"database_key": "NERI_DB_URL", "keys": ["NERI_DB_URL", "POSTGRES_ADMIN_URL", "DATABASE_ADMIN_URL"], "sources": ["shared", "project"]},
     "learn-o-tron": {"database_key": "LEARN_DB_URL", "keys": ["LEARN_DB_URL"], "sources": ["project", "backend/.env"]},
     "jobinator-4000": {"database_key": "JOBINATOR_DB_URL", "keys": ["JOBINATOR_DB_URL"], "sources": ["shared", "project"]}
   }
