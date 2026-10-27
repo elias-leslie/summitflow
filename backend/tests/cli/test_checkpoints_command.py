@@ -171,3 +171,15 @@ def test_task_branch_resolution_supports_recovered_short_branch(
 
     assert branches == [{"branch": "task-short", "subtask_id": "", "type": "task"}]
     assert resolve_task_branch("task-short", project_id="summitflow") == "task-short"
+
+
+def test_task_branches_for_a_project_whose_checkout_is_gone_are_empty(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from cli.lib.checkpoint_branches import get_task_branches
+
+    monkeypatch.setattr(
+        "app.storage.projects.get_project_root_path", lambda _project_id: str(tmp_path / "gone")
+    )
+
+    assert get_task_branches("task-old", project_id="retired") == []

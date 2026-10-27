@@ -58,7 +58,8 @@ def get_task_branches(task_id: str, project_id: str | None = None) -> list[dict[
     for pattern in (task_id, f"{task_id}/*"):
         try:
             result = _run_git(["git", "branch", "--list", pattern], cwd=cwd)
-        except subprocess.CalledProcessError:
+        except (subprocess.CalledProcessError, FileNotFoundError):
+            # FileNotFoundError: the project's checkout is gone (a retired project).
             continue
 
         for branch in _clean_branch_lines(result.stdout):
