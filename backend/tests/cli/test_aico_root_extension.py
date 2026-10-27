@@ -84,6 +84,7 @@ def test_create_help_names_only_the_supported_root_tools(monkeypatch):
     for slug in ("claude-code", "codex", "pi"):
         assert slug in result.output
     assert "--blank-slate" in result.output
+    assert "--instructions PROMPT[@REVISION]" in result.output
     assert "opencode" not in result.output.lower()
     manifest = aico_record().manifest
     assert manifest is not None
@@ -92,6 +93,8 @@ def test_create_help_names_only_the_supported_root_tools(monkeypatch):
     assert "--tool claude-code|codex|pi " in usage["cmd"]
     assert "--blank-slate" in usage["cmd"]
     assert manifest.help_options["create"]["--blank-slate"] == 0
+    assert "--instructions PROMPT[@REVISION]" in usage["cmd"]
+    assert manifest.help_options["create"]["--instructions"] == 1
     assert "opencode" not in " ".join(map(str, usage["precautions"])).lower()
 
 
