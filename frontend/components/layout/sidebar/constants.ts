@@ -1,4 +1,4 @@
-import { FolderOpen, ListTodo, Palette } from 'lucide-react'
+import { BookOpenText, FolderOpen, ListTodo, Palette } from 'lucide-react'
 import type { NavItemConfig } from './types'
 
 // Project-specific navigation items (shown when project expanded).
@@ -15,6 +15,17 @@ export const projectNavItems: NavItemConfig[] = [
       'text-slate-400 hover:bg-phosphor-500/10 hover:text-phosphor-400',
     iconActiveClasses: 'text-phosphor-400',
     iconInactiveClasses: 'text-slate-500 group-hover:text-phosphor-400',
+  },
+  {
+    id: 'agent-context',
+    label: 'Agent context',
+    href: '',
+    icon: BookOpenText,
+    activeClasses: 'bg-indigo-500/15 text-indigo-400',
+    inactiveClasses:
+      'text-slate-400 hover:bg-indigo-500/10 hover:text-indigo-400',
+    iconActiveClasses: 'text-indigo-400',
+    iconInactiveClasses: 'text-slate-500 group-hover:text-indigo-400',
   },
   {
     id: 'files',

@@ -12,6 +12,7 @@ import {
 import { useCallback, useEffect, useState } from 'react'
 import { toast } from 'sonner'
 import { TaskKanbanBoard } from '@/components/kanban/TaskKanbanBoard'
+import { ProjectAgentContext } from '@/components/projects/ProjectAgentContext'
 import { ProjectHealthBadge } from '@/components/projects/ProjectHealthBadge'
 import { ProjectOverview } from '@/components/projects/ProjectOverview'
 import { useViewMode } from '@/components/tasks/hooks/useViewMode'
@@ -51,6 +52,11 @@ const SECTION_COPY: Record<
     label: 'Execution board',
     description:
       'Drive planning and delivery with board and table views that keep momentum visible.',
+  },
+  'agent-context': {
+    label: 'Agent context',
+    description:
+      'What Agent Hub gives a coding agent at session start in this project.',
   },
 }
 
@@ -273,6 +279,11 @@ export function ProjectDetailClient() {
         {activeTab === null && (
           <div className="h-full overflow-auto p-3 sm:p-4">
             <ProjectOverview project={project} />
+          </div>
+        )}
+        {activeTab === 'agent-context' && (
+          <div className="h-full overflow-auto p-3 sm:p-4">
+            <ProjectAgentContext projectId={projectId} />
           </div>
         )}
         {activeTab === 'tasks' && (

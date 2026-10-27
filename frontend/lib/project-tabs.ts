@@ -1,4 +1,4 @@
-export const PROJECT_TABS = ['tasks'] as const
+export const PROJECT_TABS = ['tasks', 'agent-context'] as const
 export type ProjectTab = (typeof PROJECT_TABS)[number]
 
 export function parseProjectTab(value: string | null): ProjectTab | null {

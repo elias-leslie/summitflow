@@ -2,6 +2,7 @@
 // All domain-specific API functions are now in separate modules under lib/api/
 
 // Re-export domain modules
+export * from './api/agent-context'
 export * from './api/backups'
 export * from './api/db-workbench'
 export * from './api/files'
