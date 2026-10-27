@@ -115,7 +115,6 @@ class FileScanner(BaseScanner):
             except Exception:
                 logger.debug("Failed to index data source: %s", rel_path, exc_info=True)
 
-
     def _is_ignored(self, rel_path: Path, *, is_dir: bool = False) -> bool:
         """Whether Git ignores this untracked root-relative path."""
         return is_git_ignored(rel_path.as_posix(), self._ignored_paths, is_dir=is_dir)

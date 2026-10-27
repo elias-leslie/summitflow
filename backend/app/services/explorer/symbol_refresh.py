@@ -1,6 +1,6 @@
 """Targeted symbol refresh for changed files.
 
-Bridges the bi-hourly full-scan gap: freshly published files become
+Bridges the six-hourly full-scan gap: freshly published files become
 symbol-searchable immediately instead of waiting for the next sweep.
 """
 

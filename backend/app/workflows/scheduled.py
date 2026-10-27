@@ -6,7 +6,7 @@ CANCEL_NEWEST concurrency so scan/index jobs do not overlap.
 
 Schedule philosophy (2026-03-16 tuning):
   - Health/smoke: */5 to */30 min — enough for alerting, not so frequent it drains CPU
-  - Explorer/indexes: */2h — batch git ops on 6000+ files are the biggest CPU cost
+  - Explorer: full scan */6h plus a daily 03:10 file sweep; per-file analysis, not git, is the cost
   - Cleanup/maintenance: daily retention
   - Claims reset: */15 min — lightweight DB query, kept frequent for task flow
 """
