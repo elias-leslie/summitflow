@@ -6,19 +6,13 @@ interface ProjectPreviewPanelProps {
   projectId: string
   healthPreview: string
   normalizedRootPath: string
-  syncAgentHubPermission: boolean
-  permissionTier: string
 }
 
 export function ProjectPreviewPanel({
   projectId,
   healthPreview,
   normalizedRootPath,
-  syncAgentHubPermission,
-  permissionTier,
 }: ProjectPreviewPanelProps) {
-  const agentHubDisplay = syncAgentHubPermission ? permissionTier : 'disabled'
-
   return (
     <aside className="space-y-3">
       <div className="card space-y-3 p-4">
@@ -36,7 +30,6 @@ export function ProjectPreviewPanel({
               <span className="text-slate-600">not configured</span>
             )}
           </PreviewRow>
-          <PreviewRow label="Agent Hub Access">{agentHubDisplay}</PreviewRow>
         </div>
       </div>
 

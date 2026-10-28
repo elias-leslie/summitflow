@@ -8,28 +8,6 @@ import type { Project } from '@/lib/api'
 import { projectNavItems } from './constants'
 import { ProjectNavItem } from './ProjectNavItem'
 import type { NavItemId } from './types'
-import { useProjectPermissionTier } from './useProjectPermissionTier'
-
-const TIER_BADGE_CONFIG = {
-  off: {
-    label: 'OFF',
-    bg: 'bg-slate-600/30',
-    text: 'text-slate-500',
-    border: 'border-slate-600/40',
-  },
-  read: {
-    label: 'R',
-    bg: 'bg-blue-500/15',
-    text: 'text-blue-400',
-    border: 'border-blue-500/30',
-  },
-  full: {
-    label: 'F',
-    bg: 'bg-emerald-500/15',
-    text: 'text-emerald-400',
-    border: 'border-emerald-500/30',
-  },
-} as const
 
 interface ProjectAccordionItemProps {
   project: Project
@@ -56,10 +34,6 @@ export function ProjectAccordionItem({
   isDragging = false,
 }: ProjectAccordionItemProps) {
   const pathname = usePathname()
-  const tier = useProjectPermissionTier(project.id)
-  const badge = tier
-    ? TIER_BADGE_CONFIG[tier as keyof typeof TIER_BADGE_CONFIG]
-    : null
 
   return (
     <div
@@ -150,21 +124,6 @@ export function ProjectAccordionItem({
                 {project.name}
               </div>
             </div>
-
-            {/* Permission tier badge */}
-            {badge && (
-              <span
-                className={clsx(
-                  'mt-0.5 flex-shrink-0 rounded border px-1.5 py-0.5 text-[9px] font-bold leading-none',
-                  badge.bg,
-                  badge.text,
-                  badge.border,
-                )}
-                title={`Permission tier: ${tier}`}
-              >
-                {badge.label}
-              </span>
-            )}
           </Link>
 
           <div className="ml-[42px] mt-1 flex min-w-0 items-center gap-2 text-[11px] text-slate-500">

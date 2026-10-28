@@ -32,10 +32,6 @@ export interface Project {
 }
 
 export interface ProjectPermissionBootstrap {
-  permission_tier?: string
-  auto_exec_enabled?: boolean
-  execution_start_hour?: number
-  execution_end_hour?: number
   root_path?: string
   daily_cost_budget_usd?: number
   monthly_cost_budget_usd?: number

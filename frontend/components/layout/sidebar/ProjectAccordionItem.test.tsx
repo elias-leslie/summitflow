@@ -8,17 +8,12 @@ const navigationMocks = vi.hoisted(() => ({
   usePathname: vi.fn(),
 }))
 
-const permissionTierMock = vi.hoisted(() => vi.fn())
 const fetchProjectHealth = vi.hoisted(() => vi.fn())
 
 vi.mock('@/lib/api', () => ({ fetchProjectHealth }))
 
 vi.mock('next/navigation', () => ({
   usePathname: navigationMocks.usePathname,
-}))
-
-vi.mock('./useProjectPermissionTier', () => ({
-  useProjectPermissionTier: permissionTierMock,
 }))
 
 function buildProject(overrides: Partial<Project> = {}): Project {
@@ -66,7 +61,6 @@ describe('ProjectAccordionItem', () => {
   beforeEach(() => {
     vi.clearAllMocks()
     navigationMocks.usePathname.mockReturnValue('/projects/testing-1')
-    permissionTierMock.mockReturnValue(null)
   })
 
   it('keeps the drag handle out of layout flow until hover or focus', () => {
@@ -109,7 +103,6 @@ describe('ProjectAccordionItem', () => {
   })
 
   it('keeps health in the secondary metadata row outside the broad project link', async () => {
-    permissionTierMock.mockReturnValue('full')
     fetchProjectHealth.mockResolvedValue({
       project_id: 'testing-1',
       healthy: true,
@@ -126,7 +119,6 @@ describe('ProjectAccordionItem', () => {
     const identifier = screen.getByText('testing-1')
     const toggle = screen.getByTestId('project-accordion-toggle-testing-1')
     expect(link).toHaveTextContent('Browser Automation')
-    expect(link).toHaveTextContent('F')
     expect(link.querySelector('button')).toBeNull()
     expect(link).not.toContainElement(health)
     expect(identifier.parentElement).toContainElement(health)

@@ -62,10 +62,10 @@ describe('NewProjectClient', () => {
   it('normalizes project registration fields before submitting', async () => {
     renderClient()
 
-    expect(screen.queryByLabelText('Auto Exec')).not.toBeInTheDocument()
+    expect(screen.queryByLabelText('Permission Tier')).not.toBeInTheDocument()
     expect(
-      screen.getByRole('link', { name: 'Open Agent Hub Automations' }),
-    ).toHaveAttribute('href', 'https://agent.summitflow.dev/automations')
+      screen.queryByLabelText('Provision Agent Hub permission'),
+    ).not.toBeInTheDocument()
 
     fireEvent.change(screen.getByLabelText('Project Name *'), {
       target: { value: 'My Project!!' },
@@ -91,12 +91,7 @@ describe('NewProjectClient', () => {
       root_path: '/tmp/my-project',
       category: 'dev',
       summitflow_hosted: undefined,
-      agent_hub_permission: {
-        permission_tier: 'read',
-        auto_exec_enabled: false,
-        execution_start_hour: 0,
-        execution_end_hour: 24,
-      },
+      agent_hub_permission: {},
       onboarding: {},
     })
   })
@@ -120,12 +115,7 @@ describe('NewProjectClient', () => {
       root_path: '/home/demo/projects/hosted-example',
       category: 'dev',
       summitflow_hosted: true,
-      agent_hub_permission: {
-        permission_tier: 'read',
-        auto_exec_enabled: false,
-        execution_start_hour: 0,
-        execution_end_hour: 24,
-      },
+      agent_hub_permission: {},
       onboarding: {},
     })
   })
@@ -149,30 +139,6 @@ describe('NewProjectClient', () => {
       await screen.findByText('Root path must be an absolute path'),
     ).toBeInTheDocument()
     expect(apiMocks.createProject).not.toHaveBeenCalled()
-  })
-
-  it('allows skipping Agent Hub permission bootstrap', async () => {
-    renderClient()
-
-    fireEvent.change(screen.getByLabelText('Project Name *'), {
-      target: { value: 'No Bootstrap' },
-    })
-    fireEvent.change(screen.getByLabelText('Base URL'), {
-      target: { value: 'https://example.com' },
-    })
-    fireEvent.click(screen.getByLabelText('Provision Agent Hub permission'))
-
-    expect(await submitProject()).toEqual({
-      id: 'no-bootstrap',
-      name: 'No Bootstrap',
-      base_url: 'https://example.com',
-      health_endpoint: '/health',
-      root_path: '/home/demo/projects/no-bootstrap',
-      category: 'dev',
-      summitflow_hosted: true,
-      agent_hub_permission: undefined,
-      onboarding: {},
-    })
   })
 
   it('submits the selected sidebar category', async () => {

@@ -14,17 +14,14 @@ import {
 } from '@/components/ui/select'
 import { PROJECT_CATEGORY_LABELS, type ProjectCategory } from '@/lib/api'
 import { DEFAULT_HEALTH_ENDPOINT } from '@/lib/project-registration'
-import { AgentHubSection } from './AgentHubSection'
 import { ROUTE_HOME } from './constants'
 import { ProjectPreviewPanel } from './ProjectPreviewPanel'
 import { useNewProjectForm } from './useNewProjectForm'
 
 export function NewProjectClient() {
-  const { fields, agentHub, errors, isPending, preview, handlers } =
-    useNewProjectForm()
+  const { fields, errors, isPending, preview, handlers } = useNewProjectForm()
   const { name, projectId, baseUrl, healthEndpoint, rootPath, category } =
     fields
-  const { syncAgentHubPermission, permissionTier } = agentHub
   const {
     handleNameChange,
     handleProjectIdChange,
@@ -33,8 +30,6 @@ export function NewProjectClient() {
     handleRootPathChange,
     handleCategoryChange,
     handleSubmit,
-    setSyncAgentHubPermission,
-    setPermissionTier,
   } = handlers
   const categoryOptions: ProjectCategory[] = ['production', 'testing', 'dev']
 
@@ -199,15 +194,6 @@ export function NewProjectClient() {
             </p>
           </div>
 
-          <div className="chrome-line my-1" />
-
-          <AgentHubSection
-            syncAgentHubPermission={syncAgentHubPermission}
-            permissionTier={permissionTier}
-            onSyncChange={setSyncAgentHubPermission}
-            onTierChange={setPermissionTier}
-          />
-
           <div className="flex items-center gap-3 pt-2">
             <button
               type="submit"
@@ -236,8 +222,6 @@ export function NewProjectClient() {
           projectId={projectId}
           healthPreview={preview.healthPreview}
           normalizedRootPath={preview.normalizedRootPath}
-          syncAgentHubPermission={syncAgentHubPermission}
-          permissionTier={permissionTier}
         />
       </div>
     </div>

@@ -60,7 +60,7 @@ def test_projects_sync_identity_hits_sync_endpoint() -> None:
     mock_projects_api.assert_called_once_with("POST", "/terminal/sync-identity")
 
 
-def test_projects_create_sends_permission_bootstrap_fields() -> None:
+def test_projects_create_requests_the_agent_hub_project_row() -> None:
     with patch(
         "cli.commands._projects_helpers.projects_api",
         return_value={"id": "test2", "name": "Testbed"},
@@ -75,8 +75,6 @@ def test_projects_create_sends_permission_bootstrap_fields() -> None:
                 "https://test2.example.com",
                 "--root-path",
                 "/srv/workspaces/projects/test2",
-                "--permission-tier",
-                "full",
             ],
         )
 
@@ -89,9 +87,7 @@ def test_projects_create_sends_permission_bootstrap_fields() -> None:
             "base_url": "https://test2.example.com",
             "health_endpoint": "/health",
             "root_path": "/srv/workspaces/projects/test2",
-            "agent_hub_permission": {
-                "permission_tier": "full",
-            },
+            "agent_hub_permission": {},
         },
     )
 
@@ -151,6 +147,7 @@ def test_projects_create_derives_hosted_defaults() -> None:
             "health_endpoint": "/health",
             "root_path": str(PUBLIC_PROJECTS_ROOT / "test3"),
             "summitflow_hosted": True,
+            "agent_hub_permission": {},
             "onboarding": {},
         },
     )
@@ -181,6 +178,7 @@ def test_projects_create_can_disable_hosted_onboarding() -> None:
             "health_endpoint": "/health",
             "root_path": str(PUBLIC_PROJECTS_ROOT / "test3"),
             "summitflow_hosted": True,
+            "agent_hub_permission": {},
         },
     )
 
@@ -209,6 +207,7 @@ def test_projects_create_marks_hosted_alias_projects_without_baking_domains() ->
             "health_endpoint": "/health",
             "root_path": str(PUBLIC_PROJECTS_ROOT / "monkey-fight"),
             "summitflow_hosted": True,
+            "agent_hub_permission": {},
             "onboarding": {},
         },
     )

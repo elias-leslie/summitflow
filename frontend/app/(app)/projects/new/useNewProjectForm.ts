@@ -16,14 +16,7 @@ import {
   type ProjectFormErrors,
   validateProjectForm,
 } from '@/lib/project-registration'
-import {
-  DEFAULT_ONBOARDING,
-  DEFAULT_PERMISSION_TIER,
-  EXECUTION_END_HOUR,
-  EXECUTION_START_HOUR,
-  QUERY_KEYS,
-  ROUTE_PROJECT,
-} from './constants'
+import { DEFAULT_ONBOARDING, QUERY_KEYS, ROUTE_PROJECT } from './constants'
 
 type FormErrors = ProjectFormErrors & { submit?: string }
 type ErrorField = keyof FormErrors
@@ -40,8 +33,6 @@ export function useNewProjectForm() {
   const [healthEndpoint, setHealthEndpoint] = useState(DEFAULT_HEALTH_ENDPOINT)
   const [rootPath, setRootPath] = useState('')
   const [category, setCategory] = useState<ProjectCategory>('dev')
-  const [syncAgentHubPermission, setSyncAgentHubPermission] = useState(true)
-  const [permissionTier, setPermissionTier] = useState(DEFAULT_PERMISSION_TIER)
   const [errors, setErrors] = useState<FormErrors>({})
 
   const mutation = useMutation({
@@ -163,14 +154,7 @@ export function useNewProjectForm() {
       root_path: normalized.rootPath || undefined,
       category,
       summitflow_hosted: summitflowHosted || undefined,
-      agent_hub_permission: syncAgentHubPermission
-        ? {
-            permission_tier: permissionTier,
-            auto_exec_enabled: false,
-            execution_start_hour: EXECUTION_START_HOUR,
-            execution_end_hour: EXECUTION_END_HOUR,
-          }
-        : undefined,
+      agent_hub_permission: {},
       onboarding: normalized.rootPath ? { ...DEFAULT_ONBOARDING } : undefined,
     })
   }
@@ -180,7 +164,6 @@ export function useNewProjectForm() {
 
   return {
     fields: { name, projectId, baseUrl, healthEndpoint, rootPath, category },
-    agentHub: { syncAgentHubPermission, permissionTier },
     errors,
     isPending: mutation.isPending,
     preview: { normalizedRootPath, healthPreview },
@@ -192,8 +175,6 @@ export function useNewProjectForm() {
       handleRootPathChange,
       handleCategoryChange,
       handleSubmit,
-      setSyncAgentHubPermission,
-      setPermissionTier,
     },
   }
 }

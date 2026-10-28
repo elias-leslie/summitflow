@@ -11,7 +11,7 @@ from typing import Annotated
 import typer
 
 from ..config import get_config
-from ..output import output_error, output_json
+from ..output import output_json
 from ._projects_audit import run_audit
 from ._projects_helpers import (
     DEFAULT_HEALTH_ENDPOINT,
@@ -207,22 +207,6 @@ def create_project(
             help="Derive the canonical hosted app URL and configured projects-root defaults",
         ),
     ] = False,
-    permission_tier: Annotated[
-        str | None,
-        typer.Option("--permission-tier", help="Bootstrap matching Agent Hub permission tier"),
-    ] = None,
-    auto_exec_enabled: Annotated[
-        bool | None,
-        typer.Option("--auto-exec/--no-auto-exec", hidden=True),
-    ] = None,
-    execution_start_hour: Annotated[
-        int | None,
-        typer.Option("--execution-start-hour", min=0, max=23, hidden=True),
-    ] = None,
-    execution_end_hour: Annotated[
-        int | None,
-        typer.Option("--execution-end-hour", min=1, max=24, hidden=True),
-    ] = None,
     onboard: Annotated[
         bool | None,
         typer.Option(
@@ -240,20 +224,12 @@ def create_project(
     Examples:
         st projects create persona-sandbox "Persona Sandbox" --base-url http://localhost:3003
         st projects create my-app "My App" -u http://localhost:8080 -r /home/user/my-app
-        st projects create test2 "Testbed" --summitflow-hosted --permission-tier full
+        st projects create test2 "Testbed" --summitflow-hosted
         st projects create fydor "Fydor" --native -r /srv/workspaces/projects/fydor
 
-    Automated execution starts disabled. Configure permission and schedules in
-    Agent Hub Automations after project creation.
+    The matching Agent Hub project row (budgets, cost ingest) is created with the
+    project. Pause autonomous runs per project in Agent Hub Automations.
     """
-    if any(value is not None for value in (auto_exec_enabled, execution_start_hour, execution_end_hour)):
-        output_error(
-            "Project creation cannot set automated execution permission or hours. "
-            "Create the project, then configure it in Agent Hub Automations "
-            "(https://agent.summitflow.dev/automations)."
-        )
-        raise typer.Exit(2)
-
     effective_onboard = summitflow_hosted if onboard is None else onboard
 
     run_create(
@@ -264,7 +240,6 @@ def create_project(
         health_endpoint,
         summitflow_hosted=summitflow_hosted,
         native=native,
-        permission_tier=permission_tier,
         onboarding=effective_onboard,
     )
 

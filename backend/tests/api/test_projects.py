@@ -232,7 +232,7 @@ def test_create_project_does_not_add_a_backup_source(client, monkeypatch) -> Non
             conn.commit()
 
 
-def test_create_project_syncs_agent_hub_permission_when_requested(client, monkeypatch) -> None:
+def test_create_project_syncs_agent_hub_project_row_when_requested(client, monkeypatch) -> None:
     """POST /api/projects should provision Agent Hub permission bootstrap when requested."""
     project_id = f"bootstrap-{uuid4().hex[:8]}"
     root_path = f"{Path.home()}/.local/share/summitflow/workspaces/projects/{project_id}"
@@ -250,12 +250,7 @@ def test_create_project_syncs_agent_hub_permission_when_requested(client, monkey
                 "health_endpoint": "/health",
                 "root_path": root_path,
                 "category": "testing",
-                "agent_hub_permission": {
-                    "permission_tier": "full",
-                    "auto_exec_enabled": True,
-                    "execution_start_hour": 0,
-                    "execution_end_hour": 24,
-                },
+                "agent_hub_permission": {"daily_cost_budget_usd": 5.0},
             },
         )
 
@@ -265,8 +260,7 @@ def test_create_project_syncs_agent_hub_permission_when_requested(client, monkey
         assert sync_mock.await_args is not None
         args = sync_mock.await_args.args
         assert args[0] == project_id
-        assert args[1].permission_tier == "full"
-        assert args[1].auto_exec_enabled is True
+        assert args[1].daily_cost_budget_usd == 5.0
         assert args[2] == root_path
     finally:
         with get_connection() as conn, conn.cursor() as cur:
@@ -289,10 +283,6 @@ async def test_reconcile_agent_hub_project_identity_renames_legacy_permission(mo
         if project_id == "terminal":
             return {
                 "project_id": "terminal",
-                "permission_tier": "read",
-                "auto_exec_enabled": True,
-                "execution_start_hour": 2,
-                "execution_end_hour": 20,
                 "root_path": "/srv/workspaces/projects/legacy-a-term",
                 "daily_cost_budget_usd": 5.0,
                 "monthly_cost_budget_usd": 50.0,
@@ -316,10 +306,6 @@ async def test_reconcile_agent_hub_project_identity_renames_legacy_permission(mo
     assert sync_mock.await_args is not None
     sync_args = sync_mock.await_args.args
     assert sync_args[0] == "a-term"
-    assert sync_args[1].permission_tier == "read"
-    assert sync_args[1].auto_exec_enabled is True
-    assert sync_args[1].execution_start_hour == 2
-    assert sync_args[1].execution_end_hour == 20
     assert sync_args[1].root_path == "/srv/workspaces/projects/a-term"
     assert sync_args[1].daily_cost_budget_usd == 5.0
     assert sync_args[1].monthly_cost_budget_usd == 50.0
@@ -468,12 +454,7 @@ def test_create_project_rolls_back_when_agent_hub_sync_fails(client, monkeypatch
             "base_url": "https://rollback.example",
             "health_endpoint": "/health",
             "root_path": root_path,
-            "agent_hub_permission": {
-                "permission_tier": "full",
-                "auto_exec_enabled": True,
-                "execution_start_hour": 0,
-                "execution_end_hour": 24,
-            },
+            "agent_hub_permission": {},
         },
     )
 

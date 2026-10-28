@@ -66,10 +66,6 @@ def _build_permission_payload(
     effective_root_path = permission.root_path or root_path
     payload: dict[str, object] = {
         "project_id": project_id,
-        "permission_tier": permission.permission_tier,
-        "auto_exec_enabled": permission.auto_exec_enabled,
-        "execution_start_hour": permission.execution_start_hour,
-        "execution_end_hour": permission.execution_end_hour,
         "budget_alert_threshold": permission.budget_alert_threshold,
     }
     if effective_root_path is not None:
@@ -88,10 +84,6 @@ def _coerce_permission_bootstrap(
 ) -> ProjectPermissionBootstrap:
     """Convert an Agent Hub permission response into a bootstrap payload."""
     return ProjectPermissionBootstrap(
-        permission_tier=str(payload["permission_tier"]),
-        auto_exec_enabled=bool(payload["auto_exec_enabled"]),
-        execution_start_hour=int(payload["execution_start_hour"]),
-        execution_end_hour=int(payload["execution_end_hour"]),
         root_path=root_path or payload.get("root_path"),
         daily_cost_budget_usd=payload.get("daily_cost_budget_usd"),
         monthly_cost_budget_usd=payload.get("monthly_cost_budget_usd"),

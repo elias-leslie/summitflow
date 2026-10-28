@@ -60,17 +60,6 @@ def _project_update_fields(
     )
 
 
-def _permission_payload(
-    *,
-    permission_tier: str | None,
-) -> dict[str, Any]:
-    return _normalize_fields(
-        {
-            "permission_tier": permission_tier,
-        }
-    )
-
-
 def _create_project_body(
     *,
     project_id: str,
@@ -80,7 +69,6 @@ def _create_project_body(
     health_endpoint: str,
     summitflow_hosted: bool,
     native: bool = False,
-    permission_tier: str | None,
     onboarding: bool,
 ) -> dict[str, Any]:
     effective_root_path = root_path
@@ -105,11 +93,7 @@ def _create_project_body(
     if summitflow_hosted:
         body["summitflow_hosted"] = True
 
-    permission_payload = _permission_payload(
-        permission_tier=permission_tier,
-    )
-    if permission_payload:
-        body["agent_hub_permission"] = permission_payload
+    body["agent_hub_permission"] = {}
     if onboarding:
         body["onboarding"] = {}
     return body
@@ -252,7 +236,6 @@ def run_create(
     health_endpoint: str,
     summitflow_hosted: bool = False,
     native: bool = False,
-    permission_tier: str | None = None,
     onboarding: bool = False,
 ) -> None:
     """Implementation for `projects create`."""
@@ -268,7 +251,6 @@ def run_create(
         health_endpoint=health_endpoint,
         summitflow_hosted=summitflow_hosted,
         native=native,
-        permission_tier=permission_tier,
         onboarding=onboarding,
     )
     result = projects_api("POST", json=body)

@@ -15,7 +15,7 @@
   ],
   "namespace": "automations",
   "help": {
-    "": "Usage: automations [OPTIONS] COMMAND [ARGS]...\n\n  Manage canonical Agent Hub background automations\n\nOptions:\n  --install-completion  Install completion for the current shell.\n  --show-completion     Show completion for the current shell, to copy it or\n                        customize the installation.\n  --help                Show this message and exit.\n\nCommands:\n  catalog        List registered background workflow types, optionally by...\n  list           List automation profiles and effective state with...\n  show           Show one automation profile, revision, gates, and schedule.\n  validate       Validate a profile against its registered workflow...\n  apply          Create or revise an automation profile with revision...\n  import         Register an owner's schedule and cursor without...\n  cutover        Transfer an imported schedule after its owner durably...\n  enable         Enable scheduled background admissions for a profile.\n  disable        Stop new background admissions for a profile.\n  policy         Inspect one project's shared automation policy.\n  policy-apply   Update shared policy using the current revision in the...\n  execution      Read the execution permission from its existing...\n  execution-set  Update only execution fields; access tier stays in...\n  run            Start an audited manual cycle under the workflow's...\n  runs           Inspect accepted, running, failed, and unknown...\n  review         Mark one profile reviewed through its current or...",
+    "": "Usage: automations [OPTIONS] COMMAND [ARGS]...\n\n  Manage canonical Agent Hub background automations\n\nOptions:\n  --install-completion  Install completion for the current shell.\n  --show-completion     Show completion for the current shell, to copy it or\n                        customize the installation.\n  --help                Show this message and exit.\n\nCommands:\n  catalog       List registered background workflow types, optionally by...\n  list          List automation profiles and effective state with...\n  show          Show one automation profile, revision, gates, and schedule.\n  validate      Validate a profile against its registered workflow...\n  apply         Create or revise an automation profile with revision...\n  import        Register an owner's schedule and cursor without...\n  cutover       Transfer an imported schedule after its owner durably...\n  enable        Enable scheduled background admissions for a profile.\n  disable       Stop new background admissions for a profile.\n  policy        Inspect one project's shared automation policy.\n  policy-apply  Update shared policy using the current revision in the...\n  run           Start an audited manual cycle under the workflow's...\n  runs          Inspect accepted, running, failed, and unknown automation...\n  review        Mark one profile reviewed through its current or selected...",
     "catalog": "Usage: automations catalog [OPTIONS]\n\n  List registered background workflow types, optionally by owner project.\n\nOptions:\n  --project <str>\n  --json\n  --help           Show this message and exit.",
     "list": "Usage: automations list [OPTIONS]\n\n  List automation profiles and effective state with pagination.\n\nOptions:\n  --project <str>\n  --limit <int range>   [default: 100; 1<=x<=500]\n  --offset <int range>  [default: 0; x>=0]\n  --json\n  --help                Show this message and exit.",
     "show": "Usage: automations show [OPTIONS] {profile_id}\n\n  Show one automation profile, revision, gates, and schedule.\n\nArguments:\n  profile_id  [required]\n\nOptions:\n  --json\n  --help  Show this message and exit.",
@@ -27,8 +27,6 @@
     "disable": "Usage: automations disable [OPTIONS] {profile_id}\n\n  Stop new background admissions for a profile.\n\nArguments:\n  profile_id  [required]\n\nOptions:\n  --revision <int range>  [x>=1; required]\n  --json\n  --help                  Show this message and exit.",
     "policy": "Usage: automations policy [OPTIONS] {project_id}\n\n  Inspect one project's shared automation policy.\n\nArguments:\n  project_id  [required]\n\nOptions:\n  --json\n  --help  Show this message and exit.",
     "policy-apply": "Usage: automations policy-apply [OPTIONS] {project_id}\n\n  Update shared policy using the current revision in the input.\n\nArguments:\n  project_id  [required]\n\nOptions:\n  --file <str>  JSON/YAML path or - for stdin  [required]\n  --json\n  --help        Show this message and exit.",
-    "execution": "Usage: automations execution [OPTIONS] {project_id}\n\n  Read the execution permission from its existing authorized API.\n\nArguments:\n  project_id  [required]\n\nOptions:\n  --json\n  --help  Show this message and exit.",
-    "execution-set": "Usage: automations execution-set [OPTIONS] {project_id}\n\n  Update only execution fields; access tier stays in Access Control.\n\nArguments:\n  project_id  [required]\n\nOptions:\n  --auto-exec <str>\n  --start-hour <int range>  [0<=x<=23]\n  --end-hour <int range>    [1<=x<=24]\n  --json\n  --help                    Show this message and exit.",
     "run": "Usage: automations run [OPTIONS] {profile_id}\n\n  Start an audited manual cycle under the workflow's registered policy.\n\nArguments:\n  profile_id  [required]\n\nOptions:\n  --idempotency-key <str>\n  --json\n  --help                   Show this message and exit.",
     "runs": "Usage: automations runs [OPTIONS]\n\n  Inspect accepted, running, failed, and unknown automation runs.\n\nOptions:\n  --profile <str>\n  --project <str>\n  --limit <int range>   [default: 50; 1<=x<=500]\n  --offset <int range>  [default: 0; x>=0]\n  --json\n  --help                Show this message and exit.",
     "review": "Usage: automations review [OPTIONS] {profile_id}\n\n  Mark one profile reviewed through its current or selected run.\n\nArguments:\n  profile_id  [required]\n\nOptions:\n  --through-run-id <str>\n  --json\n  --help                  Show this message and exit."
@@ -145,27 +143,6 @@
       "tier": "reference",
       "cmd": "st automations policy-apply PROJECT_ID --file POLICY.json|yaml|-",
       "when": "revise project-wide automation limits with an expected revision",
-      "task_types": [
-        "automation-admin"
-      ],
-      "on_demand": "autonomous operations"
-    },
-    {
-      "surface": "st.automations.execution",
-      "tier": "reference",
-      "cmd": "st automations execution PROJECT_ID [--json]",
-      "when": "inspect the project execution permission gate and hours before changing automated work",
-      "task_types": [
-        "automation-admin",
-        "incident"
-      ],
-      "on_demand": "autonomous operations"
-    },
-    {
-      "surface": "st.automations.execution-set",
-      "tier": "reference",
-      "cmd": "st automations execution-set PROJECT_ID [--auto-exec on|off] [--start-hour 0..23 --end-hour 1..24]",
-      "when": "change the project execution permission gate or hours through its existing authorized API",
       "task_types": [
         "automation-admin"
       ],
