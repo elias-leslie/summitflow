@@ -10,4 +10,4 @@
 !design_tools-*-py3-none-any.whl
 # Versioned frontend release inputs pinned by pnpm-lock.yaml.
 !agent-hub-chat-ui-*.tgz
-!agent-hub-passport-client-*.tgz
+!agent-hub-sdk-*.tgz

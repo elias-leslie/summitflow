@@ -1,7 +1,10 @@
 import type { ChatMessage } from '@agent-hub/chat-ui'
 import { useCallback, useMemo, useRef, useState } from 'react'
 import { toast } from 'sonner'
-import { buildAgentHubChatApiConfig } from '@/lib/agent-hub-chat-config'
+import {
+  buildAgentHubChatConfig,
+  createAgentHubChatClient,
+} from '@/lib/agent-hub-chat-config'
 import { getAgentHubProxyBase } from '@/lib/agent-hub-proxy'
 import type { TaskType } from '@/lib/api/tasks-types'
 import { postJson } from '@/lib/api/utils'
@@ -57,13 +60,13 @@ export function useTaskIdeation(
   const [error, setError] = useState<string | null>(null)
   const messagesRef = useRef<ChatMessage[]>([])
 
-  const apiConfig = useMemo(
-    () =>
-      buildAgentHubChatApiConfig({
-        proxyBase: getAgentHubProxyBase(),
-        projectId,
-      }),
+  const chatConfig = useMemo(
+    () => buildAgentHubChatConfig({ projectId }),
     [projectId],
+  )
+  const chatClient = useMemo(
+    () => createAgentHubChatClient(getAgentHubProxyBase()),
+    [],
   )
 
   const handleMessagesChange = useCallback((messages: ChatMessage[]) => {
@@ -157,7 +160,8 @@ export function useTaskIdeation(
     taskData,
     isSubmitting,
     error,
-    apiConfig,
+    chatConfig,
+    chatClient,
     handleMessagesChange,
     handleClose,
     handleBackToChat,

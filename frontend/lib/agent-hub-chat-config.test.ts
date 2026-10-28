@@ -1,30 +1,40 @@
-import { describe, expect, it } from 'vitest'
-import { buildAgentHubChatApiConfig } from './agent-hub-chat-config'
+import { describe, expect, it, vi } from 'vitest'
+import {
+  buildAgentHubChatConfig,
+  createAgentHubChatClient,
+} from './agent-hub-chat-config'
 
-describe('buildAgentHubChatApiConfig', () => {
+describe('buildAgentHubChatConfig', () => {
   it('uses the provided project id for chat and memory scoping', () => {
-    expect(
-      buildAgentHubChatApiConfig({
-        proxyBase: '/api/agent-hub',
-        projectId: 'agent-hub',
-      }),
-    ).toEqual({
-      completeEndpoint: '/api/agent-hub/complete',
-      sessionsEndpoint: '/api/agent-hub/sessions',
-      preferencesEndpoint: '/api/agent-hub/preferences',
+    expect(buildAgentHubChatConfig({ projectId: 'agent-hub' })).toEqual({
       projectId: 'agent-hub',
       memoryGroupPrefix: 'agent-hub:',
     })
   })
 
   it('falls back to the default project when project id is missing', () => {
-    expect(
-      buildAgentHubChatApiConfig({
-        proxyBase: '/api/agent-hub',
-      }),
-    ).toMatchObject({
+    expect(buildAgentHubChatConfig({})).toMatchObject({
       projectId: 'summitflow',
       memoryGroupPrefix: 'summitflow:',
     })
+  })
+})
+
+describe('createAgentHubChatClient', () => {
+  it('sends SDK requests to the Agent Hub proxy paths', async () => {
+    const fetchMock = vi.fn().mockResolvedValue(
+      new Response(JSON.stringify([]), {
+        status: 200,
+        headers: { 'Content-Type': 'application/json' },
+      }),
+    )
+    const client = createAgentHubChatClient('/api/agent-hub', fetchMock)
+
+    await client.sessions.get('s 1').catch(() => undefined)
+    await client.turns.cancel('s1').catch(() => undefined)
+
+    const urls = fetchMock.mock.calls.map((call) => String(call[0]))
+    expect(urls[0]).toBe('/api/agent-hub/sessions/s%201')
+    expect(urls[1]).toBe('/api/agent-hub/complete/cancel')
   })
 })

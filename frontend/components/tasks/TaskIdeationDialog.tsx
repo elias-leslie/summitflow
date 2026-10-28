@@ -11,7 +11,6 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog'
-import { getAgentHubProxyBase } from '@/lib/agent-hub-proxy'
 import { TaskSummaryCard } from './TaskSummaryCard'
 import type { TaskIdeationDialogProps } from './taskIdeationTypes'
 import { AGENT_SLUG, CHAT_TITLE } from './taskIdeationTypes'
@@ -28,7 +27,8 @@ export function TaskIdeationDialog({
     taskData,
     isSubmitting,
     error,
-    apiConfig,
+    chatConfig,
+    chatClient,
     handleMessagesChange,
     handleClose,
     handleBackToChat,
@@ -86,8 +86,8 @@ export function TaskIdeationDialog({
                 <ChatPanel
                   agentSlug={AGENT_SLUG}
                   toolsEnabled
-                  apiConfig={apiConfig}
-                  modelsEndpoint={`${getAgentHubProxyBase()}/models`}
+                  client={chatClient}
+                  config={chatConfig}
                   title={CHAT_TITLE}
                   onMessagesChange={handleMessagesChange}
                 />

@@ -5,7 +5,6 @@ settings:
   excludeLinksFromLockfile: false
 
 overrides:
-  '@agent-hub/passport-client': file:docker/workspace-packages/agent-hub-passport-client-0.1.0.tgz
   '@babel/core': 7.29.6
   browserslist: 4.28.7
   esbuild: 0.28.1
@@ -24,8 +23,11 @@ importers:
   frontend:
     dependencies:
       '@agent-hub/chat-ui':
-        specifier: file:../docker/workspace-packages/agent-hub-chat-ui-0.1.1.tgz
-        version: file:docker/workspace-packages/agent-hub-chat-ui-0.1.1.tgz(@types/react@19.3.0)(react-dom@19.3.0(react@19.3.0))(react@19.3.0)
+        specifier: file:../docker/workspace-packages/agent-hub-chat-ui-0.2.0.tgz
+        version: file:docker/workspace-packages/agent-hub-chat-ui-0.2.0.tgz(@agent-hub/sdk@file:docker/workspace-packages/agent-hub-sdk-0.1.1.tgz)(@types/react@19.3.0)(react-dom@19.3.0(react@19.3.0))(react@19.3.0)
+      '@agent-hub/sdk':
+        specifier: file:../docker/workspace-packages/agent-hub-sdk-0.1.1.tgz
+        version: file:docker/workspace-packages/agent-hub-sdk-0.1.1.tgz
       '@codemirror/lang-cpp':
         specifier: ^6.0.3
         version: 6.0.3
@@ -226,19 +228,21 @@ packages:
   '@adobe/css-tools@4.4.4':
     resolution: {integrity: sha512-Elp+iwUx5rN5+Y8xLt5/GRoG20WGoDCQ/1Fb+1LiGtvwbDavuSk0jhD/eZdckHAuzcDzccnkv+rEjyWfRx18gg==}
 
-  '@agent-hub/chat-ui@file:docker/workspace-packages/agent-hub-chat-ui-0.1.1.tgz':
-    resolution: {integrity: sha512-SsyHnNzDiyVSRu4VjrpW+GSryvQ42ljTaZl0F+NCgagQg4G8qAgBSD0KU+QMnRvYI4eFDvMUgmGcFdH3TfNivQ==, tarball: file:docker/workspace-packages/agent-hub-chat-ui-0.1.1.tgz}
-    version: 0.1.1
+  '@agent-hub/chat-ui@file:docker/workspace-packages/agent-hub-chat-ui-0.2.0.tgz':
+    resolution: {integrity: sha512-5F1FhryyHAjWSkF+Dx2wD6ARj0peeMBYQQ4zHEfQfiJEz2F/DGRTU/UhXzfWIA/echY4pwm1BLmQevWI6V2Cyg==, tarball: file:docker/workspace-packages/agent-hub-chat-ui-0.2.0.tgz}
+    version: 0.2.0
     peerDependencies:
+      '@agent-hub/passport-client': '>=0.1.0'
+      '@agent-hub/sdk': '>=0.1.1'
       react: '>=18 || ^19.0.0'
       react-dom: '>=18 || ^19.0.0'
+    peerDependenciesMeta:
+      '@agent-hub/passport-client':
+        optional: true
 
-  '@agent-hub/passport-client@file:docker/workspace-packages/agent-hub-passport-client-0.1.0.tgz':
-    resolution: {integrity: sha512-eFW0eKA/CCWIm54ZH/fwJztkn6eJaK1kTFd7XbLTiZHXVbptF9csTKUD395uzVxEYEtgedN6PLDcA1L8tJ5WyA==, tarball: file:docker/workspace-packages/agent-hub-passport-client-0.1.0.tgz}
-    version: 0.1.0
-    peerDependencies:
-      react: '>=18 || ^19.0.0'
-      react-dom: '>=18 || ^19.0.0'
+  '@agent-hub/sdk@file:docker/workspace-packages/agent-hub-sdk-0.1.1.tgz':
+    resolution: {integrity: sha512-uOfi56922u5s64jUnF+JiAcAQB4W1V7gR9XrlRamWQlfpTnKic4PBsWQI7uWjc86Q/K6wAnxMQsd99qvpCgs+g==, tarball: file:docker/workspace-packages/agent-hub-sdk-0.1.1.tgz}
+    version: 0.1.1
 
   '@alloc/quick-lru@5.3.0':
     resolution: {integrity: sha512-U4+70Pc5ZS9osnCBCE5Jha/ciHM+Yp+CNMNC/7HvYbNRk1Ldd+f7qO65W5qfhu/TCv+/ozljlXXe9Nj8419DMA==}
@@ -2974,9 +2978,9 @@ snapshots:
 
   '@adobe/css-tools@4.4.4': {}
 
-  '@agent-hub/chat-ui@file:docker/workspace-packages/agent-hub-chat-ui-0.1.1.tgz(@types/react@19.3.0)(react-dom@19.3.0(react@19.3.0))(react@19.3.0)':
+  '@agent-hub/chat-ui@file:docker/workspace-packages/agent-hub-chat-ui-0.2.0.tgz(@agent-hub/sdk@file:docker/workspace-packages/agent-hub-sdk-0.1.1.tgz)(@types/react@19.3.0)(react-dom@19.3.0(react@19.3.0))(react@19.3.0)':
     dependencies:
-      '@agent-hub/passport-client': file:docker/workspace-packages/agent-hub-passport-client-0.1.0.tgz(react-dom@19.3.0(react@19.3.0))(react@19.3.0)
+      '@agent-hub/sdk': file:docker/workspace-packages/agent-hub-sdk-0.1.1.tgz
       '@tanstack/react-query': 5.104.1(react@19.3.0)
       clsx: 2.1.1
       lucide-react: 0.562.0(react@19.3.0)
@@ -2989,13 +2993,7 @@ snapshots:
       - '@types/react'
       - supports-color
 
-  '@agent-hub/passport-client@file:docker/workspace-packages/agent-hub-passport-client-0.1.0.tgz(react-dom@19.3.0(react@19.3.0))(react@19.3.0)':
-    dependencies:
-      clsx: 2.1.1
-      lucide-react: 0.562.0(react@19.3.0)
-      react: 19.3.0
-      react-dom: 19.3.0(react@19.3.0)
-      tailwind-merge: 2.6.1
+  '@agent-hub/sdk@file:docker/workspace-packages/agent-hub-sdk-0.1.1.tgz': {}
 
   '@alloc/quick-lru@5.3.0': {}
 

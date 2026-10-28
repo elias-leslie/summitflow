@@ -1,7 +1,7 @@
 #!/bin/bash
 # Pack workspace packages for Docker builds.
 #
-# JavaScript: @agent-hub/{chat-ui,passport-client} → .tgz tarballs
+# JavaScript: @agent-hub/{chat-ui,sdk} → .tgz tarballs
 # (@summitflow/notes-ui is a pnpm workspace package built from source.)
 # Python: explicit --python-owner refresh only; Docker uses locked release wheels.
 #
@@ -141,9 +141,9 @@ pack_js_package() {
 
 # ── JavaScript packages ──────────────────────────────────────────
 if [ -n "$PACKAGES_DIR" ]; then
-  for pkg in passport-client chat-ui; do
-    pack_js_package "@agent-hub/$pkg" "$PACKAGES_DIR/$pkg"
-  done
+  # The chat-ui tarball has the SDK as a peer, so both ship together.
+  pack_js_package "@agent-hub/sdk" "$PACKAGES_DIR/agent-hub-sdk"
+  pack_js_package "@agent-hub/chat-ui" "$PACKAGES_DIR/chat-ui"
 else
   echo "SKIP: agent-hub packages root not found"
 fi
