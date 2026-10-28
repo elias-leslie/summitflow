@@ -241,7 +241,7 @@ packages:
         optional: true
 
   '@agent-hub/sdk@file:docker/workspace-packages/agent-hub-sdk-0.1.2.tgz':
-    resolution: {integrity: sha512-PrD7iZon++WJ26O7MTAIphPF7t1YY0/Ceke2gUM37I42D99HBySHbssHMRCnRvwD7yed2duUZH78Y3ho6IY22Q==, tarball: file:docker/workspace-packages/agent-hub-sdk-0.1.2.tgz}
+    resolution: {integrity: sha512-yWiqvn7+8V/ZERML9TrfEfId3LphvxADdT14SUSVptIhLSYiptvu+cfnUvJn35AwTxCxtZCbJyAsZ5V8iA9JBQ==, tarball: file:docker/workspace-packages/agent-hub-sdk-0.1.2.tgz}
     version: 0.1.2
 
   '@alloc/quick-lru@5.3.0':
