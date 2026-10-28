@@ -16,9 +16,9 @@ REGISTRY = [
     UsageSpec(surface="st.service.rebuild", cmd="st service rebuild <project>"),
     UsageSpec(surface="st.service.observe", cmd="st service observe <project>"),
     UsageSpec(surface="st.sessions.send", cmd="st sessions send", when="message another agent"),
-    UsageSpec(surface="st.neri.hunt.begin", cmd="st neri hunt begin"),
-    UsageSpec(surface="st.neri.report.review_packet", cmd="st neri report review-packet",
-              why="commercial submission packet"),
+    UsageSpec(surface="st.learn.improvements.promote", cmd="st learn improvements promote"),
+    UsageSpec(surface="st.learn.agent_lab", cmd="st learn agent-lab",
+              why="local agent permission simulator"),
     UsageSpec(surface="st.monitor.status", cmd="st monitor status", on_demand="host and project troubleshooting"),
     UsageSpec(surface="st.vm.repair", cmd="st vm repair", on_demand="VM repair"),
 ]
@@ -44,15 +44,15 @@ def _discover(query: str) -> tuple[int, dict | None, str]:
     ("Troubleshooting", ["st.monitor.status"], ["workflow 'host and project troubleshooting'"]),
     ("host-troubleshooting", ["st.monitor.status"], ["workflow 'host and project troubleshooting'"]),
     # Words naming a nested family path.
-    ("neri hunt", ["st.neri.hunt.begin"], ["st.neri.hunt"]),
-    ("neri-hunt", ["st.neri.hunt.begin"], ["st.neri.hunt"]),
-    ("hunts", ["st.neri.hunt.begin"], ["st.neri.hunt"]),
+    ("learn improvements", ["st.learn.improvements.promote"], ["st.learn.improvements"]),
+    ("learn-improvements", ["st.learn.improvements.promote"], ["st.learn.improvements"]),
+    ("improvement", ["st.learn.improvements.promote"], ["st.learn.improvements"]),
     # Plural and singular name the same family.
     ("services", ["st.service.rebuild", "st.service.observe"], ["st.service"]),
     ("session", ["st.sessions.send"], ["st.sessions"]),
     # Substring of a label word when no whole word matches.
     ("troubleshoot", ["st.monitor.status"], ["workflow 'host and project troubleshooting'"]),
-    ("packet", ["st.neri.report.review_packet"], ["st.neri.report.review_packet"]),
+    ("lab", ["st.learn.agent_lab"], ["st.learn.agent_lab"]),
 ])
 def test_discover_matches_label_words_and_names_what_matched(registry, query, surfaces, matched) -> None:
     code, payload, output = _discover(query)
@@ -81,7 +81,7 @@ def test_whole_word_matches_win_over_substrings() -> None:
     assert discover_matches([UsageSpec(surface="st.vmware.sync")], "vm") == ([], [])
 
 
-@pytest.mark.parametrize(("query", "suggested"), [("sevice", "st.service"), ("nerii", "st.neri")])
+@pytest.mark.parametrize(("query", "suggested"), [("sevice", "st.service"), ("learnn", "st.learn")])
 def test_unknown_topic_lists_ranked_suggestions_without_substituting(registry, query, suggested) -> None:
     result = runner.invoke(tools_app, ["manifest", "--discover", query, "--format", "json"])
     assert result.exit_code == 1
@@ -91,9 +91,9 @@ def test_unknown_topic_lists_ranked_suggestions_without_substituting(registry, q
 
 
 def test_unknown_topic_names_mentioning_surfaces_and_workflows(registry) -> None:
-    result = runner.invoke(tools_app, ["manifest", "--discover", "commercial"])
+    result = runner.invoke(tools_app, ["manifest", "--discover", "simulator"])
     assert result.exit_code == 1
-    assert "Surfaces mentioning it: st.neri.report.review_packet." in result.output
+    assert "Surfaces mentioning it: st.learn.agent_lab." in result.output
     # No near-miss label: list the workflows so a placeholder query still learns the vocabulary.
     assert "Workflows: VM repair, host and project troubleshooting." in result.output
     assert "--density full lists the complete catalogue." in result.output

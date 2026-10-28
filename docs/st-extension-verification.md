@@ -75,6 +75,8 @@ through a real consumer-facing route, not model ingestion or subsequent use.
 - Safe actual `st neri capabilities`, `st learn capabilities`, and `st models
   list --limit 1 --json` succeeded. No offensive/paid work was used for these
   checks. Learn's accepted-only manual-task promotion behavior is retained.
+  (The `st neri` extension was unregistered on 2026-10-27 when the Neri app
+  was retired; `st learn capabilities` and `st models list` remain registered.)
 - Managed rebuilds succeeded for SummitFlow, Agent Hub, Jobinator, Portfolio,
   Neri and Learn. Native packages require installation, not new services.
 
