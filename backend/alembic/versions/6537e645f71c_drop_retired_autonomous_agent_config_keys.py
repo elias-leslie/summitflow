@@ -12,6 +12,11 @@ these agent_configs keys any more, so strip them from every project row:
 - quality_gate_tools/mode/fix_enabled
 - claude_enabled, gemini_enabled, default_agent, claude_model, gemini_model and
   component_source (their only accessors had no callers)
+- keys left in stored rows by earlier removals, with no default since: the old backup
+  flags pending_drain_enabled and restore_tests_enabled (their Hatchet crons were deleted
+  on 2026-10-28), and the memory-era checkpoints_enabled, context_injection_enabled,
+  diary_enabled, extraction_enabled, extraction_rpm_limit, memory_enabled,
+  observations_enabled and patterns_enabled
 
 The projects.agent_configs column default carried the agent keys, so it becomes '{}'.
 
@@ -62,6 +67,17 @@ _RETIRED_KEYS = (
     "claude_model",
     "gemini_model",
     "component_source",
+    # Orphaned by earlier removals; no default to restore on downgrade.
+    "pending_drain_enabled",
+    "restore_tests_enabled",
+    "checkpoints_enabled",
+    "context_injection_enabled",
+    "diary_enabled",
+    "extraction_enabled",
+    "extraction_rpm_limit",
+    "memory_enabled",
+    "observations_enabled",
+    "patterns_enabled",
 )
 
 # Prior DEFAULT_AGENT_CONFIG values (autonomous_external_origins had no default).

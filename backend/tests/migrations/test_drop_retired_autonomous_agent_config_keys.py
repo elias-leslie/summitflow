@@ -33,6 +33,9 @@ _RETIRED = {
     "claude_model": "sonnet",
     "default_agent": "claude",
     "component_source": "pages",
+    "pending_drain_enabled": True,
+    "memory_enabled": True,
+    "extraction_rpm_limit": 10,
 }
 
 
