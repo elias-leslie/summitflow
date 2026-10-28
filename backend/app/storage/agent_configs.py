@@ -43,7 +43,6 @@ class AgentConfig(TypedDict, total=False):
     refresh_graphify_graphs_enabled: bool  # Enable scheduled Graphify code graph refresh
     scheduled_backups_enabled: bool  # Enable scheduled backup creation
     stale_cleanup_enabled: bool  # Enable scheduled stale cleanup jobs
-    self_healing_enabled: bool  # Enable scheduled self-healing orchestrator
     prod_smoke_test_enabled: bool  # Enable scheduled production smoke tests
     health_monitor_enabled: bool  # Enable scheduled health monitor checks
     runtime_hygiene_enabled: bool  # Enable scheduled runtime hygiene audit
@@ -91,7 +90,6 @@ DEFAULT_AGENT_CONFIG: AgentConfig = {
     "refresh_graphify_graphs_enabled": True,
     "scheduled_backups_enabled": True,
     "stale_cleanup_enabled": True,
-    "self_healing_enabled": False,
     "prod_smoke_test_enabled": True,
     "health_monitor_enabled": True,
     "runtime_hygiene_enabled": False,
