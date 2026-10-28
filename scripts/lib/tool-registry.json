@@ -50,6 +50,34 @@
       "owner_manifest": "st-extensions/agents.json"
     },
     {
+      "id": "agent-hub.workflow",
+      "owner": "agent-hub",
+      "namespace": "workflow",
+      "manifest": "extensions/workflow.json",
+      "executable": "backend/.venv/bin/agent-hub-st",
+      "arguments": [
+        "workflow"
+      ],
+      "grant": {
+        "enabled": true,
+        "effects": [
+          "network",
+          "read-remote",
+          "write-remote",
+          "read-local",
+          "credentials"
+        ]
+      },
+      "environment": [
+        "AICO_SESSION_ID",
+        "AICO_AGENT_SLUG",
+        "AGENT_HUB_FRONTEND_URL",
+        "AGENT_HUB_FRONTEND_PORT"
+      ],
+      "execution_source": "accepted_runtime",
+      "owner_manifest": "st-extensions/workflow.json"
+    },
+    {
       "id": "agent-hub.complete",
       "owner": "agent-hub",
       "namespace": "complete",
