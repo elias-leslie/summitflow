@@ -5,11 +5,13 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import resource
 import shutil
 import stat
 import subprocess
 import sys
 import tempfile
+import time
 from collections.abc import Callable, Iterable, Mapping, Sequence
 from dataclasses import dataclass
 from datetime import UTC, datetime
@@ -23,6 +25,7 @@ from app.utils.transient_scratch import (
     validate_temp_parent,
 )
 
+from . import lane_measurements
 from .service_ops import (
     backend_optional_dependencies,
     frontend_install_plan,
@@ -394,7 +397,12 @@ def run_cleanroom(
     # This isolated execution route is used for installs, lock resolution and
     # gates. Admit before copying/staging the checkout as well as spawning the
     # command; ordinary ST inspection does not use this route.
-    with heavy_work("isolated validation") as work:
+    # A tiny fixture must not queue behind a closed heavy gate: a command whose
+    # last identical run was cheap takes the light class (lane_measurements).
+    lane_keys = lane_measurements.cleanroom_keys(command, deps=options.deps, clone=options.clone)
+    lane_class = lane_measurements.admission_class(project_root, "cleanroom", lane_keys)
+    with heavy_work("isolated validation", work_class=lane_class, project=project_root.name) as work:
+        started = time.monotonic()
         temp_dir = tempfile.mkdtemp(
             prefix=f"{project_root.name}{CLEANROOM_PREFIX_INFIX}", dir=_cleanroom_temp_parent(),
         )
@@ -453,6 +461,8 @@ def run_cleanroom(
             else:
                 print(f"CLEANROOM:kept:{temp_dir}", file=sys.stderr)
                 print(f"CLEANROOM:prune:{prune_hint(project_root)}", file=sys.stderr)
+            lane_measurements.record(project_root, "cleanroom", lane_keys, (time.monotonic() - started) * 1000,
+                                     resource.getrusage(resource.RUSAGE_CHILDREN).ru_maxrss)
 
 
 def _build_parser() -> argparse.ArgumentParser:

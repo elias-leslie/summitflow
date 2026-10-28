@@ -25,7 +25,7 @@ import typer
 from app.utils.heavy_work import HeavyWork, heavy_work
 
 from ..details import detail_path, display_path, summary_hint, write_details
-from ..lib import ci_parity, remote_runner
+from ..lib import ci_parity, lane_measurements, remote_runner
 from ..lib.acceptance import AcceptanceError
 from ..lib.architecture_check import run_architecture_check
 from ..lib.cleanroom import main as cleanroom_main
@@ -142,58 +142,19 @@ _FRONTEND_TEST_TIMEOUT = 600
 _LIGHT_TOOLS = frozenset({"ruff", "biome", "actionlint", "shellcheck", "squawk"})
 # Name the admission holder in result lines once queueing becomes noticeable.
 _QUEUE_NOTICE_MS = 1000.0
-# Measured per project: a vitest suite whose last run took seconds and little
-# memory (aico: 470 tests, 6.7 s, 164 MB peak) joins the light lane instead of
-# queueing behind full suites. Unmeasured or larger suites stay heavy.
-# Type checks of one file, or of a whole project that takes no paths (tsc),
-# join it when the same scope last ran in about 2 s: a 0.08 s basedpyright
-# check waited 66.9 s behind a full pytest suite in the heavy lane.
-_MEASURED_LIGHT = {  # execution ms, peak child RSS KiB
-    "vitest": (30_000.0, 1024 * 1024),
-    "types": (2_000.0, 1024 * 1024),
-    "tsc": (2_000.0, 1024 * 1024),
-}
-_SCOPED_MEASUREMENTS = frozenset({"types", "tsc"})
-
-
-def _measurement_key(name: str, extra_args: Sequence[str] = ()) -> str | None:
-    """Where a run's timing is kept; None when its scope is not lane-eligible."""
-    if name not in _SCOPED_MEASUREMENTS:
-        return name
-    paths = sum(1 for arg in extra_args if arg and not arg.startswith("-"))
-    return {0: f"{name}:project", 1: f"{name}:file"}.get(paths)
-
-
-def _lane_measurements(root: Path) -> Path | None:
-    state = root / ".git" / "st"
-    return state / "lane-measurements.json" if state.is_dir() else None
+# Measured cost, not a hardcoded list, moves cheap runs (vitest, type checks)
+# into the light lane; limits and per-project overrides live in
+# cli/lib/lane_measurements.py and `.st-check.toml [lanes.<check>]`.
 
 
 def _measured_light(root: Path, name: str, extra_args: Sequence[str] = ()) -> bool:
-    limits, path, key = _MEASURED_LIGHT.get(name), _lane_measurements(root), _measurement_key(name, extra_args)
-    if limits is None or path is None or key is None:
-        return False
-    try:
-        last = json.loads(path.read_text()).get(key) or {}
-        return float(last["execution_ms"]) <= limits[0] and int(last["max_rss_kb"]) <= limits[1]
-    except (OSError, ValueError, KeyError, TypeError, AttributeError):
-        return False
+    return lane_measurements.admission_class(root, name, lane_measurements.scope_keys(name, extra_args)) == "light"
 
 
 def _record_measurement(root: Path, name: str, execution_ms: float, max_rss_kb: int, returncode: int,
                         extra_args: Sequence[str] = ()) -> None:
-    path, key = _lane_measurements(root), _measurement_key(name, extra_args)
-    if name not in _MEASURED_LIGHT or path is None or key is None or returncode not in {0, 1}:
-        return
-    try:
-        values = json.loads(path.read_text()) if path.is_file() else {}
-        values = values if isinstance(values, dict) else {}
-        values[key] = {"execution_ms": round(execution_ms, 3), "max_rss_kb": max_rss_kb}
-        temporary = path.with_name(f".{path.name}.{os.getpid()}.tmp")
-        temporary.write_text(json.dumps(values, sort_keys=True))
-        os.replace(temporary, path)
-    except (OSError, ValueError):
-        return
+    if returncode in {0, 1}:
+        lane_measurements.record(root, name, lane_measurements.scope_keys(name, extra_args), execution_ms, max_rss_kb)
 
 
 def _run_frontend_script(command: list[str], cwd: Path, env: dict[str, str]) -> subprocess.CompletedProcess[str]:
@@ -331,7 +292,8 @@ def _execute_tool(root: Path, cwd: Path, name: str, binary: str, base_args: list
     # Only direct adapters of fast, low-memory linters are light.
     # Configured wrappers and all other tools retain the heavy default.
     direct = binary == name or (binary == "npx" and base_args[:1] == [name])
-    work_class = "light" if (name in _LIGHT_TOOLS and direct) or _measured_light(root, name, extra_args) else "heavy"
+    work_class = lane_measurements.pinned_class(root, name) or (
+        "light" if (name in _LIGHT_TOOLS and direct) or _measured_light(root, name, extra_args) else "heavy")
     parity = ci_parity.active() and ci_parity.has_ci(root)
     remote = (_run_on_ci_runner(root, command, cwd, report)
               if name == "pytest" and work_class == "heavy" and not extra_args and not parity else None)

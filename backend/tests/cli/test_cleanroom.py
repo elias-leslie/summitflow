@@ -114,7 +114,7 @@ def test_parse_env_assignments_rejects_invalid_values() -> None:
 def test_admission_failure_precedes_snapshot_materialization(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    def unavailable(_label: str) -> None:
+    def unavailable(_label: str, **_options: object) -> None:
         raise HeavyWorkError("fixture admission unavailable")
 
     def unexpected_snapshot(*_args: object, **_kwargs: object) -> None:
@@ -407,7 +407,7 @@ class _RecordingWork:
 def _use_recording_work(monkeypatch: pytest.MonkeyPatch, work: _RecordingWork, parent: Path) -> None:
     parent.mkdir(mode=0o700, exist_ok=True)
     monkeypatch.setenv("TMPDIR", str(parent))
-    monkeypatch.setattr(cleanroom, "heavy_work", lambda _label: work)
+    monkeypatch.setattr(cleanroom, "heavy_work", lambda _label, **_options: work)
 
 
 def test_deps_install_backend_then_frontend_before_command_with_extras(
