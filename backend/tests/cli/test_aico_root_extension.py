@@ -86,7 +86,7 @@ def test_create_help_names_only_the_supported_root_tools(monkeypatch):
     monkeypatch.setattr("cli.extensions.dispatch_extension", lambda *a, **k: pytest.fail("dispatched"))
     result = CliRunner().invoke(app(), ["aico", "create", "--help"])
     assert result.exit_code == 0
-    for slug in ("claude-code", "codex", "pi"):
+    for slug in ("claude-code", "codex", "pi", "agent-hub"):
         assert slug in result.output
     assert "--blank-slate" in result.output
     assert "--instructions PROMPT[@REVISION]" in result.output
@@ -94,12 +94,14 @@ def test_create_help_names_only_the_supported_root_tools(monkeypatch):
     manifest = aico_record().manifest
     assert manifest is not None
     usage = next(row for row in manifest.usage if row["surface"] == "st.aico.create")
-    assert "--tool claude-code|codex|pi " in manifest.help[""]
-    assert "--tool claude-code|codex|pi " in usage["cmd"]
+    assert "--tool claude-code|codex|pi|agent-hub " in manifest.help[""]
+    assert "--tool claude-code|codex|pi|agent-hub " in usage["cmd"]
     assert "--blank-slate" in usage["cmd"]
     assert manifest.help_options["create"]["--blank-slate"] == 0
     assert "--instructions PROMPT[@REVISION]" in usage["cmd"]
     assert manifest.help_options["create"]["--instructions"] == 1
+    assert manifest.help_options["create"]["--agent"] == 1
+    assert "--tool agent-hub --agent SLUG" in manifest.help[""]
     assert "opencode" not in " ".join(map(str, usage["precautions"])).lower()
 
 
