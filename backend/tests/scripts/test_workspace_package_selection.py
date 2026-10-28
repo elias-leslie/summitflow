@@ -61,7 +61,7 @@ def test_default_pack_never_builds_or_overwrites_python_wheels(tmp_path: Path) -
         executable.write_text("#!/bin/sh\n" + body + "\n")
         executable.chmod(0o755)
     packages = tmp_path / "agent-hub/packages"
-    for package in ("chat-ui", "passport-client"):
+    for package in ("chat-ui", "agent-hub-sdk"):
         (packages / package / "node_modules").mkdir(parents=True)
     out = tmp_path / "out"
     out.mkdir()
