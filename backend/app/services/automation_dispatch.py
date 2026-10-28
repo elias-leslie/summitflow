@@ -260,7 +260,7 @@ async def accept_automation_dispatch(
 
     status = "accepted" if receipt["status"] in {"queued", "running", "waiting"} else receipt["status"]
     response = {"owner_run_id": receipt["owner_run_id"], "status": status}
-    if request.workflow_key == "browser_workflow" and receipt.get("result"):
+    if receipt.get("result"):
         response["receipt"] = receipt["result"]
     return response
 
@@ -356,22 +356,6 @@ async def execute_automation_run(
         await _report_completion(finished)
         return {"run_id": run_id, "status": "failed"}
 
-    if claimed["workflow_key"] != "browser_workflow":
-        # Work pickup and routine upkeep were retired with the autonomous pipeline.
-        result = {
-            "project_id": claimed["project_id"],
-            "status": "disabled",
-            "reason": "workflow_retired",
-        }
-        finished = automation_dispatches.finish_automation_run(
-            run_id,
-            worker_run_id,
-            status="skipped",
-            result=result,
-        )
-        await _report_completion(finished)
-        return {"run_id": run_id, "status": "skipped", "result": result}
-
     try:
         result = await execute_browser_workflow(claimed)
         current = automation_dispatches.get_automation_run(run_id)
@@ -381,7 +365,7 @@ async def execute_automation_run(
             # existed, or racing a human/failed-read return.
             result = await execute_browser_workflow(current)
         result_status = str(result.get("status") or "completed")
-        if claimed["workflow_key"] == "browser_workflow" and result_status == "waiting_human":
+        if result_status == "waiting_human":
             waiting = automation_dispatches.wait_automation_run(run_id, worker_run_id, result)
             _browser_event(waiting, "waiting_human")
             await _report_browser_wait(waiting)
@@ -438,7 +422,6 @@ async def execute_automation_run(
 
     if await _enqueue_pending_browser_cancel(finished):
         return {"run_id": run_id, "status": "cancellation_pending", "result": result}
-    if claimed["workflow_key"] == "browser_workflow":
-        _browser_event(finished, finished["status"])
+    _browser_event(finished, finished["status"])
     await _report_completion(finished)
     return {"run_id": run_id, "status": finished["status"], "result": result}

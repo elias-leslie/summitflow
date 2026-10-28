@@ -10,40 +10,20 @@ import pytest
 from app.api.automation_dispatch import AutomationDispatchRequest
 from app.services import automation_dispatch
 
-_POLICY = {
-    "autonomous_enabled": True,
-    "routine_upkeep_enabled": True,
-    "autonomous_max_concurrent": 2,
-    "autonomous_max_tasks_per_day": None,
-    "autonomous_cooldown_minutes": 0,
-    "autonomous_allowed_types": ["task"],
-    "autonomous_external_origins": None,
-    "autonomous_start_hour": 0,
-    "autonomous_end_hour": 24,
-    "autonomous_auto_merge_tiers": [1],
-    "autonomous_max_self_fix_attempts": 3,
-    "autonomous_max_supervisor_attempts": 3,
-    "autonomous_max_extensions": 3,
-    "autonomous_require_review": False,
-    "quality_gate_tools": [],
-    "quality_gate_mode": "quick",
-    "quality_gate_fix_enabled": True,
-}
-
 
 def _request() -> AutomationDispatchRequest:
     return AutomationDispatchRequest(
         run_id="run-1",
         profile_id="profile-1",
         project_id="agent-hub",
-        workflow_key="work_pickup",
+        workflow_key="browser_workflow",
         definition_version=1,
         profile_revision=2,
         occurrence_key="occurrence-1",
         trigger="scheduled",
         scheduled_for=datetime(2026, 9, 23, 14, tzinfo=UTC),
-        config={},
-        policy_config=_POLICY,
+        config={"workflow": {"schema_version": 1, "steps": [{"id": "read"}]}},
+        policy_config={},
     )
 
 
@@ -171,52 +151,6 @@ async def test_outbox_reconciler_resumes_pending_receipts(mocker) -> None:
     assert enqueue.await_count == 2
     mark_queued.assert_called_once_with("run-1")
     defer.assert_called_once_with("run-2")
-
-
-@pytest.mark.asyncio
-@pytest.mark.parametrize("workflow_key", ["work_pickup", "task_generation"])
-async def test_retired_autonomous_workflows_are_skipped_without_domain_work(mocker, workflow_key) -> None:
-    payload = {
-        "workflow_key": workflow_key,
-        "profile_id": "profile-1",
-        "project_id": "agent-hub",
-        "config": {"batch_limit": 3},
-        "policy_config": _POLICY,
-    }
-    receipt = {
-        "run_id": "run-1",
-        "owner_run_id": "owner-1",
-        "status": "queued",
-        "request_payload": payload,
-        "workflow_key": workflow_key,
-        "profile_id": "profile-1",
-        "project_id": "agent-hub",
-    }
-    mocker.patch(
-        "app.services.automation_dispatch.automation_dispatches.get_automation_run",
-        return_value=receipt,
-    )
-    mocker.patch(
-        "app.services.automation_dispatch.automation_dispatches.claim_automation_run",
-        return_value=receipt,
-    )
-    finish = mocker.patch(
-        "app.services.automation_dispatch.automation_dispatches.finish_automation_run",
-        return_value={**receipt, "status": "skipped"},
-    )
-    mocker.patch("app.services.automation_dispatch._report_completion", new_callable=AsyncMock)
-    domain = mocker.patch("app.services.automation_dispatch.asyncio.to_thread")
-    browser = mocker.patch("app.services.automation_dispatch.execute_browser_workflow", new_callable=AsyncMock)
-
-    result = await automation_dispatch.execute_automation_run(
-        "run-1", "owner-1", worker_run_id="hatchet-1"
-    )
-
-    assert result["status"] == "skipped"
-    assert finish.call_args.kwargs["status"] == "skipped"
-    assert finish.call_args.kwargs["result"]["reason"] == "workflow_retired"
-    domain.assert_not_called()
-    browser.assert_not_awaited()
 
 
 @pytest.mark.asyncio

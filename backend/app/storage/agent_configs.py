@@ -6,7 +6,6 @@ from typing import Any, TypedDict, cast
 
 from psycopg.types.json import Jsonb
 
-from ..constants import TASK_TYPE_VALUES
 from ..logging_config import get_logger
 from .connection import get_connection, get_cursor
 
@@ -14,30 +13,8 @@ logger = get_logger(__name__)
 
 
 class AgentConfig(TypedDict, total=False):
-    """Agent configuration for a project."""
+    """Per-project schedule kill switches and publication settings."""
 
-    claude_enabled: bool
-    gemini_enabled: bool
-    default_agent: str  # "claude" or "gemini"
-    claude_model: str  # Legacy UI field. Do not use for routing.
-    gemini_model: str  # Legacy UI field. Do not use for routing.
-
-    # Component management
-    component_source: str  # "pages", "endpoints", "directories", or "manual"
-
-    # Autonomous execution controls
-    autonomous_enabled: bool  # Enable autonomous task pickup and execution
-    autonomous_start_hour: int  # Hour (0-23) when autonomous execution can start
-    autonomous_end_hour: int  # Hour (0-23) when autonomous execution must stop
-    autonomous_frequency_minutes: int  # How often to check for work
-    autonomous_max_concurrent: int  # Max concurrent autonomous tasks (1-3)
-    autonomous_auto_merge_tiers: list[int]  # Tiers eligible for auto-merge
-    autonomous_task_types: list[str]  # Labels eligible for autonomous execution
-    upkeep_enabled: bool  # Enable routine upkeep signal discovery/routing
-    upkeep_frequency_minutes: int  # How often routine upkeep may run
-    upkeep_batch_limit: int  # Max tasks a routine upkeep cycle creates/dispatches
-    work_pickup_enabled: bool  # Enable scheduled autonomous work pickup
-    task_generation_enabled: bool  # Enable scheduled routine upkeep cron entrypoint
     reset_claims_enabled: bool  # Enable scheduled claim reset sweeps
     refresh_project_indexes_enabled: bool  # Enable scheduled .index.yaml refresh
     refresh_graphify_graphs_enabled: bool  # Enable scheduled Graphify code graph refresh
@@ -51,40 +28,9 @@ class AgentConfig(TypedDict, total=False):
     nightly_security_alert_enabled: bool  # Enable the nightly OSV security alert (system kill switch)
     publication_mode: str  # Per project: "nightly" (hourly push) or "manual" (default)
     publication_hold: dict[str, Any] | None  # {"through": OID | None, "reason", "set_at"}; keeps later commits local
-    autonomous_max_tasks_per_day: int | None  # Max tasks per day
-    autonomous_cooldown_minutes: int  # Gap between autonomous dispatches
-    autonomous_allowed_types: list[str] | None  # Allowed task types
-    autonomous_external_origins: list[str] | None  # External origins eligible for autonomous pickup
-    autonomous_max_self_fix_attempts: int  # Max self-fix attempts
-    autonomous_max_supervisor_attempts: int  # Max supervisor attempts
-    autonomous_max_extensions: int  # Max extension requests
-    autonomous_require_review: bool  # Require review before merge
-
-    # Quality gate configuration
-    quality_gate_tools: list[str]  # e.g. ["ruff", "types", "biome", "tsc"] - empty = st check --quick
-    quality_gate_mode: str  # "quick", "check", or "changed-only"
-    quality_gate_fix_enabled: bool  # Allow st check --fix during self-heal
 
 
 DEFAULT_AGENT_CONFIG: AgentConfig = {
-    "claude_enabled": True,
-    "gemini_enabled": True,
-    "default_agent": "gemini",
-    # Component management
-    "component_source": "manual",
-    # Autonomous execution - disabled by default (opt-in)
-    "autonomous_enabled": False,
-    "autonomous_start_hour": 0,  # Default: 24/7 execution allowed
-    "autonomous_end_hour": 24,  # 24 means end of day (midnight)
-    "autonomous_frequency_minutes": 30,
-    "autonomous_max_concurrent": 1,  # Default: 1 concurrent task
-    "autonomous_auto_merge_tiers": [1],
-    "autonomous_task_types": ["auto-generated"],
-    "upkeep_enabled": False,
-    "upkeep_frequency_minutes": 120,
-    "upkeep_batch_limit": 5,
-    "work_pickup_enabled": False,
-    "task_generation_enabled": True,
     "reset_claims_enabled": True,
     "refresh_project_indexes_enabled": True,
     "refresh_graphify_graphs_enabled": True,
@@ -97,17 +43,6 @@ DEFAULT_AGENT_CONFIG: AgentConfig = {
     "nightly_deep_lane_enabled": True,
     "nightly_security_alert_enabled": True,
     "publication_mode": "manual",
-    "autonomous_max_tasks_per_day": None,
-    "autonomous_cooldown_minutes": 0,
-    "autonomous_allowed_types": list(TASK_TYPE_VALUES),
-    "autonomous_max_self_fix_attempts": 3,
-    "autonomous_max_supervisor_attempts": 3,
-    "autonomous_max_extensions": 3,
-    "autonomous_require_review": False,
-    # Quality gate defaults
-    "quality_gate_tools": [],  # Empty = use st check --quick (default behavior)
-    "quality_gate_mode": "quick",
-    "quality_gate_fix_enabled": True,
 }
 
 
@@ -185,28 +120,9 @@ def update_agent_config(project_id: str, config: AgentConfig) -> AgentConfig:
         return cast(AgentConfig, row[0])
 
 
-# Re-export submodule functions — consumed via `from ...storage import agent_configs`
-# These imports are at the end to avoid circular dependencies
-from .agent_configs_agents import (  # noqa: E402
-    enable_agent,
-    get_enabled_agents,
-    set_default_agent,
-)
-from .agent_configs_components import (  # noqa: E402
-    COMPONENT_SOURCES,
-    get_component_source,
-    set_component_source,
-)
-
 __all__ = [
-    "COMPONENT_SOURCES",
     "DEFAULT_AGENT_CONFIG",
     "AgentConfig",
-    "enable_agent",
     "get_agent_config",
-    "get_component_source",
-    "get_enabled_agents",
-    "set_component_source",
-    "set_default_agent",
     "update_agent_config",
 ]

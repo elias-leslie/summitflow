@@ -36,11 +36,7 @@ def _create_projects_table(cur: psycopg.Cursor) -> None:
                 CHECK (category IN ('production', 'testing', 'dev')),
             sidebar_rank INTEGER
                 CHECK (sidebar_rank IS NULL OR sidebar_rank >= 0),
-            agent_configs JSONB DEFAULT '{
-                "claude_enabled": true,
-                "gemini_enabled": true,
-                "default_agent": "gemini"
-            }'::jsonb,
+            agent_configs JSONB DEFAULT '{}'::jsonb,
             created_at TIMESTAMPTZ DEFAULT NOW()
         )
         """
