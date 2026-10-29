@@ -719,7 +719,6 @@
   "usage_tiers": {
     "description": "Startup tool-surface tiers for st tools manifest. floor: always shown for compact and adaptive density. core: shown at core density unless on demand. adaptive_score_threshold: normalized usage score (0-100) at or above which adaptive density also shows a non-floor surface.",
     "floor": [
-      "st.search",
       "st.context",
       "st.check",
       "st.db",
@@ -731,7 +730,7 @@
       "st.ui.inspect",
       "st.browser.preview"
     ],
-    "core": ["st.search", "st.check", "st.db", "st.service.rebuild", "st.tools.status", "st.tools.adoption", "st.tools.audit", "st.tools.cost", "st.agents.preview"],
+    "core": ["st.check", "st.db", "st.service.rebuild", "st.tools.status", "st.tools.adoption", "st.tools.audit", "st.tools.cost", "st.agents.preview"],
     "adaptive_score_threshold": 15.0
   },
   "description": "Centralized tool registry — single source of truth for operator tool discovery, redirects, and check-runner configuration.",

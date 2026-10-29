@@ -19,6 +19,7 @@
     {
       "surface": "st.search",
       "tier": "reference",
+      "on_demand": "code search",
       "cmd": "st search \"query\"",
       "when": "optional ranked discovery; search before adding code, extend a close match",
       "precautions": [

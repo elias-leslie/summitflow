@@ -202,25 +202,25 @@ def test_filter_specs_by_surface() -> None:
 def test_select_specs_for_core_density_adds_drilldown_surface() -> None:
     specs = [
         UsageSpec(surface="st.create"),
-        UsageSpec(surface="st.search"),
+        UsageSpec(surface="st.context"),
         UsageSpec(surface="st.browser", task_types=("frontend",)),
     ]
 
     out = select_specs_for_density(specs, density="core")
 
-    assert [s.surface for s in out] == ["st.create", "st.search", "st.details"]
+    assert [s.surface for s in out] == ["st.create", "st.context", "st.details"]
 
 
 def test_select_specs_for_task_density_adds_matching_task_surfaces() -> None:
     specs = [
-        UsageSpec(surface="st.search"),
+        UsageSpec(surface="st.context"),
         UsageSpec(surface="st.browser", task_types=("frontend",)),
         UsageSpec(surface="st.sessions.ownership", task_types=("devops",)),
     ]
 
     out = select_specs_for_density(specs, density="task", task_type="frontend")
 
-    assert [s.surface for s in out] == ["st.search", "st.browser", "st.details"]
+    assert [s.surface for s in out] == ["st.context", "st.browser", "st.details"]
 
 
 def test_select_specs_adaptive_floor_always_present() -> None:
@@ -258,7 +258,7 @@ def test_select_specs_adaptive_includes_high_score_surface() -> None:
 
 def test_select_specs_adaptive_includes_task_surface() -> None:
     specs = [
-        UsageSpec(surface="st.search"),  # floor
+        UsageSpec(surface="st.context"),  # floor
         UsageSpec(surface="st.browser", task_types=("frontend",)),
     ]
 
@@ -327,7 +327,8 @@ def test_manifest_command_core_density_is_compact_and_drillable() -> None:
     core_surfaces = {t["surface"] for t in payload["tools"]}
     assert payload["density"] == "core"
     assert "st.details" in core_surfaces
-    assert "st.search" in core_surfaces
+    assert "st.check" in core_surfaces
+    assert "st.search" not in core_surfaces
     assert "st.create" in full_surfaces
     assert "st.create" in core_surfaces
     assert len(core_surfaces) < len(full_surfaces)
@@ -558,7 +559,8 @@ def test_committed_registry_keeps_the_implementation_floor() -> None:
     from cli.lib.usage import _usage_tiers
 
     floor, core, threshold = _usage_tiers()
-    assert {"st.search", "st.context", "st.check", "st.commit", "st.claim", "st.done"} <= floor
+    assert {"st.context", "st.check", "st.commit", "st.claim", "st.done"} <= floor
+    assert "st.search" not in floor and "st.search" not in core
     assert "st.check" in core and threshold > 0
 
 
