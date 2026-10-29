@@ -2,11 +2,11 @@
   "id": "neri.neri",
   "owner": "neri",
   "namespace": "neri",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "st_contract_versions": [
     1
   ],
-  "summary": "Neri bounty case state: orient, open, gate-checked stage moves, owner asks, drift check.",
+  "summary": "Neri bounty case state: orient, open, gate-checked stage moves, owner asks, program verdicts, drift check.",
   "effects": [
     "read-local",
     "write-local",
@@ -21,10 +21,11 @@
     "log": "Usage: neri log [OPTIONS] {CASE} {text}\n\nArguments:\n  CASE  [required]\n  text  [required]\n\nOptions:\n  --take\n  --session <str>\n  --json\n  --help           Show this message and exit.",
     "ask": "Usage: neri ask [OPTIONS] {subject} {title}\n\nArguments:\n  subject  [required]\n  title    [required]\n\nOptions:\n  --kind <str>     [required]\n  --detail <str>\n  --session <str>\n  --json\n  --help           Show this message and exit.",
     "check": "Usage: neri check [OPTIONS] [CASE]\n\nArguments:\n  [CASE]\n\nOptions:\n  --json\n  --help  Show this message and exit.",
-    "program": "Usage: neri program [OPTIONS] COMMAND [ARGS]...\n\n  Program policy records\n\nOptions:\n  --help  Show this message and exit.\n\nCommands:\n  list\n  show\n  refresh",
+    "program": "Usage: neri program [OPTIONS] COMMAND [ARGS]...\n\n  Program policy records\n\nOptions:\n  --help  Show this message and exit.\n\nCommands:\n  list\n  show\n  refresh\n  set",
     "program list": "Usage: neri program list [OPTIONS]\n\nOptions:\n  --json\n  --help  Show this message and exit.",
     "program show": "Usage: neri program show [OPTIONS] {PROGRAM}\n\nArguments:\n  PROGRAM  [required]\n\nOptions:\n  --json\n  --help  Show this message and exit.",
-    "program refresh": "Usage: neri program refresh [OPTIONS] {PROGRAM}\n\nArguments:\n  PROGRAM  [required]\n\nOptions:\n  --key <str>\n  --session <str>\n  --json\n  --help           Show this message and exit."
+    "program refresh": "Usage: neri program refresh [OPTIONS] {PROGRAM}\n\nArguments:\n  PROGRAM  [required]\n\nOptions:\n  --key <str>\n  --session <str>\n  --json\n  --help           Show this message and exit.",
+    "program set": "Usage: neri program set [OPTIONS] {PROGRAM}\n\nArguments:\n  PROGRAM  [required]\n\nOptions:\n  --verdict <str>   [required]\n  --evidence <str>  [required]\n  --gate <str>\n  --recheck <str>\n  --platform <str>\n  --name <str>\n  --session <str>\n  --json\n  --help            Show this message and exit."
   },
   "help_options": {
     "": {
@@ -129,6 +130,16 @@
       "precautions": [
         "signed-out network read",
         "the key must be in the watch-list; it comes from the policy file's Source URL"
+      ]
+    },
+    {
+      "surface": "st.neri.program.set",
+      "tier": "reference",
+      "cmd": "st neri program set <program> --verdict go|open|no-go [--gate G1|G2|G3] --evidence TEXT",
+      "when": "a selection gate settles or a recheck changes a program's verdict",
+      "why": "the program shortlist row: verdict, failed gate, evidence with source URL, recheck",
+      "precautions": [
+        "evidence names a primary-source URL and UTC date; 240 chars"
       ]
     }
   ]
