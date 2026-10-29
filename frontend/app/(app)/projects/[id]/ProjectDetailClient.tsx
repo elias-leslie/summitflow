@@ -16,7 +16,7 @@ import { ProjectAgentContext } from '@/components/projects/ProjectAgentContext'
 import { ProjectHealthBadge } from '@/components/projects/ProjectHealthBadge'
 import { ProjectOverview } from '@/components/projects/ProjectOverview'
 import { useViewMode } from '@/components/tasks/hooks/useViewMode'
-import { JennyExecutionStrip } from '@/components/tasks/JennyExecutionStrip'
+import { TaskExecutionStrip } from '@/components/tasks/TaskExecutionStrip'
 import type { TaskFilterValues } from '@/components/tasks/TaskFilters'
 import { TaskIdeationDialog } from '@/components/tasks/TaskIdeationDialog'
 import { TaskModal } from '@/components/tasks/TaskModal'
@@ -303,7 +303,7 @@ export function ProjectDetailClient() {
                 }}
               >
                 <div className="space-y-4">
-                  <JennyExecutionStrip tasks={kanbanTasks} />
+                  <TaskExecutionStrip tasks={kanbanTasks} />
                   <TaskKanbanBoard
                     tasks={kanbanTasks}
                     projectId={projectId}

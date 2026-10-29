@@ -60,7 +60,7 @@ def test_abandon_keeps_foreign_writes_after_their_lease_is_gone(repo, monkeypatc
 
 def test_abandon_keeps_a_path_under_an_unhooked_agents_live_lease(repo, monkeypatch):
     monkeypatch.setenv("AGENT_HUB_SESSION_ID", "hub-session-1")  # write_file never records a writer
-    monkeypatch.setenv("AGENT_HUB_AGENT_SLUG", "jenny")
+    monkeypatch.setenv("AGENT_HUB_AGENT_SLUG", "worker-agent")
     leases.acquire("proj", ["mine/a.py"], project_root=str(repo))
     monkeypatch.delenv("AGENT_HUB_SESSION_ID")
     monkeypatch.delenv("AGENT_HUB_AGENT_SLUG")
@@ -120,7 +120,7 @@ def test_check_claims_like_the_edit_hook_for_unhooked_writers(repo, monkeypatch)
     leases.acquire("proj", ["mine/a.py"], project_root=str(repo))
     monkeypatch.delenv("CLAUDE_CODE_SESSION_ID")
     monkeypatch.setenv("AGENT_HUB_SESSION_ID", "hub-session-1")
-    monkeypatch.setenv("AGENT_HUB_AGENT_SLUG", "jenny")
+    monkeypatch.setenv("AGENT_HUB_AGENT_SLUG", "worker-agent")
     result = CliRunner().invoke(lease_command.app, ["--check", "mine/a.py"])
     assert result.exit_code == 0, result.output
     assert "WARNING: " in result.output and "leased by cc:other-" in result.output

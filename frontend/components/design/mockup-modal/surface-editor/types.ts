@@ -25,22 +25,15 @@ export interface MockupSurfaceEditorProps {
   mockup: Mockup
   projectId: string
   onSaved?: (mockup: Mockup) => void
-  onSendToJenny?: (payload: {
-    sourceMockup: Mockup
-    savedMockup?: Mockup
-    summary: string
-  }) => void
 }
 
 export interface ToolbarProps {
   mode: EditorMode
   compareMode: CompareMode
   dirty: boolean
-  canSendToJenny: boolean
   isSaving: boolean
   onModeChange: (mode: EditorMode) => void
   onCompareModeChange: (mode: CompareMode) => void
-  onSendToJenny: () => void
   onSave: () => void
 }
 
@@ -78,7 +71,6 @@ export interface SurfaceEditorActions {
   removeSelected: () => void
   moveSelectedSibling: (direction: 'before' | 'after') => void
   addNote: () => void
-  sendToJenny: () => void
   save: () => void
 }
 

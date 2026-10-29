@@ -93,7 +93,7 @@ export function SurfaceInspector({
               value={noteText}
               onChange={(event) => onNoteTextChange(event.target.value)}
               rows={3}
-              placeholder="What should Jenny change here?"
+              placeholder="What should change here?"
               className="rounded border border-slate-700 bg-slate-950 p-2 text-sm text-slate-100 focus:border-phosphor-500/60 focus:outline-none"
             />
           </label>

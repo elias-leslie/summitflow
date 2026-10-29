@@ -9,8 +9,8 @@ Storage: ~/.summitflow/leases/<project>.json with fcntl locking for atomic
 read/modify/write across concurrent agents on the same machine. Cross-machine
 support is a follow-up via an Agent Hub API wrapper.
 
-Agent identity uses env vars so Claude Code, Codex CLI, Agent Hub persona
-(Jenny), and Agent Hub specialists all coexist in the same lease table.
+Agent identity uses env vars so Claude Code, Codex CLI, and Agent Hub agents
+all coexist in the same lease table.
 
 File leases are advisory; the same store keeps per-path writer sets (every
 session that wrote a dirty path, kept until commit or revert) that st commit

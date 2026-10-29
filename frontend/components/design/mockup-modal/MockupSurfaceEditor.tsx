@@ -10,7 +10,6 @@ export function MockupSurfaceEditor({
   mockup,
   projectId,
   onSaved,
-  onSendToJenny,
 }: MockupSurfaceEditorProps) {
   const {
     iframeRef,
@@ -28,7 +27,7 @@ export function MockupSurfaceEditor({
     isSaving,
     actions,
     prepareDocument,
-  } = useSurfaceEditor(mockup, projectId, onSaved, onSendToJenny)
+  } = useSurfaceEditor(mockup, projectId, onSaved)
 
   return (
     <div className="flex h-full min-h-0 w-full flex-col overflow-hidden rounded-lg border border-slate-800 bg-slate-950">
@@ -38,11 +37,9 @@ export function MockupSurfaceEditor({
             mode={mode}
             compareMode={compareMode}
             dirty={dirty}
-            canSendToJenny={Boolean(onSendToJenny)}
             isSaving={isSaving}
             onModeChange={setMode}
             onCompareModeChange={setCompareMode}
-            onSendToJenny={actions.sendToJenny}
             onSave={actions.save}
           />
 

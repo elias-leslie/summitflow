@@ -1,7 +1,7 @@
 'use client'
 
 import clsx from 'clsx'
-import { Save, Send } from 'lucide-react'
+import { Save } from 'lucide-react'
 import {
   COMPARE_BUTTON_ACTIVE,
   COMPARE_BUTTON_BASE,
@@ -18,11 +18,9 @@ export function EditorToolbar({
   mode,
   compareMode,
   dirty,
-  canSendToJenny,
   isSaving,
   onModeChange,
   onCompareModeChange,
-  onSendToJenny,
   onSave,
 }: ToolbarProps) {
   return (
@@ -63,16 +61,6 @@ export function EditorToolbar({
         <span className="rounded border border-amber-500/25 bg-amber-500/10 px-2 py-1 text-xs text-amber-300">
           Unsaved
         </span>
-      ) : null}
-      {canSendToJenny ? (
-        <button
-          type="button"
-          onClick={onSendToJenny}
-          className="inline-flex h-8 items-center gap-1.5 rounded border border-phosphor-500/30 bg-phosphor-500/10 px-2 text-xs text-phosphor-200 hover:bg-phosphor-500/15"
-        >
-          <Send className="h-3.5 w-3.5" />
-          Jenny
-        </button>
       ) : null}
       <button
         type="button"

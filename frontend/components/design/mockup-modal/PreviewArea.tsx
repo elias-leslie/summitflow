@@ -30,11 +30,6 @@ interface PreviewAreaProps {
   onRerun: () => void
   onDelete: () => void
   onVersionCreated?: (mockup: Mockup) => void
-  onSendToJenny?: (payload: {
-    sourceMockup: Mockup
-    savedMockup?: Mockup
-    summary: string
-  }) => void
 }
 
 export function PreviewArea({
@@ -49,7 +44,6 @@ export function PreviewArea({
   onRerun,
   onDelete,
   onVersionCreated,
-  onSendToJenny,
 }: PreviewAreaProps) {
   const imageUrl = getMockupImageUrl(projectId, mockup.mockup_id)
 
@@ -68,7 +62,6 @@ export function PreviewArea({
             mockup={mockup}
             projectId={projectId}
             onSaved={onVersionCreated}
-            onSendToJenny={onSendToJenny}
           />
         ) : mockup.file_path ? (
           <Image

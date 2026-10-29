@@ -8,7 +8,6 @@ import {
   extractMockupAnnotations,
   extractStructuredMockupAnnotations,
   type MockupAnnotation,
-  summarizeMockupForWorkContext,
 } from '@/lib/mockup-html'
 import { getErrorMessage } from '@/lib/utils'
 import {
@@ -33,11 +32,6 @@ export function useSurfaceEditor(
   mockup: Mockup,
   projectId: string,
   onSaved?: (mockup: Mockup) => void,
-  onSendToJenny?: (payload: {
-    sourceMockup: Mockup
-    savedMockup?: Mockup
-    summary: string
-  }) => void,
 ): UseSurfaceEditorReturn {
   const iframeRef = useRef<HTMLIFrameElement | null>(null)
   const queryClient = useQueryClient()
@@ -53,7 +47,6 @@ export function useSurfaceEditor(
   const [selectedIds, setSelectedIds] = useState<string[]>([])
   const [noteText, setNoteText] = useState('')
   const [dirty, setDirty] = useState(false)
-  const [lastSavedMockup, setLastSavedMockup] = useState<Mockup | null>(null)
   const [draftKey, setDraftKey] = useState(0)
   const [frameRevision, setFrameRevision] = useState(0)
   const [annotations, setAnnotations] = useState<MockupAnnotation[]>(() =>
@@ -145,7 +138,6 @@ export function useSurfaceEditor(
   useEffect(() => {
     setDraftKey((current) => current + 1)
     setDirty(false)
-    setLastSavedMockup(null)
     setAnnotations(
       extractStructuredMockupAnnotations(mockup.content, mockup.metadata),
     )
@@ -295,7 +287,6 @@ export function useSurfaceEditor(
     },
     onSuccess: (saved) => {
       setDirty(false)
-      setLastSavedMockup(saved)
       queryClient.invalidateQueries({ queryKey: ['mockups', projectId] })
       queryClient.invalidateQueries({ queryKey: ['mockup-stats', projectId] })
       queryClient.invalidateQueries({
@@ -413,22 +404,6 @@ export function useSurfaceEditor(
 
     save() {
       saveMutation.mutate()
-    },
-
-    sendToJenny() {
-      const draftContent = serializeDraft()
-      const savedMockup = lastSavedMockup ?? undefined
-      const summary = [
-        editorDom.buildEditorSummary(mockup, annotations, dirty, draftContent),
-        '',
-        `Current artifact summary: ${summarizeMockupForWorkContext(savedMockup ?? mockup)}`,
-        'Full HTML is stored in the Design artifact and should be fetched only when needed.',
-      ].join('\n')
-      onSendToJenny?.({
-        sourceMockup: mockup,
-        savedMockup,
-        summary,
-      })
     },
   }
 

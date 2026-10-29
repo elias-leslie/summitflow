@@ -12,7 +12,7 @@ def _mockup_payload(**overrides: Any) -> dict[str, Any]:
         "project_id": "summitflow",
         "mockup_id": "mk-123456789abc",
         "name": "Tasks page",
-        "description": "Jenny-managed task board",
+        "description": "Managed task board",
         "mockup_type": "page",
         "file_path": None,
         "content": "<html><body><main>full html should stay out by default</main></body></html>",
