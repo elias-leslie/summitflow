@@ -2,7 +2,7 @@
   "id": "neri.neri",
   "owner": "neri",
   "namespace": "neri",
-  "version": "0.3.0",
+  "version": "0.4.0",
   "st_contract_versions": [
     1
   ],
@@ -13,19 +13,19 @@
     "process"
   ],
   "help": {
-    "": "Usage: neri [OPTIONS] COMMAND [ARGS]...\n\n  Neri bug bounty case state\n\nOptions:\n  --help  Show this message and exit.\n\nCommands:\n  next\n  show\n  new\n  advance\n  log\n  ask\n  check\n  program  Program policy records",
-    "next": "Usage: neri next [OPTIONS]\n\nOptions:\n  --session <str>\n  --json\n  --help           Show this message and exit.",
-    "show": "Usage: neri show [OPTIONS] {subject}\n\nArguments:\n  subject  [required]\n\nOptions:\n  --session <str>\n  --json\n  --help           Show this message and exit.",
-    "new": "Usage: neri new [OPTIONS] {PROGRAM} {slug}\n\nArguments:\n  PROGRAM  [required]\n  slug     [required]\n\nOptions:\n  --label <str>\n  --session <str>\n  --json\n  --help           Show this message and exit.",
-    "advance": "Usage: neri advance [OPTIONS] {CASE} {stage}\n\nArguments:\n  CASE   [required]\n  stage  [required]\n\nOptions:\n  --dry-run\n  --reason <str>\n  --take\n  --outcome <str>\n  --amount <str>\n  --currency <str>    [default: USD]\n  --submission <str>\n  --ack <str>\n  --session <str>\n  --json\n  --help              Show this message and exit.",
-    "log": "Usage: neri log [OPTIONS] {CASE} {text}\n\nArguments:\n  CASE  [required]\n  text  [required]\n\nOptions:\n  --take\n  --session <str>\n  --json\n  --help           Show this message and exit.",
-    "ask": "Usage: neri ask [OPTIONS] {subject} {title}\n\nArguments:\n  subject  [required]\n  title    [required]\n\nOptions:\n  --kind <str>     [required]\n  --detail <str>\n  --session <str>\n  --json\n  --help           Show this message and exit.",
-    "check": "Usage: neri check [OPTIONS] [CASE]\n\nArguments:\n  [CASE]\n\nOptions:\n  --json\n  --help  Show this message and exit.",
-    "program": "Usage: neri program [OPTIONS] COMMAND [ARGS]...\n\n  Program policy records\n\nOptions:\n  --help  Show this message and exit.\n\nCommands:\n  list\n  show\n  refresh\n  set",
-    "program list": "Usage: neri program list [OPTIONS]\n\nOptions:\n  --json\n  --help  Show this message and exit.",
-    "program show": "Usage: neri program show [OPTIONS] {PROGRAM}\n\nArguments:\n  PROGRAM  [required]\n\nOptions:\n  --json\n  --help  Show this message and exit.",
-    "program refresh": "Usage: neri program refresh [OPTIONS] {PROGRAM}\n\nArguments:\n  PROGRAM  [required]\n\nOptions:\n  --key <str>\n  --session <str>\n  --json\n  --help           Show this message and exit.",
-    "program set": "Usage: neri program set [OPTIONS] {PROGRAM}\n\nArguments:\n  PROGRAM  [required]\n\nOptions:\n  --verdict <str>   [required]\n  --evidence <str>  [required]\n  --gate <str>\n  --recheck <str>\n  --platform <str>\n  --name <str>\n  --session <str>\n  --json\n  --help            Show this message and exit."
+    "": "Usage: neri [OPTIONS] COMMAND [ARGS]...\n\n  Neri bug bounty case state\n\nOptions:\n  --help  Show this message and exit.\n\nCommands:\n  next     Holds, asks, open cases\n  show     Case card or program\n  new      Start a case\n  advance  Move a case one stage.\n  log      Log a history line\n  ask      Ask the owner\n  check    Find state/file drift\n  program  Program policy",
+    "next": "Usage: neri next [OPTIONS]\n\n  Holds, asks, open cases\n\nOptions:\n  --json\n  --help  Show this message and exit.",
+    "show": "Usage: neri show [OPTIONS] {subject}\n\n  Case card or program\n\nArguments:\n  subject  [required]\n\nOptions:\n  --events <int range>  [default: 5; x>=1]\n  --json\n  --help                Show this message and exit.",
+    "new": "Usage: neri new [OPTIONS] {PROGRAM} {slug}\n\n  Start a case\n\nArguments:\n  PROGRAM  [required]\n  slug     [required]\n\nOptions:\n  --label <str>\n  --json\n  --help         Show this message and exit.",
+    "advance": "Usage: neri advance [OPTIONS] {CASE} {STAGE}\n\n  Move a case one stage.\n\n  STAGE: hunting|candidate|replayed|reviewed|ready|submitted|closed|killed\n\nArguments:\n  CASE   [required]\n  STAGE  [required]\n\nOptions:\n  --dry-run\n  --reason <str>\n  --take\n  --outcome OUTCOME   accepted|duplicate|informative|not_applicable|paid\n  --amount <str>\n  --currency <str>    [default: USD]\n  --submission <str>\n  --ack <str>\n  --json\n  --help              Show this message and exit.",
+    "log": "Usage: neri log [OPTIONS] {CASE} {text}\n\n  Log a history line\n\nArguments:\n  CASE  [required]\n  text  [required]\n\nOptions:\n  --next <str>     next step; - clears\n  --program <str>\n  --release\n  --take\n  --json\n  --help           Show this message and exit.",
+    "ask": "Usage: neri ask [OPTIONS] {subject} {title}\n\n  Ask the owner\n\nArguments:\n  subject  [required]\n  title    [required]\n\nOptions:\n  --kind KIND     approve|submit|decide|setup  [required]\n  --detail <str>\n  --json\n  --help          Show this message and exit.",
+    "check": "Usage: neri check [OPTIONS] [CASE]\n\n  Find state/file drift\n\nArguments:\n  [CASE]\n\nOptions:\n  --all\n  --json\n  --help  Show this message and exit.",
+    "program": "Usage: neri program [OPTIONS] COMMAND [ARGS]...\n\n  Program policy\n\nOptions:\n  --help  Show this message and exit.\n\nCommands:\n  list     List programs\n  show     One program\n  refresh  Re-read a policy\n  set      Record a verdict",
+    "program list": "Usage: neri program list [OPTIONS]\n\n  List programs\n\nOptions:\n  --json\n  --help  Show this message and exit.",
+    "program show": "Usage: neri program show [OPTIONS] {PROGRAM}\n\n  One program\n\nArguments:\n  PROGRAM  [required]\n\nOptions:\n  --json\n  --help  Show this message and exit.",
+    "program refresh": "Usage: neri program refresh [OPTIONS] {PROGRAM}\n\n  Re-read a policy\n\nArguments:\n  PROGRAM  [required]\n\nOptions:\n  --key <str>\n  --json\n  --help       Show this message and exit.",
+    "program set": "Usage: neri program set [OPTIONS] {PROGRAM}\n\n  Record a verdict\n\nArguments:\n  PROGRAM  [required]\n\nOptions:\n  --verdict VERDICT  go|open|no-go  [required]\n  --evidence <str>   [required]\n  --gate GATE        G1|G2|G3\n  --recheck <str>\n  --platform <str>\n  --name <str>\n  --json\n  --help             Show this message and exit."
   },
   "help_options": {
     "": {
@@ -49,9 +49,9 @@
     {
       "surface": "st.neri.show",
       "tier": "reference",
-      "cmd": "st neri show <case|program>",
+      "cmd": "st neri show <case|program> [--events N]",
       "when": "before working a case, or to read a program",
-      "why": "stage, gates met and missing for the next stage, last events, file paths",
+      "why": "stage, gates met and missing for the next stage, last events (default 5, with import notes), file paths",
       "precautions": [
         "read-only; gate output skips the secret scan"
       ]
@@ -70,24 +70,26 @@
     {
       "surface": "st.neri.advance",
       "tier": "guardrail",
-      "cmd": "st neri advance <case> <stage> [--dry-run]",
+      "cmd": "st neri advance <case> <stage> [--dry-run] [--reason TEXT]",
       "when": "a stage's files are done; --dry-run lists what is missing",
       "why": "checks the gates against the case files, moves the stage, sends the alert once",
       "precautions": [
-        "one step forward; killed or hunting need --reason",
-        "replay and review must come from a session unlike the finder's",
-        "a rerun retries a failed alert; --take claims a stale case"
+        "one step forward; killed anywhere or hunting from candidate on need --reason",
+        "ready, submitted, closed again: re-gate, refresh facts, no alert",
+        "ready opens the owner's submit ask; --take claims a stale case",
+        "replay and review need a session unlike the finder's"
       ]
     },
     {
       "surface": "st.neri.log",
       "tier": "reference",
-      "cmd": "st neri log <case> \"text\"",
+      "cmd": "st neri log <case> \"text\" [--next TEXT|-] [--program SLUG] [--release]",
       "when": "a fact, decision or dead end worth keeping in the case history",
-      "why": "timestamped history line with your identity; keeps your claim alive",
+      "why": "timestamped history line; keeps your claim alive",
       "precautions": [
-        "240 characters max",
-        "evidence and report text stay in the files"
+        "240 characters max; details stay in notes.md",
+        "--next sets the next step ('-' clears); --program sets the program",
+        "--release drops your hold; killed or closed cases take none"
       ]
     },
     {
@@ -104,11 +106,12 @@
     {
       "surface": "st.neri.check",
       "tier": "guardrail",
-      "cmd": "st neri check [case]",
+      "cmd": "st neri check [case|--all]",
       "when": "before committing in Neri Hunters, or when a case looks off",
       "why": "finds stage vs files drift, report edits after the handoff commit, stale holders, failed alerts",
       "precautions": [
-        "read-only; exits 1 on errors, warnings do not fail"
+        "read-only; exits 1 on errors only",
+        "no argument: warnings as counts by kind; a case or --all lists each"
       ]
     },
     {
@@ -122,20 +125,30 @@
       ]
     },
     {
+      "surface": "st.neri.program.show",
+      "tier": "reference",
+      "cmd": "st neri program show <program>",
+      "when": "reading a program's verdict, gate, recheck and cases",
+      "why": "shortlist row plus cases; same as st neri show <program>",
+      "precautions": [
+        "read-only"
+      ]
+    },
+    {
       "surface": "st.neri.program.refresh",
       "tier": "reference",
       "cmd": "st neri program refresh <program> [--key h1:handle]",
       "when": "a program's policy needs a current check (candidate and ready gates need one)",
-      "why": "runs queue_tool.py refresh for the program and stamps its checked date",
+      "why": "runs queue_tool.py refresh; stamps checked only if the policy is unchanged",
       "precautions": [
-        "signed-out network read",
-        "the key must be in the watch-list; it comes from the policy file's Source URL"
+        "signed-out network read; on a diff, update programs/<p>.md",
+        "the key (from the policy Source URL) must be in the watch-list"
       ]
     },
     {
       "surface": "st.neri.program.set",
       "tier": "reference",
-      "cmd": "st neri program set <program> --verdict go|open|no-go [--gate G1|G2|G3] --evidence TEXT",
+      "cmd": "st neri program set <program> --verdict go|open|no-go [--gate G1|G2|G3] [--recheck TEXT] --evidence TEXT",
       "when": "a selection gate settles or a recheck changes a program's verdict",
       "why": "the program shortlist row: verdict, failed gate, evidence with source URL, recheck",
       "precautions": [
