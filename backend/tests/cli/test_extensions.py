@@ -305,6 +305,21 @@ def test_learn_binding_forwards_native_codex_session_identity():
     assert "CODEX_SESSION_ID" in binding["environment"]
 
 
+def test_neri_registration_is_local_and_small():
+    registry_path = Path(__file__).resolve().parents[3] / "scripts/lib/tool-registry.json"
+    catalog = load_extensions(set(), registry_path=registry_path)
+    record = next(row for row in catalog.records
+                  if row.binding is not None and row.binding.namespace == "neri")
+    assert record.manifest is not None
+    assert record.binding is not None
+    # Local case state only: no network, credentials or remote effects.
+    assert set(record.binding.grant.effects) == {"read-local", "write-local", "process"}
+    assert set(record.manifest.effects) <= set(record.binding.grant.effects)
+    assert record.binding.environment == []
+    commands = {path.split()[0] for path in record.manifest.help if path}
+    assert commands == {"next", "show", "new", "advance", "log", "ask", "program", "check"}
+
+
 def test_web_registration_exposes_pinned_dom_and_offline_artifact_workflows():
     registry_path = Path(__file__).resolve().parents[3] / "scripts/lib/tool-registry.json"
     record = next(row for row in load_extensions(set(), registry_path=registry_path).records

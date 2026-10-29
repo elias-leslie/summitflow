@@ -373,6 +373,22 @@
       ]
     },
     {
+      "id": "neri.neri",
+      "owner": "neri",
+      "namespace": "neri",
+      "manifest": "extensions/neri.json",
+      "executable": "backend/.venv/bin/neri-st",
+      "grant": {
+        "enabled": true,
+        "effects": [
+          "read-local",
+          "write-local",
+          "process"
+        ]
+      },
+      "environment": []
+    },
+    {
       "id": "portfolio-ai.portfolio",
       "owner": "portfolio-ai",
       "namespace": "portfolio",

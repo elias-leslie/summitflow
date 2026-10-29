@@ -55,7 +55,7 @@ this inventory does not reorder them.
 | 3 | ui, selection | desktop-automation | new | Platform operations and Aico protocol bridge; no active-desktop verification. |
 | 4 | jobs | jobinator-4000 | existing | Domain CLI/client and tests. |
 | 5 | portfolio | portfolio-ai | existing | Domain CLI/client and tests. |
-| 6 | neri | neri | retired | `st neri` removed 2026-10-27 with the Neri app; bounty work is text-only in the bounty repo. |
+| 6 | neri | neri | existing | Retired 2026-10-27 with the old app; re-added 2026-10-29 as 8 local commands over Neri's small state DB (`neri/backend/app/st_cli`), case files stay in Neri Hunters. |
 | 7 | learn | learn-o-tron | existing | CLI, PTY and transcripts; public ST task-promotion interface. |
 | 8 | graph/search | code-intelligence | new | Reusable intelligence; `st search` is local-only (live checkout parsing), with no hosted index. |
 | 9 | wiki | vault-tools | new | Filesystem/search/lint/ingest engine; canonical vault data preserved. |
@@ -164,7 +164,7 @@ ST reader; ordinary owner dispatch and grants are unchanged.
 | aico widget | Aico: `tether/scripts/aico-root-watch.py`, private GUI `/v1/widgets/ID` contract | ST supplies passive help/usage and forwards exact `AICO_WIDGET_ID`; Aico owns ordinary-widget descriptor, validation and generation-fenced title/position. Prefer these owner commands before desktop automation. Existing root routes remain unchanged. |
 | aico root | Aico: `tether/scripts/aico-root-watch.py`, private GUI `/v1/roots/ID` and headless `/v1/sessions/ID/end` contracts | Aico owns root descriptor, validation, generation-fenced show/title/position and End. `st sessions title` dispatches to `st aico root title`; ST keeps no label validator. Fleet `sessions activate/position/close` keep their ledger-backed paths. |
 | tether | Aico (Tether): `tether/scripts/st-tether` -> installed `bin/tether` over `$XDG_RUNTIME_DIR/tether/<instance>/control.sock` (API v1) | Tether owns session lifecycle, roots, the merged agent-tool registry and projects for the Aico desktop and web app. ST forwards argv only; `TETHER_INSTANCE`/`TETHER_SOCKET` pass through. Fleet's `aico` surface, `st sessions title`, the monitor's owner observation and the tmux agent session sync prefer Tether when it answers and fall back to Aico's legacy sockets, which the default instance also serves after the cutover. |
-| jobs, portfolio, learn | Their existing owners: `app.st_cli`, fixed owner consoles | Existing project APIs/state/auth; neutral SDK project resolution/output. Learn uses public ST manual-task promotion. |
+| jobs, portfolio, learn, neri | Their existing owners: `app.st_cli`, fixed owner consoles | Existing project APIs/state/auth; neutral SDK project resolution/output. Learn uses public ST manual-task promotion. |
 | graph, search | code-intelligence: `code_intelligence`, `code-graph`, `code-search` | ST schedules Graphify refresh and supplies the process-runner callback. Search has no ST-hosted index; it parses the local checkout. |
 | wiki | vault-tools: `vault_tools`, `vault-st` | Existing vault paths/content unchanged. No new database or service. |
 | design | design-tools: `design_tools`, `design-st` | Owner holds domain schemas, SQL, prompts, renderers and generation behavior. ST keeps authenticated routes, existing DB connections, migrations history, artifact root and provider/browser adapters. |

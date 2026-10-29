@@ -1,0 +1,135 @@
+{
+  "id": "neri.neri",
+  "owner": "neri",
+  "namespace": "neri",
+  "version": "0.2.0",
+  "st_contract_versions": [
+    1
+  ],
+  "summary": "Neri bounty case state: orient, open, gate-checked stage moves, owner asks, drift check.",
+  "effects": [
+    "read-local",
+    "write-local",
+    "process"
+  ],
+  "help": {
+    "": "Usage: neri [OPTIONS] COMMAND [ARGS]...\n\n  Neri bug bounty case state\n\nOptions:\n  --help  Show this message and exit.\n\nCommands:\n  next\n  show\n  new\n  advance\n  log\n  ask\n  check\n  program  Program policy records",
+    "next": "Usage: neri next [OPTIONS]\n\nOptions:\n  --session <str>\n  --json\n  --help           Show this message and exit.",
+    "show": "Usage: neri show [OPTIONS] {subject}\n\nArguments:\n  subject  [required]\n\nOptions:\n  --session <str>\n  --json\n  --help           Show this message and exit.",
+    "new": "Usage: neri new [OPTIONS] {PROGRAM} {slug}\n\nArguments:\n  PROGRAM  [required]\n  slug     [required]\n\nOptions:\n  --label <str>\n  --session <str>\n  --json\n  --help           Show this message and exit.",
+    "advance": "Usage: neri advance [OPTIONS] {CASE} {stage}\n\nArguments:\n  CASE   [required]\n  stage  [required]\n\nOptions:\n  --dry-run\n  --reason <str>\n  --take\n  --outcome <str>\n  --amount <str>\n  --currency <str>    [default: USD]\n  --submission <str>\n  --ack <str>\n  --session <str>\n  --json\n  --help              Show this message and exit.",
+    "log": "Usage: neri log [OPTIONS] {CASE} {text}\n\nArguments:\n  CASE  [required]\n  text  [required]\n\nOptions:\n  --take\n  --session <str>\n  --json\n  --help           Show this message and exit.",
+    "ask": "Usage: neri ask [OPTIONS] {subject} {title}\n\nArguments:\n  subject  [required]\n  title    [required]\n\nOptions:\n  --kind <str>     [required]\n  --detail <str>\n  --session <str>\n  --json\n  --help           Show this message and exit.",
+    "check": "Usage: neri check [OPTIONS] [CASE]\n\nArguments:\n  [CASE]\n\nOptions:\n  --json\n  --help  Show this message and exit.",
+    "program": "Usage: neri program [OPTIONS] COMMAND [ARGS]...\n\n  Program policy records\n\nOptions:\n  --help  Show this message and exit.\n\nCommands:\n  list\n  show\n  refresh",
+    "program list": "Usage: neri program list [OPTIONS]\n\nOptions:\n  --json\n  --help  Show this message and exit.",
+    "program show": "Usage: neri program show [OPTIONS] {PROGRAM}\n\nArguments:\n  PROGRAM  [required]\n\nOptions:\n  --json\n  --help  Show this message and exit.",
+    "program refresh": "Usage: neri program refresh [OPTIONS] {PROGRAM}\n\nArguments:\n  PROGRAM  [required]\n\nOptions:\n  --key <str>\n  --session <str>\n  --json\n  --help           Show this message and exit."
+  },
+  "help_options": {
+    "": {
+      "--help": 0
+    },
+    "program": {
+      "--help": 0
+    }
+  },
+  "usage": [
+    {
+      "surface": "st.neri.next",
+      "tier": "mandate",
+      "cmd": "st neri next",
+      "when": "start of a Neri session, and after an owner answer",
+      "why": "one call: cases you hold, answered owner asks, stale items, top open cases",
+      "precautions": [
+        "read-only"
+      ]
+    },
+    {
+      "surface": "st.neri.show",
+      "tier": "reference",
+      "cmd": "st neri show <case|program>",
+      "when": "before working a case, or to read a program",
+      "why": "stage, gates met and missing for the next stage, last events, file paths",
+      "precautions": [
+        "read-only; gate output skips the secret scan"
+      ]
+    },
+    {
+      "surface": "st.neri.new",
+      "tier": "reference",
+      "cmd": "st neri new <program> <slug> [--label TEXT]",
+      "when": "starting a case; slug is yyyy-mm-dd-name",
+      "why": "copies findings/_template, adds the case row and claims it for your session",
+      "precautions": [
+        "rerun is a no-op",
+        "label is generic: no target or evidence"
+      ]
+    },
+    {
+      "surface": "st.neri.advance",
+      "tier": "guardrail",
+      "cmd": "st neri advance <case> <stage> [--dry-run]",
+      "when": "a stage's files are done; --dry-run lists what is missing",
+      "why": "checks the gates against the case files, moves the stage, sends the alert once",
+      "precautions": [
+        "one step forward; killed or hunting need --reason",
+        "replay and review must come from a session unlike the finder's",
+        "a rerun retries a failed alert; --take claims a stale case"
+      ]
+    },
+    {
+      "surface": "st.neri.log",
+      "tier": "reference",
+      "cmd": "st neri log <case> \"text\"",
+      "when": "a fact, decision or dead end worth keeping in the case history",
+      "why": "timestamped history line with your identity; keeps your claim alive",
+      "precautions": [
+        "240 characters max",
+        "evidence and report text stay in the files"
+      ]
+    },
+    {
+      "surface": "st.neri.ask",
+      "tier": "reference",
+      "cmd": "st neri ask <case|program|platform> --kind approve|submit|decide|setup \"title\"",
+      "when": "the owner must decide, approve, submit or set something up",
+      "why": "shows on the owner page; the answer comes back in `st neri next`",
+      "precautions": [
+        "title 200 characters, --detail 400",
+        "generic wording: no target or evidence"
+      ]
+    },
+    {
+      "surface": "st.neri.check",
+      "tier": "guardrail",
+      "cmd": "st neri check [case]",
+      "when": "before committing in Neri Hunters, or when a case looks off",
+      "why": "finds stage vs files drift, report edits after the handoff commit, stale holders, failed alerts",
+      "precautions": [
+        "read-only; exits 1 on errors, warnings do not fail"
+      ]
+    },
+    {
+      "surface": "st.neri.program.list",
+      "tier": "reference",
+      "cmd": "st neri program list",
+      "when": "choosing where to hunt, or finding stale policy checks",
+      "why": "programs with platform, tier, policy age and open case count",
+      "precautions": [
+        "read-only"
+      ]
+    },
+    {
+      "surface": "st.neri.program.refresh",
+      "tier": "reference",
+      "cmd": "st neri program refresh <program> [--key h1:handle]",
+      "when": "a program's policy needs a current check (candidate and ready gates need one)",
+      "why": "runs queue_tool.py refresh for the program and stamps its checked date",
+      "precautions": [
+        "signed-out network read",
+        "the key must be in the watch-list; it comes from the policy file's Source URL"
+      ]
+    }
+  ]
+}
