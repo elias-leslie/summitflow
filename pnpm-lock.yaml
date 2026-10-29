@@ -229,7 +229,7 @@ packages:
     resolution: {integrity: sha512-Elp+iwUx5rN5+Y8xLt5/GRoG20WGoDCQ/1Fb+1LiGtvwbDavuSk0jhD/eZdckHAuzcDzccnkv+rEjyWfRx18gg==}
 
   '@agent-hub/chat-ui@file:docker/workspace-packages/agent-hub-chat-ui-0.4.6.tgz':
-    resolution: {integrity: sha512-dCBnEdiPfU9V00m+UqVf9uluT+J/TG2C/hKfbC20lWZSdkKMO2+KJIiIbGyHxvSEEXgAxsjEPxpukzqmxZm/HA==, tarball: file:docker/workspace-packages/agent-hub-chat-ui-0.4.6.tgz}
+    resolution: {integrity: sha512-Nd355uLFwAZd/Xmw0CmmuKDHkzXECQs2/g5N8GBagdIZ/Lu3WveFQAW4aRx1/FNjgqyK2YC+EPMObyPA8WM8dA==, tarball: file:docker/workspace-packages/agent-hub-chat-ui-0.4.6.tgz}
     version: 0.4.6
     peerDependencies:
       '@agent-hub/passport-client': '>=0.1.0'
