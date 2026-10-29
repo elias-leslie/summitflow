@@ -383,9 +383,7 @@
         "effects": [
           "read-local",
           "write-local",
-          "process",
-          "network",
-          "credentials"
+          "process"
         ]
       },
       "environment": []

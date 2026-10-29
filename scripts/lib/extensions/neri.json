@@ -10,9 +10,7 @@
   "effects": [
     "read-local",
     "write-local",
-    "process",
-    "network",
-    "credentials"
+    "process"
   ],
   "help": {
     "": "Usage: neri [OPTIONS] COMMAND [ARGS]...\n\n  Neri bug bounty case state\n\nOptions:\n  --help  Show this message and exit.\n\nCommands:\n  next     Holds, asks, open cases\n  show     Case card or program\n  new      Start a case\n  advance  Move a case one stage.\n  log      Log a history line\n  ask      Ask the owner\n  check    Find state/file drift\n  program  Program policy",
