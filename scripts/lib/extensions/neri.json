@@ -2,15 +2,17 @@
   "id": "neri.neri",
   "owner": "neri",
   "namespace": "neri",
-  "version": "0.4.0",
+  "version": "0.5.0",
   "st_contract_versions": [
     1
   ],
-  "summary": "Neri bounty case state: orient, open, gate-checked stage moves, owner asks, program verdicts, drift check.",
+  "summary": "Neri bounty case state: orient, open, gate-checked stage moves (ready also makes the HackerOne draft), owner asks, program verdicts, drift check.",
   "effects": [
     "read-local",
     "write-local",
-    "process"
+    "process",
+    "network",
+    "credentials"
   ],
   "help": {
     "": "Usage: neri [OPTIONS] COMMAND [ARGS]...\n\n  Neri bug bounty case state\n\nOptions:\n  --help  Show this message and exit.\n\nCommands:\n  next     Holds, asks, open cases\n  show     Case card or program\n  new      Start a case\n  advance  Move a case one stage.\n  log      Log a history line\n  ask      Ask the owner\n  check    Find state/file drift\n  program  Program policy",
@@ -74,10 +76,10 @@
       "when": "a stage's files are done; --dry-run lists what is missing",
       "why": "checks the gates against the case files, moves the stage, sends the alert once",
       "precautions": [
-        "one step forward; killed anywhere or hunting from candidate on need --reason",
+        "one step; killed, or hunting from candidate on, needs --reason",
         "ready, submitted, closed again: re-gate, refresh facts, no alert",
-        "ready opens the owner's submit ask; --take claims a stale case",
-        "replay and review need a session unlike the finder's"
+        "ready opens the owner's submit ask and the HackerOne draft",
+        "replay and review need a session unlike the finder's; --take claims a stale case"
       ]
     },
     {
