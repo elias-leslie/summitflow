@@ -414,6 +414,8 @@ def isolated_coordination_store(tmp_path_factory) -> Generator[None]:
             patch.delenv(name, raising=False)
         # An empty anchor disables lineage's process-tree walk under a real harness.
         patch.setenv("ST_COORD_ANCHOR", "")
+        # Quick-check receipts live in the checkout's .git; tests that run `st check` must not read or write them.
+        patch.setenv("ST_QUICK_RECEIPTS", "0")
         yield
 
 

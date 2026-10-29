@@ -136,6 +136,49 @@ def _selected_changed_files(repo: Path, paths: Sequence[str]) -> list[str]:
     return sorted(files) or list(paths)
 
 
+def _build_output_directories() -> frozenset[str]:
+    from cli.tool_registry import load_tool_registry
+
+    names = load_tool_registry().get("checkpoint_build_output", {}).get("directories", [])
+    return frozenset(name for name in names if isinstance(name, str))
+
+
+def _drop_untracked_build_output(
+    repo: Path, selected: Sequence[str], files: Sequence[str]
+) -> tuple[list[str], list[str]]:
+    """Split off build-output directories the checkpoint was not told to take.
+
+    Without a .gitignore, `node_modules/` or `dist/` looks like new source and a
+    whole-tree or directory checkpoint would commit it. Returns (kept files,
+    skipped directories). A directory with any tracked file stays, and so does
+    one a selected path reaches into to name.
+    """
+    directories = _build_output_directories()
+    named = [Path(os.path.normpath(path)).parts for path in selected]
+    prefix_of: dict[str, str] = {}
+    for path in files:
+        parts = Path(path).parts
+        for index, part in enumerate(parts[:-1]):
+            if part in directories and not any(
+                len(item) > index and item[: index + 1] == parts[: index + 1] for item in named
+            ):
+                prefix_of[path] = "/".join(parts[: index + 1])
+                break
+    if not prefix_of:
+        return list(files), []
+    prefixes = sorted(set(prefix_of.values()))
+    listed = subprocess.run(
+        ["git", "ls-files", "-z", "--cached", "--", *(f":(literal){prefix}" for prefix in prefixes)],
+        cwd=repo, capture_output=True, check=False,
+    )
+    if listed.returncode != 0:
+        return list(files), []
+    tracked = [item for item in listed.stdout.decode(errors="surrogateescape").split("\0") if item]
+    skipped = [prefix for prefix in prefixes if not any(item.startswith(prefix + "/") for item in tracked)]
+    kept = [path for path in files if prefix_of.get(path) not in skipped]
+    return kept, skipped
+
+
 def _checkout_snapshot(repo: Path) -> dict[str, str]:
     """Per-path state of dirty files (status, index blob, worktree blob) plus HEAD."""
     status = run_git(repo, ["status", "--porcelain=v1", "-z", "--untracked-files=all"])
@@ -368,6 +411,14 @@ def commit_git_revision(
         return {**result, "reason": "no_changes_in_selected_paths" if selected_paths else "clean"}
     selected_files = _selected_changed_files(repo, selected_paths) if selected_paths and has_changes else []
     changed_scope = (selected_files if selected_paths else _selected_changed_files(repo, ["."])) if has_changes else []
+    skipped_dirs: list[str] = []
+    if has_changes:
+        changed_scope, skipped_dirs = _drop_untracked_build_output(repo, selected_paths, changed_scope)
+        selected_files = changed_scope if selected_paths else []
+        if skipped_dirs:
+            result["skipped_untracked"] = skipped_dirs
+            if not changed_scope:
+                return {**result, "reason": "only_untracked_build_output"}
     _require_no_sweep(repo, selected_paths, changed_scope)
     try:
         coord.guard(repo, "commit", with_ack=with_ack)
@@ -381,6 +432,10 @@ def commit_git_revision(
             before_files = _checkout_snapshot(repo) if selected_paths else None
             ok, detail = run_checks(repo, paths=scope, full=False)
             result["check_count"] = attempt
+            if "CHECK:REUSED:quick" in detail:
+                result["check_reused"] = True
+            else:
+                result.pop("check_reused", None)
             if workspace_fingerprint(repo) == before_checks:
                 break
             changed = _snapshot_changes(repo, before_files) if before_files is not None else set()
@@ -406,7 +461,7 @@ def commit_git_revision(
             if add.returncode != 0:
                 raise CommitError(add.stderr.strip() or "git add failed")
     else:
-        add = run_git(repo, ["add", "-A"])
+        add = run_git(repo, ["add", "-A", "--", ".", *(f":(exclude,literal){item}" for item in skipped_dirs)])
         if add.returncode != 0:
             raise CommitError(add.stderr.strip() or "git add failed")
     if run_git(repo, ["diff", "--cached", "--quiet"]).returncode == 0:

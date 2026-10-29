@@ -3,12 +3,15 @@
 from __future__ import annotations
 
 import os
+import time
 from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Protocol
 
 import typer
+
+from cli.lib import quick_receipt
 
 from .check_changed import _vitest_changed_scope
 from .check_frontend import frontend_test_config
@@ -292,7 +295,8 @@ def help_text(names: str) -> str:
     return (
         """st check: repo gates. Never run raw pytest/vitest/biome/tsc/ruff/sqlfluff/squawk.
 
-  st check --quick [--changed-only]      fast loop (st commit runs it)
+  st check --quick [--changed-only] [--no-reuse]   fast loop (st commit runs it; a passing run on
+                                         unchanged files is reused, not repeated)
   st check --check                       full gate
   st check --fix [--changed-only]        apply ruff/biome fixes
   st check --frontend-only
@@ -324,7 +328,11 @@ def handle_check_args(
         print(help_text("|".join(sorted(configs))))
         return 0
 
-    args, changed_only, fix = extract_check_options(args)
+    no_reuse = "--no-reuse" in args
+    args, changed_only, fix = extract_check_options([arg for arg in args if arg != "--no-reuse"])
+    if not args:
+        print(help_text("|".join(sorted(configs))))
+        return 0
     first = args[0]
     if first == "cleanroom":
         return runtime.cleanroom_main(["--project-root", str(runtime.resolve_repo_root()), *args[1:]])
@@ -339,11 +347,39 @@ def handle_check_args(
         return 2
     names, selected_fix = selection
     selected = [name for name in names if name in configs]
-    return run_selected(
+    quick = first in {"--quick", "-q"}
+    receipt_scope = (
+        _quick_receipt_scope(runtime) if quick and changed_only and not fix and not selected_fix else None
+    )
+    if receipt_scope is not None and not no_reuse:
+        root, files = receipt_scope
+        reused = quick_receipt.reusable(root, files)
+        if reused is not None:
+            print(
+                f"CHECK:REUSED:quick:{len(files)} files unchanged since a passing quick check "
+                f"{int(time.time() - float(reused['at']))}s ago (--no-reuse reruns)"
+            )
+            return 0
+    context_before = quick_receipt.context_hash(receipt_scope[0]) if receipt_scope else None
+    hashes = quick_receipt.scope_hashes(*receipt_scope) if receipt_scope else {}
+    code = run_selected(
         selected,
         configs,
         fix=fix or selected_fix,
         changed_only=changed_only,
-        quick_checkpoint=first in {"--quick", "-q"},
+        quick_checkpoint=quick,
         runtime=runtime,
     )
+    if code == 0 and receipt_scope is not None:
+        quick_receipt.record(receipt_scope[0], receipt_scope[1], hashes, context_before)
+    return code
+
+
+def _quick_receipt_scope(runtime: CheckRuntime) -> tuple[Path, list[str]] | None:
+    """Repo root and changed files a quick check may be reused for; None when not applicable."""
+    try:
+        root = runtime.resolve_repo_root()
+        files = runtime.changed_files(root)
+    except Exception:  # not a receipt candidate; the check itself reports real problems
+        return None
+    return (root, files) if files else None

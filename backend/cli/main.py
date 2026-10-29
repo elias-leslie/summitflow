@@ -251,6 +251,12 @@ def _emit_commit_output(ctx: typer.Context, result: dict[str, object]) -> None:
         )
         if result.get("status") == SUCCESS_STATUS:
             _print_budget_line()
+        if result.get("check_reused"):
+            print("CHECK:reused a passing quick check on unchanged files")
+        skipped = result.get("skipped_untracked")
+        if isinstance(skipped, list) and skipped:
+            print(f"SKIPPED:untracked build output left out: {', '.join(str(item) for item in skipped)}; "
+                  "name it with --paths to commit it, or add a .gitignore")
         if result.get("reason") == "quality_gates_failed":
             check_detail = result.get("detail")
             if isinstance(check_detail, str):

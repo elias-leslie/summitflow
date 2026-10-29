@@ -733,6 +733,10 @@
     "core": ["st.check", "st.db", "st.service.rebuild", "st.tools.status", "st.tools.adoption", "st.tools.audit", "st.tools.cost", "st.agents.preview"],
     "adaptive_score_threshold": 15.0
   },
+  "checkpoint_build_output": {
+    "description": "Directory names whose untracked contents st commit leaves out of a whole-tree or directory checkpoint in a repo that does not ignore them. Naming the path with --paths still commits it.",
+    "directories": ["node_modules", "dist", "build", "out", "target", "__pycache__", ".venv", "venv", ".next", ".nuxt", ".turbo", ".cache", "coverage", ".pytest_cache", ".ruff_cache", ".mypy_cache", ".tox", ".gradle"]
+  },
   "description": "Centralized tool registry — single source of truth for operator tool discovery, redirects, and check-runner configuration.",
   "cmd_start": "(^|&&\\s*|;\\s*)",
   "operator_tools": [
