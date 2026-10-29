@@ -230,7 +230,7 @@ packages:
 
   '@agent-hub/chat-ui@file:docker/workspace-packages/agent-hub-chat-ui-0.4.6.tgz':
     resolution: {integrity: sha512-dCBnEdiPfU9V00m+UqVf9uluT+J/TG2C/hKfbC20lWZSdkKMO2+KJIiIbGyHxvSEEXgAxsjEPxpukzqmxZm/HA==, tarball: file:docker/workspace-packages/agent-hub-chat-ui-0.4.6.tgz}
-    version: 0.4.5
+    version: 0.4.6
     peerDependencies:
       '@agent-hub/passport-client': '>=0.1.0'
       '@agent-hub/sdk': '>=0.1.1'
