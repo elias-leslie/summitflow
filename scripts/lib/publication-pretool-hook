@@ -4,8 +4,10 @@
 # only for Bash calls that name nothing the policy inspects. Explicit deny on
 # startup failures because native runtimes may continue after hook exit errors.
 set -uo pipefail
+# readlink -f yields a canonical absolute path: root is three suffix strips
+# (scripts/lib/<this file>), with no dirname/cd subshells on the per-call path.
 script_path="$(readlink -f "${BASH_SOURCE[0]}")"
-root="$(cd "$(dirname "$script_path")/../.." && pwd)"
+root="${script_path%/*/*/*}"
 payload=""
 IFS= read -r -d '' payload
 # A guard install missing its pieces still refuses everything, prefiltered or not.

@@ -6,15 +6,24 @@ import contextlib
 import os
 import re
 import shlex
-import subprocess
 from collections.abc import Callable, Sequence
-from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
 
 # The publication hook imports this module with a stdlib-only interpreter (see
-# scripts/lib/command-guard). Backend utilities load structlog/pydantic, so they
-# are imported only by the functions that need them.
+# scripts/lib/command-guard) on every agent shell call. Backend utilities load
+# structlog/pydantic, and typing, dataclasses and subprocess cost ~9 ms of the
+# hook's ~25, so they are imported only by the code that needs them (type-only
+# names are never loaded at runtime).
+TYPE_CHECKING = False
+if TYPE_CHECKING:
+    import subprocess
+    from typing import Any
+
+
+def _subprocess_errors() -> tuple[type[BaseException], ...]:
+    import subprocess
+
+    return (OSError, subprocess.CalledProcessError)
 
 
 class _LazySafeSubprocess:
@@ -74,15 +83,53 @@ DANGEROUS_PATTERNS: tuple[tuple[re.Pattern[str], str], ...] = (
 # Type alias for the path-conflict checker callback
 PathConflictFn = Callable[[Sequence[str], str], "CommandGuardDecision | None"]
 
-@dataclass(frozen=True)
 class CommandGuardDecision:
-    """Result of evaluating one shell command."""
+    """Result of evaluating one shell command (immutable value object).
+
+    Behaves like the frozen dataclass it replaced (keyword/positional fields,
+    value equality and hash, repr, read-only attributes) without importing
+    dataclasses -> inspect on every hook call.
+    """
+
+    __slots__ = ("blocked", "code", "command", "message", "source")
+    __match_args__ = ("blocked", "code", "message", "source", "command")
 
     blocked: bool
     code: str | None
     message: str | None
     source: str | None
     command: str
+
+    def __init__(self, blocked: bool, code: str | None, message: str | None, source: str | None, command: str) -> None:
+        set_field = object.__setattr__
+        set_field(self, "blocked", blocked)
+        set_field(self, "code", code)
+        set_field(self, "message", message)
+        set_field(self, "source", source)
+        set_field(self, "command", command)
+
+    def _values(self) -> tuple[object, ...]:
+        return (self.blocked, self.code, self.message, self.source, self.command)
+
+    def __setattr__(self, name: str, value: object) -> None:
+        raise AttributeError(f"cannot assign to field {name!r}")
+
+    def __delattr__(self, name: str) -> None:
+        raise AttributeError(f"cannot delete field {name!r}")
+
+    def __eq__(self, other: object) -> bool:
+        if other.__class__ is not self.__class__:
+            return NotImplemented
+        return self._values() == other._values()  # type: ignore[attr-defined]
+
+    def __hash__(self) -> int:
+        return hash(self._values())
+
+    def __repr__(self) -> str:
+        return (
+            f"CommandGuardDecision(blocked={self.blocked!r}, code={self.code!r}, message={self.message!r}, "
+            f"source={self.source!r}, command={self.command!r})"
+        )
 
     def to_dict(self) -> dict[str, object]:
         return {
@@ -270,7 +317,7 @@ def git_revert_paths(repo_root: Path, args: Sequence[str], error_class: type[Exc
             ["git", "-C", str(repo_root), "show", "--format=", "--name-only", "--no-renames", *revisions],
             capture_output=True, text=True, check=True,
         )
-    except (OSError, subprocess.CalledProcessError) as exc:
+    except _subprocess_errors() as exc:
         raise error_class(f"Failed to inspect git revert paths for {' '.join(revisions)}: {exc}") from exc
     return [line.strip() for line in result.stdout.splitlines() if line.strip()]
 
@@ -315,7 +362,7 @@ def repo_root(cwd: Path) -> Path | None:
             ["git", "-C", str(cwd), "rev-parse", "--show-toplevel"],
             capture_output=True, text=True, check=True,
         )
-    except (OSError, subprocess.CalledProcessError):
+    except _subprocess_errors():
         return None
     root = result.stdout.strip()
     return Path(root).resolve() if root else None

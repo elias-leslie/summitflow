@@ -1,9 +1,11 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+# readlink -f yields a canonical absolute path, so the directory and root are
+# plain suffix strips (no dirname/cd subshells on this per-call hot path).
 SCRIPT_PATH="$(readlink -f "${BASH_SOURCE[0]}")"
-SCRIPT_DIR="$(cd "$(dirname "$SCRIPT_PATH")" && pwd)"
-SUMMITFLOW_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
+SCRIPT_DIR="${SCRIPT_PATH%/*}"
+SUMMITFLOW_ROOT="${SCRIPT_DIR%/*/*}"
 PYTHON_BIN="$SUMMITFLOW_ROOT/backend/.venv/bin/python"
 
 export SF_COMMAND_GUARD_DISABLE=1

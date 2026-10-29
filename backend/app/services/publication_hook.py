@@ -11,10 +11,13 @@ from __future__ import annotations
 import json
 import shlex
 import sys
-from typing import Any
 
 from ._command_guard_helpers import CommandGuardDecision
 from ._publication_guard import evaluate_irreversible_command, evaluate_publication_command
+
+TYPE_CHECKING = False  # typing costs ~2 ms per hook call; annotations are strings
+if TYPE_CHECKING:
+    from typing import Any
 
 _CONNECTOR_MUTATIONS = (
     "merge_pull_request", "create_release", "update_release", "delete_release",

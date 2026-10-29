@@ -47,14 +47,7 @@ from ._command_guard_helpers import (
 from ._command_guard_helpers import (
     repo_root as _repo_root,
 )
-from ._destructive_path_guard_helpers import derive_task_id
 from ._publication_guard import evaluate_publication_command
-from .destructive_path_guard import (
-    DestructivePathGuardError,
-    check_destructive_paths,
-    format_guard_report,
-    staged_destructive_paths,
-)
 from .publication_hook import publication_hook_main
 
 _ROOT = Path(__file__).resolve().parents[3]
@@ -106,6 +99,40 @@ class CommandGuardError(RuntimeError):
     """Raised when the shared command guard cannot evaluate safely."""
 
 
+# The ownership checks pull in the lane inventory (Agent Hub client, httpx,
+# psycopg: ~150 ms of imports) and only a few git commands need them, so every
+# shell-command evaluation must not pay for them. These stand-ins load the real
+# module on first use; tests patch them by name like the former imports.
+def check_destructive_paths(*args: Any, **kwargs: Any) -> Any:
+    from .destructive_path_guard import check_destructive_paths as real
+
+    return real(*args, **kwargs)
+
+
+def format_guard_report(*args: Any, **kwargs: Any) -> Any:
+    from .destructive_path_guard import format_guard_report as real
+
+    return real(*args, **kwargs)
+
+
+def staged_destructive_paths(*args: Any, **kwargs: Any) -> Any:
+    from .destructive_path_guard import staged_destructive_paths as real
+
+    return real(*args, **kwargs)
+
+
+def derive_task_id(*args: Any, **kwargs: Any) -> Any:
+    from ._destructive_path_guard_helpers import derive_task_id as real
+
+    return real(*args, **kwargs)
+
+
+def _guard_error() -> type[Exception]:
+    from .destructive_path_guard import DestructivePathGuardError
+
+    return DestructivePathGuardError
+
+
 def get_bash_intercept_words() -> tuple[str, ...]:
     """Return the bash command words that should delegate to the shared guard."""
     return _BASH_INTERCEPT_WORDS
@@ -148,7 +175,7 @@ def _check_path_conflicts(repo_root: Path, raw_paths: Sequence[str], command: st
         return None
     try:
         decision = check_destructive_paths(repo_root, paths)
-    except DestructivePathGuardError as exc:
+    except _guard_error() as exc:
         return CommandGuardDecision(
             blocked=True, code="ownership_error", message=str(exc), source="ownership", command=command,
         )
@@ -510,7 +537,7 @@ def staged_destructive_decision(repo_root: str | Path | None = None) -> CommandG
     target_root = Path(repo_root or ".").resolve()
     try:
         destructive_paths = staged_destructive_paths(target_root)
-    except DestructivePathGuardError as exc:
+    except _guard_error() as exc:
         return CommandGuardDecision(
             blocked=True, code="ownership_error", message=str(exc),
             source="ownership", command=str(target_root),
@@ -519,7 +546,7 @@ def staged_destructive_decision(repo_root: str | Path | None = None) -> CommandG
         return CommandGuardDecision(False, None, None, None, str(target_root))
     try:
         decision = check_destructive_paths(target_root, destructive_paths)
-    except DestructivePathGuardError as exc:
+    except _guard_error() as exc:
         return CommandGuardDecision(
             blocked=True, code="ownership_error", message=str(exc),
             source="ownership", command=str(target_root),
