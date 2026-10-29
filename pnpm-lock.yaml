@@ -23,8 +23,8 @@ importers:
   frontend:
     dependencies:
       '@agent-hub/chat-ui':
-        specifier: file:../docker/workspace-packages/agent-hub-chat-ui-0.3.1.tgz
-        version: file:docker/workspace-packages/agent-hub-chat-ui-0.3.1.tgz(@agent-hub/sdk@file:docker/workspace-packages/agent-hub-sdk-0.1.2.tgz)(@types/react@19.3.0)(react-dom@19.3.0(react@19.3.0))(react@19.3.0)
+        specifier: file:../docker/workspace-packages/agent-hub-chat-ui-0.4.0.tgz
+        version: file:docker/workspace-packages/agent-hub-chat-ui-0.4.0.tgz(@agent-hub/sdk@file:docker/workspace-packages/agent-hub-sdk-0.1.2.tgz)(@types/react@19.3.0)(react-dom@19.3.0(react@19.3.0))(react@19.3.0)
       '@agent-hub/sdk':
         specifier: file:../docker/workspace-packages/agent-hub-sdk-0.1.2.tgz
         version: file:docker/workspace-packages/agent-hub-sdk-0.1.2.tgz
@@ -228,9 +228,9 @@ packages:
   '@adobe/css-tools@4.4.4':
     resolution: {integrity: sha512-Elp+iwUx5rN5+Y8xLt5/GRoG20WGoDCQ/1Fb+1LiGtvwbDavuSk0jhD/eZdckHAuzcDzccnkv+rEjyWfRx18gg==}
 
-  '@agent-hub/chat-ui@file:docker/workspace-packages/agent-hub-chat-ui-0.3.1.tgz':
-    resolution: {integrity: sha512-VrB8ZkNcaaZOqy2NvEgJY04VBWZu5nqZWN3xKNfbL4uMrpCRjCSqb5r4KyhlvoUi8jcF/WyOsGFtq3d/+MIkYg==, tarball: file:docker/workspace-packages/agent-hub-chat-ui-0.3.1.tgz}
-    version: 0.3.1
+  '@agent-hub/chat-ui@file:docker/workspace-packages/agent-hub-chat-ui-0.4.0.tgz':
+    resolution: {integrity: sha512-d5QjHcYCHgGexXdgHHd6erSFkBojmTKxtSydeqd6mQ2VcsaNR07XuAMYkLkcA/OEaAGLCN4U78wUsWcnMWe4Fg==, tarball: file:docker/workspace-packages/agent-hub-chat-ui-0.4.0.tgz}
+    version: 0.4.0
     peerDependencies:
       '@agent-hub/passport-client': '>=0.1.0'
       '@agent-hub/sdk': '>=0.1.1'
@@ -2978,7 +2978,7 @@ snapshots:
 
   '@adobe/css-tools@4.4.4': {}
 
-  '@agent-hub/chat-ui@file:docker/workspace-packages/agent-hub-chat-ui-0.3.1.tgz(@agent-hub/sdk@file:docker/workspace-packages/agent-hub-sdk-0.1.2.tgz)(@types/react@19.3.0)(react-dom@19.3.0(react@19.3.0))(react@19.3.0)':
+  '@agent-hub/chat-ui@file:docker/workspace-packages/agent-hub-chat-ui-0.4.0.tgz(@agent-hub/sdk@file:docker/workspace-packages/agent-hub-sdk-0.1.2.tgz)(@types/react@19.3.0)(react-dom@19.3.0(react@19.3.0))(react@19.3.0)':
     dependencies:
       '@agent-hub/sdk': file:docker/workspace-packages/agent-hub-sdk-0.1.2.tgz
       '@tanstack/react-query': 5.104.1(react@19.3.0)
