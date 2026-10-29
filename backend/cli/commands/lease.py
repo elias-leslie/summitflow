@@ -116,12 +116,13 @@ def lease_command(
 
     if list_flag:
         leases = list_active(pid)
-        if not leases:
+        marks = repo_marks(pid)
+        if not leases and not marks:
             print("No active leases.")
             return
         for lease in leases:
             print(format_pulse_line(lease))
-        for mark in repo_marks(pid):
+        for mark in marks:
             print(coord.holder_line(pid, mark))
         return
 
