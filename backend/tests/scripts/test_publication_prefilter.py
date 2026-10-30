@@ -17,6 +17,7 @@ from pathlib import Path
 import pytest
 
 from app.services.publication_hook import evaluate_payload
+from tests.linear_time import assert_linear
 
 REPO = Path(__file__).resolve().parents[3]
 PREFILTER = REPO / "scripts/lib/publication-prefilter.sh"
@@ -165,9 +166,18 @@ def test_live_hook_still_denies_through_prefilter(tmp_path: Path) -> None:
 
 def test_large_escape_heavy_payload_reaches_python_well_inside_hook_timeout(tmp_path: Path) -> None:
     """Bash regex backtracking on a huge payload must never push the hook past its 5 s timeout."""
-    heredoc = "cat <<'EOF'\n" + '"x\n' * 120_000 + "EOF\n"
-    assert _skips([json.dumps(_payload(heredoc + "ls"))]) == [False]
-    result = subprocess.run(["bash", str(HOOK)], input=json.dumps(_payload(heredoc + "&& git push origin main")),
-                            text=True, capture_output=True, check=True, timeout=4,
+
+    def heredoc(lines: int) -> str:
+        return "cat <<'EOF'\n" + '"x\n' * lines + "EOF\n"
+
+    def build(lines: int) -> str:
+        return json.dumps(_payload(heredoc(lines) + "ls"))
+
+    assert _skips([build(120_000)]) == [False]
+    # Growth, not a wall-clock bound: both sizes are past the size cut; without it the
+    # command decode and trigger scan take ~32x for 8x the payload.
+    assert_linear(lambda payload: _skips([payload]), build, 120_000)
+    result = subprocess.run(["bash", str(HOOK)], input=json.dumps(_payload(heredoc(120_000) + "&& git push origin main")),
+                            text=True, capture_output=True, check=True, timeout=60,
                             env={**QUIET, "HOME": str(tmp_path), "XDG_STATE_HOME": str(tmp_path / "state")})
     assert json.loads(result.stdout)["hookSpecificOutput"]["permissionDecision"] == "deny"
