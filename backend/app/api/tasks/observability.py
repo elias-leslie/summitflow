@@ -17,6 +17,7 @@ from pydantic import BaseModel, Field
 from ...logging_config import get_logger
 from ...services._agent_hub_config import (
     AGENT_HUB_URL,
+    build_agent_hub_headers,
     get_sync_client,
 )
 from ...storage.events import get_events_by_trace
@@ -136,14 +137,21 @@ def _fetch_session_events(
 
 
 def _fetch_session_summary(session_id: str) -> dict[str, Any] | None:
-    """Fetch a single Agent Hub session summary."""
+    """Fetch a single Agent Hub session summary (metadata and counts, without its events)."""
     try:
-        with get_sync_client(timeout=HTTP_TIMEOUT, client_name=DEFAULT_REQUEST_SOURCE) as client:
-            return client.get_session(session_id).model_dump(mode="json")
-    except AgentHubError as e:
-        if e.status_code != 404:
-            logger.warning("Agent Hub session API error", session_id=session_id, status=e.status_code, detail=e.message[:200])
-        return None
+        response = httpx.get(
+            f"{AGENT_HUB_URL}/api/sessions/{session_id}",
+            params={"include_events": "false"},
+            headers=build_agent_hub_headers(default_request_source=DEFAULT_REQUEST_SOURCE),
+            timeout=HTTP_TIMEOUT,
+        )
+        if response.status_code == 404:
+            return None
+        if not response.is_success:
+            logger.warning("Agent Hub session API error", session_id=session_id, status=response.status_code, detail=response.text[:200])
+            return None
+        payload = response.json()
+        return payload if isinstance(payload, dict) else None
     except httpx.ConnectError:
         logger.warning("Cannot connect to Agent Hub", url=AGENT_HUB_URL)
         return None

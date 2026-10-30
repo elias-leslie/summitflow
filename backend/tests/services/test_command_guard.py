@@ -2,8 +2,10 @@ from __future__ import annotations
 
 from pathlib import Path
 
+import httpx
 import pytest
 
+from app.services import command_guard
 from app.services.command_guard import (
     evaluate_shell_command,
     get_bash_intercept_words,
@@ -324,6 +326,28 @@ def test_allows_git_restore_all_in_unmanaged_temp_clone(monkeypatch: pytest.Monk
     decision = evaluate_shell_command("git restore .", repo_root)
 
     assert decision.blocked is False
+
+
+def test_agent_task_lookup_skips_session_events(monkeypatch: pytest.MonkeyPatch) -> None:
+    requests: list[httpx.Request] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        requests.append(request)
+        return httpx.Response(200, json={"id": "sess-current", "external_id": "task-current"})
+
+    real_client = httpx.Client
+    monkeypatch.setattr(
+        httpx, "Client", lambda **kwargs: real_client(transport=httpx.MockTransport(handler), **kwargs)
+    )
+    command_guard._agent_hub_task_id_for_session.cache_clear()
+    try:
+        assert command_guard._agent_hub_task_id_for_session("sess-current") == "task-current"
+    finally:
+        command_guard._agent_hub_task_id_for_session.cache_clear()
+
+    assert len(requests) == 1
+    assert requests[0].url.path == "/api/sessions/sess-current"
+    assert requests[0].url.params["include_events"] == "false"
 
 
 def test_blocks_st_done_for_different_agent_task(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:

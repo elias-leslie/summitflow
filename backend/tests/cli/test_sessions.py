@@ -730,6 +730,8 @@ class TestRequireProjectFalse:
         assert "$ st check --quick" in result.output
         assert mock_client.list_sessions.call_args.kwargs["project_id"] == "agent-hub"
         assert mock_events.call_args.kwargs["page"] == 4
+        # The MON line reads only session fields; events come from the paged events endpoint.
+        mock_client.get_session.assert_called_once_with("sess-monitor-1234", include_events=False)
 
     def test_monitor_session_errors_surfaces_tool_failures_and_repeats(self) -> None:
         mock_client = MagicMock()

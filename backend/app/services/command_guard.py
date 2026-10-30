@@ -304,7 +304,11 @@ def _agent_hub_task_id_for_session(session_id: str) -> str | None:
 
         headers = build_agent_hub_headers(request_source="sf-command-guard")
         with httpx.Client(timeout=_AGENT_HUB_SESSION_TIMEOUT_SECONDS) as client:
-            response = client.get(f"{AGENT_HUB_URL}/api/sessions/{session_id}", headers=headers)
+            response = client.get(
+                f"{AGENT_HUB_URL}/api/sessions/{session_id}",
+                params={"include_events": "false"},
+                headers=headers,
+            )
             response.raise_for_status()
             payload = response.json()
     except Exception:

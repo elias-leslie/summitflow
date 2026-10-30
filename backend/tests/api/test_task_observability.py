@@ -7,7 +7,9 @@ from datetime import UTC, datetime
 from typing import Any
 from unittest.mock import patch
 
-from app.api.tasks.observability import _infer_session_task_id
+import httpx
+
+from app.api.tasks.observability import _fetch_session_summary, _infer_session_task_id
 from app.storage.events import create_event
 
 
@@ -28,6 +30,24 @@ class TestTaskObservability:
                 "repo_root": "/srv/workspaces/projects/agent-hub/task-bc3ed9c0",
             }
         ) is None
+
+    def test_fetch_session_summary_skips_session_events(self) -> None:
+        responses = {
+            "sess-1": httpx.Response(200, json={"id": "sess-1", "external_id": "task-1"}),
+            "sess-gone": httpx.Response(404, json={"detail": "not found"}),
+        }
+        calls: list[tuple[str, dict[str, Any]]] = []
+
+        def fake_get(url: str, **kwargs: Any) -> httpx.Response:
+            calls.append((url, kwargs["params"]))
+            return responses[url.rsplit("/", 1)[-1]]
+
+        with patch("app.api.tasks.observability.httpx.get", side_effect=fake_get):
+            assert _fetch_session_summary("sess-1") == {"id": "sess-1", "external_id": "task-1"}
+            assert _fetch_session_summary("sess-gone") is None
+
+        assert [url.rsplit("/api/", 1)[-1] for url, _ in calls] == ["sessions/sess-1", "sessions/sess-gone"]
+        assert all(params == {"include_events": "false"} for _, params in calls)
 
     def test_get_agent_events_wrong_project_returns_404(
         self, client: Any, test_project_id: str, cleanup_task: Callable[[str], None]

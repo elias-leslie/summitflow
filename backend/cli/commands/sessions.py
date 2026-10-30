@@ -287,7 +287,7 @@ def _monitor_single_session(
     client = STClient(require_project=False)
     resolved_id = _resolve_session_id(session_id, client, project_id=project_id)
     try:
-        session = client.get_session(resolved_id)
+        session = client.get_session(resolved_id, include_events=False)
     except APIError as e:
         handle_api_error(e)
         return
