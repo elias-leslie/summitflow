@@ -75,7 +75,7 @@
       "why": "checks the gates against the case files, moves the stage, sends the alert once",
       "precautions": [
         "one step; killed, or hunting from candidate on, needs --reason",
-        "ready, submitted, closed again: re-gate, refresh facts, no alert",
+        "same stage again: resend failed alerts; ready/submitted/closed re-gate",
         "ready opens the owner's submit ask and the HackerOne draft",
         "replay and review need a session unlike the finder's; --take claims a stale case"
       ]
