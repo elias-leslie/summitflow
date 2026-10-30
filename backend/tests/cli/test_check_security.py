@@ -97,6 +97,19 @@ def test_gitleaks_materializes_only_changed_candidate_files(
     ) == 0
 
 
+def test_symlink_into_an_unreadable_directory_is_a_candidate_without_being_followed(tmp_path):
+    locked = tmp_path / "locked"
+    (locked / "inner").mkdir(parents=True)
+    root = tmp_path / "repo"
+    root.mkdir()
+    (root / "_shared").symlink_to(locked / "inner")
+    locked.chmod(0)
+    try:
+        assert check_security._safe_candidate_paths(root, ["_shared"]) == ["_shared"]
+    finally:
+        locked.chmod(0o700)
+
+
 def test_changed_only_gitleaks_keeps_the_repo_allowlist(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

@@ -67,7 +67,8 @@ def _safe_candidate_paths(root: Path, paths: list[str]) -> list[str]:
             candidate.parent.resolve(strict=True).relative_to(resolved_root)
         except (OSError, ValueError):
             continue
-        if candidate.is_file() or candidate.is_symlink():
+        # A symlink is scanned as its link text; never follow it (its target may be unreadable or outside the repo).
+        if candidate.is_symlink() or candidate.is_file():
             selected.add(relative.as_posix())
     return sorted(selected)
 
