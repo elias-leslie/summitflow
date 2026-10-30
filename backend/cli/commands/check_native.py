@@ -299,7 +299,10 @@ def _prepared_identity(root: Path, path: Path, *, commit: str | None = None) -> 
 
     Virtualenvs and node_modules rewrite caches (pyc, Vite/Vitest results) on
     every run; those bytes are not dependency inputs. Other prepared runtimes
-    keep their complete content walk.
+    keep their complete content walk, minus __pycache__: a Python package used
+    from its checkout (aico's uilint input) writes bytecode on the run's first
+    import, which changed the plan mid-acceptance; Python checks pyc against
+    the bound source anyway.
     """
     if not path.is_dir():
         return identity(root, path)
@@ -310,7 +313,7 @@ def _prepared_identity(root: Path, path: Path, *, commit: str | None = None) -> 
         elif path.name == "node_modules":
             entries, kind = _node_modules_manifest(root, path, commit=commit), "node_packages"
         else:
-            return _environment_identity(root, path, commit=commit)
+            return _environment_identity(root, path, commit=commit, prune=_PYTHON_CACHE_NAMES)
         if any(entry.get("state") == "unavailable" for entry in entries):
             raise OSError("prepared environment entry unavailable")
     except OSError:

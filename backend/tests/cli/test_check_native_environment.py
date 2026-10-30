@@ -153,3 +153,18 @@ def test_prepared_identity_binds_installed_manifests_not_caches(tmp_path: Path, 
     else:
         files["unclaimed"].write_text("hand placed module\n")
     assert _prepared_identity(tmp_path, environment) != changed
+
+
+def test_prepared_source_package_ignores_bytecode_written_by_the_run(tmp_path: Path) -> None:
+    """A managed input used from its checkout (aico's uilint) compiles on first import mid-acceptance."""
+    from cli.commands.check_native import _prepared_identity
+
+    package = tmp_path / "uilint"
+    package.mkdir()
+    (package / "scope.py").write_text("X = 1\n")
+    before = _prepared_identity(tmp_path, package)
+    (package / "__pycache__").mkdir()
+    (package / "__pycache__" / "scope.cpython-313.pyc").write_bytes(b"bytecode")
+    assert _prepared_identity(tmp_path, package) == before
+    (package / "scope.py").write_text("X = 2\n")
+    assert _prepared_identity(tmp_path, package) != before
