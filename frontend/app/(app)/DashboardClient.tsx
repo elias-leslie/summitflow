@@ -57,6 +57,14 @@ export function DashboardClient() {
   const endIndex = startIndex + PROJECTS_PER_PAGE
   const visibleProjects = projects.slice(startIndex, endIndex)
 
+  // Blocked tasks live in each project's task list; link to its blocked filter.
+  const blockedLinks = projects
+    .filter((p) => p.stats.blocked > 0)
+    .map((p) => ({
+      href: `/projects/${p.id}?tab=tasks&status=blocked`,
+      label: `${p.name} ${p.stats.blocked}`,
+    }))
+
   const handlePrevPage = () => setPage((p) => Math.max(0, p - 1))
   const handleNextPage = () => setPage((p) => Math.min(totalPages - 1, p + 1))
 
@@ -100,6 +108,7 @@ export function DashboardClient() {
       color: totals.blocked > 0 ? 'text-rose-300' : 'text-slate-100',
       iconColor: 'text-rose-400',
       iconBg: 'bg-rose-500/10',
+      links: blockedLinks,
     },
   ]
 
@@ -149,6 +158,19 @@ export function DashboardClient() {
                   <div className="text-2xs text-slate-500 mt-1.5 font-medium uppercase tracking-wider">
                     {stat.label}
                   </div>
+                  {'links' in stat && stat.links && stat.links.length > 0 && (
+                    <div className="mt-1 flex flex-wrap gap-x-2 text-2xs">
+                      {stat.links.map((link) => (
+                        <Link
+                          key={link.href}
+                          href={link.href}
+                          className="text-rose-300 hover:text-rose-200 underline-offset-2 hover:underline"
+                        >
+                          {link.label}
+                        </Link>
+                      ))}
+                    </div>
+                  )}
                 </div>
               </motion.div>
             )

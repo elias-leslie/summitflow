@@ -7,7 +7,8 @@ import { cn } from '@/lib/utils'
 
 export interface TaskFilterValues {
   type: TaskType | 'all'
-  status: TaskStatus | 'all'
+  /** 'blocked' matches open tasks waiting on an unfinished dependency, not a stored status. */
+  status: TaskStatus | 'all' | 'blocked'
   priority: number | 'all'
 }
 
@@ -18,12 +19,16 @@ interface TaskFiltersProps {
   className?: string
 }
 
-const STATUS_OPTIONS: { value: TaskStatus | 'all'; label: string }[] = [
+const STATUS_OPTIONS: {
+  value: TaskFilterValues['status']
+  label: string
+}[] = [
   { value: 'all', label: 'All Statuses' },
   ...Object.entries(statusIconConfig).map(([value, config]) => ({
     value: value as TaskStatus,
     label: config.label,
   })),
+  { value: 'blocked', label: 'Blocked by a task' },
 ]
 
 const TYPE_OPTIONS = [

@@ -19,7 +19,7 @@ export function useTasksList(
     refetch: refetchTasks,
   } = useQuery({
     queryKey: taskQueryKeys.all(projectId),
-    queryFn: () => fetchTasks(projectId, { limit: 500 }),
+    queryFn: () => fetchTasks(projectId, { limit: 500, include: 'blockers' }),
     staleTime: STALE_GIT,
   })
 
@@ -38,8 +38,9 @@ export function useTasksList(
         return false
       }
 
-      // Status filter (direct match)
-      if (filters.status !== 'all' && task.status !== filters.status) {
+      if (filters.status === 'blocked') {
+        if (!task.blocked_by_incomplete) return false
+      } else if (filters.status !== 'all' && task.status !== filters.status) {
         return false
       }
 

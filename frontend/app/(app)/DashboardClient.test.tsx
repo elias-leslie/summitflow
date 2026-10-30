@@ -80,6 +80,17 @@ describe('DashboardClient', () => {
     expect(screen.getByText('Tasks')).toBeInTheDocument()
   })
 
+  it('links the Blocked total to each project with blocked tasks', async () => {
+    renderClient()
+
+    const link = await screen.findByRole('link', { name: 'SummitFlow 1' })
+
+    expect(link).toHaveAttribute(
+      'href',
+      '/projects/summitflow?tab=tasks&status=blocked',
+    )
+  })
+
   it('shows an empty state when no projects are registered', async () => {
     apiMocks.fetchProjectsWithStats.mockResolvedValue({
       total: 0,

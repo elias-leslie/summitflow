@@ -116,7 +116,20 @@ export function ProjectDetailClient() {
   }, [parsedTab, searchParams, updateUrlParams])
 
   // View mode (board | table) for unified tasks tab
-  const { viewMode, setViewMode } = useViewMode(projectId)
+  const { viewMode: savedViewMode, setViewMode: saveViewMode } =
+    useViewMode(projectId)
+  // A status link (e.g. the dashboard's Blocked count) needs the filterable table.
+  const [statusLinkOpensTable, setStatusLinkOpensTable] = useState(
+    Boolean(taskInitialFilters.status),
+  )
+  const viewMode = statusLinkOpensTable ? 'table' : savedViewMode
+  const setViewMode = useCallback(
+    (mode: typeof savedViewMode) => {
+      setStatusLinkOpensTable(false)
+      saveViewMode(mode)
+    },
+    [saveViewMode],
+  )
 
   // Kanban state
   const [selectedTaskId, setSelectedTaskId] = useState<string | null>(urlTaskId)
