@@ -293,7 +293,7 @@ def install_clone_dependencies(project: ProjectServices) -> int:
     if (code := sync_backend(clone)) != 0:
         return code
     plan = frontend_install_plan(clone.frontend_dir, clone.root)
-    return run(list(plan.command), cwd=plan.cwd, quiet_success=True, _heavy=True) if plan else 0
+    return run(frontend_install_command(plan, clone.root), cwd=plan.cwd, quiet_success=True, _heavy=True) if plan else 0
 
 
 def project_ids(*, include_inactive: bool = False) -> list[str]:
@@ -1116,6 +1116,35 @@ def locked_backend_sync_command(declared_extras: Mapping[str, Any], extras: Sequ
     return command
 
 
+def release_cache_options(manager: str, root: Path) -> list[str]:
+    """Install options that let a release under the service state root share unchanged dependencies.
+
+    uv and pnpm reflink from their cache only within one filesystem. The user
+    caches (uv's on /srv/scratch, the pnpm store on /srv/workspaces) sit on
+    another disk than the state root, so each release got full private copies
+    (~1.6 GB per agent-hub rebuild). A cache beside the releases fixes that;
+    clone, never hardlink, keeps release files independent of the cache. Paths
+    elsewhere (cleanroom snapshots, dev checkouts) keep the user's caches.
+    """
+    # Absolute, or the installer would resolve a relative state root against its own cwd.
+    state_root = service_release.service_state_root().resolve()
+    if not root.resolve().is_relative_to(state_root):
+        return []
+    cache = state_root / "cache"
+    if manager == "uv":
+        return ["--cache-dir", str(cache / "uv"), "--link-mode", "clone"]
+    if manager == "pnpm":
+        # An existing private clone's node_modules recorded the old store; pnpm
+        # must reinstall it instead of aborting for lack of a TTY to confirm.
+        return ["--store-dir", str(cache / "pnpm-store"), "--package-import-method", "clone-or-copy",
+                "--config.confirm-modules-purge=false"]
+    return []  # npm ci always copies from its tarball cache
+
+
+def frontend_install_command(plan: FrontendInstall, root: Path) -> list[str]:
+    return [*plan.command, *release_cache_options(plan.manager, root)]
+
+
 def sync_backend(project: ProjectServices) -> int:
     """Install the locked Python environment before migrations or restarts."""
     declared_extras = backend_optional_dependencies(project.backend_dir)
@@ -1130,7 +1159,8 @@ def sync_backend(project: ProjectServices) -> int:
     if unknown:
         print("[service] configured backend extras are not declared: " + ", ".join(sorted(unknown)))
         return 1
-    command = locked_backend_sync_command(declared_extras, project.backend_extras)
+    command = [*locked_backend_sync_command(declared_extras, project.backend_extras),
+               *release_cache_options("uv", project.root)]
     return run(command, cwd=project.backend_dir, quiet_success=True, _heavy=True)
 
 
@@ -1409,7 +1439,7 @@ def build_frontend(project: ProjectServices) -> int:
     if project.frontend_dir.is_relative_to(project.root):
         _seed_from_live_release(project, project.frontend_dir.relative_to(project.root) / ".next" / "cache")
     print("[service] building frontend")
-    install = run(list(plan.command), cwd=plan.cwd, quiet_success=True, _heavy=True)
+    install = run(frontend_install_command(plan, project.root), cwd=plan.cwd, quiet_success=True, _heavy=True)
     if install != 0:
         return install
     if plan.manager == "npm":

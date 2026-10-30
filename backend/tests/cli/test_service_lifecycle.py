@@ -2,6 +2,7 @@
 
 import json
 import os
+import shutil
 import subprocess
 import sys
 from contextlib import contextmanager, nullcontext
@@ -462,6 +463,42 @@ def test_frontend_frozen_install_runs_at_workspace_root_and_keeps_cache(project,
     assert run.call_args_list[-1].args[0] == ["pnpm", "build"]
     assert all(call.kwargs["_heavy"] is True for call in run.call_args_list)
     assert (cache / "retained").exists()
+
+
+def test_release_installs_clone_from_a_cache_beside_the_release(project, monkeypatch, tmp_path):
+    state = tmp_path.resolve() / "state"
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setenv("SUMMITFLOW_SERVICE_STATE_ROOT", "state")  # relative: options must still be absolute
+    source = state / "projects" / "example" / "releases" / ("a" * 32) / "source"
+    release = replace(project, root=source, backend_dir=source / "backend", frontend_dir=source / "frontend")
+    release.backend_dir.mkdir(parents=True)
+    (release.backend_dir / "pyproject.toml").write_text("[project]\nname='x'\n")
+    (release.backend_dir / "uv.lock").touch()
+    release.frontend_dir.mkdir()
+    (release.frontend_dir / "package.json").write_text("{}")
+    run = Mock(return_value=0)
+    monkeypatch.setattr(service_ops, "run", run)
+
+    assert service_ops.sync_backend(release) == 0
+    assert run.call_args.args[0] == ["uv", "sync", "--locked", "--cache-dir", str(state / "cache" / "uv"),
+                                     "--link-mode", "clone"]
+    assert service_ops.build_frontend(release) == 0
+    pnpm_install = [
+        "pnpm", "install", "--frozen-lockfile", "--store-dir", str(state / "cache" / "pnpm-store"),
+        "--package-import-method", "clone-or-copy", "--config.confirm-modules-purge=false"]
+    assert run.call_args_list[1].args[0] == pnpm_install
+    assert run.call_args_list[-1].args[0] == ["pnpm", "build"]
+    # The private deploy clone also lives under the state root.
+    clone = state / "projects" / "example" / "source"
+    shutil.copytree(source, clone)
+    run.reset_mock()
+    assert service_ops.install_clone_dependencies(replace(project, source_repo=clone)) == 0
+    assert run.call_args.args[0] == pnpm_install and run.call_args.kwargs["cwd"] == clone / "frontend"
+    (release.frontend_dir / "package-lock.json").touch()
+    npm = service_ops.frontend_install_plan(release.frontend_dir, source)
+    assert npm is not None and service_ops.frontend_install_command(npm, source) == ["npm", "ci"]
+    # A checkout outside the state root keeps the user's own caches.
+    assert service_ops.release_cache_options("uv", tmp_path / "checkout") == []
 
 
 def _probe_infra(monkeypatch, *, pg_ok: bool, hatchet_status: int | None):
