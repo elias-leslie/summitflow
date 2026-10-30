@@ -437,7 +437,9 @@ def run_cleanroom(
             if options.deps:
                 install_env = _install_env(env, base_env) if options.share_caches else env
                 if options.clone is not None:
-                    install_env = {**install_env, "UV_LINK_MODE": "copy", "npm_config_package_import_method": "copy"}
+                    # pnpm 10 reads npm_config_*, pnpm 11+ only pnpm_config_*.
+                    install_env = {**install_env, "UV_LINK_MODE": "copy", "npm_config_package_import_method": "copy",
+                                   "pnpm_config_package_import_method": "copy"}
                 code = install_dependencies(snapshot_root, options.extras, runner=work.run, env=install_env)
                 if code != 0:
                     return code

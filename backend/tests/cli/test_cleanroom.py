@@ -562,7 +562,7 @@ def test_clone_runs_committed_revision_with_copied_dependency_installs(
     assert all(state == {"committed": True, "untracked": False, "own_objects": True} for *_, state in seen)
     for _command, env, _state in seen[:2]:
         assert env["UV_LINK_MODE"] == "copy"
-        assert env["npm_config_package_import_method"] == "copy"
+        assert env["npm_config_package_import_method"] == env["pnpm_config_package_import_method"] == "copy"
     assert "UV_LINK_MODE" not in seen[2][1]
     assert list((tmp_path / "parent").iterdir()) == []
 
