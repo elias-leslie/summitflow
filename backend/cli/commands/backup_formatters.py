@@ -40,8 +40,12 @@ def ago(value: Any, now: datetime | None = None) -> str:
         return "never"
     hours = ((now or datetime.now(UTC)) - when).total_seconds() / 3600
     if hours < 1:
-        return f"{max(hours * 60, 0):.0f} minutes ago"
-    return f"{hours:.0f} hours ago" if hours < 48 else f"{hours / 24:.0f} days ago"
+        amount, unit = round(max(hours * 60, 0)), "minute"
+    elif hours < 48:
+        amount, unit = round(hours), "hour"
+    else:
+        amount, unit = round(hours / 24), "day"
+    return f"{amount} {unit}{'' if amount == 1 else 's'} ago"
 
 
 def _local_section(local: Mapping[str, Any], now: datetime) -> list[str]:

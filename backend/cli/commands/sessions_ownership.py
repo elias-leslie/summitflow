@@ -38,9 +38,9 @@ def collect_project_owners(client: STClient, pid: str) -> list[dict[str, object]
 def _format_ownership_line(project_id: str, owner: dict[str, object]) -> str:
     parts = [
         project_id,
-        str(owner.get("task_id") or "-"),
-        str(owner.get("agent_slug") or "?"),
-        str(owner.get("session_id") or "?"),
+        f"task={owner.get('task_id') or '-'}",
+        f"agent={owner.get('agent_slug') or 'unknown'}",
+        f"session={owner.get('session_id') or 'unknown'}",
         f"kind={owner.get('ownership_kind') or 'unknown'}",
     ]
     if branch := owner.get("branch"):
@@ -60,9 +60,9 @@ def _format_reader_line(project_id: str, owner: dict[str, object]) -> str:
     paths = owner.get("observed_read_paths") or owner.get("scope_paths")
     parts = [
         project_id,
-        str(owner.get("task_id") or "-"),
-        str(owner.get("agent_slug") or "?"),
-        str(owner.get("session_id") or "?"),
+        f"task={owner.get('task_id') or '-'}",
+        f"agent={owner.get('agent_slug') or 'unknown'}",
+        f"session={owner.get('session_id') or 'unknown'}",
     ]
     if isinstance(paths, list) and paths:
         parts.append(f"paths={','.join(str(path) for path in paths[:3])}")

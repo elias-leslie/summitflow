@@ -45,6 +45,19 @@ def test_missing_caller_units_use_runtime_observation_and_preserve_disabled_time
     client.get.assert_called_once_with("/docker/status")
 
 
+def test_status_names_the_live_release_commit(observed, monkeypatch):
+    monkeypatch.setattr(service.service_release, "current_release_commit", lambda project: "d3c873736c1a8f246f99")
+    result = CliRunner().invoke(service.app, ["status", "example"])
+    assert result.exit_code == 0, result.output
+    assert "release=d3c873736c1a" in result.output
+
+
+def test_status_omits_release_when_no_receipt_is_readable(observed, monkeypatch):
+    monkeypatch.setattr(service.service_release, "current_release_commit", lambda project: None)
+    result = CliRunner().invoke(service.app, ["status", "example"])
+    assert "release=" not in result.output
+
+
 def test_summitflow_rebuild_keeps_current_workers():
     root = Path(__file__).resolve().parents[3]
     project = service_ops._project_from_identity(

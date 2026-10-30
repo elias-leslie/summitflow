@@ -115,3 +115,36 @@ def test_check_help_stays_within_agent_budget() -> None:
     from cli.commands.check_dispatch import help_text
 
     assert len(help_text("a|b|c")) <= MAX_CHECK_HELP_CHARS
+
+
+@pytest.mark.parametrize(
+    ("argv", "expected"),
+    [
+        (["ready", "--help"], ("cwd or -P", "[TRIAGE]", "suggested next pickup")),
+        (["list", "--help"], ("cwd or -P", "ordered by priority", "completed_at")),
+        (["vcs", "publication", "--help"], ("--hold and --release change it",)),
+    ],
+)
+def test_help_answers_what_testers_asked(argv: list[str], expected: tuple[str, ...]) -> None:
+    result = runner.invoke(app, argv, terminal_width=200)
+
+    assert result.exit_code == 0
+    output = " ".join(result.output.split())
+    for text in expected:
+        assert text in output
+    assert "Read-only lightweight" not in output
+
+
+def test_task_rows_show_the_full_status() -> None:
+    from cli._formatters_compact import format_compact_task
+
+    row = format_compact_task({"id": "task-1", "project_id": "summitflow", "status": "completed", "title": "x"})
+
+    assert " completed " in row
+
+
+def test_rebuild_help_says_it_deploys_committed_head() -> None:
+    result = runner.invoke(app, ["service", "rebuild", "--help"], terminal_width=200)
+
+    assert result.exit_code == 0
+    assert "committed local HEAD (st commit first; no push needed)" in " ".join(result.output.split())

@@ -837,7 +837,7 @@ class TestOwnershipCommand:
 
         assert result.exit_code == 0
         assert "OWNERSHIP[writers=1|readers=0]" in result.output
-        assert "WRITE summitflow | task-1 | coder | sess-1 | kind=scoped" in result.output
+        assert "WRITE summitflow | task=task-1 | agent=coder | session=sess-1 | kind=scoped" in result.output
         assert "branch=task-1/main" in result.output
         assert "cwd=/tmp/task-1" in result.output
         assert "paths=backend/app/foo.py" in result.output
@@ -909,7 +909,7 @@ class TestOwnershipCommand:
 
         assert result.exit_code == 0
         assert "OWNERSHIP[writers=0|readers=1]" in result.output
-        assert "READ agent-hub | - | ? | sess-reader | paths=backend/app/api/tasks.py | scope=observed_read" in result.output
+        assert "READ agent-hub | task=- | agent=unknown | session=sess-reader | paths=backend/app/api/tasks.py | scope=observed_read" in result.output
         assert "WRITE" not in result.output
 
 

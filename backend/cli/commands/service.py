@@ -210,7 +210,7 @@ def status(
         typer.Option("--project", "-P", help="Project id. Alias for PROJECT."),
     ] = None,
 ) -> None:
-    """Show managed service status through the canonical service path."""
+    """Show managed service states and the live release's source commit."""
     if project_arg and project_option and project_arg != project_option:
         output_error("Pass project either as PROJECT or --project/-P, not both.")
         raise typer.Exit(1)
@@ -236,6 +236,8 @@ def status(
         if services.manual_workers and not services.deployment:
             parts.append("manual: " + " ".join(f"{svc}:{service_ops.service_state(svc)}"
                                                for svc in services.manual_workers))
+        if not services.deployment and (release := service_release.current_release_commit(project_id)):
+            parts.append(f"release={release[:12]}")
         location = f" [{services.deployment.label}]" if services.deployment else ""
         print(f"{services.project_id:<15}{location} {' '.join(parts)}")
     raise typer.Exit(1 if errors else 0)
@@ -487,7 +489,7 @@ def rebuild(
         typer.Option("--sha", help="Full commit id to deploy: with --source-repo it is read from the mirror; for a runtime_user project it replaces the checkout's main"),
     ] = None,
 ) -> None:
-    """Build, migrate, restart, and health-check a project."""
+    """Build, migrate, restart, and health-check a project from its committed local HEAD (st commit first; no push needed)."""
     services = _load(project)
     _require_local_build(services)
     from ..lib import coord

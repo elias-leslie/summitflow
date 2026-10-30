@@ -50,7 +50,7 @@ def publication_status(
     release: Annotated[bool, typer.Option("--release", help="Clear a publication hold")] = False,
     reobserve: Annotated[bool, typer.Option("--reobserve", help="Re-record the newest retained publication receipt against repair findings")] = False,
 ) -> None:
-    """Read-only lightweight startup status, without a network CI wait."""
+    """Show publication status without a network CI wait; --mode, --hold and --release change it."""
     from app.services.publication_health import (
         format_publication_health,
         get_project_publication_health,

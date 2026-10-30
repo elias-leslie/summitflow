@@ -11,7 +11,7 @@ from typer.testing import CliRunner
 
 from app.tasks import backup_offsite, backup_offsite_restore, backup_overview, backup_run
 from cli.commands import backup
-from cli.commands.backup_formatters import format_size, render_status
+from cli.commands.backup_formatters import ago, format_size, render_status
 
 runner = CliRunner()
 NOW = datetime(2026, 10, 26, 12, 0, tzinfo=UTC)
@@ -74,6 +74,13 @@ def test_status_renders_without_drive_data() -> None:
     text = render_status(overview, NOW)
     assert "Last good run: never" in text
     assert "Old backups" not in text
+
+
+def test_ago_uses_singular_for_one_unit() -> None:
+    assert ago((NOW - timedelta(hours=1)).isoformat(), NOW) == "1 hour ago"
+    assert ago((NOW - timedelta(hours=21)).isoformat(), NOW) == "21 hours ago"
+    assert ago((NOW - timedelta(minutes=1)).isoformat(), NOW) == "1 minute ago"
+    assert ago((NOW - timedelta(days=3)).isoformat(), NOW) == "3 days ago"
 
 
 def test_format_size() -> None:

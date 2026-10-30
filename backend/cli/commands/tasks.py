@@ -84,7 +84,10 @@ def list_tasks(
     json_output: Annotated[bool, typer.Option("--json", help="Return task objects as JSON.")] = False,
     compact: Annotated[bool | None, typer.Option("--compact/--no-compact")] = None,
 ) -> None:
-    """List tasks with optional filters."""
+    """List tasks in the current project (cwd or -P) with optional filters.
+
+    Rows are ordered by priority, then newest created; --json adds created_at and completed_at.
+    """
     from .tasks_list import list_tasks_command
 
     if compact is not None:
@@ -107,7 +110,11 @@ def ready(
     limit: Annotated[int, typer.Option("--limit")] = 50,
     blocked: Annotated[bool, typer.Option("--blocked", help="Show pending tasks with incomplete blocking dependencies instead.")] = False,
 ) -> None:
-    """List claimable tasks, or use --blocked to inspect blocked pending tasks."""
+    """List claimable tasks, or use --blocked to inspect blocked pending tasks.
+
+    Covers the current project (cwd or -P); the first row is the suggested next pickup.
+    [TRIAGE] marks a task with no objective or complexity yet: read it with st context and plan it before claiming.
+    """
     from .tasks_ready import list_ready_tasks
 
     try:
