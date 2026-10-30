@@ -2,6 +2,8 @@
 from __future__ import annotations
 
 import json
+import os
+import pwd
 import subprocess
 from pathlib import Path
 from typing import Any
@@ -216,7 +218,14 @@ def test_push_is_one_nightshift_notice_on_stdin(monkeypatch: pytest.MonkeyPatch)
     assert notice["push"] == "tray" and notice["actions"] == ["look-into"] and notice["primary"] == "look-into"
 
 
-@pytest.mark.skipif(alert._nightshift() is None, reason="nightshift is not installed here")
+def _installed_nightshift() -> str | None:
+    """The task's own lookup, else the account's real ~/.local/bin (isolated acceptance runs with another HOME)."""
+    found = alert._nightshift()
+    fallback = Path(pwd.getpwuid(os.getuid()).pw_dir) / ".local" / "bin" / "nightshift"
+    return found or (str(fallback) if fallback.is_file() else None)
+
+
+@pytest.mark.skipif(_installed_nightshift() is None, reason="nightshift is not installed here")
 def test_the_real_notice_passes_the_nightshift_contract(monkeypatch: pytest.MonkeyPatch, two_projects: None) -> None:
     """Conformance: the notice the nightly run really builds is accepted by nightshift push --json --dry-run."""
     pushed: list[dict[str, Any]] = []
@@ -224,6 +233,6 @@ def test_the_real_notice_passes_the_nightshift_contract(monkeypatch: pytest.Monk
     monkeypatch.setattr(alert, "scan_project", lambda root: many[root])
     monkeypatch.setattr(alert, "push_summary", lambda notice: pushed.append(notice) or True)
     alert.run_nightly_security_alert()
-    checked = subprocess.run([str(alert._nightshift()), "push", "--json", "--dry-run"], input=json.dumps(pushed[0]),
+    checked = subprocess.run([str(_installed_nightshift()), "push", "--json", "--dry-run"], input=json.dumps(pushed[0]),
                              capture_output=True, text=True, timeout=60, check=False)
     assert checked.returncode == 0, checked.stderr
