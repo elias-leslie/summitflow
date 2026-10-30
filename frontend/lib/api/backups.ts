@@ -90,8 +90,18 @@ export interface DriveBackups {
 }
 
 export interface OldBackups {
-  local_repository: { path: string | null; bytes: number | null }
-  drive_snapshots: { count: number | null; ages_out_after_days: number }
+  local_repository: {
+    path: string | null
+    bytes: number | null
+    /** Measured gone by the weekly verify job (its restic config file is missing). */
+    missing: boolean
+  }
+  drive_snapshots: {
+    count: number | null
+    ages_out_after_days: number
+    /** The backup run's window is so long the age-out is effectively paused. */
+    paused: boolean
+  }
   retired_sources: number
 }
 
@@ -257,10 +267,12 @@ export function parseBackupOverview(value: unknown): BackupOverview {
       local_repository: {
         path: str(repository.path),
         bytes: num(repository.bytes),
+        missing: repository.missing === true,
       },
       drive_snapshots: {
         count: num(snapshots.count),
         ages_out_after_days: num(snapshots.ages_out_after_days) ?? 30,
+        paused: snapshots.paused === true,
       },
       retired_sources: num(legacy.retired_sources) ?? 0,
     },

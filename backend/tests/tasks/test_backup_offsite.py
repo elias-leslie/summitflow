@@ -135,6 +135,26 @@ def _state(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, **values: Any) -> No
     (tmp_path / "state.json").write_text(json.dumps(values))
 
 
+def test_status_reports_the_age_out_window_the_run_used(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    # Only the backup service loads the env file that pauses the age-out; the API's own settings still say 30.
+    _state(tmp_path, monkeypatch)
+    monkeypatch.setattr(overview.backup_store, "list_sources", lambda: [])
+    monkeypatch.setattr(offsite, "get_settings", lambda: SimpleNamespace(backup_offsite_legacy_days=30))
+    assert overview.legacy_summary()["drive_snapshots"] | {"note": None} == {"count": None, "ages_out_after_days": 30, "paused": False, "note": None}
+    monkeypatch.setattr(offsite, "_snapshots", lambda repo: [{"id": "a", "time": "2026-09-01T10:00:00-04:00", "tags": ["source:aico"]}])
+    run_settings = SimpleNamespace(backup_offsite_legacy_days=36500, backup_offsite_keep_daily=7, backup_offsite_keep_weekly=4, backup_offsite_keep_monthly=6)
+    monkeypatch.setattr(offsite, "get_settings", lambda: run_settings)
+    state: dict[str, Any] = {"runs": [{"status": "ok"}] * 3}
+    offsite.retain(FakeRepo(SimpleNamespace(returncode=0)), state, now=NOW)  # type: ignore[arg-type]
+    assert state["legacy"] == {"drive_snapshots": 1, "ages_out_after_days": 36500}
+    offsite.write_state(state)
+    monkeypatch.setattr(offsite, "get_settings", lambda: SimpleNamespace(backup_offsite_legacy_days=30))
+    drive = overview.legacy_summary()["drive_snapshots"]
+    assert (drive["count"], drive["ages_out_after_days"], drive["paused"]) == (1, 36500, True)
+    _state(tmp_path, monkeypatch, legacy={"ages_out_after_days": 0})
+    assert overview.legacy_summary()["drive_snapshots"]["ages_out_after_days"] == 0  # a run that forgets everything says so
+
+
 def test_health_is_quiet_while_both_layers_are_current(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     _state(tmp_path, monkeypatch, last_success_at=(NOW - timedelta(hours=20)).isoformat(), last_status="ok", check={"failures": 1})
     monkeypatch.setattr(overview, "local_summary", lambda **_: {"enabled": True, "last_good_at": (NOW - timedelta(hours=3)).isoformat(), "last_run": {"status": "failed", "error": "slow"}})

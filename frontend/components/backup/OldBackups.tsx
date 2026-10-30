@@ -24,7 +24,7 @@ export function OldBackups({ legacy }: { legacy: Legacy }) {
   const days = drive.ages_out_after_days
   return (
     <CollapsibleSection
-      title="Old backups, ageing out"
+      title={drive.paused ? 'Old backups' : 'Old backups, ageing out'}
       summary="Left from the earlier per-project backups. Nothing writes to them any more."
     >
       <ul
@@ -32,16 +32,24 @@ export function OldBackups({ legacy }: { legacy: Legacy }) {
         data-testid="old-backups"
       >
         <Row title="Old backup copy on the T7">
-          {repo.path
-            ? `${repo.path}${repo.bytes ? `, ${formatBytes(repo.bytes)}` : ''}. `
-            : 'Size not measured yet. '}
-          Nothing writes to it, so you can delete it.
+          {repo.missing && repo.path ? (
+            `Not found at ${repo.path}.`
+          ) : (
+            <>
+              {repo.path
+                ? `${repo.path}${repo.bytes ? `, ${formatBytes(repo.bytes)}` : ''}. `
+                : 'Size not measured yet. '}
+              Nothing writes to it, so you can delete it.
+            </>
+          )}
         </Row>
         <Row title="Old copies on Google Drive">
           {drive.count === null
             ? 'Not counted yet. '
             : `${drive.count} ${drive.count === 1 ? 'copy' : 'copies'} left. `}
-          They are removed on their own after {days} days.
+          {drive.paused
+            ? 'They are kept: the age-out is paused.'
+            : `They are removed on their own after ${days} days.`}
         </Row>
         {legacy.retired_sources > 0 && (
           <Row title="Old per-project backups">

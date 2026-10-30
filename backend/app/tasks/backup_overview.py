@@ -33,6 +33,8 @@ OFFSITE_MISSING_AFTER = timedelta(hours=48)
 PROXMOX_MISSING_AFTER = timedelta(hours=48)
 CHECK_FAILURES_BEFORE_PROBLEM = 2  # the read-back runs weekly: two in a row
 TIMER = "summitflow-host-backup.timer"
+# An age-out window this long is a pause (the old snapshots are kept), not a schedule worth stating in days.
+AGE_OUT_PAUSED_DAYS = 3650
 
 
 def _parse(value: Any) -> datetime | None:
@@ -108,12 +110,16 @@ def legacy_summary() -> dict[str, Any]:
     state = offsite.read_state()
     legacy = state.get("legacy") or {}
     sources = [source for source in backup_store.list_sources() if not source.get("enabled")]
+    used = legacy.get("ages_out_after_days")  # what the last run used; absent before its first cleanup
+    days = used if isinstance(used, int) else offsite.get_settings().backup_offsite_legacy_days
+    paused = days >= AGE_OUT_PAUSED_DAYS
     return {
         "local_repository": {"path": legacy.get("local_repository_path"), "bytes": legacy.get("local_repository_bytes"),
                              "missing": bool(legacy.get("local_repository_missing")),
                              "note": "The old restic repository on the T7. Nothing writes to it any more; the owner can delete it."},
-        "drive_snapshots": {"count": legacy.get("drive_snapshots"), "ages_out_after_days": offsite.get_settings().backup_offsite_legacy_days,
-                            "note": "Per-project snapshots from before the daily job. They age out on their own."},
+        "drive_snapshots": {"count": legacy.get("drive_snapshots"), "ages_out_after_days": days, "paused": paused,
+                            "note": "Per-project snapshots from before the daily job. "
+                                    + ("The age-out is paused, so they are kept." if paused else "They age out on their own.")},
         "retired_sources": len(sources),
     }
 

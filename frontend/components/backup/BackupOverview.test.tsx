@@ -219,5 +219,43 @@ describe('OldBackups', () => {
     expect(
       screen.getByText(/removed on their own after 30 days/),
     ).toBeInTheDocument()
+    expect(screen.getByText(/so you can delete it/)).toBeInTheDocument()
+  })
+
+  it('says the old T7 repository is not found instead of offering to delete it', () => {
+    const { legacy } = overview()
+    render(
+      <OldBackups
+        legacy={{
+          ...legacy,
+          local_repository: {
+            path: '/mnt/t7/restic',
+            bytes: null,
+            missing: true,
+          },
+        }}
+      />,
+    )
+    expect(screen.getByText('Not found at /mnt/t7/restic.')).toBeInTheDocument()
+    expect(screen.queryByText(/delete it/)).toBeNull()
+  })
+
+  it('says the old Drive copies are kept while the age-out is paused', () => {
+    const legacy = parseBackupOverview({
+      ...overview(),
+      legacy: {
+        local_repository: { path: '/mnt/t7/restic', bytes: 2 ** 30 },
+        drive_snapshots: {
+          count: 143,
+          ages_out_after_days: 36500,
+          paused: true,
+        },
+        retired_sources: 0,
+      },
+    }).legacy
+    render(<OldBackups legacy={legacy} />)
+    expect(screen.getByText('Old backups')).toBeInTheDocument()
+    expect(screen.getByText(/kept: the age-out is paused/)).toBeInTheDocument()
+    expect(screen.queryByText(/36500/)).toBeNull()
   })
 })

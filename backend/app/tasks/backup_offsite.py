@@ -508,7 +508,8 @@ def retain(repo: Repo, state: dict[str, Any], *, now: datetime) -> dict[str, Any
         if old.returncode:
             record["legacy_error"] = _last_error(old)
     record["snapshots"] = len(listing)
-    state["legacy"] = measure_legacy(listing, state.get("legacy"))
+    # Status reads the window from here: the run's env file can pause the age-out where the API's settings can't see it.
+    state["legacy"] = {**measure_legacy(listing, state.get("legacy")), "ages_out_after_days": settings.backup_offsite_legacy_days}
     return {**maintenance, **record}
 
 

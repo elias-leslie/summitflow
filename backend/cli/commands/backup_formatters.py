@@ -104,7 +104,9 @@ def _old_section(legacy: Mapping[str, Any]) -> list[str]:
         lines.append(f"  T7 restic repository: not found at {repo['path']}.")
     elif repo.get("path"):
         lines.append(f"  T7 restic repository: {repo['path']}, {format_size(repo.get('bytes'))}. You can delete it.")
-    if drive.get("count"):
+    if drive.get("count") and drive.get("paused"):
+        lines.append(f"  Google Drive: {drive['count']} per-project snapshots, kept (the age-out is paused)")
+    elif drive.get("count"):
         lines.append(f"  Google Drive: {drive['count']} per-project snapshots, gone {drive.get('ages_out_after_days')} days after the change")
     return lines if len(lines) > 1 else []
 
