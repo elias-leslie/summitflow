@@ -699,6 +699,32 @@ def test_workspace_dependency_discovery_borrows_only_locked_ignored_packages(tmp
         _dependency_roots(tmp_path)
 
 
+def test_workspace_dependency_discovery_borrows_linked_npm_workspace_modules(tmp_path: Path):
+    """aico: an npm workspace package outside packages/ keeps its own node_modules; the clone needs it."""
+    from cli.commands.check_native import _node_modules_manifest
+    from cli.commands.done_task_acceptance import _dependency_roots
+
+    git(tmp_path, "init", "-q", "--initial-branch=main")
+    (tmp_path / ".gitignore").write_text("node_modules/\n")
+    (tmp_path / "package-lock.json").write_text("{}\n")
+    daemon = tmp_path / "tether"
+    (daemon / "node_modules" / "esbuild").mkdir(parents=True)
+    (daemon / "node_modules" / "esbuild" / "package.json").write_text('{"name":"esbuild"}\n')
+    (daemon / "package.json").write_text('{"name":"tether"}\n')
+    (tmp_path / "web").mkdir()
+    (tmp_path / "web" / "package.json").write_text('{"name":"web"}\n')  # linked, but no node_modules of its own
+    (tmp_path / "node_modules" / "@scope").mkdir(parents=True)
+    (tmp_path / "node_modules" / "tether").symlink_to("../tether", target_is_directory=True)
+    (tmp_path / "node_modules" / "@scope" / "web").symlink_to("../../web", target_is_directory=True)
+    git(tmp_path, "add", ".")
+
+    roots = _dependency_roots(tmp_path)
+    assert roots == [tmp_path / "node_modules", daemon / "node_modules"]
+    # The manifest the plan binds counts the workspace's modules only where they exist.
+    manifest = _node_modules_manifest(tmp_path, tmp_path / "node_modules", commit=None)
+    assert [entry["workspace_modules"] for entry in manifest if "workspace_modules" in entry] == ["tether"]
+
+
 @pytest.mark.parametrize("invalid", ["tracked", "unignored", "escaped"])
 def test_workspace_dependency_discovery_rejects_unprepared_package_roots(tmp_path: Path, invalid: str):
     from cli.commands.done_task_acceptance import _dependency_roots

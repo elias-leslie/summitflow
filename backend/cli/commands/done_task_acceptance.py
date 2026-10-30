@@ -91,6 +91,28 @@ def _preserve_equivalent_modes(repo: Path, source: Path, mode_entries: dict[str,
         candidate.chmod(permissions)
 
 
+def _linked_workspace_modules(repo: Path) -> set[str]:
+    """node_modules of workspace packages the root node_modules links to (aico's tether/, web/server/).
+
+    The native plan binds them through those links, so a clone without them
+    records a different prepared environment than the checkout it is checked against.
+    """
+    modules = repo / "node_modules"
+    if not modules.is_dir():
+        return set()
+    resolved = repo.resolve()
+    links = [*modules.iterdir(), *(scoped for scope in modules.glob("@*")
+                                   if scope.is_dir() and not scope.is_symlink() for scoped in scope.iterdir())]
+    found: set[str] = set()
+    for link in links:
+        if not link.is_symlink():
+            continue
+        target = link.resolve()
+        if target != resolved and target.is_relative_to(resolved) and (target / "node_modules").is_dir():
+            found.add((target / "node_modules").relative_to(resolved).as_posix())
+    return found
+
+
 def _dependency_roots(repo: Path) -> list[Path]:
     """Borrow only existing local prepared dependency directories, never source."""
     from cli.commands.check_execution import read_tool_paths
@@ -100,6 +122,7 @@ def _dependency_roots(repo: Path) -> list[Path]:
     # Workspace source remains in the accepted tree, but resolves peers from
     # its own prepared dependency directory (not the app's node_modules).
     workspace_dependencies = {path.relative_to(repo).as_posix() for path in repo.glob("packages/*/node_modules")}
+    workspace_dependencies.update(_linked_workspace_modules(repo))
     candidates.update(workspace_dependencies)
     declared = list(read_tool_paths(repo).values())
     native = native_plan(repo)
