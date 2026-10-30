@@ -89,11 +89,13 @@ def test_reserved_lab_asset_follows_the_nightshift_registry(tmp_path):
         {"id": "neri-lab", "vmid": 120, "presence": "intermittent", "tier": "lab", "kind": "vm"},
         {"id": "st-browser", "vmid": 100, "presence": "always_on", "tier": "standard", "kind": "vm"},
         {"id": "ubuntu-2404-cloud", "vmid": 9000, "presence": "parked", "tier": "lab", "kind": "template"},
+        {"vmid": 130, "presence": "parked", "kind": "vm"},
     ])
     assert proxmox.reserved_lab_asset("112", reg) == "ominull-target-linux"
     assert proxmox.reserved_lab_asset("120", reg) == "neri-lab"
     assert proxmox.reserved_lab_asset("100", reg) is None
     assert proxmox.reserved_lab_asset("9000", reg) is None
+    assert proxmox.reserved_lab_asset("130", reg) == "130"  # no asset id: the registry's own vmid names it
     assert proxmox.reserved_lab_asset("112", tmp_path / "missing.json") is None
 
 
@@ -113,6 +115,19 @@ def test_start_declares_a_parked_vm_after_starting_it(monkeypatch, tmp_path):
     ]
     pve.start("100")  # not in the registry: no declaration
     assert calls[-1] == "/nodes/node/qemu/100/status/start" and len(calls) == 3
+
+
+def test_start_without_a_reason_declares_the_registry_vmid(monkeypatch, tmp_path):
+    reg = tmp_path / "registry.json"
+    write_registry(reg, [{"vmid": 130, "presence": "parked", "kind": "vm"}])
+    monkeypatch.setattr(proxmox, "NIGHTSHIFT_REGISTRY", reg)
+    calls = []
+    monkeypatch.setattr(proxmox.subprocess, "run", lambda cmd, **_: calls.append(cmd) or subprocess.CompletedProcess(cmd, 0, "", ""))
+    pve = client()
+    monkeypatch.setattr(pve, "request", lambda *_, **__: "UPID:x")
+    monkeypatch.setattr(pve, "wait_task", lambda upid, **_: None)
+    pve.start("130")
+    assert calls == [["nightshift", "lab-use", "start", "130", "--hours", "4", "--reason", "st vm start 130"]]
 
 
 def test_start_fails_open_when_nightshift_is_unavailable(monkeypatch, tmp_path, capsys):

@@ -17,7 +17,7 @@ from typer.testing import CliRunner
 from cli.commands import lease as lease_command
 from cli.commands._abandon_helpers import get_dirty_files, split_owned_dirty_files
 from cli.commands.done_task_scope import closeout_paths
-from cli.lib import leases
+from cli.lib import coord, leases
 
 
 def _git(repo: Path, *args: str) -> str:
@@ -89,6 +89,15 @@ def test_done_refuses_a_path_another_session_wrote_even_without_a_lease(repo, mo
     _as(monkeypatch, "my-session-0001")
     with pytest.raises(ValueError, match="also written by another session"):
         closeout_paths(str(repo), "task-1", {}, project_id="proj", paths=("mine/a.py",))
+
+
+def test_foreign_writers_match_the_real_path_behind_a_symlinked_checkout(repo, tmp_path, monkeypatch):
+    linked = tmp_path / "linked"
+    linked.symlink_to(repo)
+    _as(monkeypatch, "other-session-1")
+    leases.record_writes("proj", [str(repo / "mine" / "a.py")])
+    _as(monkeypatch, "my-session-0001")
+    assert list(coord.foreign_writers("proj", linked, ["mine/a.py", "mine/b.py"])) == ["mine/a.py"]
 
 
 def test_done_accepts_an_explicit_path_with_only_an_unknown_writer(repo, monkeypatch):

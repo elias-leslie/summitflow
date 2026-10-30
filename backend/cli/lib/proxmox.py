@@ -130,7 +130,7 @@ def reserved_lab_asset(vmid: str, registry: Path | None = None) -> str | None:
     for row in rows:
         same = isinstance(row, dict) and str(row.get("vmid")) == str(vmid) and row.get("kind") != "template"
         if same and (row.get("presence") == "parked" or row.get("tier") == "lab"):
-            return str(row.get("id") or vmid)
+            return str(row.get("id") or row.get("vmid"))
     return None
 
 
@@ -153,7 +153,8 @@ def declare_if_lab(vmid: str, hours: float, reason: str) -> None:
     """Only a start this call made is declared: a refused start, or a VM someone else already runs, must not get a
     declaration naming this session (it would hide their undeclared run on the board and replace their claim)."""
     if asset := reserved_lab_asset(vmid):
-        declare_lab_use(asset, hours, reason or f"st vm start {vmid}")
+        # A registry match means a numeric vmid; int() keeps API-supplied text out of the nightshift argv.
+        declare_lab_use(asset, hours, reason or f"st vm start {int(vmid)}")
 
 
 def _read_env_file(path: Path) -> dict[str, str]:

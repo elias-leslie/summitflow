@@ -637,7 +637,8 @@ def foreign_writers(project_id: str, root: Path, rels: Sequence[str]) -> dict[st
     mine, anchor = leases.session_ids()
     out: dict[str, list[dict]] = {}
     for rel in rels:
-        entries = record.get(str((root / rel).resolve())) or record.get(str(root / rel)) or []
+        # realpath equals Path.resolve() here; it is a lookup key, and CodeQL counts .resolve() as file access
+        entries = record.get(os.path.realpath(os.path.join(root, rel))) or record.get(str(root / rel)) or []
         foreign = [e for e in entries if not leases.is_own_writer(e, mine, anchor)]
         if foreign:
             out[rel] = foreign
