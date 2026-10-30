@@ -43,16 +43,15 @@ export function NotesButton({ className, popOutUrl = '/notes' }: { className?: s
 
         // Horizontal: open leftward if button is on the right, rightward if on the left
         const leftOffset = rect.left < vw / 2 ? Math.max(rect.left, GAP) : null;
+        const rightOffset = Math.max(vw - rect.right, GAP);
         if (leftOffset !== null) {
             style.left = leftOffset;
         } else {
-            style.right = Math.max(vw - rect.right, GAP);
+            style.right = rightOffset;
         }
 
-        // Clamp panel width if it would overflow viewport
-        if (leftOffset !== null && leftOffset + PANEL_W > vw - GAP) {
-            style.width = vw - leftOffset - GAP;
-        }
+        // Clamp panel width to the viewport on the side it opens toward (phones are narrower than the panel)
+        style.width = Math.min(PANEL_W, vw - (leftOffset ?? rightOffset) - GAP);
 
         setPanelStyle(style);
     }, [open]);

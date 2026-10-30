@@ -83,7 +83,9 @@ export function useNoteEditorState({ note, onDeleted }: UseNoteEditorStateOption
 
     const save = useCallback((updates: { title?: string; content?: string; tags?: string[]; pinned?: boolean }) => {
         if (debounceRef.current) clearTimeout(debounceRef.current);
-        const payload = { noteId: note.id, data: updates };
+        // Merge into the unsent save: a title typed just before the body must not be dropped.
+        const unsent = pendingRef.current?.noteId === note.id ? pendingRef.current.data : {};
+        const payload = { noteId: note.id, data: { ...unsent, ...updates } };
         pendingRef.current = payload;
         debounceRef.current = setTimeout(() => {
             pendingRef.current = null;
