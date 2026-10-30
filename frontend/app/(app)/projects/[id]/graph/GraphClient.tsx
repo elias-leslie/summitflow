@@ -36,6 +36,16 @@ function stat(label: string, value: number | string): React.ReactElement {
   )
 }
 
+// Diagnostic codes from code_intelligence.graphify_tools.graphify_status.
+const DIAGNOSTIC_LABELS: Record<string, string> = {
+  graph_missing: 'No graph built yet',
+  detect_missing: 'Graph is empty and its file scan is missing',
+  graph_stale: 'Files changed since the last build',
+  semantic_sources_not_extracted: 'Docs and media not extracted yet',
+  html_uses_external_cdn: 'Graph page loads scripts from a CDN',
+  graph_unreadable: "Graph file can't be read",
+}
+
 function graphUrl(status: GraphifyStatus): string | null {
   if (!status.html_url) return null
   const stamp = status.html_updated_at ?? status.graph_updated_at ?? ''
@@ -51,7 +61,14 @@ export function GraphClient(): React.ReactElement {
   const [secondary, setSecondary] = useState('')
   const [budget, setBudget] = useState(1200)
 
-  const { data: status, isLoading } = useQuery({
+  const {
+    data: status,
+    isLoading,
+    isError,
+    error,
+    isFetching,
+    refetch,
+  } = useQuery({
     queryKey: ['graphify-status', projectId],
     queryFn: () => fetchGraphifyStatus(projectId),
   })
@@ -83,6 +100,32 @@ export function GraphClient(): React.ReactElement {
       toast.error(getErrorMessage(error, 'Graph command failed'))
     },
   })
+
+  if (isError && !status) {
+    return (
+      <div className="flex h-full items-center justify-center p-4">
+        <div
+          role="alert"
+          className="max-w-md rounded-md border border-rose-500/20 bg-rose-500/10 p-5 text-center"
+        >
+          <div className="text-sm font-medium text-rose-100">
+            Couldn't load the graph status
+          </div>
+          <div className="mt-2 text-sm text-rose-100/70">
+            {getErrorMessage(error, 'The graph service did not answer.')}
+          </div>
+          <button
+            type="button"
+            onClick={() => void refetch()}
+            disabled={isFetching}
+            className="mt-4 inline-flex h-9 items-center gap-2 rounded-md border border-slate-700/80 px-3 text-sm text-slate-200 transition-colors hover:border-slate-500 disabled:opacity-60"
+          >
+            {isFetching ? 'Retrying...' : 'Try again'}
+          </button>
+        </div>
+      </div>
+    )
+  }
 
   if (isLoading || !status) {
     return (
@@ -164,9 +207,10 @@ export function GraphClient(): React.ReactElement {
             {status.diagnostics.map((diagnostic) => (
               <span
                 key={diagnostic}
-                className="rounded-full border border-amber-500/20 bg-amber-500/10 px-2 py-0.5 font-mono text-[11px] text-amber-200"
+                title={diagnostic}
+                className="rounded-full border border-amber-500/20 bg-amber-500/10 px-2 py-0.5 text-[11px] text-amber-200"
               >
-                {diagnostic}
+                {DIAGNOSTIC_LABELS[diagnostic] ?? diagnostic}
               </span>
             ))}
           </div>
@@ -179,6 +223,7 @@ export function GraphClient(): React.ReactElement {
           }}
         >
           <select
+            aria-label="Graph command"
             value={mode}
             onChange={(event) => {
               setMode(event.target.value as GraphifyCommandMode)
@@ -191,6 +236,13 @@ export function GraphClient(): React.ReactElement {
             <option value="explain">Explain</option>
           </select>
           <input
+            aria-label={
+              mode === 'query'
+                ? 'Question'
+                : mode === 'path'
+                  ? 'Source node'
+                  : 'Node'
+            }
             value={primary}
             onChange={(event) => setPrimary(event.target.value)}
             placeholder={
@@ -203,6 +255,7 @@ export function GraphClient(): React.ReactElement {
             className="h-9 min-w-0 rounded-md border border-slate-700/80 bg-slate-950 px-3 text-sm text-slate-200 outline-none placeholder:text-slate-600"
           />
           <input
+            aria-label="Target node"
             value={secondary}
             onChange={(event) => setSecondary(event.target.value)}
             disabled={mode !== 'path'}
@@ -210,6 +263,8 @@ export function GraphClient(): React.ReactElement {
             className="h-9 min-w-0 rounded-md border border-slate-700/80 bg-slate-950 px-3 text-sm text-slate-200 outline-none placeholder:text-slate-600 disabled:opacity-40"
           />
           <input
+            aria-label="Answer budget (tokens)"
+            title="Answer budget (tokens)"
             type="number"
             min={100}
             max={8000}
