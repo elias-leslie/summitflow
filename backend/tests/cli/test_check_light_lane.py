@@ -98,31 +98,37 @@ def test_single_file_run_records_its_own_scope_and_keeps_others(project: Path, m
 def test_fast_type_check_does_not_wait_behind_heavy_suite(
     project: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str],
 ) -> None:
-    """Timing demonstration: a held heavy lane delays the unmeasured run, not the measured one."""
-    _admitted(monkeypatch)
+    """A held heavy lane makes the unmeasured run wait; the measured one is admitted on its first try.
+
+    Every wait in the admission loop sleeps, so counting sleeps tells "admitted at once" from "queued" without
+    measuring time. The first sleep ends the heavy suite, so a run that queues is admitted on its next try."""
+    admitted = _admitted(monkeypatch)
     held, release = threading.Event(), threading.Event()
+    waits: list[float] = []
 
     def heavy_suite() -> None:
         with guard.heavy_work("check pytest", project="other"):
             held.set()
             release.wait(5)
 
-    def timed(args: list[str]) -> float:
-        capsys.readouterr()
-        check._run_tool("types", {"binary": "ty"}, args)
-        line = capsys.readouterr().out.splitlines()[-1]
-        return float(line.split("|queue_ms:")[1].split("|")[0])
+    holder = threading.Thread(target=heavy_suite)
+
+    def wait(duration: float) -> None:
+        waits.append(duration)
+        release.set()
+        holder.join(5)
 
     _store(project).write_text(json.dumps({"types:file": FAST}))
-    holder = threading.Thread(target=heavy_suite)
     holder.start()
     try:
         assert held.wait(5)
-        assert timed(["app/one.py"]) < 250  # light lane: admitted at once
-        threading.Timer(0.5, release.set).start()
-        started = time.monotonic()
-        heavy_queue_ms = timed(["app/one.py", "app/two.py"])  # heavy: queues until the suite ends
-        assert heavy_queue_ms >= 400 and time.monotonic() - started >= 0.4
+        monkeypatch.setattr(guard.time, "sleep", wait)
+        check._run_tool("types", {"binary": "ty"}, ["app/one.py"])
+        assert admitted == ["light"] and waits == []  # light lane: admitted at once
+        capsys.readouterr()
+        check._run_tool("types", {"binary": "ty"}, ["app/one.py", "app/two.py"])
+        assert admitted == ["light", "heavy"] and waits  # heavy: queued until the suite ended
+        assert "Waiting for shared heavy-work lane" in capsys.readouterr().err
     finally:
         release.set()
         holder.join(5)
@@ -158,19 +164,30 @@ def test_cleanroom_takes_light_class_only_after_a_cheap_identical_run(project: P
 def test_amber_gate_holds_heavy_but_not_measured_light(
     project: Path, monkeypatch: pytest.MonkeyPatch, tmp_path: Path,
 ) -> None:
-    """Real admission path with a stubbed Nightshift file: amber closes heavy admission only."""
+    """Amber in a stubbed Nightshift file closes heavy admission (real decision); measured light never asks."""
     gate = tmp_path / "admission.json"
     gate.write_text(json.dumps({"v": 1, "state": "amber", "admit": False, "reason": "Memory is tight",
                                 "expires_at": time.time() + 600}))
     monkeypatch.setattr(guard, "NIGHTSHIFT_ADMISSION", gate)
-    monkeypatch.setattr(guard, "admission_state", _REAL_ADMISSION_STATE)
-    _admitted(monkeypatch)
+    admitted = _admitted(monkeypatch)
     monkeypatch.setattr(check, "_run_on_ci_runner", lambda *_args: None)
     _store(project).write_text(json.dumps({"types:project": FAST}))
-    started = time.monotonic()
+
+    def light_gate(now: float | None = None) -> guard.Admission:
+        pytest.fail("measured light run asked for host admission")
+
+    monkeypatch.setattr(guard, "admission_state", light_gate)
     check._run_tool("types", {"binary": "ty"}, ["app/one.py", "app/two.py"])  # measured light: no gate
-    assert time.monotonic() - started < 0.9
-    finished = threading.Event()
+    assert admitted == ["light"]
+    refused, finished = threading.Event(), threading.Event()
+
+    def heavy_gate(now: float | None = None) -> guard.Admission:
+        decided = _REAL_ADMISSION_STATE(now)
+        if not decided.admit:
+            refused.set()
+        return decided
+
+    monkeypatch.setattr(guard, "admission_state", heavy_gate)
 
     def unmeasured() -> None:
         with guard.heavy_work("check pytest", project="other"):
@@ -178,7 +195,7 @@ def test_amber_gate_holds_heavy_but_not_measured_light(
 
     worker = threading.Thread(target=unmeasured, daemon=True)
     worker.start()
-    assert not finished.wait(1.3)  # heavy still waits for host admission
+    assert refused.wait(5) and not finished.is_set()  # heavy still waits for host admission
     gate.write_text(json.dumps({"v": 1, "state": "green", "admit": True, "reason": "ok",
                                 "expires_at": time.time() + 600}))
     assert finished.wait(5)

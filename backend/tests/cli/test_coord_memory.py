@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import json
-import os
 import time
 from pathlib import Path
 
@@ -215,10 +214,19 @@ def test_broken_nightshift_or_state_never_raises(host):
     assert take("cc:aaaaaa", host) is None
 
 
-def test_hot_path_is_cheap(host):
+def test_unchanged_hot_path_spawns_locks_and_writes_nothing(host, monkeypatch):
+    """What keeps the per-prompt hook cheap: with nothing new it runs no subprocess, never takes the lock shared by
+    every agent, and leaves its state file as it was."""
     assert take("cc:aaaaaa", host) is None
-    start = time.perf_counter()
-    for _ in range(200):
+    state = host.tmp / "state" / "mem-cc_aaaaaa.json"
+    before = state.stat()
+
+    def refuse(*_args, **_kwargs):
+        pytest.fail("the unchanged hot path ran a subprocess or opened the shared lock")
+
+    monkeypatch.setattr(coord_memory.subprocess, "run", refuse)
+    monkeypatch.setattr(coord_memory, "open", refuse, raising=False)
+    for _ in range(3):
         assert coord_memory.check("cc:aaaaaa", paths=host.paths()) is None
-    assert (time.perf_counter() - start) / 200 < 0.005
-    assert os.path.exists(host.tmp / "state" / "mem-cc_aaaaaa.json")
+    after = state.stat()
+    assert (after.st_ino, after.st_mtime_ns) == (before.st_ino, before.st_mtime_ns)
