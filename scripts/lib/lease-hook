@@ -7,9 +7,9 @@
 #   lease-hook session    SessionStart: register identity; one stdout line if a reset left work open
 #   lease-hook bash-pre   PreToolUse shell: snapshot the dirty files of the cwd repo and of sibling repos
 #                         the command names (pure shell)
-#   lease-hook bash-post  PostToolUse(Failure) shell: record written/deleted paths in writer sets (other repos
-#                         and background commands as unknown); one warning line if the command wrote a
-#                         foreign-leased file; one additionalContext line when a gh/git push error shows
+#   lease-hook bash-post  PostToolUse(Failure) shell: record written/deleted paths in writer sets (other repos,
+#                         background commands, and writes while another session's shell ran in the repo as
+#                         unknown); one warning line if the command wrote a foreign-leased file; one additionalContext line when a gh/git push error shows
 #                         GitHub's fine-grained-PAT 403
 # Silent when nothing overlaps.
 mode="${1:-edit}"
@@ -64,15 +64,16 @@ if [ "$mode" = bash-pre ] || [ "$mode" = bash-post ]; then
     # Pure shell on the hot path (no Python start per command); Python only when a value is escaped.
     if sid=$(field session_id) && cwd=$(field cwd); then
         tid=$(field tool_use_id) || tid=$(field toolCallId) || tid=""
-        key="$sid-$tid"
     else
-        { IFS= read -r key; IFS= read -r cwd; } < <("$py" -I -c '
+        { IFS= read -r sid; IFS= read -r tid; IFS= read -r cwd; } < <("$py" -I -c '
 import json, sys
 d = json.loads(sys.stdin.read() or "{}")
-print("%s-%s" % (d.get("session_id") or "", d.get("tool_use_id") or d.get("toolCallId") or ""))
+print(d.get("session_id") or "")
+print(d.get("tool_use_id") or d.get("toolCallId") or "")
 print(d.get("cwd") or "")' <<<"$input" 2>/dev/null)
     fi
-    key=$(printf '%s' "$key" | tr -c 'A-Za-z0-9_.-' '_')
+    own_prefix=$(printf '%s-' "$sid" | tr -c 'A-Za-z0-9_.-' '_')
+    key=$(printf '%s-%s' "$sid" "$tid" | tr -c 'A-Za-z0-9_.-' '_')
     [ -n "$cwd" ] && [ -n "$key" ] || exit 0
     dir="${XDG_RUNTIME_DIR:-/tmp}/st-lease-bash"
     mkdir -p "$dir" 2>/dev/null || exit 0
@@ -107,7 +108,16 @@ print(d.get("cwd") or "")' <<<"$input" 2>/dev/null)
     written=$(comm -13 <(tail -n +$((ntops + 3)) "$dir/$key") <(printf '%s\n' "$after" | grep -v '^$') | cut -d' ' -f2-)
     rm -f "$dir/$key"
     [ -n "$written" ] || exit 0
-    top=${tops[0]} own="" other="" dirty=""
+    top=${tops[0]} own="" other="" dirty="" concurrent=0
+    # Another session's foreground shell still running in this repo writes files this diff cannot tell from ours.
+    for f in "$dir"/*; do
+        [ -f "$f" ] || continue
+        case "${f##*/}" in "$own_prefix"*) continue ;; esac
+        { IFS= read -r _; read -r obg ontops; } <"$f" 2>/dev/null || continue
+        [ "$obg" = 0 ] || continue
+        case "$ontops" in ''|*[!0-9]*) continue ;; esac
+        if sed -n "3,$((ontops + 2))p" "$f" 2>/dev/null | grep -qxF -- "$top"; then concurrent=1; break; fi
+    done
     while IFS= read -r line; do
         case "$line" in "$top/"*) own+="$line"$'\n' ;; ?*) other+="$line"$'\n' ;; esac
     done <<<"$written"
@@ -115,7 +125,8 @@ print(d.get("cwd") or "")' <<<"$input" 2>/dev/null)
         line=${line#* }
         case "$line" in "$top/"*) dirty+="$line"$'\n' ;; esac
     done <<<"$after"
-    export ST_HOOK_SINCE="$since" ST_HOOK_WRITTEN="$own" ST_HOOK_OTHER="$other" ST_HOOK_BG="$bg"
+    export ST_HOOK_SINCE="$since" ST_HOOK_WRITTEN="$own" ST_HOOK_OTHER="$other" ST_HOOK_BG="$bg" \
+        ST_HOOK_CONCURRENT="$concurrent"
     # The whole dirty set goes by file: it can outgrow the environment.
     dirty_file=$(mktemp "$dir/.dirty.XXXXXX" 2>/dev/null) && printf '%s' "$dirty" >"$dirty_file" \
         && export ST_HOOK_DIRTY_FILE="$dirty_file"
@@ -132,6 +143,7 @@ if "ST_HOOK_WRITTEN" in os.environ:
     payload["st_written"] = lines(os.environ["ST_HOOK_WRITTEN"])
     payload["st_other"] = lines(os.environ.get("ST_HOOK_OTHER", ""))
     payload["st_background"] = os.environ.get("ST_HOOK_BG") == "1"
+    payload["st_concurrent"] = os.environ.get("ST_HOOK_CONCURRENT") == "1"
     if os.environ.get("ST_HOOK_DIRTY_FILE"):
         try:
             with open(os.environ["ST_HOOK_DIRTY_FILE"]) as handle:

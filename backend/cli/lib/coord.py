@@ -666,19 +666,22 @@ def record_shell_writes(
     *,
     other: Sequence[str] = (),
     background: bool = False,
+    concurrent: bool = False,
     dirty: Sequence[str] | None = None,
 ) -> None:
     """Join the writer sets of paths a shell command wrote (deletions included).
 
     ``written`` is from the command's cwd repo and is recorded for this
     session, or as unknown for a background command whose writes continue
-    after the hook. ``other`` (writes in other repos the command named) is
+    after the hook, or for a ``concurrent`` one (another session's shell was
+    still running in the repo, so either may have written them). ``other`` (writes in other repos the command named) is
     recorded as unknown. ``dirty`` is the cwd repo's whole dirty set after the
     command: writer sets of paths no longer dirty there are dropped.
     """
     dirty_set = {os.path.realpath(p) for p in dirty} if dirty is not None else None
     groups: dict[str, tuple[Path, list[str], str | None]] = {}
-    for paths, reason in ((written, "background" if background else None), (other, "other-repo")):
+    own_reason = "background" if background else "concurrent" if concurrent else None
+    for paths, reason in ((written, own_reason), (other, "other-repo")):
         for path in paths:
             resolved = project_for_path(path)
             if resolved is None:
@@ -801,12 +804,14 @@ def dispatch_hook(payload: dict[str, Any]) -> tuple[str, str] | None:
         except ValueError:
             return None
         written = [str(p) for p in payload["st_written"]]
-        line = shell_write_warning(written, since)
+        concurrent = bool(payload.get("st_concurrent"))
+        # With another session's shell running in the repo, its writes look like this command's.
+        line = None if concurrent else shell_write_warning(written, since)
         with suppress(Exception):  # attribution is best effort; never fail the shell hook
             dirty = payload.get("st_dirty")
             record_shell_writes(
                 written, since, other=[str(p) for p in payload.get("st_other") or []],
-                background=bool(payload.get("st_background")),
+                background=bool(payload.get("st_background")), concurrent=concurrent,
                 dirty=[str(p) for p in dirty] if isinstance(dirty, list) else None,
             )
         return ("warn", line) if line else None

@@ -420,6 +420,34 @@ def test_real_hook_marks_background_and_other_repo_writes_unknown(repo, tmp_path
     assert _hook_writers(tmp_path, "siblingrepo") == {"new.txt": ["unknown(other-repo)"]}
 
 
+def test_real_hook_never_credits_another_sessions_running_shell_write(repo, tmp_path):
+    """Session A's command in the checkout ends while B's is still writing a file B leased: A must not own it."""
+    env = {"ST_COORD_HARNESS": "claude_code"}
+    target = str(repo / "backend" / "a.py")
+    lease = {"session_id": "bbbbbbbb-2222", "hook_event_name": "PreToolUse", "tool_name": "Edit",
+             "cwd": str(repo), "tool_input": {"file_path": target}}
+    assert _hook(lease, tmp_path, **env).returncode == 0
+    a = _shell(repo, "aaaaaaaa-1111", "toolu_a", "st check --quick")
+    b = _shell(repo, "bbbbbbbb-2222", "toolu_b", "sed -i s/1/2/ backend/a.py && pnpm test")
+    assert _hook(a, tmp_path, "bash-pre", **env).returncode == 0
+    assert _hook(b, tmp_path, "bash-pre", **env).returncode == 0
+    (repo / "backend" / "a.py").write_text("a = 2\n")
+    post = _hook({**a, "hook_event_name": "PostToolUse"}, tmp_path, "bash-post", **env)
+    assert (post.returncode, post.stderr) == (0, "")  # no "this shell command wrote" warning to A
+    assert _hook_writers(tmp_path) == {"a.py": ["cc:bbbbbb", "unknown(concurrent)"]}
+
+    assert _hook({**b, "hook_event_name": "PostToolUse"}, tmp_path, "bash-post", **env).returncode == 0
+
+    # A background shell of B's (a dev server) does not hide A's own writes.
+    bg = _shell(repo, "bbbbbbbb-2222", "toolu_bg", "pnpm dev", run_in_background=True)
+    assert _hook(bg, tmp_path, "bash-pre", **env).returncode == 0
+    a2 = _shell(repo, "aaaaaaaa-1111", "toolu_a2", "touch gen.json")
+    assert _hook(a2, tmp_path, "bash-pre", **env).returncode == 0
+    (repo / "gen.json").write_text('{"a": 1}\n')
+    assert _hook({**a2, "hook_event_name": "PostToolUse"}, tmp_path, "bash-post", **env).returncode == 0
+    assert _hook_writers(tmp_path)["gen.json"] == ["cc:aaaaaa"]
+
+
 def test_real_hook_edit_collision_reaches_the_model_and_exits_zero(repo, tmp_path):
     """The warning is PreToolUse additionalContext (stdout JSON): exit-0 stderr reaches no harness model."""
     target = str(repo / "backend" / "a.py")
