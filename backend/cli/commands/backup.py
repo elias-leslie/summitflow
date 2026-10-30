@@ -317,9 +317,9 @@ def old_list(
     legacy = backup_offsite.read_state().get("legacy") or {}
     if where == "local":
         typer.echo(f"This is the old restic repository on the T7: {legacy.get('local_repository_path') or '-'}, "
-                   f"{format_size(legacy.get('local_repository_bytes'))}. Nothing writes to it any more; the owner can delete it.")
+                   f"{format_size(legacy.get('local_repository_bytes'))}. Nothing writes to it any more.")
     else:
-        typer.echo("Old Google Drive snapshots from before the daily job. They age out on their own.")
+        typer.echo("Old Google Drive snapshots from before the daily job. They age out on their own; a source's newest copy stays until it has a newer one.")
     typer.echo(render_old_snapshots(rows))
 
 

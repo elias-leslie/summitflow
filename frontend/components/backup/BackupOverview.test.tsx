@@ -201,6 +201,51 @@ describe('DriveCard', () => {
     expect(screen.queryByText(/Failed/)).not.toBeInTheDocument()
   })
 
+  it('lists a powered-off guest with its kept copy, apart from the live sources', () => {
+    render(
+      <DriveCard
+        overview={overview({
+          offsite: {
+            jobs: {
+              workspaces: { status: 'ok', time: ago(14), bytes: 2 ** 30 },
+              'disk-b': { status: 'ok', time: ago(15), bytes: 5 },
+              'pve-vm-180': { status: 'ok', time: ago(24 * 60), bytes: 5 },
+              'pve-vm-130': { status: 'ok', time: ago(24 * 9), bytes: 5 },
+            },
+            offline: {
+              'pve-vm-180': {
+                guest: 'VM 180 apps',
+                offline_since: ago(24 * 59),
+                last_copy_at: ago(24 * 60),
+              },
+              'pve-vm-130': {
+                guest: 'VM 130 runner',
+                offline_since: null,
+                last_copy_at: ago(24 * 9),
+              },
+            },
+          },
+        })}
+      />,
+    )
+    expect(screen.getByText('VM 180 apps')).toBeInTheDocument()
+    expect(
+      screen.getByText(
+        /^Off since .*\. Its last copy is kept until it changes\.$/,
+      ),
+    ).toBeInTheDocument()
+    expect(
+      screen.getByText(
+        'Off. It may have run since its last copy without being copied.',
+      ),
+    ).toBeInTheDocument()
+    // The live sources' oldest copy is the disk's, not the guest that is off.
+    expect(
+      screen.getByText('1 source; the time is the oldest copy'),
+    ).toBeInTheDocument()
+    expect(screen.queryByText(/Not backed up/)).toBeNull()
+  })
+
   it('says when a copy is running', () => {
     render(
       <DriveCard
@@ -217,9 +262,14 @@ describe('OldBackups', () => {
     expect(screen.getAllByRole('button')).toHaveLength(1)
     expect(screen.getByText(/143 copies left/)).toBeInTheDocument()
     expect(
-      screen.getByText(/removed on their own after 30 days/),
+      screen.getByText(
+        /removed after 30 days, except a source's newest copy, which stays until it has a newer one/,
+      ),
     ).toBeInTheDocument()
-    expect(screen.getByText(/so you can delete it/)).toBeInTheDocument()
+    expect(
+      screen.getByText(/Nothing writes to it any more/),
+    ).toBeInTheDocument()
+    expect(screen.queryByText(/delete/)).toBeNull()
   })
 
   it('says the old T7 repository is not found instead of offering to delete it', () => {

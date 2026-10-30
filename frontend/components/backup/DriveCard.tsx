@@ -137,7 +137,7 @@ export function DriveCard({ overview }: { overview: BackupOverview }) {
           Last run: {drive.error}
         </p>
       )}
-      <DriveJobs rows={driveRows(drive.jobs)} />
+      <DriveJobs rows={driveRows(drive.jobs, drive.offline)} />
       {drive.repository && (
         <dl className="text-xs">
           <DetailValue label="Repository" value={drive.repository} mono />

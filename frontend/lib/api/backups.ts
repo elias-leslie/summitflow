@@ -44,6 +44,14 @@ export interface DriveJob {
   error: string | null
 }
 
+/** A guest the last daily run found powered off: it cannot change, so its last copy stays current. */
+export interface OfflineGuest {
+  guest: string
+  /** When it was first found off after a copy; null when it may have run since without being copied. */
+  offline_since: string | null
+  last_copy_at: string | null
+}
+
 export interface DriveCheck {
   status: string | null
   /** How much stored data one weekly check reads back, such as "500M". */
@@ -83,6 +91,7 @@ export interface DriveBackups {
   error: string | null
   running: { started_at: string | null } | null
   jobs: Record<string, DriveJob>
+  offline: Record<string, OfflineGuest>
   check: DriveCheck | null
   spot_restore: DriveTestRestore | null
   maintenance: DriveCleanup | null
@@ -208,6 +217,11 @@ function readDrive(row: Raw): DriveBackups {
       added_bytes: num(job.added_bytes),
       files: num(job.files),
       error: str(job.error),
+    })),
+    offline: record(row.offline, (guest) => ({
+      guest: str(guest.guest) ?? '',
+      offline_since: str(guest.offline_since),
+      last_copy_at: str(guest.last_copy_at),
     })),
     check: check && {
       status: str(check.status),

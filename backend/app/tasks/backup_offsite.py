@@ -27,7 +27,7 @@ import os
 import re
 import shutil
 import subprocess
-from collections.abc import Callable, Mapping, Sequence
+from collections.abc import Callable, Collection, Mapping, Sequence
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
@@ -354,6 +354,7 @@ class Job:
     filename: str = ""
     env: tuple[tuple[str, str], ...] = ()
     error: str = ""
+    guest: str = ""  # an offline guest's name, as "VM 180 apps"
 
 
 def project_tags() -> list[str]:
@@ -411,7 +412,7 @@ def source_jobs() -> list[Job]:
             except Exception as exc:
                 if isinstance(exc, ProxmoxGuestOffline):
                     # A powered-off guest cannot have changed; its last snapshot stays current.
-                    jobs.append(Job(name=source_id, kind="offline", tags=tags, required=False))
+                    jobs.append(Job(name=source_id, kind="offline", tags=tags, required=False, guest=exc.guest))
                 else:
                     jobs.append(Job(name=source_id, kind="stream", tags=tags, required=False, error=str(exc)[:300]))
                 continue
@@ -450,7 +451,7 @@ def run_job(repo: Repo, job: Job) -> dict[str, Any]:
     files = ["--exclude-file", str(repo.runtime.excludes), "--exclude-caches", "--exclude-if-present", ".nobackup"]
     head = {"name": job.name, "kind": job.kind, "required": job.required, "started_at": started.isoformat()}
     if job.kind == "offline":
-        return {**head, "status": "offline"}
+        return {**head, "status": "offline", "guest": job.guest or job.name}
     if job.kind == "stream":
         if not job.command or not job.filename:
             return {**head, "status": "failed", "error": job.error or "the source could not be planned"}
@@ -466,6 +467,32 @@ def run_job(repo: Repo, job: Job) -> dict[str, Any]:
     return _job_record(job, result, started)
 
 
+def offline_since(previous: Mapping[str, Any] | None, seen_at: str) -> str | None:
+    """When a powered-off guest was first found off, carried from run to run; None when it may have changed since its last copy.
+
+    Found off by the run after a copy, it was not seen running since (that copy misses at most the hours before the
+    shutdown, like any daily copy; a start and stop between two daily runs is not seen). Found off after a failed or
+    missing record, it may have run uncaptured, so it is not known.
+    """
+    status = (previous or {}).get("status")
+    if status == "offline":
+        return (previous or {}).get("offline_since")
+    return seen_at if status == "ok" else None
+
+
+def _seen(state: Mapping[str, Any]) -> dict[str, Any]:
+    # Before the first run that keeps ``seen``, the last run's records are what was seen.
+    return dict(state.get("seen") or (state.get("last_run") or {}).get("jobs") or {})
+
+
+def offline_guests(state: Mapping[str, Any]) -> dict[str, dict[str, Any]]:
+    """Guests last found powered off: since when, and the last copy that is kept until they change."""
+    jobs = state.get("jobs") or {}
+    return {name: {"guest": record.get("guest") or name, "offline_since": record.get("offline_since"),
+                   "last_copy_at": (jobs.get(name) or {}).get("time"), "snapshot_id": (jobs.get(name) or {}).get("snapshot_id")}
+            for name, record in sorted(_seen(state).items()) if isinstance(record, dict) and record.get("status") == "offline"}
+
+
 # ---- retention -------------------------------------------------------------------------------------------------
 
 def _snapshots(repo: Repo, *filters: str) -> list[dict[str, Any]]:
@@ -473,11 +500,25 @@ def _snapshots(repo: Repo, *filters: str) -> list[dict[str, Any]]:
     return value if isinstance(value, list) else []
 
 
-def retention_ids(snapshots: Sequence[Mapping[str, Any]], *, now: datetime, legacy_days: int) -> list[str]:
-    """Legacy-shape snapshots (per-source tags, no ``offsite`` tag) older than the window, newest few always kept per source."""
+def retention_ids(snapshots: Sequence[Mapping[str, Any]], *, now: datetime, legacy_days: int,
+                  enabled_sources: Collection[str] = ()) -> list[str]:
+    """Legacy-shape snapshots (per-source tags, no ``offsite`` tag) older than the window.
+
+    The newest snapshot of each enabled source, of either shape, is never released: an old per-source copy stays
+    until the daily job holds a newer copy of that source. A guest that stays powered off has nothing newer to make.
+    (The daily shape's own newest is kept by its ``--keep-daily`` forget, per group.)
+    """
     cutoff = now - timedelta(days=legacy_days)
+    wanted = {f"source:{source}" for source in enabled_sources}
+    newest: dict[str, tuple[datetime, str]] = {}
+    for item in snapshots:
+        when = _parse(item.get("time")) or now
+        for tag in wanted.intersection(map(str, item.get("tags") or [])):
+            if tag not in newest or when > newest[tag][0]:
+                newest[tag] = (when, str(item["id"]))
+    keep = {snapshot_id for _, snapshot_id in newest.values()}
     legacy = [item for item in snapshots if TAG not in (item.get("tags") or []) and any(str(t).startswith("source:") for t in item.get("tags") or [])]
-    return sorted(str(item["id"]) for item in legacy if (_parse(item.get("time")) or now) < cutoff)
+    return sorted(str(item["id"]) for item in legacy if (_parse(item.get("time")) or now) < cutoff and str(item["id"]) not in keep)
 
 
 def measure_legacy(listing: Sequence[Mapping[str, Any]], previous: Mapping[str, Any] | None) -> dict[str, Any]:
@@ -499,7 +540,8 @@ def retain(repo: Repo, state: dict[str, Any], *, now: datetime) -> dict[str, Any
         record["forget_error"] = _last_error(forget)
     # Old per-source snapshots from before the daily job age out here, with their stated window.
     listing = _snapshots(repo)
-    legacy = retention_ids(listing, now=now, legacy_days=settings.backup_offsite_legacy_days)
+    enabled = {str(source["id"]) for source in backup_store.list_sources() if source.get("enabled")}
+    legacy = retention_ids(listing, now=now, legacy_days=settings.backup_offsite_legacy_days, enabled_sources=enabled)
     good_runs = sum(1 for item in state.get("runs") or [] if isinstance(item, dict) and item.get("status") == "ok")
     # The old per-source snapshots age out only once the daily job has proven itself for a few days.
     if legacy and forget.returncode == 0 and good_runs >= LEGACY_AFTER_GOOD_RUNS:
@@ -555,11 +597,15 @@ def run_offsite(points: Sequence[Mapping[str, Any]], run_id: str, *, now: dateti
         jobs = [*subvolume_jobs(points, run_id), *stream_jobs(), *source_jobs()]
         for job in jobs:
             try:
-                record = run_job(repo, job)
+                record: dict[str, Any] = run_job(repo, job)
             except Exception as exc:  # one job failing never hides the others
                 logger.exception("offsite_job_failed", job=job.name)
                 record = {"name": job.name, "kind": job.kind, "required": job.required, "status": "failed", "error": str(exc)[:300]}
+            if record.get("status") == "offline":
+                record["offline_since"] = offline_since(_seen(state).get(job.name), record["started_at"])
             run["jobs"][job.name] = record
+            # What each job was last seen as, so a run that never reaches a guest does not lose when it went off.
+            state["seen"] = {**_seen(state), job.name: {key: record[key] for key in ("status", "guest", "offline_since") if key in record}}
             trim_runtime(runtime)  # the cache never grows past its cap across jobs
             state["current_run"] = run
             write_state(state)

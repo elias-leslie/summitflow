@@ -7,7 +7,7 @@ Two recovery layers, both written by ``backup_run``:
   btrbk snapshots of that run.
 
 Everything older (the per-project sources, the restic repository on the T7) is
-shown only as "old, ageing out" so the owner can see what could be deleted.
+shown only as "old, ageing out"; a source's newest copy stays until it has a newer one.
 """
 
 from __future__ import annotations
@@ -100,7 +100,7 @@ def offsite_summary() -> dict[str, Any]:
         "last_attempt_at": state.get("last_attempt_at"), "last_success_at": state.get("last_success_at"), "status": state.get("last_status"),
         "error": state.get("last_error"), "running": {"started_at": run.get("started_at")} if run and state.get("last_status") == "running" else None,
         "jobs": jobs, "check": state.get("check"), "spot_restore": state.get("spot_restore"),
-        "maintenance": state.get("maintenance"), "runs": state.get("runs") or [],
+        "maintenance": state.get("maintenance"), "runs": state.get("runs") or [], "offline": offsite.offline_guests(state),
     }
     return summary
 
@@ -116,10 +116,10 @@ def legacy_summary() -> dict[str, Any]:
     return {
         "local_repository": {"path": legacy.get("local_repository_path"), "bytes": legacy.get("local_repository_bytes"),
                              "missing": bool(legacy.get("local_repository_missing")),
-                             "note": "The old restic repository on the T7. Nothing writes to it any more; the owner can delete it."},
+                             "note": "The old restic repository on the T7. Nothing writes to it any more."},
         "drive_snapshots": {"count": legacy.get("drive_snapshots"), "ages_out_after_days": days, "paused": paused,
                             "note": "Per-project snapshots from before the daily job. "
-                                    + ("The age-out is paused, so they are kept." if paused else "They age out on their own.")},
+                                    + ("The age-out is paused, so they are kept." if paused else "They age out on their own; a source's newest copy stays until it has a newer one.")},
         "retired_sources": len(sources),
     }
 
@@ -177,12 +177,17 @@ def freshness_sources(now: datetime) -> dict[str, dict[str, Any]]:
         "last_success_at": success.isoformat() if success else None, "last_status": state.get("last_status"), "offline_since": None,
         "last_error": state.get("last_error"),
     }
-    for name, job in sorted((state.get("jobs") or {}).items()):
+    jobs, offline = state.get("jobs") or {}, offsite.offline_guests(state)
+    for name in sorted(set(jobs) | set(offline)):
         if name in offsite.SUBVOLUME_JOBS or name in offsite.STREAM_JOBS:
             continue
+        job, guest = jobs.get(name) or {}, offline.get(name) or {}
         when = _parse(job.get("time"))
-        sources[name] = {"ok": bool(when and now - when <= PROXMOX_MISSING_AFTER), "frequency": "daily", "stale_after_hours": PROXMOX_MISSING_AFTER.total_seconds() / 3600,
-                         "last_success_at": when.isoformat() if when else None, "last_status": job.get("status"), "offline_since": None, "last_error": None}
+        # A guest that has been off since its last copy cannot have changed: that copy stays current.
+        current = bool(when and (now - when <= PROXMOX_MISSING_AFTER or guest.get("offline_since")))
+        sources[name] = {"ok": current, "frequency": "daily", "stale_after_hours": PROXMOX_MISSING_AFTER.total_seconds() / 3600,
+                         "last_success_at": when.isoformat() if when else None, "last_status": "offline" if guest else job.get("status"),
+                         "offline_since": guest.get("offline_since"), "last_error": None}
     return sources
 
 

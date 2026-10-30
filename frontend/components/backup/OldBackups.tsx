@@ -39,7 +39,7 @@ export function OldBackups({ legacy }: { legacy: Legacy }) {
               {repo.path
                 ? `${repo.path}${repo.bytes ? `, ${formatBytes(repo.bytes)}` : ''}. `
                 : 'Size not measured yet. '}
-              Nothing writes to it, so you can delete it.
+              Nothing writes to it any more.
             </>
           )}
         </Row>
@@ -49,7 +49,7 @@ export function OldBackups({ legacy }: { legacy: Legacy }) {
             : `${drive.count} ${drive.count === 1 ? 'copy' : 'copies'} left. `}
           {drive.paused
             ? 'They are kept: the age-out is paused.'
-            : `They are removed on their own after ${days} days.`}
+            : `They are removed after ${days} days, except a source's newest copy, which stays until it has a newer one.`}
         </Row>
         {legacy.retired_sources > 0 && (
           <Row title="Old per-project backups">

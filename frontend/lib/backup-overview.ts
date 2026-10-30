@@ -1,5 +1,5 @@
 import type { DriveBackups, DriveJob, LocalBackups } from '@/lib/api/backups'
-import { formatBytes, formatTimeAgo } from '@/lib/format'
+import { formatBytes, formatDate, formatTimeAgo } from '@/lib/format'
 
 /** What each name in the overview means to the owner. Unknown names show as sent. */
 const POINT_LABELS: Record<string, string> = {
@@ -107,11 +107,34 @@ function jobRow(
   }
 }
 
-/** The named jobs first, then Proxmox guests and drives outside the machine as one row. */
-export function driveRows(jobs: DriveBackups['jobs']): DriveRow[] {
+/** A powered-off guest: its last copy stays current while it stays off. */
+function offlineRow(
+  key: string,
+  guest: DriveBackups['offline'][string],
+): DriveRow {
+  return {
+    key: `offline-${key}`,
+    label: guest.guest || key,
+    has: !!guest.last_copy_at,
+    failed: false,
+    when: guest.last_copy_at,
+    size: null,
+    note: guest.offline_since
+      ? `Off since ${formatDate(guest.offline_since)}. Its last copy is kept until it changes.`
+      : 'Off. It may have run since its last copy without being copied.',
+  }
+}
+
+/** The named jobs first, then Proxmox guests and drives outside the machine as one row, then each guest that is off. */
+export function driveRows(
+  jobs: DriveBackups['jobs'],
+  offline: DriveBackups['offline'] = {},
+): DriveRow[] {
   const named = new Set(DRIVE_LABELS.map(([key]) => key))
   const rows = DRIVE_LABELS.map(([key, label]) => jobRow(key, label, jobs[key]))
-  const others = Object.entries(jobs).filter(([key]) => !named.has(key))
+  const others = Object.entries(jobs).filter(
+    ([key]) => !named.has(key) && !(key in offline),
+  )
   if (others.length > 0) {
     const times = others
       .map(([, job]) => job.time)
@@ -133,5 +156,7 @@ export function driveRows(jobs: DriveBackups['jobs']): DriveRow[] {
           : `${others.length} ${others.length === 1 ? 'source' : 'sources'}; the time is the oldest copy`,
     })
   }
+  for (const [key, guest] of Object.entries(offline))
+    rows.push(offlineRow(key, guest))
   return rows
 }

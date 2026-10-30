@@ -58,6 +58,46 @@ def test_only_old_per_source_snapshots_age_out() -> None:
     assert offsite.retention_ids(snapshots, now=NOW, legacy_days=30) == ["old-legacy"]
 
 
+def _days_ago(days: int) -> str:
+    return (NOW - timedelta(days=days)).isoformat()
+
+
+def test_a_guest_off_for_60_days_keeps_its_last_copy_until_a_newer_one_exists() -> None:
+    enabled = {"pve-vm-180", "pve-vm-100"}
+    snapshots = [
+        {"id": "vm-older", "time": _days_ago(70), "tags": ["source:pve-vm-180"]},
+        {"id": "vm-newest", "time": _days_ago(60), "tags": ["source:pve-vm-180"]},
+        {"id": "guest-old", "time": _days_ago(60), "tags": ["source:pve-vm-100"]},
+        {"id": "guest-daily", "time": _days_ago(1), "tags": ["offsite", "job:pve-vm-100", "source:pve-vm-100"]},
+        {"id": "retired-old", "time": _days_ago(60), "tags": ["source:aico"]},
+    ]
+    # The guest that stayed off keeps its only recovery point; one with a newer daily copy and a retired source age out.
+    assert offsite.retention_ids(snapshots, now=NOW, legacy_days=30, enabled_sources=enabled) == ["guest-old", "retired-old", "vm-older"]
+    # Once the guest runs and the daily job copies it, its old copy goes too.
+    newer = [*snapshots, {"id": "vm-daily", "time": _days_ago(0), "tags": ["offsite", "job:pve-vm-180", "source:pve-vm-180"]}]
+    assert "vm-newest" in offsite.retention_ids(newer, now=NOW, legacy_days=30, enabled_sources=enabled)
+
+
+def test_the_age_out_reads_which_sources_are_enabled(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(offsite, "_snapshots", lambda repo: [{"id": "vm", "time": _days_ago(60), "tags": ["source:pve-vm-180"]},
+                                                              {"id": "old", "time": _days_ago(60), "tags": ["source:aico"]}])
+    monkeypatch.setattr(offsite.backup_store, "list_sources", lambda: [{"id": "pve-vm-180", "enabled": True}, {"id": "aico", "enabled": False}])
+    monkeypatch.setattr(offsite, "get_settings", lambda: SimpleNamespace(backup_offsite_legacy_days=30, backup_offsite_keep_daily=7,
+                                                                         backup_offsite_keep_weekly=4, backup_offsite_keep_monthly=3))
+    repo = FakeRepo(SimpleNamespace(returncode=0))
+    record = offsite.retain(repo, {"runs": [{"status": "ok"}] * 3}, now=NOW)  # type: ignore[arg-type]
+    assert record["legacy_forgotten"] == 1 and repo.calls[-1][:2] == ("forget", "old") and "vm" not in repo.calls[-1]
+
+
+def test_a_guest_is_off_since_the_first_run_after_its_copy_that_found_it_off() -> None:
+    assert offsite.offline_since({"status": "ok"}, "t2") == "t2"
+    assert offsite.offline_since({"status": "offline", "offline_since": "t2"}, "t9") == "t2"
+    # It ran without being copied in between, or nothing is known: it may have changed.
+    assert offsite.offline_since({"status": "failed"}, "t2") is None
+    assert offsite.offline_since(None, "t2") is None
+    assert offsite.offline_since({"status": "offline", "offline_since": None}, "t9") is None
+
+
 @pytest.mark.parametrize(
     ("last_success", "hour", "expected"),
     [
@@ -126,8 +166,48 @@ def test_a_job_record_keeps_what_the_ui_and_receipts_need() -> None:
 
 
 def test_a_powered_off_guest_is_not_a_failure() -> None:
-    record = offsite.run_job(FakeRepo(None), offsite.Job(name="pve-vm", kind="offline", tags=(), required=False))  # type: ignore[arg-type]
-    assert record["status"] == "offline"
+    record = offsite.run_job(FakeRepo(None), offsite.Job(name="pve-vm", kind="offline", tags=(), required=False, guest="VM 180 apps"))  # type: ignore[arg-type]
+    assert record["status"] == "offline" and record["guest"] == "VM 180 apps"
+
+
+def test_a_run_that_never_reaches_a_guest_keeps_when_it_went_off(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    _state(tmp_path, monkeypatch, jobs={"pve-vm-180": {"time": _days_ago(3), "snapshot_id": "abc"}},
+           last_run={"jobs": {"pve-vm-180": {"status": "ok"}}})
+    monkeypatch.setattr(offsite, "load_target", lambda: SimpleNamespace(repository="r"))
+    monkeypatch.setattr(offsite, "prepare_runtime", lambda target: None)
+    monkeypatch.setattr(offsite, "Repo", lambda target, runtime: FakeRepo(None))
+    monkeypatch.setattr(offsite, "trim_runtime", lambda runtime: 0)
+    monkeypatch.setattr(offsite, "stream_jobs", list)
+    monkeypatch.setattr(offsite, "retain", lambda repo, state, now: {})
+    clock = [NOW - timedelta(days=2)]
+    monkeypatch.setattr(offsite, "_now", lambda: clock[0])
+    off = offsite.Job(name="pve-vm-180", kind="offline", tags=(), required=False, guest="VM 180 apps")
+    monkeypatch.setattr(offsite, "subvolume_jobs", lambda points, run_id: [])
+    monkeypatch.setattr(offsite, "source_jobs", lambda: [off])
+    first = offsite.run_offsite([], "b1", now=clock[0])["jobs"]["pve-vm-180"]["offline_since"]
+    assert first == (NOW - timedelta(days=2)).isoformat()
+    monkeypatch.setattr(offsite, "subvolume_jobs", lambda points, run_id: (_ for _ in ()).throw(offsite.OffsiteError("no snapshot")))
+    clock[0] = NOW - timedelta(days=1)
+    assert offsite.run_offsite([], "b2", now=clock[0])["status"] == "failed"  # fails before any job runs
+    monkeypatch.setattr(offsite, "subvolume_jobs", lambda points, run_id: [])
+    clock[0] = NOW
+    assert offsite.run_offsite([], "b3", now=NOW)["jobs"]["pve-vm-180"]["offline_since"] == first
+    assert offsite.offline_guests(offsite.read_state())["pve-vm-180"]["offline_since"] == first
+
+
+def test_status_lists_a_powered_off_guest_as_current_with_its_last_copy(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    copy = {"time": _days_ago(60), "snapshot_id": "abc"}
+    _state(tmp_path, monkeypatch, jobs={"pve-vm-180": copy, "pve-vm-100": copy},
+           last_run={"jobs": {"pve-vm-180": {"status": "offline", "guest": "VM 180 apps", "offline_since": _days_ago(59)},
+                              "pve-vm-100": {"status": "offline", "guest": "VM 100 st-browser", "offline_since": None}}})
+    monkeypatch.setattr(overview, "local_summary", lambda **_: {"enabled": True, "last_good_at": NOW.isoformat(), "last_run": {"status": "completed"}})
+    sources = overview.freshness_sources(NOW)
+    assert sources["pve-vm-180"] | {"stale_after_hours": None} == {
+        "ok": True, "frequency": "daily", "stale_after_hours": None, "last_success_at": _days_ago(60), "last_status": "offline",
+        "offline_since": _days_ago(59), "last_error": None}
+    assert sources["pve-vm-100"]["ok"] is False  # it may have run since its last copy
+    assert offsite.offline_guests(offsite.read_state())["pve-vm-180"] == {
+        "guest": "VM 180 apps", "offline_since": _days_ago(59), "last_copy_at": _days_ago(60), "snapshot_id": "abc"}
 
 
 def _state(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, **values: Any) -> None:

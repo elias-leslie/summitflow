@@ -82,6 +82,15 @@ def _offsite_section(offsite: Mapping[str, Any], now: datetime) -> list[str]:
         for name, job in sorted(jobs.items()):
             lines.append(f"    {name:<{width}}  {ago(job.get('time'), now):<14} {job.get('snapshot_id', '-')[:8]}  "
                          f"{format_size(job.get('bytes'))} read, {format_size(job.get('stored_bytes'))} stored")
+    offline = offsite.get("offline") or {}
+    if offline:
+        lines.append("  Powered off, nothing new to copy:")
+        for guest in offline.values():
+            copy = f"last copy {local_time(guest['last_copy_at'])}" if guest.get("last_copy_at") else "no daily copy yet"
+            if guest.get("offline_since"):
+                lines.append(f"    {guest['guest']}: off since {local_time(guest['offline_since'])}, {copy} (kept until it changes)")
+            else:
+                lines.append(f"    {guest['guest']}: off, {copy}; it may have run since without being copied")
     check = offsite.get("check")
     if check:
         text = f"{check.get('status')}, {check.get('sample') or '?'} of stored data read back, {ago(check.get('checked_at'), now)}"
@@ -103,11 +112,12 @@ def _old_section(legacy: Mapping[str, Any]) -> list[str]:
     if repo.get("path") and repo.get("missing"):
         lines.append(f"  T7 restic repository: not found at {repo['path']}.")
     elif repo.get("path"):
-        lines.append(f"  T7 restic repository: {repo['path']}, {format_size(repo.get('bytes'))}. You can delete it.")
+        lines.append(f"  T7 restic repository: {repo['path']}, {format_size(repo.get('bytes'))}. Nothing writes to it any more.")
     if drive.get("count") and drive.get("paused"):
         lines.append(f"  Google Drive: {drive['count']} per-project snapshots, kept (the age-out is paused)")
     elif drive.get("count"):
-        lines.append(f"  Google Drive: {drive['count']} per-project snapshots, gone {drive.get('ages_out_after_days')} days after the change")
+        lines.append(f"  Google Drive: {drive['count']} per-project snapshots, each removed {drive.get('ages_out_after_days')} days after it was taken"
+                     " (a source's newest copy stays until it has a newer one)")
     return lines if len(lines) > 1 else []
 
 

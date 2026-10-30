@@ -61,6 +61,14 @@ _VIA = re.compile(r"agent|pct|host")
 class ProxmoxGuestOffline(RuntimeError):
     """The guest is powered off and already backed up; its disks cannot have changed."""
 
+    def __init__(self, message: str, *, guest: str = "") -> None:
+        super().__init__(message)
+        self.guest = guest
+
+
+def _guest_label(target: ProxmoxTarget, state: dict[str, Any]) -> str:
+    return f"{'VM' if target.kind == 'qemu' else 'CT'} {target.vmid} {state.get('name') or ''}".strip()
+
 
 @dataclass(frozen=True)
 class FileSelection:
@@ -203,7 +211,8 @@ def plan_capture(source_id: str, path: str) -> dict[str, Any]:
         return _plan_files(source_id, target, path)
     state = guest_state(target)
     if state["status"] != "running" and _has_completed_backup(source_id):
-        raise ProxmoxGuestOffline(f"Proxmox {target.kind} {target.vmid} is {state['status']}; its last backup is current")
+        raise ProxmoxGuestOffline(f"Proxmox {target.kind} {target.vmid} is {state['status']}; its last backup is current",
+                                  guest=_guest_label(target, state))
     if target.kind == "lxc" and state["status"] == "running":
         percent = thin_pool_percent(target.host)
         if percent is not None and percent >= THIN_POOL_FULL_PERCENT:
@@ -229,7 +238,8 @@ def _plan_files(source_id: str, target: ProxmoxTarget, path: str) -> dict[str, A
         state = guest_state(target)
         if state["status"] != "running":
             # Files can only be read from a running guest; a stopped one cannot change.
-            raise ProxmoxGuestOffline(f"Proxmox {target.kind} {target.vmid} is {state['status']}; file capture resumes when it runs")
+            raise ProxmoxGuestOffline(f"Proxmox {target.kind} {target.vmid} is {state['status']}; file capture resumes when it runs",
+                                      guest=_guest_label(target, state))
         capture.update(vmid=target.vmid, node=state["node"], name=state["name"])
     # The dispatcher tars on the host, through pct exec, or inside the VM through its QEMU agent.
     command = [*pve_ssh(target.host), "capture", source_id, path_digest(path)]
@@ -294,9 +304,8 @@ REQUIRED_TARGETS: dict[str, str] = {
     "proxmox-gem/lxc/150 ominull": "source:ominull-production-state",
 }
 FRESHNESS_HOURS = 36  # Daily captures plus a missed tick and a slow offsite copy.
-# A powered-off guest cannot change, so its last backup stays current while it is
-# offline, but only up to this cap: past it the owner must look at the guest.
-OFFLINE_FRESHNESS_DAYS = 30
+# A powered-off guest cannot change, so its last copy stays current for as long as it has
+# been off since that copy (``backup_offsite.offline_since``), however long that is.
 FRESHNESS_RECEIPT = Path.home() / ".local/state/summitflow/backup-freshness/proxmox.json"
 
 
@@ -319,11 +328,11 @@ def _aware(value: Any) -> datetime:
 
 def freshness_receipt(now: datetime | None = None) -> dict[str, Any]:
     """Whether every covered guest and the cluster config has a Google Drive copy newer than the limit."""
-    from .backup_offsite import read_state
+    from .backup_offsite import offline_guests, read_state
 
     current = now or datetime.now(UTC)
     state = read_state()
-    jobs, last_jobs = state.get("jobs") or {}, (state.get("last_run") or {}).get("jobs") or {}
+    jobs, offline = state.get("jobs") or {}, offline_guests(state)
     spot = state.get("spot_restore") or {}
     spot_at = spot.get("at") and _aware(spot["at"])
     restore_ok = (spot.get("status") == "ok") if spot_at and (current - spot_at).days <= 35 else (False if spot.get("status") == "failed" else None)
@@ -341,21 +350,22 @@ def freshness_receipt(now: datetime | None = None) -> dict[str, Any]:
             continue
         when = _aware(job["time"])
         age = (current - when).total_seconds() / 3600
-        offline = (last_jobs.get(str(source["id"])) or {}).get("status") == "offline"
+        guest = offline.get(str(source["id"]))
         status, reason = "fresh", None
         if age > FRESHNESS_HOURS:
-            if offline and age <= OFFLINE_FRESHNESS_DAYS * 24:
+            if guest and guest["offline_since"]:
                 status = "offline-unchanged"
-            elif offline:
-                status, reason = "stale", f"guest offline and its last backup is older than the {OFFLINE_FRESHNESS_DAYS}-day offline cap"
+            elif guest:
+                status, reason = "stale", "guest is off, but it may have run since its last copy without being copied"
             else:
                 status = "stale"
         targets.append({**entry, "status": status, "fresh": status != "stale", **({"reason": reason} if reason else {}),
+                        **({"offline_since": guest["offline_since"]} if guest else {}),
                         "snapshot_id": job.get("snapshot_id"), "captured_at": when.isoformat(), "verified_at": when.isoformat(),
                         "age_hours": round(age, 1), "offsite": "verified",
                         "restore_test_ok": restore_ok, "restore_drill_ok": restore_ok, "restore_verified": bool(restore_ok),
                         "restore_drill_at": spot_at.isoformat() if spot_at else None})
-    return {"schema_version": 1, "generated_at": current.isoformat(), "max_age_hours": FRESHNESS_HOURS, "offline_max_age_days": OFFLINE_FRESHNESS_DAYS,
+    return {"schema_version": 1, "generated_at": current.isoformat(), "max_age_hours": FRESHNESS_HOURS,
             "ok": all(item["fresh"] for item in targets), "targets": targets}
 
 

@@ -58,6 +58,28 @@ describe('parseBackupOverview', () => {
     expect(overview.offsite.check?.status).toBe('partial')
   })
 
+  it('reads powered-off guests and keeps an unknown off-since as null', () => {
+    const drive = {
+      ...firstRun.offsite,
+      offline: {
+        'pve-vm-180': {
+          guest: 'VM 180 apps',
+          offline_since: null,
+          last_copy_at: '2026-10-30T07:57:00+00:00',
+        },
+      },
+    }
+    const overview = parseBackupOverview({ ...firstRun, offsite: drive })
+    expect(overview.offsite.offline).toEqual({
+      'pve-vm-180': {
+        guest: 'VM 180 apps',
+        offline_since: null,
+        last_copy_at: '2026-10-30T07:57:00+00:00',
+      },
+    })
+    expect(parseBackupOverview(firstRun).offsite.offline).toEqual({})
+  })
+
   it('rejects a body that is not an overview', () => {
     expect(() => parseBackupOverview({ detail: 'nope' })).toThrow()
   })

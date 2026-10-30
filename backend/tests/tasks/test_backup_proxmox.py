@@ -165,7 +165,7 @@ def test_freshness_receipt_requires_every_target_to_have_a_recent_drive_copy(mon
 
     config, profiles, _vault, _identity, ominull = ids
     _covered(monkeypatch, {**{k: v for k, v in fresh.items() if k != profiles}, config: _job(40), ominull: _job(200)},
-             {ominull: {"status": "offline"}})
+             {ominull: {"status": "offline", "offline_since": (NOW - timedelta(hours=199)).isoformat()}})
     receipt = px.freshness_receipt(NOW)
     assert receipt["ok"] is False
     assert [item["status"] for item in receipt["targets"]] == ["stale", "never-verified", "fresh", "fresh", "offline-unchanged"]
@@ -182,20 +182,22 @@ def test_the_receipt_time_is_when_the_drive_job_saved_the_copy(monkeypatch):
     assert first["verified_at"] == first["captured_at"] == (NOW - timedelta(hours=5)).isoformat() and first["age_hours"] == 5.0
 
 
-def test_offline_guest_stays_fresh_only_up_to_the_cap(monkeypatch, tmp_path):
+def test_a_guest_off_since_its_last_copy_stays_current_however_long(monkeypatch, tmp_path):
     monkeypatch.setattr(px, "FRESHNESS_RECEIPT", tmp_path / "proxmox.json")
     ids = _covered(monkeypatch, {})
     guest = ids[1]
-    limit = px.OFFLINE_FRESHNESS_DAYS * 24
     rows = {source_id: _job(2) for source_id in ids}
-    _covered(monkeypatch, {**rows, guest: _job(limit - 1)}, {guest: {"status": "offline"}})
-    assert px.freshness_receipt(NOW)["targets"][1]["status"] == "offline-unchanged"
-    _covered(monkeypatch, {**rows, guest: _job(limit + 1)}, {guest: {"status": "offline"}})
+    since = (NOW - timedelta(days=59)).isoformat()
+    _covered(monkeypatch, {**rows, guest: _job(60 * 24)}, {guest: {"status": "offline", "offline_since": since}})
+    target = px.freshness_receipt(NOW)["targets"][1]
+    assert target["status"] == "offline-unchanged" and target["fresh"] is True and target["offline_since"] == since
+    # Off, but it may have run since its last copy without being copied: not known to be current.
+    _covered(monkeypatch, {**rows, guest: _job(40)}, {guest: {"status": "offline", "offline_since": None}})
     receipt = px.freshness_receipt(NOW)
     target = receipt["targets"][1]
     assert receipt["ok"] is False and target["status"] == "stale" and target["fresh"] is False
-    assert "offline cap" in target["reason"]
-    assert "offline cap" in alerts._proxmox_conditions(NOW)["proxmox-freshness"]["message"]
+    assert "may have run since its last copy" in target["reason"]
+    assert "may have run since its last copy" in alerts._proxmox_conditions(NOW)["proxmox-freshness"]["message"]
 
 
 def test_missing_coverage_raises_a_proxmox_alert(monkeypatch, tmp_path):

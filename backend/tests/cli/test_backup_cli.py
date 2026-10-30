@@ -11,7 +11,7 @@ from typer.testing import CliRunner
 
 from app.tasks import backup_offsite, backup_offsite_restore, backup_overview, backup_run
 from cli.commands import backup
-from cli.commands.backup_formatters import ago, format_size, render_status
+from cli.commands.backup_formatters import ago, format_size, local_time, render_status
 
 runner = CliRunner()
 NOW = datetime(2026, 10, 26, 12, 0, tzinfo=UTC)
@@ -49,7 +49,22 @@ def test_status_says_current_then_local_then_drive(monkeypatch) -> None:
     assert "home 8, workspaces 8" in result.output
     assert "600.0 GB free of 1000.0 GB" in result.output
     assert "Test restore: ok" in result.output
-    assert "You can delete it." in result.output
+    assert "/mnt/t7/restic, 200.0 GB. Nothing writes to it any more." in result.output and "delete" not in result.output
+    assert "40 per-project snapshots, each removed 30 days after it was taken (a source's newest copy stays until it has a newer one)" in result.output
+
+
+def test_status_lists_powered_off_guests_with_their_last_copy(monkeypatch) -> None:
+    data = _overview()
+    data["offsite"]["offline"] = {
+        "pve-vm-180": {"guest": "VM 180 apps", "offline_since": "2026-10-24T07:00:00+00:00", "last_copy_at": "2026-10-23T07:57:00+00:00"},
+        "pve-ct-140": {"guest": "CT 140 vault", "offline_since": None, "last_copy_at": None},
+    }
+    monkeypatch.setattr(backup_overview, "overview", lambda **_: data)
+    output = runner.invoke(backup.app, ["status"]).output
+    assert "  Powered off, nothing new to copy:" in output
+    since, copy = (local_time(value) for value in ("2026-10-24T07:00:00+00:00", "2026-10-23T07:57:00+00:00"))
+    assert f"    VM 180 apps: off since {since}, last copy {copy} (kept until it changes)" in output
+    assert "    CT 140 vault: off, no daily copy yet; it may have run since without being copied" in output
 
 
 def test_status_says_when_the_old_t7_repository_is_gone(monkeypatch) -> None:
@@ -58,7 +73,7 @@ def test_status_says_when_the_old_t7_repository_is_gone(monkeypatch) -> None:
     monkeypatch.setattr(backup_overview, "overview", lambda **_: data)
     result = runner.invoke(backup.app, ["status"])
     assert "T7 restic repository: not found at /mnt/t7/restic." in result.output
-    assert "You can delete it." not in result.output
+    assert "delete" not in result.output
 
 
 def test_status_says_the_old_drive_snapshots_are_kept_while_the_age_out_is_paused(monkeypatch) -> None:
@@ -188,13 +203,13 @@ def test_run_starts_the_unit_and_reports_failure(monkeypatch) -> None:
     assert failed.exit_code == 1 and "unit not found" in failed.output
 
 
-def test_old_list_names_the_t7_repository_as_deletable(monkeypatch) -> None:
+def test_old_list_names_the_t7_repository(monkeypatch) -> None:
     monkeypatch.setattr(backup_offsite_restore, "legacy_snapshots", lambda source=None, **kw: [
         {"id": "o1", "full_id": "o1x", "time": "2026-09-01T02:00:00+00:00", "source": "aico"}] if kw["where"] == "local" else [])
     monkeypatch.setattr(backup_offsite, "read_state", lambda: {"legacy": {"local_repository_path": "/mnt/t7/restic", "local_repository_bytes": 2 * 1024**3}})
     result = runner.invoke(backup.app, ["old", "list", "--where", "local"])
     assert result.exit_code == 0
-    assert "/mnt/t7/restic, 2.0 GB" in result.output and "the owner can delete it" in result.output
+    assert "/mnt/t7/restic, 2.0 GB. Nothing writes to it any more." in result.output and "delete" not in result.output
     assert "o1" in result.output and "aico" in result.output
 
 
