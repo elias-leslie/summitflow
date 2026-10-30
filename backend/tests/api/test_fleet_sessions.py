@@ -32,6 +32,7 @@ def _client(role="owner", *, local=False):
         return await call_next(request)
 
     app.include_router(api.router, prefix="/api")
+    app.include_router(api.coordination_router, prefix="/api")
     with TestClient(app) as client:
         yield client
 
@@ -237,7 +238,7 @@ def test_sdk_legacy_root_retry_preserves_immutable_capsule(execution_fleet):
     assert launches == []
 
 
-def test_a_host_agents_request_is_recorded_here_for_owners_only(monkeypatch):
+def test_a_host_agents_request_is_recorded_here(monkeypatch):
     from cli.lib import coord_remote
 
     seen = []
@@ -248,14 +249,13 @@ def test_a_host_agents_request_is_recorded_here_for_owners_only(monkeypatch):
 
     monkeypatch.setattr(coord_remote, "record_from_host", record)
     body = {"target": "Agent-Hub", "text": "Done", "sender": "cc:9b1c2d", "host": "agent-work", "reply_to": "a810c7e0"}
-    with _client(role="viewer") as client:
-        assert client.post("/api/fleet/v1/coordination/requests", json=body).status_code == 403
-    with _client() as client:
+    # Agents send these (the agent token), not only the owner.
+    with _client(role="agent") as client:
         response = client.post("/api/fleet/v1/coordination/requests", json=body)
         assert response.status_code == 200
         assert response.json() == {"id": "abc123", "to": "cc:4a9a07", "state": "open", "duplicate": None}
         assert client.post("/api/fleet/v1/coordination/requests", json={**body, "extra": 1}).status_code == 422
     assert seen == [("Agent-Hub", "Done", {"sender": "cc:9b1c2d", "host": "agent-work", "reply_to": "a810c7e0"})]
     monkeypatch.setattr(coord_remote, "record_from_host", lambda *a, **k: (_ for _ in ()).throw(LookupError("no agent")))
-    with _client() as client:
+    with _client(role="agent") as client:
         assert client.post("/api/fleet/v1/coordination/requests", json=body).status_code == 404

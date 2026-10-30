@@ -20,6 +20,9 @@ from .backups.key_endpoints import _require_same_origin
 from .monitor import require_monitor_owner
 
 router = APIRouter(prefix="/fleet/v1", dependencies=[Depends(require_monitor_owner)])
+# Agents call this one (st sessions send on an agent host, with the agent token),
+# so it keeps the app-wide owner-or-agent check instead of the owner-only one.
+coordination_router = APIRouter(prefix="/fleet/v1")
 
 
 def _mutation(request: Request, response: Response) -> None:
@@ -92,7 +95,7 @@ class HostRequest(BaseModel):
     reply_to: str | None = Field(default=None, min_length=8, max_length=8)
 
 
-@router.post("/coordination/requests")
+@coordination_router.post("/coordination/requests")
 def host_request(body: HostRequest, request: Request, response: Response) -> dict[str, Any]:
     """Record a host agent's st sessions send in this computer's ledger; the
     host's own ledger cannot hold a request for an agent here."""
