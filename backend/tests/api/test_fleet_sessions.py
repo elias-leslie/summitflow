@@ -235,3 +235,27 @@ def test_sdk_legacy_root_retry_preserves_immutable_capsule(execution_fleet):
     assert state["capabilities"]["launch"] == "unavailable"
     assert sdk.show(capsule["root"])["execution_root"] == str(canonical)
     assert launches == []
+
+
+def test_a_host_agents_request_is_recorded_here_for_owners_only(monkeypatch):
+    from cli.lib import coord_remote
+
+    seen = []
+
+    def record(target, text, **kwargs):
+        seen.append((target, text, kwargs))
+        return {"id": "abc123", "to": "cc:4a9a07", "state": "open", "text": "private"}
+
+    monkeypatch.setattr(coord_remote, "record_from_host", record)
+    body = {"target": "Agent-Hub", "text": "Done", "sender": "cc:9b1c2d", "host": "agent-work", "reply_to": "a810c7e0"}
+    with _client(role="viewer") as client:
+        assert client.post("/api/fleet/v1/coordination/requests", json=body).status_code == 403
+    with _client() as client:
+        response = client.post("/api/fleet/v1/coordination/requests", json=body)
+        assert response.status_code == 200
+        assert response.json() == {"id": "abc123", "to": "cc:4a9a07", "state": "open", "duplicate": None}
+        assert client.post("/api/fleet/v1/coordination/requests", json={**body, "extra": 1}).status_code == 422
+    assert seen == [("Agent-Hub", "Done", {"sender": "cc:9b1c2d", "host": "agent-work", "reply_to": "a810c7e0"})]
+    monkeypatch.setattr(coord_remote, "record_from_host", lambda *a, **k: (_ for _ in ()).throw(LookupError("no agent")))
+    with _client() as client:
+        assert client.post("/api/fleet/v1/coordination/requests", json=body).status_code == 404

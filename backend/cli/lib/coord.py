@@ -430,14 +430,15 @@ def live_agents() -> list[str]:
 
 
 def send(to: str, text: str, *, project: str | None = None, limit: int = MAX_TEXT,
-         source_key: str | None = None) -> dict[str, Any]:
+         source_key: str | None = None, sender: str | None = None) -> dict[str, Any]:
     """Record a request; an identical open request, or any request with the same source key, returns the existing row.
 
     The source key is the sender's stable revision for one instruction: a retry
     or fallback with that key never records a second request, whatever its state.
+    ``sender`` records a request from an agent on another machine (coord_remote).
     """
     body = _clean_text(text, limit)
-    agent_id, _, session_id, _ = leases.identify_agent()
+    agent_id, _, session_id, _ = (sender, "", "", "") if sender else leases.identify_agent()
     now = datetime.now(UTC).isoformat()
     with leases._lock("_coord"):
         rows = _load_ledger()

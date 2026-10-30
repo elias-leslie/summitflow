@@ -139,8 +139,10 @@ def _capture_handshake(monkeypatch) -> list[tuple[str, str]]:
 @pytest.fixture(autouse=True)
 def _no_live_tether(monkeypatch):
     """Label resolution never reads the developer's live Aico windows."""
-    from cli.lib import coordinators
+    from cli.lib import coord_remote, coordinators
 
+    monkeypatch.delenv("ST_AGENT_HOST", raising=False)
+    monkeypatch.setattr(coord_remote, "windows", lambda target: [])
     monkeypatch.setattr(sessions_fleet, "_tether_aliases", lambda target: [])
     monkeypatch.setattr(coordinators, "agent_for_widget", lambda widget: None)
 

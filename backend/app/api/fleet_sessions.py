@@ -81,6 +81,29 @@ class Bounds(BaseModel):
     height: int = Field(ge=240, le=100000, strict=True)
 
 
+class HostRequest(BaseModel):
+    """A coordination request from an agent on an agent host (cli/lib/coord_remote.py)."""
+
+    model_config = ConfigDict(extra="forbid")
+    target: str = Field(min_length=1, max_length=256)
+    text: str = Field(min_length=1, max_length=2000)
+    sender: str = Field(min_length=1, max_length=128)
+    host: str = Field(min_length=1, max_length=32)
+    reply_to: str | None = Field(default=None, min_length=8, max_length=8)
+
+
+@router.post("/coordination/requests")
+def host_request(body: HostRequest, request: Request, response: Response) -> dict[str, Any]:
+    """Record a host agent's st sessions send in this computer's ledger; the
+    host's own ledger cannot hold a request for an agent here."""
+    from cli.lib import coord_remote
+
+    _mutation(request, response)
+    row = _call(coord_remote.record_from_host, body.target, body.text, sender=body.sender,
+                host=body.host, reply_to=body.reply_to)
+    return {key: row.get(key) for key in ("id", "to", "state", "duplicate")}
+
+
 @router.post("/roots")
 def start(body: StartRoot, request: Request, response: Response) -> dict[str, Any]:
     _mutation(request, response)

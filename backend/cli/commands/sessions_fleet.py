@@ -54,24 +54,13 @@ def _tether_aliases(target: str) -> list[str]:
     A window answers to its widget id, its st aico create request id, or its
     title; its live harness can resolve without an Agent Hub session record.
     """
-    from app.services import tether
+    from ..lib import coord_remote
 
-    items: list[Any] = []
-    for status, body in tether.request_all("/v1/sessions"):
-        if status == 200 and isinstance(body, dict) and isinstance(body.get("items"), list):
-            items += body["items"]
-    want = target.strip().casefold()
     out: list[str] = []
-    for item in items:
-        if not isinstance(item, dict):
-            continue
-        names = {str(item.get(k) or "").casefold() for k in ("id", "ownershipId", "rootRequestId", "name", "label", "displayTitle")}
+    for item in coord_remote.windows(target):
         tmux = item.get("tmux")
         tmux_name = tmux.get("sessionName") if isinstance(tmux, dict) else None
-        if isinstance(tmux_name, str):
-            names.add(tmux_name.casefold())
-        if want and want in names:
-            out.extend(value for value in (item.get("id"), tmux_name) if isinstance(value, str) and value)
+        out.extend(value for value in (item.get("id"), tmux_name) if isinstance(value, str) and value)
     return out
 
 
@@ -104,6 +93,33 @@ def _resolve_agent(target: str) -> str:
                    "an Aico window's widget id, st aico create request id or title; fleet-started root-* "
                    "handles go to the fleet stream.", err=True)
     raise typer.Exit(2)
+
+
+def _send_across_machines(target: str, text: str) -> bool:
+    """A window on an agent host gets the text through the Tether hub; on an agent
+    host, a target that is none of its own agents goes to the workstation."""
+    from ..lib import coord_remote
+
+    try:
+        if window := coord_remote.to_host_window(target, text):
+            typer.echo(f"sent to window {window['id']} on {window['host']}; it has no ledger here, "
+                       "so its answer comes back as a new request to you")
+            return True
+        host = coord_remote.agent_host()
+        if not host or coord_remote.names_local_agent(target):
+            return False
+        agent_id, widget = coord_remote._sender()
+        client = STClient(require_project=False)
+        row = client.post(client._global_url("/fleet/v1/coordination/requests"), json={
+            "target": target, "text": text, "sender": agent_id, "host": host, "reply_to": widget or None})
+    except ValueError as exc:
+        typer.echo(f"ERROR {exc}", err=True)
+        raise typer.Exit(2) from exc
+    except APIError as exc:
+        handle_api_error(exc)
+        raise typer.Exit(1) from exc
+    typer.echo(f"sent {row.get('id')} -> {row.get('to')} on the workstation; it answers with st sessions send")
+    return True
 
 
 def _client() -> FleetClient:
@@ -186,6 +202,8 @@ def send(
     if delivery == "handshake":
         from .sessions_handshake import send_request
 
+        if _send_across_machines(root, instruction):
+            return
         send_request(_resolve_agent(root), instruction, source_key)
         return
     if delivery == "native-thread":
