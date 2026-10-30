@@ -63,6 +63,7 @@ export function NotificationBell({
   const [loadingMore, setLoadingMore] = useState(false)
   const [loading, setLoading] = useState(false)
   const [loadError, setLoadError] = useState<string | null>(null)
+  const [confirmingDismissAll, setConfirmingDismissAll] = useState(false)
 
   // Fetch pending count periodically
   useEffect(() => {
@@ -128,7 +129,30 @@ export function NotificationBell({
     if (!isOpen) {
       loadNotifications()
     }
+    setConfirmingDismissAll(false)
     setIsOpen(!isOpen)
+  }
+
+  // A confirm left open while rows were dismissed one by one must not greet the next notification.
+  useEffect(() => {
+    if (pendingCount === 0) setConfirmingDismissAll(false)
+  }, [pendingCount])
+
+  const handleDismissAll = async () => {
+    setConfirmingDismissAll(false)
+    try {
+      if (projectId) {
+        await dismissAllNotifications(projectId)
+      } else {
+        await dismissAllGlobalNotifications()
+      }
+      setNotifications([])
+      setTotal(0)
+      setPendingCount(0)
+      toast.success('All notifications dismissed')
+    } catch {
+      toast.error('Failed to dismiss notifications')
+    }
   }
 
   const handleNotificationClick = async (notification: Notification) => {
@@ -215,30 +239,40 @@ export function NotificationBell({
               </h3>
               {pendingCount > 0 && (
                 <div className="flex items-center gap-2">
-                  <span className="text-xs text-slate-400">
-                    {pendingCount} pending
-                  </span>
-                  <button
-                    type="button"
-                    onClick={async () => {
-                      try {
-                        if (projectId) {
-                          await dismissAllNotifications(projectId)
-                        } else {
-                          await dismissAllGlobalNotifications()
-                        }
-                        setNotifications([])
-                        setTotal(0)
-                        setPendingCount(0)
-                        toast.success('All notifications dismissed')
-                      } catch {
-                        toast.error('Failed to dismiss notifications')
-                      }
-                    }}
-                    className="text-xs text-slate-500 hover:text-slate-300 transition-colors"
-                  >
-                    Dismiss all
-                  </button>
+                  {confirmingDismissAll ? (
+                    <>
+                      <span className="text-xs text-slate-300">
+                        Dismiss every notification?
+                      </span>
+                      <button
+                        type="button"
+                        onClick={() => void handleDismissAll()}
+                        className="text-xs font-medium text-rose-300 hover:text-rose-200 transition-colors"
+                      >
+                        Dismiss all
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setConfirmingDismissAll(false)}
+                        className="text-xs text-slate-400 hover:text-slate-200 transition-colors"
+                      >
+                        Keep
+                      </button>
+                    </>
+                  ) : (
+                    <>
+                      <span className="text-xs text-slate-400">
+                        {pendingCount} pending
+                      </span>
+                      <button
+                        type="button"
+                        onClick={() => setConfirmingDismissAll(true)}
+                        className="text-xs text-slate-500 hover:text-slate-300 transition-colors"
+                      >
+                        Dismiss all…
+                      </button>
+                    </>
+                  )}
                 </div>
               )}
             </div>
@@ -348,9 +382,9 @@ export function NotificationBell({
                         <button
                           type="button"
                           onClick={(e) => handleDismiss(e, notification)}
-                          className="absolute right-3 top-3 p-1 hover:bg-slate-700 rounded opacity-0 group-hover:opacity-100 focus-visible:opacity-100 transition-opacity"
+                          className="absolute right-3 top-3 p-1 hover:bg-slate-700 rounded sm:opacity-0 sm:group-hover:opacity-100 focus-visible:opacity-100 transition-opacity"
                           title="Dismiss"
-                          aria-label="Dismiss"
+                          aria-label={`Dismiss notification: ${notification.title}`}
                         >
                           <X className="w-4 h-4 text-slate-500" />
                         </button>

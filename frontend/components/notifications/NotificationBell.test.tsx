@@ -4,9 +4,11 @@ import { NotificationBell } from './NotificationBell'
 
 const sonnerMocks = vi.hoisted(() => ({
   error: vi.fn(),
+  success: vi.fn(),
 }))
 
 const apiMocks = vi.hoisted(() => ({
+  dismissAllNotifications: vi.fn(),
   dismissNotification: vi.fn(),
   fetchNotificationCount: vi.fn(),
   fetchNotifications: vi.fn(),
@@ -14,6 +16,7 @@ const apiMocks = vi.hoisted(() => ({
 }))
 
 vi.mock('@/lib/api', () => ({
+  dismissAllNotifications: apiMocks.dismissAllNotifications,
   dismissNotification: apiMocks.dismissNotification,
   fetchNotificationCount: apiMocks.fetchNotificationCount,
   fetchNotifications: apiMocks.fetchNotifications,
@@ -142,6 +145,34 @@ describe('NotificationBell', () => {
         'agent-hub',
         'notif-123',
       )
+    })
+  })
+
+  it('names the notification on its dismiss button', async () => {
+    render(<NotificationBell projectId="agent-hub" />)
+    fireEvent.click(screen.getByTitle('Notifications'))
+    await screen.findByText('Task failed')
+    expect(
+      screen.getByRole('button', { name: 'Dismiss notification: Task failed' }),
+    ).toBeInTheDocument()
+  })
+
+  it('asks before dismissing every notification, and Keep leaves them', async () => {
+    apiMocks.dismissAllNotifications.mockResolvedValue({})
+    render(<NotificationBell projectId="agent-hub" />)
+    fireEvent.click(screen.getByTitle('Notifications'))
+    await screen.findByText('Task failed')
+
+    fireEvent.click(screen.getByRole('button', { name: 'Dismiss all…' }))
+    expect(screen.getByText('Dismiss every notification?')).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: 'Keep' }))
+    expect(apiMocks.dismissAllNotifications).not.toHaveBeenCalled()
+    expect(screen.getByText('Task failed')).toBeInTheDocument()
+
+    fireEvent.click(screen.getByRole('button', { name: 'Dismiss all…' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Dismiss all' }))
+    await waitFor(() => {
+      expect(apiMocks.dismissAllNotifications).toHaveBeenCalledWith('agent-hub')
     })
   })
 
