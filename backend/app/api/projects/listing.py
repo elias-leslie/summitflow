@@ -10,9 +10,11 @@ from typing import cast
 
 import httpx
 
+from ...local_endpoints import local_url
 from ...project_identity import (
     ProjectLifecycle,
     canonicalize_project_name,
+    get_project_identity,
     get_project_lifecycle,
     get_project_lifecycles,
 )
@@ -62,6 +64,23 @@ async def probe_project_health(
     return project_id, "healthy" if response.status_code == 200 else "warning"
 
 
+def project_health_target(project_id: str, base_url: str, endpoint: str) -> tuple[str, str]:
+    """Probe the local backend the project's identity declares, else its registry URL.
+
+    Registry rows go stale or point at an owner-gated frontend route (403), so a
+    healthy local service would show as a warning. Remote placements keep the
+    registry URL: their declared port is not on this host.
+    """
+    try:
+        runtime = (get_project_identity(project_id) or {}).get("runtime")
+    except (OSError, ValueError):
+        return base_url, endpoint
+    if not isinstance(runtime, dict) or runtime.get("deployment") is not None:
+        return base_url, endpoint
+    backend = local_url(project_id, "backend_port")
+    return (backend, runtime.get("health_endpoint") or "/health") if backend else (base_url, endpoint)
+
+
 def clear_project_health_cache() -> None:
     _health_cache.clear()
 
@@ -73,7 +92,8 @@ async def resolve_project_health_statuses(
     now = time.monotonic()
     statuses: dict[str, str] = {}
     to_probe: list[tuple[str, str, str]] = []
-    for project_id, base_url, endpoint in projects:
+    for project_id, registry_url, registry_endpoint in projects:
+        base_url, endpoint = project_health_target(project_id, registry_url, registry_endpoint)
         if not base_url:
             statuses[project_id] = UNCONFIGURED_HEALTH_STATUS
             continue

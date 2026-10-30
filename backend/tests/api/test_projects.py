@@ -1186,3 +1186,54 @@ async def test_project_health_probes_are_cached_and_unconfigured_skips_probe(mon
         assert calls == ["live", "live"]
     finally:
         listing.clear_project_health_cache()
+
+
+@pytest.mark.asyncio
+async def test_project_health_probes_the_local_backend_its_identity_declares(monkeypatch) -> None:
+    from app import project_identity
+    from app.api.projects import listing
+
+    identities = {
+        "gated": {"runtime": {"backend_port": 8003, "health_endpoint": "/health"}},
+        "unregistered": {"runtime": {"backend_port": 3020, "health_endpoint": "/healthz"}},
+        "remote": {"runtime": {"backend_port": 8013, "deployment": {"kind": "proxmox"}}},
+        "no-port": {"runtime": {"backend_port": 0, "health_endpoint": "/"}},
+    }
+
+    def fake_identity(project_id, root_path=None):
+        if project_id == "unreadable":
+            raise OSError("permission denied")
+        return identities.get(project_id)
+
+    monkeypatch.setattr(listing, "get_project_identity", fake_identity)
+    monkeypatch.setattr(project_identity, "get_project_identity", fake_identity)
+    probed: dict[str, str] = {}
+
+    async def fake_probe(_client, project_id, base_url, endpoint):
+        probed[project_id] = base_url + endpoint
+        return project_id, "healthy"
+
+    monkeypatch.setattr(listing, "probe_project_health", fake_probe)
+    listing.clear_project_health_cache()
+    try:
+        statuses = await listing.resolve_project_health_statuses([
+            ("gated", "http://127.0.0.1:3003", "/api/health"),
+            ("unregistered", "", "/health"),
+            ("remote", "http://localhost:8013", "/healthz"),
+            ("no-port", "", "/health"),
+            ("unreadable", "http://127.0.0.1:3005", "/health"),
+            ("no-identity", "http://127.0.0.1:4001", "/"),
+        ])
+    finally:
+        listing.clear_project_health_cache()
+    assert statuses == {
+        **dict.fromkeys(["gated", "unregistered", "remote", "unreadable", "no-identity"], "healthy"),
+        "no-port": "unconfigured",
+    }
+    assert probed == {
+        "gated": "http://localhost:8003/health",
+        "unregistered": "http://localhost:3020/healthz",
+        "remote": "http://localhost:8013/healthz",
+        "unreadable": "http://127.0.0.1:3005/health",
+        "no-identity": "http://127.0.0.1:4001/",
+    }
