@@ -20,6 +20,7 @@ from .tasks_bug import create_bug_task
 from .tasks_import import create_from_file, import_plan_file
 
 _DEFAULT_TASK_TYPE = "task"
+_DEFAULT_PRIORITY = 2
 _IDEA_LABEL = "crowdsourced"
 
 
@@ -65,13 +66,19 @@ def _apply_blocked_by(
 
 def _handle_plan_import(
     plan: Path, dry_run: bool, task_id: str | None,
-    task_type: str | None, labels: str | None,
+    overrides: dict[str, Any], labels: str | None,
+    parent: str | None, blocked_by: str | None,
 ) -> None:
     client = STClient()
     task, tid = import_plan_file(
         plan, dry_run, task_id, client,
-        task_type=task_type, labels=labels.split(",") if labels else None,
+        overrides=overrides, labels=labels.split(",") if labels else None, parent=parent,
     )
+    if blocked_by:
+        task = _apply_blocked_by(client, task, blocked_by)
+        if "dependency_error" in task:
+            output_error(f"Imported {tid}, but --blocked-by {blocked_by} failed: {task['dependency_error']}")
+            raise typer.Exit(1)
     if not dry_run:
         complexity = task.get("complexity", "SIMPLE")
         subtask_count = len(task.get("subtasks") or [])
@@ -82,7 +89,8 @@ def _handle_plan_import(
             stage = second_opinion.get("stage", "task_shape")
             status = second_opinion.get("status", "pending")
             second_opinion_suffix = f"|2nd:advisory:{stage}:{status}"
-        typer.echo(f"IMPORT:{tid}|{complexity}|{suffix}{second_opinion_suffix}")
+        blocked_suffix = f"|blocked-by:{blocked_by}" if blocked_by else ""
+        typer.echo(f"IMPORT:{tid}|{complexity}|{suffix}{second_opinion_suffix}{blocked_suffix}")
 
 
 def _handle_single_task_create(
@@ -128,7 +136,7 @@ def create_task_command(
     from_file: Path | None,
     dry_run: bool,
     description: str | None,
-    priority: int,
+    priority: int | None,
     labels: str | None,
     task_type: str | None,
     parent: str | None,
@@ -147,7 +155,11 @@ def create_task_command(
         st create --from-file tasks.json            # batch
     """
     if plan:
-        _handle_plan_import(plan, dry_run, task_id, task_type, labels)
+        overrides = {"title": title, "description": description, "priority": priority, "task_type": task_type}
+        _handle_plan_import(
+            plan, dry_run, task_id,
+            {k: v for k, v in overrides.items() if v is not None}, labels, parent, blocked_by,
+        )
         return
 
     if from_file:
@@ -162,6 +174,7 @@ def create_task_command(
         raise typer.Exit(1)
 
     _handle_single_task_create(
-        title, dry_run, description, priority, labels, task_type or _DEFAULT_TASK_TYPE, parent,
-        blocked_by,
+        title, dry_run, description,
+        _DEFAULT_PRIORITY if priority is None else priority,
+        labels, task_type or _DEFAULT_TASK_TYPE, parent, blocked_by,
     )

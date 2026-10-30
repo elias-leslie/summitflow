@@ -125,13 +125,12 @@ def _refresh_imported_task(
 
 
 def _apply_plan_overrides(
-    plan: Any, task_type: str | None, labels: list[str] | None
+    plan: Any, overrides: dict[str, Any] | None, labels: list[str] | None
 ) -> None:
-    """Apply `st create -t/-l` to the plan: the type replaces, labels are added."""
+    """Apply `st create` flags to the plan: title/-d/-p/-t replace, -l labels are added."""
     if not isinstance(plan, dict):
         return
-    if task_type:
-        plan["task_type"] = task_type
+    plan.update(overrides or {})
     existing = plan.get("labels") or []
     if labels and isinstance(existing, list):
         merged = list(existing)
@@ -144,11 +143,12 @@ def _apply_plan_overrides(
 
 def import_plan_file(
     file_path: Path, dry_run: bool, task_id: str | None, client: STClient,
-    *, task_type: str | None = None, labels: list[str] | None = None,
+    *, overrides: dict[str, Any] | None = None, labels: list[str] | None = None,
+    parent: str | None = None,
 ) -> tuple[dict[str, Any], str]:
     """Import a plan.json file and create or update task, returning (task_dict, task_id)."""
     plan = _load_json_file(file_path)
-    _apply_plan_overrides(plan, task_type, labels)
+    _apply_plan_overrides(plan, overrides, labels)
     _validate_plan(plan, client)
     if dry_run:
         subtasks = plan.get("subtasks", [])
@@ -167,6 +167,8 @@ def import_plan_file(
     }
     if plan.get("labels"):
         task_data["labels"] = plan["labels"]
+    if parent:
+        task_data["parent_task_id"] = parent
     if subtasks_data:
         task_data["subtasks"] = subtasks_data
     if task_id:

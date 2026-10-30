@@ -1296,8 +1296,8 @@ class TestPlanSchemaConsistency:
         assert schema["properties"]["task_type"]["enum"] == list(TASK_TYPE_VALUES)
 
 
-class TestPlanCreateTypeAndLabels:
-    """st create --plan applies -t/--type and -l/--labels like a bare-title create."""
+class TestPlanCreateFlags:
+    """st create --plan applies the title, -d, -p, -t, -l, --parent and --blocked-by flags like a bare-title create."""
 
     def _client(self) -> MagicMock:
         schema_path = Path(__file__).resolve().parents[2] / "app" / "schemas" / "plan.schema.json"
@@ -1360,6 +1360,63 @@ class TestPlanCreateTypeAndLabels:
         assert result.exit_code == 0, result.output
         updates = client.update_task.call_args.kwargs
         assert updates["labels"] == ["existing", "sf-refactor"]
+
+    def test_title_description_and_priority_flags_replace_the_plan_fields(self) -> None:
+        client = self._client()
+        plan = self._plan(description="from plan", priority=3)
+
+        result = self._invoke(client, "Split the helper module", "--plan", str(plan), "-d", "from flag", "-p", "0")
+
+        assert result.exit_code == 0, result.output
+        payload = client.batch_create_tasks.call_args.args[0][0]
+        assert (payload["title"], payload["description"], payload["priority"]) == ("Split the helper module", "from flag", 0)
+
+    def test_plan_fields_stay_when_flags_are_absent(self) -> None:
+        client = self._client()
+        plan = self._plan(description="from plan", priority=3)
+
+        result = self._invoke(client, "--plan", str(plan))
+
+        assert result.exit_code == 0, result.output
+        payload = client.batch_create_tasks.call_args.args[0][0]
+        assert (payload["title"], payload["description"], payload["priority"]) == ("Split the helper", "from plan", 3)
+        assert "parent_task_id" not in payload
+
+    def test_parent_flag_reaches_the_created_task(self) -> None:
+        client = self._client()
+
+        result = self._invoke(client, "--plan", str(self._plan()), "--parent", "task-parent")
+
+        assert result.exit_code == 0, result.output
+        assert client.batch_create_tasks.call_args.args[0][0]["parent_task_id"] == "task-parent"
+
+    def test_parent_flag_reaches_the_updated_task(self) -> None:
+        client = self._client()
+
+        result = self._invoke(client, "--plan", str(self._plan()), "--task", "task-mock-1", "--parent", "task-parent")
+
+        assert result.exit_code == 0, result.output
+        assert client.update_task.call_args.kwargs["parent_task_id"] == "task-parent"
+
+    def test_blocked_by_flag_adds_the_dependency(self) -> None:
+        client = self._client()
+
+        result = self._invoke(client, "--plan", str(self._plan()), "--blocked-by", "task-blocker")
+
+        assert result.exit_code == 0, result.output
+        client.add_dependency.assert_called_once_with("task-mock-1", "task-blocker", dep_type="blocks")
+        assert "|intent-only|blocked-by:task-blocker" in result.output
+
+    def test_blocked_by_failure_is_reported(self) -> None:
+        from cli.client import APIError
+
+        client = self._client()
+        client.add_dependency.side_effect = APIError(404, "Task not found: task-blocker")
+
+        result = self._invoke(client, "--plan", str(self._plan()), "--blocked-by", "task-blocker")
+
+        assert result.exit_code == 1
+        assert "Imported task-mock-1, but --blocked-by task-blocker failed" in result.output
 
 
 class TestCreateFromFileErrors:

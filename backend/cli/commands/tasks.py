@@ -35,7 +35,7 @@ _DEFAULT_CRITIQUE_AGENT = "specifier"
     tier="mandate",
 )
 def create(
-    title: Annotated[str | None, typer.Argument()] = None,
+    title: Annotated[str | None, typer.Argument(help="Task title. With --plan, replaces the plan's title.")] = None,
     from_file: Annotated[
         Path | None,
         typer.Option("--from-file", help=FROM_FILE_OPTION_HELP),
@@ -48,20 +48,20 @@ def create(
         bool,
         typer.Option("--draft", hidden=True, help="Accepted for compatibility; every create is a plain pending task."),
     ] = False,
-    description: Annotated[str | None, typer.Option("-d", "--description", help="Task details beyond the title.")] = None,
-    priority: Annotated[int, typer.Option("-p", "--priority", min=0, max=4, help="0 is highest priority; default is 2.")] = 2,
+    description: Annotated[str | None, typer.Option("-d", "--description", help="Task details beyond the title. With --plan, replaces the plan's description.")] = None,
+    priority: Annotated[int | None, typer.Option("-p", "--priority", min=0, max=4, help="0 is highest priority; default is 2. With --plan, overrides the plan's priority.")] = None,
     labels: Annotated[str | None, typer.Option("-l", "--labels", help="Comma-separated labels. With --plan, added to the plan's labels.")] = None,
     task_type: Annotated[
         str | None,
         typer.Option("-t", "--type", help="Task type: task (default), bug, idea, refactor, ... With --plan, overrides the plan's task_type."),
     ] = None,
-    parent: Annotated[str | None, typer.Option("--parent", help="Parent task ID for a child task.")] = None,
+    parent: Annotated[str | None, typer.Option("--parent", help="Parent task ID for a child task. Works with --plan.")] = None,
     plan: Annotated[
         Path | None,
         typer.Option("--plan", help=PLAN_OPTION_HELP),
     ] = None,
     task_id: Annotated[str | None, typer.Option("--task", help="With --plan, update this existing task instead of creating one.")] = None,
-    blocked_by: Annotated[str | None, typer.Option("--blocked-by", help="Create a blocking dependency on this task ID.")] = None,
+    blocked_by: Annotated[str | None, typer.Option("--blocked-by", help="Create a blocking dependency on this task ID. Works with --plan.")] = None,
 ) -> None:
     del draft  # compatibility no-op
     from .tasks_create import create_task_command
