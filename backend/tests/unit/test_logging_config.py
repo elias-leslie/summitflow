@@ -49,3 +49,22 @@ def test_importing_app_under_pytest_does_not_attach_file_log_handler() -> None:
         isinstance(handler, logging.handlers.TimedRotatingFileHandler)
         for handler in logging.getLogger().handlers
     )
+
+
+def test_loggers_import_structlog_on_first_use() -> None:
+    """Module-level loggers must not cost every st command structlog's import; first use still logs through it."""
+    import os
+    import subprocess
+    import sys
+
+    backend = Path(__file__).resolve().parents[2]
+    probe = (
+        "import sys; import app.storage.tasks.claims; loaded = 'structlog' in sys.modules;"
+        "from structlog.testing import capture_logs; from app.logging_config import get_logger;"
+        "logger = get_logger('probe');"
+        "exec('with capture_logs() as logs: logger.bind(task=1).info(\"claimed\")');"
+        "print(loaded, [(entry['event'], entry['task'], entry['log_level']) for entry in logs])"
+    )
+    result = subprocess.run([sys.executable, "-c", probe], text=True, capture_output=True, check=True, timeout=30,
+                            cwd=backend, env={**os.environ, "PYTHONPATH": str(backend)})
+    assert result.stdout.strip() == "False [('claimed', 1, 'info')]"

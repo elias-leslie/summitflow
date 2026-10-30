@@ -12,10 +12,12 @@ import os
 import sys
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import Any, ClassVar
+from typing import TYPE_CHECKING, Any, ClassVar, cast
 
-import structlog
 from pythonjsonlogger import jsonlogger
+
+if TYPE_CHECKING:
+    import structlog
 
 # Environment variable names
 _ENV_LOG_LEVEL = "LOG_LEVEL"
@@ -217,6 +219,8 @@ def _configure_root_logger(
 
 def _configure_structlog() -> None:
     """Configure structlog with standard processors for structured JSON output."""
+    import structlog
+
     structlog.configure(
         processors=[
             structlog.contextvars.merge_contextvars,
@@ -278,4 +282,25 @@ def get_logger(name: str) -> structlog.stdlib.BoundLogger:
     Returns:
         Structured logger instance
     """
-    return structlog.get_logger(name)
+    return cast("structlog.stdlib.BoundLogger", _DeferredLogger(name))
+
+
+class _DeferredLogger:
+    """structlog.get_logger(name), resolved on first use.
+
+    Modules create their logger at import; importing structlog (and the rich it
+    pulls in) costs about 40 ms of every st command that never logs.
+    """
+
+    def __init__(self, name: str) -> None:
+        self._name = name
+        self._logger: Any = None
+
+    def __getattr__(self, attr: str) -> Any:
+        if attr in ("_logger", "_name"):  # an instance made without __init__ (copy) has neither
+            raise AttributeError(attr)
+        if self._logger is None:
+            import structlog
+
+            self._logger = structlog.get_logger(self._name)
+        return getattr(self._logger, attr)
