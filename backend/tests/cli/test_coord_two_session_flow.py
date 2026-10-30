@@ -4,8 +4,8 @@ No LLM and no mocks of the coordination code: each session is a different
 native session identity, and every step goes through the same `st` commands
 and library calls the agents use, against disposable git repos and a private
 lease/ledger store (see the autouse isolation fixture in conftest). The
-project registry is the one stub: the repo fixture answers it, so no step
-reaches a SummitFlow API.
+project registry and the Tether session catalog are the only stubs: the repo
+fixture answers them, so no step reaches a SummitFlow API or a Tether daemon.
 """
 
 from __future__ import annotations
@@ -17,7 +17,7 @@ import pytest
 from typer.testing import CliRunner
 
 from cli import config
-from cli.lib import coord, leases
+from cli.lib import coord, coordinators, leases
 from cli.lib.commit_workflow import CommitError, commit_git_revision
 from cli.main import app
 
@@ -61,6 +61,7 @@ def repo(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
     # other lookup fails locally instead of reaching the live backend.
     monkeypatch.setattr(config, "get_project_root_path", lambda project: str(root) if project == "pairrepo" else None)
     monkeypatch.setenv("ST_API_BASE", "http://127.0.0.1:9/api")
+    monkeypatch.setattr(coordinators, "sessions", dict)  # no live Tether catalog behind holder lines
     return root
 
 
