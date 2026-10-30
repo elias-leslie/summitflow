@@ -43,6 +43,7 @@ def observe(
     acceptance: Annotated[Path, typer.Option("--acceptance", help="Successful full acceptance receipt")],
     evidence: Annotated[Path, typer.Option("--evidence", help="Write a completion evidence reference to this new file")],
 ) -> None:
+    """Verify an owner-managed native deployment and write source-bound task evidence."""
     from ..client import APIError, STClient
 
     try:
@@ -239,7 +240,7 @@ def status(
         if not services.deployment and (release := service_release.current_release_commit(project_id)):
             parts.append(f"release={release[:12]}")
         location = f" [{services.deployment.label}]" if services.deployment else ""
-        print(f"{services.project_id:<15}{location} {' '.join(parts)}")
+        print(f"{services.project_id:<15}{location} {' '.join(parts) or 'no managed services'}")
     raise typer.Exit(1 if errors else 0)
 
 

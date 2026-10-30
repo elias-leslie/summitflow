@@ -252,6 +252,13 @@ class TestFormatContextTask:
         assert "SYNCABLE_SUBTASKS:1.1,1.2" in output
         assert "SYNC_SKIPS:1.3:citations | 1.4:steps-2" in output
 
+    def test_pending_task_never_says_complete_ready(self) -> None:
+        task = {"id": "task-792", "status": "pending", "priority": 2, "task_type": "task", "title": "Draft",
+                "completion_readiness": {"ready": True, "gates": []}}
+
+        assert "COMPLETE_READY" not in format_context_task(task)
+        assert "COMPLETE_READY:yes" in format_context_task({**task, "status": "running"})
+
     def test_hides_execution_readiness_noise_for_completed_tasks(self) -> None:
         task = {
             "id": "task-791b",

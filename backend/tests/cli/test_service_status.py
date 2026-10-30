@@ -58,6 +58,19 @@ def test_status_omits_release_when_no_receipt_is_readable(observed, monkeypatch)
     assert "release=" not in result.output
 
 
+def test_status_says_when_a_project_has_no_managed_services(observed, monkeypatch):
+    project, _, _ = observed
+    monkeypatch.setattr(service, "_load", lambda _: replace(project, backend_service="", optional_workers=()))
+    monkeypatch.setattr(service.service_release, "current_release_commit", lambda project: None)
+    result = CliRunner().invoke(service.app, ["status", "example"])
+    assert "example         no managed services" in result.output
+
+
+def test_observe_help_has_a_description():
+    result = CliRunner().invoke(service.app, ["--help"], terminal_width=200)
+    assert "Verify an owner-managed native deployment" in result.output
+
+
 def test_summitflow_rebuild_keeps_current_workers():
     root = Path(__file__).resolve().parents[3]
     project = service_ops._project_from_identity(

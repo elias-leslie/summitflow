@@ -189,13 +189,13 @@ def _format_workflow_line(task: dict[str, Any]) -> str | None:
     return f"WORKFLOW:plan:{plan_status}|ready:{ready_flag}|issues:{issues}|decisions:{decisions_count}"
 
 
-def _format_completion_readiness(completion_readiness: object) -> str | None:
-    """Return COMPLETE_READY line if relevant."""
+def _format_completion_readiness(completion_readiness: object, status: str) -> str | None:
+    """Return COMPLETE_READY line if relevant; a pending task is never ready to close, so it gets no yes."""
     if not isinstance(completion_readiness, dict):
         return None
     readiness_data = cast(dict[str, Any], completion_readiness)
     if readiness_data.get("ready"):
-        return "COMPLETE_READY:yes"
+        return None if status == "pending" else "COMPLETE_READY:yes"
     gates = readiness_data.get("gates") or []
     gate_codes = [
         str(g.get("gate") or g.get("code") or "unknown")
@@ -301,7 +301,7 @@ def format_context_task(task: dict[str, Any]) -> str:
     if harness := _format_harness_line(task):
         lines.append(harness)
     lines.extend(_format_body_lines(task, final_status=final_status))
-    if cr_line := _format_completion_readiness(task.get("completion_readiness")):
+    if cr_line := _format_completion_readiness(task.get("completion_readiness"), status):
         lines.append(cr_line)
     lines.extend(_format_sync_lines(task))
     lines.extend(
