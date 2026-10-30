@@ -26,7 +26,11 @@ export function TaskSearch({ onExpandedChange }: TaskSearchProps) {
   const inputRef = useRef<HTMLInputElement>(null)
   const isXl = useIsXl()
 
-  const { data: tasksData } = useQuery({
+  const {
+    data: tasksData,
+    isError,
+    isPending,
+  } = useQuery({
     queryKey: ['tasks', selectedProjectId, 'search'],
     queryFn: () => fetchTasks(selectedProjectId!, { limit: 500 }),
     enabled: !!selectedProjectId && searchValue.length > 0,
@@ -49,6 +53,18 @@ export function TaskSearch({ onExpandedChange }: TaskSearchProps) {
   useEffect(() => {
     setSelectedIndex(0)
   }, [searchResults])
+
+  // Search reads one project's tasks; say so rather than showing an empty result.
+  const emptyMessage = !selectedProjectId
+    ? 'Open a project to search its tasks'
+    : isError
+      ? 'Search failed; try again'
+      : isPending
+        ? 'Searching…'
+        : `No ${selectedProjectId} tasks match`
+  const placeholder = selectedProjectId
+    ? `Search ${selectedProjectId} tasks…`
+    : 'Search tasks…'
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
     if (e.key === 'Escape') {
@@ -122,7 +138,7 @@ export function TaskSearch({ onExpandedChange }: TaskSearchProps) {
   const resultsDropdown = (
     <>
       {isSearchFocused && searchValue && searchResults.length > 0 && (
-        <div className="absolute top-full left-0 right-0 mt-1.5 bg-slate-800/95 backdrop-blur-sm border border-slate-700/80 rounded-lg shadow-xl shadow-black/40 overflow-hidden z-50">
+        <div className="absolute top-full right-0 mt-1.5 w-[min(28rem,calc(100vw-2rem))] bg-slate-800/95 backdrop-blur-sm border border-slate-700/80 rounded-lg shadow-xl shadow-black/40 overflow-hidden z-50">
           {searchResults.map((task, index) => (
             <button
               type="button"
@@ -135,14 +151,14 @@ export function TaskSearch({ onExpandedChange }: TaskSearchProps) {
             >
               {typeIcons[task.task_type] || typeIcons.task}
               <div className="flex-1 min-w-0">
-                <div className="text-sm text-slate-200 truncate">
+                <div className="text-sm text-slate-200 line-clamp-2 break-words">
                   {task.title}
                 </div>
                 <div className="text-xs text-slate-500 truncate">{task.id}</div>
               </div>
               <span
                 className={clsx(
-                  'text-xs px-1.5 py-0.5 rounded',
+                  'shrink-0 text-xs px-1.5 py-0.5 rounded',
                   task.status === 'completed'
                     ? 'bg-phosphor-500/20 text-phosphor-400'
                     : task.status === 'running'
@@ -159,8 +175,11 @@ export function TaskSearch({ onExpandedChange }: TaskSearchProps) {
         </div>
       )}
       {isSearchFocused && searchValue && searchResults.length === 0 && (
-        <div className="absolute top-full left-0 right-0 mt-1.5 bg-slate-800/95 backdrop-blur-sm border border-slate-700/80 rounded-lg shadow-xl shadow-black/40 p-3 z-50">
-          <span className="text-sm text-slate-500">No tasks found</span>
+        <div
+          role="status"
+          className="absolute top-full right-0 mt-1.5 w-[min(28rem,calc(100vw-2rem))] bg-slate-800/95 backdrop-blur-sm border border-slate-700/80 rounded-lg shadow-xl shadow-black/40 p-3 z-50"
+        >
+          <span className="text-sm text-slate-500">{emptyMessage}</span>
         </div>
       )}
     </>
@@ -186,7 +205,7 @@ export function TaskSearch({ onExpandedChange }: TaskSearchProps) {
               <input
                 ref={inputRef}
                 type="text"
-                placeholder="Search tasks..."
+                placeholder={placeholder}
                 aria-label="Search tasks"
                 value={searchValue}
                 onChange={(e) => setSearchValue(e.target.value)}
@@ -227,7 +246,7 @@ export function TaskSearch({ onExpandedChange }: TaskSearchProps) {
         <input
           ref={inputRef}
           type="text"
-          placeholder={isSearchFocused ? 'Search tasks by title or ID...' : ''}
+          placeholder={isSearchFocused ? placeholder : ''}
           aria-label="Search tasks"
           value={searchValue}
           onChange={(e) => setSearchValue(e.target.value)}
