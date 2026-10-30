@@ -98,6 +98,47 @@ def test_friction_line_degrades_per_metric(monkeypatch: pytest.MonkeyPatch, repo
                     "|handshakes_24h=3|unpublished[proj]=no-receipt")
 
 
+def test_session_metrics_run_in_the_background_and_feed_the_friction_line(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import threading
+
+    started = threading.Event()
+    release = threading.Event()
+
+    def slow_query() -> str:
+        started.set()
+        assert release.wait(5)
+        return "commits=3/4ok"
+
+    monkeypatch.setattr(pulse_friction, "_session_metrics", slow_query)
+    monkeypatch.setattr(pulse_friction, "_sweep_refusals", lambda: "sweep_refusals=0")
+    monkeypatch.setattr(pulse_friction, "_rebuilds", lambda: "rebuilds=0ok/0failed")
+    monkeypatch.setattr(pulse_friction, "_handshakes", lambda: "handshakes_24h=0")
+
+    result = pulse_friction.start_session_metrics()
+    # The caller keeps going (the pulse API request) while the query runs.
+    assert started.wait(5)
+    release.set()
+
+    assert pulse_friction.friction_line(session_metrics=result) == (
+        "FRICTION[host,7d]:commits=3/4ok|sweep_refusals=0|rebuilds=0ok/0failed|handshakes_24h=0")
+
+
+def test_background_session_metrics_failure_degrades_like_inline(monkeypatch: pytest.MonkeyPatch) -> None:
+    def broken() -> str:
+        raise OSError("agent hub down")
+
+    monkeypatch.setattr(pulse_friction, "_session_metrics", broken)
+    monkeypatch.setattr(pulse_friction, "_sweep_refusals", lambda: "sweep_refusals=0")
+    monkeypatch.setattr(pulse_friction, "_rebuilds", lambda: "rebuilds=0ok/0failed")
+    monkeypatch.setattr(pulse_friction, "_handshakes", lambda: "handshakes_24h=0")
+
+    line = pulse_friction.friction_line(session_metrics=pulse_friction.start_session_metrics())
+
+    assert line.startswith("FRICTION[host,7d]:commits=unavailable|")
+
+
 def test_worktree_lines_flag_dirty_worktree_outside_workspace(
     repo: Path, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -126,7 +167,8 @@ def test_pulse_compact_prints_worktree_and_friction_lines(monkeypatch: pytest.Mo
 
     seen: list[object] = []
     monkeypatch.setattr(pulse_friction, "worktree_lines", lambda path: [f"WORKTREE:{path.name}|x"])
-    monkeypatch.setattr(pulse_friction, "friction_line", lambda repos=(): seen.append(list(repos)) or "FRICTION[x]")
+    monkeypatch.setattr(pulse_friction, "friction_line",
+                        lambda repos=(), **_: seen.append(list(repos)) or "FRICTION[x]")
     payload = {"project_id": "proj", "summary": {}, "cleanup": {"path": str(repo)}}
     printed: list[str] = []
     monkeypatch.setattr("builtins.print", lambda *args, **_: printed.append(" ".join(map(str, args))))

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -24,7 +25,8 @@ def _stub_friction(monkeypatch: pytest.MonkeyPatch) -> None:
     """Keep these tests off the live Agent Hub DB, jobs store and real worktrees."""
     from cli.commands import pulse_friction
 
-    monkeypatch.setattr(pulse_friction, "friction_line", lambda repos=(): "FRICTION[stub]")
+    monkeypatch.setattr(pulse_friction, "friction_line", lambda repos=(), **_: "FRICTION[stub]")
+    monkeypatch.setattr(pulse_friction, "start_session_metrics", lambda: lambda: "commits=stub")
     monkeypatch.setattr(pulse_friction, "worktree_lines", lambda repo: [])
 
 
@@ -939,3 +941,51 @@ def test_require_pulse_gate_ignores_the_callers_own_writes() -> None:
         "active_nonwriter_write_session"
     ]
 
+
+def test_pulse_starts_friction_query_after_refresh_and_before_the_api_request(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from cli.commands import pulse as pulse_cmd
+    from cli.commands import pulse_friction
+
+    events: list[str] = []
+    monkeypatch.setattr(pulse_cmd, "refresh_agent_observability", lambda: events.append("refresh"))
+
+    def start() -> object:
+        events.append("query-started")
+        return lambda: "commits=1/1ok"
+
+    monkeypatch.setattr(pulse_friction, "start_session_metrics", start)
+    def friction_line(repos: object = (), session_metrics: Callable[[], str] | None = None) -> str:
+        assert session_metrics is not None
+        return f"FRICTION[{session_metrics()}]"
+
+    monkeypatch.setattr(pulse_friction, "friction_line", friction_line)
+    mock_client = MagicMock()
+    mock_client.get.side_effect = lambda url: events.append("api") or {"project_id": "agent-hub", "summary": {}}
+
+    with patch("cli.commands.pulse.STClient", return_value=mock_client):
+        result = runner.invoke(app, ["pulse", "--project", "agent-hub"])
+
+    assert result.exit_code == 0, result.output
+    assert events == ["refresh", "query-started", "api"]
+    assert "FRICTION[commits=1/1ok]" in result.output
+
+
+def test_pulse_json_mode_does_not_run_the_friction_query(monkeypatch: pytest.MonkeyPatch) -> None:
+    from cli.commands import pulse as pulse_cmd
+    from cli.commands import pulse_friction
+
+    def unexpected() -> None:
+        raise AssertionError("the friction line is compact-only")
+
+    monkeypatch.setattr(pulse_friction, "start_session_metrics", unexpected)
+    monkeypatch.setattr(pulse_cmd, "is_compact", lambda: False)
+    mock_client = MagicMock()
+    mock_client.get.return_value = {"project_id": "agent-hub", "summary": {}}
+
+    with patch("cli.commands.pulse.STClient", return_value=mock_client):
+        result = runner.invoke(app, ["pulse", "--project", "agent-hub"])
+
+    assert result.exit_code == 0, result.output
+    assert '"project_id": "agent-hub"' in result.output

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from typing import Annotated, Any
 
 import typer
@@ -88,7 +89,12 @@ def preflight_reasons_for_payload(
     return _preflight_reasons(summary, cleanup, filtered)
 
 
-def _print_compact(payloads: list[dict[str, Any]], *, details: bool = False) -> None:
+def _print_compact(
+    payloads: list[dict[str, Any]],
+    *,
+    details: bool = False,
+    session_metrics: Callable[[], str] | None = None,
+) -> None:
     from .pulse_friction import friction_line, payload_repo, worktree_lines
 
     repos = [repo for payload in payloads if (repo := payload_repo(payload))]
@@ -101,7 +107,7 @@ def _print_compact(payloads: list[dict[str, Any]], *, details: bool = False) -> 
         except Exception:  # the worktree audit never breaks the pulse
             continue
     # Publication lag only for a single-project pulse, so `--all` stays one line.
-    print(friction_line(repos if len(payloads) == 1 else ()))
+    print(friction_line(repos if len(payloads) == 1 else (), session_metrics=session_metrics))
     try:
         from ..lib.coord import notices
 
@@ -209,6 +215,12 @@ def pulse(
         return
 
     refresh_agent_observability()
+    session_metrics = None
+    if is_compact():
+        from .pulse_friction import start_session_metrics
+
+        # The friction line's Agent Hub query does not depend on the pulse payload; overlap the two.
+        session_metrics = start_session_metrics()
     client = STClient(require_project=False)
     try:
         payloads = _pulse_payloads(
@@ -223,7 +235,7 @@ def pulse(
         return
 
     if is_compact():
-        _print_compact(payloads, details=details)
+        _print_compact(payloads, details=details, session_metrics=session_metrics)
         if gate and any(_payload_blocked(payload) for payload in payloads):
             raise typer.Exit(2)
         return

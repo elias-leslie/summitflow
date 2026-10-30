@@ -13,8 +13,10 @@ from __future__ import annotations
 import json
 import re
 import subprocess
+import threading
 import time
-from collections.abc import Iterable
+from collections.abc import Callable, Iterable
+from concurrent.futures import Future
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any
@@ -23,19 +25,21 @@ WINDOW_DAYS = 7
 _OID = re.compile(r"[0-9a-f]{40}")
 _JOB = re.compile(r"[0-9a-f]{32}\.json")
 
+# The cutoff is a one-time subquery so Postgres checks created_at before content: with the
+# bare now() - interval it unpacked every tool_result's TOASTed content first (3.8 s vs 1.1 s).
 _SESSION_SQL = r"""
 WITH commits AS (
     SELECT substring(content from 'COMMIT\[1\]:status=([A-Z_]+)') AS status,
            substring(content from 'COMMIT\[1\]:status=BLOCKED pushed=[a-z]+ detail=([a-z_]+)') AS reason
     FROM session_events
-    WHERE event_type = 'tool_result' AND created_at >= now() - make_interval(days => %(days)s)
+    WHERE event_type = 'tool_result' AND created_at >= (SELECT now() - make_interval(days => %(days)s))
       AND content LIKE '%%COMMIT[1]:status=%%'
 ), dones AS (
     SELECT substring(COALESCE(tool_input->>'cmd', tool_input->>'command')
                      from 'st done[^\n;&|]*?(task-[0-9a-f]{16})') AS task
     FROM session_events
     WHERE event_type = 'tool_use' AND tool_name IN ('Bash', 'bash', 'exec_command')
-      AND created_at >= now() - make_interval(days => %(days)s)
+      AND created_at >= (SELECT now() - make_interval(days => %(days)s))
       AND COALESCE(tool_input->>'cmd', tool_input->>'command') ~ '(^|[;&|]\s*)st done '
 ), per_task AS (
     SELECT task, count(*) AS calls FROM dones WHERE task IS NOT NULL GROUP BY task
@@ -61,6 +65,24 @@ def _session_metrics() -> str:
     total, ok, gates, changed, tasks, repeat = row or (0, 0, 0, 0, 0, 0)
     return (f"commits={ok}/{total}ok|blocked_gates={gates}|blocked_source_changed={changed}"
             f"|done_2plus_calls={repeat}/{tasks}tasks")
+
+
+def start_session_metrics() -> Callable[[], str]:
+    """Run the session-events query (~3 s) on a daemon thread while the pulse API answers.
+
+    The returned callable waits for it; the query's error is raised there. Daemon, so an
+    API error exits at once instead of waiting out the query.
+    """
+    future: Future[str] = Future()
+
+    def run() -> None:
+        try:
+            future.set_result(_session_metrics())
+        except BaseException as exc:  # re-raised by the caller as inline; never leave it waiting
+            future.set_exception(exc)
+
+    threading.Thread(target=run, name="pulse-session-metrics", daemon=True).start()
+    return future.result
 
 
 def _since(days: int) -> datetime:
@@ -152,10 +174,13 @@ def unpublished(repo: Path, project_id: str) -> str:
     return f"unpublished[{project_id}]={len(times)}commits/oldest_{age_hours:.0f}h"
 
 
-def friction_line(repos: Iterable[tuple[str, Path]] = ()) -> str:
-    """One line; each metric degrades to ``unavailable`` on its own."""
+def friction_line(repos: Iterable[tuple[str, Path]] = (), session_metrics: Callable[[], str] | None = None) -> str:
+    """One line; each metric degrades to ``unavailable`` on its own.
+
+    ``session_metrics`` is a result from start_session_metrics(); without one the query runs here.
+    """
     parts: list[str] = []
-    metrics = (("commits", _session_metrics), ("sweep_refusals", _sweep_refusals),
+    metrics = (("commits", session_metrics or _session_metrics), ("sweep_refusals", _sweep_refusals),
                ("rebuilds", _rebuilds), ("handshakes_24h", _handshakes))
     for label, metric in metrics:
         try:
