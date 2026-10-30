@@ -96,6 +96,7 @@ describe('README file browser links', () => {
 
     fireEvent.click(screen.getByRole('button', { name: 'config.json' }))
     expect(await screen.findByText('Selected file content')).toBeInTheDocument()
+    expect(screen.getByText('1 line')).toBeInTheDocument()
     expect(
       requests.some(
         (url) =>

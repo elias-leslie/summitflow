@@ -252,7 +252,11 @@ function FileInfoBar({
     <div className="flex items-center gap-3 border-b border-slate-800 bg-slate-900/50 px-4 py-2 text-xs text-slate-400">
       <FileCode className="h-3.5 w-3.5 text-slate-500" />
       <span className="font-medium text-slate-300">{data.name}</span>
-      {!data.is_binary ? <span>{data.lines} lines</span> : null}
+      {!data.is_binary ? (
+        <span>
+          {data.lines} {data.lines === 1 ? 'line' : 'lines'}
+        </span>
+      ) : null}
       <span>{formatSize(data.size)}</span>
       {data.language ? (
         <span

@@ -17,10 +17,14 @@ export const fileQueryKeys = {
   all: ['files'] as const,
   scope: (scope: FileBrowserScope) =>
     [...fileQueryKeys.all, getFileScopeKey(scope)] as const,
+  trees: (scope: FileBrowserScope) =>
+    [...fileQueryKeys.scope(scope), 'tree'] as const,
   tree: (scope: FileBrowserScope, path: string) =>
-    [...fileQueryKeys.scope(scope), 'tree', path] as const,
+    [...fileQueryKeys.trees(scope), path] as const,
+  contents: (scope: FileBrowserScope) =>
+    [...fileQueryKeys.scope(scope), 'content'] as const,
   content: (scope: FileBrowserScope, path: string) =>
-    [...fileQueryKeys.scope(scope), 'content', path] as const,
+    [...fileQueryKeys.contents(scope), path] as const,
 }
 
 export function useFileTree(scope: FileBrowserScope, path: string = '') {

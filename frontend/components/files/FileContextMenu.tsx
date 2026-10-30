@@ -1,6 +1,6 @@
 'use client'
 
-import { useQueryClient } from '@tanstack/react-query'
+import { type QueryClient, useQueryClient } from '@tanstack/react-query'
 import {
   ClipboardCopy,
   Copy,
@@ -57,6 +57,26 @@ function triggerDownload(url: string, filename: string) {
   document.body.appendChild(link)
   link.click()
   document.body.removeChild(link)
+}
+
+// After a rename or delete the old path is gone: drop its cached content (and
+// everything under it) instead of refetching it, which would 404 and retry for
+// seconds while the menu shows Working… and the viewer keeps the old file.
+// Only the tree listings need a refetch.
+async function refreshAfterPathRemoved(
+  queryClient: QueryClient,
+  target: FileContextMenuTarget,
+) {
+  queryClient.removeQueries({
+    queryKey: fileQueryKeys.contents(target.scope),
+    predicate: ({ queryKey }) => {
+      const path = String(queryKey.at(-1) ?? '')
+      return path === target.path || path.startsWith(`${target.path}/`)
+    },
+  })
+  await queryClient.invalidateQueries({
+    queryKey: fileQueryKeys.trees(target.scope),
+  })
 }
 
 export function FileContextMenu({
@@ -142,11 +162,9 @@ export function FileContextMenu({
     setMutating(true)
     try {
       await renamePath(target.scope, target.path, nextName)
-      await queryClient.invalidateQueries({
-        queryKey: fileQueryKeys.scope(target.scope),
-      })
-      toast.success(`Renamed ${target.name}`)
       onMutated?.()
+      await refreshAfterPathRemoved(queryClient, target)
+      toast.success(`Renamed ${target.name}`)
     } catch (error) {
       toast.error(getErrorMessage(error, 'Failed to rename path'))
     } finally {
@@ -165,11 +183,9 @@ export function FileContextMenu({
     setMutating(true)
     try {
       await deletePath(target.scope, target.path)
-      await queryClient.invalidateQueries({
-        queryKey: fileQueryKeys.scope(target.scope),
-      })
-      toast.success(`Deleted ${target.name}`)
       onMutated?.()
+      await refreshAfterPathRemoved(queryClient, target)
+      toast.success(`Deleted ${target.name}`)
     } catch (error) {
       toast.error(getErrorMessage(error, 'Failed to delete path'))
     } finally {
