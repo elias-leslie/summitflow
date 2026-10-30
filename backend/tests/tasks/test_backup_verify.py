@@ -93,6 +93,16 @@ def test_the_verify_record_is_its_own_file_so_neither_job_overwrites_the_other(t
     assert "check" not in json.loads((tmp_path / "state.json").read_text())
 
 
+def test_a_deleted_old_repository_replaces_its_last_measured_size(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(offsite, "state_dir", lambda: tmp_path)
+    offsite.update_verify(legacy={"local_repository_path": "/t7/restic", "local_repository_bytes": 78 * 1024**3})
+    target = SimpleNamespace(local_repository=tmp_path / "restic")  # never created: the repository is gone
+    offsite.update_verify(legacy=verify.old_repository_bytes(target))  # type: ignore[arg-type]
+    legacy = offsite.read_state()["legacy"]
+    assert legacy["local_repository_missing"] is True and legacy["local_repository_bytes"] is None
+    assert legacy["local_repository_path"] == str(tmp_path / "restic")
+
+
 def test_the_backup_unit_no_longer_reads_anything_back() -> None:
     source = (Path(offsite.__file__)).read_text()
     for name in ("run_check", "spot_restore", "prune", "check\""):

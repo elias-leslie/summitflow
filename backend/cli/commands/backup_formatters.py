@@ -100,7 +100,9 @@ def _old_section(legacy: Mapping[str, Any]) -> list[str]:
     repo = legacy.get("local_repository") or {}
     drive = legacy.get("drive_snapshots") or {}
     lines = ["Old backups (from before the daily job; nothing writes to them any more)"]
-    if repo.get("path"):
+    if repo.get("path") and repo.get("missing"):
+        lines.append(f"  T7 restic repository: not found at {repo['path']}.")
+    elif repo.get("path"):
         lines.append(f"  T7 restic repository: {repo['path']}, {format_size(repo.get('bytes'))}. You can delete it.")
     if drive.get("count"):
         lines.append(f"  Google Drive: {drive['count']} per-project snapshots, gone {drive.get('ages_out_after_days')} days after the change")

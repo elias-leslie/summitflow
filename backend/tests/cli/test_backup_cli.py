@@ -52,6 +52,15 @@ def test_status_says_current_then_local_then_drive(monkeypatch) -> None:
     assert "You can delete it." in result.output
 
 
+def test_status_says_when_the_old_t7_repository_is_gone(monkeypatch) -> None:
+    data = _overview()
+    data["legacy"]["local_repository"] = {"path": "/mnt/t7/restic", "bytes": None, "missing": True}
+    monkeypatch.setattr(backup_overview, "overview", lambda **_: data)
+    result = runner.invoke(backup.app, ["status"])
+    assert "T7 restic repository: not found at /mnt/t7/restic." in result.output
+    assert "You can delete it." not in result.output
+
+
 def test_status_lists_real_problems_and_fails(monkeypatch) -> None:
     problem = {"key": "offsite-missing", "title": "No recent Google Drive backup", "message": "The last good one was 3 days ago."}
     monkeypatch.setattr(backup_overview, "overview", lambda **_: _overview([problem]))

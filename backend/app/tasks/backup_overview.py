@@ -110,6 +110,7 @@ def legacy_summary() -> dict[str, Any]:
     sources = [source for source in backup_store.list_sources() if not source.get("enabled")]
     return {
         "local_repository": {"path": legacy.get("local_repository_path"), "bytes": legacy.get("local_repository_bytes"),
+                             "missing": bool(legacy.get("local_repository_missing")),
                              "note": "The old restic repository on the T7. Nothing writes to it any more; the owner can delete it."},
         "drive_snapshots": {"count": legacy.get("drive_snapshots"), "ages_out_after_days": offsite.get_settings().backup_offsite_legacy_days,
                             "note": "Per-project snapshots from before the daily job. They age out on their own."},

@@ -128,7 +128,7 @@ def state_dir() -> Path:
 # What the weekly verify job writes (``verify.json``), shown as part of the one state: a field is replaced, a
 # section is merged. Keeping it in its own file means neither job can overwrite the other's record.
 VERIFY_FIELDS = ("check", "spot_restore", "verify_run")
-VERIFY_SECTIONS = {"maintenance": ("pruned_at", "prune_partial_at", "prune_error"), "legacy": ("local_repository_path", "local_repository_bytes")}
+VERIFY_SECTIONS = {"maintenance": ("pruned_at", "prune_partial_at", "prune_error"), "legacy": ("local_repository_path", "local_repository_bytes", "local_repository_missing")}
 
 
 def _read_json(path: Path) -> dict[str, Any]:

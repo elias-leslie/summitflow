@@ -156,6 +156,10 @@ def old_repository_bytes(target: Target) -> dict[str, Any]:
     if target.local_repository is None:
         return {}
     measured: dict[str, Any] = {"local_repository_path": str(target.local_repository)}
+    # A repository that is gone must say so; a skipped measurement would leave last week's size standing.
+    measured["local_repository_missing"] = not (target.local_repository / "config").exists()
+    if measured["local_repository_missing"]:
+        return {**measured, "local_repository_bytes": None}
     with contextlib.suppress(IndexError, ValueError, subprocess.TimeoutExpired):
         out = subprocess.run(["du", "-sb", "--", str(target.local_repository)], capture_output=True, text=True, check=False, timeout=600)
         measured["local_repository_bytes"] = int(out.stdout.split()[0])
