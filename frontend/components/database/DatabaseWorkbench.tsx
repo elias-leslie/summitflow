@@ -135,7 +135,7 @@ export function DatabaseWorkbench({
 
   return (
     <div className="flex h-dvh min-h-dvh flex-col overflow-hidden bg-[#05070b]">
-      <div className="flex h-12 shrink-0 items-center gap-2 border-b border-slate-800/80 bg-slate-950/86 px-3 shadow-[0_18px_48px_-38px_rgba(0,0,0,0.95)]">
+      <div className="flex min-h-12 shrink-0 flex-wrap items-center gap-2 border-b border-slate-800/80 bg-slate-950/86 px-3 py-2 shadow-[0_18px_48px_-38px_rgba(0,0,0,0.95)]">
         <div className="flex min-w-0 items-center gap-2">
           <span className="flex h-7 w-7 items-center justify-center rounded-md border border-emerald-500/20 bg-emerald-500/10 text-emerald-300">
             <Database className="h-4 w-4" />
