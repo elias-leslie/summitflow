@@ -43,6 +43,25 @@ assert not any(name == 'cli' or name.startswith('cli.') for name in __import__('
     assert result.returncode == 0, result.stderr
 
 
+def test_sdk_import_defers_httpx_until_a_client_is_built(tmp_path: Path) -> None:
+    """Every extension dispatch imports st_sdk; httpx (~20 ms) loads only for a real client."""
+    package_root = Path(__file__).parents[3] / "packages" / "st-sdk"
+    env = {**os.environ, "PYTHONPATH": str(package_root)}
+    script = """
+import sys
+import st_sdk
+from st_sdk import STClient
+assert 'httpx' not in sys.modules
+STClient(base_url='http://localhost:9/api', project_id='fixture')
+assert 'httpx' in sys.modules
+"""
+
+    result = subprocess.run([sys.executable, "-c", script], cwd=tmp_path, env=env, text=True,
+                            capture_output=True, check=False)
+
+    assert result.returncode == 0, result.stderr
+
+
 def test_run_app_applies_extension_context_before_callback(
     monkeypatch, tmp_path: Path
 ) -> None:
