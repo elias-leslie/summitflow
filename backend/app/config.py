@@ -144,6 +144,11 @@ def get_settings() -> Settings:
     return Settings()
 
 
+# The DATABASE_URL an agent host's st guard sets (agent-hub
+# scripts/remote-host/host/st): the database is never forwarded to a host, so
+# nothing listens there and DB-backed commands refuse at once instead.
+AGENT_HOST_DATABASE_URL = "postgresql://st-remote-host@127.0.0.1:1/unavailable"
+
 # Pre-loaded for modules that need them at import time
 # These provide backward compatibility with existing code
 settings = get_settings()

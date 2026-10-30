@@ -362,6 +362,17 @@ class _RootGroup(TyperGroup):
             return _lazy_command(cmd_name)
         return super().get_command(ctx, cmd_name)
 
+    def invoke(self, ctx: Any) -> Any:
+        try:
+            return super().invoke(ctx)
+        except Exception as exc:
+            # An agent host has no database (app.storage.connection.DatabaseUnavailable): one line, not a traceback.
+            connection = sys.modules.get("app.storage.connection")
+            if connection is not None and isinstance(exc, connection.DatabaseUnavailable):
+                typer.echo(f"ERROR {exc}", err=True)
+                raise typer.Exit(2) from exc
+            raise
+
     def format_commands(self, ctx: Any, formatter: Any) -> None:
         # Root help lists the placeholders' help instead of importing every command module.
         ctx.meta[_LISTING] = True

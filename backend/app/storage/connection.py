@@ -8,7 +8,7 @@ from contextlib import contextmanager
 import psycopg
 from psycopg_pool import ConnectionPool
 
-from ..config import DATABASE_URL
+from ..config import AGENT_HOST_DATABASE_URL, DATABASE_URL
 
 # Module-level connection pool (lazy-initialized)
 _pool: ConnectionPool | None = None
@@ -33,11 +33,19 @@ def generate_prefixed_id(prefix: str) -> str:
     return f"{prefix}-{uuid.uuid4().hex[:PREFIXED_ID_HEX_LENGTH]}"
 
 
+class DatabaseUnavailable(psycopg.OperationalError):
+    """This machine has no SummitFlow database: an agent host's placeholder DATABASE_URL."""
+
+
 def get_pool() -> ConnectionPool:
     """Get the connection pool, initializing if needed."""
     global _pool
     if _pool is None:
         assert DATABASE_URL is not None, "DATABASE_URL must be set"
+        if DATABASE_URL == AGENT_HOST_DATABASE_URL:
+            # Otherwise the pool retries a port nothing listens on for its full 30 s timeout.
+            raise DatabaseUnavailable("this needs the SummitFlow database, which is only on the workstation "
+                                      "(agent hosts get API access, not the database); run it there")
         _pool = ConnectionPool(
             DATABASE_URL,
             min_size=POOL_MIN_SIZE,
