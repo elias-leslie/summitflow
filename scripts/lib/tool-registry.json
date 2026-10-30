@@ -434,24 +434,6 @@
       ]
     },
     {
-      "id": "desktop-automation.selection",
-      "owner": "desktop-automation",
-      "namespace": "selection",
-      "manifest": "extensions/selection.json",
-      "executable": ".venv/bin/desktop-st-selection",
-      "grant": {
-        "enabled": true,
-        "effects": [
-          "network",
-          "write-remote"
-        ]
-      },
-      "environment": [
-        "AICO_SIDECAR_HOST",
-        "AICO_SIDECAR_PORT"
-      ]
-    },
-    {
       "id": "desktop-automation.show",
       "owner": "desktop-automation",
       "namespace": "show",

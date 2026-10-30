@@ -25,7 +25,7 @@ the overall migration.
 |---|---|---|---|---|
 | 1 | browser | browser-automation | new | Runner, checks and automation; ST retains project/VM routing and safety adapters. |
 | 2 | web | agent-hub | existing | Supported web-research CLI; move benchmark and preserve option/output parity. |
-| 3 | ui, selection | desktop-automation | new | Platform operations and Aico protocol bridge; no active-desktop verification. |
+| 3 | ui (selection retired 2026-10-30) | desktop-automation | new | Platform operations; no active-desktop verification. |
 | 4 | jobs | jobinator-4000 | existing | Domain CLI/client and tests. |
 | 5 | portfolio | portfolio-ai | existing | Domain CLI/client and tests. |
 | 6 | neri | neri | retired | `st neri` removed 2026-10-27 with the Neri app; bounty work is text-only in the bounty repo. |
