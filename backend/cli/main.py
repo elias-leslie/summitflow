@@ -61,7 +61,7 @@ FORWARD_CONTEXT_SETTINGS = {"allow_extra_args": True, "ignore_unknown_options": 
 # shows the module's own help.
 LAZY_COMMANDS: dict[str, tuple[str, str, str, str, bool]] = {
     "create": ("tasks", "named", "", "Create a pending task.", False),
-    "list": ("tasks", "named", "", "List tasks with optional filters.", False),
+    "list": ("tasks", "named", "", "List tasks in the current project (cwd or -P) with optional filters.", False),
     "ready": ("tasks", "named", "", "List claimable tasks, or use --blocked to inspect blocked pending tasks.", False),
     "ready-all": ("tasks", "named", "", "Cross-project summary: ready and blocked tasks across all projects.", False),
     "context": ("tasks", "named", "", "Get task or subtask context in a single call.", False),
