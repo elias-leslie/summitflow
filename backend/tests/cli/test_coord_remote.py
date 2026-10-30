@@ -123,6 +123,14 @@ def test_a_malformed_host_request_is_refused(tether, kwargs):
         coord_remote.record_from_host("cc:4a9a07", "x", **kwargs)
 
 
+def test_a_host_request_from_a_shell_in_a_tether_root_is_recorded(monkeypatch, tether):
+    """A root whose agent isn't running leaves a shell whose id is st:<root handle>."""
+    monkeypatch.setattr(coordinators, "agent_for_widget", {"4a9a070d": "cc:4a9a07"}.get)
+    row = coord_remote.record_from_host("Agent-Hub", "x", sender="st:aico-root-f36",
+                                        host="agent-work", reply_to="c1338b32")
+    assert row["from"] == "st:aico-root-f36@agent-work"
+
+
 def test_a_host_request_for_no_agent_here_is_not_found(monkeypatch, tether):
     monkeypatch.setattr(coordinators, "agent_for_widget", lambda _: None)
     with pytest.raises(LookupError):

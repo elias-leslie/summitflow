@@ -24,6 +24,8 @@ from . import coord, coord_route, coordinators, leases
 
 # A host name in Tether's hosts.json (tether/src/hub/hosts.ts).
 HOST = re.compile(r"[a-z0-9][a-z0-9-]{0,31}")
+# A host request comes from an agent id, or the st:<session> id a shell in a Tether root resolves to.
+SENDER = re.compile(r"(cc|codex|pi|agy|st|tmux):[\w-]+")
 _NAMES = ("id", "ownershipId", "rootRequestId", "name", "label", "displayTitle")
 
 
@@ -117,7 +119,7 @@ def record_from_host(target: str, text: str, *, sender: str, host: str,
     """Record a host agent's request in this (the workstation's) ledger."""
     if not HOST.fullmatch(host):
         raise ValueError("invalid host name")
-    if not coord_route.AGENT_ID.fullmatch(sender):
+    if not SENDER.fullmatch(sender):
         raise ValueError("invalid sender id")
     if reply_to is not None and not re.fullmatch(r"[0-9a-f]{8}", reply_to):
         raise ValueError("invalid reply window")
