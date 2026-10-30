@@ -274,6 +274,17 @@ def test_ci_repro_delegates_remaining_args(monkeypatch: pytest.MonkeyPatch) -> N
     assert calls == [["--seed", "7"]]
 
 
+@pytest.mark.parametrize("args", [["pytest", "--help"], ["vitest", "-h"], ["semgrep", "--help"]])
+def test_gate_help_prints_usage_without_running_the_tool(repo: Path, monkeypatch: pytest.MonkeyPatch,
+                                                         args: list[str]) -> None:
+    ran = Mock(return_value=0)
+    monkeypatch.setattr("cli.commands.check_dispatch.run_named_tool", ran)
+    result = _invoke(*args)
+    assert result.exit_code == 0
+    assert f"Usage: st check {args[0]} [--changed-only] [-- <{args[0]} args>]" in result.output
+    ran.assert_not_called()
+
+
 # --- native gates -----------------------------------------------------------
 
 

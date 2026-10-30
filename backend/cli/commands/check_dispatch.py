@@ -291,6 +291,17 @@ def run_named_tool(
     return 0 if skipped else runtime.run_tool(first, config, extra_args)
 
 
+def tool_help_text(name: str) -> str:
+    return (
+        f"Usage: st check {name} [--changed-only] [-- <{name} args>]\n"
+        f"Runs {name} with this repo's config through st; heavy tools first wait for the shared heavy-work lane.\n"
+        f"Args after -- go to {name}. Paths may be relative to the repo root, e.g.\n"
+        f"  st check pytest -- backend/tests/api/test_projects.py -k health\n"
+        f"  st check vitest -- frontend/components/Foo.test.tsx\n"
+        f"All gates: st check --help\n"
+    )
+
+
 def help_text(names: str) -> str:
     return (
         """st check: repo gates. Never run raw pytest/vitest/biome/tsc/ruff/sqlfluff/squawk.
@@ -339,6 +350,9 @@ def handle_check_args(
     if first == "codeql":
         return runtime.run_codeql_alert_check(args[1:])
     if first in configs or first in {"gitleaks", "semgrep", "osv", "security"}:
+        if args[1:] in (["-h"], ["--help"]):  # help must not queue for the heavy lane or reach the tool
+            print(tool_help_text(first))
+            return 0
         return run_named_tool(first, args, configs, changed_only=changed_only, fix=fix, runtime=runtime)
 
     selection = runtime.tool_selections.get(first)
