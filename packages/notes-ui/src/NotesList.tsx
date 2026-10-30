@@ -11,9 +11,11 @@ interface NotesListProps {
     scopeFilter: string | undefined;
     selectedId: string | null;
     onSelect: (note: Note) => void;
+    /** Narrow panels show the list alone, across the whole panel. */
+    fullWidth?: boolean;
 }
 
-export function NotesList({ activeTab, scopeFilter, selectedId, onSelect }: NotesListProps) {
+export function NotesList({ activeTab, scopeFilter, selectedId, onSelect, fullWidth = false }: NotesListProps) {
     const { projectScope } = useNotesContext();
     const [search, setSearch] = useState('');
     const [activeTag, setActiveTag] = useState<string | null>(null);
@@ -51,9 +53,9 @@ export function NotesList({ activeTab, scopeFilter, selectedId, onSelect }: Note
         <div
             className="flex flex-col h-full border-r border-slate-700/50 bg-slate-950/40"
             style={{
-                width: '30%',
+                width: fullWidth ? '100%' : '30%',
                 minWidth: 180,
-                maxWidth: 280,
+                maxWidth: fullWidth ? 'none' : 280,
                 backgroundColor: 'rgba(2, 6, 23, 0.55)',
                 borderColor: 'rgba(51, 65, 85, 0.5)',
             }}

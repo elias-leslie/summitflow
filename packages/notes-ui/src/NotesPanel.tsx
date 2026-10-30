@@ -1,5 +1,5 @@
-import { useState } from 'react';
-import { StickyNote, ExternalLink, ChevronDown } from 'lucide-react';
+import { useEffect, useRef, useState } from 'react';
+import { StickyNote, ExternalLink, ChevronDown, ChevronLeft } from 'lucide-react';
 import clsx from 'clsx';
 import { useNotesContext } from './NotesProvider';
 import { NotesList } from './NotesList';
@@ -8,6 +8,25 @@ import type { Note } from './types';
 
 interface NotesPanelProps {
     onPopOut?: () => void;
+}
+
+/** Below this panel width the list and editor don't fit side by side, so one shows at a time. */
+const SINGLE_COLUMN_BELOW_PX = 480;
+
+/** Tracks whether the panel itself (not the viewport: it can be a narrow popover on a wide screen) is narrow. */
+function useNarrow(ref: React.RefObject<HTMLDivElement | null>): boolean {
+    const [narrow, setNarrow] = useState(false);
+    useEffect(() => {
+        const el = ref.current;
+        if (!el) return;
+        const measure = () => setNarrow(el.getBoundingClientRect().width < SINGLE_COLUMN_BELOW_PX);
+        measure();
+        if (typeof ResizeObserver === 'undefined') return;
+        const observer = new ResizeObserver(measure);
+        observer.observe(el);
+        return () => observer.disconnect();
+    }, [ref]);
+    return narrow;
 }
 
 export function NotesPanel({ onPopOut }: NotesPanelProps) {
@@ -21,9 +40,14 @@ export function NotesPanel({ onPopOut }: NotesPanelProps) {
         ? scopeOptions
         : [{ value: projectScope || 'global', label: getScopeLabel(projectScope || 'global'), known: false }];
     const activeScopeLabel = getScopeLabel(scopeFilter);
+    const panelRef = useRef<HTMLDivElement>(null);
+    const narrow = useNarrow(panelRef);
+    const showList = !narrow || !selectedNote;
+    const showEditor = !narrow || !!selectedNote;
 
     return (
         <div
+            ref={panelRef}
             className="flex flex-col flex-1 min-h-0 bg-slate-900"
             style={{ backgroundColor: '#0f172a' }}
         >
@@ -31,6 +55,8 @@ export function NotesPanel({ onPopOut }: NotesPanelProps) {
             <div
                 className="flex items-center justify-between px-3 py-2.5 border-b border-slate-700/50 flex-shrink-0 bg-slate-950/60"
                 style={{
+                    flexWrap: 'wrap',
+                    rowGap: 6,
                     backgroundColor: 'rgba(2, 6, 23, 0.78)',
                     borderColor: 'rgba(51, 65, 85, 0.5)',
                 }}
@@ -128,13 +154,29 @@ export function NotesPanel({ onPopOut }: NotesPanelProps) {
                 className="flex flex-1 min-h-0 overflow-hidden bg-slate-900"
                 style={{ backgroundColor: '#0f172a' }}
             >
-                <NotesList
-                    activeTab={activeTab}
-                    scopeFilter={scopeFilter}
-                    selectedId={selectedNote?.id ?? null}
-                    onSelect={setSelectedNote}
-                />
-                <div className="flex-1 min-w-0 bg-slate-900" style={{ backgroundColor: '#0f172a' }}>
+                {showList && (
+                    <NotesList
+                        activeTab={activeTab}
+                        scopeFilter={scopeFilter}
+                        selectedId={selectedNote?.id ?? null}
+                        onSelect={setSelectedNote}
+                        fullWidth={narrow}
+                    />
+                )}
+                {showEditor && (
+                <div className="flex flex-col flex-1 min-w-0 bg-slate-900" style={{ display: 'flex', flexDirection: 'column', backgroundColor: '#0f172a' }}>
+                    {narrow && selectedNote && (
+                        <button
+                            type="button"
+                            onClick={() => setSelectedNote(null)}
+                            className="flex items-center gap-1 px-3 py-1.5 text-[11px] text-slate-400 hover:text-slate-200 border-b border-slate-700/50 flex-shrink-0"
+                            style={{ borderColor: 'rgba(51, 65, 85, 0.5)' }}
+                        >
+                            <ChevronLeft className="w-3.5 h-3.5" />
+                            All {activeTab === 'note' ? 'notes' : 'prompts'}
+                        </button>
+                    )}
+                    <div className="flex-1 min-h-0" style={{ flex: 1, minHeight: 0 }}>
                     {selectedNote ? (
                         <NoteEditor
                             note={selectedNote}
@@ -155,7 +197,9 @@ export function NotesPanel({ onPopOut }: NotesPanelProps) {
                             </div>
                         </div>
                     )}
+                    </div>
                 </div>
+                )}
             </div>
         </div>
     );
