@@ -176,3 +176,16 @@ def test_everyone_lists_open_requests_from_any_sender(monkeypatch):
     page = coord_disrupt.snapshot(everyone=True, run=_quiet)
     assert any(r["id"] == sent["id"] and r["reply"] == "none" for r in page["handshakes"])
     assert "codex:dddddd" in page["awaiting_reply"]
+
+
+def test_runtime_page_keeps_a_hold_after_its_holder_said_yes_to_someone_else(monkeypatch, tmp_path):
+    _as(monkeypatch, "codex", "holder-thread-eeeeee")
+    holder = leases.acquire_mark("demo-proj", str(tmp_path), "hold", "integration").agent_id
+    _as(monkeypatch, "claude", "disrupt-unrelated-asker")
+    sent = coord.send(holder, "may I read your notes file?")
+    _as(monkeypatch, "codex", "holder-thread-eeeeee")
+    coord.ack(sent["id"], "yes")
+    _as(monkeypatch, "claude", "runtime-page-reader-2")
+    page = coord_disrupt.snapshot(everyone=True, run=_quiet)
+    assert any(r["id"] == sent["id"] and r["reply"] == "yes" for r in page["handshakes"])
+    assert "an agent is holding demo-proj (integration)" in page["blocking"]

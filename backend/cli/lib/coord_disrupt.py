@@ -209,7 +209,9 @@ def snapshot(
     agents = live_agents(session_rows, host)
 
     replies = handshakes(request_ids, now, everyone=everyone)
-    ready = {r["acked_by"] or r["to"] for r in replies if r["reply"] == "yes"}
+    # A yes answers the request it was given to, so it excuses a hold only for the caller who asked.
+    # The Runtime page (everyone) asked nobody: another agent's unrelated yes must not hide a hold there.
+    ready = set() if everyone else {r["acked_by"] or r["to"] for r in replies if r["reply"] == "yes"}
     holds, files = marks_and_leases()
 
     backups_rows: list[dict[str, Any]] = []
