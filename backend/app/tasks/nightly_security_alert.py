@@ -3,8 +3,10 @@
 Each night the committed lockfiles (uv.lock, pnpm-lock.yaml, package-lock.json) of every active project go through
 the same osv-scanner invocation ``st check security`` uses, under heavy-work admission. A finding counts only when the
 package is a runtime dependency and the advisory names a fixed version above the locked one. After every project is
-scanned, at most one push goes to Nightshift's PWA Web Push (``nightshift push``) and nowhere else: how many fixable
-advisories in how many projects, then one line per project. Nothing is sent on a clean night. An advisory that stays
+scanned, at most one notice goes to Nightshift (``nightshift push --json``, notice contract v1) and nowhere else: how
+many fixable advisories in how many projects, then one line per project, offered as Look into it (an agent bumps the
+packages) on the desktop, not the phone. A clean night where every project was scanned tells Nightshift it is over
+(``nightshift resolve``); a night with a failed scan says nothing, since unknown is not clean. An advisory that stays
 unfixed shows up in the next night's summary again; that is the point, so nothing is remembered between nights.
 """
 
@@ -16,12 +18,12 @@ import re
 import subprocess
 import tempfile
 import tomllib
-from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
 import yaml
 
+from ..config import settings
 from ..logging_config import get_logger
 from .backup_canaries import _nightshift
 from .nightly_publication import _projects
@@ -29,7 +31,8 @@ from .nightly_publication import _projects
 logger = get_logger(__name__)
 
 LOCK_NAMES = ("uv.lock", "pnpm-lock.yaml", "package-lock.json")
-SUMMARY_QUIET_SECONDS = 20 * 3600  # a hand re-run the same night stays quiet; the key carries the date
+NOTICE_KEY = "dependency-advisories"  # one condition: fixable advisories are open somewhere
+SUMMARY_QUIET_SECONDS = 20 * 3600  # a hand re-run the same night stays quiet; the next night pushes again
 SUMMARY_PACKAGES_SHOWN = 2  # packages named per project line before "+N more"
 SUMMARY_MAX_CHARS = 3900  # Nightshift keeps 4000 characters for the detail page; the lock screen shows the first 180
 SCAN_TIMEOUT_SECONDS = 600
@@ -231,20 +234,45 @@ def summarize(by_project: dict[str, list[dict[str, str]]]) -> tuple[str, str] | 
     return "Security fixes available", "\n".join(lines)
 
 
-def push_summary(title: str, message: str, *, night: str, quiet_seconds: int = SUMMARY_QUIET_SECONDS) -> bool:
-    """Send the one Nightshift Web Push; True when Nightshift accepted it."""
+def build_notice(title: str, message: str, projects: list[str], *,
+                 quiet_seconds: int = SUMMARY_QUIET_SECONDS) -> dict[str, Any]:
+    """The night's summary as a Nightshift notice (contract v1): the first line is what the phone or card shows, the
+    project lines are the detail. Open goes to the one project's Git page, else the Git overview of all projects."""
+    lead, _, rest = message.partition("\n")
+    base = settings.summitflow_public_url.rstrip("/")
+    page = f"{base}/projects/{projects[0]}/git" if len(projects) == 1 else f"{base}/git"
+    return {
+        "v": 1, "source": "summitflow", "kind": "alert", "severity": "warning",
+        "title": title, "body": lead, **({"detail": rest} if rest else {}),
+        "key": NOTICE_KEY, "open": page,
+        "fields": [{"label": "Projects", "value": ", ".join(projects)[:300]}],
+        "actions": ["look-into"], "primary": "look-into",
+        "push": "tray", "cooldown": quiet_seconds,
+    }
+
+
+def _run_nightshift(arguments: list[str], stdin: str | None = None) -> bool:
     binary = _nightshift()
     if binary is None:
         return False
     try:
-        result = subprocess.run(
-            [binary, "push", "--title", title, "--severity", "warning",
-             "--key", f"dependency-advisory-summary:{night}", "--cooldown", str(quiet_seconds), message],
-            capture_output=True, text=True, timeout=PUSH_TIMEOUT_SECONDS, check=False,
-        )
+        result = subprocess.run([binary, *arguments], input=stdin, capture_output=True, text=True,
+                                timeout=PUSH_TIMEOUT_SECONDS, check=False)
     except (OSError, subprocess.SubprocessError):
         return False
+    if result.returncode == 2:  # the notice breaks Nightshift's contract: a bug here, not an outage
+        logger.error("nightly_security_alert_notice_refused", command=arguments[0], error=result.stderr.strip()[:500])
     return result.returncode == 0
+
+
+def push_summary(notice: dict[str, Any]) -> bool:
+    """Send the one Nightshift notice; True when Nightshift accepted it."""
+    return _run_nightshift(["push", "--json"], json.dumps(notice))
+
+
+def resolve_summary() -> bool:
+    """Every project scanned clean: tell Nightshift the advisories are over (closes an open notice, ends its quiet)."""
+    return _run_nightshift(["resolve", NOTICE_KEY, "--text", "No fixable security advisories left in any project."])
 
 
 def run_nightly_security_alert(*, project_ids: list[str] | None = None, send: bool = True) -> dict[str, Any]:
@@ -263,8 +291,10 @@ def run_nightly_security_alert(*, project_ids: list[str] | None = None, send: bo
         found[project_id] = findings
         rows.append({"project_id": project_id, "state": "scanned", "fixable_runtime": len(findings)})
     summary = summarize(found)
-    sent = False
+    sent = resolved = False
     if summary and send:
-        sent = push_summary(*summary, night=datetime.now(UTC).date().isoformat())
-    return {"status": "completed", "alerts_sent": int(sent), "projects": rows,
+        sent = push_summary(build_notice(*summary, sorted(p for p, items in found.items() if items)))
+    elif send and rows and all(row["state"] == "scanned" for row in rows):
+        resolved = resolve_summary()
+    return {"status": "completed", "alerts_sent": int(sent), "resolved": resolved, "projects": rows,
             **({"summary": summary[1]} if summary else {})}

@@ -87,6 +87,8 @@ class Settings(BaseSettings):
     cloudflare_access_team_domain: str = ""
     cloudflare_access_aud: str = ""
     summitflow_owner_emails: str = ""
+    # Where the owner opens SummitFlow; a Nightshift notice's Open link points into it.
+    summitflow_public_url: str = "https://dev.summitflow.dev"
 
     # Owner by credential, not address. While summitflow_loopback_is_owner is on (default,
     # SUMMITFLOW_LOOPBACK_IS_OWNER) every local caller is the owner. Off, a caller is the owner only with
