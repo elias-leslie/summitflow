@@ -3,7 +3,9 @@
 No LLM and no mocks of the coordination code: each session is a different
 native session identity, and every step goes through the same `st` commands
 and library calls the agents use, against disposable git repos and a private
-lease/ledger store (see the autouse isolation fixture in conftest).
+lease/ledger store (see the autouse isolation fixture in conftest). The
+project registry is the one stub: the repo fixture answers it, so no step
+reaches a SummitFlow API.
 """
 
 from __future__ import annotations
@@ -14,6 +16,7 @@ from pathlib import Path
 import pytest
 from typer.testing import CliRunner
 
+from cli import config
 from cli.lib import coord, leases
 from cli.lib.commit_workflow import CommitError, commit_git_revision
 from cli.main import app
@@ -54,6 +57,10 @@ def repo(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
     _git(root, "commit", "-qm", "init")
     monkeypatch.chdir(root)
     monkeypatch.setenv("ST_PROJECT_ID", "pairrepo")
+    # The registry lookup for the project root is answered here; the API base points at a closed port so any
+    # other lookup fails locally instead of reaching the live backend.
+    monkeypatch.setattr(config, "get_project_root_path", lambda project: str(root) if project == "pairrepo" else None)
+    monkeypatch.setenv("ST_API_BASE", "http://127.0.0.1:9/api")
     return root
 
 
