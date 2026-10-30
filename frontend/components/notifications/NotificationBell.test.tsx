@@ -63,10 +63,23 @@ describe('NotificationBell', () => {
     apiMocks.dismissNotification.mockResolvedValue({})
   })
 
+  it('names the project its count covers on a project page', async () => {
+    const { unmount } = render(<NotificationBell projectId="agent-hub" />)
+    fireEvent.click(screen.getByTitle('Notifications for agent-hub'))
+    expect(
+      await screen.findByRole('heading', {
+        name: 'Notifications for agent-hub',
+      }),
+    ).toBeInTheDocument()
+    unmount()
+    render(<NotificationBell projectId={null} />)
+    expect(screen.getByTitle('Notifications')).toBeInTheDocument()
+  })
+
   it('marks a notification as read when clicked', async () => {
     render(<NotificationBell projectId="agent-hub" />)
 
-    fireEvent.click(screen.getByTitle('Notifications'))
+    fireEvent.click(screen.getByTitle(/^Notifications/))
 
     await screen.findByText('Task failed')
     fireEvent.click(screen.getByText('Task failed'))
@@ -82,7 +95,7 @@ describe('NotificationBell', () => {
   it('expands to the full message with a link to the task', async () => {
     render(<NotificationBell projectId="agent-hub" />)
 
-    fireEvent.click(screen.getByTitle('Notifications'))
+    fireEvent.click(screen.getByTitle(/^Notifications/))
 
     const row = await screen.findByRole('button', { expanded: false })
     expect(screen.queryByRole('link', { name: 'Open' })).toBeNull()
@@ -119,7 +132,7 @@ describe('NotificationBell', () => {
 
     render(<NotificationBell projectId={null} />)
 
-    fireEvent.click(screen.getByTitle('Notifications'))
+    fireEvent.click(screen.getByTitle(/^Notifications/))
     fireEvent.click(
       await screen.findByRole('button', { name: 'Show more (1)' }),
     )
@@ -135,7 +148,7 @@ describe('NotificationBell', () => {
   it('dismisses a notification without navigating', async () => {
     render(<NotificationBell projectId="agent-hub" />)
 
-    fireEvent.click(screen.getByTitle('Notifications'))
+    fireEvent.click(screen.getByTitle(/^Notifications/))
 
     await screen.findByText('Task failed')
     fireEvent.click(screen.getByTitle('Dismiss'))
@@ -150,7 +163,7 @@ describe('NotificationBell', () => {
 
   it('names the notification on its dismiss button', async () => {
     render(<NotificationBell projectId="agent-hub" />)
-    fireEvent.click(screen.getByTitle('Notifications'))
+    fireEvent.click(screen.getByTitle(/^Notifications/))
     await screen.findByText('Task failed')
     expect(
       screen.getByRole('button', { name: 'Dismiss notification: Task failed' }),
@@ -160,7 +173,7 @@ describe('NotificationBell', () => {
   it('asks before dismissing every notification, and Keep leaves them', async () => {
     apiMocks.dismissAllNotifications.mockResolvedValue({})
     render(<NotificationBell projectId="agent-hub" />)
-    fireEvent.click(screen.getByTitle('Notifications'))
+    fireEvent.click(screen.getByTitle(/^Notifications/))
     await screen.findByText('Task failed')
 
     fireEvent.click(screen.getByRole('button', { name: 'Dismiss all…' }))
@@ -181,7 +194,7 @@ describe('NotificationBell', () => {
 
     render(<NotificationBell projectId="agent-hub" />)
 
-    fireEvent.click(screen.getByTitle('Notifications'))
+    fireEvent.click(screen.getByTitle(/^Notifications/))
 
     await screen.findByText('Failed to load notifications')
     expect(
@@ -202,7 +215,7 @@ describe('NotificationBell', () => {
 
     expect(await screen.findByText('7')).toBeInTheDocument()
     expect(apiMocks.fetchNotificationCount).not.toHaveBeenCalled()
-    fireEvent.click(screen.getByTitle('Notifications'))
+    fireEvent.click(screen.getByTitle(/^Notifications/))
     await waitFor(() => {
       expect(scopeMocks.fetchGlobalNotifications).toHaveBeenCalledWith({
         limit: 10,
@@ -219,7 +232,9 @@ describe('NotificationBell', () => {
       await screen.findByTestId('notification-count-error'),
     ).toBeInTheDocument()
     expect(
-      screen.getByRole('button', { name: 'Notifications (count unavailable)' }),
+      screen.getByRole('button', {
+        name: 'Notifications for agent-hub (count unavailable)',
+      }),
     ).toBeInTheDocument()
     expect(screen.queryByText('0')).not.toBeInTheDocument()
   })

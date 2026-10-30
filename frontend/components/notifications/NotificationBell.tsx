@@ -56,6 +56,10 @@ export function NotificationBell({
 }: NotificationBellProps) {
   const [isOpen, setIsOpen] = useState(false)
   const [pendingCount, setPendingCount] = useState(0)
+  // Project pages count only that project's notifications; say so, or the badge looks wrong.
+  const scopeLabel = projectId
+    ? `Notifications for ${projectId}`
+    : 'Notifications'
   const [countError, setCountError] = useState(false)
   const [notifications, setNotifications] = useState<Notification[]>([])
   const [total, setTotal] = useState(0)
@@ -199,11 +203,11 @@ export function NotificationBell({
         onClick={handleToggle}
         className="btn-ghost p-2 rounded-lg relative"
         aria-label={
-          countError ? 'Notifications (count unavailable)' : 'Notifications'
+          countError ? `${scopeLabel} (count unavailable)` : scopeLabel
         }
         aria-expanded={isOpen}
         aria-haspopup="dialog"
-        title="Notifications"
+        title={scopeLabel}
       >
         <Bell className="w-4 h-4" />
         {countError ? (
@@ -235,7 +239,7 @@ export function NotificationBell({
             {/* Header */}
             <div className="flex items-center justify-between px-4 py-3 border-b border-slate-700">
               <h3 className="text-sm font-medium text-slate-200">
-                Notifications
+                {scopeLabel}
               </h3>
               {pendingCount > 0 && (
                 <div className="flex items-center gap-2">
