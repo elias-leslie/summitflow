@@ -636,14 +636,14 @@ function StatusCell({
       </div>
       <div
         className={clsx(
-          'mt-2 text-sm truncate font-semibold',
+          'mt-2 break-words text-sm font-semibold',
           mono && 'font-mono',
           tc.text,
         )}
       >
         {value}
       </div>
-      <div className="mt-0.5 truncate text-2xs text-slate-500">{helper}</div>
+      <div className="mt-0.5 break-words text-2xs text-slate-500">{helper}</div>
     </div>
   )
 }
