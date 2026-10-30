@@ -13,6 +13,7 @@ import time
 import tomllib
 import uuid
 from collections.abc import Callable, Mapping, Sequence
+from contextlib import nullcontext
 from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import Any
@@ -293,7 +294,7 @@ def install_clone_dependencies(project: ProjectServices) -> int:
     if (code := sync_backend(clone)) != 0:
         return code
     plan = frontend_install_plan(clone.frontend_dir, clone.root)
-    return run(frontend_install_command(plan, clone.root), cwd=plan.cwd, quiet_success=True, _heavy=True) if plan else 0
+    return release_install(plan.command, plan.manager, clone.root, cwd=plan.cwd) if plan else 0
 
 
 def project_ids(*, include_inactive: bool = False) -> list[str]:
@@ -1126,11 +1127,9 @@ def release_cache_options(manager: str, root: Path) -> list[str]:
     clone, never hardlink, keeps release files independent of the cache. Paths
     elsewhere (cleanroom snapshots, dev checkouts) keep the user's caches.
     """
-    # Absolute, or the installer would resolve a relative state root against its own cwd.
-    state_root = service_release.service_state_root().resolve()
-    if not root.resolve().is_relative_to(state_root):
+    cache = service_release.release_cache_root()
+    if not root.resolve().is_relative_to(cache.parent):
         return []
-    cache = state_root / "cache"
     if manager == "uv":
         return ["--cache-dir", str(cache / "uv"), "--link-mode", "clone"]
     if manager == "pnpm":
@@ -1141,8 +1140,11 @@ def release_cache_options(manager: str, root: Path) -> list[str]:
     return []  # npm ci always copies from its tarball cache
 
 
-def frontend_install_command(plan: FrontendInstall, root: Path) -> list[str]:
-    return [*plan.command, *release_cache_options(plan.manager, root)]
+def release_install(command: Sequence[str], manager: str, root: Path, *, cwd: Path) -> int:
+    """Run a dependency install; one under the state root holds the release cache so host retention skips its prune."""
+    options = release_cache_options(manager, root)
+    with service_release.release_cache_lock() if options else nullcontext():
+        return run([*command, *options], cwd=cwd, quiet_success=True, _heavy=True)
 
 
 def sync_backend(project: ProjectServices) -> int:
@@ -1159,9 +1161,8 @@ def sync_backend(project: ProjectServices) -> int:
     if unknown:
         print("[service] configured backend extras are not declared: " + ", ".join(sorted(unknown)))
         return 1
-    command = [*locked_backend_sync_command(declared_extras, project.backend_extras),
-               *release_cache_options("uv", project.root)]
-    return run(command, cwd=project.backend_dir, quiet_success=True, _heavy=True)
+    command = locked_backend_sync_command(declared_extras, project.backend_extras)
+    return release_install(command, "uv", project.root, cwd=project.backend_dir)
 
 
 def _cargo() -> str:
@@ -1439,7 +1440,7 @@ def build_frontend(project: ProjectServices) -> int:
     if project.frontend_dir.is_relative_to(project.root):
         _seed_from_live_release(project, project.frontend_dir.relative_to(project.root) / ".next" / "cache")
     print("[service] building frontend")
-    install = run(frontend_install_command(plan, project.root), cwd=plan.cwd, quiet_success=True, _heavy=True)
+    install = release_install(plan.command, plan.manager, project.root, cwd=plan.cwd)
     if install != 0:
         return install
     if plan.manager == "npm":

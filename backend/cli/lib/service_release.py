@@ -694,3 +694,36 @@ def deployment_lock(
             yield
         finally:
             fcntl.flock(lock.fileno(), fcntl.LOCK_UN)
+
+
+def release_cache_root() -> Path:
+    """Dependency caches the releases under the state root install from.
+
+    Absolute, or an installer would resolve a relative state root against its own cwd.
+    """
+    return service_state_root().resolve() / "cache"
+
+
+@contextmanager
+def release_cache_lock(*, exclusive: bool = False) -> Iterator[bool]:
+    """Installs hold the release caches shared; a prune takes them exclusively.
+
+    Rebuilds of different projects install concurrently (two heavy slots), so
+    neither the heavy lane nor a project's deployment lock excludes them all.
+    The exclusive holder never waits: it yields False while any install runs.
+    """
+    cache = release_cache_root()
+    cache.mkdir(parents=True, exist_ok=True)
+    with (cache / ".lock").open("a+") as lock:
+        if not exclusive:
+            fcntl.flock(lock.fileno(), fcntl.LOCK_SH)
+        else:
+            try:
+                fcntl.flock(lock.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+            except BlockingIOError:
+                yield False
+                return
+        try:
+            yield True
+        finally:
+            fcntl.flock(lock.fileno(), fcntl.LOCK_UN)

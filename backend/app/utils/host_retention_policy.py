@@ -107,6 +107,9 @@ class HostRetentionPolicy:
     # a busy host's cache just grows). pnpm's store and unused Hugging Face repos are pruned daily without a cap.
     uv_cache_max_gb: float = 8.0
     npm_cache_max_gb: float = 2.0
+    # Each service release cache (<state root>/cache/uv, cache/pnpm-store) is emptied once over this; every package
+    # is re-downloadable and releases hold clones, not links. pnpm's own prune cannot be used on a clone-imported store.
+    release_cache_max_gb: float = 8.0
 
     @classmethod
     def from_env(cls) -> HostRetentionPolicy:
@@ -156,6 +159,7 @@ class HostRetentionPolicy:
             go_cache_max_gb=_float_env("SF_HOST_RETENTION_GO_CACHE_MAX_GB", 4.0),
             uv_cache_max_gb=_float_env("SF_HOST_RETENTION_UV_CACHE_MAX_GB", 8.0),
             npm_cache_max_gb=_float_env("SF_HOST_RETENTION_NPM_CACHE_MAX_GB", 2.0),
+            release_cache_max_gb=_float_env("SF_HOST_RETENTION_RELEASE_CACHE_MAX_GB", 8.0),
         )
 
     def defaults_for(self) -> dict[str, float]:

@@ -11,8 +11,9 @@ import pytest
 
 
 @pytest.fixture(autouse=True)
-def _isolate_scratch(mocker) -> Any:
-    """Host retention must never touch the live /srv/scratch or its stamp in tests."""
+def _isolate_scratch(mocker, monkeypatch, tmp_path: Path) -> Any:
+    """Host retention must never touch the live /srv/scratch, its stamp or the service release caches in tests."""
+    monkeypatch.setenv("SUMMITFLOW_SERVICE_STATE_ROOT", str(tmp_path / "no-service-state"))
     mocker.patch("app.tasks.host_retention.SCRATCH_ROOT", Path("/nonexistent-test-scratch"))
     mocker.patch("app.tasks.host_retention.UV_CACHE", Path("/nonexistent-test-scratch/cache/uv"))
     mocker.patch("app.tasks.host_retention.HF_HUB", Path("/nonexistent-test-scratch/cache/huggingface-hub"))
@@ -178,8 +179,47 @@ def test_daily_retention_also_runs_the_pnpm_hf_and_npm_bounds(mocker, tmp_path: 
         home_dir=tmp_path / "home", tmp_dir=tmp_path, project_roots=[], policy=policy))
     assert result["npm_cache"]["status"] == "success"
     assert pnpm.called and result["pnpm_store"] == {"status": "success"}
+    assert result["release_cache"] == {"status": "skipped", "reason": "no release cache"}
     assert hf.call_args.kwargs["hub"] == host_retention.HF_HUB
     assert result["hf_hub"] == {"status": "success", "deleted_paths": ["m"], "bytes": 5}
+
+
+def test_release_caches_are_bounded_only_while_no_release_install_holds_them(mocker, monkeypatch, tmp_path: Path) -> None:
+    from app.tasks import host_retention
+    from cli.lib import service_release
+
+    state = tmp_path / "state"
+    monkeypatch.setenv("SUMMITFLOW_SERVICE_STATE_ROOT", str(state))
+    policy = host_retention.HostRetentionPolicy()
+    assert host_retention._release_cache_bounded(policy) == {"status": "skipped", "reason": "no release cache"}
+    cache = state / "cache"
+    cache.mkdir(parents=True)
+    uv = _sized_cache(cache, "uv", 4096)
+    store = _sized_cache(cache, "pnpm-store", 4096)
+    mocker.patch("app.tasks._retention_reclaim.shutil.which", return_value="/usr/bin/tool")
+    seen: list[list[str]] = []
+
+    def fake_run(args: list[str], *, env: dict[str, str] | None = None):
+        seen.append(args)
+        return type("Proc", (), {"returncode": 0, "stdout": "", "stderr": ""})()
+
+    mocker.patch.object(host_retention, "_run", fake_run)
+
+    with service_release.release_cache_lock():  # a release install is running
+        assert host_retention._release_cache_bounded(policy) == {"status": "skipped", "reason": "release install running"}
+    assert seen == []
+    kept = cast(dict[str, Any], host_retention._release_cache_bounded(policy))
+    assert (kept["status"], kept["uv"]["status"], kept["pnpm"]["status"]) == ("success", "kept", "kept")
+    # Only uv prunes: pnpm's prune drops every one-link file, i.e. a whole clone-imported store.
+    assert seen == [["uv", "cache", "prune", "--cache-dir", str(uv)]]
+    assert any(store.iterdir())
+
+    cleared = cast(dict[str, Any], host_retention._release_cache_bounded(
+        host_retention.HostRetentionPolicy(release_cache_max_gb=1e-9)))
+    assert (cleared["uv"]["status"], cleared["pnpm"]["status"]) == ("success", "success")
+    assert uv.is_dir() and store.is_dir() and not any(uv.iterdir()) and not any(store.iterdir())
+    with service_release.release_cache_lock(exclusive=True) as held:
+        assert held  # the bound released the caches
 
 
 def test_playwright_retention_keeps_builds_pinned_by_installed_packages(tmp_path: Path) -> None:

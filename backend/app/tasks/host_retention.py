@@ -176,6 +176,37 @@ def _pnpm_store_prune() -> dict[str, object]:
     return {key: value for key, value in result.items() if key != "step"}
 
 
+def _release_cache_bounded(policy: HostRetentionPolicy) -> dict[str, object]:
+    """Daily bound on the caches service releases install from, skipped while any release install holds them.
+
+    uv prunes unused entries first. pnpm's store gets only the cap: `pnpm store prune` deletes every file with one
+    link, and releases import by clone, so it would empty the whole store each day.
+    """
+    from cli.lib import service_release
+
+    cache = service_release.release_cache_root()
+    if not cache.is_dir():
+        return {"status": "skipped", "reason": "no release cache"}
+    uv, store = cache / "uv", cache / "pnpm-store"
+    steps: dict[str, dict[str, object]] = {}
+    try:
+        with service_release.release_cache_lock(exclusive=True) as held:
+            if not held:
+                return {"status": "skipped", "reason": "release install running"}
+            if uv.is_dir():
+                pruned = _tool("uv", ["uv", "cache", "prune", "--cache-dir", str(uv)], run=_run)
+                steps["uv"] = {key: value for key, value in pruned.items() if key != "step"}
+                if pruned["status"] == "success":
+                    steps["uv"] = {**_clear_when_over("release uv cache", uv, policy.release_cache_max_gb, [],
+                                                      clear_fn=lambda: _empty_cache_dir(uv)), "pruned": True}
+            steps["pnpm"] = _clear_when_over("release pnpm store", store, policy.release_cache_max_gb, [],
+                                             clear_fn=lambda: _empty_cache_dir(store))
+    except OSError as exc:
+        return {"status": "error", "error": str(exc)}
+    errors = [f"{name}: {step['error']}" for name, step in steps.items() if step.get("status") == "error"]
+    return {"status": "error", "error": "; ".join(errors), **steps} if errors else {"status": "success", **steps}
+
+
 def _hf_hub_prune(now: datetime) -> dict[str, object]:
     """Daily removal of Hugging Face repos unused for the policy's days (never one a process holds open)."""
     result = prune_unused_hf_repos(hub=HF_HUB, now=now)
@@ -273,6 +304,7 @@ def cleanup_host_artifacts(
     uv_cache_result = _uv_cache_bounded(effective_policy)
     npm_cache_result = _npm_cache_bounded(effective_home, effective_policy)
     pnpm_store_result = _pnpm_store_prune()
+    release_cache_result = _release_cache_bounded(effective_policy)
     hf_hub_result = _hf_hub_prune(effective_now)
     agent_tmp_removed: list[str] = list(agent_tmp_result.get("deleted_paths") or [])
     agent_tmp_bytes = int(agent_tmp_result.get("bytes") or 0)
@@ -321,7 +353,7 @@ def cleanup_host_artifacts(
     errors = [
         entry["error"]
         for entry in (scratch_result, check_artifacts, agent_tmp_result, go_cache_result, uv_cache_result,
-                      npm_cache_result, pnpm_store_result, hf_hub_result)
+                      npm_cache_result, pnpm_store_result, release_cache_result, hf_hub_result)
         if isinstance(entry, dict) and entry.get("status") == "error" and entry.get("error")
     ]
     status = "partial" if errors else "success"
@@ -349,6 +381,7 @@ def cleanup_host_artifacts(
         "uv_cache": uv_cache_result,
         "npm_cache": npm_cache_result,
         "pnpm_store": pnpm_store_result,
+        "release_cache": release_cache_result,
         "hf_hub": hf_hub_result,
         "temp_backups": tmp_backups_result,
         "scratch": scratch_result,

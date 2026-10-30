@@ -476,7 +476,13 @@ def test_release_installs_clone_from_a_cache_beside_the_release(project, monkeyp
     (release.backend_dir / "uv.lock").touch()
     release.frontend_dir.mkdir()
     (release.frontend_dir / "package.json").write_text("{}")
-    run = Mock(return_value=0)
+    def run_command(command, **_kwargs):
+        # An install holds the release caches, so host retention's prune skips it; a build does not.
+        with service_release.release_cache_lock(exclusive=True) as prune_admitted:
+            assert prune_admitted is (tuple(command[:2]) not in {("uv", "sync"), ("pnpm", "install")})
+        return 0
+
+    run = Mock(side_effect=run_command)
     monkeypatch.setattr(service_ops, "run", run)
 
     assert service_ops.sync_backend(release) == 0
@@ -496,7 +502,7 @@ def test_release_installs_clone_from_a_cache_beside_the_release(project, monkeyp
     assert run.call_args.args[0] == pnpm_install and run.call_args.kwargs["cwd"] == clone / "frontend"
     (release.frontend_dir / "package-lock.json").touch()
     npm = service_ops.frontend_install_plan(release.frontend_dir, source)
-    assert npm is not None and service_ops.frontend_install_command(npm, source) == ["npm", "ci"]
+    assert npm is not None and service_ops.release_cache_options(npm.manager, source) == []
     # A checkout outside the state root keeps the user's own caches.
     assert service_ops.release_cache_options("uv", tmp_path / "checkout") == []
 
