@@ -241,7 +241,7 @@ def handle_dismiss_conflict(task_id: str) -> dict[str, str]:
     return {"status": "dismissed"}
 
 
-async def build_project_dashboard(
+def build_project_dashboard(
     project_id: str, commits_limit: int = 15
 ) -> ProjectDashboardResponse:
     """Build project dashboard response."""

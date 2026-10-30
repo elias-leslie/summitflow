@@ -314,7 +314,7 @@ def _resolve_task_sessions(
 
 
 @router.get("/projects/{project_id}/tasks/{task_id}/agent-events", response_model=AgentHubEventsResponse)
-async def get_task_agent_events(
+def get_task_agent_events(
     project_id: str,
     task_id: str,
     event_type: str | None = Query(None, description="Filter by event type (user_message, assistant_message, thinking, tool_use, tool_result, memory_inject, memory_cite, error)"),
@@ -338,7 +338,7 @@ async def get_task_agent_events(
 
 
 @router.get("/projects/{project_id}/tasks/{task_id}/agent-sessions")
-async def get_task_agent_sessions(
+def get_task_agent_sessions(
     project_id: str,
     task_id: str,
     include_history: bool = Query(False, description="Include older linked Agent Hub sessions"),

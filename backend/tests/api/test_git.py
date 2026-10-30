@@ -91,6 +91,28 @@ class TestGitStatus:
         assert on_event_loop == [False, False]
 
 
+    def test_blocking_handlers_run_in_the_threadpool(self) -> None:
+        """Git, snapshot and agent-event handlers do subprocess or sync HTTP work; async def would stall the loop."""
+        import inspect
+
+        from fastapi.routing import APIRoute
+
+        from app.api import git, snapshots
+        from app.api.tasks import observability
+
+        awaiting = {"publish_project_changes", "push_project_repository"}  # offloads via to_thread / raises only
+        routes = [route for route in git.router.routes if isinstance(route, APIRoute)]
+        endpoints = {route.name: route.endpoint for route in routes if route.name not in awaiting}
+        endpoints |= {
+            "snapshot_summary": snapshots.snapshot_summary,
+            "snapshot_scopes": snapshots.snapshot_scopes,
+            "list_all_snapshots": snapshots.list_all_snapshots,
+            "get_task_agent_events": observability.get_task_agent_events,
+            "get_task_agent_sessions": observability.get_task_agent_sessions,
+        }
+        assert [name for name, endpoint in endpoints.items() if inspect.iscoroutinefunction(endpoint)] == []
+
+
 class TestGitCleanupStatus:
     """Tests for cleanup-status API surfaces."""
 

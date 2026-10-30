@@ -90,7 +90,7 @@ def get_git_status() -> GitStatusResponse:
 
 
 @router.get("/git/cleanup-status", tags=["git"])
-async def get_cleanup_status() -> dict[str, object]:
+def get_cleanup_status() -> dict[str, object]:
     """Get canonical cleanup status across all managed repositories."""
     return _build_cleanup_status_response(all_projects=True)
 
@@ -110,13 +110,13 @@ def get_project_git_status(project_id: str) -> GitStatusResponse:
 
 
 @router.get("/projects/{project_id}/git/cleanup-status", tags=["git"])
-async def get_project_cleanup_status(project_id: str) -> dict[str, object]:
+def get_project_cleanup_status(project_id: str) -> dict[str, object]:
     """Get canonical cleanup status for one managed repository."""
     return _build_cleanup_status_response(all_projects=False, project_id=project_id)
 
 
 @router.post("/git/sync", response_model=GitSyncResponse, tags=["git"])
-async def sync_repositories() -> GitSyncResponse:
+def sync_repositories() -> GitSyncResponse:
     """Sync all managed repositories by pulling from remote."""
     results = [sync_repository(repo_path) for repo_path in _active_repos()]
     counts = aggregate_sync_results(results)
@@ -124,7 +124,7 @@ async def sync_repositories() -> GitSyncResponse:
 
 
 @router.post("/git/fetch", response_model=GitSyncResponse, tags=["git"])
-async def fetch_repositories() -> GitSyncResponse:
+def fetch_repositories() -> GitSyncResponse:
     """Fetch remote refs for all managed repositories without merging."""
     from ..utils.git_helpers import fetch_repository
 
@@ -134,7 +134,7 @@ async def fetch_repositories() -> GitSyncResponse:
 
 
 @router.get("/git/checkpoints", response_model=CheckpointsResponse, tags=["git"])
-async def get_checkpoints(
+def get_checkpoints(
     project_id: str | None = Query(default=None),
 ) -> CheckpointsResponse:
     """Get list of active task checkpoints, optionally filtered by project."""
@@ -145,7 +145,7 @@ async def get_checkpoints(
 
 
 @router.get("/git/branches", response_model=BranchesResponse, tags=["git"])
-async def get_branches(
+def get_branches(
     project_id: str | None = Query(default=None),
 ) -> BranchesResponse:
     """Get list of branches across managed repos, optionally filtered by project."""
@@ -171,7 +171,7 @@ async def get_branches(
     response_model=GitSyncResponse,
     tags=["git"],
 )
-async def pull_project_repository(project_id: str) -> GitSyncResponse:
+def pull_project_repository(project_id: str) -> GitSyncResponse:
     """Pull changes for a specific project's repository."""
     result = pull_repository(get_project_root(project_id))
     return GitSyncResponse(results=[result], **build_sync_response_from_result(result))
@@ -192,7 +192,7 @@ async def push_project_repository(project_id: str) -> dict[str, object]:
     response_model=GitSyncResponse,
     tags=["git"],
 )
-async def fetch_project_repository(project_id: str) -> GitSyncResponse:
+def fetch_project_repository(project_id: str) -> GitSyncResponse:
     """Fetch changes for a specific project's repository."""
     from ..utils.git_helpers import fetch_repository
 
@@ -212,7 +212,7 @@ async def publish_project_changes(project_id: str, request: ProjectPublishReques
 
 
 @router.get("/git/conflicts", response_model=ConflictsResponse, tags=["git"])
-async def get_conflicts(
+def get_conflicts(
     project_id: str | None = Query(default=None),
 ) -> ConflictsResponse:
     """Get all tasks with active merge conflicts, optionally filtered by project."""
@@ -221,7 +221,7 @@ async def get_conflicts(
 
 
 @router.post("/git/tasks/{task_id}/dismiss-conflict", tags=["git"])
-async def dismiss_conflict(task_id: str) -> dict[str, str]:
+def dismiss_conflict(task_id: str) -> dict[str, str]:
     """Dismiss a merge conflict, moving the task back to failed."""
     return handle_dismiss_conflict(task_id)
 
@@ -230,13 +230,13 @@ async def dismiss_conflict(task_id: str) -> dict[str, str]:
 
 
 @router.get("/tasks/{task_id}/diff", response_model=TaskDiffResponse, tags=["git"])
-async def get_task_diff_endpoint(task_id: str) -> TaskDiffResponse:
+def get_task_diff_endpoint(task_id: str) -> TaskDiffResponse:
     """Get the full diff for a merged task."""
     return build_task_diff_response(task_id)
 
 
 @router.get("/git/recent-merges", response_model=RecentMergesResponse, tags=["git"])
-async def get_recent_merges(
+def get_recent_merges(
     limit: int = Query(default=20, le=100),
     project_id: str | None = Query(default=None),
 ) -> RecentMergesResponse:
@@ -252,7 +252,7 @@ async def get_recent_merges(
     response_model=TaskDiffResponse,
     tags=["git"],
 )
-async def get_commit_diff(
+def get_commit_diff(
     sha: str,
     project_id: str | None = Query(default=None),
 ) -> TaskDiffResponse:
@@ -272,7 +272,7 @@ async def get_commit_diff(
 
 
 @router.get("/git/commits/recent", response_model=RecentCommitsResponse, tags=["git"])
-async def get_recent_commits_endpoint(
+def get_recent_commits_endpoint(
     limit: int = Query(default=50, le=200),
     project_id: str | None = Query(default=None),
 ) -> RecentCommitsResponse:
@@ -285,7 +285,7 @@ async def get_recent_commits_endpoint(
 
 
 @router.get("/git/snapshots", response_model=SnapshotsResponse, tags=["git"])
-async def get_snapshots(
+def get_snapshots(
     project_id: str | None = Query(default=None),
 ) -> SnapshotsResponse:
     """Get pre-merge snapshots across managed repos."""
@@ -294,7 +294,7 @@ async def get_snapshots(
 
 
 @router.post("/git/snapshots/{task_id}/revert", tags=["git"])
-async def revert_snapshot(task_id: str) -> dict[str, str]:
+def revert_snapshot(task_id: str) -> dict[str, str]:
     """Revert to a pre-merge snapshot (uses git revert to preserve history)."""
     return handle_revert_snapshot(task_id)
 
@@ -307,12 +307,12 @@ async def revert_snapshot(task_id: str) -> dict[str, str]:
     response_model=ProjectDashboardResponse,
     tags=["git"],
 )
-async def get_project_dashboard(
+def get_project_dashboard(
     project_id: str,
     commits_limit: int = Query(default=15, le=100),
 ) -> ProjectDashboardResponse:
     """Get combined dashboard data for a single project."""
-    return await build_project_dashboard(project_id, commits_limit)
+    return build_project_dashboard(project_id, commits_limit)
 
 
 @router.get("/projects/{project_id}/development/status", tags=["git"])

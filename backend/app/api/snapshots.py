@@ -187,7 +187,7 @@ def _get_cli_libs() -> tuple[Any, ...]:
 
 
 @router.get("/snapshots/summary", response_model=SnapshotSummaryResponse)
-async def snapshot_summary(project_id: str | None = None) -> SnapshotSummaryResponse:
+def snapshot_summary(project_id: str | None = None) -> SnapshotSummaryResponse:
     """Aggregate snapshot summary with policy and timer status."""
     _, _, _, load_manifest, DEFAULT_POLICY, enumerate_snapshot_scopes, _ = _get_cli_libs()
     from cli.lib.autosnapshot import read_sweep_state
@@ -235,7 +235,7 @@ async def snapshot_summary(project_id: str | None = None) -> SnapshotSummaryResp
 
 
 @router.get("/snapshots/scopes", response_model=list[ScopeResponse])
-async def snapshot_scopes(
+def snapshot_scopes(
     project_id: str | None = None,
     include_archived: bool = False,
 ) -> list[ScopeResponse]:
@@ -267,7 +267,7 @@ async def snapshot_scopes(
 
 
 @router.get("/snapshots", response_model=list[SnapshotResponse])
-async def list_all_snapshots(
+def list_all_snapshots(
     project_id: str | None = None,
     scope_type: str | None = None,
     scope_name: str | None = None,
