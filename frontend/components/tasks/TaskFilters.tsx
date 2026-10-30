@@ -7,8 +7,11 @@ import { cn } from '@/lib/utils'
 
 export interface TaskFilterValues {
   type: TaskType | 'all'
-  /** 'blocked' matches open tasks waiting on an unfinished dependency, not a stored status. */
-  status: TaskStatus | 'all' | 'blocked'
+  /**
+   * 'blocked' matches open tasks waiting on an unfinished dependency and 'active' matches
+   * open tasks (what the dashboard counts); neither is a stored status.
+   */
+  status: TaskStatus | 'all' | 'blocked' | 'active'
   priority: number | 'all'
 }
 
@@ -24,12 +27,34 @@ const STATUS_OPTIONS: {
   label: string
 }[] = [
   { value: 'all', label: 'All Statuses' },
+  { value: 'active', label: 'Open (not paused or done)' },
   ...Object.entries(statusIconConfig).map(([value, config]) => ({
     value: value as TaskStatus,
     label: config.label,
   })),
   { value: 'blocked', label: 'Blocked by a task' },
 ]
+
+/** Statuses the dashboard's Features/Tasks/Bugs counts leave out (mirrors the backend's inactive set). */
+const NOT_OPEN = new Set([
+  'completed',
+  'failed',
+  'cancelled',
+  'abandoned',
+  'closed',
+  'paused',
+])
+
+export function isOpenTask(status: string): boolean {
+  return !NOT_OPEN.has(status)
+}
+
+/** A status filter a link may carry in ?status=. */
+export function isStatusFilter(
+  value: string | null,
+): value is TaskFilterValues['status'] {
+  return STATUS_OPTIONS.some((option) => option.value === value)
+}
 
 const TYPE_OPTIONS = [
   { value: 'all', label: 'All Types' },

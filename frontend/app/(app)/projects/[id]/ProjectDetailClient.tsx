@@ -17,7 +17,10 @@ import { ProjectHealthBadge } from '@/components/projects/ProjectHealthBadge'
 import { ProjectOverview } from '@/components/projects/ProjectOverview'
 import { useViewMode } from '@/components/tasks/hooks/useViewMode'
 import { TaskExecutionStrip } from '@/components/tasks/TaskExecutionStrip'
-import type { TaskFilterValues } from '@/components/tasks/TaskFilters'
+import {
+  isStatusFilter,
+  type TaskFilterValues,
+} from '@/components/tasks/TaskFilters'
 import { TaskIdeationDialog } from '@/components/tasks/TaskIdeationDialog'
 import { TaskModal } from '@/components/tasks/TaskModal'
 import { TaskQueryState } from '@/components/tasks/TaskQueryState'
@@ -78,20 +81,8 @@ export function ProjectDetailClient() {
     parsedTab ?? (urlTaskId || urlModal === 'create-task' ? 'tasks' : null)
   const activeSection: ProjectSection = activeTab ?? 'overview'
   const taskInitialFilters: Partial<TaskFilterValues> = {}
-  if (
-    urlTaskStatus &&
-    [
-      'all',
-      'active',
-      'blocked',
-      'conflicted',
-      'pending',
-      'running',
-      'completed',
-      'failed',
-    ].includes(urlTaskStatus)
-  ) {
-    taskInitialFilters.status = urlTaskStatus as TaskFilterValues['status']
+  if (isStatusFilter(urlTaskStatus)) {
+    taskInitialFilters.status = urlTaskStatus
   }
   if (urlTaskType && ['all', 'feature', 'bug', 'task'].includes(urlTaskType)) {
     taskInitialFilters.type = urlTaskType as TaskFilterValues['type']

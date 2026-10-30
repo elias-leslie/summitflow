@@ -3,6 +3,7 @@ import { renderHook, waitFor } from '@testing-library/react'
 import type { ReactNode } from 'react'
 import { describe, expect, it, vi } from 'vitest'
 import type { Task } from '@/lib/api'
+import { isStatusFilter } from '../TaskFilters'
 import { useTasksList } from './useTasksList'
 
 const api = vi.hoisted(() => ({ fetchTasks: vi.fn() }))
@@ -15,6 +16,8 @@ const tasks = [
   { id: 'waiting', status: 'pending', blocked_by_incomplete: true },
   { id: 'free', status: 'pending', blocked_by_incomplete: false },
   { id: 'running', status: 'running' },
+  { id: 'paused', status: 'paused' },
+  { id: 'done', status: 'completed' },
 ] as Task[]
 
 describe('useTasksList', () => {
@@ -41,5 +44,35 @@ describe('useTasksList', () => {
       include: 'blockers',
     })
     expect(result.current.filteredTasks.map((t) => t.id)).toEqual(['waiting'])
+  })
+
+  it('filters Open the way the dashboard counts: not paused and not finished', async () => {
+    api.fetchTasks.mockResolvedValue({ tasks, total: tasks.length })
+    const client = new QueryClient()
+    const wrapper = ({ children }: { children: ReactNode }) => (
+      <QueryClientProvider client={client}>{children}</QueryClientProvider>
+    )
+    const { result } = renderHook(
+      () =>
+        useTasksList(
+          'summitflow',
+          { type: 'all', status: 'active', priority: 'all' },
+          (list) => list,
+        ),
+      { wrapper },
+    )
+    await waitFor(() => expect(result.current.isLoading).toBe(false))
+    expect(result.current.filteredTasks.map((t) => t.id)).toEqual([
+      'waiting',
+      'free',
+      'running',
+    ])
+  })
+
+  it('accepts every status filter a link can carry, including paused', () => {
+    for (const value of ['active', 'blocked', 'paused', 'cancelled', 'all'])
+      expect(isStatusFilter(value)).toBe(true)
+    expect(isStatusFilter('conflicted')).toBe(false)
+    expect(isStatusFilter(null)).toBe(false)
   })
 })
