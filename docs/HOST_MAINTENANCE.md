@@ -7,9 +7,9 @@ retention. See the Nightshift project for their units, schedules, and alerts.
 
 `scripts/install-host-infra.sh` installs only SummitFlow-specific host pieces:
 the backup storage write window (`summitflow-backup-window` and its guard
-timer), the host backup timer (`summitflow-host-backup.timer`), btrbk log rotation, Docker container log limits, and the
-`summitflow-infra-reconcile` user unit that brings up shared Compose
-infrastructure without `st` or API dependencies.
+timer), the host backup timer (`summitflow-host-backup.timer`), btrbk log rotation and Docker container log limits.
+The shared stack (postgres, redis, hatchet) comes up at boot from Nightshift's root `summitflow-stack.service`; the
+installer retires the older `summitflow-infra-reconcile` user unit, which raced it.
 
 ## SummitFlow-owned layer
 

@@ -57,27 +57,12 @@ EOF
 # the application-aware daily maintenance path; Docker pruning is Nightshift's.
 systemctl --user disable --now docker-prune.timer 2>/dev/null || true
 
-# Reconcile core Compose infrastructure without depending on st, the API,
-# PostgreSQL, or Hatchet. Application services remain ordered after this unit.
+# The shared stack (postgres, redis, hatchet) is Nightshift's: its root summitflow-stack.service brings it up at boot
+# from the vendored compose file. The older user unit recreated the same containers from this repo's compose file and
+# raced it at boot (2026-10-30), so it is retired here.
+systemctl --user disable --now summitflow-infra-reconcile.service 2>/dev/null || true
+rm -f "$USER_SYSTEMD_DIR/summitflow-infra-reconcile.service"
 install -d -m 0755 "$USER_SYSTEMD_DIR"
-cat >"$USER_SYSTEMD_DIR/summitflow-infra-reconcile.service" <<'EOF'
-[Unit]
-Description=Reconcile SummitFlow shared Docker infrastructure directly from Compose
-After=basic.target
-Before=agent-hub-backend.service agent-hub-hatchet-agent-worker.service agent-hub-hatchet-ops-worker.service summitflow-backend.service summitflow-hatchet-worker.service portfolio-backend.service portfolio-hatchet-worker.service aico-web.service
-
-[Service]
-Type=oneshot
-WorkingDirectory=/srv/workspaces/projects/summitflow/docker/compose
-ExecStart=/usr/bin/docker compose --env-file %h/.config/credstore/summitflow/compose.env -f /srv/workspaces/projects/summitflow/docker/compose/docker-compose.yml --profile infra up -d --remove-orphans
-RemainAfterExit=yes
-Restart=on-failure
-RestartSec=15
-TimeoutStartSec=10min
-
-[Install]
-WantedBy=default.target
-EOF
 
 # The host backup job: btrbk every 4 hours, one daily Google Drive copy; and the weekly, time-bounded read-back of that copy.
 # Both run from the current release. The 30-minute project snapshot timer (st autosnap) sits beside them.
@@ -90,6 +75,5 @@ systemctl --user daemon-reload
 systemctl --user enable --now summitflow-host-backup.timer summitflow-host-verify.timer btrfs-autosnapshot.timer
 sudo systemctl enable --now summitflow-backup-window-guard.timer
 sudo systemctl enable summitflow-backup-window-guard.service
-systemctl --user enable summitflow-infra-reconcile.service
 
 echo "SummitFlow host infrastructure installed."
