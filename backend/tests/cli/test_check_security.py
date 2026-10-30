@@ -97,6 +97,23 @@ def test_gitleaks_materializes_only_changed_candidate_files(
     ) == 0
 
 
+def test_changed_only_gitleaks_keeps_the_repo_allowlist(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    (tmp_path / "manifest.json").write_text("{}\n")
+    (tmp_path / ".gitleaks.toml").write_text("[extend]\nuseDefault = true\n")
+    seen: list[list[str]] = []
+
+    def run(command, **_kwargs):
+        seen.append(command)
+        return subprocess.CompletedProcess(command, 0, "[]", "")
+
+    monkeypatch.delenv("GITLEAKS_CONFIG", raising=False)
+    monkeypatch.setattr(HeavyWork, "run", staticmethod(run))
+    assert check_security.run_local_security_check("gitleaks", tmp_path, ["manifest.json"], True, []) == 0
+    assert seen[0][seen[0].index("--config") + 1] == str(tmp_path / ".gitleaks.toml")
+
+
 def test_gitleaks_is_required_and_redacts_findings(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:

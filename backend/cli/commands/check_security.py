@@ -233,6 +233,9 @@ def _run_local_security_check(
                     "-",
                     str(candidate),
                 ]
+                # The candidate holds only scanned files, so the repo's allowlist would go unseen there.
+                if not os.environ.get("GITLEAKS_CONFIG") and (root / ".gitleaks.toml").is_file():
+                    command[2:2] = ["--config", str(root / ".gitleaks.toml")]
             else:
                 config = _semgrep_config(root)
                 if config is None:
