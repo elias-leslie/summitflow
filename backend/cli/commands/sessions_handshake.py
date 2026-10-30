@@ -28,7 +28,7 @@ def _workstation(method: str, path: str, body: dict[str, Any] | None = None) -> 
     try:
         return client.post(url, json=body) if method == "POST" else client.get(url)
     except APIError as exc:
-        detail = exc.detail if isinstance(exc.detail, str) else exc
+        detail = exc.detail.get("message", exc.detail) if isinstance(exc.detail, dict) else exc.detail
         raise ValueError(f"the workstation refused it: {detail}") from exc
     except httpx.HTTPError as exc:
         raise ValueError(f"the workstation's SummitFlow API did not answer ({type(exc).__name__})") from exc

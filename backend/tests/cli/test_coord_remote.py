@@ -258,3 +258,15 @@ def test_on_an_agent_host_its_own_requests_keep_its_ledger(on_host):
         mp.setattr(coord.leases, "self_ids", lambda: {"cc:111111"})
         assert runner.invoke(app, ["sessions", "ack", row["id"], "yes"]).exit_code == 0
     assert coord._load_ledger()[0]["state"] == "acked" and on_host == []
+
+
+def test_on_an_agent_host_a_refusal_reads_as_the_workstations_words(on_host, monkeypatch):
+    from st_sdk.http import APIError
+
+    def refuse(self, url, json):
+        raise APIError(422, {"error": "http_error", "message": "request def456 has no ack to confirm (state=closed)"})
+
+    monkeypatch.setattr(_Workstation, "post", refuse)
+    result = runner.invoke(app, ["sessions", "confirm", "def456"])
+    assert result.exit_code == 2
+    assert "ERROR the workstation refused it: request def456 has no ack to confirm (state=closed)" in result.output
