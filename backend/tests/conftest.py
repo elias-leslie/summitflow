@@ -428,7 +428,7 @@ def _private_host_state(tmp_path_factory: pytest.TempPathFactory) -> Path:
 
 @pytest.fixture(autouse=True)
 def isolated_host_state(_private_host_state: Path) -> Generator[None]:
-    """Keep tests off the host heavy-work lane and per-user ST state.
+    """Keep tests off the host heavy-work lane, host admission and per-user ST state.
 
     The heavy lane is shared with live agents: a test that queued behind a
     real suite or rebuild outlived its pytest timeout. Tests needing a
@@ -450,6 +450,9 @@ def isolated_host_state(_private_host_state: Path) -> Generator[None]:
         patch.setenv("GIT_CONFIG_GLOBAL", str(gitconfig))
         patch.setenv("GIT_CONFIG_NOSYSTEM", "1")
         patch.setattr(heavy_work, "_LOCK_DIRECTORY", lane)
+        # Host admission is live too: while Nightshift reports amber, every heavy_work entry waited out its timeout.
+        patch.setattr(heavy_work, "NIGHTSHIFT_ADMISSION", _private_host_state / "nightshift-admission.json")
+        patch.setattr(heavy_work, "_PSI_MEMORY", _private_host_state / "psi-memory")
         patch.setattr(confirm_token, "_TOKENS_DIR", _private_host_state / "confirm-tokens")
         patch.setenv("SUMMITFLOW_SERVICE_STATE_ROOT", str(_private_host_state / "services"))
         # SessionStart cases must not read live Nightshift findings or spend the agents' brief ledger.

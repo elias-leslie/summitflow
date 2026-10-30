@@ -797,6 +797,15 @@ def test_queued_work_remembers_which_holder_it_waited_behind(lane: Path) -> None
         assert work.waited_behind is None
 
 
+def test_tests_never_read_live_host_admission() -> None:
+    # The autouse isolated_host_state fixture: while Nightshift reported amber, every test entering heavy_work
+    # waited on the real host admission until pytest-timeout killed it (157 failures in isolated acceptance).
+    live_nightshift = Path(os.environ.get("XDG_RUNTIME_DIR", f"/run/user/{os.getuid()}")) / "nightshift/admission.json"
+    assert live_nightshift != guard.NIGHTSHIFT_ADMISSION
+    assert Path("/proc/pressure/memory") != guard._PSI_MEMORY
+    assert guard.admission_state().admit
+
+
 def test_admission_prefers_current_nightshift_state_then_tether_psi(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

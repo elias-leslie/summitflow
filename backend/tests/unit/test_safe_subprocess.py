@@ -152,6 +152,7 @@ from pathlib import Path
 from app.utils import heavy_work as guard, safe_subprocess
 assert ctypes.CDLL(None, use_errno=True).prctl(36, 1, 0, 0, 0) == 0
 guard._LOCK_DIRECTORY = Path({str(tmp_path / 'lane')!r})
+guard.admission_state = lambda now=None: guard.Admission(True, 'fixture')
 child_code = "import os,time; pid=os.fork(); os._exit(0) if pid else time.sleep(60)"
 started = time.monotonic()
 # This Python's UUID implementation lazily caches /dev/urandom. Admission's
@@ -196,6 +197,7 @@ from pathlib import Path
 from app.utils import heavy_work as guard
 assert ctypes.CDLL(None, use_errno=True).prctl(36, 1, 0, 0, 0) == 0
 guard._LOCK_DIRECTORY = Path({str(tmp_path / 'lane')!r})
+guard.admission_state = lambda now=None: guard.Admission(True, 'fixture')
 # Both signal waits expire here (the detached holder keeps the pipe open);
 # a short grace exercises the same bounded path.
 from app.utils import safe_subprocess
