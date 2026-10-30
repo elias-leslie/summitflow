@@ -11,6 +11,7 @@ import { HostDisruptionCard } from '@/components/runtime/HostDisruptionCard'
 import { HostMonitor } from '@/components/runtime/HostMonitor'
 import { MaintenanceStatusCard } from '@/components/runtime/MaintenanceStatusCard'
 import { ProxmoxStatusCard } from '@/components/runtime/ProxmoxStatusCard'
+import { RuntimeHealthCounts } from '@/components/runtime/RuntimeHealthCounts'
 import { RuntimeModeBanner } from '@/components/runtime/RuntimeModeBanner'
 import { ServiceGrid } from '@/components/runtime/ServiceGrid'
 import { runtimeApi } from '@/lib/api/runtime'
@@ -63,20 +64,7 @@ export default function RuntimePage() {
             </p>
           </div>
         </div>
-        {health && (
-          <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-sm">
-            <span className="text-slate-500">{health.total} services</span>
-            {health.healthy > 0 && (
-              <span className="text-emerald-400">{health.healthy} healthy</span>
-            )}
-            {health.unhealthy > 0 && (
-              <span className="text-red-400">{health.unhealthy} unhealthy</span>
-            )}
-            {health.stopped > 0 && (
-              <span className="text-slate-500">{health.stopped} stopped</span>
-            )}
-          </div>
-        )}
+        {health && <RuntimeHealthCounts health={health} />}
       </motion.div>
 
       <nav
