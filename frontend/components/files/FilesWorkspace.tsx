@@ -78,6 +78,7 @@ export function FilesWorkspace({
   const queryClient = useQueryClient()
   const fileInputRef = useRef<HTMLInputElement>(null)
   const dragState = useRef(false)
+  const treePaneRef = useRef<HTMLDivElement>(null)
 
   const [browsePath, setBrowsePath] = useState(
     () =>
@@ -114,9 +115,10 @@ export function FilesWorkspace({
 
     const handleMouseMove = (moveEvent: MouseEvent) => {
       if (!dragState.current) return
+      const paneLeft = treePaneRef.current?.getBoundingClientRect().left ?? 0
       const newWidth = Math.min(
         MAX_SIDEBAR_WIDTH,
-        Math.max(MIN_SIDEBAR_WIDTH, moveEvent.clientX),
+        Math.max(MIN_SIDEBAR_WIDTH, moveEvent.clientX - paneLeft),
       )
       setSidebarWidth(newWidth)
     }
@@ -223,9 +225,9 @@ export function FilesWorkspace({
         onChange={handleUploadChange}
       />
 
-      <div className="flex items-center gap-4 border-b border-slate-800 px-6 py-4">
+      <div className="flex flex-wrap items-center gap-x-4 gap-y-3 border-b border-slate-800 px-4 py-4 md:px-6">
         <HeaderIcon className="h-5 w-5 text-emerald-400" />
-        <div className="min-w-0 flex-1">
+        <div className="min-w-0 flex-1 basis-48">
           <div className="flex items-center gap-3">
             <h1 className="display text-lg font-semibold text-slate-100">
               {title}
@@ -273,10 +275,13 @@ export function FilesWorkspace({
         </button>
       </div>
 
-      <div className="flex flex-1 overflow-hidden">
+      <div className="flex min-h-0 flex-1 flex-col overflow-hidden md:flex-row">
         <div
-          className="flex-shrink-0 overflow-y-auto border-r border-slate-800 bg-slate-950/50"
-          style={{ width: sidebarWidth }}
+          ref={treePaneRef}
+          className="max-h-[45%] w-full flex-shrink-0 overflow-y-auto border-b border-slate-800 bg-slate-950/50 md:max-h-none md:w-[var(--files-tree-width)] md:border-r md:border-b-0"
+          style={
+            { '--files-tree-width': `${sidebarWidth}px` } as React.CSSProperties
+          }
         >
           <FileTree
             scope={scope}
@@ -289,11 +294,11 @@ export function FilesWorkspace({
         </div>
 
         <div
-          className="w-1 cursor-col-resize bg-slate-800 transition-colors hover:bg-emerald-500/30"
+          className="hidden w-1 cursor-col-resize bg-slate-800 transition-colors hover:bg-emerald-500/30 md:block"
           onMouseDown={handleMouseDown}
         />
 
-        <div className="flex-1 overflow-hidden">
+        <div className="min-h-0 flex-1 overflow-hidden">
           {isViewingFile ? (
             <FileViewer scope={scope} filePath={selectedEntry.path} />
           ) : selectedEntry ? (
