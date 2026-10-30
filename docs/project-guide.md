@@ -399,6 +399,10 @@ Hatchet, Docker socket access, or a browser runtime should
 show missing-configuration behavior instead of exposing credentials or crashing
 unrelated pages.
 
+Owner notifications (the nightly security alert) go through Nightshift's notice contract v1
+(`nightshift push --json`, see Nightshift's `docs/notify-contract.md`); without Nightshift installed they are
+logged and not sent.
+
 ## License
 
 Apache License 2.0. See [LICENSE](../LICENSE) and [NOTICE](../NOTICE).
