@@ -51,6 +51,7 @@ class OutgoingVerification:
 
 
 _OID = re.compile(r"(?:[0-9a-f]{40}|[0-9a-f]{64})\Z")
+_MANIFEST_NAME = re.compile(r"manifest(?:-[A-Za-z0-9_.]+)?\.json")
 _BEGIN = rb"-----" + rb"BEGIN "
 _CONTENT = re.compile(
     _BEGIN + rb"[A-Z ]*PRIVATE KEY-----|" + _BEGIN + rb"PGP PRIVATE KEY BLOCK-----"
@@ -74,12 +75,13 @@ def _public_manifest_key(root: Path, finding: Any) -> bool:
     generic-api-key rule cannot tell it from a secret. The value is re-read from
     the exact committed blob, never the redacted report, and must parse as a
     public key. Anything else, including a private key there, stays a finding.
+    A repo shipping two builds keeps the second as manifest-<build>.json.
     """
     if not isinstance(finding, dict):
         return False
     commit, path, line = finding.get("Commit"), finding.get("File"), finding.get("StartLine")
     if (not isinstance(commit, str) or not _OID.fullmatch(commit) or not isinstance(path, str)
-            or path.rsplit("/", 1)[-1] != "manifest.json" or not isinstance(line, int)):
+            or not _MANIFEST_NAME.fullmatch(path.rsplit("/", 1)[-1]) or not isinstance(line, int)):
         return False
     try:
         body = _git(root, "cat-file", "blob", f"{commit}:{path}")

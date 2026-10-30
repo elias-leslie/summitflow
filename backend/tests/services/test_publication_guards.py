@@ -494,7 +494,7 @@ def _manifest_scan(history, monkeypatch, key: str, *, line: int = 3, path: str =
     from app.services.git import outgoing
 
     body = body or json.dumps({"manifest_version": 3, "key": key}, indent=2).encode()
-    oid = history[4](None, "extension/manifest.json", body)
+    oid = history[4](None, path, body)
 
     def scanner(command, **kwargs):
         if report:
@@ -520,14 +520,17 @@ def _der_key(private: bool) -> str:
     return base64.b64encode(der).decode()
 
 
-def test_extension_manifest_public_key_finding_is_tolerated(history, monkeypatch) -> None:
-    assert _manifest_scan(history, monkeypatch, _der_key(private=False)).commits_scanned == 1
+@pytest.mark.parametrize("path", ["extension/manifest.json", "extension/manifest-agents.json"])
+def test_extension_manifest_public_key_finding_is_tolerated(history, monkeypatch, path) -> None:
+    scan = _manifest_scan(history, monkeypatch, _der_key(private=False), path=path)
+    assert scan.commits_scanned == 1
 
 
 @pytest.mark.parametrize("private, options", [
     (True, {}),
     (False, {"report": False}),
     (False, {"path": "extension/config.json"}),
+    (False, {"path": "extension/manifest-agents.json.bak"}),
     (False, {"line": 2}),
 ])
 def test_other_scanner_findings_still_refused(history, monkeypatch, private, options) -> None:
