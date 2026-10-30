@@ -95,6 +95,7 @@ export interface ProjectsWithStatsResponse {
 export interface ProjectHealth {
   project_id: string
   healthy: boolean
+  endpoint?: string
   status_code?: number
   response_time_ms?: number
   error?: string

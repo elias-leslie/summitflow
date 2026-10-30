@@ -55,6 +55,22 @@ describe('ProjectHealthBadge', () => {
     expect(screen.queryByRole('tooltip')).not.toBeInTheDocument()
   })
 
+  it('shows the endpoint the check actually used, not the registry URL', async () => {
+    fetchHealth.mockResolvedValue({
+      project_id: 'summitflow',
+      healthy: true,
+      endpoint: 'http://localhost:8001/health',
+      status_code: 200,
+      checked_at: '2026-10-02T12:00:00Z',
+    })
+    renderBadge()
+    fireEvent.focus(screen.getByRole('button'))
+    const tooltip = await screen.findByRole('tooltip')
+    expect(await screen.findByText('200')).toBeInTheDocument()
+    expect(tooltip).toHaveTextContent('http://localhost:8001/health')
+    expect(tooltip).not.toHaveTextContent('https://summitflow.test/health')
+  })
+
   it('shows loading on hover and an unavailable request separately from unhealthy endpoints', async () => {
     fetchHealth.mockRejectedValue(new Error('Health API offline'))
     renderBadge()

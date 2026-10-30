@@ -18,6 +18,12 @@ from ...project_identity import (
     get_project_lifecycle,
     get_project_lifecycles,
 )
+from ...runtime_deployment import (
+    DeploymentError,
+    ProxmoxDeployment,
+    guest_http_status,
+    parse_deployment,
+)
 from ...storage.connection import get_cursor
 from .models import ProjectCategory, ProjectHealthResponse, ProjectResponse
 from .public_urls import resolve_project_public_url
@@ -34,7 +40,9 @@ ProjectListRow = tuple[
     datetime,
 ]
 
-PROJECT_HEALTH_TIMEOUT = httpx.Timeout(2.0, connect=0.5)
+PROJECT_HEALTH_TIMEOUT_SECONDS = 2.0
+GUEST_HEALTH_SSH_ALLOWANCE_SECONDS = 3.0
+PROJECT_HEALTH_TIMEOUT = httpx.Timeout(PROJECT_HEALTH_TIMEOUT_SECONDS, connect=0.5)
 HEALTH_CHECK_FULL_TIMEOUT = 10
 
 SQL_LIST_PROJECTS = """
@@ -64,21 +72,38 @@ async def probe_project_health(
     return project_id, "healthy" if response.status_code == 200 else "warning"
 
 
-def project_health_target(project_id: str, base_url: str, endpoint: str) -> tuple[str, str]:
-    """Probe the local backend the project's identity declares, else its registry URL.
+async def probe_guest_health(project_id: str, deployment: ProxmoxDeployment, url: str) -> tuple[str, str]:
+    # The SSH hop has its own longer bound; cap it so one hung guest can't stall the project list.
+    try:
+        status = await asyncio.wait_for(
+            asyncio.to_thread(guest_http_status, deployment, url, PROJECT_HEALTH_TIMEOUT_SECONDS),
+            PROJECT_HEALTH_TIMEOUT_SECONDS + GUEST_HEALTH_SSH_ALLOWANCE_SECONDS,
+        )
+    except (DeploymentError, TimeoutError):
+        return project_id, "warning"
+    return project_id, "healthy" if status == 200 else "warning"
+
+
+def project_health_target(
+    project_id: str, base_url: str, endpoint: str
+) -> tuple[str, str, ProxmoxDeployment | None]:
+    """Probe the backend the project's identity declares, else its registry URL.
 
     Registry rows go stale or point at an owner-gated frontend route (403), so a
-    healthy local service would show as a warning. Remote placements keep the
-    registry URL: their declared port is not on this host.
+    healthy service would show as a warning. A Proxmox placement's backend binds
+    the guest's loopback, so it is probed from inside that guest.
     """
     try:
         runtime = (get_project_identity(project_id) or {}).get("runtime")
-    except (OSError, ValueError):
-        return base_url, endpoint
-    if not isinstance(runtime, dict) or runtime.get("deployment") is not None:
-        return base_url, endpoint
+        if not isinstance(runtime, dict):
+            return base_url, endpoint, None
+        deployment = parse_deployment(runtime.get("deployment"))
+    except (OSError, ValueError, DeploymentError):
+        return base_url, endpoint, None
     backend = local_url(project_id, "backend_port")
-    return (backend, runtime.get("health_endpoint") or "/health") if backend else (base_url, endpoint)
+    if not backend:
+        return base_url, endpoint, None
+    return backend, runtime.get("health_endpoint") or "/health", deployment
 
 
 def clear_project_health_cache() -> None:
@@ -91,9 +116,9 @@ async def resolve_project_health_statuses(
     """Fetch live health labels, reusing probes younger than the cache TTL."""
     now = time.monotonic()
     statuses: dict[str, str] = {}
-    to_probe: list[tuple[str, str, str]] = []
+    to_probe: list[tuple[str, str, str, ProxmoxDeployment | None]] = []
     for project_id, registry_url, registry_endpoint in projects:
-        base_url, endpoint = project_health_target(project_id, registry_url, registry_endpoint)
+        base_url, endpoint, deployment = project_health_target(project_id, registry_url, registry_endpoint)
         if not base_url:
             statuses[project_id] = UNCONFIGURED_HEALTH_STATUS
             continue
@@ -101,18 +126,20 @@ async def resolve_project_health_statuses(
         if cached and now - cached[0] < PROJECT_HEALTH_CACHE_TTL_SECONDS:
             statuses[project_id] = cached[1]
         else:
-            to_probe.append((project_id, base_url, endpoint))
+            to_probe.append((project_id, base_url, endpoint, deployment))
     if not to_probe:
         return statuses
     async with httpx.AsyncClient(timeout=PROJECT_HEALTH_TIMEOUT) as client:
         results = await asyncio.gather(
             *(
-                probe_project_health(client, project_id, url, endpoint)
-                for project_id, url, endpoint in to_probe
+                probe_guest_health(project_id, deployment, url + endpoint)
+                if deployment
+                else probe_project_health(client, project_id, url, endpoint)
+                for project_id, url, endpoint, deployment in to_probe
             )
         )
     probed_at = time.monotonic()
-    for (project_id, url, endpoint), (_, status) in zip(to_probe, results, strict=True):
+    for (project_id, url, endpoint, _), (_, status) in zip(to_probe, results, strict=True):
         _health_cache[(project_id, url, endpoint)] = (probed_at, status)
         statuses[project_id] = status
     return statuses
@@ -185,14 +212,32 @@ async def check_registered_project_health(project_id: str) -> ProjectHealthRespo
 
         raise HTTPException(status_code=404, detail=f"Project {project_id} not found")
 
-    if not row[0]:
+    base_url, endpoint, deployment = project_health_target(project_id, row[0] or "", row[1] or "")
+    if not base_url:
         return ProjectHealthResponse(
             project_id=project_id,
             healthy=True,
             checked_at=datetime.now(UTC),
         )
 
-    url = f"{row[0]}{row[1]}"
+    url = f"{base_url}{endpoint}"
+    if deployment:
+        start = datetime.now(UTC)
+        status_code: int | None = None
+        error: str | None = None
+        try:
+            status_code = await asyncio.to_thread(guest_http_status, deployment, url, HEALTH_CHECK_FULL_TIMEOUT)
+        except DeploymentError as exc:
+            error = str(exc)
+        return ProjectHealthResponse(
+            project_id=project_id,
+            healthy=status_code == 200,
+            endpoint=f"{url} in {deployment.label}",
+            status_code=status_code,
+            error=error,
+            response_time_ms=(datetime.now(UTC) - start).total_seconds() * 1000,
+            checked_at=datetime.now(UTC),
+        )
     try:
         async with httpx.AsyncClient(timeout=HEALTH_CHECK_FULL_TIMEOUT) as client:
             start = datetime.now(UTC)
@@ -201,6 +246,7 @@ async def check_registered_project_health(project_id: str) -> ProjectHealthRespo
         return ProjectHealthResponse(
             project_id=project_id,
             healthy=response.status_code == 200,
+            endpoint=url,
             status_code=response.status_code,
             response_time_ms=elapsed,
             checked_at=datetime.now(UTC),
@@ -209,6 +255,7 @@ async def check_registered_project_health(project_id: str) -> ProjectHealthRespo
         return ProjectHealthResponse(
             project_id=project_id,
             healthy=False,
+            endpoint=url,
             error=str(exc),
             checked_at=datetime.now(UTC),
         )

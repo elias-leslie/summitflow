@@ -70,6 +70,7 @@ class ProjectHealthResponse(BaseModel):
 
     project_id: str
     healthy: bool
+    endpoint: str | None = None
     status_code: int | None = None
     response_time_ms: float | None = None
     error: str | None = None

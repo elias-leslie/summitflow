@@ -103,6 +103,12 @@ def _guest_command(target: ProxmoxDeployment, command: list[str]) -> str:
     return output
 
 
+def guest_http_status(target: ProxmoxDeployment, url: str, timeout: float) -> int:
+    """HTTP status url answers inside the guest, where its services bind loopback."""
+    output = _guest_command(target, ["curl", "-sS", "-m", str(timeout), "-o", "/dev/null", "-w", "%{http_code}", url])
+    return int(output.strip()) if output.strip().isdigit() else 0
+
+
 def _systemctl(target: ProxmoxDeployment, verb: str, units: Sequence[str]) -> str:
     if not units or any(not re.fullmatch(r"[A-Za-z0-9_][A-Za-z0-9_.@:-]*", unit) for unit in units):
         raise DeploymentError("Remote unit operations require declared systemd unit names")

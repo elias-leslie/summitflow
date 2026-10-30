@@ -1237,3 +1237,52 @@ async def test_project_health_probes_the_local_backend_its_identity_declares(mon
         "unreadable": "http://127.0.0.1:3005/health",
         "no-identity": "http://127.0.0.1:4001/",
     }
+
+
+@pytest.mark.asyncio
+async def test_project_health_probes_a_proxmox_placement_inside_its_guest(monkeypatch) -> None:
+    from app import project_identity
+    from app.api.projects import listing
+    from app.runtime_deployment import DeploymentError
+
+    placement = {"kind": "proxmox", "ssh_host": "pve", "vmid": 180, "manager": "system"}
+    identities = {
+        "up": {"runtime": {"backend_port": 8014, "health_endpoint": "/health", "deployment": placement}},
+        "down": {"runtime": {"backend_port": 9999, "health_endpoint": "/api/v1/hierarchy",
+                             "deployment": {**placement, "vmid": 150}}},
+        "login": {"runtime": {"backend_port": 8020, "deployment": {**placement, "vmid": 160}}},
+    }
+
+    def fake_identity(project_id, root_path=None):
+        return identities.get(project_id)
+
+    monkeypatch.setattr(listing, "get_project_identity", fake_identity)
+    monkeypatch.setattr(project_identity, "get_project_identity", fake_identity)
+    guest_calls: list[tuple[int, str]] = []
+
+    def fake_guest_http_status(target, url, timeout):
+        guest_calls.append((target.vmid, url))
+        if target.vmid == 150:
+            raise DeploymentError("guest stopped")
+        return 200 if target.vmid == 180 else 302
+
+    async def unexpected_http_probe(*_args):
+        raise AssertionError("a guest's loopback is not reachable from this host")
+
+    monkeypatch.setattr(listing, "guest_http_status", fake_guest_http_status)
+    monkeypatch.setattr(listing, "probe_project_health", unexpected_http_probe)
+    listing.clear_project_health_cache()
+    try:
+        statuses = await listing.resolve_project_health_statuses([
+            ("up", "http://127.0.0.1:3014", "/api/health"),
+            ("down", "http://192.0.2.10:9999", "/api/v1/hierarchy"),
+            ("login", "", ""),
+        ])
+    finally:
+        listing.clear_project_health_cache()
+    assert statuses == {"up": "healthy", "down": "warning", "login": "warning"}
+    assert sorted(guest_calls) == [
+        (150, "http://localhost:9999/api/v1/hierarchy"),
+        (160, "http://localhost:8020/health"),
+        (180, "http://localhost:8014/health"),
+    ]

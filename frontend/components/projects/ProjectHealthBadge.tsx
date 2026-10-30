@@ -86,7 +86,8 @@ export function ProjectHealthBadge({
 
   const healthy = health?.healthy ?? project.health_status === 'healthy'
   const label = !configured ? 'unconfigured' : healthy ? 'healthy' : 'watch'
-  const endpoint = `${project.base_url}${project.health_endpoint}`
+  const endpoint =
+    health?.endpoint ?? `${project.base_url}${project.health_endpoint}`
 
   return (
     <>
