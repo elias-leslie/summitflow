@@ -12,7 +12,7 @@ from st_sdk.fleet import FleetClient
 from st_sdk.usage import usage
 
 from ..client import APIError, STClient
-from ..config import get_config, get_project_override
+from ..config import get_config, get_config_optional, get_project_override
 from ..output import handle_api_error, output_json
 
 
@@ -95,15 +95,22 @@ def _resolve_agent(target: str) -> str:
     raise typer.Exit(2)
 
 
-def _send_across_machines(target: str, text: str) -> bool:
+def _send_across_machines(target: str, text: str, source_key: str | None = None) -> bool:
     """A window on an agent host gets the text through the Tether hub; on an agent
     host, a target that is none of its own agents goes to the workstation."""
     from ..lib import coord_remote
 
     try:
-        if window := coord_remote.to_host_window(target, text):
-            typer.echo(f"sent to window {window['id']} on {window['host']}; it has no ledger here, "
-                       "so its answer comes back as a new request to you")
+        cfg = get_config_optional()
+        if sent := coord_remote.to_host_window(target, text, project=getattr(cfg, "project_id", None) or None,
+                                               source_key=source_key):
+            window, row = sent
+            if row.get("duplicate"):
+                typer.echo(f"existing {row['id']} -> window {window['id']} on {window['host']} "
+                           f"(state {row['state']}); not sent again. Track it with st sessions inbox")
+            else:
+                typer.echo(f"sent {row['id']} -> window {window['id']} on {window['host']}; its ack comes "
+                           "back here. Track it with st sessions inbox")
             return True
         host = coord_remote.agent_host()
         if not host or coord_remote.names_local_agent(target):
@@ -118,7 +125,8 @@ def _send_across_machines(target: str, text: str) -> bool:
     except APIError as exc:
         handle_api_error(exc)
         raise typer.Exit(1) from exc
-    typer.echo(f"sent {row.get('id')} -> {row.get('to')} on the workstation; it answers with st sessions send")
+    typer.echo(f"sent {row.get('id')} -> {row.get('to')} on the workstation; its ack is posted into this "
+               "window. Track it with st sessions inbox")
     return True
 
 
@@ -202,7 +210,7 @@ def send(
     if delivery == "handshake":
         from .sessions_handshake import send_request
 
-        if _send_across_machines(root, instruction):
+        if _send_across_machines(root, instruction, source_key):
             return
         send_request(_resolve_agent(root), instruction, source_key)
         return

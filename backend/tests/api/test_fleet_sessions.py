@@ -259,3 +259,26 @@ def test_a_host_agents_request_is_recorded_here(monkeypatch):
     monkeypatch.setattr(coord_remote, "record_from_host", lambda *a, **k: (_ for _ in ()).throw(LookupError("no agent")))
     with _client(role="agent") as client:
         assert client.post("/api/fleet/v1/coordination/requests", json=body).status_code == 404
+
+
+def test_a_host_agent_acks_confirms_and_lists_through_the_api(monkeypatch):
+    from cli.lib import coord, coord_remote
+
+    sent = coord.send("a810c7e0@agent-work", "Run the check")
+    theirs = coord.send("cc:4a9a07", "x", sender="cc:9b1c2d@agent-work", remote={"host": "agent-work"})
+    coord.ack(theirs["id"], "yes", remote=("cc:4a9a07", "cc:4a9a07"))
+    base = "/api/fleet/v1/coordination/requests"
+    with _client(role="agent") as client:
+        listed = client.get(base, params={"host": "agent-work", "sender": ["cc:9b1c2d"], "window": "a810c7e0"})
+        assert listed.status_code == 200
+        assert {(r["id"], r["state"]) for r in listed.json()["requests"]} == {(sent["id"], "open"), (theirs["id"], "acked")}
+        ack = {"intent": "yes", "note": None, "sender": "cc:9b1c2d", "host": "agent-work", "window": "a810c7e0"}
+        response = client.post(f"{base}/{sent['id']}/ack", json=ack)
+        assert response.status_code == 200 and response.json()["acked_by"] == "cc:9b1c2d@agent-work"
+        assert "text" not in response.json()
+        assert client.post(f"{base}/{sent['id']}/ack", json={**ack, "window": "ffffffff"}).status_code == 422
+        assert client.post(f"{base}/nope00/ack", json=ack).status_code == 422
+        confirm = {"senders": ["cc:9b1c2d"], "host": "agent-work"}
+        response = client.post(f"{base}/{theirs['id']}/confirm", json=confirm)
+        assert response.status_code == 200 and response.json()["state"] == "closed"
+    assert coord_remote.inbox_for_host(senders=["cc:9b1c2d"], host="agent-work", window="a810c7e0") == []

@@ -43,6 +43,10 @@ INTENTS = ("yes", "no")
 _ETA = re.compile(r"eta:(\d{1,4})")
 
 
+class UnknownRequest(ValueError):
+    """No request with that id in this machine's ledger (an agent host's may be on the workstation)."""
+
+
 class CoordBlocked(Exception):
     """A repo operation conflicts with another live agent; message is one line."""
 
@@ -430,12 +434,14 @@ def live_agents() -> list[str]:
 
 
 def send(to: str, text: str, *, project: str | None = None, limit: int = MAX_TEXT,
-         source_key: str | None = None, sender: str | None = None) -> dict[str, Any]:
+         source_key: str | None = None, sender: str | None = None,
+         remote: dict[str, str] | None = None) -> dict[str, Any]:
     """Record a request; an identical open request, or any request with the same source key, returns the existing row.
 
     The source key is the sender's stable revision for one instruction: a retry
     or fallback with that key never records a second request, whatever its state.
-    ``sender`` records a request from an agent on another machine (coord_remote).
+    ``sender`` records a request from an agent on another machine, ``remote`` its
+    host and reply window (coord_remote).
     """
     body = _clean_text(text, limit)
     agent_id, _, session_id, _ = (sender, "", "", "") if sender else leases.identify_agent()
@@ -451,25 +457,37 @@ def send(to: str, text: str, *, project: str | None = None, limit: int = MAX_TEX
             "id": uuid.uuid4().hex[:6], "from": agent_id, "from_session": session_id, "to": to,
             "project": project, "source_key": source_key, "text": body, "created": now, "state": "open",
             "intent": None, "eta_min": None, "note": None, "acked_at": None,
-            "closed_at": None, "surfaced_at": None, "ack_seen": False,
+            "closed_at": None, "surfaced_at": None, "ack_seen": False, **(remote or {}),
         }
         rows.append(row)
         _save_ledger(rows)
     return row
 
 
-def ack(message_id: str, intent: str, note: str | None = None) -> dict[str, Any]:
-    """Recipient states intent: yes | no | eta:<minutes>."""
+def drop(message_id: str) -> None:
+    """Forget a request that never reached its recipient (a failed cross-machine post)."""
+    with leases._lock("_coord"):
+        _save_ledger([row for row in _load_ledger() if row["id"] != message_id])
+
+
+def ack(message_id: str, intent: str, note: str | None = None, *,
+        remote: tuple[str, str] | None = None) -> dict[str, Any]:
+    """Recipient states intent: yes | no | eta:<minutes>.
+
+    ``remote`` is (acking agent, address the request must be to) for an ack an
+    agent host forwards here (coord_remote).
+    """
     eta = _ETA.fullmatch(intent)
     if intent not in INTENTS and not eta:
         raise ValueError("intent must be yes, no or eta:<minutes>")
     if intent == "no" and not note:
         raise ValueError("a 'no' ack needs a short reason")
-    agent_id, _, session_id, _ = leases.identify_agent()
+    agent_id, _, session_id, _ = (remote[0], "", "", "") if remote else leases.identify_agent()
     with leases._lock("_coord"):
         rows = _load_ledger()
         row = _find(rows, message_id)
-        if not _addresses(row["to"], agent_id, session_id):
+        addressed = row["to"] == remote[1] if remote else _addresses(row["to"], agent_id, session_id)
+        if not addressed:
             raise ValueError(f"request {message_id} is not addressed to {agent_id}")
         if row["state"] == "closed":
             raise ValueError(f"request {message_id} is already closed")
@@ -482,13 +500,16 @@ def ack(message_id: str, intent: str, note: str | None = None) -> dict[str, Any]
         return dict(row)
 
 
-def confirm(message_id: str, *, withdraw: bool = False) -> dict[str, Any]:
-    """Requester closes the exchange; ``withdraw`` closes one nobody acked (it authorizes nothing)."""
-    agent_id = leases.identify_agent()[0]
+def confirm(message_id: str, *, withdraw: bool = False, senders: set[str] | None = None) -> dict[str, Any]:
+    """Requester closes the exchange; ``withdraw`` closes one nobody acked (it authorizes nothing).
+
+    ``senders`` are the requester's ids for a confirm an agent host forwards here (coord_remote).
+    """
+    agent_id = min(senders) if senders else leases.identify_agent()[0]
     with leases._lock("_coord"):
         rows = _load_ledger()
         row = _find(rows, message_id)
-        if row["from"] not in leases.self_ids():
+        if row["from"] not in (senders or leases.self_ids()):
             raise ValueError(f"request {message_id} was not sent by {agent_id}")
         if withdraw:
             if row["state"] != "open":
@@ -506,7 +527,7 @@ def _find(rows: list[dict[str, Any]], message_id: str) -> dict[str, Any]:
     for row in rows:
         if row["id"] == message_id:
             return row
-    raise ValueError(f"unknown request {message_id}")
+    raise UnknownRequest(f"unknown request {message_id}")
 
 
 def ack_authorizes(message_id: str, holder: leases.Lease, project_id: str) -> bool:

@@ -107,6 +107,60 @@ def host_request(body: HostRequest, request: Request, response: Response) -> dic
     return {key: row.get(key) for key in ("id", "to", "state", "duplicate")}
 
 
+class HostAck(BaseModel):
+    """A host agent's st sessions ack for a request this ledger holds for its window."""
+
+    model_config = ConfigDict(extra="forbid")
+    intent: str = Field(min_length=1, max_length=16)
+    note: str | None = Field(default=None, max_length=2000)
+    sender: str = Field(min_length=1, max_length=128)
+    host: str = Field(min_length=1, max_length=32)
+    window: str = Field(min_length=8, max_length=8)
+
+
+class HostConfirm(BaseModel):
+    """A host agent's st sessions confirm for a request it sent here."""
+
+    model_config = ConfigDict(extra="forbid")
+    senders: list[str] = Field(min_length=1, max_length=16)
+    host: str = Field(min_length=1, max_length=32)
+    withdraw: bool = False
+
+
+_ROW_KEYS = ("id", "from", "to", "state", "intent", "eta_min", "note", "acked_by", "withdrawn")
+
+
+@coordination_router.post("/coordination/requests/{message_id}/ack")
+def host_ack(message_id: str, body: HostAck, request: Request, response: Response) -> dict[str, Any]:
+    from cli.lib import coord_remote
+
+    _mutation(request, response)
+    row = _call(coord_remote.ack_from_host, message_id, body.intent, body.note, sender=body.sender,
+                host=body.host, window=body.window)
+    return {key: row.get(key) for key in _ROW_KEYS}
+
+
+@coordination_router.post("/coordination/requests/{message_id}/confirm")
+def host_confirm(message_id: str, body: HostConfirm, request: Request, response: Response) -> dict[str, Any]:
+    from cli.lib import coord_remote
+
+    _mutation(request, response)
+    row = _call(coord_remote.confirm_from_host, message_id, senders=body.senders, host=body.host,
+                withdraw=body.withdraw)
+    return {key: row.get(key) for key in _ROW_KEYS}
+
+
+@coordination_router.get("/coordination/requests")
+def host_inbox(response: Response, host: str, sender: Annotated[list[str], Query(max_length=16)],
+               window: str | None = None) -> dict[str, Any]:
+    """A host agent's st sessions inbox: what this ledger holds for or from it."""
+    from cli.lib import coord_remote
+
+    response.headers["Cache-Control"] = "no-store"
+    rows = _call(coord_remote.inbox_for_host, senders=sender, host=host, window=window)
+    return {"requests": [{key: row.get(key) for key in (*_ROW_KEYS, "text")} for row in rows]}
+
+
 @router.post("/roots")
 def start(body: StartRoot, request: Request, response: Response) -> dict[str, Any]:
     _mutation(request, response)
