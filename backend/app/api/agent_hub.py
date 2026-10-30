@@ -252,7 +252,8 @@ async def list_agent_hub_sessions(
 @router.get("/agent-hub/sessions/{session_id}")
 async def get_session(session_id: str, include_events: bool = Query(default=True)) -> object:
     """Proxy to Agent Hub to get session data; include_events=false returns metadata and counts only."""
-    params: dict[str, str | int] | None = None if include_events else {"include_events": "false"}
+    # Always sent: Agent Hub's own default is the summary.
+    params: dict[str, str | int] = {"include_events": "true" if include_events else "false"}
     return await _get_json(f"{AGENT_HUB_URL}/api/sessions/{session_id}", params=params)
 
 

@@ -135,4 +135,5 @@ def test_session_detail_forwards_metadata_only_reads(mocker: MockerFixture) -> N
     assert client.get("/api/agent-hub/sessions/sess-1?include_events=false").status_code == 200
     assert client.get("/api/agent-hub/sessions/sess-1").status_code == 200
     assert mock_get_json.await_args_list[0].kwargs == {"params": {"include_events": "false"}}
-    assert mock_get_json.await_args_list[1].kwargs == {"params": None}
+    # Agent Hub's own default is the summary, so the proxy's default (events) is asked for.
+    assert mock_get_json.await_args_list[1].kwargs == {"params": {"include_events": "true"}}

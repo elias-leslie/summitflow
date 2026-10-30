@@ -23,11 +23,11 @@ importers:
   frontend:
     dependencies:
       '@agent-hub/chat-ui':
-        specifier: file:../docker/workspace-packages/agent-hub-chat-ui-0.4.6.tgz
-        version: file:docker/workspace-packages/agent-hub-chat-ui-0.4.6.tgz(@agent-hub/sdk@file:docker/workspace-packages/agent-hub-sdk-0.1.3.tgz)(@types/react@19.3.0)(react-dom@19.3.0(react@19.3.0))(react@19.3.0)
+        specifier: file:../docker/workspace-packages/agent-hub-chat-ui-0.4.7.tgz
+        version: file:docker/workspace-packages/agent-hub-chat-ui-0.4.7.tgz(@agent-hub/sdk@file:docker/workspace-packages/agent-hub-sdk-0.1.4.tgz)(@types/react@19.3.0)(react-dom@19.3.0(react@19.3.0))(react@19.3.0)
       '@agent-hub/sdk':
-        specifier: file:../docker/workspace-packages/agent-hub-sdk-0.1.3.tgz
-        version: file:docker/workspace-packages/agent-hub-sdk-0.1.3.tgz
+        specifier: file:../docker/workspace-packages/agent-hub-sdk-0.1.4.tgz
+        version: file:docker/workspace-packages/agent-hub-sdk-0.1.4.tgz
       '@codemirror/lang-cpp':
         specifier: ^6.0.3
         version: 6.0.3
@@ -228,21 +228,21 @@ packages:
   '@adobe/css-tools@4.4.4':
     resolution: {integrity: sha512-Elp+iwUx5rN5+Y8xLt5/GRoG20WGoDCQ/1Fb+1LiGtvwbDavuSk0jhD/eZdckHAuzcDzccnkv+rEjyWfRx18gg==}
 
-  '@agent-hub/chat-ui@file:docker/workspace-packages/agent-hub-chat-ui-0.4.6.tgz':
-    resolution: {integrity: sha512-Nd355uLFwAZd/Xmw0CmmuKDHkzXECQs2/g5N8GBagdIZ/Lu3WveFQAW4aRx1/FNjgqyK2YC+EPMObyPA8WM8dA==, tarball: file:docker/workspace-packages/agent-hub-chat-ui-0.4.6.tgz}
-    version: 0.4.6
+  '@agent-hub/chat-ui@file:docker/workspace-packages/agent-hub-chat-ui-0.4.7.tgz':
+    resolution: {integrity: sha512-csLBLv/rZa4eDVirqL6oweB9di38FZidTmFHBnXJLIa1R2ShDUKEN7O9Xa0uaA8E1Og/X3w8JgkEQGTBJ2cvPg==, tarball: file:docker/workspace-packages/agent-hub-chat-ui-0.4.7.tgz}
+    version: 0.4.7
     peerDependencies:
       '@agent-hub/passport-client': '>=0.1.0'
-      '@agent-hub/sdk': '>=0.1.1'
+      '@agent-hub/sdk': '>=0.1.4'
       react: '>=18 || ^19.0.0'
       react-dom: '>=18 || ^19.0.0'
     peerDependenciesMeta:
       '@agent-hub/passport-client':
         optional: true
 
-  '@agent-hub/sdk@file:docker/workspace-packages/agent-hub-sdk-0.1.3.tgz':
-    resolution: {integrity: sha512-6mwABX8o80YotzraaUYfxJEB+pBnviEm4eHI0fQPqi1PQGXdLEEEpEerI2hlQcrdBWfD87ojTyXC3ogilOCkRw==, tarball: file:docker/workspace-packages/agent-hub-sdk-0.1.3.tgz}
-    version: 0.1.3
+  '@agent-hub/sdk@file:docker/workspace-packages/agent-hub-sdk-0.1.4.tgz':
+    resolution: {integrity: sha512-P+mEKtEEeVw6LPvbvKFH0htp15vM+sfRHsmLL9KUwK2WEA1MvB4v8G6/b0SigBIQPx2BhrnFiE8NJl6C4G+Dvw==, tarball: file:docker/workspace-packages/agent-hub-sdk-0.1.4.tgz}
+    version: 0.1.4
 
   '@alloc/quick-lru@5.3.0':
     resolution: {integrity: sha512-U4+70Pc5ZS9osnCBCE5Jha/ciHM+Yp+CNMNC/7HvYbNRk1Ldd+f7qO65W5qfhu/TCv+/ozljlXXe9Nj8419DMA==}
@@ -2767,9 +2767,9 @@ snapshots:
 
   '@adobe/css-tools@4.4.4': {}
 
-  '@agent-hub/chat-ui@file:docker/workspace-packages/agent-hub-chat-ui-0.4.6.tgz(@agent-hub/sdk@file:docker/workspace-packages/agent-hub-sdk-0.1.3.tgz)(@types/react@19.3.0)(react-dom@19.3.0(react@19.3.0))(react@19.3.0)':
+  '@agent-hub/chat-ui@file:docker/workspace-packages/agent-hub-chat-ui-0.4.7.tgz(@agent-hub/sdk@file:docker/workspace-packages/agent-hub-sdk-0.1.4.tgz)(@types/react@19.3.0)(react-dom@19.3.0(react@19.3.0))(react@19.3.0)':
     dependencies:
-      '@agent-hub/sdk': file:docker/workspace-packages/agent-hub-sdk-0.1.3.tgz
+      '@agent-hub/sdk': file:docker/workspace-packages/agent-hub-sdk-0.1.4.tgz
       '@tanstack/react-query': 5.104.1(react@19.3.0)
       clsx: 2.1.1
       lucide-react: 0.562.0(react@19.3.0)
@@ -2782,7 +2782,7 @@ snapshots:
       - '@types/react'
       - supports-color
 
-  '@agent-hub/sdk@file:docker/workspace-packages/agent-hub-sdk-0.1.3.tgz': {}
+  '@agent-hub/sdk@file:docker/workspace-packages/agent-hub-sdk-0.1.4.tgz': {}
 
   '@alloc/quick-lru@5.3.0': {}
 

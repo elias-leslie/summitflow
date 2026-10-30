@@ -99,6 +99,14 @@ class TestSessionClientContract:
         assert mock_get.call_args.args[1]("/sessions/sess-123") == "http://test/agent-hub/sessions/sess-123"
         assert mock_get.call_args.kwargs == {"include_events": True}
 
+    def test_get_session_always_sends_include_events(self) -> None:
+        from cli import _client_execution as exec_ops
+
+        client = MagicMock()
+        for include_events, sent in ((True, "true"), (False, "false")):
+            exec_ops.get_session(client, lambda path: path, lambda response: {}, "s1", include_events=include_events)
+            assert client.get.call_args.kwargs == {"params": {"include_events": sent}}
+
 
 class TestSessionsListCommand:
     """Tests for `st sessions list`."""

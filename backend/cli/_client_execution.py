@@ -52,8 +52,11 @@ def get_session(
     client: httpx.Client, url_fn: Any, handle_response: Any, session_id: str,
     *, include_events: bool = True,
 ) -> dict[str, Any]:
-    """Get a specific session; include_events=False returns metadata and counts only."""
-    params = None if include_events else {"include_events": "false"}
+    """Get a specific session; include_events=False returns metadata and counts only.
+
+    Always sent: Agent Hub's own default is the summary.
+    """
+    params = {"include_events": "true" if include_events else "false"}
     response = client.get(url_fn(f"/sessions/{session_id}"), params=params)
     return cast(dict[str, Any], handle_response(response))
 

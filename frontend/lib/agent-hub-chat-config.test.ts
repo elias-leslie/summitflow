@@ -34,7 +34,7 @@ describe('createAgentHubChatClient', () => {
     await client.turns.cancel('s1').catch(() => undefined)
 
     const urls = fetchMock.mock.calls.map((call) => String(call[0]))
-    expect(urls[0]).toBe('/api/agent-hub/sessions/s%201')
+    expect(urls[0]).toBe('/api/agent-hub/sessions/s%201?include_events=true')
     expect(urls[1]).toBe('/api/agent-hub/complete/cancel')
   })
 })
