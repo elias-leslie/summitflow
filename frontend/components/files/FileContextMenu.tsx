@@ -63,9 +63,11 @@ function triggerDownload(url: string, filename: string) {
 // everything under it) instead of refetching it, which would 404 and retry for
 // seconds while the menu shows Working… and the viewer keeps the old file.
 // Only the tree listings need a refetch.
+type PathTarget = Pick<FileContextMenuTarget, 'scope' | 'path' | 'name'>
+
 async function refreshAfterPathRemoved(
   queryClient: QueryClient,
-  target: FileContextMenuTarget,
+  target: PathTarget,
 ) {
   queryClient.removeQueries({
     queryKey: fileQueryKeys.contents(target.scope),
@@ -79,16 +81,62 @@ async function refreshAfterPathRemoved(
   })
 }
 
+/** Rename and delete, shared by the context menu and the file viewer header. */
+export function usePathMutations(onMutated?: () => void) {
+  const queryClient = useQueryClient()
+  const [mutating, setMutating] = useState(false)
+
+  const rename = useCallback(
+    async (target: PathTarget) => {
+      if (mutating) return
+      const nextName = window.prompt('Rename', target.name)?.trim()
+      if (!nextName || nextName === target.name) return
+      setMutating(true)
+      try {
+        await renamePath(target.scope, target.path, nextName)
+        onMutated?.()
+        await refreshAfterPathRemoved(queryClient, target)
+        toast.success(`Renamed ${target.name}`)
+      } catch (error) {
+        toast.error(getErrorMessage(error, 'Failed to rename path'))
+      } finally {
+        setMutating(false)
+      }
+    },
+    [mutating, onMutated, queryClient],
+  )
+
+  const remove = useCallback(
+    async (target: PathTarget) => {
+      if (mutating) return
+      if (!window.confirm(`Delete ${target.name}?`)) return
+      setMutating(true)
+      try {
+        await deletePath(target.scope, target.path)
+        onMutated?.()
+        await refreshAfterPathRemoved(queryClient, target)
+        toast.success(`Deleted ${target.name}`)
+      } catch (error) {
+        toast.error(getErrorMessage(error, 'Failed to delete path'))
+      } finally {
+        setMutating(false)
+      }
+    },
+    [mutating, onMutated, queryClient],
+  )
+
+  return { mutating, rename, remove }
+}
+
 export function FileContextMenu({
   position,
   target,
   onClose,
   onMutated,
 }: FileContextMenuProps) {
-  const queryClient = useQueryClient()
   const menuRef = useRef<HTMLDivElement>(null)
   const [copyingContents, setCopyingContents] = useState(false)
-  const [mutating, setMutating] = useState(false)
+  const { mutating, rename, remove } = usePathMutations(onMutated)
 
   useEffect(() => {
     if (!position) return
@@ -152,47 +200,16 @@ export function FileContextMenu({
   }, [onClose, target])
 
   const handleRename = useCallback(async () => {
-    if (!target || mutating) return
-    const nextName = window.prompt('Rename', target.name)?.trim()
-    if (!nextName || nextName === target.name) {
-      onClose()
-      return
-    }
-
-    setMutating(true)
-    try {
-      await renamePath(target.scope, target.path, nextName)
-      onMutated?.()
-      await refreshAfterPathRemoved(queryClient, target)
-      toast.success(`Renamed ${target.name}`)
-    } catch (error) {
-      toast.error(getErrorMessage(error, 'Failed to rename path'))
-    } finally {
-      setMutating(false)
-      onClose()
-    }
-  }, [mutating, onClose, onMutated, queryClient, target])
+    if (!target) return
+    await rename(target)
+    onClose()
+  }, [onClose, rename, target])
 
   const handleDelete = useCallback(async () => {
-    if (!target || mutating) return
-    if (!window.confirm(`Delete ${target.name}?`)) {
-      onClose()
-      return
-    }
-
-    setMutating(true)
-    try {
-      await deletePath(target.scope, target.path)
-      onMutated?.()
-      await refreshAfterPathRemoved(queryClient, target)
-      toast.success(`Deleted ${target.name}`)
-    } catch (error) {
-      toast.error(getErrorMessage(error, 'Failed to delete path'))
-    } finally {
-      setMutating(false)
-      onClose()
-    }
-  }, [mutating, onClose, onMutated, queryClient, target])
+    if (!target) return
+    await remove(target)
+    onClose()
+  }, [onClose, remove, target])
 
   if (!position || !target) return null
 

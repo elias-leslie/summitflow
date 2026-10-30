@@ -8,9 +8,11 @@ import {
   Check,
   Copy,
   Download,
+  Edit3,
   FileCode,
   Loader2,
   Save,
+  Trash2,
 } from 'lucide-react'
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { toast } from 'sonner'
@@ -22,11 +24,14 @@ import {
 import { fileQueryKeys, useFileContent } from '@/lib/hooks/useFileExplorer'
 import { FEEDBACK_TIMEOUT } from '@/lib/polling'
 import { cn, getErrorMessage } from '@/lib/utils'
+import { usePathMutations } from './FileContextMenu'
 import { loadLanguageExtension } from './languageLoader'
 
 interface FileViewerProps {
   scope: FileBrowserScope
   filePath: string
+  /** Called once the open file is renamed or deleted, so the viewer can close. */
+  onMutated?: () => void
 }
 
 function formatSize(bytes: number): string {
@@ -35,8 +40,9 @@ function formatSize(bytes: number): string {
   return `${(bytes / (1024 * 1024)).toFixed(1)} MB`
 }
 
-export function FileViewer({ scope, filePath }: FileViewerProps) {
+export function FileViewer({ scope, filePath, onMutated }: FileViewerProps) {
   const queryClient = useQueryClient()
+  const pathMutations = usePathMutations(onMutated)
   const { data, isLoading, isError, error } = useFileContent(scope, filePath)
   const [langExtension, setLangExtension] = useState<Extension | null>(null)
   const [CodeMirrorComponent, setCodeMirrorComponent] =
@@ -153,6 +159,21 @@ export function FileViewer({ scope, filePath }: FileViewerProps) {
           data={data}
           downloadUrl={downloadUrl}
           content={draftContent}
+          mutating={pathMutations.mutating}
+          onRename={() =>
+            void pathMutations.rename({
+              scope,
+              path: filePath,
+              name: data.name,
+            })
+          }
+          onDelete={() =>
+            void pathMutations.remove({
+              scope,
+              path: filePath,
+              name: data.name,
+            })
+          }
         />
         <div className="flex flex-1 items-center justify-center text-slate-500">
           <div className="text-center">
@@ -177,6 +198,16 @@ export function FileViewer({ scope, filePath }: FileViewerProps) {
         isDirty={isDirty}
         isSaving={isSaving}
         onSave={handleSave}
+        mutating={pathMutations.mutating}
+        onRename={() => {
+          // Renaming closes the viewer, which would drop unsaved edits.
+          if (isDirty && !window.confirm('Discard unsaved changes and rename?'))
+            return
+          void pathMutations.rename({ scope, path: filePath, name: data.name })
+        }}
+        onDelete={() =>
+          void pathMutations.remove({ scope, path: filePath, name: data.name })
+        }
       />
       <div className="flex-1 overflow-auto">
         {CodeMirrorComponent ? (
@@ -224,6 +255,9 @@ interface FileInfoBarProps {
   isDirty?: boolean
   isSaving?: boolean
   onSave?: () => void
+  mutating?: boolean
+  onRename?: () => void
+  onDelete?: () => void
 }
 
 function FileInfoBar({
@@ -234,6 +268,9 @@ function FileInfoBar({
   isDirty = false,
   isSaving = false,
   onSave,
+  mutating = false,
+  onRename,
+  onDelete,
 }: FileInfoBarProps) {
   const [copied, setCopied] = useState(false)
 
@@ -322,6 +359,30 @@ function FileInfoBar({
                 Copy
               </>
             )}
+          </button>
+        ) : null}
+        {onRename ? (
+          <button
+            type="button"
+            className="flex items-center gap-1.5 rounded px-2 py-0.5 transition-colors hover:bg-slate-800 hover:text-slate-200"
+            onClick={onRename}
+            disabled={mutating}
+            title="Rename file"
+          >
+            <Edit3 className="h-3 w-3" />
+            Rename
+          </button>
+        ) : null}
+        {onDelete ? (
+          <button
+            type="button"
+            className="flex items-center gap-1.5 rounded px-2 py-0.5 transition-colors hover:bg-rose-500/15 hover:text-rose-300"
+            onClick={onDelete}
+            disabled={mutating}
+            title="Delete file"
+          >
+            <Trash2 className="h-3 w-3" />
+            {mutating ? 'Working...' : 'Delete'}
           </button>
         ) : null}
       </div>

@@ -300,7 +300,11 @@ export function FilesWorkspace({
 
         <div className="min-h-0 flex-1 overflow-hidden">
           {isViewingFile ? (
-            <FileViewer scope={scope} filePath={selectedEntry.path} />
+            <FileViewer
+              scope={scope}
+              filePath={selectedEntry.path}
+              onMutated={handleTreeMutated}
+            />
           ) : selectedEntry ? (
             <DirectoryEmptyState
               directoryName={selectedEntry.name}

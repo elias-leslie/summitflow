@@ -1,5 +1,5 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
-import { fireEvent, render, screen } from '@testing-library/react'
+import { fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { FilesClient } from '@/app/(app)/projects/[id]/files/FilesClient'
 import { resolveReadmeUrl } from '../projects/ProjectReadmeMarkdown'
@@ -16,9 +16,18 @@ vi.mock('@uiw/react-codemirror', () => ({
 function renderLinkedWorkspace(url: string) {
   navigation.query = new URL(url, 'https://summitflow.test').search
   const requests: URL[] = []
-  vi.spyOn(globalThis, 'fetch').mockImplementation(async (input) => {
+  vi.spyOn(globalThis, 'fetch').mockImplementation(async (input, init) => {
     const url = new URL(String(input), 'https://summitflow.test')
     requests.push(url)
+    if (init?.method === 'DELETE') {
+      return new Response(
+        JSON.stringify({ path: url.searchParams.get('path') }),
+        {
+          status: 200,
+          headers: { 'Content-Type': 'application/json' },
+        },
+      )
+    }
     const path = url.searchParams.get('path') || ''
     const body = url.pathname.endsWith('/tree')
       ? {
@@ -115,6 +124,31 @@ describe('README file browser links', () => {
       requests.some(
         (url) =>
           url.pathname.endsWith('/content') &&
+          url.searchParams.get('path') === 'profiles/config.json',
+      ),
+    ).toBe(true)
+  })
+
+  it('deletes the open file from the viewer header and closes it', async () => {
+    vi.spyOn(window, 'confirm').mockReturnValue(true)
+    const requests = renderLinkedWorkspace(
+      '/projects/summitflow/files?path=profiles%2Fconfig.json',
+    )
+    expect(await screen.findByText('Selected file content')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Rename' })).toBeInTheDocument()
+
+    fireEvent.click(screen.getByRole('button', { name: 'Delete' }))
+
+    await waitFor(() =>
+      expect(
+        screen.queryByText('Selected file content'),
+      ).not.toBeInTheDocument(),
+    )
+    expect(window.confirm).toHaveBeenCalledWith('Delete config.json?')
+    expect(
+      requests.some(
+        (url) =>
+          url.pathname.endsWith('/path') &&
           url.searchParams.get('path') === 'profiles/config.json',
       ),
     ).toBe(true)
