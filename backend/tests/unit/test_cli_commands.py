@@ -1287,6 +1287,80 @@ class TestPlanSchemaConsistency:
 
         jsonschema.validate(plan, schema)
 
+    def test_plan_schema_task_types_match_task_system(self) -> None:
+        from app.constants import TASK_TYPE_VALUES
+
+        schema_path = Path(__file__).resolve().parents[2] / "app" / "schemas" / "plan.schema.json"
+        schema = json.loads(schema_path.read_text())
+
+        assert schema["properties"]["task_type"]["enum"] == list(TASK_TYPE_VALUES)
+
+
+class TestPlanCreateTypeAndLabels:
+    """st create --plan applies -t/--type and -l/--labels like a bare-title create."""
+
+    def _client(self) -> MagicMock:
+        schema_path = Path(__file__).resolve().parents[2] / "app" / "schemas" / "plan.schema.json"
+        client = MagicMock()
+        client.base_url = "http://test"
+        client.get.return_value = json.loads(schema_path.read_text())
+        client.batch_create_tasks.return_value = {"created": [_make_mock_task("task-mock-1")], "errors": []}
+        client.get_task.return_value = {**_make_mock_task("task-mock-1"), "labels": ["existing"]}
+        client.get_subtasks.return_value = {"subtasks": []}
+        return client
+
+    def _plan(self, **fields: Any) -> Path:
+        plan_path = Path(tempfile.mkdtemp()) / "plan.json"
+        plan_path.write_text(json.dumps({"title": "Split the helper", "complexity": "SIMPLE", **fields}))
+        return plan_path
+
+    def _invoke(self, client: MagicMock, *args: str) -> Any:
+        with (
+            patch("cli.commands.tasks_create.STClient", return_value=client),
+            patch("cli.commands.tasks_import.upsert_task_spirit_from_plan", return_value=None),
+        ):
+            return runner.invoke(tasks_app, ["create", *args])
+
+    def test_type_and_labels_flags_reach_the_created_task(self) -> None:
+        client = self._client()
+        plan = self._plan(labels=["sprint"])
+
+        result = self._invoke(client, "--plan", str(plan), "-t", "refactor", "-l", "sf-refactor,sprint")
+
+        assert result.exit_code == 0, result.output
+        payload = client.batch_create_tasks.call_args.args[0][0]
+        assert payload["task_type"] == "refactor"
+        assert payload["labels"] == ["sprint", "sf-refactor"]
+
+    def test_plan_task_type_and_labels_apply_without_flags(self) -> None:
+        client = self._client()
+        plan = self._plan(task_type="regression", labels=["sprint"])
+
+        result = self._invoke(client, "--plan", str(plan))
+
+        assert result.exit_code == 0, result.output
+        payload = client.batch_create_tasks.call_args.args[0][0]
+        assert payload["task_type"] == "regression"
+        assert payload["labels"] == ["sprint"]
+
+    def test_unknown_type_with_plan_is_refused(self) -> None:
+        client = self._client()
+
+        result = self._invoke(client, "--plan", str(self._plan()), "-t", "idea")
+
+        assert result.exit_code == 1
+        assert "Schema validation failed: task_type" in result.output
+        client.batch_create_tasks.assert_not_called()
+
+    def test_update_from_plan_adds_labels_to_existing_ones(self) -> None:
+        client = self._client()
+
+        result = self._invoke(client, "--plan", str(self._plan()), "--task", "task-mock-1", "-l", "sf-refactor")
+
+        assert result.exit_code == 0, result.output
+        updates = client.update_task.call_args.kwargs
+        assert updates["labels"] == ["existing", "sf-refactor"]
+
 
 class TestCreateFromFileErrors:
     """Test error handling for st create --from-file.

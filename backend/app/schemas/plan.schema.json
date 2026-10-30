@@ -37,7 +37,7 @@
 
     "task_type": {
       "type": "string",
-      "enum": ["feature", "bug", "task"],
+      "enum": ["feature", "bug", "task", "refactor", "debt", "regression"],
       "default": "task"
     },
 

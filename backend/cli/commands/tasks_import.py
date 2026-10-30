@@ -124,15 +124,36 @@ def _refresh_imported_task(
     return task
 
 
+def _apply_plan_overrides(
+    plan: Any, task_type: str | None, labels: list[str] | None
+) -> None:
+    """Apply `st create -t/-l` to the plan: the type replaces, labels are added."""
+    if not isinstance(plan, dict):
+        return
+    if task_type:
+        plan["task_type"] = task_type
+    existing = plan.get("labels") or []
+    if labels and isinstance(existing, list):
+        merged = list(existing)
+        for label in labels:
+            cleaned = label.strip()
+            if cleaned and cleaned not in merged:
+                merged.append(cleaned)
+        plan["labels"] = merged
+
+
 def import_plan_file(
-    file_path: Path, dry_run: bool, task_id: str | None, client: STClient
+    file_path: Path, dry_run: bool, task_id: str | None, client: STClient,
+    *, task_type: str | None = None, labels: list[str] | None = None,
 ) -> tuple[dict[str, Any], str]:
     """Import a plan.json file and create or update task, returning (task_dict, task_id)."""
     plan = _load_json_file(file_path)
+    _apply_plan_overrides(plan, task_type, labels)
     _validate_plan(plan, client)
     if dry_run:
         subtasks = plan.get("subtasks", [])
         typer.echo(f"Would create task: {plan.get('title')}")
+        typer.echo(f"  task_type: {plan.get('task_type', 'task')}")
         typer.echo(f"  complexity: {plan.get('complexity', 'SIMPLE')}")
         typer.echo(f"  subtasks: {len(subtasks)}")
         for st in subtasks:
@@ -144,6 +165,8 @@ def import_plan_file(
         "task_type": plan.get("task_type", "task"), "priority": plan.get("priority", 2),
         "complexity": plan.get("complexity", "SIMPLE"),
     }
+    if plan.get("labels"):
+        task_data["labels"] = plan["labels"]
     if subtasks_data:
         task_data["subtasks"] = subtasks_data
     if task_id:
@@ -157,10 +180,14 @@ def _update_task_from_plan(
 ) -> tuple[dict[str, Any], str]:
     """Update existing task from plan data."""
     try:
-        if not client.get_task(task_id):
+        existing = client.get_task(task_id)
+        if not existing:
             output_error(f"Task not found: {task_id}")
             raise typer.Exit(1)
         update_fields = {k: v for k, v in task_data.items() if k != "subtasks" and v is not None}
+        if "labels" in update_fields:
+            current = list(existing.get("labels") or [])
+            update_fields["labels"] = current + [label for label in update_fields["labels"] if label not in current]
         client.update_task(task_id, **update_fields)
         if subtasks:
             _replace_subtasks(task_id, subtasks, client)

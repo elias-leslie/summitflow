@@ -19,6 +19,7 @@ from ..output import handle_api_error, output_error, output_task
 from .tasks_bug import create_bug_task
 from .tasks_import import create_from_file, import_plan_file
 
+_DEFAULT_TASK_TYPE = "task"
 _IDEA_LABEL = "crowdsourced"
 
 
@@ -63,10 +64,14 @@ def _apply_blocked_by(
 
 
 def _handle_plan_import(
-    plan: Path, dry_run: bool, task_id: str | None
+    plan: Path, dry_run: bool, task_id: str | None,
+    task_type: str | None, labels: str | None,
 ) -> None:
     client = STClient()
-    task, tid = import_plan_file(plan, dry_run, task_id, client)
+    task, tid = import_plan_file(
+        plan, dry_run, task_id, client,
+        task_type=task_type, labels=labels.split(",") if labels else None,
+    )
     if not dry_run:
         complexity = task.get("complexity", "SIMPLE")
         subtask_count = len(task.get("subtasks") or [])
@@ -125,7 +130,7 @@ def create_task_command(
     description: str | None,
     priority: int,
     labels: str | None,
-    task_type: str,
+    task_type: str | None,
     parent: str | None,
     plan: Path | None,
     blocked_by: str | None,
@@ -142,7 +147,7 @@ def create_task_command(
         st create --from-file tasks.json            # batch
     """
     if plan:
-        _handle_plan_import(plan, dry_run, task_id)
+        _handle_plan_import(plan, dry_run, task_id, task_type, labels)
         return
 
     if from_file:
@@ -157,6 +162,6 @@ def create_task_command(
         raise typer.Exit(1)
 
     _handle_single_task_create(
-        title, dry_run, description, priority, labels, task_type, parent,
+        title, dry_run, description, priority, labels, task_type or _DEFAULT_TASK_TYPE, parent,
         blocked_by,
     )

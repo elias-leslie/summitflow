@@ -22,7 +22,6 @@ from .tasks_helpers import (
 
 app = typer.Typer(help="Task management commands")
 
-_DEFAULT_TASK_TYPE = "task"
 _DEFAULT_CRITIQUE_STAGE = "task_shape"
 _DEFAULT_CRITIQUE_AGENT = "specifier"
 
@@ -51,11 +50,11 @@ def create(
     ] = False,
     description: Annotated[str | None, typer.Option("-d", "--description", help="Task details beyond the title.")] = None,
     priority: Annotated[int, typer.Option("-p", "--priority", min=0, max=4, help="0 is highest priority; default is 2.")] = 2,
-    labels: Annotated[str | None, typer.Option("-l", "--labels", help="Comma-separated labels.")] = None,
+    labels: Annotated[str | None, typer.Option("-l", "--labels", help="Comma-separated labels. With --plan, added to the plan's labels.")] = None,
     task_type: Annotated[
-        str,
-        typer.Option("-t", "--type", help="Task type: task, bug, idea, refactor, ..."),
-    ] = _DEFAULT_TASK_TYPE,
+        str | None,
+        typer.Option("-t", "--type", help="Task type: task (default), bug, idea, refactor, ... With --plan, overrides the plan's task_type."),
+    ] = None,
     parent: Annotated[str | None, typer.Option("--parent", help="Parent task ID for a child task.")] = None,
     plan: Annotated[
         Path | None,
