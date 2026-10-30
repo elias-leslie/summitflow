@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -270,6 +271,43 @@ def test_invalid_native_configuration_fails_closed(native_repo: Path, change: tu
     config.write_text(config.read_text().replace(*change))
     with pytest.raises(NativeCheckError):
         _plan(native_repo)
+
+
+_CHECK_STAGE = 'argv=["python"]\ncoverage="full"\n'
+
+
+@pytest.mark.parametrize(("stage", "message"), [
+    ('id="native-suite"\n' + _CHECK_STAGE, "stage ids must be unique"),
+    ('id="x"\nargv=[]\ncoverage="full"\n', "x: argv must be a nonempty string array"),
+    ('id="x"\nargv=["uv", "sync"]\ncoverage="full"\n', "x: dependency preparation must be explicit"),
+    ('id="x"\nargv=["python"]\ncoverage="partial"\n', "x: declare required/applicable booleans"),
+    ('id="x"\n' + _CHECK_STAGE + "timeout_seconds=0\n", "x: timeout_seconds must be between 1 and 86400"),
+    ('id="x"\n' + _CHECK_STAGE + "cwd=1\n", "x: cwd must be project-local"),
+    ('id="x"\nargv=["python"]\ncoverage="full"\nkind="test"\n', "x: test stages require fresh counted evidence"),
+    ('id="x"\n' + _CHECK_STAGE + 'evidence={format="json", source="pipe"}\n', "x: evidence.source must be"),
+    ('id="x"\n' + _CHECK_STAGE + 'evidence={format="json", source="stdout", not_applicable_tests={a=" "}}\n',
+     "x: not_applicable_tests must name exact cases"),
+    ('id="x"\n' + _CHECK_STAGE + 'evidence={format="json", source="stdout", not_applicable_tests={a="flaky"}}\n',
+     "x: exact not_applicable_tests currently requires Go test JSON"),
+    ('id="x"\n' + _CHECK_STAGE + 'evidence={format="json"}\n', "x: evidence.path must be project-local"),
+    ('id="x"\n' + _CHECK_STAGE + 'evidence={format="text", source="stdout"}\n', "x: text evidence requires success_pattern"),
+    ('id="x"\n' + _CHECK_STAGE + 'evidence={format="text", source="stdout", success_pattern="(", failure_pattern="f", '
+     'executed_pattern="e"}\n', "x: invalid success_pattern"),
+    ('id="x"\n' + _CHECK_STAGE + 'exclude=["a/**"]\n', "x: exclude narrows declared inputs"),
+    ('id="x"\nargv=["python"]\ncoverage="focused"\nrequired=false\ncovered_by="missing"\n', "covered_by requires"),
+])
+def test_stage_validation_names_the_failing_rule(native_repo: Path, stage: str, message: str) -> None:
+    config = native_repo / ".st-check.toml"
+    config.write_text(config.read_text() + "\n[[native.stages]]\n" + stage)
+    with pytest.raises(NativeCheckError, match=re.escape(message)):
+        native_plan(native_repo)
+
+
+def test_native_plan_requires_one_required_stage(native_repo: Path) -> None:
+    config = native_repo / ".st-check.toml"
+    config.write_text(config.read_text().replace("required = true", "required = false"))
+    with pytest.raises(NativeCheckError, match="must include a required stage"):
+        native_plan(native_repo)
 
 
 def test_native_timeout_keeps_heavy_admission(native_repo: Path, monkeypatch) -> None:

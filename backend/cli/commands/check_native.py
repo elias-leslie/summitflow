@@ -336,6 +336,98 @@ def _expand_home_tools(tools: Any) -> Any:
     }
 
 
+def _stage_executable(root: Path, command: str, tools: dict[str, str], paths: list[str]) -> Path:
+    """Resolve a stage's argv[0]: a declared tool, a project path, or the first native.paths hit."""
+    if command in tools:
+        return Path(tools[command])
+    if Path(command).is_absolute() and command in tools.values():
+        return Path(command)
+    if "/" in command:
+        return _local(root, command)
+    return next((_local(root, p) / command for p in paths if (_local(root, p) / command).is_file()),
+                _local(root, paths[0]) / command if paths else root / command)
+
+
+def _validate_stage_evidence(root: Path, stage_id: str, evidence: Any) -> None:
+    """Fresh evidence must name a supported format, a project-local source and complete text patterns."""
+    if not isinstance(evidence, dict) or evidence.get("format") not in {"junit", "json", "go-test-json", "text"}:
+        raise NativeCheckError(f"{stage_id}: unsupported evidence format")
+    if evidence.get("source", "file") not in {"file", "stdout", "combined"}:
+        raise NativeCheckError(f"{stage_id}: evidence.source must be file, stdout or combined")
+    exemptions = evidence.get("not_applicable_tests", {})
+    if not isinstance(exemptions, dict) or any(not isinstance(key, str) or not key or not isinstance(reason, str) or not reason.strip() for key, reason in exemptions.items()):
+        raise NativeCheckError(f"{stage_id}: not_applicable_tests must name exact cases with reasons")
+    if exemptions and evidence["format"] != "go-test-json":
+        raise NativeCheckError(f"{stage_id}: exact not_applicable_tests currently requires Go test JSON")
+    if evidence.get("source", "file") == "file":
+        if not isinstance(evidence.get("path"), str) or not evidence["path"]:
+            raise NativeCheckError(f"{stage_id}: evidence.path must be project-local")
+        _local(root, evidence["path"])
+        if not _local(root, evidence["path"]).resolve().is_relative_to(root.resolve()):
+            raise NativeCheckError(f"{stage_id}: evidence escapes the project")
+    if evidence["format"] == "text":
+        for key in ("success_pattern", "failure_pattern", "executed_pattern"):
+            pattern = evidence.get(key)
+            if not isinstance(pattern, str) or not pattern:
+                raise NativeCheckError(f"{stage_id}: text evidence requires {key}")
+            try:
+                re.compile(pattern)
+            except re.error as exc:
+                raise NativeCheckError(f"{stage_id}: invalid {key}") from exc
+
+
+def _normalize_stage(root: Path, stage: Any, ids: set[str], tools: dict[str, str], paths: list[str]) -> dict[str, Any]:
+    """Validate one native stage declaration and return it with resolved defaults and tool identity."""
+    if not isinstance(stage, dict):
+        raise NativeCheckError("native stage must be a table")
+    stage_id = stage.get("id")
+    argv = stage.get("argv")
+    required = stage.get("required", True)
+    applicable = stage.get("applicable", True)
+    cwd = stage.get("cwd", ".")
+    kind = stage.get("kind", "check")
+    coverage = stage.get("coverage")
+    evidence = stage.get("evidence")
+    timeout = stage.get("timeout_seconds", 600)
+    if not isinstance(stage_id, str) or not re.fullmatch(r"[a-zA-Z0-9][a-zA-Z0-9_.-]*", stage_id) or stage_id in ids:
+        raise NativeCheckError("native stage ids must be unique nonempty identifiers")
+    if not isinstance(argv, list) or not argv or any(not isinstance(arg, str) or not arg for arg in argv):
+        raise NativeCheckError(f"{stage_id}: argv must be a nonempty string array")
+    wrapper = Path(argv[0]).name
+    if wrapper in {"npx", "corepack", "pip", "pip3"} or (
+        wrapper in {"npm", "pnpm", "yarn", "bun", "uv"}
+        and any(arg in {"install", "add", "sync", "exec", "dlx", "x"} for arg in argv[1:3])
+    ):
+        raise NativeCheckError(f"{stage_id}: dependency preparation must be explicit and separate from checks")
+    if type(required) is not bool or type(applicable) is not bool or kind not in {"test", "check"} or coverage not in {"full", "focused"}:
+        raise NativeCheckError(f"{stage_id}: declare required/applicable booleans, kind and full/focused coverage")
+    if type(timeout) is not int or timeout < 1 or timeout > 86400:
+        raise NativeCheckError(f"{stage_id}: timeout_seconds must be between 1 and 86400")
+    if not applicable and (required or not isinstance(stage.get("reason"), str) or not stage["reason"].strip()):
+        raise NativeCheckError(f"{stage_id}: not-applicable stages must be optional with a reason")
+    if not isinstance(cwd, str):
+        raise NativeCheckError(f"{stage_id}: cwd must be project-local")
+    _local(root, cwd)
+    if not _local(root, cwd).resolve().is_relative_to(root.resolve()):
+        raise NativeCheckError(f"{stage_id}: cwd escapes the project")
+    executable = _stage_executable(root, argv[0], tools, paths)
+    if kind == "test" and not isinstance(evidence, dict):
+        raise NativeCheckError(f"{stage_id}: test stages require fresh counted evidence")
+    if evidence is not None:
+        _validate_stage_evidence(root, stage_id, evidence)
+    for key in ("inputs", "exclude"):
+        patterns = stage.get(key, [])
+        if (not isinstance(patterns, list) or any(not isinstance(item, str) or not item or item.startswith("/")
+                                                   or ".." in Path(item).parts for item in patterns)):
+            raise NativeCheckError(f"{stage_id}: {key} must list project-relative path globs")
+    if stage.get("exclude") and not stage.get("inputs"):
+        raise NativeCheckError(f"{stage_id}: exclude narrows declared inputs; declare inputs first")
+    return {**stage, "id": stage_id, "argv": argv, "cwd": cwd, "kind": kind,
+            "coverage": coverage, "required": required, "applicable": applicable,
+            "tool": identity(root, executable),
+            "executable": executable.relative_to(root).as_posix() if executable.is_relative_to(root) else str(executable)}
+
+
 def native_plan(root: Path, *, commit: str | None = None) -> dict[str, Any] | None:
     """Load declarations strictly; legacy projects remain on their existing gate."""
     config = root / ".st-check.toml"
@@ -397,86 +489,8 @@ def native_plan(root: Path, *, commit: str | None = None) -> dict[str, Any] | No
     normalized = []
     ids: set[str] = set()
     for stage in stages:
-        if not isinstance(stage, dict):
-            raise NativeCheckError("native stage must be a table")
-        stage_id = stage.get("id")
-        argv = stage.get("argv")
-        required = stage.get("required", True)
-        applicable = stage.get("applicable", True)
-        cwd = stage.get("cwd", ".")
-        kind = stage.get("kind", "check")
-        coverage = stage.get("coverage")
-        evidence = stage.get("evidence")
-        timeout = stage.get("timeout_seconds", 600)
-        if not isinstance(stage_id, str) or not re.fullmatch(r"[a-zA-Z0-9][a-zA-Z0-9_.-]*", stage_id) or stage_id in ids:
-            raise NativeCheckError("native stage ids must be unique nonempty identifiers")
-        if not isinstance(argv, list) or not argv or any(not isinstance(arg, str) or not arg for arg in argv):
-            raise NativeCheckError(f"{stage_id}: argv must be a nonempty string array")
-        wrapper = Path(argv[0]).name
-        if wrapper in {"npx", "corepack", "pip", "pip3"} or (
-            wrapper in {"npm", "pnpm", "yarn", "bun", "uv"}
-            and any(arg in {"install", "add", "sync", "exec", "dlx", "x"} for arg in argv[1:3])
-        ):
-            raise NativeCheckError(f"{stage_id}: dependency preparation must be explicit and separate from checks")
-        if type(required) is not bool or type(applicable) is not bool or kind not in {"test", "check"} or coverage not in {"full", "focused"}:
-            raise NativeCheckError(f"{stage_id}: declare required/applicable booleans, kind and full/focused coverage")
-        if type(timeout) is not int or timeout < 1 or timeout > 86400:
-            raise NativeCheckError(f"{stage_id}: timeout_seconds must be between 1 and 86400")
-        if not applicable and (required or not isinstance(stage.get("reason"), str) or not stage["reason"].strip()):
-            raise NativeCheckError(f"{stage_id}: not-applicable stages must be optional with a reason")
-        if not isinstance(cwd, str):
-            raise NativeCheckError(f"{stage_id}: cwd must be project-local")
-        _local(root, cwd)
-        if not _local(root, cwd).resolve().is_relative_to(root.resolve()):
-            raise NativeCheckError(f"{stage_id}: cwd escapes the project")
-        if argv[0] in tools:
-            executable = Path(tools[argv[0]])
-        elif Path(argv[0]).is_absolute() and argv[0] in tools.values():
-            executable = Path(argv[0])
-        elif "/" in argv[0]:
-            executable = _local(root, argv[0])
-        else:
-            executable = next((_local(root, p) / argv[0] for p in paths if (_local(root, p) / argv[0]).is_file()),
-                              _local(root, paths[0]) / argv[0] if paths else root / argv[0])
-        if kind == "test" and not isinstance(evidence, dict):
-            raise NativeCheckError(f"{stage_id}: test stages require fresh counted evidence")
-        if evidence is not None:
-            if not isinstance(evidence, dict) or evidence.get("format") not in {"junit", "json", "go-test-json", "text"}:
-                raise NativeCheckError(f"{stage_id}: unsupported evidence format")
-            if evidence.get("source", "file") not in {"file", "stdout", "combined"}:
-                raise NativeCheckError(f"{stage_id}: evidence.source must be file, stdout or combined")
-            exemptions = evidence.get("not_applicable_tests", {})
-            if not isinstance(exemptions, dict) or any(not isinstance(key, str) or not key or not isinstance(reason, str) or not reason.strip() for key, reason in exemptions.items()):
-                raise NativeCheckError(f"{stage_id}: not_applicable_tests must name exact cases with reasons")
-            if exemptions and evidence["format"] != "go-test-json":
-                raise NativeCheckError(f"{stage_id}: exact not_applicable_tests currently requires Go test JSON")
-            if evidence.get("source", "file") == "file":
-                if not isinstance(evidence.get("path"), str) or not evidence["path"]:
-                    raise NativeCheckError(f"{stage_id}: evidence.path must be project-local")
-                _local(root, evidence["path"])
-                if not _local(root, evidence["path"]).resolve().is_relative_to(root.resolve()):
-                    raise NativeCheckError(f"{stage_id}: evidence escapes the project")
-            if evidence["format"] == "text":
-                for key in ("success_pattern", "failure_pattern", "executed_pattern"):
-                    pattern = evidence.get(key)
-                    if not isinstance(pattern, str) or not pattern:
-                        raise NativeCheckError(f"{stage_id}: text evidence requires {key}")
-                    try:
-                        re.compile(pattern)
-                    except re.error as exc:
-                        raise NativeCheckError(f"{stage_id}: invalid {key}") from exc
-        for key in ("inputs", "exclude"):
-            patterns = stage.get(key, [])
-            if (not isinstance(patterns, list) or any(not isinstance(item, str) or not item or item.startswith("/")
-                                                       or ".." in Path(item).parts for item in patterns)):
-                raise NativeCheckError(f"{stage_id}: {key} must list project-relative path globs")
-        if stage.get("exclude") and not stage.get("inputs"):
-            raise NativeCheckError(f"{stage_id}: exclude narrows declared inputs; declare inputs first")
-        ids.add(stage_id)
-        normalized.append({**stage, "id": stage_id, "argv": argv, "cwd": cwd, "kind": kind,
-                           "coverage": coverage, "required": required, "applicable": applicable,
-                           "tool": identity(root, executable),
-                           "executable": executable.relative_to(root).as_posix() if executable.is_relative_to(root) else str(executable)})
+        normalized.append(_normalize_stage(root, stage, ids, tools, paths))
+        ids.add(normalized[-1]["id"])
     if not any(stage["required"] for stage in normalized):
         raise NativeCheckError("native plan must include a required stage")
     preceding: dict[str, dict[str, Any]] = {}
