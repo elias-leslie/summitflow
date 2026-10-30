@@ -91,6 +91,19 @@ describe('ProjectCard', () => {
     )
   })
 
+  it('routes task and bug counts to every type the count includes', () => {
+    renderCard(project)
+
+    fireEvent.click(screen.getByRole('button', { name: /^Tasks: / }))
+    expect(pushMock).toHaveBeenCalledWith(
+      '/projects/summitflow?tab=tasks&status=active&taskType=task,refactor',
+    )
+    fireEvent.click(screen.getByRole('button', { name: /^Bugs: / }))
+    expect(pushMock).toHaveBeenCalledWith(
+      '/projects/summitflow?tab=tasks&status=active&taskType=bug,regression',
+    )
+  })
+
   it('shows the project host and root path trust signals', () => {
     renderCard(project)
 

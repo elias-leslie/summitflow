@@ -19,6 +19,7 @@ import { useViewMode } from '@/components/tasks/hooks/useViewMode'
 import { TaskExecutionStrip } from '@/components/tasks/TaskExecutionStrip'
 import {
   isStatusFilter,
+  isTypeFilter,
   type TaskFilterValues,
 } from '@/components/tasks/TaskFilters'
 import { TaskIdeationDialog } from '@/components/tasks/TaskIdeationDialog'
@@ -84,8 +85,8 @@ export function ProjectDetailClient() {
   if (isStatusFilter(urlTaskStatus)) {
     taskInitialFilters.status = urlTaskStatus
   }
-  if (urlTaskType && ['all', 'feature', 'bug', 'task'].includes(urlTaskType)) {
-    taskInitialFilters.type = urlTaskType as TaskFilterValues['type']
+  if (isTypeFilter(urlTaskType)) {
+    taskInitialFilters.type = urlTaskType
   }
 
   const updateUrlParams = useCallback(

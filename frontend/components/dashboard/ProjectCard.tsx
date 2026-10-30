@@ -124,12 +124,12 @@ export function ProjectCard({ project }: ProjectCardProps) {
         break
       case 'tasks':
         router.push(
-          `/projects/${project.id}?tab=tasks&status=active&taskType=task`,
+          `/projects/${project.id}?tab=tasks&status=active&taskType=task,refactor`,
         )
         break
       case 'bugs':
         router.push(
-          `/projects/${project.id}?tab=tasks&status=active&taskType=bug`,
+          `/projects/${project.id}?tab=tasks&status=active&taskType=bug,regression`,
         )
         break
       case 'blocked':

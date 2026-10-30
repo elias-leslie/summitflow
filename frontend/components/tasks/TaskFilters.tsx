@@ -5,8 +5,19 @@ import type { TaskStatus, TaskType } from '@/lib/api'
 import { statusIconConfig } from '@/lib/task-config'
 import { cn } from '@/lib/utils'
 
+/**
+ * The type sets the dashboard's Tasks and Bugs counts cover (mirrors the backend's
+ * TASK_TILE_TYPES / BUG_TILE_TYPES).
+ */
+const TYPE_GROUPS = {
+  'task,refactor': ['task', 'refactor'],
+  'bug,regression': ['bug', 'regression'],
+} as const satisfies Record<string, readonly TaskType[]>
+
+type TaskTypeGroup = keyof typeof TYPE_GROUPS
+
 export interface TaskFilterValues {
-  type: TaskType | 'all'
+  type: TaskType | 'all' | TaskTypeGroup
   /**
    * 'blocked' matches open tasks waiting on an unfinished dependency and 'active' matches
    * open tasks (what the dashboard counts); neither is a stored status.
@@ -56,7 +67,7 @@ export function isStatusFilter(
   return STATUS_OPTIONS.some((option) => option.value === value)
 }
 
-const TYPE_OPTIONS = [
+const TYPE_OPTIONS: { value: TaskFilterValues['type']; label: string }[] = [
   { value: 'all', label: 'All Types' },
   { value: 'feature', label: 'Features' },
   { value: 'bug', label: 'Bugs' },
@@ -64,7 +75,28 @@ const TYPE_OPTIONS = [
   { value: 'refactor', label: 'Refactors' },
   { value: 'debt', label: 'Tech Debt' },
   { value: 'regression', label: 'Regressions' },
+  { value: 'task,refactor', label: 'Tasks and refactors' },
+  { value: 'bug,regression', label: 'Bugs and regressions' },
 ]
+
+/** A type filter a link may carry in ?taskType=. */
+export function isTypeFilter(
+  value: string | null,
+): value is TaskFilterValues['type'] {
+  return TYPE_OPTIONS.some((option) => option.value === value)
+}
+
+export function matchesTypeFilter(
+  filter: TaskFilterValues['type'],
+  taskType: TaskType | undefined,
+): boolean {
+  if (filter === 'all') return true
+  if (filter in TYPE_GROUPS) {
+    const group: readonly string[] = TYPE_GROUPS[filter as TaskTypeGroup]
+    return taskType !== undefined && group.includes(taskType)
+  }
+  return taskType === filter
+}
 
 const PRIORITY_OPTIONS = [
   { value: 'all', label: 'All Priority' },

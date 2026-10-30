@@ -3,7 +3,11 @@ import { useCallback, useMemo } from 'react'
 import { fetchTasks, type Task } from '@/lib/api'
 import { STALE_GIT } from '@/lib/polling'
 import { taskQueryKeys } from '@/lib/task-cache'
-import { isOpenTask, type TaskFilterValues } from '../TaskFilters'
+import {
+  isOpenTask,
+  matchesTypeFilter,
+  type TaskFilterValues,
+} from '../TaskFilters'
 
 export function useTasksList(
   projectId: string,
@@ -34,9 +38,7 @@ export function useTasksList(
 
     const filtered = tasks.filter((task) => {
       // Type filter
-      if (filters.type !== 'all' && task.task_type !== filters.type) {
-        return false
-      }
+      if (!matchesTypeFilter(filters.type, task.task_type)) return false
 
       if (filters.status === 'blocked') {
         if (!task.blocked_by_incomplete) return false
