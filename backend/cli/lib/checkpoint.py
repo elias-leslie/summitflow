@@ -10,6 +10,7 @@ from __future__ import annotations
 import json
 import subprocess
 import sys
+from collections.abc import Callable
 from datetime import UTC, datetime
 from pathlib import Path
 
@@ -39,7 +40,7 @@ __all__ = [
     "get_active_checkpoints", "get_remote_task_branches", "get_snapshot_info",
     "get_stale_checkpoints",
     "has_active_task",
-    "remove_snapshot",
+    "remove_snapshot", "task_holds_checkpoint",
 ]
 
 
@@ -146,9 +147,14 @@ def _checkpoint_is_active(checkpoint: SnapshotMeta) -> bool:
     status = _task_status(checkpoint.task_id)
     if status is None:
         return True  # task lookup unavailable: fail open so claim guards stay safe
+    return task_holds_checkpoint(status, lambda: _task_claimed_by(checkpoint.task_id))
+
+
+def task_holds_checkpoint(status: str, claimed_by: Callable[[], str | None]) -> bool:
+    """A task's checkpoint is active while it runs or is claimed; paused and terminal tasks never hold one."""
     if status in _TERMINAL_TASK_STATUSES or status == "paused":
         return False
-    return status == "running" or bool(_task_claimed_by(checkpoint.task_id))
+    return status == "running" or bool(claimed_by())
 
 
 _MISSING_TASK_STATUS = "__missing__"

@@ -4,6 +4,8 @@ from __future__ import annotations
 
 from unittest.mock import MagicMock, patch
 
+import pytest
+
 from cli._output_formatters import (
     format_context_snapshot,
     format_context_subtasks,
@@ -449,6 +451,48 @@ class TestFormatContextSnapshot:
         assert "SNAPSHOT:active|claimed_by:human|since:2026-03-10T10:00:00" in output
         assert "TASK_BRANCH" not in output
         assert "PORTS" not in output
+
+    def test_kept_checkpoint_without_a_claim_is_inactive(self) -> None:
+        snapshot = {"claimed_by": "Elias Leslie", "created_at": "2026-10-30T01:38:30", "base_branch": "main"}
+
+        output = format_context_snapshot(snapshot, active=False)
+
+        assert "SNAPSHOT:inactive|last_claimed_by:Elias Leslie|since:2026-10-30T01:38:30" in output
+        assert "SNAPSHOT:active" not in output
+
+
+@pytest.mark.parametrize(("status", "claimed_by", "active"), [
+    ("running", None, True),
+    ("pending", "agent", True),
+    ("pending", None, False),
+    ("paused", "agent", False),
+    ("completed", "agent", False),
+])
+def test_task_holds_checkpoint_only_while_running_or_claimed(status: str, claimed_by: str | None, active: bool) -> None:
+    from cli.lib.checkpoint import task_holds_checkpoint
+
+    assert task_holds_checkpoint(status, lambda: claimed_by) is active
+
+
+@pytest.mark.parametrize(("status", "claimed_by", "expected"), [
+    (" Pending ", None, "SNAPSHOT:inactive|last_claimed_by:agent-coder"),
+    ("running", None, "SNAPSHOT:active|claimed_by:agent-coder"),
+])
+def test_compact_context_marks_a_kept_checkpoint_by_task_state(
+    capsys: pytest.CaptureFixture[str], status: str, claimed_by: str | None, expected: str
+) -> None:
+    from cli._output_context_views import output_context
+    from cli.output import set_compact_output
+
+    task = {"id": "task-1", "title": "Fixture", "status": status, "claimed_by": claimed_by}
+    snapshot = {"claimed_by": "agent-coder", "created_at": "2026-10-30T01:38:30", "base_branch": "main"}
+    set_compact_output(True)
+    try:
+        output_context(task, [], snapshot=snapshot)
+    finally:
+        set_compact_output(False)
+
+    assert expected in capsys.readouterr().out
 
 
 class TestFormatContextSubtasks:

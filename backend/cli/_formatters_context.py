@@ -83,13 +83,17 @@ def format_context_references(references: list[dict[str, Any]], header: str = "R
     return "\n".join(lines)
 
 
-def format_context_snapshot(snapshot: dict[str, Any]) -> str:
-    """Format snapshot/checkpoint state for context output."""
+def format_context_snapshot(snapshot: dict[str, Any], *, active: bool = True) -> str:
+    """Format snapshot/checkpoint state for context output.
+
+    A checkpoint kept after its claim expired or was released is not an active
+    claim: it shows as inactive with who last claimed the task.
+    """
     if not snapshot:
         return ""
-    lines = ["SNAPSHOT:active"]
+    lines = ["SNAPSHOT:active" if active else "SNAPSHOT:inactive"]
     if claimed_by := snapshot.get("claimed_by"):
-        lines[0] += f"|claimed_by:{claimed_by}"
+        lines[0] += f"|claimed_by:{claimed_by}" if active else f"|last_claimed_by:{claimed_by}"
     if created_at := snapshot.get("created_at"):
         ts = str(created_at)[:19]
         lines[0] += f"|since:{ts}"

@@ -28,9 +28,12 @@ def output_context(
     from ._output_state import _compact_output
 
     if _compact_output:
+        from .lib.checkpoint import task_holds_checkpoint
+
         sections = [
             format_context_task(task),
-            format_context_snapshot(snapshot or {}),
+            format_context_snapshot(snapshot or {}, active=task_holds_checkpoint(
+                str(task.get("status") or "").strip().lower(), lambda: task.get("claimed_by"))),
             format_context_decisions(task.get("decisions") or []),
             format_context_subtasks(subtasks),
         ]
