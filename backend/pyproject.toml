@@ -22,7 +22,7 @@ dependencies = [
     "radon>=6.0.0",
     "jsonschema>=4.21.0",
     "agent-hub-client==0.8.0",
-    "summitflow-st-sdk==0.1.4",
+    "summitflow-st-sdk==0.1.5",
     "agent-hub-st==0.5.0",
     "code-intelligence==0.1.0",
     "design-tools==0.1.0",

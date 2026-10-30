@@ -1,6 +1,7 @@
 """Lab VM clients preserve programming failures through the real ST SDK stack."""
 
 from pathlib import Path
+from urllib.error import URLError
 
 import httpx
 import pytest
@@ -44,7 +45,7 @@ def sdk_path(monkeypatch, tmp_path):
         return client
 
     monkeypatch.setattr(httpx, "Client", isolated_client)
-    monkeypatch.setattr(httpx, "get", lambda *_, **__: httpx.Response(200, json=[]))
+    monkeypatch.setattr(sdk_config, "_get", lambda _url: (200, b"[]"))
     try:
         yield reply, seen, owner
     finally:
@@ -79,7 +80,7 @@ def test_real_sdk_optional_detection_programming_failures_surface(sdk_path, monk
         calls.append(True)
         raise error
 
-    monkeypatch.setattr(httpx, "get", broken_get)
+    monkeypatch.setattr(sdk_config, "_get", broken_get)
     with pytest.raises(error_type) as exc:
         RemoteProxmoxClient.for_lab()
     assert exc.value is error and calls == [True]
@@ -112,24 +113,24 @@ def test_real_sdk_external_response_failures_remain_redacted(sdk_path, response)
     assert "private" not in str(exc.value) and len(str(exc.value)) < 180 and exc.value.__suppress_context__
 
 
-@pytest.mark.parametrize("error", [httpx.ConnectError("private-config"), httpx.ReadTimeout("private-config"),
-    httpx.InvalidURL("private-config"), OSError("private-config")])
+@pytest.mark.parametrize("error", [URLError("private-config"), TimeoutError("private-config"),
+    sdk_config._InvalidURL("private-config"), OSError("private-config")])
 def test_real_sdk_optional_detection_external_failures_are_bounded(sdk_path, monkeypatch, caplog, error):
     monkeypatch.delenv("ST_PROJECT_ID")
 
     def unavailable(*_, **__):
         raise error
 
-    monkeypatch.setattr(httpx, "get", unavailable)
+    monkeypatch.setattr(sdk_config, "_get", unavailable)
     remote = RemoteProxmoxClient.for_lab()
     assert isinstance(remote._http, STClient) and remote._http.project_id == ""
     assert "private" not in caplog.text
 
 
-@pytest.mark.parametrize("response", [httpx.Response(200, text="private-config"), httpx.Response(200, content=b"\xff")])
-def test_real_sdk_optional_detection_decode_failures_remain_redacted(sdk_path, monkeypatch, response):
+@pytest.mark.parametrize("body", [b"private-config", b"\xff"])
+def test_real_sdk_optional_detection_decode_failures_remain_redacted(sdk_path, monkeypatch, body):
     monkeypatch.delenv("ST_PROJECT_ID")
-    monkeypatch.setattr(httpx, "get", lambda *_, **__: response)
+    monkeypatch.setattr(sdk_config, "_get", lambda _url: (200, body))
     with pytest.raises(ProxmoxError) as exc:
         RemoteProxmoxClient.for_lab()
     assert "private" not in str(exc.value) and exc.value.__suppress_context__

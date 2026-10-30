@@ -117,16 +117,15 @@ def test_selected_project_config_resolves_registered_root(tmp_path: Path) -> Non
     env["PYTHONPATH"] = str(package_root)
     script = f"""
 import json
-import httpx
 from st_sdk import config
 
 requests = []
-def registered_projects(url, **kwargs):
+def registered_projects(url):
     requests.append(url)
     project = {{"id": "selected-project", "root_path": {str(selected_root)!r}}}
-    return httpx.Response(200, json=project if url.endswith("/selected-project") else [project])
+    return 200, json.dumps(project if url.endswith("/selected-project") else [project]).encode()
 
-httpx.get = registered_projects
+config._get = registered_projects
 config.set_project_override("selected-project")
 resolved = config.get_config_optional()
 print(json.dumps({{
@@ -155,12 +154,58 @@ print(json.dumps({{
     }
 
 
+def test_registry_lookup_reads_over_the_standard_library(tmp_path: Path) -> None:
+    """An extension dispatch's owner lookup must not pay httpx's import; redirects are answers, as before."""
+    package_root = Path(__file__).parents[3] / "packages" / "st-sdk"
+    env = {**os.environ, "PYTHONPATH": str(package_root), "SUMMITFLOW_OWNER_TOKEN_FILE": str(tmp_path / "none"),
+           "SUMMITFLOW_AGENT_TOKEN_FILE": str(tmp_path / "none")}
+    script = """
+import json, sys, threading
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from st_sdk import config
+
+class Registry(BaseHTTPRequestHandler):
+    def do_GET(self):
+        if self.path == "/api/projects/owner":
+            body, status = json.dumps({"id": "owner", "root_path": "/owner"}).encode(), 200
+        elif self.path == "/api/projects/moved":
+            body, status = b"", 302
+        else:
+            body, status = b"{}", 404
+        self.send_response(status)
+        if status == 302:
+            self.send_header("Location", "/api/projects/owner")
+        self.send_header("Content-Length", str(len(body)))
+        self.end_headers()
+        self.wfile.write(body)
+    def log_message(self, *_):
+        pass
+
+server = ThreadingHTTPServer(("127.0.0.1", 0), Registry)
+threading.Thread(target=server.serve_forever, daemon=True).start()
+config.configure_defaults(api_base=f"http://127.0.0.1:{server.server_port}/api")
+print(json.dumps([config.get_project_root_path("owner"), config.get_project_root_path("gone"),
+                  config._get(f"{config.get_api_base()}/projects/moved")[0], "httpx" in sys.modules]))
+try:
+    config._get("http://127.0.0.1:abc/api/projects")
+except config._InvalidURL:
+    print("invalid")
+server.shutdown()
+"""
+    result = subprocess.run([sys.executable, "-c", script], cwd=tmp_path, env=env, text=True, capture_output=True,
+                            check=False, timeout=30)
+
+    assert result.returncode == 0, result.stderr
+    lookups, invalid = result.stdout.splitlines()
+    assert json.loads(lookups) == ["/owner", None, 302, False]
+    assert invalid == "invalid"
+
+
 def test_selected_project_override_is_lazy_during_static_description(tmp_path: Path) -> None:
     package_root = Path(__file__).parents[3] / "packages" / "st-sdk"
     env = os.environ.copy()
     env["PYTHONPATH"] = str(package_root)
     script = """
-import httpx
 import typer
 from st_sdk import config
 from st_sdk.runtime import describe_app
@@ -168,7 +213,7 @@ from st_sdk.runtime import describe_app
 def forbidden(*args, **kwargs):
     raise AssertionError("static description contacted the project registry")
 
-httpx.get = forbidden
+config._get = forbidden
 config.set_project_override("selected-project")
 app = typer.Typer(help="Static owner help")
 @app.callback()

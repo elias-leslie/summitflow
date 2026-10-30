@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import logging
 import os
 import sys
@@ -9,16 +10,13 @@ import time
 from dataclasses import dataclass
 from functools import lru_cache
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, cast
+from typing import Any, cast
 from urllib.parse import quote
 
 import yaml
 
 from .execution_context import canonical_repo_root
 from .identity import token_headers
-
-if TYPE_CHECKING:
-    import httpx
 
 logger = logging.getLogger(__name__)
 _RETRY_DELAY = 0.5
@@ -176,34 +174,66 @@ def _detect_project_from_local_metadata(cwd: Path) -> tuple[str | None, str | No
     return None, None
 
 
-def _parse_projects_response(response: httpx.Response) -> list[object] | str | None:
-    if response.status_code != 200:
-        return f"status={response.status_code}"
-    data = response.json()
+class _InvalidURL(Exception):
+    """The registry URL cannot be requested (no scheme, host or valid port)."""
+
+
+def _get(url: str) -> tuple[int, bytes]:
+    """Status and body of one registry GET; redirects are answers, not followed.
+
+    The standard library, not httpx: every extension dispatch reads its owner's
+    project before starting it, and httpx's import and TLS setup cost about
+    55 ms of that. Raises TimeoutError, URLError, OSError or HTTPException when
+    the registry is unreachable and _InvalidURL for a malformed URL.
+    """
+    import urllib.request
+    from http.client import InvalidURL
+    from urllib.error import HTTPError
+
+    class NoRedirect(urllib.request.HTTPRedirectHandler):
+        def redirect_request(self, *_args: object, **_kwargs: object) -> None:
+            return None
+
+    headers = token_headers()
+    try:
+        request = urllib.request.Request(url, headers=headers)
+        response = urllib.request.build_opener(NoRedirect).open(request, timeout=5.0)
+    except HTTPError as exc:
+        with exc:
+            return exc.code, exc.read()
+    except (ValueError, InvalidURL) as exc:  # urllib's unknown url type; a bad port
+        raise _InvalidURL(type(exc).__name__) from None
+    with response:
+        return response.status, response.read()
+
+
+def _parse_projects_response(status: int, body: bytes) -> list[object] | str | None:
+    if status != 200:
+        return f"status={status}"
+    data = json.loads(body)
     return data if isinstance(data, list) else None
 
 
 def _fetch_projects_with_retry(api_base: str, max_retries: int) -> list[object] | None:
-    import httpx  # imported on use: httpx costs about 70 ms of every st start
+    from http.client import HTTPException
+    from urllib.error import URLError
 
     for attempt in range(max_retries):
         try:
-            response = httpx.get(f"{api_base}/projects", headers=token_headers(), timeout=5.0)
-        except httpx.TimeoutException:
+            status, body = _get(f"{api_base}/projects")
+        except (TimeoutError, URLError, ConnectionError, HTTPException) as exc:
+            timed_out = isinstance(exc, TimeoutError) or isinstance(getattr(exc, "reason", None), TimeoutError)
             logger.warning(
-                "Project detection timeout (attempt %d/%d)", attempt + 1, max_retries
-            )
-        except httpx.RequestError:
-            logger.warning(
-                "Project detection network error (attempt %d/%d)",
+                "Project detection %s (attempt %d/%d)",
+                "timeout" if timed_out else "network error",
                 attempt + 1,
                 max_retries,
             )
-        except (httpx.InvalidURL, OSError) as exc:
+        except (_InvalidURL, OSError) as exc:
             logger.warning("Project detection unavailable (%s)", type(exc).__name__)
             return None
         else:
-            result = _parse_projects_response(response)
+            result = _parse_projects_response(status, body)
             if isinstance(result, list):
                 return result
             if result is None:
@@ -290,18 +320,17 @@ def _fetch_project(api_base: str, project_id: str) -> dict[str, Any] | None:
     The single-project read avoids serializing every registered project on each
     extension dispatch; the list remains the fallback for older APIs.
     """
-    import httpx
+    from http.client import HTTPException
+    from urllib.error import URLError
 
     try:
-        response = httpx.get(
-            f"{api_base}/projects/{quote(project_id, safe='')}", headers=token_headers(), timeout=5.0
-        )
-    except httpx.HTTPError:
-        response = None
-    if response is not None and response.status_code == 404:
+        status, body = _get(f"{api_base}/projects/{quote(project_id, safe='')}")
+    except (URLError, OSError, HTTPException):
+        status, body = None, b""
+    if status == 404:
         return None
-    if response is not None and response.status_code == 200:
-        data = response.json()
+    if status == 200:
+        data = json.loads(body)
         if isinstance(data, dict) and data.get("id") == project_id:
             return cast(dict[str, Any], data)
     for project in _fetch_projects_with_retry(api_base, max_retries=2) or []:
