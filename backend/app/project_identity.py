@@ -10,8 +10,6 @@ from functools import lru_cache
 from pathlib import Path
 from typing import Any, Literal, cast
 
-import psycopg
-
 from app.utils.shared_paths import get_repo_root
 
 _WORKSPACES_ROOT = Path(os.environ.get("ST_WORKSPACES_ROOT", Path.home() / ".local" / "share" / "summitflow" / "workspaces"))
@@ -290,6 +288,8 @@ def get_project_lifecycles(
     """Fetch owner decisions; service recovery can opt into active fallback on DB outage."""
     if not project_ids:
         return {}
+    import psycopg  # imported on use: psycopg costs about 30 ms of every st start
+
     from app.storage.connection import get_cursor
 
     try:

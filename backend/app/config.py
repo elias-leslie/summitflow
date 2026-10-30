@@ -5,7 +5,6 @@ Uses pydantic-settings for validated configuration with environment variable sup
 
 from __future__ import annotations
 
-import os
 from functools import lru_cache
 from pathlib import Path
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
@@ -13,52 +12,36 @@ from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 from pydantic import field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
+# Re-exported: the ports and URLs live in local_endpoints so st starts without Settings.
+from .local_endpoints import (
+    AGENT_HUB_URL as AGENT_HUB_URL,
+)
+from .local_endpoints import (
+    DEFAULT_API_BASE as DEFAULT_API_BASE,
+)
+from .local_endpoints import (
+    HATCHET_GRPC_PORT as HATCHET_GRPC_PORT,
+)
+from .local_endpoints import (
+    HATCHET_HEALTH_PORT as HATCHET_HEALTH_PORT,
+)
+from .local_endpoints import (
+    POSTGRES_PORT as POSTGRES_PORT,
+)
+from .local_endpoints import (
+    REDIS_PORT as REDIS_PORT,
+)
+from .local_endpoints import (
+    SUMMITFLOW_BACKEND_PORT as SUMMITFLOW_BACKEND_PORT,
+)
+from .local_endpoints import (
+    SUMMITFLOW_FRONTEND_PORT as SUMMITFLOW_FRONTEND_PORT,
+)
+from .local_endpoints import (
+    TETHER_DEFAULT_INSTANCE as TETHER_DEFAULT_INSTANCE,
+)
+from .local_endpoints import local_url
 from .utils.maintenance_window import MaintenanceWindow
-
-
-# Project ports live in each project's project.identity.json (runtime
-# backend_port/frontend_port). SummitFlow reads its own from its identity; the
-# infra ports below belong to SummitFlow's own stack.
-def _own_runtime_port(key: str) -> int:
-    import json
-
-    from .utils.shared_paths import get_repo_root
-
-    identity = json.loads((get_repo_root() / "project.identity.json").read_text(encoding="utf-8"))
-    return int(identity["runtime"][key])
-
-
-SUMMITFLOW_BACKEND_PORT = _own_runtime_port("backend_port")
-SUMMITFLOW_FRONTEND_PORT = _own_runtime_port("frontend_port")
-
-
-def _local_url(project_id: str, key: str) -> str:
-    """http://localhost:<port> from another project's identity, or "" when it is not on this host."""
-    from .project_identity import get_runtime_port
-
-    try:
-        port = get_runtime_port(project_id, key)
-    except (OSError, ValueError):  # another project's unreadable identity must not break SummitFlow
-        return ""
-    return f"http://localhost:{port}" if port else ""
-
-POSTGRES_PORT = 5432
-REDIS_PORT = 6379
-HATCHET_GRPC_PORT = 7070
-HATCHET_HEALTH_PORT = 8888
-# Tether (Aico's per-user session daemon) has no TCP port: it serves
-# its API on $XDG_RUNTIME_DIR/tether/<instance>/control.sock under
-# tether@<instance>.service. TETHER_SOCKET overrides the socket path.
-TETHER_DEFAULT_INSTANCE = "default"
-
-
-def _env_or_default(name: str, default: str) -> str:
-    """Return stripped env value or default when unset/blank."""
-    value = os.getenv(name)
-    if value is None:
-        return default
-    value = value.strip()
-    return value or default
 
 
 class Settings(BaseSettings):
@@ -95,8 +78,8 @@ class Settings(BaseSettings):
     cors_origins: list[str] = [
         origin for origin in (
             f"http://localhost:{SUMMITFLOW_FRONTEND_PORT}",
-            _local_url("monkey-fight", "frontend_port"),
-            _local_url("agent-hub", "frontend_port"),
+            local_url("monkey-fight", "frontend_port"),
+            local_url("agent-hub", "frontend_port"),
         ) if origin
     ]
 
@@ -166,5 +149,3 @@ def get_settings() -> Settings:
 settings = get_settings()
 DATABASE_URL = settings.database_url
 REDIS_URL = settings.redis_url
-DEFAULT_API_BASE = _env_or_default("ST_API_BASE", f"http://localhost:{SUMMITFLOW_BACKEND_PORT}/api")
-AGENT_HUB_URL = _env_or_default("AGENT_HUB_URL", _local_url("agent-hub", "backend_port"))

@@ -30,7 +30,7 @@ from st_sdk.config import (
     set_project_override as set_project_override,
 )
 
-from app.config import AGENT_HUB_URL, DEFAULT_API_BASE
+from app.local_endpoints import AGENT_HUB_URL, DEFAULT_API_BASE
 
 __all__ = [
     "Config",
