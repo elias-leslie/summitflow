@@ -67,8 +67,12 @@ def _build_cleanup_status_response(*, all_projects: bool, project_id: str | None
 
 
 @router.get("/git/status", response_model=GitStatusResponse, tags=["git"])
-async def get_git_status() -> GitStatusResponse:
-    """Get git status for all managed repositories."""
+def get_git_status() -> GitStatusResponse:
+    """Get git status for all managed repositories.
+
+    Plain def: the per-repo git subprocesses run in the threadpool, so the topbar's poll
+    no longer holds every other request behind it.
+    """
     active_checkpoints_by_project: dict[str, list] = defaultdict(list)
     for checkpoint in get_active_checkpoints():
         if checkpoint.project_id:
@@ -96,7 +100,7 @@ async def get_cleanup_status() -> dict[str, object]:
     response_model=GitStatusResponse,
     tags=["git"],
 )
-async def get_project_git_status(project_id: str) -> GitStatusResponse:
+def get_project_git_status(project_id: str) -> GitStatusResponse:
     """Get git status for a specific project's repository."""
     repo_path = get_project_root_with_fallback(project_id)
     repo_status = get_repo_status(repo_path, project_id=project_id)

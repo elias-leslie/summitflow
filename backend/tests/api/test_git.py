@@ -68,6 +68,29 @@ class TestGitStatus:
         assert detail["commits_ahead"] == 2
 
 
+    def test_git_status_runs_off_the_event_loop(self, mocker: MockerFixture) -> None:
+        """The topbar polls this on every page; its git subprocesses must not stall other requests."""
+        import asyncio
+        from pathlib import Path
+
+        on_event_loop: list[bool] = []
+
+        def repo_status(*_args: Any, **_kwargs: Any) -> None:
+            try:
+                asyncio.get_running_loop()
+                on_event_loop.append(True)
+            except RuntimeError:
+                on_event_loop.append(False)
+
+        mocker.patch("app.api.git.get_managed_repos", return_value=[Path("/test/repo")])
+        mocker.patch("app.api.git.get_repo_status", side_effect=repo_status)
+        mocker.patch("app.api.git.get_project_root_with_fallback", return_value=Path("/test/repo"))
+
+        assert client.get("/api/git/status").status_code == 200
+        assert client.get("/api/projects/summitflow/git/status").status_code == 200
+        assert on_event_loop == [False, False]
+
+
 class TestGitCleanupStatus:
     """Tests for cleanup-status API surfaces."""
 
