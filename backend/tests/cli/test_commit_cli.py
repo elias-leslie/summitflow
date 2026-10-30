@@ -598,3 +598,64 @@ def test_commit_gives_up_after_bounded_lock_wait(tmp_path: Path, monkeypatch) ->
             commit_repo(repo, message="mine", paths=("mine.py",))
     finally:
         handle.close()
+
+
+def _head(repo: Path) -> str:
+    return subprocess.run(["git", "rev-parse", "HEAD"], cwd=repo, text=True, capture_output=True,
+                          check=True).stdout.strip()
+
+
+def test_failed_quality_gates_block_without_committing(tmp_path: Path, monkeypatch) -> None:
+    repo = _selected_repo(tmp_path)
+    before = _head(repo)
+    monkeypatch.setattr(commit_workflow, "run_checks", lambda *_args, **_kwargs: (False, "LINT:FAIL:1"))
+
+    result = commit_workflow.commit_git_revision(repo, message="mine", paths=("mine.py",))
+
+    assert {key: result[key] for key in ("status", "reason", "detail", "check_count")} == {
+        "status": "BLOCKED", "reason": "quality_gates_failed", "detail": "LINT:FAIL:1", "check_count": 1}
+    assert result["check_duration_ms"] >= 0
+    assert "check_reused" not in result
+    assert _head(repo) == before
+
+
+def test_reused_quick_check_is_reported_only_for_the_run_that_counted(tmp_path: Path, monkeypatch) -> None:
+    repo = _selected_repo(tmp_path)
+    monkeypatch.setattr(commit_workflow, "run_checks", lambda *_args, **_kwargs: (True, "CHECK:REUSED:quick"))
+    assert commit_workflow.commit_git_revision(repo, message="mine", paths=("mine.py",))["check_reused"] is True
+
+    (repo / "mine.py").write_text("again\n")
+    details = iter(["CHECK:REUSED:quick", "ok"])
+
+    def checks(*_args, **_kwargs):
+        detail = next(details)
+        if detail != "ok":
+            (repo / "other.py").write_text("another session's edit\n")
+        return True, detail
+
+    monkeypatch.setattr(commit_workflow, "run_checks", checks)
+    result = commit_workflow.commit_git_revision(repo, message="mine again", paths=("mine.py",))
+
+    assert result["status"] == "SUCCESS"
+    assert result["check_count"] == 2
+    assert "check_reused" not in result
+
+
+def test_skipped_checks_report_no_check_fields(tmp_path: Path, monkeypatch) -> None:
+    repo = _selected_repo(tmp_path)
+    monkeypatch.setattr(commit_workflow, "run_checks", Mock(side_effect=AssertionError("checks ran")))
+
+    result = commit_workflow.commit_git_revision(repo, message="mine", paths=("mine.py",), skip_checks=True)
+
+    assert result["status"] == "SUCCESS"
+    assert not {"check_count", "check_reused", "check_duration_ms"} & result.keys()
+
+
+def test_clean_or_unselected_checkout_skips_before_checks(tmp_path: Path, monkeypatch) -> None:
+    repo = _selected_repo(tmp_path)
+    monkeypatch.setattr(commit_workflow, "run_checks", Mock(side_effect=AssertionError("checks ran")))
+
+    assert commit_workflow.commit_git_revision(repo, message="x", paths=("other.py",))["reason"] == (
+        "no_changes_in_selected_paths")
+    (repo / "mine.py").write_text("before\n")
+    assert commit_workflow.commit_git_revision(repo, message="x")["reason"] == "clean"

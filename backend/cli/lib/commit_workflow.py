@@ -385,6 +385,45 @@ def _commit_selected_index(repo: Path, message: str, paths: Sequence[str]) -> su
         return committed
 
 
+def _run_checkpoint_checks(
+    repo: Path, scope: list[str], selected: bool, result: dict[str, Any]
+) -> dict[str, Any] | None:
+    """Run the quick gate on ``scope``, recording its fields in ``result``.
+
+    Returns the BLOCKED result when the gate fails or the checkout changed while
+    it ran, else ``None``.
+    """
+    check_started = time.monotonic()
+    for attempt in range(1, CHECK_ATTEMPTS + 1):
+        before_checks = workspace_fingerprint(repo)
+        before_files = _checkout_snapshot(repo) if selected else None
+        ok, detail = run_checks(repo, paths=scope, full=False)
+        result["check_count"] = attempt
+        if "CHECK:REUSED:quick" in detail:
+            result["check_reused"] = True
+        else:
+            result.pop("check_reused", None)
+        if workspace_fingerprint(repo) == before_checks:
+            break
+        changed = _snapshot_changes(repo, before_files) if before_files is not None else set()
+        outside_only = bool(changed) and not changed & set(scope)
+        if outside_only and attempt < CHECK_ATTEMPTS:
+            # Another session edited files outside this selection; the
+            # selection itself is intact, so one fresh run is enough.
+            continue
+        result["check_duration_ms"] = round((time.monotonic() - check_started) * 1000, 3)
+        return {
+            **result,
+            "status": "BLOCKED",
+            "reason": "source_changed_during_checks",
+            "detail": _changed_detail(changed, scope, retried=attempt > 1),
+        }
+    result["check_duration_ms"] = round((time.monotonic() - check_started) * 1000, 3)
+    if not ok:
+        return {**result, "status": "BLOCKED", "reason": "quality_gates_failed", "detail": detail}
+    return None
+
+
 def commit_git_revision(
     repo: Path,
     *,
@@ -409,51 +448,20 @@ def commit_git_revision(
     has_changes = _selected_paths_dirty(repo, selected_paths) if selected_paths else dirty(repo)
     if not has_changes:
         return {**result, "reason": "no_changes_in_selected_paths" if selected_paths else "clean"}
-    selected_files = _selected_changed_files(repo, selected_paths) if selected_paths and has_changes else []
-    changed_scope = (selected_files if selected_paths else _selected_changed_files(repo, ["."])) if has_changes else []
-    skipped_dirs: list[str] = []
-    if has_changes:
-        changed_scope, skipped_dirs = _drop_untracked_build_output(repo, selected_paths, changed_scope)
-        selected_files = changed_scope if selected_paths else []
-        if skipped_dirs:
-            result["skipped_untracked"] = skipped_dirs
-            if not changed_scope:
-                return {**result, "reason": "only_untracked_build_output"}
+    changed_scope, skipped_dirs = _drop_untracked_build_output(
+        repo, selected_paths, _selected_changed_files(repo, selected_paths or ["."]))
+    selected_files = changed_scope if selected_paths else []
+    if skipped_dirs:
+        result["skipped_untracked"] = skipped_dirs
+        if not changed_scope:
+            return {**result, "reason": "only_untracked_build_output"}
     _require_no_sweep(repo, selected_paths, changed_scope)
     try:
         coord.guard(repo, "commit", with_ack=with_ack)
     except coord.CoordBlocked as exc:
         raise CommitError(str(exc)) from None
-    scope = changed_scope
-    if not skip_checks and (has_changes or scope):
-        check_started = time.monotonic()
-        for attempt in range(1, CHECK_ATTEMPTS + 1):
-            before_checks = workspace_fingerprint(repo)
-            before_files = _checkout_snapshot(repo) if selected_paths else None
-            ok, detail = run_checks(repo, paths=scope, full=False)
-            result["check_count"] = attempt
-            if "CHECK:REUSED:quick" in detail:
-                result["check_reused"] = True
-            else:
-                result.pop("check_reused", None)
-            if workspace_fingerprint(repo) == before_checks:
-                break
-            changed = _snapshot_changes(repo, before_files) if before_files is not None else set()
-            outside_only = bool(changed) and not changed & set(scope)
-            if outside_only and attempt < CHECK_ATTEMPTS:
-                # Another session edited files outside this selection; the
-                # selection itself is intact, so one fresh run is enough.
-                continue
-            result["check_duration_ms"] = round((time.monotonic() - check_started) * 1000, 3)
-            return {
-                **result,
-                "status": "BLOCKED",
-                "reason": "source_changed_during_checks",
-                "detail": _changed_detail(changed, scope, retried=attempt > 1),
-            }
-        result["check_duration_ms"] = round((time.monotonic() - check_started) * 1000, 3)
-        if not ok:
-            return {**result, "status": "BLOCKED", "reason": "quality_gates_failed", "detail": detail}
+    if not skip_checks and (blocked := _run_checkpoint_checks(repo, changed_scope, bool(selected_paths), result)):
+        return blocked
     if selected_paths:
         addable = _addable_paths(repo, selected_files)
         if addable:
