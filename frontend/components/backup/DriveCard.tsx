@@ -10,43 +10,43 @@ function checkFact(drive: BackupOverview['offsite']): StatusFact {
     !check ||
     (!check.last_ok_at && !check.error && check.status !== 'partial')
   )
-    return { label: 'Data check', value: 'Runs weekly' }
+    return { label: 'Weekly data check', value: 'Not run yet' }
   const sample = check.sample
     ? `, ${check.sample.replace(/M$/, ' MB')} read`
     : ''
   if (check.status === 'partial')
     return {
-      label: 'Data check',
+      label: 'Weekly data check',
       value: `Out of time ${relativeTime(check.checked_at, 'earlier')}; reads a new sample next week`,
     }
   const failing = !isOk(check.status)
   return failing
     ? {
-        label: 'Data check',
+        label: 'Weekly data check',
         value: `Failed ${check.failures > 1 ? `${check.failures} times in a row` : 'last time'}${check.error ? `: ${check.error}` : ''}`,
         tone: check.failures >= 2 ? 'bad' : 'warn',
       }
     : {
-        label: 'Data check',
+        label: 'Weekly data check',
         value: `Passed ${relativeTime(check.last_ok_at, 'earlier')}${sample}`,
       }
 }
 
 function restoreFact(drive: BackupOverview['offsite']): StatusFact {
   const spot = drive.spot_restore
-  if (!spot?.at) return { label: 'Test restore', value: 'Runs weekly' }
+  if (!spot?.at) return { label: 'Weekly test restore', value: 'Not run yet' }
   if (spot.status === 'partial')
     return {
-      label: 'Test restore',
+      label: 'Weekly test restore',
       value: `Out of time ${relativeTime(spot.at, 'earlier')}; tries again next week`,
     }
   return isOk(spot.status)
     ? {
-        label: 'Test restore',
+        label: 'Weekly test restore',
         value: `Passed ${relativeTime(spot.at, 'earlier')}`,
       }
     : {
-        label: 'Test restore',
+        label: 'Weekly test restore',
         value: `Failed ${relativeTime(spot.at, 'earlier')}${spot.error ? `: ${spot.error}` : ''}`,
         tone: 'bad',
       }
@@ -55,9 +55,9 @@ function restoreFact(drive: BackupOverview['offsite']): StatusFact {
 function cleanupFact(drive: BackupOverview['offsite']): StatusFact {
   const upkeep = drive.maintenance
   const when = upkeep?.pruned_at ?? upkeep?.ran_at
-  if (!when) return { label: 'Cleanup', value: 'Runs weekly' }
+  if (!when) return { label: 'Weekly cleanup', value: 'Not run yet' }
   return {
-    label: 'Cleanup',
+    label: 'Weekly cleanup',
     value: `Done ${relativeTime(when, 'earlier')}`,
     tone: upkeep?.prune_error ? 'warn' : undefined,
   }
@@ -122,7 +122,9 @@ export function DriveCard({ overview }: { overview: BackupOverview }) {
                     isOk(run.status) ? 'text-slate-300' : 'text-rose-300'
                   }
                 >
-                  {isOk(run.status) ? 'Good' : (run.error ?? 'Failed')}
+                  {isOk(run.status)
+                    ? 'Good'
+                    : `Failed${run.error ? `: ${run.error}` : ''}`}
                 </span>
               </li>
             ))}

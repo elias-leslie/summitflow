@@ -104,7 +104,8 @@ function ScopeCard({ scope }: { scope: BtrfsScope }) {
           {scope.scope_name}
         </span>
         <span className="text-[10px] text-slate-600 rounded bg-slate-900/60 px-1.5 py-0.5 shrink-0">
-          {scope.snapshot_count}
+          {scope.snapshot_count}{' '}
+          {scope.snapshot_count === 1 ? 'snapshot' : 'snapshots'}
         </span>
         <span className="hidden sm:flex items-center gap-3 text-2xs text-slate-400 ml-auto">
           <span className="font-mono">

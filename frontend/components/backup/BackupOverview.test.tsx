@@ -131,6 +131,32 @@ describe('DriveCard', () => {
     expect(screen.getAllByText('Not copied yet')).toHaveLength(4)
   })
 
+  it('says the checks run weekly and marks a failed daily run as failed', () => {
+    render(
+      <DriveCard
+        overview={overview({
+          offsite: {
+            runs: [
+              {
+                status: 'failed',
+                started_at: ago(80),
+                error: 'restic snapshots returned invalid JSON',
+              },
+              { status: 'ok', started_at: ago(14) },
+            ],
+          },
+        })}
+      />,
+    )
+    expect(screen.getByText('Weekly data check')).toBeInTheDocument()
+    expect(screen.getByText('Weekly test restore')).toBeInTheDocument()
+    expect(screen.getByText('Weekly cleanup')).toBeInTheDocument()
+    expect(screen.getByText('Good')).toBeInTheDocument()
+    expect(
+      screen.getByText('Failed: restic snapshots returned invalid JSON'),
+    ).toBeInTheDocument()
+  })
+
   it('stays quiet before the first run', () => {
     render(
       <DriveCard
@@ -189,7 +215,7 @@ describe('OldBackups', () => {
   it('names what is left and offers nothing to click except the disclosure', () => {
     render(<OldBackups legacy={overview().legacy} />)
     expect(screen.getAllByRole('button')).toHaveLength(1)
-    expect(screen.getByText(/143 left/)).toBeInTheDocument()
+    expect(screen.getByText(/143 copies left/)).toBeInTheDocument()
     expect(
       screen.getByText(/removed on their own after 30 days/),
     ).toBeInTheDocument()

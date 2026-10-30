@@ -24,6 +24,15 @@ function lastLine(source: ExternalBackupSource): string {
   return `Last good run ${formatTimeAgo(source.last_success_at)}`
 }
 
+/** Hours read badly past two days: "336 h" is two weeks. */
+export function staleAfter(hours: number): string {
+  if (hours < 48) return `${Math.round(hours)} h`
+  const days = Math.round(hours / 24)
+  return days % 7 === 0
+    ? `${days / 7} ${days === 7 ? 'week' : 'weeks'}`
+    : `${days} days`
+}
+
 function whereLine(source: ExternalBackupSource): string {
   return source.kind === 'systemd_unit'
     ? `Timer ${source.target}`
@@ -90,7 +99,7 @@ export function ExternalBackups() {
               <div>{lastLine(source)}</div>
               <div className="text-slate-500">
                 {FREQUENCY[source.frequency] ?? source.frequency} · stale after{' '}
-                {Math.round(source.stale_after_hours)} h
+                {staleAfter(source.stale_after_hours)}
                 {source.owner_project && ` · ${source.owner_project}`}
               </div>
               <div className="break-all font-mono text-[11px] text-slate-500">

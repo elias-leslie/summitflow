@@ -1,6 +1,6 @@
 import { render, screen } from '@testing-library/react'
 import { describe, expect, it, vi } from 'vitest'
-import { ExternalBackups } from './ExternalBackups'
+import { ExternalBackups, staleAfter } from './ExternalBackups'
 
 const mocks = vi.hoisted(() => ({ useQuery: vi.fn() }))
 vi.mock('@tanstack/react-query', () => ({ useQuery: mocks.useQuery }))
@@ -49,5 +49,13 @@ describe('ExternalBackups', () => {
     expect(
       screen.getByText('Timer blackbox-archive.service'),
     ).toBeInTheDocument()
+    expect(screen.getByText(/stale after 2 weeks/)).toBeInTheDocument()
+  })
+
+  it('gives staleness in hours, days or weeks', () => {
+    expect(staleAfter(36)).toBe('36 h')
+    expect(staleAfter(48)).toBe('2 days')
+    expect(staleAfter(168)).toBe('1 week')
+    expect(staleAfter(336)).toBe('2 weeks')
   })
 })

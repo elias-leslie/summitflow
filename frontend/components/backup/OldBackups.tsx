@@ -38,7 +38,9 @@ export function OldBackups({ legacy }: { legacy: Legacy }) {
           Nothing writes to it, so you can delete it.
         </Row>
         <Row title="Old copies on Google Drive">
-          {drive.count === null ? 'Not counted yet. ' : `${drive.count} left. `}
+          {drive.count === null
+            ? 'Not counted yet. '
+            : `${drive.count} ${drive.count === 1 ? 'copy' : 'copies'} left. `}
           They are removed on their own after {days} days.
         </Row>
         {legacy.retired_sources > 0 && (
