@@ -3,6 +3,7 @@
 import { useMutation, useQuery } from '@tanstack/react-query'
 import clsx from 'clsx'
 import { RefreshCw, Search } from 'lucide-react'
+import { usePathname, useRouter, useSearchParams } from 'next/navigation'
 import { useMemo, useState } from 'react'
 import {
   deriveSignals,
@@ -15,19 +16,66 @@ import { SyncResults } from '@/components/git/RowDetails'
 import { checkGitRemotes, fetchDevelopmentStatus } from '@/lib/api/git'
 import { formatTimeAgo } from '@/lib/format'
 import { POLL_SLOW, STALE_GIT } from '@/lib/polling'
+import { buildUrlWithUpdatedSearchParams } from '@/lib/search-params'
 
-const FILTERS: Array<{ key: Filter; label: string }> = [
-  { key: 'attention', label: 'Needs a look' },
-  { key: 'source', label: 'Uncommitted' },
-  { key: 'accepted', label: 'Acceptance' },
-  { key: 'running', label: 'Runtime' },
-  { key: 'published', label: 'Publishing' },
-  { key: 'backup', label: 'Backup' },
-  { key: 'tasks', label: 'Tasks' },
+const FILTERS: Array<{ key: Filter; label: string; title: string }> = [
+  {
+    key: 'attention',
+    label: 'Needs a look',
+    title: 'Repositories with something to look at in any column',
+  },
+  {
+    key: 'source',
+    label: 'Uncommitted',
+    title: 'Repositories with uncommitted files',
+  },
+  {
+    key: 'accepted',
+    label: 'Acceptance',
+    title: 'Repositories whose acceptance checks are out of date or failed',
+  },
+  {
+    key: 'running',
+    label: 'Runtime',
+    title:
+      'Repositories whose running version differs from the accepted source or could not be checked',
+  },
+  {
+    key: 'published',
+    label: 'Publishing',
+    title: 'Repositories with unpublished commits or a publishing problem',
+  },
+  {
+    key: 'backup',
+    label: 'Backup',
+    title: 'Repositories whose backup failed or has no Google Drive copy yet',
+  },
+  {
+    key: 'tasks',
+    label: 'Tasks',
+    title: 'Repositories with blocked or failed tasks',
+  },
 ]
 
+function readFilter(value: string | null): Filter | null {
+  return FILTERS.find(({ key }) => key === value)?.key ?? null
+}
+
 export function GitClient() {
-  const [filter, setFilter] = useState<Filter | null>(null)
+  const router = useRouter()
+  const pathname = usePathname()
+  const searchParams = useSearchParams()
+  // The chosen filter lives in the URL so a reload or a shared link keeps it.
+  const [filter, setFilterState] = useState<Filter | null>(() =>
+    readFilter(searchParams.get('show')),
+  )
+  const setFilter = (next: Filter | null) => {
+    setFilterState(next)
+    router.replace(
+      buildUrlWithUpdatedSearchParams(pathname, searchParams, { show: next }),
+      { scroll: false },
+    )
+  }
   const [search, setSearch] = useState('')
   const query = useQuery({
     queryKey: ['development-status'],
@@ -126,9 +174,10 @@ export function GitClient() {
           <Chip active={filter === null} onClick={() => setFilter(null)}>
             All <Count>{rows.length}</Count>
           </Chip>
-          {FILTERS.map(({ key, label }) => (
+          {FILTERS.map(({ key, label, title }) => (
             <Chip
               key={key}
+              title={title}
               active={filter === key}
               disabled={counts[key] === 0}
               onClick={() => setFilter(filter === key ? null : key)}
@@ -137,6 +186,10 @@ export function GitClient() {
               {label} <Count>{counts[key]}</Count>
             </Chip>
           ))}
+          <p className="basis-full text-2xs text-slate-500">
+            Counts are repositories with something to look at in that column.
+            Open a repository for details.
+          </p>
         </div>
       )}
 
@@ -218,11 +271,13 @@ function Chip({
   active,
   disabled,
   tone,
+  title,
   onClick,
   children,
 }: {
   active: boolean
   disabled?: boolean
+  title?: string
   tone?: 'warn'
   onClick: () => void
   children: React.ReactNode
@@ -231,6 +286,7 @@ function Chip({
     <button
       type="button"
       aria-pressed={active}
+      title={title}
       disabled={disabled}
       onClick={onClick}
       className={clsx(

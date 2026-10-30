@@ -9,6 +9,15 @@ const api = vi.hoisted(() => ({
   checkGitRemotes: vi.fn(),
 }))
 vi.mock('@/lib/api/git', () => api)
+const nav = vi.hoisted(() => ({
+  params: new URLSearchParams(),
+  replace: vi.fn(),
+}))
+vi.mock('next/navigation', () => ({
+  useRouter: () => ({ replace: nav.replace }),
+  usePathname: () => '/git',
+  useSearchParams: () => nav.params,
+}))
 vi.mock('@/components/git/ProjectRow', () => ({
   ROW_GRID: '',
   ProjectRow: ({ repo }: { repo: { name: string } }) => (
@@ -25,7 +34,10 @@ function renderClient() {
     </QueryClientProvider>,
   )
 }
-beforeEach(() => vi.clearAllMocks())
+beforeEach(() => {
+  vi.clearAllMocks()
+  nav.params = new URLSearchParams()
+})
 describe('Development route', () => {
   it('loads the shared projection without triggering publication or remote actions', async () => {
     api.fetchDevelopmentStatus.mockResolvedValue({
@@ -117,5 +129,43 @@ describe('Development route', () => {
     fireEvent.click(screen.getByRole('button', { name: /Uncommitted/ }))
     expect(screen.queryByText('aardvark development')).not.toBeInTheDocument()
     expect(screen.getByText('alpha development')).toBeInTheDocument()
+    expect(nav.replace).toHaveBeenLastCalledWith('/git?show=source', {
+      scroll: false,
+    })
+    fireEvent.click(screen.getByRole('button', { name: /^All/ }))
+    expect(nav.replace).toHaveBeenLastCalledWith('/git', { scroll: false })
+  })
+  it('keeps the filter from the URL after a reload and says what counts mean', async () => {
+    nav.params = new URLSearchParams('show=source')
+    const clean = {
+      repo: {
+        ...repo,
+        name: 'aardvark',
+        path: '/repos/aardvark',
+        uncommitted: 0,
+      },
+      development: {
+        ...development,
+        working_tree: {
+          ...development.working_tree,
+          state: 'clean',
+          uncommitted: 0,
+        },
+      },
+    }
+    api.fetchDevelopmentStatus.mockResolvedValue({
+      version: 'development.v1',
+      repositories: [clean, { repo, development }],
+      total: 2,
+    })
+    renderClient()
+    await screen.findByText('alpha development')
+    expect(screen.queryByText('aardvark development')).not.toBeInTheDocument()
+    const chip = screen.getByRole('button', { name: /Uncommitted/ })
+    expect(chip).toHaveAttribute('aria-pressed', 'true')
+    expect(chip).toHaveAttribute('title', 'Repositories with uncommitted files')
+    expect(
+      screen.getByText(/Counts are repositories with something to look at/),
+    ).toBeInTheDocument()
   })
 })

@@ -1,5 +1,11 @@
+import { Suspense } from 'react'
 import { GitClient } from './GitClient'
 
 export default function GitPage() {
-  return <GitClient />
+  // GitClient reads its filter from the URL (useSearchParams), which needs a Suspense boundary.
+  return (
+    <Suspense>
+      <GitClient />
+    </Suspense>
+  )
 }
