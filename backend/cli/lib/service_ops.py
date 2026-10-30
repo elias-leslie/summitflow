@@ -13,7 +13,7 @@ import time
 import tomllib
 import uuid
 from collections.abc import Callable, Mapping, Sequence
-from contextlib import nullcontext
+from contextlib import nullcontext, suppress
 from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import Any
@@ -561,6 +561,57 @@ def manual_worker_release_references(project: ProjectServices, releases_root: Pa
         if cwd.is_relative_to(prefix) and cwd != prefix:
             references.add(releases_root / cwd.relative_to(prefix).parts[0])
     return references
+
+
+def changed_manual_workers(project: ProjectServices, releases_root: Path, commit: str, *,
+                           repo: Path) -> tuple[str, ...]:
+    """Running manual workers whose source changed between their release and ``commit``.
+
+    A plain rebuild restarts these too, as ``--worker`` would, so one deploy
+    covers the project. A worker's source is its unit template and its
+    ``WorkingDirectory`` under the project root (the whole repo when it names
+    none), diffed in ``repo`` (the checkout: a release source has no .git). A
+    stopped worker is left alone; one whose release commit cannot be read, or
+    whose diff fails, counts as changed.
+    """
+    changed: list[str] = []
+    for unit in project.manual_workers:
+        if not (pid := _service_main_pid(unit)):
+            continue
+        base = _process_release_commit(project, releases_root, pid)
+        if base == commit:
+            continue
+        template = project.root / "scripts" / "systemd" / canonical_unit(unit)
+        workdir = "."
+        with suppress(OSError):
+            for line in template.read_text().splitlines():
+                if line.startswith("WorkingDirectory=__PROJECT_ROOT__"):
+                    workdir = line.removeprefix("WorkingDirectory=__PROJECT_ROOT__").strip("/") or "."
+        if base is None:
+            changed.append(unit)
+            continue
+        diff = capture(["git", "diff", "--quiet", base, commit, "--",
+                        f"scripts/systemd/{canonical_unit(unit)}", workdir], cwd=repo)
+        if diff.returncode > 1:
+            reason = (diff.stderr or "").strip().splitlines()[-1:] or ["git diff failed"]
+            print(f"[service] could not compare {unit}'s release {base[:12]} with {commit[:12]} "
+                  f"({reason[0]}); restarting it")
+        if diff.returncode != 0:
+            changed.append(unit)
+    return tuple(changed)
+
+
+def _process_release_commit(project: ProjectServices, releases_root: Path, pid: int) -> str | None:
+    """The commit of the release a process runs from (its working directory), if it runs from one."""
+    try:
+        cwd = (_PROC_ROOT / str(pid) / "cwd").resolve(strict=True)
+        relative = cwd.relative_to(releases_root.resolve(strict=True))
+    except (OSError, ValueError):
+        return None
+    if not relative.parts:
+        return None
+    return service_release.build_commit(project.project_id, relative.parts[0],
+                                        state_root=releases_root.parent.parent.parent)
 
 
 def release_references_for_services(releases_root: Path) -> set[Path] | None:

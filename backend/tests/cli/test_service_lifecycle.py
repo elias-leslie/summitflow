@@ -1454,6 +1454,7 @@ def manual_lifecycle(lifecycle, project, monkeypatch):
     managed = replace(project, manual_workers=(MANUAL,))
     monkeypatch.setattr(service, "_load", lambda _: managed)
     monkeypatch.setattr(service_ops, "manual_worker_release_references", Mock(return_value=set()))
+    monkeypatch.setattr(service_ops, "changed_manual_workers", Mock(return_value=()))
     return lifecycle
 
 
@@ -1474,7 +1475,7 @@ def test_identity_accepts_manual_workers_but_not_a_unit_in_two_roles(tmp_path):
 
 
 @pytest.mark.parametrize("args", [[], ["--scope", "backend"], ["--scope", "worker"]])
-def test_normal_rebuild_never_renders_or_restarts_a_manual_worker(manual_lifecycle, project, monkeypatch, args):
+def test_normal_rebuild_leaves_an_unchanged_manual_worker_alone(manual_lifecycle, project, monkeypatch, args):
     # Overlapping component dirs force full scope; the manual worker still stays out.
     monkeypatch.setattr(service, "_load", lambda _: replace(
         project, frontend_dir=project.root, backend_dir=project.root, manual_workers=(MANUAL,)))
@@ -1483,6 +1484,101 @@ def test_normal_rebuild_never_renders_or_restarts_a_manual_worker(manual_lifecyc
     assert MANUAL not in _restarted(manual_lifecycle)
     assert "backend.service" in _restarted(manual_lifecycle)
     assert manual_lifecycle["sync_systemd_units"].call_args.kwargs == {"manual": ()}
+    assert "leaving manual workers unchanged (stopped, or no change since their release): " + MANUAL in result.output
+
+
+def test_one_rebuild_also_deploys_a_manual_worker_whose_source_changed(manual_lifecycle, monkeypatch):
+    changed = Mock(return_value=(MANUAL,))
+    monkeypatch.setattr(service_ops, "changed_manual_workers", changed)
+    result = CliRunner().invoke(service.app, ["rebuild", "example"])
+    assert result.exit_code == 0, result.output
+    assert changed.call_args.args[2] == "c" * 40  # the release's commit
+    assert changed.call_args.kwargs["repo"] == service._load("example").git_root  # the checkout, not the release
+    assert "changed since their running release, so also restarting: " + MANUAL in result.output
+    assert _restarted(manual_lifecycle)[0] == "backend.service" and MANUAL in _restarted(manual_lifecycle)
+    renders = [call.kwargs for call in manual_lifecycle["sync_systemd_units"].call_args_list]
+    assert renders == [{"manual": ()}, {"manual": (MANUAL,)}]
+    assert ("manual_worker_units", "succeeded") in _phases()
+    assert MANUAL in _mock(service_release.mark_phase).call_args_list[0].kwargs["workers"]
+    manual_lifecycle["verify_health"].assert_called_once()
+
+
+@pytest.mark.parametrize("args", [["--scope", "backend"], ["--scope", "frontend"]])
+def test_a_narrowed_rebuild_never_deploys_a_manual_worker(manual_lifecycle, monkeypatch, args):
+    changed = Mock(return_value=(MANUAL,))
+    monkeypatch.setattr(service_ops, "changed_manual_workers", changed)
+    assert CliRunner().invoke(service.app, ["rebuild", "example", *args]).exit_code == 0
+    changed.assert_not_called()
+    assert MANUAL not in _restarted(manual_lifecycle)
+
+
+def test_a_failed_rebuild_restores_the_manual_worker_it_rendered(manual_lifecycle, monkeypatch, tmp_path):
+    previous = tmp_path / "previous" / "source"
+    monkeypatch.setattr(service_release, "previous_source_root", lambda _release: previous)
+    monkeypatch.setattr(service_ops, "changed_manual_workers", Mock(return_value=(MANUAL,)))
+    monkeypatch.setattr(service_ops, "service_state", lambda _: "failed")
+    assert CliRunner().invoke(service.app, ["rebuild", "example"]).exit_code == 1
+    restores = [call for call in manual_lifecycle["sync_systemd_units"].call_args_list if call.args[0].root == previous]
+    assert [call.kwargs for call in restores] == [{"manual": ()}, {"manual": (MANUAL,)}]
+
+
+def test_a_manual_worker_changed_when_its_unit_or_working_directory_did(project, monkeypatch, tmp_path, capsys):
+    import subprocess
+
+    repo = project.root
+    git = lambda *a: subprocess.run(["git", *a], cwd=repo, check=True, capture_output=True, text=True).stdout.strip()  # noqa: E731
+    git("init", "-q")
+    git("config", "user.email", "t@example.test")
+    git("config", "user.name", "t")
+    (repo / "scripts" / "systemd").mkdir(parents=True, exist_ok=True)
+    (repo / "scripts" / "systemd" / MANUAL).write_text("[Service]\nWorkingDirectory=__PROJECT_ROOT__/daemon\n")
+    (repo / "daemon").mkdir()
+    (repo / "daemon" / "main.ts").write_text("1")
+    (repo / "web.ts").write_text("1")
+
+    def commit(path: str) -> str:
+        (repo / path).write_text((repo / path).read_text() + "+")
+        git("add", "-A")
+        git("commit", "-qm", path)
+        return git("rev-parse", "HEAD")
+
+    git("add", "-A")
+    git("commit", "-qm", "base")
+    base = git("rev-parse", "HEAD")
+    elsewhere = commit("web.ts")
+    daemon = commit("daemon/main.ts")
+    unit = commit(f"scripts/systemd/{MANUAL}")
+    releases = tmp_path / "state" / "projects" / "example" / "releases"
+    (releases / ("a" * 32) / "source" / "daemon").mkdir(parents=True)
+    proc = tmp_path / "proc" / "41"
+    proc.mkdir(parents=True)
+    (proc / "cwd").symlink_to(releases / ("a" * 32) / "source" / "daemon", target_is_directory=True)
+    monkeypatch.setattr(service_ops, "_PROC_ROOT", tmp_path / "proc")
+    pids = {MANUAL: 41}
+    monkeypatch.setattr(service_ops, "_service_main_pid", lambda name: pids.get(name, 0))
+    running = {"commit": base}
+    monkeypatch.setattr(service_release, "build_commit",
+                        lambda project_id, build_id, state_root: running["commit"]
+                        if (project_id, build_id, state_root) == ("example", "a" * 32, tmp_path / "state") else None)
+    # The rebuild hands over the release's project, whose root is a git archive extraction with no .git;
+    # the diff runs in the checkout.
+    source = releases / ("a" * 32) / "source"
+    (source / "scripts" / "systemd").mkdir(parents=True)
+    (source / "scripts" / "systemd" / MANUAL).write_text((repo / "scripts" / "systemd" / MANUAL).read_text())
+    managed = replace(project, root=source, manual_workers=(MANUAL, "stopped@default.service"))
+    changed = lambda new: service_ops.changed_manual_workers(managed, releases, new, repo=repo)  # noqa: E731
+    assert changed(base) == ()
+    assert changed(elsewhere) == ()
+    assert changed(daemon) == (MANUAL,)
+    running["commit"] = daemon
+    assert changed(unit) == (MANUAL,)
+    running["commit"] = None  # its release cannot be read
+    assert changed(elsewhere) == (MANUAL,)
+    running["commit"] = "f" * 40  # git cannot compare it: restart, and say why
+    assert changed(elsewhere) == (MANUAL,)
+    assert f"could not compare {MANUAL}'s release ffffffffffff" in capsys.readouterr().out
+    pids.clear()  # stopped: nothing to restart
+    assert changed(unit) == ()
 
 
 def test_named_manual_worker_rebuilds_only_its_unit(manual_lifecycle, project, monkeypatch):

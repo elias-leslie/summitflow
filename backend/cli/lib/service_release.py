@@ -305,10 +305,13 @@ def _materialize_release(
 
 def current_release_commit(project_id: str, *, state_root: Path | None = None) -> str | None:
     """The source commit of the live release, read from its sealed receipt."""
+    build_id = _current_build(_project_state(project_id, state_root))
+    return None if build_id is None else build_commit(project_id, build_id, state_root=state_root)
+
+
+def build_commit(project_id: str, build_id: str, *, state_root: Path | None = None) -> str | None:
+    """The source commit a release was built from, read from its sealed receipt."""
     project_state = _project_state(project_id, state_root)
-    build_id = _current_build(project_state)
-    if build_id is None:
-        return None
     try:
         value = json.loads((project_state / "receipts" / f"{build_id}.json").read_text())
     except (OSError, ValueError):
