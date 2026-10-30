@@ -124,6 +124,9 @@ def confirm(
             _fail(exc)
             return
         host, senders, _ = _host_identity()
+        if not senders:
+            _fail(ValueError(f"unknown request {message_id}; this agent has no id the workstation accepts"))
+            return
         try:
             _workstation("POST", f"/{quote(message_id, safe='')}/confirm",
                          {"senders": senders, "host": host, "withdraw": withdraw})
@@ -165,8 +168,8 @@ def inbox() -> None:
         if state == "open" and row["from"] in leases.self_ids():
             state += "/seen" if coord.surfaced(row) else "/unseen"
         show(row, state)
-    if coord_remote.agent_host():
-        host, senders, window = _host_identity()
+    if coord_remote.agent_host() and (identity := _host_identity())[1]:
+        host, senders, window = identity
         query = urlencode({"host": host, "sender": senders, **({"window": window} if window else {})}, doseq=True)
         try:
             remote = _workstation("GET", f"?{query}").get("requests") or []

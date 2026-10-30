@@ -270,3 +270,13 @@ def test_on_an_agent_host_a_refusal_reads_as_the_workstations_words(on_host, mon
     result = runner.invoke(app, ["sessions", "confirm", "def456"])
     assert result.exit_code == 2
     assert "ERROR the workstation refused it: request def456 has no ack to confirm (state=closed)" in result.output
+
+
+def test_on_an_agent_host_a_shell_with_no_agent_id_is_refused_here(on_host, monkeypatch):
+    monkeypatch.setattr(coord.leases, "identify_agent", lambda **_: ("", "", "", ""))
+    monkeypatch.setattr(coord.leases, "self_ids", lambda: set())
+    result = runner.invoke(app, ["sessions", "confirm", "def456"])
+    assert result.exit_code == 2
+    assert "ERROR unknown request def456; this agent has no id the workstation accepts" in result.output
+    assert runner.invoke(app, ["sessions", "inbox"]).output == ""
+    assert on_host == []
