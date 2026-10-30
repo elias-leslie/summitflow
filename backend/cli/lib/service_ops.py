@@ -429,23 +429,26 @@ def observed_service_states(project: ProjectServices) -> dict[str, str]:
     for unit in missing:
         matches = [row for row in rows
                    if row.get("manager") == "systemd" and row.get("name") == canonical_unit(unit)]
-        if len(matches) != 1:
-            continue
-        row = matches[0]
-        state = row.get("state")
-        if not isinstance(state, str):
-            continue
-        if state == "stopped":
-            status = row.get("status")
-            if isinstance(status, str) and status.startswith("systemd "):
-                observed = status.removeprefix("systemd ").partition(" ")[0]
-                states[unit] = observed if observed in {"inactive", "failed", "deactivating"} else "unknown"
-        elif state == "running" and row.get("health") == "unhealthy":
-            states[unit] = "unhealthy"
-        else:
-            states[unit] = {"running": "active", "starting": "activating",
-                            "failed": "failed"}.get(state, "unknown")
+        if len(matches) == 1:
+            states[unit] = _runtime_row_state(matches[0])
     return states
+
+
+def _runtime_row_state(row: Mapping[str, Any]) -> str:
+    """Translate one Runtime API ``/docker/status`` systemd row into an ActiveState."""
+    state = row.get("state")
+    if not isinstance(state, str):
+        return "unknown"
+    if state == "stopped":
+        status = row.get("status")
+        if isinstance(status, str) and status.startswith("systemd "):
+            observed = status.removeprefix("systemd ").partition(" ")[0]
+            if observed in {"inactive", "failed", "deactivating"}:
+                return observed
+        return "unknown"
+    if state == "running" and row.get("health") == "unhealthy":
+        return "unhealthy"
+    return {"running": "active", "starting": "activating", "failed": "failed"}.get(state, "unknown")
 
 
 def _release_references_for_manager(
