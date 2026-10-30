@@ -154,6 +154,20 @@ def test_plan_mismatch_names_changed_inputs():
     assert plan_differences(recorded, current) == ["commands", "gate_implementation:cli/commands/check.py"]
 
 
+def test_plan_mismatch_names_changed_prepared_environment_entry():
+    from cli.lib.acceptance import plan_differences
+
+    kept = {"path": "/p/uilint/bin", "file_count": 1, "sha256": "a", "state": "present"}
+    recorded = {"native": {"prepared_environment": [kept, {"path": "/p/uilint/uilint", "file_count": 47, "sha256": "b",
+                                                           "state": "present"}]}}
+    current = {"native": {"prepared_environment": [kept, {"path": "/p/uilint/uilint", "file_count": 9, "sha256": "c",
+                                                          "state": "present"}, {"path": "/p/new", "state": "missing"}]}}
+    assert plan_differences(recorded, current) == [
+        "native:prepared_environment:/p/new (added)",
+        "native:prepared_environment:/p/uilint/uilint (file_count 47 vs 9)",
+    ]
+
+
 def test_subtask_claim_renews_own_parent_claim_and_names_expiry(monkeypatch):
     import typer
 

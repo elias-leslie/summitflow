@@ -374,7 +374,7 @@ def test_acceptance_blocks_permission_drift_even_when_checks_exit_zero(repo: Pat
         (cwd / "app.py").chmod(0o664)
         return subprocess.CompletedProcess(command, 0, "passed before permission drift", "")
 
-    with pytest.raises(acceptance.AcceptanceError, match="source_changed_during_acceptance"):
+    with pytest.raises(acceptance.AcceptanceError, match=r"source_changed_during_acceptance \(changed: execution:materialization, source_modes:fingerprint\);"):
         acceptance.accept_revision(repo, sha="HEAD", runner=mutate)
     assert acceptance.source_identity(repo)["clean"] is True
 
@@ -694,8 +694,12 @@ def test_accept_revision_detects_shared_plan_mutation_during_checks(repo: Path, 
         scanner.write_text("changed scanner during acceptance")
         return subprocess.CompletedProcess(command, 0, "ok", "")
 
-    with pytest.raises(acceptance.AcceptanceError, match="acceptance_plan_changed_during_acceptance"):
+    with pytest.raises(acceptance.AcceptanceError, match="acceptance_plan_changed_during_acceptance") as blocked:
         acceptance.accept_revision(repo, sha="HEAD", runner=mutate)
+    receipt = json.loads(Path(str(blocked.value).rsplit("acceptance evidence: ", 1)[1]).read_text())
+    assert receipt["reason"] == "acceptance_plan_changed_during_acceptance"
+    assert receipt["changed_inputs"] == ["security_tools:gitleaks", "security_tools:osv-scanner", "security_tools:semgrep"]
+    assert f"(changed: {', '.join(receipt['changed_inputs'])})" in str(blocked.value)
 
 
 def test_validate_receipt_allows_later_checkout_to_advance(repo: Path) -> None:
@@ -715,6 +719,7 @@ def test_validate_receipt_allows_later_checkout_to_advance(repo: Path) -> None:
 def test_validate_receipt_rejects_tampered_payload(repo: Path) -> None:
     receipt = acceptance.accept_revision(repo, sha="HEAD", runner=successful_runner([]))
     payload = json.loads(Path(receipt["acceptance_artifact"]).read_text())
+    assert "changed_inputs" not in payload
     payload["source"]["tree"] = "0" * 40
 
     with pytest.raises(acceptance.AcceptanceError, match="integrity"):

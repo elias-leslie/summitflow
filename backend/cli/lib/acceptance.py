@@ -812,6 +812,27 @@ def _project_acceptance_plan(repo: Path, *, commit: str | None = None,
     return plan
 
 
+def _path_entry_differences(old: Any, new: Any) -> list[str]:
+    """Changed entries of path-keyed lists, e.g. ``/repo/uilint (file_count 47 vs 9)``."""
+    if not (isinstance(old, list) and isinstance(new, list)
+            and all(isinstance(item, Mapping) and "path" in item for item in (*old, *new))):
+        return []
+    before = {str(item["path"]): item for item in old}
+    after = {str(item["path"]): item for item in new}
+    names: list[str] = []
+    for path in sorted(set(before) | set(after)):
+        was, now = before.get(path), after.get(path)
+        if was == now:
+            continue
+        if was is None or now is None:
+            names.append(f"{path} ({'added' if was is None else 'removed'})")
+            continue
+        counts = [f"{field} {was.get(field)} vs {now.get(field)}"
+                  for field in ("state", "file_count", "entry_count") if was.get(field) != now.get(field)]
+        names.append(f"{path} ({', '.join(counts) or 'content changed'})")
+    return names
+
+
 def plan_differences(recorded: Mapping[str, Any], current: Mapping[str, Any], limit: int = 6) -> list[str]:
     """Name the plan inputs that differ, e.g. ``gate_implementation:cli/commands/check.py``."""
     names: list[str] = []
@@ -820,10 +841,33 @@ def plan_differences(recorded: Mapping[str, Any], current: Mapping[str, Any], li
             continue
         old, new = recorded.get(key), current.get(key)
         if isinstance(old, Mapping) and isinstance(new, Mapping):
-            names.extend(f"{key}:{sub}" for sub in sorted(set(old) | set(new)) if old.get(sub) != new.get(sub))
+            for sub in sorted(set(old) | set(new)):
+                if old.get(sub) != new.get(sub):
+                    entries = _path_entry_differences(old.get(sub), new.get(sub))
+                    names.extend([f"{key}:{sub}:{entry}" for entry in entries] or [f"{key}:{sub}"])
         else:
             names.append(str(key))
     return names[:limit] + ([f"+{len(names) - limit} more"] if len(names) > limit else [])
+
+
+def _changed_inputs(before: Mapping[str, Any], after: Mapping[str, Any],
+                    identity_fields: Sequence[str] = ()) -> list[str]:
+    """Name what moved during acceptance so a blocked receipt explains itself.
+
+    Source identities diff their detailed inputs first and fall back to the
+    digest fields; plans diff directly. Never raises: it only annotates a block.
+    """
+    if "error" in after:
+        return [" ".join(str(after["error"]).split())[:300]]
+    try:
+        if not identity_fields:
+            return plan_differences(before, after)
+        detail = ("source_inputs", "source_modes", "execution", "local_inputs")
+        return (plan_differences({key: before.get(key) for key in detail}, {key: after.get(key) for key in detail})
+                or plan_differences({key: before.get(key) for key in identity_fields},
+                                    {key: after.get(key) for key in identity_fields}))
+    except Exception:  # the block itself stands without its annotation
+        return []
 
 
 _BLOCKING_SKIPS = ("tool_not_installed", "required", "no_tests")
@@ -1552,19 +1596,20 @@ def _accept_revision(
             failed = True
             break
     with repo_lock(repo, purpose="finalize acceptance", wait_seconds=REPO_LOCK_WAIT_SECONDS):
+        identity_fields = ("commit", "tree", "status", "workspace_fingerprint", "input_fingerprint", "working_materialization")
         try:
             after = source_identity(repo, sha=before["commit"], execution_basis=execution_basis)
-            mutated = any(
-                before[field] != after[field]
-                for field in ("commit", "tree", "status", "workspace_fingerprint", "input_fingerprint", "working_materialization")
-            )
-        except (AcceptanceError, OSError):
-            mutated = True
+            mutated = any(before[field] != after[field] for field in identity_fields)
+        except (AcceptanceError, OSError) as exc:
+            mutated, after = True, {"error": f"source identity unavailable: {exc}"}
         try:
-            plan_changed = requested_plan(repo, commit=plan_commit, coverage=coverage, scope=normalized_scope,
-                                           required_stages=required_stages) != plan
-        except AcceptanceError:
-            plan_changed = True
+            after_plan = requested_plan(repo, commit=plan_commit, coverage=coverage, scope=normalized_scope,
+                                        required_stages=required_stages)
+            plan_changed = after_plan != plan
+        except AcceptanceError as exc:
+            plan_changed, after_plan = True, {"error": f"plan unavailable: {exc}"}
+        changed_inputs = _changed_inputs(before, after, identity_fields) if mutated else (
+            _changed_inputs(plan, after_plan) if plan_changed else [])
         state = "blocked" if mutated or plan_changed else ("failed" if failed else "success")
         reason = (
             "source_changed_during_acceptance"
@@ -1599,6 +1644,8 @@ def _accept_revision(
             "completed_at": datetime.now(UTC).isoformat(),
             "ci_parity": {"seed": seed, "repro": ci_parity.repro_command(seed)},
         }
+        if changed_inputs:
+            receipt["changed_inputs"] = changed_inputs
         receipt["acceptance_id"] = _receipt_digest(receipt)
         cache_artifact = artifact
         # Every outcome is written under its own immutable id: a retry of these
@@ -1620,7 +1667,8 @@ def _accept_revision(
             # receipt can sit in another user's home (deploy gate) the caller can't read.
             failure_line = (failure_line or ((failed_check or {}).get("evidence") or {}).get("reason")
                             or next((line.strip()[:300] for line in reversed(lines) if line.strip()), None))
-            summary = f"{reason}; {failure_line}" if failure_line else reason
+            headline = f"{reason} (changed: {', '.join(changed_inputs)})" if changed_inputs else reason
+            summary = f"{headline}; {failure_line}" if failure_line else headline
             summary += _failure_excerpt(repo, failure_line or "")
             raise AcceptanceError(f"{summary}; reproduce: {ci_parity.repro_command(seed)}; acceptance evidence: {artifact}")
         return _descriptor(receipt, artifact, reused=False)
