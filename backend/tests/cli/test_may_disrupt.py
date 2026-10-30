@@ -47,7 +47,9 @@ def test_hold_blocks_host_target_unless_holder_said_yes(monkeypatch, tmp_path):
     holder = leases.acquire_mark("demo-proj", str(tmp_path), "hold", "integration").agent_id
     _as(monkeypatch, "claude", "disrupt-asker-03")
     out = coord_disrupt.snapshot(run=_quiet)
-    assert any("demo-proj: repo hold (integration)" in line for line in out["blocking"])
+    assert "an agent is holding demo-proj (integration)" in out["blocking"]
+    assert not any(holder in line for line in out["blocking"])  # owner copy; the id stays in holds
+    assert [h["holder"] for h in out["holds"] if h["project"] == "demo-proj"] == [holder]
     assert not any("demo-proj" in line for line in coord_disrupt.snapshot("other-proj", run=_quiet)["blocking"])
 
     sent = coord.send(holder, "Nightshift: reboot; reply yes when checkpointed")
@@ -56,6 +58,20 @@ def test_hold_blocks_host_target_unless_holder_said_yes(monkeypatch, tmp_path):
     _as(monkeypatch, "claude", "disrupt-asker-03")
     out = coord_disrupt.snapshot(request_ids=[sent["id"]], run=_quiet)
     assert not any("demo-proj" in line for line in out["blocking"])
+
+
+def test_running_acceptance_says_what_runs_where_without_the_agent_id(monkeypatch, tmp_path):
+    _as(monkeypatch, "claude", "acceptance-runner-dddddd")
+    mark = leases.acquire_mark("demo-op", str(tmp_path), "op", "acceptance")
+    _as(monkeypatch, "claude", "disrupt-asker-05")
+    try:
+        out = coord_disrupt.snapshot(run=_quiet)
+    finally:
+        leases.release_mark("demo-op", mark.lease_id)
+    assert "acceptance checks running in demo-op" in out["blocking"]
+    assert not any(mark.agent_id in line for line in out["blocking"])
+    assert {"project": "demo-op", "kind": "op", "holder": mark.agent_id}.items() <= next(
+        h for h in out["holds"] if h["project"] == "demo-op").items()
 
 
 def test_backups_and_unreadable_parts_keep_it_unclear(monkeypatch):

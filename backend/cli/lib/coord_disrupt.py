@@ -177,6 +177,15 @@ def local_backup_work(run: Runner) -> tuple[list[str], list[str], list[str]]:
     return units, procs[:20], unknown
 
 
+def _hold_line(hold: dict[str, Any]) -> str:
+    """Owner-facing blocking line: what runs in which project. The holder id stays in ``holds``."""
+    project, purpose = hold["project"], hold["purpose"]
+    if hold["kind"] == "op":
+        what = "acceptance checks" if purpose == "acceptance" else purpose or "a repo operation"
+        return f"{what} running in {project}"
+    return f"an agent is holding {project}" + (f" ({purpose})" if purpose else "")
+
+
 def snapshot(
     target: str = HOST_TARGET,
     *,
@@ -218,10 +227,8 @@ def snapshot(
             blocking.append(f"{r['acked_by'] or r['to']} objected" + (f": {r['note']}" if r.get("note") else ""))
         elif r["eta_running"]:
             blocking.append(f"{r['acked_by'] or r['to']} asked to wait until {r['eta_until']}")
-    for h in holds:
-        if in_scope(target, h["project"]) and not (h["kind"] == "hold" and h["holder"] in ready):
-            what = "deploy/acceptance running" if h["kind"] == "op" else f"repo hold ({h['purpose'] or 'busy'})"
-            blocking.append(f"{h['project']}: {what} by {h['holder']}")
+    blocking += [_hold_line(h) for h in holds
+                 if in_scope(target, h["project"]) and not (h["kind"] == "hold" and h["holder"] in ready)]
     blocking += [f"backup {b.get('source_id') or b.get('project_id') or b.get('id')} running" for b in backups_rows]
     blocking += [f"unit {u} running" for u in units]
     blocking += [f"process: {p}" for p in procs]
