@@ -14,6 +14,8 @@ from typing import Final
 
 import typer
 
+from app import runtime_deployment
+from app.project_identity import get_project_identity
 from app.services.db_workbench import (
     DbWorkbenchError,
     project_db_url,
@@ -49,7 +51,34 @@ def _detect_project(explicit: str | None) -> str:
     return Path.cwd().name
 
 
+def _deployment(project: str) -> runtime_deployment.ProxmoxDeployment | None:
+    runtime = (get_project_identity(project) or {}).get("runtime")
+    try:
+        return runtime_deployment.parse_deployment(runtime.get("deployment") if isinstance(runtime, dict) else None)
+    except runtime_deployment.DeploymentError as exc:
+        output_error(str(exc))
+        raise typer.Exit(1) from None
+
+
+def _require_running_deployment(project: str) -> None:
+    """A remotely deployed project's database lives in its guest; refuse while that is down."""
+    target = _deployment(project)
+    if not target:
+        return
+    try:
+        status = runtime_deployment._guest_status(target)
+    except runtime_deployment.DeploymentError as exc:
+        output_error(f"{project}'s database runs on {target.label}: {exc}")
+        raise typer.Exit(1) from None
+    if status != "running":
+        tool = "pct" if target.guest_type == "lxc" else "qm"
+        output_error(f"{project}'s database runs on {target.label}, which is {status}. "
+                     f"Start it first: ssh {target.ssh_host} {tool} start {target.vmid}")
+        raise typer.Exit(1)
+
+
 def _db_url(project: str) -> str:
+    _require_running_deployment(project)
     db_url = project_db_url(project)
     if db_url:
         return db_url
@@ -316,6 +345,14 @@ def _alembic(project: str, args: list[str]) -> int:
     if migration_url:
         database_env = migration_env.grant_for(project).database_key
         env[database_env] = migration_url
+    elif target := _deployment(project):
+        if args[0] in {"upgrade", "downgrade"}:
+            output_error(f"{project} runs on {target.label}; its native remote release procedure applies "
+                         "migrations together with the code that needs them.")
+            return 1
+        # Everything else that opens a database reads the deployed one, not a local copy.
+        if args[0] != "revision" or "--autogenerate" in args:
+            env[migration_env.grant_for(project).database_key] = _db_url(project)
     result = subprocess.run(
         command,
         cwd=cwd,

@@ -12,8 +12,10 @@ from typing import cast
 from unittest.mock import patch
 
 import pytest
+import typer
 from typer.testing import CliRunner
 
+from app import runtime_deployment
 from cli.commands import check, db, service, setup, vm
 from cli.lib import service_ops, service_release
 from cli.lib.proxmox import ProxmoxClient, ProxmoxConfig
@@ -323,7 +325,10 @@ def test_db_detail_name_hashes_query_without_literals() -> None:
 def test_db_url_uses_canonical_project_resolver() -> None:
     resolved = "postgresql://summitflow_app:pw@localhost/summitflow"
 
-    with patch("cli.commands.db.project_db_url", return_value=resolved) as resolver:
+    with (
+        patch("cli.commands.db._deployment", return_value=None),
+        patch("cli.commands.db.project_db_url", return_value=resolved) as resolver,
+    ):
         assert db._db_url("a-term") == resolved
 
     resolver.assert_called_once_with("a-term")
@@ -974,6 +979,56 @@ def test_db_migration_url_override_targets_ephemeral_database(
     migration_env = run.call_args.kwargs["env"]
     assert migration_env["PORTFOLIO_DB_URL"] == migration_url
     assert not {"ST_DB_MIGRATION_URL", "PROXMOX_TOKEN_SECRET", "AGENT_HUB_DB_URL"} & migration_env.keys()
+
+
+_GUEST = runtime_deployment.ProxmoxDeployment(kind="proxmox", ssh_host="pve", vmid=180, user="app", uid=1000)
+
+
+def test_db_url_refuses_while_deployment_guest_is_stopped(capsys: pytest.CaptureFixture[str]) -> None:
+    with (
+        patch("cli.commands.db._deployment", return_value=_GUEST),
+        patch("cli.commands.db.runtime_deployment._guest_status", return_value="stopped"),
+        patch("cli.commands.db.project_db_url") as resolver,
+        pytest.raises(typer.Exit),
+    ):
+        db._db_url("portfolio-ai")
+
+    resolver.assert_not_called()
+    out = capsys.readouterr()
+    assert "pve / VM 180, which is stopped" in out.out + out.err
+    assert "ssh pve qm start 180" in out.out + out.err
+
+
+def test_db_migrate_upgrade_refuses_for_remote_deployment(tmp_path: Path) -> None:
+    with (
+        patch("cli.commands.db._project_root", return_value=tmp_path),
+        patch("cli.commands.db._migration_dir", return_value=tmp_path),
+        patch("cli.commands.db._deployment", return_value=_GUEST),
+        patch("cli.commands.db.subprocess.run") as run,
+    ):
+        assert db._alembic("portfolio-ai", ["upgrade", "head"]) == 1
+        assert db._alembic("portfolio-ai", ["downgrade", "-1"]) == 1
+
+    run.assert_not_called()
+
+
+def test_db_migrate_status_reads_the_deployed_database(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.delenv("ST_DB_MIGRATION_URL", raising=False)
+    deployed = "postgresql://portfolio_app:pw@127.0.0.1:15432/portfolio_ai"
+    completed = subprocess.CompletedProcess(args=["alembic"], returncode=0, stdout="", stderr="")
+
+    with (
+        patch("cli.commands.db._project_root", return_value=tmp_path),
+        patch("cli.commands.db._migration_dir", return_value=tmp_path),
+        patch("cli.commands.db._deployment", return_value=_GUEST),
+        patch("cli.commands.db.runtime_deployment._guest_status", return_value="running"),
+        patch("cli.commands.db.project_db_url", return_value=deployed),
+        patch("cli.commands.db.subprocess.run", return_value=completed) as run,
+        patch("cli.commands.db.emit_result_or_details"),
+    ):
+        assert db._alembic("portfolio-ai", ["current", "-v"]) == 0
+
+    assert run.call_args.kwargs["env"]["PORTFOLIO_DB_URL"] == deployed
 
 
 def test_db_tables_counts_uses_exact_counts_not_pg_stats() -> None:
