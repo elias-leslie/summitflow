@@ -19,7 +19,8 @@ import { ProjectPreviewPanel } from './ProjectPreviewPanel'
 import { useNewProjectForm } from './useNewProjectForm'
 
 export function NewProjectClient() {
-  const { fields, errors, isPending, preview, handlers } = useNewProjectForm()
+  const { fields, errors, isPending, preview, managedRoot, handlers } =
+    useNewProjectForm()
   const { name, projectId, baseUrl, healthEndpoint, rootPath, category } =
     fields
   const {
@@ -156,8 +157,20 @@ export function NewProjectClient() {
               className={clsx('mono', errors.rootPath && 'border-rose-500/50')}
             />
             <p className="text-xs text-slate-500">
-              Strongly recommended. SummitFlow-hosted projects auto-fill to
-              `/home/demo/projects/&lt;project-id&gt;`.
+              Strongly recommended.{' '}
+              {managedRoot.path ? (
+                <>
+                  SummitFlow-hosted projects auto-fill to{' '}
+                  <code className="mono">
+                    {managedRoot.path}/&lt;project-id&gt;
+                  </code>
+                  .
+                </>
+              ) : managedRoot.failed ? (
+                "Couldn't load the folder for SummitFlow-hosted projects, so it won't auto-fill. Type the full path."
+              ) : (
+                'Loading the default folder for SummitFlow-hosted projects…'
+              )}
             </p>
             {errors.rootPath && (
               <p className="text-xs text-rose-400">{errors.rootPath}</p>

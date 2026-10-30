@@ -44,12 +44,14 @@ from .models import (
     ProjectOnboardingRequest,
     ProjectOnboardingResponse,
     ProjectPagesResponse,
+    ProjectRegistrationDefaults,
     ProjectResponse,
     ProjectRetirementRequest,
     ProjectsWithStatsResponse,
     ProjectUpdate,
 )
 from .onboarding import build_onboarding_response, run_project_onboarding
+from .public_urls import managed_projects_root
 from .pulse import router as pulse_router
 from .readme import router as readme_router
 
@@ -137,6 +139,12 @@ async def list_projects_with_stats(include_inactive: bool = False) -> ProjectsWi
         project.health_status = health_statuses.get(project.id)
         project.active_checkpoint = active_checkpoints.get(project.id)
     return ProjectsWithStatsResponse(projects=result, total=len(result))
+
+
+@router.get("/registration-defaults", response_model=ProjectRegistrationDefaults)
+async def get_registration_defaults() -> ProjectRegistrationDefaults:
+    """Defaults the Create Project form fills in: where SummitFlow-hosted projects live on this host."""
+    return ProjectRegistrationDefaults(managed_projects_root=managed_projects_root())
 
 
 @router.get("/{project_id}", response_model=ProjectResponse)

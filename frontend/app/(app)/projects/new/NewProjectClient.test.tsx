@@ -10,6 +10,7 @@ const routerMocks = vi.hoisted(() => ({
 
 const apiMocks = vi.hoisted(() => ({
   createProject: vi.fn(),
+  fetchProjectRegistrationDefaults: vi.fn(),
 }))
 
 vi.mock('next/navigation', () => ({
@@ -18,6 +19,7 @@ vi.mock('next/navigation', () => ({
 
 vi.mock('@/lib/api', () => ({
   createProject: apiMocks.createProject,
+  fetchProjectRegistrationDefaults: apiMocks.fetchProjectRegistrationDefaults,
   PROJECT_CATEGORY_LABELS: {
     production: 'Production',
     testing: 'Testing',
@@ -56,6 +58,9 @@ describe('NewProjectClient', () => {
     apiMocks.createProject.mockResolvedValue({
       id: 'my-project',
       name: 'My Project',
+    })
+    apiMocks.fetchProjectRegistrationDefaults.mockResolvedValue({
+      managed_projects_root: '/data/hosted/projects',
     })
   })
 
@@ -99,12 +104,15 @@ describe('NewProjectClient', () => {
   it('auto-fills the managed workspace root and marks hosted setup on submit', async () => {
     renderClient()
 
+    expect(
+      await screen.findByText('/data/hosted/projects/<project-id>'),
+    ).toBeInTheDocument()
     fireEvent.change(screen.getByLabelText('Project Name *'), {
       target: { value: 'Hosted Example' },
     })
 
     expect(screen.getByLabelText('Root Path')).toHaveValue(
-      '/home/demo/projects/hosted-example',
+      '/data/hosted/projects/hosted-example',
     )
 
     expect(await submitProject()).toEqual({
@@ -112,12 +120,55 @@ describe('NewProjectClient', () => {
       name: 'Hosted Example',
       base_url: undefined,
       health_endpoint: '/health',
-      root_path: '/home/demo/projects/hosted-example',
+      root_path: '/data/hosted/projects/hosted-example',
       category: 'dev',
       summitflow_hosted: true,
       agent_hub_permission: {},
       onboarding: {},
     })
+  })
+
+  it('fills the managed root once it loads after the name was typed', async () => {
+    let resolveDefaults: (value: { managed_projects_root: string }) => void =
+      () => {}
+    apiMocks.fetchProjectRegistrationDefaults.mockReturnValue(
+      new Promise((resolve) => {
+        resolveDefaults = resolve
+      }),
+    )
+    renderClient()
+
+    expect(
+      screen.getByText(
+        /Loading the default folder for SummitFlow-hosted projects/,
+      ),
+    ).toBeInTheDocument()
+    fireEvent.change(screen.getByLabelText('Project Name *'), {
+      target: { value: 'Early Bird' },
+    })
+    expect(screen.getByLabelText('Root Path')).toHaveValue('')
+
+    resolveDefaults({ managed_projects_root: '/data/hosted/projects' })
+    await waitFor(() => {
+      expect(screen.getByLabelText('Root Path')).toHaveValue(
+        '/data/hosted/projects/early-bird',
+      )
+    })
+  })
+
+  it('says the managed root failed to load and leaves the path to the user', async () => {
+    apiMocks.fetchProjectRegistrationDefaults.mockRejectedValue(
+      new Error('Failed to load project defaults'),
+    )
+    renderClient()
+
+    expect(
+      await screen.findByText(/Couldn't load the folder/),
+    ).toBeInTheDocument()
+    fireEvent.change(screen.getByLabelText('Project Name *'), {
+      target: { value: 'Hosted Example' },
+    })
+    expect(screen.getByLabelText('Root Path')).toHaveValue('')
   })
 
   it('blocks submission when the root path is relative', async () => {
@@ -143,6 +194,8 @@ describe('NewProjectClient', () => {
 
   it('submits the selected sidebar category', async () => {
     renderClient()
+
+    await screen.findByText('/data/hosted/projects/<project-id>')
 
     fireEvent.change(screen.getByLabelText('Project Name *'), {
       target: { value: 'Testing Project' },

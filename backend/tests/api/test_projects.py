@@ -620,6 +620,18 @@ def test_update_project_clears_stale_public_url_when_hosting_is_removed(client, 
             conn.commit()
 
 
+def test_registration_defaults_expose_the_configured_managed_root(client, monkeypatch) -> None:
+    """The Create Project form fills the host's managed root, not a hardcoded one."""
+    clear_public_url_config_cache()
+    monkeypatch.setenv("SUMMITFLOW_MANAGED_PROJECTS_ROOT", "/data/hosted/projects/")
+    try:
+        response = client.get("/api/projects/registration-defaults")
+    finally:
+        clear_public_url_config_cache()
+    assert response.status_code == 200
+    assert response.json() == {"managed_projects_root": "/data/hosted/projects"}
+
+
 def test_resolve_project_public_url_uses_alias_for_hosted_local_project(monkeypatch) -> None:
     """Hosted workspace projects should expose their canonical public alias."""
     clear_public_url_config_cache()

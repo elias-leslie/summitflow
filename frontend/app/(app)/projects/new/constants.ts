@@ -1,6 +1,7 @@
 export const QUERY_KEYS = {
   projects: ['projects'] as const,
   projectsWithStats: ['projects-with-stats'] as const,
+  registrationDefaults: ['project-registration-defaults'] as const,
 }
 
 export const ROUTE_PROJECT = (id: string) => `/projects/${id}`

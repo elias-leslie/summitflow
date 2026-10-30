@@ -113,6 +113,10 @@ export interface ProjectPage {
   port: number | null
 }
 
+export interface ProjectRegistrationDefaults {
+  managed_projects_root: string
+}
+
 export interface ProjectPagesResponse {
   items: ProjectPage[]
 }

@@ -146,6 +146,12 @@ class ProjectPage(BaseModel):
     port: int | None = None
 
 
+class ProjectRegistrationDefaults(BaseModel):
+    """Server-side defaults for the Create Project form."""
+
+    managed_projects_root: str
+
+
 class ProjectPagesResponse(BaseModel):
     """Frontend pages of a project."""
 

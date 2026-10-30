@@ -54,6 +54,11 @@ def _load_public_url_config() -> tuple[str | None, dict[str, str], str]:
     return base_domain or None, aliases, managed_root or DEFAULT_MANAGED_PROJECTS_ROOT
 
 
+def managed_projects_root() -> str:
+    """Folder SummitFlow-hosted projects live under (``SUMMITFLOW_MANAGED_PROJECTS_ROOT``)."""
+    return _load_public_url_config()[2]
+
+
 def clear_public_url_config_cache() -> None:
     """Clear cached environment-backed URL defaults."""
     _load_public_url_config.cache_clear()

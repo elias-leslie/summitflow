@@ -15,11 +15,14 @@ export interface ProjectFormErrors {
 }
 
 export const DEFAULT_HEALTH_ENDPOINT = '/health'
-export const MANAGED_PROJECTS_ROOT = '/home/demo/projects'
 
-export function buildManagedRootPath(projectId: string): string {
+/** managedRoot is the host's SUMMITFLOW_MANAGED_PROJECTS_ROOT; unknown until the API answers. */
+export function buildManagedRootPath(
+  managedRoot: string | undefined,
+  projectId: string,
+): string {
   const normalized = normalizeProjectId(projectId)
-  return normalized ? `${MANAGED_PROJECTS_ROOT}/${normalized}` : ''
+  return managedRoot && normalized ? `${managedRoot}/${normalized}` : ''
 }
 
 export function normalizeProjectId(value: string): string {
@@ -62,9 +65,13 @@ export function normalizeRootPath(value: string): string {
   return value.trim().replace(/\/+$/, '')
 }
 
-export function isManagedWorkspaceRootPath(value: string): boolean {
-  const normalized = normalizeRootPath(value)
-  return normalized.startsWith(`${MANAGED_PROJECTS_ROOT}/`)
+export function isManagedWorkspaceRootPath(
+  managedRoot: string | undefined,
+  value: string,
+): boolean {
+  return Boolean(
+    managedRoot && normalizeRootPath(value).startsWith(`${managedRoot}/`),
+  )
 }
 
 export function buildHealthPreview(

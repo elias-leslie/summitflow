@@ -13,6 +13,7 @@ import type {
   ProjectPage,
   ProjectPagesResponse,
   ProjectReadme,
+  ProjectRegistrationDefaults,
   ProjectsWithStatsResponse,
   ProjectUpdate,
 } from './projects-types'
@@ -63,6 +64,12 @@ export async function fetchProjectReadme(id: string): Promise<ProjectReadme> {
     return { project_id: id, status: readme.status, content: null }
   }
   throw new Error('Invalid README response')
+}
+
+export async function fetchProjectRegistrationDefaults(): Promise<ProjectRegistrationDefaults> {
+  return fetchWithErrorHandling('/api/projects/registration-defaults', {
+    errorMessage: 'Failed to load project defaults',
+  })
 }
 
 export async function createProject(project: ProjectCreate): Promise<Project> {

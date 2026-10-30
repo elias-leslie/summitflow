@@ -1,10 +1,10 @@
 'use client'
 
-import { useMutation, useQueryClient } from '@tanstack/react-query'
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useRouter } from 'next/navigation'
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import type { ProjectCategory } from '@/lib/api'
-import { createProject } from '@/lib/api'
+import { createProject, fetchProjectRegistrationDefaults } from '@/lib/api'
 import {
   buildHealthPreview,
   buildManagedRootPath,
@@ -35,6 +35,21 @@ export function useNewProjectForm() {
   const [category, setCategory] = useState<ProjectCategory>('dev')
   const [errors, setErrors] = useState<FormErrors>({})
 
+  const defaults = useQuery({
+    queryKey: QUERY_KEYS.registrationDefaults,
+    queryFn: fetchProjectRegistrationDefaults,
+    staleTime: Number.POSITIVE_INFINITY,
+  })
+  const managedRoot = defaults.data?.managed_projects_root
+
+  // The name may be typed before the host's managed root arrives.
+  useEffect(() => {
+    if (!managedRoot) return
+    setRootPath(
+      (current) => current || buildManagedRootPath(managedRoot, projectId),
+    )
+  }, [managedRoot, projectId])
+
   const mutation = useMutation({
     mutationFn: createProject,
     onSuccess: (project) => {
@@ -63,8 +78,11 @@ export function useNewProjectForm() {
     nextProjectId: string,
     previousProjectId: string,
   ) => {
-    const previousRootPath = buildManagedRootPath(previousProjectId)
-    const nextRootPath = buildManagedRootPath(nextProjectId)
+    const previousRootPath = buildManagedRootPath(
+      managedRoot,
+      previousProjectId,
+    )
+    const nextRootPath = buildManagedRootPath(managedRoot, nextProjectId)
     setProjectId(nextProjectId)
     setRootPath((current) =>
       !current || current === previousRootPath ? nextRootPath : current,
@@ -111,7 +129,7 @@ export function useNewProjectForm() {
       healthEndpoint,
       rootPath,
     })
-    if (isManagedWorkspaceRootPath(rootPath) && !baseUrl.trim()) {
+    if (isManagedWorkspaceRootPath(managedRoot, rootPath) && !baseUrl.trim()) {
       delete newErrors.baseUrl
     }
     setErrors(newErrors)
@@ -144,7 +162,10 @@ export function useNewProjectForm() {
       healthEndpoint,
       rootPath,
     })
-    const summitflowHosted = isManagedWorkspaceRootPath(normalized.rootPath)
+    const summitflowHosted = isManagedWorkspaceRootPath(
+      managedRoot,
+      normalized.rootPath,
+    )
 
     mutation.mutate({
       id: normalized.projectId ?? '',
@@ -167,6 +188,7 @@ export function useNewProjectForm() {
     errors,
     isPending: mutation.isPending,
     preview: { normalizedRootPath, healthPreview },
+    managedRoot: { path: managedRoot, failed: defaults.isError },
     handlers: {
       handleNameChange,
       handleProjectIdChange,
