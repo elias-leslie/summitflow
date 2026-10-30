@@ -14,12 +14,14 @@ import type { Note } from './types';
 interface NoteEditorProps {
     note: Note;
     onDeleted: () => void;
+    onCreated?: (note: Note) => void;
 }
 
-export function NoteEditor({ note, onDeleted }: NoteEditorProps) {
+export function NoteEditor({ note, onDeleted, onCreated }: NoteEditorProps) {
     const { api, capabilities } = useNotesContext();
+    const isDraft = !note.id;
 
-    const editor = useNoteEditorState({ note, onDeleted });
+    const editor = useNoteEditorState({ note, onDeleted, onCreated });
 
     const format = useFormatProposal({
         noteId: note.id,
@@ -51,13 +53,13 @@ export function NoteEditor({ note, onDeleted }: NoteEditorProps) {
         format.setProposal(null);
         format.stopPolling();
         history.setShowHistory(false);
-        format.initProposal(note.id);
+        if (note.id) format.initProposal(note.id);
     // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [note.id]);
 
     // Auto-title on load
     useEffect(() => {
-        if (!capabilities.title_generation) return;
+        if (!capabilities.title_generation || !note.id) return;
         const isUntitled = !note.title.trim() || note.title === 'Untitled';
         if (isUntitled && note.content.trim().length >= 50 && !editor.autoFormatAttemptedRef.current) {
             editor.autoFormatAttemptedRef.current = true;
@@ -110,12 +112,12 @@ export function NoteEditor({ note, onDeleted }: NoteEditorProps) {
                 mode={editor.mode}
                 saveState={editor.saveState}
                 formatState={format.formatState}
-                canFormat={capabilities.formatting}
+                canFormat={capabilities.formatting && !isDraft}
                 contentLength={editor.content.trim().length}
                 confirmDelete={editor.confirmDelete}
                 onTitleChange={editor.handleTitleChange}
                 onStartFormat={() => format.startFormat(editor.content, editor.title)}
-                onToggleHistory={history.toggleHistory}
+                onToggleHistory={isDraft ? () => {} : history.toggleHistory}
                 onTogglePin={editor.togglePin}
                 onSetMode={editor.setMode}
                 onDelete={editor.handleDelete}
@@ -132,7 +134,7 @@ export function NoteEditor({ note, onDeleted }: NoteEditorProps) {
                 content={editor.content}
                 onContentChange={editor.handleContentChange}
             />
-            {note.type === 'prompt' && (
+            {note.type === 'prompt' && !isDraft && (
                 <PromptActions
                     content={editor.content}
                     noteId={note.id}

@@ -84,9 +84,11 @@ export function NoteEditorHeader({
                         title="Preview"><Eye className="w-3 h-3" /></button>
                 </div>
                 <button type="button" onClick={onDelete}
-                    className={clsx('p-1.5 rounded-md transition-all duration-150 ml-0.5', confirmDelete ? 'text-rose-400 bg-rose-500/10 hover:text-rose-300' : 'text-slate-500 hover:text-slate-300 hover:bg-slate-800')}
-                    title={confirmDelete ? 'Click again to confirm' : 'Delete'}>
+                    className={clsx('flex items-center gap-1 p-1.5 rounded-md transition-all duration-150 ml-0.5', confirmDelete ? 'text-rose-400 bg-rose-500/10 hover:text-rose-300' : 'text-slate-500 hover:text-slate-300 hover:bg-slate-800')}
+                    title={confirmDelete ? 'Click again to delete this note' : 'Delete note'}
+                    aria-label={confirmDelete ? 'Confirm: delete this note' : 'Delete note'}>
                     <Trash2 className="w-3.5 h-3.5" />
+                    {confirmDelete && <span className="text-[11px] font-medium">Delete?</span>}
                 </button>
             </div>
         </div>

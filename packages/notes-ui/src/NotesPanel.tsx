@@ -139,6 +139,7 @@ export function NotesPanel({ onPopOut }: NotesPanelProps) {
                         <NoteEditor
                             note={selectedNote}
                             onDeleted={() => setSelectedNote(null)}
+                            onCreated={setSelectedNote}
                         />
                     ) : (
                         <div className="flex items-center justify-center h-full bg-slate-900" style={{ backgroundColor: '#0f172a' }}>

@@ -1,7 +1,7 @@
 import { useState, useMemo } from 'react';
 import { Search, Plus, StickyNote, Zap } from 'lucide-react';
 import clsx from 'clsx';
-import { useNotesList, useCreateNote, useNoteTags } from './useNotes';
+import { useNotesList, useNoteTags } from './useNotes';
 import { useNotesContext } from './NotesProvider';
 import { NoteItem } from './NoteItem';
 import type { Note } from './types';
@@ -28,19 +28,20 @@ export function NotesList({ activeTab, scopeFilter, selectedId, onSelect }: Note
 
     const { data, isLoading } = useNotesList(listOptions);
     const { data: tagsData } = useNoteTags(scopeFilter);
-    const createNote = useCreateNote();
-
+    // Open an unsaved draft; the editor creates the note on the first edit.
     const handleCreate = () => {
-        createNote.mutate(
-            {
-                title: '',
-                type: activeTab,
-                project_scope: scopeFilter ?? projectScope ?? 'global',
-            },
-            {
-                onSuccess: (note) => onSelect(note),
-            },
-        );
+        onSelect({
+            id: '',
+            title: '',
+            content: '',
+            tags: [],
+            pinned: false,
+            metadata: {},
+            type: activeTab,
+            project_scope: scopeFilter ?? projectScope ?? 'global',
+            created_at: null,
+            updated_at: null,
+        });
     };
 
     const items = data?.items ?? [];
@@ -123,12 +124,10 @@ export function NotesList({ activeTab, scopeFilter, selectedId, onSelect }: Note
                 <button
                     type="button"
                     onClick={handleCreate}
-                    disabled={createNote.isPending}
                     className={clsx(
                         'w-full flex items-center justify-center gap-1.5 px-3 py-2 rounded-lg text-xs font-medium transition-all duration-200',
                         'bg-slate-800/60 border border-slate-700/50 text-slate-400',
                         'hover:border-[var(--color-phosphor-500,#00f5ff)]/30 hover:text-[var(--color-phosphor-400,#33f7ff)] hover:bg-[var(--color-phosphor-500,#00f5ff)]/8 hover:shadow-[0_0_12px_-3px_var(--color-phosphor-500,#00f5ff)]',
-                        createNote.isPending && 'opacity-50 cursor-wait',
                     )}
                 >
                     <Plus className="w-3.5 h-3.5" />
