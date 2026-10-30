@@ -52,8 +52,10 @@ def test_isolated_clone_trusts_source_metadata_in_both_git_processes(native_sour
         repo = repo.rename(quoted_repo)
     metadata = git(repo, 'rev-parse', '--absolute-git-dir')
     common = Path(git(repo, 'rev-parse', '--path-format=absolute', '--git-common-dir'))
-    real_git = shutil.which('git')
-    assert real_git is not None
+    # The git on PATH may be a shim that execs the next git on PATH, which would be this
+    # wrapper again; exec Git's own binary instead.
+    exec_path = subprocess.run(['git', '--exec-path'], capture_output=True, text=True, check=True).stdout.strip()
+    real_git = str(Path(exec_path) / 'git')
     tools = tmp_path / 'git-tools'
     tools.mkdir()
     wrapper = tools / 'git'
