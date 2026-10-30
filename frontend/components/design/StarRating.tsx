@@ -22,12 +22,20 @@ export function StarRating({
 }: StarRatingProps): React.ReactElement {
   const roundedAverage = Number.isFinite(average) ? average : 0
   const displayAverage = roundedAverage.toFixed(1)
+  const summary =
+    count > 0
+      ? `${displayAverage} · ${count} ${count === 1 ? 'rating' : 'ratings'}`
+      : 'No ratings yet'
 
   return (
     <div className="flex flex-wrap items-center gap-2">
       <div
         className="flex items-center gap-1"
-        aria-label={`Average rating ${displayAverage} out of 5`}
+        aria-label={
+          count > 0
+            ? `Average rating ${displayAverage} out of 5`
+            : 'No ratings yet'
+        }
       >
         {[1, 2, 3, 4, 5].map((rating) => {
           const selected = userRating >= rating
@@ -72,7 +80,7 @@ export function StarRating({
           compact ? 'text-xs text-slate-400' : 'text-sm text-slate-300'
         }
       >
-        {displayAverage} · {count} {count === 1 ? 'rating' : 'ratings'}
+        {summary}
       </span>
     </div>
   )
