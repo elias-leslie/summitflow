@@ -404,6 +404,7 @@ def test_a_finished_service_job_nudges_tether_job_waits(monkeypatch, tmp_path):
     monkeypatch.setattr(coord_deliver, "nudge", lambda kind, ref: nudged.append((kind, ref)))
     job_id = "e" * 32
     monkeypatch.setattr(service_ops.service_release, "jobs_root", lambda: tmp_path)
-    (tmp_path / f"{job_id}.json").write_text(json.dumps({"job_id": job_id, "state": "queued", "command": ["true"]}))
-    assert service_ops.run_detached_job(job_id) == 0
-    assert nudged == [("job", job_id)]
+    (tmp_path / f"{job_id}.json").write_text(json.dumps({"job_id": job_id, "state": "queued", "command": ["x"]}))
+    monkeypatch.setattr(service_ops.subprocess, "run", lambda *a, **k: __import__("subprocess").CompletedProcess([], 7))
+    assert service_ops.run_detached_job(job_id) == 7
+    assert nudged == [("job", job_id)]  # failed jobs nudge too
