@@ -62,6 +62,29 @@ describe('ServiceCard', () => {
     expect(screen.getByText('5.8%')).toBeInTheDocument()
   })
 
+  it('names the auto-start switch after the unit the card shows, not the service id', () => {
+    render(
+      <ServiceCard
+        container={{
+          name: 'aico-web.service',
+          service: 'aico-api',
+          display_name: 'aico-web',
+          manager: 'systemd',
+          category: 'app',
+          state: 'running',
+          health: 'healthy',
+          status: 'Serving HTTP 200',
+          ports: ['3002'],
+          auto_start: true,
+        }}
+      />,
+    )
+
+    expect(
+      screen.getByRole('switch', { name: 'Toggle auto-start for aico-web' }),
+    ).toBeInTheDocument()
+  })
+
   it('hides start/stop for system-manager units', () => {
     render(
       <ServiceCard

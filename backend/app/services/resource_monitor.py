@@ -285,7 +285,7 @@ def get_gpu_usage() -> GPUStatusDict:
         percent_used = round((used / total) * 100, 2) if total else 0.0
 
         # Single-GPU host: attribute all compute procs to this device. The
-        # remainder (used - compute) is the display/desktop (Xorg, Chrome...).
+        # remainder (used - compute) is the display/desktop (compositor, browsers...).
         device_processes = list(compute_processes)
         compute_total = sum(p["used_mb"] or 0 for p in device_processes)
         display_mb = used - compute_total
@@ -294,7 +294,7 @@ def get_gpu_usage() -> GPUStatusDict:
                 {
                     "pid": 0,
                     "name": "display & desktop",
-                    "command": "Xorg / compositor / browsers (graphics)",
+                    "command": "desktop compositor / browsers (graphics)",
                     "used_mb": display_mb,
                     "type": "display",
                 }

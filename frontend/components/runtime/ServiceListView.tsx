@@ -193,6 +193,7 @@ export function ServiceListView({
                       />
                       <AutostartToggle
                         service={s.service}
+                        label={s.display_name}
                         autoStart={s.auto_start}
                         variant="chip"
                       />

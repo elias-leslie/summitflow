@@ -5,6 +5,8 @@ import { useServiceAction } from './useServiceAction'
 
 interface AutostartToggleProps {
   service: string
+  /** Name shown on the card (the real unit name); defaults to the service id. */
+  label?: string
   autoStart: boolean | null
   /** 'switch' renders a labelled toggle (cards); 'chip' renders a compact pill (list rows). */
   variant?: 'switch' | 'chip'
@@ -18,6 +20,7 @@ interface AutostartToggleProps {
  */
 export function AutostartToggle({
   service,
+  label,
   autoStart,
   variant = 'switch',
 }: AutostartToggleProps) {
@@ -38,6 +41,7 @@ export function AutostartToggle({
         onClick={() => action.mutate()}
         disabled={action.isPending}
         title={title}
+        aria-label={`Auto-start for ${label ?? service}`}
         className={clsx(
           'text-2xs px-1.5 py-0.5 rounded border transition-colors disabled:opacity-40',
           enabled
@@ -55,7 +59,7 @@ export function AutostartToggle({
       type="button"
       role="switch"
       aria-checked={enabled}
-      aria-label={`Toggle auto-start for ${service}`}
+      aria-label={`Toggle auto-start for ${label ?? service}`}
       onClick={() => action.mutate()}
       disabled={action.isPending}
       title={title}
