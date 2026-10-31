@@ -271,6 +271,20 @@ new requests after tool results, immediately when a run settles, or within its
 15-second idle poll. A request arriving during a provider response waits for
 the next supported native boundary; `open/seen` is separate from an actual ack.
 
+How the recipient learns of it: when it runs in an Aico window and Tether has
+deliveries (API 16), the send queues one line, `[Message] 1 request from
+cc:1c7a9f · st sessions inbox`, on that window's gated delivery queue
+(`POST /v1/sessions/WIDGET/deliveries`, source `coord:AGENT_ID`, coalesced per
+recipient). Tether delivers it once the agent is idle, nobody is typing and the
+input line is empty, or through a native puller; the agent's own turn hook then
+shows the request. Acks, reminders every 5 minutes, a lapsed `eta:` and memory
+notices go the same way. The line never carries request or reply text. A
+window on an agent host gets it through the hub. Recipients SummitFlow cannot
+place in a window, shells, agy and an older Tether keep the earlier wakes
+(Claude's asyncRewake hook, the Codex idle watcher, the cross-host inject).
+`st sessions send --delivery native-thread` reports Tether's own record of
+that line: `queued`, or `woken` once it was delivered.
+
 Installed extension updates apply to newly launched or reloaded Pi processes.
 A running process keeps its loaded adapter even when the installed symlink
 changes. At the agent's next clean idle seam, native `/reload` loads the current

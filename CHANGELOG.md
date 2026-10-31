@@ -21,6 +21,12 @@ bumped.
 - Extensions: owner projects add `st` commands through versioned extensions
   built on the new `summitflow-st-sdk` package (0.1.1).
 - Agent Hub integration goes through the `agent-hub-client` package.
+- Coordination inbox: an agent in an Aico window learns of a request, ack,
+  reminder or memory notice through one content-free `[Message] …` line on
+  Tether's gated delivery queue (Tether API 16), also across agent hosts,
+  instead of SummitFlow typing into its pane; native-thread sends report
+  Tether's delivery state. Acks and finished service jobs nudge Tether waits
+  (API 17).
 - Operator UI: a file browser for project and workspace files, and a design
   mockup workflow.
 

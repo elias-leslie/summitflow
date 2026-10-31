@@ -10,10 +10,18 @@ requests it sent) on every harness surface that can carry text:
                                              additionalContext (Claude + Codex)
   stop   Stop                                decision=block so the turn continues
                                              and answers; on Codex, arms `watch`
-  watch  Claude: asyncRewake background hook (exit 2 wakes an idle session;
+  watch  In an Aico window with Tether API 16: queues one content-free
+                 `[Message] …` line on the window's gated delivery queue
+                 (cli.lib.coord_deliver) and keeps watching; Tether delivers it
+                 when the agent is idle and nobody types. Otherwise:
+         Claude: asyncRewake background hook (exit 2 wakes an idle session;
                  claude-config labels it a plain "Coordination inbox" notice)
          Codex:  detached idle watcher that types one line into its own tmux
                  pane (Codex has no rewake hook; only armed between turns)
+
+Senders queue the same line when they record a request or ack; the woke state
+(cli.lib.coord_wake) keeps the watcher and Pi's idle check from waking the
+agent again for an item a line was queued for.
 
 Requests surface once per agent, then again every REMIND seconds while still
 unanswered (an eta ack whose minutes ran out counts as unanswered again); an
@@ -22,10 +30,10 @@ surfaces carry memory notices (cli.lib.coord_memory): a process in this pane
 killed for memory, a stopped pane, a memory warning. Each shows once per agent
 and per subagent, needs no answer and never blocks Stop; SessionStart,
 SubagentStart and subagent tool hooks carry only these. Fails open
-and is silent when nothing is waiting. Pane typing goes only through
-cli.lib.coord_wake.type_line (idle pane, empty composer), the single injection
-path; `st sessions send --delivery native-thread` to a live Codex thread writes
-the ledger and relies on this watcher to wake it.
+and is silent when nothing is waiting. Without Tether's queue, pane typing
+goes only through cli.lib.coord_wake.type_line (idle pane, empty composer), the
+single injection path; `st sessions send --delivery native-thread` to a live
+Codex thread writes the ledger and wakes it the same way as a handshake send.
 Usage (via scripts/lib/coord-inbox): python coord_inbox.py <summitflow-backend> <mode> [provider]
 """
 
@@ -40,12 +48,13 @@ import sys
 import time
 
 sys.path.insert(0, sys.argv[1])
-from cli.lib import coord, coord_lineage, coord_memory, coord_wake, leases  # type: ignore[import-not-found]  # noqa: E402  # SummitFlow backend on sys.path
+from cli.lib import coord, coord_deliver, coord_lineage, coord_memory, coord_wake, leases  # type: ignore[import-not-found]  # noqa: E402  # SummitFlow backend on sys.path
 
 REMIND = 300
 POLL = 2.0
 WATCH_SECONDS = int(os.environ.get("ST_COORD_WATCH_SECONDS") or 6 * 3600 - 120)
 RETRY = 10.0  # re-check a busy pane this soon instead of waiting for the next ledger change
+MEM_RECHECK = 30.0  # a memory notice a Tether line already announced: look again this much later
 STATE = coord_wake.STATE
 LEDGER = leases.LEASES_DIR / "_coord.json"
 _key = coord_wake.state_key
@@ -103,14 +112,42 @@ def due(agent_id: str, items: list[tuple[str, str, bool]]) -> list[tuple[str, st
             if (item[0] not in seen if ":ack:" in item[0] else now - seen.get(item[0], 0) >= REMIND)]
 
 
+def wakeable(agent_id: str, items: list[tuple[str, str, bool]]) -> list[tuple[str, str, bool]]:
+    """Due items no Tether line was queued for lately: a request again after REMIND, an ack once."""
+    woke = coord_wake.load_woke(agent_id)
+    now = time.time()
+    return [item for item in items
+            if (item[0] not in woke if ":ack:" in item[0] else now - woke.get(item[0], 0) >= REMIND)]
+
+
+def tether_wake(agent_id: str, items: list[tuple[str, str, bool]],
+                note: coord_memory.Notice | None) -> bool:
+    """Queue this agent's [Message] line on its Aico window through Tether (coord_deliver); False keeps today's path."""
+    try:
+        queued = coord_deliver.wake(agent_id, [key for key, _, _ in items], memory=note.text if note else None)
+    except Exception:  # noqa: BLE001 - fail open to the direct wake
+        return False
+    if queued is None:
+        return False
+    _trace(agent_id, f"tether-queued:{queued['delivery'].get('id')}",
+           [key for key, _, _ in items] + ([coord_deliver.memory_key(note.text)] if note else []))
+    return True
+
+
+def _trace(agent_id: str, how: str, keys: list[str]) -> None:
+    STATE.mkdir(parents=True, exist_ok=True)
+    now = time.time()
+    with open(STATE / "surfaced.log", "a") as log:  # content-free delivery trace
+        stamp = time.strftime("%Y-%m-%dT%H:%M:%S", time.gmtime(now)) + f".{int(now % 1 * 1000):03d}Z"
+        log.write(f"{stamp} {agent_id} {how} {','.join(keys)}\n")
+
+
 def mark(agent_id: str, items: list[tuple[str, str, bool]], how: str = "") -> None:
     seen = _load_seen(agent_id)
     now = time.time()
     seen.update({key: now for key, _, _ in items})
     _save_seen(agent_id, seen)
-    with open(STATE / "surfaced.log", "a") as log:  # content-free delivery trace
-        stamp = time.strftime("%Y-%m-%dT%H:%M:%S", time.gmtime(now)) + f".{int(now % 1 * 1000):03d}Z"
-        log.write(f"{stamp} {agent_id} {how} {','.join(k for k, _, _ in items)}\n")
+    _trace(agent_id, how, [k for k, _, _ in items])
 
 
 def render(items: list[tuple[str, str, bool]]) -> str:
@@ -176,7 +213,18 @@ def watch(provider: str) -> int:
             agent_id, items = pending()
             fresh = due(agent_id, items)
         note = memory(agent_id) if now >= mem_retry else None
+        if note and coord_deliver.memory_key(note.text) in coord_wake.load_woke(agent_id):
+            note.done(delivered=False)  # a Tether line already says so; the turn hook shows it
+            note, mem_retry = None, now + MEM_RECHECK
+        fresh = wakeable(agent_id, fresh)
         if fresh or note:
+            if tether_wake(agent_id, fresh, note):
+                # Tether delivers when the agent is idle and nobody types; keep watching for reminders.
+                if note:
+                    note.done(delivered=False)
+                    mem_retry = now + MEM_RECHECK
+                time.sleep(POLL)
+                continue
             if provider == "codex":
                 # Codex: wake the pane; its UserPromptSubmit hook then shows the memory notice in full
                 if note:
@@ -236,6 +284,9 @@ def main() -> int:
     if mode == "turn" and provider == "codex" and event == "UserPromptSubmit":
         disarm_codex(agent_id)
     fresh = due(agent_id, items)
+    if provider == "pi" and event == "PiIdle":
+        # Pi's idle check is a wake of its own: skip what a Tether line already wakes it for.
+        fresh = wakeable(agent_id, fresh)
     if mode == "stop":
         if any(":req" in key for key, _, _ in fresh):  # only a waiting requester justifies continuing
             mark(agent_id, fresh, f"{provider}-stop-block")

@@ -5,13 +5,16 @@ between the workstation and an agent host lives in the workstation's ledger, so
 its ack and confirm work as for a local one:
 
 - To a window on an agent host (Tether lists it with ``host``), the request is
-  recorded for ``<window>@<host>`` and posted into the window through the local
-  Tether hub (``POST /v1/sessions/:id/inject``), with its id and how to ack.
+  recorded for ``<window>@<host>`` and the window gets a ``[Message]`` line on
+  its gated delivery queue through the local Tether hub
+  (``POST /v1/sessions/:id/deliveries``, Tether API 16; its ``st sessions inbox``
+  reads the request from here). A host Tether without deliveries, or a shell,
+  gets the request posted into the window (``/inject``) with how to ack, as before.
 - On an agent host (``ST_AGENT_HOST``, set by the host's st guard), a target that
   is none of its own agents goes to the workstation's SummitFlow API
   (``POST /fleet/v1/coordination/requests``), which records it in the
-  workstation ledger for the agent that id or window names. Its ack is posted
-  back into the sender's window.
+  workstation ledger for the agent that id or window names, and wakes it the
+  same way as a local send. Its ack reaches the sender's window the same way.
 - On an agent host, ``st sessions ack``/``confirm`` for an id its own ledger
   lacks, and ``st sessions inbox``, go to the same API (the ``*_from_host``
   functions below answer them on the workstation).
@@ -26,7 +29,7 @@ from http.client import HTTPException
 from typing import Any
 from urllib.parse import quote
 
-from . import coord, coord_route, coordinators, leases
+from . import coord, coord_deliver, coord_route, coordinators, leases
 
 # A host name in Tether's hosts.json (tether/src/hub/hosts.ts).
 HOST = re.compile(r"[a-z0-9][a-z0-9-]{0,31}")
@@ -69,8 +72,22 @@ def _sender() -> tuple[str, str]:
     return agent_id, widget if re.fullmatch(r"[0-9a-f]{8}", widget) else ""
 
 
+def deliver(window: dict[str, Any], address: str) -> dict[str, Any] | None:
+    """Queue the ``[Message]`` line for ``address`` on a host window's gated queue (through the hub).
+
+    None when it was not taken: the hub or the host's Tether predates
+    deliveries (API 16), or the window is a shell. The caller then injects.
+    """
+    if not coord_deliver.enabled():
+        return None
+    line = coord_deliver.summary(address)
+    if line is None:
+        return None
+    return coord_deliver.post(str(window["id"]), coord_deliver.SOURCE_PREFIX + address, line)
+
+
 def inject(window: dict[str, Any], framed: str) -> None:
-    """Post text into a window on an agent host; raises ValueError when it was not taken."""
+    """Post text into a window on an agent host (Tether before deliveries); raises ValueError when it was not taken."""
     from app.services import tether
 
     try:
@@ -103,9 +120,12 @@ def to_host_window(target: str, text: str, *, project: str | None = None,
         raise ValueError(f"{target!r} names {len(found)} windows on agent hosts; send to one widget id: {names}")
     window = found[0]
     agent_id, widget = _sender()
-    row = coord.send(f"{window['id']}@{window['host']}", text, project=project, source_key=source_key)
+    address = f"{window['id']}@{window['host']}"
+    row = coord.send(address, text, project=project, source_key=source_key)
     if row.get("duplicate"):
         return window, row
+    if delivery := deliver(window, address):
+        return window, {**row, "delivery": delivery}
     sender = f"{agent_id}{f' (window {widget})' if widget else ''}"
     try:
         inject(window, f"[st sessions send {row['id']} from {sender} on {socket.gethostname()}] {row['text']} "
@@ -145,8 +165,11 @@ def record_from_host(target: str, text: str, *, sender: str, host: str,
     answer = reply_to or sender
     note = f" (from {sender} on {host}; longer answers: st sessions send {answer} '<answer>')"
     body = coord._clean_text(text)
-    return coord.send(to, body + note, limit=coord.MAX_TEXT + len(note), sender=f"{sender}@{host}",
-                      remote={"host": host, "reply_window": reply_to} if reply_to else {"host": host})
+    row = coord.send(to, body + note, limit=coord.MAX_TEXT + len(note), sender=f"{sender}@{host}",
+                     remote={"host": host, "reply_window": reply_to} if reply_to else {"host": host})
+    if not row.get("duplicate"):
+        coord_deliver.safe_wake(to, [f"{row['id']}:req"])
+    return row
 
 
 def post_ack(row: dict[str, Any]) -> dict[str, Any] | None:
@@ -159,6 +182,8 @@ def post_ack(row: dict[str, Any]) -> dict[str, Any] | None:
     found = [item for item in windows(str(window_id)) if item.get("host") == host and item.get("id") == window_id]
     if not found:
         raise ValueError(f"window {window_id} on {host} is not open")
+    if deliver(found[0], str(row["from"])):
+        return found[0]
     intent = row["intent"] + (f" {row['eta_min']}m" if row.get("eta_min") else "")
     note = f" ({row['note']})" if row.get("note") else ""
     inject(found[0], f"[st sessions ack from {row.get('acked_by')} on {socket.gethostname()}] "
@@ -181,7 +206,10 @@ def ack_from_host(message_id: str, intent: str, note: str | None, *, sender: str
                   window: str) -> dict[str, Any]:
     """A host agent acks a request this ledger holds for its window."""
     ids, address = _host_ids(host, [sender], window)
-    return coord.ack(message_id, intent, note, remote=(next(iter(ids)), str(address)))
+    row = coord.ack(message_id, intent, note, remote=(next(iter(ids)), str(address)))
+    coord_deliver.nudge("reply", row["id"])
+    coord_deliver.safe_wake(str(row["from"]), [f"{row['id']}:ack:{row.get('acked_at')}"])
+    return row
 
 
 def confirm_from_host(message_id: str, *, senders: list[str], host: str, withdraw: bool = False) -> dict[str, Any]:

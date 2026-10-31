@@ -204,6 +204,7 @@ def send(
 
     Handshake (<=500 chars, else a brief file): recipient acks yes, no 'reason' or eta:MIN; then
     st sessions confirm (--withdraw if unacked). Only channel; never also type it in the window.
+    An agent in an Aico window gets a [Message] line through Tether's gated queue.
     Labels (Aico widget/title/tmux, session name, short id) must match one live agent.
 
     Native-thread: bound Codex UUID, stable --source-key, <=2000 bytes; woken if live, else queued.

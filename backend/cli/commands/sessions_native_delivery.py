@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import hashlib
+import time
 from typing import Any
 from uuid import NAMESPACE_URL, uuid5
 
@@ -10,7 +11,7 @@ from app.services.fleet_sessions import sanitized_instruction
 from app.storage.fleet_events import append_fleet_event, read_fleet_page
 from app.storage.projects import get_project_root_path
 
-from ..lib import coord, coord_route, coord_wake
+from ..lib import coord, coord_deliver, coord_route, coord_wake
 from ..lib.native_session_delivery import (
     NativeQueueError,
     exact_uuid,
@@ -63,16 +64,29 @@ def send_native_instruction(thread: str, instruction: str, *, project: str, sour
     return {**base, **result, "replayed": False}
 
 
-WAKE_CONFIRM_SECONDS = 8.0  # the armed watcher polls the ledger every 2s
+WAKE_CONFIRM_SECONDS = 8.0  # how long a send looks for the wake to go out (Tether's record, or the watcher's seen state)
+_DELIVERY_POLL = 0.5
+
+
+def _tether_delivery(delivery_id: str, timeout: float) -> dict[str, Any] | None:
+    """Tether's record of a queued [Message] line once it is no longer queued, else the last one read."""
+    deadline = time.monotonic() + timeout
+    while True:
+        record = coord_deliver.state(delivery_id)
+        if record is None or record.get("state") != "queued" or time.monotonic() >= deadline:
+            return record
+        time.sleep(_DELIVERY_POLL)
 
 
 def _deliver_live(thread: str, prompt: str, *, project: str, source_key: str) -> dict[str, Any] | None:
     """A thread open in a live Codex TUI never sees the offline queue: record it on the ledger instead.
 
-    The target's own idle watcher (armed between turns in its tmux pane) is the
-    only thing that types; it wakes the pane and its hook reads the ledger. When
-    no watcher is armed or it does not confirm, the request stays queued on the
-    ledger for the target's next turn hook. None means: not live, use the queue.
+    In an Aico window with Tether deliveries (API 16), Tether's gated queue
+    takes a [Message] line and its own record says queued or delivered. Without
+    it, the target's own idle watcher (armed between turns in its tmux pane) is
+    the only thing that types. Either way its hook reads the ledger; when
+    nothing confirms, the request stays queued for its next turn hook. None
+    means: not live, use the queue.
     """
     agent_id = coord_route.live_agent_for_session(thread)
     if agent_id is None or len(prompt) > coord.NATIVE_MAX_TEXT:
@@ -81,6 +95,17 @@ def _deliver_live(thread: str, prompt: str, *, project: str, source_key: str) ->
     base = {"project_id": project, "thread_id": thread, "source_key": source_key, "capability": "native-thread",
             "transport": "coordination-ledger", "agent_id": agent_id, "request_id": row["id"],
             "replayed": bool(row.get("duplicate"))}
+    if not row.get("duplicate") and (queued := coord_deliver.safe_wake(agent_id, [f"{row['id']}:req"])):
+        delivery_id = str(queued["delivery"]["id"])
+        record = _tether_delivery(delivery_id, WAKE_CONFIRM_SECONDS) or {}
+        wake = {"tether_delivery_id": delivery_id, "widget": queued["widget"],
+                "wake": {key: record.get(key) for key in ("state", "via", "deliveredAt")}}
+        if record.get("state") == "delivered":
+            return {**base, **wake, "delivery": "woken", "observed": False}
+        return {**base, **wake, "delivery": "queued", "observed": False,
+                "reason": "Tether delivers the [Message] line once the agent is idle and nobody is typing"
+                if record.get("state") == "queued" else "Tether did not deliver the [Message] line; "
+                "its next turn hook surfaces the request"}
     if coord_wake.codex_watch_pid(agent_id) is None:
         return {**base, "delivery": "queued", "observed": False,
                 "reason": "live thread not confirmed idle (no armed idle watcher); its next turn hook surfaces it"}
@@ -137,9 +162,16 @@ def verify_native_instruction(thread: str, *, project: str, source_key: str,
             raise ValueError("Live coordination delivery has no native queue identity")
         status = coord.delivery_status(retained["coordination_request_id"],
                                        to=retained["agent_id"], project=project, source_key=source_key)
+        wake: dict[str, Any] = {}
+        if delivery_id := retained.get("tether_delivery_id"):
+            record = coord_deliver.state(str(delivery_id)) or {}
+            wake = {"tether_delivery_id": delivery_id,
+                    "wake": {key: record.get(key) for key in ("state", "via", "deliveredAt")}}
+            if status.get("delivery") == "queued" and record.get("state") == "delivered":
+                status = {**status, "delivery": "woken"}
         return {**base, "transport": "coordination-ledger",
                 "coordination_request_id": retained["coordination_request_id"],
-                "execution": "not_observed", "thread_state": "live_at_send", **status}
+                "execution": "not_observed", "thread_state": "live_at_send", **status, **wake}
     if retained.get("delivery") == "failed":
         return {**base, "delivery": "failed", "execution": "not_observed", "observed": False,
                 "thread_state": "unknown", "reason": "retained_send_failed"}

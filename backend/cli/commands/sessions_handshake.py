@@ -62,8 +62,15 @@ def send_request(to: str, text: str, source_key: str | None = None) -> None:
         typer.echo(f"existing {row['id']} -> {to} ({why}; state {row['state']}); not sent again. "
                    "Track it with st sessions inbox")
         return
-    typer.echo(f"sent {row['id']} -> {to}; the recipient's hook shows it on its next turn or wakes it when idle. "
-               "Track seen/ack with st sessions inbox")
+    from ..lib import coord_deliver
+
+    if queued := coord_deliver.safe_wake(to, [f"{row['id']}:req"]):
+        typer.echo(f"sent {row['id']} -> {to}; Tether delivers a [Message] line to its window {queued['widget']} "
+                   f"when it is idle (delivery {queued['delivery']['id']}), and its hook shows the request. "
+                   "Track seen/ack with st sessions inbox")
+    else:
+        typer.echo(f"sent {row['id']} -> {to}; the recipient's hook shows it on its next turn or wakes it when idle. "
+                   "Track seen/ack with st sessions inbox")
     if not coord.known_target(to):
         live = ", ".join(coord.live_agents()) or "none"
         typer.echo(f"WARNING {to} is not a registered agent id (cc:/codex:/pi:/agy: id or 13+ char session prefix); "
@@ -103,13 +110,20 @@ def ack(
             return
         typer.echo(f"acked {message_id} {intent} on the workstation")
         return
+    from ..lib import coord_deliver
+
     typer.echo(f"acked {row['id']} {intent}")
+    coord_deliver.nudge("reply", row["id"])
     try:
         if window := coord_remote.post_ack(row):
             typer.echo(f"posted the ack into window {window['id']} on {window['host']}")
+            return
     except ValueError as exc:
         typer.echo(f"WARNING the sender's window did not get the ack: {exc}; it sees it in st sessions inbox",
                    err=True)
+        return
+    if coord_deliver.safe_wake(str(row["from"]), [f"{row['id']}:ack:{row.get('acked_at')}"]):
+        typer.echo(f"Tether delivers a [Message] line about the ack to {row['from']}")
 
 
 def confirm(

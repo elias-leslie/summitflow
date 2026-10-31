@@ -594,3 +594,11 @@ def cleanup_task(db_schema_initialized: None) -> Generator[Callable[[str], None]
                 )
                 cur.execute("DELETE FROM tasks WHERE id = %s", (task_id,))
             conn.commit()
+
+
+@pytest.fixture(autouse=True)
+def no_live_tether_deliveries(monkeypatch):
+    """Inbox wakes never reach the real Tether: a test pytest runs inside an Aico pane would queue lines into it."""
+    from cli.lib import coord_deliver
+
+    monkeypatch.setattr(coord_deliver, "api_version", lambda: None)

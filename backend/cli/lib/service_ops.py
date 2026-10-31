@@ -1785,6 +1785,9 @@ def run_detached_job(job_id: str) -> int:
         code = 1
     record.update(state="succeeded" if code == 0 else "failed", exit_code=code, completed_at=time.time(), log_path=str(log_path))
     _write_job(record)
+    from .coord_deliver import nudge
+
+    nudge("job", job_id)  # Tether job waits re-read now (hint only; they also re-read every minute)
     return code
 
 

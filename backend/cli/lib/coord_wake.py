@@ -1,12 +1,17 @@
 """Idle wake of a live harness for the coordination inbox; the single pane-injection path.
 
-Claude Code wakes through its own asyncRewake hook. Codex has no rewake hook,
-so its Stop hook arms one detached idle watcher (scripts/lib/coord_inbox.py
-``watch codex``) bound to its own tmux pane, and UserPromptSubmit disarms it.
-While armed, that watcher is the only code that types into a pane: one line,
-into its own pane, and only when the composer is empty. Senders never type;
-they write the ledger and the armed watcher wakes the pane so the agent's own
-hook reads it. Delivery state here is content-free.
+When the agent runs in an Aico window and Tether has deliveries (API 16), the
+wake is a content-free ``[Message]`` line on Tether's gated queue
+(cli.lib.coord_deliver): senders queue it when they record a request or ack,
+and the agent's own watcher queues reminders and memory notices. Nothing here
+types then; ``woke`` records which items a line was queued for.
+
+Otherwise Claude Code wakes through its own asyncRewake hook. Codex has no
+rewake hook, so its Stop hook arms one detached idle watcher
+(scripts/lib/coord_inbox.py ``watch codex``) bound to its own tmux pane, and
+UserPromptSubmit disarms it. While armed, that watcher is the only code that
+types into a pane: one line, into its own pane, and only when the composer is
+empty. Delivery state here is content-free.
 """
 
 from __future__ import annotations
@@ -53,6 +58,31 @@ def load_seen(agent_id: str) -> dict[str, float]:
         return data if isinstance(data, dict) else {}
     except (OSError, ValueError):
         return {}
+
+
+def woke_path(agent_id: str) -> Path:
+    return STATE / f"{state_key(agent_id)}.woke.json"
+
+
+def load_woke(agent_id: str) -> dict[str, float]:
+    """Inbox item keys a Tether ``[Message]`` line was queued for (cli.lib.coord_deliver), with the time."""
+    try:
+        data = json.loads(woke_path(agent_id).read_text())
+        return data if isinstance(data, dict) else {}
+    except (OSError, ValueError):
+        return {}
+
+
+def mark_woke(agent_id: str, keys: list[str] | tuple[str, ...], now: float | None = None) -> None:
+    """Record that a Tether line now wakes the agent for ``keys`` (content-free; a day is kept)."""
+    now = time.time() if now is None else now
+    woke = {k: v for k, v in load_woke(agent_id).items() if isinstance(v, (int, float)) and v > now - 86400}
+    woke.update({key: now for key in keys})
+    STATE.mkdir(parents=True, exist_ok=True)
+    path = woke_path(agent_id)
+    tmp = path.with_name(f"{path.name}.{os.getpid()}.tmp")
+    tmp.write_text(json.dumps(woke))
+    tmp.replace(path)
 
 
 def codex_pidfile(agent_id: str) -> Path:
