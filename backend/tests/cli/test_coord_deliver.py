@@ -82,10 +82,16 @@ class FakeTether:
             return (200, record) if record else (404, {"error": "not_found"})
         if path == "/v1/waits/check":
             return 200, {"kind": body["kind"], "ref": body["ref"], "armed": 0}
+        if method == "DELETE" and "/deliveries?source=" in path:
+            return 200, {"sessionId": path.split("/")[3], "source": path.split("source=", 1)[1], "withdrawn": 1,
+                         "sending": False}
         return 404, {"error": "not_found"}
 
     def posts(self) -> list[tuple[str, dict[str, Any]]]:
         return [(path, body) for method, path, body in self.calls if method == "POST" and path.endswith("/deliveries")]
+
+    def withdrawals(self) -> list[str]:
+        return [path for method, path, _ in self.calls if method == "DELETE"]
 
     def nudges(self) -> list[dict[str, Any]]:
         return [body for _, path, body in self.calls if path == "/v1/waits/check"]
@@ -283,6 +289,34 @@ def test_a_failing_tether_never_fails_the_send(monkeypatch, tether):
     monkeypatch.setattr("cli.commands.sessions_fleet._send_across_machines", lambda *a, **k: False)
     result = runner.invoke(app, ["sessions", "send", "codex:target", "hello"])
     assert result.exit_code == 0 and "the recipient's hook shows it" in result.output
+
+
+# ---------------------------------------------------------------- stale lines
+
+
+def test_a_line_nothing_waits_for_any_more_is_withdrawn_once(monkeypatch, tether):
+    tether.version = 18
+    _identity("codex:target", "019a-target")
+    _as(monkeypatch, "claude", "sender-09")
+    row = coord.send("codex:target", "rebuild ok?")
+    assert coord_deliver.wake("codex:target", [f"{row['id']}:req"])
+    assert coord_deliver.withdraw_stale("codex:target") is None  # the request still waits
+    assert tether.withdrawals() == []
+    monkeypatch.setattr(leases, "identify_agent", lambda **_: ("codex:target", "", "019a-target", "codex"))
+    coord.ack(row["id"], "yes", "go")
+    assert coord_deliver.withdraw_stale("codex:target") is True
+    assert tether.withdrawals() == [f"/v1/sessions/{WIDGET}/deliveries?source=coord%3Acodex%3Atarget"]
+    assert coord_deliver.withdraw_stale("codex:target") is None  # nothing queued since
+    assert len(tether.withdrawals()) == 1
+
+
+def test_no_withdraw_before_tether_api_18_or_without_a_queued_line(monkeypatch, tether):
+    _identity("codex:target", "019a-target")
+    assert coord_deliver.withdraw_stale("codex:target") is None  # never queued: no request at all
+    coord_wake.mark_woke("codex:target", ["x:req"])
+    tether.version = 17
+    assert coord_deliver.withdraw_stale("codex:target") is None
+    assert tether.withdrawals() == []
 
 
 # ---------------------------------------------------------------- the recipient's own watcher

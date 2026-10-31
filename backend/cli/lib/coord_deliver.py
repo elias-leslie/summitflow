@@ -17,6 +17,10 @@ own watcher does not wake it a second time for the same item.
 
 Unresolved recipients, shells, agy and an older Tether keep today's path:
 every function here answers None and the caller carries on as before.
+
+A line that goes stale before it is pasted (the request was answered, the ack
+shown by the turn hook) is taken back: the turn hook calls ``withdraw_stale``
+once the recipient's inbox has nothing waiting (Tether API 18).
 """
 
 from __future__ import annotations
@@ -25,6 +29,7 @@ import hashlib
 import re
 import time
 from http.client import HTTPException
+from pathlib import Path
 from typing import Any, NamedTuple
 from urllib.parse import quote
 
@@ -32,6 +37,7 @@ from . import coord, coord_lineage, coord_wake, coordinators, leases
 
 DELIVERY_API = 16  # POST /v1/sessions/:id/deliveries, GET /v1/deliveries/:id
 NUDGE_API = 17  # POST /v1/waits/check
+WITHDRAW_API = 18  # DELETE /v1/sessions/:id/deliveries?source=
 SOURCE_PREFIX = "coord:"
 _TIMEOUT = 2.0
 _NUDGE_TIMEOUT = 0.5
@@ -287,6 +293,48 @@ def safe_wake(to: str, keys: list[str] | tuple[str, ...] = ()) -> dict[str, Any]
         return wake(to, keys)
     except Exception:  # the ledger row is recorded; the recipient's hooks still see it
         return None
+
+
+def _withdrawn_path(agent_id: str) -> Path:
+    return coord_wake.STATE / f"{coord_wake.state_key(agent_id)}.withdrawn"
+
+
+def withdraw_stale(agent_id: str) -> bool | None:
+    """Take back the agent's undelivered ``[Message]`` line once its inbox has nothing waiting (Tether API 18).
+
+    The turn hook calls it after showing the inbox: a request answered or withdrawn, or an ack just shown,
+    leaves the queued line stale, and Tether drops it before it is pasted (one already going out is not
+    stopped). Only after a line was queued since the last withdraw, so most turns make no request. True
+    when a line went, False when none was queued, None when not asked (nothing queued lately, something
+    still waiting, no window, an older Tether, no answer).
+    """
+    woke = [v for v in coord_wake.load_woke(agent_id).values() if isinstance(v, (int, float))]
+    path = _withdrawn_path(agent_id)
+    try:
+        last = float(path.read_text())
+    except (OSError, ValueError):
+        last = 0.0
+    if not woke or max(woke) <= last:
+        return None
+    version = api_version()
+    if version is None or version < WITHDRAW_API:
+        return None
+    who = target(agent_id)
+    if who is None or summary(who) is not None:
+        return None
+    from app.services import tether
+
+    source = quote(SOURCE_PREFIX + who.agent_id, safe="")
+    try:
+        status, body = tether.request("DELETE", f"/v1/sessions/{quote(who.widget, safe='')}/deliveries?source={source}",
+                                      timeout=_NUDGE_TIMEOUT)
+    except (OSError, ValueError, HTTPException):
+        return None
+    if status != 200 or not isinstance(body, dict):
+        return None
+    coord_wake.STATE.mkdir(parents=True, exist_ok=True)
+    path.write_text(f"{time.time():.3f}")
+    return bool(body.get("withdrawn"))
 
 
 def nudge(kind: str, ref: str) -> None:

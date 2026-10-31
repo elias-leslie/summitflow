@@ -324,6 +324,12 @@ def main() -> int:
     if fresh:
         mark(agent_id, fresh, f"{provider}-{event or mode}")
     emit(event, fresh, memory(agent_id))
+    if mode == "turn":
+        try:  # a queued [Message] line nothing waits for any more is taken back before it is pasted
+            if coord_deliver.withdraw_stale(agent_id):
+                _trace(agent_id, "tether-withdrawn", [])
+        except Exception:  # noqa: BLE001 - best effort; a stale line only costs one look at an empty inbox
+            pass
     return 0
 
 
