@@ -12,6 +12,7 @@ import subprocess
 import sys
 import tempfile
 import time
+import tomllib
 from collections.abc import Callable, Iterable, Mapping, Sequence
 from dataclasses import dataclass
 from datetime import UTC, datetime
@@ -218,8 +219,38 @@ def _snapshot_source_dirs(snapshot_root: Path) -> tuple[Path, Path]:
     return runtime_source_dirs(runtime, snapshot_root)
 
 
+def _native_stage_uv_projects(snapshot_root: Path, *, exclude: Path) -> list[Path]:
+    """Other locked uv projects whose ``.venv`` a declared native stage runs from.
+
+    A native stage (``.st-check.toml``) may run a tool from a second uv project's
+    environment (neri's ``proxy/.venv/bin/ruff``). Native checks never install,
+    so an isolated snapshot must prepare those environments like the backend's.
+    An unreadable declaration adds nothing; the native plan reports it.
+    """
+    try:
+        native = tomllib.loads((snapshot_root / ".st-check.toml").read_text()).get("native", {})
+    except (OSError, ValueError):
+        return []
+    stages = native.get("stages") if isinstance(native, dict) else None
+    paths = native.get("paths") if isinstance(native, dict) else None
+    declared = [*(s.get("argv", [None])[0] for s in stages or [] if isinstance(s, dict) and s.get("argv")),
+                *(paths if isinstance(paths, list) else [])]
+    root = snapshot_root.resolve()
+    found: dict[Path, Path] = {}
+    for raw in declared:
+        if not isinstance(raw, str) or Path(raw).is_absolute() or ".venv" not in Path(raw).parts:
+            continue
+        parts = Path(raw).parts
+        project_dir = snapshot_root.joinpath(*parts[:parts.index(".venv")])
+        resolved = project_dir.resolve()
+        if (resolved != exclude.resolve() and resolved.is_relative_to(root) and resolved not in found
+                and backend_optional_dependencies(project_dir) is not None):
+            found[resolved] = project_dir
+    return list(found.values())
+
+
 def plan_dependency_installs(snapshot_root: Path, extras: Sequence[str]) -> list[tuple[list[str], Path]]:
-    """Locked install commands for the snapshot, backend first, then frontend.
+    """Locked install commands for the snapshot: backend, other native-stage uv projects, then frontend.
 
     Requested extras must be declared in the snapshot backend's
     ``[project.optional-dependencies]``; otherwise CleanroomUsageError.
@@ -240,6 +271,8 @@ def plan_dependency_installs(snapshot_root: Path, extras: Sequence[str]) -> list
                 f"unknown backend extra(s): {', '.join(unknown)} (declared: {known})",
             )
         steps.append((locked_backend_sync_command(declared, extras), backend_dir))
+    for project_dir in _native_stage_uv_projects(snapshot_root, exclude=backend_dir):
+        steps.append((locked_backend_sync_command(backend_optional_dependencies(project_dir) or {}, ()), project_dir))
     frontend = frontend_install_plan(frontend_dir, snapshot_root)
     if frontend is not None:
         steps.append((list(frontend.command), frontend.cwd))

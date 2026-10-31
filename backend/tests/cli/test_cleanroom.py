@@ -449,6 +449,46 @@ def test_deps_use_identity_root_dirs_and_pnpm_workspace(
     ]
 
 
+def test_deps_prepare_other_uv_projects_native_stages_run_from(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    project = _deps_project(tmp_path)
+    for name, extras in (("proxy", "[project.optional-dependencies]\ndev=['a']\n"), ("tool", "")):
+        (project / name).mkdir()
+        (project / name / "pyproject.toml").write_text(f"[project]\nname='{name}'\nversion='0'\n{extras}")
+        (project / name / "uv.lock").write_text("version = 1\n")
+    (project / "nolock").mkdir()
+    (project / "nolock" / "pyproject.toml").write_text("[project]\nname='n'\nversion='0'\n")
+    (project / ".st-check.toml").write_text(
+        "[native]\npaths = ['tool/.venv/bin']\n"
+        "[[native.stages]]\nargv = ['backend/.venv/bin/python', '-m', 'pytest']\n"
+        "[[native.stages]]\nargv = ['proxy/.venv/bin/ruff', 'check', '.']\n"
+        "[[native.stages]]\nargv = ['proxy/.venv/bin/python', '-m', 'pytest']\n"
+        "[[native.stages]]\nargv = ['nolock/.venv/bin/python']\n"
+        "[[native.stages]]\nargv = ['../outside/.venv/bin/python']\n"
+        "[[native.stages]]\nargv = ['/usr/bin/true']\n",
+    )
+    work = _RecordingWork()
+    _use_recording_work(monkeypatch, work, tmp_path / "parent")
+    assert cleanroom.run_cleanroom(
+        project, ["build"], options=cleanroom.CleanroomOptions(deps=True, share_caches=False),
+    ) == 0
+    snapshot = work.calls[-1][1]
+    assert work.calls == [
+        (["uv", "sync", "--locked", "--extra", "dev"], snapshot / "backend"),
+        (["uv", "sync", "--locked", "--extra", "dev"], snapshot / "proxy"),
+        (["uv", "sync", "--locked"], snapshot / "tool"),
+        (["npm", "ci"], snapshot / "frontend"),
+        (["build"], snapshot),
+    ]
+
+
+def test_deps_ignore_an_unreadable_native_declaration(tmp_path: Path) -> None:
+    project = _deps_project(tmp_path)
+    (project / ".st-check.toml").write_text("[native\n")
+    assert [cwd.name for _command, cwd in cleanroom.plan_dependency_installs(project, ())] == ["backend", "frontend"]
+
+
 def test_deps_failure_skips_command_and_cleans_up(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     project = _deps_project(tmp_path)
     work = _RecordingWork(fail="uv")
