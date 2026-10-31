@@ -72,18 +72,31 @@ def _sender() -> tuple[str, str]:
     return agent_id, widget if re.fullmatch(r"[0-9a-f]{8}", widget) else ""
 
 
-def deliver(window: dict[str, Any], address: str) -> dict[str, Any] | None:
-    """Queue the ``[Message]`` line for ``address`` on a host window's gated queue (through the hub).
+REMOTE_TIMEOUT = 10.0  # the hub forwards to the host's Tether
 
-    None when it was not taken: the hub or the host's Tether predates
-    deliveries (API 16), or the window is a shell. The caller then injects.
+
+def deliver(window: dict[str, Any], ids: set[str]) -> dict[str, Any] | None:
+    """Queue the ``[Message]`` line for a host window on its gated queue (through the hub).
+
+    ``ids`` are the ledger addresses that window answers for (``<window>@<host>``
+    and its agent's ``<id>@<host>``); one source per window coalesces requests
+    and acks. None when it was refused: the hub or the host's Tether predates
+    deliveries (API 16), or the window is a shell; the caller then injects.
+    Raises ValueError when the hub did not answer, so nothing is typed while
+    the line may still be queued.
     """
     if not coord_deliver.enabled():
         return None
-    line = coord_deliver.summary(address)
+    address = f"{window['id']}@{window['host']}"
+    line = coord_deliver.summary(coord_deliver.Target(str(window["id"]), address, frozenset(ids | {address})))
     if line is None:
         return None
-    return coord_deliver.post(str(window["id"]), coord_deliver.SOURCE_PREFIX + address, line)
+    try:
+        return coord_deliver.post(str(window["id"]), coord_deliver.SOURCE_PREFIX + address, line,
+                                  timeout=REMOTE_TIMEOUT)
+    except coord_deliver.Unsettled as exc:
+        raise ValueError(f"window {window['id']} on {window.get('host')} did not answer ({exc}); "
+                         "its agent sees it in st sessions inbox") from exc
 
 
 def inject(window: dict[str, Any], framed: str) -> None:
@@ -124,7 +137,11 @@ def to_host_window(target: str, text: str, *, project: str | None = None,
     row = coord.send(address, text, project=project, source_key=source_key)
     if row.get("duplicate"):
         return window, row
-    if delivery := deliver(window, address):
+    try:
+        delivery = deliver(window, {address})
+    except ValueError:
+        return window, row  # recorded; the line may be queued, and the host agent's inbox lists it
+    if delivery:
         return window, {**row, "delivery": delivery}
     sender = f"{agent_id}{f' (window {widget})' if widget else ''}"
     try:
@@ -182,7 +199,7 @@ def post_ack(row: dict[str, Any]) -> dict[str, Any] | None:
     found = [item for item in windows(str(window_id)) if item.get("host") == host and item.get("id") == window_id]
     if not found:
         raise ValueError(f"window {window_id} on {host} is not open")
-    if deliver(found[0], str(row["from"])):
+    if deliver(found[0], {str(row["from"])}):
         return found[0]
     intent = row["intent"] + (f" {row['eta_min']}m" if row.get("eta_min") else "")
     note = f" ({row['note']})" if row.get("note") else ""

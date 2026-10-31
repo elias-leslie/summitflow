@@ -25,7 +25,7 @@ import hashlib
 import re
 import time
 from http.client import HTTPException
-from typing import Any
+from typing import Any, NamedTuple
 from urllib.parse import quote
 
 from . import coord, coord_lineage, coord_wake, coordinators, leases
@@ -39,6 +39,7 @@ _NUDGE_TIMEOUT = 0.5
 _ID = re.compile(r"[A-Za-z][A-Za-z0-9_-]{0,15}:[A-Za-z0-9_.-]{1,64}(@[a-z0-9][a-z0-9-]{0,31})?")
 _WIDGET = re.compile(r"[0-9a-f]{8}")
 _NAMED = 3  # senders named on one line before "+N"
+LINE_MAX = 500  # Tether noteMaxChars
 LOOK = "st sessions inbox"
 
 
@@ -83,84 +84,151 @@ def _identity(agent_id: str) -> tuple[str, dict[str, Any]] | None:
     return None
 
 
-def widget_for(to: str) -> str | None:
-    """The Aico window (Tether session id) a local recipient's live harness runs in, or None.
+class Target(NamedTuple):
+    """Where a recipient's line goes: its window, the id it is posted and recorded under, and who it covers.
 
-    agy has no delivery in Tether (409) and keeps its own path; an address on
-    another machine (``<window>@<host>``) is coord_remote's.
+    ``family`` is every identity the recipient's own inbox answers for (its
+    harness process's ids, as cli.lib.leases.self_ids sees them from inside), so
+    the line counts what its turn hook will show.
+    """
+
+    widget: str
+    agent_id: str
+    family: frozenset[str]
+    sessions: tuple[str, ...] = ()
+
+
+def _nested(anchor: str) -> bool:
+    """A harness started under another harness (a headless ``claude -p`` an agent runs) inherits its window."""
+    info = coord_lineage._stat(int(anchor.partition(":")[0]))
+    return info is not None and coord_lineage._proc_anchor(info[1]) is not None
+
+
+def _window_anchors(widget: str) -> list[str]:
+    coordinators._harness_widgets.cache_clear()  # long-lived callers (a 6 h watcher) look afresh
+    return [a for a in coordinators._harness_widgets().get(widget) or () if not _nested(a)]
+
+
+def target(to: str) -> Target | None:
+    """The Aico window (Tether session) a local recipient is the live agent of, or None.
+
+    Only the window's own agent is woken there: its newest main-thread identity
+    or a main-thread predecessor on the same process (a context reset). A Codex
+    child thread, a harness nested under another one, and an identity on a
+    process that is no longer the window's newest keep today's path. agy has no
+    delivery in Tether (409); ``<window>@<host>`` is coord_remote's.
     """
     if not to or "@" in to or to.startswith("agy:"):
         return None
     found = _identity(to)
     if found is None:
         return None
-    widget = coordinators.widget_for_anchor(found[1].get("anchor"))
-    return widget if widget and _WIDGET.fullmatch(widget) else None
+    agent_id, row = found
+    anchor = row.get("anchor")
+    if not isinstance(anchor, str) or not coord_lineage.anchor_alive(anchor) or _nested(anchor):
+        return None
+    widget = coordinators.widget_for_anchor(anchor)
+    if not widget or not _WIDGET.fullmatch(widget):
+        return None
+    identities = coord_lineage.load_doc().get("identities") or {}
+    rows = {aid: r for aid, r in identities.items() if isinstance(r, dict) and r.get("anchor") in _window_anchors(widget)}
+    if not rows or max((str(r.get("last") or ""), str(r.get("anchor"))) for r in rows.values())[1] != anchor:
+        return None  # the window's newest agent runs in another process
+    family = {aid: r for aid, r in rows.items() if r.get("anchor") == anchor}
+    mains = {aid for aid, r in family.items() if r.get("main")} or set(family)
+    if agent_id not in mains:
+        return None  # a child thread keeps its own inbox
+    current = max(mains, key=lambda aid: str(family[aid].get("last") or ""))
+    sessions = tuple(str(r.get("session")) for r in family.values() if r.get("session"))
+    return Target(widget, current, frozenset(family), sessions)
+
+
+def widget_for(to: str) -> str | None:
+    found = target(to)
+    return found.widget if found else None
 
 
 # ---------------------------------------------------------------- the line
 
-def _names(ids: list[str]) -> str:
+def _names(ids: list[str], named: int) -> str:
     shown = list(dict.fromkeys(i for i in ids if _ID.fullmatch(i)))
-    if not shown:
-        return "another agent"
-    extra = len(shown) - _NAMED
-    return ", ".join(shown[:_NAMED]) + (f" +{extra}" if extra > 0 else "")
+    if not shown or not named:
+        return f"{len(shown)} agents" if len(shown) > 1 else "another agent"
+    extra = len(shown) - named
+    return ", ".join(shown[:named]) + (f" +{extra}" if extra > 0 else "")
 
 
 def _plural(count: int, word: str) -> str:
     return f"{count} {word}{'' if count == 1 else 's'}"
 
 
-def waiting(to: str) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
-    """(open requests to ``to``, acks of its requests it has not been shown) in the ledger."""
-    found = _identity(to)
-    agent_id = found[0] if found else to
-    session = str((found[1] if found else {}).get("session") or "")
-    seen = coord_wake.load_seen(agent_id)
+def waiting(who: Target) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
+    """(open requests to the recipient, acks of its requests it has not been shown) in the ledger.
+
+    The same scope as its inbox (cli.lib.coord.inbox): any of its family's ids or a 13+ char prefix of
+    their sessions.
+    """
+    seen = coord_wake.load_seen(who.agent_id)
 
     def addressed(row_to: str) -> bool:
-        return row_to in (agent_id, to) or (len(row_to) >= 13 and bool(session) and session.startswith(row_to))
+        return row_to in who.family or (len(row_to) >= 13 and any(s.startswith(row_to) for s in who.sessions))
 
     with leases._lock("_coord"):
         rows = coord._load_ledger()
-    requests = [r for r in rows if r["state"] == "open" and addressed(str(r["to"])) and r["from"] != agent_id]
-    acks = [r for r in rows if r["state"] == "acked" and r["from"] in (agent_id, to)
+    requests = [r for r in rows if r["state"] == "open" and addressed(str(r["to"])) and r["from"] not in who.family]
+    acks = [r for r in rows if r["state"] == "acked" and r["from"] in who.family
             and f"{r['id']}:ack:{r.get('acked_at')}" not in seen]
     return requests, acks
 
 
-def summary(to: str, *, memory: bool = False) -> str | None:
-    """``[Message] 2 requests from cc:1c7a9f, codex:019a2b · 1 ack from cc:65b53f · st sessions inbox``."""
-    requests, acks = waiting(to)
-    parts = []
-    if requests:
-        parts.append(f"{_plural(len(requests), 'request')} from {_names([str(r['from']) for r in requests])}")
-    if acks:
-        parts.append(f"{_plural(len(acks), 'ack')} from {_names([str(r.get('acked_by') or '') for r in acks])}")
-    if memory:
-        parts.append("a memory notice for this pane")
-    if not parts:
-        return None
-    return "[Message] " + " · ".join(parts) + f" · {LOOK}"
+def summary(who: Target, *, memory: bool = False) -> str | None:
+    """``[Message] 2 requests from cc:1c7a9f, codex:019a2b · 1 ack from cc:65b53f · st sessions inbox``.
+
+    Fewer names when long ids would pass Tether's line limit.
+    """
+    requests, acks = waiting(who)
+    for named in (_NAMED, 1, 0):
+        parts = []
+        if requests:
+            parts.append(f"{_plural(len(requests), 'request')} from {_names([str(r['from']) for r in requests], named)}")
+        if acks:
+            parts.append(f"{_plural(len(acks), 'ack')} from {_names([str(r.get('acked_by') or '') for r in acks], named)}")
+        if memory:
+            parts.append("a memory notice for this pane")
+        if not parts:
+            return None
+        line = "[Message] " + " · ".join(parts) + f" · {LOOK}"
+        if len(line) <= LINE_MAX:
+            return line
+    return line
 
 
 # ---------------------------------------------------------------- queueing
 
-def post(widget: str, source: str, line: str) -> dict[str, Any] | None:
-    """Queue ``line`` on ``widget``'s delivery queue: Tether's record, or None when it was not taken.
+class Unsettled(Exception):
+    """Tether did not answer, or failed: the line may or may not be queued, so nothing else may type it."""
 
-    The hub forwards a session on another host to that host's Tether; an older
-    one answers 404 and the caller keeps its own path.
+
+def post(widget: str, source: str, line: str, *, timeout: float = _TIMEOUT) -> dict[str, Any] | None:
+    """Queue ``line`` on ``widget``'s delivery queue: Tether's record, or None when it refused it.
+
+    Refused means a definite answer (404 unknown session, or a hub peer
+    predating deliveries; 409 delivery_unsupported for shells and agy; 400), so
+    the caller keeps its own path. No answer or a server error raises
+    Unsettled. The hub forwards a session on another host to that host's Tether.
     """
     from app.services import tether
 
     try:
         status, body = tether.request("POST", f"/v1/sessions/{quote(widget, safe='')}/deliveries",
-                                      {"source": source, "line": line}, timeout=_TIMEOUT)
-    except (OSError, ValueError, HTTPException):
+                                      {"source": source, "line": line}, timeout=timeout)
+    except (OSError, ValueError, HTTPException) as exc:
+        raise Unsettled(type(exc).__name__) from exc
+    if status in (200, 201) and isinstance(body, dict) and body.get("id"):
+        return body
+    if status in (400, 404, 409):
         return None
-    return body if status in (200, 201) and isinstance(body, dict) and body.get("id") else None
+    raise Unsettled(f"status {status}")
 
 
 def state(delivery_id: str) -> dict[str, Any] | None:
@@ -184,26 +252,33 @@ def wake(to: str, keys: list[str] | tuple[str, ...] = (), *, memory: str | None 
     """Queue the recipient's ``[Message]`` line through Tether and record ``keys`` as woken.
 
     ``memory`` is a memory notice's text for that recipient (only its key is
-    kept). Returns ``{delivery, widget, line}`` or None when the recipient keeps
-    today's path (older Tether, no resolvable window, shell or agy, refused).
+    kept). Returns ``{delivery, widget, line, agent_id}``, or None when the
+    recipient keeps today's path (older Tether, no window it is the agent of,
+    shell or agy, refused). Raises Unsettled when Tether did not answer: the
+    caller then tries again later and never types the line itself.
     """
     if not enabled():
         return None
-    widget = widget_for(to)
-    if widget is None:
+    who = target(to)
+    if who is None:
         return None
-    found = _identity(to)
-    agent_id = found[0] if found else to
-    line = summary(agent_id, memory=memory is not None)
+    line = summary(who, memory=memory is not None)
     if line is None:
         return None
-    delivery = post(widget, SOURCE_PREFIX + agent_id, line)
-    if delivery is None:
-        return None
     woke = [*keys, *([memory_key(memory)] if memory is not None else [])]
-    if woke:
-        coord_wake.mark_woke(agent_id, woke)
-    return {"delivery": delivery, "widget": widget, "line": line}
+    # Recorded before the POST, so the recipient's own watcher does not queue a second line meanwhile.
+    stamp = coord_wake.mark_woke(who.agent_id, woke) if woke else None
+    try:
+        delivery = post(who.widget, SOURCE_PREFIX + who.agent_id, line)
+    except Unsettled:
+        if stamp is not None:
+            coord_wake.unmark_woke(who.agent_id, woke, stamp)
+        raise
+    if delivery is None:
+        if stamp is not None:
+            coord_wake.unmark_woke(who.agent_id, woke, stamp)
+        return None
+    return {"delivery": delivery, "widget": who.widget, "line": line, "agent_id": who.agent_id}
 
 
 def safe_wake(to: str, keys: list[str] | tuple[str, ...] = ()) -> dict[str, Any] | None:

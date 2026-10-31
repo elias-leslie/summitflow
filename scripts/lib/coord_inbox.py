@@ -54,7 +54,7 @@ REMIND = 300
 POLL = 2.0
 WATCH_SECONDS = int(os.environ.get("ST_COORD_WATCH_SECONDS") or 6 * 3600 - 120)
 RETRY = 10.0  # re-check a busy pane this soon instead of waiting for the next ledger change
-MEM_RECHECK = 30.0  # a memory notice a Tether line already announced: look again this much later
+MEM_RECHECK = float(REMIND)  # a memory notice a Tether line announced: its text (and key) changes, so not sooner
 STATE = coord_wake.STATE
 LEDGER = leases.LEASES_DIR / "_coord.json"
 _key = coord_wake.state_key
@@ -121,17 +121,38 @@ def wakeable(agent_id: str, items: list[tuple[str, str, bool]]) -> list[tuple[st
 
 
 def tether_wake(agent_id: str, items: list[tuple[str, str, bool]],
-                note: coord_memory.Notice | None) -> bool:
-    """Queue this agent's [Message] line on its Aico window through Tether (coord_deliver); False keeps today's path."""
+                note: coord_memory.Notice | None) -> str:
+    """Queue this agent's [Message] line on its Aico window through Tether (coord_deliver).
+
+    "queued"; "retry" when Tether did not answer (never type then: the line may
+    be queued, and a retry replaces it); "direct" for today's path. The memory
+    notice's lock is released before any HTTP call.
+    """
     try:
-        queued = coord_deliver.wake(agent_id, [key for key, _, _ in items], memory=note.text if note else None)
+        if not coord_deliver.enabled() or coord_deliver.target(agent_id) is None:
+            return "direct"
+        text = note.text if note else None
+        if note:
+            note.done(delivered=False)  # the turn hook shows it in full
+        queued = coord_deliver.wake(agent_id, [key for key, _, _ in items], memory=text)
+    except coord_deliver.Unsettled:
+        return "retry"
     except Exception:  # noqa: BLE001 - fail open to the direct wake
-        return False
+        return "direct"
     if queued is None:
-        return False
+        return "direct"
     _trace(agent_id, f"tether-queued:{queued['delivery'].get('id')}",
-           [key for key, _, _ in items] + ([coord_deliver.memory_key(note.text)] if note else []))
-    return True
+           [key for key, _, _ in items] + ([coord_deliver.memory_key(text)] if text else []))
+    return "queued"
+
+
+def superseded(agent_id: str) -> bool:
+    """A context reset gave this window a newer main identity; its own watcher takes over."""
+    try:
+        found = coord_deliver.target(agent_id) if coord_deliver.enabled() else None
+    except Exception:  # noqa: BLE001 - keep watching
+        return False
+    return found is not None and found.agent_id != agent_id
 
 
 def _trace(agent_id: str, how: str, keys: list[str]) -> None:
@@ -212,19 +233,25 @@ def watch(provider: str) -> int:
             last_mtime, last_check = mtime, now
             agent_id, items = pending()
             fresh = due(agent_id, items)
+        if fresh and superseded(agent_id):
+            return 0
         note = memory(agent_id) if now >= mem_retry else None
         if note and coord_deliver.memory_key(note.text) in coord_wake.load_woke(agent_id):
             note.done(delivered=False)  # a Tether line already says so; the turn hook shows it
             note, mem_retry = None, now + MEM_RECHECK
         fresh = wakeable(agent_id, fresh)
         if fresh or note:
-            if tether_wake(agent_id, fresh, note):
+            how = tether_wake(agent_id, fresh, note)
+            if how != "direct":
                 # Tether delivers when the agent is idle and nobody types; keep watching for reminders.
                 if note:
-                    note.done(delivered=False)
-                    mem_retry = now + MEM_RECHECK
+                    mem_retry = now + (MEM_RECHECK if how == "queued" else RETRY)
+                if how == "retry":
+                    last_check = now - 60 + RETRY
                 time.sleep(POLL)
                 continue
+            if note and note._lock.closed:
+                note = memory(agent_id)  # released for a Tether call that was refused: take it again
             if provider == "codex":
                 # Codex: wake the pane; its UserPromptSubmit hook then shows the memory notice in full
                 if note:

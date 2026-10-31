@@ -279,9 +279,13 @@ recipient). Tether delivers it once the agent is idle, nobody is typing and the
 input line is empty, or through a native puller; the agent's own turn hook then
 shows the request. Acks, reminders every 5 minutes, a lapsed `eta:` and memory
 notices go the same way. The line never carries request or reply text. A
-window on an agent host gets it through the hub. Recipients SummitFlow cannot
-place in a window, shells, agy and an older Tether keep the earlier wakes
-(Claude's asyncRewake hook, the Codex idle watcher, the cross-host inject).
+window on an agent host gets it through the hub. Only a window's own agent is
+woken there: an address of its predecessor before a context reset reaches the
+current agent, and the line counts both. Recipients SummitFlow cannot place in
+a window as its agent (a Codex child thread, a harness nested under another
+one), shells, agy and an older Tether keep the earlier wakes (Claude's
+asyncRewake hook, the Codex idle watcher, the cross-host inject). When Tether
+does not answer, nothing is typed instead; the watcher tries again.
 `st sessions send --delivery native-thread` reports Tether's own record of
 that line: `queued`, or `woken` once it was delivered.
 

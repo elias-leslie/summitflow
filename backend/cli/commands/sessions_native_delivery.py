@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import hashlib
-import time
 from typing import Any
 from uuid import NAMESPACE_URL, uuid5
 
@@ -64,18 +63,7 @@ def send_native_instruction(thread: str, instruction: str, *, project: str, sour
     return {**base, **result, "replayed": False}
 
 
-WAKE_CONFIRM_SECONDS = 8.0  # how long a send looks for the wake to go out (Tether's record, or the watcher's seen state)
-_DELIVERY_POLL = 0.5
-
-
-def _tether_delivery(delivery_id: str, timeout: float) -> dict[str, Any] | None:
-    """Tether's record of a queued [Message] line once it is no longer queued, else the last one read."""
-    deadline = time.monotonic() + timeout
-    while True:
-        record = coord_deliver.state(delivery_id)
-        if record is None or record.get("state") != "queued" or time.monotonic() >= deadline:
-            return record
-        time.sleep(_DELIVERY_POLL)
+WAKE_CONFIRM_SECONDS = 8.0  # how long a send looks for the idle watcher's wake (no Tether queue)
 
 
 def _deliver_live(thread: str, prompt: str, *, project: str, source_key: str) -> dict[str, Any] | None:
@@ -97,7 +85,7 @@ def _deliver_live(thread: str, prompt: str, *, project: str, source_key: str) ->
             "replayed": bool(row.get("duplicate"))}
     if not row.get("duplicate") and (queued := coord_deliver.safe_wake(agent_id, [f"{row['id']}:req"])):
         delivery_id = str(queued["delivery"]["id"])
-        record = _tether_delivery(delivery_id, WAKE_CONFIRM_SECONDS) or {}
+        record = coord_deliver.state(delivery_id) or {}  # a busy thread gets it later: never wait here
         wake = {"tether_delivery_id": delivery_id, "widget": queued["widget"],
                 "wake": {key: record.get(key) for key in ("state", "via", "deliveredAt")}}
         if record.get("state") == "delivered":

@@ -16,10 +16,13 @@ empty. Delivery state here is content-free.
 
 from __future__ import annotations
 
+import fcntl
 import json
 import os
 import subprocess
 import time
+from collections.abc import Iterator
+from contextlib import contextmanager
 from pathlib import Path
 
 
@@ -73,16 +76,39 @@ def load_woke(agent_id: str) -> dict[str, float]:
         return {}
 
 
-def mark_woke(agent_id: str, keys: list[str] | tuple[str, ...], now: float | None = None) -> None:
-    """Record that a Tether line now wakes the agent for ``keys`` (content-free; a day is kept)."""
-    now = time.time() if now is None else now
-    woke = {k: v for k, v in load_woke(agent_id).items() if isinstance(v, (int, float)) and v > now - 86400}
-    woke.update({key: now for key in keys})
+@contextmanager
+def _woke_lock(agent_id: str) -> Iterator[None]:
     STATE.mkdir(parents=True, exist_ok=True)
+    with open(STATE / f"{state_key(agent_id)}.woke.lock", "w") as lock:
+        fcntl.flock(lock, fcntl.LOCK_EX)
+        yield
+
+
+def _save_woke(agent_id: str, woke: dict[str, float]) -> None:
     path = woke_path(agent_id)
     tmp = path.with_name(f"{path.name}.{os.getpid()}.tmp")
     tmp.write_text(json.dumps(woke))
     tmp.replace(path)
+
+
+def mark_woke(agent_id: str, keys: list[str] | tuple[str, ...], now: float | None = None) -> float:
+    """Record that a Tether line now wakes the agent for ``keys`` (content-free; a day is kept); the stamp used."""
+    now = time.time() if now is None else now
+    with _woke_lock(agent_id):
+        woke = {k: v for k, v in load_woke(agent_id).items() if isinstance(v, (int, float)) and v > now - 86400}
+        woke.update({key: now for key in keys})
+        _save_woke(agent_id, woke)
+    return now
+
+
+def unmark_woke(agent_id: str, keys: list[str] | tuple[str, ...], stamp: float) -> None:
+    """Undo mark_woke(..., stamp) for ``keys`` no later mark replaced (the line was not queued)."""
+    with _woke_lock(agent_id):
+        woke = load_woke(agent_id)
+        for key in keys:
+            if woke.get(key) == stamp:
+                del woke[key]
+        _save_woke(agent_id, woke)
 
 
 def codex_pidfile(agent_id: str) -> Path:
