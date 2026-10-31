@@ -15,7 +15,8 @@ recipient has waiting. What was queued for which inbox item is kept in the
 recipient's content-free woke state (cli.lib.coord_wake), so the recipient's
 own watcher does not wake it a second time for the same item.
 
-Unresolved recipients, shells, agy and an older Tether keep today's path:
+Unresolved recipients, shells and an older Tether keep today's path (an agy
+window takes lines from Tether API 18; an older one refuses with 409):
 every function here answers None and the caller carries on as before.
 
 A line that goes stale before it is pasted (the request was answered, the ack
@@ -122,10 +123,10 @@ def target(to: str) -> Target | None:
     Only the window's own agent is woken there: its newest main-thread identity
     or a main-thread predecessor on the same process (a context reset). A Codex
     child thread, a harness nested under another one, and an identity on a
-    process that is no longer the window's newest keep today's path. agy has no
-    delivery in Tether (409); ``<window>@<host>`` is coord_remote's.
+    process that is no longer the window's newest keep today's path. An agy
+    window takes lines from Tether API 18 (older: 409); ``<window>@<host>`` is coord_remote's.
     """
-    if not to or "@" in to or to.startswith("agy:"):
+    if not to or "@" in to:
         return None
     found = _identity(to)
     if found is None:
@@ -261,7 +262,7 @@ def wake(to: str, keys: list[str] | tuple[str, ...] = (), *, memory: str | None 
     ``memory`` is a memory notice's text for that recipient (only its key is
     kept). Returns ``{delivery, widget, line, agent_id}``, or None when the
     recipient keeps today's path (older Tether, no window it is the agent of,
-    shell or agy, refused). Raises Unsettled when Tether did not answer: the
+    a shell, refused). Raises Unsettled when Tether did not answer: the
     caller then tries again later and never types the line itself.
     """
     if not enabled():

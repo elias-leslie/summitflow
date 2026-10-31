@@ -171,6 +171,14 @@ def test_wake_queues_one_line_on_the_recipients_window_and_records_woke(monkeypa
     assert f"{row['id']}:req" in coord_wake.load_woke("codex:target")
 
 
+def test_an_agy_recipient_gets_the_line_on_its_window(monkeypatch, tether):
+    _identity("agy:abc123", "agy-conversation-1")
+    coord.send("agy:abc123", "hello", sender="cc:sender")
+    assert coord_deliver.wake("agy:abc123", ["k:req"])
+    assert tether.posts()[0][1]["source"] == "coord:agy:abc123"
+    assert "k:req" in coord_wake.load_woke("agy:abc123")
+
+
 def test_a_session_prefix_address_wakes_the_identity_it_names(monkeypatch, tether):
     _identity("cc:c9ffbd", "c9ffbd05-c536-446f-82f7-30690775f33e")
     _as(monkeypatch, "claude", "sender-02")
@@ -180,9 +188,9 @@ def test_a_session_prefix_address_wakes_the_identity_it_names(monkeypatch, tethe
     assert "x:req" in coord_wake.load_woke("cc:c9ffbd")
 
 
-@pytest.mark.parametrize("case", ["old_tether", "no_window", "agy", "remote", "refused", "gone", "nested"])
+@pytest.mark.parametrize("case", ["old_tether", "no_window", "remote", "refused", "gone", "nested"])
 def test_unresolved_recipients_keep_todays_path(monkeypatch, tether, case):
-    target = {"agy": "agy:abc123", "remote": "a810c7e0@agent-work"}.get(case, "codex:target")
+    target = {"remote": "a810c7e0@agent-work"}.get(case, "codex:target")
     _identity(target, "019a-target", anchor="1:1" if case == "no_window" else "4242:99")
     coord.send(target, "hello", sender="cc:sender")
     if case == "old_tether":
