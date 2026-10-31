@@ -2,30 +2,30 @@
   "id": "neri.neri",
   "owner": "neri",
   "namespace": "neri",
-  "version": "0.5.0",
+  "version": "0.6.0",
   "st_contract_versions": [
     1
   ],
-  "summary": "Neri bounty case state: orient, open, gate-checked stage moves (ready also makes the HackerOne draft), owner asks, program verdicts, drift check.",
+  "summary": "Neri bounty case state: orient, open with a frozen start record, gate-checked stage moves (ready also makes the HackerOne draft), owner asks, ranked programs with scope, drift check.",
   "effects": [
     "read-local",
     "write-local",
     "process"
   ],
   "help": {
-    "": "Usage: neri [OPTIONS] COMMAND [ARGS]...\n\n  Neri bug bounty case state\n\nOptions:\n  --help  Show this message and exit.\n\nCommands:\n  next     Holds, asks, open cases\n  show     Case card or program\n  new      Start a case\n  advance  Move a case one stage.\n  log      Log a history line\n  ask      Ask the owner\n  check    Find state/file drift\n  program  Program policy",
-    "next": "Usage: neri next [OPTIONS]\n\n  Holds, asks, open cases\n\nOptions:\n  --json\n  --help  Show this message and exit.",
+    "": "Usage: neri [OPTIONS] COMMAND [ARGS]...\n\n  Neri bug bounty case state\n\nOptions:\n  --help  Show this message and exit.\n\nCommands:\n  next     Holds, asks, open cases, top programs\n  show     Case card or program\n  new      Start a case and freeze its hunt-start record\n  advance  Move a case one stage.\n  log      Log a history line\n  ask      Ask the owner\n  check    Find state/file drift\n  program  Program policy",
+    "next": "Usage: neri next [OPTIONS]\n\n  Holds, asks, open cases, top programs\n\nOptions:\n  --needs HUNT  source|lab|big-lab|live\n  --json\n  --help        Show this message and exit.",
     "show": "Usage: neri show [OPTIONS] {subject}\n\n  Case card or program\n\nArguments:\n  subject  [required]\n\nOptions:\n  --events <int range>  [default: 5; x>=1]\n  --json\n  --help                Show this message and exit.",
-    "new": "Usage: neri new [OPTIONS] {PROGRAM} {slug}\n\n  Start a case\n\nArguments:\n  PROGRAM  [required]\n  slug     [required]\n\nOptions:\n  --label <str>\n  --json\n  --help         Show this message and exit.",
+    "new": "Usage: neri new [OPTIONS] {PROGRAM} {slug}\n\n  Start a case and freeze its hunt-start record\n\nArguments:\n  PROGRAM  [required]\n  slug     [required]\n\nOptions:\n  --asset <str>     scope row it targets\n  --class <str>     bug class, e.g. CWE-285\n  --hunt KIND       source|lab|big-lab|live\n  --searched <str>  public same-class search and result\n  --version <str>   target version or commit\n  --cost <str>      cost estimate\n  --lineage <str>   earlier case, same finding\n  --label <str>\n  --json\n  --help            Show this message and exit.",
     "advance": "Usage: neri advance [OPTIONS] {CASE} {STAGE}\n\n  Move a case one stage.\n\n  STAGE: hunting|candidate|replayed|reviewed|ready|submitted|closed|killed\n\nArguments:\n  CASE   [required]\n  STAGE  [required]\n\nOptions:\n  --dry-run\n  --reason <str>\n  --take\n  --outcome OUTCOME   accepted|duplicate|informative|not_applicable|paid\n  --amount <str>\n  --currency <str>    [default: USD]\n  --submission <str>\n  --ack <str>\n  --json\n  --help              Show this message and exit.",
-    "log": "Usage: neri log [OPTIONS] {CASE} {text}\n\n  Log a history line\n\nArguments:\n  CASE  [required]\n  text  [required]\n\nOptions:\n  --next <str>     next step; - clears\n  --program <str>\n  --release\n  --take\n  --json\n  --help           Show this message and exit.",
+    "log": "Usage: neri log [OPTIONS] {CASE} {text}\n\n  Log a history line\n\nArguments:\n  CASE  [required]\n  text  [required]\n\nOptions:\n  --next <str>     next step; - clears\n  --program <str>\n  --release\n  --peak <str>     mem=5.2G,cpu=1.5[,hunt=KIND]\n  --take\n  --json\n  --help           Show this message and exit.",
     "ask": "Usage: neri ask [OPTIONS] {subject} {title}\n\n  Ask the owner\n\nArguments:\n  subject  [required]\n  title    [required]\n\nOptions:\n  --kind KIND     approve|submit|decide|setup  [required]\n  --detail <str>\n  --json\n  --help          Show this message and exit.",
     "check": "Usage: neri check [OPTIONS] [CASE]\n\n  Find state/file drift\n\nArguments:\n  [CASE]\n\nOptions:\n  --all\n  --json\n  --help  Show this message and exit.",
-    "program": "Usage: neri program [OPTIONS] COMMAND [ARGS]...\n\n  Program policy\n\nOptions:\n  --help  Show this message and exit.\n\nCommands:\n  list     List programs\n  show     One program\n  refresh  Re-read a policy\n  set      Record a verdict",
-    "program list": "Usage: neri program list [OPTIONS]\n\n  List programs\n\nOptions:\n  --json\n  --help  Show this message and exit.",
+    "program": "Usage: neri program [OPTIONS] COMMAND [ARGS]...\n\n  Program policy\n\nOptions:\n  --help  Show this message and exit.\n\nCommands:\n  list     Programs, ranked, with a why line\n  show     One program\n  refresh  Read program records from the platform API\n  set      Record judgment and ratings; identity; observed fields on...",
+    "program list": "Usage: neri program list [OPTIONS]\n\n  Programs, ranked, with a why line\n\nOptions:\n  --json\n  --help  Show this message and exit.",
     "program show": "Usage: neri program show [OPTIONS] {PROGRAM}\n\n  One program\n\nArguments:\n  PROGRAM  [required]\n\nOptions:\n  --json\n  --help  Show this message and exit.",
-    "program refresh": "Usage: neri program refresh [OPTIONS] {PROGRAM}\n\n  Re-read a policy\n\nArguments:\n  PROGRAM  [required]\n\nOptions:\n  --key <str>\n  --json\n  --help       Show this message and exit.",
-    "program set": "Usage: neri program set [OPTIONS] {PROGRAM}\n\n  Record a verdict\n\nArguments:\n  PROGRAM  [required]\n\nOptions:\n  --verdict VERDICT  go|open|no-go  [required]\n  --evidence <str>   [required]\n  --gate GATE        G1|G2|G3\n  --recheck <str>\n  --platform <str>\n  --name <str>\n  --json\n  --help             Show this message and exit."
+    "program refresh": "Usage: neri program refresh [OPTIONS] [PROGRAM]\n\n  Read program records from the platform API\n\nArguments:\n  [PROGRAM]\n\nOptions:\n  --key <str>\n  --all\n  --json\n  --help       Show this message and exit.",
+    "program set": "Usage: neri program set [OPTIONS] {PROGRAM}\n\n  Record judgment and ratings; identity; observed fields on manual platforms\n\nArguments:\n  PROGRAM  [required]\n\nOptions:\n  --verdict VERDICT  go|open|no-go\n  --evidence <str>\n  --gate GATE        G1|G2|G3\n  --recheck <str>\n  --proof MODE       self-hosted|live|source-only\n  --g3 <int range>   [0<=x<=3]\n  --dup <int range>  [0<=x<=3]\n  --lab <int range>  [0<=x<=3]\n  --platform <str>\n  --name <str>\n  --handle <str>\n  --state <str>      open|paused|suspended|closed\n  --pays <str>       target-class max, e.g. 5000\n  --currency <str>\n  --avg-paid <str>\n  --scope <str>      in|out KIND ASSET\n  --json\n  --help             Show this message and exit."
   },
   "help_options": {
     "": {
@@ -39,11 +39,12 @@
     {
       "surface": "st.neri.next",
       "tier": "mandate",
-      "cmd": "st neri next",
+      "cmd": "st neri next [--needs source|lab|big-lab|live]",
       "when": "start of a Neri session, and after an owner answer",
-      "why": "one call: cases you hold, answered owner asks, stale items, top open cases",
+      "why": "one call: cases you hold, answered asks, stale items, top open cases, top ranked programs",
       "precautions": [
-        "read-only"
+        "read-only",
+        "--needs prints only the placement needs for that hunt kind"
       ]
     },
     {
@@ -59,12 +60,12 @@
     {
       "surface": "st.neri.new",
       "tier": "reference",
-      "cmd": "st neri new <program> <slug> [--label TEXT]",
+      "cmd": "st neri new <program> <slug> --asset A --class C --hunt KIND --searched TEXT",
       "when": "starting a case; slug is yyyy-mm-dd-name",
-      "why": "copies findings/_template, adds the case row and claims it for your session",
+      "why": "copies findings/_template, adds the case row, claims it, freezes the start record",
       "precautions": [
-        "rerun is a no-op",
-        "label is generic: no target or evidence"
+        "optional --version, --cost, --lineage (an earlier case of the same finding), --label",
+        "rerun is a no-op; label is generic: no target or evidence"
       ]
     },
     {
@@ -89,7 +90,8 @@
       "precautions": [
         "240 characters max; details stay in notes.md",
         "--next sets the next step ('-' clears); --program sets the program",
-        "--release drops your hold; killed or closed cases take none"
+        "--release drops your hold; killed or closed cases take none",
+        "--peak mem=5.2G,cpu=1.5[,hunt=lab] records a measured peak for hunt needs"
       ]
     },
     {
@@ -119,9 +121,9 @@
       "tier": "reference",
       "cmd": "st neri program list",
       "when": "choosing where to hunt, or finding stale policy checks",
-      "why": "programs with platform, tier, policy age and open case count",
+      "why": "ranked programs first with a why line, then gated and untriaged ones; unknowns say unknown",
       "precautions": [
-        "read-only"
+        "read-only; rank is worked out on read, never stored"
       ]
     },
     {
@@ -137,22 +139,23 @@
     {
       "surface": "st.neri.program.refresh",
       "tier": "reference",
-      "cmd": "st neri program refresh <program> [--key h1:handle]",
-      "when": "a program's policy needs a current check (candidate and ready gates need one)",
-      "why": "runs queue_tool.py refresh; stamps checked only if the policy is unchanged",
+      "cmd": "st neri program refresh <program>|--all [--key h1:handle]",
+      "when": "a policy needs a current check (candidate and ready gates need one); --all weekly",
+      "why": "the only writer of observed fields and scope rows on API platforms; before/after event",
       "precautions": [
-        "signed-out network read; on a diff, update programs/<p>.md",
-        "the key (from the policy Source URL) must be in the watch-list"
+        "signed-out network read through queue_tool.py",
+        "stamps checked only when the policy fingerprint is unchanged; on a change, update programs/<p>.md"
       ]
     },
     {
       "surface": "st.neri.program.set",
       "tier": "reference",
-      "cmd": "st neri program set <program> --verdict go|open|no-go [--gate G1|G2|G3] [--recheck TEXT] --evidence TEXT",
-      "when": "a selection gate settles or a recheck changes a program's verdict",
-      "why": "the program shortlist row: verdict, failed gate, evidence with source URL, recheck",
+      "cmd": "st neri program set <program> [--verdict V --gate G --recheck T] [--g3 --dup --lab N] --evidence TEXT",
+      "when": "a verdict settles or changes, or ratings (0-3, scale in policy.json) need setting",
+      "why": "judgment, ratings with rater, identity; each change is a before/after event",
       "precautions": [
-        "evidence names a primary-source URL and UTC date; 240 chars"
+        "evidence: primary-source URL and UTC date, 240 chars",
+        "manual platforms only: --state --pays --currency --avg-paid --scope 'in|out KIND ASSET'"
       ]
     }
   ]
