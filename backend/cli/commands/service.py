@@ -300,12 +300,8 @@ def _release_steps(
     backend: bool,
     development_root: Path,
     manual: tuple[str, ...] = (),
-    followers: tuple[str, ...] = (),
 ) -> list[ReleaseStep]:
-    """List the pre-restart release steps; frontend and manual scopes record migrations as not applicable.
-
-    ``followers`` are manual workers a plain rebuild also deploys (service_ops.changed_manual_workers).
-    """
+    """List the pre-restart release steps; frontend and manual scopes record migrations as not applicable."""
     steps: list[ReleaseStep] = [("infrastructure", lambda: service_ops.ensure_infra(services))]
     steps.append(("backend_dependencies", lambda: service_ops.sync_backend(services)))
     if backend:
@@ -321,8 +317,6 @@ def _release_steps(
             reason="manual_worker_scope" if manual else "frontend_restart_scope",
         )
     steps.append(("systemd_units", lambda: service_ops.sync_systemd_units(services, manual=manual)))
-    if followers:
-        steps.append(("manual_worker_units", lambda: service_ops.sync_systemd_units(services, manual=followers)))
     if backend and services.release_install:
         steps.append(("release_install", lambda: service_ops.run_release_install(
             services, development_root=development_root, source_commit=release.source.source_commit)))
@@ -336,15 +330,12 @@ def _run_release_steps(
     release: service_release.PreparedRelease,
     development_services: service_ops.ProjectServices,
     manual: tuple[str, ...] = (),
-    followers: tuple[str, ...] = (),
 ) -> None:
     """Run each step in order; the first failure fails the release before any restart."""
     for name, step in steps:
         if _timed_phase(release, name, step) != 0:
             if name == "systemd_units":
                 _restore_previous_units(development_services, release, manual)
-            elif name == "manual_worker_units":
-                _restore_previous_units(development_services, release, followers)
             service_release.fail_release(release, name)
             print(
                 f"[service] rebuild stopped: {name.replace('_', ' ')} failed; "
@@ -498,11 +489,6 @@ def rebuild(
         str | None,
         typer.Option("--sha", help="Full commit id to deploy: with --source-repo it is read from the mirror; for a runtime_user project it replaces the checkout's main"),
     ] = None,
-    manual_followers: Annotated[
-        bool,
-        typer.Option("--manual-followers/--no-manual-followers", hidden=True,
-                     help="Also restart running manual workers whose source changed (st service restart never does)"),
-    ] = True,
 ) -> None:
     """Build, migrate, restart, and health-check a project from its committed local HEAD (st commit first; no push needed)."""
     services = _load(project)
@@ -586,7 +572,6 @@ def rebuild(
                     with_ack=with_ack,
                     rollback=rollback,
                     **({"migrate_monitor_store": True} if migrate_monitor_store else {}),
-                    **({} if manual_followers else {"manual_followers": False}),
                 )
             )
         except (service_ops.ServiceError, service_release.ReleaseError) as exc:
@@ -614,15 +599,15 @@ def rebuild(
             with coord.acked(with_ack):
                 release, services = service_ops.prepare_accepted_release(services, acceptance, rollback=rollback)
             print(_acceptance_line(vars(release.source), supplied=acceptance is not None))
-            # One rebuild deploys the whole project: a running manual worker whose source changed
-            # since its release is rendered and restarted too, exactly as --worker would.
-            followers = () if manual or scope != RebuildScope.full or not manual_followers \
-                else service_ops.changed_manual_workers(
+            # A manual worker (Tether) restarts only when --worker names it, in every scope: restarting
+            # it cuts into live agent sessions, and its source may be another lane's pending change
+            # (2026-10-31 a routine aico rebuild put Neri's Tether change live). Say so when it changed.
+            stale = () if manual else service_ops.changed_manual_workers(
                 services, release.release_root.parent, release.source.source_commit,
                 repo=development_services.git_root)
-            workers = (*workers, *followers)
-            if followers:
-                print("[service] changed since their running release, so also restarting: " + " ".join(followers))
+            for unit in stale:
+                print(f"[service] {unit} changed since its running release and was left running; deploy it with: "
+                      f"st service rebuild {services.project_id} --worker {unit.removesuffix('.service')}")
             service_release.mark_phase(
                 release,
                 "deployment_scope",
@@ -636,12 +621,10 @@ def rebuild(
                 f"source: {release.source.source_commit}, build: {release.build_id})"
             )
             _run_release_steps(
-                _release_steps(services, release, backend=backend, development_root=development_root, manual=manual,
-                               followers=followers),
+                _release_steps(services, release, backend=backend, development_root=development_root, manual=manual),
                 release,
                 development_services,
                 manual,
-                followers,
             )
             if migrate_monitor_store:
                 try:
@@ -669,7 +652,7 @@ def rebuild(
             skipped = [name for name in services.optional_workers if name not in workers]
             if skipped and not manual:
                 print("[service] leaving optional workers unchanged: " + " ".join(skipped))
-            if unchanged := [name for name in services.manual_workers if not manual and name not in followers]:
+            if unchanged := [name for name in services.manual_workers if not manual and name not in stale]:
                 print("[service] leaving manual workers unchanged (stopped, or no change since their release): "
                       + " ".join(unchanged))
             restart_backend = bool(backend and services.backend_service)
@@ -690,8 +673,6 @@ def rebuild(
                     monitor_activated = False
                 else:
                     _restore_previous_units(development_services, release, manual)
-                    if followers:
-                        _restore_previous_units(development_services, release, followers)
                 service_release.fail_release(
                     release,
                     "restart_health",
@@ -850,7 +831,6 @@ def restart(
         worker=worker,
         acceptance=acceptance,
         with_ack=with_ack,
-        manual_followers=False,
     )
 
 

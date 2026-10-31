@@ -1488,39 +1488,31 @@ def test_normal_rebuild_leaves_an_unchanged_manual_worker_alone(manual_lifecycle
     assert "leaving manual workers unchanged (stopped, or no change since their release): " + MANUAL in result.output
 
 
-def test_one_rebuild_also_deploys_a_manual_worker_whose_source_changed(manual_lifecycle, monkeypatch):
+@pytest.mark.parametrize("args", [[], ["--scope", "backend"], ["--scope", "frontend"]])
+def test_a_rebuild_leaves_a_changed_manual_worker_running_and_says_how_to_deploy_it(manual_lifecycle, monkeypatch,
+                                                                                    args):
+    """2026-10-31: a routine full aico rebuild restarted Tether and put another lane's Tether change live."""
     changed = Mock(return_value=(MANUAL,))
     monkeypatch.setattr(service_ops, "changed_manual_workers", changed)
-    result = CliRunner().invoke(service.app, ["rebuild", "example"])
+    result = CliRunner().invoke(service.app, ["rebuild", "example", *args])
     assert result.exit_code == 0, result.output
     assert changed.call_args.args[2] == "c" * 40  # the release's commit
     assert changed.call_args.kwargs["repo"] == service._load("example").git_root  # the checkout, not the release
-    assert "changed since their running release, so also restarting: " + MANUAL in result.output
-    assert _restarted(manual_lifecycle)[0] == "backend.service" and MANUAL in _restarted(manual_lifecycle)
-    renders = [call.kwargs for call in manual_lifecycle["sync_systemd_units"].call_args_list]
-    assert renders == [{"manual": ()}, {"manual": (MANUAL,)}]
-    assert ("manual_worker_units", "succeeded") in _phases()
-    assert MANUAL in _mock(service_release.mark_phase).call_args_list[0].kwargs["workers"]
-    manual_lifecycle["verify_health"].assert_called_once()
+    assert (f"{MANUAL} changed since its running release and was left running; deploy it with: "
+            "st service rebuild example --worker daemon@default") in result.output
+    assert MANUAL not in _restarted(manual_lifecycle)
+    assert [call.kwargs for call in manual_lifecycle["sync_systemd_units"].call_args_list] == [{"manual": ()}]
+    assert MANUAL not in _mock(service_release.mark_phase).call_args_list[0].kwargs["workers"]
+    assert "leaving manual workers unchanged" not in result.output
 
 
-@pytest.mark.parametrize("args", [["--scope", "backend"], ["--scope", "frontend"]])
-def test_a_narrowed_rebuild_never_deploys_a_manual_worker(manual_lifecycle, monkeypatch, args):
+def test_naming_the_manual_worker_deploys_it(manual_lifecycle, monkeypatch):
     changed = Mock(return_value=(MANUAL,))
     monkeypatch.setattr(service_ops, "changed_manual_workers", changed)
-    assert CliRunner().invoke(service.app, ["rebuild", "example", *args]).exit_code == 0
+    result = CliRunner().invoke(service.app, ["rebuild", "example", "--worker", "daemon@default"])
+    assert result.exit_code == 0, result.output
     changed.assert_not_called()
-    assert MANUAL not in _restarted(manual_lifecycle)
-
-
-def test_a_failed_rebuild_restores_the_manual_worker_it_rendered(manual_lifecycle, monkeypatch, tmp_path):
-    previous = tmp_path / "previous" / "source"
-    monkeypatch.setattr(service_release, "previous_source_root", lambda _release: previous)
-    monkeypatch.setattr(service_ops, "changed_manual_workers", Mock(return_value=(MANUAL,)))
-    monkeypatch.setattr(service_ops, "service_state", lambda _: "failed")
-    assert CliRunner().invoke(service.app, ["rebuild", "example"]).exit_code == 1
-    restores = [call for call in manual_lifecycle["sync_systemd_units"].call_args_list if call.args[0].root == previous]
-    assert [call.kwargs for call in restores] == [{"manual": ()}, {"manual": (MANUAL,)}]
+    assert _restarted(manual_lifecycle) == [MANUAL]
 
 
 def test_a_manual_worker_changed_when_its_unit_or_working_directory_did(project, monkeypatch, tmp_path, capsys):
@@ -1734,31 +1726,11 @@ def test_health_probes_the_page_a_backend_serves(runtime):
 
 def test_restart_never_redeploys_a_manual_worker(manual_lifecycle, monkeypatch):
     """A full restart must not bounce Tether because its source changed (release a341faf7 selected it)."""
-    changed = Mock(return_value=(MANUAL,))
-    monkeypatch.setattr(service_ops, "changed_manual_workers", changed)
+    monkeypatch.setattr(service_ops, "changed_manual_workers", Mock(return_value=(MANUAL,)))
     monkeypatch.setattr(service, "_restart_in_place", Mock(return_value=None))
     result = CliRunner().invoke(service.app, ["restart", "example"])
     assert result.exit_code == 0, result.output
-    changed.assert_not_called()
     assert MANUAL not in _restarted(manual_lifecycle)
-
-
-def test_detached_restart_queues_a_rebuild_without_manual_followers(monkeypatch):
-    rebuild = Mock()
-    monkeypatch.setattr(service, "rebuild", rebuild)
-    monkeypatch.setattr(service, "_restart_in_place", Mock(return_value=None))
-    monkeypatch.setattr(service, "_load", lambda _: SimpleNamespace(workers=lambda include_all: (), manual_workers=()))
-    assert CliRunner().invoke(service.app, ["restart", "example", "--detach"]).exit_code == 0
-    assert rebuild.call_args.kwargs["manual_followers"] is False
-    captured = Mock(return_value=subprocess.CompletedProcess([], 0, "", ""))
-    monkeypatch.setattr(service_ops, "capture", captured)
-    monkeypatch.setattr(service_ops, "systemctl", lambda *_: subprocess.CompletedProcess([], 0, "inactive", ""))
-    write_job = Mock()
-    monkeypatch.setattr(service_ops, "_write_job", write_job)
-    monkeypatch.setattr(service_ops, "_caller_identity_env", lambda: [])
-    service_ops.queue_detached("example", False, manual_followers=False)
-    queued = write_job.call_args.args[0]["command"]
-    assert "--no-manual-followers" in queued
 
 
 @pytest.fixture

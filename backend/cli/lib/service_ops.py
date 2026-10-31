@@ -621,8 +621,8 @@ def changed_manual_workers(project: ProjectServices, releases_root: Path, commit
                            repo: Path) -> tuple[str, ...]:
     """Running manual workers whose source changed between their release and ``commit``.
 
-    A plain rebuild restarts these too, as ``--worker`` would, so one deploy
-    covers the project. A worker's source is its unit template and its
+    A rebuild leaves them running and names them with the ``--worker`` command
+    that deploys them (a manual worker restarts only when named). A worker's source is its unit template and its
     ``WorkingDirectory`` under the project root (the whole repo when it names
     none), diffed in ``repo`` (the checkout: a release source has no .git). A
     stopped worker is left alone; one whose release commit cannot be read, or
@@ -1891,7 +1891,6 @@ def queue_detached(
     migrate_monitor_store: bool = False,
     with_ack: str | None = None,
     rollback: bool = False,
-    manual_followers: bool = True,
 ) -> int:
     unit = f"sf-rebuild-{project}"
     if systemctl("is-active", f"{unit}.service").stdout.strip() in {"active", "activating", "deactivating", "reloading"}:
@@ -1910,8 +1909,6 @@ def queue_detached(
         command.extend(["--with-ack", with_ack])
     if rollback:
         command.append("--rollback")
-    if not manual_followers:
-        command.append("--no-manual-followers")
     source_evidence = None
     if accepted_source is not None:
         source = service_release.AcceptedSource.from_descriptor(accepted_source)
