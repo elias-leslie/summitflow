@@ -119,3 +119,17 @@ def test_wake_is_an_on_demand_surface_with_short_help(monkeypatch):
     assert result.exit_code == 0
     assert 'Example: st aico wake +1h "check the release"' in result.output
     assert len(result.output) < 1000
+
+
+def test_wait_is_an_on_demand_surface_that_points_subagents_at_block(monkeypatch):
+    manifest = aico_record().manifest
+    assert manifest is not None
+    usage = next(row for row in manifest.usage if row["surface"] == "st.aico.wait")
+    assert usage["on_demand"] and usage["tier"] == "reference"
+    assert "--block" in " ".join(usage["precautions"])
+    assert manifest.help_options["wait"]["--block"] == 0
+    assert manifest.help_options["waits"]["--recent"] == 0
+    monkeypatch.setattr("cli.extensions.dispatch_extension", lambda *a, **k: pytest.fail("dispatched"))
+    result = CliRunner().invoke(app(), ["aico", "wait", "--help"])
+    assert result.exit_code == 0
+    assert "Example: st aico wait session neri-r1" in result.output
