@@ -353,6 +353,7 @@ def lifecycle(monkeypatch, project):
     monkeypatch.setattr(service_release, "fail_release", Mock())
     monkeypatch.setattr(service_release, "complete_release", Mock())
     monkeypatch.setattr(service_ops, "release_references_for_services", Mock(return_value=set()))
+    monkeypatch.setattr(service_ops, "process_release_references", Mock(return_value=set()))
     monkeypatch.setattr(
         service_release,
         "publish_deployment_result",
