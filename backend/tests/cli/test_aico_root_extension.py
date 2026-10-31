@@ -117,5 +117,5 @@ def test_wake_is_an_on_demand_surface_with_short_help(monkeypatch):
     monkeypatch.setattr("cli.extensions.dispatch_extension", lambda *a, **k: pytest.fail("dispatched"))
     result = CliRunner().invoke(app(), ["aico", "wake", "--help"])
     assert result.exit_code == 0
-    assert 'Example: st aico wake +1h "check the lane reports"' in result.output
+    assert 'Example: st aico wake +1h "check the release"' in result.output
     assert len(result.output) < 1000
