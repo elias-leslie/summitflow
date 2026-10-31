@@ -40,6 +40,29 @@ _SESSION_ENV = {
 
 # ---------------------------------------------------------------- anchor
 
+def harness_provider(pid: int, comm: str) -> str | None:
+    """Provider of a harness process. A Claude Code background job execs its versioned
+    binary (``~/.local/share/claude/versions/<version>``), so its comm is the version."""
+    if comm in HARNESS_COMMS:
+        return HARNESS_COMMS[comm]
+    try:
+        exe = Path(os.readlink(f"/proc/{pid}/exe"))
+    except OSError:
+        return None
+    return HARNESS_COMMS.get(exe.parent.parent.name) if exe.parent.name == "versions" else None
+
+
+def shared_host(pid: int) -> bool:
+    """A shared daemon hosts unrelated threads (codex app-server / exec-server / mcp-server,
+    Claude's daemon, pty host and spare), so it is no agent; unreadable counts as shared."""
+    try:
+        cmdline = Path(f"/proc/{pid}/cmdline").read_bytes()
+    except OSError:
+        return True
+    return any(arg.endswith((b"-server", b"-host", b"bg-spare")) or arg == b"daemon"
+               for arg in cmdline.split(b"\0")[1:])
+
+
 def _stat(pid: int) -> tuple[str, int, str] | None:
     try:
         raw = Path(f"/proc/{pid}/stat").read_text()
@@ -61,15 +84,9 @@ def _proc_anchor(start_pid: int) -> tuple[str, str] | None:
         if info is None:
             return None
         comm, ppid, start = info
-        if comm in HARNESS_COMMS:
-            try:
-                cmdline = Path(f"/proc/{pid}/cmdline").read_bytes()
-            except OSError:
-                return None
-            # Shared daemons (codex app-server / exec-server / mcp-server) host unrelated threads.
-            if any(arg.endswith(b"-server") or arg == b"daemon" for arg in cmdline.split(b"\0")[1:]):
-                return None
-            return f"{pid}:{start}", HARNESS_COMMS[comm]
+        provider = harness_provider(pid, comm)
+        if provider:
+            return None if shared_host(pid) else (f"{pid}:{start}", provider)
         pid = ppid
     return None
 

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import os
+from pathlib import Path
 
 import pytest
 
@@ -22,7 +23,7 @@ def tether(monkeypatch, tmp_path):
     coordinators._harness_widgets.cache_clear()
     catalog = {d["id"]: d for d in (COORD, LANE, ORPHAN)}
     monkeypatch.setattr(coordinators, "sessions", lambda: catalog)
-    monkeypatch.setattr(coordinators, "_harness_widgets", lambda: {"c0000001": f"{os.getpid()}:1"})
+    monkeypatch.setattr(coordinators, "_harness_widgets", lambda: {"c0000001": [f"{os.getpid()}:1"]})
     coord_lineage.save_doc({"identities": {
         "cc:000old": {"anchor": f"{os.getpid()}:1", "last": "2026-10-13T10:00:00+00:00"},
         "cc:96eb15": {"anchor": f"{os.getpid()}:1", "last": "2026-10-13T12:00:00+00:00"},
@@ -85,3 +86,50 @@ def test_coordinator_without_a_session_record_is_listed(tether):
     assert coordinators.unrecorded_line(entry) == (
         "SES - | active | - | cc:96eb15 | task=- state=no-session-record | Personal Workspace | coordinator")
     assert coordinators.unrecorded_coordinators({"c0000001"}) == []
+
+
+def test_widget_answers_with_the_newest_identity_on_any_of_its_harness_processes(monkeypatch, tmp_path):
+    """A Claude Code session moved into a background job keeps its first process in the pane;
+    the job is a second harness process in the same widget and carries the live identity."""
+    monkeypatch.setattr(leases, "LEASES_DIR", tmp_path)
+    monkeypatch.setattr(coordinators, "_harness_widgets", lambda: {"w0000001": ["9611:1", "21914:2"]})
+    coord_lineage.save_doc({"identities": {
+        "cc:53c606": {"anchor": "9611:1", "last": "2026-10-30T22:17:00+00:00"},
+        "cc:1c7a9f": {"anchor": "21914:2", "last": "2026-10-31T16:00:00+00:00"},
+        "cc:other1": {"anchor": "7777:3", "last": "2026-10-31T17:00:00+00:00"},
+    }})
+    assert coordinators.agent_for_widget("w0000001") == "cc:1c7a9f"
+    assert coordinators.agent_for_widget("w0000002") is None
+
+
+def test_background_job_binary_is_a_claude_harness(monkeypatch):
+    """A background job execs ~/.local/share/claude/versions/<version>, so its comm is the version."""
+    monkeypatch.setattr(os, "readlink", lambda path: "/home/u/.local/share/claude/versions/2.1.314")
+    assert coord_lineage.harness_provider(1234, "2.1.314") == "claude_code"
+    assert coord_lineage.harness_provider(1234, "claude") == "claude_code"
+    monkeypatch.setattr(os, "readlink", lambda path: "/usr/bin/python3.14")
+    assert coord_lineage.harness_provider(1234, "python3") is None
+
+
+@pytest.mark.parametrize(("args", "shared"), [
+    ([], False),
+    (["--bg-pty-host", "/tmp/x.sock"], True),
+    (["--bg-spare", "/tmp/x.sock"], True),
+    (["daemon", "run"], True),
+    (["app-server"], True),
+])
+def test_shared_hosts_are_no_agent(args, shared):
+    import subprocess
+    import sys
+    import time
+
+    proc = subprocess.Popen([sys.executable, "-c", "import time; time.sleep(30)", *args])
+    try:
+        for _ in range(100):  # the child's cmdline is ours until exec finishes
+            if b"time.sleep" in Path(f"/proc/{proc.pid}/cmdline").read_bytes():
+                break
+            time.sleep(0.01)
+        assert coord_lineage.shared_host(proc.pid) is shared
+    finally:
+        proc.kill()
+        proc.wait()

@@ -59,9 +59,13 @@ def widget_for_anchor(anchor: str | None) -> str | None:
 
 
 @cache
-def _harness_widgets() -> dict[str, str]:
-    """Live harness anchors by the widget they run in (the oldest process wins a widget)."""
-    found: dict[str, tuple[int, str]] = {}
+def _harness_widgets() -> dict[str, list[str]]:
+    """Live harness anchors by the widget they run in, oldest first.
+
+    A widget can hold more than one harness process: a Claude Code session moved
+    into a background job keeps its original process in the pane.
+    """
+    found: dict[str, list[tuple[int, str]]] = {}
     uid = os.getuid()
     for entry in Path("/proc").iterdir():
         if not entry.name.isdigit():
@@ -73,25 +77,23 @@ def _harness_widgets() -> dict[str, str]:
             continue
         pid = int(entry.name)
         info = coord_lineage._stat(pid)
-        if info is None or info[0] not in coord_lineage.HARNESS_COMMS:
+        if info is None or not coord_lineage.harness_provider(pid, info[0]) or coord_lineage.shared_host(pid):
             continue
         widget = _environ(pid).get("AICO_WIDGET_ID")
         if not widget:
             continue
-        start = int(info[2])
-        if widget not in found or start < found[widget][0]:
-            found[widget] = (start, f"{pid}:{info[2]}")
-    return {widget: anchor for widget, (_, anchor) in found.items()}
+        found.setdefault(widget, []).append((int(info[2]), f"{pid}:{info[2]}"))
+    return {widget: [anchor for _, anchor in sorted(rows)] for widget, rows in found.items()}
 
 
 def agent_for_widget(widget: str) -> str | None:
-    """Coordination id of the agent in ``widget``: the latest identity on its harness process."""
-    anchor = _harness_widgets().get(widget)
-    if anchor is None:
+    """Coordination id of the agent in ``widget``: the latest identity on any of its harness processes."""
+    anchors = set(_harness_widgets().get(widget) or ())
+    if not anchors:
         return None
     identities = coord_lineage.load_doc().get("identities") or {}
     mine = [(str(row.get("last") or ""), aid) for aid, row in identities.items()
-            if isinstance(row, dict) and row.get("anchor") == anchor]
+            if isinstance(row, dict) and row.get("anchor") in anchors]
     return max(mine)[1] if mine else None
 
 

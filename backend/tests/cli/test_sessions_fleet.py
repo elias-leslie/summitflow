@@ -379,3 +379,22 @@ def test_wait_until_fails_without_reaching_a_state(monkeypatch, args, code):
     result = runner.invoke(_sessions_app(), ["wait", *args])
     assert result.exit_code == code
     assert result.stdout == ""
+
+
+def test_send_to_a_window_reaches_its_newest_identity_not_its_agent_hub_record(monkeypatch):
+    """Agent Hub still names the session a window started with; a fork or resume since then
+    lives under a new identity, and the window's newest identity gets the message."""
+    from cli.lib import coordinators
+
+    _live_identities(cc_53c606="53c6069b-bd56-4fb2-9c1e-ac2b32b48b7b",
+                     cc_1c7a9f="1c7a9ffd-ef52-46b5-8d87-1ebb3f778a8e")
+    sent = _capture_handshake(monkeypatch)
+    monkeypatch.setattr(sessions_fleet, "_agent_hub_sessions", lambda: [
+        {"id": "53c6069b-bd56-4fb2-9c1e-ac2b32b48b7b", "status": "active",
+         "external_identity": {"aico_widget_id": "a36fa317"}},
+    ])
+    monkeypatch.setattr(coordinators, "agent_for_widget", {"a36fa317": "cc:1c7a9f"}.get)
+    result = runner.invoke(app, ["sessions", "send", "a36fa317", "lane done"])
+    assert result.exit_code == 0, result.output
+    assert "→ cc:1c7a9f" in result.output
+    assert sent == [("cc:1c7a9f", "lane done")]

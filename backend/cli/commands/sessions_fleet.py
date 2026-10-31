@@ -70,13 +70,20 @@ def _resolve_agent(target: str) -> str:
 
     if coord_route.AGENT_ID.fullmatch(target) or coord.known_target(target):
         return target
+    # An Aico window answers with the newest identity in it: its Agent Hub record can still name
+    # the session it started with (a fork, resume or reset since then mints a new one).
+    windows = {agent: f"aico widget {alias}" for alias in dict.fromkeys([target.strip().casefold(),
+                                                                       *_tether_aliases(target)])
+               if (agent := coordinators.agent_for_widget(alias))}
+    if len(windows) == 1:
+        agent_id = next(iter(windows))
+        typer.echo(f"→ {agent_id}")
+        return agent_id
     sessions = _agent_hub_sessions()
     found, unreachable = coord_route.resolve_label(target, sessions)
     if not found:
+        found.update(windows)
         for alias in dict.fromkeys([target.strip().casefold(), *_tether_aliases(target)]):
-            agent = coordinators.agent_for_widget(alias)
-            if agent:
-                found.setdefault(agent, f"aico widget {alias}")
             for aid, how in coord_route.resolve_label(alias, sessions)[0].items():
                 found.setdefault(aid, f"aico window {alias}, {how}")
     if len(found) == 1:
