@@ -310,6 +310,18 @@ def test_a_line_nothing_waits_for_any_more_is_withdrawn_once(monkeypatch, tether
     assert len(tether.withdrawals()) == 1
 
 
+def test_a_line_merged_in_during_the_withdraw_is_queued_again(monkeypatch, tether):
+    tether.version = 18
+    _identity("codex:target", "019a-target")
+    coord_wake.mark_woke("codex:target", ["old:req"])
+    answers = iter([None])  # nothing waiting at the read; a sender's request lands before the DELETE
+    monkeypatch.setattr(coord_deliver, "summary", lambda who, **k: next(answers, "REQUEST ef56 from cc:x: ok?"))
+    posts = len(tether.posts())
+    assert coord_deliver.withdraw_stale("codex:target") is True
+    assert len(tether.withdrawals()) == 1
+    assert len(tether.posts()) == posts + 1  # queued again, not lost
+
+
 def test_no_withdraw_before_tether_api_18_or_without_a_queued_line(monkeypatch, tether):
     _identity("codex:target", "019a-target")
     assert coord_deliver.withdraw_stale("codex:target") is None  # never queued: no request at all

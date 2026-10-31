@@ -25,6 +25,7 @@ once the recipient's inbox has nothing waiting (Tether API 18).
 
 from __future__ import annotations
 
+import contextlib
 import hashlib
 import re
 import time
@@ -316,11 +317,13 @@ def withdraw_stale(agent_id: str) -> bool | None:
         last = 0.0
     if not woke or max(woke) <= last:
         return None
-    version = api_version()
-    if version is None or version < WITHDRAW_API:
-        return None
+    # Taken before the inbox read: a line a sender queues meanwhile is newer and gets its own look.
+    began = time.time()
     who = target(agent_id)
     if who is None or summary(who) is not None:
+        return None
+    version = api_version()
+    if version is None or version < WITHDRAW_API:
         return None
     from app.services import tether
 
@@ -333,8 +336,13 @@ def withdraw_stale(agent_id: str) -> bool | None:
     if status != 200 or not isinstance(body, dict):
         return None
     coord_wake.STATE.mkdir(parents=True, exist_ok=True)
-    path.write_text(f"{time.time():.3f}")
-    return bool(body.get("withdrawn"))
+    path.write_text(f"{began:.3f}")
+    withdrawn = bool(body.get("withdrawn"))
+    # A sender's line merged into the queued one between the read and the DELETE went with it: queue it again.
+    if withdrawn and summary(who) is not None:
+        with contextlib.suppress(Unsettled):
+            wake(agent_id)
+    return withdrawn
 
 
 def nudge(kind: str, ref: str) -> None:
