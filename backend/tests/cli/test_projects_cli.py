@@ -250,7 +250,7 @@ def test_projects_audit_reports_complete_inventory_and_representation(tmp_path: 
     (active / ".git").mkdir()
     (active / "project.identity.json").write_text(json.dumps({
         "project": {"id": "aico", "lifecycle": "retired"},
-        "services": {"backend": "aico-shell.service"},
+        "services": {"backend": "aico-web.service"},
     }))
     fixture = tmp_path / "test1"
     fixture.mkdir()
@@ -262,7 +262,7 @@ def test_projects_audit_reports_complete_inventory_and_representation(tmp_path: 
         return {
             "/projects?include_inactive=true": (projects, None),
             "/projects": (projects[:1], None),
-            "/docker/status": ([{"service": "aico-shell", "state": "running", "health": "healthy"}], None),
+            "/docker/status": ([{"service": "aico-web", "state": "running", "health": "healthy"}], None),
         }[path]
     with patch("cli.commands._projects_audit._get_list", side_effect=api):
         result = runner.invoke(app, ["audit"])

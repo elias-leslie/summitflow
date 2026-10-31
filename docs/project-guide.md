@@ -77,12 +77,12 @@ UI (~23 pages), and ~33 Hatchet workflows. Output is compact JSON by default, wi
   control: screenshot, OCR, GIF, click/type/key), `st web` (Agent-Hub-routed web
   search/research/fetch), `st design` (AI or hand-authored HTML mockups + asset
   generation/import/critique/export).
-- `st aico widget status|title|position` controls the exact ordinary Aico widget
+- `st aico widget status|title|coordinator` controls the exact ordinary Aico widget
   from the current managed pane's `AICO_WIDGET_ID`, or an explicit `--widget-id`.
-  Use these owner commands for titles and bounds before desktop automation;
+  Use these owner commands for titles and the coordinator mark;
   [widget controls](fleet-session-control.md#ordinary-aico-widget-controls) use
   the private GUI socket and generation-fenced content-free receipts.
-- `st aico root status|show|title|position|end REQUEST_ID` controls one exact
+- `st aico root status|title|end REQUEST_ID` controls one exact
   retained owner root, including direct `st aico create` roots;
   `st sessions title` is a compatibility alias of `st aico root title`.
 - `st tether sessions|roots|tools|projects|doctor|version` forwards to the CLI of

@@ -30,10 +30,13 @@ def app():
 def test_root_manifest_exposes_owner_controls_and_alias():
     manifest = aico_record().manifest
     assert manifest is not None
-    assert "st aico root status|show|title|position|end|send" in manifest.help[""]
-    for operation in ("status", "show", "title", "position", "end", "send"):
+    assert "st aico root status|title|end|send" in manifest.help[""]
+    for operation in ("status", "title", "end", "send"):
         assert f"st aico root {operation} REQUEST_ID" in manifest.help[f"root {operation}"]
         assert f"st.aico.root.{operation}" in {row["surface"] for row in manifest.usage}
+    for operation in ("show", "position"):
+        assert "Retired" in manifest.help[f"root {operation}"]
+        assert f"st.aico.root.{operation}" not in {row["surface"] for row in manifest.usage}
     assert manifest.help_options["root end"]["--owner-socket"] == 1
     assert "compatibility alias" in manifest.help["root title"]
     assert "A-Term" not in manifest.help["root position"]

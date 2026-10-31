@@ -32,17 +32,18 @@ def test_widget_manifest_exposes_exact_current_pane_owner_controls():
     manifest = aico_record().manifest
     assert manifest is not None
     assert "st aico widget" in manifest.help[""]
-    assert "before using desktop automation" in manifest.help["widget"]
-    for operation in ("status", "title", "position"):
+    assert "st aico widget position" not in manifest.help[""]
+    for operation in ("status", "title"):
         text = manifest.help[f"widget {operation}"]
         assert "AICO_WIDGET_ID" in text
         assert "--widget-id ID" in text
         assert manifest.help_options[f"widget {operation}"] == {"--widget-id": 1, "--root-socket": 1}
-    assert {"st.aico.widget.status", "st.aico.widget.title", "st.aico.widget.position"} <= {
+    assert {"st.aico.widget.status", "st.aico.widget.title"} <= {
         row["surface"] for row in manifest.usage
     }
+    assert "st.aico.widget.position" not in {row["surface"] for row in manifest.usage}
     assert "1-160" in manifest.help["widget title"]
-    assert "100000" in manifest.help["widget position"]
+    assert "Retired" in manifest.help["widget position"]
     assert "Output contains" in manifest.help["widget"]
     assert "No catalog prompt retention or fleet ledger" in manifest.help["create"]
 
@@ -50,7 +51,7 @@ def test_widget_manifest_exposes_exact_current_pane_owner_controls():
 @pytest.mark.parametrize("arguments, expected", [
     (["widget", "status", "--help"], "Read one exact ordinary widget"),
     (["widget", "title", "--help"], "Rename the exact ordinary widget"),
-    (["widget", "position", "--help"], "Arrange the exact ordinary widget"),
+    (["widget", "position", "--help"], "Aico has no desktop windows any more"),
     (["widget", "--widget-id", "title", "status", "--help"], "Read one exact ordinary widget"),
 ])
 def test_widget_help_is_passive_and_resolves_nested_routes(monkeypatch, arguments, expected):

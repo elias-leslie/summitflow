@@ -94,9 +94,9 @@ current capsule instead of replaying the entire history to refresh context.
 
 Existing `show` and `close` accept opaque root handles, and `list --fleet` lists
 fleet roots. Other session readers continue using their existing Agent Hub path.
-`st sessions activate ROOT` uses the exact stored generation to show or reattach
-the root. `st sessions position ROOT X Y WIDTH HEIGHT` arranges Aico roots with
-validated bounds; positioning a retained `a-term` root reports unsupported.
+`st sessions activate ROOT` and `st sessions position ROOT X Y WIDTH HEIGHT` are
+retired with the Aico desktop windows: there is no window to show or arrange, so
+they report unavailable. Sessions show in Aico web.
 Close requests native End through Aico's existing private owner socket with the
 stored exact widget identity and generation fence. An acknowledged End or an exact
 matching provider-owned ended tombstone closes the allocation and releases its
@@ -163,16 +163,16 @@ Owner operations for one exact retained root live under `st aico root`:
 
 ```sh
 st aico root status REQUEST_ID
-st aico root show REQUEST_ID
 st aico root title REQUEST_ID "Project · Focus"
-st aico root position REQUEST_ID X Y WIDTH HEIGHT
 st aico root end REQUEST_ID
 ```
 
-They address direct `st aico create` roots and fleet-started roots alike. Show,
-title and position read the exact request, require a running descriptor, post its
-generation once and verify identity and generation in the receipt. Missing,
-ended, pending, uncertain or stale roots cannot authorize those view updates.
+They address direct `st aico create` roots and fleet-started roots alike. Title
+reads the exact request, requires a running descriptor, posts its
+generation once and verifies identity and generation in the receipt. Missing,
+ended, pending, uncertain or stale roots cannot authorize that update.
+`root show` and `root position` are retired: Aico has no desktop windows any more;
+sessions show in Aico web, so they print that and exit 2.
 `applied: false` means nothing was applied; `applied: null` means the outcome is
 unknown and must be reconciled with `st aico root status`, never blindly retried.
 End pins the exact descriptor's generation and may contain a pending or uncertain
@@ -191,7 +191,7 @@ titled through Tether. The owner extension
 performs all validation and reports the receipt. Labels require 1-160 UTF-8 bytes
 of control-free single-line Unicode after ECMAScript whitespace trimming. The
 owner's `contracts/view-mutation-vectors.json` pins label and bounds rules for
-both its Electron handler and its Python client, so SummitFlow keeps no separate
+both its title handler and its Python client, so SummitFlow keeps no separate
 label validator. Supply no secrets or private target data. Content exists only
 in the input and the owner's existing session metadata. SummitFlow retains no
 title, fleet event or duplicate session store, and output contains only
@@ -222,13 +222,11 @@ Owner code changes need a managed rebuild before live use.
 
 ## Ordinary Aico widget controls
 
-Use the ordinary-widget owner commands for the current managed pane before desktop
-automation:
+Use the ordinary-widget owner commands for the current managed pane:
 
 ```sh
 st aico widget status
 st aico widget title "Project · Focus"
-st aico widget position 0 0 960 720
 ```
 
 Each command defaults to the exact `AICO_WIDGET_ID` inherited from the managed pane.
@@ -240,15 +238,14 @@ discover fleet roots or infer a widget from a native thread.
 The private GUI socket is the same configured `AICO_GUI_CONTROL_SOCKET`, with
 `--root-socket PATH` available for an exact local socket. Status reads
 `GET /v1/widgets/ID`, returning only owner, widget ID, session ID, generation,
-status and availability. A title or position mutation reads this exact descriptor
+status and availability. A title mutation reads this exact descriptor
 immediately first, requires a running available workload, posts the generation to
-`/v1/widgets/ID/title` or `/v1/widgets/ID/position`, and verifies the returned
+`/v1/widgets/ID/title`, and verifies the returned
 identity and generation. GUI absence, missing widgets, changed identity and stale
 generations fail closed; commands never start Aico.
 
 Labels use the same non-secret 1-160 trimmed UTF-8 byte, control-free single-line
-validation as retained root titles. Integer bounds require absolute values at
-most 100000, width at least 360 and height at least 240. Content goes only to the
+validation as retained root titles. Content goes only to the
 owner's existing session metadata. Receipts and errors contain no label, and ST
 adds no fleet event or duplicate session record. Existing retained-root commands
 continue addressing their exact request IDs.

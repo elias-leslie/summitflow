@@ -18,7 +18,7 @@ _IDENTITIES = [
     {"project": {"id": "monkey-fight"}, "services": {
         "backend": "", "frontend": "monkey-fight.service", "default_workers": [], "optional_workers": []}},
     {"project": {"id": "tether"}, "services": {"backend": "tether@default.service", "frontend": ""}},
-    {"project": {"id": "aico"}, "services": {"backend": "aico-shell.service",
+    {"project": {"id": "aico"}, "services": {"backend": "aico-web.service",
                                              "manual_workers": ["daemon@default.service"]}},
     {"project": {"id": "docs-only"}},
 ]
@@ -49,7 +49,7 @@ def test_user_services_come_from_identity(identity_services: dict[str, str]) -> 
         "monkey-fight": "monkey-fight.service",
         "monkey-fight-web": "monkey-fight.service",
         "tether": "tether@default.service",
-        "aico": "aico-shell.service",
+        "aico": "aico-web.service",
         "daemon@default": "daemon@default.service",
     }
 
