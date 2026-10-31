@@ -265,3 +265,10 @@ def test_nightshift_memory_reads_only_a_fresh_v1_state(tmp_path, monkeypatch) ->
     f.write_text(json.dumps({"v": 1, "state": "amber", "reason": reason + "\x1b<", "expires_at": 130, "mem_available_gib": 5.5}))
     assert heavy_work.nightshift_memory(100.0) == {"state": "amber", "reason": reason, "mem_available_gib": 5.5}
     assert heavy_work.nightshift_memory(131.0) is None
+    # disk red with memory green (Nightshift memctl since 2026-10-31): memory is green, the disk is not memory pressure
+    f.write_text(json.dumps({"v": 1, "state": "red", "admit": False, "reason": "Disk is critical: / has 20.0 GiB free",
+                             "memory_state": "green", "memory_reason": "Enough memory: 16.0 GiB available",
+                             "expires_at": 130, "mem_available_gib": 16.0}))
+    assert heavy_work.nightshift_memory(100.0) == {"state": "green", "reason": "Enough memory: 16.0 GiB available",
+                                                   "mem_available_gib": 16.0}
+    assert heavy_work.admission_state(100.0).admit is False  # heavy work still waits for the disk

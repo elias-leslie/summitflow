@@ -135,16 +135,19 @@ def _nightshift_admission(now: float) -> Admission | None:
 
 def nightshift_memory(now: float | None = None) -> dict[str, Any] | None:
     """Nightshift's host memory state (admission.json, contract v1: green, amber or red with its reason), the one
-    memory-pressure source on this host; None when it is missing or stale."""
+    memory-pressure source on this host; None when it is missing or stale. A file with memory_state (Nightshift
+    since 2026-10-31, whose state also counts the disk) is read by memory_state and memory_reason."""
     now = time.time() if now is None else now
     try:
         state = json.loads(NIGHTSHIFT_ADMISSION.read_text())
-        if state.get("v") != 1 or float(state["expires_at"]) <= now or state.get("state") not in ("green", "amber", "red"):
+        mem = "memory_state" if "memory_state" in state else "state"
+        if state.get("v") != 1 or float(state["expires_at"]) <= now or state.get(mem) not in ("green", "amber", "red"):
             return None
     except (OSError, ValueError, TypeError, KeyError, AttributeError):
         return None
-    reason = re.sub(r"[^a-zA-Z0-9 .,:%()_-]", "", str(state.get("reason", "")))[:160]  # Nightshift's plain sentence
-    return {"state": state["state"], "reason": reason,
+    text = state.get("memory_reason" if mem == "memory_state" else "reason", "")
+    reason = re.sub(r"[^a-zA-Z0-9 .,:%()_-]", "", str(text))[:160]  # Nightshift's plain sentence
+    return {"state": state[mem], "reason": reason,
             **{k: state[k] for k in ("mem_available_gib", "swap_used_pct", "psi_some_avg60") if isinstance(state.get(k), int | float)}}
 
 

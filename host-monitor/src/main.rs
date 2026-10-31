@@ -464,13 +464,19 @@ fn probe(port: u16, path: &str) -> Value {
     json!({"availability":"ok","healthy":line.starts_with("HTTP/1.") && line.contains(" 200 ")})
 }
 
-/// Whether Nightshift calls memory tight (amber or red); None when its state is missing or stale.
+/// Whether Nightshift calls memory tight (amber or red); None when its state is missing or stale. Its
+/// memory_state when present (since 2026-10-31 `state` is the worse of memory and disk; disk has its own trigger).
 fn memory_tight(path: &Path, now_s: f64) -> Option<bool> {
     let v: Value = serde_json::from_slice(&fs::read(path).ok()?).ok()?;
     if v["v"] != 1 || v["expires_at"].as_f64().is_none_or(|e| e <= now_s) {
         return None;
     }
-    match v["state"].as_str()? {
+    let state = if v.get("memory_state").is_some() {
+        &v["memory_state"]
+    } else {
+        &v["state"]
+    };
+    match state.as_str()? {
         "green" => Some(false),
         "amber" | "red" => Some(true),
         _ => None,
@@ -1765,5 +1771,18 @@ mod tests {
         assert_eq!(memory_tight(&f, 100.0), Some(false));
         fs::write(&f, r#"{"v":2,"state":"red","expires_at":130}"#).unwrap();
         assert_eq!(memory_tight(&f, 100.0), None);
+        // disk red with memory green (Nightshift's disk-red fixture shape): memory is not tight
+        fs::write(
+            &f,
+            r#"{"v":1,"state":"red","admit":false,"memory_state":"green","expires_at":130}"#,
+        )
+        .unwrap();
+        assert_eq!(memory_tight(&f, 100.0), Some(false));
+        fs::write(
+            &f,
+            r#"{"v":1,"state":"red","memory_state":"amber","expires_at":130}"#,
+        )
+        .unwrap();
+        assert_eq!(memory_tight(&f, 100.0), Some(true));
     }
 }
