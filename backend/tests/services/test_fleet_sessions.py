@@ -332,24 +332,8 @@ def test_a_term_surface_is_retired_but_retained_roots_stay_readable(monkeypatch)
         service.start_root("fixture", "/fixture/project", root="root-" + "0" * 32, tool="codex",
             instruction="Review exact source refs.", scope={}, surface="a-term", work_role="implementation")
     monkeypatch.setattr(service, "reconcile_root", lambda root: {"status": "registered", "surface": "a-term", "host": descriptor})
-    assert service.arrange_root("root-fixture") == {"root": "root-fixture", "capability": "unavailable", "applied": False}
-    assert service.arrange_root("root-fixture", bounds={"x": 0, "y": 0, "width": 400, "height": 300})["capability"] == "unsupported"
     assert not service._host_end(descriptor, root="root-fixture")
     client.assert_not_called()
-
-
-def test_position_validates_bounds_and_checks_exact_generation(monkeypatch):
-    descriptor = {"owner": "aico", "hostIdentity": "aabbccdd", "generation": "a" * 64}
-    monkeypatch.setattr(service, "reconcile_root", lambda root: {"status": "registered", "surface": "aico", "host": descriptor})
-    request = MagicMock(return_value=descriptor)
-    monkeypatch.setattr(service, "_host_request", request)
-    bounds = {"x": 100, "y": 100, "width": 400, "height": 300}
-    assert service.arrange_root("root-fixture", bounds=bounds)["applied"]
-    assert request.call_args.args == ("aico", "/v1/roots/root-fixture/position", {"generation": "a" * 64, "bounds": bounds})
-    with pytest.raises(ValueError, match="Bounds"):
-        service.arrange_root("root-fixture", bounds={**bounds, "width": 100})
-    request.return_value = {**descriptor, "generation": "different"}
-    assert not service.arrange_root("root-fixture")["applied"]
 
 
 @pytest.mark.asyncio

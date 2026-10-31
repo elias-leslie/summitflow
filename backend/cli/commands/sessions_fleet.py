@@ -317,8 +317,6 @@ def register(app: typer.Typer) -> None:
     app.command("send")(send)
     app.command("verify")(verify)
     app.command("wait")(wait)
-    app.command("activate")(activate)
-    app.command("position")(position)
     app.command("emit")(emit)
     from .sessions_handshake import register as _register_handshake
 
@@ -361,16 +359,6 @@ def verify(
         # Never surface provider/transcript/DB contents through diagnostic text.
         raise typer.BadParameter("Native receipt identity or provenance is unavailable") from exc
     output_json(result)
-
-
-def activate(root: str) -> None:
-    """Show or reattach the exact owned root generation."""
-    output_json(_call("activate", root))
-
-
-def position(root: str, x: int, y: int, width: Annotated[int, typer.Argument(min=360)], height: Annotated[int, typer.Argument(min=240)]) -> None:
-    """Arrange an Aico root through its generation-fenced owner endpoint."""
-    output_json(_call("position", root, x=x, y=y, width=width, height=height))
 
 
 def emit(

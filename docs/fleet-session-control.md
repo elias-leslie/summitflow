@@ -94,9 +94,8 @@ current capsule instead of replaying the entire history to refresh context.
 
 Existing `show` and `close` accept opaque root handles, and `list --fleet` lists
 fleet roots. Other session readers continue using their existing Agent Hub path.
-`st sessions activate ROOT` and `st sessions position ROOT X Y WIDTH HEIGHT` are
-retired with the Aico desktop windows: there is no window to show or arrange, so
-they report unavailable. Sessions show in Aico web.
+`st sessions activate` and `st sessions position` are gone with the Aico desktop
+windows: there is no window to show or arrange. Sessions show in Aico web.
 Close requests native End through Aico's existing private owner socket with the
 stored exact widget identity and generation fence. An acknowledged End or an exact
 matching provider-owned ended tombstone closes the allocation and releases its

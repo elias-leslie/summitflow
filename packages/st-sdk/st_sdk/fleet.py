@@ -53,12 +53,6 @@ class FleetClient:
     def close(self, root: str) -> dict[str, Any]:
         return self.client.post(self._url(root, "/close"))
 
-    def activate(self, root: str) -> dict[str, Any]:
-        return self.client.post(self._url(root, "/activate"))
-
-    def position(self, root: str, *, x: int, y: int, width: int, height: int) -> dict[str, Any]:
-        return self.client.post(self._url(root, "/position"), json={"x": x, "y": y, "width": width, "height": height})
-
     def append(self, root: str, *, source_key: str, event_type: str, attributes: dict[str, Any]) -> dict[str, Any]:
         """Caller supplies sanitized compact refs, not transcript/terminal content."""
         encoded = json.dumps([event_type, attributes], sort_keys=True, separators=(",", ":"), allow_nan=False)

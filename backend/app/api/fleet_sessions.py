@@ -76,14 +76,6 @@ class SourceEvent(BaseModel):
     digest: str = Field(pattern="^[0-9a-f]{64}$")
 
 
-class Bounds(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-    x: int = Field(ge=-100000, le=100000, strict=True)
-    y: int = Field(ge=-100000, le=100000, strict=True)
-    width: int = Field(ge=360, le=100000, strict=True)
-    height: int = Field(ge=240, le=100000, strict=True)
-
-
 class HostRequest(BaseModel):
     """A coordination request from an agent on an agent host (cli/lib/coord_remote.py)."""
 
@@ -192,18 +184,6 @@ def send(root: str, body: Instruction, request: Request, response: Response) -> 
 def close(root: str, request: Request, response: Response) -> dict[str, Any]:
     _mutation(request, response)
     return _call(service.close_root, root)
-
-
-@router.post("/roots/{root}/activate")
-def activate(root: str, request: Request, response: Response) -> dict[str, Any]:
-    _mutation(request, response)
-    return _call(service.arrange_root, root)
-
-
-@router.post("/roots/{root}/position")
-def position(root: str, body: Bounds, request: Request, response: Response) -> dict[str, Any]:
-    _mutation(request, response)
-    return _call(service.arrange_root, root, bounds=body.model_dump())
 
 
 @router.post("/roots/{root}/events")

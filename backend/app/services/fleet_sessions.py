@@ -358,28 +358,6 @@ def close_root(root: str) -> dict[str, Any]:
     return root_state(root)
 
 
-def arrange_root(root: str, *, bounds: dict[str, int] | None = None) -> dict[str, Any]:
-    """Activate or position through the exact generation-fenced owner surface."""
-    state = reconcile_root(root)
-    if state["status"] != "registered" or not state["host"] or not state["host"].get("generation"):
-        return {"root": root, "capability": "unavailable", "applied": False}
-    if bounds is not None:
-        if set(bounds) != {"x", "y", "width", "height"} or any(type(v) is not int or abs(v) > 100000 for v in bounds.values()) or bounds["width"] < 360 or bounds["height"] < 240:
-            raise ValueError("Bounds require integer x/y and width >= 360, height >= 240 within 100000")
-        if state["surface"] == "a-term":
-            return {"root": root, "capability": "unsupported", "applied": False}
-    action = "position" if bounds is not None else "show"
-    payload = {"generation": state["host"]["generation"]}
-    if bounds is not None:
-        payload["bounds"] = bounds
-    try:
-        observed = _host_request(state["surface"], f"/v1/roots/{quote(root, safe='')}/{action}", payload)
-    except (httpx.HTTPError, ValueError, OSError):
-        return {"root": root, "capability": "unavailable", "applied": False}
-    applied = all(observed.get(key) == state["host"][key] for key in ("owner", "hostIdentity", "generation"))
-    return {"root": root, "capability": "host-acknowledged" if applied else "unavailable", "applied": applied}
-
-
 async def wait_events(root: str, *, cursor: int = 0, timeout: float = 300, page_size: int = 100) -> dict[str, Any]:
     """Drain every currently committed page; quiet timeout creates no event."""
     if cursor < 0 or not 0 <= timeout <= 300 or not 1 <= page_size <= 1000:
