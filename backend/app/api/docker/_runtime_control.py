@@ -178,7 +178,7 @@ async def _set_service_autostart(service: str, enabled: bool) -> ActionResult:
 
 async def _systemd_service_action(svc: dict[str, Any], action: Literal["start", "stop", "restart"]) -> ActionResult:
     """Execute a start/stop/restart action on a systemd service."""
-    service = svc["service"]
+    service = svc.get("display_name") or svc["service"]  # messages name the unit people see
     unit = svc["unit"]
 
     if svc.get("deployment"):
@@ -229,4 +229,4 @@ async def _remote_action(svc: dict[str, Any], action: str, units: list[str]) -> 
         await asyncio.to_thread(runtime_deployment.control_units, target, action, units)
     except runtime_deployment.DeploymentError as exc:
         return ActionResult(success=False, message=str(exc))
-    return ActionResult(success=True, message=f"{action.capitalize()} {svc['service']} on {target.label}")
+    return ActionResult(success=True, message=f"{action.capitalize()} {svc.get('display_name') or svc['service']} on {target.label}")

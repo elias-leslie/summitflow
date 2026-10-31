@@ -232,7 +232,8 @@ async def prod_smoke_test_wf(input: EmptyInput, ctx: Context) -> dict[str, Any]:
 @hatchet.task(
     name="summitflow-health-monitor",
     input_validator=EmptyInput,
-    execution_timeout="60s",
+    # The unit self-heal can restart services and wait for their health checks.
+    execution_timeout="240s",
     retries=1,
     on_crons=[schedule_cron("health_monitor")],
     concurrency=ConcurrencyExpression(
@@ -243,11 +244,14 @@ async def prod_smoke_test_wf(input: EmptyInput, ctx: Context) -> dict[str, Any]:
 )
 async def health_monitor_wf(input: EmptyInput, ctx: Context) -> dict[str, Any]:
     from ..services.notifications.health_monitor import check_and_notify
+    from ..services.notifications.service_heal import run_service_heal
 
     if not _system_schedule_enabled("health_monitor"):
         return _disabled_schedule_result("health_monitor")
 
-    return await asyncio.to_thread(check_and_notify)
+    result: dict[str, Any] = dict(await asyncio.to_thread(check_and_notify))
+    result["service_heal"] = await asyncio.to_thread(run_service_heal)
+    return result
 
 
 @hatchet.task(

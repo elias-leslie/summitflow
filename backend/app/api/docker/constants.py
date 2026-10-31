@@ -102,9 +102,10 @@ def runtime_service_definitions() -> tuple[dict[str, Any], ...]:
             if not unit or unit in seen:
                 continue
             seen.add(unit)
+            # ``service`` stays the stable API id (``<project>-api``); people see the real unit name.
             service = unit.removesuffix(".service") if role == "worker" else f"{project_id}-{role}"
             definition = {
-                "service": service, "display_name": service, "manager": "systemd",
+                "service": service, "display_name": unit.removesuffix(".service"), "manager": "systemd",
                 "category": "worker" if role == "worker" else "app", "unit": unit,
                 "ports": [str(port)] if port else [], "project_id": project_id,
             }

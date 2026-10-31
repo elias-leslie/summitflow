@@ -1453,7 +1453,7 @@ MANUAL = "daemon@default.service"
 def manual_lifecycle(lifecycle, project, monkeypatch):
     managed = replace(project, manual_workers=(MANUAL,))
     monkeypatch.setattr(service, "_load", lambda _: managed)
-    monkeypatch.setattr(service_ops, "manual_worker_release_references", Mock(return_value=set()))
+    monkeypatch.setattr(service_ops, "process_release_references", Mock(return_value=set()))
     monkeypatch.setattr(service_ops, "changed_manual_workers", Mock(return_value=()))
     return lifecycle
 
@@ -1621,32 +1621,184 @@ def test_failed_manual_worker_restores_only_its_unit(manual_lifecycle, monkeypat
     assert restore.kwargs == {"manual": (MANUAL,)}
 
 
-def test_release_cleanup_keeps_the_release_a_manual_worker_runs_from(manual_lifecycle, monkeypatch):
+def test_release_cleanup_keeps_every_release_a_running_process_uses(manual_lifecycle, monkeypatch):
     old = Path("/releases") / ("a" * 32)
     monkeypatch.setattr(service_ops, "release_references_for_services", Mock(return_value={Path("/releases/x")}))
-    monkeypatch.setattr(service_ops, "manual_worker_release_references", Mock(return_value={old}))
+    monkeypatch.setattr(service_ops, "process_release_references", Mock(return_value={old}))
     assert CliRunner().invoke(service.app, ["rebuild", "example"]).exit_code == 0
     references = _mock(service_release.complete_release).call_args.kwargs["service_references"]
     assert references == {Path("/releases/x"), old}
-    monkeypatch.setattr(service_ops, "manual_worker_release_references", Mock(return_value=None))
+    monkeypatch.setattr(service_ops, "process_release_references", Mock(return_value=None))
     assert CliRunner().invoke(service.app, ["rebuild", "example"]).exit_code == 0
     assert _mock(service_release.complete_release).call_args.kwargs["service_references"] is None
 
 
-def test_manual_worker_release_reference_reads_the_running_process(project, monkeypatch, tmp_path):
+@pytest.fixture
+def unit_processes(project, monkeypatch, tmp_path):
+    """A backend unit whose cgroup holds a main PID and a child, as /proc and /sys/fs/cgroup show them."""
     releases = tmp_path / "releases"
-    source = releases / ("a" * 32) / "source"
-    source.mkdir(parents=True)
-    proc = tmp_path / "proc" / "41"
-    proc.mkdir(parents=True)
-    (proc / "cwd").symlink_to(source, target_is_directory=True)
-    monkeypatch.setattr(service_ops, "_PROC_ROOT", tmp_path / "proc")
-    monkeypatch.setattr(service_ops, "_service_main_pid", lambda unit: 41 if unit == MANUAL else 0)
-    managed = replace(project, manual_workers=(MANUAL, "idle.service"))
-    assert service_ops.manual_worker_release_references(managed, releases) == {releases / ("a" * 32)}
-    (proc / "cwd").unlink()
-    assert service_ops.manual_worker_release_references(managed, releases) is None
-    assert service_ops.manual_worker_release_references(project, tmp_path / "missing") == set()
+    builds = {name: releases / (name * 32) for name in "abcde"}
+    for build in builds.values():
+        (build / "source").mkdir(parents=True)
+    proc, cgroups = tmp_path / "proc", tmp_path / "cgroups"
+    group = "/user.slice/app.slice/backend.service"
+    (cgroups / group.lstrip("/") / "child").mkdir(parents=True)
+    (cgroups / group.lstrip("/") / "cgroup.procs").write_text("41\n")
+    (cgroups / group.lstrip("/") / "child" / "cgroup.procs").write_text("42\n")
+    for pid in (41, 42):
+        (proc / str(pid) / "fd").mkdir(parents=True)
+        (proc / str(pid) / "cwd").symlink_to(tmp_path, target_is_directory=True)
+        (proc / str(pid) / "cmdline").write_bytes(b"node\0server.mjs\0")
+    monkeypatch.setattr(service_ops, "_PROC_ROOT", proc)
+    monkeypatch.setattr(service_ops, "_CGROUP_ROOT", cgroups)
+    monkeypatch.setattr(service_ops, "_service_main_pid", lambda unit: 41 if unit == "backend.service" else 0)
+    monkeypatch.setattr(service_ops, "_systemctl_value",
+                        lambda unit, key: group if (unit, key) == ("backend.service", "ControlGroup") else "")
+    return replace(project, manual_workers=(MANUAL,)), releases, builds, proc
+
+
+def test_process_release_references_read_every_process_of_every_unit(unit_processes):
+    """The 2026-10-31 Aico outage: a frontend deploy re-rendered aico-web's unit file to the new
+    release while its process kept serving the old one, and pruning deleted that release."""
+    managed, releases, builds, proc = unit_processes
+    (proc / "41" / "cwd").unlink()
+    (proc / "41" / "cwd").symlink_to(builds["a"] / "source", target_is_directory=True)
+    (proc / "42" / "fd" / "7").symlink_to(builds["b"] / "source" / "out.js")
+    (proc / "42" / "maps").write_text(f"7f00-7f10 r-xp 0 08:01 9 {builds['c']}/source/addon.node\n")
+    (proc / "42" / "cmdline").write_bytes(f"node\0{builds['d']}/source/dist/server.mjs\0".encode())
+    assert service_ops.process_release_references(managed, releases) == {
+        releases / ("a" * 32), releases / ("b" * 32), releases / ("c" * 32), releases / ("d" * 32)}
+
+
+def test_process_release_references_skip_exited_and_fail_closed_on_unreadable(unit_processes, monkeypatch):
+    managed, releases, _builds, proc = unit_processes
+    shutil.rmtree(proc / "42")  # exited between the cgroup read and /proc
+    assert service_ops.process_release_references(managed, releases) == set()
+    (proc / "41" / "cmdline").unlink()
+    (proc / "41" / "cmdline").mkdir()  # alive but unreadable
+    assert service_ops.process_release_references(managed, releases) is None
+    assert service_ops.process_release_references(managed, releases.parent / "missing") == set()
+
+
+@pytest.fixture
+def page_project(project, lifecycle, monkeypatch):
+    """Aico's shape: no frontend unit; the backend unit serves the built page."""
+    served = replace(project, frontend_service="", frontend_port=0, page_on_backend=True)
+    monkeypatch.setattr(service, "_load", lambda _: served)
+    return served
+
+
+def test_identity_marks_a_backend_that_serves_the_built_frontend(tmp_path):
+    (tmp_path / "package.json").write_text("{}")
+    identity = {"project": {"id": "example"}, "runtime": {"frontend_dir": ".", "backend_dir": "web"},
+                "services": {"backend": "web.service"}}
+    parsed = service_ops._project_from_identity(identity, "example", tmp_path)
+    assert parsed.page_on_backend and parsed.page_service == "web.service"
+    identity["services"]["frontend"] = "page.service"
+    assert not service_ops._project_from_identity(identity, "example", tmp_path).page_on_backend
+    (tmp_path / "package.json").unlink()
+    del identity["services"]["frontend"]
+    assert not service_ops._project_from_identity(identity, "example", tmp_path).page_on_backend
+
+
+def test_frontend_deploy_restarts_the_backend_that_serves_the_page(page_project, lifecycle):
+    """Aico 2026-10-31: --scope frontend restarted nothing, so aico-web kept serving a release pruning removed."""
+    result = CliRunner().invoke(service.app, ["rebuild", "example", "--scope", "frontend"])
+    assert result.exit_code == 0, result.output
+    assert "backend.service serves the frontend; using backend scope" in result.output
+    assert _restarted(lifecycle)[0] == "backend.service"
+    lifecycle["run_migrations"].assert_called_once()
+    assert _mock(service_release.mark_phase).call_args_list[0].kwargs["scope"] == "backend"
+
+
+def test_frontend_deploy_with_a_frontend_unit_still_restarts_only_it(lifecycle):
+    assert CliRunner().invoke(service.app, ["rebuild", "example", "--scope", "frontend"]).exit_code == 0
+    assert _restarted(lifecycle) == ["frontend.service"]
+
+
+def test_health_probes_the_page_a_backend_serves(runtime):
+    """/health stayed 200 while / was 404; a backend that serves the page must pass both."""
+    project, _proc, _properties, _listeners, http = runtime
+    served = replace(project, page_on_backend=True)
+    http.side_effect = lambda url, **_: SimpleNamespace(status_code=404 if url.endswith(":8001/") else 200)
+    assert service_ops.verify_health(served) == 1
+    assert [call.args[0] for call in http.call_args_list][:2] == ["http://127.0.0.1:8001/health",
+                                                                   "http://127.0.0.1:8001/"]
+    http.side_effect = lambda url, **_: SimpleNamespace(status_code=200)
+    assert service_ops.verify_health(served) == 0
+    http.reset_mock()
+    assert service_ops.verify_health(project) == 0  # no page on the backend: /health only
+    assert [call.args[0] for call in http.call_args_list] == ["http://127.0.0.1:8001/health"]
+
+
+def test_restart_never_redeploys_a_manual_worker(manual_lifecycle, monkeypatch):
+    """A full restart must not bounce Tether because its source changed (release a341faf7 selected it)."""
+    changed = Mock(return_value=(MANUAL,))
+    monkeypatch.setattr(service_ops, "changed_manual_workers", changed)
+    monkeypatch.setattr(service, "_restart_in_place", Mock(return_value=None))
+    result = CliRunner().invoke(service.app, ["restart", "example"])
+    assert result.exit_code == 0, result.output
+    changed.assert_not_called()
+    assert MANUAL not in _restarted(manual_lifecycle)
+
+
+def test_detached_restart_queues_a_rebuild_without_manual_followers(monkeypatch):
+    rebuild = Mock()
+    monkeypatch.setattr(service, "rebuild", rebuild)
+    monkeypatch.setattr(service, "_restart_in_place", Mock(return_value=None))
+    monkeypatch.setattr(service, "_load", lambda _: SimpleNamespace(workers=lambda include_all: (), manual_workers=()))
+    assert CliRunner().invoke(service.app, ["restart", "example", "--detach"]).exit_code == 0
+    assert rebuild.call_args.kwargs["manual_followers"] is False
+    captured = Mock(return_value=subprocess.CompletedProcess([], 0, "", ""))
+    monkeypatch.setattr(service_ops, "capture", captured)
+    monkeypatch.setattr(service_ops, "systemctl", lambda *_: subprocess.CompletedProcess([], 0, "inactive", ""))
+    write_job = Mock()
+    monkeypatch.setattr(service_ops, "_write_job", write_job)
+    monkeypatch.setattr(service_ops, "_caller_identity_env", lambda: [])
+    service_ops.queue_detached("example", False, manual_followers=False)
+    queued = write_job.call_args.args[0]["command"]
+    assert "--no-manual-followers" in queued
+
+
+@pytest.fixture
+def live_release(manual_lifecycle, monkeypatch):
+    """The checkout's HEAD is the live release's commit."""
+    monkeypatch.setattr(service_release, "current_build", lambda _p: "f" * 32)
+    monkeypatch.setattr(service_release, "current_release_commit", lambda _p: "c" * 40)
+    monkeypatch.setattr(service_release, "build_receipt", lambda *_a: {"events": []})
+    monkeypatch.setattr(service_ops, "capture", lambda *_a, **_k: subprocess.CompletedProcess([], 0, "c" * 40 + "\n", ""))
+    restart = Mock(return_value=0)
+    monkeypatch.setattr(service.service_heal, "restart_onto_current", restart)
+    return restart
+
+
+def test_restart_of_the_live_release_builds_nothing(live_release, manual_lifecycle):
+    """A restart queued 12+ min behind another project's build in heavy admission: no build, no wait."""
+    result = CliRunner().invoke(service.app, ["restart", "example"])
+    assert result.exit_code == 0, result.output
+    for step in ("build_frontend", "sync_backend", "run_migrations", "sync_systemd_units"):
+        manual_lifecycle[step].assert_not_called()
+    units = live_release.call_args.args[1]
+    assert units == ["backend.service", "required.service", "active.service", "frontend.service"]
+    assert MANUAL not in units
+    assert CliRunner().invoke(service.app, ["restart", "example", "--scope", "frontend"]).exit_code == 0
+    assert live_release.call_args.args[1] == ["frontend.service"]
+
+
+def test_restart_rebuilds_when_head_is_not_live_or_migrations_did_not_run(live_release, manual_lifecycle,
+                                                                         monkeypatch, project):
+    monkeypatch.setattr(service_ops, "capture", lambda *_a, **_k: subprocess.CompletedProcess([], 0, "9" * 40, ""))
+    result = CliRunner().invoke(service.app, ["restart", "example"])
+    assert result.exit_code == 0, result.output
+    assert "is not the live release" in result.output
+    live_release.assert_not_called()
+    manual_lifecycle["build_frontend"].assert_called_once()
+    monkeypatch.setattr(service_ops, "capture", lambda *_a, **_k: subprocess.CompletedProcess([], 0, "c" * 40, ""))
+    project.backend_dir.mkdir(parents=True, exist_ok=True)
+    (project.backend_dir / "alembic.ini").write_text("")
+    result = CliRunner().invoke(service.app, ["restart", "example", "--scope", "backend"])
+    assert "did not run migrations" in result.output
+    live_release.assert_not_called()
 
 
 def test_unit_sync_start_and_stop_leave_manual_workers_alone(project, monkeypatch, tmp_path):

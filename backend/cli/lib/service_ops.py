@@ -78,6 +78,18 @@ class ProjectServices:
     source_repo: Path | None = None
     source_sha: str = ""
     deployment: runtime_deployment.ProxmoxDeployment | None = None
+    # The backend unit serves the built web page (no services.frontend, a
+    # frontend build exists): a frontend deploy restarts it and health probes "/".
+    page_on_backend: bool = False
+
+    @property
+    def page_service(self) -> str:
+        """The unit users reach for the web page, or "" when the project has none."""
+        return self.frontend_service or (self.backend_service if self.page_on_backend else "")
+
+    @property
+    def page_port(self) -> int:
+        return self.frontend_port if self.frontend_service else (self.backend_port if self.page_on_backend else 0)
 
     @property
     def git_root(self) -> Path:
@@ -173,10 +185,11 @@ def _project_from_identity(identity: Mapping[str, Any], project_id: str, root: P
         *_as_str_list(services.get("default_workers")), *_as_str_list(services.get("optional_workers"))) if unit}
     if any(canonical_unit(unit) in managed for unit in manual_workers):
         raise ServiceError("services.manual_workers must not repeat a backend, frontend or rebuild-managed worker")
+    backend_service = str(services.get("backend") or "")
     return ProjectServices(
         project_id=canonical_id,
         root=root,
-        backend_service=str(services.get("backend") or ""),
+        backend_service=backend_service,
         frontend_service=str(services.get("frontend") or ""),
         default_workers=_as_str_list(services.get("default_workers")),
         optional_workers=_as_str_list(services.get("optional_workers")),
@@ -193,6 +206,8 @@ def _project_from_identity(identity: Mapping[str, Any], project_id: str, root: P
         runtime_user=runtime_user,
         infra=tuple(infra),
         deployment=deployment,
+        page_on_backend=bool(backend_service and not services.get("frontend")
+                             and (frontend_dir / "package.json").is_file()),
     )
 
 
@@ -538,28 +553,67 @@ def _release_references_for_manager(
     return references
 
 
-def manual_worker_release_references(project: ProjectServices, releases_root: Path) -> set[Path] | None:
-    """Releases running manual workers started from, which may predate ``current``.
+def _unit_pids(unit: str) -> set[int]:
+    """Every process in a unit's control group (children included), plus its main PID."""
+    pids = {pid} if (pid := _service_main_pid(unit)) else set()
+    group = _systemctl_value(unit, "ControlGroup")
+    if group and ".." not in Path(group).parts:
+        directory = _CGROUP_ROOT / group.lstrip("/")
+        for procs in (directory.rglob("cgroup.procs") if directory.is_dir() else ()):
+            with suppress(OSError):
+                pids.update(int(line) for line in procs.read_text().split() if line.isdecimal())
+    return pids
 
-    Read from each main process's working directory, since a re-rendered unit
-    file no longer names the release its process runs from. ``None`` fails closed.
+
+def _process_paths(pid: int) -> list[str] | None:
+    """Paths a live process uses: cwd, root, executable, argv, open files and mapped files.
+
+    ``[]`` when the process has exited; ``None`` when it is alive but unreadable.
+    Environment values are never read.
+    """
+    process = _PROC_ROOT / str(pid)
+    if not process.is_dir():
+        return []
+    paths: list[str] = []
+    try:
+        for name in ("cwd", "root", "exe"):
+            with suppress(FileNotFoundError):
+                paths.append(os.readlink(process / name))
+        paths.extend((process / "cmdline").read_bytes().decode(errors="replace").split("\0"))
+        with suppress(FileNotFoundError):
+            paths.append((process / "maps").read_text(errors="replace"))
+        fds = process / "fd"
+        for fd in (os.listdir(fds) if fds.is_dir() else ()):
+            with suppress(FileNotFoundError):
+                paths.append(os.readlink(fds / fd))
+    except OSError:
+        return None if process.is_dir() else []
+    return paths
+
+
+def process_release_references(project: ProjectServices, releases_root: Path) -> set[Path] | None:
+    """Releases any process of the project's units still uses; ``None`` fails closed.
+
+    A re-rendered unit file names the new release while its running process can
+    still serve the old one (a scoped deploy, a manual worker), so pruning reads
+    the processes themselves: working directory, executable, arguments, open and
+    mapped files of every process in each unit's control group.
     """
     references: set[Path] = set()
-    if not project.manual_workers:
-        return references
     try:
-        prefix = releases_root.resolve(strict=True)
+        prefix = str(releases_root.resolve(strict=True)) + "/"
     except OSError:
-        return None
-    for unit in project.manual_workers:
-        if not (pid := _service_main_pid(unit)):
-            continue
-        try:
-            cwd = (_PROC_ROOT / str(pid) / "cwd").resolve(strict=True)
-        except OSError:
-            return None
-        if cwd.is_relative_to(prefix) and cwd != prefix:
-            references.add(releases_root / cwd.relative_to(prefix).parts[0])
+        return references if not releases_root.exists() else None
+    pattern = re.compile(re.escape(prefix) + r"([0-9a-f]{32})(?![0-9a-f])")
+    units = dict.fromkeys(activated_service(unit) or canonical_unit(unit)
+                          for unit in (*project.all_services, *project.manual_workers) if unit)
+    for unit in units:
+        for pid in sorted(_unit_pids(unit)):
+            paths = _process_paths(pid)
+            if paths is None:
+                return None
+            for text in paths:
+                references.update(releases_root / build for build in pattern.findall(text))
     return references
 
 
@@ -1569,9 +1623,15 @@ def wait_for_summitflow_api(seconds: float = API_WAIT_SECONDS) -> bool:
 
 
 def verify_health(project: ProjectServices) -> int:
+    """Probe each selected component; a backend that serves the page is checked at "/" too.
+
+    /health alone stays 200 while the page a user opens is 404 (a unit running
+    from a removed release), so the page users hit is part of health.
+    """
     errors = 0
     for component, service, port, endpoint, attempts in (
         ("backend", project.backend_service, project.backend_port, project.health_endpoint, 15),
+        ("page", project.backend_service if project.page_on_backend else "", project.backend_port, "/", 15),
         ("frontend", project.frontend_service, project.frontend_port, "/", 30),
     ):
         if not service or port <= 0:
@@ -1831,6 +1891,7 @@ def queue_detached(
     migrate_monitor_store: bool = False,
     with_ack: str | None = None,
     rollback: bool = False,
+    manual_followers: bool = True,
 ) -> int:
     unit = f"sf-rebuild-{project}"
     if systemctl("is-active", f"{unit}.service").stdout.strip() in {"active", "activating", "deactivating", "reloading"}:
@@ -1849,6 +1910,8 @@ def queue_detached(
         command.extend(["--with-ack", with_ack])
     if rollback:
         command.append("--rollback")
+    if not manual_followers:
+        command.append("--no-manual-followers")
     source_evidence = None
     if accepted_source is not None:
         source = service_release.AcceptedSource.from_descriptor(accepted_source)

@@ -304,6 +304,9 @@ class TestDockerRuntime:
             "agent-hub-api", "agent-hub-web", "agent-hub-hatchet-ops-worker", "agent-hub-hatchet-agent-worker",
             "vantage-api", "vantage-web", "vantage-hatchet-worker",
         }
+        # The id stays <project>-api; the page shows the real unit (aico-web showed as "aico-api").
+        assert services["agent-hub-api"]["display_name"] == "agent-hub-backend"
+        assert services["agent-hub-hatchet-agent-worker"]["display_name"] == "agent-hub-hatchet-agent-worker"
         assert services["agent-hub-api"]["ports"] == ["8003"]
         assert services["agent-hub-api"]["probe_url"] == "http://localhost:8003/health"
         assert services["agent-hub-hatchet-agent-worker"]["unit"] == "agent-hub-hatchet-agent-worker.service"
@@ -412,7 +415,7 @@ class TestDockerRuntime:
 
         assert result == docker_api.ActionResult(
             success=True,
-            message="Restarted summitflow-api",
+            message="Restarted summitflow-backend",
         )
         clear_ports.assert_awaited_once()
 
@@ -440,7 +443,7 @@ class TestDockerRuntime:
 
         assert result == docker_api.ActionResult(
             success=True,
-            message="Stopped vantage-api",
+            message="Stopped vantage-backend",
         )
         run_systemctl.assert_awaited_once_with(
             "stop",

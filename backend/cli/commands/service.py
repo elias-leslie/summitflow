@@ -15,7 +15,7 @@ from typing import Annotated, Any
 
 import typer
 
-from ..lib import service_deploy_client, service_ops, service_release
+from ..lib import service_deploy_client, service_heal, service_ops, service_release
 from ..lib.confirm_token import confirm_gate
 from ..lib.service_ops import wait_for_summitflow_api
 from ..lib.usage import usage
@@ -498,6 +498,11 @@ def rebuild(
         str | None,
         typer.Option("--sha", help="Full commit id to deploy: with --source-repo it is read from the mirror; for a runtime_user project it replaces the checkout's main"),
     ] = None,
+    manual_followers: Annotated[
+        bool,
+        typer.Option("--manual-followers/--no-manual-followers", hidden=True,
+                     help="Also restart running manual workers whose source changed (st service restart never does)"),
+    ] = True,
 ) -> None:
     """Build, migrate, restart, and health-check a project from its committed local HEAD (st commit first; no push needed)."""
     services = _load(project)
@@ -556,6 +561,11 @@ def rebuild(
     if scope != RebuildScope.full and overlapping_components:
         print("[service] shared component directory; using full rebuild")
         scope = RebuildScope.full
+    if scope == RebuildScope.frontend and services.page_on_backend and not manual:
+        # No frontend unit: the backend unit serves the built page, so a frontend
+        # deploy must restart it, and with new backend code its migrations run first.
+        print(f"[service] {services.backend_service} serves the frontend; using backend scope")
+        scope = RebuildScope.backend
     # Manual-worker rebuilds restart nothing else, so the backend-restart gates do not apply.
     backend = scope != RebuildScope.frontend and not manual
     frontend = scope in (RebuildScope.full, RebuildScope.frontend) and not manual
@@ -576,6 +586,7 @@ def rebuild(
                     with_ack=with_ack,
                     rollback=rollback,
                     **({"migrate_monitor_store": True} if migrate_monitor_store else {}),
+                    **({} if manual_followers else {"manual_followers": False}),
                 )
             )
         except (service_ops.ServiceError, service_release.ReleaseError) as exc:
@@ -605,7 +616,8 @@ def rebuild(
             print(_acceptance_line(vars(release.source), supplied=acceptance is not None))
             # One rebuild deploys the whole project: a running manual worker whose source changed
             # since its release is rendered and restarted too, exactly as --worker would.
-            followers = () if manual or scope != RebuildScope.full else service_ops.changed_manual_workers(
+            followers = () if manual or scope != RebuildScope.full or not manual_followers \
+                else service_ops.changed_manual_workers(
                 services, release.release_root.parent, release.source.source_commit,
                 repo=development_services.git_root)
             workers = (*workers, *followers)
@@ -700,7 +712,9 @@ def rebuild(
             service_references = service_ops.release_references_for_services(
                 release.release_root.parent
             )
-            manual_references = service_ops.manual_worker_release_references(
+            # Running processes, not unit files: a scoped deploy re-renders a unit
+            # its process keeps serving from an older release.
+            manual_references = service_ops.process_release_references(
                 services, release.release_root.parent
             )
             service_references = (None if service_references is None or manual_references is None
@@ -741,10 +755,62 @@ def rebuild(
     raise typer.Exit(0)
 
 
+def _in_place_units(
+    services: service_ops.ProjectServices, scope: RebuildScope, *, include_all_workers: bool,
+    requested_workers: tuple[str, ...],
+) -> list[str]:
+    """The units a restart of ``scope`` covers, never a manual worker unless named."""
+    backend = scope != RebuildScope.frontend or services.page_on_backend
+    units = [services.backend_service] if backend and services.backend_service else []
+    units += _selected_workers(services, backend=scope != RebuildScope.frontend,
+                               include_all_workers=include_all_workers, requested_workers=requested_workers)
+    if scope in (RebuildScope.full, RebuildScope.frontend) and services.frontend_service:
+        units.append(services.frontend_service)
+    return list(dict.fromkeys(units))
+
+
+def _restart_in_place(
+    project: str, scope: RebuildScope, *, include_all_workers: bool, requested_workers: tuple[str, ...],
+) -> int | None:
+    """Restart onto the release ``current`` already holds when it is the checkout's HEAD.
+
+    Returns None when a build is needed (HEAD moved, no release yet, a manual
+    worker, a remote or delegated runtime, or a backend whose migrations the
+    current release did not run), so the caller rebuilds instead.
+    """
+    services = _load(project)
+    if services.runtime_user or services.deployment or any(
+            name in services.manual_workers for name in requested_workers):
+        return None
+    current = service_release.current_build(services.project_id)
+    commit = service_release.current_release_commit(services.project_id)
+    head = service_ops.capture(["git", "rev-parse", "HEAD"], cwd=services.git_root).stdout.strip()
+    if current is None or not commit or commit != head:
+        if current is not None:
+            print(f"[service] HEAD {head[:12] or '?'} is not the live release ({(commit or '?')[:12]}); rebuilding")
+        return None
+    units = _in_place_units(services, scope, include_all_workers=include_all_workers,
+                            requested_workers=requested_workers)
+    receipt = service_release.build_receipt(services.project_id, current)
+    if services.backend_service in units and not service_heal.migrations_cover(services, receipt):
+        print("[service] the live release's deploy did not run migrations; rebuilding")
+        return None
+    print(f"[service] restarting {services.project_id} onto its live release {current[:12]} (no build): "
+          + " ".join(units))
+    try:
+        with service_release.deployment_lock(services.project_id):
+            errors = service_heal.restart_onto_current(services, units, reason="restart")
+    except (service_ops.ServiceError, service_release.ReleaseError) as exc:
+        output_error(str(exc))
+        return 1
+    print(f"[service] restart {'complete' if errors == 0 else f'finished with {errors} error(s)'}")
+    return 1 if errors else 0
+
+
 @app.command()
 def restart(
     project: Annotated[str, typer.Argument(help="Project id to restart/rebuild")],
-    detach: Annotated[bool, typer.Option("--detach", help="Queue restart in background")] = False,
+    detach: Annotated[bool, typer.Option("--detach", help="Queue a rebuild in background when one is needed")] = False,
     include_all_workers: Annotated[
         bool,
         typer.Option("--include-all-workers", help="Start or restart all declared optional workers, including inactive ones"),
@@ -760,7 +826,22 @@ def restart(
         typer.Option("--with-ack", help="Request id the repo's holder acked yes"),
     ] = None,
 ) -> None:
-    """Restart a managed project through the rebuild path."""
+    """Restart a managed project onto its live release; rebuild only when HEAD is not live yet.
+
+    A restart never builds when the live release is HEAD (so it never waits in
+    heavy-work admission) and never restarts a manual worker such as Tether
+    unless --worker names it.
+    """
+    if acceptance is None:
+        services = _load(project)
+        declared = {service_ops.canonical_unit(name): name for name in (
+            *services.workers(include_all=True), *services.manual_workers)}
+        requested = tuple(declared.get(service_ops.canonical_unit(name), name) for name in worker or ())
+        if set(requested) <= set(declared.values()):
+            code = _restart_in_place(project, scope, include_all_workers=include_all_workers,
+                                     requested_workers=requested)
+            if code is not None:
+                raise typer.Exit(code)
     rebuild(
         project,
         detach=detach,
@@ -769,7 +850,40 @@ def restart(
         worker=worker,
         acceptance=acceptance,
         with_ack=with_ack,
+        manual_followers=False,
     )
+
+
+@app.command()
+def heal(
+    projects: Annotated[list[str] | None, typer.Argument(help="Project ids; omit for every managed project")] = None,
+    dry_run: Annotated[bool, typer.Option("--dry-run", help="Report problems, restart nothing")] = False,
+    cooldown_minutes: Annotated[
+        int, typer.Option("--cooldown-minutes", help="A unit that breaks again this soon after a heal is not restarted again")
+    ] = 30,
+    as_json: Annotated[bool, typer.Option("--json", help="One JSON object per project")] = False,
+) -> None:
+    """Restart units users would see broken onto the live release (no build); exit 1 when one stays broken.
+
+    Finds a unit running from a removed release, a unit the live deploy covered
+    that still runs an older one, and a page that fails while /health passes.
+    Never restarts a manual worker (Tether); a project mid-deploy is skipped.
+    """
+    results = [service_heal.heal_project(project_id, cooldown_seconds=cooldown_minutes * 60, dry_run=dry_run)
+               for project_id in (projects or service_ops.project_ids())]
+    for result in results:
+        if as_json:
+            print(json.dumps(result))
+            continue
+        line = f"{result['project']}: {result['status']}"
+        if result.get("restarted"):
+            line += " (restarted " + " ".join(result["restarted"]) + ")"
+        if result.get("detail"):
+            line += f": {result['detail']}"
+        print(line)
+        for problem in result.get("problems") or ():
+            print(f"  {problem['unit']}: {problem['detail']}")
+    raise typer.Exit(1 if any(r["status"] in {"failed", "needs_attention"} for r in results) else 0)
 
 
 def _job_result(job_id: str) -> dict:

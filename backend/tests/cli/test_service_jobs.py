@@ -4,6 +4,7 @@ import json
 import subprocess
 from dataclasses import replace
 from pathlib import Path
+from types import SimpleNamespace
 from unittest.mock import Mock
 
 import pytest
@@ -331,6 +332,8 @@ def test_restart_cli_forwards_with_ack_to_rebuild(monkeypatch):
     # goes through rebuild, so it must accept and forward that request id.
     rebuild = Mock()
     monkeypatch.setattr(service, "rebuild", rebuild)
+    monkeypatch.setattr(service, "_load", lambda _: SimpleNamespace(workers=lambda include_all: (), manual_workers=()))
+    monkeypatch.setattr(service, "_restart_in_place", Mock(return_value=None))  # HEAD is not live: rebuild
     result = CliRunner().invoke(service.app, ["restart", "example", "--detach", "--with-ack", "req-1"])
     assert result.exit_code == 0, result.output
     assert rebuild.call_args.kwargs["with_ack"] == "req-1"

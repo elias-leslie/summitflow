@@ -303,6 +303,25 @@ def _materialize_release(
     return prepared
 
 
+def project_state_dir(project_id: str, *, state_root: Path | None = None) -> Path:
+    """A managed project's service state: releases, receipts, current and previous pointers."""
+    return _project_state(project_id, state_root)
+
+
+def current_build(project_id: str, *, state_root: Path | None = None) -> str | None:
+    """The build id ``current`` points at, or None before the first managed deploy."""
+    return _current_build(_project_state(project_id, state_root))
+
+
+def build_receipt(project_id: str, build_id: str, *, state_root: Path | None = None) -> dict[str, Any] | None:
+    """A release's sealed receipt, or None when it is missing or does not verify."""
+    try:
+        value = json.loads((_project_state(project_id, state_root) / "receipts" / f"{build_id}.json").read_text())
+    except (OSError, ValueError):
+        return None
+    return value if isinstance(value, dict) and value.get("deployment_id") == _receipt_id(value) else None
+
+
 def current_release_commit(project_id: str, *, state_root: Path | None = None) -> str | None:
     """The source commit of the live release, read from its sealed receipt."""
     build_id = _current_build(_project_state(project_id, state_root))
@@ -311,12 +330,8 @@ def current_release_commit(project_id: str, *, state_root: Path | None = None) -
 
 def build_commit(project_id: str, build_id: str, *, state_root: Path | None = None) -> str | None:
     """The source commit a release was built from, read from its sealed receipt."""
-    project_state = _project_state(project_id, state_root)
-    try:
-        value = json.loads((project_state / "receipts" / f"{build_id}.json").read_text())
-    except (OSError, ValueError):
-        return None
-    if not isinstance(value, dict) or value.get("deployment_id") != _receipt_id(value):
+    value = build_receipt(project_id, build_id, state_root=state_root)
+    if value is None:
         return None
     commit = (value.get("source") or {}).get("source_commit")
     return commit if isinstance(commit, str) and commit else None
