@@ -128,6 +128,11 @@ def _dependency_roots(repo: Path) -> list[Path]:
     native = native_plan(repo)
     if native is not None:
         declared.extend(native["paths"])
+        # A stage may run a tool from another uv/npm project's environment
+        # (neri's proxy/.venv/bin/ruff); borrow that environment like a path.
+        declared.extend(stage["executable"] for stage in native["stages"]
+                        if not Path(stage["executable"]).is_absolute()
+                        and {".venv", "venv", "node_modules"}.intersection(Path(stage["executable"]).parts))
         # A required acceptance stage may not connect to an owner production DB.
         for name, value in native["environment"].items():
             if name in {"DATABASE_URL", "DATABASE_ADMIN_URL", "POSTGRES_ADMIN_URL"}:

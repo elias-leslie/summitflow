@@ -725,6 +725,28 @@ def test_workspace_dependency_discovery_borrows_linked_npm_workspace_modules(tmp
     assert [entry["workspace_modules"] for entry in manifest if "workspace_modules" in entry] == ["tether"]
 
 
+def test_dependency_discovery_borrows_the_environment_a_native_stage_runs_from(tmp_path: Path):
+    """neri: proxy-lint runs proxy/.venv/bin/ruff from a second uv project; the clone needs that venv."""
+    from cli.commands.done_task_acceptance import _dependency_roots
+
+    git(tmp_path, "init", "-q", "--initial-branch=main")
+    (tmp_path / ".gitignore").write_text(".venv/\n")
+    proxy = tmp_path / "proxy"
+    (proxy / ".venv" / "bin").mkdir(parents=True)
+    (proxy / ".venv" / "bin" / "ruff").write_text("#!/bin/sh\n")
+    (proxy / ".venv" / "bin" / "ruff").chmod(0o755)
+    (proxy / "pyproject.toml").write_text("[project]\nname='proxy'\nversion='0'\n")
+    (proxy / "uv.lock").write_text("version = 1\n")
+    (tmp_path / ".st-check.toml").write_text(
+        "[native]\nschema_version = 1\nlocks = ['proxy/uv.lock']\n"
+        "[[native.stages]]\nid = 'proxy-lint'\nkind = 'check'\ncoverage = 'full'\ncwd = 'proxy'\n"
+        "argv = ['proxy/.venv/bin/ruff', 'check', '.']\n",
+    )
+    git(tmp_path, "add", ".")
+
+    assert _dependency_roots(tmp_path) == [proxy / ".venv"]
+
+
 @pytest.mark.parametrize("invalid", ["tracked", "unignored", "escaped"])
 def test_workspace_dependency_discovery_rejects_unprepared_package_roots(tmp_path: Path, invalid: str):
     from cli.commands.done_task_acceptance import _dependency_roots
