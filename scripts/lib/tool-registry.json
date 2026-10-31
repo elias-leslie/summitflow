@@ -387,7 +387,23 @@
           "process"
         ]
       },
-      "environment": []
+      "environment": [
+        "NERI_DB_URL",
+        "NERI_HUNTERS_ROOT",
+        "NERI_HUNTER_GRANTS",
+        "NERI_HUNT_STATE",
+        "NERI_HUNTS_POLICY",
+        "NERI_PROXY_CONFIG",
+        "NERI_PROXY_STATE",
+        "NERI_HUNTER_URL",
+        "NERI_PORT",
+        "TETHER_SOCKET",
+        "TETHER_INSTANCE",
+        "TETHER_HOSTS_FILE",
+        "TETHER_PLACEMENT_FILE",
+        "XDG_RUNTIME_DIR",
+        "DBUS_SESSION_BUS_ADDRESS"
+      ]
     },
     {
       "id": "portfolio-ai.portfolio",

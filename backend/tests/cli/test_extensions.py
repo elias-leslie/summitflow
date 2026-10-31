@@ -315,7 +315,7 @@ def test_neri_registration_is_local_and_small():
     # Local case state only: no network, credentials or remote effects.
     assert set(record.binding.grant.effects) == {"read-local", "write-local", "process"}
     assert set(record.manifest.effects) <= set(record.binding.grant.effects)
-    assert record.binding.environment == []
+    # Environment: exactly the documented override keys (see the neri binding test below).
     commands = {path.split()[0] for path in record.manifest.help if path}
     assert commands == {"next", "show", "new", "advance", "log", "ask", "program", "check"}
 
@@ -482,3 +482,23 @@ def test_saved_mandates_and_installed_tether_bindings():
     for command in ("sessions create", "sessions show", "reboot prepare", "recovery resume", "--print"):
         assert command in help_text
     assert "legacy [" not in help_text
+
+
+def test_neri_binding_forwards_its_override_and_tether_environment(tmp_path, monkeypatch):
+    from cli.extensions import _environment
+
+    record = next(record for record in load_extensions(set()).records if record.binding and record.binding.namespace == "neri")
+    binding = record.binding
+    assert binding is not None
+    expected = {"NERI_DB_URL", "NERI_HUNTERS_ROOT", "NERI_HUNTER_GRANTS", "NERI_HUNT_STATE", "NERI_HUNTS_POLICY",
+                "NERI_PROXY_CONFIG", "NERI_PROXY_STATE", "NERI_HUNTER_URL", "NERI_PORT", "TETHER_SOCKET",
+                "TETHER_INSTANCE", "TETHER_HOSTS_FILE", "TETHER_PLACEMENT_FILE", "XDG_RUNTIME_DIR",
+                "DBUS_SESSION_BUS_ADDRESS"}
+    assert set(binding.environment) == expected
+    for name in expected:
+        monkeypatch.setenv(name, f"fixture-{name}")
+    monkeypatch.setenv("UNAPPROVED_SESSION_SECRET", "not-forwarded")
+    forwarded = _environment(binding, context(tmp_path))
+    for name in expected:
+        assert forwarded[name] == f"fixture-{name}"
+    assert "UNAPPROVED_SESSION_SECRET" not in forwarded
