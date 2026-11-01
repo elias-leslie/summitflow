@@ -280,7 +280,9 @@ recipient). Tether delivers it once the agent is idle, nobody is typing and the
 input line is empty, or through a native puller; the agent's own turn hook then
 shows the request. Acks, a lapsed `eta:` and memory notices go the same way;
 an agent is woken once per item (turn hooks still show an unanswered request
-again every 5 minutes). The line never carries request or reply text. A
+again every 5 minutes). An ack the sender armed `st aico wait reply REQ` for
+(until acked) gets no `[Message]` line: Tether's `[Ready] request ... answered`
+line is its one wake. The line never carries request or reply text. A
 window on an agent host gets it through the hub. Only a window's own agent is
 woken there: an address of its predecessor before a context reset reaches the
 current agent, and the line counts both. Recipients SummitFlow cannot place in

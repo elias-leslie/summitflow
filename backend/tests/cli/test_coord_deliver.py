@@ -64,6 +64,7 @@ class FakeTether:
         self.records: dict[str, dict[str, Any]] = {}
         self.nested: set[str] = set()
         self.on_post: Any = None
+        self.waits: dict[str, list[dict[str, Any]]] | None = {}  # widget -> GET /v1/sessions/:id/waits?recent=1 items
 
     def __call__(self, method: str, path: str, body: dict[str, Any] | None = None, **_: Any) -> tuple[int, Any]:
         self.calls.append((method, path, body))
@@ -80,6 +81,10 @@ class FakeTether:
         if path.startswith("/v1/deliveries/"):
             record = self.records.get(path.rsplit("/", 1)[1])
             return (200, record) if record else (404, {"error": "not_found"})
+        if method == "GET" and path.endswith("/waits?recent=1"):
+            if self.waits is None:
+                raise ConnectionRefusedError
+            return 200, {"items": self.waits.get(path.split("/")[3], [])}
         if path == "/v1/waits/check":
             return 200, {"kind": body["kind"], "ref": body["ref"], "armed": 0}
         if method == "DELETE" and "/deliveries?source=" in path:
@@ -523,6 +528,74 @@ def test_an_ack_wakes_its_sender_once(monkeypatch, inbox, tether):
         coord_wake._save_woke("cc:sender", {f"{row['id']}:ack:{ack['acked_at']}": time.time() - 30})
     _as(monkeypatch, "claude", "sender-14")
     assert inbox.watch("claude_code") == 0 and len(tether.posts()) == 2
+
+
+def _reply_wait(ref: str, state: str = "armed", until: str = "acked", outcome: str | None = None,
+                host: str | None = None) -> dict[str, Any]:
+    return {"id": "0123456789ab", "waiter": ANCHORS[SENDER_ANCHOR], "kind": "reply", "ref": ref, "host": host,
+            "until": until, "state": state, "outcome": outcome}
+
+
+def _ack_as_cli(monkeypatch, row: dict[str, Any], sid: str) -> None:
+    _as(monkeypatch, "codex", sid)
+    acked = runner.invoke(app, ["sessions", "ack", row["id"], "yes"])
+    assert acked.exit_code == 0, acked.output
+
+
+@pytest.mark.parametrize("wait", [{}, {"state": "fired", "outcome": "until"}], ids=["armed", "fired"])
+def test_an_ack_its_sender_waits_on_wakes_it_once_through_the_wait(monkeypatch, inbox, tether, wait):
+    # 2026-11-01: st aico wait reply REQ woke the sender with [Ready] and the ack's [Message] line, two lines.
+    tether.version = 18  # nudges (API 17)
+    _identity("cc:sender", "sender-17", anchor=SENDER_ANCHOR)
+    _identity("codex:target", "target-17")
+    row = _send_as_cli(monkeypatch, "codex:target", "may I rebuild?", "sender-17")
+    assert tether.waits is not None
+    tether.waits[ANCHORS[SENDER_ANCHOR]] = [_reply_wait(row["id"], **wait)]
+    _ack_as_cli(monkeypatch, row, "target-17")
+    assert [body["source"] for _, body in tether.posts()] == ["coord:codex:target"]  # the request's line only
+    assert tether.nudges() == [{"kind": "reply", "ref": row["id"]}]  # the wait fires now
+    [ack] = [r for r in coord._load_ledger() if r["id"] == row["id"]]
+    key = f"{row['id']}:ack:{ack['acked_at']}"
+    assert key in coord_wake.load_woke("cc:sender")
+    _as(monkeypatch, "claude", "sender-17")
+    monkeypatch.setattr(inbox, "GRACE", 0.0)
+    assert inbox.watch("claude_code") == 0 and len(tether.posts()) == 1  # nor does its own watcher line it
+    with coord_wake._woke_lock("cc:sender"):  # the sender's mark was lost: its watcher still leaves it to the wait
+        coord_wake._save_woke("cc:sender", {})
+    assert inbox.watch("claude_code") == 0 and len(tether.posts()) == 1
+    assert key in coord_wake.load_woke("cc:sender")
+    _, items = inbox.pending()
+    assert [item.key.split(":")[1] for item in items] == ["ack"]  # the turn hook still shows the answer
+
+
+@pytest.mark.parametrize("wait", [
+    {"until": "closed"}, {"state": "cancelled"}, {"state": "timed_out", "outcome": "timeout"}, {"host": "gem"}, None,
+], ids=["until-closed", "cancelled", "timed-out", "other-host", "no-answer"])
+def test_an_ack_no_reply_wait_reports_still_gets_its_line(monkeypatch, inbox, tether, wait):
+    _identity("cc:sender", "sender-18", anchor=SENDER_ANCHOR)
+    _identity("codex:target", "target-18")
+    row = _send_as_cli(monkeypatch, "codex:target", "may I rebuild?", "sender-18")
+    if wait is None:
+        tether.waits = None  # GET waits fails: today's line
+    elif tether.waits is not None:
+        tether.waits[ANCHORS[SENDER_ANCHOR]] = [_reply_wait(row["id"], **wait)]
+    _ack_as_cli(monkeypatch, row, "target-18")
+    assert [body["source"] for _, body in tether.posts()] == ["coord:codex:target", "coord:cc:sender"]
+    assert tether.posts()[1][1]["line"] == "[Message] Ack from codex:target · st sessions inbox"
+
+
+def test_a_line_leaves_out_only_the_ack_a_wait_reports(monkeypatch, tether):
+    _identity("cc:sender", "sender-19", anchor=SENDER_ANCHOR)
+    monkeypatch.setattr(leases, "identify_agent", lambda **_: ("cc:sender", "", "sender-19", "claude_code"))
+    waited = coord.send("codex:target", "may I rebuild?")
+    other = coord.send("codex:target", "may I deploy?")
+    coord.send("cc:sender", "a question back", sender="cc:abcdef")
+    monkeypatch.setattr(leases, "identify_agent", lambda **_: ("codex:target", "", "target-19", "codex"))
+    coord.ack(waited["id"], "yes")
+    coord.ack(other["id"], "no", "busy")
+    assert tether.waits is not None
+    tether.waits[ANCHORS[SENDER_ANCHOR]] = [_reply_wait(waited["id"])]
+    assert _line("cc:sender") == "[Message] Request from cc:abcdef · Ack from codex:target · st sessions inbox"
 
 
 def test_an_eta_that_ran_out_wakes_once_more(monkeypatch, inbox, tether):

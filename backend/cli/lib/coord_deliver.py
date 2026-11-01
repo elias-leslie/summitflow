@@ -20,6 +20,9 @@ Unresolved recipients, shells and an older Tether keep today's path (an agy
 window takes lines from Tether API 18; an older one refuses with 409):
 every function here answers None and the caller carries on as before.
 
+An ack the recipient armed a reply wait for (``st aico wait reply REQ``) is left out of
+the line: Tether's ``[Ready] request ... answered`` line for that wait is its one wake.
+
 A line that goes stale before it is pasted (the request was answered, the ack
 shown by the turn hook) is taken back: the turn hook calls ``withdraw_stale``
 once the recipient's inbox has nothing waiting (Tether API 18).
@@ -199,11 +202,31 @@ def _counted(count: int, word: str) -> str:
     return word.capitalize() if count == 1 else f"{count} {word}s"
 
 
+def reply_waited(widget: str) -> set[str]:
+    """Requests whose ack this window's own reply wait reports: ``st aico wait reply REQ`` (until acked).
+
+    Armed, or already fired by the answer. A wait until closed does not fire on the ack, so it does not
+    count, nor does one on another host's ledger. Empty when Tether does not answer: the ack then gets
+    its line.
+    """
+    from app.services import tether
+
+    try:
+        status, body = tether.request("GET", f"/v1/sessions/{quote(widget, safe='')}/waits?recent=1",
+                                      timeout=_NUDGE_TIMEOUT)
+    except Exception:  # an ack with no line is worse than one line too many
+        return set()
+    items = body.get("items") if status == 200 and isinstance(body, dict) else None
+    return {str(w["ref"]) for w in items or () if isinstance(w, dict) and w.get("kind") == "reply"
+            and w.get("until") == "acked" and not w.get("host") and isinstance(w.get("ref"), str)
+            and (w.get("state") == "armed" or (w.get("state") == "fired" and w.get("outcome") == "until"))}
+
+
 def waiting(who: Target) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
     """(open requests to the recipient, acks of its requests it has not been shown) in the ledger.
 
     The same scope as its inbox (cli.lib.coord.inbox): any of its family's ids or a 13+ char prefix of
-    their sessions.
+    their sessions. Acks its own reply wait reports (``reply_waited``) are left out.
     """
     seen = coord_wake.load_seen(who.agent_id)
 
@@ -215,6 +238,8 @@ def waiting(who: Target) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
     requests = [r for r in rows if r["state"] == "open" and addressed(str(r["to"])) and r["from"] not in who.family]
     acks = [r for r in rows if r["state"] == "acked" and r["from"] in who.family
             and f"{r['id']}:ack:{r.get('acked_at')}" not in seen]
+    if acks and (waited := reply_waited(who.widget)):
+        acks = [r for r in acks if not any(str(r["id"]).startswith(ref) for ref in waited)]
     return requests, acks
 
 
@@ -309,6 +334,8 @@ def wake(to: str, keys: list[str] | tuple[str, ...] = (), *, memory: str | None 
         return None
     line = summary(who, memory=memory is not None)
     if line is None:
+        if keys:  # covered by the recipient's own reply wait (or gone): its watcher must not line it either
+            coord_wake.mark_woke(who.agent_id, list(keys))
         return None
     woke = [*keys, *([memory_key(memory)] if memory is not None else [])]
     # Recorded before the POST, so the recipient's own watcher does not queue a second line meanwhile.

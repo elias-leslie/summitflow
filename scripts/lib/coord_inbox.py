@@ -170,17 +170,22 @@ def tether_wake(agent_id: str, items: list[Item],
                 note: coord_memory.Notice | None) -> str:
     """Queue this agent's [Message] line on its Aico window through Tether (coord_deliver).
 
-    "queued"; "retry" when Tether did not answer (never type then: the line may
-    be queued, and a retry replaces it); "direct" for today's path. The memory
-    notice's lock is released before any HTTP call.
+    "queued"; "covered" when the window's line would name nothing (an ack its own
+    reply wait reports: Tether's [Ready] line is the wake); "retry" when Tether did
+    not answer (never type then: the line may be queued, and a retry replaces
+    it); "direct" for today's path. The memory notice's lock is released before
+    any HTTP call.
     """
     try:
-        if not coord_deliver.enabled() or coord_deliver.target(agent_id) is None:
+        if not coord_deliver.enabled() or (who := coord_deliver.target(agent_id)) is None:
             return "direct"
         text = note.text if note else None
         if note:
             note.done(delivered=False)  # the turn hook shows it in full
         queued = coord_deliver.wake(agent_id, [item.key for item in items], memory=text)
+        if queued is None and text is None and coord_deliver.summary(who) is None:
+            _trace(agent_id, "tether-covered", [item.key for item in items])
+            return "covered"
     except coord_deliver.Unsettled:
         return "retry"
     except Exception:  # noqa: BLE001 - fail open to the direct wake
