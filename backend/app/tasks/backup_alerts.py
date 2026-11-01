@@ -57,9 +57,10 @@ def _previous_successes() -> dict[str, str]:
 def external_statuses(now: datetime) -> dict[str, dict[str, Any]]:
     """Backups other projects run (Blackbox archive pull, Portfolio-AI artifacts), with the same freshness window.
 
-    A probe that cannot read its source (``unknown``: a stopped guest, an unreachable host) keeps the last success
-    already seen, so the source turns overdue only when that success really leaves the window; the reason it is
-    unreadable stays in ``last_error``.
+    A probe that cannot read its source keeps the last success already seen. A stopped guest (``stopped``) is fine
+    however old that success is: its data cannot change while it is off, so the last good backup still covers it.
+    An unreachable one (``unknown``) turns overdue only when that success leaves the window. The reason stays in
+    ``last_error``.
     """
     from .backup_external import list_external_sources, probe
 
@@ -77,9 +78,11 @@ def external_statuses(now: datetime) -> dict[str, dict[str, Any]]:
         window = _FREQUENCY_DELTAS.get(frequency, timedelta(days=1)) * SOURCE_STALE_FACTOR
         seen = probe(source)
         last_success = _parse(seen["last_success_at"])
-        if last_success is None and seen["last_status"] == "unknown":
+        stopped = seen["last_status"] == "stopped"
+        if last_success is None and (stopped or seen["last_status"] == "unknown"):
             last_success = _parse(previous.get(str(source["id"])))
-        ok = bool(last_success and now - last_success <= window) or seen["last_status"] == "running"
+        ok = (bool(last_success and (stopped or now - last_success <= window))
+              or seen["last_status"] == "running")
         error = seen["last_error"] or (None if ok else "no success within the freshness window")
         out[str(source["id"])] = {"ok": ok, "frequency": frequency, "stale_after_hours": round(window.total_seconds() / 3600, 1),
                                   "last_success_at": last_success.isoformat() if last_success else None,

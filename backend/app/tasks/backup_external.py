@@ -4,7 +4,8 @@
   recorded Result=success with exit status 0. systemd forgets a run on reboot, so a unit with no run since boot is
   judged by its last finished start job in the journal.
 - ``guest_unit``: the same reading inside the Proxmox guest that the owner project's catalog placement names
-  (project.identity.json runtime.deployment), through the QEMU guest agent or ``pct exec``.
+  (project.identity.json runtime.deployment), through the QEMU guest agent or ``pct exec``. A stopped guest reads
+  ``stopped``: its data cannot change, so the caller keeps the last success it saw.
 - ``artifact_glob``: the newest matching file's modification time; a file counts once it is non-empty.
 """
 
@@ -130,7 +131,7 @@ def _probe_guest_unit(source: dict[str, Any], unit: str, placement: Callable[[An
             return {"last_success_at": None, "last_status": "unknown",
                     "last_error": f"{source.get('owner_project')} has no Proxmox placement in its project identity"}
         if runtime_deployment._guest_status(target) != "running":
-            return {"last_success_at": None, "last_status": "unknown", "last_error": f"{target.label} is stopped"}
+            return {"last_success_at": None, "last_status": "stopped", "last_error": f"{target.label} is stopped"}
     except runtime_deployment.DeploymentError as exc:
         return {"last_success_at": None, "last_status": "unknown", "last_error": str(exc)}
     seen = _probe_unit(unit, _guest_runner(target))

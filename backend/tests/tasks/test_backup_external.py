@@ -86,7 +86,7 @@ def test_guest_unit_reads_the_unit_inside_the_owner_projects_guest(monkeypatch):
 
     monkeypatch.setattr(rd, "_guest_status", lambda _: "stopped")
     stopped = backup_external.probe(source, placement=lambda _: target)
-    assert stopped["last_status"] == "unknown" and stopped["last_error"] == "pve / VM 180 is stopped"
+    assert stopped["last_status"] == "stopped" and stopped["last_error"] == "pve / VM 180 is stopped"
 
     unplaced = backup_external.probe(source, placement=lambda _: None)
     assert unplaced["last_success_at"] is None and "no Proxmox placement" in unplaced["last_error"]
@@ -132,8 +132,8 @@ def test_external_sources_join_the_receipt_with_the_same_window(mocker, tmp_path
     assert out["pai"]["external"] is True
 
 
-def test_unreadable_source_keeps_the_last_success_already_seen(mocker, tmp_path: Path):
-    """A stopped guest is not a missed backup: the last success stays until it really leaves the window."""
+def test_unreachable_source_keeps_the_last_success_until_it_leaves_the_window(mocker, tmp_path: Path):
+    """A guest that is up but unreadable keeps its last success until that success really leaves the window."""
     now = datetime(2026, 11, 1, 21, tzinfo=UTC)
     receipt = tmp_path / "sources.json"
     receipt.write_text(json.dumps({"sources": {
@@ -147,10 +147,10 @@ def test_unreadable_source_keeps_the_last_success_already_seen(mocker, tmp_path:
         for source_id in ("pai", "old", "new")
     ])
     mocker.patch.object(backup_external, "probe", lambda source: {
-        "last_success_at": None, "last_status": "unknown", "last_error": "davion-gem / VM 180 is stopped"})
+        "last_success_at": None, "last_status": "unknown", "last_error": "guest agent did not answer"})
     out = backup_alerts.external_statuses(now)
     assert out["pai"]["ok"] and out["pai"]["last_success_at"] == (now - timedelta(hours=11)).isoformat()
-    assert out["pai"]["last_error"] == "davion-gem / VM 180 is stopped"
+    assert out["pai"]["last_error"] == "guest agent did not answer"
     assert not out["old"]["ok"] and out["old"]["last_success_at"] == (now - timedelta(days=15)).isoformat()
     assert not out["new"]["ok"] and out["new"]["last_success_at"] is None
     conditions = backup_alerts._external_conditions(out, now)
@@ -168,3 +168,21 @@ def test_a_failed_run_does_not_fall_back_to_an_older_success(mocker, tmp_path: P
     mocker.patch.object(backup_external, "probe", lambda source: {
         "last_success_at": None, "last_status": "failed", "last_error": "last run ended exit-code (exit 1)"})
     assert not backup_alerts.external_statuses(now)["pai"]["ok"]
+
+
+def test_stopped_guest_with_a_good_backup_is_never_overdue(mocker, tmp_path: Path):
+    """The owner stopping a VM is not a backup problem: its data cannot change, so the last good backup covers it."""
+    now = datetime(2026, 12, 1, tzinfo=UTC)
+    receipt = tmp_path / "sources.json"
+    receipt.write_text(json.dumps({"sources": {"pai": {"last_success_at": (now - timedelta(days=30)).isoformat()}}}))
+    mocker.patch.object(backup_alerts, "SOURCES_RECEIPT", receipt)
+    mocker.patch.object(backup_external, "list_external_sources", return_value=[
+        {"id": source_id, "name": source_id, "owner_project": "portfolio-ai", "kind": "guest_unit",
+         "target": "portfolio-backup.service", "frequency": "weekly", "enabled": True}
+        for source_id in ("pai", "new")])
+    mocker.patch.object(backup_external, "probe", lambda source: {
+        "last_success_at": None, "last_status": "stopped", "last_error": "davion-gem / VM 180 is stopped"})
+    out = backup_alerts.external_statuses(now)
+    assert out["pai"]["ok"] and out["pai"]["last_error"] == "davion-gem / VM 180 is stopped"
+    assert not out["new"]["ok"]  # no good backup on record: nothing covers it
+    assert backup_alerts._external_conditions(out, now)["sources-stale"]["reason"] == "sources-stale:new"
