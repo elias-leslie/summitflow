@@ -24,7 +24,9 @@ memory notice. Ride-along items: an FYI note (`st sessions send --fyi`) and a ba
 request for its sender. They are shown once by the turn hook, never wake an idle agent (`wakeable` and the
 watcher leave them out, Pi's idle check too), never block Stop, and ride along with the next wake. Tether's own
 ride-along lines (a lane's repeated went-idle line, a coordination line for these items) are taken at the
-window's next prompt (UserPromptSubmit; Pi's next tool result) with GET /v1/sessions/<window>/due?ride=1.
+window's next prompt (UserPromptSubmit; Pi's next tool result), only by the window's own agent (not a harness
+nested in it): peeked first thing (GET /v1/sessions/<window>/due?ride=peek) and taken once printed (DELETE
+...?token=, Tether API 25), so a hook that times out loses none; API 24 takes them at once (?ride=1).
 
 Senders queue the same line when they record a request or ack; the woke state
 (cli.lib.coord_wake) keeps the watcher and Pi's idle check from waking the
@@ -448,6 +450,8 @@ def main() -> int:
     if mode == "turn" and event == "SessionStart":
         emit(event, [], memory(leases.identify_agent()[0], resumed=payload.get("source") == "resume"))
         return 0
+    # Ride-along lines first, before the slower inbox work below eats the hook's time.
+    ride = take_ride(leases.identify_agent()[0]) if mode == "turn" and takes_ride(provider, event) else None
     agent_id, items = pending()
     if mode == "turn" and provider == "codex" and event == "UserPromptSubmit":
         disarm_codex(agent_id)
@@ -462,16 +466,15 @@ def main() -> int:
         return 0
     if fresh:
         mark(agent_id, fresh, f"{provider}-{event or mode}")
-    ride = ""
     if mode == "turn":
         try:  # a queued [Message] line nothing waits for any more is taken back before it is pasted
             if coord_deliver.withdraw_stale(agent_id):
                 _trace(agent_id, "tether-withdrawn", [])
         except Exception:  # noqa: BLE001 - best effort; a stale line only costs one look at an empty inbox
             pass
-        if takes_ride(provider, event):
-            ride = take_ride()
-    emit(event, fresh, memory(agent_id), ride)
+    emit(event, fresh, memory(agent_id), ride.text if ride else "")
+    if ride:  # printed: now Tether may let them go
+        coord_deliver.confirm_ride(ride.widget, ride.lines)
     return 0
 
 
@@ -480,12 +483,34 @@ def takes_ride(provider: str, event: str) -> bool:
     return event == "UserPromptSubmit" or (provider == "pi" and event == "PostToolUse")
 
 
-def take_ride() -> str:
-    """The ride-along lines Tether holds for this window (a lane's repeated went-idle line, ...), taken now; '' if none."""
+class Ride(NamedTuple):
+    """Ride-along lines peeked for this window: the text to print, and what confirms them once printed."""
+
+    widget: str
+    lines: coord_deliver.Ride
+
+    @property
+    def text(self) -> str:
+        return self.lines.text
+
+
+def take_ride(agent_id: str) -> Ride | None:
+    """The ride-along lines Tether holds for this window (a lane's repeated went-idle line, ...), or None.
+
+    Only for the window's own agent: a harness nested in it (a ``claude -p`` or ``codex exec`` an agent runs)
+    inherits AICO_WIDGET_ID but is not the one they are for (coord_deliver.target answers None for it).
+    """
+    widget = os.environ.get("AICO_WIDGET_ID", "")
     try:
-        return coord_deliver.take_ride(os.environ.get("AICO_WIDGET_ID", "")) or ""
-    except Exception:  # noqa: BLE001 - best effort; they join the next wake
-        return ""
+        if not widget or not coord_deliver.enabled():
+            return None
+        who = coord_deliver.target(agent_id)
+        if who is None or who.widget != widget:
+            return None
+        lines = coord_deliver.take_ride(widget)
+    except Exception:  # noqa: BLE001 - best effort; they stay queued or join the next wake
+        return None
+    return Ride(widget, lines) if lines else None
 
 
 def emit(event: str, fresh: list[Item], note: coord_memory.Notice | None, ride: str = "") -> None:

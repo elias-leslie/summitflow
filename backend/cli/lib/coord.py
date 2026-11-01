@@ -201,7 +201,8 @@ def guard(repo: Path, operation: str, *, with_ack: str | None = None) -> None:
         hint = (
             "wait for it to finish"
             if lease.kind == "op"
-            else f'request handoff: st sessions send {lease.agent_id} "<ask>" --delivery handshake, then rerun with --with-ack <id>'
+            else (f'request handoff: st sessions send {lease.agent_id} "<ask>" --delivery handshake, arm '
+                  "st aico wait reply <id> so its ack wakes you, then rerun with --with-ack <id>")
         )
         raise CoordBlocked(f"{holder_line(project_id, lease, root)}; {operation} refused; {hint}")
 
@@ -456,8 +457,9 @@ def send(to: str, text: str, *, project: str | None = None, limit: int = MAX_TEX
         for row in rows:
             if row["from"] != agent_id or row["to"] != to:
                 continue
-            if (source_key and row.get("source_key") == source_key) or (row["text"] == body and row["state"] in ("open", "fyi")):
-                return {**row, "duplicate": True}
+            if (source_key and row.get("source_key") == source_key) or (row["text"] == body and (
+                    (not fyi and row["state"] == "open") or (fyi and row["state"] == "fyi" and not fyi_shown(row)))):
+                return {**row, "duplicate": True}  # same class only: a note shown before is a new note
         row = {
             "id": uuid.uuid4().hex[:6], "from": agent_id, "from_session": session_id, "to": to,
             "project": project, "source_key": source_key, "text": body, "created": now,

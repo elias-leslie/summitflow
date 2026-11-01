@@ -616,6 +616,36 @@ def test_peer_message_to_old_identity_reaches_successor(repos, monkeypatch, harn
     coord.guard(repo, "rebuild", with_ack=request["id"])  # ack by successor authorizes against old's hold
 
 
+def test_reset_skips_fyi_notes_both_ways(repos, monkeypatch, harness_procs):
+    # Review P3-3: an FYI needs nothing from either side, so a reset neither shows "ack None from None on X to
+    # confirm" nor tells the peer to resend.
+    harness = ("claude_code", "CLAUDE_CODE_SESSION_ID", "cc")
+    anchor, _ = harness_procs()
+    peer_anchor, _ = harness_procs()
+    peer = _peer(monkeypatch, peer_anchor)
+    coord_lineage.observe()
+    old = become(monkeypatch, harness, "old777-context", anchor)
+    coord_lineage.observe()
+    coord.send(peer, "paused, nothing running", fyi=True)
+    _peer(monkeypatch, peer_anchor)
+    coord.send(old, "fyi: lane done", fyi=True)
+
+    become(monkeypatch, harness, "new888-context", anchor)
+    assert coord_lineage.observe(reset=True, emit=True) == []
+    _peer(monkeypatch, peer_anchor)
+    assert all("context reset" not in line for line in coord.notices())
+
+
+def test_a_handoff_hint_says_how_to_be_woken_by_the_ack(repos, monkeypatch):
+    # Review P2-3: a bare yes closes the request without waking the requester.
+    repo = repos["hostrepo"]
+    as_claude(monkeypatch, "integrator-0001")
+    leases.acquire_mark("hostrepo", str(repo), "hold", "integration")
+    as_codex(monkeypatch, "finisher-00001")
+    with pytest.raises(coord.CoordBlocked, match="arm st aico wait reply <id> so its ack wakes you"):
+        coord.guard(repo, "publish")
+
+
 @pytest.mark.parametrize("harness", HARNESSES)
 def test_stale_predecessor_is_not_inherited_and_expires_normally(repos, monkeypatch, harness_procs, harness):
     repo = repos["hostrepo"]

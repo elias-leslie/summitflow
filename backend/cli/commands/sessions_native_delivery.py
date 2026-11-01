@@ -83,7 +83,8 @@ def _deliver_live(thread: str, prompt: str, *, project: str, source_key: str) ->
     base = {"project_id": project, "thread_id": thread, "source_key": source_key, "capability": "native-thread",
             "transport": "coordination-ledger", "agent_id": agent_id, "request_id": row["id"],
             "replayed": bool(row.get("duplicate"))}
-    if not row.get("duplicate") and (queued := coord_deliver.safe_wake(agent_id, [f"{row['id']}:req"])):
+    if not row.get("duplicate") and (queued := coord_deliver.safe_wake(agent_id, [f"{row['id']}:req"],
+                                                                       sender=str(row["from"]))):
         delivery_id = str(queued["delivery"]["id"])
         record = coord_deliver.state(delivery_id) or {}  # a busy thread gets it later: never wait here
         wake = {"tether_delivery_id": delivery_id, "widget": queued["widget"],

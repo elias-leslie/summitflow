@@ -88,6 +88,11 @@ class FakeTether:
             return 200, {"items": self.waits.get(path.split("/")[3], [])}
         if method == "GET" and path.endswith("/due?ride=1"):
             return 200, {"text": self.ride_text.pop(path.split("/")[3], None)}
+        if method == "GET" and path.endswith("/due?ride=peek"):
+            text = self.ride_text.get(path.split("/")[3])
+            return 200, {"text": text, "token": "aaaaaaaaaaaa.0123abcd" if text else None}
+        if method == "DELETE" and "/due?token=" in path:
+            return 200, {"taken": 1 if self.ride_text.pop(path.split("/")[3], None) else 0}
         if path == "/v1/waits/check":
             return 200, {"kind": body["kind"], "ref": body["ref"], "armed": 0}
         if method == "DELETE" and "/deliveries?source=" in path:
@@ -767,8 +772,11 @@ def test_a_bare_yes_closes_for_its_sender_and_rides_along(monkeypatch, tether):
 
 @pytest.mark.parametrize("answer", [("yes", "go ahead"), ("no", "busy"), ("eta:5", None)],
                          ids=["note", "no", "eta"])
-def test_acks_with_a_note_a_no_or_an_eta_stay_wakes(monkeypatch, tether, answer):
-    _pair(monkeypatch, tether)
+@pytest.mark.parametrize("version", [24, 25])
+def test_acks_with_a_note_a_no_or_an_eta_stay_wakes(monkeypatch, tether, answer, version):
+    # Review P1-3: an ack (an eta, "yes, starting") may open a turn of work, so it never counts as the acker telling
+    # the requester: from API 25 it names its window as a reply (an act on the requester), before that none.
+    _pair(monkeypatch, tether, version=version)
     row = _send_as_cli(monkeypatch, "codex:target", "pause please", "sender-30")
     _as(monkeypatch, "codex", "target-30")
     args = ["sessions", "ack", row["id"], answer[0], *([answer[1]] if answer[1] else [])]
@@ -776,7 +784,11 @@ def test_acks_with_a_note_a_no_or_an_eta_stay_wakes(monkeypatch, tether, answer)
     [ledger] = [r for r in coord._load_ledger() if r["id"] == row["id"]]
     assert ledger["state"] == "acked"
     second = tether.posts()[1][1]
-    assert "ride" not in second and second["from"] == [WIDGET]
+    assert "ride" not in second
+    if version >= 25:
+        assert second["from"] == [WIDGET] and second["reply"] is True
+    else:
+        assert "from" not in second and "reply" not in second
     assert second["line"] == "[Message] Ack from codex:target · st sessions inbox"
 
 
@@ -822,7 +834,7 @@ def test_an_fyi_is_ride_along_and_needs_no_ack_or_confirm(monkeypatch, tether):
     row = _fyi_as_cli(monkeypatch, "codex:target", "paused, nothing running", "sender-30")
     assert row["state"] == "fyi"
     [(_, body)] = tether.posts()
-    assert body["ride"] is True and "from" not in body
+    assert body["ride"] is True and body["from"] == [OTHER]  # its sender acted on the recipient; never "told"
     assert body["line"] == "[Message] FYI from cc:sender · st sessions inbox"
     assert "paused" not in body["line"]
     _as(monkeypatch, "codex", "target-30")
@@ -897,6 +909,7 @@ def test_ride_along_lines_join_the_next_prompt_not_every_tool_result(monkeypatch
     monkeypatch.setenv("AICO_WIDGET_ID", WIDGET)
     tether.version = 24
     _identity("codex:target", "target-31")
+    _as(monkeypatch, "codex", "target-31")
     tether.ride_text[WIDGET] = '[Ready] lane "Store lane" went idle again after 2m'
     assert _hook(inbox, monkeypatch, capsys, provider, "PostToolUse") == ""
     assert tether.ride_text  # a tool result never takes them
@@ -908,7 +921,10 @@ def test_ride_along_lines_join_the_next_prompt_not_every_tool_result(monkeypatch
 def test_pi_takes_ride_along_lines_at_its_next_tool_result_and_its_idle_check_does_not(monkeypatch, inbox, tether, capsys):
     monkeypatch.setenv("AICO_WIDGET_ID", WIDGET)
     tether.version = 24
-    _identity("pi:target", "pi-target-1")
+    _identity("pi:target", "target-pi1")
+    _as(monkeypatch, "claude", "x")
+    monkeypatch.delenv("CLAUDE_CODE_SESSION_ID")
+    monkeypatch.setenv("PI_SESSION_ID", "target-pi1")
     tether.ride_text[WIDGET] = "[Ready] lane X went idle again"
     assert _hook(inbox, monkeypatch, capsys, "pi", "PiIdle") == ""
     assert tether.ride_text
@@ -918,6 +934,8 @@ def test_pi_takes_ride_along_lines_at_its_next_tool_result_and_its_idle_check_do
 
 def test_no_ride_flush_before_tether_api_24_or_without_a_window(monkeypatch, inbox, tether, capsys):
     tether.version = 23
+    _identity("codex:target", "target-31")
+    _as(monkeypatch, "codex", "target-31")
     monkeypatch.setenv("AICO_WIDGET_ID", WIDGET)
     tether.ride_text[WIDGET] = "x"
     assert _hook(inbox, monkeypatch, capsys, "claude_code", "UserPromptSubmit") == ""
@@ -1082,3 +1100,105 @@ def test_a_finished_service_job_nudges_tether_job_waits(monkeypatch, tmp_path):
     monkeypatch.setattr(service_ops.subprocess, "run", lambda *a, **k: __import__("subprocess").CompletedProcess([], 7))
     assert service_ops.run_detached_job(job_id) == 7
     assert nudged == [("job", job_id)]  # failed jobs nudge too
+
+
+# ---------------------------------------------------------------- review fixes (wake trim)
+
+
+def test_a_line_names_only_the_window_whose_command_queued_it(monkeypatch, tether):
+    # Review P2-1: a re-post (the recipient's own watcher, withdraw_stale's re-queue) names no sender, so a request
+    # still waiting from an earlier turn never reads as the requester telling the recipient again.
+    _pair(monkeypatch, tether)
+    _send_as_cli(monkeypatch, "codex:target", "please look", "sender-30")
+    assert tether.posts()[0][1]["from"] == [OTHER]
+    assert coord_deliver.wake("codex:target") is not None
+    again = tether.posts()[1][1]
+    assert again["line"] == "[Message] Request from cc:sender · st sessions inbox" and "from" not in again
+
+
+def test_an_fyi_names_its_sender_as_contact_only(monkeypatch, tether):
+    _pair(monkeypatch, tether, version=25)
+    _fyi_as_cli(monkeypatch, "codex:target", "status note", "sender-30")
+    [(_, body)] = tether.posts()
+    assert body["ride"] is True and body["from"] == [OTHER]  # Tether counts a ride line as contact, never as telling
+
+
+@pytest.mark.parametrize("first_fyi", [True, False], ids=["fyi-then-request", "request-then-fyi"])
+def test_a_request_and_an_fyi_with_the_same_text_are_both_recorded(monkeypatch, tether, first_fyi):
+    # Review P2-6: de-dup stays within one class.
+    _pair(monkeypatch, tether)
+    send = (_fyi_as_cli, lambda m, to, text, sid: _send_as_cli(m, to, text, sid))
+    first = send[0 if first_fyi else 1](monkeypatch, "codex:target", "done: report at /tmp/r.md", "sender-30")
+    second = send[1 if first_fyi else 0](monkeypatch, "codex:target", "done: report at /tmp/r.md", "sender-30")
+    assert first["id"] != second["id"] and {first["state"], second["state"]} == {"fyi", "open"}
+
+
+def test_an_fyi_already_shown_is_a_new_note_when_sent_again(monkeypatch, tether):
+    _pair(monkeypatch, tether)
+    first = _fyi_as_cli(monkeypatch, "codex:target", "paused, nothing running", "sender-30")
+    coord_wake.STATE.mkdir(parents=True, exist_ok=True)
+    coord_wake.seen_path("codex:target").write_text(json.dumps({f"{first['id']}:fyi": time.time()}))
+    again = _fyi_as_cli(monkeypatch, "codex:target", "paused, nothing running", "sender-30")
+    assert again["id"] != first["id"] and not again.get("duplicate")
+
+
+def test_a_send_tells_how_to_be_woken_by_the_ack(monkeypatch, tether):
+    # Review P2-3: a bare yes closes the request without waking its sender; the send says how to wait on it.
+    _pair(monkeypatch, tether)
+    _as(monkeypatch, "claude", "sender-30")
+    monkeypatch.setattr("cli.commands.sessions_fleet._send_across_machines", lambda *a, **k: False)
+    result = runner.invoke(app, ["sessions", "send", "codex:target", "may I rebuild?"])
+    row = coord._load_ledger()[0]
+    assert f"arm st aico wait reply {row['id']}" in result.output
+
+
+def test_a_nested_harness_never_takes_its_windows_ride_lines(monkeypatch, inbox, tether, capsys):
+    # Review P2-4: a claude -p / codex exec an agent runs inherits AICO_WIDGET_ID; the lines are not for it.
+    monkeypatch.setenv("AICO_WIDGET_ID", WIDGET)
+    tether.version = 25
+    _identity("codex:target", "target-32")
+    _as(monkeypatch, "codex", "target-32")
+    tether.nested.add("4242:99")
+    tether.ride_text[WIDGET] = "[Ready] lane X went idle again"
+    assert _hook(inbox, monkeypatch, capsys, "codex", "UserPromptSubmit") == ""
+    assert tether.ride_text and not [c for c in tether.calls if "/due?" in c[1]]
+
+
+def test_ride_lines_are_peeked_first_and_taken_only_once_printed(monkeypatch, inbox, tether, capsys):
+    # Review P2-5: a hook that times out or dies before printing them loses no line.
+    monkeypatch.setenv("AICO_WIDGET_ID", WIDGET)
+    tether.version = 25
+    _identity("codex:target", "target-33")
+    _as(monkeypatch, "codex", "target-33")
+    tether.ride_text[WIDGET] = "[Ready] lane X went idle again"
+    killed = {"on": True}
+    real_emit = inbox.emit
+
+    def emit(*args: Any, **kwargs: Any) -> None:
+        if killed["on"]:
+            raise TimeoutError("hook killed before it printed")
+        real_emit(*args, **kwargs)
+
+    monkeypatch.setattr(inbox, "emit", emit)
+    with pytest.raises(TimeoutError):
+        _hook(inbox, monkeypatch, capsys, "codex", "UserPromptSubmit")
+    assert tether.ride_text  # still queued for the next turn or wake
+    killed["on"] = False
+    tether.calls.clear()
+    coord_wake.mark_woke("codex:target", ["x:req"])  # the hook's withdraw of a stale line runs too
+    out = _hook(inbox, monkeypatch, capsys, "codex", "UserPromptSubmit")
+    assert "went idle again" in json.loads(out)["hookSpecificOutput"]["additionalContext"]
+    assert not tether.ride_text
+    # Peeked first, before the hook's slower inbox work (the withdraw); taken only after printing.
+    paths = [path for method, path, _ in tether.calls if method in ("GET", "DELETE")]
+    assert paths == [f"/v1/sessions/{WIDGET}/due?ride=peek",
+                     f"/v1/sessions/{WIDGET}/deliveries?source=coord%3Acodex%3Atarget",
+                     f"/v1/sessions/{WIDGET}/due?token=aaaaaaaaaaaa.0123abcd"]
+
+
+def test_send_help_keeps_the_done_report_rule():
+    # Review P3-2: the help trim dropped it.
+    result = CliRunner().invoke(app, ["sessions", "send", "--help"], env={"COLUMNS": "400"})
+    assert result.exit_code == 0
+    text = " ".join(result.stdout.replace("│", " ").split())
+    assert "A done report, or anything you need answered, is a normal request" in text

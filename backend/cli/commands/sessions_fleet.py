@@ -200,7 +200,8 @@ def send(
     scope: Annotated[str, typer.Option(help="Must exactly match the root scope JSON")] = "{}",
     source_key: Annotated[str | None, typer.Option(help="Stable instruction revision key; reuse on retry")] = None,
     delivery: Annotated[Literal["fleet-stream", "native-thread", "handshake"] | None, typer.Option(help="Default: handshake for agent ids/labels, fleet-stream for root-*/UUIDs")] = None,
-    fyi: Annotated[bool, typer.Option("--fyi", help="Status note, handshake only: no ack or confirm, and it never wakes the recipient")] = False,
+    fyi: Annotated[bool, typer.Option("--fyi", help="Status note to an agent on this computer: no ack or confirm, never wakes it. "
+                                                    "A done report, or anything you need answered, is a normal request")] = False,
 ) -> None:
     """Send to another agent: agent ids/labels -> handshake; root-* handles and UUIDs -> fleet stream.
 

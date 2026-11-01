@@ -264,7 +264,7 @@ def _continuing_line(latest: str, predecessors: set[str], doc: dict[str, Any]) -
     if files:
         parts.append("leased files " + ",".join(f"{p}({n})" for p, n in sorted(files.items())))
     for row in doc.get("messages") or []:
-        if row.get("state") == "closed":
+        if row.get("state") in ("closed", "fyi"):  # an FYI note needs nothing from either side
             continue
         if row.get("from") in predecessors:
             if row.get("state") == "open":
@@ -291,7 +291,7 @@ def _to_any(to: object, ids: set[str], doc: dict[str, Any]) -> bool:
 def _note_peers(doc: dict[str, Any], successor: str, predecessors: set[str], latest: str, now: datetime) -> None:
     peers: set[str] = set()
     for row in doc.get("messages") or []:
-        if row.get("state") == "closed":
+        if row.get("state") in ("closed", "fyi"):
             continue
         if row.get("from") in predecessors and row.get("to"):
             peers.add(str(row.get("acked_by") or row["to"]))

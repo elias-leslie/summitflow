@@ -50,6 +50,10 @@ def _on_workstation(exc: ValueError) -> bool:
     return isinstance(exc, coord.UnknownRequest) and coord_remote.agent_host() is not None
 
 
+# A bare yes closes a request without waking its sender (coord_deliver.settle_bare_ack): say how to be woken.
+_ACK_WAKE = "If you wait on the answer, arm st aico wait reply {id}: a bare yes otherwise reaches you without a wake"
+
+
 def send_request(to: str, text: str, source_key: str | None = None, *, fyi: bool = False) -> None:
     cfg = get_config_optional()
     try:
@@ -64,17 +68,18 @@ def send_request(to: str, text: str, source_key: str | None = None, *, fyi: bool
         return
     from ..lib import coord_deliver
 
+    sender = str(row["from"])
     if fyi:
-        coord_deliver.safe_wake(to, [f"{row['id']}:fyi"])
+        coord_deliver.safe_wake(to, [f"{row['id']}:fyi"], sender=sender)
         typer.echo(f"sent FYI {row['id']} -> {to}; it does not wake anyone: the recipient's hook shows it on its next "
                    "turn (or with the next message that does wake it). No ack or confirm needed")
-    elif queued := coord_deliver.safe_wake(to, [f"{row['id']}:req"]):
+    elif queued := coord_deliver.safe_wake(to, [f"{row['id']}:req"], sender=sender):
         typer.echo(f"sent {row['id']} -> {to}; Tether delivers a [Message] line to its window {queued['widget']} "
                    f"when it is idle (delivery {queued['delivery']['id']}), and its hook shows the request. "
-                   "Track seen/ack with st sessions inbox")
+                   f"Track seen/ack with st sessions inbox. {_ACK_WAKE.format(id=row['id'])}")
     else:
         typer.echo(f"sent {row['id']} -> {to}; the recipient's hook shows it on its next turn or wakes it when idle. "
-                   "Track seen/ack with st sessions inbox")
+                   f"Track seen/ack with st sessions inbox. {_ACK_WAKE.format(id=row['id'])}")
     if not coord.known_target(to):
         live = ", ".join(coord.live_agents()) or "none"
         typer.echo(f"WARNING {to} is not a registered agent id (cc:/codex:/pi:/agy: id or 13+ char session prefix); "
@@ -129,7 +134,8 @@ def ack(
         typer.echo(f"WARNING the sender's window did not get the ack: {exc}; it sees it in st sessions inbox",
                    err=True)
         return
-    queued = coord_deliver.safe_wake(str(row["from"]), [f"{row['id']}:ack:{row.get('acked_at')}"])
+    queued = coord_deliver.safe_wake(str(row["from"]), [f"{row['id']}:ack:{row.get('acked_at')}"],
+                                     sender=str(row.get("acked_by") or ""), reply=True)
     if row.get("auto_closed"):
         typer.echo(f"closed {row['id']}: a bare yes needs no confirm"
                    + (f"; {row['from']} gets it with its next message or turn, no wake" if queued else ""))

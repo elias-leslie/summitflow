@@ -27,9 +27,14 @@ Two delivery classes (Tether API 24, "Deliveries"). A line that names a request,
 eta, or a memory notice is a wake, as before. A line that names only ride-along items (an FYI note from
 ``st sessions send --fyi``, a bare ``ack yes`` that closed the request for its sender: coord.close_bare_ack) is
 queued with ``ride: true``: Tether never pastes it or wakes a puller for it, and it joins the next wake or the
-window's next turn. A wake line also carries ``from`` (the Aico windows of the agents it names), so a lane that
-told its launcher in a turn sends no went-idle line for it. Against a Tether older than 24 the line is posted
-plain, as before.
+window's next turn. Against a Tether older than 24 the line is posted plain, as before.
+
+``from`` names only the Aico window of the agent whose command queued the line (``sender``), never every agent
+the line counts: a recipient's own watcher and ``withdraw_stale`` pass none. A request (``st sessions send``) tells
+the recipient something, so a lane that sent its launcher one in a turn gets no went-idle line for it. An ack is a
+``reply`` (Tether API 25): it counts as its sender acting on the recipient (a lane's repeat went-idle backoff starts
+over) but never as telling it, since an ack (an eta, "yes, starting") may open a turn of work whose end the
+requester still needs to hear. Before API 25 an ack carries no ``from``.
 
 A line that goes stale before it is pasted (the request was answered, the ack
 shown by the turn hook) is taken back: the turn hook calls ``withdraw_stale``
@@ -53,6 +58,7 @@ DELIVERY_API = 16  # POST /v1/sessions/:id/deliveries, GET /v1/deliveries/:id
 NUDGE_API = 17  # POST /v1/waits/check
 WITHDRAW_API = 18  # DELETE /v1/sessions/:id/deliveries?source=
 RIDE_API = 24  # `ride` and `from` on a delivery; GET /v1/sessions/:id/due?ride=1
+REPLY_API = 25  # `reply` on a delivery; GET /v1/sessions/:id/due?ride=peek, DELETE .../due?token=
 SOURCE_PREFIX = "coord:"
 _TIMEOUT = 2.0
 _NUDGE_TIMEOUT = 0.5
@@ -269,11 +275,10 @@ def rides(who: Target) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
 
 
 class Line(NamedTuple):
-    """A recipient's line: its text, whether it is ride-along only, and the agents a wake line names."""
+    """A recipient's line: its text, and whether it is ride-along only."""
 
     text: str
     ride: bool
-    senders: tuple[str, ...] = ()
 
 
 def _plural(count: int, one: str, many: str) -> str:
@@ -315,8 +320,7 @@ def compose(who: Target, *, memory: bool = False, ride_items: bool = True) -> Li
         line = "[Message] " + " · ".join(parts) + f" · {LOOK}"
         if len(line) <= LINE_MAX:
             break
-    wake_class = bool(requests or acks or memory)
-    return Line(line, not wake_class, tuple(dict.fromkeys([*senders, *ackers])) if wake_class else ())
+    return Line(line, not (requests or acks or memory))
 
 
 def summary(who: Target, *, memory: bool = False, ride_items: bool = True) -> str | None:
@@ -359,8 +363,20 @@ def settle_bare_ack(row: dict[str, Any]) -> dict[str, Any]:
         return row
 
 
-def take_ride(widget: str) -> str | None:
-    """The ride-along lines Tether queued for this window, taken now (``GET .../due?ride=1``, API 24), or None."""
+class Ride(NamedTuple):
+    """Tether's ride-along lines for a window: the text, and the token that takes them once shown (None: taken)."""
+
+    text: str
+    token: str | None = None
+
+
+def take_ride(widget: str) -> Ride | None:
+    """The ride-along lines Tether queued for this window, or None.
+
+    From Tether API 25 they are only peeked (``GET .../due?ride=peek``): the caller shows the text, then
+    ``confirm_ride`` takes them, so a hook that times out or is killed first loses none. API 24 takes them
+    at once (``?ride=1``).
+    """
     from app.services import tether
 
     if not _WIDGET.fullmatch(widget or ""):
@@ -368,13 +384,31 @@ def take_ride(widget: str) -> str | None:
     version = api_version()
     if version is None or version < RIDE_API:
         return None
+    peek = version >= REPLY_API
     try:
-        status, body = tether.request("GET", f"/v1/sessions/{quote(widget, safe='')}/due?ride=1",
+        status, body = tether.request("GET", f"/v1/sessions/{quote(widget, safe='')}/due?ride={'peek' if peek else '1'}",
                                       timeout=_NUDGE_TIMEOUT)
-    except Exception:  # best effort: they join the next wake instead
+    except Exception:  # best effort: they stay queued (peek) or join the next wake
         return None
-    text = body.get("text") if status == 200 and isinstance(body, dict) else None
-    return text if isinstance(text, str) and text else None
+    if status != 200 or not isinstance(body, dict):
+        return None
+    text, token = body.get("text"), body.get("token")
+    if not isinstance(text, str) or not text:
+        return None
+    if peek and not isinstance(token, str):
+        return None  # nothing to confirm with: leave them for the next turn
+    return Ride(text, token if peek else None)
+
+
+def confirm_ride(widget: str, ride: Ride) -> None:
+    """Take the ride-along lines ``take_ride`` peeked, now that they were shown (``DELETE .../due?token=``)."""
+    from app.services import tether
+
+    if ride.token is None or not _WIDGET.fullmatch(widget or ""):
+        return
+    with contextlib.suppress(Exception):  # unconfirmed: shown again at the next turn, never lost
+        tether.request("DELETE", f"/v1/sessions/{quote(widget, safe='')}/due?token={quote(ride.token, safe='')}",
+                       timeout=_NUDGE_TIMEOUT)
 
 
 # ---------------------------------------------------------------- queueing
@@ -384,7 +418,7 @@ class Unsettled(Exception):
 
 
 def post(widget: str, source: str, line: str, *, timeout: float = _TIMEOUT, ride: bool = False,
-         senders: tuple[str, ...] = ()) -> dict[str, Any] | None:
+         senders: tuple[str, ...] = (), reply: bool = False) -> dict[str, Any] | None:
     """Queue ``line`` on ``widget``'s delivery queue: Tether's record, or None when it refused it.
 
     Refused means a definite answer (404 unknown session, or a hub peer
@@ -392,8 +426,10 @@ def post(widget: str, source: str, line: str, *, timeout: float = _TIMEOUT, ride
     the caller keeps its own path. No answer or a server error raises
     Unsettled. The hub forwards a session on another host to that host's Tether.
 
-    ``ride`` queues a ride-along line and ``senders`` (Aico windows) record who told this window (both
-    API 24); a Tether that does not answer with that version gets a plain line.
+    ``ride`` queues a ride-along line and ``senders`` (Aico windows) record who sent what it carries (both
+    API 24); a Tether that does not answer with that version gets a plain line. ``reply`` marks the senders'
+    line as an ack (API 25): they acted on this window but did not tell it anything; before 25 an ack names
+    no senders.
     """
     from app.services import tether
 
@@ -403,8 +439,10 @@ def post(widget: str, source: str, line: str, *, timeout: float = _TIMEOUT, ride
         if version is not None and version >= RIDE_API:
             if ride:
                 body_in["ride"] = True
-            if senders:
+            if senders and (not reply or version >= REPLY_API):
                 body_in["from"] = list(senders[:8])
+                if reply:
+                    body_in["reply"] = True
     try:
         status, body = tether.request("POST", f"/v1/sessions/{quote(widget, safe='')}/deliveries",
                                       body_in, timeout=timeout)
@@ -434,11 +472,13 @@ def memory_key(text: str) -> str:
     return "mem:" + hashlib.sha256(text.encode()).hexdigest()[:16]
 
 
-def wake(to: str, keys: list[str] | tuple[str, ...] = (), *, memory: str | None = None) -> dict[str, Any] | None:
+def wake(to: str, keys: list[str] | tuple[str, ...] = (), *, memory: str | None = None, sender: str | None = None,
+         reply: bool = False) -> dict[str, Any] | None:
     """Queue the recipient's ``[Message]`` line through Tether and record ``keys`` as woken.
 
     ``memory`` is a memory notice's text for that recipient (only its key is
-    kept). Returns ``{delivery, widget, line, agent_id}``, or None when the
+    kept). ``sender`` is the agent whose own command queues the line (a request, an FYI, with ``reply`` an
+    ack): its window is the line's ``from``. Returns ``{delivery, widget, line, agent_id}``, or None when the
     recipient keeps today's path (older Tether, no window it is the agent of,
     a shell, refused). Raises Unsettled when Tether did not answer: the
     caller then tries again later and never types the line itself.
@@ -457,8 +497,9 @@ def wake(to: str, keys: list[str] | tuple[str, ...] = (), *, memory: str | None 
     # Recorded before the POST, so the recipient's own watcher does not queue a second line meanwhile.
     stamp = coord_wake.mark_woke(who.agent_id, woke) if woke else None
     try:
+        own = window_of(sender) if sender else None
         delivery = post(who.widget, SOURCE_PREFIX + who.agent_id, line.text, ride=line.ride,
-                        senders=tuple(w for a in line.senders if (w := window_of(a)) and w != who.widget))
+                        senders=(own,) if own and own != who.widget else (), reply=reply)
     except Unsettled:
         if stamp is not None:
             coord_wake.unmark_woke(who.agent_id, woke, stamp)
@@ -471,10 +512,11 @@ def wake(to: str, keys: list[str] | tuple[str, ...] = (), *, memory: str | None 
             "ride": line.ride}
 
 
-def safe_wake(to: str, keys: list[str] | tuple[str, ...] = ()) -> dict[str, Any] | None:
+def safe_wake(to: str, keys: list[str] | tuple[str, ...] = (), *, sender: str | None = None,
+              reply: bool = False) -> dict[str, Any] | None:
     """wake() for a sender's command path: a failure here never fails the send or ack."""
     try:
-        return wake(to, keys)
+        return wake(to, keys, sender=sender, reply=reply)
     except Exception:  # the ledger row is recorded; the recipient's hooks still see it
         return None
 
