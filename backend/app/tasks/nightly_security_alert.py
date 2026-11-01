@@ -31,6 +31,7 @@ from .nightly_publication import _projects
 logger = get_logger(__name__)
 
 LOCK_NAMES = ("uv.lock", "pnpm-lock.yaml", "package-lock.json")
+OSV_CONFIG_NAME = "osv-scanner.toml"  # osv-scanner reads this beside a lockfile (e.g. to ignore a pinned research target)
 NOTICE_KEY = "dependency-advisories"  # one condition: fixable advisories are open somewhere
 SUMMARY_QUIET_SECONDS = 20 * 3600  # a hand re-run the same night stays quiet; the next night pushes again
 SUMMARY_PACKAGES_SHOWN = 2  # packages named per project line before "+N more"
@@ -47,14 +48,23 @@ def _normal(name: str) -> str:
     return re.sub(r"[-_.]+", "-", name).lower()
 
 
-def committed_lockfiles(root: Path) -> list[str]:
-    """Lockfiles tracked in git at HEAD, so a dirty worktree never changes the answer."""
+def _committed_paths(root: Path) -> list[str]:
     from .backup_publish import _git
 
     listed = _git(root, "ls-tree", "-r", "-z", "--name-only", "HEAD")
-    if listed.returncode != 0:
-        return []
-    return sorted(path for path in listed.stdout.split("\0") if path and Path(path).name in LOCK_NAMES)
+    return [path for path in listed.stdout.split("\0") if path] if listed.returncode == 0 else []
+
+
+def committed_lockfiles(root: Path) -> list[str]:
+    """Lockfiles tracked in git at HEAD, so a dirty worktree never changes the answer."""
+    return sorted(path for path in _committed_paths(root) if Path(path).name in LOCK_NAMES)
+
+
+def committed_osv_configs(root: Path, lockfiles: list[str]) -> list[str]:
+    """The project's committed osv-scanner configs that sit beside a scanned lockfile, as ``st check security`` sees them."""
+    directories = {Path(path).parent for path in lockfiles}
+    return sorted(path for path in _committed_paths(root)
+                  if Path(path).name == OSV_CONFIG_NAME and Path(path).parent in directories)
 
 
 def _materialize(root: Path, paths: list[str], destination: Path) -> list[Path]:
@@ -192,6 +202,7 @@ def scan_project(root: Path) -> list[dict[str, str]] | None:
         lockfiles = _materialize(root, paths, base)
         if not lockfiles:
             return None
+        _materialize(root, committed_osv_configs(root, paths), base)
         try:
             with heavy_work("nightly security alert", work_class="heavy") as work:
                 result = safe_subprocess.run_inherited(
@@ -221,8 +232,10 @@ def summarize(by_project: dict[str, list[dict[str, str]]]) -> tuple[str, str] | 
              f"{count} {'project' if count == 1 else 'projects'}."]
     for project, items in sorted(by_project.items()):
         packages: dict[str, dict[str, str]] = {}
-        for item in items:
-            packages.setdefault(item["package"], item)
+        for item in items:  # one line per package, naming the version that fixes all of its advisories
+            known = packages.get(item["package"])
+            if known is None or _version_key(item["fixed"]) > _version_key(known["fixed"]):
+                packages[item["package"]] = item
         shown = [f"{item['package']} {item['version']} -> {item['fixed']}"
                  for item in list(packages.values())[:SUMMARY_PACKAGES_SHOWN]]
         more = len(packages) - len(shown)

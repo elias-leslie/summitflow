@@ -236,3 +236,25 @@ def test_the_real_notice_passes_the_nightshift_contract(monkeypatch: pytest.Monk
     checked = subprocess.run([str(_installed_nightshift()), "push", "--json", "--dry-run"], input=json.dumps(pushed[0]),
                              capture_output=True, text=True, timeout=60, check=False)
     assert checked.returncode == 0, checked.stderr
+
+
+def test_a_package_line_names_the_version_that_fixes_all_its_advisories() -> None:
+    _, message = alert.summarize({"portfolio-ai": [finding("pypdf", "A-1", "6.21.2", "6.21.3"),
+                                                  finding("pypdf", "A-2", "6.21.2", "6.21.4"),
+                                                  finding("pypdf", "A-3", "6.21.2", "6.21.3")]}) or ("", "")
+    assert message.splitlines()[1] == "portfolio-ai: 1 package, pypdf 6.21.2 -> 6.21.4"
+
+
+def test_a_committed_osv_config_beside_a_lockfile_goes_into_the_scan(tmp_path: Path) -> None:
+    """A project ignores a deliberately pinned research target with osv-scanner.toml beside its lockfile."""
+    for path in ("lab/package-lock.json", "lab/osv-scanner.toml", "other/osv-scanner.toml", "backend/uv.lock"):
+        (tmp_path / path).parent.mkdir(parents=True, exist_ok=True)
+        (tmp_path / path).write_text("{}\n")
+    (tmp_path / "backend/osv-scanner.toml").write_text("uncommitted\n")
+    subprocess.run(["git", "init", "-q"], cwd=tmp_path, check=True)
+    subprocess.run(["git", "add", "lab", "other", "backend/uv.lock"], cwd=tmp_path, check=True)
+    subprocess.run(["git", "-c", "user.name=t", "-c", "user.email=t@t", "commit", "-qm", "x"], cwd=tmp_path, check=True)
+
+    lockfiles = alert.committed_lockfiles(tmp_path)
+    assert lockfiles == ["backend/uv.lock", "lab/package-lock.json"]
+    assert alert.committed_osv_configs(tmp_path, lockfiles) == ["lab/osv-scanner.toml"]
