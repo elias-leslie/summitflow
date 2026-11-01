@@ -1196,6 +1196,20 @@ def test_ride_lines_are_peeked_first_and_taken_only_once_printed(monkeypatch, in
                      f"/v1/sessions/{WIDGET}/due?token=aaaaaaaaaaaa.0123abcd"]
 
 
+def test_ride_lines_stay_queued_when_little_hook_time_is_left(monkeypatch, inbox, tether, capsys):
+    # Review follow-up: killed after the take, the lines would be lost; unconfirmed, they show again next turn.
+    monkeypatch.setenv("AICO_WIDGET_ID", WIDGET)
+    tether.version = 25
+    _identity("codex:target", "target-34")
+    _as(monkeypatch, "codex", "target-34")
+    tether.ride_text[WIDGET] = "[Ready] lane X went idle again"
+    monkeypatch.setattr(inbox, "STARTED", time.monotonic() - inbox.HOOK_SECONDS + 1.0)
+    out = _hook(inbox, monkeypatch, capsys, "codex", "UserPromptSubmit")
+    assert "went idle again" in json.loads(out)["hookSpecificOutput"]["additionalContext"]
+    assert tether.ride_text  # not taken
+    assert not [path for method, path, _ in tether.calls if method == "DELETE" and "token=" in path]
+
+
 def test_send_help_keeps_the_done_report_rule():
     # Review P3-2: the help trim dropped it.
     result = CliRunner().invoke(app, ["sessions", "send", "--help"], env={"COLUMNS": "400"})

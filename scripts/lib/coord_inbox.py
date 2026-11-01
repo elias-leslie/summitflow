@@ -62,6 +62,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import NamedTuple
 
+STARTED = time.monotonic()
 sys.path.insert(0, sys.argv[1])
 from cli.lib import coord, coord_deliver, coord_lineage, coord_memory, coord_wake, leases  # type: ignore[import-not-found]  # noqa: E402  # SummitFlow backend on sys.path
 
@@ -71,6 +72,11 @@ POLL = 2.0
 WATCH_SECONDS = int(os.environ.get("ST_COORD_WATCH_SECONDS") or 6 * 3600 - 120)
 RETRY = 10.0  # re-check a busy pane this soon instead of waiting for the next ledger change
 MEM_RECHECK = float(REMIND)  # a memory notice a Tether line announced: its text (and key) changes, so not sooner
+# The harnesses' turn-hook limit (~/.claude/settings.json, ~/.codex/hooks.json, pi-coord-extension.ts runHook).
+HOOK_SECONDS = float(os.environ.get("ST_COORD_HOOK_SECONDS") or 5)
+# Ride-along lines are confirmed (taken) only with this much of it left: a hook killed after the take would lose
+# them, while one left unconfirmed shows them again next turn (the confirm's own timeout is 0.5 s).
+CONFIRM_LEFT = 1.5
 STATE = coord_wake.STATE
 LEDGER = leases.LEASES_DIR / "_coord.json"
 _key = coord_wake.state_key
@@ -473,8 +479,12 @@ def main() -> int:
         except Exception:  # noqa: BLE001 - best effort; a stale line only costs one look at an empty inbox
             pass
     emit(event, fresh, memory(agent_id), ride.text if ride else "")
-    if ride:  # printed: now Tether may let them go
-        coord_deliver.confirm_ride(ride.widget, ride.lines)
+    if ride:  # printed: now Tether may let them go, unless the hook may be killed before it exits
+        if time.monotonic() - STARTED <= HOOK_SECONDS - CONFIRM_LEFT:
+            sys.stdout.flush()
+            coord_deliver.confirm_ride(ride.widget, ride.lines)
+        else:
+            _trace(agent_id, "ride-unconfirmed", [])
     return 0
 
 
