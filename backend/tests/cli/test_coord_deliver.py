@@ -1361,6 +1361,17 @@ def test_ride_lines_stay_queued_when_little_hook_time_is_left(monkeypatch, inbox
     assert not [path for method, path, _ in tether.calls if method == "DELETE" and "token=" in path]
 
 
+def test_stale_withdraw_is_skipped_when_the_hook_could_be_killed_in_it(monkeypatch, inbox, tether, capsys):
+    # Final review P3: a hook killed in withdraw_stale loses what it printed, closed-ack notes it marked shown with it.
+    monkeypatch.setenv("AICO_WIDGET_ID", WIDGET)
+    tether.version = 25
+    _identity("codex:target", "target-34")
+    _as(monkeypatch, "codex", "target-34")
+    monkeypatch.setattr(inbox, "STARTED", time.monotonic() - inbox.HOOK_SECONDS + inbox.WITHDRAW_LEFT - 0.5)
+    _hook(inbox, monkeypatch, capsys, "codex", "UserPromptSubmit")
+    assert not [path for _, path, _ in tether.calls if "deliveries?source=" in path]
+
+
 def test_send_help_keeps_the_done_report_rule():
     # Review P3-2: the help trim dropped it.
     result = CliRunner().invoke(app, ["sessions", "send", "--help"], env={"COLUMNS": "400"})

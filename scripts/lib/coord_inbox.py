@@ -78,6 +78,9 @@ HOOK_SECONDS = float(os.environ.get("ST_COORD_HOOK_SECONDS") or 5)
 # Ride-along lines are confirmed (taken) only with this much of it left: a hook killed after the take would lose
 # them, while one left unconfirmed shows them again next turn (the confirm's own timeout is 0.5 s).
 CONFIRM_LEFT = 1.5
+# withdraw_stale's worst case (a delete, a re-queue and their lookups): run only with that much hook time left, since a
+# hook killed after it printed loses its output and the closed acks it already marked shown.
+WITHDRAW_LEFT = 3.0
 STATE = coord_wake.STATE
 LEDGER = leases.LEASES_DIR / "_coord.json"
 _key = coord_wake.state_key
@@ -482,7 +485,7 @@ def main() -> int:
             coord_deliver.confirm_ride(ride.widget, ride.lines)
         else:
             _trace(agent_id, "ride-unconfirmed", [])
-    if mode == "turn":
+    if mode == "turn" and time.monotonic() - STARTED <= HOOK_SECONDS - WITHDRAW_LEFT:
         try:  # a queued [Message] line nothing waits for any more is taken back before it is pasted
             if coord_deliver.withdraw_stale(agent_id):
                 _trace(agent_id, "tether-withdrawn", [])
