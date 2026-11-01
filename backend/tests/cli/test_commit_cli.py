@@ -659,3 +659,46 @@ def test_clean_or_unselected_checkout_skips_before_checks(tmp_path: Path, monkey
         "no_changes_in_selected_paths")
     (repo / "mine.py").write_text("before\n")
     assert commit_workflow.commit_git_revision(repo, message="x")["reason"] == "clean"
+
+
+_LONG_REST = "More detail " + "x" * 120
+
+
+@pytest.mark.parametrize(
+    ("message", "expected"),
+    [
+        ("short subject", "short subject"),
+        (f"Short one. {_LONG_REST}", f"Short one.\n\n{_LONG_REST}"),
+        (f"Subject: with colon. {_LONG_REST}", f"Subject: with colon.\n\n{_LONG_REST}"),
+        # No sentence end within the limit: unchanged, no mid-word cut.
+        ("Subject: " + "x" * 120 + ". tail", "Subject: " + "x" * 120 + ". tail"),
+        (f"No sentence end here: {_LONG_REST}", f"No sentence end here: {_LONG_REST}"),
+        # Multi-line message with a short first line is untouched.
+        (f"short\n\n{_LONG_REST}. Co-Authored-By: x", f"short\n\n{_LONG_REST}. Co-Authored-By: x"),
+        # Abbreviations are not sentence ends.
+        (f"Use e.g. this. {_LONG_REST}", f"Use e.g. this.\n\n{_LONG_REST}"),
+    ],
+)
+def test_short_subject_message(message: str, expected: str) -> None:
+    assert commit_workflow.short_subject_message(message) == expected
+
+
+def test_long_paragraph_message_commits_with_short_subject_and_full_body(tmp_path: Path, monkeypatch) -> None:
+    def git(*args: str) -> str:
+        return subprocess.run(["git", *args], cwd=tmp_path, text=True, capture_output=True, check=True).stdout
+
+    git("init", "-q")
+    git("config", "user.name", "Test")
+    git("config", "user.email", "test@example.invalid")
+    (tmp_path / "a.txt").write_text("before")
+    git("add", ".")
+    git("commit", "-qm", "baseline")
+    (tmp_path / "a.txt").write_text("after")
+    monkeypatch.setattr(commit_workflow, "run_checks", lambda repo, **kw: (True, ""))
+    message = f"Fix the thing. {_LONG_REST}\n\nCo-Authored-By: X <x@example.invalid>"
+    result = commit_workflow.commit_git_revision(tmp_path, message=message, push=False)
+    assert result["status"] == "SUCCESS"
+    assert git("log", "-1", "--format=%s").strip() == "Fix the thing."
+    body = git("log", "-1", "--format=%b")
+    assert _LONG_REST in body
+    assert "Co-Authored-By: X" in body

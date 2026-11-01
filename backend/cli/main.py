@@ -411,7 +411,7 @@ cast(Any, app).st_materialize = _materialize_lazy_commands
 )
 def commit_command(
     ctx: typer.Context,
-    message: Annotated[str, typer.Option("--message", "--msg", "-m", help="Required commit description.")],
+    message: Annotated[str, typer.Option("--message", "--msg", "-m", help="Required commit description; short first sentence becomes the subject.")],
     push: Annotated[bool, typer.Option("--push/--no-push", help="Unsupported; publish accepted source with st vcs publish.")] = False,
     task_id: Annotated[str, typer.Option("--task", help="Task id for checkpoint and audit log.")] = "",
     repo: Annotated[str | None, typer.Option("--repo", "-R", help="Repository path. Defaults to current repo.")] = None,

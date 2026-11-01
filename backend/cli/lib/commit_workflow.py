@@ -424,6 +424,29 @@ def _run_checkpoint_checks(
     return None
 
 
+SUBJECT_LIMIT = 100
+_NOT_SENTENCE_END = ("e.g.", "i.e.", "vs.", "etc.")
+
+
+def short_subject_message(message: str) -> str:
+    """Give a paragraph-length first line a short subject without dropping any text.
+
+    A first line over SUBJECT_LIMIT becomes "first sentence, blank line, rest" when that
+    sentence (ending in ". ") fits; otherwise the message is returned unchanged.
+    """
+    first_line = message.split("\n", 1)[0]
+    if len(first_line) <= SUBJECT_LIMIT:
+        return message
+    start = 0
+    while (end := first_line.find(". ", start)) != -1 and end < SUBJECT_LIMIT:
+        sentence = first_line[: end + 1]
+        if not sentence.lower().endswith(_NOT_SENTENCE_END):
+            rest = message[len(sentence):].strip()
+            return f"{sentence}\n\n{rest}" if rest else sentence
+        start = end + 1
+    return message
+
+
 def commit_git_revision(
     repo: Path,
     *,
@@ -438,6 +461,7 @@ def commit_git_revision(
         raise CommitError(COMMIT_PUBLICATION_GUIDANCE)
     if not message.strip():
         raise CommitError("commit message is required")
+    git_message = short_subject_message(message)
     result: dict[str, Any] = {
         "repo": repo.name,
         "path": str(repo),
@@ -487,10 +511,10 @@ def commit_git_revision(
             validated_patch.stderr.decode(errors="replace").strip()
             or "cannot bind checkpoint checks to the staged candidate"
         )
-    commit_args = ["commit", "-m", message]
+    commit_args = ["commit", "-m", git_message]
     if selected_paths:
         commit_args.extend(["--only", "--", *_pathspecs(repo, selected_files)])
-    committed = (_commit_selected_index(repo, message, selected_files)
+    committed = (_commit_selected_index(repo, git_message, selected_files)
                  if selected_paths and len(addable) != len(selected_files)
                  else run_git(repo, commit_args))
     if committed.returncode != 0:
