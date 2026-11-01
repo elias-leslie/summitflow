@@ -132,17 +132,68 @@ def test_line_reports_unseen_acks_and_memory(monkeypatch, tether):
     monkeypatch.setattr(leases, "identify_agent", lambda **_: ("codex:target", "", "target-thread", "codex"))
     row = coord.ack(sent["id"], "no", "busy deploying")
     assert _line("cc:sender", memory=True) == (
-        "[Message] 1 ack from codex:target · a memory notice for this pane · st sessions inbox")
+        "[Message] Ack from codex:target · a memory notice for this pane · st sessions inbox")
     coord_wake.mark_woke("cc:sender", [])  # woke state does not hide content; seen state does
     coord_wake.STATE.mkdir(parents=True, exist_ok=True)
     coord_wake.seen_path("cc:sender").write_text(json.dumps({f"{row['id']}:ack:{row['acked_at']}": time.time()}))
     assert _line("cc:sender") is None
 
 
+def _titled(monkeypatch, titles: dict[str, str]) -> None:
+    """Tether's session catalog: each widget's displayTitle."""
+    monkeypatch.setattr(coordinators, "sessions", _Catalog({w: {"id": w, "displayTitle": t} for w, t in titles.items()}))
+
+
+class _Catalog:
+    def __init__(self, rows: dict[str, dict[str, Any]]) -> None:
+        self.rows = rows
+
+    def __call__(self) -> dict[str, dict[str, Any]]:
+        return self.rows
+
+    def cache_clear(self) -> None:
+        pass
+
+
+def test_the_line_names_each_sender_by_its_window_title(monkeypatch, tether):
+    _identity("codex:target", "019a-target")
+    _identity("cc:sender", "sender-session", anchor=SENDER_ANCHOR)
+    _titled(monkeypatch, {OTHER: "Neri \u2014 Neri P2a final native acceptance"})
+    monkeypatch.setattr(leases, "identify_agent", lambda **_: ("cc:sender", "", "sender-session", "claude_code"))
+    coord.send("codex:target", "secret plan")
+    monkeypatch.setattr(leases, "identify_agent", lambda **_: ("cc:abcdef", "", "abcdef-1", "claude_code"))  # no window
+    coord.send("codex:target", "other secret")
+    line = _line("codex:target")
+    assert line == ('[Message] 2 requests from "Neri P2a final native acceptance" (cc:sender), cc:abcdef'
+                    " · st sessions inbox")
+    assert "secret" not in line
+
+
+def test_one_request_reads_request_from_its_window(monkeypatch, tether):
+    _identity("codex:target", "019a-target")
+    _identity("cc:sender", "sender-session", anchor=SENDER_ANCHOR)
+    _titled(monkeypatch, {OTHER: 'SummitFlow \u2014 A "quoted"\ttitle that runs on well past the forty-char cap'})
+    monkeypatch.setattr(leases, "identify_agent", lambda **_: ("cc:sender", "", "sender-session", "claude_code"))
+    coord.send("codex:target", "may I rebuild?")
+    line = _line("codex:target")
+    assert line == "[Message] Request from \"A 'quoted' title that runs on well past\u2026\" (cc:sender) · st sessions inbox"
+    assert len(line) <= coord_deliver.LINE_MAX
+
+
+def test_titles_go_before_names_when_the_line_is_too_long(monkeypatch, tether):
+    _identity("codex:target", "019a-target")
+    _identity("cc:sender", "sender-session", anchor=SENDER_ANCHOR)
+    _titled(monkeypatch, {OTHER: "T" * 40})
+    monkeypatch.setattr(coord_deliver, "LINE_MAX", 60)
+    monkeypatch.setattr(leases, "identify_agent", lambda **_: ("cc:sender", "", "sender-session", "claude_code"))
+    coord.send("codex:target", "may I rebuild?")
+    assert _line("codex:target") == "[Message] Request from cc:sender · st sessions inbox"
+
+
 def test_ids_that_are_not_agent_ids_are_never_put_on_the_line(monkeypatch, tether):
     _identity("codex:target", "019a-target")
     coord.send("codex:target", "x", sender="cc:ok/../rm -rf")
-    assert _line("codex:target") == "[Message] 1 request from another agent · st sessions inbox"
+    assert _line("codex:target") == "[Message] Request from another agent · st sessions inbox"
 
 
 def test_long_ids_name_fewer_senders_to_stay_within_tethers_line_limit(monkeypatch, tether):
@@ -167,7 +218,7 @@ def test_wake_queues_one_line_on_the_recipients_window_and_records_woke(monkeypa
     assert queued and queued["widget"] == WIDGET
     [(path, body)] = tether.posts()
     assert path == f"/v1/sessions/{WIDGET}/deliveries"
-    assert body == {"source": "coord:codex:target", "line": "[Message] 1 request from cc:sender · st sessions inbox"}
+    assert body == {"source": "coord:codex:target", "line": "[Message] Request from cc:sender · st sessions inbox"}
     assert f"{row['id']}:req" in coord_wake.load_woke("codex:target")
 
 
@@ -279,7 +330,7 @@ def test_send_and_ack_queue_lines_for_each_side_and_nudge_reply_waits(monkeypatc
     assert "Tether delivers a [Message] line about the ack to cc:sender" in acked.output
     assert [(path.split("/")[3], body["source"]) for path, body in tether.posts()] == [
         (WIDGET, "coord:codex:target"), (OTHER, "coord:cc:sender")]
-    assert tether.posts()[1][1]["line"] == "[Message] 1 ack from codex:target · st sessions inbox"
+    assert tether.posts()[1][1]["line"] == "[Message] Ack from codex:target · st sessions inbox"
     assert tether.nudges() == [{"kind": "reply", "ref": row["id"]}]
 
 
@@ -426,7 +477,7 @@ def test_a_new_request_still_wakes_once(monkeypatch, inbox, tether):
     first = _send_as_cli(monkeypatch, "codex:target", "may I rebuild?", "sender-11")
     second = _send_as_cli(monkeypatch, "codex:target", "may I deploy?", "abcdef-11")
     assert [body["line"] for _, body in tether.posts()] == [
-        "[Message] 1 request from cc:sender · st sessions inbox",
+        "[Message] Request from cc:sender · st sessions inbox",
         "[Message] 2 requests from cc:sender, cc:abcdef · st sessions inbox"]
     _as(monkeypatch, "codex", "target-11")
     monkeypatch.setattr(inbox, "GRACE", 0.0)
@@ -611,7 +662,7 @@ def test_a_host_window_gets_a_gated_line_through_the_hub_not_a_paste(monkeypatch
     [(path, body)] = hub.posts()
     assert path == "/v1/sessions/a810c7e0/deliveries"
     assert body == {"source": "coord:a810c7e0@agent-work",
-                    "line": "[Message] 1 request from cc:ea3f27 · st sessions inbox"}
+                    "line": "[Message] Request from cc:ea3f27 · st sessions inbox"}
     assert not [c for c in hub.calls if c[1].endswith("/inject")]
     assert row["to"] == "a810c7e0@agent-work"
 
@@ -644,7 +695,7 @@ def test_an_ack_for_a_host_agent_goes_to_its_window_as_a_line(monkeypatch, hub):
     [(path, body)] = hub.posts()
     assert path == "/v1/sessions/a810c7e0/deliveries"
     assert body == {"source": "coord:a810c7e0@agent-work",  # one source per host window: requests and acks
-                    "line": "[Message] 1 ack from cc:4a9a07 · st sessions inbox"}
+                    "line": "[Message] Ack from cc:4a9a07 · st sessions inbox"}
 
 
 def test_a_hub_that_does_not_answer_never_leads_to_a_paste(monkeypatch, hub):
@@ -666,7 +717,7 @@ def test_a_host_agents_request_and_ack_wake_the_workstation_agent(monkeypatch, h
     asked = coord.send("a810c7e0@agent-work", "check please", sender="cc:4a9a07")
     coord_remote.ack_from_host(asked["id"], "yes", None, sender="cc:hostagent", host="agent-work", window="a810c7e0")
     assert hub.posts()[-1][1] == {"source": "coord:cc:4a9a07", "line": (
-        "[Message] 1 request from cc:hostagent@agent-work · 1 ack from cc:hostagent@agent-work · st sessions inbox")}
+        "[Message] Request from cc:hostagent@agent-work · Ack from cc:hostagent@agent-work · st sessions inbox")}
     assert hub.nudges() == [{"kind": "reply", "ref": asked["id"]}]
 
 

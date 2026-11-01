@@ -7,7 +7,8 @@ delivery queue (``POST /v1/sessions/<widget>/deliveries``), and Tether pastes
 it once the agent is idle, nobody is typing and the input is empty, hands it to
 a native puller, or gives an Agent Hub chat a turn. The agent's own turn hook
 (scripts/lib/coord_inbox.py) still shows the content. The line comes from
-typed values only (counts and agent ids), never request or reply text.
+typed values only (counts, agent ids and the senders' Aico window titles),
+never request or reply text, so case details stay out of notices.
 
 One source per recipient (``coord:<agent id>``) coalesces: a newer line
 replaces an undelivered one, so the line always summarises everything the
@@ -47,6 +48,8 @@ _NUDGE_TIMEOUT = 0.5
 _ID = re.compile(r"[A-Za-z][A-Za-z0-9_-]{0,15}:[A-Za-z0-9_.-]{1,64}(@[a-z0-9][a-z0-9-]{0,31})?")
 _WIDGET = re.compile(r"[0-9a-f]{8}")
 _NAMED = 3  # senders named on one line before "+N"
+TITLE_MAX = 40  # a sender's window title on the line, in characters
+_DASH = " \u2014 "  # Tether's displayTitle is "Project — Task"
 LINE_MAX = 500  # Tether noteMaxChars
 LOOK = "st sessions inbox"
 
@@ -158,16 +161,42 @@ def widget_for(to: str) -> str | None:
 
 # ---------------------------------------------------------------- the line
 
-def _names(ids: list[str], named: int) -> str:
+def _clean_title(shown: str) -> str | None:
+    """The task part of a window title, one line, no double quotes, at most TITLE_MAX characters."""
+    task = shown.rsplit(_DASH, 1)[-1]
+    task = " ".join("".join(c if c.isprintable() else " " for c in task).replace('"', "'").split())
+    if not task:
+        return None
+    return task if len(task) <= TITLE_MAX else task[:TITLE_MAX - 1].rstrip() + "\u2026"
+
+
+def window_title(agent_id: str) -> str | None:
+    """The Aico window title (Tether ``displayTitle``) of the window a local agent runs in, or None."""
+    found = _identity(agent_id)
+    anchor = found[1].get("anchor") if found else None
+    if not isinstance(anchor, str):
+        return None
+    try:
+        widget = coordinators.widget_for_anchor(anchor)
+        desc = coordinators.sessions().get(widget or "") if widget else None
+    except Exception:  # best effort: the id alone names the sender
+        return None
+    shown = str((desc or {}).get("displayTitle") or "").strip()
+    return _clean_title(shown) if shown else None
+
+
+def _names(ids: list[str], named: int, titles: dict[str, str]) -> str:
     shown = list(dict.fromkeys(i for i in ids if _ID.fullmatch(i)))
     if not shown or not named:
         return f"{len(shown)} agents" if len(shown) > 1 else "another agent"
     extra = len(shown) - named
-    return ", ".join(shown[:named]) + (f" +{extra}" if extra > 0 else "")
+    return ", ".join(f'"{titles[i]}" ({i})' if i in titles else i for i in shown[:named]) + (
+        f" +{extra}" if extra > 0 else "")
 
 
-def _plural(count: int, word: str) -> str:
-    return f"{count} {word}{'' if count == 1 else 's'}"
+def _counted(count: int, word: str) -> str:
+    """``Request`` for one, ``2 requests`` for more."""
+    return word.capitalize() if count == 1 else f"{count} {word}s"
 
 
 def waiting(who: Target) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
@@ -190,21 +219,29 @@ def waiting(who: Target) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
 
 
 def summary(who: Target, *, memory: bool = False) -> str | None:
-    """``[Message] 2 requests from cc:1c7a9f, codex:019a2b · 1 ack from cc:65b53f · st sessions inbox``.
+    """``[Message] Request from "Neri P2a acceptance" (codex:619a52) · Ack from cc:65b53f · st sessions inbox``.
 
-    Fewer names when long ids would pass Tether's line limit.
+    Each sender is named by its Aico window title when it has one. Fewer names, then no titles, when
+    the line would pass Tether's line limit.
     """
     requests, acks = waiting(who)
-    for named in (_NAMED, 1, 0):
+    if not (requests or acks or memory):
+        return None
+    senders = [str(r["from"]) for r in requests]
+    ackers = [str(r.get("acked_by") or "") for r in acks]
+    if requests or acks:
+        coordinators.sessions.cache_clear()  # long-lived callers (a 6 h watcher) see renamed windows
+    titles = {i: t for i in dict.fromkeys(senders[:_NAMED] + ackers[:_NAMED])
+              if _ID.fullmatch(i) and (t := window_title(i))}
+    line = ""
+    for named, shown in ((_NAMED, titles), (1, titles), (_NAMED, {}), (1, {}), (0, {})):
         parts = []
         if requests:
-            parts.append(f"{_plural(len(requests), 'request')} from {_names([str(r['from']) for r in requests], named)}")
+            parts.append(f"{_counted(len(requests), 'request')} from {_names(senders, named, shown)}")
         if acks:
-            parts.append(f"{_plural(len(acks), 'ack')} from {_names([str(r.get('acked_by') or '') for r in acks], named)}")
+            parts.append(f"{_counted(len(acks), 'ack')} from {_names(ackers, named, shown)}")
         if memory:
             parts.append("a memory notice for this pane")
-        if not parts:
-            return None
         line = "[Message] " + " · ".join(parts) + f" · {LOOK}"
         if len(line) <= LINE_MAX:
             return line

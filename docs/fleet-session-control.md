@@ -272,13 +272,15 @@ new requests after tool results, immediately when a run settles, or within its
 the next supported native boundary; `open/seen` is separate from an actual ack.
 
 How the recipient learns of it: when it runs in an Aico window and Tether has
-deliveries (API 16), the send queues one line, `[Message] 1 request from
-cc:1c7a9f · st sessions inbox`, on that window's gated delivery queue
+deliveries (API 16), the send queues one line, `[Message] Request from
+"One wake per message" (cc:94bdf3) · st sessions inbox` (each sender named by
+its Aico window title when it has one), on that window's gated delivery queue
 (`POST /v1/sessions/WIDGET/deliveries`, source `coord:AGENT_ID`, coalesced per
 recipient). Tether delivers it once the agent is idle, nobody is typing and the
 input line is empty, or through a native puller; the agent's own turn hook then
-shows the request. Acks, reminders every 5 minutes, a lapsed `eta:` and memory
-notices go the same way. The line never carries request or reply text. A
+shows the request. Acks, a lapsed `eta:` and memory notices go the same way;
+an agent is woken once per item (turn hooks still show an unanswered request
+again every 5 minutes). The line never carries request or reply text. A
 window on an agent host gets it through the hub. Only a window's own agent is
 woken there: an address of its predecessor before a context reset reaches the
 current agent, and the line counts both. Recipients SummitFlow cannot place in
