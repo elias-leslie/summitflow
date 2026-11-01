@@ -56,6 +56,46 @@ def test_systemd_unit_without_a_run_since_boot_reads_the_journal():
     assert backup_external.probe(unit, run=run_with(None))["last_status"] == "never"
 
 
+def test_systemd_time_in_utc_is_not_read_as_local_time():
+    # A guest that runs in UTC prints "UTC"; strptime's %Z leaves that naive, which read as workstation time.
+    parsed = backup_external._parse_systemd_time("Sun 2026-11-01 01:48:34 UTC")
+    assert parsed == datetime(2026, 11, 1, 1, 48, 34, tzinfo=UTC)
+
+
+def test_guest_unit_reads_the_unit_inside_the_owner_projects_guest(monkeypatch):
+    from app import runtime_deployment as rd
+
+    target = rd.ProxmoxDeployment(kind="proxmox", ssh_host="pve", vmid=180, user="app", uid=1000)
+    calls: list[list[str]] = []
+
+    def guest_command(placement, argv):
+        assert placement is target
+        calls.append(argv)
+        if "--user" in argv:
+            return ("LoadState=loaded\nResult=success\nExecMainStatus=0\nActiveState=inactive\n"
+                    "ExecMainExitTimestamp=Sun 2026-11-01 01:48:34 UTC\n")
+        return "LoadState=not-found\n"
+
+    monkeypatch.setattr(rd, "_guest_status", lambda _: "running")
+    monkeypatch.setattr(rd, "_guest_command", guest_command)
+    source = {"kind": "guest_unit", "owner_project": "portfolio-ai", "target": "portfolio-backup.service"}
+    seen = backup_external.probe(source, placement=lambda project: target if project == "portfolio-ai" else None)
+    assert seen == {"last_success_at": "2026-11-01T01:48:34+00:00", "last_status": "completed", "last_error": None}
+    assert calls and all("portfolio-backup.service" in argv for argv in calls)
+
+    monkeypatch.setattr(rd, "_guest_status", lambda _: "stopped")
+    stopped = backup_external.probe(source, placement=lambda _: target)
+    assert stopped["last_status"] == "unknown" and stopped["last_error"] == "pve / VM 180 is stopped"
+
+    unplaced = backup_external.probe(source, placement=lambda _: None)
+    assert unplaced["last_success_at"] is None and "no Proxmox placement" in unplaced["last_error"]
+
+    def unreachable(_):
+        raise rd.DeploymentError("Could not reach pve / VM 180")
+    monkeypatch.setattr(rd, "_guest_status", unreachable)
+    assert backup_external.probe(source, placement=lambda _: target)["last_error"] == "Could not reach pve / VM 180"
+
+
 def test_artifact_glob_uses_newest_non_empty_file(tmp_path: Path):
     old, new, empty = tmp_path / "a_1.tar.gz", tmp_path / "a_2.tar.gz", tmp_path / "a_3.tar.gz"
     old.write_text("x")

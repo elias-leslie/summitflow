@@ -3,6 +3,8 @@
 - ``systemd_unit``: the unit's last run (system manager first, then the owner's user manager); success when systemd
   recorded Result=success with exit status 0. systemd forgets a run on reboot, so a unit with no run since boot is
   judged by its last finished start job in the journal.
+- ``guest_unit``: the same reading inside the Proxmox guest that the owner project's catalog placement names
+  (project.identity.json runtime.deployment), through the QEMU guest agent or ``pct exec``.
 - ``artifact_glob``: the newest matching file's modification time; a file counts once it is non-empty.
 """
 
@@ -16,6 +18,8 @@ from collections.abc import Callable
 from datetime import UTC, datetime
 from typing import Any
 
+from .. import runtime_deployment
+from ..project_identity import get_project_identity
 from ..storage.connection import get_cursor
 
 Runner = Callable[[list[str]], tuple[int, str]]
@@ -69,6 +73,11 @@ def _parse_systemd_time(value: str) -> datetime | None:
     value = value.strip()
     if not value or value == "n/a":
         return None
+    if value.endswith((" UTC", " GMT")):  # strptime's %Z leaves these naive, which would read as local time
+        try:
+            return datetime.strptime(value[:-4], "%a %Y-%m-%d %H:%M:%S").replace(tzinfo=UTC)
+        except ValueError:
+            return None
     for fmt in ("%a %Y-%m-%d %H:%M:%S %Z", "%a %Y-%m-%d %H:%M:%S %z"):
         try:
             parsed = datetime.strptime(value, fmt)
@@ -78,29 +87,66 @@ def _parse_systemd_time(value: str) -> datetime | None:
     return None
 
 
-def probe(source: dict[str, Any], *, run: Runner = _run) -> dict[str, Any]:
+def _probe_unit(unit: str, run: Runner) -> dict[str, Any]:
+    loaded = _systemd_props(unit, run)
+    if loaded is None:
+        return {"last_success_at": None, "last_status": "unknown", "last_error": f"{unit} is not installed"}
+    props, scope = loaded
+    finished = _parse_systemd_time(props.get("ExecMainExitTimestamp", ""))
+    if props.get("ActiveState") in {"activating", "active"} and props.get("Result") == "success" and not finished:
+        return {"last_success_at": None, "last_status": "running", "last_error": None}
+    ok = props.get("Result") == "success" and props.get("ExecMainStatus", "0") == "0"
+    if finished is None:
+        last = _journal_last_job(unit, scope, run)
+        if last is None:
+            return {"last_success_at": None, "last_status": "never", "last_error": None}
+        finished, ok = last
+        if not ok:
+            return {"last_success_at": None, "last_status": "failed", "last_error": "last run before this boot failed"}
+    if ok:
+        return {"last_success_at": finished.astimezone(UTC).isoformat(), "last_status": "completed", "last_error": None}
+    return {"last_success_at": None, "last_status": "failed",
+            "last_error": f"last run ended {props.get('Result')} (exit {props.get('ExecMainStatus')})"}
+
+
+def _guest_placement(project_id: Any) -> runtime_deployment.ProxmoxDeployment | None:
+    identity = get_project_identity(str(project_id)) if project_id else None
+    return runtime_deployment.parse_deployment(((identity or {}).get("runtime") or {}).get("deployment"))
+
+
+def _guest_runner(target: runtime_deployment.ProxmoxDeployment) -> Runner:
+    def run(argv: list[str]) -> tuple[int, str]:
+        try:
+            return 0, runtime_deployment._guest_command(target, argv)
+        except runtime_deployment.DeploymentError as exc:
+            return 1, str(exc)
+    return run
+
+
+def _probe_guest_unit(source: dict[str, Any], unit: str, placement: Callable[[Any], Any]) -> dict[str, Any]:
+    try:
+        target = placement(source.get("owner_project"))
+        if target is None:
+            return {"last_success_at": None, "last_status": "unknown",
+                    "last_error": f"{source.get('owner_project')} has no Proxmox placement in its project identity"}
+        if runtime_deployment._guest_status(target) != "running":
+            return {"last_success_at": None, "last_status": "unknown", "last_error": f"{target.label} is stopped"}
+    except runtime_deployment.DeploymentError as exc:
+        return {"last_success_at": None, "last_status": "unknown", "last_error": str(exc)}
+    seen = _probe_unit(unit, _guest_runner(target))
+    if seen["last_error"]:
+        seen["last_error"] = f"{seen['last_error']} on {target.label}"
+    return seen
+
+
+def probe(source: dict[str, Any], *, run: Runner = _run,
+          placement: Callable[[Any], Any] = _guest_placement) -> dict[str, Any]:
     """{last_success_at, last_status, last_error} for one external source."""
     target = str(source.get("target") or "")
     if source.get("kind") == "systemd_unit":
-        loaded = _systemd_props(target, run)
-        if loaded is None:
-            return {"last_success_at": None, "last_status": "unknown", "last_error": f"{target} is not installed"}
-        props, scope = loaded
-        finished = _parse_systemd_time(props.get("ExecMainExitTimestamp", ""))
-        if props.get("ActiveState") in {"activating", "active"} and props.get("Result") == "success" and not finished:
-            return {"last_success_at": None, "last_status": "running", "last_error": None}
-        ok = props.get("Result") == "success" and props.get("ExecMainStatus", "0") == "0"
-        if finished is None:
-            last = _journal_last_job(target, scope, run)
-            if last is None:
-                return {"last_success_at": None, "last_status": "never", "last_error": None}
-            finished, ok = last
-            if not ok:
-                return {"last_success_at": None, "last_status": "failed", "last_error": "last run before this boot failed"}
-        if ok:
-            return {"last_success_at": finished.astimezone(UTC).isoformat(), "last_status": "completed", "last_error": None}
-        return {"last_success_at": None, "last_status": "failed",
-                "last_error": f"last run ended {props.get('Result')} (exit {props.get('ExecMainStatus')})"}
+        return _probe_unit(target, run)
+    if source.get("kind") == "guest_unit":
+        return _probe_guest_unit(source, target, placement)
     if source.get("kind") == "artifact_glob":
         newest: float | None = None
         for path in glob.glob(target):
