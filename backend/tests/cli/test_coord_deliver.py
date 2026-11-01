@@ -487,6 +487,45 @@ def test_an_eta_that_ran_out_wakes_once_more(monkeypatch, inbox, tether):
     assert inbox.watch("claude_code") == 0 and len(tether.posts()) == 2  # once
 
 
+def _holder(tmp_path: Path, script_dir: Path, lock: Path):
+    """A process that looks like a watcher started from ``script_dir`` and holds ``lock``."""
+    import subprocess
+    import sys
+
+    script_dir.mkdir(parents=True, exist_ok=True)
+    script = script_dir / "coord_inbox.py"
+    script.write_text("import fcntl, sys, time\nf = open(sys.argv[2], 'w')\nfcntl.flock(f, fcntl.LOCK_EX)\n"
+                      "print('held', flush=True)\ntime.sleep(60)\n")
+    proc = subprocess.Popen([sys.executable, "-I", str(script), "watch", str(lock)], stdout=subprocess.PIPE, text=True)
+    assert proc.stdout and proc.stdout.readline().strip() == "held"
+    return proc
+
+
+def test_a_watcher_from_another_release_hands_over_the_lock(inbox, tmp_path):
+    # 2026-10-31: watchers started before a deploy kept the old wake rules for up to 6 h.
+    lock_path = tmp_path / "cc_x.claude_code-watch.lock"
+    old = _holder(tmp_path, tmp_path / "releases" / "old" / "scripts" / "lib", lock_path)
+    try:
+        with open(lock_path, "w") as lock:
+            assert inbox._lock_holder(lock) == old.pid
+            assert inbox.take_over(lock) is True
+        assert old.wait(timeout=5) != 0
+    finally:
+        old.kill()
+
+
+def test_a_watcher_of_the_same_release_keeps_the_lock(inbox, tmp_path, monkeypatch):
+    lock_path = tmp_path / "cc_y.claude_code-watch.lock"
+    same = _holder(tmp_path, tmp_path / "same", lock_path)
+    monkeypatch.setattr(inbox, "SCRIPT", str((tmp_path / "same" / "coord_inbox.py").resolve()))
+    try:
+        with open(lock_path, "w") as lock:
+            assert inbox.take_over(lock) is False
+        assert same.poll() is None
+    finally:
+        same.kill()
+
+
 def test_watcher_falls_back_to_the_asyncrewake_wake_without_tether(monkeypatch, inbox, tether, capsys):
     tether.version = 15
     req = inbox.Item("cd34:req", "REQUEST cd34 from cc:x: may I rebuild?", False)

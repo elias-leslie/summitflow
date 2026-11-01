@@ -50,6 +50,7 @@ import subprocess
 import sys
 import time
 from datetime import datetime
+from pathlib import Path
 from typing import NamedTuple
 
 sys.path.insert(0, sys.argv[1])
@@ -252,6 +253,71 @@ def arm_codex(agent_id: str, backend: str) -> None:
     coord_wake.codex_pidfile(agent_id).write_text(str(proc.pid))
 
 
+SCRIPT = os.path.realpath(__file__)
+
+
+def _lock_holder(lock) -> int | None:  # noqa: ANN001 - an open file
+    """PID holding the flock on ``lock``'s file, or None.
+
+    /proc/locks names the file by inode (its device field is the superblock's, which differs from
+    st_dev on btrfs), so a candidate counts only when it has this very file open.
+    """
+    info = os.fstat(lock.fileno())
+    try:
+        lines = Path("/proc/locks").read_text().splitlines()
+    except OSError:
+        return None
+    for line in lines:
+        parts = line.split()
+        if len(parts) < 6 or parts[1] != "FLOCK" or not parts[4].isdigit() or parts[5].rsplit(":", 1)[-1] != str(info.st_ino):
+            continue
+        pid = int(parts[4])
+        try:
+            fds = list(Path(f"/proc/{pid}/fd").iterdir())
+        except OSError:
+            continue
+        for fd in fds:
+            try:
+                other = fd.stat()
+            except OSError:
+                continue
+            if (other.st_dev, other.st_ino) == (info.st_dev, info.st_ino):
+                return pid
+    return None
+
+
+def take_over(lock) -> bool:  # noqa: ANN001 - an open file
+    """Stop a watcher of another release holding this agent's lock and take the lock; False leaves it running.
+
+    A watcher lives up to WATCH_SECONDS on the code it started with, and every later hook start finds
+    the lock held, so a fix reached running sessions only hours after a deploy (2026-10-31: watchers
+    from before the Tether change still woke agents a second time). Now a deploy takes effect at the
+    agent's next turn. Only a coord_inbox.py watcher from another path is stopped.
+    """
+    pid = _lock_holder(lock)
+    if pid is None or pid == os.getpid():
+        return False
+    try:
+        argv = Path(f"/proc/{pid}/cmdline").read_bytes().split(b"\0")
+    except OSError:
+        return False
+    scripts = [a.decode(errors="replace") for a in argv if a.endswith(b"coord_inbox.py")]
+    if not scripts or b"watch" not in argv or os.path.realpath(scripts[0]) == SCRIPT:
+        return False
+    try:
+        os.kill(pid, signal.SIGTERM)
+    except OSError:
+        return False
+    deadline = time.monotonic() + 3.0
+    while time.monotonic() < deadline:
+        try:
+            fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+            return True
+        except OSError:
+            time.sleep(0.05)
+    return False
+
+
 def watch(provider: str) -> int:
     agent_id = leases.identify_agent()[0]
     anchor = coord_lineage.harness()[0]
@@ -260,7 +326,8 @@ def watch(provider: str) -> int:
     try:
         fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
     except OSError:
-        return 0  # one watcher per agent
+        if not take_over(lock):
+            return 0  # one watcher per agent
     deadline = time.time() + WATCH_SECONDS
     last_mtime = -1.0
     recheck = 0.0  # read the ledger again by then even when it did not change
