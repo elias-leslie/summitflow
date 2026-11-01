@@ -502,3 +502,15 @@ def test_neri_binding_forwards_its_override_and_tether_environment(tmp_path, mon
     for name in expected:
         assert forwarded[name] == f"fixture-{name}"
     assert "UNAPPROVED_SESSION_SECRET" not in forwarded
+
+
+def test_agent_hub_writers_receive_the_context_writer_environment():
+    """Agent Hub names the writing session from these two variables; the dispatcher drops any not listed."""
+    root = Path(__file__).resolve().parents[3]
+    bindings = {b["id"]: b for b in json.loads((root / "scripts/lib/tool-registry.json").read_text())["extensions"]}
+    for extension in ("agent-hub.memory", "agent-hub.prompt", "agent-hub.note", "agent-hub.ctx"):
+        assert {"AICO_SESSION_ID", "AGENT_HUB_CONTEXT_PREINJECTED_HASH"} <= set(bindings[extension]["environment"]), extension
+    ctx = bindings["agent-hub.ctx"]
+    assert (ctx["execution_source"], ctx["owner_manifest"]) == ("accepted_runtime", "st-extensions/ctx.json")
+    fallback = json.loads((root / "scripts/lib" / ctx["manifest"]).read_text())
+    assert (fallback["id"], fallback["namespace"]) == ("agent-hub.ctx", "ctx")

@@ -78,6 +78,32 @@
       "owner_manifest": "st-extensions/workflow.json"
     },
     {
+      "id": "agent-hub.ctx",
+      "owner": "agent-hub",
+      "namespace": "ctx",
+      "manifest": "extensions/ctx.json",
+      "executable": "backend/.venv/bin/agent-hub-st",
+      "arguments": [
+        "ctx"
+      ],
+      "grant": {
+        "enabled": true,
+        "effects": [
+          "network",
+          "read-remote",
+          "write-remote",
+          "read-local",
+          "credentials"
+        ]
+      },
+      "environment": [
+        "AICO_SESSION_ID",
+        "AGENT_HUB_CONTEXT_PREINJECTED_HASH"
+      ],
+      "execution_source": "accepted_runtime",
+      "owner_manifest": "st-extensions/ctx.json"
+    },
+    {
       "id": "agent-hub.complete",
       "owner": "agent-hub",
       "namespace": "complete",
@@ -136,7 +162,10 @@
           "credentials"
         ]
       },
-      "environment": []
+      "environment": [
+        "AICO_SESSION_ID",
+        "AGENT_HUB_CONTEXT_PREINJECTED_HASH"
+      ]
     },
     {
       "id": "agent-hub.automations",
@@ -230,7 +259,10 @@
           "credentials"
         ]
       },
-      "environment": []
+      "environment": [
+        "AICO_SESSION_ID",
+        "AGENT_HUB_CONTEXT_PREINJECTED_HASH"
+      ]
     },
     {
       "id": "agent-hub.prompt",
@@ -252,7 +284,10 @@
           "credentials"
         ]
       },
-      "environment": []
+      "environment": [
+        "AICO_SESSION_ID",
+        "AGENT_HUB_CONTEXT_PREINJECTED_HASH"
+      ]
     },
     {
       "id": "agent-hub.skills",
