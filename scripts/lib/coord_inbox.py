@@ -467,26 +467,27 @@ def main() -> int:
     fresh = wakeable(agent_id, items) if provider == "pi" and event == "PiIdle" else due(agent_id, items)
     if mode == "stop":
         if any(":req" in item.key for item in fresh):  # only a waiting requester justifies continuing
+            print(json.dumps({"decision": "block", "reason": render(fresh)}), flush=True)
             mark(agent_id, fresh, f"{provider}-stop-block")
-            print(json.dumps({"decision": "block", "reason": render(fresh)}))
         elif provider == "codex":
             arm_codex(agent_id, backend)
         return 0
+    # Printed before marked seen: a hook killed in between shows an item again, never loses it (a closed ack's note).
+    emit(event, fresh, memory(agent_id), ride.text if ride else "")
     if fresh:
         mark(agent_id, fresh, f"{provider}-{event or mode}")
-    if mode == "turn":
-        try:  # a queued [Message] line nothing waits for any more is taken back before it is pasted
-            if coord_deliver.withdraw_stale(agent_id):
-                _trace(agent_id, "tether-withdrawn", [])
-        except Exception:  # noqa: BLE001 - best effort; a stale line only costs one look at an empty inbox
-            pass
-    emit(event, fresh, memory(agent_id), ride.text if ride else "")
     if ride:  # printed: now Tether may let them go, unless the hook may be killed before it exits
         if time.monotonic() - STARTED <= HOOK_SECONDS - CONFIRM_LEFT:
             sys.stdout.flush()
             coord_deliver.confirm_ride(ride.widget, ride.lines)
         else:
             _trace(agent_id, "ride-unconfirmed", [])
+    if mode == "turn":
+        try:  # a queued [Message] line nothing waits for any more is taken back before it is pasted
+            if coord_deliver.withdraw_stale(agent_id):
+                _trace(agent_id, "tether-withdrawn", [])
+        except Exception:  # noqa: BLE001 - best effort; a stale line only costs one look at an empty inbox
+            pass
     return 0
 
 

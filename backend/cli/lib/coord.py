@@ -45,8 +45,9 @@ MAX_TEXT = 500
 NATIVE_MAX_TEXT = 2000
 INTENTS = ("yes", "no")
 # How to answer a request, wherever one is shown (turn hook, pane line, a host window, st sessions send help).
-ACK_HINT = ("st sessions ack {id} yes | no 'why' | eta:MIN (note a yes only if the sender must act now; "
-            "status goes in your done report, progress via --fyi)")
+# A lane's noted yes reaches its sender only with its next turn (coord_deliver.settle_bare_ack): urgent is a request.
+ACK_HINT = ("st sessions ack {id} yes | no 'why' | eta:MIN (note a yes only if the sender must act; "
+            "urgent: send a request; status: done report, progress: --fyi)")
 _ETA = re.compile(r"eta:(\d{1,4})")
 
 
@@ -611,8 +612,20 @@ def delivery_status(message_id: str, *, to: str, project: str, source_key: str) 
             "observed": observed, "intent": row.get("intent"), "withdrawn": bool(row.get("withdrawn"))}
 
 
+def closed_ack_shown(row: dict[str, Any]) -> bool:
+    """True once the requester's own hook has shown it this closed ack (content-free seen state)."""
+    from . import coord_wake
+
+    key = f"{row['id']}:ack:{row.get('acked_at')}"
+    return any(key in coord_wake.load_seen(i) for i in {str(row["from"]), *leases.self_ids()})
+
+
 def inbox() -> list[dict[str, Any]]:
-    """Requests awaiting my ack, acks awaiting my confirm, and FYI notes to me not yet shown."""
+    """Requests awaiting my ack, acks awaiting my confirm, and FYI notes to me and noted closed acks not yet shown.
+
+    A noted ``yes`` that closed my request (``close_bare_ack``, a lane's) stays listed until a hook showed it, so
+    the ``[Message] Ack ... (closed) · st sessions inbox`` line leads to its note.
+    """
     agent_id, _, session_id, _ = leases.identify_agent()
     mine = leases.self_ids()
     with leases._lock("_coord"):
@@ -623,6 +636,8 @@ def inbox() -> list[dict[str, Any]]:
         or (row["state"] == "fyi" and _addresses(row["to"], agent_id, session_id) and not fyi_shown(row))
         or (row["state"] == "acked" and row["from"] in mine)
         or (row["state"] == "open" and row["from"] in mine)
+        or (row["state"] == "closed" and row.get("auto_closed") and row.get("note") and row["from"] in mine
+            and not closed_ack_shown(row))
     ]
 
 

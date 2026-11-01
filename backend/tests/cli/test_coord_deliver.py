@@ -894,8 +894,10 @@ def test_a_lanes_done_request_after_its_yes_is_a_wake_that_carries_the_yes(monke
 
 
 @pytest.mark.parametrize("case", ["no", "eta", "peer", "owner-joined", "unwatched", "remote", "reply-wait",
-                                  "no-tether-answer", "launcher-to-lane"])
+                                  "no-tether-answer", "launcher-to-lane", "lane-waits", "nested-sender"])
 def test_these_acks_from_or_to_a_lane_stay_wakes(monkeypatch, tether, case):
+    # lane-waits (review P2-3): a lane with its own wait or check-in armed sends no went-idle line until it fires.
+    # nested-sender (review P3-4): the lane's went-idle line wakes the window's own agent, not a claude -p in it.
     _pair(monkeypatch, tether, version=25)
     _lane(tether)
     answer = ["yes", "received; will verify"]
@@ -916,6 +918,8 @@ def test_these_acks_from_or_to_a_lane_stay_wakes(monkeypatch, tether, case):
         tether.waits = {OTHER: [_reply_wait("x")]}  # filled in below, once the request id is known
     elif case == "no-tether-answer":
         tether.watches = None
+    elif case == "lane-waits":
+        _lane(tether, waitingOn="a check-in at 5:30 PM")
     if case == "launcher-to-lane":
         # The coordinator answering its lane: the lane may sit idle waiting for orders.
         _as(monkeypatch, "codex", "target-30")
@@ -929,14 +933,51 @@ def test_these_acks_from_or_to_a_lane_stay_wakes(monkeypatch, tether, case):
         row = _send_as_cli(monkeypatch, "codex:target", "run the store migration", "sender-30")
         if case == "reply-wait":
             tether.waits = {OTHER: [_reply_wait(row["id"])]}
+        elif case == "nested-sender":
+            tether.nested.add(SENDER_ANCHOR)
         ledger = _lane_ack(monkeypatch, row, *answer)
         to = "coord:cc:sender"
     assert ledger["state"] == "acked" and not ledger.get("auto_closed")
     acks = [body for _, body in tether.posts() if body["source"] == to]
-    if case == "reply-wait":
+    if case == "nested-sender":  # its own watcher wakes it (no window line for a nested harness)
+        assert all("ride" not in body for body in acks)
+    elif case == "reply-wait":
         assert acks == [] or all("ride" not in body for body in acks)  # the wait is its one wake
     else:
         assert acks and "ride" not in acks[-1]
+
+
+def test_a_lanes_noted_yes_stays_in_the_launchers_inbox_until_a_hook_shows_it(monkeypatch, inbox, tether, capsys):
+    # Review P2-2: the "Ack from L (closed) · st sessions inbox" line must lead to the note.
+    _pair(monkeypatch, tether, version=25)
+    _lane(tether)
+    row = _send_as_cli(monkeypatch, "codex:target", "run the store migration", "sender-30")
+    _lane_ack(monkeypatch, row, "yes", "received; sha abc123")
+    _as(monkeypatch, "claude", "sender-30")
+    listed = runner.invoke(app, ["sessions", "inbox"])
+    assert listed.exit_code == 0 and f"{row['id']} closed" in listed.output and "(received; sha abc123)" in listed.output
+    assert "sha abc123" in _hook(inbox, monkeypatch, capsys, "claude_code", "UserPromptSubmit")
+    assert row["id"] not in runner.invoke(app, ["sessions", "inbox"]).output
+
+
+def test_a_hook_killed_before_printing_a_lanes_yes_shows_it_next_turn(monkeypatch, inbox, tether, capsys):
+    # Review P2-2: marked seen only once printed, so a hook killed in between loses no note.
+    _pair(monkeypatch, tether, version=25)
+    _lane(tether)
+    row = _send_as_cli(monkeypatch, "codex:target", "run the store migration", "sender-30")
+    _lane_ack(monkeypatch, row, "yes", "received; sha abc123")
+    _as(monkeypatch, "claude", "sender-30")
+    real_emit = inbox.emit
+
+    def killed(*args: Any, **kwargs: Any) -> None:
+        raise TimeoutError("hook killed before it printed")
+
+    monkeypatch.setattr(inbox, "emit", killed)
+    with pytest.raises(TimeoutError):
+        _hook(inbox, monkeypatch, capsys, "claude_code", "UserPromptSubmit")
+    monkeypatch.setattr(inbox, "emit", real_emit)
+    out = _hook(inbox, monkeypatch, capsys, "claude_code", "UserPromptSubmit")
+    assert f"ACK {row['id']} yes (received; sha abc123)" in json.loads(out)["hookSpecificOutput"]["additionalContext"]
 
 
 def test_an_fyi_is_ride_along_and_needs_no_ack_or_confirm(monkeypatch, tether):
@@ -1299,11 +1340,11 @@ def test_ride_lines_are_peeked_first_and_taken_only_once_printed(monkeypatch, in
     out = _hook(inbox, monkeypatch, capsys, "codex", "UserPromptSubmit")
     assert "went idle again" in json.loads(out)["hookSpecificOutput"]["additionalContext"]
     assert not tether.ride_text
-    # Peeked first, before the hook's slower inbox work (the withdraw); taken only after printing.
+    # Peeked first, taken only after printing, before the hook's slower withdraw of a stale line.
     paths = [path for method, path, _ in tether.calls if method in ("GET", "DELETE")]
     assert paths == [f"/v1/sessions/{WIDGET}/due?ride=peek",
-                     f"/v1/sessions/{WIDGET}/deliveries?source=coord%3Acodex%3Atarget",
-                     f"/v1/sessions/{WIDGET}/due?token=aaaaaaaaaaaa.0123abcd"]
+                     f"/v1/sessions/{WIDGET}/due?token=aaaaaaaaaaaa.0123abcd",
+                     f"/v1/sessions/{WIDGET}/deliveries?source=coord%3Acodex%3Atarget"]
 
 
 def test_ride_lines_stay_queued_when_little_hook_time_is_left(monkeypatch, inbox, tether, capsys):
@@ -1326,3 +1367,10 @@ def test_send_help_keeps_the_done_report_rule():
     assert result.exit_code == 0
     text = " ".join(result.stdout.replace("│", " ").split())
     assert "A done report, or anything you need answered, is a normal request" in text
+
+
+def test_the_ack_hint_says_urgent_goes_as_a_request():
+    # Review P3-5: a lane's noted yes wakes no one, so something urgent goes as a request.
+    result = CliRunner().invoke(app, ["sessions", "send", "--help"], env={"COLUMNS": "400"})
+    text = " ".join(result.stdout.replace("│", " ").split())
+    assert "urgent: send a request" in text and "urgent: send a request" in coord.ACK_HINT

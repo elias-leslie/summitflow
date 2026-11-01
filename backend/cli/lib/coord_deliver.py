@@ -348,9 +348,10 @@ def window_of(agent_id: str) -> str | None:
 def launched_by(lane: str, launcher: str) -> bool:
     """``lane`` is an Aico window ``launcher`` launched on this computer, and the launcher hears its lane reports.
 
-    Tether's descriptor names the launcher as its ``parentId``, from a launch (``launched``), and the launcher has
-    no ``st aico unwatch`` on it: every way the lane stops (went idle, blocked, ended) then reaches the launcher
-    (Tether docs/api-v1.md "Lane reports"). False when Tether does not answer.
+    Tether's descriptor names the launcher as its ``parentId``, from a launch (``launched``), the lane waits on
+    nothing of its own (``waitingOn``: an armed wait or a pending check-in holds back its went-idle line), and the
+    launcher has no ``st aico unwatch`` on it: every way the lane stops (went idle, blocked, ended) then reaches
+    the launcher (Tether docs/api-v1.md "Lane reports"). False when Tether does not answer.
     """
     from app.services import tether
 
@@ -360,7 +361,7 @@ def launched_by(lane: str, launcher: str) -> bool:
         status, desc = tether.request("GET", f"/v1/sessions/{lane}", timeout=_TIMEOUT)
         if status != 200 or not isinstance(desc, dict) or desc.get("host"):
             return False
-        if desc.get("parentId") != launcher or desc.get("launched") is not True:
+        if desc.get("parentId") != launcher or desc.get("launched") is not True or desc.get("waitingOn"):
             return False
         status, body = tether.request("GET", f"/v1/sessions/{launcher}/watches", timeout=_TIMEOUT)
     except Exception:  # a wake too many is better than a lost one
@@ -376,16 +377,24 @@ def settle_bare_ack(row: dict[str, Any]) -> dict[str, Any]:
     A ``yes``, a sender on this computer, and no ``st aico wait reply`` armed (or fired) for the request: the
     ack is ride-along and needs no confirm when it is bare (no note), or comes from a lane the sender launched
     (``launched_by``), whatever its note says: the lane's stop (went idle, done request, blocked, ended) is the
-    launcher's wake, and the note joins it. ``no``, eta acks, a noted yes to anyone else (the launcher's to its
-    lane, a peer's), a request that came from an agent host, and a sender whose reply wait covers it are left
+    launcher's wake, and the note joins it. That needs the sender to be its window's own agent (``target``, as
+    ``take_ride``): a harness nested in the window is not the one the lane's went-idle line wakes. ``no``, eta
+    acks, a noted yes to anyone else (the launcher's to its lane, a peer's, a nested harness's), a lane waiting on
+    something of its own, a request that came from an agent host, and a sender whose reply wait covers it are left
     exactly as they were. The row returned is the ledger's, closed or not.
     """
     if row.get("intent") != "yes" or row.get("host") or row.get("state") != "acked":
         return row
     widget = window_of(str(row["from"])) if enabled() else None
     lane = bool(row.get("note"))
-    if lane and not (widget and launched_by(window_of(str(row.get("acked_by") or "")) or "", widget)):
-        return row
+    if lane:
+        try:
+            who = target(str(row["from"])) if widget else None
+        except Exception:  # a wake too many is better than a lost one
+            who = None
+        if not (who and who.widget == widget
+                and launched_by(window_of(str(row.get("acked_by") or "")) or "", who.widget)):
+            return row
     if widget and any(str(row["id"]).startswith(ref) for ref in reply_waited(widget)):
         return row
     try:
