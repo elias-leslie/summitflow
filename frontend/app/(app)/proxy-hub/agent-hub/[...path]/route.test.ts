@@ -1,8 +1,12 @@
+import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { GET, POST } from './route'
 
 const fetchMock = vi.fn()
 const originalApiUrl = process.env.API_URL
+const originalOwnerTokenFile = process.env.AGENT_HUB_OWNER_TOKEN_FILE
 
 vi.stubGlobal('fetch', fetchMock)
 
@@ -33,6 +37,56 @@ describe('agent hub proxy route', () => {
     } else {
       process.env.API_URL = originalApiUrl
     }
+    if (originalOwnerTokenFile === undefined) {
+      delete process.env.AGENT_HUB_OWNER_TOKEN_FILE
+    } else {
+      process.env.AGENT_HUB_OWNER_TOKEN_FILE = originalOwnerTokenFile
+    }
+  })
+
+  async function ownerWrite(headers: Record<string, string> = {}) {
+    fetchMock
+      .mockResolvedValueOnce(meResponse(true))
+      .mockResolvedValueOnce(new Response('{}', { status: 200 }))
+    const response = await POST(
+      new Request('http://localhost/proxy-hub/agent-hub/memory', {
+        method: 'POST',
+        headers: { ...identityHeaders, ...headers },
+        body: '{"content":"x"}',
+      }),
+      { params: Promise.resolve({ path: ['memory'] }) },
+    )
+    expect(response.status).toBe(200)
+    const [, init] = fetchMock.mock.calls.at(-1) ?? []
+    return new Headers(init?.headers)
+  }
+
+  it('marks owner writes with the Agent Hub owner token so they are not queued for review', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'agent-hub-owner-'))
+    try {
+      process.env.AGENT_HUB_OWNER_TOKEN_FILE = join(dir, 'token')
+      writeFileSync(process.env.AGENT_HUB_OWNER_TOKEN_FILE, 'owner-secret\n')
+
+      const owner = await ownerWrite()
+      expect(owner.get('x-agent-hub-owner-token')).toBe('owner-secret')
+
+      const agent = await ownerWrite({
+        'X-Context-Writer': 'delivery=abc; session=aico-widget-1',
+      })
+      expect(agent.get('x-agent-hub-owner-token')).toBeNull()
+      expect(agent.get('x-context-writer')).toBe(
+        'delivery=abc; session=aico-widget-1',
+      )
+    } finally {
+      rmSync(dir, { recursive: true, force: true })
+    }
+  })
+
+  it('sends no owner token when the token file is missing', async () => {
+    process.env.AGENT_HUB_OWNER_TOKEN_FILE =
+      '/nonexistent/agent-hub-owner-token'
+    const headers = await ownerWrite()
+    expect(headers.get('x-agent-hub-owner-token')).toBeNull()
   })
 
   it('rejects non-owners before calling Agent Hub', async () => {
