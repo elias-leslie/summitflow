@@ -32,6 +32,7 @@ from ..lib.cleanroom import main as cleanroom_main
 from ..lib.task_claims import TaskClaimRenewalError, renew_owned_claim
 from ..lib.usage import usage
 from ..output import output_error
+from .check_agent_context_files import run_agent_context_files_check
 from .check_artifacts import write_check_details
 from .check_changed import (
     _changed_args,
@@ -409,6 +410,7 @@ def _runtime() -> CheckRuntime:
         cleanroom_main=cleanroom_main,
         run_architecture_check=run_architecture_check,
         run_project_identity_check=run_project_identity_check,
+        run_agent_context_files_check=run_agent_context_files_check,
         output_error=output_error,
         resolve_repo_root=_resolve_repo_root,
         workdir=_workdir,
