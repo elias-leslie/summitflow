@@ -188,7 +188,7 @@ def start(
 
 @usage(
     surface="st.sessions.send",
-    cmd=f"st sessions send AGENT_OR_WINDOW 'question' [--fyi] | st sessions confirm ID [--withdraw] | {coord.ACK_HINT.format(id='ID')}",
+    cmd="st sessions send AGENT_OR_WINDOW 'question' [--fyi] | st sessions confirm ID [--withdraw] | st sessions ack ID yes|no 'why'|eta:MIN",
     when="ask another agent a question (<=500 chars; a brief file only for long material): it acks, you confirm; "
          "--fyi for a status note nobody needs to answer",
     precautions=("address the coordinating parent; workers answer only their own requests; "
