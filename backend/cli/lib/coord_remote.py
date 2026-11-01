@@ -147,7 +147,7 @@ def to_host_window(target: str, text: str, *, project: str | None = None,
     sender = f"{agent_id}{f' (window {widget})' if widget else ''}"
     try:
         inject(window, f"[st sessions send {row['id']} from {sender} on {socket.gethostname()}] {row['text']} "
-                       f"(Answer with: st sessions ack {row['id']} yes|no 'reason'|eta:MIN)")
+                       f"| answer: {coord.ACK_HINT.format(id=row['id'])}")
     except ValueError:
         coord.drop(row["id"])  # never delivered, so a retry (same text or source key) sends it again
         raise

@@ -25,9 +25,10 @@ the line: Tether's ``[Ready] request ... answered`` line for that wait is its on
 
 Two delivery classes (Tether API 24, "Deliveries"). A line that names a request, an ack with a note or an
 eta, or a memory notice is a wake, as before. A line that names only ride-along items (an FYI note from
-``st sessions send --fyi``, a bare ``ack yes`` that closed the request for its sender: coord.close_bare_ack) is
-queued with ``ride: true``: Tether never pastes it or wakes a puller for it, and it joins the next wake or the
-window's next turn. Against a Tether older than 24 the line is posted plain, as before.
+``st sessions send --fyi``, an ``ack yes`` that closed the request for its sender: coord.close_bare_ack, for a
+bare yes or a yes from the sender's own lane, see ``settle_bare_ack``) is queued with ``ride: true``: Tether never
+pastes it or wakes a puller for it, and it joins the next wake or the window's next turn. Against a Tether older
+than 24 the line is posted plain, as before.
 
 ``from`` names only the Aico window of the agent whose command queued the line (``sender``), never every agent
 the line counts: a recipient's own watcher and ``withdraw_stale`` pass none. A request (``st sessions send``) tells
@@ -344,21 +345,51 @@ def window_of(agent_id: str) -> str | None:
     return widget if widget and _WIDGET.fullmatch(widget) else None
 
 
-def settle_bare_ack(row: dict[str, Any]) -> dict[str, Any]:
-    """Close an acked request for its sender when the ack is a bare ``yes`` it waits on nothing for.
+def launched_by(lane: str, launcher: str) -> bool:
+    """``lane`` is an Aico window ``launcher`` launched on this computer, and the launcher hears its lane reports.
 
-    A ``yes`` with no note, a sender on this computer, and no ``st aico wait reply`` armed (or fired) for
-    the request: the ack is ride-along and needs no confirm. Notes, ``no``, eta acks, a request that came from
-    an agent host, and a sender whose reply wait covers it are left exactly as they were. The row returned is
-    the ledger's, closed or not.
+    Tether's descriptor names the launcher as its ``parentId``, from a launch (``launched``), and the launcher has
+    no ``st aico unwatch`` on it: every way the lane stops (went idle, blocked, ended) then reaches the launcher
+    (Tether docs/api-v1.md "Lane reports"). False when Tether does not answer.
     """
-    if row.get("intent") != "yes" or row.get("note") or row.get("host") or row.get("state") != "acked":
+    from app.services import tether
+
+    if not (_WIDGET.fullmatch(lane or "") and _WIDGET.fullmatch(launcher or "")) or lane == launcher:
+        return False
+    try:
+        status, desc = tether.request("GET", f"/v1/sessions/{lane}", timeout=_TIMEOUT)
+        if status != 200 or not isinstance(desc, dict) or desc.get("host"):
+            return False
+        if desc.get("parentId") != launcher or desc.get("launched") is not True:
+            return False
+        status, body = tether.request("GET", f"/v1/sessions/{launcher}/watches", timeout=_TIMEOUT)
+    except Exception:  # a wake too many is better than a lost one
+        return False
+    items = body.get("items") if status == 200 and isinstance(body, dict) else None
+    return isinstance(items, list) and not any(
+        isinstance(w, dict) and w.get("lane") == lane and w.get("mode") == "unwatch" for w in items)
+
+
+def settle_bare_ack(row: dict[str, Any]) -> dict[str, Any]:
+    """Close an acked request for its sender when the ack is a ``yes`` it waits on nothing for.
+
+    A ``yes``, a sender on this computer, and no ``st aico wait reply`` armed (or fired) for the request: the
+    ack is ride-along and needs no confirm when it is bare (no note), or comes from a lane the sender launched
+    (``launched_by``), whatever its note says: the lane's stop (went idle, done request, blocked, ended) is the
+    launcher's wake, and the note joins it. ``no``, eta acks, a noted yes to anyone else (the launcher's to its
+    lane, a peer's), a request that came from an agent host, and a sender whose reply wait covers it are left
+    exactly as they were. The row returned is the ledger's, closed or not.
+    """
+    if row.get("intent") != "yes" or row.get("host") or row.get("state") != "acked":
         return row
-    if enabled() and (widget := window_of(str(row["from"]))) and any(
-            str(row["id"]).startswith(ref) for ref in reply_waited(widget)):
+    widget = window_of(str(row["from"])) if enabled() else None
+    lane = bool(row.get("note"))
+    if lane and not (widget and launched_by(window_of(str(row.get("acked_by") or "")) or "", widget)):
+        return row
+    if widget and any(str(row["id"]).startswith(ref) for ref in reply_waited(widget)):
         return row
     try:
-        return coord.close_bare_ack(str(row["id"]))
+        return coord.close_bare_ack(str(row["id"]), lane=lane)
     except ValueError:
         return row
 

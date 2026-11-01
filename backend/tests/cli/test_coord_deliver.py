@@ -66,6 +66,8 @@ class FakeTether:
         self.on_post: Any = None
         self.waits: dict[str, list[dict[str, Any]]] | None = {}  # widget -> GET /v1/sessions/:id/waits?recent=1 items
         self.ride_text: dict[str, str] = {}  # widget -> the ride-along text GET /v1/sessions/:id/due?ride=1 takes
+        self.descriptors: dict[str, dict[str, Any]] = {}  # widget -> GET /v1/sessions/:id (none: 404)
+        self.watches: dict[str, list[dict[str, Any]]] | None = {}  # watcher -> GET /v1/sessions/:id/watches items
 
     def __call__(self, method: str, path: str, body: dict[str, Any] | None = None, **_: Any) -> tuple[int, Any]:
         self.calls.append((method, path, body))
@@ -93,6 +95,13 @@ class FakeTether:
             return 200, {"text": text, "token": "aaaaaaaaaaaa.0123abcd" if text else None}
         if method == "DELETE" and "/due?token=" in path:
             return 200, {"taken": 1 if self.ride_text.pop(path.split("/")[3], None) else 0}
+        if method == "GET" and path.endswith("/watches"):
+            if self.watches is None:
+                raise ConnectionRefusedError
+            return 200, {"items": self.watches.get(path.split("/")[3], [])}
+        if method == "GET" and path.count("/") == 3 and path.startswith("/v1/sessions/"):
+            desc = self.descriptors.get(path.split("/")[3])
+            return (200, desc) if desc else (404, {"error": "not_found"})
         if path == "/v1/waits/check":
             return 200, {"kind": body["kind"], "ref": body["ref"], "armed": 0}
         if method == "DELETE" and "/deliveries?source=" in path:
@@ -827,6 +836,107 @@ def test_a_closed_ack_is_shown_once_and_never_wakes_an_idle_agent(monkeypatch, i
     inbox.mark("cc:sender", items)
     assert inbox.due("cc:sender", items) == []
     assert "FYI" in inbox.render(items) or "nothing to answer" in inbox.render(items)
+
+
+# A yes from a lane to its own launcher (window WIDGET, launched by the sender's window OTHER) rides along.
+
+def _lane(tether, **desc: Any) -> None:
+    tether.descriptors[WIDGET] = {"id": WIDGET, "parentId": OTHER, "coordinatorId": OTHER, "launched": True,
+                                  "host": None, **desc}
+
+
+def _lane_ack(monkeypatch, row: dict[str, Any], *answer: str) -> dict[str, Any]:
+    _as(monkeypatch, "codex", "target-30")
+    acked = runner.invoke(app, ["sessions", "ack", row["id"], *answer])
+    assert acked.exit_code == 0, acked.output
+    return next(r for r in coord._load_ledger() if r["id"] == row["id"])
+
+
+@pytest.mark.parametrize("version", [24, 25])
+def test_a_lanes_yes_to_its_launcher_rides_along_note_and_all(monkeypatch, inbox, tether, capsys, version):
+    # Verdict wake-next 1: 40 of 46 ack wakes on coordinators were lanes narrating receipt ("P2a: received X; will
+    # verify Y"); each cost a no-op coordinator turn. The lane's stop wakes the launcher; the note joins it.
+    _pair(monkeypatch, tether, version=version)
+    _lane(tether)
+    row = _send_as_cli(monkeypatch, "codex:target", "run the store migration", "sender-30")
+    ledger = _lane_ack(monkeypatch, row, "yes", "received; will verify the store after the migration")
+    assert ledger["state"] == "closed" and ledger["auto_closed"] and ledger["note"].startswith("received")
+    second = tether.posts()[1][1]
+    assert second["source"] == "coord:cc:sender" and second["ride"] is True
+    assert second["line"] == "[Message] Ack from codex:target (closed) · st sessions inbox"
+    if version >= 25:  # an act on the launcher, never telling it: the lane's went-idle line still goes
+        assert second["from"] == [WIDGET] and second["reply"] is True
+    # Closed like a bare yes: the launcher's watcher never wakes for it or sends it again, confirm is a no-op.
+    posts = len(tether.posts())
+    _as(monkeypatch, "claude", "sender-30")
+    monkeypatch.setattr(inbox, "GRACE", 0.0)
+    assert inbox.watch("claude_code") == 0 and len(tether.posts()) == posts
+    assert runner.invoke(app, ["sessions", "confirm", row["id"]]).exit_code == 0
+    # The note reaches the launcher once, at its next turn.
+    out = _hook(inbox, monkeypatch, capsys, "claude_code", "UserPromptSubmit")
+    text = json.loads(out)["hookSpecificOutput"]["additionalContext"]
+    assert f"ACK {row['id']} yes (received; will verify the store after the migration) from codex:target" in text
+    assert _hook(inbox, monkeypatch, capsys, "claude_code", "UserPromptSubmit") == ""
+
+
+def test_a_lanes_done_request_after_its_yes_is_a_wake_that_carries_the_yes(monkeypatch, tether):
+    # The lane stopping is still the launcher's wake: its done report is a request, and the closed yes joins it.
+    _pair(monkeypatch, tether, version=25)
+    _lane(tether)
+    row = _send_as_cli(monkeypatch, "codex:target", "run the store migration", "sender-30")
+    _lane_ack(monkeypatch, row, "yes", "received")
+    sent = runner.invoke(app, ["sessions", "send", "cc:sender", "Done: migration verified, report in REPORT.md"])
+    assert sent.exit_code == 0, sent.output
+    done = tether.posts()[-1][1]
+    assert "ride" not in done and "reply" not in done and done["from"] == [WIDGET]
+    assert done["line"] == ("[Message] Request from codex:target · Ack from codex:target (closed) · "
+                            "st sessions inbox")
+
+
+@pytest.mark.parametrize("case", ["no", "eta", "peer", "owner-joined", "unwatched", "remote", "reply-wait",
+                                  "no-tether-answer", "launcher-to-lane"])
+def test_these_acks_from_or_to_a_lane_stay_wakes(monkeypatch, tether, case):
+    _pair(monkeypatch, tether, version=25)
+    _lane(tether)
+    answer = ["yes", "received; will verify"]
+    if case == "no":
+        answer = ["no", "busy with the store"]
+    elif case == "eta":
+        answer = ["eta:20"]
+    elif case == "peer":
+        _lane(tether, parentId="ee99ff00")  # a lane of the same coordinator, launched by another window
+    elif case == "owner-joined":
+        _lane(tether, launched=False)
+    elif case == "unwatched":
+        assert tether.watches is not None
+        tether.watches[OTHER] = [{"lane": WIDGET, "mode": "unwatch", "createdAt": 1}]
+    elif case == "remote":
+        _lane(tether, host="agent-work")
+    elif case == "reply-wait":
+        tether.waits = {OTHER: [_reply_wait("x")]}  # filled in below, once the request id is known
+    elif case == "no-tether-answer":
+        tether.watches = None
+    if case == "launcher-to-lane":
+        # The coordinator answering its lane: the lane may sit idle waiting for orders.
+        _as(monkeypatch, "codex", "target-30")
+        assert runner.invoke(app, ["sessions", "send", "cc:sender", "may I rebuild?"]).exit_code == 0
+        row = next(r for r in coord._load_ledger() if r["text"] == "may I rebuild?")
+        _as(monkeypatch, "claude", "sender-30")
+        assert runner.invoke(app, ["sessions", "ack", row["id"], "yes", "go ahead, then deploy"]).exit_code == 0
+        ledger = next(r for r in coord._load_ledger() if r["id"] == row["id"])
+        to = "coord:codex:target"
+    else:
+        row = _send_as_cli(monkeypatch, "codex:target", "run the store migration", "sender-30")
+        if case == "reply-wait":
+            tether.waits = {OTHER: [_reply_wait(row["id"])]}
+        ledger = _lane_ack(monkeypatch, row, *answer)
+        to = "coord:cc:sender"
+    assert ledger["state"] == "acked" and not ledger.get("auto_closed")
+    acks = [body for _, body in tether.posts() if body["source"] == to]
+    if case == "reply-wait":
+        assert acks == [] or all("ride" not in body for body in acks)  # the wait is its one wake
+    else:
+        assert acks and "ride" not in acks[-1]
 
 
 def test_an_fyi_is_ride_along_and_needs_no_ack_or_confirm(monkeypatch, tether):

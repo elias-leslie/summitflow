@@ -20,9 +20,10 @@ requests it sent) on every harness surface that can carry text:
                  pane (Codex has no rewake hook; only armed between turns)
 
 Two delivery classes (Tether API 24, coord_deliver). Wake items: a request, an ack with a note or an eta, a
-memory notice. Ride-along items: an FYI note (`st sessions send --fyi`) and a bare `ack yes` that closed the
-request for its sender. They are shown once by the turn hook, never wake an idle agent (`wakeable` and the
-watcher leave them out, Pi's idle check too), never block Stop, and ride along with the next wake. Tether's own
+memory notice. Ride-along items: an FYI note (`st sessions send --fyi`) and an `ack yes` that closed the
+request for its sender (bare, or from the sender's own lane: coord_deliver.settle_bare_ack). They are shown
+once by the turn hook, never wake an idle agent (`wakeable` and the watcher leave them out, Pi's idle check
+too), never block Stop, and ride along with the next wake. Tether's own
 ride-along lines (a lane's repeated went-idle line, a coordination line for these items) are taken at the
 window's next prompt (UserPromptSubmit; Pi's next tool result), only by the window's own agent (not a harness
 nested in it): peeked first thing (GET /v1/sessions/<window>/due?ride=peek) and taken once printed (DELETE
@@ -144,8 +145,8 @@ def pending() -> tuple[str, list[Item]]:
             if eta and row.get("acked_at") and row.get("eta_min") is not None:
                 at = _epoch(row["acked_at"]) + 60 * int(row["eta_min"])
             items.append(Item(f"{row['id']}:req", (
-                f"{flag}REQUEST {row['id']} from {row['from']}{lapsed}: {row['text']} | answer now with "
-                f"`st sessions ack {row['id']} yes|no 'reason'|eta:MIN`"), urgent, at))
+                f"{flag}REQUEST {row['id']} from {row['from']}{lapsed}: {row['text']} | answer now: "
+                f"{coord.ACK_HINT.format(id=row['id'])}"), urgent, at))
         elif row["state"] == "acked" and row["from"] in mine:
             intent = (row.get("intent") or "?") + (f" {row['eta_min']}m" if row.get("eta_min") else "")
             note = f" ({row['note']})" if row.get("note") else ""
@@ -153,8 +154,9 @@ def pending() -> tuple[str, list[Item]]:
                 f"ACK {row['id']} {intent}{note} from {row.get('acked_by')} | close with "
                 f"`st sessions confirm {row['id']}`"), False, _epoch(row.get("acked_at"))))
     for row in coord.closed_acks():
+        note = f" ({row['note']})" if row.get("note") else ""
         items.append(Item(f"{row['id']}:ack:{row.get('acked_at')}", (
-            f"ACK {row['id']} yes from {row.get('acked_by')} | closed; nothing to do"), False,
+            f"ACK {row['id']} yes{note} from {row.get('acked_by')} | closed; nothing to do"), False,
             _epoch(row.get("acked_at")), True))
     return agent_id, items
 

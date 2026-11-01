@@ -13,6 +13,7 @@ from st_sdk.usage import usage
 
 from ..client import APIError, STClient
 from ..config import get_config, get_config_optional, get_project_override
+from ..lib import coord
 from ..output import handle_api_error, output_json
 
 
@@ -66,7 +67,7 @@ def _tether_aliases(target: str) -> list[str]:
 
 def _resolve_agent(target: str) -> str:
     """An agent id, a known session prefix, or a label naming exactly one live agent; else exit 2."""
-    from ..lib import coord, coord_route, coordinators
+    from ..lib import coord_route, coordinators
 
     if coord_route.AGENT_ID.fullmatch(target) or coord.known_target(target):
         return target
@@ -187,7 +188,7 @@ def start(
 
 @usage(
     surface="st.sessions.send",
-    cmd="st sessions send AGENT_OR_WINDOW 'question' [--fyi] | st sessions ack ID yes|no 'reason'|eta:MIN | st sessions confirm ID [--withdraw]",
+    cmd=f"st sessions send AGENT_OR_WINDOW 'question' [--fyi] | st sessions confirm ID [--withdraw] | {coord.ACK_HINT.format(id='ID')}",
     when="ask another agent a question (<=500 chars; a brief file only for long material): it acks, you confirm; "
          "--fyi for a status note nobody needs to answer",
     precautions=("address the coordinating parent; workers answer only their own requests; "
@@ -203,15 +204,14 @@ def send(
     fyi: Annotated[bool, typer.Option("--fyi", help="Status note to an agent on this computer: no ack or confirm, never wakes it. "
                                                     "A done report, or anything you need answered, is a normal request")] = False,
 ) -> None:
-    """Send to another agent: agent ids/labels -> handshake; root-* handles and UUIDs -> fleet stream.
+    """Send to an agent: ids/labels -> handshake; root-*, UUIDs -> fleet stream.
 
-    Handshake (<=500 chars, else a brief file): recipient acks yes, no 'reason' or eta:MIN; then
-    st sessions confirm (--withdraw if unacked). Never type it in the window
-    (Tether delivers a line). Labels (widget, title, tmux, short id) must match one live agent.
-    --fyi: a note nobody answers; wakes no one, no ack or confirm.
+    Handshake (<=500 chars, else a brief file): recipient answers {ack}; then
+    st sessions confirm (--withdraw if unacked). Never type it in a window.
+    Labels (widget, title, tmux, short id) must match one live agent.
 
     Native-thread: bound Codex UUID, stable --source-key, <=2000 bytes; woken if live, else queued.
-    Retry with the same --source-key; verify: st sessions verify UUID --source-key REV.
+    Retry: same --source-key; verify: st sessions verify UUID --source-key REV.
     """
     if fyi and delivery not in (None, "handshake"):
         raise typer.BadParameter("--fyi is a handshake note; it cannot go to a fleet root or native thread")
@@ -329,6 +329,9 @@ def _wait_for_state(target: str, states: set[str], timeout: float) -> None:
             typer.echo(f"Timed out after {timeout:g}s; {session} is {state}", err=True)
             raise typer.Exit(1)
         time.sleep(min(_STATE_POLL_SECONDS, max(0.0, deadline - time.monotonic())))
+
+
+send.__doc__ = (send.__doc__ or "").replace("{ack}", coord.ACK_HINT.format(id="ID"))
 
 
 def register(app: typer.Typer) -> None:

@@ -26,6 +26,8 @@ from collections.abc import Iterator
 from contextlib import contextmanager
 from pathlib import Path
 
+from . import coord
+
 
 def _state_dir() -> Path:
     """Share Pi's user runtime even when a caller shell omits XDG_RUNTIME_DIR."""
@@ -135,7 +137,7 @@ def pane_line(rendered: str, requests: int) -> str:
         return line
     if requests:
         return (f"st coordination: {requests} request(s) waiting on you; read them with `st sessions inbox`, "
-                "then answer with `st sessions ack <id> yes|no 'reason'|eta:MIN`")
+                f"then answer: {coord.ACK_HINT.format(id='<id>')}")
     return "st coordination: updates on requests you sent; read them with `st sessions inbox`"
 
 

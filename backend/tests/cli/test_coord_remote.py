@@ -47,7 +47,7 @@ def test_a_window_on_an_agent_host_gets_the_request_through_the_hub(monkeypatch,
     assert row["to"] == "a810c7e0@agent-work" and row["from"] == "cc:ea3f27"
     assert f"sent {row['id']} -> window a810c7e0 on agent-work" in result.output
     assert body["text"].startswith(f"[st sessions send {row['id']} from cc:ea3f27 (window ea3f2738) on ")
-    assert "Run the check" in body["text"] and f"st sessions ack {row['id']} yes|no" in body["text"]
+    assert "Run the check" in body["text"] and coord.ACK_HINT.format(id=row["id"]) in body["text"]
 
 
 def test_a_refused_inject_says_why(monkeypatch, tether):

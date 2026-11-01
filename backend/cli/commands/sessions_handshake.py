@@ -50,8 +50,9 @@ def _on_workstation(exc: ValueError) -> bool:
     return isinstance(exc, coord.UnknownRequest) and coord_remote.agent_host() is not None
 
 
-# A bare yes closes a request without waking its sender (coord_deliver.settle_bare_ack): say how to be woken.
-_ACK_WAKE = "If you wait on the answer, arm st aico wait reply {id}: a bare yes otherwise reaches you without a wake"
+# A bare yes, or a lane's yes to its launcher, closes a request without waking its sender
+# (coord_deliver.settle_bare_ack): say how to be woken.
+_ACK_WAKE = "If you wait on the answer, arm st aico wait reply {id}: a yes otherwise may reach you without a wake"
 
 
 def send_request(to: str, text: str, source_key: str | None = None, *, fyi: bool = False) -> None:
@@ -94,8 +95,8 @@ def ack(
     """Answer a request addressed to you; 'no' needs a reason, and yes authorizes the requester's --with-ack for 2h.
 
     An eta whose minutes run out puts the request back to waiting on you: answer yes, no or a new eta.
-    A bare yes (no note) to a sender not waiting on a reply closes the request for them at once: they are not
-    woken and have nothing to confirm. Add a note if it carries something they should act on.
+    A yes to a sender not waiting on a reply closes the request for them when it is bare, or comes from the
+    sender's own lane: no wake, nothing to confirm; the note rides with their next turn.
     """
     from ..lib import coord_remote
 
@@ -137,7 +138,7 @@ def ack(
     queued = coord_deliver.safe_wake(str(row["from"]), [f"{row['id']}:ack:{row.get('acked_at')}"],
                                      sender=str(row.get("acked_by") or ""), reply=True)
     if row.get("auto_closed"):
-        typer.echo(f"closed {row['id']}: a bare yes needs no confirm"
+        typer.echo(f"closed {row['id']}: no confirm needed"
                    + (f"; {row['from']} gets it with its next message or turn, no wake" if queued else ""))
     elif queued:
         typer.echo(f"Tether delivers a [Message] line about the ack to {row['from']}")

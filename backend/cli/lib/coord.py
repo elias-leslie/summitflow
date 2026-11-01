@@ -10,9 +10,9 @@ One identity (``leases.identify_agent``), one store (``~/.summitflow/leases``):
 - a handshake ledger: request -> ack (intent) -> confirm, with one-line notices; an
   eta ack whose minutes run out puts the request back to waiting on the recipient.
   Two rows need no third step and never wake anyone alone (ride-along, see
-  coord_deliver): an FYI (``send(fyi=True)``, state ``fyi``, nothing to answer) and a bare
-  ``ack yes`` with no note while the sender waits on no reply (``close_bare_ack``: state
-  ``closed``, ``auto_closed``).
+  coord_deliver): an FYI (``send(fyi=True)``, state ``fyi``, nothing to answer) and an
+  ``ack yes`` while the sender waits on no reply, bare or from the sender's own lane
+  (``close_bare_ack``: state ``closed``, ``auto_closed``).
 
 Output is silent without overlap. Minimal disclosure: sensitive holders render
 as an opaque busy line; message text is short and neutral (long material goes in a brief file).
@@ -44,6 +44,9 @@ MAX_TEXT = 500
 # Owner/fleet instructions to a live Codex thread ride the ledger; same bound as sanitized_instruction.
 NATIVE_MAX_TEXT = 2000
 INTENTS = ("yes", "no")
+# How to answer a request, wherever one is shown (turn hook, pane line, a host window, st sessions send help).
+ACK_HINT = ("st sessions ack {id} yes | no 'why' | eta:MIN (note a yes only if the sender must act now; "
+            "status goes in your done report, progress via --fyi)")
 _ETA = re.compile(r"eta:(\d{1,4})")
 
 
@@ -510,16 +513,17 @@ def ack(message_id: str, intent: str, note: str | None = None, *,
         return dict(row)
 
 
-def close_bare_ack(message_id: str) -> dict[str, Any]:
-    """Close an acked request for its sender with no third step: a bare ``yes`` (no note) it waits on nothing for.
+def close_bare_ack(message_id: str, *, lane: bool = False) -> dict[str, Any]:
+    """Close an acked request for its sender with no third step: a ``yes`` it waits on nothing for.
 
-    The ack stays on the row (``acked_at``, ``acked_by``, ``intent``), so a ``--with-ack`` it authorizes and an
-    armed reply wait (which fires on acked or closed) behave as before. Anything else is left as it was.
+    A bare one (no note), or with ``lane`` one from the sender's own lane, note and all (coord_deliver.settle_bare_ack).
+    The ack stays on the row (``acked_at``, ``acked_by``, ``intent``, ``note``), so a ``--with-ack`` it authorizes and
+    an armed reply wait (which fires on acked or closed) behave as before. Anything else is left as it was.
     """
     with leases._lock("_coord"):
         rows = _load_ledger()
         row = _find(rows, message_id)
-        if row["state"] != "acked" or row.get("intent") != "yes" or row.get("note"):
+        if row["state"] != "acked" or row.get("intent") != "yes" or (row.get("note") and not lane):
             return dict(row)
         row.update(state="closed", auto_closed=True, closed_at=datetime.now(UTC).isoformat(), ack_seen=True)
         _save_ledger(rows)
@@ -623,7 +627,7 @@ def inbox() -> list[dict[str, Any]]:
 
 
 def closed_acks() -> list[dict[str, Any]]:
-    """My requests answered by a bare ``ack yes`` and closed with it (ride-along: shown once, nothing to do)."""
+    """My requests a ``yes`` closed with no third step (``close_bare_ack``; ride-along: shown once, nothing to do)."""
     mine = leases.self_ids()
     with leases._lock("_coord"):
         rows = _load_ledger()
