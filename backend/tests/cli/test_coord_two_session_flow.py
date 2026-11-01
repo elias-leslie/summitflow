@@ -96,7 +96,7 @@ def test_lease_conflict_handshake_ack_and_release_between_two_sessions(
     assert ack_as_sender.exit_code == 2 and "not addressed" in ack_as_sender.output
     _as(monkeypatch, "alpha-session-0001")
     assert any(request["id"] in line for line in coord.notices())
-    assert f"acked {request['id']} yes" in _st("sessions", "ack", request["id"], "yes")
+    assert f"acked {request['id']} yes" in _st("sessions", "ack", request["id"], "yes", "go on")
 
     # B's commit now goes through with the acked request; A's hold is untouched.
     _as(monkeypatch, "beta-session-00002")

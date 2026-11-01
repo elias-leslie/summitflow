@@ -19,6 +19,13 @@ requests it sent) on every harness surface that can carry text:
          Codex:  detached idle watcher that types one line into its own tmux
                  pane (Codex has no rewake hook; only armed between turns)
 
+Two delivery classes (Tether API 24, coord_deliver). Wake items: a request, an ack with a note or an eta, a
+memory notice. Ride-along items: an FYI note (`st sessions send --fyi`) and a bare `ack yes` that closed the
+request for its sender. They are shown once by the turn hook, never wake an idle agent (`wakeable` and the
+watcher leave them out, Pi's idle check too), never block Stop, and ride along with the next wake. Tether's own
+ride-along lines (a lane's repeated went-idle line, a coordination line for these items) are taken at the
+window's next prompt (UserPromptSubmit; Pi's next tool result) with GET /v1/sessions/<window>/due?ride=1.
+
 Senders queue the same line when they record a request or ack; the woke state
 (cli.lib.coord_wake) keeps the watcher and Pi's idle check from waking the
 agent again for an item a line was queued for.
@@ -92,13 +99,15 @@ def _urgent(text: str) -> bool:
 class Item(NamedTuple):
     """One inbox item: its state key, the line shown, URGENT, and when it happened (epoch seconds; 0 unknown).
 
-    ``at`` is the request's creation, the time an eta ack's minutes ran out, or the ack's time.
+    ``at`` is the request's creation, the time an eta ack's minutes ran out, or the ack's time. ``ride`` marks
+    a ride-along item (an FYI note, a closed bare ack): shown once, never an idle wake.
     """
 
     key: str
     line: str
     urgent: bool
     at: float = 0.0
+    ride: bool = False
 
 
 def _epoch(stamp: object) -> float:
@@ -114,7 +123,11 @@ def pending() -> tuple[str, list[Item]]:
     mine = leases.self_ids()
     items: list[Item] = []
     for row in coord.inbox():
-        if row["state"] == "open" and row["from"] not in mine:
+        if row["state"] == "fyi" and row["from"] not in mine:
+            items.append(Item(f"{row['id']}:fyi", (
+                f"FYI {row['id']} from {row['from']}: {row['text']} | no reply needed"), False,
+                _epoch(row.get("created")), True))
+        elif row["state"] == "open" and row["from"] not in mine:
             urgent = _urgent(row["text"])
             flag = "URGENT " if urgent else ""
             eta = row.get("intent") == "eta"
@@ -131,15 +144,19 @@ def pending() -> tuple[str, list[Item]]:
             items.append(Item(f"{row['id']}:ack:{row.get('acked_at')}", (
                 f"ACK {row['id']} {intent}{note} from {row.get('acked_by')} | close with "
                 f"`st sessions confirm {row['id']}`"), False, _epoch(row.get("acked_at"))))
+    for row in coord.closed_acks():
+        items.append(Item(f"{row['id']}:ack:{row.get('acked_at')}", (
+            f"ACK {row['id']} yes from {row.get('acked_by')} | closed; nothing to do"), False,
+            _epoch(row.get("acked_at")), True))
     return agent_id, items
 
 
 def due(agent_id: str, items: list[Item]) -> list[Item]:
-    """What a turn hook or Stop shows: a request again every REMIND seconds until answered, an ack once."""
+    """What a turn hook or Stop shows: a request again every REMIND seconds until answered, an ack or FYI once."""
     seen = _load_seen(agent_id)
     now = time.time()
     return [item for item in items
-            if (item.key not in seen if ":ack:" in item.key else now - seen.get(item.key, 0) >= REMIND)]
+            if (item.key not in seen if ":ack:" in item.key or item.ride else now - seen.get(item.key, 0) >= REMIND)]
 
 
 def wakeable(agent_id: str, items: list[Item], now: float | None = None) -> list[Item]:
@@ -147,7 +164,8 @@ def wakeable(agent_id: str, items: list[Item], now: float | None = None) -> list
 
     Once per item: a request or ack whose key a Tether line was queued for (woke) or a hook showed
     (seen) at or after its time never wakes the agent again; an eta that ran out since does, once.
-    Items younger than GRACE are left to the sender's own line (see ``settling``).
+    Items younger than GRACE are left to the sender's own line (see ``settling``). Ride-along items
+    (an FYI note, a closed bare ack) never wake an idle agent.
     """
     seen, woke = _load_seen(agent_id), coord_wake.load_woke(agent_id)
     now = time.time() if now is None else now
@@ -156,7 +174,7 @@ def wakeable(agent_id: str, items: list[Item], now: float | None = None) -> list
         stamp = max(seen.get(item.key, 0.0), woke.get(item.key, 0.0))
         return stamp < item.at if item.at else not stamp  # no known time: only if never woken or shown
 
-    return [item for item in items if item.at <= now - GRACE and new(item)]
+    return [item for item in items if not item.ride and item.at <= now - GRACE and new(item)]
 
 
 def settling(items: list[Item], now: float | None = None) -> float | None:
@@ -224,8 +242,12 @@ def mark(agent_id: str, items: list[Item], how: str = "") -> None:
 
 def render(items: list[Item]) -> str:
     waiting = any(":req" in item.key for item in items)
-    head = ("st coordination (another agent is waiting on you; reply before continuing):" if waiting
-            else "st coordination (update on a request you sent):")
+    if waiting:
+        head = "st coordination (another agent is waiting on you; reply before continuing):"
+    elif all(item.ride for item in items):
+        head = "st coordination (FYI; nothing to answer):"
+    else:
+        head = "st coordination (update on a request you sent):"
     return "\n".join([head, *(item.line for item in sorted(items, key=lambda i: not i.urgent))])
 
 
@@ -440,19 +462,35 @@ def main() -> int:
         return 0
     if fresh:
         mark(agent_id, fresh, f"{provider}-{event or mode}")
-    emit(event, fresh, memory(agent_id))
+    ride = ""
     if mode == "turn":
         try:  # a queued [Message] line nothing waits for any more is taken back before it is pasted
             if coord_deliver.withdraw_stale(agent_id):
                 _trace(agent_id, "tether-withdrawn", [])
         except Exception:  # noqa: BLE001 - best effort; a stale line only costs one look at an empty inbox
             pass
+        if takes_ride(provider, event):
+            ride = take_ride()
+    emit(event, fresh, memory(agent_id), ride)
     return 0
 
 
-def emit(event: str, fresh: list[Item], note: coord_memory.Notice | None) -> None:
-    """Print coordination items and a memory notice as one additionalContext; the notice counts once printed."""
-    text = "\n\n".join(t for t in (render(fresh) if fresh else "", note.text if note else "") if t)
+def takes_ride(provider: str, event: str) -> bool:
+    """The turns that carry Tether's ride-along lines: a new prompt (Claude Code, Codex), Pi's next tool result."""
+    return event == "UserPromptSubmit" or (provider == "pi" and event == "PostToolUse")
+
+
+def take_ride() -> str:
+    """The ride-along lines Tether holds for this window (a lane's repeated went-idle line, ...), taken now; '' if none."""
+    try:
+        return coord_deliver.take_ride(os.environ.get("AICO_WIDGET_ID", "")) or ""
+    except Exception:  # noqa: BLE001 - best effort; they join the next wake
+        return ""
+
+
+def emit(event: str, fresh: list[Item], note: coord_memory.Notice | None, ride: str = "") -> None:
+    """Print coordination items, Tether's ride-along lines and a memory notice as one additionalContext; the notice counts once printed."""
+    text = "\n\n".join(t for t in (render(fresh) if fresh else "", ride, note.text if note else "") if t)
     if text:
         print(json.dumps({"hookSpecificOutput": {"hookEventName": event or "PostToolUse", "additionalContext": text}}),
               flush=True)

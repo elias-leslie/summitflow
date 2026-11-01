@@ -23,6 +23,14 @@ every function here answers None and the caller carries on as before.
 An ack the recipient armed a reply wait for (``st aico wait reply REQ``) is left out of
 the line: Tether's ``[Ready] request ... answered`` line for that wait is its one wake.
 
+Two delivery classes (Tether API 24, "Deliveries"). A line that names a request, an ack with a note or an
+eta, or a memory notice is a wake, as before. A line that names only ride-along items (an FYI note from
+``st sessions send --fyi``, a bare ``ack yes`` that closed the request for its sender: coord.close_bare_ack) is
+queued with ``ride: true``: Tether never pastes it or wakes a puller for it, and it joins the next wake or the
+window's next turn. A wake line also carries ``from`` (the Aico windows of the agents it names), so a lane that
+told its launcher in a turn sends no went-idle line for it. Against a Tether older than 24 the line is posted
+plain, as before.
+
 A line that goes stale before it is pasted (the request was answered, the ack
 shown by the turn hook) is taken back: the turn hook calls ``withdraw_stale``
 once the recipient's inbox has nothing waiting (Tether API 18).
@@ -44,6 +52,7 @@ from . import coord, coord_lineage, coord_wake, coordinators, leases
 DELIVERY_API = 16  # POST /v1/sessions/:id/deliveries, GET /v1/deliveries/:id
 NUDGE_API = 17  # POST /v1/waits/check
 WITHDRAW_API = 18  # DELETE /v1/sessions/:id/deliveries?source=
+RIDE_API = 24  # `ride` and `from` on a delivery; GET /v1/sessions/:id/due?ride=1
 SOURCE_PREFIX = "coord:"
 _TIMEOUT = 2.0
 _NUDGE_TIMEOUT = 0.5
@@ -243,20 +252,52 @@ def waiting(who: Target) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
     return requests, acks
 
 
-def summary(who: Target, *, memory: bool = False) -> str | None:
+def rides(who: Target) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
+    """(FYI notes to the recipient, bare acks that closed its requests) it has not been shown: ride-along only."""
+    seen = coord_wake.load_seen(who.agent_id)
+
+    def addressed(row_to: str) -> bool:
+        return row_to in who.family or (len(row_to) >= 13 and any(s.startswith(row_to) for s in who.sessions))
+
+    with leases._lock("_coord"):
+        rows = coord._load_ledger()
+    fyis = [r for r in rows if r["state"] == "fyi" and addressed(str(r["to"])) and r["from"] not in who.family
+            and f"{r['id']}:fyi" not in seen]
+    closed = [r for r in rows if r["state"] == "closed" and r.get("auto_closed") and r["from"] in who.family
+              and f"{r['id']}:ack:{r.get('acked_at')}" not in seen]
+    return fyis, closed
+
+
+class Line(NamedTuple):
+    """A recipient's line: its text, whether it is ride-along only, and the agents a wake line names."""
+
+    text: str
+    ride: bool
+    senders: tuple[str, ...] = ()
+
+
+def _plural(count: int, one: str, many: str) -> str:
+    return one if count == 1 else f"{count} {many}"
+
+
+def compose(who: Target, *, memory: bool = False, ride_items: bool = True) -> Line | None:
     """``[Message] Request from "Neri P2a acceptance" (codex:619a52) · Ack from cc:65b53f · st sessions inbox``.
 
     Each sender is named by its Aico window title when it has one. Fewer names, then no titles, when
-    the line would pass Tether's line limit.
+    the line would pass Tether's line limit. ``ride_items`` false leaves FYI notes and closed acks out
+    (a line for a window on another host: coord_remote).
     """
     requests, acks = waiting(who)
-    if not (requests or acks or memory):
+    fyis, closed = rides(who) if ride_items else ([], [])
+    if not (requests or acks or memory or fyis or closed):
         return None
     senders = [str(r["from"]) for r in requests]
     ackers = [str(r.get("acked_by") or "") for r in acks]
-    if requests or acks:
+    notes = [str(r["from"]) for r in fyis]
+    closers = [str(r.get("acked_by") or "") for r in closed]
+    if requests or acks or fyis or closed:
         coordinators.sessions.cache_clear()  # long-lived callers (a 6 h watcher) see renamed windows
-    titles = {i: t for i in dict.fromkeys(senders[:_NAMED] + ackers[:_NAMED])
+    titles = {i: t for i in dict.fromkeys(senders[:_NAMED] + ackers[:_NAMED] + notes[:_NAMED] + closers[:_NAMED])
               if _ID.fullmatch(i) and (t := window_title(i))}
     line = ""
     for named, shown in ((_NAMED, titles), (1, titles), (_NAMED, {}), (1, {}), (0, {})):
@@ -267,10 +308,73 @@ def summary(who: Target, *, memory: bool = False) -> str | None:
             parts.append(f"{_counted(len(acks), 'ack')} from {_names(ackers, named, shown)}")
         if memory:
             parts.append("a memory notice for this pane")
+        if fyis:
+            parts.append(f"{_plural(len(fyis), 'FYI', 'FYIs')} from {_names(notes, named, shown)}")
+        if closed:
+            parts.append(f"{_counted(len(closed), 'ack')} from {_names(closers, named, shown)} (closed)")
         line = "[Message] " + " · ".join(parts) + f" · {LOOK}"
         if len(line) <= LINE_MAX:
-            return line
-    return line
+            break
+    wake_class = bool(requests or acks or memory)
+    return Line(line, not wake_class, tuple(dict.fromkeys([*senders, *ackers])) if wake_class else ())
+
+
+def summary(who: Target, *, memory: bool = False, ride_items: bool = True) -> str | None:
+    """The text of ``compose``, or None when nothing is waiting."""
+    line = compose(who, memory=memory, ride_items=ride_items)
+    return line.text if line else None
+
+
+def window_of(agent_id: str) -> str | None:
+    """The Aico window an agent of this computer runs in (its newest anchor's), or None; ``@host`` ids have none here."""
+    if not agent_id or "@" in agent_id:
+        return None
+    found = _identity(agent_id)
+    anchor = found[1].get("anchor") if found else None
+    if not isinstance(anchor, str):
+        return None
+    try:
+        widget = coordinators.widget_for_anchor(anchor)
+    except Exception:  # best effort: no window, no "told" record
+        return None
+    return widget if widget and _WIDGET.fullmatch(widget) else None
+
+
+def settle_bare_ack(row: dict[str, Any]) -> dict[str, Any]:
+    """Close an acked request for its sender when the ack is a bare ``yes`` it waits on nothing for.
+
+    A ``yes`` with no note, a sender on this computer, and no ``st aico wait reply`` armed (or fired) for
+    the request: the ack is ride-along and needs no confirm. Notes, ``no``, eta acks, a request that came from
+    an agent host, and a sender whose reply wait covers it are left exactly as they were. The row returned is
+    the ledger's, closed or not.
+    """
+    if row.get("intent") != "yes" or row.get("note") or row.get("host") or row.get("state") != "acked":
+        return row
+    if enabled() and (widget := window_of(str(row["from"]))) and any(
+            str(row["id"]).startswith(ref) for ref in reply_waited(widget)):
+        return row
+    try:
+        return coord.close_bare_ack(str(row["id"]))
+    except ValueError:
+        return row
+
+
+def take_ride(widget: str) -> str | None:
+    """The ride-along lines Tether queued for this window, taken now (``GET .../due?ride=1``, API 24), or None."""
+    from app.services import tether
+
+    if not _WIDGET.fullmatch(widget or ""):
+        return None
+    version = api_version()
+    if version is None or version < RIDE_API:
+        return None
+    try:
+        status, body = tether.request("GET", f"/v1/sessions/{quote(widget, safe='')}/due?ride=1",
+                                      timeout=_NUDGE_TIMEOUT)
+    except Exception:  # best effort: they join the next wake instead
+        return None
+    text = body.get("text") if status == 200 and isinstance(body, dict) else None
+    return text if isinstance(text, str) and text else None
 
 
 # ---------------------------------------------------------------- queueing
@@ -279,19 +383,31 @@ class Unsettled(Exception):
     """Tether did not answer, or failed: the line may or may not be queued, so nothing else may type it."""
 
 
-def post(widget: str, source: str, line: str, *, timeout: float = _TIMEOUT) -> dict[str, Any] | None:
+def post(widget: str, source: str, line: str, *, timeout: float = _TIMEOUT, ride: bool = False,
+         senders: tuple[str, ...] = ()) -> dict[str, Any] | None:
     """Queue ``line`` on ``widget``'s delivery queue: Tether's record, or None when it refused it.
 
     Refused means a definite answer (404 unknown session, or a hub peer
     predating deliveries; 409 delivery_unsupported for shells and agy; 400), so
     the caller keeps its own path. No answer or a server error raises
     Unsettled. The hub forwards a session on another host to that host's Tether.
+
+    ``ride`` queues a ride-along line and ``senders`` (Aico windows) record who told this window (both
+    API 24); a Tether that does not answer with that version gets a plain line.
     """
     from app.services import tether
 
+    body_in: dict[str, Any] = {"source": source, "line": line}
+    if ride or senders:
+        version = api_version()
+        if version is not None and version >= RIDE_API:
+            if ride:
+                body_in["ride"] = True
+            if senders:
+                body_in["from"] = list(senders[:8])
     try:
         status, body = tether.request("POST", f"/v1/sessions/{quote(widget, safe='')}/deliveries",
-                                      {"source": source, "line": line}, timeout=timeout)
+                                      body_in, timeout=timeout)
     except (OSError, ValueError, HTTPException) as exc:
         raise Unsettled(type(exc).__name__) from exc
     if status in (200, 201) and isinstance(body, dict) and body.get("id"):
@@ -332,7 +448,7 @@ def wake(to: str, keys: list[str] | tuple[str, ...] = (), *, memory: str | None 
     who = target(to)
     if who is None:
         return None
-    line = summary(who, memory=memory is not None)
+    line = compose(who, memory=memory is not None)
     if line is None:
         if keys:  # covered by the recipient's own reply wait (or gone): its watcher must not line it either
             coord_wake.mark_woke(who.agent_id, list(keys))
@@ -341,7 +457,8 @@ def wake(to: str, keys: list[str] | tuple[str, ...] = (), *, memory: str | None 
     # Recorded before the POST, so the recipient's own watcher does not queue a second line meanwhile.
     stamp = coord_wake.mark_woke(who.agent_id, woke) if woke else None
     try:
-        delivery = post(who.widget, SOURCE_PREFIX + who.agent_id, line)
+        delivery = post(who.widget, SOURCE_PREFIX + who.agent_id, line.text, ride=line.ride,
+                        senders=tuple(w for a in line.senders if (w := window_of(a)) and w != who.widget))
     except Unsettled:
         if stamp is not None:
             coord_wake.unmark_woke(who.agent_id, woke, stamp)
@@ -350,7 +467,8 @@ def wake(to: str, keys: list[str] | tuple[str, ...] = (), *, memory: str | None 
         if stamp is not None:
             coord_wake.unmark_woke(who.agent_id, woke, stamp)
         return None
-    return {"delivery": delivery, "widget": who.widget, "line": line, "agent_id": who.agent_id}
+    return {"delivery": delivery, "widget": who.widget, "line": line.text, "agent_id": who.agent_id,
+            "ride": line.ride}
 
 
 def safe_wake(to: str, keys: list[str] | tuple[str, ...] = ()) -> dict[str, Any] | None:
@@ -385,8 +503,11 @@ def withdraw_stale(agent_id: str) -> bool | None:
     # Taken before the inbox read: a line a sender queues meanwhile is newer and gets its own look.
     began = time.time()
     who = target(agent_id)
-    if who is None or summary(who) is not None:
+    if who is None:
         return None
+    left = compose(who)
+    if left is not None and not left.ride:
+        return None  # a request, an ack to answer or a memory notice still waits: the queued wake line stands
     version = api_version()
     if version is None or version < WITHDRAW_API:
         return None
@@ -403,7 +524,8 @@ def withdraw_stale(agent_id: str) -> bool | None:
     coord_wake.STATE.mkdir(parents=True, exist_ok=True)
     path.write_text(f"{began:.3f}")
     withdrawn = bool(body.get("withdrawn"))
-    # A sender's line merged into the queued one between the read and the DELETE went with it: queue it again.
+    # A sender's line merged into the queued one between the read and the DELETE went with it, and a ride-along
+    # item still unseen keeps its own line: queue it again.
     if withdrawn and summary(who) is not None:
         with contextlib.suppress(Unsettled):
             wake(agent_id)

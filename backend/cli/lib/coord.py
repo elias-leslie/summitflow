@@ -9,6 +9,10 @@ One identity (``leases.identify_agent``), one store (``~/.summitflow/leases``):
   (acceptance/deployment, fenced to the running process);
 - a handshake ledger: request -> ack (intent) -> confirm, with one-line notices; an
   eta ack whose minutes run out puts the request back to waiting on the recipient.
+  Two rows need no third step and never wake anyone alone (ride-along, see
+  coord_deliver): an FYI (``send(fyi=True)``, state ``fyi``, nothing to answer) and a bare
+  ``ack yes`` with no note while the sender waits on no reply (``close_bare_ack``: state
+  ``closed``, ``auto_closed``).
 
 Output is silent without overlap. Minimal disclosure: sensitive holders render
 as an opaque busy line; message text is short and neutral (long material goes in a brief file).
@@ -435,13 +439,14 @@ def live_agents() -> list[str]:
 
 def send(to: str, text: str, *, project: str | None = None, limit: int = MAX_TEXT,
          source_key: str | None = None, sender: str | None = None,
-         remote: dict[str, str] | None = None) -> dict[str, Any]:
+         remote: dict[str, str] | None = None, fyi: bool = False) -> dict[str, Any]:
     """Record a request; an identical open request, or any request with the same source key, returns the existing row.
 
     The source key is the sender's stable revision for one instruction: a retry
     or fallback with that key never records a second request, whatever its state.
     ``sender`` records a request from an agent on another machine, ``remote`` its
-    host and reply window (coord_remote).
+    host and reply window (coord_remote). ``fyi`` records a status note: state ``fyi``, nothing to
+    ack or confirm.
     """
     body = _clean_text(text, limit)
     agent_id, _, session_id, _ = (sender, "", "", "") if sender else leases.identify_agent()
@@ -451,11 +456,12 @@ def send(to: str, text: str, *, project: str | None = None, limit: int = MAX_TEX
         for row in rows:
             if row["from"] != agent_id or row["to"] != to:
                 continue
-            if (source_key and row.get("source_key") == source_key) or (row["text"] == body and row["state"] == "open"):
+            if (source_key and row.get("source_key") == source_key) or (row["text"] == body and row["state"] in ("open", "fyi")):
                 return {**row, "duplicate": True}
         row = {
             "id": uuid.uuid4().hex[:6], "from": agent_id, "from_session": session_id, "to": to,
-            "project": project, "source_key": source_key, "text": body, "created": now, "state": "open",
+            "project": project, "source_key": source_key, "text": body, "created": now,
+            "state": "fyi" if fyi else "open",
             "intent": None, "eta_min": None, "note": None, "acked_at": None,
             "closed_at": None, "surfaced_at": None, "ack_seen": False, **(remote or {}),
         }
@@ -491,11 +497,29 @@ def ack(message_id: str, intent: str, note: str | None = None, *,
             raise ValueError(f"request {message_id} is not addressed to {agent_id}")
         if row["state"] == "closed":
             raise ValueError(f"request {message_id} is already closed")
+        if row["state"] == "fyi":
+            raise ValueError(f"{message_id} is an FYI note: nothing to answer")
         row.update(
             state="acked", intent="eta" if eta else intent, eta_min=int(eta.group(1)) if eta else None,
             note=_clean_text(note, None) if note else None, acked_at=datetime.now(UTC).isoformat(),
             acked_by=agent_id, ack_seen=False,
         )
+        _save_ledger(rows)
+        return dict(row)
+
+
+def close_bare_ack(message_id: str) -> dict[str, Any]:
+    """Close an acked request for its sender with no third step: a bare ``yes`` (no note) it waits on nothing for.
+
+    The ack stays on the row (``acked_at``, ``acked_by``, ``intent``), so a ``--with-ack`` it authorizes and an
+    armed reply wait (which fires on acked or closed) behave as before. Anything else is left as it was.
+    """
+    with leases._lock("_coord"):
+        rows = _load_ledger()
+        row = _find(rows, message_id)
+        if row["state"] != "acked" or row.get("intent") != "yes" or row.get("note"):
+            return dict(row)
+        row.update(state="closed", auto_closed=True, closed_at=datetime.now(UTC).isoformat(), ack_seen=True)
         _save_ledger(rows)
         return dict(row)
 
@@ -511,6 +535,10 @@ def confirm(message_id: str, *, withdraw: bool = False, senders: set[str] | None
         row = _find(rows, message_id)
         if row["from"] not in (senders or leases.self_ids()):
             raise ValueError(f"request {message_id} was not sent by {agent_id}")
+        if row["state"] == "closed" and row.get("auto_closed") and not withdraw:
+            return dict(row)  # closed when the bare ack came in: nothing left to do
+        if row["state"] == "fyi":
+            raise ValueError(f"{message_id} is an FYI note: nothing to confirm")
         if withdraw:
             if row["state"] != "open":
                 raise ValueError(f"request {message_id} is {row['state']}; only an unacked request can be withdrawn")
@@ -554,6 +582,14 @@ def surfaced(row: dict[str, Any]) -> bool:
     return f"{row['id']}:req" in coord_wake.load_seen(str(row["to"]))
 
 
+def fyi_shown(row: dict[str, Any]) -> bool:
+    """True once the recipient's own hook has shown it this FYI note (content-free seen state)."""
+    from . import coord_wake
+
+    key = f"{row['id']}:fyi"
+    return any(key in coord_wake.load_seen(i) for i in {str(row["to"]), *leases.self_ids()})
+
+
 def delivery_status(message_id: str, *, to: str, project: str, source_key: str) -> dict[str, Any]:
     """Read one sender-owned inbox receipt without exposing message or reply text."""
     with leases._lock("_coord"):
@@ -570,7 +606,7 @@ def delivery_status(message_id: str, *, to: str, project: str, source_key: str) 
 
 
 def inbox() -> list[dict[str, Any]]:
-    """Requests awaiting my ack, and acks awaiting my confirm."""
+    """Requests awaiting my ack, acks awaiting my confirm, and FYI notes to me not yet shown."""
     agent_id, _, session_id, _ = leases.identify_agent()
     mine = leases.self_ids()
     with leases._lock("_coord"):
@@ -578,9 +614,18 @@ def inbox() -> list[dict[str, Any]]:
     return [
         row for row in rows
         if (row["state"] == "open" and _addresses(row["to"], agent_id, session_id))
+        or (row["state"] == "fyi" and _addresses(row["to"], agent_id, session_id) and not fyi_shown(row))
         or (row["state"] == "acked" and row["from"] in mine)
         or (row["state"] == "open" and row["from"] in mine)
     ]
+
+
+def closed_acks() -> list[dict[str, Any]]:
+    """My requests answered by a bare ``ack yes`` and closed with it (ride-along: shown once, nothing to do)."""
+    mine = leases.self_ids()
+    with leases._lock("_coord"):
+        rows = _load_ledger()
+    return [row for row in rows if row["state"] == "closed" and row.get("auto_closed") and row["from"] in mine]
 
 
 def notices() -> list[str]:

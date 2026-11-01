@@ -50,10 +50,10 @@ def _on_workstation(exc: ValueError) -> bool:
     return isinstance(exc, coord.UnknownRequest) and coord_remote.agent_host() is not None
 
 
-def send_request(to: str, text: str, source_key: str | None = None) -> None:
+def send_request(to: str, text: str, source_key: str | None = None, *, fyi: bool = False) -> None:
     cfg = get_config_optional()
     try:
-        row = coord.send(to, text, project=getattr(cfg, "project_id", None) or None, source_key=source_key)
+        row = coord.send(to, text, project=getattr(cfg, "project_id", None) or None, source_key=source_key, fyi=fyi)
     except ValueError as exc:
         _fail(exc)
         return
@@ -64,7 +64,11 @@ def send_request(to: str, text: str, source_key: str | None = None) -> None:
         return
     from ..lib import coord_deliver
 
-    if queued := coord_deliver.safe_wake(to, [f"{row['id']}:req"]):
+    if fyi:
+        coord_deliver.safe_wake(to, [f"{row['id']}:fyi"])
+        typer.echo(f"sent FYI {row['id']} -> {to}; it does not wake anyone: the recipient's hook shows it on its next "
+                   "turn (or with the next message that does wake it). No ack or confirm needed")
+    elif queued := coord_deliver.safe_wake(to, [f"{row['id']}:req"]):
         typer.echo(f"sent {row['id']} -> {to}; Tether delivers a [Message] line to its window {queued['widget']} "
                    f"when it is idle (delivery {queued['delivery']['id']}), and its hook shows the request. "
                    "Track seen/ack with st sessions inbox")
@@ -85,6 +89,8 @@ def ack(
     """Answer a request addressed to you; 'no' needs a reason, and yes authorizes the requester's --with-ack for 2h.
 
     An eta whose minutes run out puts the request back to waiting on you: answer yes, no or a new eta.
+    A bare yes (no note) to a sender not waiting on a reply closes the request for them at once: they are not
+    woken and have nothing to confirm. Add a note if it carries something they should act on.
     """
     from ..lib import coord_remote
 
@@ -114,6 +120,7 @@ def ack(
 
     typer.echo(f"acked {row['id']} {intent}")
     coord_deliver.nudge("reply", row["id"])
+    row = coord_deliver.settle_bare_ack(row)
     try:
         if window := coord_remote.post_ack(row):
             typer.echo(f"posted the ack into window {window['id']} on {window['host']}")
@@ -122,7 +129,11 @@ def ack(
         typer.echo(f"WARNING the sender's window did not get the ack: {exc}; it sees it in st sessions inbox",
                    err=True)
         return
-    if coord_deliver.safe_wake(str(row["from"]), [f"{row['id']}:ack:{row.get('acked_at')}"]):
+    queued = coord_deliver.safe_wake(str(row["from"]), [f"{row['id']}:ack:{row.get('acked_at')}"])
+    if row.get("auto_closed"):
+        typer.echo(f"closed {row['id']}: a bare yes needs no confirm"
+                   + (f"; {row['from']} gets it with its next message or turn, no wake" if queued else ""))
+    elif queued:
         typer.echo(f"Tether delivers a [Message] line about the ack to {row['from']}")
 
 

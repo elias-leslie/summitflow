@@ -88,7 +88,8 @@ def deliver(window: dict[str, Any], ids: set[str]) -> dict[str, Any] | None:
     if not coord_deliver.enabled():
         return None
     address = f"{window['id']}@{window['host']}"
-    line = coord_deliver.summary(coord_deliver.Target(str(window["id"]), address, frozenset(ids | {address})))
+    line = coord_deliver.summary(coord_deliver.Target(str(window["id"]), address, frozenset(ids | {address})),
+                                  ride_items=False)
     if line is None:
         return None
     try:
@@ -151,6 +152,11 @@ def to_host_window(target: str, text: str, *, project: str | None = None,
         coord.drop(row["id"])  # never delivered, so a retry (same text or source key) sends it again
         raise
     return window, row
+
+
+def names_host_window(target: str) -> bool:
+    """True when ``target`` names a window on an agent host (not an agent id)."""
+    return not coord_route.AGENT_ID.fullmatch(target) and any(isinstance(w.get("host"), str) for w in windows(target))
 
 
 def names_local_agent(target: str) -> bool:
@@ -225,6 +231,7 @@ def ack_from_host(message_id: str, intent: str, note: str | None, *, sender: str
     ids, address = _host_ids(host, [sender], window)
     row = coord.ack(message_id, intent, note, remote=(next(iter(ids)), str(address)))
     coord_deliver.nudge("reply", row["id"])
+    row = coord_deliver.settle_bare_ack(row)  # a bare yes closes for a sender that waits on nothing
     coord_deliver.safe_wake(str(row["from"]), [f"{row['id']}:ack:{row.get('acked_at')}"])
     return row
 

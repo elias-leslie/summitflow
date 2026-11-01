@@ -187,8 +187,9 @@ def start(
 
 @usage(
     surface="st.sessions.send",
-    cmd="st sessions send AGENT_OR_WINDOW 'question' | st sessions ack ID yes|no 'reason'|eta:MIN | st sessions confirm ID [--withdraw]",
-    when="ask another agent a question (<=500 chars; a brief file only for long material): it acks, you confirm",
+    cmd="st sessions send AGENT_OR_WINDOW 'question' [--fyi] | st sessions ack ID yes|no 'reason'|eta:MIN | st sessions confirm ID [--withdraw]",
+    when="ask another agent a question (<=500 chars; a brief file only for long material): it acks, you confirm; "
+         "--fyi for a status note nobody needs to answer",
     precautions=("address the coordinating parent; workers answer only their own requests; "
                  "don't-touch: st lease --hold; fleet roots/native threads: --help",),
     tier="reference",
@@ -199,6 +200,7 @@ def send(
     scope: Annotated[str, typer.Option(help="Must exactly match the root scope JSON")] = "{}",
     source_key: Annotated[str | None, typer.Option(help="Stable instruction revision key; reuse on retry")] = None,
     delivery: Annotated[Literal["fleet-stream", "native-thread", "handshake"] | None, typer.Option(help="Default: handshake for agent ids/labels, fleet-stream for root-*/UUIDs")] = None,
+    fyi: Annotated[bool, typer.Option("--fyi", help="Status note, handshake only: no ack or confirm, and it never wakes the recipient")] = False,
 ) -> None:
     """Send to another agent: agent ids/labels -> handshake; root-* handles and UUIDs -> fleet stream.
 
@@ -207,9 +209,15 @@ def send(
     (an Aico window gets a [Message] line via Tether).
     Labels (Aico widget/title/tmux, session name, short id) must match one live agent.
 
+    --fyi: a status note nobody needs to answer ("paused, nothing running"). Ride-along: it wakes no one,
+    appears at the recipient's next turn or with the next message that does wake it, and needs no ack or
+    confirm. Same-computer agents only. A done report, or anything you need an answer to, is a normal request.
+
     Native-thread: bound Codex UUID, stable --source-key, <=2000 bytes; woken if live, else queued.
     Retry with the same --source-key; st sessions verify UUID --source-key REV. No secrets.
     """
+    if fyi and delivery not in (None, "handshake"):
+        raise typer.BadParameter("--fyi is a handshake note; it cannot go to a fleet root or native thread")
     if delivery is None:
         # Coordination agent ids are never fleet roots; route them to the ledger.
         # Fleet handles and UUIDs keep the fleet stream; anything else is a label.
@@ -218,9 +226,15 @@ def send(
     if delivery == "handshake":
         from .sessions_handshake import send_request
 
-        if _send_across_machines(root, instruction, source_key):
+        if fyi:
+            from ..lib import coord_remote
+
+            if coord_remote.agent_host() or coord_remote.names_host_window(root):
+                raise typer.BadParameter("--fyi works between agents on this computer; for a window on another host "
+                                         "send a normal request")
+        elif _send_across_machines(root, instruction, source_key):
             return
-        send_request(_resolve_agent(root), instruction, source_key)
+        send_request(_resolve_agent(root), instruction, source_key, **({"fyi": True} if fyi else {}))
         return
     if delivery == "native-thread":
         from .sessions_native_delivery import send_native_instruction

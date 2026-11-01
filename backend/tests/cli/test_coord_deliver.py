@@ -65,6 +65,7 @@ class FakeTether:
         self.nested: set[str] = set()
         self.on_post: Any = None
         self.waits: dict[str, list[dict[str, Any]]] | None = {}  # widget -> GET /v1/sessions/:id/waits?recent=1 items
+        self.ride_text: dict[str, str] = {}  # widget -> the ride-along text GET /v1/sessions/:id/due?ride=1 takes
 
     def __call__(self, method: str, path: str, body: dict[str, Any] | None = None, **_: Any) -> tuple[int, Any]:
         self.calls.append((method, path, body))
@@ -85,6 +86,8 @@ class FakeTether:
             if self.waits is None:
                 raise ConnectionRefusedError
             return 200, {"items": self.waits.get(path.split("/")[3], [])}
+        if method == "GET" and path.endswith("/due?ride=1"):
+            return 200, {"text": self.ride_text.pop(path.split("/")[3], None)}
         if path == "/v1/waits/check":
             return 200, {"kind": body["kind"], "ref": body["ref"], "armed": 0}
         if method == "DELETE" and "/deliveries?source=" in path:
@@ -330,7 +333,7 @@ def test_send_and_ack_queue_lines_for_each_side_and_nudge_reply_waits(monkeypatc
     [row] = coord._load_ledger()
     assert f"Tether delivers a [Message] line to its window {WIDGET}" in sent.output
     _as(monkeypatch, "codex", "target-03")
-    acked = runner.invoke(app, ["sessions", "ack", row["id"], "yes"])
+    acked = runner.invoke(app, ["sessions", "ack", row["id"], "yes", "go ahead"])
     assert acked.exit_code == 0, acked.output
     assert "Tether delivers a [Message] line about the ack to cc:sender" in acked.output
     assert [(path.split("/")[3], body["source"]) for path, body in tether.posts()] == [
@@ -379,7 +382,8 @@ def test_a_line_merged_in_during_the_withdraw_is_queued_again(monkeypatch, tethe
     _identity("codex:target", "019a-target")
     coord_wake.mark_woke("codex:target", ["old:req"])
     answers = iter([None])  # nothing waiting at the read; a sender's request lands before the DELETE
-    monkeypatch.setattr(coord_deliver, "summary", lambda who, **k: next(answers, "REQUEST ef56 from cc:x: ok?"))
+    monkeypatch.setattr(coord_deliver, "compose", lambda who, **k: next(
+        answers, coord_deliver.Line("[Message] Request from cc:x · st sessions inbox", False)))
     posts = len(tether.posts())
     assert coord_deliver.withdraw_stale("codex:target") is True
     assert len(tether.withdrawals()) == 1
@@ -519,7 +523,7 @@ def test_an_ack_wakes_its_sender_once(monkeypatch, inbox, tether):
     _identity("codex:target", "target-14")
     row = _send_as_cli(monkeypatch, "codex:target", "may I rebuild?", "sender-14")
     _as(monkeypatch, "codex", "target-14")
-    acked = runner.invoke(app, ["sessions", "ack", row["id"], "yes"])
+    acked = runner.invoke(app, ["sessions", "ack", row["id"], "yes", "go ahead"])
     assert acked.exit_code == 0, acked.output
     assert [body["source"] for _, body in tether.posts()] == ["coord:codex:target", "coord:cc:sender"]
     _age(row["id"], 60, "acked_at")  # the key carries acked_at: shift the woke record with it
@@ -536,9 +540,9 @@ def _reply_wait(ref: str, state: str = "armed", until: str = "acked", outcome: s
             "until": until, "state": state, "outcome": outcome}
 
 
-def _ack_as_cli(monkeypatch, row: dict[str, Any], sid: str) -> None:
+def _ack_as_cli(monkeypatch, row: dict[str, Any], sid: str, *note: str) -> None:
     _as(monkeypatch, "codex", sid)
-    acked = runner.invoke(app, ["sessions", "ack", row["id"], "yes"])
+    acked = runner.invoke(app, ["sessions", "ack", row["id"], "yes", *note])
     assert acked.exit_code == 0, acked.output
 
 
@@ -579,7 +583,7 @@ def test_an_ack_no_reply_wait_reports_still_gets_its_line(monkeypatch, inbox, te
         tether.waits = None  # GET waits fails: today's line
     elif tether.waits is not None:
         tether.waits[ANCHORS[SENDER_ANCHOR]] = [_reply_wait(row["id"], **wait)]
-    _ack_as_cli(monkeypatch, row, "target-18")
+    _ack_as_cli(monkeypatch, row, "target-18", "go ahead")
     assert [body["source"] for _, body in tether.posts()] == ["coord:codex:target", "coord:cc:sender"]
     assert tether.posts()[1][1]["line"] == "[Message] Ack from codex:target · st sessions inbox"
 
@@ -710,6 +714,243 @@ def test_pi_idle_check_skips_items_a_tether_line_wakes_it_for(monkeypatch, inbox
     assert inbox.main() == 0 and "REQUEST aa11" in capsys.readouterr().out  # its turn hook still shows it
 
 
+# ---------------------------------------------------------------- delivery classes (Tether API 24)
+
+
+def _pair(monkeypatch, tether, sid: str = "sender-30", version: int = 24) -> None:
+    tether.version = version
+    _identity("cc:sender", sid, anchor=SENDER_ANCHOR)
+    _identity("codex:target", "target-30")
+
+
+def _fyi_as_cli(monkeypatch, to: str, text: str, sid: str) -> dict[str, Any]:
+    _as(monkeypatch, "claude", sid)
+    result = runner.invoke(app, ["sessions", "send", to, text, "--fyi"])
+    assert result.exit_code == 0, result.output
+    return next(r for r in reversed(coord._load_ledger()) if r["text"] == text)
+
+
+def test_a_request_is_a_wake_and_names_the_windows_that_sent_it(monkeypatch, tether):
+    # Owner example: a lane told to pause answers "paused, nothing running"; that message is the wake and
+    # Tether learns from it that the lane told its launcher, so the went-idle line is dropped.
+    _pair(monkeypatch, tether)
+    _send_as_cli(monkeypatch, "codex:target", "paused, nothing running", "sender-30")
+    [(path, body)] = tether.posts()
+    assert path == f"/v1/sessions/{WIDGET}/deliveries"
+    assert "ride" not in body and body["from"] == [OTHER]
+    assert body["line"] == "[Message] Request from cc:sender · st sessions inbox"
+
+
+def test_an_older_tether_gets_a_plain_line(monkeypatch, tether):
+    _pair(monkeypatch, tether, version=23)
+    _send_as_cli(monkeypatch, "codex:target", "paused, nothing running", "sender-30")
+    _fyi_as_cli(monkeypatch, "codex:target", "also fine", "sender-30")
+    assert all(set(body) == {"source", "line"} for _, body in tether.posts())
+
+
+def test_a_bare_yes_closes_for_its_sender_and_rides_along(monkeypatch, tether):
+    # Owner example: "Woken by an Aico notice and nothing to do" was a bare ack woken as a full turn.
+    _pair(monkeypatch, tether)
+    row = _send_as_cli(monkeypatch, "codex:target", "pause please", "sender-30")
+    _ack_as_cli(monkeypatch, row, "target-30")
+    [ledger] = [r for r in coord._load_ledger() if r["id"] == row["id"]]
+    assert ledger["state"] == "closed" and ledger["auto_closed"] and ledger["intent"] == "yes"
+    assert ledger["acked_by"] == "codex:target" and ledger["acked_at"]
+    second = tether.posts()[1][1]
+    assert second["source"] == "coord:cc:sender" and second["ride"] is True and "from" not in second
+    assert second["line"] == "[Message] Ack from codex:target (closed) · st sessions inbox"
+    # No third step: the sender's confirm is a quiet no-op, and its inbox has nothing to answer.
+    _as(monkeypatch, "claude", "sender-30")
+    done = runner.invoke(app, ["sessions", "confirm", row["id"]])
+    assert done.exit_code == 0 and coord._load_ledger()[0]["state"] == "closed"
+
+
+@pytest.mark.parametrize("answer", [("yes", "go ahead"), ("no", "busy"), ("eta:5", None)],
+                         ids=["note", "no", "eta"])
+def test_acks_with_a_note_a_no_or_an_eta_stay_wakes(monkeypatch, tether, answer):
+    _pair(monkeypatch, tether)
+    row = _send_as_cli(monkeypatch, "codex:target", "pause please", "sender-30")
+    _as(monkeypatch, "codex", "target-30")
+    args = ["sessions", "ack", row["id"], answer[0], *([answer[1]] if answer[1] else [])]
+    assert runner.invoke(app, args).exit_code == 0
+    [ledger] = [r for r in coord._load_ledger() if r["id"] == row["id"]]
+    assert ledger["state"] == "acked"
+    second = tether.posts()[1][1]
+    assert "ride" not in second and second["from"] == [WIDGET]
+    assert second["line"] == "[Message] Ack from codex:target · st sessions inbox"
+
+
+@pytest.mark.parametrize("wait", [{}, {"state": "fired", "outcome": "until"}], ids=["armed", "fired"])
+def test_a_bare_yes_its_sender_waits_on_stays_open_for_the_wait(monkeypatch, tether, wait):
+    _pair(monkeypatch, tether)
+    row = _send_as_cli(monkeypatch, "codex:target", "pause please", "sender-30")
+    assert tether.waits is not None
+    tether.waits[ANCHORS[SENDER_ANCHOR]] = [_reply_wait(row["id"], **wait)]
+    _ack_as_cli(monkeypatch, row, "target-30")
+    [ledger] = [r for r in coord._load_ledger() if r["id"] == row["id"]]
+    assert ledger["state"] == "acked" and not ledger.get("auto_closed")
+    assert [body["source"] for _, body in tether.posts()] == ["coord:codex:target"]  # the wait is the one wake
+
+
+def test_a_bare_yes_from_a_host_window_keeps_its_ack_path(monkeypatch, tether):
+    row = coord.send("cc:4a9a07", "can I deploy?", sender="cc:hostagent@agent-work",
+                     remote={"host": "agent-work", "reply_window": "a810c7e0"})
+    acked = coord.ack(row["id"], "yes", remote=("cc:4a9a07", "cc:4a9a07"))
+    assert coord_deliver.settle_bare_ack(acked)["state"] == "acked"
+
+
+def test_a_closed_ack_is_shown_once_and_never_wakes_an_idle_agent(monkeypatch, inbox, tether, capsys):
+    _pair(monkeypatch, tether)
+    row = _send_as_cli(monkeypatch, "codex:target", "pause please", "sender-30")
+    _ack_as_cli(monkeypatch, row, "target-30")
+    posts = len(tether.posts())
+    _as(monkeypatch, "claude", "sender-30")
+    _, items = inbox.pending()
+    [item] = items
+    assert item.ride and item.key.startswith(f"{row['id']}:ack:") and "closed; nothing to do" in item.line
+    assert inbox.wakeable("cc:sender", items, now=time.time() + 60) == []
+    monkeypatch.setattr(inbox, "GRACE", 0.0)
+    assert inbox.watch("claude_code") == 0 and len(tether.posts()) == posts  # the watcher leaves it
+    assert inbox.due("cc:sender", items) == items
+    inbox.mark("cc:sender", items)
+    assert inbox.due("cc:sender", items) == []
+    assert "FYI" in inbox.render(items) or "nothing to answer" in inbox.render(items)
+
+
+def test_an_fyi_is_ride_along_and_needs_no_ack_or_confirm(monkeypatch, tether):
+    _pair(monkeypatch, tether)
+    row = _fyi_as_cli(monkeypatch, "codex:target", "paused, nothing running", "sender-30")
+    assert row["state"] == "fyi"
+    [(_, body)] = tether.posts()
+    assert body["ride"] is True and "from" not in body
+    assert body["line"] == "[Message] FYI from cc:sender · st sessions inbox"
+    assert "paused" not in body["line"]
+    _as(monkeypatch, "codex", "target-30")
+    acked = runner.invoke(app, ["sessions", "ack", row["id"], "yes"])
+    assert acked.exit_code == 2 and "FYI note" in acked.output
+    _as(monkeypatch, "claude", "sender-30")
+    confirmed = runner.invoke(app, ["sessions", "confirm", row["id"]])
+    assert confirmed.exit_code == 2 and "FYI note" in confirmed.output
+
+
+def test_an_fyi_alongside_a_request_joins_its_wake_line(monkeypatch, tether):
+    _pair(monkeypatch, tether)
+    _fyi_as_cli(monkeypatch, "codex:target", "status note", "sender-30")
+    _send_as_cli(monkeypatch, "codex:target", "please look", "sender-30")
+    first, second = (body for _, body in tether.posts())
+    assert first["ride"] is True
+    assert "ride" not in second and second["from"] == [OTHER]
+    assert second["line"] == "[Message] Request from cc:sender · FYI from cc:sender · st sessions inbox"
+
+
+def test_an_fyi_is_not_for_fleet_roots_or_agent_hosts(monkeypatch, tether):
+    _pair(monkeypatch, tether)
+    for extra in (["--delivery", "native-thread"], ["--delivery", "fleet-stream"]):
+        result = runner.invoke(app, ["sessions", "send", "codex:target", "x", "--fyi", *extra])
+        assert result.exit_code == 2 and "handshake note" in result.output
+    monkeypatch.setenv("ST_AGENT_HOST", "agent-work")
+    result = runner.invoke(app, ["sessions", "send", "codex:target", "x", "--fyi"])
+    assert result.exit_code == 2 and "this computer" in result.output
+    assert coord._load_ledger() == []
+
+
+def test_a_repeated_fyi_is_not_recorded_twice(monkeypatch, tether):
+    _pair(monkeypatch, tether)
+    first = _fyi_as_cli(monkeypatch, "codex:target", "status note", "sender-30")
+    again = _fyi_as_cli(monkeypatch, "codex:target", "status note", "sender-30")
+    assert again["id"] == first["id"] and len(coord._load_ledger()) == 1
+
+
+def _hook(inbox, monkeypatch, capsys, provider: str, event: str) -> str:
+    monkeypatch.setattr(inbox.coord, "adopt_hook_identity", lambda payload: None)
+    monkeypatch.setattr(inbox.coord_lineage, "observe", lambda **_: [])
+    monkeypatch.setattr("sys.argv", [str(COORD_INBOX), "backend", "turn", provider])
+    monkeypatch.setattr("sys.stdin", __import__("io").StringIO(json.dumps({"hook_event_name": event})))
+    assert inbox.main() == 0
+    return capsys.readouterr().out
+
+
+def test_the_turn_hook_shows_an_fyi_once_and_the_watcher_never_wakes_for_it(monkeypatch, inbox, tether, capsys):
+    _pair(monkeypatch, tether)
+    row = _fyi_as_cli(monkeypatch, "codex:target", "paused, nothing running", "sender-30")
+    posts = len(tether.posts())
+    _as(monkeypatch, "codex", "target-30")
+    monkeypatch.setattr(inbox, "GRACE", 0.0)
+    _, items = inbox.pending()
+    [item] = items
+    assert item.ride and item.key == f"{row['id']}:fyi" and "paused, nothing running" in item.line
+    assert inbox.watch("claude_code") == 0 and len(tether.posts()) == posts
+    assert inbox.wakeable("codex:target", items, now=time.time() + 60) == []
+    assert "FYI" in inbox.render(items).splitlines()[0]
+    # The turn hook shows it, once; Stop does not block on it.
+    out = _hook(inbox, monkeypatch, capsys, "codex", "UserPromptSubmit")
+    assert "paused, nothing running" in json.loads(out)["hookSpecificOutput"]["additionalContext"]
+    assert _hook(inbox, monkeypatch, capsys, "codex", "UserPromptSubmit") == ""
+    assert coord.inbox() == []  # shown: it leaves the inbox
+    monkeypatch.setattr("sys.argv", [str(COORD_INBOX), "backend", "stop", "claude_code"])
+    monkeypatch.setattr("sys.stdin", __import__("io").StringIO(json.dumps({"hook_event_name": "Stop"})))
+    assert inbox.main() == 0 and capsys.readouterr().out == ""
+
+
+@pytest.mark.parametrize("provider", ["claude_code", "codex"])
+def test_ride_along_lines_join_the_next_prompt_not_every_tool_result(monkeypatch, inbox, tether, capsys, provider):
+    monkeypatch.setenv("AICO_WIDGET_ID", WIDGET)
+    tether.version = 24
+    _identity("codex:target", "target-31")
+    tether.ride_text[WIDGET] = '[Ready] lane "Store lane" went idle again after 2m'
+    assert _hook(inbox, monkeypatch, capsys, provider, "PostToolUse") == ""
+    assert tether.ride_text  # a tool result never takes them
+    out = _hook(inbox, monkeypatch, capsys, provider, "UserPromptSubmit")
+    assert "went idle again" in json.loads(out)["hookSpecificOutput"]["additionalContext"]
+    assert not tether.ride_text
+
+
+def test_pi_takes_ride_along_lines_at_its_next_tool_result_and_its_idle_check_does_not(monkeypatch, inbox, tether, capsys):
+    monkeypatch.setenv("AICO_WIDGET_ID", WIDGET)
+    tether.version = 24
+    _identity("pi:target", "pi-target-1")
+    tether.ride_text[WIDGET] = "[Ready] lane X went idle again"
+    assert _hook(inbox, monkeypatch, capsys, "pi", "PiIdle") == ""
+    assert tether.ride_text
+    out = _hook(inbox, monkeypatch, capsys, "pi", "PostToolUse")
+    assert "went idle again" in json.loads(out)["hookSpecificOutput"]["additionalContext"]
+
+
+def test_no_ride_flush_before_tether_api_24_or_without_a_window(monkeypatch, inbox, tether, capsys):
+    tether.version = 23
+    monkeypatch.setenv("AICO_WIDGET_ID", WIDGET)
+    tether.ride_text[WIDGET] = "x"
+    assert _hook(inbox, monkeypatch, capsys, "claude_code", "UserPromptSubmit") == ""
+    tether.version = 24
+    monkeypatch.delenv("AICO_WIDGET_ID")
+    assert _hook(inbox, monkeypatch, capsys, "claude_code", "UserPromptSubmit") == ""
+    assert not [c for c in tether.calls if c[1].endswith("due?ride=1")]
+
+
+def test_a_ride_line_left_after_the_wake_went_stale_is_queued_again_as_ride(monkeypatch, tether):
+    # A queued request line whose request was answered: gone, but the unseen FYI keeps a line of its own.
+    _pair(monkeypatch, tether, version=24)
+    req = _send_as_cli(monkeypatch, "codex:target", "please look", "sender-30")
+    _fyi_as_cli(monkeypatch, "codex:target", "status note", "sender-30")
+    _as(monkeypatch, "codex", "target-30")
+    assert runner.invoke(app, ["sessions", "ack", req["id"], "no", "later"]).exit_code == 0
+    _age(req["id"], 1)
+    coord_wake.mark_woke("codex:target", [f"{req['id']}:req"])
+    posts = len(tether.posts())
+    assert coord_deliver.withdraw_stale("codex:target") is True
+    assert len(tether.withdrawals()) == 1
+    reposted = tether.posts()[posts][1]
+    assert reposted["ride"] is True and reposted["line"] == "[Message] FYI from cc:sender · st sessions inbox"
+
+
+def test_a_wake_class_item_still_standing_keeps_its_queued_line(monkeypatch, tether):
+    _pair(monkeypatch, tether, version=24)
+    _send_as_cli(monkeypatch, "codex:target", "please look", "sender-30")
+    _fyi_as_cli(monkeypatch, "codex:target", "status note", "sender-30")
+    coord_wake.mark_woke("codex:target", ["x:req"])
+    assert coord_deliver.withdraw_stale("codex:target") is None and not tether.withdrawals()
+
+
 # ---------------------------------------------------------------- across machines
 
 
@@ -788,7 +1029,7 @@ def test_a_host_agents_request_and_ack_wake_the_workstation_agent(monkeypatch, h
     assert f"{row['id']}:req" in coord_wake.load_woke("cc:4a9a07")
     # And the other way: the workstation agent asked, the host agent acks.
     asked = coord.send("a810c7e0@agent-work", "check please", sender="cc:4a9a07")
-    coord_remote.ack_from_host(asked["id"], "yes", None, sender="cc:hostagent", host="agent-work", window="a810c7e0")
+    coord_remote.ack_from_host(asked["id"], "yes", "ok", sender="cc:hostagent", host="agent-work", window="a810c7e0")
     assert hub.posts()[-1][1] == {"source": "coord:cc:4a9a07", "line": (
         "[Message] Request from cc:hostagent@agent-work · Ack from cc:hostagent@agent-work · st sessions inbox")}
     assert hub.nudges() == [{"kind": "reply", "ref": asked["id"]}]

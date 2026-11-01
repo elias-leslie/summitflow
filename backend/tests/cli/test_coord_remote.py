@@ -256,7 +256,7 @@ def test_on_an_agent_host_its_own_requests_keep_its_ledger(on_host):
     with pytest.MonkeyPatch.context() as mp:
         mp.setattr(coord.leases, "identify_agent", lambda **_: ("cc:111111", "", "", ""))
         mp.setattr(coord.leases, "self_ids", lambda: {"cc:111111"})
-        assert runner.invoke(app, ["sessions", "ack", row["id"], "yes"]).exit_code == 0
+        assert runner.invoke(app, ["sessions", "ack", row["id"], "yes", "ok"]).exit_code == 0
     assert coord._load_ledger()[0]["state"] == "acked" and on_host == []
 
 
