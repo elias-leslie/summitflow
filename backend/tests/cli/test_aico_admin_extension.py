@@ -43,7 +43,9 @@ def test_aico_create_manifest_exposes_exact_resume_without_fleet_retention():
     # Claude Code takes the same per-launch override, so a test lane can run on a small model.
     assert "Claude Code launches accept --model MODEL" in text and "claude-haiku-5-5" in text
     assert "--reasoning-effort low|medium|high|xhigh|max" in text
-    assert "Without --model, each tool runs the model in its own config" in text
+    # Without --model the work role's row in Agent Hub's launch table applies; explicit flags win.
+    assert "launch table (st models route --role ROLE --tool TOOL" in text and "Explicit flags win" in text
+    assert "a work role Agent Hub knows" in text and "refuses a typo" in text
     assert all(options[name] == 1 for name in ("--resume-session", "--project", "--project-root"))
     assert "--surface" not in options and "--root-url" not in options
     assert "A-Term" not in text and "--surface" not in text
