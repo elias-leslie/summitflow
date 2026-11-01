@@ -205,16 +205,12 @@ def send(
     """Send to another agent: agent ids/labels -> handshake; root-* handles and UUIDs -> fleet stream.
 
     Handshake (<=500 chars, else a brief file): recipient acks yes, no 'reason' or eta:MIN; then
-    st sessions confirm (--withdraw if unacked). Only channel; never type it in the window
-    (an Aico window gets a [Message] line via Tether).
-    Labels (Aico widget/title/tmux, session name, short id) must match one live agent.
-
-    --fyi: a status note nobody needs to answer ("paused, nothing running"). Ride-along: it wakes no one,
-    appears at the recipient's next turn or with the next message that does wake it, and needs no ack or
-    confirm. Same-computer agents only. A done report, or anything you need an answer to, is a normal request.
+    st sessions confirm (--withdraw if unacked). Never type it in the window
+    (Tether delivers a line). Labels (widget, title, tmux, short id) must match one live agent.
+    --fyi: a note nobody answers; wakes no one, no ack or confirm.
 
     Native-thread: bound Codex UUID, stable --source-key, <=2000 bytes; woken if live, else queued.
-    Retry with the same --source-key; st sessions verify UUID --source-key REV. No secrets.
+    Retry with the same --source-key; verify: st sessions verify UUID --source-key REV.
     """
     if fyi and delivery not in (None, "handshake"):
         raise typer.BadParameter("--fyi is a handshake note; it cannot go to a fleet root or native thread")
