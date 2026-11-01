@@ -3,8 +3,9 @@
 When the agent runs in an Aico window and Tether has deliveries (API 16), the
 wake is a content-free ``[Message]`` line on Tether's gated queue
 (cli.lib.coord_deliver): senders queue it when they record a request or ack,
-and the agent's own watcher queues reminders and memory notices. Nothing here
-types then; ``woke`` records which items a line was queued for.
+and the agent's own watcher queues memory notices, a lapsed eta and an item no
+sender line covered (once per item). Nothing here types then; ``woke`` records
+which items a line was queued for.
 
 Otherwise Claude Code wakes through its own asyncRewake hook. Codex has no
 rewake hook, so its Stop hook arms one detached idle watcher

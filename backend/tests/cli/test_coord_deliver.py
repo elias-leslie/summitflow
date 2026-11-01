@@ -362,7 +362,7 @@ def inbox(monkeypatch, tether):
 @pytest.mark.parametrize("provider", ["claude_code", "codex"])
 def test_watcher_queues_through_tether_and_keeps_watching(monkeypatch, inbox, tether, capsys, provider):
     _identity("codex:target", "target-05")
-    req = ("cd34:req", "REQUEST cd34 from cc:x: may I rebuild?", False)
+    req = inbox.Item("cd34:req", "REQUEST cd34 from cc:x: may I rebuild?", False)
     coord.send("codex:target", "may I rebuild?", sender="cc:x")
     monkeypatch.setattr(inbox, "pending", lambda: ("codex:target", [req]))
     assert inbox.watch(provider) == 0  # no asyncRewake exit, no typing: it ran to its deadline
@@ -372,20 +372,124 @@ def test_watcher_queues_through_tether_and_keeps_watching(monkeypatch, inbox, te
     assert "cd34:req" not in coord_wake.load_seen("codex:target")  # the turn hook still shows it
 
 
-def test_watcher_skips_an_item_the_sender_woke_and_reminds_after_remind(monkeypatch, inbox, tether, capsys):
+def _send_as_cli(monkeypatch, to: str, text: str, sid: str) -> dict[str, Any]:
+    """``st sessions send`` from another agent: the ledger row plus the sender's own [Message] line."""
+    _as(monkeypatch, "claude", sid)
+    monkeypatch.setattr("cli.commands.sessions_fleet._send_across_machines", lambda *a, **k: False)
+    result = runner.invoke(app, ["sessions", "send", to, text])
+    assert result.exit_code == 0, result.output
+    return next(r for r in reversed(coord._load_ledger()) if r["text"] == text)
+
+
+def _age(message_id: str, seconds: float, field: str = "created") -> None:
+    from datetime import UTC, datetime, timedelta
+
+    with leases._lock("_coord"):
+        rows = coord._load_ledger()
+        for row in rows:
+            if row["id"] == message_id:
+                row[field] = (datetime.now(UTC) - timedelta(seconds=seconds)).isoformat()
+        coord._save_ledger(rows)
+
+
+def test_an_open_request_the_sender_woke_for_never_queues_a_second_line(monkeypatch, inbox, tether):
+    # 2026-11-01: an idle wake reminded every REMIND s for a request still open; each was a full turn.
     _identity("codex:target", "target-06")
-    coord.send("codex:target", "may I rebuild?", sender="cc:x")
-    req = ("ef56:req", "REQUEST ef56 from cc:x", False)
-    monkeypatch.setattr(inbox, "pending", lambda: ("codex:target", [req]))
-    coord_wake.mark_woke("codex:target", ["ef56:req"])
-    assert inbox.watch("claude_code") == 0 and tether.posts() == []
-    coord_wake.mark_woke("codex:target", ["ef56:req"], now=time.time() - inbox.REMIND - 1)
+    row = _send_as_cli(monkeypatch, "codex:target", "may I rebuild?", "sender-06")
+    assert len(tether.posts()) == 1  # the sender's line: the one wake
+    _age(row["id"], inbox.REMIND + 60)
+    with coord_wake._woke_lock("codex:target"):  # the line went out long ago
+        coord_wake._save_woke("codex:target", {f"{row['id']}:req": time.time() - inbox.REMIND - 30})
+    _as(monkeypatch, "codex", "target-06")
+    for provider in ("claude_code", "codex"):
+        assert inbox.watch(provider) == 0
+    assert len(tether.posts()) == 1
+
+
+def test_a_request_shown_in_a_turn_never_wakes_the_agent_again(monkeypatch, inbox, tether, capsys):
+    tether.version = 15  # no Tether line: the watcher's own wake is the only one
+    row = coord.send("cc:receiver", "may I rebuild?", sender="cc:x")
+    _age(row["id"], 60)
+    monkeypatch.setattr(inbox.leases, "identify_agent", lambda **_: ("cc:receiver", "", "receiver-1", "claude_code"))
+    monkeypatch.setattr(inbox.leases, "self_ids", lambda: {"cc:receiver"})
+    monkeypatch.setattr(inbox.coord.leases, "identify_agent", inbox.leases.identify_agent)
+    _, items = inbox.pending()
+    inbox.mark("cc:receiver", items, "claude_code-PostToolUse")  # its turn hook showed it
+    future = time.time() + inbox.REMIND + 1
+    assert inbox.wakeable("cc:receiver", items, now=future) == []
+    assert inbox.due("cc:receiver", items) == []  # and turns remind only after REMIND
+    assert inbox.watch("claude_code") == 0 and capsys.readouterr().err == ""
+
+
+def test_a_new_request_still_wakes_once(monkeypatch, inbox, tether):
+    _identity("codex:target", "target-11")
+    first = _send_as_cli(monkeypatch, "codex:target", "may I rebuild?", "sender-11")
+    second = _send_as_cli(monkeypatch, "codex:target", "may I deploy?", "abcdef-11")
+    assert [body["line"] for _, body in tether.posts()] == [
+        "[Message] 1 request from cc:sender · st sessions inbox",
+        "[Message] 2 requests from cc:sender, cc:abcdef · st sessions inbox"]
+    _as(monkeypatch, "codex", "target-11")
+    monkeypatch.setattr(inbox, "GRACE", 0.0)
+    assert inbox.watch("claude_code") == 0 and len(tether.posts()) == 2  # both lines were the senders'
+    woke = coord_wake.load_woke("codex:target")
+    assert {f"{first['id']}:req", f"{second['id']}:req"} <= set(woke)
+
+
+def test_the_watcher_wakes_once_when_the_senders_line_did_not_go(monkeypatch, inbox, tether):
+    _identity("codex:target", "target-12")
+    row = coord.send("codex:target", "may I rebuild?", sender="cc:x")  # recorded, no sender line
+    _age(row["id"], 30)
+    _as(monkeypatch, "codex", "target-12")
     assert inbox.watch("claude_code") == 0 and len(tether.posts()) == 1
+    assert inbox.watch("claude_code") == 0 and len(tether.posts()) == 1  # a later watcher: still one
+
+
+def test_the_watcher_leaves_a_fresh_item_to_its_senders_line(monkeypatch, inbox, tether):
+    # 2026-10-31: a watcher read the ledger row before the sender recorded its line and woke the agent itself.
+    _identity("codex:target", "target-13")
+    row = coord.send("codex:target", "may I rebuild?", sender="cc:x")
+    _as(monkeypatch, "codex", "target-13")
+    _, items = inbox.pending()
+    now = time.time()
+    assert inbox.wakeable("codex:target", items, now=now) == []
+    assert inbox.settling(items, now=now) == pytest.approx(items[0].at + inbox.GRACE)
+    assert inbox.watch("claude_code") == 0 and tether.posts() == []  # inside GRACE the whole run
+    coord_wake.mark_woke("codex:target", [f"{row['id']}:req"])  # the sender's line, a moment late
+    assert inbox.wakeable("codex:target", items, now=now + inbox.GRACE + 1) == []
+
+
+def test_an_ack_wakes_its_sender_once(monkeypatch, inbox, tether):
+    _identity("cc:sender", "sender-14", anchor=SENDER_ANCHOR)
+    _identity("codex:target", "target-14")
+    row = _send_as_cli(monkeypatch, "codex:target", "may I rebuild?", "sender-14")
+    _as(monkeypatch, "codex", "target-14")
+    acked = runner.invoke(app, ["sessions", "ack", row["id"], "yes"])
+    assert acked.exit_code == 0, acked.output
+    assert [body["source"] for _, body in tether.posts()] == ["coord:codex:target", "coord:cc:sender"]
+    _age(row["id"], 60, "acked_at")  # the key carries acked_at: shift the woke record with it
+    [ack] = [r for r in coord._load_ledger() if r["id"] == row["id"]]
+    with coord_wake._woke_lock("cc:sender"):
+        coord_wake._save_woke("cc:sender", {f"{row['id']}:ack:{ack['acked_at']}": time.time() - 30})
+    _as(monkeypatch, "claude", "sender-14")
+    assert inbox.watch("claude_code") == 0 and len(tether.posts()) == 2
+
+
+def test_an_eta_that_ran_out_wakes_once_more(monkeypatch, inbox, tether):
+    _identity("codex:target", "target-15")
+    row = _send_as_cli(monkeypatch, "codex:target", "may I rebuild?", "sender-15")
+    _as(monkeypatch, "codex", "target-15")
+    coord.ack(row["id"], "eta:3")
+    _age(row["id"], 4 * 60, "acked_at")
+    _age(row["id"], 5 * 60)
+    with coord_wake._woke_lock("codex:target"):
+        coord_wake._save_woke("codex:target", {f"{row['id']}:req": time.time() - 5 * 60 + 1})
+    assert inbox.watch("claude_code") == 0 and len(tether.posts()) == 2  # the lapse is news
+    assert inbox.watch("claude_code") == 0 and len(tether.posts()) == 2  # once
 
 
 def test_watcher_falls_back_to_the_asyncrewake_wake_without_tether(monkeypatch, inbox, tether, capsys):
     tether.version = 15
-    req = ("cd34:req", "REQUEST cd34 from cc:x: may I rebuild?", False)
+    req = inbox.Item("cd34:req", "REQUEST cd34 from cc:x: may I rebuild?", False)
     monkeypatch.setattr(inbox, "pending", lambda: ("cc:receiver", [req]))
     assert inbox.watch("claude_code") == 2
     assert "REQUEST cd34" in capsys.readouterr().err
@@ -415,7 +519,7 @@ def test_watcher_never_types_while_tether_does_not_answer_and_retries(monkeypatc
     coord.send("codex:target", "may I rebuild?", sender="cc:x")
     tether.answer = (500, {"error": "internal"})
     monkeypatch.setattr(inbox, "RETRY", 0.0)
-    monkeypatch.setattr(inbox, "pending", lambda: ("codex:target", [("ab01:req", "REQUEST ab01", False)]))
+    monkeypatch.setattr(inbox, "pending", lambda: ("codex:target", [inbox.Item("ab01:req", "REQUEST ab01", False)]))
     assert inbox.watch("codex") == 0 and capsys.readouterr().err == ""  # type_line would fail the test
     assert len(tether.posts()) > 1  # tried again
     assert coord_wake.load_woke("codex:target") == {}
@@ -426,12 +530,12 @@ def test_a_watcher_left_from_before_a_context_reset_exits(monkeypatch, inbox, te
     _identity("cc:after", "after-clear", last="2026-10-31T11", main=True)
     coord.send("cc:before", "hi", sender="cc:x")
     monkeypatch.setattr(inbox, "WATCH_SECONDS", 30)
-    monkeypatch.setattr(inbox, "pending", lambda: ("cc:before", [("ab02:req", "REQUEST ab02", False)]))
+    monkeypatch.setattr(inbox, "pending", lambda: ("cc:before", [inbox.Item("ab02:req", "REQUEST ab02", False)]))
     assert inbox.watch("claude_code") == 0 and tether.posts() == []  # cc:after's own watcher wakes it
 
 
 def test_pi_idle_check_skips_items_a_tether_line_wakes_it_for(monkeypatch, inbox, tether, capsys):
-    req = ("aa11:req", "REQUEST aa11 from cc:x: hi", False)
+    req = inbox.Item("aa11:req", "REQUEST aa11 from cc:x: hi", False)
     monkeypatch.setattr(inbox, "pending", lambda: ("pi:target", [req]))
     monkeypatch.setattr(inbox.coord, "adopt_hook_identity", lambda payload: None)
     monkeypatch.setattr(inbox.coord_lineage, "observe", lambda **_: [])

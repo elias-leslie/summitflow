@@ -6,6 +6,7 @@ import json
 import os
 import shutil
 import subprocess
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 import pytest
@@ -95,6 +96,9 @@ def test_pi_checks_inbox_when_the_run_has_settled(monkeypatch, tmp_path):
     monkeypatch.setenv("CLAUDE_CODE_SESSION_ID", "fixture-sender")
     row = coord.send("pi:560933", "Read the settled fixture brief", source_key="fixture:settled")
     monkeypatch.delenv("CLAUDE_CODE_SESSION_ID")
+    rows = coord._load_ledger()  # past the sender's settle window (coord_inbox GRACE): the idle check's to wake for
+    rows[0]["created"] = (datetime.now(UTC) - timedelta(seconds=60)).isoformat()
+    coord._save_ledger(rows)
     hooks = tmp_path / ".claude" / "hooks"
     hooks.mkdir(parents=True)
     (hooks / "coord-inbox.sh").symlink_to(ROOT / "scripts/lib/coord-inbox")

@@ -23,10 +23,13 @@ Senders queue the same line when they record a request or ack; the woke state
 (cli.lib.coord_wake) keeps the watcher and Pi's idle check from waking the
 agent again for an item a line was queued for.
 
-Requests surface once per agent, then again every REMIND seconds while still
-unanswered (an eta ack whose minutes ran out counts as unanswered again); an
-ack surfaces once. Text starting with URGENT/CONFLICT is flagged as such. The same
-surfaces carry memory notices (cli.lib.coord_memory): a process in this pane
+An idle wake (the watcher, Pi's idle check) comes once per item: a request or
+ack the agent was woken for or shown in a turn never wakes it again; an eta ack
+whose minutes ran out wakes it once more. An item younger than GRACE seconds is
+left to its sender, who queues the line right after writing the ledger row, so
+the watcher never races it into a second wake. Turn hooks and Stop still show
+an unanswered request again every REMIND seconds. Text starting with
+URGENT/CONFLICT is flagged as such. The same surfaces carry memory notices (cli.lib.coord_memory): a process in this pane
 killed for memory, a stopped pane, a memory warning. Each shows once per agent
 and per subagent, needs no answer and never blocks Stop; SessionStart,
 SubagentStart and subagent tool hooks carry only these. Fails open
@@ -46,11 +49,14 @@ import signal
 import subprocess
 import sys
 import time
+from datetime import datetime
+from typing import NamedTuple
 
 sys.path.insert(0, sys.argv[1])
 from cli.lib import coord, coord_deliver, coord_lineage, coord_memory, coord_wake, leases  # type: ignore[import-not-found]  # noqa: E402  # SummitFlow backend on sys.path
 
 REMIND = 300
+GRACE = 5.0  # a ledger item this young is its sender's to wake for (coord_deliver.wake right after the write)
 POLL = 2.0
 WATCH_SECONDS = int(os.environ.get("ST_COORD_WATCH_SECONDS") or 6 * 3600 - 120)
 RETRY = 10.0  # re-check a busy pane this soon instead of waiting for the next ledger change
@@ -82,45 +88,84 @@ def _urgent(text: str) -> bool:
     return text.lstrip("[!( ").upper().startswith(("URGENT", "CONFLICT", "CRITICAL"))
 
 
-def pending() -> tuple[str, list[tuple[str, str, bool]]]:
-    """(agent_id, [(key, line, urgent)]) for requests to me and acks of my requests."""
+class Item(NamedTuple):
+    """One inbox item: its state key, the line shown, URGENT, and when it happened (epoch seconds; 0 unknown).
+
+    ``at`` is the request's creation, the time an eta ack's minutes ran out, or the ack's time.
+    """
+
+    key: str
+    line: str
+    urgent: bool
+    at: float = 0.0
+
+
+def _epoch(stamp: object) -> float:
+    try:
+        return datetime.fromisoformat(str(stamp)).timestamp()
+    except ValueError:
+        return 0.0
+
+
+def pending() -> tuple[str, list[Item]]:
+    """(agent_id, items) for requests to me and acks of my requests."""
     agent_id = leases.identify_agent()[0]
     mine = leases.self_ids()
-    items: list[tuple[str, str, bool]] = []
+    items: list[Item] = []
     for row in coord.inbox():
         if row["state"] == "open" and row["from"] not in mine:
             urgent = _urgent(row["text"])
             flag = "URGENT " if urgent else ""
-            lapsed = f" (your eta:{row['eta_min']} ran out)" if row.get("intent") == "eta" else ""
-            items.append((f"{row['id']}:req", (
+            eta = row.get("intent") == "eta"
+            lapsed = f" (your eta:{row['eta_min']} ran out)" if eta else ""
+            at = _epoch(row.get("created"))
+            if eta and row.get("acked_at") and row.get("eta_min") is not None:
+                at = _epoch(row["acked_at"]) + 60 * int(row["eta_min"])
+            items.append(Item(f"{row['id']}:req", (
                 f"{flag}REQUEST {row['id']} from {row['from']}{lapsed}: {row['text']} | answer now with "
-                f"`st sessions ack {row['id']} yes|no 'reason'|eta:MIN`"), urgent))
+                f"`st sessions ack {row['id']} yes|no 'reason'|eta:MIN`"), urgent, at))
         elif row["state"] == "acked" and row["from"] in mine:
             intent = (row.get("intent") or "?") + (f" {row['eta_min']}m" if row.get("eta_min") else "")
             note = f" ({row['note']})" if row.get("note") else ""
-            items.append((f"{row['id']}:ack:{row.get('acked_at')}", (
+            items.append(Item(f"{row['id']}:ack:{row.get('acked_at')}", (
                 f"ACK {row['id']} {intent}{note} from {row.get('acked_by')} | close with "
-                f"`st sessions confirm {row['id']}`"), False))
+                f"`st sessions confirm {row['id']}`"), False, _epoch(row.get("acked_at"))))
     return agent_id, items
 
 
-def due(agent_id: str, items: list[tuple[str, str, bool]]) -> list[tuple[str, str, bool]]:
+def due(agent_id: str, items: list[Item]) -> list[Item]:
+    """What a turn hook or Stop shows: a request again every REMIND seconds until answered, an ack once."""
     seen = _load_seen(agent_id)
     now = time.time()
-    # Requests re-surface every REMIND seconds until answered; an ack surfaces once.
     return [item for item in items
-            if (item[0] not in seen if ":ack:" in item[0] else now - seen.get(item[0], 0) >= REMIND)]
+            if (item.key not in seen if ":ack:" in item.key else now - seen.get(item.key, 0) >= REMIND)]
 
 
-def wakeable(agent_id: str, items: list[tuple[str, str, bool]]) -> list[tuple[str, str, bool]]:
-    """Due items no Tether line was queued for lately: a request again after REMIND, an ack once."""
-    woke = coord_wake.load_woke(agent_id)
-    now = time.time()
-    return [item for item in items
-            if (item[0] not in woke if ":ack:" in item[0] else now - woke.get(item[0], 0) >= REMIND)]
+def wakeable(agent_id: str, items: list[Item], now: float | None = None) -> list[Item]:
+    """What an idle wake is for: items the agent was neither woken for nor shown since they happened.
+
+    Once per item: a request or ack whose key a Tether line was queued for (woke) or a hook showed
+    (seen) at or after its time never wakes the agent again; an eta that ran out since does, once.
+    Items younger than GRACE are left to the sender's own line (see ``settling``).
+    """
+    seen, woke = _load_seen(agent_id), coord_wake.load_woke(agent_id)
+    now = time.time() if now is None else now
+
+    def new(item: Item) -> bool:
+        stamp = max(seen.get(item.key, 0.0), woke.get(item.key, 0.0))
+        return stamp < item.at if item.at else not stamp  # no known time: only if never woken or shown
+
+    return [item for item in items if item.at <= now - GRACE and new(item)]
 
 
-def tether_wake(agent_id: str, items: list[tuple[str, str, bool]],
+def settling(items: list[Item], now: float | None = None) -> float | None:
+    """When the youngest item still inside GRACE leaves it (look again then), or None."""
+    now = time.time() if now is None else now
+    ends = [item.at + GRACE for item in items if item.at > now - GRACE]
+    return min(ends) if ends else None
+
+
+def tether_wake(agent_id: str, items: list[Item],
                 note: coord_memory.Notice | None) -> str:
     """Queue this agent's [Message] line on its Aico window through Tether (coord_deliver).
 
@@ -134,7 +179,7 @@ def tether_wake(agent_id: str, items: list[tuple[str, str, bool]],
         text = note.text if note else None
         if note:
             note.done(delivered=False)  # the turn hook shows it in full
-        queued = coord_deliver.wake(agent_id, [key for key, _, _ in items], memory=text)
+        queued = coord_deliver.wake(agent_id, [item.key for item in items], memory=text)
     except coord_deliver.Unsettled:
         return "retry"
     except Exception:  # noqa: BLE001 - fail open to the direct wake
@@ -142,7 +187,7 @@ def tether_wake(agent_id: str, items: list[tuple[str, str, bool]],
     if queued is None:
         return "direct"
     _trace(agent_id, f"tether-queued:{queued['delivery'].get('id')}",
-           [key for key, _, _ in items] + ([coord_deliver.memory_key(text)] if text else []))
+           [item.key for item in items] + ([coord_deliver.memory_key(text)] if text else []))
     return "queued"
 
 
@@ -163,19 +208,19 @@ def _trace(agent_id: str, how: str, keys: list[str]) -> None:
         log.write(f"{stamp} {agent_id} {how} {','.join(keys)}\n")
 
 
-def mark(agent_id: str, items: list[tuple[str, str, bool]], how: str = "") -> None:
+def mark(agent_id: str, items: list[Item], how: str = "") -> None:
     seen = _load_seen(agent_id)
     now = time.time()
-    seen.update({key: now for key, _, _ in items})
+    seen.update({item.key: now for item in items})
     _save_seen(agent_id, seen)
-    _trace(agent_id, how, [k for k, _, _ in items])
+    _trace(agent_id, how, [item.key for item in items])
 
 
-def render(items: list[tuple[str, str, bool]]) -> str:
-    waiting = any(":req" in key for key, _, _ in items)
+def render(items: list[Item]) -> str:
+    waiting = any(":req" in item.key for item in items)
     head = ("st coordination (another agent is waiting on you; reply before continuing):" if waiting
             else "st coordination (update on a request you sent):")
-    return "\n".join([head, *(line for _, line, _ in sorted(items, key=lambda i: not i[2]))])
+    return "\n".join([head, *(item.line for item in sorted(items, key=lambda i: not i.urgent))])
 
 
 def disarm_codex(agent_id: str) -> None:
@@ -218,7 +263,7 @@ def watch(provider: str) -> int:
         return 0  # one watcher per agent
     deadline = time.time() + WATCH_SECONDS
     last_mtime = -1.0
-    last_check = 0.0
+    recheck = 0.0  # read the ledger again by then even when it did not change
     mem_retry = 0.0
     while time.time() < deadline:
         if anchor and not coord_lineage.anchor_alive(anchor):
@@ -228,26 +273,28 @@ def watch(provider: str) -> int:
         except OSError:
             mtime = 0.0
         now = time.time()
-        fresh: list[tuple[str, str, bool]] = []
-        if mtime != last_mtime or now - last_check >= 60:
-            last_mtime, last_check = mtime, now
+        fresh: list[Item] = []
+        if mtime != last_mtime or now >= recheck:
+            last_mtime, recheck = mtime, now + 60
             agent_id, items = pending()
-            fresh = due(agent_id, items)
+            fresh = wakeable(agent_id, items, now)
+            settled = settling(items, now)
+            if settled is not None:
+                recheck = min(recheck, settled)  # its sender's line has had GRACE to be queued by then
         if fresh and superseded(agent_id):
             return 0
         note = memory(agent_id) if now >= mem_retry else None
         if note and coord_deliver.memory_key(note.text) in coord_wake.load_woke(agent_id):
             note.done(delivered=False)  # a Tether line already says so; the turn hook shows it
             note, mem_retry = None, now + MEM_RECHECK
-        fresh = wakeable(agent_id, fresh)
         if fresh or note:
             how = tether_wake(agent_id, fresh, note)
             if how != "direct":
-                # Tether delivers when the agent is idle and nobody types; keep watching for reminders.
+                # Tether delivers when the agent is idle and nobody types; keep watching for new items.
                 if note:
                     mem_retry = now + (MEM_RECHECK if how == "queued" else RETRY)
                 if how == "retry":
-                    last_check = now - 60 + RETRY
+                    recheck = now + RETRY
                 time.sleep(POLL)
                 continue
             if note and note._lock.closed:
@@ -257,10 +304,10 @@ def watch(provider: str) -> int:
                 if note:
                     note.done(delivered=False)
                 sock = os.environ.get("TMUX", "").split(",")[0]
-                line = (coord_wake.pane_line(render(fresh), sum(":req" in key for key, _, _ in fresh)) if fresh
+                line = (coord_wake.pane_line(render(fresh), sum(":req" in item.key for item in fresh)) if fresh
                         else coord_memory.WAKE_LINE)
                 if not coord_wake.type_line(line, sock, os.environ.get("TMUX_PANE", "")):
-                    last_check = now - 60 + RETRY  # busy composer: leave it queued, look again soon
+                    recheck = now + RETRY  # busy composer: leave it queued, look again soon
                     mem_retry = now + RETRY
                     time.sleep(POLL)
                     continue
@@ -310,12 +357,10 @@ def main() -> int:
     agent_id, items = pending()
     if mode == "turn" and provider == "codex" and event == "UserPromptSubmit":
         disarm_codex(agent_id)
-    fresh = due(agent_id, items)
-    if provider == "pi" and event == "PiIdle":
-        # Pi's idle check is a wake of its own: skip what a Tether line already wakes it for.
-        fresh = wakeable(agent_id, fresh)
+    # Pi's idle check is a wake of its own: once per item, like the watcher (a Tether line may already wake it).
+    fresh = wakeable(agent_id, items) if provider == "pi" and event == "PiIdle" else due(agent_id, items)
     if mode == "stop":
-        if any(":req" in key for key, _, _ in fresh):  # only a waiting requester justifies continuing
+        if any(":req" in item.key for item in fresh):  # only a waiting requester justifies continuing
             mark(agent_id, fresh, f"{provider}-stop-block")
             print(json.dumps({"decision": "block", "reason": render(fresh)}))
         elif provider == "codex":
@@ -333,7 +378,7 @@ def main() -> int:
     return 0
 
 
-def emit(event: str, fresh: list[tuple[str, str, bool]], note: coord_memory.Notice | None) -> None:
+def emit(event: str, fresh: list[Item], note: coord_memory.Notice | None) -> None:
     """Print coordination items and a memory notice as one additionalContext; the notice counts once printed."""
     text = "\n\n".join(t for t in (render(fresh) if fresh else "", note.text if note else "") if t)
     if text:

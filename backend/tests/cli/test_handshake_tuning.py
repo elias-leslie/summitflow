@@ -101,13 +101,13 @@ def test_lapsed_eta_request_line_says_so(monkeypatch, inbox_module):
     coord.ack(sent["id"], "eta:3")
     _age_ack(sent["id"], 4)
     _agent, items = inbox_module.pending()
-    assert next(line for key, line, _ in items if key == f"{sent['id']}:req").startswith(
+    assert next(item.line for item in items if item.key == f"{sent['id']}:req").startswith(
         f"REQUEST {sent['id']} from cc:eta-se (your eta:3 ran out): may I commit")
 
 
 def test_claude_watcher_wakes_the_sender_for_an_ack_without_typing_into_its_pane(monkeypatch, capsys, inbox_module):
     # The wake stays asyncRewake (claude-config labels it a plain notice); agent text is never typed as a user prompt.
-    ack = ("ab12:ack:t1", "ACK ab12 yes from codex:abcdef | close with `st sessions confirm ab12`", False)
+    ack = inbox_module.Item("ab12:ack:t1", "ACK ab12 yes from codex:abcdef | close with `st sessions confirm ab12`", False)
     monkeypatch.setattr(inbox_module, "pending", lambda: ("cc:sender", [ack]))
     monkeypatch.setattr(coord_wake, "type_line", lambda *_a: pytest.fail("Claude acks never type into the pane"))
     assert inbox_module.watch("claude_code") == 2
@@ -128,7 +128,7 @@ def test_ack_reason_is_normalized_and_reaches_the_sender_wake(monkeypatch, inbox
 
 
 def test_claude_watcher_still_wakes_the_receiver_for_a_request(monkeypatch, capsys, inbox_module):
-    req = ("cd34:req", "REQUEST cd34 from cc:x: may I rebuild? | answer now with `st sessions ack cd34 ...`", False)
+    req = inbox_module.Item("cd34:req", "REQUEST cd34 from cc:x: may I rebuild? | answer now with `st sessions ack cd34 ...`", False)
     monkeypatch.setattr(inbox_module, "pending", lambda: ("cc:receiver", [req]))
     monkeypatch.setattr(coord_wake, "type_line", lambda *_a: pytest.fail("a request wakes via asyncRewake"))
     assert inbox_module.watch("claude_code") == 2
