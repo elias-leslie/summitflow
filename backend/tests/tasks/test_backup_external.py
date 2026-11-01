@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import os
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
@@ -110,8 +111,9 @@ def test_artifact_glob_uses_newest_non_empty_file(tmp_path: Path):
     assert none["last_status"] == "never"
 
 
-def test_external_sources_join_the_receipt_with_the_same_window(mocker):
+def test_external_sources_join_the_receipt_with_the_same_window(mocker, tmp_path: Path):
     now = datetime(2026, 10, 17, 12, tzinfo=UTC)
+    mocker.patch.object(backup_alerts, "SOURCES_RECEIPT", tmp_path / "sources.json")
     mocker.patch.object(backup_external, "list_external_sources", return_value=[
         {"id": "blackbox-archive", "name": "Blackbox", "owner_project": "blackbox", "kind": "systemd_unit",
          "target": "blackbox-archive.service", "frequency": "daily", "enabled": True},
@@ -128,3 +130,41 @@ def test_external_sources_join_the_receipt_with_the_same_window(mocker):
     assert out["blackbox-archive"]["ok"] and out["blackbox-archive"]["stale_after_hours"] == 48.0
     assert not out["pai"]["ok"] and out["pai"]["last_error"] == "no success within the freshness window"
     assert out["pai"]["external"] is True
+
+
+def test_unreadable_source_keeps_the_last_success_already_seen(mocker, tmp_path: Path):
+    """A stopped guest is not a missed backup: the last success stays until it really leaves the window."""
+    now = datetime(2026, 11, 1, 21, tzinfo=UTC)
+    receipt = tmp_path / "sources.json"
+    receipt.write_text(json.dumps({"sources": {
+        "pai": {"last_success_at": (now - timedelta(hours=11)).isoformat()},
+        "old": {"last_success_at": (now - timedelta(days=15)).isoformat()},
+    }}))
+    mocker.patch.object(backup_alerts, "SOURCES_RECEIPT", receipt)
+    mocker.patch.object(backup_external, "list_external_sources", return_value=[
+        {"id": source_id, "name": source_id, "owner_project": "portfolio-ai", "kind": "guest_unit",
+         "target": "portfolio-backup.service", "frequency": "weekly", "enabled": True}
+        for source_id in ("pai", "old", "new")
+    ])
+    mocker.patch.object(backup_external, "probe", lambda source: {
+        "last_success_at": None, "last_status": "unknown", "last_error": "davion-gem / VM 180 is stopped"})
+    out = backup_alerts.external_statuses(now)
+    assert out["pai"]["ok"] and out["pai"]["last_success_at"] == (now - timedelta(hours=11)).isoformat()
+    assert out["pai"]["last_error"] == "davion-gem / VM 180 is stopped"
+    assert not out["old"]["ok"] and out["old"]["last_success_at"] == (now - timedelta(days=15)).isoformat()
+    assert not out["new"]["ok"] and out["new"]["last_success_at"] is None
+    conditions = backup_alerts._external_conditions(out, now)
+    assert conditions["sources-stale"]["reason"] == "sources-stale:new,old"
+
+
+def test_a_failed_run_does_not_fall_back_to_an_older_success(mocker, tmp_path: Path):
+    now = datetime(2026, 11, 1, 21, tzinfo=UTC)
+    receipt = tmp_path / "sources.json"
+    receipt.write_text(json.dumps({"sources": {"pai": {"last_success_at": (now - timedelta(hours=11)).isoformat()}}}))
+    mocker.patch.object(backup_alerts, "SOURCES_RECEIPT", receipt)
+    mocker.patch.object(backup_external, "list_external_sources", return_value=[
+        {"id": "pai", "name": "pai", "owner_project": "portfolio-ai", "kind": "guest_unit",
+         "target": "portfolio-backup.service", "frequency": "weekly", "enabled": True}])
+    mocker.patch.object(backup_external, "probe", lambda source: {
+        "last_success_at": None, "last_status": "failed", "last_error": "last run ended exit-code (exit 1)"})
+    assert not backup_alerts.external_statuses(now)["pai"]["ok"]

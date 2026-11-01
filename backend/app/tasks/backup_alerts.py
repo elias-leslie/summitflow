@@ -44,8 +44,23 @@ def _parse(value: Any) -> datetime | None:
     return parsed if parsed.tzinfo else parsed.replace(tzinfo=UTC)
 
 
+def _previous_successes() -> dict[str, str]:
+    """Each source's last success from the last published receipt, so an unreadable probe keeps what was last seen."""
+    try:
+        sources = json.loads(SOURCES_RECEIPT.read_text()).get("sources") or {}
+    except (OSError, ValueError, AttributeError):
+        return {}
+    return {str(key): str(value["last_success_at"]) for key, value in sources.items()
+            if isinstance(value, dict) and value.get("last_success_at")}
+
+
 def external_statuses(now: datetime) -> dict[str, dict[str, Any]]:
-    """Backups other projects run (Blackbox archive pull, Portfolio-AI artifacts), with the same freshness window."""
+    """Backups other projects run (Blackbox archive pull, Portfolio-AI artifacts), with the same freshness window.
+
+    A probe that cannot read its source (``unknown``: a stopped guest, an unreachable host) keeps the last success
+    already seen, so the source turns overdue only when that success really leaves the window; the reason it is
+    unreadable stays in ``last_error``.
+    """
     from .backup_external import list_external_sources, probe
 
     out: dict[str, dict[str, Any]] = {}
@@ -54,6 +69,7 @@ def external_statuses(now: datetime) -> dict[str, dict[str, Any]]:
     except Exception:  # a missing table or database hiccup never breaks the alert pass
         logger.exception("external_backup_sources_unreadable")
         return out
+    previous = _previous_successes()
     for source in sources:
         if not source.get("enabled"):
             continue
@@ -61,6 +77,8 @@ def external_statuses(now: datetime) -> dict[str, dict[str, Any]]:
         window = _FREQUENCY_DELTAS.get(frequency, timedelta(days=1)) * SOURCE_STALE_FACTOR
         seen = probe(source)
         last_success = _parse(seen["last_success_at"])
+        if last_success is None and seen["last_status"] == "unknown":
+            last_success = _parse(previous.get(str(source["id"])))
         ok = bool(last_success and now - last_success <= window) or seen["last_status"] == "running"
         error = seen["last_error"] or (None if ok else "no success within the freshness window")
         out[str(source["id"])] = {"ok": ok, "frequency": frequency, "stale_after_hours": round(window.total_seconds() / 3600, 1),
