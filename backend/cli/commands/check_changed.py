@@ -8,7 +8,12 @@ import shlex
 import subprocess
 from pathlib import Path
 
-from .check_constants import _TOOL_CONFIG_PATHS, _TOOL_FILE_SUFFIXES
+from .check_constants import (
+    _DATA_FILE_SUFFIXES,
+    _SCAN_SKIP_DIRS,
+    _TOOL_CONFIG_PATHS,
+    _TOOL_FILE_SUFFIXES,
+)
 
 
 def _is_pytest_test_path(path: Path) -> bool:
@@ -73,7 +78,75 @@ def _pytest_test_files(root: Path) -> list[Path]:
     )
 
 
+def _changed_data_files(changed_files: list[str]) -> list[str]:
+    """Changed data files (json/toml/yaml) that are not a tool's own config."""
+    tool_configs = {name for names in _TOOL_CONFIG_PATHS.values() for name in names}
+    return [
+        rel_path
+        for rel_path in changed_files
+        if Path(rel_path).suffix in _DATA_FILE_SUFFIXES
+        and Path(rel_path).name not in tool_configs
+    ]
+
+
+def _names_file(tree: ast.AST, names: set[str]) -> set[str]:
+    """File names that appear in the tree as an exact string or a path tail."""
+    found: set[str] = set()
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Constant) and isinstance(node.value, str):
+            value = node.value
+            for name in names:
+                if value == name or value.endswith("/" + name):
+                    found.add(name)
+    return found
+
+
+def _data_file_referrers(root: Path, data_files: list[str]) -> dict[str, set[str]]:
+    """Map each data file to the project's Python files that name it exactly.
+
+    One walk of the project's Python files. A file matches only when a string
+    literal equals the file name or ends with "/<name>", so "hunts-policy.json"
+    never matches "policy.json".
+    """
+    names = {Path(rel_path).name for rel_path in data_files}
+    referrers: dict[str, set[str]] = {name: set() for name in names}
+    for dirpath, dirnames, filenames in os.walk(root):
+        dirnames[:] = [d for d in dirnames if d not in _SCAN_SKIP_DIRS]
+        for filename in filenames:
+            if not filename.endswith(".py"):
+                continue
+            path = Path(dirpath) / filename
+            try:
+                text = path.read_text(encoding="utf-8")
+            except (OSError, UnicodeError):
+                continue
+            present = {name for name in names if name in text}
+            if not present:
+                continue
+            try:
+                tree = ast.parse(text)
+            except (SyntaxError, ValueError):
+                continue
+            rel = path.relative_to(root).as_posix()
+            for name in _names_file(tree, present):
+                referrers[name].add(rel)
+    return referrers
+
+
+def _expand_data_files(root: Path, changed_files: list[str]) -> list[str]:
+    """Replace changed data files with the Python files that name them."""
+    data_files = _changed_data_files(changed_files)
+    if not data_files:
+        return changed_files
+    referrers = _data_file_referrers(root, data_files)
+    expanded = [rel_path for rel_path in changed_files if rel_path not in data_files]
+    for rel_path in data_files:
+        expanded.extend(sorted(referrers[Path(rel_path).name]))
+    return expanded
+
+
 def _focused_pytest_paths(root: Path, changed_files: list[str]) -> list[str] | None:
+    changed_files = _expand_data_files(root, changed_files)
     tests = _pytest_test_files(root)
     imports_by_test: dict[Path, tuple[set[str], set[tuple[str, str]]]] | None = None
     selected: set[Path] = set()
@@ -277,6 +350,15 @@ def _skip_reason(
     has_relevant = any(is_relevant(rel_path) for rel_path in changed_files)
     if name == "pytest" and deferred_full_pytest and not scoped_args:
         return "requires_full_acceptance:cross_cutting_config"
+    if name == "pytest" and scoped_args:
+        # Tests chosen from a changed data file's referrers still run.
+        return None
+    if name == "pytest" and not scoped_args and not has_relevant:
+        # A data file that no Python module or test names must not look like
+        # "nothing relevant changed": say which file could not be mapped.
+        data_files = _changed_data_files(changed_files)
+        if data_files:
+            return "data_file_unmapped:" + ",".join(sorted(data_files))
     if name == "pytest" and has_relevant and not scoped_args:
         return "no_deterministic_focused_tests;run_targeted_pytest_or_full_acceptance"
     if config.get("pass_path"):

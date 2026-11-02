@@ -59,6 +59,15 @@ _TOOL_CONFIG_PATHS: dict[str, set[str]] = {
     },
 }
 
+# Data files a Python module can load by name; a change to one counts as a
+# change to the modules that name it (see check_changed._data_file_referrers).
+_DATA_FILE_SUFFIXES = {".json", ".toml", ".yaml", ".yml"}
+# Directories never scanned for Python files that name a data file.
+_SCAN_SKIP_DIRS = {
+    ".git", ".venv", "venv", "node_modules", "__pycache__", "site-packages",
+    ".mypy_cache", ".ruff_cache", ".pytest_cache", "dist", "build",
+}
+
 _CODEQL_PAGE_SIZE = 100
 _FIX_ARGS: dict[str, list[str]] = {"ruff": ["--fix"], "biome": ["--write"]}
 

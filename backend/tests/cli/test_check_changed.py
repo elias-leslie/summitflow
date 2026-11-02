@@ -185,6 +185,78 @@ def test_docs_only_skip_unless_explicit_test_args() -> None:
     ) is None
 
 
+def _data_file_project(tmp_path: Path) -> None:
+    store = tmp_path / "backend/app/st_cli/store.py"
+    store.parent.mkdir(parents=True)
+    store.write_text('POLICY = Path(__file__).parent / "policy.json"\n')
+    (store.parent / "policy.json").write_text("{}")
+    other = tmp_path / "backend/app/st_cli/hunts.py"
+    other.write_text('HUNTS = "hunts-policy.json"\n')
+    tests = tmp_path / "backend/tests"
+    tests.mkdir(parents=True)
+    (tests / "test_store_load.py").write_text("from app.st_cli import store\n")
+    (tests / "test_hunts_load.py").write_text("from app.st_cli import hunts\n")
+    (tests / "test_policy_text.py").write_text('NAME = "st_cli/policy.json"\n')
+
+
+def test_data_file_change_selects_tests_of_modules_that_name_it(tmp_path: Path) -> None:
+    _data_file_project(tmp_path)
+    changed = ["backend/app/st_cli/policy.json"]
+    args = _changed_args(
+        "pytest", tmp_path, tmp_path / "backend", {"pass_path": False}, changed
+    )
+    assert args == ["tests/test_policy_text.py", "tests/test_store_load.py"]
+    assert _skip_reason(
+        "pytest", {"pass_path": False}, changed_only=True,
+        changed_files=changed, scoped_args=args,
+    ) is None
+
+
+def test_data_file_name_match_is_exact_not_substring(tmp_path: Path) -> None:
+    _data_file_project(tmp_path)
+    args = _changed_args(
+        "pytest", tmp_path, tmp_path / "backend", {"pass_path": False},
+        ["backend/app/st_cli/hunts-policy.json"],
+    )
+    assert args == ["tests/test_hunts_load.py"]
+    assert "tests/test_store_load.py" not in args
+
+
+def test_unmapped_data_file_is_named_in_the_skip_reason(tmp_path: Path) -> None:
+    _data_file_project(tmp_path)
+    changed = ["backend/app/st_cli/orphan.json"]
+    args = _changed_args(
+        "pytest", tmp_path, tmp_path / "backend", {"pass_path": False}, changed
+    )
+    assert args == []
+    assert _skip_reason(
+        "pytest", {"pass_path": False}, changed_only=True,
+        changed_files=changed, scoped_args=args,
+    ) == "data_file_unmapped:backend/app/st_cli/orphan.json"
+
+
+def test_data_file_naming_module_without_tests_is_unmapped(tmp_path: Path) -> None:
+    src = tmp_path / "backend/app/lonely.py"
+    src.parent.mkdir(parents=True)
+    src.write_text('P = "lonely.json"\n')
+    changed = ["backend/app/lonely.json"]
+    args = _changed_args(
+        "pytest", tmp_path, tmp_path / "backend", {"pass_path": False}, changed
+    )
+    assert args == []
+    assert _skip_reason(
+        "pytest", {"pass_path": False}, changed_only=True,
+        changed_files=changed, scoped_args=args,
+    ) == "data_file_unmapped:backend/app/lonely.json"
+
+
+def test_tool_config_json_is_not_a_data_file(tmp_path: Path) -> None:
+    assert _skip_reason(
+        "pytest", {"pass_path": False}, changed_only=True,
+        changed_files=["frontend/package.json"], scoped_args=[],
+    ) == "no_relevant_changed_paths"
+
+
 def _quick_vitest(tmp_path: Path, changed: list[str], mode: str = "--quick") -> tuple[str, list[list[str]]]:
     frontend = tmp_path / "frontend"
     (frontend / "src").mkdir(parents=True)
