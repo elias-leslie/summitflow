@@ -136,7 +136,16 @@ You asked whether a standard exists, so Aico isn't held together with per-tool h
 - **Not doing:** an ACP or SDK chat UI in Aico. Revisit only if you want a phone-first chat for headless sessions.
 - **Status:** starts after the delivery fix for all tools (running now) lands, since it touches the same code. Medium-large.
 
-### Debt guards in `st check` (Proposed 2026-11-02, from your Claude chat prompt)
+### Debt guards in `st check` (On hold 2026-11-02: wait for the consolidation)
+**Your call:** not yet. You may fold summitflow, agent-hub and nightshift into aico, after pruning them hard. Guards and baselines built for those three repos now would be thrown away.
+- **Plan:** when the pruning starts, run the dead-code and duplication tools once, as reports for finding what to cut (no gate).
+- **After the consolidation,** add only the two cheap, fast guards to the one repo: dead code, and new suppressions, skipped tests or removed asserts in a diff.
+- **Skipped as ceremony:** mutation testing, complexity and size ratchets, logging reviewer-finding outcomes, and the cleanup job.
+
+### Possible consolidation into aico (Owner idea 2026-11-02, not started)
+You're considering folding summitflow, agent-hub and nightshift into aico, with heavy pruning first. Nothing is being done on it yet. Keep it in mind when sizing work in those three repos: prefer cuts over new structure there. The per-tool adapter rework lives in aico/tether, so it holds either way.
+
+#### Original proposal (for reference)
 The idea: automated checks that stop agents adding tech debt, so the cleanup doesn't creep back.
 - **Already have:**
   - the quick check on every `st commit`, and the full and deep lanes
