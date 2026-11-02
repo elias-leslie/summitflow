@@ -264,7 +264,7 @@ def run_quick_native_stages(root: Path, changed_files: list[str] | None) -> int:
             details = write_check_details(root, stage["id"], output)
             failures += int(not ok)
             print(f"NATIVE:{'OK' if ok else 'FAIL'}:{stage['id']}|details:{display_path(root, details)}|"
-                  f"hint:{summary_hint(output) if output else outcome['state']}|execution_ms:{outcome.get('duration_ms', 0):.0f}")
+                  f"hint:{summary_hint(output) if output else '-' if ok else outcome['state']}|execution_ms:{outcome.get('duration_ms', 0):.0f}")
         return failures
     except NativeCheckError as exc:
         print(f"NATIVE:FAIL:config|hint:{exc}")
