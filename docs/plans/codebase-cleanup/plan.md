@@ -126,13 +126,15 @@ Proposed shape:
 - No CRDT library, no database replication, no Cloudflare storage. Expected size: a few hundred lines plus tests.
 - **Test:** split the hosts, edit the same list on both, then rejoin them. Both adds survive, the newer text wins with a saved revision, and deletes stay deleted. Live check: add an item from phone Aico with gem off, power gem on, and the item appears there.
 
-### Standard agent interface for Aico (Exploring, owner question 2026-11-02)
-You asked whether a standard exists, so Aico isn't held together with per-tool hooks.
-- **Today:** Tether runs each tool's real TUI in tmux. It reads busy or idle from each tool's own status files and hooks, and delivers by typing into the pane. Every tool needs its own glue (`tether/src/tools.ts`, SummitFlow `coord_inbox.py`, the Pi extension), and that's where the delivery bugs came from. Agent Hub already drives tools headless, through Claude `stream-json` and `codex app-server`, so the repo has two ways of talking to the same tools.
-- **The standard:** ACP (Agent Client Protocol, from Zed), JSON-RPC over stdio. Its agent list has about 40 agents: Gemini CLI natively, Claude through Zed's adapter on the Claude Agent SDK, Codex through an adapter, Pi through `pi-acp` on its RPC mode. I found nothing for Antigravity.
-- **T3 Code** uses each vendor's own programmatic interface instead (Codex app-server, the Claude Agent SDK) behind one adapter registry, and draws the chat itself.
-- **Trade-off:** with a protocol you get clean events (turn started or ended, tool calls, permission asks) and a real "queue this for the next turn". You lose the real TUI in the pane, so Aico would draw the conversation itself, which suits a phone better anyway.
-- **Proposed (waiting for your call):** a spike. Run one tool, Claude through ACP, as an Aico session type alongside the TUI sessions. Compare delivery, state, phone use and effort, then decide whether to move other tools over. Either way, put Tether's per-tool code behind one adapter contract with one test suite every tool must pass.
+### Standard agent interface for Aico (Decided 2026-11-02: one adapter per tool, keep the real TUIs)
+You asked whether a standard exists, so Aico isn't held together with per-tool hooks. You said yes to a Claude-over-ACP spike, then "figure out what's best". Reading T3 Code's source (pingdotgg/t3code @6f41364, scratch clone `/srv/scratch/t3code-ref/t3code`) answered the question without one.
+- **ACP and the vendor SDKs can't attach to a TUI you're looking at.** They launch the tool headless, and the app draws the chat itself. That's what T3 Code is.
+- **That costs a lot of code.** T3 Code's Claude adapter is 11.7k lines, Codex is 8k plus 60k of generated app-server protocol, and its ACP packages are about 38k.
+- **T3 Code doesn't use ACP for Claude or Codex either.** It uses the Claude Agent SDK and `codex app-server`. ACP is its route for tools without a native interface (Antigravity, Grok, Cursor and others), behind one `ProviderAdapter` contract (start, steer, interrupt, resume, events).
+- **Our mess is where the per-tool code lives.** Per-tool knowledge is spread over about 8 Tether files (`agent-state.ts` alone has 27 per-tool branches, plus `tools.ts`, `model-switch.ts`, `lifecycle/tui/context.ts`, `root-control.ts`, `continuity.ts`), SummitFlow `scripts/lib/coord_inbox.py` (547 lines) and `tether/integrations/pi/aico-due.ts`. Each tool's own extension points (Claude and Codex hooks, the Pi extension) are the supported way to work with a live TUI; they're just not organized.
+- **Decision:** keep the real TUIs, and borrow T3 Code's shape instead of its protocol. Each tool gets one adapter module under `tether/src/lifecycle/tui/` (the registry already exists), all implementing one contract: launch, busy or idle, deliver now, deliver at the next turn, install context and hooks, resume, model switch. One conformance suite runs every adapter through the same checks: unit tests, plus a short live smoke per tool. Adding a tool means one file plus passing the suite. Headless runs (Agent Hub) keep using `stream-json` and `codex app-server`.
+- **Not doing:** an ACP or SDK chat UI in Aico. Revisit only if you want a phone-first chat for headless sessions.
+- **Status:** starts after the delivery fix for all tools (running now) lands, since it touches the same code. Medium-large.
 
 ## Hosts: always-on (davion-gem) vs on-demand (davion-sidarli) (Exploring)
 Owner decisions (2026-11-02):
