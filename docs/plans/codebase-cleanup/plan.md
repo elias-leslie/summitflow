@@ -142,6 +142,18 @@ You asked whether a standard exists, so Aico isn't held together with per-tool h
 - **After the consolidation,** add only the two cheap, fast guards to the one repo: dead code, and new suppressions, skipped tests or removed asserts in a diff.
 - **Skipped as ceremony:** mutation testing, complexity and size ratchets, logging reviewer-finding outcomes, and the cleanup job.
 
+### After the current work: hard pruning, consolidation, and multi-host Aico (Owner 2026-11-02, queued)
+Once this plan is done, look into:
+1. **Pruning, then consolidation.** Hard-prune summitflow, agent-hub and nightshift, then fold them into aico. Use the one-off dead-code and duplication reports (see Debt guards).
+2. **Multi-host Aico.** Every machine with Aico installed adds availability, redundancy and load balancing for everything Aico does: tasks, agent work, notes, runtime, backup and dev management.
+   - **Starting point:** the two-front-door design, notes row sync, and Tether peers.
+   - **First sketch:** sort each capability into one of four kinds:
+     - **Stateless front doors:** any host serves them.
+     - **Replicated data:** notes-style row sync (per-row clock, newest wins, revisions kept), generalized for tasks and settings.
+     - **Single-owner work:** queues, schedules and agent runs. One host holds a lease and another takes over when that host goes silent. Placement goes by host capacity, as `st` admission already does locally.
+     - **Host-bound:** GPU, VMs, hunting. These run where the hardware is and show as unavailable elsewhere.
+   - No database replication or cluster software. Design this before the consolidation, so the merged code is built multi-host from the start.
+
 ### Possible consolidation into aico (Owner idea 2026-11-02, not started)
 You're considering folding summitflow, agent-hub and nightshift into aico, with heavy pruning first. Nothing is being done on it yet. Keep it in mind when sizing work in those three repos: prefer cuts over new structure there. The per-tool adapter rework lives in aico/tether, so it holds either way.
 
