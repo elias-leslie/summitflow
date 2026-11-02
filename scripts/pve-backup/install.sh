@@ -110,7 +110,7 @@ public="$(as_admin ssh-keygen -y -f "$private")"
 line="restrict,from=\"$FROM\",command=\"/usr/local/sbin/summitflow-pve-backup\" ${BASH_REMATCH[1]} summitflow-pve-backup"
 
 if [ "$(id -u)" = 0 ] && [ -d /usr/local/lib/nightshift-exec/current/nightshift ]; then
-  rid=$(receipt begin summitflow-pve-backup --repo "$ROOT" \
+  rid=$(receipt begin summitflow-pve-backup --head "$head" \
     --expect "pve=/usr/local/sbin/summitflow-pve-backup" --expect "pve=/etc/summitflow-pve-backup/*")
 fi
 
