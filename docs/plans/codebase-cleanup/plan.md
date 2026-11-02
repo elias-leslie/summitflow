@@ -14,6 +14,7 @@ Status: **Decided** = the owner said do it. **Proposed** = recommended and check
 - 2026-11-02 **Photo text may call Gemini directly.** If the bake-off shows Gemini is best, extraction runs the `agy` subscription CLI on whichever host is up, and Agent Hub becomes an optional route for this one module.
 - 2026-11-02 **VMs:** agents may start any VM they need (e.g. VM 180 to check the portfolio-ai and jobinator leftovers) and stop it again when done. Only VMs they started get stopped.
 - 2026-11-02 **Kept as is:** the Nightshift native tray and inbox panel (you moved off the website on 10-30, so T4 is withdrawn), the ledger and the drill, the aico lifecycle harness and real-session smoke scripts, and the Neri warp and oracle exits.
+- 2026-11-02 **Wake-on-LAN changes need your OK first.** That covers the Wake button, the wake commands in hosts.json and any router or BIOS changes. Run each by you before building it. Testing the existing WoL (shut down, wake, time it) is fine without asking.
 - 2026-11-02 **Router cloudflared: no.** There isn't enough flash for it, firmware upgrades wipe it, and gem already runs its own connector (tunnel `9483e71c`, serving `pve.summitflow.dev`).
 
 ## Cross-project
