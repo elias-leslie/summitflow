@@ -18,6 +18,8 @@ Status: **Decided** = the owner said do it. **Proposed** = recommended and check
 - 2026-11-02 **Router cloudflared: no.** There isn't enough flash for it, firmware upgrades wipe it, and gem already runs its own connector (tunnel `9483e71c`, serving `pve.summitflow.dev`).
 - 2026-11-02 **gem's Aico container may SSH into the Proxmox host**, only for a phone rescue shell and alerts while the workstation is off. That means one restricted key and the container's address in the `management` ipset, done when CT 190 is built.
 - 2026-11-02 **Nightly notes export uses its own Drive token**, limited to its `SummitFlow-Notes` folder (`drive.file`). You sign in once when the export is built; the backup's token never goes to gem.
+- 2026-11-02 **Wake workstation button: not now.** You said "hold off on this for now and revisit it at a later date if i want". Nothing gets built; `wake-ws` on gem stays the manual route.
+- 2026-11-02 **Phone Photos multi-select works** (you tested it on your phone).
 
 ## Cross-project
 | # | Item | Status | Size / gain |
