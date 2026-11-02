@@ -540,8 +540,10 @@ def quick_native_stages(root: Path, changed_files: list[str] | None) -> tuple[di
     """
     config = root / ".st-check.toml"
     try:
-        raw = tomllib.loads(config.read_text(encoding="utf-8")) if config.is_file() else {}
-    except (OSError, UnicodeError, tomllib.TOMLDecodeError) as exc:
+        raw = tomllib.loads(config.read_text(encoding="utf-8"))
+    except OSError:  # no readable declaration: no native stages, nothing opted in
+        return None, []
+    except (UnicodeError, tomllib.TOMLDecodeError) as exc:
         raise NativeCheckError(f"invalid .st-check.toml: {exc}") from exc
     declared = (raw.get("native") or {}).get("stages") if isinstance(raw.get("native"), dict) else None
     if not isinstance(declared, list) or not any(isinstance(item, dict) and item.get("quick") is True for item in declared):
