@@ -185,34 +185,24 @@ What exists, added after the October lockout:
 
 Adding the gem Aico front door gives the phone:
 - **A root rescue session on gem** (claude, codex, `ssh ws`, `wake-ws`). It's easier than the Proxmox shell on a phone, and the Proxmox UI stays as the fallback.
+- **Waking the workstation** (owner ask 2026-11-02). It's already possible: enp8s0 supports wake-on-LAN, set to magic packet and kept across reboots by netplan, and `wake-ws` on gem sends the packet. Per RESCUE.md it works after a shutdown but not after a power cut. Today the route is `pve.summitflow.dev` → Shell → `wake-ws`. With the gem front door, the workstation link in gem's `~/.config/tether/hosts.json` gets `wake-ws` as its wake command, so phone Aico shows a Wake button on the offline workstation. For power cuts, set the BIOS "restore on AC power loss" option, or use the smart plug. **Live test (owner OK'd doing it later):** shut the workstation down, wake it from the phone, and time how long it takes to answer pings and for Aico to come back.
 - **VM 200 agent-work sessions** through gem's Tether. The wake command is a local `qm start 200`, and VM 200 has claude, codex, pi and agy.
   - **Limit:** with no workstation there is no `st`, Agent Hub or SummitFlow, so these are plain harness sessions in git checkouts.
   - **Worth adding:** VM 200 pulls fresh checkouts from GitHub, read-only. The Nightshift "workstation silent" push links to the Aico rescue session.
 
-### Leftovers from moving portfolio-ai and jobinator to VM 180 (owner: clean up)
-- **Remove on the workstation:**
-  - the `port.` and `jobs.` ingress in `/etc/cloudflared/config.yml`
-  - the matching Caddy vhosts in `/etc/caddy/Caddyfile` (29-31, 73-75)
-  - the disabled `jobinator-4000-*` user units and their old local release
-  - the disabled project `backup_sources` rows
-- **Fix the data:**
-  - SummitFlow `projects` base_url and ports
-  - portfolio `project.identity.json` `local_*` ports
-  - `jobinator-4000/docs/project-guide.md:139-141`
-  - the old `portfolio` project row
-- **First check VM 180's own connector:** start VM 180, read its tunnel ID and ingress, and confirm `port.` and `jobs.` load through it. If it shares the workstation tunnel `2757c3c8`, the workstation rules are live 502s. Stop the VM afterwards.
-- Sources: [Cloudflare tunnel replicas](https://developers.cloudflare.com/cloudflare-one/connections/connect-networks/deploy-tunnels/deploy-cloudflared-replicas/), [tunnel configuration](https://developers.cloudflare.com/tunnel/configuration/index.md).
-
-### Guardrail: don't slow dev down (owner 2026-11-02)
-Measured 2026-11-02:
-- **Network:** LAN round trip workstation to gem averages 0.48ms on 1GbE. Agent Hub `/health` on loopback takes 0.4-0.5ms.
-- **CPU:** in a single-thread Python benchmark, gem is about 30% slower (1.27s vs 0.97s).
-
-Rules:
-- **Tests never cross the network.** Test DBs (summitflow_test, agent_hub_test, portfolio_ai_test_gw*) and `st check` stay on whichever machine runs the code, with a local Postgres. Many sequential SQL round trips at +0.5ms each would visibly slow the checks.
-- **Heavy work stays on the workstation while it's on:** builds, checks, browser runs.
-- **Phase 1 adds no load to the dev path:** moving the household apps and Aico's front door to gem. Aico on the workstation keeps talking to its local Tether.
-- **Phase 2 (platform core on gem) goes ahead only on measured numbers.** Time these before and after: `st check` gate median, `st commit`, `st context`, and the per-prompt context hook. The change is rolled back if gates get more than 5% slower or hooks gain more than 50ms. Both thresholds are proposals for you to set.
+### Leftovers from moving portfolio-ai and jobinator to VM 180 (done 2026-11-02)
+- **VM 180 has its own tunnel** (`cdd3c8b5`, remote-managed, token on the VM), so `port.` and `jobs.` never went through the workstation's tunnel `2757c3c8`. The workstation rules were stale, not live 502s.
+- **Removed on the workstation:**
+  - the `port.` and `jobs.` ingress from `/etc/cloudflared/config.yml` and the matching Caddy vhosts. Backups are `*.bak.20261102T165118Z`, both services were reloaded, and the other hostnames still answer.
+  - the three disabled `jobinator-4000-*` user units
+  - the pre-move local release builds under `~/.summitflow/services/projects/{portfolio-ai,jobinator-4000}/releases` (8.7G, rebuildable). The deploy receipts were kept as history.
+- **Already correct, left as is:**
+  - The SummitFlow `projects` rows: public URLs are `port.`/`jobs.`, and the ports match what VM 180 really listens on (3000/8000, 3014/8014). `st service status` shows both on VM 180.
+  - The `portfolio` project row: that's your separate portfolio-site project, not a leftover.
+  - The `portfolio-prod-api`/`db` sockets, which are live forwards to the VM.
+- **Fixed:** the jobinator doc (`docs/project-guide.md`, commit 6148dd2).
+- **Left alone:** the disabled project `backup_sources` rows. That's backup config, so it's your call; they're harmless while disabled.
+- VM 180 was started for the check and shut down again.
 
 ## agent-hub
 | # | Item | Status | Size |
@@ -225,7 +215,7 @@ Rules:
 | A6 | Dead backend modules and one-time backfill scripts, checking each file before removing it | Proposed | about -1.2k |
 | A7 | Trim the giant mock-heavy test files and add tests for the subscription collector | Proposed | -3-4k tests |
 | A8 | Memory system: keep the live core (about 4k: context_builder, context_injector, scoring, applicability, usage_tracker, promotion) plus the CLI and agent config. Delete the dormant side layers: the review agent (last run 09-23), governance, redundancy, lifecycle_score, tier ops (schedules off since 09-19 by you), analytics, and their dashboard API. 483 memories, 148 active, injection live. | Proposed | about -4.8k plus tests |
-| A9 | `memory_injection_metrics` stopped writing on 2026-10-30 while injection kept running. Find out why and fix it. | Proposed | bug |
+| A9 | Checked 2026-11-02: not a bug. `memory_injection_metrics` is written only on Agent Hub's own `/api/complete` path, and that path's traffic stopped on 10-30 (254 requests on 10-29, 4 on 10-30). Harness deliveries go through `build_canonical_context_delivery` and are recorded in `context_deliveries` (since 11-01). A live `st complete` wrote a new row. Fold into A8: point the memory dashboard and analytics at `context_deliveries`, or drop them with the analytics layer. | Done (no change) | 0 |
 
 ## summitflow
 | # | Item | Status | Size |
@@ -245,7 +235,7 @@ Rules:
 | C2 | Collapse the pane/tab/slot hook chain left over from multi-pane | Proposed | -1-1.5k src, -1.5k tests |
 | C3 | Trim tests that read source text or rely on heavy mocks. Test lines grew by 10.3k recently. | Proposed | -3-4k tests |
 | C4 | Split `tether/scripts/aico-root-watch.py` (3.2k lines, 86 commits in 90 days) and `lifecycle/engine.ts` (3.3k), and add tests for `engine.ts` and `daemon.ts` | Proposed | 0 net |
-| C5 | Keep `tether-lifecycle-harness.sh` and `tether-real-session-smoke.sh` (the only live proof that Tether contains its processes) and run them in the nightly deep lane. Delete `aico-install-context-hooks.sh`: it has no callers, and agent-hub `integrations/context-delivery/install.py` replaced it. | Proposed | -23 lines |
+| C5 | Keep `tether-lifecycle-harness.sh` and `tether-real-session-smoke.sh` (the only live proof that Tether contains its processes) and run them in the nightly deep lane. Deleted `aico-install-context-hooks.sh` (aico b4a9c00). Remaining: wire the two scripts into the deep lane. | Partly done | -23 lines |
 
 ## nightshift
 | # | Item | Status | Size |
@@ -254,19 +244,19 @@ Rules:
 | T2 | Remove the file-vs-store comparison (`items/diff.py`, `shadow.run_diff`). It still runs every 15 minutes after the migration finished. | Proposed | -1-1.8k |
 | T3 | Fold `decide/` into `rules.py`; the module itself says nothing there learns. Collapse ingest schema versions v1-v4. | Proposed | -0.9-1.5k |
 | T4 | ~~Tray just opens the PWA~~. Withdrawn: on 10-30 you moved to the native inbox panel. Data comes from shared `nightshift inbox --json`, with parity tests (`tests/test_inbox.py`); only the drawing is duplicated. | Withdrawn | 0 |
-| T5 | Keep the ledger (hash chain, checked every 15 min, anchored on PVE) and the drill (monthly). Fix the drill's 11-01 listener failure: port 29321 was detected but never declared. Declare it or close it. | Proposed (fix) | 0 |
+| T5 | Keep the ledger (hash chain, checked every 15 min, anchored on PVE) and the drill (monthly). Fixed 2026-11-02 (nightshift debbe2d). The tripwire marked a declared listener as "traced" when the same 15-minute pass also had other agents' listeners closing. Declared listeners now count as declared first. Regression tests were added, it's deployed, and a live listener drill passes. | Done | 0 |
 
 ## neri
 | # | Item | Status | Size |
 |---|---|---|---|
 | R1 | Delete `proxy/ops/synthetic` and `backend/scripts/import_index.py`. Nothing references them. Re-checked live. | Proposed | -564 |
-| R2 | The live config uses `direct`, `warp` (free Cloudflare WARP) and `oracle` (WireGuard to an Always Free Oracle VM); keep them. Delete only the `platform-vpn` kind, which is selection policy only with no tooling, and its README example. | Proposed | small |
+| R2 | Keep all exit kinds. The live config uses `direct`, `warp` (free Cloudflare WARP) and `oracle` (WireGuard to an Always Free Oracle VM). `platform-vpn` has no tooling, but it backs the 10-31 safety rule: a program with `rules.vpn_required = true` is refused unless a platform-vpn exit is configured (`proxy/neri_proxy/exits.py:51-69`). | No change | 0 |
 | R3 | Merge `proxy/ops/live/live_check.py` into the selftest | Proposed | about -300 |
 | R4 | Split `st_cli/commands.py` (2.2k lines) and `hunt_cmd.py` (2.0k); add tests for `sandbox_root.py` and `addon.py` | Proposed | 0 net |
 
 ## Execution order
 0. This plan is the record; keep it current.
-1. Quick cleanups: C5 hooks wrapper, R2 platform-vpn, T5 drill listener, A9 metrics gap, RESCUE.md line 19, and the VM 180 leftovers (start VM 180, check, clean up, stop it).
+1. Quick cleanups. **Done 2026-11-02:** C5 hooks wrapper, T5 drill listener, A9 check, RESCUE.md line 19 (nightshift 216a0d9, and installed on gem), and the VM 180 leftovers. Left over: wiring the C5 harness scripts into the deep lane.
 2. A8: the dormant memory layers.
 3. Vision bake-off. It decides the `vision-extract` route.
 4. Notes store, capture and the two Aico front doors: a design doc first, then build.
