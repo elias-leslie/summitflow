@@ -90,7 +90,7 @@ Proposed ownership (to discuss):
     - `gemini-3.8-flash-low`: exact transcription in 23 s, about 34k tokens.
     - The default model, with no `--model`: also exact, but 175 s and about 230k tokens.
     - So `vision-extract` pins a Flash model, and captures are processed in the background.
-    - Next: the five real photos from you go in `/srv/scratch/vision-bakeoff`, and the results table goes here.
+    - Next: Capture v1 ships first (owner 2026-11-02: "open Aico from my phone and easily take a photo", wired up properly), and you take the five sample photos with it. The results table goes here.
 - **Nightshift Web Push:** delivers reminders, since it is the only owner-alert channel.
 - **Backups:** the Aico notes database and photos join the existing registered Google Drive backup. No separate Drive sync.
 
@@ -239,7 +239,7 @@ Adding the gem Aico front door gives the phone:
 | C2 | Collapse the pane/tab/slot hook chain left over from multi-pane | Proposed | -1-1.5k src, -1.5k tests |
 | C3 | Trim tests that read source text or rely on heavy mocks. Test lines grew by 10.3k recently. | Proposed | -3-4k tests |
 | C4 | Split `tether/scripts/aico-root-watch.py` (3.2k lines, 86 commits in 90 days) and `lifecycle/engine.ts` (3.3k), and add tests for `engine.ts` and `daemon.ts` | Proposed | 0 net |
-| C5 | Keep `tether-lifecycle-harness.sh` and `tether-real-session-smoke.sh` (the only live proof that Tether contains its processes) and run them in the nightly deep lane. Deleted `aico-install-context-hooks.sh` (aico b4a9c00). Remaining: wire the two scripts into the deep lane. | Partly done | -23 lines |
+| C5 | Keep `tether-lifecycle-harness.sh` and `tether-real-session-smoke.sh` (the only live proof that Tether contains its processes) and run them in the nightly deep lane. Deleted `aico-install-context-hooks.sh` (aico b4a9c00). Both scripts now run in the nightly deep lane against a throwaway `tether@dev` (aico bdcc2a6). The first deep run passed: 13 harness checks and the Codex smoke, with nothing left behind. | Done | -23 lines |
 
 ## nightshift
 | # | Item | Status | Size |
@@ -260,9 +260,9 @@ Adding the gem Aico front door gives the phone:
 
 ## Execution order
 0. This plan is the record; keep it current.
-1. Quick cleanups. **Done 2026-11-02:** C5 hooks wrapper, T5 drill listener, A9 check, RESCUE.md line 19 (nightshift 216a0d9, and installed on gem), and the VM 180 leftovers. Left over: wiring the C5 harness scripts into the deep lane.
+1. Quick cleanups. **Done 2026-11-02:** C5 hooks wrapper, T5 drill listener, A9 check, RESCUE.md line 19 (nightshift 216a0d9, and installed on gem), and the VM 180 leftovers. 
 2. A8: the dormant memory layers.
 3. Vision bake-off. It decides the `vision-extract` route.
-4. Notes store, capture and the two Aico front doors: a design doc first, then build.
+4. Notes store, capture and the two Aico front doors: a design doc first (`aico/docs/plans/notes-and-capture.md`), then build. **Milestone 1 is Capture v1:** a Capture button anywhere in the phone PWA that opens the camera and stores photos durably, plus a captures list and an agent read path. It moves ahead of the bake-off, because the bake-off photos are taken with it.
 5. Vehicles in portfolio-ai.
 The rest of the per-project items (Proposed) follow, each verified with `st check`, and with `st check budget` timings before and after.
