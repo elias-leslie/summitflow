@@ -422,6 +422,14 @@ def _normalize_stage(root: Path, stage: Any, ids: set[str], tools: dict[str, str
             raise NativeCheckError(f"{stage_id}: {key} must list project-relative path globs")
     if stage.get("exclude") and not stage.get("inputs"):
         raise NativeCheckError(f"{stage_id}: exclude narrows declared inputs; declare inputs first")
+    quick_paths = stage.get("quick_paths", [])
+    if "quick" in stage and (type(stage["quick"]) is not bool or (stage["quick"] and kind != "check")):
+        raise NativeCheckError(f"{stage_id}: quick must be a boolean and only check stages can join the quick lane")
+    if (not isinstance(quick_paths, list) or any(not isinstance(item, str) or not item or item.startswith("/")
+                                                 or ".." in Path(item).parts for item in quick_paths)):
+        raise NativeCheckError(f"{stage_id}: quick_paths must list project-relative path globs")
+    if quick_paths and stage.get("quick") is not True:
+        raise NativeCheckError(f"{stage_id}: quick_paths narrow a quick stage; set quick = true first")
     return {**stage, "id": stage_id, "argv": argv, "cwd": cwd, "kind": kind,
             "coverage": coverage, "required": required, "applicable": applicable,
             "tool": identity(root, executable),
@@ -522,6 +530,32 @@ def native_plan(root: Path, *, commit: str | None = None) -> dict[str, Any] | No
             "legacy_tools": list(dict.fromkeys(legacy_tools)),
             "prepared_environment": [_prepared_identity(root, path, commit=commit) for path in sorted(runtime_paths)],
             "preparation": "explicit_only_no_installation"}
+
+
+def quick_native_stages(root: Path, changed_files: list[str] | None) -> tuple[dict[str, Any] | None, list[tuple[dict[str, Any], str | None]]]:
+    """Stages that opted into ``st check --quick`` with a skip reason when no changed file is relevant.
+
+    ``changed_files`` is None for a whole-tree run. Without ``quick_paths`` a stage always runs.
+    The plan (prepared-environment identities included) is only built when a stage opted in.
+    """
+    config = root / ".st-check.toml"
+    try:
+        raw = tomllib.loads(config.read_text(encoding="utf-8")) if config.is_file() else {}
+    except (OSError, UnicodeError, tomllib.TOMLDecodeError) as exc:
+        raise NativeCheckError(f"invalid .st-check.toml: {exc}") from exc
+    declared = (raw.get("native") or {}).get("stages") if isinstance(raw.get("native"), dict) else None
+    if not isinstance(declared, list) or not any(isinstance(item, dict) and item.get("quick") is True for item in declared):
+        return None, []
+    plan = native_plan(root)
+    picked: list[tuple[dict[str, Any], str | None]] = []
+    for stage in (plan["stages"] if plan else []):
+        if stage.get("quick") is not True or not stage["applicable"]:
+            continue
+        patterns = stage.get("quick_paths") or []
+        skip = "no_relevant_changed_paths" if patterns and changed_files is not None and not any(
+            _selected(path, patterns) for path in changed_files) else None
+        picked.append((stage, skip))
+    return plan, picked
 
 
 def legacy_applicability(root: Path, names: list[str]) -> tuple[list[str], list[dict[str, Any]]]:

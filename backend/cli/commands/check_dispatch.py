@@ -5,6 +5,7 @@ from __future__ import annotations
 import os
 import time
 from collections.abc import Callable
+from contextlib import suppress
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Protocol
@@ -233,7 +234,41 @@ def run_selected(
             continue
         fix_args = runtime.fix_args.get(name, []) if fix else []
         failures += int(runtime.run_tool(name, config, [*scoped_args, *fix_args]) != 0)
+    if quick_checkpoint:
+        failures += run_quick_native_stages(root, changed_files if changed_only else None)
     return int(failures != 0)
+
+
+def run_quick_native_stages(root: Path, changed_files: list[str] | None) -> int:
+    """Run native stages that opted into the quick lane (`quick = true`); returns the failure count."""
+    from ..details import display_path, summary_hint
+    from .check_artifacts import write_check_details
+    from .check_native import NativeCheckError, quick_native_stages, run_native
+
+    try:
+        plan, picked = quick_native_stages(root, changed_files)
+        if plan is None:
+            return 0
+        failures = 0
+        for stage, skip in picked:
+            if skip:
+                print(f"NATIVE:SKIP:{stage['id']}:{skip}")
+                continue
+            outcome = run_native(root, plan, stage_id=stage["id"], reuse=False, full_gate=False)["stages"][0]
+            output = outcome.get("detail") or outcome.get("reason") or ""
+            retained = next((a.get("retained_path") for a in outcome["artifacts"] if a.get("path") == "output"), None)
+            if retained:
+                with suppress(OSError):
+                    output = Path(retained).read_text(encoding="utf-8", errors="replace")
+            ok = outcome["state"] == "pass"
+            details = write_check_details(root, stage["id"], output)
+            failures += int(not ok)
+            print(f"NATIVE:{'OK' if ok else 'FAIL'}:{stage['id']}|details:{display_path(root, details)}|"
+                  f"hint:{summary_hint(output) if output else outcome['state']}|execution_ms:{outcome.get('duration_ms', 0):.0f}")
+        return failures
+    except NativeCheckError as exc:
+        print(f"NATIVE:FAIL:config|hint:{exc}")
+        return 1
 
 
 def selected_tool_args(

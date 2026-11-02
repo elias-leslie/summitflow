@@ -295,6 +295,11 @@ _CHECK_STAGE = 'argv=["python"]\ncoverage="full"\n'
      'executed_pattern="e"}\n', "x: invalid success_pattern"),
     ('id="x"\n' + _CHECK_STAGE + 'exclude=["a/**"]\n', "x: exclude narrows declared inputs"),
     ('id="x"\nargv=["python"]\ncoverage="focused"\nrequired=false\ncovered_by="missing"\n', "covered_by requires"),
+    ('id="x"\n' + _CHECK_STAGE + 'quick="yes"\n', "x: quick must be a boolean"),
+    ('id="x"\nargv=["python"]\ncoverage="full"\nkind="test"\nquick=true\nevidence={format="json", path="r.json"}\n',
+     "x: quick must be a boolean and only check stages"),
+    ('id="x"\n' + _CHECK_STAGE + 'quick_paths=["a/**"]\n', "x: quick_paths narrow a quick stage"),
+    ('id="x"\n' + _CHECK_STAGE + 'quick=true\nquick_paths=["/abs"]\n', "x: quick_paths must list project-relative"),
 ])
 def test_stage_validation_names_the_failing_rule(native_repo: Path, stage: str, message: str) -> None:
     config = native_repo / ".st-check.toml"
@@ -1151,3 +1156,32 @@ def test_timeouts_are_never_cached_as_failures(native_repo: Path) -> None:
     assert not _deterministic_failure({"state": "fail", "returncode": 124, "reason": "stage_timeout"})
     assert not _deterministic_failure({"state": "fail", "returncode": -9, "reason": ""})
     assert _deterministic_failure({"state": "fail", "returncode": 1, "reason": "evidence_records_failures"})
+
+
+def _quick_stage(repo: Path, body: str = "") -> None:
+    (repo / ".tools/typecheck.py").write_text("import sys\nprint('error TS2322: bad type')\nsys.exit(1)\n")
+    config = repo / ".st-check.toml"
+    config.write_text(config.read_text() + '\n[[native.stages]]\nid = "nested-tsc"\nkind = "check"\ncoverage = "full"\n'
+                      'argv = ["python", ".tools/typecheck.py"]\nquick = true\n' + body)
+
+
+def test_quick_lane_selects_only_opted_in_stages_and_filters_by_changed_paths(native_repo: Path) -> None:
+    from cli.commands.check_native import quick_native_stages
+
+    assert quick_native_stages(native_repo, ["a.ts"]) == (None, [])  # nothing opted in: no plan built
+    _quick_stage(native_repo, 'quick_paths = ["web/**/*.ts", "**/tsconfig.json"]\n')
+    plan, picked = quick_native_stages(native_repo, ["web/server/src/a.ts"])
+    assert plan is not None and [(stage["id"], skip) for stage, skip in picked] == [("nested-tsc", None)]
+    assert quick_native_stages(native_repo, ["tsconfig.json"])[1][0][1] is None
+    assert quick_native_stages(native_repo, ["README.md"])[1][0][1] == "no_relevant_changed_paths"
+    assert quick_native_stages(native_repo, None)[1][0][1] is None  # whole-tree run ignores the filter
+
+
+def test_quick_lane_runs_opted_in_stage_and_reports_failure_with_details(native_repo: Path, capsys) -> None:
+    from cli.commands.check_dispatch import run_quick_native_stages
+
+    _quick_stage(native_repo)
+    assert run_quick_native_stages(native_repo, ["a.ts"]) == 1
+    out = capsys.readouterr().out
+    assert out.startswith("NATIVE:FAIL:nested-tsc|details:") and "TS2322" in out
+    assert run_quick_native_stages(native_repo, None) == 1  # never served from a cache
