@@ -263,6 +263,6 @@ Adding the gem Aico front door gives the phone:
 1. Quick cleanups. **Done 2026-11-02:** C5 hooks wrapper, T5 drill listener, A9 check, RESCUE.md line 19 (nightshift 216a0d9, and installed on gem), and the VM 180 leftovers. 
 2. A8: the dormant memory layers.
 3. Vision bake-off. It decides the `vision-extract` route.
-4. Notes store, capture and the two Aico front doors: a design doc first (`aico/docs/plans/notes-and-capture.md`), then build. **Milestone 1 is Capture v1:** a Capture button anywhere in the phone PWA that opens the camera and stores photos durably, plus a captures list and an agent read path. It moves ahead of the bake-off, because the bake-off photos are taken with it.
+4. Notes store, capture and the two Aico front doors: a design doc first (`aico/docs/plans/notes-and-capture.md`), then build. **Milestone 1 is Capture v1:** a Capture button anywhere in the phone PWA that opens the camera and stores photos durably, plus a captures list and an agent read path. It moves ahead of the bake-off, because the bake-off photos are taken with it. **1b (owner 2026-11-02): photo requests in Needs you.** `tether ask create ... --photos N` adds a Take photo / Choose photos control to the ask card. The photos are saved as captures tagged with the ask, and the answer reaches the asking session with their capture ids. The bake-off photos are requested this way.
 5. Vehicles in portfolio-ai.
 The rest of the per-project items (Proposed) follow, each verified with `st check`, and with `st check budget` timings before and after.
