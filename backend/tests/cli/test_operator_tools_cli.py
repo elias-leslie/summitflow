@@ -518,7 +518,7 @@ def test_check_bare_changed_only_defaults_to_quick() -> None:
     }
     with (
         patch("cli.commands.check._tool_configs", return_value=configs),
-        patch("cli.commands.check._changed_files", return_value=["config.toml"]),
+        patch("cli.commands.check._changed_files", return_value=["README.md"]),
         patch("cli.commands.check._run_tool", return_value=0) as run_tool,
     ):
         result = runner.invoke(main_app, ["check", "--changed-only"])
