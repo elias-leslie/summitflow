@@ -152,7 +152,11 @@ Once this plan is done, look into:
      - Deploy each service separately, so rebuilding one doesn't rebuild everything.
      - Keep shared code small.
    - **Speed targets:** measure today's per-repo commit-check and rebuild times first. After the merge, they must stay at or under today's per-repo numbers; they must not add up to the combined total.
-2. **Multi-host Aico.** Every machine with Aico installed adds availability, redundancy and load balancing for everything Aico does: tasks, agent work, notes, runtime, backup and dev management.
+2. **Aico as the single pane of glass (owner vision 2026-11-02).**
+   - The Nightshift tray and phone app become the Aico tray and phone app, keeping everything they do today (approvals, YubiKey, toasts, asks).
+   - Aico shows compact status and gives simple control over backups and runtime, replacing SummitFlow's current pages. Those pages are bloated and complicated today, so expect heavy simplification.
+   - The exact screens get settled in design and mockup reviews with you, before they're built. The pruning list marks each SummitFlow and Nightshift screen as move, simplify or drop.
+3. **Multi-host Aico.** Every machine with Aico installed adds availability, redundancy and load balancing for everything Aico does: tasks, agent work, notes, runtime, backup and dev management.
    - **Starting point:** the two-front-door design, notes row sync, and Tether peers.
    - **First sketch:** sort each capability into one of four kinds:
      - **Stateless front doors:** any host serves them.
