@@ -86,7 +86,11 @@ Proposed ownership (to discuss):
   - One small `vision-extract` module takes a typed JSON schema and returns results. It runs on whichever host is up.
   - If the bake-off picks Gemini, it calls `agy -p --output-format json --json-schema` (the subscription, OAuth), with Agent Hub as an optional route.
   - Today, receipts use `household-receipt-vision` (`portfolio-ai .../household_review_agent_service.py:55-74`). Its primary is `local/qwen3-vl:8b` on the workstation GPU, and its fallback is the free-tier `gemini-3.1-flash-lite`. So receipts already depend on the workstation, and Google's free tier may use the data.
-  - **Bake-off first.** Five samples: a handwritten grocery list, a receipt, an odometer, a service invoice and a recipe photo. Compare agy, `gemini-3.8-flash` (API) and `qwen3-vl:8b`, scored by exact transcription. Also check whether agy accepts images at all. The results table goes here.
+  - **Bake-off first.** Five samples: a handwritten grocery list, a receipt, an odometer, a service invoice and a recipe photo. Compare agy, `gemini-3.8-flash` (API) and `qwen3-vl:8b`, scored by exact transcription. agy accepts images (checked 2026-11-02 on a made-up grocery-list image): the prompt gives the file path, and agy reads it with its file tool. `--json-schema` returns the structured result.
+    - `gemini-3.8-flash-low`: exact transcription in 23 s, about 34k tokens.
+    - The default model, with no `--model`: also exact, but 175 s and about 230k tokens.
+    - So `vision-extract` pins a Flash model, and captures are processed in the background.
+    - Next: the five real photos from you go in `/srv/scratch/vision-bakeoff`, and the results table goes here.
 - **Nightshift Web Push:** delivers reminders, since it is the only owner-alert channel.
 - **Backups:** the Aico notes database and photos join the existing registered Google Drive backup. No separate Drive sync.
 
