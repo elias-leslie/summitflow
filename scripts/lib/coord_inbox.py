@@ -446,8 +446,9 @@ def main() -> int:
     if not isinstance(payload, dict):
         payload = {}
     event = str(payload.get("hook_event_name") or "")
-    subagent = str(payload.get("agent_id") or "") if provider in ("claude_code", "codex") else ""
-    if subagent:  # subagent hooks share the parent session id: items and ride-along lines stay for the parent
+    worker = str(payload.get("agent_id") or "")  # a subagent's hook: the parent's session id plus its own agent_id
+    subagent = worker if provider == "claude_code" else ""
+    if subagent:  # Claude subagent hooks share the parent session id: coordination items stay for the parent
         if mode == "turn":
             emit(event, [], memory(f"{leases.identify_agent()[0]}/{subagent}"))
         return 0
@@ -463,7 +464,7 @@ def main() -> int:
         emit(event, [], memory(leases.identify_agent()[0], resumed=payload.get("source") == "resume"))
         return 0
     # Ride-along lines first, before the slower inbox work below eats the hook's time.
-    ride = take_ride(leases.identify_agent()[0]) if mode == "turn" and takes_ride(provider, event, subagent) else None
+    ride = take_ride(leases.identify_agent()[0]) if mode == "turn" and takes_ride(provider, event, worker) else None
     agent_id, items = pending()
     if mode == "turn" and provider == "codex" and event == "UserPromptSubmit":
         disarm_codex(agent_id)
