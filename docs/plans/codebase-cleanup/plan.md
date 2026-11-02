@@ -160,6 +160,9 @@ Once this plan is done, look into:
    - **Where it runs:** on whatever machines it's installed on, using what it can reach there.
      - **davion-sidarli:** a full install.
      - **davion-gem:** a full install in its own container (CT 190), not on the Proxmox host itself. It's always on, so Aico stays up when the workstation is off. It also starts and stops gem's VMs through Proxmox.
+     - **neri-hunters (VM 201):** a worker like agent-work. You see and control Neri coordinators and hunters from any Aico screen, as you do today.
+       - Neri access stays exactly as it is: the launch table's deny rows plus the agents' own rules.
+       - Aico adds no filtering, gates or sync restrictions for Neri. (Owner 2026-11-02: don't add friction to hunting.)
      - **Agent VMs on gem:** Aico installed in worker mode. It runs agents and tracks their status on the VM, with no UI and no synced data copy. Agents work on the VM's own files; there's no remote file access and no extra token cost.
      - **Windows laptops:** skipped for now. A Linux or Mac laptop could join later.
    - **One install, a few switches** (UI, data copy, worker). Every machine serves Aico to itself locally: `aico.summitflow.dev` goes to 127.0.0.1 on that machine, which is already true on the workstation. Anything owned by another machine is fetched over the fleet link. The phone comes in through Cloudflare, as it does today.
