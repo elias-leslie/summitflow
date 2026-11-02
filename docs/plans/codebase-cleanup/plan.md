@@ -136,6 +136,32 @@ You asked whether a standard exists, so Aico isn't held together with per-tool h
 - **Not doing:** an ACP or SDK chat UI in Aico. Revisit only if you want a phone-first chat for headless sessions.
 - **Status:** starts after the delivery fix for all tools (running now) lands, since it touches the same code. Medium-large.
 
+### Debt guards in `st check` (Proposed 2026-11-02, from your Claude chat prompt)
+The idea: automated checks that stop agents adding tech debt, so the cleanup doesn't creep back.
+- **Already have:**
+  - the quick check on every `st commit`, and the full and deep lanes
+  - `st check budget`, which ratchets LOC, test ratio and gate time (it's currently over: the gate takes 96 s against a 90 s target)
+  - import-linter in agent-hub only
+  - radon in summitflow
+  - the read-only `code-reviewer` agent
+  - the hooks that block stash and reset
+  - the search-first rule in CLAUDE.md
+- **Missing:**
+  - a diff check for new suppressions, skipped tests and removed asserts
+  - duplication (jscpd)
+  - dead code (vulture, knip)
+  - per-file size and complexity ratchets that fail only on new or worse violations
+  - module-boundary rules outside agent-hub
+  - mutation testing on changed code
+  - a record of which reviewer findings led to a fix
+  - a bounded cleanup job
+- **How it fits:** build once as shared `st check` stages with per-repo baselines, not a separate setup per repo. Fast checks go in quick; slow ones (mutation, duplication, dead code) go in the deep or nightly lane, so commits don't slow down.
+  - Baselines only tighten automatically. Loosening one takes an explicit flag with a reason, which shows in the nightly report; there's no approval tap.
+  - Ship in SummitFlow first, then roll out to agent-hub, aico, nightshift and neri. Neri's checks run on code only.
+  - Its first runs also produce dead-code and duplication lists, which feed the cleanup milestones here.
+- **Differences from the prompt:** commits go to main through `st commit`, not a branch. The reviewer is the existing `code-reviewer` agent. The cleanup job reuses the scheduled-agent tooling, off by default.
+- **Size:** medium for SummitFlow, then small per repo.
+
 ## Hosts: always-on (davion-gem) vs on-demand (davion-sidarli) (Exploring)
 Owner decisions (2026-11-02):
 - Notes must keep working with either host down (updated 2026-11-02; see "Notes store"). The offline phone queue and the Drive Inbox stay dropped, and the Drive backup stays.
