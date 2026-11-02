@@ -32,6 +32,7 @@ class SkipReason(Protocol):
         scoped_args: list[str],
         explicit_args: bool = False,
         deferred_full_pytest: bool = False,
+        root: Path | None = None,
     ) -> str | None: ...
 
 
@@ -220,6 +221,7 @@ def run_selected(
             changed_files=changed_files,
             scoped_args=scoped_args,
             deferred_full_pytest=deferred_full_pytest,
+            root=root,
         )
         if skip_reason:
             print(f"{config.get('label') or name.upper()!s}:SKIP:{name}:{skip_reason}")
@@ -255,6 +257,7 @@ def selected_tool_args(
         changed_files=changed_files,
         scoped_args=scoped_args,
         explicit_args=bool(explicit_args),
+        root=root,
     )
     if skip_reason:
         print(f"{config.get('label') or name.upper()!s}:SKIP:{name}:{skip_reason}")

@@ -1,6 +1,7 @@
 """Changed-file selection must not hide Python regressions."""
 
 import json
+import subprocess
 from pathlib import Path
 from unittest.mock import patch
 
@@ -208,7 +209,7 @@ def test_data_file_change_selects_tests_of_modules_that_name_it(tmp_path: Path) 
     assert args == ["tests/test_policy_text.py", "tests/test_store_load.py"]
     assert _skip_reason(
         "pytest", {"pass_path": False}, changed_only=True,
-        changed_files=changed, scoped_args=args,
+        changed_files=changed, scoped_args=args, root=tmp_path,
     ) is None
 
 
@@ -231,7 +232,7 @@ def test_unmapped_data_file_is_named_in_the_skip_reason(tmp_path: Path) -> None:
     assert args == []
     assert _skip_reason(
         "pytest", {"pass_path": False}, changed_only=True,
-        changed_files=changed, scoped_args=args,
+        changed_files=changed, scoped_args=args, root=tmp_path,
     ) == "data_file_unmapped:backend/app/st_cli/orphan.json"
 
 
@@ -246,15 +247,77 @@ def test_data_file_naming_module_without_tests_is_unmapped(tmp_path: Path) -> No
     assert args == []
     assert _skip_reason(
         "pytest", {"pass_path": False}, changed_only=True,
-        changed_files=changed, scoped_args=args,
+        changed_files=changed, scoped_args=args, root=tmp_path,
     ) == "data_file_unmapped:backend/app/lonely.json"
 
 
 def test_tool_config_json_is_not_a_data_file(tmp_path: Path) -> None:
     assert _skip_reason(
         "pytest", {"pass_path": False}, changed_only=True,
-        changed_files=["frontend/package.json"], scoped_args=[],
+        changed_files=["frontend/package.json"], scoped_args=[], root=tmp_path,
     ) == "no_relevant_changed_paths"
+
+
+def test_same_base_name_in_two_dirs_selects_only_the_matching_tree(tmp_path: Path) -> None:
+    for tree in ("backend/app", "other/app"):
+        (tmp_path / tree).mkdir(parents=True)
+        (tmp_path / tree / "mod.py").write_text('P = "settings.json"\n')
+        (tmp_path / tree / "settings.json").write_text("{}")
+    tests = tmp_path / "backend/tests"
+    tests.mkdir()
+    (tests / "test_mod.py").write_text("from app import mod\n")
+    (tmp_path / "other/tests").mkdir()
+    (tmp_path / "other/tests/test_other.py").write_text('X = "app/settings.json"\n')
+    # bare name stays inside backend/; the path-tail literal only names other/
+    args = _changed_args(
+        "pytest", tmp_path, tmp_path / "backend", {"pass_path": False},
+        ["backend/app/settings.json"],
+    )
+    assert args == ["tests/test_mod.py"]
+
+
+def test_frontend_json_never_selects_backend_tests(tmp_path: Path) -> None:
+    (tmp_path / "frontend/public").mkdir(parents=True)
+    (tmp_path / "frontend/public/manifest.json").write_text("{}")
+    (tmp_path / "backend/app").mkdir(parents=True)
+    (tmp_path / "backend/app/snap.py").write_text('M = "manifest.json"\n')
+    (tmp_path / "backend/tests").mkdir()
+    (tmp_path / "backend/tests/test_snap.py").write_text("from app import snap\n")
+    changed = ["frontend/public/manifest.json"]
+    args = _changed_args(
+        "pytest", tmp_path, tmp_path / "backend", {"pass_path": False}, changed
+    )
+    assert args == []
+    assert _skip_reason(
+        "pytest", {"pass_path": False}, changed_only=True,
+        changed_files=changed, scoped_args=args, root=tmp_path,
+    ) == "no_relevant_changed_paths"
+
+
+def test_worktree_copies_are_ignored_in_a_git_checkout(tmp_path: Path) -> None:
+    subprocess.run(["git", "init", "-q"], cwd=tmp_path, check=True)
+    (tmp_path / ".gitignore").write_text(".claude/\n")
+    _data_file_project(tmp_path)
+    copy = tmp_path / ".claude/worktrees/w1/backend/tests"
+    copy.mkdir(parents=True)
+    (copy / "test_copy.py").write_text('X = "policy.json"\n')
+    args = _changed_args(
+        "pytest", tmp_path, tmp_path / "backend", {"pass_path": False},
+        ["backend/app/st_cli/policy.json"],
+    )
+    assert args == ["tests/test_policy_text.py", "tests/test_store_load.py"]
+
+
+def test_data_file_and_python_change_together(tmp_path: Path) -> None:
+    _data_file_project(tmp_path)
+    (tmp_path / "backend/app/st_cli/hunts.py").write_text('HUNTS = "hunts-policy.json"\n')
+    args = _changed_args(
+        "pytest", tmp_path, tmp_path / "backend", {"pass_path": False},
+        ["backend/app/st_cli/policy.json", "backend/app/st_cli/hunts.py"],
+    )
+    assert args == [
+        "tests/test_hunts_load.py", "tests/test_policy_text.py", "tests/test_store_load.py",
+    ]
 
 
 def _quick_vitest(tmp_path: Path, changed: list[str], mode: str = "--quick") -> tuple[str, list[list[str]]]:

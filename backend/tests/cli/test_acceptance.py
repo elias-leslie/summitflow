@@ -1038,3 +1038,14 @@ def test_receipt_detail_keeps_decisive_lines_without_admission_noise():
     assert "TEST:FAIL:3" in kept and "Waiting for shared" not in kept and len(kept) <= 1200
     blocked = acceptance._receipt_detail("TEST:SKIP:pytest:tool_not_installed\n" + "x" * 3000)
     assert blocked.startswith("TEST:SKIP:pytest:tool_not_installed") and len(blocked) <= 1200
+
+
+@pytest.mark.parametrize(("line", "blocking"), [
+    ("BIOME:SKIP:biome:required", True),
+    ("BIOME:SKIP:biome:no_tests|details:x", True),
+    ("BIOME:SKIP:biome:tool_not_installed;coverage_not_claimed", True),
+    ("TEST:SKIP:pytest:data_file_unmapped:backend/required/no_tests.json", False),
+    ("TEST:SKIP:pytest:no_relevant_changed_paths", False),
+])
+def test_blocking_skip_matches_the_reason_token_not_the_line(line: str, blocking: bool) -> None:
+    assert acceptance._blocking_skip(line) is blocking

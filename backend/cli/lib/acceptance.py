@@ -873,8 +873,21 @@ def _changed_inputs(before: Mapping[str, Any], after: Mapping[str, Any],
 _BLOCKING_SKIPS = ("tool_not_installed", "required", "no_tests")
 
 
-def _blocking_skip(line: str) -> bool:
-    return ":SKIP:" in line and any(reason in line for reason in _BLOCKING_SKIPS)
+def _skip_reason_tokens(line: str) -> set[str]:
+    """Tokens of a "LABEL:SKIP:tool:reason[;reason]" line's reason, nothing else.
+
+    A file path inside a reason (data_file_unmapped:backend/required/x.json)
+    must never read as the reason "required".
+    """
+    _, sep, rest = line.partition(":SKIP:")
+    if not sep:
+        return set()
+    reason = rest.partition(":")[2].partition("|")[0]
+    return {token for part in reason.split(";") for token in part.split(":")}
+
+
+def _blocking_skip(line: str, reasons: Sequence[str] = _BLOCKING_SKIPS) -> bool:
+    return not _skip_reason_tokens(line).isdisjoint(reasons)
 
 
 def _receipt_detail(detail: str, limit: int = 1200) -> str:
@@ -892,9 +905,11 @@ def _gate_evidence(detail: str, plan: Mapping[str, Any]) -> dict[str, Any]:
     if native is None:
         # Historical textual stages cannot be promoted to native coverage. A
         # missing declared suite/tool or deferred check is never full acceptance.
-        incomplete = any(":DEFER:" in line or (":SKIP:" in line and any(
-            reason in line for reason in ("tool_not_installed", "no_declared_tests", "no_tests", "required")
-        )) for line in detail.splitlines())
+        incomplete = any(
+            ":DEFER:" in line
+            or _blocking_skip(line, ("tool_not_installed", "no_declared_tests", "no_tests", "required"))
+            for line in detail.splitlines()
+        )
         return {"coverage": "full", "state": "unavailable" if incomplete else "pass", "stages": [],
                 "format": "legacy_aggregate"}
     try:
@@ -966,8 +981,10 @@ def _task_gate_evidence(repo: Path, detail: str, plan: Mapping[str, Any], comman
         f"{checks[stage['id']].get('label') or stage['id'].upper()}:SKIP:{stage['id']}:tool_not_installed"
         for stage in inapplicable
     }
-    blocked = ":OK:" not in detail or any(":FAIL:" in line or (":SKIP:" in line and line not in allowed_skips and any(
-        reason in line for reason in ("tool_not_installed", "required", "no_tests"))) for line in detail.splitlines())
+    blocked = ":OK:" not in detail or any(
+        ":FAIL:" in line or (line not in allowed_skips and _blocking_skip(line))
+        for line in detail.splitlines()
+    )
     digest = hashlib.sha256(detail.encode()).hexdigest()
     directory = _git_common_dir(repo) / "st" / "native-stages" / "artifacts"
     directory.mkdir(parents=True, exist_ok=True)

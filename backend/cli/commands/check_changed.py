@@ -78,6 +78,41 @@ def _pytest_test_files(root: Path) -> list[Path]:
     )
 
 
+def _project_python_files(root: Path) -> list[str]:
+    """Tracked and untracked-but-not-ignored .py files, as paths under root."""
+    result = subprocess.run(
+        ["git", "ls-files", "--cached", "--others", "--exclude-standard", "*.py"],
+        cwd=root,
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+    if result.returncode == 0:
+        return sorted({line for line in result.stdout.splitlines() if line})
+    # Not a git checkout: walk, skipping directories that never hold project code.
+    found: list[str] = []
+    for dirpath, dirnames, filenames in os.walk(root):
+        dirnames[:] = [d for d in dirnames if d not in _SCAN_SKIP_DIRS]
+        found.extend(
+            (Path(dirpath) / name).relative_to(root).as_posix()
+            for name in filenames
+            if name.endswith(".py")
+        )
+    return sorted(found)
+
+
+def _in_python_tree(rel_path: str, python_dirs: set[str]) -> bool:
+    """True when the file sits in, or under, a directory that holds .py files.
+
+    The project root only counts for files directly in it, so frontend/CI
+    json or yaml next to a root script does not read as Python data.
+    """
+    parent = Path(rel_path).parent
+    if str(parent) == ".":
+        return "." in python_dirs
+    return any(str(ancestor) in python_dirs for ancestor in (parent, *parent.parents) if str(ancestor) != ".")
+
+
 def _changed_data_files(changed_files: list[str]) -> list[str]:
     """Changed data files (json/toml/yaml) that are not a tool's own config."""
     tool_configs = {name for names in _TOOL_CONFIG_PATHS.values() for name in names}
@@ -89,59 +124,91 @@ def _changed_data_files(changed_files: list[str]) -> list[str]:
     ]
 
 
-def _names_file(tree: ast.AST, names: set[str]) -> set[str]:
-    """File names that appear in the tree as an exact string or a path tail."""
-    found: set[str] = set()
-    for node in ast.walk(tree):
-        if isinstance(node, ast.Constant) and isinstance(node.value, str):
-            value = node.value
-            for name in names:
-                if value == name or value.endswith("/" + name):
-                    found.add(name)
-    return found
+def _python_data_files(
+    changed_files: list[str], python_files: list[str]
+) -> tuple[list[str], set[str]]:
+    """Changed data files that live in a Python tree, and the .py directories."""
+    python_dirs = {str(Path(path).parent) for path in python_files}
+    return [
+        rel_path
+        for rel_path in _changed_data_files(changed_files)
+        if _in_python_tree(rel_path, python_dirs)
+    ], python_dirs
 
 
-def _data_file_referrers(root: Path, data_files: list[str]) -> dict[str, set[str]]:
-    """Map each data file to the project's Python files that name it exactly.
+def _top_dir(rel_path: str) -> str:
+    parts = Path(rel_path).parts
+    return parts[0] if len(parts) > 1 else ""
 
-    One walk of the project's Python files. A file matches only when a string
-    literal equals the file name or ends with "/<name>", so "hunts-policy.json"
-    never matches "policy.json".
+
+def _literal_match(value: str, data_path: str) -> str | None:
+    """How a string literal names the data file: "bare", "path", or not at all.
+
+    A bare name ("policy.json", or an f-string tail "/policy.json") matches on
+    the file name alone. A literal with a directory part must be a tail of the
+    changed path ("st_cli/policy.json" for backend/app/st_cli/policy.json).
+    """
+    tail = value.removeprefix("./").lstrip("/")
+    if tail == Path(data_path).name:
+        return "bare"
+    if "/" in tail and (data_path == tail or data_path.endswith("/" + tail)):
+        return "path"
+    return None
+
+
+def _data_file_referrers(
+    root: Path, data_files: list[str], python_files: list[str]
+) -> dict[str, set[str]]:
+    """Map each data file to the project's Python files that name it.
+
+    One pass over the project's Python files. A bare-name literal only counts
+    for files under the data file's own top-level directory (a root-level data
+    file counts everywhere), so frontend/public/manifest.json never selects
+    backend tests. "hunts-policy.json" never matches "policy.json".
     """
     names = {Path(rel_path).name for rel_path in data_files}
-    referrers: dict[str, set[str]] = {name: set() for name in names}
-    for dirpath, dirnames, filenames in os.walk(root):
-        dirnames[:] = [d for d in dirnames if d not in _SCAN_SKIP_DIRS]
-        for filename in filenames:
-            if not filename.endswith(".py"):
-                continue
-            path = Path(dirpath) / filename
-            try:
-                text = path.read_text(encoding="utf-8")
-            except (OSError, UnicodeError):
-                continue
-            present = {name for name in names if name in text}
-            if not present:
-                continue
-            try:
-                tree = ast.parse(text)
-            except (SyntaxError, ValueError):
-                continue
-            rel = path.relative_to(root).as_posix()
-            for name in _names_file(tree, present):
-                referrers[name].add(rel)
+    referrers: dict[str, set[str]] = {rel_path: set() for rel_path in data_files}
+    for rel in python_files:
+        path = root / rel
+        try:
+            text = path.read_text(encoding="utf-8")
+        except (OSError, UnicodeError):
+            continue
+        if not any(name in text for name in names):
+            continue
+        try:
+            tree = ast.parse(text)
+        except (SyntaxError, ValueError):
+            continue
+        literals = {
+            node.value
+            for node in ast.walk(tree)
+            if isinstance(node, ast.Constant) and isinstance(node.value, str)
+        }
+        for data_path in data_files:
+            data_top = _top_dir(data_path)
+            for value in literals:
+                kind = _literal_match(value, data_path)
+                if kind == "path" or (
+                    kind == "bare" and (not data_top or _top_dir(rel) == data_top)
+                ):
+                    referrers[data_path].add(rel)
+                    break
     return referrers
 
 
 def _expand_data_files(root: Path, changed_files: list[str]) -> list[str]:
-    """Replace changed data files with the Python files that name them."""
-    data_files = _changed_data_files(changed_files)
+    """Replace changed Python-tree data files with the Python files that name them."""
+    if not _changed_data_files(changed_files):
+        return changed_files
+    python_files = _project_python_files(root)
+    data_files, _ = _python_data_files(changed_files, python_files)
     if not data_files:
         return changed_files
-    referrers = _data_file_referrers(root, data_files)
+    referrers = _data_file_referrers(root, data_files, python_files)
     expanded = [rel_path for rel_path in changed_files if rel_path not in data_files]
     for rel_path in data_files:
-        expanded.extend(sorted(referrers[Path(rel_path).name]))
+        expanded.extend(sorted(referrers[rel_path]))
     return expanded
 
 
@@ -337,6 +404,7 @@ def _skip_reason(
     scoped_args: list[str],
     explicit_args: bool = False,
     deferred_full_pytest: bool = False,
+    root: Path | None = None,
 ) -> str | None:
     if not changed_only or explicit_args:
         return None
@@ -356,7 +424,11 @@ def _skip_reason(
     if name == "pytest" and not scoped_args and not has_relevant:
         # A data file that no Python module or test names must not look like
         # "nothing relevant changed": say which file could not be mapped.
-        data_files = _changed_data_files(changed_files)
+        data_files = (
+            _python_data_files(changed_files, _project_python_files(root))[0]
+            if root is not None and _changed_data_files(changed_files)
+            else []
+        )
         if data_files:
             return "data_file_unmapped:" + ",".join(sorted(data_files))
     if name == "pytest" and has_relevant and not scoped_args:
