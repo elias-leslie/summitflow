@@ -145,6 +145,13 @@ You asked whether a standard exists, so Aico isn't held together with per-tool h
 ### After the current work: hard pruning, consolidation, and multi-host Aico (Owner 2026-11-02, queued)
 Once this plan is done, look into:
 1. **Pruning, then consolidation.** Hard-prune summitflow, agent-hub and nightshift, then fold them into aico. Use the one-off dead-code and duplication reports (see Debt guards).
+   - **First deliverable, before any cutting:** a full list of the general areas and functions in all three repos. For each area, give one recommendation (drop, streamline, merge into an existing Aico part, or keep as is), plus a line on why, its rough size, and what uses it today. Expect a lot to go. You choose per item.
+   - **Merge without bloat or slow dev.** Plan the layout before moving anything:
+     - Split Aico into separate packages or services with enforced boundaries.
+     - Make builds, checks and tests run only for what a change touches, with whole-repo runs nightly.
+     - Deploy each service separately, so rebuilding one doesn't rebuild everything.
+     - Keep shared code small.
+   - **Speed targets:** measure today's per-repo commit-check and rebuild times first. After the merge, they must stay at or under today's per-repo numbers; they must not add up to the combined total.
 2. **Multi-host Aico.** Every machine with Aico installed adds availability, redundancy and load balancing for everything Aico does: tasks, agent work, notes, runtime, backup and dev management.
    - **Starting point:** the two-front-door design, notes row sync, and Tether peers.
    - **First sketch:** sort each capability into one of four kinds:
