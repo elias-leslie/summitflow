@@ -1024,11 +1024,11 @@ def test_a_repeated_fyi_is_not_recorded_twice(monkeypatch, tether):
     assert again["id"] == first["id"] and len(coord._load_ledger()) == 1
 
 
-def _hook(inbox, monkeypatch, capsys, provider: str, event: str) -> str:
+def _hook(inbox, monkeypatch, capsys, provider: str, event: str, **payload) -> str:
     monkeypatch.setattr(inbox.coord, "adopt_hook_identity", lambda payload: None)
     monkeypatch.setattr(inbox.coord_lineage, "observe", lambda **_: [])
     monkeypatch.setattr("sys.argv", [str(COORD_INBOX), "backend", "turn", provider])
-    monkeypatch.setattr("sys.stdin", __import__("io").StringIO(json.dumps({"hook_event_name": event})))
+    monkeypatch.setattr("sys.stdin", __import__("io").StringIO(json.dumps({"hook_event_name": event, **payload})))
     assert inbox.main() == 0
     return capsys.readouterr().out
 
@@ -1056,17 +1056,32 @@ def test_the_turn_hook_shows_an_fyi_once_and_the_watcher_never_wakes_for_it(monk
 
 
 @pytest.mark.parametrize("provider", ["claude_code", "codex"])
-def test_ride_along_lines_join_the_next_prompt_not_every_tool_result(monkeypatch, inbox, tether, capsys, provider):
+def test_ride_along_lines_join_the_main_agents_next_tool_result_never_a_subagents(monkeypatch, inbox, tether, capsys,
+                                                                                  provider):
     monkeypatch.setenv("AICO_WIDGET_ID", WIDGET)
-    tether.version = 24
+    tether.version = 25
     _identity("codex:target", "target-31")
     _as(monkeypatch, "codex", "target-31")
     tether.ride_text[WIDGET] = '[Ready] lane "Store lane" went idle again after 2m'
-    assert _hook(inbox, monkeypatch, capsys, provider, "PostToolUse") == ""
-    assert tether.ride_text  # a tool result never takes them
-    out = _hook(inbox, monkeypatch, capsys, provider, "UserPromptSubmit")
+    # A subagent's tool result shares the session id; the lines would be lost in its context.
+    assert _hook(inbox, monkeypatch, capsys, provider, "PostToolUse", agent_id="a1", agent_type="general-purpose") == ""
+    assert tether.ride_text and not [c for c in tether.calls if "/due?" in c[1]]
+    out = _hook(inbox, monkeypatch, capsys, provider, "PostToolUse")  # the main agent's next tool result
     assert "went idle again" in json.loads(out)["hookSpecificOutput"]["additionalContext"]
     assert not tether.ride_text
+    tether.ride_text[WIDGET] = "[Ready] lane Y went idle again"
+    out = _hook(inbox, monkeypatch, capsys, provider, "UserPromptSubmit")  # and still the next prompt
+    assert "lane Y" in json.loads(out)["hookSpecificOutput"]["additionalContext"]
+
+
+def test_takes_ride_only_for_the_main_agent(inbox):
+    for provider in ("claude_code", "codex"):
+        assert inbox.takes_ride(provider, "UserPromptSubmit")
+        assert inbox.takes_ride(provider, "PostToolUse")
+        assert not inbox.takes_ride(provider, "PostToolUse", "agent-1")
+        assert not inbox.takes_ride(provider, "Stop") and not inbox.takes_ride(provider, "SessionStart")
+    assert inbox.takes_ride("claude_code", "PostToolUseFailure")
+    assert inbox.takes_ride("pi", "PostToolUse") and not inbox.takes_ride("pi", "PiIdle")
 
 
 def test_pi_takes_ride_along_lines_at_its_next_tool_result_and_its_idle_check_does_not(monkeypatch, inbox, tether, capsys):

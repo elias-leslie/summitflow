@@ -25,9 +25,10 @@ request for its sender (bare, or from the sender's own lane: coord_deliver.settl
 once by the turn hook, never wake an idle agent (`wakeable` and the watcher leave them out, Pi's idle check
 too), never block Stop, and ride along with the next wake. Tether's own
 ride-along lines (a lane's repeated went-idle line, a coordination line for these items) are taken at the
-window's next prompt (UserPromptSubmit; Pi's next tool result), only by the window's own agent (not a harness
-nested in it): peeked first thing (GET /v1/sessions/<window>/due?ride=peek) and taken once printed (DELETE
-...?token=, Tether API 25), so a hook that times out loses none; API 24 takes them at once (?ride=1).
+window's next prompt or the main agent's next tool result (UserPromptSubmit, PostToolUse; never a subagent's),
+only by the window's own agent (not a harness nested in it): peeked first thing
+(GET /v1/sessions/<window>/due?ride=peek) and taken once printed (DELETE ...?token=, Tether API 25), so a
+hook that times out loses none; API 24 takes them at once (?ride=1).
 
 Senders queue the same line when they record a request or ack; the woke state
 (cli.lib.coord_wake) keeps the watcher and Pi's idle check from waking the
@@ -445,8 +446,8 @@ def main() -> int:
     if not isinstance(payload, dict):
         payload = {}
     event = str(payload.get("hook_event_name") or "")
-    subagent = str(payload.get("agent_id") or "") if provider == "claude_code" else ""
-    if subagent:  # Claude subagent hooks share the parent session id: coordination items stay for the parent
+    subagent = str(payload.get("agent_id") or "") if provider in ("claude_code", "codex") else ""
+    if subagent:  # subagent hooks share the parent session id: items and ride-along lines stay for the parent
         if mode == "turn":
             emit(event, [], memory(f"{leases.identify_agent()[0]}/{subagent}"))
         return 0
@@ -462,7 +463,7 @@ def main() -> int:
         emit(event, [], memory(leases.identify_agent()[0], resumed=payload.get("source") == "resume"))
         return 0
     # Ride-along lines first, before the slower inbox work below eats the hook's time.
-    ride = take_ride(leases.identify_agent()[0]) if mode == "turn" and takes_ride(provider, event) else None
+    ride = take_ride(leases.identify_agent()[0]) if mode == "turn" and takes_ride(provider, event, subagent) else None
     agent_id, items = pending()
     if mode == "turn" and provider == "codex" and event == "UserPromptSubmit":
         disarm_codex(agent_id)
@@ -494,9 +495,16 @@ def main() -> int:
     return 0
 
 
-def takes_ride(provider: str, event: str) -> bool:
-    """The turns that carry Tether's ride-along lines: a new prompt (Claude Code, Codex), Pi's next tool result."""
-    return event == "UserPromptSubmit" or (provider == "pi" and event == "PostToolUse")
+def takes_ride(provider: str, event: str, subagent: str = "") -> bool:
+    """The turns that carry Tether's ride-along lines: a new prompt, or the main agent's next tool result.
+
+    Never a subagent's: Claude Code and Codex hooks give it an ``agent_id`` and the parent's session id, and
+    lines printed there land in its context while its parent, the window's agent, never sees them. Pi's
+    PostToolUse comes from its extension, for the main agent only.
+    """
+    if subagent or provider not in ("claude_code", "codex", "pi"):
+        return False
+    return event in {"UserPromptSubmit", "PostToolUse"} or (provider == "claude_code" and event == "PostToolUseFailure")
 
 
 class Ride(NamedTuple):
