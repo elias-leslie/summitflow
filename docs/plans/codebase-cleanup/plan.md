@@ -126,6 +126,14 @@ Proposed shape:
 - No CRDT library, no database replication, no Cloudflare storage. Expected size: a few hundred lines plus tests.
 - **Test:** split the hosts, edit the same list on both, then rejoin them. Both adds survive, the newer text wins with a saved revision, and deletes stay deleted. Live check: add an item from phone Aico with gem off, power gem on, and the item appears there.
 
+### Standard agent interface for Aico (Exploring, owner question 2026-11-02)
+You asked whether a standard exists, so Aico isn't held together with per-tool hooks.
+- **Today:** Tether runs each tool's real TUI in tmux. It reads busy or idle from each tool's own status files and hooks, and delivers by typing into the pane. Every tool needs its own glue (`tether/src/tools.ts`, SummitFlow `coord_inbox.py`, the Pi extension), and that's where the delivery bugs came from. Agent Hub already drives tools headless, through Claude `stream-json` and `codex app-server`, so the repo has two ways of talking to the same tools.
+- **The standard:** ACP (Agent Client Protocol, from Zed), JSON-RPC over stdio. Its agent list has about 40 agents: Gemini CLI natively, Claude through Zed's adapter on the Claude Agent SDK, Codex through an adapter, Pi through `pi-acp` on its RPC mode. I found nothing for Antigravity.
+- **T3 Code** uses each vendor's own programmatic interface instead (Codex app-server, the Claude Agent SDK) behind one adapter registry, and draws the chat itself.
+- **Trade-off:** with a protocol you get clean events (turn started or ended, tool calls, permission asks) and a real "queue this for the next turn". You lose the real TUI in the pane, so Aico would draw the conversation itself, which suits a phone better anyway.
+- **Proposed (waiting for your call):** a spike. Run one tool, Claude through ACP, as an Aico session type alongside the TUI sessions. Compare delivery, state, phone use and effort, then decide whether to move other tools over. Either way, put Tether's per-tool code behind one adapter contract with one test suite every tool must pass.
+
 ## Hosts: always-on (davion-gem) vs on-demand (davion-sidarli) (Exploring)
 Owner decisions (2026-11-02):
 - Notes must keep working with either host down (updated 2026-11-02; see "Notes store"). The offline phone queue and the Drive Inbox stay dropped, and the Drive backup stays.
