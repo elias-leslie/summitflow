@@ -16,6 +16,8 @@ Status: **Decided** = the owner said do it. **Proposed** = recommended and check
 - 2026-11-02 **Kept as is:** the Nightshift native tray and inbox panel (you moved off the website on 10-30, so T4 is withdrawn), the ledger and the drill, the aico lifecycle harness and real-session smoke scripts, and the Neri warp and oracle exits.
 - 2026-11-02 **Wake-on-LAN changes need your OK first.** That covers the Wake button, the wake commands in hosts.json and any router or BIOS changes. Run each by you before building it. Testing the existing WoL (shut down, wake, time it) is fine without asking.
 - 2026-11-02 **Router cloudflared: no.** There isn't enough flash for it, firmware upgrades wipe it, and gem already runs its own connector (tunnel `9483e71c`, serving `pve.summitflow.dev`).
+- 2026-11-02 **gem's Aico container may SSH into the Proxmox host**, only for a phone rescue shell and alerts while the workstation is off. That means one restricted key and the container's address in the `management` ipset, done when CT 190 is built.
+- 2026-11-02 **Nightly notes export uses its own Drive token**, limited to its `SummitFlow-Notes` folder (`drive.file`). You sign in once when the export is built; the backup's token never goes to gem.
 
 ## Cross-project
 | # | Item | Status | Size / gain |
