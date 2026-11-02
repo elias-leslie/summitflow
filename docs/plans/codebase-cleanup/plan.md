@@ -156,14 +156,40 @@ Once this plan is done, look into:
    - The Nightshift tray and phone app become the Aico tray and phone app, keeping everything they do today (approvals, YubiKey, toasts, asks).
    - Aico shows compact status and gives simple control over backups and runtime, replacing SummitFlow's current pages. Those pages are bloated and complicated today, so expect heavy simplification.
    - The exact screens get settled in design and mockup reviews with you, before they're built. The pruning list marks each SummitFlow and Nightshift screen as move, simplify or drop.
-3. **Multi-host Aico.** Every machine with Aico installed adds availability, redundancy and load balancing for everything Aico does: tasks, agent work, notes, runtime, backup and dev management.
-   - **Starting point:** the two-front-door design, notes row sync, and Tether peers.
-   - **First sketch:** sort each capability into one of four kinds:
-     - **Stateless front doors:** any host serves them.
-     - **Replicated data:** notes-style row sync (per-row clock, newest wins, revisions kept), generalized for tasks and settings.
-     - **Single-owner work:** queues, schedules and agent runs. One host holds a lease and another takes over when that host goes silent. Placement goes by host capacity, as `st` admission already does locally.
-     - **Host-bound:** GPU, VMs, hunting. These run where the hardware is and show as unavailable elsewhere.
-   - No database replication or cluster software. Design this before the consolidation, so the merged code is built multi-host from the start.
+3. **Aico fleet (direction agreed with you 2026-11-02).** Install Aico on a machine and it joins the fleet. It adds that machine's resources and uptime, and from wherever you are it all looks like one Aico.
+   - **Where it runs:** on whatever machines it's installed on, using what it can reach there.
+     - **davion-sidarli:** a full install.
+     - **davion-gem:** a full install in its own container (CT 190), not on the Proxmox host itself. It's always on, so Aico stays up when the workstation is off. It also starts and stops gem's VMs through Proxmox.
+     - **Agent VMs on gem:** Aico installed in worker mode. It runs agents and tracks their status on the VM, with no UI and no synced data copy. Agents work on the VM's own files; there's no remote file access and no extra token cost.
+     - **Windows laptops:** skipped for now. A Linux or Mac laptop could join later.
+   - **One install, a few switches** (UI, data copy, worker). Every machine serves Aico to itself locally: `aico.summitflow.dev` goes to 127.0.0.1 on that machine, which is already true on the workstation. Anything owned by another machine is fetched over the fleet link. The phone comes in through Cloudflare, as it does today.
+   - **Kinds of work:**
+     - **Front doors:** any machine serves them.
+     - **Synced data:** notes-style row sync for notes, tasks, settings and asks.
+     - **Run-once work** (queues, schedules, agent runs): one machine holds an expiring claim, and another takes over if it goes silent. Work is placed by tool, repo, capacity and power state.
+     - **Hardware-bound** (GPU, VMs, hunting): stays on its machine and shows as unavailable when that machine is off.
+     - No leader, no consensus and no cluster software.
+   - **Fleet link, Ominull-style** (`ominull/docs/TRUST_FABRIC.md`, `AGENT_TLS.md`): each machine connects out, gets its own certificate from a small Aico CA, and joins once you approve its code in the tray or phone. Each link is one long-lived encrypted connection carrying control, events, terminal views and sync. Updates are signed.
+     - No dependence on SSH; SSH remains your manual rescue route only.
+     - The listener is LAN only, never on the internet, and is declared to Nightshift.
+     - Ominull's design is copied, not its code.
+   - **Repos:** synced directly over the LAN as git remotes, pushed to peers right after each commit. GitHub is the fallback, because nightly publishing leaves it up to a day behind.
+     - Each repo has a home machine. Another machine takes it over only while the home is down.
+     - Synced repos: a pinned list plus any repo with commits in the last 14 days. Code only, and never Neri case or hunter data.
+   - **Sessions** stay on the machine where they started. Resume elsewhere only where that turns out to be cheap.
+   - **No auto-wake for now.**
+   - **Stack:**
+     - **TypeScript on Node** for Aico (server, link, sync, jobs, CLI, worker).
+     - **SQLite per machine,** no Postgres. The Postgres, Redis and Hatchet stack retires with the consolidation.
+     - **Rust for the tray only.**
+     - **Python** only where the pruning list shows it clearly earns its place (likely Nightshift's root-level checks).
+     - **Compiled helpers** only where a measurement shows startup cost matters, such as per-tool-call hooks.
+     - **One repo in packages** with enforced boundaries. Checks and tests run per package, and services deploy separately.
+   - **Rebuild vs port, and data:** the pruning list marks each area *port*, *rebuild from scratch* or *drop*, and each data set *migrate*, *start fresh* or *archive*.
+     - **Rebuild by default** where the fleet design or the leaner scope differs a lot; most UI and ops pages will.
+     - **Port** logic that works and is well tested.
+     - **Data:** start fresh on operational history (task and session records, telemetry). Migrate small valuable data (memories, prompts, project registry, backup configuration).
+     - **Old databases:** keep a read-only archive dump; deleting it stays your call.
 
 ### Possible consolidation into aico (Owner idea 2026-11-02, not started)
 You're considering folding summitflow, agent-hub and nightshift into aico, with heavy pruning first. Nothing is being done on it yet. Keep it in mind when sizing work in those three repos: prefer cuts over new structure there. The per-tool adapter rework lives in aico/tether, so it holds either way.
