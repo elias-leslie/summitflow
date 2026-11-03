@@ -92,7 +92,7 @@ def prepare_source(source_id: str, path: str) -> dict[str, Any] | None:
     context = extension_context()
     context.update(project_id=spec["project"], project_root=root, cwd=root, output={"human": False, "compact": False, "progress_only": False})
     result = run_process([str(executable), *binding.arguments, "--request", json.dumps(request)],
-                         env=_environment(binding, context), timeout=TIMEOUT_SECONDS, capture=True)
+                         env=_environment(binding, context), timeout=TIMEOUT_SECONDS, capture=True, cwd=root)
     if result.returncode:
         owner = _owner_code(result.stdout)
         raise PrepareError(f"{spec['project']} could not refresh {source_id}" + (f" ({owner})" if owner else f" (exit {result.returncode})"))

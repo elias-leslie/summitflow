@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import os
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from types import SimpleNamespace
@@ -102,3 +103,48 @@ def test_status_lists_a_stale_copy_as_a_problem(monkeypatch: pytest.MonkeyPatch)
     monkeypatch.setattr(overview.offsite, "read_state", lambda: {"last_success_at": NOW.isoformat()})
     problems = overview.health_problems(NOW)
     assert [p["key"] for p in problems] == ["stale-copy"] and "192h old" in problems[0]["message"]
+
+
+def _owner(monkeypatch: pytest.MonkeyPatch, tmp_path: Path, script: str) -> tuple[Path, Path]:
+    """A stand-in owner executable inside its own root, wired in where ST resolves extensions."""
+    import cli.config
+    import cli.extensions
+
+    root, folder = tmp_path / "owner", tmp_path / "folder"
+    root.mkdir()
+    folder.mkdir()
+    executable = root / "owner.py"
+    executable.write_text("#!/usr/bin/env python3\nimport json, os, sys\n" + script)
+    executable.chmod(0o755)
+    operation = SimpleNamespace(request_contract_version=1, response_schema_version=1)
+    record = SimpleNamespace(status="unverified", manifest=SimpleNamespace(structured_operations={"prepare_backup": operation}, effects=["write-remote", "write-local"]),
+                             binding=SimpleNamespace(id="ominull.backup", owner="ominull", arguments=[], execution_source="checkout"))
+    monkeypatch.setattr(cli.extensions, "load_extensions", lambda core: SimpleNamespace(records=[record]))
+    monkeypatch.setattr(cli.extensions, "_resolve_executable", lambda rec: (executable, 0, ""))
+    monkeypatch.setattr(cli.extensions, "_environment", lambda binding, context: {"PATH": os.environ["PATH"]})
+    monkeypatch.setattr(cli.extensions, "extension_context", lambda: {})
+    monkeypatch.setattr(cli.config, "get_project_root_path", lambda project: str(root))
+    monkeypatch.setattr(offsite, "read_state", lambda: {})
+    return root, folder
+
+
+def test_the_owner_runs_from_its_own_checkout_and_its_published_files_are_checked(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    _root, folder = _owner(monkeypatch, tmp_path, f"""
+request = json.loads(sys.argv[sys.argv.index('--request') + 1])
+if os.getcwd() != {str(tmp_path / 'owner')!r} or request['source_id'] != {SOURCE!r}:
+    print(json.dumps({{'status': 'failed', 'error': 'context_code_root'}})); sys.exit(2)
+open({str(tmp_path / 'folder' / 'lxc-150.tar')!r}, 'wb').write(b'12345')
+print(json.dumps({{'status': 'completed', 'source_id': request['source_id'], 'backup_id': request['backup_id'],
+                   'archive_path': {str(tmp_path / 'folder' / 'lxc-150.tar')!r}, 'size_bytes': 5}}))
+""")
+    assert prepare.prepare_source(SOURCE, str(folder))["size_bytes"] == 5  # type: ignore[index]
+
+
+def test_an_owner_refusal_names_its_code_and_a_guest_that_is_off_is_not_an_error(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    _, folder = _owner(monkeypatch, tmp_path, "print(json.dumps({'status': 'failed', 'error': 'backup_secrets_not_sealed'})); sys.exit(1)\n")
+    with pytest.raises(prepare.PrepareError, match=r"backup_secrets_not_sealed"):
+        prepare.prepare_source(SOURCE, str(folder))
+    (tmp_path / "again").mkdir()
+    _owner(monkeypatch, tmp_path / "again", "request = json.loads(sys.argv[sys.argv.index('--request') + 1])\n"
+           "print(json.dumps({'status': 'skipped', 'reason': 'guest_stopped', 'source_id': request['source_id'], 'backup_id': request['backup_id']}))\n")
+    assert prepare.prepare_source(SOURCE, str(tmp_path / "again" / "folder")) is None

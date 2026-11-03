@@ -36,10 +36,10 @@ class Result:
 
 
 def run_process(command: Sequence[str], *, env: Mapping[str, str] | None, timeout: float, capture: bool = False,
-                on_line: Callable[[str], None] | None = None) -> Result:
+                on_line: Callable[[str], None] | None = None, cwd: str | None = None) -> Result:
     """Run ``command`` for at most ``timeout`` seconds. ``capture`` keeps all of stdout, otherwise only its last lines."""
     proc = subprocess.Popen(list(command), stdin=subprocess.DEVNULL, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
-                            env=None if env is None else dict(env), start_new_session=True, text=True, errors="replace")
+                            env=None if env is None else dict(env), cwd=cwd, start_new_session=True, text=True, errors="replace")
     summary: dict[str, Any] = {}
     lines: deque[str] = deque(maxlen=MAX_CAPTURED_LINES if capture else TAIL_LINES)
     errors: deque[str] = deque(maxlen=TAIL_LINES)
