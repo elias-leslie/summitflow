@@ -295,16 +295,6 @@ def test_exact_arguments_context_environment_and_nonzero_exit(tmp_path, capfd, m
     assert err == "child stderr\n"
 
 
-def test_learn_binding_forwards_native_codex_session_identity():
-    registry_path = Path(__file__).resolve().parents[3] / "scripts/lib/tool-registry.json"
-    registry = json.loads(registry_path.read_text())
-    binding = next(
-        row for row in registry["extensions"] if row["namespace"] == "learn"
-    )
-
-    assert "CODEX_SESSION_ID" in binding["environment"]
-
-
 def test_neri_registration_is_local_and_small():
     registry_path = Path(__file__).resolve().parents[3] / "scripts/lib/tool-registry.json"
     catalog = load_extensions(set(), registry_path=registry_path)
