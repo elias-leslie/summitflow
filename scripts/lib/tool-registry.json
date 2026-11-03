@@ -6,7 +6,7 @@
       "owner": "aico",
       "namespace": "aico",
       "manifest": "extensions/aico.json",
-      "executable": "tether/scripts/aico-root-watch.py",
+      "executable": "native/host-steward/aico-root-watch.py",
       "grant": {
         "enabled": true,
         "effects": ["read-local", "process", "network"]
@@ -18,7 +18,7 @@
       "owner": "aico",
       "namespace": "tether",
       "manifest": "extensions/tether.json",
-      "executable": "tether/scripts/st-tether",
+      "executable": "packages/tether/scripts/st-tether",
       "grant": {
         "enabled": true,
         "effects": ["read-local", "write-local", "process"]
