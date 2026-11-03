@@ -231,6 +231,8 @@ Once this plan is done, look into:
 ### Settled consolidation choices (owner 2026-11-03)
 Every pick matches the recommendation unless noted. Anything not listed below moves as recommended on page 1.
 
+**Cut list, Aico package layout, data plan and build order (M0a-M12):** `cutlist.md` beside this file. About 287k lines are dropped across the three repos. About 246k lines are ported or used as the reference for a rebuild, for roughly 107k lines of new code. Only live rows move: the 149 active memories, the 143 enabled prompts, about 15 roles, about 13 tasks, the project registry, backup config and the current plans. Everything else goes into one read-only archive dump per store.
+
 **Status: one screen for the whole fleet**
 - Every check, job, backup, service, VM, machine link and grant writes one row. A row shows what it is, its kind, the machine or project, its state, the last and next run, what the state means in plain words, and an action.
 - Problems come first; healthy rows fold into a count. You can filter by state, kind, machine, project or search, and sort the list.
