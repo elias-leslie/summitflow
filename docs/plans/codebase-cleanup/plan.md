@@ -22,6 +22,12 @@ Status: **Decided** = the owner said do it. **Proposed** = recommended and check
 - 2026-11-02 **Phone Photos multi-select works** (you tested it on your phone).
 - 2026-11-03 **End state: summitflow, agent-hub and nightshift leave production.** "I don't expect summitflow, agent-hub, or nightshift to be in production when this is all said and done." They are pruned heavily, and only what's useful and needed is merged into Aico. The pruning list therefore has no "keep as is": each area is dropped or merged into Aico (ported or rebuilt). Anything that can't or shouldn't move says so plainly. Be honest about what has seen little or no use.
 - 2026-11-03 **Tray: alerts that ended on their own stop counting as new.** Resolved and Back online items leave the tray and stay on the website. Only open problems and unread agent reports count.
+- 2026-11-03 **Decide now, rebuild lean.** "We're making the calls now." No grace periods or "keep it 5 days, then decide". Where it's faster, rebuild from scratch and use the original only as a reference. Don't migrate questionable data. Carry over only data that is clearly valuable: memories, prompts, role definitions, the project registry, backup config and notes. Ask only real judgment calls. (Memory 029fd551.)
+- 2026-11-03 **Pruning choices settled.** All 129 areas, 15 questions and the ideas were answered on the two pages (https://claude.ai/artifact/V9QLJQ9TXU51RTm3D4FMBd and https://claude.ai/artifact/Twj3VQK5SipsZSx2UajMjn). The results are in "Settled consolidation choices" below.
+- 2026-11-03 **One central Status screen** ("i like it"). The design and the UI rule are in "Settled consolidation choices" below.
+- 2026-11-03 **Owner alerts go only through the Aico phone app** (FCM). The Proxmox sender covers the times the workstation is down. Web Push is retired. (Memory 1c1c6f8e updated.)
+- 2026-11-03 **Projects retired:** rootfall, monkey-fight, the-aftertimes, the-aftertimes-support, design-tools and fydor. 68 open tasks in them were cancelled. One fydor task stays open because its repair-findings guard refused the cancel; the project is hidden and nothing migrates from it.
+- 2026-11-03 **`st learn` removed** (summitflow cb0fb265, deployed).
 
 ## Cross-project
 | # | Item | Status | Size / gain |
@@ -144,6 +150,32 @@ You asked whether a standard exists, so Aico isn't held together with per-tool h
 - **After the consolidation,** add only the two cheap, fast guards to the one repo: dead code, and new suppressions, skipped tests or removed asserts in a diff.
 - **Skipped as ceremony:** mutation testing, complexity and size ratchets, logging reviewer-finding outcomes, and the cleanup job.
 
+#### Original proposal (for reference)
+The idea: automated checks that stop agents adding tech debt, so the cleanup doesn't creep back.
+- **Already have:**
+  - the quick check on every `st commit`, and the full and deep lanes
+  - `st check budget`, which ratchets LOC, test ratio and gate time (it's currently over: the gate takes 96 s against a 90 s target)
+  - import-linter in agent-hub only
+  - radon in summitflow
+  - the read-only `code-reviewer` agent
+  - the hooks that block stash and reset
+  - the search-first rule in CLAUDE.md
+- **Missing:**
+  - a diff check for new suppressions, skipped tests and removed asserts
+  - duplication (jscpd)
+  - dead code (vulture, knip)
+  - per-file size and complexity ratchets that fail only on new or worse violations
+  - module-boundary rules outside agent-hub
+  - mutation testing on changed code
+  - a record of which reviewer findings led to a fix
+  - a bounded cleanup job
+- **How it fits:** build once as shared `st check` stages with per-repo baselines, not a separate setup per repo. Fast checks go in quick; slow ones (mutation, duplication, dead code) go in the deep or nightly lane, so commits don't slow down.
+  - Baselines only tighten automatically. Loosening one takes an explicit flag with a reason, which shows in the nightly report; there's no approval tap.
+  - Ship in SummitFlow first, then roll out to agent-hub, aico, nightshift and neri. Neri's checks run on code only.
+  - Its first runs also produce dead-code and duplication lists, which feed the cleanup milestones here.
+- **Differences from the prompt:** commits go to main through `st commit`, not a branch. The reviewer is the existing `code-reviewer` agent. The cleanup job reuses the scheduled-agent tooling, off by default.
+- **Size:** medium for SummitFlow, then small per repo.
+
 ### After the current work: hard pruning, consolidation, and multi-host Aico (Owner 2026-11-02, queued)
 Once this plan is done, look into:
 1. **Pruning, then consolidation.** Hard-prune summitflow, agent-hub and nightshift, then fold them into aico. Use the one-off dead-code and duplication reports (see Debt guards).
@@ -174,7 +206,7 @@ Once this plan is done, look into:
      - **Run-once work** (queues, schedules, agent runs): one machine holds an expiring claim, and another takes over if it goes silent. Work is placed by tool, repo, capacity and power state.
      - **Hardware-bound** (GPU, VMs, hunting): stays on its machine and shows as unavailable when that machine is off.
      - No leader, no consensus and no cluster software.
-   - **Fleet link, Ominull-style** (`ominull/docs/TRUST_FABRIC.md`, `AGENT_TLS.md`): each machine connects out, gets its own certificate from a small Aico CA, and joins once you approve its code in the tray or phone. Each link is one long-lived encrypted connection carrying control, events, terminal views and sync. Updates are signed.
+   - **Fleet link, Ominull-style** (`ominull/docs/TRUST_FABRIC.md`, `AGENT_TLS.md`): each machine connects out with its own key, and joins once you approve its code in the tray or phone. The approved keys go on a pinned allowlist that every machine holds. There is no CA (decided 2026-11-03). Each link is one long-lived encrypted connection carrying control, events, terminal views and sync. Updates are signed.
      - No dependence on SSH; SSH remains your manual rescue route only.
      - The listener is LAN only, never on the internet, and is declared to Nightshift.
      - Ominull's design is copied, not its code.
@@ -187,8 +219,8 @@ Once this plan is done, look into:
      - **TypeScript on Node** for Aico (server, link, sync, jobs, CLI, worker).
      - **SQLite per machine,** no Postgres. The Postgres, Redis and Hatchet stack retires with the consolidation.
      - **Rust for the tray only.**
-     - **Python** only where the pruning list shows it clearly earns its place (likely Nightshift's root-level checks).
-     - **Compiled helpers** only where a measurement shows startup cost matters, such as per-tool-call hooks.
+     - **Python** only for the root-level host checks and the Proxmox sender.
+     - **Go for one binary only:** `aico-hook`, the per-tool-call hook. It starts in about 1 ms, against 18-21 ms for TypeScript. Today's hooks cost about 98 ms per call over about 13k Bash calls a day.
      - **One repo in packages** with enforced boundaries. Checks and tests run per package, and services deploy separately.
    - **Rebuild vs port, and data:** the pruning list marks each area *port*, *rebuild from scratch* or *drop*, and each data set *migrate*, *start fresh* or *archive*.
      - **Rebuild by default** where the fleet design or the leaner scope differs a lot; most UI and ops pages will.
@@ -196,34 +228,52 @@ Once this plan is done, look into:
      - **Data:** start fresh on operational history (task and session records, telemetry). Migrate small valuable data (memories, prompts, project registry, backup configuration).
      - **Old databases:** keep a read-only archive dump; deleting it stays your call.
 
-### Possible consolidation into aico (Owner idea 2026-11-02, not started)
-You're considering folding summitflow, agent-hub and nightshift into aico, with heavy pruning first. Nothing is being done on it yet. Keep it in mind when sizing work in those three repos: prefer cuts over new structure there. The per-tool adapter rework lives in aico/tether, so it holds either way.
+### Settled consolidation choices (owner 2026-11-03)
+Every pick matches the recommendation unless noted. Anything not listed below moves as recommended on page 1.
 
-#### Original proposal (for reference)
-The idea: automated checks that stop agents adding tech debt, so the cleanup doesn't creep back.
-- **Already have:**
-  - the quick check on every `st commit`, and the full and deep lanes
-  - `st check budget`, which ratchets LOC, test ratio and gate time (it's currently over: the gate takes 96 s against a 90 s target)
-  - import-linter in agent-hub only
-  - radon in summitflow
-  - the read-only `code-reviewer` agent
-  - the hooks that block stash and reset
-  - the search-first rule in CLAUDE.md
-- **Missing:**
-  - a diff check for new suppressions, skipped tests and removed asserts
-  - duplication (jscpd)
-  - dead code (vulture, knip)
-  - per-file size and complexity ratchets that fail only on new or worse violations
-  - module-boundary rules outside agent-hub
-  - mutation testing on changed code
-  - a record of which reviewer findings led to a fix
-  - a bounded cleanup job
-- **How it fits:** build once as shared `st check` stages with per-repo baselines, not a separate setup per repo. Fast checks go in quick; slow ones (mutation, duplication, dead code) go in the deep or nightly lane, so commits don't slow down.
-  - Baselines only tighten automatically. Loosening one takes an explicit flag with a reason, which shows in the nightly report; there's no approval tap.
-  - Ship in SummitFlow first, then roll out to agent-hub, aico, nightshift and neri. Neri's checks run on code only.
-  - Its first runs also produce dead-code and duplication lists, which feed the cleanup milestones here.
-- **Differences from the prompt:** commits go to main through `st commit`, not a branch. The reviewer is the existing `code-reviewer` agent. The cleanup job reuses the scheduled-agent tooling, off by default.
-- **Size:** medium for SummitFlow, then small per repo.
+**Status: one screen for the whole fleet**
+- Every check, job, backup, service, VM, machine link and grant writes one row. A row shows what it is, its kind, the machine or project, its state, the last and next run, what the state means in plain words, and an action.
+- Problems come first; healthy rows fold into a count. You can filter by state, kind, machine, project or search, and sort the list.
+- Late is not ok: a stale row shows "late since", and a row whose host is off shows "unknown".
+- Row actions: run now, detail, log, and start a session to look into it.
+- The tray badge, the phone, `st status` and the screen all read the same rows. A project page is the same list, filtered. Needs you stays separate; a failing row may raise one.
+- Detail pages only where there's real content: backup restore, the context-cost grid, costs and transcripts.
+- It replaces the separate Checks, Jobs, Fleet and Alerts-history screens, and the status parts of Runtime, Backups and Repo status. The final shape gets settled in a mockup review.
+- **UI rule:** anything that runs on its own, or holds state you might ask "is it working?" about, gets a row. Agent-only tools stay CLI. Rare config gets a read-only view and is changed through agents.
+
+**Agent Hub**
+- **Model calls (gateway):** dropped. Aico gets a small "ask a model" route: a prompt, optional files or images, and a JSON schema go in, and a subscription CLI (agy, Codex or Claude) runs headless on whichever host is up. It reuses the photo reader's agy runner. portfolio-ai and jobinator keep their routine jobs on their own timers on VM 180, report Status rows to Aico, and send alerts and asks through Aico. Their Agent Hub client becomes a thin Aico client using a service token over the LAN.
+- **Keys:** three kinds of secret move, as owner-only files in one Aico secrets folder per machine: the OpenCode Go key, the host tool logins, and the `_lab_*` logins. You re-enter them; nothing is migrated.
+- **Sessions:** a slim store, plus pi totals, the files each session wrote and a per-tool counter. Aico keeps the tools' own transcripts. The old event store gets one compressed dump. Old sessions are archived; nothing else is carried.
+- **Context cost:** rebuilt lean, about 2k lines. It adds a per-item inventory, a nightly "loaded but unused" flag to the tray, and an over-budget hint to the agent. The review queue goes. The runtime-context editor folds into the agents and prompts page.
+- **Agents:** only 5-15 role definitions move. The other rows go.
+- **Python client:** retired. The session, ownership and catalog lookups are ported.
+- **Web tools:** `st web` search, fetch, batch and refocus move into Aico, plus a call counter.
+- **Workflow runs:** dropped, along with tether `runs.ts` and the open "multi-model workflow runner" task.
+- **Memory:** full-text search plus tags.
+- **jenny and jobinator jobs:** dropped once VM 180's schedules are confirmed to cover what they still need.
+
+**Nightshift**
+- **Command executor:** dropped. It's been legacy since sudo on 10-20. Two small replacements: `sudo btrfs` for the snapshot list, and one sudoers line for the space guard.
+- **Ledger:** dropped. The old chain is archived read-only. The elevate use-log shows on the Grants view. The drill runs on demand.
+- **Elevate:** kept thin. It's a grant plus a tray or phone tap; approvals and passkeys shrink to that.
+- **Host monitor:** dropped.
+- **OmniNull parts in Nightshift:** trim the unused parts first, then move the alert feed, couriers and release signer to the OmniNull repo. Aico only pushes. (Router check and OmniNull's role: see the OmniNull research, pending.)
+- **Desktop bridge item** (ns-38): waits on the desktop-bridge work.
+
+**SummitFlow**
+- **`st` stays** as the CLI. These surfaces fold into Aico: web, elevate, vm, sessions, lease, pulse, memory, prompt and mandates. These stay separate: browser, ui, neri, jobs, portfolio, bugout, ominull, uilint and wiki. Dropped: learn (done), design, graph and show. A tiny `st monitor` stays, reading `/proc`.
+- **Hooks:** guard, lease and coordination go into the Go `aico-hook`.
+- **Commit and done:** both run locally. GitHub work runs nightly and never blocks. The three Actions workflows and the acceptance ceremony are deleted; at most one code-scanning job stays.
+- **Tasks:** about 13 are carried by hand and the rest are closed. Tasks and sessions link many-to-many.
+- **Mockups:** HTML files, added with `st mockup add <file> --project --title`. One page per project, with a note and a "Use this one" button that answers the asking session.
+- **Snapshots:** btrfs snapshots and btrbk stay on the workstation only. They give instant undo for uncommitted work, and btrbk is config, not our code. Every other machine uses restic. Each machine's Aico SQLite goes hourly to CT 160 (append-only) and daily to Drive. Replicas don't count as backups.
+- **Code intelligence** (sf-37): waits on its check.
+- **Repo status and workflow runs:** folded into Status, or dropped.
+
+**Ideas from other tools**
+- Adopted: the pinned-key allowlist; task-to-session links; drift fixtures, for the fleet link and the phone API only.
+- Skipped: relays and hosted sync. **Rule:** Aico never assumes Cloudflare. The front door works without it.
 
 ## Hosts: always-on (davion-gem) vs on-demand (davion-sidarli) (Exploring)
 Owner decisions (2026-11-02):
