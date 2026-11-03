@@ -258,7 +258,14 @@ Every pick matches the recommendation unless noted. Anything not listed below mo
 - **Ledger:** dropped. The old chain is archived read-only. The elevate use-log shows on the Grants view. The drill runs on demand.
 - **Elevate:** kept thin. It's a grant plus a tray or phone tap; approvals and passkeys shrink to that.
 - **Host monitor:** dropped.
-- **OmniNull parts in Nightshift:** trim the unused parts first, then move the alert feed, couriers and release signer to the OmniNull repo. Aico only pushes. (Router check and OmniNull's role: see the OmniNull research, pending.)
+- **OmniNull's role** (researched 2026-11-03). OmniNull stays a separate security product: the hub in CT 150, 8 machines enrolled, 2 of them Windows laptops. Aico doesn't need it to run, and it isn't redundant. Nothing else does network-flow detection, Windows coverage, host isolation or signed terminal sessions. It doesn't fold into Aico, and Aico's host checks don't move into it.
+  - **Alerts:** the hub pushes the existing notice JSON to a new Aico endpoint. Aico shows it in Needs you and pushes it through the app. "That was me" goes back through the hub's existing verdict route. The hub keeps an alert and retries until Aico accepts it. Its health arrives as Status rows (`ominull.<name>`), which show late if they stop. This replaces Nightshift pulling the feed every 15 minutes. About one critical push a week today.
+  - **Moves to the OmniNull repo:** the release signer, an "agents on a retired build" row, and its own detection-health rows.
+  - **Stays in Aico's host checks:** the router check (OmniNull keeps traffic baselines, not router config drift, so ns-24 stays), tripwire, sudo, listeners, ufw and sshd posture, the file-based OmniNull lock check, canary and honeypot webhooks, the off-host deadman, backups, storage, PVE and ECC.
+  - **Dropped:** Nightshift's ingest, its data map and feed versions 1-3, the evidence replica (CT 150 gets a normal backup instead), the courier that repeats the lock check, the OmniNull part of `registry.py`, host-grant signing, and the unused "auto" key.
+  - **One Status row:** "fleet machines without an OmniNull agent", so the two machine lists can't drift apart.
+  - **Fleet link:** takes OmniNull's ideas (`HOST_AUTHORITY.md`: a root-owned pin file of at most a few Ed25519 keys that the agent never writes; signed updates; no fallback), but none of its code, and uses its own signing key.
+  - **Found 2026-11-03:** CT 150's backup export stopped refreshing on 10-26, when the old backup scheduler was removed. The daily Drive job kept re-uploading the 10-26 file and reporting it as current. A fix is in progress. **Rule for Aico backups:** judge freshness by the age of the data, not the time of the upload.
 - **Desktop bridge item** (ns-38): waits on the desktop-bridge work.
 
 **SummitFlow**
