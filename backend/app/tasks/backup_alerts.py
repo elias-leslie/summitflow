@@ -125,10 +125,10 @@ def _proxmox_conditions(now: datetime) -> dict[str, dict[str, str]]:
 
 
 def _overview_conditions(now: datetime) -> dict[str, dict[str, str]]:
-    from .backup_overview import health_problems
+    from .backup_overview import STALE_COPY_KEY, health_problems
 
     return {f"backup:{problem['key']}": {"title": problem["title"], "message": problem["message"], "reason": problem["key"]}
-            for problem in health_problems(now)}
+            for problem in health_problems(now) if problem["key"] != STALE_COPY_KEY}
 
 
 def _fingerprint(key: str, reason: str) -> str:

@@ -120,3 +120,11 @@ def test_prune_waits_a_week_instead_of_filling_a_tight_scratch(monkeypatch: pyte
     monkeypatch.setattr(verify.shutil, "disk_usage", lambda _path: SimpleNamespace(free=verify.PRUNE_MIN_FREE_BYTES - 1))
     repo = Repo()
     assert verify.prune(repo, "t") == {"prune_partial_at": "t", "prune_error": None} and repo.calls == []  # type: ignore[arg-type]
+
+
+@pytest.fixture(autouse=True)
+def no_copy_freshness_questions(monkeypatch: pytest.MonkeyPatch) -> None:
+    """These tests are about the Drive layer; whether each copy is current has its own tests (test_backup_proxmox, test_backup_prepare)."""
+    from app.tasks import backup_proxmox
+
+    monkeypatch.setattr(backup_proxmox, "freshness_receipt", lambda now=None: {"targets": []})

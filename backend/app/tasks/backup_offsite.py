@@ -37,6 +37,7 @@ from ..config import get_settings
 from ..logging_config import get_logger
 from ..storage import backups as backup_store
 from ..utils.shared_paths import get_workspaces_root
+from . import backup_prepare as prepare_sources
 from .backup_database import (
     POSTGRES_DUMP_NAME,
     REDIS_DUMP_NAME,
@@ -355,6 +356,7 @@ class Job:
     env: tuple[tuple[str, str], ...] = ()
     error: str = ""
     guest: str = ""  # an offline guest's name, as "VM 180 apps"
+    prepare: bool = False  # the source's owner makes its payload fresh first (backup_prepare)
 
 
 def project_tags() -> list[str]:
@@ -419,7 +421,9 @@ def source_jobs() -> list[Job]:
             jobs.append(Job(name=source_id, kind="stream", tags=tags, required=False, command=tuple(plan["command"]),
                             filename=plan["target"].filename))
         elif path and _off_host_disk(path) and Path(path).exists():
-            jobs.append(Job(name=source_id, kind="path", tags=tags, required=False, paths=(path,)))
+            spec = prepare_sources.SOURCES.get(source_id)
+            jobs.append(Job(name=source_id, kind="path", tags=tags, required=False, paths=(path,),
+                            prepare=spec is not None, guest=spec["guest"] if spec else ""))
     return jobs
 
 
@@ -452,6 +456,15 @@ def run_job(repo: Repo, job: Job) -> dict[str, Any]:
     head = {"name": job.name, "kind": job.kind, "required": job.required, "started_at": started.isoformat()}
     if job.kind == "offline":
         return {**head, "status": "offline", "guest": job.guest or job.name}
+    if job.prepare:
+        # A refresh that fails must not let restic upload the previous payload as today's backup.
+        try:
+            if prepare_sources.prepare_source(job.name, job.paths[0]) is None:
+                return {**head, "status": "offline", "guest": job.guest or job.name}
+        except Exception as exc:
+            logger.exception("offsite_prepare_failed", job=job.name)
+            return {**head, "status": "failed", "error": f"not uploaded, the fresh copy could not be made: {exc}"[:300],
+                    "duration_s": round((_now() - started).total_seconds(), 1)}
     if job.kind == "stream":
         if not job.command or not job.filename:
             return {**head, "status": "failed", "error": job.error or "the source could not be planned"}

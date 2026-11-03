@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import os
 import subprocess
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
@@ -147,6 +148,7 @@ def _covered(monkeypatch, jobs: dict[str, dict[str, Any]], last_jobs: dict[str, 
         else:
             sources.append({"id": f"s{index}", "path": matcher + "?via=agent&path=/x" if matcher.endswith("/files") else matcher, "enabled": True})
     monkeypatch.setattr(px.backup_store, "list_sources", lambda: sources)
+    monkeypatch.setattr(px, "payload_time", lambda path: NOW)  # the folders are as new as the Drive copy; see the payload tests below
     monkeypatch.setattr(backup_offsite, "read_state", lambda: {"jobs": jobs, "last_run": {"jobs": last_jobs or {}}})
     return [source["id"] for source in sources]
 
@@ -169,6 +171,54 @@ def test_freshness_receipt_requires_every_target_to_have_a_recent_drive_copy(mon
     receipt = px.freshness_receipt(NOW)
     assert receipt["ok"] is False
     assert [item["status"] for item in receipt["targets"]] == ["stale", "never-verified", "fresh", "fresh", "offline-unchanged"]
+
+
+def _folder_target(monkeypatch, folder: Path, uploaded_hours: float):
+    """The ominull source only, backed by a real folder, as the Drive job last saw it."""
+    source = {"id": "ominull-production-state", "path": str(folder), "enabled": True}
+    monkeypatch.setattr(px.backup_store, "list_sources", lambda: [source])
+    monkeypatch.setattr(px, "REQUIRED_TARGETS", {"proxmox-gem/lxc/150 ominull": "source:ominull-production-state"})
+    monkeypatch.setattr(backup_offsite, "read_state", lambda: {"jobs": {source["id"]: _job(uploaded_hours)}})
+    return px.freshness_receipt(NOW)["targets"][0]
+
+
+def test_a_folder_re_uploaded_every_day_is_stale_when_its_files_are_old(monkeypatch, tmp_path):
+    tmp_path = tmp_path / "folder"  # the autouse key file sits beside it, not in it
+    tmp_path.mkdir()
+    (tmp_path / "manifest.json").write_text(json.dumps({"completed_at": (NOW - timedelta(days=8)).isoformat()}))
+    (tmp_path / "lxc-150.tar").write_bytes(b"x")
+    target = _folder_target(monkeypatch, tmp_path, uploaded_hours=2)  # restic ran 2 hours ago and stored nothing new
+    assert target["status"] == "stale" and target["fresh"] is False and target["age_hours"] == 192.0
+    assert target["uploaded_at"] == (NOW - timedelta(hours=2)).isoformat() and "old" in target["reason"]
+
+
+def test_a_folder_with_a_fresh_manifest_is_current_even_if_its_files_are_older(monkeypatch, tmp_path):
+    tmp_path = tmp_path / "folder"  # the autouse key file sits beside it, not in it
+    tmp_path.mkdir()
+    (tmp_path / "manifest.json").write_text(json.dumps({"completed_at": (NOW - timedelta(hours=5)).isoformat()}))
+    assert _folder_target(monkeypatch, tmp_path, uploaded_hours=1)["fresh"] is True
+
+
+def test_a_folder_without_a_manifest_is_judged_by_its_newest_file(monkeypatch, tmp_path):
+    tmp_path = tmp_path / "folder"  # the autouse key file sits beside it, not in it
+    tmp_path.mkdir()
+    old, new = tmp_path / "old.db", tmp_path / "sub" / "new.db"
+    new.parent.mkdir()
+    old.write_bytes(b"x")
+    new.write_bytes(b"x")
+    for path, hours in ((old, 100), (new, 3)):
+        stamp = (NOW - timedelta(hours=hours)).timestamp()
+        os.utime(path, (stamp, stamp))
+    assert px.payload_time(str(tmp_path)) == NOW - timedelta(hours=3)
+    assert _folder_target(monkeypatch, tmp_path, uploaded_hours=1)["fresh"] is True
+    stamp = (NOW - timedelta(hours=60)).timestamp()
+    os.utime(new, (stamp, stamp))
+    assert _folder_target(monkeypatch, tmp_path, uploaded_hours=1)["status"] == "stale"
+
+
+def test_an_unreadable_folder_is_not_called_current(monkeypatch, tmp_path):
+    target = _folder_target(monkeypatch, tmp_path / "missing", uploaded_hours=1)
+    assert target["status"] == "stale" and target["fresh"] is False and "cannot be read" in target["reason"]
 
 
 def test_neri_guest_disk_is_not_a_required_target():

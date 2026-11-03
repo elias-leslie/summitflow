@@ -27,6 +27,7 @@ never a command, and the far side builds the config dump (without priv/ and any
 
 from __future__ import annotations
 
+import contextlib
 import hashlib
 import json
 import os
@@ -326,6 +327,30 @@ def _aware(value: Any) -> datetime:
     return when if when.tzinfo else when.replace(tzinfo=UTC)
 
 
+def payload_time(path: str) -> datetime | None:
+    """When a folder source's files were made: its manifest's ``completed_at``, else its newest file. None if unreadable.
+
+    The Drive job's own time only says when restic last read the folder, which a stale folder passes every day.
+    """
+    root = Path(path)
+    try:
+        return _aware(json.loads((root / "manifest.json").read_text())["completed_at"])
+    except (OSError, ValueError, KeyError, TypeError, AttributeError):
+        pass
+    newest = None
+    try:
+        for directory, _names, files in os.walk(root):
+            for name in files:
+                with contextlib.suppress(OSError):
+                    mtime = os.lstat(os.path.join(directory, name)).st_mtime
+                    newest = mtime if newest is None else max(newest, mtime)
+        if newest is None and root.is_file():
+            newest = root.stat().st_mtime
+    except OSError:
+        return None
+    return None if newest is None else datetime.fromtimestamp(newest, UTC)
+
+
 def freshness_receipt(now: datetime | None = None) -> dict[str, Any]:
     """Whether every covered guest and the cluster config has a Google Drive copy newer than the limit."""
     from .backup_offsite import offline_guests, read_state
@@ -348,7 +373,16 @@ def freshness_receipt(now: datetime | None = None) -> dict[str, Any]:
         if job is None:
             targets.append({**entry, "status": "never-verified", "fresh": False})
             continue
-        when = _aware(job["time"])
+        when = uploaded = _aware(job["time"])
+        folder = not is_proxmox_path(str(source.get("path") or ""))
+        if folder:
+            # A folder is only as new as its files; re-uploading an old payload does not refresh it.
+            made = payload_time(str(source["path"]))
+            if made is None:
+                targets.append({**entry, "status": "stale", "fresh": False, "reason": "the backup folder cannot be read",
+                                "snapshot_id": job.get("snapshot_id"), "uploaded_at": uploaded.isoformat()})
+                continue
+            when = min(uploaded, made)
         age = (current - when).total_seconds() / 3600
         guest = offline.get(str(source["id"]))
         status, reason = "fresh", None
@@ -359,9 +393,11 @@ def freshness_receipt(now: datetime | None = None) -> dict[str, Any]:
                 status, reason = "stale", "guest is off, but it may have run since its last copy without being copied"
             else:
                 status = "stale"
+                if folder and (current - uploaded).total_seconds() / 3600 <= FRESHNESS_HOURS:
+                    reason = "the files in the backup folder are old; the Drive copy only uploaded them again"
         targets.append({**entry, "status": status, "fresh": status != "stale", **({"reason": reason} if reason else {}),
                         **({"offline_since": guest["offline_since"]} if guest else {}),
-                        "snapshot_id": job.get("snapshot_id"), "captured_at": when.isoformat(), "verified_at": when.isoformat(),
+                        "snapshot_id": job.get("snapshot_id"), "captured_at": when.isoformat(), "uploaded_at": uploaded.isoformat(), "verified_at": when.isoformat(),
                         "age_hours": round(age, 1), "offsite": "verified",
                         "restore_test_ok": restore_ok, "restore_drill_ok": restore_ok, "restore_verified": bool(restore_ok),
                         "restore_drill_at": spot_at.isoformat() if spot_at else None})

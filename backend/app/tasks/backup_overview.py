@@ -35,6 +35,7 @@ CHECK_FAILURES_BEFORE_PROBLEM = 2  # the read-back runs weekly: two in a row
 TIMER = "summitflow-host-backup.timer"
 # An age-out window this long is a pause (the old snapshots are kept), not a schedule worth stating in days.
 AGE_OUT_PAUSED_DAYS = 3650
+STALE_COPY_KEY = "stale-copy"  # the Proxmox freshness alert already raises these; the status shows them too
 
 
 def _parse(value: Any) -> datetime | None:
@@ -154,6 +155,14 @@ def health_problems(now: datetime | None = None) -> list[dict[str, str]]:
     if pruned is not None and now - pruned > timedelta(days=21) and maintenance.get("prune_error"):
         problems.append({"key": "offsite-prune", "title": "Google Drive backup cleanup keeps failing",
                          "message": f"The Drive repository has not been cleaned up since {pruned.date()}. Last error: {maintenance['prune_error']}"})
+    from .backup_proxmox import freshness_receipt
+
+    behind = [item for item in freshness_receipt(now)["targets"] if not item["fresh"]]
+    if behind:
+        # The Drive job can finish while a folder it uploaded is days old, so the copy's own age is checked too.
+        detail = "; ".join(f"{item['target']} ({item['status']}" + (f", {item['age_hours']:.0f}h old" if item.get("age_hours") is not None else "")
+                           + (f", {item['reason']}" if item.get("reason") else "") + ")" for item in behind)
+        problems.append({"key": STALE_COPY_KEY, "title": "A backup copy is not current", "message": detail})
     return problems
 
 

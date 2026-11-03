@@ -370,3 +370,11 @@ def test_a_project_restore_uses_the_path_the_snapshot_recorded(tmp_path: Path, m
     monkeypatch.setattr(restore, "snapshots", lambda *_a, **_k: [{"id": "abc", "full_id": "abc" * 21 + "d", "time": "2026-10-26T00:00:00+00:00", "paths": ["/srv/workspaces"]}])
     result = restore.restore("demo", tmp_path / "out", dry_run=True)
     assert result["path"] == "/srv/workspaces/projects/demo"
+
+
+@pytest.fixture(autouse=True)
+def no_copy_freshness_questions(monkeypatch: pytest.MonkeyPatch) -> None:
+    """These tests are about the Drive layer; whether each copy is current has its own tests (test_backup_proxmox, test_backup_prepare)."""
+    from app.tasks import backup_proxmox
+
+    monkeypatch.setattr(backup_proxmox, "freshness_receipt", lambda now=None: {"targets": []})
