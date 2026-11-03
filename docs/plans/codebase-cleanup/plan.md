@@ -251,7 +251,7 @@ Every pick matches the recommendation unless noted. Anything not listed below mo
 - **Web tools:** `st web` search, fetch, batch and refocus move into Aico, plus a call counter.
 - **Workflow runs:** dropped, along with tether `runs.ts` and the open "multi-model workflow runner" task.
 - **Memory:** full-text search plus tags.
-- **jenny and jobinator jobs:** dropped once VM 180's schedules are confirmed to cover what they still need.
+- **App automations:** dropped. Checked 2026-11-03: VM 180 runs its own Hatchet (in docker), and the portfolio-ai and jobinator workers schedule their own jobs there. Agent Hub's app automations (jenny, jobinator) were already all off. Only Agent Hub's own cleanup jobs still run there, and they go with it.
 
 **Nightshift**
 - **Command executor:** dropped. It's been legacy since sudo on 10-20. Two small replacements: `sudo btrfs` for the snapshot list, and one sudoers line for the space guard.
