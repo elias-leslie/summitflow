@@ -20,6 +20,8 @@ Status: **Decided** = the owner said do it. **Proposed** = recommended and check
 - 2026-11-02 **Nightly notes export uses its own Drive token**, limited to its `SummitFlow-Notes` folder (`drive.file`). You sign in once when the export is built; the backup's token never goes to gem.
 - 2026-11-02 **Wake workstation button: not now.** You said "hold off on this for now and revisit it at a later date if i want". Nothing gets built; `wake-ws` on gem stays the manual route.
 - 2026-11-02 **Phone Photos multi-select works** (you tested it on your phone).
+- 2026-11-03 **End state: summitflow, agent-hub and nightshift leave production.** "I don't expect summitflow, agent-hub, or nightshift to be in production when this is all said and done." They are pruned heavily, and only what's useful and needed is merged into Aico. The pruning list therefore has no "keep as is": each area is dropped or merged into Aico (ported or rebuilt). Anything that can't or shouldn't move says so plainly. Be honest about what has seen little or no use.
+- 2026-11-03 **Tray: alerts that ended on their own stop counting as new.** Resolved and Back online items leave the tray and stay on the website. Only open problems and unread agent reports count.
 
 ## Cross-project
 | # | Item | Status | Size / gain |
@@ -145,7 +147,7 @@ You asked whether a standard exists, so Aico isn't held together with per-tool h
 ### After the current work: hard pruning, consolidation, and multi-host Aico (Owner 2026-11-02, queued)
 Once this plan is done, look into:
 1. **Pruning, then consolidation.** Hard-prune summitflow, agent-hub and nightshift, then fold them into aico. Use the one-off dead-code and duplication reports (see Debt guards).
-   - **First deliverable, before any cutting:** a full list of the general areas and functions in all three repos. For each area, give one recommendation (drop, streamline, merge into an existing Aico part, or keep as is), plus a line on why, its rough size, and what uses it today. Expect a lot to go. You choose per item.
+   - **First deliverable, before any cutting:** a full list of the general areas and functions in all three repos. For each area, give one recommendation (drop, or merge into Aico by porting or rebuilding, streamlined), plus a line on why, its rough size, and what uses it today. None of the three repos stays in production (owner 2026-11-03). Expect a lot to go. You choose per item. **In progress 2026-11-03.**
    - **Merge without bloat or slow dev.** Plan the layout before moving anything:
      - Split Aico into separate packages or services with enforced boundaries.
      - Make builds, checks and tests run only for what a change touches, with whole-repo runs nightly.
