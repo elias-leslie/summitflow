@@ -313,12 +313,14 @@ From `st models route --role R` (policy v5, read 2026-11-03); re-check it when s
 | who | model, effort | used for |
 |---|---|---|
 | Coordinator (one fresh session per run of milestones) | Opus 5.5, xhigh | briefs, deciding, checking every result live, commits of plan changes; delegates the building |
-| Builder, default | Sonnet 5.5, high (subagent `model: sonnet`) | M0a, M0b, M1, M3, M4, M5a, M6, M8, M9, M10a, M10d, M12, migration scripts |
-| Builder, Opus | Opus 5.5, high | design, hard debugging, security, root or deleting code: M2 (screen design, after the owner reviews the mockup), M5b (root side, PVE sender), M6b and M8b (agent harness), M7 (Go hook and guard corpus), M10b (check/commit/done), M10c (ops: backups, snapshots, restore drill), M11 (fleet link and secrets) |
+| Builder, default | Sonnet 5.5, high (subagent `model: sonnet`) | mechanical or well-specified work: M0a, M0b, M4, M5a, M8, M9, M10a, M10d, M12, migration scripts. A Sonnet builder that is stuck, or finds the work needs a design call, stops and reports; the coordinator reruns that part on Opus |
+| Builder, Opus | Opus 5.5, high | design, contracts others build on, hard debugging, security, root or deleting code: M1 (Status contract everything reports into), M3 (jobs and owner alerts), M6 (memory, prompts, routing, deny table), M2 (screen design, after the owner reviews the mockup), M5b (root side, PVE sender), M6b and M8b (agent harness), M7 (Go hook and guard corpus), M10b (check/commit/done), M10c (ops: backups, snapshots, restore drill), M11 (fleet link and secrets) |
 | Reviewer | `code-reviewer` subagent (Opus, read-only) | one required review per milestone before its verified commit; no optional repeat reviews |
 | Tester | `user-tester` subagent (Haiku 5.5, high); Sonnet only if Haiku can't, Opus only when truly needed (say why) | user journeys with only what a real user has: Status screen, tray, phone, notes, `aico` CLI help; the coordinator checks each finding live before anything is fixed |
 | Search and fact gathering | `Explore` subagent, or Sonnet 5.5 high | broad sweeps and inventories that need only the conclusion |
 | Other harness | Codex gpt-6.1-sol, xhigh (Aico lane) | a builder when Claude's weekly usage is low (16% left on 2026-11-03, resets 11-06; Codex weekly resets 11-04 05:28, 12.6K credits left); the M6b slice is also measured against Pi on gpt-6.1-sol |
+
+Result rule (owner 2026-11-03): the cheaper model is used only where it gives the same result; when in doubt, use the stronger one. Every milestone ends with the coordinator checking it against the vision before it counts as done: it matches the decisions log and settled choices; it stays lean (no added ceremony, gates or unused layers; LOC near the cut list's estimate); dev speed doesn't get worse (`st check budget`, commit time); owner-facing screens and copy follow the product UI rules, with mockups reviewed by the owner first; and live behavior is checked, not just tests. The reviewer gets the milestone's goal and the relevant plan sections, not the builder's summary.
 
 Usage rule: keep coordinator turns short and put file reading and building in subagents. One builder per milestone (split an L milestone into two briefs up front), ended once verified.
 
