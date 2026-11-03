@@ -306,6 +306,22 @@ One agent per milestone, from a brief of <= 60 lines. Sizing rule: <= ~8k new li
 
 Order for parallel agents: M0a, M0b, then {M1, M6, M11} in parallel; M2/M3/M5a follow M1; M7 follows M6.
 
+### 4.1 Models and effort per piece
+
+From `st models route --role R` (policy v5, read 2026-11-03); re-check it when starting each milestone, since usage and routes change. Builders, reviewers and testers run as native Claude Code subagents of the coordinating session (Agent tool with `model`); an Aico lane (`st aico create`) only for another harness, for example Codex.
+
+| who | model, effort | used for |
+|---|---|---|
+| Coordinator (one fresh session per run of milestones) | Opus 5.5, xhigh | briefs, deciding, checking every result live, commits of plan changes; delegates the building |
+| Builder, default | Sonnet 5.5, high (subagent `model: sonnet`) | M0a, M0b, M1, M3, M4, M5a, M6, M8, M9, M10a, M10d, M12, migration scripts |
+| Builder, Opus | Opus 5.5, high | design, hard debugging, security, root or deleting code: M2 (screen design, after the owner reviews the mockup), M5b (root side, PVE sender), M6b and M8b (agent harness), M7 (Go hook and guard corpus), M10b (check/commit/done), M10c (ops: backups, snapshots, restore drill), M11 (fleet link and secrets) |
+| Reviewer | `code-reviewer` subagent (Opus, read-only) | one required review per milestone before its verified commit; no optional repeat reviews |
+| Tester | `user-tester` subagent (Haiku 5.5, high); Sonnet only if Haiku can't, Opus only when truly needed (say why) | user journeys with only what a real user has: Status screen, tray, phone, notes, `aico` CLI help; the coordinator checks each finding live before anything is fixed |
+| Search and fact gathering | `Explore` subagent, or Sonnet 5.5 high | broad sweeps and inventories that need only the conclusion |
+| Other harness | Codex gpt-6.1-sol, xhigh (Aico lane) | a builder when Claude's weekly usage is low (16% left on 2026-11-03, resets 11-06; Codex weekly resets 11-04 05:28, 12.6K credits left); the M6b slice is also measured against Pi on gpt-6.1-sol |
+
+Usage rule: keep coordinator turns short and put file reading and building in subagents. One builder per milestone (split an L milestone into two briefs up front), ended once verified.
+
 ## 5. Choices the sources did not settle
 - Package set, names and the `packages/` + `native/` + `contracts/` split; dependency-cruiser as the gate; one SQLite file per owning package; Status writers outside TypeScript post to loopback HTTP.
 - `chat-ui` (ah-13): dropped, although page 1 said agree. The gateway and chat page are gone, so nothing feeds it; only a message-renderer subset is kept if the transcript view needs it.
