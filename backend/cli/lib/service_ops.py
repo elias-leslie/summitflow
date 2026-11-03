@@ -14,7 +14,7 @@ import tomllib
 import uuid
 from collections.abc import Callable, Mapping, Sequence
 from contextlib import nullcontext, suppress
-from dataclasses import dataclass, replace
+from dataclasses import dataclass, field, replace
 from pathlib import Path
 from typing import Any
 
@@ -69,6 +69,9 @@ class ProjectServices:
     # Long-lived units the project owns but a normal rebuild never touches;
     # only `--worker <unit>` renders and restarts one.
     manual_workers: tuple[str, ...] = ()
+    # Extra repo paths a manual worker runs code from beyond its unit file and
+    # WorkingDirectory (identity ``services.manual_worker_sources``: unit -> paths).
+    manual_worker_sources: Mapping[str, tuple[str, ...]] = field(default_factory=dict)
     backend_extras: tuple[str, ...] = ()
     host_config_root: Path | None = None
     durable_data_root: Path | None = None
@@ -126,6 +129,10 @@ def canonical_unit(unit: str) -> str:
     suffixes = (".service", ".socket", ".device", ".mount", ".automount", ".swap",
                 ".target", ".path", ".timer", ".slice", ".scope")
     return f"{unit}.service" if unit and not unit.endswith(suffixes) else unit
+
+
+def _manual_worker_sources(value: Any) -> dict[str, tuple[str, ...]]:
+    return {canonical_unit(unit): _as_str_list(paths) for unit, paths in _dict_value(value).items()}
 
 
 def _as_str_list(value: Any) -> tuple[str, ...]:
@@ -194,6 +201,7 @@ def _project_from_identity(identity: Mapping[str, Any], project_id: str, root: P
         default_workers=_as_str_list(services.get("default_workers")),
         optional_workers=_as_str_list(services.get("optional_workers")),
         manual_workers=manual_workers,
+        manual_worker_sources=_manual_worker_sources(services.get("manual_worker_sources")),
         backend_port=int(runtime.get("backend_port") or 0),
         frontend_port=int(runtime.get("frontend_port") or 0),
         backend_dir=backend_dir,
@@ -622,9 +630,10 @@ def changed_manual_workers(project: ProjectServices, releases_root: Path, commit
     """Running manual workers whose source changed between their release and ``commit``.
 
     A rebuild leaves them running and names them with the ``--worker`` command
-    that deploys them (a manual worker restarts only when named). A worker's source is its unit template and its
+    that deploys them (a manual worker restarts only when named). A worker's source is its unit template, its
     ``WorkingDirectory`` under the project root (the whole repo when it names
-    none), diffed in ``repo`` (the checkout: a release source has no .git). A
+    none) and the identity's ``services.manual_worker_sources`` paths for code it
+    bundles from elsewhere in the repo, diffed in ``repo`` (the checkout: a release source has no .git). A
     stopped worker is left alone; one whose release commit cannot be read, or
     whose diff fails, counts as changed.
     """
@@ -645,7 +654,8 @@ def changed_manual_workers(project: ProjectServices, releases_root: Path, commit
             changed.append(unit)
             continue
         diff = capture(["git", "diff", "--quiet", base, commit, "--",
-                        f"scripts/systemd/{canonical_unit(unit)}", workdir], cwd=repo)
+                        f"scripts/systemd/{canonical_unit(unit)}", workdir,
+                        *project.manual_worker_sources.get(canonical_unit(unit), ())], cwd=repo)
         if diff.returncode > 1:
             reason = (diff.stderr or "").strip().splitlines()[-1:] or ["git diff failed"]
             print(f"[service] could not compare {unit}'s release {base[:12]} with {commit[:12]} "

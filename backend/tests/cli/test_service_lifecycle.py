@@ -1528,6 +1528,8 @@ def test_a_manual_worker_changed_when_its_unit_or_working_directory_did(project,
     (repo / "daemon").mkdir()
     (repo / "daemon" / "main.ts").write_text("1")
     (repo / "web.ts").write_text("1")
+    (repo / "lib").mkdir()
+    (repo / "lib" / "bundled.ts").write_text("1")
 
     def commit(path: str) -> str:
         (repo / path).write_text((repo / path).read_text() + "+")
@@ -1541,6 +1543,7 @@ def test_a_manual_worker_changed_when_its_unit_or_working_directory_did(project,
     elsewhere = commit("web.ts")
     daemon = commit("daemon/main.ts")
     unit = commit(f"scripts/systemd/{MANUAL}")
+    bundled = commit("lib/bundled.ts")
     releases = tmp_path / "state" / "projects" / "example" / "releases"
     (releases / ("a" * 32) / "source" / "daemon").mkdir(parents=True)
     proc = tmp_path / "proc" / "41"
@@ -1570,6 +1573,10 @@ def test_a_manual_worker_changed_when_its_unit_or_working_directory_did(project,
     running["commit"] = "f" * 40  # git cannot compare it: restart, and say why
     assert changed(elsewhere) == (MANUAL,)
     assert f"could not compare {MANUAL}'s release ffffffffffff" in capsys.readouterr().out
+    running["commit"] = unit
+    assert changed(bundled) == ()  # outside the unit and its working directory
+    managed = replace(managed, manual_worker_sources={MANUAL: ("lib",)})  # declared in the identity
+    assert changed(bundled) == (MANUAL,)
     pids.clear()  # stopped: nothing to restart
     assert changed(unit) == ()
 
