@@ -396,6 +396,19 @@ _register_lazy_placeholders()
 cast(Any, app).st_materialize = _materialize_lazy_commands
 
 
+def _aico_commit(message: str, paths: list[str] | None, *, task_id: str, repo: str | None, skip_checks: bool,
+                 with_ack: str | None) -> int | None:
+    """`aico commit` for a path-scoped commit in this repo; None keeps SummitFlow's (task audit, -R, rollback)."""
+    from .lib import aico_delegate
+
+    if not paths or task_id or repo is not None or not aico_delegate.checks_enabled("commit"):
+        return None
+    argv = ["commit", "-m", message, "--paths", *paths, *(["--with-ack", with_ack] if with_ack else []),
+            *(["--skip-checks"] if skip_checks else [])]
+    code = aico_delegate.run_checks(*argv)
+    return None if code == aico_delegate.NOT_HANDLED else code
+
+
 @app.command("commit", context_settings={"allow_extra_args": True})
 @usage(
     surface="st.commit",
@@ -451,6 +464,9 @@ def commit_command(
             paths = [*paths, *ctx.args]
         if push:
             raise CommitError(COMMIT_PUBLICATION_GUIDANCE)
+        if (code := _aico_commit(message, paths, task_id=task_id, repo=repo, skip_checks=skip_checks,
+                                 with_ack=with_ack)) is not None:
+            raise typer.Exit(code)
         repo_path = current_repo() if repo is None else Path(repo).expanduser().resolve()
         result = commit_repo(
             repo_path,

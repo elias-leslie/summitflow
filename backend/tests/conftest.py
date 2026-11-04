@@ -416,6 +416,8 @@ def isolated_coordination_store(tmp_path_factory) -> Generator[None]:
         patch.setenv("ST_COORD_ANCHOR", "")
         # Quick-check receipts live in the checkout's .git; tests that run `st check` must not read or write them.
         patch.setenv("ST_QUICK_RECEIPTS", "0")
+        # `st check` / `st commit` test SummitFlow's own gate, never the host's `aico` (test_aico_gate_seam turns it on).
+        patch.setenv("ST_AICO_CHECKS", "0")
         yield
 
 

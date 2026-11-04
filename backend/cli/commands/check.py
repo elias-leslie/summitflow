@@ -505,8 +505,38 @@ def _acceptance_summary(receipt: dict[str, object]) -> str:
     )
 
 
+# `st check` options Aico's gate runs (the value: its own spelling; None drops it).
+_AICO_CHECK_FLAGS = {"--quick": "--quick", "-q": "--quick", "--changed-only": "--changed-only", "-d": "--changed-only",
+                     "--check": None, "-c": None, "--fix": "--fix", "--no-reuse": "--no-reuse",
+                     "--acceptance": "--acceptance"}
+
+
+def _aico_check(args: list[str]) -> int | None:
+    """`aico check` when it runs these options and this repo's gate; None keeps SummitFlow's (ST_AICO_CHECKS=0)."""
+    from cli.lib import aico_delegate
+
+    if not aico_delegate.checks_enabled("check"):
+        return None
+    argv: list[str] = []
+    rest = list(args)
+    while rest:
+        arg = rest.pop(0)
+        if arg == "--sha" and rest:
+            argv += ["--sha", rest.pop(0)]
+        elif arg in _AICO_CHECK_FLAGS:
+            argv += [flag] if (flag := _AICO_CHECK_FLAGS[arg]) else []
+        else:
+            return None
+    if "--sha" in argv and "--acceptance" not in argv:
+        return None
+    code = aico_delegate.run_checks("check", *argv)
+    return None if code == aico_delegate.NOT_HANDLED else code
+
+
 def _handle_check_args(ctx: typer.Context, configs: dict[str, dict[str, object]]) -> int:
     args = list(ctx.args)
+    if (code := _aico_check(args)) is not None:
+        return code
     mode = args[0] if args else None
     if mode in {"--native", "--check", "-c"}:
         code = _native_mode(args, configs)
