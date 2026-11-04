@@ -21,6 +21,8 @@ from __future__ import annotations
 import copy
 import functools
 import os
+import random
+import time
 from collections.abc import Callable, Iterator
 from contextlib import contextmanager
 from dataclasses import dataclass
@@ -28,7 +30,8 @@ from typing import Any
 from urllib.parse import quote
 
 _TIMEOUT = 3.0
-_ATTEMPTS = 5  # reads and writes of one change before giving up
+_ATTEMPTS = 40  # reads and writes of one change before giving up
+_BACKOFF = 0.004  # the jittered pause after a lost race grows by this per attempt (at most 10x)
 # Tether's document limit (packages/tether/src/coordination/docs.ts MAX_DOC_BYTES); an answer carries one document.
 MAX_DOC_BYTES = 2 * 1024 * 1024 + 64 * 1024
 
@@ -163,6 +166,8 @@ def retrying[F: Callable[..., Any]](fn: F) -> F:
                     raise
                 if attempt + 1 == _ATTEMPTS:
                     raise Unavailable(f"{exc.name} kept changing under {_ATTEMPTS} tries") from exc
+                # Many writers at once: spread the retries so each round has a winner.
+                time.sleep(random.uniform(0, min(attempt + 1, 10) * _BACKOFF))
         raise AssertionError("unreachable")
 
     return run  # type: ignore[return-value]

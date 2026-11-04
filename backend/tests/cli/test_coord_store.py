@@ -78,6 +78,21 @@ def test_a_write_that_lost_a_race_is_redone_and_loses_nothing(tether):
         "/srv/p/a/**", "/srv/p/b/**", "/srv/p/c/**"]
 
 
+def test_many_lost_races_still_land(tether):
+    """Many writers on one document: a change is redone well past a handful of tries."""
+    lost = []
+
+    def someone_saves_first(name):
+        if len(lost) < 12:
+            lost.append(name)
+            tether.put(name, dict(tether.docs.get(name, {})))
+
+    tether.before_put = someone_saves_first
+    leases.acquire("proj", ["/srv/p/a/**"], project_root="/srv/p")
+    assert tether.conflicts == 12
+    assert [g for lease in tether.docs["proj"]["leases"] for g in lease["globs"]] == ["/srv/p/a/**"]
+
+
 def test_a_store_that_does_not_answer_is_never_read_as_empty(tether):
     leases.acquire("proj", ["/srv/p/a/**"], project_root="/srv/p")
     tether.put("_coord", {"messages": [{"id": "m1"}], "identities": {"cc:aaaaaa": {"anchor": "1:1"}}})
