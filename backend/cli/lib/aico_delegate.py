@@ -49,7 +49,7 @@ NOT_HANDLED = 3
 
 
 # The gate verbs that call Aico. Rollback: drop a verb here, or ST_AICO_CHECKS=0 for all (=1 turns all on).
-AICO_GATE_VERBS: frozenset[str] = frozenset({"check"})
+AICO_GATE_VERBS: frozenset[str] = frozenset({"check", "commit"})
 
 
 def checks_enabled(verb: str) -> bool:
