@@ -74,7 +74,7 @@ def run(*argv: str) -> int:
 
 
 # The ops verbs that call Aico. Rollback: drop a verb here, or ST_AICO_OPS=0 for all (=1 turns all on).
-AICO_OPS_VERBS: frozenset[str] = frozenset({"logs", "vm"})
+AICO_OPS_VERBS: frozenset[str] = frozenset({"logs", "snapshots", "vm"})
 
 
 def ops_enabled(verb: str) -> bool:
