@@ -525,6 +525,8 @@ def _aico_check(args: list[str]) -> int | None:
             argv += [flag] if (flag := _AICO_CHECK_FLAGS[arg]) else []
         else:
             return None
+    if not {"--quick", "-q", "--check", "-c", "--fix"} & set(args):
+        return None  # bare `st check` (or only -d) prints SummitFlow's help
     code = aico_delegate.run_checks("check", *argv)
     return None if code == aico_delegate.NOT_HANDLED else code
 
