@@ -205,11 +205,10 @@ def _run_process(argv: list[str], *, env: dict[str, str], cwd: str, capture: boo
 
 def dispatch_extension(record: ExtensionRecord, argv: list[str], *, context: dict[str, Any] | None = None,
                        root_resolver: Callable[[str], str | None] | None = None) -> int:
-    executable, code, diagnostic = _resolve_executable(record, root_resolver)
-    if code or executable is None or record.binding is None:
-        typer.echo(json.dumps({"error": "st-extension", "status": record.status if code == 2 else "missing-dependency",
-                               "message": diagnostic}), err=True)
-        return code
+    if record.status != "unverified" or record.binding is None:
+        typer.echo(json.dumps({"error": "st-extension", "status": record.status,
+                               "message": record.diagnostic}), err=True)
+        return 2
     binding = record.binding
     context = context if context is not None else extension_context()
     try:
@@ -227,6 +226,11 @@ def dispatch_extension(record: ExtensionRecord, argv: list[str], *, context: dic
 
                 present_web(argv, code, stdout, stderr)
                 return code
+        executable, code, diagnostic = _resolve_executable(record, root_resolver)
+        if code or executable is None:
+            typer.echo(json.dumps({"error": "st-extension", "status": "missing-dependency",
+                                   "message": diagnostic}), err=True)
+            return code
         code, stdout, stderr = _run_process([str(executable), *arguments], env=env, cwd=context["cwd"],
                                             capture=binding.presentation == "web-details")
         if binding.presentation == "web-details":

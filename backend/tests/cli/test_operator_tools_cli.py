@@ -1049,10 +1049,11 @@ def test_db_tables_counts_uses_exact_counts_not_pg_stats() -> None:
     ["benchmark", "--iterations", "99", "--max-chars", "100000"],
 ])
 def test_web_uses_registered_public_executable(arguments, tmp_path) -> None:
-    # Product normalization belongs to Agent Hub; ST preserves argv and presentation.
+    # Rollback retains Agent Hub's argv and presentation, independently of Aico on PATH.
     from pathlib import Path
 
     with (
+        patch("cli.lib.aico_delegate.web_command", return_value=None),
         patch("cli.extensions._resolve_executable", return_value=(Path("/trusted/web-research"), 0, "")),
         patch("cli.extensions.extension_context", return_value={"cwd": str(tmp_path)}),
         patch("cli.extensions._run_process", return_value=(0, '{"ok":true}\n', "")) as run_web,

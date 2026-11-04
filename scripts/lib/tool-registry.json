@@ -522,7 +522,14 @@
         "AGENT_HUB_WEB_LIGHTPANDA_BINARY",
         "AGENT_HUB_WEB_LIGHTPANDA_SHA256",
         "AGENT_HUB_WEB_LIGHTPANDA_VERSION",
-        "AGENT_HUB_WEB_CACHE_DIR"
+        "AGENT_HUB_WEB_CACHE_DIR",
+        "AICO_DATA_DIR",
+        "XDG_STATE_HOME",
+        "AICO_WEB_CACHE_DIR",
+        "AICO_WEB_URL",
+        "AICO_WEB_PORT",
+        "AICO_NODE",
+        "AICO_WEB_DEBUG"
       ],
       "presentation": "web-details"
     },
