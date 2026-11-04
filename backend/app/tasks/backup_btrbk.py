@@ -45,8 +45,8 @@ _RUN_ID = re.compile(r"\d{8}T\d{6}Z-[0-9a-f]{8}\Z")
 NATIVE_HELPER = "/usr/local/sbin/summitflow-native-capture"
 NATIVE_TARGET = Path("/mnt/summitflow-native/native")
 SYSFS_BTRFS = Path("/sys/fs/btrfs")
-# Listing subvolumes needs root's tree search; Nightshift's read-only diag
-# route runs it, so admission never wraps a read in sudo.
+# Listing subvolumes needs root's tree search, so admission runs `sudo -n btrfs
+# subvolume list` itself (the sudoers rule for it); it fails closed with sudo's stderr.
 _SUBVOLUME_ROW = re.compile(r"(\d+)\t(\d+)\t(\d+)\t+(\S.*)")
 
 
@@ -147,7 +147,8 @@ def _child_subvolumes(source: Path) -> list[str]:
     output = result.stdout if result.returncode == 0 else ""
     lines = output.splitlines()
     if len(lines) < 2 or lines[0].split() != ["ID", "gen", "top", "level", "path"] or not lines[1].startswith("--"):
-        raise RuntimeError(f"Subvolume listing for {source} is unavailable or incomplete; run: sudo -n btrfs subvolume list -t {source}")
+        reason = (result.stderr or "").strip()[-300:] or f"exit {result.returncode}"
+        raise RuntimeError(f"Subvolume listing for {source} is unavailable or incomplete ({reason}); run: sudo -n btrfs subvolume list -t {source}")
     children = []
     for line in lines[2:]:
         row = _SUBVOLUME_ROW.fullmatch(line.rstrip("\t"))

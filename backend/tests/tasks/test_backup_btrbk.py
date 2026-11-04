@@ -245,14 +245,15 @@ def test_required_current_received_point_is_qualified(monkeypatch: pytest.Monkey
 
 
 def _subvolume_listing(monkeypatch: pytest.MonkeyPatch, *rows: str, rc: int = 0,
-                       header: str = "ID\tgen\ttop level\tpath\t\n--\t---\t---------\t----\t\n", suffix: str = "") -> list[list[str]]:
+                       header: str = "ID\tgen\ttop level\tpath\t\n--\t---\t---------\t----\t\n", suffix: str = "",
+                       stderr: str = "") -> list[list[str]]:
     """`sudo -n btrfs subvolume list -t` output; children of the mount print relative to it."""
     calls: list[list[str]] = []
     monkeypatch.setattr(host, "_filesystem", lambda _: {"options": "rw,compress=zstd:1,subvolid=346,subvol=/@workspaces"})
     def run(args: list[str]) -> subprocess.CompletedProcess[str]:
         calls.append(args)
         out = header + "".join(f"{row}\t\n" for row in rows) + suffix
-        return subprocess.CompletedProcess(args, rc, out, "")
+        return subprocess.CompletedProcess(args, rc, out, stderr)
     monkeypatch.setattr(host, "_run", run)
     return calls
 
@@ -280,6 +281,17 @@ def test_nested_coverage_fails_closed_on_an_unusable_listing(monkeypatch: pytest
                        rc=1 if fault == "exit" else 0,
                        **({"header": "ID gen path\n"} if fault == "header" else {}))
     with pytest.raises(RuntimeError):
+        host._validate_nested_coverage(rows)
+
+
+def test_a_refused_listing_says_why_sudo_failed(monkeypatch: pytest.MonkeyPatch) -> None:
+    rows = [{"source_url": "/workspaces", "snapshot_path": "/host-snapshots"}]
+    monkeypatch.setattr(host, "get_workspaces_root", lambda: Path("/workspaces"))
+    _subvolume_listing(monkeypatch, rc=1, stderr="sudo: a password is required\n")
+    with pytest.raises(RuntimeError, match=r"unavailable or incomplete \(sudo: a password is required\)"):
+        host._validate_nested_coverage(rows)
+    _subvolume_listing(monkeypatch, rc=1)
+    with pytest.raises(RuntimeError, match=r"incomplete \(exit 1\)"):
         host._validate_nested_coverage(rows)
 
 
