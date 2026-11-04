@@ -26,6 +26,18 @@
       "environment": ["XDG_RUNTIME_DIR", "XDG_STATE_HOME", "TETHER_INSTANCE", "TETHER_SOCKET", "TETHER_NODE"]
     },
     {
+      "id": "aico.status",
+      "owner": "aico",
+      "namespace": "status",
+      "manifest": "extensions/status.json",
+      "executable": "packages/web-server/scripts/st-status",
+      "grant": {
+        "enabled": true,
+        "effects": ["read-local", "write-local", "network", "process"]
+      },
+      "environment": ["AICO_WEB_PORT", "AICO_NODE"]
+    },
+    {
       "id": "agent-hub.agents",
       "owner": "agent-hub",
       "namespace": "agents",

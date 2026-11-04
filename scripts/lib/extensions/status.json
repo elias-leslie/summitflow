@@ -1,0 +1,42 @@
+{
+  "id": "aico.status",
+  "owner": "aico",
+  "namespace": "status",
+  "version": "0.1.0",
+  "st_contract_versions": [
+    1
+  ],
+  "summary": "Status rows: every check, job, backup, service and machine that reports to Aico, problems first.",
+  "effects": [
+    "read-local",
+    "write-local",
+    "network",
+    "process"
+  ],
+  "help": {
+    "": "Usage: st status [options]\n\nShows every check, job, backup, service, VM and machine that reports to Aico on this\nmachine: problems first (failed, late, unknown, warn), healthy rows folded into a count.\n\nOptions:\n  --state S[,S]     failed, late, unknown, warn, ok, off\n  --kind K[,K]      check, job, backup, service, vm, machine, link, grant, repo\n  --machine M[,M]   only these machines\n  --project P[,P]   only these projects\n  --search TEXT     text in the name, meaning, id, machine or project\n  --sort ORDER      problems (default), what, updated, next\n  --all             list the healthy rows too\n  --json            the API answer as JSON\n\nReads aico-web on loopback (GET /api/status). Rows are written by the programs that run\nthe work (POST /api/status/rows on loopback; Python: native/host-steward/aico_status.py)."
+  },
+  "help_options": {
+    "": {
+      "--state": 1,
+      "--kind": 1,
+      "--machine": 1,
+      "--project": 1,
+      "--search": 1,
+      "--sort": 1,
+      "--all": 0,
+      "--json": 0
+    }
+  },
+  "usage": [
+    {
+      "surface": "st.status",
+      "cmd": "st status [--state S] [--kind K] [--machine M] [--project P] [--search TEXT] [--sort ORDER] [--all] [--json]",
+      "when": "see what is failed, late, unknown or warning across checks, jobs, backups, services and machines, and what to run about it",
+      "precautions": [
+        "Read-only. Late and unknown are problems, never ok: unknown means the machine stopped reporting."
+      ],
+      "tier": "reference"
+    }
+  ]
+}
