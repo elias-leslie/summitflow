@@ -133,11 +133,14 @@ def scope_lock(project_id: str, scope: SnapshotScope) -> Iterator[None]:
 
 
 def require_owned(project_id: str, root: Path, paths: list[str], owned_paths: list[str]) -> None:
-    from .. import coord
+    from .. import coord, coord_store
     from ..leases import is_mine, list_active, session_ids
-    mine, anchor = session_ids()
-    leases = list_active(project_id)
-    foreign = coord.foreign_writers(project_id, root, paths)  # writer sets outlive leases; unknown writers count
+    try:
+        mine, anchor = session_ids()
+        leases = list_active(project_id)
+        foreign = coord.foreign_writers(project_id, root, paths)  # writer sets outlive leases; unknown writers count
+    except coord_store.Unavailable as exc:
+        raise SnapshotError(f"Ownership cannot be proved: {exc}") from None
     declared = [safe_relative(p) for p in owned_paths]
     claims: dict[str, list[str]] = {}
     for path in paths:

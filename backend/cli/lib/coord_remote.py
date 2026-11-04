@@ -29,7 +29,7 @@ from http.client import HTTPException
 from typing import Any
 from urllib.parse import quote
 
-from . import coord, coord_deliver, coord_route, coordinators, leases
+from . import coord, coord_deliver, coord_route, coord_store, coordinators, leases
 
 # A host name in Tether's hosts.json (tether/src/hub/hosts.ts).
 HOST = re.compile(r"[a-z0-9][a-z0-9-]{0,31}")
@@ -241,6 +241,7 @@ def confirm_from_host(message_id: str, *, senders: list[str], host: str, withdra
     return coord.confirm(message_id, withdraw=withdraw, senders=_host_ids(host, senders, None)[0])
 
 
+@coord_store.retrying
 def inbox_for_host(*, senders: list[str], host: str, window: str | None) -> list[dict[str, Any]]:
     """Requests in this ledger awaiting a host agent's ack, or sent by it and not yet closed."""
     ids, address = _host_ids(host, senders, window)

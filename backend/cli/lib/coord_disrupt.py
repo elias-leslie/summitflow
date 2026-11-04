@@ -16,7 +16,7 @@ from collections.abc import Callable, Iterable
 from datetime import UTC, datetime, timedelta
 from typing import Any
 
-from . import coord, coord_lineage, leases
+from . import coord, coord_lineage, coord_store, leases
 
 SCHEMA = "summitflow.may-disrupt.v1"
 HOST_TARGET = "host"
@@ -101,6 +101,7 @@ def live_agents(sessions: Iterable[dict[str, Any]] | None, host: str) -> list[di
     return sorted(out.values(), key=lambda r: r["agent"])
 
 
+@coord_store.retrying
 def handshakes(request_ids: Iterable[str] | None, now: datetime, *, everyone: bool = False) -> list[dict[str, Any]]:
     """Requests by id, or every request the caller sent when none are named, with reply state.
 

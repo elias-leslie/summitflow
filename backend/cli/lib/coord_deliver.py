@@ -53,7 +53,7 @@ from pathlib import Path
 from typing import Any, NamedTuple
 from urllib.parse import quote
 
-from . import coord, coord_lineage, coord_wake, coordinators, leases
+from . import coord, coord_lineage, coord_store, coord_wake, coordinators, leases
 
 DELIVERY_API = 16  # POST /v1/sessions/:id/deliveries, GET /v1/deliveries/:id
 NUDGE_API = 17  # POST /v1/waits/check
@@ -238,6 +238,7 @@ def reply_waited(widget: str) -> set[str]:
             and (w.get("state") == "armed" or (w.get("state") == "fired" and w.get("outcome") == "until"))}
 
 
+@coord_store.retrying
 def waiting(who: Target) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
     """(open requests to the recipient, acks of its requests it has not been shown) in the ledger.
 
@@ -259,6 +260,7 @@ def waiting(who: Target) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
     return requests, acks
 
 
+@coord_store.retrying
 def rides(who: Target) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
     """(FYI notes to the recipient, bare acks that closed its requests) it has not been shown: ride-along only."""
     seen = coord_wake.load_seen(who.agent_id)

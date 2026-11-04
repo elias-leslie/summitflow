@@ -192,6 +192,7 @@ def _prune(identities: dict[str, Any], now: datetime) -> dict[str, Any]:
     return kept
 
 
+@coord_store.retrying
 def observe(*, reset: bool = False, subagent: bool = False, emit: bool = False) -> list[str]:
     """Register this identity on its anchor; on a reset return the one-line startup notice.
 
@@ -252,7 +253,11 @@ def _continuing_line(latest: str, predecessors: set[str], doc: dict[str, Any]) -
     parts: list[str] = []
     holds: list[str] = []
     files: dict[str, int] = {}
-    for project_id in leases.all_projects():
+    try:
+        projects = leases.all_projects()
+    except OSError:
+        projects = []  # the reset line still names the open requests
+    for project_id in projects:
         try:
             live = leases.list_active(project_id, kinds=("hold", "file", "op"))
         except OSError:
@@ -314,6 +319,7 @@ def _note_peers(doc: dict[str, Any], successor: str, predecessors: set[str], lat
     doc["notes"] = notes
 
 
+@coord_store.retrying
 def pop_notes(is_me: Callable[[object], bool]) -> list[str]:
     """Peer notes addressed to me, surfaced once."""
     now = datetime.now(UTC)

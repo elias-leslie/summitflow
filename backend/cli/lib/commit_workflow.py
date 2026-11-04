@@ -14,7 +14,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
-from . import coord, leases
+from . import coord, coord_store, leases
 from .acceptance import AcceptanceError, repo_lock, workspace_fingerprint
 from .task_claims import TaskClaimRenewalError, renew_owned_claim
 
@@ -277,7 +277,12 @@ def _require_no_sweep(repo: Path, selected: Sequence[str], changed: Sequence[str
     if resolved is None or not changed:
         return
     project_id, root = resolved
-    foreign = coord.foreign_writers(project_id, root, changed)
+    try:
+        foreign = coord.foreign_writers(project_id, root, changed)
+    except coord_store.Unavailable as exc:
+        # Unknown writers are not "no writers": without the store this commit could sweep another agent's work.
+        raise CommitError(f"{exc}: st commit cannot tell who wrote these files, so it refuses; "
+                          "start Tether (systemctl --user start tether@default) and retry") from None
     if not foreign:
         return
     # A changed file not named exactly came in through the whole tree, a directory or a glob.

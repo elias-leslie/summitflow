@@ -25,6 +25,7 @@ import os
 import re
 import shlex
 import subprocess
+import sys
 import uuid
 from collections.abc import Iterator, Sequence
 from contextlib import contextmanager, suppress
@@ -174,11 +175,26 @@ def guard(repo: Path, operation: str, *, with_ack: str | None = None) -> None:
     tree): blocked by any live op, or another agent's hold. acceptance: only by
     another agent's hold. reconcile (syncs working trees): also blocked by another
     agent's file lease touched within ACTIVE_WINDOW. An acked request
-    (``--with-ack``) from that holder authorizes the operation.
+    (``--with-ack``) from that holder authorizes the operation. When the
+    coordination store does not answer, every operation but rebuild is refused
+    (holds and ops are unknown, not absent); rebuild warns and goes on.
     """
     resolved = project_for_path(repo)
     if resolved is None:
         return
+    try:
+        _guard(resolved, operation, with_ack)
+    except coord_store.Unavailable as exc:
+        if operation == "rebuild":
+            # A rebuild deploys committed HEAD, not the working tree, and is how a broken Tether is put back:
+            # refusing it here would leave no managed way to restore the store.
+            print(f"WARNING {exc}: holds and ops of other agents are unknown; rebuilding anyway", file=sys.stderr)
+            return
+        raise CoordBlocked(f"{resolved[0]}: {operation} refused: {exc}; other agents' holds and ops are "
+                           "unknown; start Tether (systemctl --user start tether@default) and retry") from None
+
+
+def _guard(resolved: tuple[str, Path], operation: str, with_ack: str | None) -> None:
     project_id, root = resolved
     with_ack = with_ack or _COMMAND_ACK.get()
     coord_lineage.observe()
@@ -321,6 +337,7 @@ def session_start(payload: dict[str, Any]) -> str | None:
     return "\n".join(lines) or None
 
 
+@coord_store.retrying
 def _mark_main_thread() -> None:
     """Record this identity as its harness process's main thread (SessionStart never fires for child threads)."""
     agent_id = leases.identify_agent()[0]
@@ -444,6 +461,7 @@ def live_agents() -> list[str]:
                   if isinstance(row, dict) and coord_lineage.anchor_alive(row.get("anchor")))
 
 
+@coord_store.retrying
 def send(to: str, text: str, *, project: str | None = None, limit: int = MAX_TEXT,
          source_key: str | None = None, sender: str | None = None,
          remote: dict[str, str] | None = None, fyi: bool = False) -> dict[str, Any]:
@@ -478,12 +496,14 @@ def send(to: str, text: str, *, project: str | None = None, limit: int = MAX_TEX
     return row
 
 
+@coord_store.retrying
 def drop(message_id: str) -> None:
     """Forget a request that never reached its recipient (a failed cross-machine post)."""
     with leases._lock("_coord"):
         _save_ledger([row for row in _load_ledger() if row["id"] != message_id])
 
 
+@coord_store.retrying
 def ack(message_id: str, intent: str, note: str | None = None, *,
         remote: tuple[str, str] | None = None) -> dict[str, Any]:
     """Recipient states intent: yes | no | eta:<minutes>.
@@ -516,6 +536,7 @@ def ack(message_id: str, intent: str, note: str | None = None, *,
         return dict(row)
 
 
+@coord_store.retrying
 def close_bare_ack(message_id: str, *, lane: bool = False) -> dict[str, Any]:
     """Close an acked request for its sender with no third step: a ``yes`` it waits on nothing for.
 
@@ -533,6 +554,7 @@ def close_bare_ack(message_id: str, *, lane: bool = False) -> dict[str, Any]:
         return dict(row)
 
 
+@coord_store.retrying
 def confirm(message_id: str, *, withdraw: bool = False, senders: set[str] | None = None) -> dict[str, Any]:
     """Requester closes the exchange; ``withdraw`` closes one nobody acked (it authorizes nothing).
 
@@ -567,6 +589,7 @@ def _find(rows: list[dict[str, Any]], message_id: str) -> dict[str, Any]:
     raise UnknownRequest(f"unknown request {message_id}")
 
 
+@coord_store.retrying
 def ack_authorizes(message_id: str, holder: leases.Lease, project_id: str) -> bool:
     """A yes-ack from this holder, for this project, younger than ACK_VALID_FOR."""
     mine = leases.self_ids()
@@ -599,6 +622,7 @@ def fyi_shown(row: dict[str, Any]) -> bool:
     return any(key in coord_wake.load_seen(i) for i in {str(row["to"]), *leases.self_ids()})
 
 
+@coord_store.retrying
 def delivery_status(message_id: str, *, to: str, project: str, source_key: str) -> dict[str, Any]:
     """Read one sender-owned inbox receipt without exposing message or reply text."""
     with leases._lock("_coord"):
@@ -622,6 +646,7 @@ def closed_ack_shown(row: dict[str, Any]) -> bool:
     return any(key in coord_wake.load_seen(i) for i in {str(row["from"]), *leases.self_ids()})
 
 
+@coord_store.retrying
 def inbox() -> list[dict[str, Any]]:
     """Requests awaiting my ack, acks awaiting my confirm, and FYI notes to me and noted closed acks not yet shown.
 
@@ -643,6 +668,7 @@ def inbox() -> list[dict[str, Any]]:
     ]
 
 
+@coord_store.retrying
 def closed_acks() -> list[dict[str, Any]]:
     """My requests a ``yes`` closed with no third step (``close_bare_ack``; ride-along: shown once, nothing to do)."""
     mine = leases.self_ids()
@@ -651,6 +677,7 @@ def closed_acks() -> list[dict[str, Any]]:
     return [row for row in rows if row["state"] == "closed" and row.get("auto_closed") and row["from"] in mine]
 
 
+@coord_store.retrying
 def notices() -> list[str]:
     """One line per actionable item; unacked requests, resets and peer notes surface once."""
     agent_id, _, session_id, _ = leases.identify_agent()

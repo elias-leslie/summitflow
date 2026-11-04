@@ -6,8 +6,11 @@ another lane's uncommitted edits across lanes. Leases coordinate the real shared
 resource (the filesystem) directly.
 
 Storage: Tether's coordination documents (coord_store.py; Aico owns them, and
-aico-hook reads and writes the same ones), one per project, locked for atomic
-read/modify/write across concurrent agents on the same machine. With
+aico-hook reads and writes the same ones), one per project, changed by
+compare-and-set: ``_lock`` reads a document with its version and ``_save`` writes
+against it; a function that changes one is ``@coord_store.retrying``, so a write
+that lost a race is redone on a fresh read. A store that does not answer raises
+coord_store.Unavailable (an OSError), never an empty document. With
 ST_LEASES_DIR set the old <dir>/<project>.json files with fcntl locking are used.
 
 Agent identity uses env vars so Claude Code, Codex CLI, and Agent Hub agents
@@ -319,6 +322,7 @@ def _project_path(path: str, project_root: str | None) -> str:
     return os.path.normpath(path)
 
 
+@coord_store.retrying
 def acquire(
     project_id: str,
     globs: list[str],
@@ -362,6 +366,7 @@ def acquire(
         return lease
 
 
+@coord_store.retrying
 def list_active(project_id: str, kinds: tuple[str, ...] = ("file",)) -> list[Lease]:
     """Return live leases of the given kinds (stale ones purged on read)."""
     with _lock(project_id):
@@ -372,6 +377,7 @@ def list_active(project_id: str, kinds: tuple[str, ...] = ("file",)) -> list[Lea
         return [lease for lease in leases if lease.kind in kinds]
 
 
+@coord_store.retrying
 def heartbeat(project_id: str) -> int:
     """Touch all leases held by current agent. Returns count touched."""
     mine, anchor = self_ids(), my_anchor()
@@ -387,6 +393,7 @@ def heartbeat(project_id: str) -> int:
         return touched
 
 
+@coord_store.retrying
 def release(project_id: str, glob: str | None = None, project_root: str | None = None) -> int:
     """Release current agent's leases: all (glob None), one lease id, or one glob.
 
@@ -418,6 +425,7 @@ def release(project_id: str, glob: str | None = None, project_root: str | None =
         return released
 
 
+@coord_store.retrying
 def release_task(project_id: str, task_id: str) -> int:
     """Release every lease tied to a task, regardless of holding agent.
 
@@ -436,6 +444,7 @@ def release_task(project_id: str, task_id: str) -> int:
         return before - len(leases)
 
 
+@coord_store.retrying
 def take(project_id: str, path: str, project_root: str | None = None) -> Lease:
     """Forcibly claim a path. Drops other agents' matching leases, logs takeover, then acquires."""
     path = _project_path(path, project_root)
@@ -555,6 +564,7 @@ def writer_label(entry: dict) -> str:
     return str(entry.get("agent_id"))
 
 
+@coord_store.retrying
 def claim(project_id: str, path: str, project_root: str | None = None) -> tuple[bool, Lease | None]:
     """Atomically lease a single file to the current agent for an edit (advisory).
 
@@ -591,6 +601,7 @@ def claim(project_id: str, path: str, project_root: str | None = None) -> tuple[
         return conflict is None, conflict or own
 
 
+@coord_store.retrying
 def record_writes(
     project_id: str,
     paths: list[str],
@@ -647,6 +658,7 @@ def _prune(writers: dict[str, list[dict]], root: str, dirty: set[str]) -> None:
         del writers[path]
 
 
+@coord_store.retrying
 def prune_writers(project_id: str, root: str, dirty: set[str]) -> None:
     """Drop writer sets of paths under ``root`` that are no longer dirty (committed or reverted)."""
     with _lock(project_id):
@@ -658,6 +670,7 @@ def prune_writers(project_id: str, root: str, dirty: set[str]) -> None:
             _save(project_id, _load(project_id), writers)
 
 
+@coord_store.retrying
 def writers(project_id: str) -> dict[str, list[dict]]:
     """Path -> writer entries for every dirty path some session recorded."""
     with _lock(project_id):
@@ -684,6 +697,7 @@ def touches(project_id: str) -> dict[str, dict]:
     return out
 
 
+@coord_store.retrying
 def release_paths(project_id: str, paths: list[str], project_root: str | None = None) -> int:
     """Release the current agent's single-file leases on exactly these paths (after commit)."""
     targets = {_project_path(p, project_root) for p in paths}
@@ -698,6 +712,7 @@ def release_paths(project_id: str, paths: list[str], project_root: str | None = 
         return len(leases) - len(kept)
 
 
+@coord_store.retrying
 def acquire_mark(project_id: str, root: str, kind: str, purpose: str) -> Lease:
     """Acquire a repo-level hold (idle TTL) or op lease (fenced to this process)."""
     agent_id, slug, sid, provider = identify_agent()
@@ -721,6 +736,7 @@ def acquire_mark(project_id: str, root: str, kind: str, purpose: str) -> Lease:
     return lease
 
 
+@coord_store.retrying
 def release_mark(project_id: str, lease_id: str) -> None:
     with _lock(project_id):
         _save(project_id, [lease for lease in _load(project_id) if lease.lease_id != lease_id])
