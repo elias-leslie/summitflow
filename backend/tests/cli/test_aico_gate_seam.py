@@ -90,3 +90,13 @@ def test_commit_falls_back_when_aico_does_not_run_the_repo(aico):
         assert runner.invoke(app, ["commit", "-m", "x", "--paths", "a.py"]).exit_code == 0
     assert len(calls) == 1
     commit_repo.assert_called_once()
+
+
+def test_acceptance_runs_summitflows_own_gate(monkeypatch, tmp_path):
+    from cli.lib import acceptance
+
+    seen = {}
+    monkeypatch.setenv("ST_AICO_CHECKS", "1")
+    monkeypatch.setattr(acceptance.subprocess, "run", lambda *a, **k: seen.update(k["env"]))
+    acceptance._run(["st", "check", "--check"], tmp_path)
+    assert seen["ST_AICO_CHECKS"] == "0"

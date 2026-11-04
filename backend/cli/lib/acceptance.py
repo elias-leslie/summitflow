@@ -1108,6 +1108,8 @@ def _run(command: list[str], cwd: Path, *, native_reuse: bool = True,
         if not native_reuse:
             environment["ST_NATIVE_NO_REUSE"] = "1"
         environment[ci_parity.PARITY_FLAG] = "1"
+        # Acceptance is SummitFlow's own gate (its evidence reads this output); never Aico's.
+        environment["ST_AICO_CHECKS"] = "0"
         if seed is not None:
             environment[ci_parity.SEED_VAR] = str(seed)
         return subprocess.run([sys.executable, "-P", "-c", bootstrap,
