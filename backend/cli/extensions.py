@@ -18,6 +18,7 @@ from pydantic import ValidationError
 from typer.core import TyperCommand
 
 from .extension_contract import CONTRACT_VERSION, ExtensionBinding, ExtensionManifest
+from .lib import aico_delegate
 from .tool_registry import tool_registry_path
 
 
@@ -217,8 +218,16 @@ def dispatch_extension(record: ExtensionRecord, argv: list[str], *, context: dic
             # JSON formatting and benchmark behavior belong to the public owner CLI.
             insertion = arguments.index("--") if "--" in arguments else len(arguments)
             arguments.insert(insertion, "--compact")
-        code, stdout, stderr = _run_process([str(executable), *arguments],
-                                            env=_environment(binding, context), cwd=context["cwd"],
+        env = _environment(binding, context)
+        if binding.presentation == "web-details" and (aico := aico_delegate.web_command()):
+            # Aico runs what it has; exit 3 means "not mine" (Lightpanda, doctor, benchmark) and the owner CLI below runs.
+            code, stdout, stderr = _run_process([aico, "web", *arguments], env=env, cwd=context["cwd"], capture=True)
+            if code != aico_delegate.NOT_HANDLED:
+                from .extension_presentation import present_web
+
+                present_web(argv, code, stdout, stderr)
+                return code
+        code, stdout, stderr = _run_process([str(executable), *arguments], env=env, cwd=context["cwd"],
                                             capture=binding.presentation == "web-details")
         if binding.presentation == "web-details":
             from .extension_presentation import present_web

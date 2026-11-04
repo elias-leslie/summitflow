@@ -19,6 +19,11 @@ moved back: the old ``~/.summitflow/leases`` files are M12's archive, and only `
 The gate rollback is separate: remove the verb from ``AICO_GATE_VERBS`` (or set ``ST_AICO_CHECKS=0``) and
 SummitFlow's own `st check` / `st commit` runs. Aico answers
 exit 3 (``NOT_HANDLED``) for a repo or option it does not run, and SummitFlow's code then runs as before.
+
+`st web` calls `aico web` (Aico's packages/webtools: search, research, fetch, batch, refocus, the call counter)
+through the ``web-details`` extension (``web_command``); anything Aico does not run (Lightpanda, doctor, benchmark,
+--selector, --wait-script) answers NOT_HANDLED and Agent Hub's own executable runs as before. Rollback:
+``ST_AICO_WEB=0`` (or no ``aico`` on PATH) sends every call to Agent Hub again.
 """
 
 from __future__ import annotations
@@ -61,3 +66,10 @@ def run(*argv: str) -> int:
     sys.stdout.flush()
     sys.stderr.flush()
     return subprocess.run(["aico", *argv], check=False).returncode
+
+
+def web_command() -> str | None:
+    """The ``aico`` executable `st web` calls, or None when it is rolled back (``ST_AICO_WEB=0``) or not installed."""
+    if os.environ.get("ST_AICO_WEB", "1") == "0":
+        return None
+    return shutil.which("aico")
