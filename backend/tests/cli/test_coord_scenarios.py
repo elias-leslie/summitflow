@@ -910,7 +910,8 @@ def _inbox(payload: dict, tmp: Path, *args: str, **env: str) -> subprocess.Compl
     clean = {k: v for k, v in os.environ.items() if k not in {
         "CLAUDE_CODE_SESSION_ID", "CODEX_THREAD_ID", "CLAUDE_SESSION_ID", "TMUX", "TMUX_PANE", "ST_SESSION_ID",
         "CODEX_SESSION_ID", "PI_SESSION_ID", "ST_COORD_INBOX"}}
-    clean.update({"ST_LEASES_DIR": str(tmp / "hook-leases"), "XDG_RUNTIME_DIR": str(tmp / "run"), "ST_COORD_ANCHOR": ""})
+    clean.update({"ST_LEASES_DIR": str(tmp / "hook-leases"), "XDG_RUNTIME_DIR": str(tmp / "run"), "ST_COORD_ANCHOR": "",
+                  "XDG_STATE_HOME": str(tmp / "state")})  # no real memory-events record
     clean.update(env)
     clean["PATH"] = f"{clean.get('PATH', '')}:/usr/bin:/bin"
     return subprocess.run(["bash", str(INBOX), *args], input=json.dumps(payload), capture_output=True,
@@ -933,10 +934,10 @@ def test_inbox_hook_is_silent_when_empty_then_surfaces_a_request_once(repos, tmp
 
 
 def test_inbox_hook_leaves_requests_for_the_parent_and_session_start_shows_only_memory(repos, tmp_path, monkeypatch):
-    target = {"session_id": "c9ffbd05-c536-446f-82f7-30690775f33e", "hook_event_name": "PostToolUseFailure"}
+    target = {"session_id": "5e1f00d2-7a41-4b6e-9c3d-0b1a2c3d4e5f", "hook_event_name": "PostToolUseFailure"}
     monkeypatch.setattr(leases, "LEASES_DIR", tmp_path / "hook-leases")
     as_claude(monkeypatch, "sender-0001")
-    coord.send("cc:c9ffbd", "please release backend/a.py")
+    coord.send("cc:5e1f00", "please release backend/a.py")
     sub = _inbox({**target, "agent_id": "a1b2c3"}, tmp_path, "turn")
     start = _inbox({**target, "hook_event_name": "SessionStart", "source": "resume"}, tmp_path, "turn")
     assert [(r.returncode, r.stdout, r.stderr) for r in (sub, start)] == [(0, "", "")] * 2  # not in a pane: no notice

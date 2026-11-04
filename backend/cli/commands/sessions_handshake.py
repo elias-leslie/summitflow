@@ -9,7 +9,13 @@ import typer
 from st_sdk.usage import USAGE_SPECS_ATTR, UsageSpec, usage
 
 from ..config import get_config_optional
-from ..lib import coord, leases
+from ..lib import aico_delegate, coord, coord_remote, leases
+
+
+def _aico(*argv: str) -> None:
+    """Hand the verb to Aico (workstation only: an agent host reaches the workstation's API instead)."""
+    if aico_delegate.enabled() and coord_remote.agent_host() is None:
+        raise typer.Exit(aico_delegate.run("sessions", *argv))
 
 
 def _fail(exc: ValueError) -> None:
@@ -56,6 +62,7 @@ _ACK_WAKE = "If you wait on the answer, arm st aico wait reply {id}: a yes other
 
 
 def send_request(to: str, text: str, source_key: str | None = None, *, fyi: bool = False) -> None:
+    _aico("send", to, text, *(["--source-key", source_key] if source_key else []), *(["--fyi"] if fyi else []))
     cfg = get_config_optional()
     try:
         row = coord.send(to, text, project=getattr(cfg, "project_id", None) or None, source_key=source_key, fyi=fyi)
@@ -98,8 +105,7 @@ def ack(
     A yes to a sender not waiting on a reply closes the request for them when it is bare, or comes from the
     sender's own lane: no wake, nothing to confirm; the note rides with their next turn.
     """
-    from ..lib import coord_remote
-
+    _aico("ack", message_id, intent, *([note] if note else []))
     try:
         row = coord.ack(message_id, intent, note)
     except ValueError as exc:
@@ -149,6 +155,7 @@ def confirm(
     withdraw: Annotated[bool, typer.Option("--withdraw", help="Close an unacked request you sent")] = False,
 ) -> None:
     """Close an acked request you sent (third step of the handshake), or withdraw an unacked one."""
+    _aico("confirm", message_id, *(["--withdraw"] if withdraw else []))
     try:
         coord.confirm(message_id, withdraw=withdraw)
     except ValueError as exc:
@@ -185,7 +192,7 @@ def inbox() -> None:
     open/unseen before that, then acked with its reply note; close it with
     st sessions confirm ID.
     """
-    from ..lib import coord_remote
+    _aico("inbox")
 
     def show(row: dict[str, Any], state: str) -> None:
         detail = row["intent"] or "-"

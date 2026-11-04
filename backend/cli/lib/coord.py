@@ -33,7 +33,7 @@ from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any
 
-from . import coord_lineage, leases
+from . import coord_lineage, coord_store, leases
 
 ACTIVE_WINDOW = timedelta(minutes=10)
 UNACKED_AFTER = timedelta(minutes=10)
@@ -365,11 +365,13 @@ def _ledger_path() -> Path:
 
 
 def _load_ledger() -> list[dict[str, Any]]:
-    path = _ledger_path()
-    try:
-        data = json.loads(path.read_text())
-    except (OSError, json.JSONDecodeError):
-        return []
+    if coord_store.enabled():
+        data: Any = coord_store.read("_coord")
+    else:
+        try:
+            data = json.loads(_ledger_path().read_text())
+        except (OSError, json.JSONDecodeError):
+            return []
     rows = data.get("messages", []) if isinstance(data, dict) else []
     now = datetime.now(UTC)
     kept = []

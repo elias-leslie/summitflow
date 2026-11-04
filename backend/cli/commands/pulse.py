@@ -206,6 +206,10 @@ def pulse(
     """Show the canonical live coordination pulse and optional preflight gate."""
     if project_id and all_projects:
         raise typer.BadParameter("Use either --project or --all, not both.")
+    from ..lib import aico_delegate
+
+    if aico_delegate.enabled() and (brief or not (gate or details or project_id or all_projects or not is_compact())):
+        raise typer.Exit(aico_delegate.run("pulse", *(["--brief"] if brief else [])))
     if brief:
         from ..lib.startup_brief import brief as startup_brief
         from ..lib.startup_brief import session_role

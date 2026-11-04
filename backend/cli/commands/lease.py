@@ -14,7 +14,7 @@ from typing import Annotated
 import typer
 
 from ..config import get_config_optional
-from ..lib import coord
+from ..lib import aico_delegate, coord
 from ..lib.leases import (
     acquire,
     acquire_mark,
@@ -103,6 +103,15 @@ def lease_command(
     ] = False,
 ) -> None:
     """File-level lease for parallel-agent coordination."""
+    if aico_delegate.enabled():
+        argv = ["lease", *(globs or [])]
+        for flag, value in (("--check", check_path), ("--take", take_path), ("--release", release_glob),
+                            ("--task", task_id), ("--hold", hold)):
+            if value is not None:
+                argv += [flag, value]
+        argv += [flag for flag, on in (("--list", list_flag), ("--release-all", release_all),
+                                       ("--heartbeat", heartbeat_flag), ("--all", all_projects)) if on]
+        raise typer.Exit(aico_delegate.run(*argv))
     if list_flag and all_projects:
         for line in coord.system_lines():
             print(line)

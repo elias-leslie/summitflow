@@ -23,7 +23,7 @@ from functools import cache
 from pathlib import Path
 from typing import Any
 
-from . import leases
+from . import coord_store, leases
 
 HARNESS_COMMS = {"claude": "claude_code", "codex": "codex", "pi": "pi", "agy": "antigravity"}
 # Identity prefixes a harness anchor may carry; st:/tmux:/pid:/agent-hub ids never join a family.
@@ -118,6 +118,8 @@ def _doc_path() -> Path:
 
 
 def load_doc() -> dict[str, Any]:
+    if coord_store.enabled():
+        return coord_store.read("_coord")
     try:
         data = json.loads(_doc_path().read_text())
     except (OSError, json.JSONDecodeError):
@@ -127,6 +129,9 @@ def load_doc() -> dict[str, Any]:
 
 def save_doc(doc: dict[str, Any]) -> None:
     """Atomic replace (caller holds the _coord lock); readers never lock."""
+    if coord_store.enabled():
+        coord_store.write("_coord", doc)
+        return
     path = _doc_path()
     path.parent.mkdir(parents=True, exist_ok=True)
     tmp = path.with_suffix(f".{os.getpid()}.tmp")

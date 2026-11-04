@@ -49,6 +49,10 @@ goes only through cli.lib.coord_wake.type_line (idle pane, empty composer), the
 single injection path; `st sessions send --delivery native-thread` to a live
 Codex thread writes the ledger and wakes it the same way as a handshake send.
 Usage (via scripts/lib/coord-inbox): python coord_inbox.py <summitflow-backend> <mode> [provider]
+
+Since M10a-2 the handshake ledger, leases and the inbox hook are Aico's (aico-hook inbox, Tether's coordination
+documents). Harnesses call this only as ``memory``: the memory notice, run by aico-hook. The other modes remain as
+the rollback path (ST_AICO_COORD=0 plus the old hook entries in claude-config and codex-config).
 """
 
 from __future__ import annotations
@@ -448,6 +452,12 @@ def main() -> int:
     event = str(payload.get("hook_event_name") or "")
     worker = str(payload.get("agent_id") or "")  # a subagent's hook: the parent's session id plus its own agent_id
     subagent = worker if provider == "claude_code" else ""
+    if mode == "memory":  # aico-hook's inbox asks only for this pane's memory notice; the ledger is Aico's
+        coord.adopt_hook_identity(payload)
+        agent = leases.identify_agent()[0]
+        emit(event, [], memory(f"{agent}/{subagent}" if subagent else agent,
+                               resumed=event == "SessionStart" and payload.get("source") == "resume"))
+        return 0
     if subagent:  # Claude subagent hooks share the parent session id: coordination items stay for the parent
         if mode == "turn":
             emit(event, [], memory(f"{leases.identify_agent()[0]}/{subagent}"))

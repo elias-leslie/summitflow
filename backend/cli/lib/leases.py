@@ -5,9 +5,10 @@ in a shared checkout were fake isolation: a branch-ref switch on one lane swept
 another lane's uncommitted edits across lanes. Leases coordinate the real shared
 resource (the filesystem) directly.
 
-Storage: ~/.summitflow/leases/<project>.json with fcntl locking for atomic
-read/modify/write across concurrent agents on the same machine. Cross-machine
-support is a follow-up via an Agent Hub API wrapper.
+Storage: Tether's coordination documents (coord_store.py; Aico owns them, and
+aico-hook reads and writes the same ones), one per project, locked for atomic
+read/modify/write across concurrent agents on the same machine. With
+ST_LEASES_DIR set the old <dir>/<project>.json files with fcntl locking are used.
 
 Agent identity uses env vars so Claude Code, Codex CLI, and Agent Hub agents
 all coexist in the same lease table.
@@ -29,6 +30,8 @@ from dataclasses import asdict, dataclass
 from datetime import UTC, datetime, timedelta
 from fnmatch import fnmatch
 from pathlib import Path
+
+from . import coord_store
 
 LEASES_DIR = Path(os.environ.get("ST_LEASES_DIR") or Path.home() / ".summitflow" / "leases")
 DEFAULT_IDLE_TTL = timedelta(minutes=30)
@@ -248,6 +251,11 @@ def _lock_path(project_id: str) -> Path:
 
 @contextmanager
 def _lock(project_id: str):
+    if coord_store.enabled():
+        _project_file(project_id, "")  # refuses ids Tether would refuse too
+        with coord_store.lock(project_id):
+            yield
+        return
     LEASES_DIR.mkdir(parents=True, exist_ok=True)
     lock_file = _lock_path(project_id)
     with open(lock_file, "w") as f:
@@ -259,6 +267,9 @@ def _lock(project_id: str):
 
 
 def _read(project_id: str) -> dict:
+    if coord_store.enabled():
+        _project_file(project_id, "")
+        return coord_store.read(project_id)
     path = _store_path(project_id)
     if not path.exists():
         return {}
@@ -282,13 +293,16 @@ def _load(project_id: str) -> list[Lease]:
 
 def _save(project_id: str, leases: list[Lease], writers: dict | None = None) -> None:
     """Write leases, keeping the writer sets unless new ones are given (caller holds the lock)."""
-    path = _store_path(project_id)
-    path.parent.mkdir(parents=True, exist_ok=True)
     if writers is None:
         writers = _load_writers(_read(project_id))
     doc: dict = {"leases": [asdict(lease) for lease in leases]}
     if writers:
         doc["writers"] = writers
+    if coord_store.enabled():
+        coord_store.write(project_id, doc)
+        return
+    path = _store_path(project_id)
+    path.parent.mkdir(parents=True, exist_ok=True)
     tmp = path.with_suffix(".tmp")
     tmp.write_text(json.dumps(doc, indent=2))
     tmp.replace(path)
@@ -718,6 +732,8 @@ def repo_marks(project_id: str) -> list[Lease]:
 
 
 def all_projects() -> list[str]:
+    if coord_store.enabled():
+        return [name for name in coord_store.names() if not name.startswith("_")]
     if not LEASES_DIR.is_dir():
         return []
     return sorted(p.stem for p in LEASES_DIR.glob("*.json") if not p.stem.startswith("_"))
