@@ -143,18 +143,11 @@ def _child_subvolumes(source: Path) -> list[str]:
     match = re.search(r"(?:^|,)subvolid=(\d+)(?:,|$)", str(_filesystem(str(source)).get("options", "")))
     if not match:
         raise RuntimeError(f"Cannot identify the subvolume mounted at {source}")
-    result = _run(["nightshift", "request", "diag.read", "probe=btrfs.subvolumes", f"target={source}",
-                   "--reason", "maintain", "--agent", "summitflow-host-backup", "--wait", "120"])
-    try:
-        response = json.loads(result.stdout) if result.returncode == 0 else {}
-        listing = response.get("result") or {}
-        output = str(listing.get("out", ""))
-    except (ValueError, AttributeError):
-        response, listing, output = {}, {}, ""
+    result = _run(["sudo", "-n", "btrfs", "subvolume", "list", "-t", "--", str(source)])
+    output = result.stdout if result.returncode == 0 else ""
     lines = output.splitlines()
-    if (response.get("outcome") != "applied" or listing.get("rc") != 0 or output.endswith("[truncated]")
-            or len(lines) < 2 or lines[0].split() != ["ID", "gen", "top", "level", "path"] or not lines[1].startswith("--")):
-        raise RuntimeError(f"Subvolume listing for {source} is unavailable or incomplete; inspect Nightshift diag.read")
+    if len(lines) < 2 or lines[0].split() != ["ID", "gen", "top", "level", "path"] or not lines[1].startswith("--"):
+        raise RuntimeError(f"Subvolume listing for {source} is unavailable or incomplete; run: sudo -n btrfs subvolume list -t {source}")
     children = []
     for line in lines[2:]:
         row = _SUBVOLUME_ROW.fullmatch(line.rstrip("\t"))

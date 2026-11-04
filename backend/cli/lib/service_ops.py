@@ -1167,9 +1167,7 @@ def stop_transient_unit(project: ProjectServices, unit: str) -> tuple[int, str]:
     return (0, "stopped") if systemctl("stop", "--", unit).returncode == 0 else (1, "stop_failed")
 
 
-INFRA_RESTART_HINT = (
-    "run: nightshift request unit.restart unit=summitflow-stack.service --reason recover --wait"
-)
+INFRA_RESTART_HINT = "run: sudo systemctl restart summitflow-stack.service"
 
 
 def ensure_infra(project: ProjectServices | None = None) -> int:

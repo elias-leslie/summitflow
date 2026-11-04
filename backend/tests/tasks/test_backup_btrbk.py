@@ -244,16 +244,15 @@ def test_required_current_received_point_is_qualified(monkeypatch: pytest.Monkey
         assert host._verified_points(rows, transactions)[0]["received_uuid"] == "source"
 
 
-def _subvolume_listing(monkeypatch: pytest.MonkeyPatch, *rows: str, rc: int = 0, outcome: str = "applied",
+def _subvolume_listing(monkeypatch: pytest.MonkeyPatch, *rows: str, rc: int = 0,
                        header: str = "ID\tgen\ttop level\tpath\t\n--\t---\t---------\t----\t\n", suffix: str = "") -> list[list[str]]:
-    """Nightshift's diag.read btrfs.subvolumes response; children of the mount print relative to it."""
+    """`sudo -n btrfs subvolume list -t` output; children of the mount print relative to it."""
     calls: list[list[str]] = []
     monkeypatch.setattr(host, "_filesystem", lambda _: {"options": "rw,compress=zstd:1,subvolid=346,subvol=/@workspaces"})
     def run(args: list[str]) -> subprocess.CompletedProcess[str]:
         calls.append(args)
         out = header + "".join(f"{row}\t\n" for row in rows) + suffix
-        response = {"id": "0" * 32, "outcome": outcome, "result": {"rc": 0, "out": out, "err": ""}}
-        return subprocess.CompletedProcess(args, rc, json.dumps(response), "")
+        return subprocess.CompletedProcess(args, rc, out, "")
     monkeypatch.setattr(host, "_run", run)
     return calls
 
@@ -265,22 +264,20 @@ def test_nested_coverage_exempts_only_canonical_managed_workpoints(monkeypatch: 
     calls = _subvolume_listing(monkeypatch, "300\t1\t346\t\t.snapshots/project/point", "301\t1\t5\t\t@other/data",
                                "302\t1\t300\t\t.snapshots/project/point/inner")
     host._validate_nested_coverage(rows)
-    assert calls == [["nightshift", "request", "diag.read", "probe=btrfs.subvolumes", "target=/workspaces",
-                      "--reason", "maintain", "--agent", "summitflow-host-backup", "--wait", "120"]]
+    assert calls == [["sudo", "-n", "btrfs", "subvolume", "list", "-t", "--", "/workspaces"]]
     for nested in ("project/.snapshots/durable", "project/__snapshots/durable", "project/data"):
         _subvolume_listing(monkeypatch, f"301\t1\t346\t\t{nested}")
         with pytest.raises(RuntimeError, match="explicit host coverage"):
             host._validate_nested_coverage(rows)
 
 
-@pytest.mark.parametrize("fault", ["exit", "shadow", "truncated", "header", "row", "escape", "absolute"])
+@pytest.mark.parametrize("fault", ["exit", "header", "row", "escape", "absolute"])
 def test_nested_coverage_fails_closed_on_an_unusable_listing(monkeypatch: pytest.MonkeyPatch, fault: str) -> None:
     rows = [{"source_url": "/workspaces", "snapshot_path": "/host-snapshots"}]
     monkeypatch.setattr(host, "get_workspaces_root", lambda: Path("/workspaces"))
     child = {"escape": "../outside", "absolute": "/abs"}.get(fault, ".snapshots/project/point")
     _subvolume_listing(monkeypatch, "garbage" if fault == "row" else f"300\t1\t346\t\t{child}",
-                       rc=1 if fault == "exit" else 0, outcome="shadow" if fault == "shadow" else "applied",
-                       suffix="\n[truncated]" if fault == "truncated" else "",
+                       rc=1 if fault == "exit" else 0,
                        **({"header": "ID gen path\n"} if fault == "header" else {}))
     with pytest.raises(RuntimeError):
         host._validate_nested_coverage(rows)

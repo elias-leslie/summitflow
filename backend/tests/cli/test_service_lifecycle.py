@@ -587,14 +587,14 @@ def test_infrastructure_is_a_port_probe_that_never_starts_anything(project, monk
     run.assert_not_called()
 
 
-def test_infrastructure_down_points_at_the_nightshift_restart(project, monkeypatch, capsys):
+def test_infrastructure_down_points_at_the_systemctl_restart(project, monkeypatch, capsys):
     run = _probe_infra(monkeypatch, pg_ok=True, hatchet_status=None)
 
     assert service_ops.ensure_infra(project) == 1
     out = capsys.readouterr().out
     assert "hatchet" in out
     assert "postgres" not in out
-    assert "nightshift request unit.restart unit=summitflow-stack.service" in out
+    assert "sudo systemctl restart summitflow-stack.service" in out
     run.assert_not_called()
 
 
