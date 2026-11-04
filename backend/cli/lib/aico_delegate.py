@@ -20,6 +20,11 @@ The gate rollback is separate: remove the verb from ``AICO_GATE_VERBS`` (or set 
 SummitFlow's own `st check` / `st commit` runs. Aico answers
 exit 3 (``NOT_HANDLED``) for a repo or option it does not run, and SummitFlow's code then runs as before.
 
+The ops verbs (Aico's packages/ops) roll back the same way: drop the verb from ``AICO_OPS_VERBS`` (or set
+``ST_AICO_OPS=0`` for all). ``logs`` passes `st logs -s UNIT` for one unit or project; ``snapshots`` passes
+`st snap|snaps|rollback` for a Btrfs project root; ``vm`` passes `st vm list|status|start|stop|snapshot`;
+``rebuild`` passes `st service rebuild|result|wait` for Aico. Anything else answers NOT_HANDLED.
+
 `st web` calls `aico web` (Aico's packages/webtools: search, research, fetch, batch, refocus, the call counter)
 through the ``web-details`` extension (``web_command``); anything Aico does not run (Lightpanda, doctor, benchmark,
 --selector, --wait-script) answers NOT_HANDLED and Agent Hub's own executable runs as before. Rollback:
@@ -66,6 +71,32 @@ def run(*argv: str) -> int:
     sys.stdout.flush()
     sys.stderr.flush()
     return subprocess.run(["aico", *argv], check=False).returncode
+
+
+# The ops verbs that call Aico. Rollback: drop a verb here, or ST_AICO_OPS=0 for all (=1 turns all on).
+AICO_OPS_VERBS: frozenset[str] = frozenset({"vm"})
+
+
+def ops_enabled(verb: str) -> bool:
+    switch = os.environ.get("ST_AICO_OPS", "")
+    if switch == "0" or (switch != "1" and verb not in AICO_OPS_VERBS):
+        return False
+    return shutil.which("aico") is not None
+
+
+def run_ops(*argv: str) -> int:
+    """``aico deploy|logs|snapshots|vm ...``; NOT_HANDLED (silently) for what Aico does not run."""
+    sys.stdout.flush()
+    sys.stderr.flush()
+    return subprocess.run(["aico", *argv], check=False, env={**os.environ, "AICO_OPS_CALLER": "st"}).returncode
+
+
+def try_ops(verb: str, *argv: str) -> int | None:
+    """``aico ARGV``'s exit code when ``verb`` is cut over and Aico runs it; None means run SummitFlow's code."""
+    if not ops_enabled(verb):
+        return None
+    code = run_ops(*argv)
+    return None if code == NOT_HANDLED else code
 
 
 def web_command() -> str | None:

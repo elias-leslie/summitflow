@@ -13,6 +13,7 @@ from typing import Annotated
 
 import typer
 
+from ..lib import aico_delegate
 from ..lib.confirm_token import confirm_gate
 from ..lib.proxmox import (
     ProxmoxClient,
@@ -86,6 +87,12 @@ def _client() -> ProxmoxClient | RemoteProxmoxClient:
     except ProxmoxError as exc:
         output_error(str(exc))
         raise typer.Exit(1) from None
+
+
+def _aico(*argv: str) -> None:
+    """`aico vm ARGV` when the vm verbs are cut over to Aico (rollback: aico_delegate.AICO_OPS_VERBS)."""
+    if (code := aico_delegate.try_ops("vm", "vm", *argv)) is not None:
+        raise typer.Exit(code)
 
 
 def _run(action) -> None:
@@ -175,6 +182,7 @@ def _gb(value: object) -> str:
 @app.command("list")
 def list_vms() -> None:
     """List every Proxmox guest (VMs and containers)."""
+    _aico("list")
     def action(client: ProxmoxClient) -> None:
         print(f"{'VMID':<6} {'NAME':<25} {'STATUS':<10} {'RAM':<8} {'DISK':<8}")
         print(f"{'----':<6} {'----':<25} {'------':<10} {'---':<8} {'----':<8}")
@@ -202,6 +210,7 @@ def list_vms() -> None:
 )
 def status(vmid: Annotated[str, typer.Argument(help="VM ID")]) -> None:
     """Show VM status."""
+    _aico("status", vmid)
     def action(client: ProxmoxClient) -> None:
         data = client.status(vmid)
         cpu = int(float(data.get("cpu") or 0) * 100)
@@ -247,6 +256,7 @@ def snapshot(
     name: Annotated[str | None, typer.Argument(help="Snapshot name")] = None,
 ) -> None:
     """Create a VM snapshot."""
+    _aico("snapshot", vmid, *([name] if name else []))
     snapshot_name = name or snapshot_name_default()
 
     def action(client: ProxmoxClient) -> None:
@@ -284,6 +294,7 @@ def start(
     reason: Annotated[str, typer.Option("--reason", help="Parked/lab VM: what it is used for (Nightshift board)")] = "",
 ) -> None:
     """Start a VM. A parked or lab VM is declared with `nightshift lab-use start` first."""
+    _aico("start", vmid, "--hours", str(hours), "--reason", reason)
     _run(lambda client: (client.start(vmid, lab_hours=hours, lab_reason=reason), print(f"VM {vmid} started")))
 
 
@@ -292,6 +303,7 @@ def start(
 @app.command()
 def stop(vmid: Annotated[str, typer.Argument(help="VM ID")]) -> None:
     """Stop a VM (hard stop)."""
+    _aico("stop", vmid)
     _run(lambda client: (client.stop(vmid), print(f"VM {vmid} stopped")))
 
 

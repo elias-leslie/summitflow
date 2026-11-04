@@ -9,6 +9,7 @@ from typing import Annotated
 
 import typer
 
+from ..lib import aico_delegate
 from ..output import output_error, output_json
 from ..output_context import OutputContext
 from .logs_config import (
@@ -78,6 +79,10 @@ def tail(
     follow: Annotated[bool, typer.Option("--follow", "-f", help="Follow log output (like tail -f)")] = False,
 ) -> None:
     """Tail service logs with filtering."""
+    if service and service != "all" and "," not in service and ctx.obj.is_compact:
+        argv = ["logs", service, "-n", str(lines), "--since", since, *(["-l", level] if level else []), *(["-f"] if follow else [])]
+        if (code := aico_delegate.try_ops("logs", *argv)) is not None:
+            raise typer.Exit(code)
     user_svcs, system_svcs = get_service_list(service)
     if follow:
         follow_logs(user_svcs, system_svcs, level)

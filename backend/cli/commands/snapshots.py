@@ -7,6 +7,7 @@ from typing import Annotated
 import typer
 
 from ..config import get_config
+from ..lib import aico_delegate
 from ..lib.autosnapshot import DEFAULT_POLICY, LAST_PRUNE_REPORT, prune_all
 from ..lib.confirm_token import confirm_gate
 from ..lib.quick_snapshots import (
@@ -61,6 +62,12 @@ def _policy_fields() -> dict[str, int]:
     return DEFAULT_POLICY.to_dict()
 
 
+def _aico(*argv: str) -> None:
+    """`aico snapshots ARGV` when snapshots are cut over to Aico (rollback: aico_delegate.AICO_OPS_VERBS)."""
+    if (code := aico_delegate.try_ops("snapshots", "snapshots", *argv)) is not None:
+        raise typer.Exit(code)
+
+
 @app.command("snap")
 def snap_command(
     ctx: typer.Context,
@@ -68,6 +75,8 @@ def snap_command(
 ) -> None:
     """Capture a Btrfs snapshot for the current project scope."""
     config = get_config()
+    if ctx.obj.is_compact:
+        _aico("take", *([name] if name else []), "--project", config.project_id)
     try:
         snapshot = capture_snapshot(name, project_id=config.project_id)
     except SnapshotError as exc:
@@ -94,6 +103,8 @@ def snaps_command(
 ) -> None:
     """List snapshots for the current project scope."""
     config = get_config()
+    if ctx.obj.is_compact and not measure_usage:
+        _aico("list", "--project", config.project_id)
     try:
         snapshots = list_snapshots(project_id=config.project_id)
     except SnapshotError as exc:
@@ -233,6 +244,8 @@ def rollback_command(
         ]
 
     confirm_gate(command_key, confirm, preview_lines, f"st rollback {target}")
+    if ctx.obj.is_compact:
+        _aico("restore", target, "--project", config.project_id)
 
     try:
         snapshot = restore_snapshot(target, project_id=config.project_id)

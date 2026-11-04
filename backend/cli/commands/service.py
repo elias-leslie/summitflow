@@ -15,7 +15,7 @@ from typing import Annotated, Any
 
 import typer
 
-from ..lib import service_deploy_client, service_heal, service_ops, service_release
+from ..lib import aico_delegate, service_deploy_client, service_heal, service_ops, service_release
 from ..lib.confirm_token import confirm_gate
 from ..lib.service_ops import wait_for_summitflow_api
 from ..lib.usage import usage
@@ -491,6 +491,13 @@ def rebuild(
     ] = None,
 ) -> None:
     """Build, migrate, restart, and health-check a project from its committed local HEAD (st commit first; no push needed)."""
+    if source_repo is None and not migrate_monitor_store:  # Aico deploys its own project (aico deploy); else NOT_HANDLED
+        argv = ["deploy", project, "--scope", scope.value, *(f"--worker={w}" for w in worker or []),
+                *(["--detach"] if detach else []), *(["--include-all-workers"] if include_all_workers else []),
+                *(["--rollback"] if rollback else []), *([f"--with-ack={with_ack}"] if with_ack else []),
+                *([f"--sha={sha}"] if sha else []), *([f"--acceptance={acceptance}"] if acceptance else [])]
+        if (code := aico_delegate.try_ops("rebuild", *argv)) is not None:
+            raise typer.Exit(code)
     services = _load(project)
     _require_local_build(services)
     from ..lib import coord
@@ -921,6 +928,8 @@ def _job_exit_code(record: dict) -> int:
 @app.command("result")
 def job_result(job_id: Annotated[str, typer.Argument(help="Job id returned by --detach")]) -> None:
     """Read a durable detached rebuild result, including interrupted/unknown state."""
+    if job_id.startswith("aico-") and (code := aico_delegate.try_ops("rebuild", "deploy", "result", job_id)) is not None:
+        raise typer.Exit(code)
     record = _job_result(job_id)
     _print_job(record)
     raise typer.Exit(_job_exit_code(record))
@@ -932,6 +941,10 @@ def wait_for_job(
     timeout: Annotated[float, typer.Option("--timeout", min=0, help="Maximum seconds to await completion")] = 300,
 ) -> None:
     """Wait for a detached rebuild and return its actual exit code."""
+    if job_id.startswith("aico-") and (
+        code := aico_delegate.try_ops("rebuild", "deploy", "wait", job_id, "--timeout", str(timeout))
+    ) is not None:
+        raise typer.Exit(code)
     deadline = time.monotonic() + timeout
     while True:
         record = _job_result(job_id)
