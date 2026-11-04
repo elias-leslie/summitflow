@@ -315,7 +315,7 @@ def _projects(project_ids: list[str] | None) -> list[tuple[str, Path]]:
 def summary_line(row: dict[str, Any]) -> str:
     sha = str(row.get("sha") or "-")[:12]
     detail = row.get("outcome") or row.get("action")
-    text = f"{row['project_id']}: {detail} ({row.get('reason')}) mode={row['mode']} source={sha}"
+    text = f"{row.get('project_id') or row.get('project')}: {detail or row.get('state')} ({row.get('reason')}) mode={row.get('mode', 'nightly')} source={sha}"
     if row.get("unauthorized_workflows"):
         paths = " ".join(f"--authorize-workflow {path}" for path in row["unauthorized_workflows"])
         text += f" | st vcs publish --source {row['project_id']} --sha {row.get('sha')} {paths}"
@@ -351,6 +351,10 @@ def _notify(rows: list[dict[str, Any]], now: datetime) -> None:
 def run_nightly_publication(*, dry_run: bool = False, now: datetime | None = None,
                             project_ids: list[str] | None = None) -> dict[str, Any]:
     """One sequential pass over the auto-published projects."""
+    from cli.lib import aico_delegate
+
+    if aico_delegate.publication_enabled():
+        return aico_delegate.nightly_publication(dry_run=dry_run, project_ids=project_ids)
     now = now or datetime.now(UTC)
     containment = now.astimezone(WINDOW_ZONE).hour == CONTAINMENT_HOUR
     rows: list[dict[str, Any]] = []

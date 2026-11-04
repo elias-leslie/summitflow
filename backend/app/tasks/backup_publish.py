@@ -199,7 +199,7 @@ def _push(project: Path, head: str, branch: str, remote: str, remote_url: str,
 
 
 def publish_source(source: dict[str, Any], source_commit: str, *,
-                   authorized_workflows: tuple[str, ...] = ()) -> dict[str, Any]:
+                   authorized_workflows: tuple[str, ...] = (), checked_main: bool = False) -> dict[str, Any]:
     """Publish one exact committed source of a registered project.
 
     The owning CLI/API authorizes the call; route, acceptance (public
@@ -242,15 +242,35 @@ def publish_source(source: dict[str, Any], source_commit: str, *,
         if head_result.returncode != 0 or head_result.stdout.strip() != source_commit:
             return outcome("failed", "manual_source_unavailable")
         head = source_commit
+        if checked_main:
+            from cli.lib.aico_publish import checked_main as has_local_check
+
+            if branch != "main" or not has_local_check(project, head):
+                return outcome("failed", "local_check_required")
         result.update(head=head, branch=branch, source_status="captured", vcs="git", captured_source_commit=head,
                       source_tree=_value(project, "rev-parse", f"{head}^{{tree}}"))
         route = _value(project, "for-each-ref", "--format=%(upstream)%00%(upstream:remotename)%00%(upstream:remoteref)", f"refs/heads/{branch}").split("\0")
+        if checked_main:
+            # LAN remotes own immediate sync. GitHub publication chooses its own
+            # existing route without changing branch upstream or any git config.
+            github_remotes = []
+            for name in _value(project, "remote").splitlines():
+                urls = _value(project, "remote", "get-url", "--all", name).splitlines()
+                identity = network_repository_identity(urls[0]) if len(urls) == 1 else None
+                if identity is not None and identity[0] == "github.com" and identity[1] is None:
+                    github_remotes.append(name)
+            preferred = route[1] if len(route) == 3 and route[1] in github_remotes else None
+            if preferred is None and len(github_remotes) == 1:
+                preferred = github_remotes[0]
+            if preferred is None:
+                return outcome("skipped", "no_github_remote" if not github_remotes else "ambiguous_remote_route")
+            route = [f"refs/remotes/{preferred}/{branch}", preferred, f"refs/heads/{branch}"]
         if len(route) != 3 or not all(route):
             return outcome("skipped", "no_existing_upstream")
         tracking_ref, remote, upstream_ref = route
         if not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._-]*", remote) or upstream_ref != f"refs/heads/{branch}" or tracking_ref != f"refs/remotes/{remote}/{branch}":
             return outcome("skipped", "incorrect_upstream_route")
-        if (_value(project, "config", "--get-all", f"branch.{branch}.remote").splitlines() != [remote] or _value(project, "config", "--get-all", f"branch.{branch}.merge").splitlines() != [upstream_ref]):
+        if not checked_main and (_value(project, "config", "--get-all", f"branch.{branch}.remote").splitlines() != [remote] or _value(project, "config", "--get-all", f"branch.{branch}.merge").splitlines() != [upstream_ref]):
             return outcome("skipped", "ambiguous_upstream_route")
         fetch_urls = _value(project, "remote", "get-url", "--all", remote).splitlines()
         push_urls = _value(project, "remote", "get-url", "--push", "--all", remote).splitlines()
@@ -258,6 +278,8 @@ def publish_source(source: dict[str, Any], source_commit: str, *,
             return outcome("skipped", "ambiguous_remote_route")
         identity = network_repository_identity(fetch_urls[0])
         if identity is None or network_repository_identity(push_urls[0]) != identity:
+            return outcome("skipped", "unsafe_remote_route")
+        if checked_main and (identity[0] != "github.com" or identity[1] is not None):
             return outcome("skipped", "unsafe_remote_route")
         result["repository"] = list(identity)
         mirror = _git(project, "config", "--bool", "--get", f"remote.{remote}.mirror")
@@ -282,7 +304,8 @@ def publish_source(source: dict[str, Any], source_commit: str, *,
                 return outcome("skipped", "remote_default_branch_mismatch")
         public = is_public(repository)
         result["visibility"] = "public" if public else "private"
-        result["acceptance"] = _acceptance_for_head(project, head)
+        result["acceptance"] = ({"state": "reused", "reason": "local_check", "source_commit": head}
+                                if checked_main else _acceptance_for_head(project, head))
         if result["acceptance"].get("state") != "reused":
             if public:
                 result["source_status"] = "acceptance_required"

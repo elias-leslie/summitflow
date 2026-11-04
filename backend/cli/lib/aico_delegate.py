@@ -104,3 +104,31 @@ def web_command() -> str | None:
     if os.environ.get("ST_AICO_WEB", "1") == "0":
         return None
     return shutil.which("aico")
+
+
+def publication_enabled() -> bool:
+    """Rollback publication alone with ST_AICO_PUBLISH=0; never changes local commit/done."""
+    return os.environ.get("ST_AICO_PUBLISH", "1") != "0" and shutil.which("aico") is not None
+
+
+def run_publication(*argv: str) -> int:
+    return run("publish", *argv)
+
+
+def nightly_publication(*, dry_run: bool, project_ids: list[str] | None) -> dict:
+    """The retired SF scheduler can still forward a manual or in-flight run to Aico."""
+    import json
+
+    args = ["aico", "publish", "--all", "--json"]
+    if dry_run:
+        args.append("--dry-run")
+    for project in project_ids or []:
+        args.extend(["--source", project])
+    result = subprocess.run(args, capture_output=True, text=True, check=False)
+    try:
+        value = json.loads(result.stdout)
+        if isinstance(value, dict) and isinstance(value.get("projects"), list):
+            return value
+    except ValueError:
+        pass
+    return {"status": "failed", "projects": [], "reason": "aico_publication_unavailable"}

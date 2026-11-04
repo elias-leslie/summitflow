@@ -489,6 +489,8 @@ def commit_git_revision(
         coord.guard(repo, "commit", with_ack=with_ack)
     except coord.CoordBlocked as exc:
         raise CommitError(str(exc)) from None
+    checked_base = run_git(repo, ["rev-parse", "HEAD"]).stdout.strip()
+    checked_candidate = set(_selected_changed_files(repo, ["."])).issubset(changed_scope)
     if not skip_checks and (blocked := _run_checkpoint_checks(repo, changed_scope, bool(selected_paths), result)):
         return blocked
     if selected_paths:
@@ -504,6 +506,7 @@ def commit_git_revision(
     if run_git(repo, ["diff", "--cached", "--quiet"]).returncode == 0:
         return {**result, "reason": "no_staged_changes"}
     base = run_git(repo, ["rev-parse", "--verify", "HEAD"])
+    checked_candidate = checked_candidate and base.stdout.strip() == checked_base
     base_sha = base.stdout.strip() if base.returncode == 0 else "4b825dc642cb6eb9a060e54bf8d69288fbee4904"
     validated_patch = subprocess.run(
         ["git", "diff", "--cached", "--binary", "--full-index", base_sha, "--", *_pathspecs(repo, changed_scope)],
@@ -536,6 +539,14 @@ def commit_git_revision(
             "commit created but its tree does not match the candidate that passed checkpoint checks"
         )
     result.update({"status": "SUCCESS", "sha": sha, "message": message})
+    if not skip_checks and checked_candidate and not dirty(repo):
+        from .aico_publish import record_local_check
+
+        try:
+            record_local_check(repo, sha, passed=True)
+        except (OSError, ValueError):
+            # Publication evidence is local; its failure must never block the commit.
+            result["publication_check_recorded"] = False
     _release_committed_leases(repo, changed_scope)
     if selected_paths:
         result["selected_paths"] = selected_paths

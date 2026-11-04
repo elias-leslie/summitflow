@@ -420,6 +420,8 @@ def isolated_coordination_store(tmp_path_factory) -> Generator[None]:
         patch.setenv("ST_AICO_CHECKS", "0")
         # `st logs|snap|snaps|rollback|vm` test SummitFlow's own code too (test_aico_ops_seam turns Aico on).
         patch.setenv("ST_AICO_OPS", "0")
+        # Publication fixtures exercise SF's rollback implementation, never publish host repos.
+        patch.setenv("ST_AICO_PUBLISH", "0")
         yield
 
 

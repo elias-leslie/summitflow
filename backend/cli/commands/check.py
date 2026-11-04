@@ -14,7 +14,7 @@ import subprocess
 import sys
 import time
 from collections.abc import Iterator, Sequence
-from contextlib import contextmanager, redirect_stdout
+from contextlib import contextmanager, redirect_stdout, suppress
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import TYPE_CHECKING, cast
@@ -696,6 +696,13 @@ def _acceptance_mode(args: list[str]) -> int:
         receipt = accept_source(root, sha=options.sha, materialization=materialization, task_id=options.task_id,
                                 scope=options.scope, reuse=options.reuse, coverage=cast(Coverage, options.coverage),
                                 required_stages=options.required_stages).to_dict()
+        from cli.lib.aico_publish import record_local_check
+
+        checked_sha = receipt.get("source_commit") or (receipt.get("source") or {}).get("commit")
+        if checked_sha and options.coverage == "full":
+            with suppress(OSError, ValueError):
+                record_local_check(root, str(checked_sha), passed=receipt.get("state") == "success",
+                                   lane="acceptance", failed=[] if receipt.get("state") == "success" else ["acceptance"])
         if owned_task and receipt.get("state") == "success":
             from cli.lib.task_claims import attach_owned_acceptance
             if not attach_owned_acceptance(root, owned_task, receipt):

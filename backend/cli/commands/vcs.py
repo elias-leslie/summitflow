@@ -38,19 +38,36 @@ app = typer.Typer(
 
 @app.command("publication")
 @usage(surface="st.vcs.publication", cmd="st vcs publication [--mode nightly|manual] [--hold [--through SHA] | --release] [--reobserve]",
-       when="read publication status; set auto or manual publication; hold commits local; replay the retained receipt",
-       precautions=("nightly pushes hourly: private repos their head, public repos their newest accepted commit",
-                    "--reobserve replays only the newest retained receipt; it never fetches or publishes"),
+       when="read publication policy; set nightly or manual publication; hold commits local",
+       precautions=("Aico publishes checked main commits nightly; failures write Status for the owning agent",
+                    "--reobserve reads local selection only; it never fetches or publishes"),
        tier="reference")
 def publication_status(
-    mode: Annotated[str | None, typer.Option("--mode", help="Set publication: nightly (hourly push) or manual")] = None,
+    mode: Annotated[str | None, typer.Option("--mode", help="Set publication: nightly or manual")] = None,
     hold: Annotated[bool, typer.Option("--hold", help="Keep committed work local until released")] = False,
     through: Annotated[str | None, typer.Option("--through", help="With --hold: still publish up to this commit")] = None,
     reason: Annotated[str, typer.Option("--reason", help="With --hold: why later commits must stay local")] = "owner hold",
     release: Annotated[bool, typer.Option("--release", help="Clear a publication hold")] = False,
-    reobserve: Annotated[bool, typer.Option("--reobserve", help="Re-record the newest retained publication receipt against repair findings")] = False,
+    reobserve: Annotated[bool, typer.Option("--reobserve", help="Read the current local publication selection without pushing")] = False,
 ) -> None:
     """Show publication status without a network CI wait; --mode, --hold and --release change it."""
+    from cli.config import get_project_override
+    from cli.lib import aico_delegate
+
+    if aico_delegate.publication_enabled():
+        args = ["policy"]
+        if project := get_project_override():
+            args.extend(["--source", project])
+        for flag, value in (("--mode", mode), ("--through", through)):
+            if value:
+                args.extend([flag, value])
+        if hold:
+            args.extend(["--hold", "--reason", reason])
+        if release:
+            args.append("--release")
+        if reobserve:
+            args.append("--reobserve")
+        raise typer.Exit(aico_delegate.run_publication(*args))
     from app.services.publication_health import (
         format_publication_health,
         get_project_publication_health,
@@ -110,19 +127,33 @@ def publication_status(
 
 @app.command("publish")
 @usage(surface="st.vcs.publish", cmd="st vcs publish [--source ID] [--sha SHA]",
-       when="publish now instead of waiting for the hourly push",
-       precautions=("defaults: this checkout's project; private repos its head, public repos their newest accepted commit",
+       when="publish now instead of waiting for Aico's nightly job",
+       precautions=("defaults: the selected project's main commit, with a passing local check",
                     "never creates commits or touches the checkout; outgoing-secret and workflow-effects checks still apply"),
        tier="reference")
 def publish_now(
     source: Annotated[str | None, typer.Option("--source", help="Registered project ID (default: this checkout's project)")] = None,
-    sha: Annotated[str | None, typer.Option("--sha", help="Commit to publish, short or full (default: what the hourly push would pick)")] = None,
+    sha: Annotated[str | None, typer.Option("--sha", help="Checked main commit to publish, short or full")] = None,
     now: Annotated[bool, typer.Option("--now", hidden=True, help="Accepted for compatibility; publishing is immediate")] = False,
     authorize_workflow: Annotated[list[str] | None, typer.Option("--authorize-workflow", help="Explicit authority for a listed workflow: exact path for selected source, BASE_SHA:path for a different base workflow; repeat as needed")] = None,
     json_output: Annotated[bool, typer.Option("--json", help="Show the complete retained structured observation")] = False,
     with_ack: Annotated[str | None, typer.Option("--with-ack", help="Request id the repo's holder acked yes")] = None,
 ) -> None:
     """Push one exact committed source and retain the observation."""
+    from cli.config import get_project_override
+    from cli.lib import aico_delegate
+
+    if aico_delegate.publication_enabled():
+        source = source or get_project_override()
+        arguments: list[str] = []
+        for flag, value in (("--source", source), ("--sha", sha), ("--with-ack", with_ack)):
+            if value:
+                arguments.extend([flag, value])
+        if json_output:
+            arguments.append("--json")
+        for workflow in authorize_workflow or []:
+            arguments.extend(["--authorize-workflow", workflow])
+        raise typer.Exit(aico_delegate.run_publication(*arguments))
     from app.storage.projects import get_project_root_path
     from app.tasks.backup_manual_publish import publish_project_now
     from app.tasks.nightly_publication import publication_hold, select_candidate
@@ -183,13 +214,32 @@ def publish_now(
     if not complete:
         raise typer.Exit(2)
 
+
+@app.command("deliver", hidden=True)
+def deliver_checked_main(
+    root: Annotated[Path, typer.Option("--root")],
+    sha: Annotated[str, typer.Option("--sha")],
+    authorize_workflow: Annotated[list[str] | None, typer.Option("--authorize-workflow")] = None,
+) -> None:
+    """Aico's CLI-only transport leaf; no SF registry, DB, backend or worker."""
+    from cli.lib.aico_publish import deliver
+
+    try:
+        result = deliver(root, sha, authorized_workflows=tuple(authorize_workflow or ()))
+    except Exception:
+        result = {"publication_complete": False, "reason": "transport_unavailable"}
+    # Keep a machine-readable envelope, independent of ST's compact display mode.
+    typer.echo(json.dumps(result))
+    if not result.get("publication_complete"):
+        raise typer.Exit(1)
+
 @app.command("nightly")
 @usage(surface="st.vcs.nightly", cmd="st vcs nightly --dry-run",
-       when="preview or run the hourly publication pass for auto-published projects",
+       when="preview or run Aico's nightly publication pass",
        precautions=("--run publishes immediately", "never commits, changes checkouts or authorizes workflow files"),
        tier="reference")
 def nightly(
-    dry_run: Annotated[bool, typer.Option("--dry-run/--run", help="Show this hour's selection without side effects")] = True,
+    dry_run: Annotated[bool, typer.Option("--dry-run/--run", help="Show the nightly selection without side effects")] = True,
     project: Annotated[list[str] | None, typer.Option("--project", help="Limit to project IDs; repeat as needed")] = None,
     json_output: Annotated[bool, typer.Option("--json", help="Show complete structured rows")] = False,
 ) -> None:

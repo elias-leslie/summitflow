@@ -71,6 +71,34 @@ def _local_refs(project: Path, listing: str | None = None) -> list[str]:
     return [row for row in rows if " refs/remotes/" not in row]
 
 
+def test_aico_checked_main_keeps_outgoing_scan_and_actual_fast_forward(source):
+    from cli.lib.aico_publish import deliver, record_local_check
+
+    project = Path(source["path"])
+    sha = _head(source)
+    assert deliver(project, sha)["reason"] == "local_check_required"
+    record_local_check(project, sha, passed=True)
+    result = deliver(project, sha)
+    assert result["publication_complete"] and result["pushed"]
+    assert result["security"]["state"] == "success"
+    assert _remote_main(source) == sha
+
+
+def test_aico_github_publication_does_not_change_lan_upstream(source):
+    from cli.lib.aico_publish import deliver, record_local_check
+
+    project = Path(source["path"])
+    sha = _head(source)
+    _git(project, "remote", "add", "lan", str(source["remote"]))
+    _git(project, "update-ref", "refs/remotes/lan/main", sha)
+    _git(project, "branch", "--set-upstream-to", "lan/main")
+    record_local_check(project, sha, passed=True)
+    result = deliver(project, sha)
+    assert result["publication_complete"]
+    assert _git(project, "config", "branch.main.remote") == "lan"
+    assert _remote_main(source) == sha
+
+
 def test_private_repository_pushes_committed_head_and_preserves_checkout(source):
     project = Path(source["path"])
     head = _head(source)
