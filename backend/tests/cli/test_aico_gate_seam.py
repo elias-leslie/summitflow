@@ -39,16 +39,16 @@ def test_each_verb_has_its_own_switch(monkeypatch):
 def test_check_passes_the_options_aico_runs(aico):
     calls, codes = aico
     assert check_command._aico_check(["-q", "-d"]) == 0
-    assert check_command._aico_check(["--acceptance", "--sha", "abc"]) == 0
     assert check_command._aico_check(["--check"]) == 0
-    assert calls == [("check", "--quick", "--changed-only"), ("check", "--acceptance", "--sha", "abc"), ("check",)]
+    assert calls == [("check", "--quick", "--changed-only"), ("check",)]
     codes[0] = 1
     assert check_command._aico_check([]) == 1
 
 
 def test_check_keeps_summitflow_for_other_options_and_unhandled_repos(aico):
     calls, codes = aico
-    for args in (["budget"], ["vitest"], ["--acceptance", "--task", "t1"], ["--native", "--stage", "x"], ["--sha", "a"]):
+    # Acceptance stays SummitFlow's: deploys, publication and `st done` read its receipts.
+    for args in (["budget"], ["vitest"], ["--acceptance"], ["--acceptance", "--sha", "a"], ["--native", "--stage", "x"]):
         assert check_command._aico_check(args) is None
     assert calls == []
     codes[0] = aico_delegate.NOT_HANDLED

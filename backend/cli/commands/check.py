@@ -505,10 +505,10 @@ def _acceptance_summary(receipt: dict[str, object]) -> str:
     )
 
 
-# `st check` options Aico's gate runs (the value: its own spelling; None drops it).
+# `st check` options Aico's gate runs (the value: its own spelling; None drops it). --acceptance stays here:
+# deploys, publication and `st done` read SummitFlow's acceptance receipts (`aico check --acceptance` runs directly).
 _AICO_CHECK_FLAGS = {"--quick": "--quick", "-q": "--quick", "--changed-only": "--changed-only", "-d": "--changed-only",
-                     "--check": None, "-c": None, "--fix": "--fix", "--no-reuse": "--no-reuse",
-                     "--acceptance": "--acceptance"}
+                     "--check": None, "-c": None, "--fix": "--fix", "--no-reuse": "--no-reuse"}
 
 
 def _aico_check(args: list[str]) -> int | None:
@@ -521,14 +521,10 @@ def _aico_check(args: list[str]) -> int | None:
     rest = list(args)
     while rest:
         arg = rest.pop(0)
-        if arg == "--sha" and rest:
-            argv += ["--sha", rest.pop(0)]
-        elif arg in _AICO_CHECK_FLAGS:
+        if arg in _AICO_CHECK_FLAGS:
             argv += [flag] if (flag := _AICO_CHECK_FLAGS[arg]) else []
         else:
             return None
-    if "--sha" in argv and "--acceptance" not in argv:
-        return None
     code = aico_delegate.run_checks("check", *argv)
     return None if code == aico_delegate.NOT_HANDLED else code
 
