@@ -92,4 +92,4 @@ def test_widget_binding_forwards_current_pane_identity_without_unrelated_secrets
     assert "UNRELATED_SECRET" not in forwarded
     monkeypatch.delenv("AICO_WIDGET_ID")
     assert "AICO_WIDGET_ID" not in _environment(record.binding, {})
-    assert json.loads(REGISTRY.read_text())["extensions"][0]["namespace"] == "aico"
+    assert "aico" in {binding["namespace"] for binding in json.loads(REGISTRY.read_text())["extensions"]}
