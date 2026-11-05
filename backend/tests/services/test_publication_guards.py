@@ -548,3 +548,41 @@ def test_secret_sharing_the_public_key_line_is_refused(history, monkeypatch) -> 
 def test_other_rule_on_public_key_line_is_refused(history, monkeypatch) -> None:
     with pytest.raises(OutgoingVerificationError, match="details redacted"):
         _manifest_scan(history, monkeypatch, _der_key(private=False), rule="private-key")
+
+
+def test_trusted_publication_fingerprint_allows_only_that_finding(history, monkeypatch) -> None:
+    from app.services.git import outgoing
+
+    oid = history[4](path="fixture.py")
+    finding = {"Commit": oid, "File": "fixture.py", "RuleID": "generic-api-key", "StartLine": 20}
+    fingerprint = f"{oid}:fixture.py:generic-api-key:20"
+    history[1].joinpath("publication-fingerprints.txt").write_text(
+        f"# Reviewed public model identifier fixture, not a credential.\n{fingerprint}\n"
+    )
+
+    def scanner(command, **kwargs):
+        Path(command[command.index("--report-path") + 1]).write_text(json.dumps([finding]))
+        return subprocess.CompletedProcess(command, 1, "", "")
+
+    monkeypatch.setattr(outgoing.safe_subprocess, "run_inherited", scanner)
+    assert check(history, oid).commits_scanned == 1
+    finding["StartLine"] = 21
+    with pytest.raises(OutgoingVerificationError, match="details redacted"):
+        check(history, oid)
+
+
+def test_publication_fingerprint_policy_has_no_path_or_pattern_allows(history, monkeypatch) -> None:
+    from app.services.git import outgoing
+
+    oid = history[4](path="fixture.py")
+    history[1].joinpath("publication-fingerprints.txt").write_text("fixture.py\n*:fixture.py:*:*\n")
+
+    def scanner(command, **kwargs):
+        Path(command[command.index("--report-path") + 1]).write_text(json.dumps([
+            {"Commit": oid, "File": "fixture.py", "RuleID": "generic-api-key", "StartLine": 20},
+        ]))
+        return subprocess.CompletedProcess(command, 1, "", "")
+
+    monkeypatch.setattr(outgoing.safe_subprocess, "run_inherited", scanner)
+    with pytest.raises(OutgoingVerificationError, match="details redacted"):
+        check(history, oid)

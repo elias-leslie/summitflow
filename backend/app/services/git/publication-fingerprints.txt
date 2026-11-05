@@ -1,0 +1,3 @@
+# Approved by coordinator cc:a4e559, 2026-11-05: public model identifier
+# anthropic/claude in a guard test, not a credential. Exact immutable finding only.
+a9d4efb38e50dc8d7ff3732443541431ab15369b:packages/tether/src/model-guard.test.ts:generic-api-key:20

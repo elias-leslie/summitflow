@@ -322,7 +322,7 @@ def _verify_outgoing(
                     )
                 except (OSError, subprocess.TimeoutExpired) as exc:
                     raise OutgoingVerificationError("Outgoing secret scan failed or timed out.") from exc
-                if result.returncode and not _only_public_manifest_keys(root, report):
+                if result.returncode and not _only_reviewed_findings(root, report, policy):
                     raise OutgoingVerificationError("Outgoing secret scan refused history or failed (details redacted).")
                 report.unlink(missing_ok=True)
     return OutgoingVerification(len(commits), len(updates))
@@ -340,14 +340,32 @@ def _tree_entries(root: Path, commit: str) -> set[tuple[bytes, bytes, bytes]]:
     return entries
 
 
-def _only_public_manifest_keys(root: Path, report: Path) -> bool:
+def _only_reviewed_findings(root: Path, report: Path, policy: Path) -> bool:
     """A nonzero scan passes only with a readable report of tolerated findings."""
     try:
         findings = json.loads(report.read_bytes())
     except (OSError, ValueError):
         return False
+    try:
+        reviewed = {line.strip() for line in policy.joinpath("publication-fingerprints.txt").read_text().splitlines()
+                    if line.strip() and not line.lstrip().startswith("#")}
+    except FileNotFoundError:
+        reviewed = set()
+    except OSError:
+        return False
+
+    def reviewed_fingerprint(finding: Any) -> bool:
+        if not isinstance(finding, dict):
+            return False
+        commit, path, rule, line = (finding.get(k) for k in ("Commit", "File", "RuleID", "StartLine"))
+        if (not isinstance(commit, str) or not _OID.fullmatch(commit)
+                or not isinstance(path, str) or not isinstance(rule, str) or type(line) is not int or line < 1):
+            return False
+        # Exact immutable finding only: never interpret policy entries as paths or patterns.
+        return f"{commit}:{path}:{rule}:{line}" in reviewed
+
     return (isinstance(findings, list) and bool(findings)
-            and all(_public_manifest_key(root, finding) for finding in findings))
+            and all(_public_manifest_key(root, finding) or reviewed_fingerprint(finding) for finding in findings))
 
 
 def _is_ancestor(root: Path, base: str, oid: str) -> bool:
