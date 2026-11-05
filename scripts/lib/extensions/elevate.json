@@ -1,12 +1,12 @@
 {
-  "id": "nightshift.elevate",
-  "owner": "nightshift",
+  "id": "aico.elevate",
+  "owner": "aico",
   "namespace": "elevate",
-  "version": "0.1.0",
+  "version": "1.0.0",
   "st_contract_versions": [
     1
   ],
-  "summary": "Owner-approved, time-limited elevated credentials (GitHub admin) handed to one child process.",
+  "summary": "Aico access grants: request, inspect, revoke, and pass credentials to one child.",
   "effects": [
     "process",
     "credentials",

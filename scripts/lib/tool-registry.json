@@ -37,9 +37,18 @@
       "executable": "native/host-steward/aico-root-watch.py",
       "grant": {
         "enabled": true,
-        "effects": ["read-local", "process", "network"]
+        "effects": [
+          "read-local",
+          "process",
+          "network"
+        ]
       },
-      "environment": ["XDG_RUNTIME_DIR", "AICO_WIDGET_ID", "TETHER_SOCKET", "TETHER_INSTANCE"]
+      "environment": [
+        "XDG_RUNTIME_DIR",
+        "AICO_WIDGET_ID",
+        "TETHER_SOCKET",
+        "TETHER_INSTANCE"
+      ]
     },
     {
       "id": "tether.cli",
@@ -49,9 +58,19 @@
       "executable": "packages/tether/scripts/st-tether",
       "grant": {
         "enabled": true,
-        "effects": ["read-local", "write-local", "process"]
+        "effects": [
+          "read-local",
+          "write-local",
+          "process"
+        ]
       },
-      "environment": ["XDG_RUNTIME_DIR", "XDG_STATE_HOME", "TETHER_INSTANCE", "TETHER_SOCKET", "TETHER_NODE"]
+      "environment": [
+        "XDG_RUNTIME_DIR",
+        "XDG_STATE_HOME",
+        "TETHER_INSTANCE",
+        "TETHER_SOCKET",
+        "TETHER_NODE"
+      ]
     },
     {
       "id": "aico.status",
@@ -61,9 +80,17 @@
       "executable": "packages/web-server/scripts/st-status",
       "grant": {
         "enabled": true,
-        "effects": ["read-local", "write-local", "network", "process"]
+        "effects": [
+          "read-local",
+          "write-local",
+          "network",
+          "process"
+        ]
       },
-      "environment": ["AICO_WEB_PORT", "AICO_NODE"]
+      "environment": [
+        "AICO_WEB_PORT",
+        "AICO_NODE"
+      ]
     },
     {
       "id": "agent-hub.agents",
@@ -180,7 +207,9 @@
           "read-local"
         ]
       },
-      "environment": ["AGENT_HUB_CONTEXT_PREINJECTED_CONTRACT"]
+      "environment": [
+        "AGENT_HUB_CONTEXT_PREINJECTED_CONTRACT"
+      ]
     },
     {
       "id": "agent-hub.memory",
@@ -718,14 +747,14 @@
       }
     },
     {
-      "id": "nightshift.elevate",
-      "owner": "nightshift",
+      "id": "aico.elevate",
+      "owner": "aico",
       "namespace": "elevate",
       "manifest": "extensions/elevate.json",
-      "owner_manifest": "deploy/st/st-extension.json",
-      "executable": "deploy/st/elevate",
+      "owner_manifest": "st-extensions/elevate.json",
+      "executable": "packages/web-server/scripts/st-elevate",
       "environment": [
-        "NIGHTSHIFT_REQUESTER"
+        "AICO_SESSION_ID"
       ],
       "grant": {
         "enabled": true,
@@ -793,14 +822,42 @@
       "st.ui.inspect",
       "st.browser.preview"
     ],
-    "core": ["st.check", "st.db", "st.service.rebuild", "st.tools.status", "st.tools.adoption", "st.tools.audit", "st.tools.cost", "st.agents.preview"],
+    "core": [
+      "st.check",
+      "st.db",
+      "st.service.rebuild",
+      "st.tools.status",
+      "st.tools.adoption",
+      "st.tools.audit",
+      "st.tools.cost",
+      "st.agents.preview"
+    ],
     "adaptive_score_threshold": 15.0
   },
   "checkpoint_build_output": {
     "description": "Directory names whose untracked contents st commit leaves out of a whole-tree or directory checkpoint in a repo that does not ignore them. Naming the path with --paths still commits it.",
-    "directories": ["node_modules", "dist", "build", "out", "target", "__pycache__", ".venv", "venv", ".next", ".nuxt", ".turbo", ".cache", "coverage", ".pytest_cache", ".ruff_cache", ".mypy_cache", ".tox", ".gradle"]
+    "directories": [
+      "node_modules",
+      "dist",
+      "build",
+      "out",
+      "target",
+      "__pycache__",
+      ".venv",
+      "venv",
+      ".next",
+      ".nuxt",
+      ".turbo",
+      ".cache",
+      "coverage",
+      ".pytest_cache",
+      ".ruff_cache",
+      ".mypy_cache",
+      ".tox",
+      ".gradle"
+    ]
   },
-  "description": "Centralized tool registry — single source of truth for operator tool discovery, redirects, and check-runner configuration.",
+  "description": "Centralized tool registry \u2014 single source of truth for operator tool discovery, redirects, and check-runner configuration.",
   "cmd_start": "(^|&&\\s*|;\\s*)",
   "operator_tools": [
     {
@@ -1193,7 +1250,7 @@
         "python[0-9.]*\\s+-m\\s+pytest\\b",
         "([^\\s]*/)?\\.venv/bin/python.*-m\\s+pytest\\b"
       ],
-      "redirect_message": "Use 'st check pytest [args]' — handles venv, TOON output, and project resolution.",
+      "redirect_message": "Use 'st check pytest [args]' \u2014 handles venv, TOON output, and project resolution.",
       "check": {
         "label": "TEST",
         "binary": "pytest",
@@ -1211,7 +1268,7 @@
         "(\\.venv/bin/)?mypy\\b",
         "(\\.venv/bin/)?\\bty\\b"
       ],
-      "redirect_message": "Use 'st check types [args]' — handles venv, TOON output, and project resolution.",
+      "redirect_message": "Use 'st check types [args]' \u2014 handles venv, TOON output, and project resolution.",
       "check": {
         "label": "TYPES",
         "binary": "ty",
@@ -1228,7 +1285,7 @@
       "redirect_patterns": [
         "(\\.venv/bin/)?ruff\\b"
       ],
-      "redirect_message": "Use 'st check ruff [args]' — handles venv, TOON output, and project resolution.",
+      "redirect_message": "Use 'st check ruff [args]' \u2014 handles venv, TOON output, and project resolution.",
       "check": {
         "label": "LINT",
         "binary": "ruff",
@@ -1245,7 +1302,7 @@
       "redirect_patterns": [
         "(npx\\s+)?biome\\b"
       ],
-      "redirect_message": "Use 'st check biome [args]' — handles TOON output and project detection.",
+      "redirect_message": "Use 'st check biome [args]' \u2014 handles TOON output and project detection.",
       "check": {
         "label": "BIOME",
         "binary": "npx",
@@ -1262,7 +1319,7 @@
       "redirect_patterns": [
         "(npx\\s+)?tsc\\b"
       ],
-      "redirect_message": "Use 'st check tsc' — handles TOON output and project detection.",
+      "redirect_message": "Use 'st check tsc' \u2014 handles TOON output and project detection.",
       "check": {
         "label": "TSC",
         "binary": "npx",
@@ -1279,7 +1336,7 @@
       "redirect_patterns": [
         "(npx\\s+|pnpm(?:\\s+exec)?\\s+)?vitest\\b"
       ],
-      "redirect_message": "Use 'st check vitest [args]' — handles project detection and TOON output.",
+      "redirect_message": "Use 'st check vitest [args]' \u2014 handles project detection and TOON output.",
       "check": {
         "label": "VITEST",
         "binary": "vitest",
@@ -1311,7 +1368,7 @@
       "redirect_patterns": [
         "(\\.venv/bin/)?sqlfluff\\b"
       ],
-      "redirect_message": "Use 'st check sqlfluff' — handles venv, TOON output, project detection.",
+      "redirect_message": "Use 'st check sqlfluff' \u2014 handles venv, TOON output, project detection.",
       "check": {
         "label": "SQLFLUFF",
         "binary": "sqlfluff",
@@ -1328,7 +1385,7 @@
       "redirect_patterns": [
         "squawk\\b"
       ],
-      "redirect_message": "Use 'st check squawk' — handles TOON output and project detection.",
+      "redirect_message": "Use 'st check squawk' \u2014 handles TOON output and project detection.",
       "check": {
         "label": "SQUAWK",
         "binary": "squawk",
