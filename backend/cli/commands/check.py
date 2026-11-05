@@ -17,7 +17,7 @@ from collections.abc import Iterator, Sequence
 from contextlib import contextmanager, redirect_stdout, suppress
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import TYPE_CHECKING, cast
+from typing import TYPE_CHECKING, TextIO, cast
 from uuid import uuid4
 
 import typer
@@ -531,11 +531,42 @@ def _aico_check(args: list[str]) -> int | None:
     return None if code == aico_delegate.NOT_HANDLED else code
 
 
+class _GateOutput(io.StringIO):
+    """Keep verdict lines while preserving the gate's live progress output."""
+
+    def __init__(self, output: TextIO):
+        super().__init__()
+        self.output = output
+
+    def write(self, text: str) -> int:
+        self.output.write(text)
+        return super().write(text)
+
+    def flush(self) -> None:
+        self.output.flush()
+        super().flush()
+
+
 def _handle_check_args(ctx: typer.Context, configs: dict[str, dict[str, object]]) -> int:
     args = list(ctx.args)
     if (code := _aico_check(args)) is not None:
         return code
     mode = args[0] if args else None
+    if mode in {"--check", "-c"} and not {"--changed-only", "-d"}.intersection(args):
+        from cli.lib.aico_publish import clean_commit, failed_check_names, record_local_check
+
+        root = _resolve_repo_root()
+        before = clean_commit(root)
+        output = _GateOutput(sys.stdout)
+        with redirect_stdout(output):
+            code = _native_mode(args, configs)
+            if code is None:
+                code = handle_check_args(ctx, configs, runtime=_runtime())
+        if before and code in {0, 1} and clean_commit(root) == before:
+            with suppress(OSError, ValueError):
+                record_local_check(root, before, passed=code == 0, lane="full",
+                                   failed=failed_check_names(output.getvalue()) if code else [])
+        return code
     if mode in {"--native", "--check", "-c"}:
         code = _native_mode(args, configs)
         if code is not None:

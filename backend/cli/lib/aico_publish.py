@@ -41,6 +41,16 @@ def record_local_check(root: Path, sha: str, *, passed: bool, lane: str = "quick
     os.replace(temporary, path)
 
 
+def clean_commit(root: Path) -> str | None:
+    """A working-tree gate can describe HEAD only when it has no uncommitted inputs."""
+    try:
+        if _git(root, "status", "--porcelain=v1", "--untracked-files=all"):
+            return None
+        return _git(root, "rev-parse", "--verify", "HEAD")
+    except (OSError, ValueError):
+        return None
+
+
 def checked_main(root: Path, sha: str) -> bool:
     """Recheck the job's proof at the transport boundary; never accept a private unchecked commit."""
     import re
@@ -65,6 +75,7 @@ def failed_check_names(detail: str) -> list[str]:
 
     prefix = r"(?m)(?:^[ \t]*|;[ \t]*)"
     ids = re.findall(prefix + r"CHECK:FAIL:([A-Za-z0-9_.-]+)", detail)
+    ids.extend(re.findall(r"(?m)^NATIVE:(?:fail|unavailable|timeout):([A-Za-z0-9_.-]+)", detail))
     tags = re.findall(prefix + r"([A-Z][A-Z0-9_-]*):FAIL:", detail)
     ids.extend({"TEST": "pytest", "LINT": "ruff", "TYPES": "types"}.get(tag, tag.lower())
                for tag in tags if tag != "CHECK")

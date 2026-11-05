@@ -19,6 +19,33 @@ def test_failed_check_names_ignore_protocol_examples_in_passing_test_names():
     assert failed_check_names(detail) == ["pytest"]
 
 
+def test_ordinary_full_legacy_gate_replaces_a_prior_publication_pass(tmp_path, monkeypatch):
+    import subprocess
+
+    from cli.commands import check as check_command
+
+    for args in (["init", "-q", "-b", "main"], ["config", "user.email", "test@example.invalid"],
+                 ["config", "user.name", "Test"], ["commit", "--allow-empty", "-qm", "initial"]):
+        subprocess.check_call(["git", "-C", str(tmp_path), *args])
+    sha = subprocess.check_output(["git", "-C", str(tmp_path), "rev-parse", "HEAD"], text=True).strip()
+    record_local_check(tmp_path, sha, passed=True)
+    monkeypatch.setattr(check_command, "_aico_check", lambda _: None)
+    monkeypatch.setattr(check_command, "_native_mode", lambda *_: None)
+    monkeypatch.setattr(check_command, "_resolve_repo_root", lambda: tmp_path)
+    monkeypatch.setattr(check_command, "_tool_configs", lambda: {})
+
+    def failed(*_, **__):
+        print("TYPES:FAIL:1")
+        return 1
+
+    monkeypatch.setattr(check_command, "handle_check_args", failed)
+    result = runner.invoke(app, ["check", "--check"])
+    assert result.exit_code == 1 and "TYPES:FAIL:1" in result.output
+    assert not checked_main(tmp_path, sha)
+    proof = json.loads((tmp_path / ".git/aico-checks/receipts" / f"publish-{sha}.json").read_text())
+    assert proof["failed"] == ["types"]
+
+
 def test_publish_delegates_without_sf_db_or_services(monkeypatch):
     monkeypatch.setattr(aico_delegate, "publication_enabled", lambda: True)
     with (
