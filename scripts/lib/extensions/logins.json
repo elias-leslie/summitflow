@@ -1,0 +1,36 @@
+{
+  "id": "aico.logins",
+  "owner": "aico",
+  "namespace": "logins",
+  "version": "1.0.0",
+  "st_contract_versions": [
+    1
+  ],
+  "summary": "Aico logins for the owner and agents",
+  "effects": [
+    "read-local",
+    "write-local",
+    "network",
+    "process",
+    "credentials"
+  ],
+  "help": {
+    "": "Logins: private files, metadata-only list/show, hidden-input set/rotate, scoped run, file-only get, grants, confirmed owner removal, coordinator lab assignments and scoped lab refs/enroll/refresh/run. Use aico logins --help for syntax. Never pass a value in arguments or print a real value."
+  },
+  "usage": [
+    {
+      "surface": "st.logins",
+      "cmd": "st logins <list|show|set|rotate|run|get|grant|revoke|assign|unassign|lab>",
+      "when": "put and use logins from the Aico secrets folder; values via hidden input or stdin, lab values via fd handoff only",
+      "precautions": [
+        "Never put values in argv, logs or tool output.",
+        "Hunters see and change only coordinator-assigned lab targets."
+      ],
+      "examples": [
+        "st logins run --with NAME=ENV -- COMMAND",
+        "st logins assign SESSION --target TARGET",
+        "st logins lab refs"
+      ]
+    }
+  ]
+}

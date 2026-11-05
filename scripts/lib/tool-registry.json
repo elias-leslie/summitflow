@@ -2,6 +2,34 @@
   "version": 1,
   "extensions": [
     {
+      "id": "aico.logins",
+      "owner": "aico",
+      "namespace": "logins",
+      "manifest": "extensions/logins.json",
+      "owner_manifest": "st-extensions/logins.json",
+      "executable": "packages/web-server/scripts/st-logins",
+      "grant": {
+        "enabled": true,
+        "effects": [
+          "read-local",
+          "write-local",
+          "network",
+          "process",
+          "credentials"
+        ]
+      },
+      "environment": [
+        "AICO_NODE",
+        "AICO_DATA_DIR",
+        "XDG_RUNTIME_DIR",
+        "XDG_STATE_HOME",
+        "XDG_CONFIG_HOME",
+        "AICO_WIDGET_ID",
+        "ST_WORK_ROLE"
+      ],
+      "owner_help": true
+    },
+    {
       "id": "aico.roots",
       "owner": "aico",
       "namespace": "aico",
