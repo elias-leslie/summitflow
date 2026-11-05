@@ -217,6 +217,26 @@ def _is_setup(step: Mapping[str, Any], command: str) -> bool:
 
 
 def load_jobs(root: Path) -> list[CiJob]:
+    # Local acceptance owns its fixture. Workflows remain a legacy fallback
+    # for projects that have not declared one; no network Actions result is read.
+    local = _settings(root).get("pytest")
+    if local is not None:
+        if not isinstance(local, dict):
+            raise CiParityError("acceptance.pytest must be a table")
+        cwd = local.get("working_directory", ".")
+        argv = local.get("argv", [])
+        setup = local.get("setup", [])
+        tools = local.get("tools", [])
+        containers = local.get("services", {})
+        if (not isinstance(cwd, str) or not isinstance(argv, list)
+                or any(not isinstance(arg, str) for arg in argv)
+                or not isinstance(setup, list) or any(not isinstance(cmd, list)
+                    or not cmd or any(not isinstance(arg, str) for arg in cmd) for cmd in setup)
+                or not isinstance(tools, list) or any(not isinstance(tool, str) for tool in tools)
+                or not isinstance(containers, dict) or any(not isinstance(spec, dict) for spec in containers.values())):
+            raise CiParityError("acceptance.pytest needs command arrays, tools and service tables")
+        return [CiJob(".st-check.toml", "pytest", cwd, {}, containers, setup,
+                      [argv] if argv else [], {tool for tool in tools if isinstance(tool, str)}, gate=not argv)]
     import yaml
 
     jobs: list[CiJob] = []

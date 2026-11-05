@@ -362,8 +362,8 @@ def help_text(names: str) -> str:
   st check <"""
         + names
         + "> [-- <tool args>]\n\n"
-        "Acceptance reuses a same-source receipt (--no-reuse reruns), runs like CI (workflow env from\n"
-        ".st-check.toml [acceptance], fresh DB, seeded order) and prints the --ci-repro seed on failure.\n"
+        "Acceptance reuses a same-source receipt (--no-reuse reruns), runs the local fixture from\n"
+        ".st-check.toml [acceptance] (fresh DB, seeded order) and prints the --ci-repro seed on failure.\n"
         "Deep opt-in: @pytest.mark.slow, //go:build slow, or [[deep.stages]] in .st-check.toml; never live credentials.\n"
     )
 

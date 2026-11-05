@@ -73,6 +73,30 @@ def test_the_pytest_job_is_derived_from_the_workflow(project: Path) -> None:
     assert ci_parity.pytest_job(project, project) is None
 
 
+def test_local_fixture_owns_services_tools_and_commands_without_actions(project: Path) -> None:
+    (project / ".st-check.toml").write_text('''
+[acceptance.env]
+APP_DB_URL = "postgresql://app:test@localhost:5432/app_test"
+[acceptance.pytest]
+working_directory = "backend"
+argv = [".venv/bin/python", "-m", "pytest", "--run-integration"]
+setup = [[".venv/bin/python", "-m", "alembic", "upgrade", "head"]]
+tools = ["node", "uv"]
+[acceptance.pytest.services.postgres]
+image = "postgres:16"
+[acceptance.pytest.services.postgres.env]
+POSTGRES_USER = "app"
+POSTGRES_PASSWORD = "test"
+POSTGRES_DB = "app_test"
+''')
+    job = ci_parity.pytest_job(project, project / "backend")
+    assert job is not None and job.workflow == ".st-check.toml"
+    assert job.tests == [[".venv/bin/python", "-m", "pytest", "--run-integration"]]
+    assert job.setup == [[".venv/bin/python", "-m", "alembic", "upgrade", "head"]]
+    assert job.services["postgres"]["image"] == "postgres:16"
+    assert {"node", "uv"}.issubset(ci_parity.admitted_tools(project, job))
+
+
 def test_environment_is_scrubbed_to_the_workflow_and_ci_tools(project: Path, tmp_path: Path,
                                                                monkeypatch: pytest.MonkeyPatch) -> None:
     home = tmp_path / "home"
