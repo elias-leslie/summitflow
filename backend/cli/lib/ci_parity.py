@@ -306,6 +306,9 @@ def pytest_job(root: Path, workdir: Path) -> CiJob | None:
 
 
 def has_ci(root: Path) -> bool:
+    """Whether acceptance has a declared local fixture or a legacy workflow."""
+    if _settings(root).get("pytest") is not None:
+        return True
     directory = root / ".github" / "workflows"
     return directory.is_dir() and any(directory.glob("*.y*ml"))
 

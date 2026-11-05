@@ -74,6 +74,7 @@ def test_the_pytest_job_is_derived_from_the_workflow(project: Path) -> None:
 
 
 def test_local_fixture_owns_services_tools_and_commands_without_actions(project: Path) -> None:
+    (project / ".github/workflows/ci.yml").unlink()
     (project / ".st-check.toml").write_text('''
 [acceptance.env]
 APP_DB_URL = "postgresql://app:test@localhost:5432/app_test"
@@ -89,6 +90,7 @@ POSTGRES_USER = "app"
 POSTGRES_PASSWORD = "test"
 POSTGRES_DB = "app_test"
 ''')
+    assert ci_parity.has_ci(project)
     job = ci_parity.pytest_job(project, project / "backend")
     assert job is not None and job.workflow == ".st-check.toml"
     assert job.tests == [[".venv/bin/python", "-m", "pytest", "--run-integration"]]
