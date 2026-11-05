@@ -686,14 +686,25 @@ def _acceptance_mode(args: list[str]) -> int:
     options = _parse_acceptance_args(args[1:])
     if isinstance(options, int):
         return options
+    root = None
+    checked_sha = None
     try:
         root = _resolve_repo_root()
         owned_task = None
         if options.task_id:
             owned_task = renew_owned_claim(root, options.task_id)
+        from cli.lib.commit_workflow import run_git
+
+        if options.coverage == "full" and re.fullmatch(r"[0-9a-f]{40}|[0-9a-f]{64}", options.sha):
+            checked_sha = options.sha
+        elif options.coverage == "full":
+            selected = run_git(root, ["rev-parse", "--verify", f"{options.sha}^{{commit}}"])
+            if selected.returncode == 0:
+                checked_sha = selected.stdout.strip()
         from cli.lib.acceptance_coordinator import Coverage, accept_source
-        materialization = _acceptance_materialization(root, options.sha)
-        receipt = accept_source(root, sha=options.sha, materialization=materialization, task_id=options.task_id,
+        selected_sha = checked_sha or options.sha
+        materialization = _acceptance_materialization(root, selected_sha)
+        receipt = accept_source(root, sha=selected_sha, materialization=materialization, task_id=options.task_id,
                                 scope=options.scope, reuse=options.reuse, coverage=cast(Coverage, options.coverage),
                                 required_stages=options.required_stages).to_dict()
         from cli.lib.aico_publish import record_local_check
@@ -708,6 +719,12 @@ def _acceptance_mode(args: list[str]) -> int:
             if not attach_owned_acceptance(root, owned_task, receipt):
                 output_error("Acceptance artifact retained; task proof was not attached because the local claim/evidence changed or the API is remote. Reclaim and revalidate before completion.")
     except (AcceptanceError, TaskClaimRenewalError) as exc:
+        if root is not None and checked_sha and options.coverage == "full":
+            from cli.lib.aico_publish import failed_check_names, record_local_check
+
+            with suppress(OSError, ValueError):
+                record_local_check(root, checked_sha, passed=False, lane="acceptance",
+                                   failed=failed_check_names(str(exc)))
         output_error(str(exc))
         return 2
     if options.json_output:

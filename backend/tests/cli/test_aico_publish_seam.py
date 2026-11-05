@@ -134,3 +134,53 @@ def test_transport_command_never_reads_registry_or_prints_raw_errors(monkeypatch
     assert json.loads(result.output) == {"publication_complete": False, "reason": "transport_unavailable"}
 
 
+def test_failed_acceptance_replaces_the_same_commits_prior_publish_pass(tmp_path, monkeypatch):
+    import subprocess
+
+    from cli.commands import check as check_command
+    from cli.lib.acceptance import AcceptanceError
+
+    def git(*args):
+        return subprocess.check_output(["git", "-C", str(tmp_path), *args], text=True).strip()
+
+    git("init", "-q", "-b", "main")
+    git("config", "user.email", "test@example.invalid")
+    git("config", "user.name", "Test")
+    git("commit", "--allow-empty", "-qm", "initial")
+    sha = git("rev-parse", "HEAD")
+    record_local_check(tmp_path, sha, passed=True)
+    monkeypatch.setattr(check_command, "_resolve_repo_root", lambda: tmp_path)
+    monkeypatch.setattr(check_command, "_acceptance_materialization", lambda *_: "actual")
+    with patch("cli.lib.acceptance_coordinator.accept_source", side_effect=AcceptanceError("acceptance_checks_failed; OSV:FAIL:1")):
+        assert check_command._acceptance_mode(["--acceptance"]) == 2
+    assert not checked_main(tmp_path, sha)
+    proof = json.loads((tmp_path / ".git/aico-checks/receipts" / f"publish-{sha}.json").read_text())
+    assert proof["failed"] == ["osv"]
+
+
+def test_acceptance_pins_head_before_materialization_can_observe_another_commit(tmp_path, monkeypatch):
+    import subprocess
+
+    from cli.commands import check as check_command
+
+    def git(*args):
+        return subprocess.check_output(["git", "-C", str(tmp_path), *args], text=True).strip()
+
+    git("init", "-q", "-b", "main")
+    git("config", "user.email", "test@example.invalid")
+    git("config", "user.name", "Test")
+    git("commit", "--allow-empty", "-qm", "initial")
+    sha = git("rev-parse", "HEAD")
+    monkeypatch.setattr(check_command, "_resolve_repo_root", lambda: tmp_path)
+
+    def moved(*_):
+        git("commit", "--allow-empty", "-qm", "concurrent commit")
+        return "actual"
+
+    monkeypatch.setattr(check_command, "_acceptance_materialization", moved)
+    with patch("cli.lib.acceptance_coordinator.accept_source") as accept:
+        accept.return_value.to_dict.return_value = {"state": "success", "source_commit": sha}
+        assert check_command._acceptance_mode(["--acceptance"]) == 0
+    assert accept.call_args.kwargs["sha"] == sha
+
+

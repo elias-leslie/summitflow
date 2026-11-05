@@ -84,7 +84,7 @@ def test_historical_full_acceptance_needs_no_task_and_runs_isolated(repo: Path, 
     result = _invoke("--acceptance", "--sha", "HEAD~1")
     assert result.exit_code == 0, result.output
     assert accept["materialization"] == "isolated"
-    assert accept["sha"] == "HEAD~1"
+    assert accept["sha"] == _git(repo, "rev-parse", "HEAD~1")
     assert accept["task_id"] == ""
     assert accept["coverage"] == "full"
 
@@ -95,7 +95,7 @@ def test_historical_acceptance_with_task_and_scope_is_isolated(repo: Path, accep
     result = _invoke("--acceptance", "--sha", "HEAD~1", "--task", "task-one", "--scope", "app.py")
     assert result.exit_code == 0, result.output
     assert accept["materialization"] == "isolated"
-    assert accept["sha"] == "HEAD~1"
+    assert accept["sha"] == _git(repo, "rev-parse", "HEAD~1")
 
 
 def test_head_sha_spelled_explicitly_is_not_historical(repo: Path, accept: dict[str, object]) -> None:
@@ -169,7 +169,7 @@ def test_historical_acceptance_renews_claim_before_git_and_always_reads_status(
     monkeypatch.setattr("cli.lib.commit_workflow.run_git", recording_run_git)
     result = _invoke("--acceptance", "--sha", "HEAD~1", "--task", "task-one", "--scope", "app.py")
     assert result.exit_code == 0, result.output
-    assert calls == ["renew", "rev-parse --verify", "rev-parse HEAD", "status"]
+    assert calls == ["renew", "rev-parse --verify", "rev-parse --verify", "rev-parse HEAD", "status"]
 
 
 def _git_result(returncode: int = 0, stdout: str = "") -> subprocess.CompletedProcess[str]:

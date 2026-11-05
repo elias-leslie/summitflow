@@ -47,6 +47,7 @@ def checked_main(root: Path, sha: str) -> bool:
 
     if not re.fullmatch(r"[0-9a-f]{40}|[0-9a-f]{64}", sha):
         return False
+
     try:
         if _git(root, "rev-parse", "refs/heads/main") != sha:
             return False
@@ -56,6 +57,17 @@ def checked_main(root: Path, sha: str) -> bool:
                 and value.get("passed") is True and value.get("failed") == [])
     except (OSError, ValueError):
         return False
+
+
+def failed_check_names(detail: str) -> list[str]:
+    """Keep only check protocol names, never diagnostic text, in publication Status."""
+    import re
+
+    ids = re.findall(r"CHECK:FAIL:([A-Za-z0-9_.-]+)", detail)
+    tags = re.findall(r"\b([A-Z][A-Z0-9_-]*):FAIL:", detail)
+    ids.extend({"TEST": "pytest", "LINT": "ruff", "TYPES": "types"}.get(tag, tag.lower())
+               for tag in tags if tag != "CHECK")
+    return sorted(set(ids)) or ["acceptance"]
 
 
 def deliver(root: Path, sha: str, *, authorized_workflows: tuple[str, ...] = ()) -> dict[str, Any]:
