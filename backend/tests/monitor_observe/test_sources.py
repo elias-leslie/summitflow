@@ -184,7 +184,9 @@ def test_connection_owner_cap_never_implies_unknown_owner_is_known(
 def test_users_active_sessions_are_bounded_and_private(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    passwd = tmp_path / "passwd"
+    fixture = tmp_path / "c2-fixture"
+    fixture.mkdir()
+    passwd = fixture / "passwd"
     passwd.write_text("alice:x:1000:1000::/home/alice:/bin/bash\n")
     monkeypatch.setattr(inventory, "PASSWD", passwd)
     seen: list[list[str]] = []
@@ -202,7 +204,9 @@ def test_users_active_sessions_are_bounded_and_private(
     assert result["coverage"]["active_sessions_seen"] == 1
     assert [row["value"]["kind"] for row in result["items"]] == ["active_session", "account"]
     assert result["items"][0]["value"] == {"kind": "active_session", "uid": 1000, "state": "active"}
-    serialized = json.dumps(result)
+    # Fixture source paths may contain a session ID substring by coincidence.
+    # Inspect the emitted values, which are the fields this test keeps private.
+    serialized = json.dumps([row["value"] for row in result["items"]])
     assert all(secret not in serialized for secret in ("tty2", "pts/1", "seat0", "10min", "c2"))
     assert seen == [["loginctl", "list-sessions", "--no-legend", "--no-pager", "--no-ask-password"]]
 
