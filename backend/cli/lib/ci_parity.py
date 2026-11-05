@@ -235,8 +235,11 @@ def load_jobs(root: Path) -> list[CiJob]:
                 or not isinstance(tools, list) or any(not isinstance(tool, str) for tool in tools)
                 or not isinstance(containers, dict) or any(not isinstance(spec, dict) for spec in containers.values())):
             raise CiParityError("acceptance.pytest needs command arrays, tools and service tables")
-        return [CiJob(".st-check.toml", "pytest", cwd, {}, containers, setup,
-                      [argv] if argv else [], {tool for tool in tools if isinstance(tool, str)}, gate=not argv)]
+        workdir = root / cwd
+        tests = [translate(shlex.join(argv), root, workdir) or argv] if argv else []
+        prepared_setup = [translate(shlex.join(command), root, workdir) or command for command in setup]
+        return [CiJob(".st-check.toml", "pytest", cwd, {}, containers, prepared_setup,
+                      tests, {tool for tool in tools if isinstance(tool, str)}, gate=not argv)]
     import yaml
 
     jobs: list[CiJob] = []

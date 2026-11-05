@@ -73,8 +73,11 @@ def test_the_pytest_job_is_derived_from_the_workflow(project: Path) -> None:
     assert ci_parity.pytest_job(project, project) is None
 
 
-def test_local_fixture_owns_services_tools_and_commands_without_actions(project: Path) -> None:
+def test_local_fixture_owns_services_tools_and_commands_without_actions(project: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     (project / ".github/workflows/ci.yml").unlink()
+    (project / "backend/.venv/bin/python").write_text("#!/bin/sh\n")
+    (project / "backend/.venv/lib/python3.13/site-packages/pytest_randomly").mkdir(parents=True)
+    monkeypatch.chdir(project)
     (project / ".st-check.toml").write_text('''
 [acceptance.env]
 APP_DB_URL = "postgresql://app:test@localhost:5432/app_test"
@@ -93,10 +96,12 @@ POSTGRES_DB = "app_test"
     assert ci_parity.has_ci(project)
     job = ci_parity.pytest_job(project, project / "backend")
     assert job is not None and job.workflow == ".st-check.toml"
-    assert job.tests == [[".venv/bin/python", "-m", "pytest", "--run-integration"]]
-    assert job.setup == [[".venv/bin/python", "-m", "alembic", "upgrade", "head"]]
+    python = str(project / "backend/.venv/bin/python")
+    assert job.tests == [[python, "-m", "pytest", "--run-integration"]]
+    assert job.setup == [[python, "-m", "alembic", "upgrade", "head"]]
     assert job.services["postgres"]["image"] == "postgres:16"
     assert {"node", "uv"}.issubset(ci_parity.admitted_tools(project, job))
+    assert "--randomly-seed=123" in ci_parity.seeded(job.tests[0], 123)
 
 
 def test_environment_is_scrubbed_to_the_workflow_and_ci_tools(project: Path, tmp_path: Path,
