@@ -8,10 +8,15 @@ from unittest.mock import patch
 from typer.testing import CliRunner
 
 from cli.lib import aico_delegate
-from cli.lib.aico_publish import checked_main, deliver, record_local_check
+from cli.lib.aico_publish import checked_main, deliver, failed_check_names, record_local_check
 from cli.main import app
 
 runner = CliRunner()
+
+
+def test_failed_check_names_ignore_protocol_examples_in_passing_test_names():
+    detail = "acceptance_checks_failed; TEST:FAIL:1\nPASSED test_pattern[CODEQL:FAIL:1]\n"
+    assert failed_check_names(detail) == ["pytest"]
 
 
 def test_publish_delegates_without_sf_db_or_services(monkeypatch):

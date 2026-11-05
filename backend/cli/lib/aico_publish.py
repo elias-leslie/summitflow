@@ -63,8 +63,9 @@ def failed_check_names(detail: str) -> list[str]:
     """Keep only check protocol names, never diagnostic text, in publication Status."""
     import re
 
-    ids = re.findall(r"CHECK:FAIL:([A-Za-z0-9_.-]+)", detail)
-    tags = re.findall(r"\b([A-Z][A-Z0-9_-]*):FAIL:", detail)
+    prefix = r"(?m)(?:^[ \t]*|;[ \t]*)"
+    ids = re.findall(prefix + r"CHECK:FAIL:([A-Za-z0-9_.-]+)", detail)
+    tags = re.findall(prefix + r"([A-Z][A-Z0-9_-]*):FAIL:", detail)
     ids.extend({"TEST": "pytest", "LINT": "ruff", "TYPES": "types"}.get(tag, tag.lower())
                for tag in tags if tag != "CHECK")
     return sorted(set(ids)) or ["acceptance"]
